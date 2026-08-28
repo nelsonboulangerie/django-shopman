@@ -243,6 +243,8 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     delivery_distance_km = float(delivery_distance_km) if delivery_distance_km is not None else None
 
     payment_pending, payment_confirmed, payment_status_key, payment_expires_at = _payment_info(order)
+    cancellation_reason = str(order_data.get("cancellation_reason") or "")
+    refund_status_key = _refund_status_key(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -284,6 +286,8 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
 
     return TrackingData(
         stale_after_seconds=_stale_after_seconds(),
+        cancellation_reason=cancellation_reason,
+        refund_status_key=refund_status_key,
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
@@ -415,6 +419,22 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
         return False, False, None, None
     return True, False, "payment_pending", payment.get("expires_at") or None
 
+
+def _refund_status_key(order) -> str | None:
+    """Estorno visível ao cliente: refunded | processing | None.
+
+    Só faz sentido para pedido cancelado com pagamento capturado: o dinheiro
+    precisa voltar, e o cliente precisa saber. payment_status é a fonte viva
+    (captured/refunded/…); o estorno do cartão/Pix passa por aqui.
+    """
+    if order.status != "cancelled":
+        return None
+    live = (payment_status.get_payment_status(order) or "").lower()
+    if live in {"refunded", "refund"}:
+        return "refunded"
+    if payment_status.has_sufficient_captured_payment(order) or live in {"captured", "paid"}:
+        return "processing"
+    return None
 
 def _can_mock_confirm_payment(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?

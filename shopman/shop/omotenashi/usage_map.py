@@ -558,6 +558,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_CANCEL_SUCCESS_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CANCELLED_REASON_TITLE": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_TITLE": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_STATUS_REFUNDED": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_STATUS_PROCESSING": (
+        ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_CANCEL_WARNING_MESSAGE": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

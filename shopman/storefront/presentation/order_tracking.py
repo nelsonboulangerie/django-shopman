@@ -166,6 +166,8 @@ class OrderTrackingCopyProjection:
     cancel_dialog_message: str
     cancel_dialog_confirm: str
     cancel_dialog_back: str
+    cancelled_reason_title: str
+    refund_title: str
     mock_payment_success_title: str
     mock_payment_success_message: str
     mock_payment_failed_title: str
@@ -259,6 +261,8 @@ class OrderTrackingProjection:
     payment_expired: bool
     payment_confirmed: bool
     payment_status_label: str | None
+    cancellation_reason: str = ""
+    refund_status_label: str | None = None
     payment_expires_at: str | None
     confirmation_countdown: bool
     confirmation_expires_at: str | None
@@ -341,6 +345,8 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         payment_expired=data.payment_expired,
         payment_confirmed=data.payment_confirmed,
         payment_status_label=_payment_status_label(data.payment_status_key),
+        cancellation_reason=data.cancellation_reason,
+        refund_status_label=_refund_status_label(data.refund_status_key, copy),
         payment_expires_at=data.payment_expires_at,
         confirmation_countdown=data.confirmation_countdown,
         confirmation_expires_at=data.confirmation_expires_at,
@@ -379,6 +385,11 @@ def _status_label(display_status_key: str, status: str, copy: CopyCatalog) -> st
         return copy.title(spec[0], spec[1])
     return order_status_label(display_status_key, "") or order_status_label(status, "") or status
 
+
+def _refund_status_label(key: str | None, copy: CopyCatalog) -> str | None:
+    if not key:
+        return None
+    return copy.title(f"TRACKING_REFUND_STATUS_{key.upper()}", "Reembolso")
 
 def _payment_status_label(payment_status_key: str | None) -> str | None:
     if not payment_status_key:
@@ -1232,6 +1243,8 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
             "Confira o link do pedido ou fale com a equipe.",
         ),
         rate_limit_title=copy.title("TRACKING_RATE_LIMIT_TITLE", "Atualização pausada por um instante"),
+        cancelled_reason_title=copy.title("TRACKING_CANCELLED_REASON_TITLE", "Motivo do cancelamento"),
+        refund_title=copy.title("TRACKING_REFUND_TITLE", "Reembolso"),
         cancel_success_title=copy.title("TRACKING_CANCEL_SUCCESS_TITLE", "Pedido cancelado"),
         cancel_success_message=copy.message(
             "TRACKING_CANCEL_SUCCESS_MESSAGE",
