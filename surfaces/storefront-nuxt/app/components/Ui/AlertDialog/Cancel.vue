@@ -35,7 +35,7 @@
       }
     >(),
     {
-      text: "Cancel",
+      text: "Cancelar",
       variant: "outline",
       size: "default",
     }
