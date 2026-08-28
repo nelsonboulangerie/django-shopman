@@ -560,6 +560,18 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_STEP_CANCELLED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Cancelado")},
     },
+    "TRACKING_CANCELLED_REASON_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Motivo do cancelamento")},
+    },
+    "TRACKING_REFUND_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso")},
+    },
+    "TRACKING_REFUND_STATUS_REFUNDED": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso concluído")},
+    },
+    "TRACKING_REFUND_STATUS_PROCESSING": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Reembolso em processamento")},
+    },
     "TRACKING_STEP_RETURNED": {
         WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")},
     },

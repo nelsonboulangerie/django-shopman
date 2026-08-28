@@ -237,6 +237,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     cancel_dialog_message = serializers.CharField()
     cancel_dialog_confirm = serializers.CharField()
     cancel_dialog_back = serializers.CharField()
+    cancelled_reason_title = serializers.CharField()
+    refund_title = serializers.CharField()
     mock_payment_success_title = serializers.CharField()
     mock_payment_success_message = serializers.CharField()
     mock_payment_failed_title = serializers.CharField()
@@ -291,6 +293,9 @@ class OrderTrackingSerializer(serializers.Serializer):
     payment_expired = serializers.BooleanField()
     payment_confirmed = serializers.BooleanField()
     payment_status_label = serializers.CharField(allow_null=True, required=False)
+    # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
+    cancellation_reason = serializers.CharField(allow_blank=True, required=False)
+    refund_status_label = serializers.CharField(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.

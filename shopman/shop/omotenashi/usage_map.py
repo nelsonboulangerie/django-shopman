@@ -522,6 +522,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_AUTO_CONFIRM_LABEL": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_CANCELLED_REASON_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_CANCEL_ACK_LABEL": (
         ("shopman/shop/projections/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -891,6 +894,15 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_RATING_THANKS_CELEBRATE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_STATUS_PROCESSING": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_STATUS_REFUNDED": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_REFUND_TITLE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_REORDER_CTA": (

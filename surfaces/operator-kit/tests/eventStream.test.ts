@@ -83,6 +83,12 @@ describe("proxyEventStream — BFF SSE das superfícies de operador", () => {
     expect(calls[0]!.options.headers["last-event-id"]).toBeUndefined();
   });
 
+  it("não repassa last-event-id \"error\" (resume envenenado → 400 do django-eventstream)", async () => {
+    const { event } = makeEvent({ "last-event-id": "error" });
+    await proxyEventStream(event, "/events/orders/");
+    expect(calls[0]!.options.headers["last-event-id"]).toBeUndefined();
+  });
+
   it("propaga o status quando o Django recusa (não-autorizado) — sem corpo", async () => {
     (fetch as any).mockImplementationOnce((url: string, options: any) => {
       calls.push({ url, options });

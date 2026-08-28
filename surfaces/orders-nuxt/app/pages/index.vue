@@ -287,10 +287,16 @@ function printQueue() {
       <!-- onde está a maquininha: saiu com o entregador e não voltou -->
       <div v-if="equipmentOut.length" class="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-sm" data-equipment-out>
         <Icon name="lucide:smartphone-nfc" class="size-4 text-muted-foreground" />
-        <span v-for="item in equipmentOut" :key="`${item.ref}:${item.order_ref}`" class="inline-flex items-center gap-1">
+        <NuxtLink
+          v-for="item in equipmentOut"
+          :key="`${item.ref}:${item.order_ref}`"
+          :to="`/${item.order_ref}`"
+          class="inline-flex items-center gap-1 rounded-md px-1 py-0.5 transition hover:bg-accent hover:text-foreground"
+          :aria-label="`Abrir pedido ${item.order_ref}`"
+        >
           <span class="font-medium">{{ item.label }}</span>
           <span class="text-muted-foreground">na rua com o pedido {{ item.order_ref }}<template v-if="item.customer_name"> · {{ item.customer_name }}</template></span>
-        </span>
+        </NuxtLink>
       </div>
 
       <div v-if="allCards.length" class="flex flex-wrap items-center gap-1.5">

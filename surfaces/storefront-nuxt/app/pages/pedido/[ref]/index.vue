@@ -462,6 +462,23 @@ useSeoMeta({
                      secundário para não competir com o aviso principal. -->
                 <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
 
+                <!-- Cancelamento pelo estabelecimento: motivo + estorno visíveis —
+                     o cliente não depende da notificação para saber o porquê. -->
+                <div
+                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_reason || tracking.refund_status_label)"
+                  class="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+                  data-cancellation-info
+                >
+                  <p v-if="tracking.cancellation_reason">
+                    <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
+                    {{ tracking.cancellation_reason }}
+                  </p>
+                  <p v-if="tracking.refund_status_label">
+                    <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
+                    {{ tracking.refund_status_label }}
+                  </p>
+                </div>
+
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
                 <p v-if="showOfflineBanner" class="flex items-center gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-800 dark:text-amber-300" role="status">

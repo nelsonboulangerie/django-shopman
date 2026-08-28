@@ -808,6 +808,9 @@ export interface TrackingCopyProjection {
   pix_auto_update_note: string
   card_intro: string
   card_security_note: string
+  // Cancelamento pelo estabelecimento: rótulos do motivo e do estorno.
+  cancelled_reason_title: string
+  refund_title: string
 }
 
 export interface TrackingResponse {
@@ -843,6 +846,10 @@ export interface TrackingResponse {
   // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
   // pagamento" dentro do bloco inline.
   mock_payment_enabled: boolean
+  // Cancelamento pelo estabelecimento: o cliente lê o porquê e o estado do
+  // estorno na própria tela, sem depender da notificação.
+  cancellation_reason: string
+  refund_status_label: string | null
   confirmation_countdown: boolean
   confirmation_expires_at: string | null
   eta_display: string | null

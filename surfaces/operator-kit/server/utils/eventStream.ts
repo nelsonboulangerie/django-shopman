@@ -40,8 +40,12 @@ export async function proxyEventStream(
   if (cookie) headers.cookie = cookie;
 
   // Resume após reconexão do EventSource, quando o canal é reliable.
+  // "error" é id envenenado: o django-eventstream responde 400
+  // ("Can't resume session after stream-error") e o EventSource reinicia do
+  // zero mesmo assim. Recusar o resume é o comportamento certo (ADR-016: a
+  // verdade é o fetch canônico; o push é só o gatilho) e elimina o 400 a cada load.
   const lastEventId = getRequestHeader(event, "last-event-id");
-  if (lastEventId) headers["last-event-id"] = lastEventId;
+  if (lastEventId && lastEventId !== "error") headers["last-event-id"] = lastEventId;
 
   let upstream: Response;
   try {

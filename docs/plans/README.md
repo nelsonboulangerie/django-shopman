@@ -43,6 +43,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`STOREFRONT-GAPS-ACTION-PLAN.md`](STOREFRONT-GAPS-ACTION-PLAN.md) | WP1–10 feitos; resta WP-11 slice 3 (auto-fill do teleporte) + Fase C. |
 | [`PROJECTION-UI-PLAN.md`](PROJECTION-UI-PLAN.md) | Camada de projections largamente realizada; mantido como spec de contratos/evolução de UI. |
 | [`SEO-PLAN.md`](SEO-PLAN.md) | SEO técnico entregue; capítulo permanente (conteúdo/keywords futuros). |
+| [`WP-P2E-WAITLIST-FERMATA.md`](WP-P2E-WAITLIST-FERMATA.md) | Fila de espera com confirmação ativa (fermata) — aprovado pelo dono; execução em sessão dedicada (F1→F3). |
 
 ## Backlog / futuro (📋)
 
