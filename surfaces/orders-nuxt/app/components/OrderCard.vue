@@ -184,6 +184,18 @@ function buttonClass(priority: string): string {
         <Icon name="lucide:calendar-clock" class="size-3" />
         Agendado{{ card.commitment_date_display ? ` · ${card.commitment_date_display}` : "" }}
       </span>
+      <!-- fila de espera: o pedido não está parado, está esperando a fornada.
+           Sem o selo ele se parece com pedido travado, e alguém cutuca o que
+           não deve. Em "confirming" o relógio corre do lado do CLIENTE. -->
+      <span
+        v-if="card.waitlist_label"
+        class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5 font-medium"
+        :class="card.waitlist_state === 'confirming' ? 'border-primary/40 text-primary' : 'text-muted-foreground'"
+        data-waitlist-badge
+      >
+        <Icon name="lucide:hourglass" class="size-3" />
+        {{ card.waitlist_label }}
+      </span>
       <span
         v-if="card.payment_method_label"
         class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5"

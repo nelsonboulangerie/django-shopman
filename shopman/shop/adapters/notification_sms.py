@@ -42,6 +42,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "payment_expired": "Pedido {order_ref} cancelado: o prazo de pagamento expirou.",
     "payment_failed": "Nao conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
     "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",
+    "waitlist_available": "Sua fornada saiu! Confirme o pedido {order_ref} para garantir o seu: {tracking_url}",
+    "waitlist_released": "O prazo de confirmacao do pedido {order_ref} passou e liberamos a sua vaga. Nada foi cobrado.",
     "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}",
     "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
     "announcement_published": "{body} {cta} {action_url}",

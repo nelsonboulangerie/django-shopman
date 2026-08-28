@@ -811,6 +811,15 @@ export interface TrackingCopyProjection {
   // Cancelamento pelo estabelecimento: rótulos do motivo e do estorno.
   cancelled_reason_title: string
   refund_title: string
+  // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
+  waitlist_waiting_title: string
+  waitlist_waiting_message: string
+  waitlist_confirm_title: string
+  waitlist_confirm_message: string
+  waitlist_confirm_cta: string
+  waitlist_confirmed_title: string
+  waitlist_released_title: string
+  waitlist_released_message: string
 }
 
 export interface TrackingResponse {
@@ -850,6 +859,11 @@ export interface TrackingResponse {
   // estorno na própria tela, sem depender da notificação.
   cancellation_reason: string
   refund_status_label: string | null
+  // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
+  // 'released'. Em confirming o deadline é o relógio do cliente.
+  waitlist_state: string
+  waitlist_deadline: string | null
+  waitlist_planned_for_display: string | null
   confirmation_countdown: boolean
   confirmation_expires_at: string | null
   eta_display: string | null

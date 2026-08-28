@@ -194,6 +194,16 @@ class OrderTrackingCopyProjection:
     pix_auto_update_note: str
     card_intro: str
     card_security_note: str
+    # Fila de espera (WP-P2E): o chamado tem prazo, e a tela tem que dizer isso
+    # mesmo quando a notificação não chegou — ela é a superfície que sempre existe.
+    waitlist_waiting_title: str
+    waitlist_waiting_message: str
+    waitlist_confirm_title: str
+    waitlist_confirm_message: str
+    waitlist_confirm_cta: str
+    waitlist_confirmed_title: str
+    waitlist_released_title: str
+    waitlist_released_message: str
 
 
 @dataclass(frozen=True)
@@ -272,6 +282,9 @@ class OrderTrackingProjection:
     last_updated_iso: str
     last_updated_display: str
     stale_after_seconds: int
+    waitlist_state: str
+    waitlist_deadline: str | None
+    waitlist_planned_for_display: str | None
     # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente
     # (Pix/cartão) — a página não depende da notificação.
     cancellation_reason: str = ""
@@ -360,7 +373,17 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         last_updated_iso=data.last_updated_iso,
         last_updated_display=last_updated_display,
         stale_after_seconds=data.stale_after_seconds,
+        waitlist_state=data.waitlist_state,
+        waitlist_deadline=data.waitlist_deadline,
+        waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
     )
+
+
+def _waitlist_planned_for_display(planned_iso: str | None) -> str | None:
+    """"hoje" / "amanhã" / dia da semana — o mesmo vocabulário da sacola."""
+    from shopman.storefront.presentation.cart import _planned_for_display
+
+    return _planned_for_display(planned_iso)
 
 
 def present_tracking_status(data: TrackingStatusData) -> OrderTrackingStatusProjection:
@@ -1315,6 +1338,23 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
             "Conclua o pagamento no nosso ambiente seguro. O acompanhamento atualiza quando o gateway responder.",
         ),
         card_security_note=copy.message("TRACKING_PAYMENT_CARD_SECURITY_NOTE", "Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão."),
+        waitlist_waiting_title=copy.title("TRACKING_WAITLIST_WAITING_TITLE", "Você está na fila"),
+        waitlist_waiting_message=copy.message(
+            "TRACKING_WAITLIST_WAITING_MESSAGE",
+            "Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+        ),
+        waitlist_confirm_title=copy.title("TRACKING_WAITLIST_CONFIRM_TITLE", "Sua fornada saiu!"),
+        waitlist_confirm_message=copy.message(
+            "TRACKING_WAITLIST_CONFIRM_MESSAGE",
+            "Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+        ),
+        waitlist_confirm_cta=copy.title("TRACKING_WAITLIST_CONFIRM_CTA", "Confirmar meu pedido"),
+        waitlist_confirmed_title=copy.title("TRACKING_WAITLIST_CONFIRMED_TITLE", "Confirmado, já vamos separar"),
+        waitlist_released_title=copy.title("TRACKING_WAITLIST_RELEASED_TITLE", "A vaga passou a vez"),
+        waitlist_released_message=copy.message(
+            "TRACKING_WAITLIST_RELEASED_MESSAGE",
+            "O prazo de confirmação passou e liberamos a sua vaga. Nada foi cobrado, e você pode entrar na fila da próxima fornada.",
+        ),
     )
 
 

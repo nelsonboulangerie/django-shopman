@@ -987,6 +987,31 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_TRACK_SHIPMENT_WITH_CARRIER": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_WAITLIST_CONFIRMED_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_CONFIRM_CTA": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_CONFIRM_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_RELEASED_MESSAGE": (
+        ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_RELEASED_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_WAITING_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_WAITLIST_WAITING_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "URGENCY_BANNER_MESSAGE": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),

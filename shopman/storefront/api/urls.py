@@ -64,6 +64,7 @@ from .tracking import (
     OrderConfirmReceiptView,
     OrderRateView,
     OrderTrackingView,
+    OrderWaitlistConfirmView,
     order_events_view,
 )
 from .whatsapp_verify import WhatsAppVerifyStartView
@@ -126,6 +127,11 @@ urlpatterns = [
     # deste endpoint — sem depender de CORS.
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
+    path(
+        "orders/<str:ref>/waitlist-confirm/",
+        OrderWaitlistConfirmView.as_view(),
+        name="api-order-waitlist-confirm",
+    ),
     path("orders/<str:ref>/confirm-received/", OrderConfirmReceiptView.as_view(), name="api-order-confirm-received"),
     path("orders/<str:ref>/rate/", OrderRateView.as_view(), name="api-order-rate"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),

@@ -50,6 +50,16 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Seu pedido {order_ref} não pode ser confirmado pelo estabelecimento. "
         "Motivo: {reason}. Se precisar de ajuda, estamos aqui."
     ),
+    # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
+    # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
+    "waitlist_available": (
+        "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
+        "Confirme o pedido {order_ref} para garantir o seu: {tracking_url}"
+    ),
+    "waitlist_released": (
+        "O prazo de confirmação do pedido {order_ref} passou e liberamos a sua vaga. "
+        "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
+    ),
     "payment_confirmed": (
         "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido. "
         "Seu pedido seguirá para preparo."

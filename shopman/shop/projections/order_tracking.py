@@ -206,6 +206,13 @@ class TrackingData:
     # notificação para contar a história.
     cancellation_reason: str = ""
     refund_status_key: str | None = None
+    # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
+    # existe. A notificação pode não chegar (janela do WhatsApp, número
+    # trocado); esta tela não depende dela para o cliente saber que a fornada
+    # saiu e que há um prazo correndo.
+    waitlist_state: str = "none"
+    waitlist_deadline: str | None = None
+    waitlist_planned_for: str | None = None
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
 
@@ -331,6 +338,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         shop_name=shop_name,
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
+        **_waitlist_info(order),
     )
 
 
@@ -1543,6 +1551,28 @@ def _parse_datetime(value) -> datetime | None:
     if not timezone.is_aware(dt):
         return timezone.make_aware(dt)
     return dt
+
+
+def _waitlist_info(order) -> dict:
+    """Estado da fila para o acompanhamento (WP-P2E §5).
+
+    ``planned_for`` vem do HOLD, não do bloco gravado: enquanto a fornada não
+    sai, a data que interessa é a do lote, e é ela que o hold carrega.
+    """
+    from shopman.shop.services import waitlist
+
+    state = waitlist.state_for(order)
+    if state == waitlist.NONE:
+        return {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+    block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+    batch_date = waitlist.planned_batch_date(order)
+    planned_for = batch_date.isoformat() if batch_date else None
+    return {
+        "waitlist_state": state,
+        "waitlist_deadline": block.get("deadline") if state == waitlist.CONFIRMING else None,
+        "waitlist_planned_for": planned_for,
+    }
 
 
 def _is_payment_timeout_cancelled(order) -> bool:

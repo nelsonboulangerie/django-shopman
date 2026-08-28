@@ -263,6 +263,14 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     pix_auto_update_note = serializers.CharField()
     card_intro = serializers.CharField()
     card_security_note = serializers.CharField()
+    waitlist_waiting_title = serializers.CharField()
+    waitlist_waiting_message = serializers.CharField()
+    waitlist_confirm_title = serializers.CharField()
+    waitlist_confirm_message = serializers.CharField()
+    waitlist_confirm_cta = serializers.CharField()
+    waitlist_confirmed_title = serializers.CharField()
+    waitlist_released_title = serializers.CharField()
+    waitlist_released_message = serializers.CharField()
 
 
 class OrderTrackingSerializer(serializers.Serializer):
@@ -302,6 +310,11 @@ class OrderTrackingSerializer(serializers.Serializer):
     mock_payment_enabled = serializers.BooleanField(required=False)
     confirmation_countdown = serializers.BooleanField()
     confirmation_expires_at = serializers.CharField(allow_null=True, required=False)
+    # Fila de espera (WP-P2E): "none" | "fermata" | "confirming" | "confirmed"
+    # | "released". Em confirming o deadline é o relógio do cliente.
+    waitlist_state = serializers.CharField(required=False)
+    waitlist_deadline = serializers.CharField(allow_null=True, required=False)
+    waitlist_planned_for_display = serializers.CharField(allow_null=True, required=False)
     eta_display = serializers.CharField(allow_null=True, required=False)
     whatsapp_url = serializers.CharField(allow_blank=True, required=False)
     support_url = serializers.CharField(allow_blank=True, required=False)

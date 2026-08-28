@@ -121,6 +121,30 @@ def emit_goods(work_order) -> None:
         work_order.finished,
         work_order.output_sku,
     )
+    _open_waitlist_window(work_order)
+
+
+def _open_waitlist_window(work_order) -> None:
+    """A fornada saiu: quem estava na fila por ela é chamado a confirmar.
+
+    Este é o sinal de MATERIALIZAÇÃO do WP-P2E. A reserva de fila esperava
+    exatamente isto, e sem o chamado ela esperaria para sempre — o cliente
+    olharia "previsto para hoje" no dia seguinte. Serve FCFS até a fornada
+    acabar (``waitlist.open_window``); quem não couber continua na fila.
+    """
+    sku = getattr(work_order, "output_sku", "") or ""
+    qty = getattr(work_order, "finished", None)
+    if not sku or not qty or qty <= 0:
+        return
+    try:
+        from shopman.shop.services import waitlist
+
+        waitlist.open_window(sku, qty_available=qty)
+    except Exception:
+        logger.warning(
+            "production._open_waitlist_window failed wo=%s sku=%s",
+            work_order.ref, sku, exc_info=True,
+        )
 
 
 def notify(work_order, event: str) -> None:

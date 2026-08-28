@@ -950,6 +950,44 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(title="Voltar")},
     },
 
+    # ── Fila de espera (WP-P2E) ───────────────────────────────────
+    # A fila é uma compra em duas fases, e cada fase tem a sua voz. Esperar não
+    # é promessa vaga ("nada foi cobrado ainda" é o que tira o medo); o chamado
+    # é alegre mas tem prazo; a saída é dita sem culpa e com a porta aberta.
+    "TRACKING_WAITLIST_WAITING_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Você está na fila")},
+    },
+    "TRACKING_WAITLIST_WAITING_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Assim que a fornada sair, a gente te avisa para confirmar. Nada foi cobrado ainda.",
+        )},
+    },
+    "TRACKING_WAITLIST_CONFIRM_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Sua fornada saiu!")},
+    },
+    "TRACKING_WAITLIST_CONFIRM_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Confirme para garantir o seu. Se não der, a vaga vai para a próxima pessoa da fila.",
+        )},
+    },
+    "TRACKING_WAITLIST_CONFIRM_CTA": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Confirmar meu pedido")},
+    },
+    "TRACKING_WAITLIST_CONFIRMED_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Confirmado, já vamos separar")},
+    },
+    "TRACKING_WAITLIST_RELEASED_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="A vaga passou a vez")},
+    },
+    "TRACKING_WAITLIST_RELEASED_MESSAGE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message=(
+                "O prazo de confirmação passou e liberamos a sua vaga. "
+                "Nada foi cobrado, e você pode entrar na fila da próxima fornada."
+            ),
+        )},
+    },
+
     # ── Order confirmation (momento yoin, no acompanhamento) ──────
     "CONFIRMATION_SHARE_CTA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Compartilhar")},
