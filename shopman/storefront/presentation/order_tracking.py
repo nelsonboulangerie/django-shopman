@@ -261,8 +261,6 @@ class OrderTrackingProjection:
     payment_expired: bool
     payment_confirmed: bool
     payment_status_label: str | None
-    cancellation_reason: str = ""
-    refund_status_label: str | None = None
     payment_expires_at: str | None
     confirmation_countdown: bool
     confirmation_expires_at: str | None
@@ -274,6 +272,10 @@ class OrderTrackingProjection:
     last_updated_iso: str
     last_updated_display: str
     stale_after_seconds: int
+    # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente
+    # (Pix/cartão) — a página não depende da notificação.
+    cancellation_reason: str = ""
+    refund_status_label: str | None = None
 
 
 @dataclass(frozen=True)
