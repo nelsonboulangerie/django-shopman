@@ -379,14 +379,14 @@ export function shouldOfferPickupSwap ({ field, fulfillmentType, hasPickup, hasA
 // no lugar do antigo "Padrão da loja" (que não significava nada pra ele).
 export function paymentMethodHint (ref: string, cardProvider = ''): string {
   const value = ref.toLowerCase()
-  if (value.includes('pix')) return 'Aprovação na hora'
+  if (value.includes('pix')) return 'Pague com Pix no app do banco'
   if (value.includes('card') || value.includes('cart') || value.includes('credito') || value.includes('debito')) {
     // Nomear o provedor reconhecido (Stripe/Efí) dá previsibilidade e
     // confiança — reduz a hesitação de digitar cartão. Provedor vem do
     // backend (config); sem ele, mensagem genérica de segurança.
     return cardProvider ? `Pagamento seguro via ${cardProvider}` : 'Pagamento em ambiente seguro'
   }
-  if (value.includes('cash') || value.includes('dinheiro')) return 'Pague na entrega'
+  if (value.includes('cash') || value.includes('dinheiro')) return 'Pague ao receber'
   return ''
 }
 

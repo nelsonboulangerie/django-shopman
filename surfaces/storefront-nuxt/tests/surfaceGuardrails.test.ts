@@ -816,6 +816,10 @@ describe('surface UX guardrails', () => {
     expect(loginWhatsapp).toContain('bg-cta text-cta-foreground')
     expect(payment).toContain('Pagamento de teste')
     expect(payment).toContain('size="lg"')
+    expect(payment).toContain('{{ copy.pix_pending_note }}')
+    expect(payment).toContain('{{ copy.pix_auto_update_note }}')
+    expect(payment).not.toContain('Assim que o pagamento cair')
+    expect(payment).not.toContain('começa quando o código aparecer.')
     expect(accessBridge).toContain("response.redirect || '/'")
   })
 
