@@ -755,8 +755,9 @@ def test_events_webhook_accepts_single_event_object(db):
 
 def test_process_events_reflects_ifood_cancellation():
     """Evento CAN do iFood cancela o Order local (actor system:ifood) e acka."""
-    from shopman.shop.services import ifood_events
     from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_events
 
     class _Order:
         ref = "WEB-IFD-1"
@@ -791,8 +792,9 @@ def test_process_events_reflects_ifood_cancellation():
 
 def test_process_events_can_failure_does_not_ack():
     """Falha ao cancelar deixa o evento sem ack (iFood reentrega)."""
-    from shopman.shop.services import ifood_events
     from shopman.orderman.models import Order
+
+    from shopman.shop.services import ifood_events
 
     class _Boom:
         status = "accepted"
