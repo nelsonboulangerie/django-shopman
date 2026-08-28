@@ -201,6 +201,11 @@ class TrackingData:
     shop_name: str
     is_debug: bool
     last_updated_iso: str
+    # Cancelamento pelo estabelecimento: motivo escolhido no Gestor e estado
+    # do estorno (Pix/cartão) visíveis ao cliente — a página não depende da
+    # notificação para contar a história.
+    cancellation_reason: str = ""
+    refund_status_key: str | None = None
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
 

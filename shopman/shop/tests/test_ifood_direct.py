@@ -751,3 +751,85 @@ def test_events_webhook_accepts_single_event_object(db):
         )
     assert resp.status_code == 200
     mock_proc.assert_called_once_with([event])
+
+
+def test_process_events_reflects_ifood_cancellation():
+    """Evento CAN do iFood cancela o Order local (actor system:ifood) e acka."""
+    from shopman.shop.services import ifood_events
+    from shopman.orderman.models import Order
+
+    class _Order:
+        ref = "WEB-IFD-1"
+        status = "accepted"
+        data = {}
+
+        def can_transition_to(self, target):
+            return True
+
+        def save(self, **kwargs):
+            pass
+
+        def transition_status(self, status, actor):
+            self.status = status
+            self._actor = actor
+
+    fake = _Order()
+    with (
+        patch.object(Order.objects, "filter", return_value=MagicMock(first=lambda: fake)),
+        patch("shopman.shop.services.ifood_events.webhook_idempotency") as idem,
+        patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as ack,
+    ):
+        idem.claim.return_value = MagicMock(replayed=False, in_progress=False)
+        summary = ifood_events.process_events([
+            {"id": "evt-can-1", "code": "CAN", "orderId": "ifd-uuid"},
+        ])
+    assert fake.status == "cancelled"
+    assert fake._actor == "system:ifood"
+    assert summary["ingested"] == 1
+    ack.assert_called_once_with(["evt-can-1"])
+
+
+def test_process_events_can_failure_does_not_ack():
+    """Falha ao cancelar deixa o evento sem ack (iFood reentrega)."""
+    from shopman.shop.services import ifood_events
+    from shopman.orderman.models import Order
+
+    class _Boom:
+        status = "accepted"
+
+        def can_transition_to(self, target):
+            return True
+
+        def save(self, **kwargs):
+            pass
+
+        def transition_status(self, status, actor):
+            raise RuntimeError("boom")
+
+    with (
+        patch.object(Order.objects, "filter", return_value=MagicMock(first=lambda: _Boom())),
+        patch("shopman.shop.services.ifood_events.webhook_idempotency") as idem,
+        patch("shopman.shop.services.ifood_events.acknowledge", return_value=True) as ack,
+    ):
+        idem.claim.return_value = MagicMock(replayed=False, in_progress=False)
+        summary = ifood_events.process_events([
+            {"id": "evt-can-2", "code": "CAN", "orderId": "ifd-uuid"},
+        ])
+    assert summary["failed"] == 1
+    ack.assert_not_called()
+
+
+def test_status_handler_skips_callback_for_ifood_cancelled():
+    """Cancelamento originado no iFood não gera requestCancellation de volta."""
+    from shopman.shop.handlers import ifood_status
+
+    order = MagicMock()
+    order.channel_ref = "ifood"
+    order.status = "cancelled"
+    order.data = {"ifood_cancelled": True}
+    order.external_ref = "ifd-uuid"
+    with patch("shopman.shop.handlers.ifood_status.Directive") as DirectiveMock:
+        ifood_status.on_order_status_changed(
+            sender=None, order=order, event_type="status_changed", actor="system:ifood"
+        )
+    DirectiveMock.objects.create.assert_not_called()
