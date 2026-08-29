@@ -214,7 +214,15 @@ def test_atender_pedido_inexistente_e_recusado(operator, manager):
 
 
 def test_pedido_de_outro_turno_nao_e_atendido_daqui(operator, manager):
-    """O ``ref`` é id de linha, mas só do livro DO OPERADOR: turno alheio não resolve."""
+    """O ``ref`` é id de linha, mas só do livro DO OPERADOR: turno alheio não resolve.
+
+    ⚠️ O `terminal_ref` aqui não é decoração. O cenário abre uma SEGUNDA gaveta (é o
+    veículo para o turno alheio), e com duas ativas uma mutação que não diz onde está
+    passa a ser recusada por ambiguidade — de propósito, porque escolher a gaveta errada
+    com convicção é o modo de falha caro. Dizendo o balcão, o teste volta a medir o que
+    ele existe para medir: isolamento entre turnos. A ambiguidade em si tem teste
+    próprio em `test_terminal_ambiguo.py`.
+    """
     other = get_user_model().objects.create_user(username="outro", password="x", is_staff=True)
     from shopman.cashman.models import Terminal
 
@@ -224,7 +232,12 @@ def test_pedido_de_outro_turno_nao_e_atendido_daqui(operator, manager):
     alheio = cash.record(Entry.Kind.CHANGE_REQUESTED, shift=other_shift, operator=other, payload={"amount_q": 10000})
 
     with pytest.raises(POSError, match="não encontrado"):
-        pos_service.serve_change_request(operator=operator, request_ref=str(alheio.pk), manager_approval=_approval())
+        pos_service.serve_change_request(
+            operator=operator,
+            request_ref=str(alheio.pk),
+            manager_approval=_approval(),
+            terminal_ref=Terminal.default().ref,
+        )
 
 
 # ── ⚠️ A regra que não pode ser violada: NET ZERO ─────────────────────────

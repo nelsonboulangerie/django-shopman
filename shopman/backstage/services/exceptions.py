@@ -47,6 +47,18 @@ class POSPermissionError(POSError):
     """Raised when a POS actor lacks permission (ex.: fechar caixa de outro)."""
 
 
+class POSTerminalAmbiguous(POSError):
+    """Mais de uma gaveta ativa e ninguém disse em qual se está trabalhando.
+
+    A camada HTTP mapeia para 409 (conflito de estado), não 400 — mesmo padrão de
+    ``OrderConflict`` e ``ProductionConflict``. O operador não errou nada: falta a loja
+    dizer qual é o balcão dele.
+
+    ⚠️ Só a MUTAÇÃO recusa. A leitura escolhe, porque derrubar o quadro do PDV por
+    ambiguidade trocaria um problema por outro maior — ver ``pos.resolve_terminal``.
+    """
+
+
 class ProductionError(BackstageServiceError):
     """Raised when a production mutation cannot be applied."""
 
