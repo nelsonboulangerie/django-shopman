@@ -1066,7 +1066,12 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/cash/close/",
-            payload_schema={"required": ["closing_amount"], "optional": ["notes", "client_request_id"]},
+            payload_schema={
+                "required": ["closing_amount"],
+                # `terminal_ref` faltava, e o endpoint o lê: é por ele que o fechamento
+                # sabe QUAL terminal está sendo fechado quando há mais de um na estação.
+                "optional": ["notes", "terminal_ref", "client_request_id"],
+            },
             confirmation={"style": "destructive"},
             idempotency="client_request_id",
         ),
@@ -1167,7 +1172,14 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/",
-            payload_schema={"required": ["kind"], "optional": ["amount", "note", "client_request_id"]},
+            # ⚠️ Declarava `required: ["kind"]`, e `kind` não existe em lugar nenhum —
+            # resíduo de um tipo que o próprio docstring conta que foi removido. E
+            # `denominations`, que o endpoint lê, não era declarado. Contrato que descreve
+            # um endpoint que não existe é pior que contrato nenhum: o cliente confia.
+            payload_schema={
+                "required": ["amount"],
+                "optional": ["denominations", "note", "client_request_id"],
+            },
             idempotency="client_request_id",
         ),
         Action(
@@ -1226,7 +1238,10 @@ def _pos_actions() -> tuple[Action, ...]:
             label="Resolver coordenadas",
             priority="quiet",
             method="POST",
-            href="/api/v1/geocode/reverse",
+            # ⚠️ Sem a barra final. A rota é `geocode/reverse/`, e com `APPEND_SLASH` um
+            # POST para a versão sem barra vira 301 — o corpo se perde no caminho. As
+            # telas vivas usam a barra; quem seguisse o CONTRATO é que quebraria.
+            href="/api/v1/geocode/reverse/",
             payload_schema={
                 "required": ["lat", "lng"],
                 "returns": {"shape": "delivery_address_structured"},
@@ -1280,7 +1295,12 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["session_key"],
                 "optional": ["line_ids", "client_request_id"],
             },
-            idempotency="client_request_id",
+            # ⚠️ Prometia `client_request_id`, e essa chave só vai para o LOG. Quem
+            # protege é o ledger de tickets da cozinha, por `line_id`: reenviar um
+            # tempo é no-op, e um tempo cancelado pode voltar (reimpressão). A
+            # diferença importa para quem consome o contrato — a chave do cliente não
+            # é o que decide, então uma fila offline não deve confiar nela aqui.
+            idempotency="ledger",
         ),
         Action(
             ref="unfire_tab",
