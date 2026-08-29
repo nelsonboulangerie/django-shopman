@@ -77,47 +77,70 @@ confere o resultado.
 subclasse, então a ordem importa). O frontend **já** trata 409 com mensagem honesta — nada a mudar lá para o
 erro aparecer.
 
-### P1-1 — Cancelar pedido pronto passa a existir, para gerente e dono
+### P1-1 — A régua do canal não deixa cancelar pedido pronto, e isso é lacuna
 
-**Decisão do dono (29/08):** cancelar um pedido já pronto é de **gerente ou dono (admin)**. O Caixa não.
-Isso resolve a pergunta que travava o WP e muda o P1-1 de "esconder o botão" para "fazer o botão funcionar
-para quem pode".
+**Decisão do dono (29/08):** cancelar pedido pronto é de **gerente ou dono**. O Caixa não.
 
-**A armadilha que a resposta expõe, e que ninguém tinha visto.** As transições **não** vivem só no core: elas
-são configuradas por canal e **assadas no `snapshot` de cada pedido** (`get_transitions()` lê
-`snapshot["lifecycle"]["transitions"]`). E `snapshot` está em `SEALED_FIELDS` — **imutável após a criação**.
+> ⚠️ **Correção de uma análise anterior minha.** Numa primeira leitura eu propus uma "transição de exceção"
+> validada em código, contornando a máquina de estados, com o argumento de que mudar a config do canal não
+> alcançaria pedidos já criados. **Estava errado em três níveis**, e o registro fica porque a proposta chegou
+> a ser escrita:
+>
+> 1. **Cancelar nunca feriu a imutabilidade do pedido.** `SEALED_FIELDS` é
+>    `["ref", "channel_ref", "session_key", "snapshot", "total_q", "currency"]`. **`status` não está lá** — é
+>    mutável por desenho, porque é o ciclo de vida. O que é selado é a *régua* (snapshot), o *preço* e a
+>    *identidade*. Eu confundi "a régua é imutável" com "cancelar fere a imutabilidade".
+> 2. **O problema que a exceção resolvia não existe.** Pedido antigo não pegar a régua nova é irrelevante em
+>    alpha (reseed resolve) e, em produção, seria o comportamento **correto**: cada pedido carrega a regra sob
+>    a qual nasceu. É o ponto inteiro do snapshot, não um defeito dele.
+> 3. **A exceção criaria duas fontes para a mesma pergunta** — parte da régua no snapshot, parte numa lista em
+>    código. É exatamente o modo de falha que o `setup_groups.py` documenta em voz alta ("duas fontes para a
+>    mesma pergunta, e a pior das duas ganhava").
 
-Consequência prática: se a permissão for implementada mudando a config do canal, ela **só vale para pedidos
-novos**. Os pedidos que já estão no banco continuam não-canceláveis para sempre — e o gerente vai reclamar,
-com razão, que não consegue cancelar o pedido de meia hora atrás. Vale notar que o canal do PDV já permite
-`completed → cancelled`, mas **não** `ready → cancelled`; a lacuna é específica.
+**O achado que fecha o caso: a régua do canal do PDV é internamente incoerente.**
 
-**Dois desenhos possíveis:**
+| de | pode cancelar? |
+|---|---|
+| `new` | ✅ |
+| `accepted` | ✅ |
+| `preparing` | ✅ |
+| **`ready`** | ❌ |
+| `completed` | ✅ |
 
-| | (a) Config do canal | (b) Transição de exceção com permissão |
+Dá para cancelar **antes** (na cozinha) e **depois** (entregue e fechado), mas **não no meio** — justamente no
+estado em que o pão está pronto no balcão e ninguém pegou, que é quando o cliente liga para desistir. Não há
+ADR, comentário ou documento justificando. **É lacuna, não decisão.**
+
+Isso reenquadra o trabalho: não é "abrir uma exceção na máquina de estados". É **consertar uma régua que não
+fecha**.
+
+**O desenho, e é o padrão clássico — transição guardada.** Duas perguntas diferentes, cada uma respondida por
+quem é dono dela:
+
+| Pergunta | Quem responde | Onde vive |
 |---|---|---|
-| Como | acrescentar `"cancelled"` em `ready` no `lifecycle.transitions` do canal | a view, com permissão elevada, valida contra uma lista explícita de status canceláveis por exceção, sem consultar o snapshot |
-| Pedidos antigos | **não** cancelam (snapshot selado) | cancelam |
-| Onde mora a regra | numa config de canal, invisível no código | nomeada e visível no código |
-| Risco | o Caixa também ganharia a transição — o gate seria só a permissão da view | contorna a máquina de estados para um caso, e isso precisa estar escrito |
+| Esta transição é possível **para este pedido**? | máquina de estados | `snapshot.lifecycle.transitions`, assado no nascimento — imutável e auditável para sempre |
+| **Este ator** pode executá-la? | RBAC | permissão, resolvida em runtime |
 
-**Recomendo (b)**, por três motivos: funciona nos pedidos que já existem, que é o caso real de quem pede o
-cancelamento; deixa a exceção **nomeada** em vez de escondida numa config; e não afrouxa a máquina de estados
-para todo mundo — a transição continua proibida por padrão e só a permissão a abre. O nome importa: é uma
-**exceção autorizada**, não uma transição normal, e o código deve dizer isso.
+Misturar as duas é que seria o erro: uma máquina de estados que conhece cargos está acoplada ao RBAC, e a
+régua deixaria de ser auditável (a resposta a "sob que regras este pedido foi feito?" mudaria a cada deploy).
+A casa **já** faz essa separação — o `setup_groups` é dono do "quem", o snapshot é dono do "o quê". A minha
+proposta anterior a violava.
 
-**Fix.** Permissão nova (`shop.cancel_advanced_order` ou nome que o dono preferir), concedida ao **Gerente**
-— o Dono soma via Gerente, e superusuário tem tudo; a projection expõe `can_cancel` calculado por **status
-E permissão do `request.user`** (é a invariante "servidor decide capacidade": a UI não recalcula nada); e a
-view devolve **403** para quem não pode e **409** para status que nem por exceção cancela. O botão deixa de
-mentir para todo mundo: some para o Caixa, funciona para o gerente.
+**Fix, e é uma linha de config mais uma guarda de permissão:**
 
-Depois, regerar o contrato TS — o teste de drift falha sem isso.
+1. **Régua:** acrescentar `"cancelled"` à lista de `ready` no `lifecycle.transitions` do canal, no seed. A
+   régua passa a fechar. **Zero mudança no core, zero contorno, zero migration.**
+2. **Quem:** a view exige uma permissão adicional **quando o status atual é avançado** (`ready`). Para `new`,
+   `accepted` e `preparing`, segue valendo `shop.manage_orders` — o Caixa continua cancelando o que sempre
+   cancelou. É o mesmo mecanismo do P2-2, e o resolvedor de códigos **já aceita tupla**.
+3. **Tela:** `can_cancel` na projection = régua **E** permissão do `request.user`. O servidor decide a
+   capacidade; a UI não recalcula nada.
+4. **Reseed do alpha** para os pedidos existentes nascerem com a régua nova — em produção isso não seria
+   necessário nem desejável, mas aqui não há dado real. ⚠️ Reseed do alpha **pede a palavra do Pablo**.
 
-⚠️ **Sub-decisão que sobrou, e não bloqueia começar:** o dono respondeu sobre pedido **pronto**. Falta dizer
-se a exceção alcança também `dispatched` (já saiu para entrega) e `delivered` (já foi entregue). Proponho
-**só `ready`** por enquanto — depois que o motoboy saiu, "cancelar" é devolução, e o sistema já tem
-`RETURNED` para isso. Ver pergunta 1.
+**Sub-decisão que sobra:** a régua deve ganhar `cancelled` também em `dispatched` e `delivered`? Proponho
+**não** — depois que o motoboy saiu, o certo é `RETURNED`, que já existe e já está na régua. Ver pergunta 1.
 
 ### P1-2 — Cancelar ou recusar pedido do iFood vira texto livre quando a lista de motivos falha
 
@@ -236,6 +259,9 @@ O **Caixa não recebe**, que é exatamente o recorte pedido.
 Migration nova em `shop` (permissão custom no `Meta` de `Shop`) → começa em **`shop 0024`** (ver README §5).
 E entrada nova no teste de paridade, senão o CI reprova por permissão que ninguém tem.
 
+⚠️ A **régua** (a transição no canal) não é permissão e **não** vai neste PR: é uma linha no seed, e vai junto
+com o código do P1-1. Só a permissão vai para o PR único da onda 4.
+
 **Não** mexer em `settle_delivery_cash` — acertar o dinheiro da entrega é o trabalho do Caixa.
 
 ⚠️ **PR único de permissões da onda 4** (WP-00 Bloco D3).
@@ -244,8 +270,8 @@ E entrada nova no teste de paridade, senão o CI reprova por permissão que ning
 
 1. **Caixa** cancelando pedido `ready` recebe **403**, e o pedido continua `ready`. Hoje recebe 200 com
    `{"ok": true}` e nada acontece (provado).
-2. **Gerente** cancelando pedido `ready` recebe **200 e o pedido fica `cancelled`** — inclusive num pedido
-   criado **antes** da mudança (é o teste que prova que o snapshot selado não nos atrapalha).
+2. **Gerente** cancelando pedido `ready` recebe **200 e o pedido fica `cancelled`** — num pedido criado
+   **depois** da régua nova, que é o contrato do snapshot: cada pedido carrega a regra sob a qual nasceu.
 3. Qualquer perfil cancelando um status fora da exceção (`completed`, `cancelled`) recebe **409**, nunca 200
    mentiroso.
 6. Cancelar de `new`, `accepted` e `preparing` continua funcionando para o Caixa (regressão — não subir a
@@ -283,8 +309,8 @@ Ownership do sino de alertas. Manifest de ações como infra — ver WP-00.
 
 1. ~~Quem cancela um pedido já pronto?~~ **RESPONDIDO (29/08): gerente ou dono.** Sobraram duas
    sub-decisões, ambas pequenas e nenhuma bloqueia começar:
-   **(a)** a exceção alcança `dispatched` e `delivered`, ou só `ready`? Proponho só `ready` — depois que o
-   motoboy saiu, "cancelar" é devolução, e existe `RETURNED` para isso.
+   **(a)** a régua ganha `cancelled` também em `dispatched` e `delivered`, ou só em `ready`? Proponho só
+   `ready` — depois que o motoboy saiu, o certo é `RETURNED`, que já existe e já está na régua.
    **(b)** cancelar um pedido **pronto e pago**: o estorno é automático ou o gerente decide caso a caso? Hoje
    o cancelamento comum já dispara o fluxo de estorno; para a exceção, automático pode surpreender. Precisa da
    sua palavra antes de o executor escrever o aceite.

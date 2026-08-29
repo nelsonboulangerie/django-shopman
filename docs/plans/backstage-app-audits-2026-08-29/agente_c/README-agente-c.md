@@ -311,8 +311,12 @@ Consolidadas dos nove WPs, na ordem em que mudam o trabalho:
 ~~2. Quem cancela um pedido já pronto?~~ **RESPONDIDO (29/08): gerente ou dono.** Permissão nova concedida ao
    Gerente (o Dono soma via Gerente), Caixa não recebe. A resposta expôs uma armadilha que ninguém tinha
    visto: as transições são **assadas no `snapshot` do pedido**, que é campo **selado** — mudar a config do
-   canal só valeria para pedidos novos, e o gerente não conseguiria cancelar o pedido de meia hora atrás. Daí
-   a recomendação de transição de exceção nomeada em código. *(WP-03 P1-1)*
+   canal, assadas no `snapshot` do pedido. **Mas a conclusão que tirei disso estava errada** e o dono me
+   corrigiu: cancelar **não** fere a imutabilidade (`status` não está em `SEALED_FIELDS`), e a régua por
+   pedido é feature, não defeito. O desenho certo é o clássico — **transição guardada**: a régua diz o que é
+   possível (config do canal, imutável por pedido), o RBAC diz quem pode (runtime). E o achado que fecha:
+   a régua do canal do PDV permite cancelar em `preparing` e em `completed`, mas **não** em `ready` — é
+   lacuna, não decisão. Uma linha de config. *(WP-03 P1-1)*
 3. **O Gerente pode reexecutar uma diretiva de estorno?** O `setup_groups` diz por escrito que dinheiro é do
    Dono, e a tela de Diretivas dá ao Gerente o botão. Ou a tela ganha permissão, ou a regra tem uma exceção que
    ainda não está escrita. *(WP-09)*
