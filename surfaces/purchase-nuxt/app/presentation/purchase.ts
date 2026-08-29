@@ -39,12 +39,23 @@ export function formatMoney(cents: number | null | undefined): string {
   return moneyFormatter.format(cents / 100);
 }
 
+/**
+ * Dinheiro digitado → centavos, com a MESMA regra do `parseQtyInput` abaixo:
+ * **vírgula presente decide a notação**.
+ *
+ * ⚠️ Isto removia TODOS os pontos antes de olhar a vírgula, então o teclado do
+ * sistema divergia do servidor em até 100×:
+ *
+ *     "12.50"  tela: R$ 1.250,00   servidor: R$ 12,50
+ *     "12.5"   tela: R$ 125,00     servidor: R$ 12,50
+ *
+ * Nenhum dos dois lados avisava. O caminho pré-preenchido pela NF estava a salvo —
+ * o buraco era a DIGITAÇÃO, que é exatamente o modo manual "sem NF".
+ */
 export function parseMoneyInput(value: string): number {
-  const normalized = value
-    .trim()
-    .replace(/[R$\s]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  const text = value.trim().replace(/[R$\s]/g, "");
+  if (!text) return 0;
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.round(parsed * 100);
