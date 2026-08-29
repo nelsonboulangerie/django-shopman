@@ -42,7 +42,9 @@ Bloco A.
 ## Pré-requisitos
 
 - **WP-00 Bloco D**: toca `shopman/backstage/api/operations.py` → **onda 2, branch único** com WP-02 e WP-05.
-- **Resposta à pergunta 1** decide o desenho do P2-2 (não bloqueia o P0-1).
+- ~~Resposta à pergunta 1~~ — **respondida (29/08): cancelar pedido pronto é de gerente ou dono.** O desenho
+  está no P1-1 abaixo, com uma armadilha que a resposta expõe (o snapshot selado) e uma sub-decisão que
+  sobrou.
 
 ## Achados priorizados
 
@@ -75,16 +77,47 @@ confere o resultado.
 subclasse, então a ordem importa). O frontend **já** trata 409 com mensagem honesta — nada a mudar lá para o
 erro aparecer.
 
-### P1-1 — O botão Cancelar existe onde o cancelamento é impossível
+### P1-1 — Cancelar pedido pronto passa a existir, para gerente e dono
 
-A metade preventiva do P0-1: o 409 conserta a mentira, o `can_cancel` evita o gesto inútil.
+**Decisão do dono (29/08):** cancelar um pedido já pronto é de **gerente ou dono (admin)**. O Caixa não.
+Isso resolve a pergunta que travava o WP e muda o P1-1 de "esconder o botão" para "fazer o botão funcionar
+para quem pode".
 
-A projection do pedido expõe `can_confirm`, `can_advance`, `can_settle_delivery_cash` — e **nenhum
-`can_cancel`**. O detalhe renderiza o botão sem guarda, com um comentário afirmando que Cancelar "segue
-sempre disponível". Não segue.
+**A armadilha que a resposta expõe, e que ninguém tinha visto.** As transições **não** vivem só no core: elas
+são configuradas por canal e **assadas no `snapshot` de cada pedido** (`get_transitions()` lê
+`snapshot["lifecycle"]["transitions"]`). E `snapshot` está em `SEALED_FIELDS` — **imutável após a criação**.
 
-**Fix:** dois campos calculados **pela própria máquina de estados** (sem duplicar regra): `can_cancel` e um
-rótulo de bloqueio nomeando o status. Depois regerar o contrato TS — o teste de drift falha sem isso.
+Consequência prática: se a permissão for implementada mudando a config do canal, ela **só vale para pedidos
+novos**. Os pedidos que já estão no banco continuam não-canceláveis para sempre — e o gerente vai reclamar,
+com razão, que não consegue cancelar o pedido de meia hora atrás. Vale notar que o canal do PDV já permite
+`completed → cancelled`, mas **não** `ready → cancelled`; a lacuna é específica.
+
+**Dois desenhos possíveis:**
+
+| | (a) Config do canal | (b) Transição de exceção com permissão |
+|---|---|---|
+| Como | acrescentar `"cancelled"` em `ready` no `lifecycle.transitions` do canal | a view, com permissão elevada, valida contra uma lista explícita de status canceláveis por exceção, sem consultar o snapshot |
+| Pedidos antigos | **não** cancelam (snapshot selado) | cancelam |
+| Onde mora a regra | numa config de canal, invisível no código | nomeada e visível no código |
+| Risco | o Caixa também ganharia a transição — o gate seria só a permissão da view | contorna a máquina de estados para um caso, e isso precisa estar escrito |
+
+**Recomendo (b)**, por três motivos: funciona nos pedidos que já existem, que é o caso real de quem pede o
+cancelamento; deixa a exceção **nomeada** em vez de escondida numa config; e não afrouxa a máquina de estados
+para todo mundo — a transição continua proibida por padrão e só a permissão a abre. O nome importa: é uma
+**exceção autorizada**, não uma transição normal, e o código deve dizer isso.
+
+**Fix.** Permissão nova (`shop.cancel_advanced_order` ou nome que o dono preferir), concedida ao **Gerente**
+— o Dono soma via Gerente, e superusuário tem tudo; a projection expõe `can_cancel` calculado por **status
+E permissão do `request.user`** (é a invariante "servidor decide capacidade": a UI não recalcula nada); e a
+view devolve **403** para quem não pode e **409** para status que nem por exceção cancela. O botão deixa de
+mentir para todo mundo: some para o Caixa, funciona para o gerente.
+
+Depois, regerar o contrato TS — o teste de drift falha sem isso.
+
+⚠️ **Sub-decisão que sobrou, e não bloqueia começar:** o dono respondeu sobre pedido **pronto**. Falta dizer
+se a exceção alcança também `dispatched` (já saiu para entrega) e `delivered` (já foi entregue). Proponho
+**só `ready`** por enquanto — depois que o motoboy saiu, "cancelar" é devolução, e o sistema já tem
+`RETURNED` para isso. Ver pergunta 1.
 
 ### P1-2 — Cancelar ou recusar pedido do iFood vira texto livre quando a lista de motivos falha
 
@@ -195,27 +228,40 @@ acima.
 
 ## RBAC / `setup_groups`
 
-Depende da pergunta 1. Se a resposta for "cancelamento e fiscal sobem de exigência", a permissão pode ser
-reusada (`shop.manage_catalog` já existe) ou nova. **Não** mexer em `settle_delivery_cash`.
+**Uma permissão nova, confirmada pela decisão do dono:** cancelar pedido em estado avançado é de gerente e
+dono. Concedê-la ao **Gerente** basta — quem é dono entra em "Gerente" **e** em "Dono" (o `setup_groups`
+documenta isso: "Dono" é portão de dinheiro, não persona completa), e superusuário tem tudo por definição.
+O **Caixa não recebe**, que é exatamente o recorte pedido.
 
-⚠️ Se houver permissão nova: **PR único de permissões da onda 4** (WP-00 Bloco D3).
+Migration nova em `shop` (permissão custom no `Meta` de `Shop`) → começa em **`shop 0024`** (ver README §5).
+E entrada nova no teste de paridade, senão o CI reprova por permissão que ninguém tem.
+
+**Não** mexer em `settle_delivery_cash` — acertar o dinheiro da entrega é o trabalho do Caixa.
+
+⚠️ **PR único de permissões da onda 4** (WP-00 Bloco D3).
 
 ## Testes
 
-1. `POST /orders/<ref>/cancel/` num pedido `ready` devolve **409** e o pedido continua `ready`. Hoje devolve
-   200 (provado).
-2. Cancelar de `new`, `accepted` e `preparing` continua funcionando (regressão).
-3. `can_cancel` é `false` para `ready`/`dispatched`/`delivered` e `true` para os canceláveis; contrato TS
-   regerado (o teste de drift já cobre).
-4. Falha ao buscar motivos do iFood **bloqueia** o cancelamento de pedido do iFood; não cai em texto livre.
-5. Pedido do iFood cancelado sempre carrega código de cancelamento não-vazio.
-6. `change_out` malformado devolve **400** com `field`, nunca 500. Idem no acerto de entrega. Hoje é 500
+1. **Caixa** cancelando pedido `ready` recebe **403**, e o pedido continua `ready`. Hoje recebe 200 com
+   `{"ok": true}` e nada acontece (provado).
+2. **Gerente** cancelando pedido `ready` recebe **200 e o pedido fica `cancelled`** — inclusive num pedido
+   criado **antes** da mudança (é o teste que prova que o snapshot selado não nos atrapalha).
+3. Qualquer perfil cancelando um status fora da exceção (`completed`, `cancelled`) recebe **409**, nunca 200
+   mentiroso.
+6. Cancelar de `new`, `accepted` e `preparing` continua funcionando para o Caixa (regressão — não subir a
+   régua do cancelamento normal sem querer).
+7. `can_cancel` é `true` para o Gerente num pedido `ready` e `false` para o Caixa no mesmo pedido — **o mesmo
+   pedido, dois perfis, dois valores**. É a prova de que o servidor decide a capacidade e a UI não recalcula.
+   Contrato TS regerado (o teste de drift já cobre).
+6. Falha ao buscar motivos do iFood **bloqueia** o cancelamento de pedido do iFood; não cai em texto livre.
+7. Pedido do iFood cancelado sempre carrega código de cancelamento não-vazio.
+8. `change_out` malformado devolve **400** com `field`, nunca 500. Idem no acerto de entrega. Hoje é 500
    (provado).
-7. Pedido de entrega num canal que oferece maquininha **não** entra no lote sem declarar o equipamento.
-8. Reprocessar NFC-e exige a permissão adicional; avançar pedido não.
-9. Nota de cozinha gera evento com ator e com antes/depois.
-10. Falha no bloco de corrida projeta painel degradado, não `None`.
-11. `confirmed` não aparece em nenhum arquivo do `orders-nuxt`; o mock do e2e emite `accepted`.
+9. Pedido de entrega num canal que oferece maquininha **não** entra no lote sem declarar o equipamento.
+10. Reprocessar NFC-e exige a permissão adicional; avançar pedido não.
+11. Nota de cozinha gera evento com ator e com antes/depois.
+12. Falha no bloco de corrida projeta painel degradado, não `None`.
+13. `confirmed` não aparece em nenhum arquivo do `orders-nuxt`; o mock do e2e emite `accepted`.
 
 ## Arquivos tocados (para a matriz de colisão)
 
@@ -235,10 +281,13 @@ Ownership do sino de alertas. Manifest de ações como infra — ver WP-00.
 
 ## Perguntas para o dono do produto
 
-1. **Quem cancela um pedido já pronto?** Hoje o sistema **não deixa** ninguém (a transição não existe), mas a
-   tela oferece o botão e mente. São dois desenhos diferentes: ou a transição passa a existir para quem tem
-   uma permissão elevada — e aí cancelar um `ready` pago precisa decidir o que acontece com o estorno e com o
-   iFood —, ou o botão simplesmente some depois de pronto. **Esta pergunta decide o WP inteiro.**
+1. ~~Quem cancela um pedido já pronto?~~ **RESPONDIDO (29/08): gerente ou dono.** Sobraram duas
+   sub-decisões, ambas pequenas e nenhuma bloqueia começar:
+   **(a)** a exceção alcança `dispatched` e `delivered`, ou só `ready`? Proponho só `ready` — depois que o
+   motoboy saiu, "cancelar" é devolução, e existe `RETURNED` para isso.
+   **(b)** cancelar um pedido **pronto e pago**: o estorno é automático ou o gerente decide caso a caso? Hoje
+   o cancelamento comum já dispara o fluxo de estorno; para a exceção, automático pode surpreender. Precisa da
+   sua palavra antes de o executor escrever o aceite.
 2. **Cancelamento, fiscal e courier devem exigir permissão além de `manage_orders`?** O Caixa hoje leva tudo
    junto. Reusar uma permissão existente ou criar uma nova?
 3. **Vale configurar o código de cancelamento padrão do iFood?** Hoje o default é vazio, e isso transforma
@@ -273,9 +322,9 @@ Fases:
 2. P1-3: converter POSError em OrderError nas duas funcoes, com field. Teste 6.
 3. P1-1: can_cancel + rotulo, calculados por can_transition_to. Regerar ordersContract.ts
    com `python manage.py export_orders_schema`.
-4. P1-2: catch devolve null; dialogo bloqueia iFood sem motivos; unificar as duas copias.
-5. P2-1 (uma linha em board.ts), P2-4 (evento na nota), P3-1, P3-2.
-6. P2-2 e P2-3 depois das respostas 1 e 2.
+6. P1-2: catch devolve null; dialogo bloqueia iFood sem motivos; unificar as duas copias.
+7. P2-1 (uma linha em board.ts), P2-4 (evento na nota), P3-1, P3-2.
+8. P2-2 e P2-3 depois das respostas 1 e 2.
 
 NAO exija motivo no cancelamento de corrida (quebra a unica tela que chama o endpoint).
 NAO tire settle_delivery_cash do Caixa. NAO 409 por equipamento vazio.

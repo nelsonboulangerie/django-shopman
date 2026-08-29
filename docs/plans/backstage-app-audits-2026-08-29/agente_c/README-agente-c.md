@@ -302,11 +302,17 @@ Dois itens dele cruzam com WPs meus e **não** são duplicata:
 
 Consolidadas dos nove WPs, na ordem em que mudam o trabalho:
 
-1. **O alpha tem mais de um `Terminal` ativo?** Se tiver um com ref anterior a `pdv-main` em ordem alfabética,
-   **o PDV já está quebrado em produção**. É uma consulta de um comando ao banco. *(WP-02)*
-2. **Quem cancela um pedido já pronto?** Hoje o sistema não deixa ninguém, mas a tela oferece o botão e mente.
-   Ou a transição passa a existir com permissão elevada — e aí é preciso decidir o que acontece com o estorno e
-   com o iFood —, ou o botão some depois de pronto. **Decide o WP-03 inteiro.**
+~~1. O alpha tem mais de um `Terminal` ativo?~~ **RESPONDIDO (29/08): um só hoje, e haverá outros.** O P0 do
+   PDV **não está no ar** — não é hotfix, é P0 do WP. Mas é bomba armada: o dia em que a gerente cadastrar o
+   segundo balcão, o PDV para de vender. ⚠️ **Até o fix entrar, não cadastrar um segundo `Terminal`.** E a
+   fase 2 (falhar fechado com 2+ terminais) deixa de ser hipótese — porque um resolver concordante ainda
+   escolhe a gaveta errada com convicção, o que troca falha ruidosa por falha silenciosa. *(WP-02)*
+
+~~2. Quem cancela um pedido já pronto?~~ **RESPONDIDO (29/08): gerente ou dono.** Permissão nova concedida ao
+   Gerente (o Dono soma via Gerente), Caixa não recebe. A resposta expôs uma armadilha que ninguém tinha
+   visto: as transições são **assadas no `snapshot` do pedido**, que é campo **selado** — mudar a config do
+   canal só valeria para pedidos novos, e o gerente não conseguiria cancelar o pedido de meia hora atrás. Daí
+   a recomendação de transição de exceção nomeada em código. *(WP-03 P1-1)*
 3. **O Gerente pode reexecutar uma diretiva de estorno?** O `setup_groups` diz por escrito que dinheiro é do
    Dono, e a tela de Diretivas dá ao Gerente o botão. Ou a tela ganha permissão, ou a regra tem uma exceção que
    ainda não está escrita. *(WP-09)*

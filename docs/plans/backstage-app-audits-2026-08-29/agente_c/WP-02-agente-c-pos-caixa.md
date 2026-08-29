@@ -4,8 +4,12 @@
 **Superfície:** `surfaces/pos-nuxt` + `shopman/backstage/{api,projections,services}/pos*` + `shopman/shop/services/pos*`
 **Objetivo:** o terminal que a tela mostra é o terminal em que o dinheiro é lançado; o que o operador declara é o que o livro registra; e nada de dinheiro entra duas vezes porque o wi-fi caiu.
 
-> ⚠️ **Este WP contém o achado mais grave dos nove, e ele pode já estar no ar.**
-> Ver P0-1 e a pergunta 1 — a resposta decide se isto é WP ou hotfix.
+> ✅ **Respondido pelo dono (29/08): o alpha tem UM terminal hoje — mas haverá outros.**
+> O P0-1 **não está no ar**: não é hotfix. É uma **bomba armada** — a gerente tem `add_terminal`, e o dia em
+> que ela cadastrar o segundo balcão, o PDV para de vender. Como o dono confirmou que vai haver mais
+> terminais, esse dia chega. Segue P0 do WP, e a fase 2 deixa de ser hipótese.
+>
+> ⚠️ **Aviso operacional, até o fix entrar: não cadastrar um segundo `Terminal` no Admin.**
 
 ## Diferenças vs. WP-02 (Agente G) e WP-02-agente-d
 
@@ -61,7 +65,7 @@ sessão antes de escrever qualquer coisa sobre login, PIN ou crachá de operador
 
 - **WP-00 Bloco A** (idempotência das ações de dinheiro): o P1-2 deste WP é a primeira aplicação concreta dele.
 - **WP-00 Bloco D**: toca `shopman/backstage/api/operations.py` → **onda 2, branch único** com WP-03 e WP-05.
-- **Resposta à pergunta 1** decide se o P0-1 sai antes de tudo, como hotfix.
+- ~~Resposta à pergunta 1~~ — **respondida**: um terminal hoje, mais no futuro. Não é hotfix; é P0 do WP.
 
 ## Achados priorizados
 
@@ -94,9 +98,18 @@ o comprovante.
         terminal = resolve_terminal("")
 ```
 
-Projection e mutação passam a concordar sempre. O endurecimento proposto pelo Agente D — falhar fechado com
-409 quando há dois ou mais terminais ativos e nenhuma estação vinculada — é a **fase 2**, correta e
-separável.
+Projection e mutação passam a concordar sempre. Isso sozinho já impede a paralisação.
+
+**Fase 2 — agora obrigatória, não hipotética.** O dono confirmou (29/08) que haverá mais de um terminal. Com
+dois ou mais ativos e nenhuma estação vinculada, **um resolver concordante ainda escolhe o terminal errado
+com convicção** — os dois lados passam a apontar para `balcao-2` de forma consistente, e o operador do
+balcão 1 lança sangria na gaveta do balcão 2 sem erro nenhum. Concordância não é correção; só troca falha
+ruidosa por falha silenciosa, que é pior em dinheiro.
+
+Portanto: com 2+ terminais ativos e sem estação vinculada, **falhar fechado** — 409 nomeando a escolha
+pendente, em vez de adivinhar. `Terminal.default()` continua válido e correto para a loja de uma gaveta, que
+é o caso de hoje; o que muda é o comportamento quando o segundo aparece. O desenho de onde vem o ref depende
+da pergunta 2, que segue aberta.
 
 ### P1-1 — "Abrir caixa" com valor negativo abre com R$ 0 em silêncio
 
@@ -231,11 +244,14 @@ vínculo terminal↔estação: fase 2, depende da pergunta 2.
 
 ## Perguntas para o dono do produto
 
-1. **O alpha tem mais de um `Terminal` ativo hoje?** O seed só cria `pdv-main`, mas a gerente pode cadastrar
-   outro pelo Admin. Se já houver um segundo com ref anterior a `pdv-main` em ordem alfabética, **o PDV já
-   está quebrado em produção** e o P0-1 vira hotfix, não WP. É uma consulta de um comando ao banco do alpha.
-2. **Quando houver balcão e totem, o terminal vem da estação confiável ou de uma escolha explícita do
-   operador na antessala?** A fase 2 muda de desenho conforme a resposta.
+1. ~~O alpha tem mais de um `Terminal` ativo?~~ **RESPONDIDO (29/08): um só hoje, e haverá outros.** Não é
+   hotfix; é P0 do WP, e a fase 2 passa a ser obrigatória.
+2. **Quando o segundo terminal chegar, o ref vem da estação confiável ou de uma escolha explícita do operador
+   na antessala?** ⬅️ **agora é a pergunta que importa neste WP.** Se vem da estação, o ref sai do
+   provisionamento (`station_trust`) e o operador nunca escolhe — menos um gesto no balcão. Se vem de escolha,
+   a antessala ganha um seletor e o PDV grava a preferência no dispositivo. **Recomendo a estação**: o balcão
+   com pressa não deveria ter que responder "qual gaveta é esta?" toda manhã, e o dispositivo já é confiável
+   por outro motivo.
 3. **Fundo de troco negativo deve ser 400 ou 0 com aviso?** Proponho 400, para espelhar o fechamento. Mas se
    o balcão usa "-" como atalho de alguma coisa hoje, quero saber antes de trocar um zero silencioso por uma
    parede na abertura do dia.
