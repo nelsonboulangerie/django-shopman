@@ -533,7 +533,7 @@ def _action(
     reason: str = "",
     method: str = "",
     payload_schema: dict | None = None,
-    idempotency: str = "none",
+    idempotency: str = "required",
     confirmation: dict | None = None,
 ) -> Action:
     return Action(
@@ -897,6 +897,7 @@ def _build_promise(
                         ref="copy_pix",
                         kind="copy",
                         label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
+                        idempotency="none",
                     ),
                 ),
                 payment_method="pix",
@@ -916,6 +917,7 @@ def _build_promise(
                         kind="external",
                         label=_copy_title("TRACKING_PROMISE_CARD_ACTION", "Pagar com cartão"),
                         href=checkout_url,
+                        idempotency="none",
                     ),
                 ),
                 payment_method="card",
@@ -1028,6 +1030,7 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
                 kind="link",
                 label=_copy_title("TRACKING_PROMISE_RETRY_ACTION", "Tentar novamente"),
                 href=f"/pedido/{order.ref}",
+                idempotency="none",
             ),
         ),
         payment_method=method,

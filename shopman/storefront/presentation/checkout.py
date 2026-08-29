@@ -466,6 +466,7 @@ def _auth_action() -> Action:
         label="Entrar por telefone",
         priority="primary",
         href="/login?next=/checkout",
+        idempotency="none",
     )
 
 

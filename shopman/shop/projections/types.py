@@ -88,7 +88,15 @@ class Action:
     href: str = ""
     method: str = ""
     payload_schema: dict[str, Any] = field(default_factory=dict)
-    idempotency: str = "none"
+    # ⚠️ O default de um campo de seguranca tem que ser o valor RESTRITIVO,
+    # senao a omissao vira politica. Ate 29/08 este campo nascia "none": sete
+    # acoes do PDV nem o declaravam e herdavam "nao precisa de chave" sem que
+    # ninguem tivesse decidido nada — inclusive o cancelamento de venda e o
+    # DELETE de comanda. Invertido, cada acao nova sem decisao aparece sozinha
+    # no contrato (test_action_idempotency_contract) em vez de nascer insegura
+    # em silencio. Quem nao precisa de chave declara `idempotency="none"` e
+    # justifica na allowlist do teste.
+    idempotency: str = "required"
     confirmation: dict[str, Any] = field(default_factory=dict)
 
 

@@ -958,6 +958,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
             payload_schema={"path": {"tab_ref": "string"}},
+            idempotency="none",
         ),
         Action(
             ref="save_tab",
@@ -970,6 +971,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["tab_session_key", "items"],
                 "optional": ["customer_name", "customer_phone", "fulfillment_type", "payment_method"],
             },
+            idempotency="none",
         ),
         Action(
             ref="review_sale",
@@ -1031,6 +1033,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
         Action(
             ref="open_cash_shift",
@@ -1225,6 +1228,7 @@ def _pos_actions() -> tuple[Action, ...]:
             href="/api/v1/backstage/pos/tabs/{session_key}/clear/",
             payload_schema={"path": {"session_key": "string"}},
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
         Action(
             ref="rename_tab",
@@ -1234,6 +1238,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/rename/",
             payload_schema={"required": ["session_key", "new_tab_ref"]},
+            idempotency="none",
         ),
         Action(
             ref="move_tab_lines",
@@ -1248,6 +1253,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["from_session_key", "line_ids"],
                 "optional": ["to_session_key", "to_tab_ref", "close_source_when_empty"],
             },
+            idempotency="none",
         ),
         Action(
             ref="fire_tab",
@@ -1271,6 +1277,7 @@ def _pos_actions() -> tuple[Action, ...]:
             href="/api/v1/backstage/pos/tabs/unfire/",
             payload_schema={"required": ["session_key", "line_ids"]},
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
     )
 
