@@ -79,8 +79,16 @@ class OrderChangeOutRequired(OrderError):
 
 
 def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "", customer_note: str = ""):
+    """Cancela o pedido, ou levanta ``OrderConflict`` se o estado não permitir.
+
+    ``cancellation.cancel`` devolve ``False`` sem levantar quando a máquina de
+    estados recusa — é assinatura de serviço de domínio, não de superfície. A
+    fronteira do backstage é o lugar de traduzir isso para o dialeto da tela:
+    silenciar aqui devolvia ``200 {"ok": true}`` para um pedido que não foi
+    cancelado, sem estorno e sem aviso ao marketplace.
+    """
     try:
-        return operator_orders.cancel_order(
+        cancelled = operator_orders.cancel_order(
             order,
             reason=reason,
             actor=actor,
@@ -89,6 +97,10 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
         )
     except InvalidTransition as exc:
         raise OrderError(str(exc)) from exc
+    if not cancelled:
+        order.refresh_from_db(fields=["status"])
+        raise OrderConflict(f"Pedido em {order.get_status_display()} não pode ser cancelado.")
+    return cancelled
 
 
 def cancellation_reasons(order) -> list[dict]:

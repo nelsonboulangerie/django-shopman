@@ -98,6 +98,7 @@ from shopman.backstage.services.exceptions import (
     ProductionError,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
+from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import PosRecentSaleNotFound
@@ -1249,10 +1250,53 @@ class OrderRejectView(_OrderActionBase):
     ),
 )
 class OrderCancelView(_OrderActionBase):
+    """Cancelamento pelo operador — três camadas, cada uma respondendo o que é dela.
+
+    A régua (``snapshot.lifecycle.transitions``) diz se a transição é possível
+    para ESTE pedido; ``operator_cancel_policy`` diz se é permitida AGORA,
+    olhando o ciclo do pagamento; e aqui se responde se ESTE ator pode.
+
+    Cancelar um pedido em estado avançado (``ready``/``completed``) é de gerente:
+    ``shop.manage_orders`` sozinho continua cancelando o que sempre cancelou
+    (``new``/``accepted``/``preparing``), que é o trabalho do Caixa. E pedido
+    PAGO exige segunda assinatura, com ou sem estado avançado — é a mesma régua
+    que o PDV já aplica em ``POSCancelRecentSaleView``, agora valendo para todo
+    caminho de operador em vez de só naquele endpoint.
+    """
+
+    ADVANCED_PERMISSION = "shop.cancel_advanced_order"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
+
+        policy = cancellation_service.operator_cancel_policy(order)
+        if not policy.allowed:
+            return Response({"detail": policy.reason}, status=409)
+
+        if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(self.ADVANCED_PERMISSION):
+            return Response(
+                {
+                    "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
+                    "error": {"code": "cancel_requires_manager"},
+                },
+                status=403,
+            )
+
+        if policy.requires_approval:
+            try:
+                # O validador levanta com código próprio (`manager_approval_required`
+                # x `manager_approval_invalid`) e devolve o User que assinou — a
+                # tela distingue "falta gerente" de "PIN errado" sem ler a frase.
+                pos_tabs_service.validate_manager_override(
+                    request.data.get("manager_approval"),
+                    operator_username=_username(request),
+                    action="cancel_paid_order",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+
         # The operator's typed/preset text (may be blank). It rides through as the
         # customer-facing note; the audit reason falls back to a generic label.
         operator_reason = (request.data.get("reason") or "").strip()
@@ -1266,6 +1310,8 @@ class OrderCancelView(_OrderActionBase):
                 cancellation_code=cancellation_code,
                 customer_note=operator_reason,
             )
+        except OrderConflict as exc:
+            return Response({"detail": str(exc)}, status=409)
         except OrderError as exc:
             return Response({"detail": str(exc) or "Falha ao cancelar."}, status=400)
         return Response({"ok": True, "ref": ref})

@@ -347,6 +347,11 @@ class Shop(models.Model):
         verbose_name_plural = "loja"
         permissions = [
             ("manage_orders", "Pode confirmar/rejeitar/avançar/cancelar pedidos"),
+            # Cancelar depois de PRONTO não é o mesmo gesto que cancelar na fila:
+            # o pão já foi feito, e a venda de balcão já fechou. `manage_orders`
+            # segue valendo para a esteira normal (que é o trabalho do Caixa);
+            # isto é o degrau do gerente. Ver `OrderCancelView`.
+            ("cancel_advanced_order", "Pode cancelar pedido já pronto ou já fechado"),
             ("manage_production", "Pode criar WorkOrders e avançar produção"),
             ("view_production_suggested", "Pode ver sugestão de produção"),
             ("edit_production_suggested", "Pode transformar sugestão em planejamento"),
