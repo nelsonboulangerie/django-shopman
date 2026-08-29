@@ -15,6 +15,7 @@ from shopman.shop.models import (
     AnnouncementStatus,
     AnnouncementTemplate,
     Campaign,
+    NotificationCategory,
     UserNotification,
 )
 
@@ -49,6 +50,19 @@ def _post() -> Announcement:
     )
 
 
+def _login(client, user) -> None:
+    """Entrar e limpar o aviso do PRÓPRIO login.
+
+    Desde a trilha de acesso (SIGN-IN-AUDIT-PLAN), entrar gera uma
+    ``UserNotification`` de categoria ``sign_in`` — de propósito: o dono pediu
+    aviso de TODO login. Estes testes são da família ``campaign``, e contar o
+    aviso de acesso junto mediria a feature errada. Limpar aqui, num lugar só,
+    mantém cada asserção dizendo exatamente o que ela quer dizer.
+    """
+    client.force_login(user)
+    UserNotification.objects.filter(category=NotificationCategory.SIGN_IN).delete()
+
+
 def _notification(user, *, announcement=None, actionable=True) -> UserNotification:
     return UserNotification.objects.create(
         user=user,
@@ -69,7 +83,7 @@ class TestList:
 
     def test_own_unread_notifications_are_listed(self, client, gestor):
         _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.get(LIST_URL).json()
         assert len(body["notifications"]) == 1
@@ -79,7 +93,7 @@ class TestList:
     def test_another_users_box_is_invisible(self, client, gestor, colega):
         """A caixa é da pessoa: nem staff lê a alheia."""
         _notification(colega)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.get(LIST_URL).json()
         assert body["notifications"] == []
@@ -88,20 +102,20 @@ class TestList:
     def test_read_ones_are_hidden_by_default(self, client, gestor):
         notification = _notification(gestor)
         notification.mark_read()
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.get(LIST_URL).json()["notifications"] == []
 
     def test_all_flag_includes_the_read_ones(self, client, gestor):
         _notification(gestor).mark_read()
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert len(client.get(f"{LIST_URL}?all=1").json()["notifications"]) == 1
 
     def test_limit_is_capped(self, client, gestor):
         for _ in range(5):
             _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert len(client.get(f"{LIST_URL}?limit=2").json()["notifications"]) == 2
 
@@ -112,14 +126,14 @@ class TestList:
 class TestRead:
     def test_marking_read_drops_the_unread_count(self, client, gestor):
         notification = _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.post(f"{LIST_URL}{notification.pk}/read/").json()
         assert body["unread_count"] == 0
 
     def test_rereading_keeps_the_first_timestamp(self, client, gestor):
         notification = _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/read/")
         notification.refresh_from_db()
@@ -131,7 +145,7 @@ class TestRead:
 
     def test_cannot_read_someone_elses(self, client, gestor, colega):
         notification = _notification(colega)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/read/").status_code == 404
 
@@ -143,7 +157,7 @@ class TestAction:
     def test_approving_publishes_the_post(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "approve"}
@@ -155,7 +169,7 @@ class TestAction:
     def test_approve_is_the_default_action(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/")
         announcement.refresh_from_db()
@@ -163,7 +177,7 @@ class TestAction:
 
     def test_acting_marks_the_notification_read(self, client, gestor):
         notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/")
         notification.refresh_from_db()
@@ -173,7 +187,7 @@ class TestAction:
         """A recusa pela caixa de avisos também registra o autor — é a mesma decisão."""
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "reject"})
         announcement.refresh_from_db()
@@ -183,13 +197,13 @@ class TestAction:
     def test_operator_without_the_permission_cannot_publish(self, client, colega):
         """Staff não basta: publicar exige shop.manage_campaigns."""
         notification = _notification(colega, announcement=_post())
-        client.force_login(colega)
+        _login(client, colega)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 403
 
     def test_unknown_action_is_rejected(self, client, gestor):
         notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "incendiar"}
@@ -199,13 +213,13 @@ class TestAction:
 
     def test_a_non_actionable_notification_has_no_action(self, client, gestor):
         notification = _notification(gestor, actionable=False)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400
 
     def test_cannot_act_on_someone_elses(self, client, gestor, colega):
         notification = _notification(colega, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 404
 
@@ -216,7 +230,7 @@ class TestAction:
         announcement.expires_at = timezone.now() - timezone.timedelta(minutes=1)
         announcement.save()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400
         notification.refresh_from_db()

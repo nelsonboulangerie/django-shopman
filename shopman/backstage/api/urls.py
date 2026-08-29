@@ -75,6 +75,7 @@ from .notifications import (
 from .operations import (
     DayClosingView,
     OperationEpisodeAnswerView,
+    OperatorBadgeLostView,
     OperatorEligibleView,
     OperatorLockView,
     OperatorLoginView,
@@ -164,6 +165,7 @@ from .purchase import (
     PurchaseRequestSendView,
     PurchaseScanInvoiceView,
 )
+from .sign_ins import SignInListView
 from .telemetry import ClientErrorView
 
 urlpatterns = [
@@ -188,6 +190,8 @@ urlpatterns = [
     path("operator/eligible/", OperatorEligibleView.as_view(), name="api-backstage-operator-eligible"),
     path("operator/unlock/", OperatorUnlockView.as_view(), name="api-backstage-operator-unlock"),
     path("operator/lock/", OperatorLockView.as_view(), name="api-backstage-operator-lock"),
+    # "Perdi meu crachá": ativo, pela própria pessoa, sem esperar uso indevido.
+    path("operator/badge/lost/", OperatorBadgeLostView.as_view(), name="api-backstage-operator-badge-lost"),
     path("operator/pin/change/", OperatorPinChangeView.as_view(), name="api-backstage-operator-pin-change"),
     path("operator/pin/reset/", OperatorPinResetView.as_view(), name="api-backstage-operator-pin-reset"),
     # Provisionamento da ESTAÇÃO: uma vez por dispositivo, por quem gere operadores.
@@ -325,6 +329,9 @@ urlpatterns = [
     path("alerts/<int:pk>/ack/", AlertAckView.as_view(), name="api-backstage-alert-ack"),
     # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
+    # O histórico de acessos da PRÓPRIA conta (a trilha de todos é a tela de
+    # Auditoria no Admin). É para onde o aviso de acesso aponta.
+    path("sign-ins/", SignInListView.as_view(), name="api-backstage-sign-ins"),
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
     path(
         "notifications/<int:pk>/read/",

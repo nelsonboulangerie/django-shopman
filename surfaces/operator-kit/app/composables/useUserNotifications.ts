@@ -1,9 +1,10 @@
-// Canal PESSOAL do gestor (`user-<id>` no Django, `/sse/notifications` no BFF).
+// Canal PESSOAL da pessoa (`user-<id>` no Django, `/sse/notifications` no BFF).
 //
-// É por aqui que o announcement recém-gerado aparece no painel sem ninguém apertar F5:
-// a fornada termina, o engine cria o announcement, o backend empurra o aviso e a tela
-// refaz o fetch canônico. O push só diz "chegou algo" (ADR-016) — quem manda é
-// o refetch, então uma mensagem perdida custa no máximo um ciclo de poll.
+// Mora na layer porque a caixa é da PESSOA, não da tela: o mesmo aviso tem de
+// alcançar quem está no Gestor, no PDV ou na Produção. Uma implementação, oito apps.
+//
+// O push só diz "chegou algo" (ADR-016) — quem manda é o refetch do fetch canônico,
+// então uma mensagem perdida custa no máximo um ciclo de poll.
 export function useUserNotifications(onPush: () => void) {
   const config = useRuntimeConfig();
   const realtime = ref<"connecting" | "live" | "polling">("polling");

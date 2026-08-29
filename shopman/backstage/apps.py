@@ -61,3 +61,26 @@ class BackstageConfig(AppConfig):
             dispatch_uid="backstage.pos_event.on_shift_closed",
             weak=False,
         )
+
+        # Trilha de acesso: quem entrou, por qual porta, de onde. O sucesso vem
+        # do signal do PRÓPRIO Django — os quatro caminhos de operador (senha do
+        # Admin, senha do app, PIN, crachá) terminam todos em `login()`, então
+        # um caminho de login escrito amanhã já nasce coberto e nenhuma view
+        # precisa lembrar de gravar. Cliente não entra: o receiver filtra staff.
+        from django.contrib.auth.signals import user_logged_in, user_login_failed
+
+        from shopman.backstage.services.sign_in_audit import (
+            on_user_logged_in,
+            on_user_login_failed,
+        )
+
+        user_logged_in.connect(
+            on_user_logged_in,
+            dispatch_uid="backstage.sign_in_audit.on_logged_in",
+            weak=False,
+        )
+        user_login_failed.connect(
+            on_user_login_failed,
+            dispatch_uid="backstage.sign_in_audit.on_login_failed",
+            weak=False,
+        )

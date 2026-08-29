@@ -355,6 +355,8 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_dead_production_stock"),
         call("sweep_waitlist_windows"),
         call("check_directive_health"),
+        # Higiene de fim de ciclo: sem relação de ordem com nada acima.
+        call("purge_sign_in_audit"),
     ]
 
 

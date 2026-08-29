@@ -1130,6 +1130,13 @@ SHOPMAN_ACCOUNTING_BACKEND = None
 # Falls back to DEFAULT_FROM_EMAIL if None.
 SHOPMAN_OPERATOR_EMAIL = None
 
+# Retenção da trilha de acessos de operador (SignInEvent), em dias.
+# 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
+# a tabela nunca virar problema. A varredura roda no maintenance_worker.
+SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS = int(
+    os.environ.get("SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS", "180")
+)
+
 # PIX payment expiry in seconds (default: 1 hour).
 SHOPMAN_PIX_EXPIRY_SECONDS = int(
     os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600")

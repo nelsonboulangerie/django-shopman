@@ -20,6 +20,11 @@ class NotificationCategory(models.TextChoices):
     CAMPAIGN = "campaign", "campanha"
     PRODUCTION = "production", "produção"
     ORDER = "order", "pedidos"
+    #: Alguém entrou (ou tentou entrar) NA CONTA de quem recebe. Categoria
+    #: própria e não `SYSTEM` porque a leitura é diferente das outras: as demais
+    #: falam da loja, esta fala da pessoa, e é a única em que "isto não fui eu"
+    #: é uma resposta possível.
+    SIGN_IN = "sign_in", "acesso"
     SYSTEM = "system", "sistema"
 
 

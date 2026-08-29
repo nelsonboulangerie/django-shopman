@@ -177,6 +177,10 @@ def get_sidebar_navigation(request):
             # caso em que alguém quer conferir, não teria porta nenhuma.
             _view_item("Conferir comprovante", "qr_code_scanner", "admin_console_cash_receipt_lookup", CashReceiptVerifyView),
             _model_item("Alertas do operador", "warning", "backstage.OperatorAlert"),
+            # O crachá é a credencial que se perde no chão: posse pura, sem
+            # segundo fator. A EMISSÃO já deixava rastro no histórico do
+            # Admin; o USO não deixava nenhum. Esta é a outra metade.
+            _model_item("Acessos de operador", "login", "backstage.SignInEvent"),
         ]),
         # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
         # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai

@@ -26,6 +26,8 @@ const {
   unlock,
   changePin,
   changeError,
+  reportBadgeLost,
+  lostBadgeError,
   operator,
   mustChange,
   busy,
@@ -35,6 +37,7 @@ const {
 // voluntária de PIN precisa saber de QUEM é o PIN que está sendo trocado.
 const picked = ref<OperatorCard | null>(null);
 const changing = ref(false); // voluntary "Trocar PIN" mode (an operator is picked)
+const lostBadge = ref(false); // "Perdi meu crachá" mode
 const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
 
 onMounted(loadEligible);
@@ -66,6 +69,19 @@ async function submitVoluntaryChange(payload: {
     changing.value = false;
     identify.value?.reset(true);
     useSonner.success("PIN atualizado. Entre com o novo PIN.");
+  }
+}
+
+// ── "Perdi meu crachá" ──
+// Reusa o `OperatorIdentify` em vez de um seletor próprio: mesma lista, mesmo
+// pad, e o leitor de crachá desligado — quem está aqui não tem o crachá.
+async function submitLostBadge(payload: { username: string; pin: string }) {
+  const card = eligible.value.find((op) => op.username === payload.username);
+  if (!card) return;
+  const ok = await reportBadgeLost({ operatorId: card.id, pin: payload.pin });
+  if (ok) {
+    lostBadge.value = false;
+    useSonner.success("Crachá invalidado. Seu PIN continua valendo.");
   }
 }
 
@@ -110,11 +126,54 @@ async function submitForcedChange(payload: {
         @cancel="changing = false"
       />
 
+      <!-- "Perdi meu crachá": o crachá morre agora. A tela É a confirmação —
+           diz o que acontece e só age depois do PIN. -->
+      <template v-else-if="lostBadge">
+        <div class="mb-3 flex items-center gap-2">
+          <Icon name="lucide:badge-x" class="size-5 text-muted-foreground" />
+          <h2 class="text-lg font-bold">Perdi meu crachá</h2>
+        </div>
+        <div class="mb-4 space-y-1 rounded-lg border border-dashed p-3 text-sm">
+          <p>Seu crachá para de funcionar agora.</p>
+          <p>Seu PIN continua valendo — você segue trabalhando.</p>
+          <p class="text-muted-foreground">Um gerente emite outro crachá.</p>
+        </div>
+
+        <!-- O erro é desenhado pelo `OperatorIdentify` (que também limpa o PIN
+             quando ele muda): repeti-lo aqui daria a mesma frase duas vezes. -->
+        <OperatorIdentify
+          :people="eligible"
+          :busy="busy"
+          :badge-enabled="false"
+          :error="lostBadgeError"
+          prompt="Quem perdeu o crachá?"
+          change-label="Trocar operador"
+          @pin="submitLostBadge"
+        />
+
+        <button
+          type="button"
+          class="mt-3 inline-flex w-full items-center justify-center text-sm text-muted-foreground hover:text-foreground"
+          @click="lostBadge = false"
+        >
+          Cancelar
+        </button>
+      </template>
+
       <template v-else>
+        <!-- ⚠️ Esta tela se confunde com a AUTORIZAÇÃO DO GERENTE, não com o
+             login: as duas aparecem no meio do expediente, as duas são um
+             teclado de PIN e as duas interrompem quem está atendendo. A linha
+             abaixo é metade de um par — a outra metade, no diálogo de
+             autorização, diz "Você continua como <fulano>".
+
+               aqui         → você ASSUME o balcão (a sessão troca)
+               autorização  → você CONTINUA quem era (o gerente só assina) -->
         <div class="mb-4 flex items-center gap-2">
           <Icon name="lucide:lock" class="size-5 text-muted-foreground" />
           <h2 class="text-lg font-bold">Identifique-se para operar</h2>
         </div>
+        <p class="-mt-3 mb-4 text-sm text-muted-foreground">Você assume o balcão.</p>
 
         <div
           v-if="!eligible.length"
@@ -133,20 +192,31 @@ async function submitForcedChange(payload: {
           ref="identify"
           :people="eligible"
           :busy="busy"
-          :badge-enabled="!changing && !mustChange"
+          :badge-enabled="!changing && !mustChange && !lostBadge"
           prompt="Quem está operando?"
           change-label="Trocar operador"
           @pin="onPin"
           @badge="(token: string) => unlock({ badge: token })"
         >
           <template #footer>
-            <button
-              type="button"
-              class="inline-flex w-full items-center justify-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-              @click="startChange"
-            >
-              <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
-            </button>
+            <!-- Discreto, mas não escondido: quem perdeu o crachá precisa achar
+                 sozinho, então é texto legível ao lado do irmão, e não um menu. -->
+            <div class="flex items-center justify-center gap-4">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                @click="startChange"
+              >
+                <Icon name="lucide:key-round" class="size-4" /> Trocar meu PIN
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+                @click="lostBadge = true"
+              >
+                <Icon name="lucide:badge-x" class="size-4" /> Perdi meu crachá
+              </button>
+            </div>
           </template>
         </OperatorIdentify>
       </template>

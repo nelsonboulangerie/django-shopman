@@ -140,6 +140,35 @@ export function useOperatorLock(perm: string) {
     }
   }
 
+  // "Perdi meu crachá": o crachá morre agora, sem esperar uso indevido. Provar o
+  // PIN é a autorização (mesmo contrato da troca de PIN), então funciona na
+  // trava, antes de haver sessão — que é onde a pessoa está às 6h.
+  const lostBadgeError = ref("");
+  async function reportBadgeLost(input: {
+    operatorId: number;
+    pin: string;
+  }): Promise<boolean> {
+    if (busy.value) return false;
+    busy.value = true;
+    lostBadgeError.value = "";
+    try {
+      await $fetch("/api/v1/backstage/operator/badge/lost/", {
+        method: "POST",
+        body: { operator_id: input.operatorId, pin: input.pin, confirm: true },
+      });
+      await refresh();
+      return true;
+    } catch (err) {
+      lostBadgeError.value = httpErrorMessage(
+        err,
+        "Não foi possível invalidar o crachá.",
+      );
+      return false;
+    } finally {
+      busy.value = false;
+    }
+  }
+
   return {
     session,
     canIdentify,
@@ -154,6 +183,8 @@ export function useOperatorLock(perm: string) {
     lock,
     changePin,
     changeError,
+    reportBadgeLost,
+    lostBadgeError,
     refresh,
     busy,
   };
