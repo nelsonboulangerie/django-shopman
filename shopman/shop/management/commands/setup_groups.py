@@ -147,6 +147,11 @@ class Command(BaseCommand):
                 # O terminal do balcão ("Equipamentos") — ela cadastra a estação.
                 *_ver("cashman", "terminal"), *_escrever("cashman", "terminal"),
                 shop_shop("manage_orders"),
+                # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
+                # degrau do gerente: o pão foi feito, e às vezes o dinheiro já
+                # entrou. A esteira normal — new/accepted/preparing — continua em
+                # `manage_orders`, que é o trabalho do Caixa. Ver `OrderCancelView`.
+                shop_shop("cancel_advanced_order"),
                 # Campanha (surfaces/marketing-nuxt): publicar em nome da marca é
                 # decisão de gestão. Sem esta linha a permissão existe mas ninguém
                 # a tem, e o app fica inalcançável.

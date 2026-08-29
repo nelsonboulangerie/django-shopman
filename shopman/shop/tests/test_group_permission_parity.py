@@ -76,6 +76,10 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.audit_stock", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
+    # api/operations.py::OrderCancelView.ADVANCED_PERMISSION — cancelar depois de
+    # PRONTO/FECHADO. Deliberadamente FORA do Caixa: ele cancela a esteira normal
+    # com `manage_orders`; o degrau de depois é do gerente.
+    ("shop.cancel_advanced_order", {"Gerente"}),
     # permissions.can_access_production / can_view_production_reports (full
     # access shortcut). Only Cozinha holds it: Gerente reaches the board through
     # its full set of fine-grained column perms (can_access_board), so it does

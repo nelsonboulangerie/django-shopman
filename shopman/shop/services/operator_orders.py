@@ -514,7 +514,7 @@ def cancel_order(
     actor: str,
     cancellation_code: str = "",
     customer_note: str = "",
-) -> None:
+) -> bool:
     """Cancel an order through the canonical cancellation service.
 
     ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
@@ -525,13 +525,19 @@ def cancel_order(
     which also carries machine codes (``pix_timeout``, ``customer_requested``) that
     must never reach the customer. Empty when the operator gave no reason → the
     customer gets the plain cancellation message.
+
+    Returns:
+        True se cancelou; False quando a máquina de estados recusou a transição.
     """
     extra_data: dict[str, str] = {}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
     if customer_note.strip():
         extra_data["cancellation_note"] = customer_note.strip()
-    cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
+    # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
+    # descartá-lo fazia a view responder 200 para um pedido que continuou como
+    # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
+    return cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
 def settle_delivery_cash(

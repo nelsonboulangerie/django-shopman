@@ -4903,7 +4903,16 @@ class Command(BaseCommand):
                     "new": ["accepted", "cancelled"],
                     "accepted": ["preparing", "ready", "completed", "cancelled"],
                     "preparing": ["ready", "cancelled"],
-                    "ready": ["preparing", "dispatched", "completed"],
+                    # `cancelled` aqui não é exceção: sem ele a régua não
+                    # fechava. Dava para cancelar ANTES (na fila, na cozinha) e
+                    # DEPOIS (venda fechada, o desfazer da janela), mas não no
+                    # meio — justamente quando o pão está pronto no balcão e o
+                    # cliente liga desistindo. Quem pode é outra pergunta, e
+                    # quem responde é `OrderCancelView` com
+                    # `shop.cancel_advanced_order`. `dispatched`/`delivered`
+                    # seguem fora: depois que o motoboy saiu o fato é DEVOLUÇÃO
+                    # (`returned`), e misturar os dois estraga a leitura do B.I.
+                    "ready": ["preparing", "dispatched", "completed", "cancelled"],
                     "dispatched": ["delivered", "returned"],
                     "delivered": ["completed", "returned"],
                     "completed": ["returned", "cancelled"],
