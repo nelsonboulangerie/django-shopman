@@ -783,15 +783,22 @@ onBeforeUnmount(stopInvoiceScanner);
                 :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
                 :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
               >
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Insumo
+                <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem
+                     `for` adota o primeiro controle rotulável de dentro (o botão
+                     que abre o MaterialPicker) e reencaminha para ele os cliques
+                     que caem em parte não interativa — inclusive o véu de fechar
+                     do próprio picker. Escolher o insumo fechava e reabria a
+                     lista no mesmo clique. O nome acessível vai por `labelledBy`. -->
+                <div>
+                  <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo</span>
                   <MaterialPicker
                     class="mt-1"
                     :materials="materials"
                     :model-value="preview.line.materialSku"
+                    :labelled-by="`receipt-material-${preview.line.id}`"
                     @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
                   />
-                </label>
+                </div>
                 <template v-if="preview.suggestion">
                   <p class="mt-2 text-xs text-muted-foreground">
                     Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
