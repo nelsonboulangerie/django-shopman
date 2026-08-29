@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data
+from shopman.backstage.parsing import as_int
 from shopman.backstage.services import catalog as catalog_service
 from shopman.backstage.services.exceptions import (
     AiAssistError,
@@ -65,7 +66,10 @@ class CatalogCellView(_CatalogBase):
                 surface_ref,
                 is_published=request.data.get("is_published"),
                 is_sellable=request.data.get("is_sellable"),
-                price_q=_as_int(request.data.get("price_q")),
+                # `default=None` porque "não veio" significa "não mexe no preço"
+                # — mas LIXO deixa de virar None: antes, `{"price_q": "abc"}`
+                # silenciosamente não mudava o preço, e a tela reportava sucesso.
+                price_q=as_int(request.data, "price_q", default=None),
                 actor=_actor(request),
             )
         except CatalogError as exc:
@@ -222,13 +226,13 @@ class CatalogBulkPriceView(_CatalogBase):
     def post(self, request):
         surface_ref = (request.data.get("surface_ref") or "").strip()
         op = (request.data.get("op") or "").strip()
-        value = _as_int(request.data.get("value"))
         if not surface_ref:
             return Response({"detail": "surface_ref é obrigatório."}, status=400)
         if op not in ("set", "pct", "delta"):
             return Response({"detail": "op deve ser set, pct ou delta."}, status=400)
-        if value is None:
-            return Response({"detail": "value é obrigatório."}, status=400)
+        # Depois das duas checagens acima, e não antes: a ordem em que o operador
+        # vê os erros é a ordem em que ele preenche a tela.
+        value = as_int(request.data, "value", message="value é obrigatório.")
 
         collection_ref = (request.data.get("collection_ref") or "").strip()
         skus = request.data.get("skus") or []
@@ -399,11 +403,3 @@ def _social_payload(attrs) -> dict:
         "has_data": attrs.has_data,
     }
 
-
-def _as_int(value):
-    if value is None or value == "":
-        return None
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None

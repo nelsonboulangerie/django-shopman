@@ -139,6 +139,56 @@ def test_item_check_rejects_non_numeric_index(client, kds_operator, kds_setup):
 
 
 @pytest.mark.django_db
+def test_a_string_false_DESMARCA_o_item_em_vez_de_marcar(client, kds_operator, kds_setup):
+    """`bool("false")` é True em Python — e o item da cozinha marcava ao desmarcar.
+
+    Nenhum cliente de boa-fé manda isso hoje (o `useKdsBoard` manda booleano JSON),
+    mas quem fala com a API direto manda, e quem trocar um `fetch` por form-data vai
+    mandar sem saber. O parser estrito lê o token, não a veracidade do objeto.
+    """
+    ticket = kds_setup[2]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-ticket-item", args=[ticket.pk])
+
+    marcado = client.post(url, data={"index": 0, "checked": "true"}, content_type="application/json")
+    assert marcado.status_code == 200
+    assert marcado.json()["ticket"]["items"][0]["checked"] is True
+
+    desmarcado = client.post(url, data={"index": 0, "checked": "false"}, content_type="application/json")
+    assert desmarcado.status_code == 200
+    assert desmarcado.json()["ticket"]["items"][0]["checked"] is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("valor", ["talvez", 2, [], None])
+def test_checked_ambiguo_e_400_com_o_campo_nomeado(client, kds_operator, kds_setup, valor):
+    """Recusa em vez de adivinhar — e nomeando o campo, para a tela poder reagir."""
+    ticket = kds_setup[2]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-ticket-item", args=[ticket.pk])
+
+    resposta = client.post(url, data={"index": 0, "checked": valor}, content_type="application/json")
+
+    assert resposta.status_code == 400
+    corpo = resposta.json()
+    assert corpo["field"] == "checked"
+    assert corpo["detail"]
+
+
+@pytest.mark.django_db
+def test_checked_ausente_e_400_e_nao_um_desmarcar_silencioso(client, kds_operator, kds_setup):
+    """O POST existe para dizer marcado/desmarcado; sem a chave, não disse nada."""
+    ticket = kds_setup[2]
+    client.force_login(kds_operator)
+    url = reverse("api-backstage-kds-ticket-item", args=[ticket.pk])
+
+    resposta = client.post(url, data={"index": 0}, content_type="application/json")
+
+    assert resposta.status_code == 400
+    assert resposta.json()["field"] == "checked"
+
+
+@pytest.mark.django_db
 def test_ticket_done(client, kds_operator, kds_setup):
     ticket = kds_setup[2]
     client.force_login(kds_operator)
