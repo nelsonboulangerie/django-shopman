@@ -617,16 +617,31 @@ def _check_linked_order_coverage(
         from shopman.craftsman.models import Recipe, WorkOrder
 
         from shopman.shop.handlers.production_order_sync import linked_order_refs, order_requirement_for_work_order
+        from shopman.shop.services.production import _default_position_ref, _target_date_or_today
 
         recipe = Recipe.objects.get(pk=recipe_id)
         requested = Decimal(str(quantity or "0"))
+        # ⚠️ A busca aqui tem de ser a MESMA de quem escreve
+        # (`shop/services/production.py:set_planned_quantity`). Ela divergia em três
+        # eixos, e a primeira divergência era fatal no uso normal:
+        #
+        #   eixo          guardrail (antes)        escritor
+        #   position_ref  `position_ref or ""`     `.strip() or _default_position_ref()`
+        #   operator_ref  filtrava por operador    NÃO filtra
+        #   data          string crua              `_target_date_or_today(...)`
+        #
+        # O board manda `position_ref: undefined` quando nenhum filtro de posição está
+        # escolhido — que é o estado PADRÃO da tela. O guardrail procurava `""`, o
+        # escritor procurava `"massa"` (o default do seed vivo), e o guardrail não
+        # achava nada, retornava cedo, e o planejado era reduzido SEM CHECAGEM.
+        #
+        # É encomenda de cliente que não vai existir, reduzida em silêncio.
         work_order = (
             WorkOrder.objects.filter(
                 recipe=recipe,
-                target_date=target_date_value,
+                target_date=_target_date_or_today(target_date_value),
                 status=WorkOrder.Status.PLANNED,
-                position_ref=position_ref or "",
-                operator_ref=operator_ref or "",
+                position_ref=str(position_ref or "").strip() or _default_position_ref(),
             )
             .first()
         )
@@ -645,8 +660,21 @@ def _check_linked_order_coverage(
             )
     except ProductionOrderShortError:
         raise
+    # ⚠️ WARNING, e não DEBUG, no `except` abaixo. Ele engole qualquer falha do
+    # guardrail, e em DEBUG a mensagem é invisível na prática: um guardrail CEGO
+    # parecia um guardrail que passou. Continuar não levantando é deliberado — uma
+    # falha aqui não deve impedir o planejamento —, mas ela tem de aparecer no log de
+    # quem opera, senão a proteção some sem ninguém saber.
+    #
+    # (O comentário fica ACIMA do `except` de propósito: o gate de higiene de exceções
+    # procura `logger.`/`raise` nas linhas imediatamente seguintes, e um comentário no
+    # meio empurraria a chamada para fora da janela dele.)
     except Exception:
-        logger.debug("production_order_coverage_check_failed recipe_id=%s", recipe_id, exc_info=True)
+        logger.warning(
+            "production_order_coverage_check_failed recipe_id=%s — guardrail de cobertura CEGO nesta chamada",
+            recipe_id,
+            exc_info=True,
+        )
 
 
 def _looks_like_stock_error(exc: Exception) -> bool:
