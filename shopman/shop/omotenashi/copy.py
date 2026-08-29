@@ -596,20 +596,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
-    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
-            ),
-        },
-    },
-    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE_NO_DATE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
-            ),
-        },
-    },
     "TRACKING_PAYMENT_PIX_PREORDER_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(
@@ -641,20 +627,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {
             WILDCARD: CopyEntry(
                 message="Finalize no ambiente seguro para seguir com o pedido aceito.",
-            ),
-        },
-    },
-    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
-            ),
-        },
-    },
-    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE_NO_DATE": {
-        WILDCARD: {
-            WILDCARD: CopyEntry(
-                message="Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
             ),
         },
     },

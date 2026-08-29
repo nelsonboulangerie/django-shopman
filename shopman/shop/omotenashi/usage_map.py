@@ -685,12 +685,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE_NO_DATE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
     "TRACKING_PAYMENT_REQUESTED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
@@ -731,12 +725,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_CARD_TITLE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE": (
-        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
-    ),
-    "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE_NO_DATE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
     "TRACKING_PROMISE_CLOSED_HOURS_MESSAGE": (
