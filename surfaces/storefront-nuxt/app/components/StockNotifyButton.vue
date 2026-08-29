@@ -21,7 +21,7 @@ const props = defineProps<{
   subscribed?: boolean
 }>()
 
-const label = computed(() => props.name ? `Avise quando ${props.name} voltar` : 'Avise quando voltar')
+const label = computed(() => props.name ? `Me avise quando ${props.name} voltar` : 'Me avise quando voltar')
 const subscribedLabel = computed(() => props.name ? `Avisaremos você quando ${props.name} voltar` : 'Avisaremos você quando voltar')
 
 const apiPath = useShopmanApiPath()
@@ -53,7 +53,7 @@ async function subscribe (phoneValue: string) {
     })
     isSubscribed.value = true
     sheetOpen.value = false
-    if (import.meta.client) useSonner.success('Pronto! Avisaremos você quando voltar.')
+    if (import.meta.client) useSonner.success('Pronto. Avisaremos você quando estiver disponível.')
   } catch (e) {
     const { data } = httpError(e)
     const detail = errorDetail(e, 'Não foi possível registrar o aviso. Tente de novo.')
@@ -160,7 +160,7 @@ function onAnonymousSubmit () {
     <BottomSheet
       v-model:open="sheetOpen"
       max-width="sm"
-      title="Avisamos quando voltar"
+      title="Avisamos quando estiver disponível"
       description="Deixe seu WhatsApp e mandamos uma mensagem assim que estiver disponível."
       data-stock-notify-sheet
     >

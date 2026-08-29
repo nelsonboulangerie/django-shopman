@@ -32,7 +32,8 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
     assert all({"ref", "tone", "title", "message", "priority", "actions"} <= set(notice) for notice in payload["notices"])
     assert payload["shop_status"]["is_open"] in {True, False}
     # Label agora é copy do registro (SHOP_STATUS_*), granular ("Aberto até 19h",
-    # "Fechado. Abre às 7h"). Contratual: não-vazio e o prefixo bate com o estado.
+    # "Fechado agora. Abrimos amanhã às 7h"). Contratual: não-vazio e o prefixo
+    # bate com o estado.
     status_label = payload["shop_status"]["label"]
     assert status_label
     assert status_label.startswith("Aberto" if payload["shop_status"]["is_open"] else "Fechado")

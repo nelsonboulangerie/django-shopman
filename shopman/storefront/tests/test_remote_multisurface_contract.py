@@ -286,7 +286,7 @@ def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillme
         "Pagamento confirmado. Sua encomenda está reservada para {when}. Preparamos tudo fresco no dia.",
         "Pague ao receber",
         "Acompanhe o status do pedido em tempo real.",
-        "O acompanhamento atualiza quando o gateway responder.",
+        "Assim que a confirmação chegar, atualizamos esta tela.",
         "copy.pix_pending_note",
         "copy.pix_auto_update_note",
     ]:
@@ -310,6 +310,7 @@ def test_storefront_operational_copy_guardrails_cover_payment_prep_and_fulfillme
         "Use o código Pix abaixo para seguir com o pedido aceito.",
         "Assim que o pagamento cair",
         "Preparando seu Pix",
+        "gateway responder",
     ]:
         assert forbidden not in checked_source
 
