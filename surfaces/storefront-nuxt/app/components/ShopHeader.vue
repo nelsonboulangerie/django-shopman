@@ -159,7 +159,7 @@ onBeforeUnmount(() => {
         aria-label="Página inicial"
         @click="closeMenu"
       >
-        <ShopLogo class="h-12 w-auto" />
+        <ShopLogo class="h-14 w-auto" />
       </NuxtLink>
 
       <!-- Nav desktop (md+): links inline no lugar do hambúrguer. Item ativo = pílula creme
