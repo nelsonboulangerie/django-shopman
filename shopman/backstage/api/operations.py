@@ -95,6 +95,7 @@ from shopman.backstage.services.exceptions import (
     OrderConflict,
     OrderError,
     POSError,
+    POSTerminalAmbiguous,
     ProductionConflict,
     ProductionError,
 )
@@ -2018,6 +2019,20 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
 CASH_IDEMPOTENCY_SCOPE = "pos.cash"
 
 
+def _falha_do_caixa(exc, padrao: str) -> Response:
+    """A resposta certa quando uma mutação de caixa não deu.
+
+    ⚠️ O ``except Exception`` de cada view devolvia 400 para tudo, e engolia a
+    ambiguidade de gaveta antes que ela chegasse a qualquer lugar. 400 diz "seu pedido
+    está errado"; aqui o pedido está certo e o ESTADO da loja é que é ambíguo — mais de
+    uma gaveta ativa e ninguém disse qual. O operador não tem o que corrigir no que
+    mandou, então a resposta é 409, com o campo que falta nomeado.
+    """
+    if isinstance(exc, POSTerminalAmbiguous):
+        return Response({"detail": str(exc), "field": "terminal_ref"}, status=409)
+    return Response({"detail": str(exc) or padrao}, status=400)
+
+
 def _cash_idempotent(request, *, acao: str, executar):
     """Roda uma mutação de dinheiro UMA vez por `client_request_id`.
 
@@ -2126,7 +2141,7 @@ class POSCashOpenView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_open_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao abrir caixa."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao abrir caixa.")
             return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
 
         return _cash_idempotent(
@@ -2169,7 +2184,7 @@ class POSCashCloseView(APIView):
                 )
             except Exception as exc:
                 logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao fechar caixa."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao fechar caixa.")
             return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
 
         return _cash_idempotent(
@@ -2203,6 +2218,7 @@ class POSMovementView(APIView):
                     amount_raw=str(amount),
                     reason=reason,
                     manager_approval=request.data.get("manager_approval"),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             # O desafio de PIN da retirada precisa chegar à tela COM o código, para o
             # PDV abrir o diálogo do gerente em vez de mostrar um toast sem saída.
@@ -2210,7 +2226,7 @@ class POSMovementView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao registrar movimento.")
             return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
 
         return _cash_idempotent(
@@ -2296,12 +2312,14 @@ class POSCashDrawerOpenView(APIView):
     def post(self, request):
         reason = (request.data.get("reason") or "").strip()
         try:
-            pos_service.register_drawer_opening(operator=request.user, reason=reason)
+            pos_service.register_drawer_opening(
+                operator=request.user, reason=reason, terminal_ref=_terminal_do_pedido(request)
+            )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_open_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar abertura."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao registrar abertura.")
         return Response({"ok": True})
 
 
@@ -2328,12 +2346,13 @@ class POSCashDrawerUnlockAttemptView(APIView):
             pos_service.record_unlock_attempt(
                 operator=request.user,
                 outcome=str(request.data.get("outcome") or "opened"),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_attempt_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar a tentativa."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao registrar a tentativa.")
         return Response({"ok": True})
 
 
@@ -2360,12 +2379,13 @@ class POSCashDrawerLeftOpenView(APIView):
             pos_service.report_drawer_left_open(
                 operator=request.user,
                 minutes=request.data.get("minutes") or 0,
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_left_open_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar a gaveta aberta."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao registrar a gaveta aberta.")
         return Response({"ok": True})
 
 
@@ -2397,12 +2417,13 @@ class POSCashDrawerBlockView(APIView):
                 duration_ms=request.data.get("duration_ms"),
                 outcome=str(request.data.get("outcome") or "closed"),
                 drawer_raw=str(request.data.get("drawer_raw") or ""),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_block_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar o bloqueio."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao registrar o bloqueio.")
         return Response({"ok": True})
 
 
@@ -2431,12 +2452,13 @@ class POSCashDrawerBlindView(APIView):
             pos_service.report_drawer_blind(
                 operator=request.user,
                 reason=str(request.data.get("reason") or ""),
+                terminal_ref=_terminal_do_pedido(request),
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_blind_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar o sensor cego."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao registrar o sensor cego.")
         return Response({"ok": True})
 
 
@@ -2468,6 +2490,7 @@ class POSCashDrawerUnlockView(APIView):
                 drawer_raw=str(request.data.get("drawer_raw") or ""),
                 duration_ms=request.data.get("duration_ms"),
                 outcome=str(request.data.get("outcome") or "manager_override"),
+                terminal_ref=_terminal_do_pedido(request),
             )
         # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
         # diálogo do gerente em vez de mostrar um toast sem saída.
@@ -2475,8 +2498,21 @@ class POSCashDrawerUnlockView(APIView):
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
         except Exception as exc:
             logger.debug("pos_drawer_unlock_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao liberar a gaveta."}, status=400)
+            return _falha_do_caixa(exc, "Falha ao liberar a gaveta.")
         return Response({"ok": True})
+
+
+def _terminal_do_pedido(request) -> str:
+    """Em qual gaveta esta mutação acontece.
+
+    O corpo tem prioridade porque é AFIRMAÇÃO de quem chama; o cookie da estação é o
+    contexto ambiente do dispositivo. Com uma gaveta só — o caso de hoje — os dois
+    caminham juntos. Com duas, é isto que impede o operador do balcão 1 de lançar
+    sangria na gaveta do balcão 2 sem erro nenhum.
+    """
+    corpo = request.data if hasattr(request, "data") else {}
+    do_corpo = str((corpo or {}).get("terminal_ref") or "").strip()
+    return do_corpo or station_trust.station_ref(request)
 
 
 @extend_schema_view(
@@ -2509,12 +2545,13 @@ class POSChangeRequestView(APIView):
                     amount_raw=str(request.data.get("amount", "0")),
                     denominations=request.data.get("denominations") or [],
                     note=request.data.get("note") or "",
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except PosIntentError as exc:
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao pedir troco."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao pedir troco.")
             return Response({"ok": True, "request_ref": str(entry.pk)})
 
         return _cash_idempotent(
@@ -2549,6 +2586,7 @@ class POSChangeRequestServeView(APIView):
                     operator=request.user,
                     request_ref=request_ref,
                     manager_approval=request.data.get("manager_approval"),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
             # diálogo do gerente em vez de mostrar um toast sem saída.
@@ -2556,7 +2594,7 @@ class POSChangeRequestServeView(APIView):
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao atender o pedido."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao atender o pedido.")
             return Response({"ok": True})
 
         return _cash_idempotent(
@@ -2585,12 +2623,16 @@ class POSChangeRequestCancelView(APIView):
         # A trava de replay do dinheiro — ver `_cash_idempotent`.
         def _executar(request_ref, ):
             try:
-                pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
+                pos_service.cancel_change_request(
+                    operator=request.user,
+                    request_ref=request_ref,
+                    terminal_ref=_terminal_do_pedido(request),
+                )
             except PosIntentError as exc:
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao cancelar o pedido."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao cancelar o pedido.")
             return Response({"ok": True})
 
         return _cash_idempotent(
@@ -2624,12 +2666,13 @@ class POSCashRefundView(APIView):
                     operator=request.user,
                     order_ref=order_ref,
                     manager_approval=request.data.get("manager_approval"),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except PosIntentError as exc:
                 return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
             except Exception as exc:
                 logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
-                return Response({"detail": str(exc) or "Falha ao devolver o dinheiro."}, status=400)
+                return _falha_do_caixa(exc, "Falha ao devolver o dinheiro.")
             return Response({"ok": True, "refunded_q": refunded_q})
 
         return _cash_idempotent(
@@ -2679,6 +2722,7 @@ class POSAccountSettleView(APIView):
                     customer_ref=customer_ref,
                     amount_raw=str(body.get("amount", "")),
                     method=str(body.get("method", "")),
+                    terminal_ref=_terminal_do_pedido(request),
                 )
             except POSError as exc:
                 return Response({"detail": str(exc)}, status=400)
