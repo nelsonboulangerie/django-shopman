@@ -254,6 +254,75 @@ por isso Tier 3 — mas é o ramo permissivo escolhido no `except`, em `logger.d
 
 ---
 
+## Uma classe acima — quando o permissivo não é esquecimento, é o default do tipo
+
+### 18. ⬜ `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+
+- `shopman/shop/projections/types.py:91` — `idempotency: str = "none"`
+- `surfaces/pos-nuxt/app/presentation/actions.ts:64` — `idempotency: action?.idempotency ?? "none"`, o mesmo default permissivo repetido na superfície
+- `shopman/backstage/projections/pos.py:940-1275` — as 29 ações do `_pos_actions`
+
+**Risco: dinheiro.** Extraindo mecanicamente as 29 ações que o PDV oferece, **três**
+declaram alguma trava — `close_sale` (`:987`, `required`), `customer_resolve`
+(`:1196`, `required`) e `fire_tab` (`:1252`, `client_request_id`). As **oito
+mutações de dinheiro do caixa** declaram `none` explicitamente: `open_cash_shift`
+(`:1035`), `close_cash_shift` (`:1045`), `cash_movement` (`:1056`), `refund_cash`
+(`:1126`), `settle_account` (`:1136`), `request_change` (`:1146`),
+`serve_change_request` (`:1156`), `cancel_change_request` (`:1166`). Outras
+**sete** nem mencionam o campo e herdam `none` do default — entre elas
+`cancel_recent_sale` (`:1022`, POST) e `clear_tab` (`:1219`, DELETE).
+
+> O item foi escrito contra 25 ações e revisado contra 29: entre uma medição e
+> outra, a PR #396 (trava de gaveta) acrescentou `drawer_unlock_attempt`,
+> `drawer_left_open`, `drawer_block` e `drawer_blind` — as quatro nasceram `none`.
+> Não é dinheiro, é trilha de auditoria, e o duplo toque suja a trilha em vez da
+> gaveta. Mas é a tese deste item acontecendo em tempo real, sem ninguém errar:
+> a ação nova nasce sem trava porque o tipo diz que tudo bem.
+
+**Hoje, se der errado:** o operador toca "Sangria" no 4G do balcão, a gravação
+entra e a resposta morre no timeout. Ele toca de novo, porque a tela não mudou. O
+livro-caixa aceita as duas linhas e o turno fecha com uma diferença fantasma que
+ninguém consegue explicar — o livro é append-only, então a correção é outra linha,
+não um desfazer. Em `refund_cash` o mesmo duplo toque paga o cliente duas vezes.
+
+E **não há segunda linha de defesa**: as `UniqueConstraint` que o
+`cashman/migrations/0003_entry_one_line_per_order.py` acrescentou depois de um
+TOCTOU real cobrem só `sale` e `cod_settled` — os `kind` que têm `order_ref`. O
+próprio comentário do modelo (`packages/cashman/shopman/cashman/models/entry.py:223`)
+diz por quê: "`order_ref` vazio fica de fora porque não há pedido a que amarrar".
+Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamente os
+`kind` sem `order_ref`. A trava de banco que salvou a venda não alcança o caixa.
+
+**Correção proposta:** duas metades da mesma frente.
+
+1. **Virar o default para o restritivo** — `idempotency: str = "required"` em
+   `types.py:91`, e o mesmo `?? "required"` em `actions.ts:64`. Ação que
+   legitimamente dispensa trava (`customer_lookup`, `reverse_geocode`, as leituras)
+   passa a declarar `none` **de propósito**, e a declaração vira decisão
+   registrada em vez de silêncio.
+2. **Ligar as oito mutações de caixa no replay que já existe** — mais
+   `cancel_recent_sale` e `clear_tab`. `shopman/shop/services/pos.py:273-524` já
+   faz claim e replay por `client_request_id`, com ponte para o `IdempotencyKey`
+   do orderman (`UniqueConstraint(scope, key)` + `select_for_update`). Não é infra
+   nova: é ligar no caixa o que já roda na venda.
+
+> ⚠️ As duas metades não se separam. Hoje o campo é **puramente declarativo** —
+> nenhum componente do PDV o lê, e a garantia do `close_sale` vem do serviço, não
+> do campo. Virar o default sozinho não fecha nenhum buraco em runtime; o que ele
+> faz é impedir que a ação nº 30 nasça insegura sem ninguém perceber.
+
+**Por que isto não é mais um dos 17.** Os itens acima são fallbacks de
+**configuração**: alguém esquece uma env e o sistema degrada. Este é permissivo por
+**default de dataclass**, e isso é pior — ninguém precisa esquecer nada. A ação
+seguinte nasce sem trava por construção, escrita por quem não sabia que o campo
+existia. A versão dura do princípio que abre este documento: **o default de um
+campo de segurança tem que ser o valor restritivo, senão a omissão vira política.**
+
+Origem: `docs/plans/backstage-app-audits-2026-08-29/agente_c/WP-00-agente-c-transversal.md`,
+Bloco A (achados P0-A1, P0-A2, P1-A3).
+
+---
+
 ## Tier 4 — checks de deploy que precisariam valer em runtime
 
 Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em

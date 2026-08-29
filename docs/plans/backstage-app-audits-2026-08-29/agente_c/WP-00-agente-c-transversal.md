@@ -288,6 +288,14 @@ do alvo, ele acorda esse acoplamento e o sintoma será "flake" — o diagnóstic
 **arquivo entre jobs**, com cada job continuando serial por dentro. E os dois testes acima merecem isolamento
 próprio antes de qualquer aumento de paralelismo.
 
+**Por que a prescrição é essa, e não "é só ligar o `-n auto`".** Paralelizar por dentro do
+arquivo não é mais rápido de graça: é mais rápido **em troca de** transformar acoplamento
+existente em flake. E flake custa mais caro que os minutos que economiza, porque não cobra o
+preço no CI — cobra na equipe, treinando todo mundo a reapertar o botão em vez de ler o
+vermelho. Depois disso o vermelho perde significado, e o próximo bug de verdade chega vestido
+de flake. O shard por **arquivo entre jobs**, cada job serial por dentro, compra os mesmos
+minutos sem vender a confiança no vermelho.
+
 ### Ondas propostas
 
 | Onda | Conteúdo | Paralelizável? | Por quê |
