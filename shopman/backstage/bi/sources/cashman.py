@@ -24,11 +24,11 @@ def read_events(window) -> list[CanonicalCashEvent]:
         .order_by("at", "id")
         .values_list(
             "id", "shift_id", "operator__username", "approved_by__username",
-            "kind", "amount_q", "at", "order_ref", "parent_id",
+            "kind", "amount_q", "at", "order_ref", "parent_id", "payload",
         )
     )
     events: list[CanonicalCashEvent] = []
-    for pk, shift_id, operator, approver, kind, amount_q, at, order_ref, parent_id in rows:
+    for pk, shift_id, operator, approver, kind, amount_q, at, order_ref, parent_id, payload in rows:
         local = timezone.localtime(at)
         events.append(
             CanonicalCashEvent(
@@ -42,6 +42,7 @@ def read_events(window) -> list[CanonicalCashEvent]:
                 day=local.date(),
                 order_ref=order_ref or "",
                 parent_key=parent_id,
+                payload=payload if isinstance(payload, dict) else {},
             )
         )
     return events

@@ -11,7 +11,7 @@ const MANAGERS = [
 function props(overrides: Record<string, unknown> = {}) {
   return {
     open: true,
-    reasonText: "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.",
+    reasons: ["price_override"],
     managers: MANAGERS,
     busy: false,
     error: "",
@@ -76,7 +76,7 @@ describe("PosManagerAuthDialog — quem assina vem da lista", () => {
 
   it("mostra o motivo da autorização vindo do servidor", async () => {
     await open();
-    expect(document.body.textContent).toContain("exceção auditada");
+    expect(document.body.textContent).toContain("Preço alterado à mão.");
   });
 
   // Lista vazia (leitura negada, nenhum gerente com PIN) não pode fechar a única
@@ -131,5 +131,44 @@ describe("PosManagerAuthDialog — quem assina vem da lista", () => {
 
     expect(document.body.textContent).toContain("Nelson");
     expect(document.body.textContent).not.toContain("Trocar gerente");
+  });
+});
+
+// ── O par que importa: autorização × DESTRAVE DE SESSÃO ───────────────────
+//
+// ⚠️ A confusão perigosa não é com o login (uma vez por turno, ninguém erra).
+// É com o `OperatorLock` do operator-kit: as duas telas aparecem no meio do
+// expediente, as duas são um teclado de PIN e as duas interrompem quem está
+// atendendo. A diferença tem que estar no TEXTO, porque o teclado é o mesmo.
+
+describe("PosManagerAuthDialog — não se confunde com o destrave de sessão", () => {
+  it("diz que a sessão NÃO troca (o destrave diz o contrário)", async () => {
+    await open({ operatorName: "Joyce" });
+
+    // Par: aqui "Você continua como X"; no OperatorLock, "Você assume o balcão".
+    expect(document.body.textContent).toContain("Você continua como Joyce.");
+  });
+
+  it("pergunta quem AUTORIZA, não quem está operando", async () => {
+    await open();
+    const texto = document.body.textContent || "";
+
+    expect(texto).toContain("Quem autoriza?");
+    expect(texto).not.toContain("Quem está operando?");
+  });
+
+  it("o título nomeia o ato assinado, não 'identifique-se'", async () => {
+    await open({ action: "drawer_unlock" });
+    const texto = document.body.textContent || "";
+
+    expect(texto).toContain("Autorizar destrave da gaveta");
+    expect(texto).not.toContain("Identifique-se");
+  });
+
+  it("a frase do motivo é curta — sem explicar a política", async () => {
+    await open({ action: "cash_out", reasons: [] });
+
+    expect(document.body.textContent).toContain("Sai dinheiro da gaveta.");
+    expect(document.body.textContent).not.toContain("exceção auditada");
   });
 });

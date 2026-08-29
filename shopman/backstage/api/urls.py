@@ -104,7 +104,11 @@ from .operations import (
     POSAccountSettleView,
     POSCancelRecentSaleView,
     POSCashCloseView,
+    POSCashDrawerBlindView,
+    POSCashDrawerBlockView,
+    POSCashDrawerLeftOpenView,
     POSCashDrawerOpenView,
+    POSCashDrawerUnlockAttemptView,
     POSCashDrawerUnlockView,
     POSCashOpenView,
     POSCashReceiptView,
@@ -380,6 +384,10 @@ urlpatterns = [
     path("pos/cash/drawer-open/", POSCashDrawerOpenView.as_view(), name="api-backstage-pos-cash-drawer-open"),
     # A trava vive no PDV (é ele que lê a gaveta); o destrave passa aqui para
     # ficar no livro com quem liberou.
+    path("pos/cash/drawer-unlock-attempt/", POSCashDrawerUnlockAttemptView.as_view(), name="api-backstage-pos-cash-drawer-unlock-attempt"),
+    path("pos/cash/drawer-left-open/", POSCashDrawerLeftOpenView.as_view(), name="api-backstage-pos-cash-drawer-left-open"),
+    path("pos/cash/drawer-block/", POSCashDrawerBlockView.as_view(), name="api-backstage-pos-cash-drawer-block"),
+    path("pos/cash/drawer-blind/", POSCashDrawerBlindView.as_view(), name="api-backstage-pos-cash-drawer-blind"),
     path("pos/cash/drawer-unlock/", POSCashDrawerUnlockView.as_view(), name="api-backstage-pos-cash-drawer-unlock"),
     # Cancelar não é devolver: o dinheiro de venda cancelada sai pela gaveta de
     # quem devolve, com PIN, e só então Payman e livro registram.

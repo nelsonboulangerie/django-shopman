@@ -40,6 +40,16 @@ class OperatorAlert(models.Model):
         # Este é o aviso do instante, com o pedido no nome, para alguém conferir
         # a gaveta ANTES de o dinheiro virar diferença anônima.
         ("cash_sale_after_shift_close", "Venda entrou depois do fechamento do turno"),
+        # A trava da gaveta caiu numa estação que TINHA medição. Ela falha
+        # aberta de propósito (fila de cliente nunca para por sensor ruim), e
+        # por isso mesmo precisa gritar: sem este aviso, desligar a proteção era
+        # mais fácil que burlá-la — puxa o cabo da gaveta uma vez e a trava some
+        # para sempre, sem nada em lugar nenhum registrando que ela sumiu.
+        ("pos_drawer_sensor_blind", "Sensor da gaveta parou de responder"),
+        # Gaveta que ficou aberta ENTRE vendas. A trava cobre o instante em que
+        # a venda começa; a hora morta ficava descoberta — ninguém inicia venda,
+        # ninguém vê a gaveta, e ela passa a tarde aberta.
+        ("pos_drawer_left_open", "Gaveta ficou aberta sem ninguém vender"),
         # Alarmes do B.I. (BIAlertRule): o B.I. avisa quando o que aconteceu foge
         # do esperado. O aviso chega pelo mesmo bus, com reconhecimento.
         ("bi_import_silence", "B.I.: importação esperada não chegou"),

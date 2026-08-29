@@ -165,20 +165,206 @@ def register_drawer_opening(*, operator, reason: str = ""):
     return _record("drawer_open", shift=shift, operator=operator, reason=reason)
 
 
-def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw: str = ""):
-    """O gerente libera a próxima venda com a gaveta ainda aberta (``drawer_unlock``).
+def report_drawer_blind(*, operator, reason: str = ""):
+    """A trava caiu numa estação que TINHA medição — registra e avisa o gerente.
 
-    A trava é do PDV: ele recusa INICIAR a próxima venda enquanto SABE que a
-    gaveta está aberta (venda começada nunca vira refém; estado desconhecido
-    nunca trava; sem carência). Este é o único jeito de passar por ela, e existe
-    para a gaveta emperrada, que existe. Cada liberação vale UMA venda: a
-    exceção tratada como exceção é a que se escancara; virasse rotina, o balcão
-    aprenderia a pedir o PIN de olhos fechados.
+    A trava só age quando SABE, e estado desconhecido nunca trava: um sensor
+    ruim tem que degradar para "sem controle", nunca para "balcão parado com
+    fila". Essa escolha está certa e não se reabre aqui — mas ela abria a fuga
+    mais barata que existia contra a trava. Deixar a gaveta aberta é trabalhoso
+    e visível; **puxar o cabo da gaveta é um gesto, uma vez, e desliga a
+    proteção para sempre**. E era silencioso: o PDV lia "não sei", seguia a
+    venda, e nada em lugar nenhum dizia que a trava tinha existido e sumido.
 
-    O lançamento é o produto: quem liberou, para quem, quando, efeito zero. É a
-    contagem de "quantos destraves por operador, em que horário" que motivou o
-    livro. ``drawer_raw`` é o byte que o sensor devolveu na hora: prova de que a
-    trava agiu porque SABIA, não por palpite.
+    Por isso a distinção que o agente passou a reportar (``calibrated``): a
+    estação que NUNCA mediu não tem trava e não é notícia; a que MEDIU e parou
+    de responder é regressão, e é esta função. Duas saídas, porque são duas
+    perguntas diferentes: o ``note`` no livro responde "quando o caixa ficou
+    cego" na conferência do turno, e o alerta responde "isso está acontecendo
+    agora" para o gerente, com reconhecimento.
+
+    Falhar aberto é aceitável. Falhar aberto e calado é um convite.
+    """
+    from shopman.backstage.services.alerts import create_alert
+
+    reason = str(reason or "").strip()[:200]
+    shift = _open_shift_or_raise(operator)
+    entry = _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Sensor da gaveta parou de responder",
+        payload={"event": "drawer_sensor_blind", "detail": reason},
+    )
+    # O alerta é o que chega ao gerente HOJE; o livro é o que sobrevive à
+    # conferência. Um não substitui o outro: alerta reconhecido some da tela.
+    create_alert(
+        type="pos_drawer_sensor_blind",
+        severity="warning",
+        message=(
+            f"A trava da gaveta parou de agir no terminal de {operator.get_username()}: "
+            f"o sensor foi medido nesta estação e agora não responde ({reason or 'sem detalhe'}). "
+            "As vendas seguem, mas sem a trava. Confira o cabo da gaveta na impressora."
+        ),
+    )
+    return entry
+
+
+#: Como um bloqueio da gaveta terminou. `closed` é o caminho normal (o operador
+#: fechou a gaveta e o balcão voltou sozinho); os outros são exceção e precisam
+#: ser distinguíveis dele no B.I., senão a anomalia some na média.
+#:
+#: ⚠️ `dismissed` entrou depois, e a lacuna que ele fecha foi achada OLHANDO A
+#: TELA, não pelos testes: o X do canto do diálogo encerrava o bloqueio sem
+#: gerar linha nenhuma. Não era brecha de venda — a próxima tentativa trava de
+#: novo — mas era brecha de rastro, e dava para esbarrar na trava e desistir a
+#: manhã inteira sem deixar registro.
+DRAWER_OUTCOMES = ("closed", "sensor_lost", "manager_override", "dismissed")
+
+
+def _drawer_outcome(value, *, default: str) -> str:
+    outcome = str(value or "").strip()
+    return outcome if outcome in DRAWER_OUTCOMES else default
+
+
+def _duration_ms(value) -> int:
+    """Duração vinda da tela: inteiro, não-negativo, e com teto de 24h.
+
+    O número nasce no relógio do navegador do balcão, então não é confiável por
+    construção — um kiosk com a hora errada, ou a aba dormindo, produz duração
+    absurda. O teto impede que um outlier desses envenene a média do B.I. sem
+    que ninguém entenda de onde veio.
+    """
+    try:
+        ms = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(ms, 24 * 60 * 60 * 1000))
+
+
+def record_drawer_block(*, operator, duration_ms: int = 0, outcome: str = "closed", drawer_raw: str = ""):
+    """O bloqueio da gaveta terminou — quanto tempo durou e como acabou.
+
+    Este lançamento é a razão de a trava dura valer mais que o pedágio antigo:
+    com a liberação vindo do sensor, o sistema passa a saber **quanto tempo a
+    gaveta ficou aberta de verdade**. No desenho anterior o PIN cortava a
+    medição no meio — liberava a venda e a gaveta seguia aberta sem ninguém
+    contando.
+
+    Efeito zero no dinheiro: é um ``note``, e o payload é o que o B.I. lê.
+    """
+    shift = _open_shift_or_raise(operator)
+    payload = {
+        "event": "drawer_blocked",
+        "outcome": _drawer_outcome(outcome, default="closed"),
+        "duration_ms": _duration_ms(duration_ms),
+    }
+    drawer_raw = str(drawer_raw or "").strip()[:16]
+    if drawer_raw:
+        payload["drawer_raw"] = drawer_raw
+    return _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Bloqueio por gaveta aberta",
+        payload=payload,
+    )
+
+
+def report_drawer_left_open(*, operator, minutes: int = 0):
+    """A gaveta ficou aberta ENTRE vendas — avisa o gerente e grava.
+
+    A trava dura resolve o instante da venda: com a gaveta aberta, o balcão não
+    anda. Mas ela só age quando alguém tenta vender, e a hora morta ficava
+    descoberta — ninguém inicia venda, ninguém olha, e a gaveta passa a tarde
+    aberta. Este é o olho dessa hora: a página já sonda o agente a cada 60s, e
+    passa a ler a gaveta junto.
+
+    O limiar é do dono (regra `pos_drawer_idle_alert`, `minutes`), porque
+    "tempo demais" é julgamento de balcão, não constante de código.
+    """
+    from shopman.backstage.services.alerts import create_alert
+
+    minutes = max(0, int(minutes or 0))
+    shift = _open_shift_or_raise(operator)
+    entry = _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Gaveta aberta sem venda",
+        payload={"event": "drawer_left_open", "minutes": minutes},
+    )
+    create_alert(
+        type="pos_drawer_left_open",
+        severity="warning",
+        message=(
+            f"A gaveta do terminal de {operator.get_username()} está aberta há "
+            f"{minutes} min sem nenhuma venda começar. Confira o balcão."
+        ),
+    )
+    return entry
+
+
+#: O que aconteceu depois de alguém abrir a tela de PIN da trava.
+UNLOCK_ATTEMPT_OUTCOMES = ("opened", "abandoned", "denied")
+
+
+def record_unlock_attempt(*, operator, outcome: str = "opened"):
+    """Alguém ABRIU a tela de PIN da trava — mesmo que não tenha destravado.
+
+    A tela de trava não mostra a saída de emergência (botão de PIN ensina o
+    bypass: a exceção vira o caminho conhecido). Quem foi treinado sabe que Esc
+    abre o PIN. Justamente por ser escondida, **procurar a saída é informação** —
+    provavelmente a mais valiosa que essa tela produz.
+
+    Registrar só o destrave bem-sucedido perderia o padrão que interessa: o
+    operador que tenta o PIN do gerente cinco vezes por turno e desiste não
+    aparece em lugar nenhum, e é exatamente ele que se quer enxergar. Por isso
+    ``abandoned`` (Esc de volta) e ``denied`` (PIN recusado) entram no livro do
+    mesmo jeito que ``opened``.
+    """
+    shift = _open_shift_or_raise(operator)
+    outcome = str(outcome or "").strip()
+    if outcome not in UNLOCK_ATTEMPT_OUTCOMES:
+        outcome = "opened"
+    return _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Tela de PIN da trava da gaveta",
+        payload={"event": "drawer_unlock_attempt", "outcome": outcome},
+    )
+
+
+def unlock_drawer(
+    *,
+    operator,
+    manager_approval: dict | None = None,
+    drawer_raw: str = "",
+    duration_ms: int = 0,
+    outcome: str = "manager_override",
+):
+    """O gerente libera o balcão pela EMERGÊNCIA (``drawer_unlock``).
+
+    ⚠️ Mudou de natureza (decisão do dono, 29/08). A trava era um pedágio — o
+    gerente liberava UMA venda com a gaveta ainda aberta — e virou trava dura:
+    o PDV não anda enquanto a gaveta estiver aberta, e **quem libera é o mundo
+    físico**, o bloqueio cai sozinho quando o sensor diz que fechou.
+
+    Então este caminho deixou de ser o destrave e passou a ser a **exceção**:
+    gaveta emperrada fisicamente aberta, ou sensor morto. No dia normal ninguém
+    digita PIN nenhum, porque fechar a gaveta já destrava — e é por isso que a
+    fadiga de autorização (o gerente que digita no automático até virar reflexo)
+    desapareceu por construção.
+
+    ``outcome`` carrega essa natureza para o livro. Sem ele, a emergência ficaria
+    indistinguível do fechamento normal e a anomalia que interessa — o gerente
+    que libera 20× por dia — sumiria na média. ``duration_ms`` é quanto tempo a
+    gaveta ficou aberta até aqui: antes o PIN mascarava esse número, porque
+    liberava a venda sem ninguém saber se foram 10 segundos ou a manhã inteira.
+
+    ``drawer_raw`` é o byte que o sensor devolveu: prova de que a trava agiu
+    porque SABIA, não por palpite.
     """
     from shopman.shop.services.pos import validate_manager_override
 
@@ -190,10 +376,13 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
         operator_username=operator.get_username(),
         action="drawer_unlock",
     )
-    payload = {}
+    payload = {"outcome": _drawer_outcome(outcome, default="manager_override")}
     drawer_raw = str(drawer_raw or "").strip()[:16]
     if drawer_raw:
         payload["drawer_raw"] = drawer_raw
+    duration_ms = _duration_ms(duration_ms)
+    if duration_ms:
+        payload["duration_ms"] = duration_ms
     return _record(
         "drawer_unlock",
         shift=shift,

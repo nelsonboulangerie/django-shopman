@@ -1241,3 +1241,127 @@ def test_veredito_grava_a_polaridade_medida(monkeypatch, capsys, tmp_path):
     salvo = _json.loads(cfg.read_text())["drawer_status"]
     assert salvo == {"query": 1, "mask": 4, "closed_value": 4}
     assert "gravado" in capsys.readouterr().out
+
+
+# ── A trava está ARMADA nesta estação? ────────────────────────────────────
+#
+# A medição vive no `agent.json` do balcão e o Django nunca alcança a loopback.
+# Sem estas respostas, um balcão SEM medição era indistinguível de um balcão
+# protegido: `/drawer` dizia "não sei", o PDV não travava, e nada em lugar
+# nenhum dizia que a proteção não existia.
+
+
+def _agente_com(monkeypatch, drawer_status, leitura=None):
+    """Sobe o agente com uma medição (ou sem) e um sensor dublado."""
+    monkeypatch.setattr(
+        counter_agent, "probe_queue",
+        lambda queue: {"ok": True, "accepting": True, "reason": ""},
+    )
+    if leitura is not None:
+        monkeypatch.setattr(counter_agent, "_ler_estado", lambda cfg, *, query: leitura)
+    config = AgentConfig.from_dict({
+        "queue": "TM-T20", "token": TOKEN, "port": 0,
+        "allowed_origins": [ORIGIN], "drawer_status": drawer_status,
+    })
+    handler = type("Bound", (CounterAgentHandler,), {"config": config})
+    httpd = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    return httpd, f"http://127.0.0.1:{httpd.server_address[1]}"
+
+
+def _get(base, path):
+    with urllib.request.urlopen(base + path, timeout=5) as response:
+        return json.loads(response.read())
+
+
+MEDIDO = {"query": 1, "mask": 4, "closed_value": 4}
+
+
+def test_health_diz_se_a_trava_esta_armada(monkeypatch):
+    """"A trava está ligada?" tinha que ser respondida indo até o balcão."""
+    httpd, base = _agente_com(monkeypatch, MEDIDO)
+    try:
+        assert _get(base, "/health")["drawer_lock"] == {"calibrated": True, "query": 1}
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_health_denuncia_a_estacao_sem_medicao(monkeypatch):
+    httpd, base = _agente_com(monkeypatch, None)
+    try:
+        assert _get(base, "/health")["drawer_lock"]["calibrated"] is False
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_nunca_mediu_e_sensor_que_PAROU_sao_estados_DIFERENTES(monkeypatch):
+    """A distinção que sustenta a degradação ruidosa.
+
+    Os dois respondem `known: false` e nenhum dos dois trava o balcão. Mas
+    "aqui nunca teve trava" é fato de instalação, e "a trava tinha e sumiu" é
+    a fuga mais barata que existe contra ela — puxar o cabo da gaveta é mais
+    fácil que deixá-la aberta. Sem `calibrated`, o PDV não conseguia contar uma
+    da outra e teria que escolher entre ficar mudo sempre ou gritar sempre.
+    """
+    httpd, base = _agente_com(monkeypatch, None)
+    try:
+        nunca = _get(base, "/drawer")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    httpd, base = _agente_com(monkeypatch, MEDIDO, leitura=(None, "impressora não respondeu"))
+    try:
+        parou = _get(base, "/drawer")
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+    assert nunca["known"] is False and nunca["calibrated"] is False
+    assert parou["known"] is False and parou["calibrated"] is True
+
+
+def test_leitura_boa_continua_dizendo_aberta_e_o_byte(monkeypatch):
+    httpd, base = _agente_com(monkeypatch, MEDIDO, leitura=(0x12, ""))
+    try:
+        assert _get(base, "/drawer") == {
+            "known": True, "calibrated": True, "open": True, "raw": "0x12",
+        }
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_doctor_reprova_o_balcao_sem_medicao(monkeypatch, capsys, tmp_path):
+    """Sem esta linha, `--doctor` dizia "tudo certo" num balcão sem trava."""
+    cfg = tmp_path / "agent.json"
+    cfg.write_text(json.dumps({"queue": "TM-T20", "token": TOKEN}))
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
+    monkeypatch.setattr(
+        counter_agent, "probe_queue",
+        lambda queue: {"ok": True, "accepting": True, "reason": ""},
+    )
+
+    counter_agent.doctor()
+
+    saida = capsys.readouterr().out
+    assert "trava da gaveta" in saida and "sem medição" in saida
+    assert "--drawer-status" in saida, "reprovar sem dizer o conserto é ansiedade"
+
+
+def test_doctor_confirma_a_trava_armada(monkeypatch, capsys, tmp_path):
+    cfg = tmp_path / "agent.json"
+    cfg.write_text(json.dumps({"queue": "TM-T20", "token": TOKEN, "drawer_status": MEDIDO}))
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", cfg)
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
+    monkeypatch.setattr(
+        counter_agent, "probe_queue",
+        lambda queue: {"ok": True, "accepting": True, "reason": ""},
+    )
+
+    counter_agent.doctor()
+
+    assert "ARMADA" in capsys.readouterr().out

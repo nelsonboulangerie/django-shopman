@@ -642,6 +642,14 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
                 # Só as pontas, e o endpoint é loopback: 8 de 43 caracteres não
                 # permitem forjar nada, e sem isto não há como comparar.
                 "token_hint": _mascarar(self.config.token),
+                # A trava da gaveta esta ARMADA nesta estacao? Só o agente sabe:
+                # a medicao vive no `agent.json` do balcao, e o Django nunca
+                # alcanca a loopback. Sem esta linha, "a trava esta ligada?" so
+                # tinha resposta indo ate o balcao rodar `--doctor`.
+                "drawer_lock": {
+                    "calibrated": bool(self.config.drawer_status),
+                    "query": int((self.config.drawer_status or {}).get("query") or 0),
+                },
             },
         )
 
@@ -654,18 +662,28 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
         """
         cfg = self.config.drawer_status or {}
         if not cfg:
+            # Nunca mediu: a trava simplesmente nao existe neste balcao, e isso
+            # e um fato de instalacao, nao uma falha. `calibrated: false` diz ao
+            # PDV para ficar quieto.
             return {
                 "known": False,
+                "calibrated": False,
                 "reason": "esta estacao nunca mediu a gaveta. Rode --drawer-status.",
             }
+        # ⚠️ Daqui para baixo a estacao JA MEDIU. Todo `known: false` deste
+        # ponto em diante e REGRESSAO — o sensor respondia e parou de responder
+        # (cabo da gaveta fora, impressora trocada, porta ocupada). O PDV
+        # continua sem travar, mas precisa saber a diferenca entre "aqui nunca
+        # teve trava" e "a trava tinha e sumiu": a segunda e a fuga mais barata
+        # que existe contra a trava, e ela nao pode ser silenciosa.
         query = _status_query(int(cfg.get("query") or 1))
         byte, motivo = _ler_estado(self.config, query=query)
         if byte is None:
-            return {"known": False, "reason": motivo}
+            return {"known": False, "calibrated": True, "reason": motivo}
         aberta = self.config.estado_da_gaveta(byte)
         if aberta is None:
-            return {"known": False, "reason": "polaridade nao configurada"}
-        return {"known": True, "open": aberta, "raw": f"0x{byte:02x}"}
+            return {"known": False, "calibrated": True, "reason": "polaridade nao configurada"}
+        return {"known": True, "calibrated": True, "open": aberta, "raw": f"0x{byte:02x}"}
 
     def do_POST(self) -> None:  # noqa: N802
         rota = self.path.split("?")[0]
@@ -1234,6 +1252,18 @@ def doctor() -> int:
     ok_fila = bool(fila.get("ok"))
     print(f"  impressora ............... {config.queue}: " + ("aceitando ✓" if ok_fila else f"{fila.get('reason') or 'não aceita trabalho'} ✗"))
     tudo_certo = tudo_certo and ok_fila
+
+    # ⚠️ A trava da gaveta é o único recurso deste agente que fica DESLIGADO em
+    # silêncio: sem medição, `/drawer` responde "não sei", o PDV nunca trava, e
+    # nada em lugar nenhum diz que a proteção não existe. Um balcão sem medição
+    # parecia idêntico a um balcão protegido.
+    medido = bool(config.drawer_status)
+    print("  trava da gaveta .......... " + ("ARMADA ✓ (polaridade medida nesta estação)" if medido else "sem medição ✗"))
+    if not medido:
+        print("     ✗ o PDV não consegue saber se a gaveta ficou aberta, e a trava")
+        print("       da próxima venda nunca vai agir neste balcão.")
+        print(f"       meça: {sys.executable} {Path(__file__).resolve()} --drawer-status")
+        tudo_certo = False
 
     print("\n  " + ("tudo certo." if tudo_certo else "há o que resolver acima.") + "\n")
     return 0 if tudo_certo else 1

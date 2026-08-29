@@ -19,16 +19,29 @@
 // O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
 // (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
 // deixaria o balcão sem saída no meio de uma sangria.
-import { managerAuthReason } from "~/presentation/managerAuth";
+import type { ManagerAction } from "~/presentation/managerAuth";
+import { managerAuthReason, managerAuthTitle } from "~/presentation/managerAuth";
 import type { POSManagerProjection } from "~/types/pos";
 
 const props = defineProps<{
   open: boolean;
+  /**
+   * O operador que CONTINUA depois da assinatura.
+   *
+   * ⚠️ É a linha que separa autorizar de logar, e é texto — não cor. As duas
+   * telas pedem PIN num teclado igual, e o operador pode ler "digite o PIN"
+   * como "sua sessão vai trocar". Não vai: `validate_manager_override` resolve o
+   * gerente, confere a permissão, recusa autoassinatura e devolve o objeto —
+   * nunca chama `login()`. Dizer isso na tela é mais barato que consertar a
+   * confusão depois, e vale para qualquer autorização (desconto, sangria,
+   * destrave), não só a da gaveta.
+   */
+  operatorName?: string;
+  /** O ato que está sendo autorizado. A copy inteira sai daqui — ver `managerAuth`. */
+  action?: ManagerAction;
   thresholdQ?: number;
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
-  /** Texto pronto, para quem não vem de uma venda (retirada de gaveta). */
-  reasonText?: string;
   /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
   managers?: POSManagerProjection[];
   busy?: boolean;
@@ -47,11 +60,12 @@ const identify = ref<{ reset: (keepPicked?: boolean) => void } | null>(null);
 const managers = computed(() => props.managers ?? []);
 const reason = computed(() =>
   managerAuthReason({
-    reasonText: props.reasonText,
+    action: props.action,
     reasons: props.reasons,
     thresholdQ: props.thresholdQ,
   }),
 );
+const title = computed(() => managerAuthTitle(props.action));
 
 // Campos limpos a cada abertura. Quando o servidor recusa, some só o PIN: quem
 // foi escolhido continua escolhido, senão o gerente reescolheria o próprio nome
@@ -74,13 +88,27 @@ function onBadge(token: string) {
 
 <template>
   <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
-    <UiDialogContent class="sm:max-w-sm">
+    <!-- `data-drawer-manager-auth` deixa a trava da gaveta saber que o PIN está
+         por cima: o Esc dela não pode roubar a tecla de volta desta tela. -->
+    <!-- Camada 3, cromática: uma borda de acento que a tela de login não tem.
+         É a MAIS FRACA das três de propósito, e nunca anda sozinha — some no
+         reflexo de sol sobre o vidro do balcão e não existe para quem não
+         distingue a cor. Quem carrega o sentido é o texto (camada 1) e o fato
+         de isto ser um modal com a venda visível atrás (camada 2). -->
+    <UiDialogContent class="border-warning/50 sm:max-w-sm" data-drawer-manager-auth>
       <UiDialogHeader class="items-center text-center">
         <div class="mx-auto grid size-12 place-items-center rounded-md border border-warning/40 bg-warning/10 text-amber-600 dark:text-amber-400">
           <Icon name="lucide:shield-check" class="size-6" />
         </div>
-        <UiDialogTitle class="text-lg">Autorização do gerente</UiDialogTitle>
+        <UiDialogTitle class="text-lg">{{ title }}</UiDialogTitle>
         <UiDialogDescription>{{ reason }}</UiDialogDescription>
+        <!-- ⚠️ O par semântico do destrave de sessão, que diz "Você assume o
+             balcão". Aqui é o contrário, e é isso que o operador precisa
+             entender num teclado de PIN idêntico ao do destrave: a sessão NÃO
+             troca, o gerente assina uma coisa e vai embora. -->
+        <p v-if="operatorName" class="text-sm font-medium text-foreground">
+          Você continua como {{ operatorName }}.
+        </p>
       </UiDialogHeader>
 
       <div class="flex flex-col items-center gap-4 pb-1">

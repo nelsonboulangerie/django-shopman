@@ -61,7 +61,8 @@ import {
   requiresOpenShiftForSale,
   sessionScreenState,
 } from "../app/presentation/cash";
-import { managerAuthReason } from "../app/presentation/managerAuth";
+import type { ManagerAction } from "../app/presentation/managerAuth";
+import { MANAGER_ACTIONS, managerAuthReason, managerAuthTitle } from "../app/presentation/managerAuth";
 import {
   availableMoveModes,
   buildMovePayload,
@@ -746,10 +747,29 @@ describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
 });
 
 describe("presentation/managerAuth — o que se assina e quem assina", () => {
-  it("prefers the ready-made reason text over the review codes", () => {
+  // O motivo do SERVIDOR ganha do fixo do ato: quando a review disse por que
+  // parou, é isso que o gerente precisa ler, não a frase genérica da exceção.
+  it("prefers the review codes over the action's fixed reason", () => {
     expect(
-      managerAuthReason({ reasonText: "Retirar dinheiro da gaveta é exceção auditada.", reasons: ["price_override"] }),
-    ).toBe("Retirar dinheiro da gaveta é exceção auditada.");
+      managerAuthReason({ action: "cash_out", reasons: ["price_override"] }),
+    ).toBe("Preço alterado à mão.");
+  });
+
+  // ⚠️ Frase curta, sem explicação. A copy antiga explicava a política dentro do
+  // diálogo ("Retirar dinheiro da gaveta é exceção auditada: um gerente precisa
+  // autorizar") e o dono achou prolixo: quem está de pé com fila não lê parágrafo.
+  it("a frase de cada ato é curta", () => {
+    for (const acao of Object.keys(MANAGER_ACTIONS) as ManagerAction[]) {
+      const frase = MANAGER_ACTIONS[acao].reason;
+      expect(frase.length).toBeLessThanOrEqual(40);
+      expect(frase).not.toContain(":");
+    }
+  });
+
+  // O título nomeia O ATO — "Autorizar destrave da gaveta", não "Autorização".
+  it("o título nomeia o ato", () => {
+    expect(managerAuthTitle("drawer_unlock")).toBe("Autorizar destrave da gaveta");
+    expect(managerAuthTitle(undefined)).toBe("Autorização do gerente");
   });
 
   it("spells out the review codes, threshold included", () => {
@@ -762,10 +782,8 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   // Dizer pouco é melhor que dizer errado: o diálogo já afirmou "desconto acima de
   // R$ X" quando o gatilho era preço alterado, e o gerente assinou sem saber o quê.
   it("falls back to a generic line instead of guessing a reason", () => {
-    expect(managerAuthReason({})).toBe("Esta operação precisa da autorização de um gerente.");
-    expect(managerAuthReason({ reasons: ["codigo_desconhecido"] })).toBe(
-      "Esta operação precisa da autorização de um gerente.",
-    );
+    expect(managerAuthReason({})).toBe("Precisa de um gerente.");
+    expect(managerAuthReason({ reasons: ["codigo_desconhecido"] })).toBe("Precisa de um gerente.");
   });
 
   // Sem username o servidor não sabe contra QUAL credencial validar o PIN, e a

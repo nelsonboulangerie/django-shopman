@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ManagerAction } from "~/presentation/managerAuth";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -199,14 +200,11 @@ const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
 
-const managerAuthReasonText = computed(() => {
-  if (managerIntent.value.action === "serve_change") {
-    return "Atender o pedido abre a gaveta: um gerente precisa autorizar e assinar a troca.";
-  }
-  if (managerIntent.value.action === "refund_cash") {
-    return "Devolver dinheiro de venda cancelada tira dinheiro da gaveta: um gerente precisa autorizar.";
-  }
-  return "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.";
+// A copy mora em `presentation/managerAuth`; aqui só se escolhe QUAL ato é.
+const managerAuthAction = computed<ManagerAction>(() => {
+  if (managerIntent.value.action === "serve_change") return "serve_change";
+  if (managerIntent.value.action === "refund_cash") return "refund_cash";
+  return "cash_out";
 });
 
 function onManagerAuthorize(username: string, pin: string) {
@@ -1019,7 +1017,8 @@ async function confirmClose() {
 
     <PosManagerAuthDialog
       v-model:open="managerAuthOpen"
-      :reason-text="managerAuthReasonText"
+      :action="managerAuthAction"
+      :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"

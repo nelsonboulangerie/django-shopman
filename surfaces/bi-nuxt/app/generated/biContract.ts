@@ -133,6 +133,8 @@ export interface BICashHourRow {
   hour: number;
   drawer_openings: number;
   drawer_unlocks: number;
+  blocks: number;
+  open_seconds: number;
 }
 
 /** BICashMethodRow(method: 'str', amount_q: 'int') */
@@ -166,7 +168,28 @@ export interface BICashAccounts {
   top_open: BICashAccountRow[];
 }
 
-/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious', drawer_by_hour: 'tuple[BICashHourRow, ...]', accounts: 'BICashAccounts' = BICashAccounts(sales_q=0, settled_q=0, settled_cash_q=0, open_q=0, open_customers=0, top_open=())) */
+/** O comportamento de gaveta de UMA pessoa — para reconhecer padrão, não só contar. */
+export interface BICashDrawerRow {
+  operator: string;
+  blocks: number;
+  open_seconds: number;
+  longest_open_seconds: number;
+  overrides: number;
+  unlock_attempts: number;
+  sensor_blind: number;
+  left_open: number;
+  dismissals: number;
+}
+
+/** Um padrão que pede explicação. Não é acusação: é onde olhar. */
+export interface BICashDrawerAnomaly {
+  code: string;
+  operator: string;
+  shift_key: number;
+  detail: string;
+}
+
+/** BICashReport(date_from: 'str', date_to: 'str', days: 'tuple[BICashDay, ...]', by_operator: 'tuple[BICashOperatorRow, ...]', payment_methods: 'tuple[BICashMethodRow, ...]', shifts_total: 'int', difference_total_q: 'int', closings_missing: 'int', previous: 'BICashPrevious', drawer_by_hour: 'tuple[BICashHourRow, ...]', accounts: 'BICashAccounts' = BICashAccounts(sales_q=0, settled_q=0, settled_cash_q=0, open_q=0, open_customers=0, top_open=()), drawer_by_operator: 'tuple[BICashDrawerRow, ...]' = (), drawer_anomalies: 'tuple[BICashDrawerAnomaly, ...]' = ()) */
 export interface BICashReport {
   date_from: string;
   date_to: string;
@@ -179,6 +202,8 @@ export interface BICashReport {
   previous: BICashPrevious;
   drawer_by_hour: BICashHourRow[];
   accounts: BICashAccounts;
+  drawer_by_operator: BICashDrawerRow[];
+  drawer_anomalies: BICashDrawerAnomaly[];
 }
 
 /** BICustomerSegmentRow(segment: 'str', customers: 'int') */

@@ -54,11 +54,28 @@ const drawerHourRows = computed(() =>
     label: `${String(row.hour).padStart(2, "0")}h`,
     value: row.drawer_openings + row.drawer_unlocks,
     display: formatInt(row.drawer_openings + row.drawer_unlocks),
-    hint: row.drawer_unlocks
-      ? `${formatInt(row.drawer_unlocks)} destrave${row.drawer_unlocks === 1 ? "" : "s"} por gerente`
-      : undefined,
+    hint: [
+      row.drawer_unlocks ? `${formatInt(row.drawer_unlocks)} destrave${row.drawer_unlocks === 1 ? "" : "s"} por gerente` : "",
+      row.blocks ? `${formatInt(row.blocks)} vez${row.blocks === 1 ? "" : "es"} travado (${formatDuration(row.open_seconds)} de gaveta aberta)` : "",
+    ].filter(Boolean).join(" · ") || undefined,
   })),
 );
+
+/** Segundos em linguagem de balcão: ninguém lê "184 s". */
+function formatDuration(seconds: number): string {
+  if (!seconds) return "0 s";
+  if (seconds < 60) return `${seconds} s`;
+  const min = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (min < 60) return rest ? `${min} min ${rest} s` : `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
+
+// A gaveta é o único lugar do caixa em que o SILÊNCIO é a informação: turno com
+// dinheiro andando e nenhum bloqueio quer dizer que o sensor não estava falando.
+// Por isso esta seção mostra ausência tanto quanto presença.
+const drawerRows = computed(() => report.value?.drawer_by_operator ?? []);
+const anomalies = computed(() => report.value?.drawer_anomalies ?? []);
 </script>
 
 <template>
@@ -173,6 +190,67 @@ const drawerHourRows = computed(() =>
           </table>
           <p v-else class="text-sm text-muted-foreground">Nenhum turno fechado nem evento de caixa no período.</p>
         </section>
+        <!-- O que a trava da gaveta revelou. Aqui a AUSÊNCIA é dado: um turno com
+             dinheiro andando e zero bloqueio não é um balcão caprichoso, é um
+             sensor que não estava falando com o PDV. -->
+        <section v-if="anomalies.length" class="rounded-md border border-warning/40 bg-warning/5 p-3">
+          <h2 class="text-lg font-semibold text-foreground">Gaveta — o que pede explicação</h2>
+          <p class="mb-3 text-xs text-muted-foreground">
+            Não é acusação: é onde olhar. Cada linha aponta um turno e diz o que não fecha.
+          </p>
+          <ul class="flex flex-col gap-2">
+            <li v-for="(item, i) in anomalies" :key="`${item.code}-${item.shift_key}-${i}`" class="flex gap-2 text-sm">
+              <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+              <span class="text-foreground">
+                <span class="font-medium">{{ item.operator }}</span>
+                <span class="text-muted-foreground"> · turno {{ item.shift_key }} — </span>{{ item.detail }}
+              </span>
+            </li>
+          </ul>
+        </section>
+
+        <section class="rounded-md border border-border bg-card p-3">
+          <h2 class="text-lg font-semibold text-foreground">Gaveta por operador</h2>
+          <p class="mb-3 text-xs text-muted-foreground">
+            Quantas vezes a trava agiu, quanto tempo a gaveta ficou aberta somada, e o pior episódio —
+            que a média esconde. Desistir da venda em vez de fechar a gaveta, destrave e tentativa de PIN
+            são exceção: qualquer número acima de zero se lê.
+          </p>
+          <div class="overflow-x-auto">
+            <table v-if="drawerRows.length" class="w-full min-w-160 text-sm">
+              <thead>
+                <tr class="border-b border-border text-left text-xs font-medium text-muted-foreground">
+                  <th class="pb-2 font-medium">Operador</th>
+                  <th class="pb-2 text-right font-medium">Travou</th>
+                  <th class="pb-2 text-right font-medium">Aberta (total)</th>
+                  <th class="pb-2 text-right font-medium">Pior episódio</th>
+                  <th class="pb-2 text-right font-medium">Desistiu</th>
+                  <th class="pb-2 text-right font-medium">Destraves</th>
+                  <th class="pb-2 text-right font-medium">Buscou o PIN</th>
+                  <th class="pb-2 text-right font-medium">Sensor mudo</th>
+                  <th class="pb-2 text-right font-medium">Esquecida</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in drawerRows" :key="row.operator" class="border-b border-border last:border-0">
+                  <td class="py-2 pr-2 font-medium text-foreground">{{ row.operator }}</td>
+                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatInt(row.blocks) }}</td>
+                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatDuration(row.open_seconds) }}</td>
+                  <td class="py-2 text-right tabular-nums text-foreground">{{ formatDuration(row.longest_open_seconds) }}</td>
+                  <td class="py-2 text-right tabular-nums" :class="row.dismissals ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.dismissals) }}</td>
+                  <td class="py-2 text-right tabular-nums" :class="row.overrides ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.overrides) }}</td>
+                  <td class="py-2 text-right tabular-nums" :class="row.unlock_attempts ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.unlock_attempts) }}</td>
+                  <td class="py-2 text-right tabular-nums" :class="row.sensor_blind ? 'font-semibold text-destructive' : 'text-muted-foreground'">{{ formatInt(row.sensor_blind) }}</td>
+                  <td class="py-2 text-right tabular-nums" :class="row.left_open ? 'font-semibold text-foreground' : 'text-muted-foreground'">{{ formatInt(row.left_open) }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <p v-else class="text-sm text-muted-foreground">
+              Nenhum episódio de gaveta no período. Num balcão com sensor armado e movimento, isso merece conferência.
+            </p>
+          </div>
+        </section>
+
         <section class="rounded-md border border-border bg-card p-3">
           <h2 class="text-lg font-semibold text-foreground">Meios de pagamento</h2>
           <p class="mb-3 text-xs text-muted-foreground">Consolidado dos fechamentos do período</p>

@@ -14,7 +14,10 @@ recebe sem ter opinião própria.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 #: Sequência canônica da TM-T20: `ESC p 0 25 250` → `1B 70 00 19 FA`.
 #: ⚠️ `0x19`/`0xFA` são 25 e 250 **unidades** de 2ms — ou seja 50ms e 500ms.
@@ -110,6 +113,10 @@ class CashDrawerConfig:
                 # A tela precisa DIZER por que não dá, em vez de esconder o card
                 # e deixar o operador achando que o PDV está quebrado.
                 "reason": self._unavailable_reason(),
+                # Política da loja, não do aparelho: viaja nos dois ramos para o
+                # contrato não mudar de forma conforme o terminal. Sem sensor
+                # ninguém conta nada, e a tela já checa isso antes de olhar.
+                "idle_open_alert_minutes": idle_open_alert_minutes(),
             }
         return {
             "adapter": ADAPTER_AGENT,
@@ -123,6 +130,11 @@ class CashDrawerConfig:
             },
             "open_on_cash_sale": self.open_on_cash_sale,
             "reason": self.misconfigured_reason,
+            # Quantos minutos a gaveta pode ficar aberta ENTRE vendas antes de
+            # virar aviso. A trava já cuida do instante da venda; isto cobre a
+            # hora morta, em que ninguém inicia venda nenhuma e a gaveta aberta
+            # não seria vista por ninguém. `0` desliga.
+            "idle_open_alert_minutes": idle_open_alert_minutes(),
         }
 
     def _unavailable_reason(self) -> str:
@@ -142,3 +154,53 @@ def _positive_int(value, fallback: int) -> int:
     except (TypeError, ValueError):
         return fallback
     return parsed if parsed > 0 else fallback
+
+
+#: Default do aviso de gaveta aberta parada, em minutos.
+#:
+#: 3 minutos é a régua escolhida e ela é defensável: dar troco, conferir uma
+#: nota e fechar leva segundos; uma gaveta que passa disso SEM nenhuma venda
+#: começar não está em uso, está esquecida (ou aberta de propósito). Abaixo
+#: disso o aviso pegaria o operador contando cédulas de boa-fé e viraria ruído;
+#: bem acima, a gaveta ficaria aberta uma hora morta inteira sem ninguém saber.
+DEFAULT_IDLE_OPEN_ALERT_MINUTES = 3
+
+
+def idle_open_alert_minutes() -> int:
+    """Minutos de gaveta aberta parada até virar aviso — editável no Admin.
+
+    DONO ÚNICO da pergunta. Mora em ``Shop.defaults["pos"]``, ao lado do
+    ``fiscal_toggle``, porque é política de PDV do estabelecimento — não regra
+    de negócio avaliada num pipeline.
+
+    ⚠️ Isto foi pedido como ``RuleConfig`` e **não** foi feito lá, de propósito:
+    ``RuleConfig.rule_path`` é validado por importação, então uma régua de um
+    inteiro exigiria inventar uma classe de regra que não avalia nada só para
+    satisfazer o campo — jargão com aparência de arquitetura. O que o pedido
+    queria (o dono muda sem deploy, e config errada não desliga a proteção
+    calada) está inteiro aqui.
+
+    Ausente cai no default. Valor inválido (texto, negativo) **também** cai no
+    default, em vez de desligar o aviso: desligar proteção por erro de digitação
+    é exatamente o modo de falha que não se aceita. Para desligar de propósito,
+    ``0`` — que é explícito.
+    """
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
+        pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
+        raw = (pos_cfg or {}).get("drawer_idle_alert_minutes")
+    except Exception:
+        logger.debug("pos_drawer_idle_lookup_failed", exc_info=True)
+        return DEFAULT_IDLE_OPEN_ALERT_MINUTES
+    if raw is None:
+        return DEFAULT_IDLE_OPEN_ALERT_MINUTES
+    if isinstance(raw, bool) or not isinstance(raw, int):
+        logger.warning("drawer_idle_alert_minutes inválido (%r); usando o default.", raw)
+        return DEFAULT_IDLE_OPEN_ALERT_MINUTES
+    if raw < 0:
+        logger.warning("drawer_idle_alert_minutes negativo (%r); usando o default.", raw)
+        return DEFAULT_IDLE_OPEN_ALERT_MINUTES
+    return raw

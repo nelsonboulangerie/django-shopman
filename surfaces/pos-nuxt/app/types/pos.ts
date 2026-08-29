@@ -350,6 +350,14 @@ export interface POSCashDrawerProjection {
   agent_url?: string;
   token?: string;
   pulse?: { pin: number; on_ms: number; off_ms: number };
+  /**
+   * Minutos de gaveta aberta ENTRE vendas até virar aviso. `0` desliga.
+   *
+   * A trava cuida do instante da venda; isto cobre a hora morta, quando
+   * ninguém inicia venda nenhuma e uma gaveta aberta não seria vista por
+   * ninguém. Configurável no Admin (regra `pos_drawer_idle_alert`).
+   */
+  idle_open_alert_minutes?: number;
 }
 
 export interface POSOperatorProjection {

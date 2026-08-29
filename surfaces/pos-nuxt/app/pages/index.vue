@@ -766,6 +766,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
         :managers="pos?.managers || []"
+        :operator-name="activeOperator?.name || ''"
         :tab-display="cart.tabDisplay"
         :items="cart.items"
         :has-open-tab="hasOpenTab"
@@ -980,23 +981,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     />
 
     <!-- A trava da gaveta: só aparece quando o sensor DISSE que está aberta.
-         Fechar o diálogo desiste da venda que esperava; "já fechei" relê o
-         sensor; o gerente libera pelo PIN e o destrave vai para o log. -->
+         A saída normal não é botão nenhum — a tela sonda o sensor e sai sozinha
+         quando a gaveta fecha. Fechar o diálogo desiste da venda que esperava; o
+         PIN do gerente é a EXCEÇÃO (gaveta emperrada, sensor morto) e vai para o
+         livro marcado como tal. -->
     <PosDrawerLockDialog
       :open="drawerLock.open.value"
-      :still-open="drawerLock.stillOpen.value"
+      :sensor-lost="drawerLock.sensorLost.value"
       :busy="drawerLock.busy.value"
       @update:open="(value) => { if (!value) drawerLock.dismiss(); }"
-      @recheck="drawerLock.recheck"
       @manager="drawerLock.askManager"
     />
     <PosManagerAuthDialog
       :open="drawerLock.managerOpen.value"
-      reason-text="Liberar a próxima venda com a gaveta aberta."
+      action="drawer_unlock"
+      :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="drawerLock.busy.value"
       :error="drawerLock.managerError.value"
-      @update:open="(value) => { if (!value) drawerLock.managerOpen.value = false; }"
+      @update:open="(value) => { if (!value) drawerLock.backToLock(); }"
       @authorize="drawerLock.unlock"
       @authorize-badge="drawerLock.unlockWithBadge"
     />
@@ -1009,6 +1012,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :busy="cancellingSale"
       :error="cancelSaleError"
       :managers="pos?.managers"
+      :operator-name="activeOperator?.name || ''"
       @confirm="cancelRecentSale"
       @confirm-badge="cancelRecentSaleWithBadge"
     />
