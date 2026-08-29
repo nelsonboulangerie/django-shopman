@@ -174,6 +174,53 @@ test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 	@echo "── Backstage ──"
 	$(PYTHON) -m pytest shopman/backstage/tests -x -q -n auto
 
+# ── Shard do backstage ────────────────────────────────────────────────────
+# O `-n auto` acima resolveu o RISCO — o step estourando o teto do job, que já
+# expulsou PR inocente da fila (#361). Não resolveu o RELÓGIO. Medindo três
+# rodadas da fila de merge em 29/08, o JOB `test-backstage` (install + step)
+# levou 12min26s, 12min55s e 12min42s. O segundo colocado, `test-shop`, levou
+# 4min25s, 5min26s e 5min06s. O gate inteiro espera o backstage e mais ninguém —
+# e os ~200-300 testes que os nove WPs da auditoria vão somar entram todos aqui.
+#
+# A mesma medição que denunciou os 14 testes de `seed` desenha a divisão: são
+# exatamente 7 ARQUIVOS, e eles valem 62% do relógio. Um shard leva os 7, o
+# outro leva os outros 159.
+#
+# ⚠️ A lista mora numa variável SÓ. Um alvo é `<lista>`, o outro é
+# `<tudo> --ignore=<lista>` — então união e disjunção são por construção, e
+# nenhum arquivo pode cair fora dos dois. Conferido por coleta: 16 + 2417 =
+# 2433, que é exatamente o que o alvo inteiro coleta. Erro de digitação também
+# não passa calado: `pytest caminho/que/nao/existe.py` é ERRO (o `--ignore` do
+# outro alvo é que seria no-op), e o shard nomeado reprova alto.
+#
+# ⚠️ Para conferir o EQUILÍBRIO dos dois shards, olhe o CI — nunca o relógio
+# local. O comentário acima já registra por quê: a mesma configuração deu 451s,
+# 1181s e 1830s em três rodadas nesta máquina, com resultado idêntico.
+#
+# ⚠️ Cada shard continua com o `-n auto` padrão, que distribui por TESTE.
+# `--dist loadfile` já foi medido e é pior (ver acima): prenderia os 4 testes de
+# `test_nelson_seed_operational.py` no mesmo worker.
+#
+# O `test-backstage` acima continua rodando TUDO numa invocação só — é o que
+# `make test` e o desenvolvedor local querem. Os dois alvos abaixo existem para
+# a matriz do CI, onde os jobs correm em paralelo de verdade.
+BACKSTAGE_SEED_TESTS := \
+	shopman/backstage/tests/test_apply_product_measurements_matches_seed.py \
+	shopman/backstage/tests/test_manual_labels_match_piece_weight.py \
+	shopman/backstage/tests/test_nelson_seed_operational.py \
+	shopman/backstage/tests/test_refresh_seed_dates.py \
+	shopman/backstage/tests/test_seed_flush_keeps_alias_curation.py \
+	shopman/backstage/tests/test_seed_flush_keeps_terminal_config.py \
+	shopman/backstage/tests/test_seed_forecast_history.py
+
+test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/2 do CI)
+	@echo "── Backstage (semeia o banco) ──"
+	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -x -q -n auto
+
+test-backstage-rest: ## Backstage — todo o resto (shard 2/2 do CI)
+	@echo "── Backstage (resto) ──"
+	$(PYTHON) -m pytest shopman/backstage/tests -x -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS))
+
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
 # ninguém olhando. Os testes dele travam os cinco bytes do ESC/POS, o `-o raw`
