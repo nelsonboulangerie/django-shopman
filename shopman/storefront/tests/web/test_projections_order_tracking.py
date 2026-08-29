@@ -793,7 +793,18 @@ class TestStatusColours:
         assert "preparar" not in proj.promise.message.lower()
         assert "depois do pagamento" not in proj.promise.message.lower()
 
-    def test_waitlisted_pix_ready_requires_payment_to_confirm_queue(self, order_with_payment, product):
+    def test_todays_batch_does_not_charge_to_hold_a_spot(self, order_with_payment, product):
+        """Fornada de HOJE não cobra para garantir vaga (política da casa, 28/08/2026).
+
+        A casa produz aquele lote de qualquer jeito: quem não aparece devolve o
+        pão para a gôndola, que o vende. Cobrar adiantado ali é pedir garantia
+        contra prejuízo que não existe — e o §0 proíbe a vantagem tirada.
+
+        A cobrança antecipada fica só na ENCOMENDA, onde a produção é dedicada a
+        uma pessoa nomeada e o no-show é perda total (ver o teste de preorder).
+        A fila da fornada do dia é do WP-P2E: promete de graça, cobra quando o
+        lote sai.
+        """
         from django.utils import timezone
 
         _attach_pending_planned_hold(order_with_payment, sku=product.sku)
@@ -804,9 +815,11 @@ class TestStatusColours:
         assert proj.promise.state == "payment_pix_ready"
         assert proj.promise.fulfillment_wait_kind == "planned_batch"
         assert proj.promise.fulfillment_wait_until == timezone.localdate().isoformat()
-        assert proj.promise.message == "Pague com o Pix abaixo para confirmar sua reserva na fila de espera."
-        assert "use o código" not in proj.promise.message.lower()
-        assert "preparar" not in proj.promise.message.lower()
+        # A frase é a de pagamento normal, sem condicionar a vaga ao pagamento.
+        assert "fila de espera" not in proj.promise.message.lower()
+        assert "reserva" not in proj.promise.message.lower()
+        assert "para confirmar sua" not in proj.promise.message.lower()
+        assert "pague com o pix" in proj.promise.message.lower()
 
     def test_expired_auto_confirm_countdown_is_not_rendered(self, order, channel):
         from django.utils import timezone

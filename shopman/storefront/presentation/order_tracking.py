@@ -679,7 +679,7 @@ def _promise_copy(
         # dois contratos: em post_commit a loja já aceitou antes do QR; em
         # at_commit o pedido ainda pode estar new. A copy não inventa resposta
         # de loja nem repete confirmação operacional que já aconteceu.
-        if _is_fulfillment_wait(data):
+        if _is_preorder_wait(data):
             message = _payment_wait_message(
                 data,
                 copy=copy,
@@ -701,7 +701,7 @@ def _promise_copy(
         return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
 
     if state == "payment_card_ready":
-        if _is_fulfillment_wait(data):
+        if _is_preorder_wait(data):
             message = _payment_wait_message(
                 data,
                 copy=copy,
@@ -956,6 +956,22 @@ def _is_fulfillment_wait(data: TrackingPromiseData) -> bool:
     return data.fulfillment_wait_kind in {"planned_batch", "preorder"}
 
 
+def _is_preorder_wait(data: TrackingPromiseData) -> bool:
+    """Só a ENCOMENDA cobra para garantir a vaga.
+
+    Encomenda e fornada do dia são necessidades diferentes, e o risco também é.
+    Na encomenda a casa produz para uma pessoa nomeada numa data futura: se ela
+    não vem, a perda é total, e por isso o pagamento antecipado se justifica.
+    Na fornada de HOJE o pão vai ser assado de qualquer jeito — quem não aparece
+    devolve o pão para a gôndola, que o vende. Cobrar adiantado ali é pedir
+    garantia contra um prejuízo que não existe.
+
+    A espera pelo lote do dia é do WP-P2E (``waitlist_state``), que promete de
+    graça e cobra quando o lote sai.
+    """
+    return data.fulfillment_wait_kind == "preorder"
+
+
 def _waitlist_message(
     data: TrackingPromiseData,
     *,
@@ -1011,24 +1027,17 @@ def _payment_wait_message(
             "Pague com o Pix abaixo para confirmar sua encomenda.",
         )
 
+    # Só encomenda chega aqui (ver _is_preorder_wait): a fornada do dia não pede
+    # pagamento para garantir vaga. Se algum caminho novo cair aqui, a tela
+    # devolve a frase honesta de pagamento — degradar com graça, nunca colapsar.
     if method == "card":
-        if wait_display:
-            return copy.message(
-                "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE",
-                "Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
-            ).replace("{when}", wait_display)
         return copy.message(
-            "TRACKING_PROMISE_CARD_WAITLIST_MESSAGE_NO_DATE",
-            "Finalize no ambiente seguro para garantir sua reserva na fila de espera.",
+            "TRACKING_PROMISE_CARD_MESSAGE_NEW",
+            "Finalize no ambiente seguro para autorizar o cartão e acompanhar o pedido por aqui.",
         )
-    if wait_display:
-        return copy.message(
-            "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE",
-            "Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
-        ).replace("{when}", wait_display)
     return copy.message(
-        "TRACKING_PAYMENT_PIX_WAITLIST_MESSAGE_NO_DATE",
-        "Pague com o Pix abaixo para confirmar sua reserva na fila de espera.",
+        "TRACKING_PAYMENT_PIX_READY_MESSAGE_NEW",
+        "Pague com o Pix abaixo. A confirmação do Pix é automática; acompanhe os próximos passos por aqui.",
     )
 
 
