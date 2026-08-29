@@ -172,6 +172,30 @@ def test_nenhuma_acao_mutavel_sai_com_none_fora_da_allowlist() -> None:
     )
 
 
+#: Vocabulario fechado do campo. Ver o comentario em `Action.idempotency`.
+VOCABULARIO = {"required", "client_request_id", "ledger", "recommended", "none"}
+
+
+def test_o_vocabulario_de_idempotencia_e_fechado() -> None:
+    """Campo de texto livre aceita erro de digitacao como se fosse politica.
+
+    `idempotencia="clientrequestid"` passaria calado, e o contrato diria ao cliente
+    uma palavra que ninguem consome.
+    """
+    estranhas = [
+        f"{rel}:{line} ref={ref!r} idempotency={idem!r}"
+        for rel, line, ref, _method, idem in _action_sites()
+        if idem is not None and idem not in VOCABULARIO
+    ]
+    assert not estranhas, (
+        "valor de `idempotency` fora do vocabulario:\n  "
+        + "\n  ".join(estranhas)
+        + f"\nOs valores validos sao {sorted(VOCABULARIO)}. Se o novo valor descreve "
+        "uma protecao real que nenhum deles cobre, adicione-o AQUI e ao comentario "
+        "de `Action.idempotency` — nos dois, ou o proximo leitor nao acha."
+    )
+
+
 def test_a_divida_do_caixa_nao_cresce() -> None:
     """A lista da Onda 2 so encolhe: mutacao de dinheiro nova ja nasce com chave."""
     com_none = {

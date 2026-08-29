@@ -96,6 +96,18 @@ class Action:
     # no contrato (test_action_idempotency_contract) em vez de nascer insegura
     # em silencio. Quem nao precisa de chave declara `idempotency="none"` e
     # justifica na allowlist do teste.
+    #
+    # O vocabulario e fechado, e o teste o verifica:
+    #   "required"           — precisa de chave; quem chama a manda
+    #   "client_request_id"  — a chave e essa, e o servidor a usa de fato
+    #   "ledger"             — quem protege e um registro do servidor (o ledger de
+    #                          tickets da cozinha, por `line_id`), NAO a chave do
+    #                          cliente. Existe porque `fire_tab` prometia
+    #                          `client_request_id` e essa chave so ia para o log — a
+    #                          diferenca importa para uma fila offline, que nao pode
+    #                          confiar na propria chave ali.
+    #   "recommended"        — chave ajuda, ausencia nao e erro
+    #   "none"               — repetir e inofensivo; exige justificativa na allowlist
     idempotency: str = "required"
     confirmation: dict[str, Any] = field(default_factory=dict)
 
