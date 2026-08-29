@@ -114,33 +114,63 @@ ADR, comentário ou documento justificando. **É lacuna, não decisão.**
 Isso reenquadra o trabalho: não é "abrir uma exceção na máquina de estados". É **consertar uma régua que não
 fecha**.
 
-**O desenho, e é o padrão clássico — transição guardada.** Duas perguntas diferentes, cada uma respondida por
-quem é dono dela:
+**O desenho — e a casa já usa as três camadas; só não usa a do meio para o operador.**
 
-| Pergunta | Quem responde | Onde vive |
+| Camada | Pergunta | Onde vive hoje |
 |---|---|---|
-| Esta transição é possível **para este pedido**? | máquina de estados | `snapshot.lifecycle.transitions`, assado no nascimento — imutável e auditável para sempre |
-| **Este ator** pode executá-la? | RBAC | permissão, resolvida em runtime |
+| **Régua** | esta transição é estruturalmente possível **para este pedido**? | `snapshot.lifecycle.transitions`, assado no nascimento — imutável e auditável |
+| **Política** | é **permitido agora**, cruzando os ciclos de pedido, pagamento e fulfillment? | ✅ existe para o **cliente** (`payment_service.can_cancel`) · ❌ **não existe para o operador** |
+| **Autorização** | **este ator** pode? | RBAC, mais segunda assinatura (PIN) nas exceções auditadas |
 
-Misturar as duas é que seria o erro: uma máquina de estados que conhece cargos está acoplada ao RBAC, e a
-régua deixaria de ser auditável (a resposta a "sob que regras este pedido foi feito?" mudaria a cada deploy).
-A casa **já** faz essa separação — o `setup_groups` é dono do "quem", o snapshot é dono do "o quê". A minha
-proposta anterior a violava.
+**Os três ciclos são mesmo separados** — confirmado no código. `payment_service.can_cancel` cruza duas
+dimensões independentes:
 
-**Fix, e é uma linha de config mais uma guarda de permissão:**
+```python
+if order.status not in _CANCELLABLE_STATUSES:      # {"new", "accepted"} — ciclo do PEDIDO
+    return False
+status = (get_payment_status(order) or "").lower()  # ciclo do PAGAMENTO, via intent do payman
+if status in _UNCERTAIN_STATUSES or has_sufficient_captured_payment(order):
+    return False
+```
 
-1. **Régua:** acrescentar `"cancelled"` à lista de `ready` no `lifecycle.transitions` do canal, no seed. A
-   régua passa a fechar. **Zero mudança no core, zero contorno, zero migration.**
-2. **Quem:** a view exige uma permissão adicional **quando o status atual é avançado** (`ready`). Para `new`,
-   `accepted` e `preparing`, segue valendo `shop.manage_orders` — o Caixa continua cancelando o que sempre
-   cancelou. É o mesmo mecanismo do P2-2, e o resolvedor de códigos **já aceita tupla**.
-3. **Tela:** `can_cancel` na projection = régua **E** permissão do `request.user`. O servidor decide a
-   capacidade; a UI não recalcula nada.
-4. **Reseed do alpha** para os pedidos existentes nascerem com a régua nova — em produção isso não seria
-   necessário nem desejável, mas aqui não há dado real. ⚠️ Reseed do alpha **pede a palavra do Pablo**.
+E o fulfillment é o terceiro (`dispatched`, `delivered`, courier, equipamento). O docstring é explícito sobre
+por que o gate de pagamento existe: *"Estados incertos bloqueiam cancelamento para não cancelar um pedido que
+pode já estar pago."*
 
-**Sub-decisão que sobra:** a régua deve ganhar `cancelled` também em `dispatched` e `delivered`? Proponho
-**não** — depois que o motoboy saiu, o certo é `RETURNED`, que já existe e já está na régua. Ver pergunta 1.
+**O cliente para em `accepted`** — nem chega em `preparing`, e nem depende da régua do canal. A régua do canal
+governa o **operador**.
+
+**A lacuna real, então, não é a régua — é a política do operador.** `cancellation.cancel` é o ponto de entrada
+único dos três caminhos (cliente, operador, timeout) e **só consulta a máquina de estados**. O gate de
+pagamento mora uma camada acima, e **só no caminho do cliente**. Consequência: hoje o operador cancela um
+pedido **pago** e nada no caminho pergunta pelo dinheiro.
+
+**E a casa já resolveu esse caso uma vez, no PDV.** O `completed → cancelled` da régua não é descuido — o
+comentário em `cancellation.cancel` explica que o canal do PDV o declara de propósito ("a venda de balcão
+fecha no commit, e o desfazer da janela precisa passar"), e o endpoint correspondente
+(`POSCancelRecentSaleView`) exige **PIN de gerente**, com o comentário: *"Cancelar venda fechada é exceção
+auditada: sempre sob PIN de gerente."* A terceira camada existe e funciona — só não foi estendida ao Gestor
+de Pedidos.
+
+**Fix, agora em três peças pequenas e cada uma na sua camada:**
+
+1. **Régua** — `"cancelled"` entra em `ready` no `lifecycle.transitions` do canal, no seed. Uma linha. A régua
+   passa a fechar (hoje ela cancela antes e depois, mas não no meio). Zero core, zero migration.
+   ⚠️ **Colide com o [#391](https://github.com/nelsonboulangerie/django-shopman/pull/391)**, que também toca
+   `seed.py` — ver README §5.
+2. **Política** — uma `can_operator_cancel(order)` análoga à do cliente, cruzando pedido × pagamento ×
+   fulfillment, no `shop`. É o que falta, e é o coração deste achado: cancelar pedido **pago** deve exigir
+   decisão explícita sobre o dinheiro, não passar batido.
+3. **Autorização** — permissão para os estados avançados; e, para pedido pago, a **segunda assinatura** que o
+   PDV já usa. Reusar `validate_manager_override`, que já aceita crachá ou usuário+PIN e já recusa
+   autoassinatura.
+
+E `can_cancel` na projection passa a ser régua **E** política **E** permissão — uma pergunta só para a tela,
+respondida pelo servidor.
+
+**Decidido pelo dono (29/08):** `dispatched` e `delivered` **não** ganham `cancelled` — depois que o motoboy
+saiu, o certo é `RETURNED`, que já existe e já está na régua. Cancelar e devolver são fatos diferentes, e
+misturá-los estragaria o B.I. depois.
 
 ### P1-2 — Cancelar ou recusar pedido do iFood vira texto livre quando a lista de motivos falha
 
