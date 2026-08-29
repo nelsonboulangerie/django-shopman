@@ -31,12 +31,27 @@ def test_home_projection_keeps_operational_status_single_sourced(rf):
     assert "notices" in payload
     assert all({"ref", "tone", "title", "message", "priority", "actions"} <= set(notice) for notice in payload["notices"])
     assert payload["shop_status"]["is_open"] in {True, False}
-    # Label agora é copy do registro (SHOP_STATUS_*), granular ("Aberto até 19h",
-    # "Fechado agora. Abrimos amanhã às 7h"). Contratual: não-vazio e o prefixo
-    # bate com o estado.
+    # Label é copy do registro (`SHOP_STATUS_*`), granular e dependente da HORA:
+    # "Aberto até 19h", "Últimos pedidos até 19h" na última hora antes de fechar,
+    # "Fechado agora. Abrimos amanhã às 7h".
+    #
+    # ⚠️ O contrato é "o rótulo é uma das copies DESTE estado", e ele se lê do mesmo
+    # registro que a projection usa. Comparar com literal (`startswith("Aberto")`)
+    # transformava este teste em bomba-relógio: das 18h às 19h a loja está ABERTA e o
+    # rótulo começa com "Últimos pedidos" — e nessa uma hora do dia todo PR do
+    # repositório parava num check obrigatório que nada tinha a ver com ele.
+    from shopman.storefront.presentation import shop_status as shop_status_copy
+
+    esperadas = (
+        ("SHOP_STATUS_OPEN", "SHOP_STATUS_OPEN_UNTIL", "SHOP_STATUS_OPEN_CLOSING_SOON")
+        if payload["shop_status"]["is_open"]
+        else ("SHOP_STATUS_CLOSED", "SHOP_STATUS_CLOSED_OPENS_AT")
+    )
     status_label = payload["shop_status"]["label"]
     assert status_label
-    assert status_label.startswith("Aberto" if payload["shop_status"]["is_open"] else "Fechado")
+    assert any(
+        status_label.startswith(shop_status_copy._copy(chave)) for chave in esperadas
+    ), status_label
 
 
 def test_home_projection_does_not_promote_whatsapp_origin_without_cart(rf):
