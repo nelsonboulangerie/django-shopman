@@ -79,6 +79,31 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 `build_catalog(channel_ref="web")`. Refs canônicos em
 `Command.QA_STOREFRONT_STATES`.
 
+### Os mesmos estados num banco já semeado (`qa_scenarios`)
+
+Chegar nesta tabela custa `seed --flush --profile qa`. O alpha roda o perfil
+`demo`, em que **todo produto tem estoque** — então o "Avise-me" não tinha como
+aparecer na tela para ser testado à mão. O comando `qa_scenarios` faz o recorte
+oposto do reseed: arma o cenário **no banco que já está lá**, um SKU de cada vez.
+
+```bash
+python manage.py qa_scenarios                     # relatório (não escreve)
+python manage.py qa_scenarios --arm               # arma todos os cenários
+python manage.py qa_scenarios --arm sold_out=BF   # esgota a baguete, e só ela
+python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+```
+
+O comando e o perfil `qa` armam os estados pela **mesma função**
+(`seed.apply_storefront_state`), sobre a mesma tabela de SKUs
+(`seed.STOREFRONT_STATES`): o cenário testado à mão é o cenário que a suíte
+afirma, não uma imitação dele. Um quinto estado só do comando, `paused_channel`
+(`ListingItem.is_sellable=False` na vitrine `web`, SKU `CO`), cobre a pausa de
+**superfície** — o produto some do "pode pedir" na loja e segue vendável no
+balcão. Detalhes em [commands.md](commands.md#qa_scenarios); âncora de teste em
+`shopman/storefront/tests/web/test_qa_scenarios_command.py`.
+
 ## Cenários — Caixa e comandas
 
 | Artefato | Estado | Detalhe | Âncora do QA |

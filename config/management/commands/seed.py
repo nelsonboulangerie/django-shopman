@@ -237,6 +237,171 @@ PESO_MASSA_CRUA_G = {
 }
 
 
+# Estoque de abertura da VITRINE, por SKU. Calibrado com as médias diárias REAIS
+# auferidas dos XMLs de NFC-e (acervo _MASTER: jun/2019 pré-pandemia ~816 un/dia;
+# jun/2021 ~601 un/dia; sábado +24% — coberto pelo multiplicador 1.25 de sex/sáb).
+# Madeleine é ~11% do volume da casa; viennoiserie doce ~25%.
+# Ver docs/reports/seed_calibration_2026-07-24.md.
+#
+# Módulo, e não local do `_seed_stock`, porque TRÊS leitores precisam do mesmo
+# alvo: o seed que abre o dia, o `refresh_seed_dates` que repõe um banco
+# envelhecido e o `qa_scenarios` que devolve um SKU ao normal depois de armar um
+# cenário. O `refresh_seed_dates` já carregava uma cópia à mão desta tabela —
+# duas fontes para o mesmo número é drift à espera de acontecer.
+STOCK_VITRINE = {
+    # Rústicos — volumes herdam a calibração dos antecessores
+    "BF": 22,
+    "BE": 12,
+    "CGO": 16,
+    "CPX": 8,
+    "CI": 24,
+    "FE": 20,
+    "TB": 24,
+    "MIB": 18,
+    "PH": 20,
+    # Finos
+    "CT": 42,
+    "PC": 36,
+    "FA": 18,
+    "KP": 8,
+    "ME": 11,
+    "ANC": 16,
+    "CO": 20,
+    "BBB": 24,
+    "PHO": 48,
+    # Salgados de vitrine
+    "CMO": 10,
+    "CMA": 8,
+    "CCOM": 6,
+    "QQ": 10,
+    "JB": 10,
+    "PG": 10,
+    "TI": 4,
+    # Doces
+    "MD": 68,
+    "PPU": 8,
+    "MS": 8,
+    "PU": 10,
+    "TJ": 8,
+    "COMBO-PETIT-DEJ": 8,
+    # Bebidas com estoque físico (água engarrafada)
+    "AG": 48,
+    # Mercearia
+    "MT": 8,
+    "BK": 6,
+    "TP": 8,
+    "PT": 8,
+    "CX": 6,
+    "GL": 24,
+    "QC": 6,
+    "QP": 6,
+    "GR": 12,
+    "THL": 10,
+    "LN": 8,
+}
+
+# Sobras de ontem no cenário novo: LOTES datados de ontem, na própria vitrine
+# (~5-8% da produção do dia). Quem decide o destino é a validade: shelf_life 1
+# vence HOJE (o fechamento baixa como perda_vencido), e o canal remoto respeita
+# os gates de lote (C2).
+LEFTOVER_ITEMS = [
+    ("BF", 2),
+    ("FE", 2),
+    ("TB", 3),
+    ("CI", 2),
+    ("PH", 3),
+    ("MD", 5),
+    ("CT", 3),
+    ("PC", 2),
+]
+
+
+# ── Cenários de disponibilidade da VITRINE (a loja como o cliente vê) ─────────
+# Um estado da vitrine não se descreve, se ARMA: é estoque pronto, estoque
+# planejado e estado comercial em combinação. As funções abaixo são a fonte
+# única desse gesto — o perfil `qa` do seed as usa para nascer com os cenários
+# prontos, e o comando `qa_scenarios` as usa para armar o mesmo cenário num
+# banco JÁ semeado, sem reseed. Duas implementações divergiriam no dia em que
+# um estado ganhasse uma condição a mais.
+
+#: SKU canônico de cada estado no perfil `qa` do seed.
+#: Contrato de docs/reference/qa-seed-scenarios.md.
+STOREFRONT_STATES = {
+    "sold_out": "KP",      # esgotado + "me avise" (vendável, sem plano)
+    "low_stock": "ME",     # últimas unidades (≤ limiar)
+    "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
+    "paused": "TJ",        # pausado pelo operador (is_sellable=False)
+}
+
+#: Pronto que caracteriza "últimas unidades" (limiar padrão do canal = 5).
+STOREFRONT_LOW_STOCK_QTY = 2
+#: Planejado de amanhã que caracteriza "lista de espera / previsto".
+STOREFRONT_PLANNED_QTY = 10
+
+
+def clear_vitrine_stock(sku: str, vitrine, *, reason: str) -> None:
+    """Zera TODO estoque de vitrine do SKU — pronto E planejado.
+
+    O estado precisa nascer limpo: um quant residual da produção de hoje ou de
+    uma fornada já planejada faz "esgotado" virar "previsto" sem avisar ninguém.
+    """
+    from shopman.stockman.models import Quant
+
+    for q in Quant.objects.filter(sku=sku, position=vitrine):
+        if (q._quantity or 0) > 0:
+            stock.adjust(q, Decimal("0"), reason=reason)
+
+
+def apply_storefront_state(
+    state: str,
+    sku: str,
+    *,
+    vitrine,
+    listing_ref: str = "web",
+    reason_prefix: str = "QA vitrine",
+) -> None:
+    """Deixa ``sku`` no estado de vitrine ``state``. Idempotente.
+
+    Estados: ``sold_out`` (esgotado honesto → oferece "me avise"), ``low_stock``
+    (últimas unidades), ``planned`` (sem pronto hoje, fornada amanhã → lista de
+    espera/encomenda), ``paused`` (o operador pausou o produto em TODO canal) e
+    ``paused_channel`` (o operador pausou só esta vitrine; o card continua
+    visível no PDV).
+    """
+    from shopman.offerman.models import ListingItem, Product
+
+    if state == "paused":
+        # Publicado (aparece no cardápio) mas não vendável. É decisão do
+        # operador e se distingue do esgotado honesto: não oferece "me avise".
+        Product.objects.filter(sku=sku).update(is_sellable=False)
+        return
+    if state == "paused_channel":
+        # Pausa de SUPERFÍCIE: o produto segue vendável no balcão e some do
+        # "pode pedir" só na vitrine deste canal.
+        ListingItem.objects.filter(
+            listing__ref=listing_ref, product__sku=sku
+        ).update(is_sellable=False)
+        return
+
+    clear_vitrine_stock(sku, vitrine, reason=f"{reason_prefix} {sku}")
+    if state == "sold_out":
+        return  # sem pronto e sem plano: é o esgotado que habilita "me avise"
+    if state == "low_stock":
+        stock.receive(
+            Decimal(STOREFRONT_LOW_STOCK_QTY), sku=sku, position=vitrine,
+            reason=f"{reason_prefix} {sku}: últimas unidades",
+        )
+        return
+    if state == "planned":
+        stock.receive(
+            Decimal(STOREFRONT_PLANNED_QTY), sku=sku, position=vitrine,
+            target_date=timezone.localdate() + timedelta(days=1),
+            reason=f"{reason_prefix} {sku}: planejado",
+        )
+        return
+    raise ValueError(f"Estado de vitrine desconhecido: {state}")
+
+
 class Command(BaseCommand):
     help = "Popula o banco com dados de produção da Nelson Boulangerie"
 
@@ -423,45 +588,17 @@ class Command(BaseCommand):
         # vazio. Vai depois da vitrine para não disputar os quants dela.
         self._seed_bi_history(products, positions)
 
-    # SKUs canônicos de cada estado de vitrine no perfil qa (datas relativas).
-    QA_STOREFRONT_STATES = {
-        "sold_out": "KP",      # esgotado + "me avise" (vendável, sem plano)
-        "low_stock": "ME",    # últimas unidades (≤ limiar)
-        "planned": "PU",          # lista de espera / previsto (sem pronto, com plano)
-        "paused": "TJ",       # pausado pelo operador (is_sellable=False)
-    }
+    #: SKU canônico de cada estado de vitrine no perfil qa (datas relativas).
+    #: Fonte única no módulo — o `qa_scenarios` arma os mesmos estados sem reseed.
+    QA_STOREFRONT_STATES = STOREFRONT_STATES
 
     def _seed_qa_storefront_availability(self, positions):
         """Deixa 4 SKUs reais em cada estado de disponibilidade da LOJA, para QA/
         testes da vitrine do cliente (o resto continua ``available``). Determinístico.
         """
-        from shopman.offerman.models import Product
-        from shopman.stockman.models import Quant
-
         vitrine = positions["vitrine"]
-        today = timezone.localdate()
-
-        def _zero_all(sku: str) -> None:
-            # Zera TODO estoque de vitrine do SKU (pronto e planejado) — para o
-            # estado nascer limpo, sem quant residual da produção de hoje/futura.
-            for q in Quant.objects.filter(sku=sku, position=vitrine):
-                if (q._quantity or 0) > 0:
-                    stock.adjust(q, Decimal("0"), reason=f"QA vitrine {sku}")
-
-        s = self.QA_STOREFRONT_STATES
-        # 1) Esgotado → "me avise": sem pronto, sem plano.
-        _zero_all(s["sold_out"])
-        # 2) Últimas unidades: pronto = 2 (limiar padrão = 5).
-        _zero_all(s["low_stock"])
-        stock.receive(Decimal("2"), sku=s["low_stock"], position=vitrine,
-                      reason=f"QA vitrine {s['low_stock']}: últimas unidades")
-        # 3) Lista de espera / previsto: sem pronto, mas produção planejada amanhã.
-        _zero_all(s["planned"])
-        stock.receive(Decimal("10"), sku=s["planned"], position=vitrine,
-                      target_date=today + timedelta(days=1),
-                      reason=f"QA vitrine {s['planned']}: planejado")
-        # 4) Pausado pelo operador: publicado, aparece, mas não vendável.
-        Product.objects.filter(sku=s["paused"]).update(is_sellable=False)
+        for state, sku in self.QA_STOREFRONT_STATES.items():
+            apply_storefront_state(state, sku, vitrine=vitrine)
 
         self.stdout.write("  ✅ Vitrine QA: esgotado/últimas/lista-de-espera/pausado")
 
@@ -2562,64 +2699,8 @@ class Command(BaseCommand):
         self.stdout.write("  📊 Estoque inicial...")
 
         vitrine = positions["vitrine"]
-        # Quantidades calibradas com as médias diárias REAIS auferidas dos XMLs de
-        # NFC-e (acervo _MASTER: jun/2019 pré-pandemia ~816 un/dia; jun/2021 ~601
-        # un/dia; sábado +24% — coberto pelo multiplicador 1.25 de sex/sáb).
-        # Madeleine é ~11% do volume da casa; viennoiserie doce ~25%.
-        # Ver docs/reports/seed_calibration_2026-07-24.md.
-        stock_data = {
-            # Rústicos — volumes herdam a calibração dos antecessores
-            "BF": 22,
-            "BE": 12,
-            "CGO": 16,
-            "CPX": 8,
-            "CI": 24,
-            "FE": 20,
-            "TB": 24,
-            "MIB": 18,
-            "PH": 20,
-            # Finos
-            "CT": 42,
-            "PC": 36,
-            "FA": 18,
-            "KP": 8,
-            "ME": 11,
-            "ANC": 16,
-            "CO": 20,
-            "BBB": 24,
-            "PHO": 48,
-            # Salgados de vitrine
-            "CMO": 10,
-            "CMA": 8,
-            "CCOM": 6,
-            "QQ": 10,
-            "JB": 10,
-            "PG": 10,
-            "TI": 4,
-            # Doces
-            "MD": 68,
-            "PPU": 8,
-            "MS": 8,
-            "PU": 10,
-            "TJ": 8,
-            "COMBO-PETIT-DEJ": 8,
-            # Bebidas com estoque físico (água engarrafada)
-            "AG": 48,
-            # Mercearia
-            "MT": 8,
-            "BK": 6,
-            "TP": 8,
-            "PT": 8,
-            "CX": 6,
-            "GL": 24,
-            "QC": 6,
-            "QP": 6,
-            "GR": 12,
-            "THL": 10,
-            "LN": 8,
-        }
 
-        for sku, qty in stock_data.items():
+        for sku, qty in STOCK_VITRINE.items():
             if sku in products:
                 stock.receive(
                     quantity=Decimal(str(qty)),
@@ -2628,26 +2709,12 @@ class Command(BaseCommand):
                     reason=f"Estoque inicial seed Nelson: {sku}",
                 )
 
-        # Sobras de ontem no cenário novo: LOTES datados de ontem, na própria
-        # vitrine (~5-8% da produção do dia). Quem decide o destino é a
-        # validade: shelf_life 1 vence HOJE (o fechamento baixa como
-        # perda_vencido), e o canal remoto respeita os gates de lote (C2).
         from datetime import timedelta as _td
 
         from shopman.stockman.models import Batch as _Batch
 
         yesterday = date.today() - _td(days=1)
-        leftover_items = [
-            ("BF", 2),
-            ("FE", 2),
-            ("TB", 3),
-            ("CI", 2),
-            ("PH", 3),
-            ("MD", 5),
-            ("CT", 3),
-            ("PC", 2),
-        ]
-        for sku, qty in leftover_items:
+        for sku, qty in LEFTOVER_ITEMS:
             if sku not in products:
                 continue
             shelf = products[sku].shelf_life_days or 0
@@ -2669,7 +2736,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(
-            f"  ✅ Estoque para {len(stock_data)} produtos + {len(leftover_items)} sobras de ontem (lotes datados)"
+            f"  ✅ Estoque para {len(STOCK_VITRINE)} produtos + {len(LEFTOVER_ITEMS)} sobras de ontem (lotes datados)"
         )
 
     # ────────────────────────────────────────────────────────────────

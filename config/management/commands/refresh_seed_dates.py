@@ -50,29 +50,13 @@ from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 from config.management.commands.seed import (
+    LEFTOVER_ITEMS,
     PREP_DAYS_OF_COVER,
     PRODUCTION_PLAN,
+    STOCK_VITRINE,
     material_opening_targets,
     prep_daily_needs,
 )
-
-# Alvos de vitrine e sobras de ontem — espelham o seed (ver _seed_stock).
-STOCK_VITRINE = {
-    "BF": 22, "BE": 12, "CGO": 16, "CPX": 8, "CI": 24,
-    "FE": 20, "TB": 24, "MIB": 18, "PH": 20,
-    "CT": 42, "PC": 36, "FA": 18, "KP": 8, "ME": 11, "ANC": 16, "CO": 20,
-    "BBB": 24, "PHO": 48,
-    "CMO": 10, "CMA": 8, "CCOM": 6, "QQ": 10, "JB": 10, "PG": 10, "TI": 4,
-    "MD": 68, "PPU": 8, "MS": 8, "PU": 10, "TJ": 8,
-    "COMBO-PETIT-DEJ": 8,
-    "AG": 48,
-    "MT": 8, "BK": 6, "TP": 8, "PT": 8, "CX": 6, "GL": 24,
-    "QC": 6, "QP": 6, "GR": 12, "THL": 10, "LN": 8,
-}
-LEFTOVER_ITEMS = [
-    ("BF", 2), ("FE", 2), ("TB", 3), ("CI", 2),
-    ("PH", 3), ("MD", 5), ("CT", 3), ("PC", 2),
-]
 
 
 class Command(BaseCommand):
