@@ -5,7 +5,7 @@ GET  /api/v1/backstage/kds/<ref>/                 → KDS board projection
 POST /api/v1/backstage/kds/tickets/<pk>/items/    → toggle item checked
 POST /api/v1/backstage/kds/tickets/<pk>/done/     → mark ticket done
 POST /api/v1/backstage/kds/expedition/<pk>/action/ → dispatch/complete
-GET  /api/v1/backstage/kds/cliente/               → customer pickup board
+GET  /api/v1/backstage/kds/pickup/               → customer pickup board
 """
 
 from __future__ import annotations
