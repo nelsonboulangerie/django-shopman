@@ -766,7 +766,20 @@ def build_production_weighing(
     }
     tickets: dict[tuple[int, str], dict] = {}
 
-    def add_ticket(recipe: Recipe, quantity: Decimal, unit: str, source: str) -> None:
+    def add_ticket(
+        recipe: Recipe,
+        quantity: Decimal,
+        unit: str,
+        source: str,
+        frozen: tuple[tuple[_RecipeItemData, ...], Decimal] | None = None,
+    ) -> None:
+        """Acumula um ticket. ``frozen`` é a ficha CONGELADA no planejamento desta WO.
+
+        ⚠️ ``None`` não é descuido: o ticket de sub-preparo descreve uma receita que não
+        foi planejada como work order própria, então ela não TEM ficha congelada. O que
+        o congelamento do pai já protege é a QUANTIDADE que chega aqui — o coeficiente
+        que a escalou saiu do snapshot dele.
+        """
         if base_recipe and recipe.output_sku != base_recipe:
             return
         key = (recipe.pk, unit)
@@ -777,18 +790,32 @@ def build_production_weighing(
                 "quantity": Decimal("0"),
                 "unit": unit,
                 "sources": [],
+                "frozen": frozen,
             },
         )
+        # Duas WOs da mesma receita planejadas em momentos diferentes podem ter fichas
+        # congeladas distintas, e o ticket é um só. Fica a primeira — ela ao menos é a
+        # verdade de uma das fornadas, enquanto a receita viva pode não ser a de nenhuma
+        # — e a divergência vai para o log, porque é sintoma de ficha editada no meio do
+        # dia, não ruído.
+        if frozen is not None and entry["frozen"] is not None and entry["frozen"] != frozen:
+            logger.warning(
+                "producao.pesagem_ficha_divergente recipe=%s — duas fornadas do dia "
+                "congelaram fichas diferentes; o ticket usa a primeira.",
+                recipe.ref,
+            )
+        elif entry["frozen"] is None:
+            entry["frozen"] = frozen
         entry["quantity"] += quantity
         if source not in entry["sources"]:
             entry["sources"].append(source)
 
     for work_order in work_orders:
         recipe = work_order.recipe
-        if not recipe.batch_size:
+        items, batch_size = _work_order_recipe(work_order)
+        if not batch_size:
             continue
-        items = _work_order_recipe_items(work_order)
-        coefficient = Decimal(str(work_order.quantity)) / recipe.batch_size
+        coefficient = Decimal(str(work_order.quantity)) / batch_size
         base_items = [
             item for item in items
             if item.input_sku in active_recipes and active_recipes[item.input_sku].pk != recipe.pk
@@ -807,7 +834,9 @@ def build_production_weighing(
                 )
             continue
 
-        add_ticket(recipe, Decimal(str(work_order.quantity)), "un.", source)
+        add_ticket(
+            recipe, Decimal(str(work_order.quantity)), "un.", source, frozen=(items, batch_size)
+        )
 
     ingredient_skus = {
         item.input_sku
@@ -893,10 +922,14 @@ def build_production_mise_en_place(
     if not expand:
         for work_order in work_orders:
             recipe = work_order.recipe
-            if not recipe.batch_size:
+            # Mesma origem de erro da pesagem: aqui os itens eram os VIVOS com o
+            # rendimento VIVO — internamente coerente, mas ignorando o snapshot que o
+            # planejamento congelou. As duas telas passam a contar a mesma história.
+            items, batch_size = _work_order_recipe(work_order)
+            if not batch_size:
                 continue
-            coefficient = Decimal(str(work_order.quantity)) / recipe.batch_size
-            for item in _recipe_items(recipe):
+            coefficient = Decimal(str(work_order.quantity)) / batch_size
+            for item in items:
                 breakdown_by_sku.setdefault(item.input_sku, []).append(
                     MiseEnPlaceBreakdownProjection(
                         recipe_name=recipe.name or recipe.ref,
@@ -2237,7 +2270,13 @@ def _build_weighing_ticket(
     recipe = entry["recipe"]
     output_quantity = Decimal(str(entry["quantity"]))
     output_unit = str(entry["unit"])
-    coefficient = output_quantity / recipe.batch_size
+    # ⚠️ A ficha CONGELADA no planejamento manda aqui — é este número que o padeiro põe
+    # na balança. Ler a receita viva fazia uma edição de rendimento no meio da manhã
+    # reescrever a etiqueta em silêncio: `batch_size` de 10 para 20 corta todos os pesos
+    # pela metade, e a etiqueta cega não dá pista nenhuma.
+    frozen_items, frozen_batch = entry.get("frozen") or (None, None)
+    items = frozen_items if frozen_items is not None else _recipe_items(recipe)
+    coefficient = output_quantity / (frozen_batch or recipe.batch_size)
     ingredients = tuple(
         ProductionWeighingIngredientProjection(
             sku=item.input_sku,
@@ -2245,7 +2284,7 @@ def _build_weighing_ticket(
             quantity_display=_measure(Decimal(str(item.quantity)) * coefficient, item.unit),
             is_subrecipe=item.input_sku in active_recipes,
         )
-        for item in _recipe_items(recipe)
+        for item in items
     )
 
     # Peso da massa = soma dos insumos mássicos escalados (kg/g/mg → kg).
@@ -2253,7 +2292,7 @@ def _build_weighing_ticket(
     dough_weight = sum(
         (
             Decimal(str(item.quantity)) * coefficient * mass_factors[item.unit]
-            for item in _recipe_items(recipe)
+            for item in items
             if item.unit in mass_factors
         ),
         Decimal("0"),
@@ -2311,11 +2350,24 @@ def _recipe_items(recipe: Recipe) -> tuple[_RecipeItemData, ...]:
     )
 
 
-def _work_order_recipe_items(work_order: WorkOrder) -> tuple[_RecipeItemData, ...]:
+def _work_order_recipe(work_order: WorkOrder) -> tuple[tuple[_RecipeItemData, ...], Decimal]:
+    """Os itens da ficha **e** o rendimento, sempre da MESMA fonte.
+
+    ⚠️ Voltam juntos porque separá-los foi o defeito. A pesagem lia os itens do snapshot
+    (congelado no planejamento) e dividia pelo ``batch_size`` da receita VIVA. Editar o
+    rendimento entre o planejamento e a pesagem — a mesma manhã basta — dava quantidades
+    congeladas sobre um rendimento novo: um ``batch_size`` de 10 para 20 corta todos os
+    pesos pela metade, e a etiqueta cega não dá pista nenhuma. O padeiro pesa 300 g onde
+    a ficha manda 600 g, e nada avisa.
+
+    Os outros dois consumidores do snapshot já liam ``snapshot["batch_size"]``; era a
+    pesagem que misturava. O plano de domínio manda literalmente preferir o snapshot,
+    "evitando que uma edição posterior da receita altere silenciosamente a pesagem".
+    """
     snapshot = (work_order.meta or {}).get("_recipe_snapshot")
     if not snapshot:
-        return _recipe_items(work_order.recipe)
-    return tuple(
+        return _recipe_items(work_order.recipe), Decimal(str(work_order.recipe.batch_size or 0))
+    itens = tuple(
         _RecipeItemData(
             input_sku=str(item["input_sku"]),
             quantity=Decimal(str(item["quantity"])),
@@ -2324,6 +2376,11 @@ def _work_order_recipe_items(work_order: WorkOrder) -> tuple[_RecipeItemData, ..
         )
         for index, item in enumerate(snapshot.get("items") or [])
     )
+    # Snapshot antigo sem `batch_size` cai no rendimento vivo — que é o que ele já fazia,
+    # e é melhor que dividir por zero.
+    bruto = snapshot.get("batch_size")
+    rendimento = Decimal(str(bruto)) if bruto else Decimal(str(work_order.recipe.batch_size or 0))
+    return itens, rendimento
 
 
 def _ingredient_name(
