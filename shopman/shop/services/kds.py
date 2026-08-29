@@ -449,22 +449,38 @@ def _ticket_order(ticket, *, for_update: bool = False):
     return qs.first()
 
 
-def toggle_ticket_item(ticket, *, index: int, actor: str) -> bool:
-    """Toggle a KDS ticket item and start preparation when work begins."""
+def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) -> bool:
+    """Escreve o estado DESEJADO de um item, e inicia o preparo quando o trabalho começa.
+
+    ⚠️ É `set`, e não `toggle`, e a diferença aparece com dois tablets na mesma
+    bancada — que é a configuração normal de uma cozinha.
+
+    Com toggle, quem decide "isto muda ou não" precisa ler o estado antes, e essa
+    leitura acontecia FORA do lock: o `select_for_update` protegia só a inversão.
+    Dois cozinheiros tocam o mesmo item quase juntos, ambos querendo MARCAR. A
+    requisição A lê "desmarcado" → inverte → marcado. A B, que também tinha lido
+    "desmarcado", inverte → DESMARCADO. As duas telas mostram marcado por otimismo
+    e, meio segundo depois, a reconciliação reverte as duas juntas: o cozinheiro vê
+    o pão que ele acabou de marcar desmarcar sozinho, sem explicação na tela.
+
+    Escrevendo o estado desejado dentro do lock, a operação vira idempotente **por
+    construção** — que é o que a API já dizia ser. O teste chamado "idempotent" só
+    passava porque roda em série.
+    """
     from django.db import transaction
 
     with transaction.atomic():
         ticket = _locked_ticket(ticket)
-        return _toggle_ticket_item_locked(ticket, index=index, actor=actor)
+        return _set_ticket_item_checked_locked(ticket, index=index, checked=checked, actor=actor)
 
 
-def _toggle_ticket_item_locked(ticket, *, index: int, actor: str) -> bool:
+def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor: str) -> bool:
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     if not 0 <= index < len(ticket.items):
         return False
 
-    ticket.items[index]["checked"] = not ticket.items[index].get("checked", False)
+    ticket.items[index]["checked"] = checked
 
     if ticket.status == "pending" and any(it.get("checked") for it in ticket.items):
         ticket.status = "in_progress"

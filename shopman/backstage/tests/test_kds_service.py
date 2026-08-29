@@ -24,26 +24,45 @@ def ticket(db):
     )
 
 
+# ⚠️ Estes dois testes AFIRMAVAM O DEFEITO. Um se chamava `..._is_idempotent` e
+# provava `core.assert_not_called()`; o outro, `..._delegates_only_when_state_changes`.
+# Os dois fixavam a leitura PRÉ-LOCK — a decisão "isto muda ou não" tomada com dado
+# que envelhece entre ler e travar, que é onde a outra requisição escreve. Com dois
+# tablets na bancada, o item desmarcava sozinho.
+#
+# Idempotente não é "a segunda chamada é pulada": é "a segunda chamada deixa o mesmo
+# estado". A primeira definição exige comparar antes; a segunda, não — e é só a
+# segunda que sobrevive à concorrência.
+
+
 @pytest.mark.django_db
-def test_set_ticket_item_checked_is_idempotent(ticket, monkeypatch):
-    core = Mock()
-    monkeypatch.setattr(kds.kds_core, "toggle_ticket_item", core)
+def test_set_ticket_item_checked_is_idempotent(ticket):
+    """Chamar duas vezes com o mesmo estado desejado deixa o mesmo estado.
+
+    Sem mock: o que importa aqui é o RESULTADO, e o mock era justamente o que
+    permitia afirmar "não chamou" como se fosse idempotência.
+    """
+    kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:op")
+    kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:outro")
+
+    ticket.refresh_from_db()
+    assert ticket.items[0]["checked"] is True
+
+
+@pytest.mark.django_db
+def test_set_ticket_item_checked_delegates_always(ticket, monkeypatch):
+    """Delega SEMPRE — inclusive quando o estado atual já é o desejado.
+
+    É o oposto do que este teste afirmava, e é o conserto: enquanto o serviço
+    comparasse antes de travar, a corrida voltava.
+    """
+    core = Mock(return_value=True)
+    monkeypatch.setattr(kds.kds_core, "set_ticket_item_checked", core)
 
     result = kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=False, actor="kds:op")
 
     assert result.pk == ticket.pk
-    core.assert_not_called()
-
-
-@pytest.mark.django_db
-def test_set_ticket_item_checked_delegates_only_when_state_changes(ticket, monkeypatch):
-    core = Mock()
-    monkeypatch.setattr(kds.kds_core, "toggle_ticket_item", core)
-
-    result = kds.set_ticket_item_checked(ticket_pk=ticket.pk, index=0, checked=True, actor="kds:op")
-
-    assert result.pk == ticket.pk
-    core.assert_called_once_with(ticket, index=0, actor="kds:op")
+    core.assert_called_once_with(ticket, index=0, checked=False, actor="kds:op")
 
 
 @pytest.mark.django_db
