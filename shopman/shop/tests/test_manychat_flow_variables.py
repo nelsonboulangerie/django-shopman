@@ -299,3 +299,40 @@ def test_no_two_variables_carry_the_same_value(db):
 
     repeated = {value: names for value, names in by_value.items() if len(names) > 1}
     assert not repeated, f"variáveis diferentes com o mesmo valor: {repeated}"
+
+
+def test_the_personal_access_link_is_never_written_into_the_profile(calls, with_flow):
+    """⚠️ O link pessoal é a CHAVE DE LOGIN do cliente, com validade de horas.
+
+    Como campo personalizado, ele passava a viver em texto claro dentro do perfil dele
+    numa ferramenta SaaS de marketing — legível por qualquer pessoa com acesso à conta,
+    e utilizável enquanto o cliente não clicasse. Quem chama informa o link COMUM, e é
+    ele que sai: a CTA continua resolvendo, sem a chave junto.
+    """
+    mc.send(
+        "+5543984049009",
+        "stock_arrived",
+        {
+            "action_url": "https://loja.example.com/a?t=segredo-de-login",
+            "action_url_public": "/p/cro",
+        },
+    )
+
+    fields = _field_payloads(calls)
+    assert fields["action_url"] == "/p/cro"
+    assert "segredo-de-login" not in str(calls)
+
+
+def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_flow):
+    """A recusa é estrutural: token na query não sai, com ou sem link comum informado.
+
+    Botão em branco é o lado seguro de "gravar a chave de login do cliente num SaaS".
+    """
+    mc.send(
+        "+5543984049009",
+        "stock_arrived",
+        {"action_url": "https://loja.example.com/a?t=segredo-de-login"},
+    )
+
+    assert "action_url" not in _field_payloads(calls)
+    assert "segredo-de-login" not in str(calls)

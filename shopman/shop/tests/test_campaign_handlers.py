@@ -254,11 +254,14 @@ class TestNotifyHandler:
             SimpleNamespace(phone="+5543999990001"),
             SimpleNamespace(phone="+5543999990002"),
         )
+        # ⚠️ O mock agora é `select_wave`, e não `resolve`. Mockar `resolve` e montar
+        # a divisão de ondas à mão codificava exatamente o dicionário de três chaves
+        # que ERA o bug: `general@14` caía no vazio e o anúncio fechava como enviado.
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify") as notify,
         ):
-            resolve.return_value.all_recipients.return_value = recipients
+            select_wave.return_value = recipients
             notify.return_value = SimpleNamespace(success=True)
             self._handle(announcement)
         assert notify.call_count == 2
@@ -268,12 +271,10 @@ class TestNotifyHandler:
     def test_a_failed_send_is_counted_not_swallowed(self):
         announcement = self._announcement()
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify", side_effect=RuntimeError("wa off")),
         ):
-            resolve.return_value.all_recipients.return_value = (
-                SimpleNamespace(phone="+5543999990001"),
-            )
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990001"),)
             self._handle(announcement)
         announcement.refresh_from_db()
         assert announcement.platform_results["whatsapp"]["failed"] == 1
@@ -281,16 +282,37 @@ class TestNotifyHandler:
     def test_the_vip_wave_only_reaches_vips(self):
         announcement = self._announcement()
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify") as notify,
         ):
-            resolve.return_value.vip = (SimpleNamespace(phone="+5543999990010"),)
-            resolve.return_value.general = (
-                SimpleNamespace(phone="+5543999990011"),
-                SimpleNamespace(phone="+5543999990012"),
-            )
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990010"),)
             notify.return_value = SimpleNamespace(success=True)
             self._handle(announcement, wave="vip")
+        assert notify.call_count == 1
+        # E o handler PERGUNTOU pela onda pedida, em vez de traduzir por conta própria.
+        assert select_wave.call_args.args[1] == "vip"
+
+    def test_a_onda_de_hora_habitual_chega_em_alguem(self):
+        """`general@14` caía no default VAZIO do dicionário de três chaves.
+
+        Zero destinatários, onda gravada com "0 enviados, 0 falharam" e — como "onda
+        vazia não é falha" — status `sent`. O anúncio fechava como publicado, ninguém
+        daquela onda recebia, e NADA indicava isso.
+
+        Latente hoje (só o Admin escreve a janela de hora preferida), mas latente com o
+        mecanismo pronto, e com o pior modo de falha que esta superfície tem: relatório
+        de entrega mentindo.
+        """
+        announcement = self._announcement()
+        with (
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
+            patch("shopman.shop.notifications.notify") as notify,
+        ):
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990020"),)
+            notify.return_value = SimpleNamespace(success=True)
+            self._handle(announcement, wave="general@14")
+
+        assert select_wave.call_args.args[1] == "general@14"
         assert notify.call_count == 1
 
     def test_empty_audience_still_closes_the_post(self):

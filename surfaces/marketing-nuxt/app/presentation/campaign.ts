@@ -226,3 +226,27 @@ export function shortDateTime(iso: string): string {
 export function isStillReviewable(announcement: Announcement): boolean {
   return announcement.status === "pending_review" && announcement.expires_in_minutes !== 0;
 }
+
+/**
+ * O que dizer depois de aprovar — pela RESPOSTA do servidor, nunca pelo corpo enviado.
+ *
+ * ⚠️ O toast lia o corpo ENVIADO: sem data ele dizia "Anúncio publicado." mesmo quando
+ * o servidor tinha AGENDADO (campanha com janela de horas preferidas nasce com data na
+ * próxima janela). O gestor fechava a tela achando que já estava no ar. Quem sabe o que
+ * aconteceu é o servidor, e ele devolve `scheduled`.
+ */
+export function approvalMessage(resposta: { scheduled?: boolean } | null | undefined): string {
+  return resposta?.scheduled ? "Anúncio agendado." : "Anúncio publicado.";
+}
+
+/**
+ * O corpo do "Publicar": sem data marcada, o gestor quer AGORA.
+ *
+ * ⚠️ Sem `publish_now`, aprovar sem data deixava o anúncio parado esperando a agenda que
+ * a campanha tinha posto sozinha — e o botão se chama "Publicar".
+ */
+export function approvalBody<T extends { publish_at?: string }>(
+  edits: T,
+): T & { publish_now?: boolean } {
+  return edits.publish_at ? { ...edits } : { ...edits, publish_now: true };
+}

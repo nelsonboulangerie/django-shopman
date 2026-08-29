@@ -9,6 +9,8 @@ import {
   parseHashtags,
   platformsSummary,
   announcementOutcome,
+  approvalBody,
+  approvalMessage,
   resultLabel,
   resultTone,
   shortDateTime,
@@ -256,5 +258,49 @@ describe("isStillReviewable", () => {
 
   it("refuses one that was already decided", () => {
     expect(isStillReviewable(announcement({ status: "published" }))).toBe(false);
+  });
+});
+
+describe("approvalMessage", () => {
+  it("says scheduled when the SERVER scheduled", () => {
+    // ⚠️ O toast dizia "publicado" sempre. Uma campanha com janela de horas preferidas
+    // faz o servidor AGENDAR, e o gestor fechava a tela achando que já estava no ar.
+    expect(approvalMessage({ scheduled: true })).toBe("Anúncio agendado.");
+  });
+
+  it("says published when the server dispatched", () => {
+    expect(approvalMessage({ scheduled: false })).toBe("Anúncio publicado.");
+  });
+
+  it("does not invent a schedule when the server said nothing", () => {
+    expect(approvalMessage({})).toBe("Anúncio publicado.");
+    expect(approvalMessage(null)).toBe("Anúncio publicado.");
+    expect(approvalMessage(undefined)).toBe("Anúncio publicado.");
+  });
+});
+
+describe("approvalBody", () => {
+  it("asks to publish NOW when no date was set", () => {
+    // ⚠️ Sem isto, "Publicar" não publicava: o anúncio nascia com data na próxima
+    // janela da campanha, a aprovação respeitava a agenda e nada era despachado.
+    expect(approvalBody({})).toEqual({ publish_now: true });
+    expect(approvalBody({ publish_at: "" })).toEqual({
+      publish_at: "",
+      publish_now: true,
+    });
+  });
+
+  it("respects a date the manager actually set", () => {
+    expect(approvalBody({ publish_at: "2026-09-01T07:00" })).toEqual({
+      publish_at: "2026-09-01T07:00",
+    });
+  });
+
+  it("carries the rest of the edits through untouched", () => {
+    expect(approvalBody({ body: "Saiu do forno", publish_at: "" })).toEqual({
+      body: "Saiu do forno",
+      publish_at: "",
+      publish_now: true,
+    });
   });
 });

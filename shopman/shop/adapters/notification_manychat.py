@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -255,8 +256,9 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
             # Mantido por rastreabilidade do lado do ManyChat; NÃO é a fonte das
-            # variáveis do flow (ver acima).
-            "flow_token": ctx,
+            # variáveis do flow (ver acima). Vai o mesmo recorte dos campos: mandar o
+            # contexto CRU punha aqui exatamente o que a denylist barrava logo acima.
+            "flow_token": _shareable_context(ctx),
         }
         result = _api_call("/sending/sendFlow", payload, mc_config)
     else:
@@ -282,7 +284,65 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 _FIELD_DENYLIST = frozenset({
     "session_key", "sku", "subscriber_id", "recipient", "phone",
     "customer_ref", "customer_uuid", "hold_ids",
+    # Chave auxiliar: existe só para o `action_url` que SAI daqui poder ser o link
+    # COMUM (ver `_safe_field_value`). Ela mesma nunca viaja.
+    "action_url_public",
 })
+
+
+#: Token de acesso na query (`/a?t=<token>`) — a forma do link pessoal cunhado em
+#: `campaign_identity.personal_link`.
+_ACCESS_TOKEN_IN_QUERY = re.compile(r"[?&]t=")
+
+
+def _safe_field_value(name: str, value, ctx: dict):
+    """O valor que pode SAIR daqui, ou ``None`` para "não mande este campo".
+
+    ⚠️ `action_url` carrega um LINK DE ACESSO PESSOAL: o despacho o cunha por
+    destinatário, ele vale 24h e cria sessão de cliente identificado por número.
+    Como campo personalizado, esse token passava a viver em texto claro no perfil do
+    cliente dentro de uma ferramenta SaaS de marketing — legível por qualquer pessoa
+    com acesso à conta, e utilizável enquanto o cliente não clicasse.
+
+    ⚠️ E simplesmente NÃO mandar não serve: o flow do ManyChat não lê o `flow_token`,
+    as variáveis dele saem dos campos personalizados. Um `action_url` ausente sai como
+    botão EM BRANCO, e trocar um vazamento por uma CTA quebrada não é conserto.
+
+    Então o que sai é o link COMUM, informado por quem chama em `action_url_public`.
+    O cliente chega anônimo por esse caminho e o checkout pede login — é o preço, e é
+    o lado seguro dele. Os canais que interpolam o texto na hora (SMS, e-mail) seguem
+    recebendo o pessoal: eles não gravam nada em lugar nenhum.
+
+    A recusa é ESTRUTURAL, não uma lista de chaves: valor com token de acesso na query
+    nunca sai, mesmo que um chamador futuro esqueça de informar o link comum.
+    """
+    if name != "action_url":
+        return value
+    public = str(ctx.get("action_url_public") or "").strip()
+    if public:
+        return public
+    return None if _ACCESS_TOKEN_IN_QUERY.search(str(value)) else value
+
+
+def _shareable_context(ctx: dict) -> dict:
+    """O recorte do contexto que pode SAIR daqui para o ManyChat.
+
+    Um só filtro para os dois caminhos que mandam contexto — os campos personalizados
+    e o `flow_token`. Eram dois antes, e o `flow_token` mandava o contexto CRU: o que a
+    denylist barrava no perfil saía inteiro no corpo do envio. Filtro que vale em
+    metade das saídas não é filtro.
+    """
+    shareable: dict[str, str] = {}
+    for name, value in (ctx or {}).items():
+        if name in _FIELD_DENYLIST or not isinstance(value, (str, int, float)):
+            continue
+        safe = _safe_field_value(name, value, ctx or {})
+        if safe is None:
+            continue
+        text = str(safe).strip()
+        if text:
+            shareable[name] = text
+    return shareable
 
 
 def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
@@ -297,12 +357,7 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
     do vocabulário de integração.
     """
     pushed = 0
-    for name, value in (ctx or {}).items():
-        if name in _FIELD_DENYLIST or not isinstance(value, (str, int, float)):
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
+    for name, text in _shareable_context(ctx).items():
         result = _api_call(
             "/subscriber/setCustomFieldByName",
             {"subscriber_id": subscriber_id, "field_name": name, "field_value": text},
