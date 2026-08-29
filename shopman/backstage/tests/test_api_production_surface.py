@@ -40,7 +40,21 @@ def _operate_production_perm() -> Permission:
 
 @pytest.fixture
 def production_operator(db):
+    """Um operador de produção como a casa o define: superfície MAIS colunas.
+
+    ⚠️ A fixture concedia só `operate_production`, e a suíte inteira media um usuário
+    que não existe em nenhum dos dois grupos seedados. Ver `production_grants`.
+    """
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
     user = User.objects.create_user("prod-api", password="pw", is_staff=True)
+    return grant_production_operator(user)
+
+
+@pytest.fixture
+def production_operator_sem_colunas(db):
+    """O grant customizado: alcança a superfície, não pode escrever coluna nenhuma."""
+    user = User.objects.create_user("prod-sem-coluna", password="pw", is_staff=True)
     user.user_permissions.add(_operate_production_perm())
     return user
 
@@ -300,3 +314,29 @@ def test_plan_order_shortage_returns_structured_envelope(
     assert error["code"] == "order_shortage"
     assert error["required"] == "12"
     assert error["order_refs"] == ["ORD-1", "ORD-2"]
+
+
+def test_a_escrita_de_producao_confere_a_coluna_tambem(client, production_operator_sem_colunas):
+    """⚠️ A escrita conferia SÓ o gate de superfície.
+
+    O operador tocava "Planejar" e a cadeia inteira — `apply_planned` →
+    `set_planned_quantity` → `CraftPlanning` → sinal `production_changed` → o handler
+    do stockman criando o Quant planejado — passava sem ninguém perguntar por
+    `shop.edit_production_planned`. Idem para start e finish, e finish é a escrita
+    `kind=MAKE` no ledger de estoque.
+
+    O resolvedor de coluna já existia e já era testado; ele só governava a LEITURA.
+    Não é exposição ativa hoje (os dois grupos seedados têm as colunas), é buraco de
+    arquitetura de gate — o dia em que alguém fizer um grant customizado, ele morde.
+    """
+    client.force_login(production_operator_sem_colunas)
+
+    resposta = client.post(
+        "/api/v1/backstage/production/plan/",
+        {"recipe_id": 1, "target_date": "2026-08-29", "quantity": 10},
+        content_type="application/json",
+    )
+
+    assert resposta.status_code == 403
+    # A recusa NOMEIA o que falta: "proibido" sozinho manda o gestor adivinhar.
+    assert "edit_production_planned" in resposta.json()["detail"]

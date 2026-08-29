@@ -10,30 +10,23 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from django.contrib.auth.models import Permission, User
-from django.contrib.contenttypes.models import ContentType
+from django.contrib.auth.models import User
 from django.urls import reverse
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
 from shopman.stockman import Position
 
-from shopman.backstage.models import DayClosing
 from shopman.backstage.projections.production import build_qc_kiosk
 from shopman.backstage.services import production
 
 
-def _perm(codename: str) -> Permission:
-    return Permission.objects.get(
-        content_type=ContentType.objects.get_for_model(DayClosing),
-        codename=codename,
-    )
-
-
 @pytest.fixture
 def floor_operator(db):
+    """Superfície MAIS colunas — ver `production_grants`."""
+    from shopman.backstage.tests.production_grants import grant_production_operator
+
     user = User.objects.create_user("qc-floor", password="pw", is_staff=True)
-    user.user_permissions.add(_perm("operate_production"))
-    return user
+    return grant_production_operator(user)
 
 
 @pytest.fixture
