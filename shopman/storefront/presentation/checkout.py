@@ -564,10 +564,11 @@ def present_stock_errors(shortfalls) -> list[dict]:
     errors = []
     for sf in shortfalls:
         if sf.available_qty > 0:
+            unit = _stock_unit_label(int(sf.available_qty))
             message = copy.message(
                 "CHECKOUT_STOCK_LIMITED",
-                "{name}: disponível {qty} unidade(s) no momento.",
-            ).format(name=sf.name, qty=sf.available_qty)
+                "{name}: temos {qty} {unit} agora.",
+            ).format(name=sf.name, qty=sf.available_qty, unit=unit)
         else:
             message = copy.message(
                 "CHECKOUT_STOCK_SOLD_OUT",
@@ -581,6 +582,10 @@ def present_stock_errors(shortfalls) -> list[dict]:
             "message": message,
         })
     return errors
+
+
+def _stock_unit_label(qty: int) -> str:
+    return "unidade disponível" if qty == 1 else "unidades disponíveis"
 
 
 __all__ = [

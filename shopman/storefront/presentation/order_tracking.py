@@ -1350,7 +1350,7 @@ def _tracking_copy(copy: CopyCatalog) -> OrderTrackingCopyProjection:
         ),
         card_intro=copy.message(
             "TRACKING_PAYMENT_CARD_INTRO",
-            "Conclua o pagamento no nosso ambiente seguro. O acompanhamento atualiza quando o gateway responder.",
+            "Conclua o pagamento no nosso ambiente seguro. Assim que a confirmação chegar, atualizamos esta tela.",
         ),
         card_security_note=copy.message("TRACKING_PAYMENT_CARD_SECURITY_NOTE", "Pagamento processado por provedor seguro. Nós não recebemos os dados do seu cartão."),
         waitlist_waiting_title=copy.title("TRACKING_WAITLIST_WAITING_TITLE", "Você está na fila"),

@@ -76,7 +76,7 @@ describe('StockNotifyButton', () => {
     const wrapper = await mountSuspended(StockNotifyButton, {
       props: { sku: 'PAO', name: 'Pão', pill: true, subscribed: false }
     })
-    expect(wrapper.get('button').attributes('aria-label')).toBe('Avise quando Pão voltar')
+    expect(wrapper.get('button').attributes('aria-label')).toBe('Me avise quando Pão voltar')
   })
 
   it('anonymous submit uses the shop default DDD and repairs legacy mobile input', async () => {

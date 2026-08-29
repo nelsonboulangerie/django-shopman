@@ -128,9 +128,9 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "CHECKOUT_REPRICING_MESSAGE": {
         WILDCARD: {WILDCARD: CopyEntry(message="O preço de {name} mudou para {price}. Deseja continuar?")},
     },
-    # ``{name}`` / ``{qty}`` interpolated; ``{qty}`` is the available count.
+    # ``{name}``, ``{qty}`` and ``{unit}`` interpolated; ``{qty}`` is the available count.
     "CHECKOUT_STOCK_LIMITED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="{name}: disponível {qty} unidade(s) no momento.")},
+        WILDCARD: {WILDCARD: CopyEntry(message="{name}: temos {qty} {unit} agora.")},
     },
     "CHECKOUT_STOCK_SOLD_OUT": {
         WILDCARD: {WILDCARD: CopyEntry(message="{name} está esgotado no momento.")},
@@ -994,7 +994,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "TRACKING_PAYMENT_CARD_INTRO": {
         WILDCARD: {
             WILDCARD: CopyEntry(
-                message="Conclua o pagamento no nosso ambiente seguro. O acompanhamento atualiza quando o gateway responder.",
+                message="Conclua o pagamento no nosso ambiente seguro. Assim que a confirmação chegar, atualizamos esta tela.",
             ),
         },
     },
@@ -1265,13 +1265,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Aberto até")},
     },
     "SHOP_STATUS_OPEN_CLOSING_SOON": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Aberto. Fecha em")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Últimos pedidos até")},
     },
     "SHOP_STATUS_CLOSED": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Fechado")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Fechado agora")},
     },
     "SHOP_STATUS_CLOSED_OPENS_AT": {
-        WILDCARD: {WILDCARD: CopyEntry(message="Fechado. Abre às")},
+        WILDCARD: {WILDCARD: CopyEntry(message="Fechado agora. Abrimos")},
     },
     "FOOTER_COPYRIGHT": {
         WILDCARD: {WILDCARD: CopyEntry(message="Todos os direitos reservados.")},

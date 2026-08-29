@@ -490,8 +490,8 @@ useHead({
                 <Icon name="lucide:search-x" />
               </UiEmptyMedia>
               <UiEmptyHeader>
-                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por esse filtro' }}</UiEmptyTitle>
-                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Limpe a busca ou escolha outra seção.' }}</UiEmptyDescription>
+                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
+                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
               </UiEmptyHeader>
               <div v-if="catalog.search_empty_state?.cta_href && catalog.search_empty_state?.cta_label" class="flex justify-center">
                 <UiButton :to="catalog.search_empty_state.cta_href" variant="outline">{{ catalog.search_empty_state.cta_label }}</UiButton>
