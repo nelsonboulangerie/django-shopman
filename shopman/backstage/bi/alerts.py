@@ -117,17 +117,67 @@ _CASH_AUDIT_PUBLIC_MESSAGE = (
     "Detalhe no B.I. › Caixa (quem audita)."
 )
 
+#: Idem para o faturamento: a PROPORÇÃO é operacional (dia fraco é informação de
+#: quem está no balcão), mas o valor em reais não é.
+#:
+#: ⚠️ Não bastava mover a métrica para `AUDIT_ONLY_METRICS`: aí o GERENTE perderia
+#: o aviso, e ele é justamente quem age sobre um dia fraco. A leitura íntegra
+#: continua no `BIAlertEvent`, que já é gateado.
+_REVENUE_PUBLIC_MESSAGE = (
+    "o faturamento de {dia} ficou em {share:.0f}% do esperado. Detalhe no B.I. › Vendas."
+)
+
+#: Marca de dinheiro na mensagem. O alerta de operador é servido sob um predicado
+#: que é um OR de TODAS as personas operacionais — e o grupo Caixa satisfaz dois
+#: deles. O `setup_groups` diz por escrito: "quem vê dinheiro é quem audita".
+_MONEY_MARK = "R$"
+
+#: Rede de segurança quando a métrica é nova e ninguém escreveu a versão pública.
+#: Falhar fechado: o operador perde o detalhe, não a loja perde a fronteira.
+_REDACTED_FALLBACK = "{label} disparou. Detalhe no B.I."
+
+
+def _public_message(rule, reading: Reading) -> str:
+    """A versão que vai para o bus do operador — sem valor em reais.
+
+    O bus é servido sob um predicado que é um OR de todas as personas operacionais,
+    e o grupo Caixa satisfaz dois deles. Mandar a leitura íntegra para lá contraria
+    uma decisão escrita no próprio `setup_groups.py`: *"Dinheiro fica de fora, e não
+    é esquecimento… quem vê dinheiro é quem audita."*
+
+    A leitura íntegra NÃO se perde: ela continua no `BIAlertEvent`, que o Admin só
+    mostra a quem tem a permissão.
+
+    ⚠️ A última linha é rede, não decoração. Uma métrica nova que carregue reais na
+    mensagem e ninguém tenha lembrado de redigir a versão pública sai redigida à
+    força, com o operador perdendo o detalhe — em vez de a loja perder a fronteira.
+    """
+    from shopman.backstage.models import BIAlertRule
+
+    if rule.metric in BIAlertRule.AUDIT_ONLY_METRICS:
+        return _CASH_AUDIT_PUBLIC_MESSAGE.format(
+            count=int(reading.value or 0), days=int(rule.lookback_days or 0),
+        )
+
+    if rule.metric == BIAlertRule.Metric.DAILY_REVENUE_VS_BASELINE:
+        baseline = reading.baseline or 0
+        share = (float(reading.value or 0) / baseline * 100) if baseline else 0.0
+        # O dia sai da própria mensagem íntegra, que já o formata como "14/08 (sexta)".
+        dia = reading.message.split(" faturou")[0] if " faturou" in reading.message else "o dia"
+        return _REVENUE_PUBLIC_MESSAGE.format(dia=dia, share=share)
+
+    if _MONEY_MARK in (reading.message or ""):
+        return _REDACTED_FALLBACK.format(label=rule.label)
+
+    return reading.message
+
 
 def _fire(rule, reading: Reading, now) -> None:
-    from shopman.backstage.models import BIAlertEvent, BIAlertRule
+    from shopman.backstage.models import BIAlertEvent
     from shopman.backstage.services.alerts import create_alert
 
     alert_type = _ALERT_TYPE_BY_METRIC[rule.metric]
-    public_message = reading.message
-    if rule.metric in BIAlertRule.AUDIT_ONLY_METRICS:
-        public_message = _CASH_AUDIT_PUBLIC_MESSAGE.format(
-            count=int(reading.value or 0), days=int(rule.lookback_days or 0),
-        )
+    public_message = _public_message(rule, reading)
     with transaction.atomic():
         operator_alert = create_alert(
             type=alert_type, severity=rule.severity, message=f"{rule.label}: {public_message}",

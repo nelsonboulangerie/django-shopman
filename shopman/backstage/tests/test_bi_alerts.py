@@ -93,6 +93,70 @@ def test_yesterday_without_a_single_sale_on_an_open_day_is_a_loud_zero(revenue_r
     assert reading.fired is True and reading.value == 0.0
 
 
+# ── O que o operador lê, e o que só quem audita lê ───────────────────────────
+
+
+@pytest.mark.django_db
+def test_o_alerta_do_balconista_nao_carrega_reais(revenue_rule):
+    """A mensagem íntegra dizia "faturou R$ 3.412,00 … (R$ 7.100,00 na média)".
+
+    O `OperatorAlert` é servido sob um predicado que é um OR de TODAS as personas
+    operacionais — e o grupo Caixa satisfaz dois deles. Isso contraria uma decisão
+    escrita no próprio `setup_groups.py`: *"Dinheiro fica de fora… quem vê dinheiro
+    é quem audita."* E a regra nasce ATIVA no seed, avaliada todo ciclo do worker.
+    """
+    for weeks_ago in (1, 2, 3, 4):
+        _sale(1 + 7 * weeks_ago, 10000)
+    _sale(1, 5000)
+
+    evaluate_all()
+
+    alerta = OperatorAlert.objects.latest("id")
+    assert "R$" not in alerta.message, f"o balconista leu dinheiro: {alerta.message!r}"
+    # E não perdeu a informação que é DELE: o dia fraco continua dito.
+    assert "50% do esperado" in alerta.message
+    assert "B.I." in alerta.message
+
+
+@pytest.mark.django_db
+def test_a_leitura_integra_continua_no_evento_que_e_gateado(revenue_rule):
+    """Redigir a mensagem pública não pode custar o detalhe de quem PODE ver.
+
+    O `BIAlertEvent` é o que o Admin mostra a quem tem a permissão — é lá que o
+    valor em reais tem que continuar inteiro.
+    """
+    for weeks_ago in (1, 2, 3, 4):
+        _sale(1 + 7 * weeks_ago, 10000)
+    _sale(1, 5000)
+
+    evaluate_all()
+
+    evento = BIAlertEvent.objects.latest("id")
+    assert "R$" in evento.message
+    assert evento.value == 5000.0 and evento.baseline == 10000.0
+
+
+@pytest.mark.django_db
+def test_metrica_nova_com_dinheiro_sai_redigida_a_forca(revenue_rule):
+    """Rede de segurança: falhar fechado quando ninguém escreveu a versão pública.
+
+    O dia em que alguém acrescentar uma métrica que carrega reais e esquecer de
+    redigir a mensagem pública, o operador perde o DETALHE — não a loja perde a
+    fronteira. Aqui a métrica é simulada trocando o `metric` da regra por um que
+    não tem versão pública própria.
+    """
+    from shopman.backstage.bi.alerts import Reading, _public_message
+
+    regra = revenue_rule
+    regra.metric = BIAlertRule.Metric.NATIVE_OVERRIDES_HISTORY
+    leitura = Reading(value=1.0, baseline=None, fired=True, message="3 dias apagaram R$ 4.200,00")
+
+    publica = _public_message(regra, leitura)
+
+    assert "R$" not in publica
+    assert regra.label in publica
+
+
 # ── Importação silenciosa ────────────────────────────────────────────────────
 
 

@@ -5,6 +5,7 @@ import {
   CONTEXT_EXAMPLES,
   EXPLORE_DIMENSION_LABELS,
   EXPLORE_EXAMPLES,
+  aggregateBucket,
   availableExamples,
   WEEKDAY_LABELS,
   basisHeadline,
@@ -196,6 +197,42 @@ describe("bucketSalesDays", () => {
     const out = bucketSalesDays(days);
     expect(out[0]!.source).toBe("yooga");
     expect(out[1]!.source).toBe("shopman");
+  });
+});
+
+describe("aggregateBucket — a série longa não soma o que não se soma", () => {
+  // ⚠️ Antes disto a página somava TUDO. Com "1 ano" + "Ticket médio" + "Tempo",
+  // a barra da semana mostrava ~7× o ticket real — formatada como reais,
+  // "R$ 178,50", perfeitamente convincente. Rendimento passava de 100%.
+  const semana = [10000, 12000, 11000, 9000, 13000, 14000, 10500];
+
+  it("soma o que é aditivo (faturamento, pedidos, quantidade)", () => {
+    expect(aggregateBucket(semana, "sum")).toBe(79500);
+  });
+
+  it("tira a média do ticket médio, em vez de multiplicar por sete", () => {
+    const media = aggregateBucket(semana, "mean");
+    expect(media).toBeCloseTo(11357.14, 1);
+    // A prova de que o bug morreu: a média fica na ordem de grandeza do DIA.
+    expect(media).toBeLessThan(Math.max(...semana) * 1.01);
+  });
+
+  it("pega o maior no pico de salão, porque pico não acumula", () => {
+    expect(aggregateBucket([4, 9, 6], "max")).toBe(9);
+  });
+
+  it("rendimento agregado não passa de 100%", () => {
+    expect(aggregateBucket([98, 95, 101, 99], "mean")).toBeLessThan(101);
+  });
+
+  it("balde vazio é zero, e não NaN nem -Infinity", () => {
+    expect(aggregateBucket([], "sum")).toBe(0);
+    expect(aggregateBucket([], "mean")).toBe(0);
+    expect(aggregateBucket([], "max")).toBe(0);
+  });
+
+  it("regra desconhecida cai em soma — o default que o servidor também usa", () => {
+    expect(aggregateBucket([1, 2, 3], "qualquer-coisa")).toBe(6);
   });
 });
 
