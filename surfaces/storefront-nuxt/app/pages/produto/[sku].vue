@@ -136,7 +136,7 @@ useHead({
       <template v-else-if="product && meta">
         <!-- Imagem emoldurada + informações num único card claro. -->
         <article class="-mx-4 overflow-hidden border-b bg-card sm:-mx-6 lg:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch lg:rounded-lg lg:border">
-          <section class="min-w-0 p-4 sm:p-6">
+          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6">
             <div class="drop-shadow-md transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
               <div class="shop-photo-frame">
                 <div class="shop-photo-mat relative block bg-white">
@@ -220,7 +220,7 @@ useHead({
               </div>
             </div>
 
-            <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-0 [&_[data-slot=accordion-content]>div]:px-8 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4">
+            <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4">
               <UiAccordionItem v-if="product.components.length" value="components">
                 <UiAccordionTrigger>Itens do combo</UiAccordionTrigger>
                 <UiAccordionContent>
