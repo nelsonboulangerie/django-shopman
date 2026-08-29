@@ -42,7 +42,20 @@ esquece dois diretórios; o teste de refund existente prova a coisa errada.
 
 ## Pré-requisitos
 
-- Nenhum técnico. **Mas a pergunta 1 bloqueia parte do P0-1**, e a pergunta 2 define o tamanho da fase 2.
+⚠️ **Sobreposição em voo (29/08):** o [PR #395](https://github.com/nelsonboulangerie/django-shopman/pull/395)
+(sessão `confident-pasteur-6cf01c`) traz um `SignInEventAdmin` somente-leitura e uma entrada nova em
+`shopman/backstage/admin/navigation.py` — o mesmo arquivo que este WP toca. Sem permissão custom nova do lado
+dela (o Gerente já pega `view_signinevent` pelo `_ver("backstage")` existente — o que é, aliás, mais uma
+instância do auto-grant descrito na seção de RBAC). Rebasear sobre o #395. Migrations deste WP começam em
+`backstage 0039`.
+
+📎 **Frente de 2FA do Admin — três achados que não se fecham sozinhos.** Este WP tem *não existe check de 2FA
+no deploy* (P1-6) e *a chave TOTP está exposta* (P1-4). O item 13 do inventário
+`docs/plans/fallbacks-perigosos-go-live.md` (PR #393) traz o terceiro: *o middleware de 2FA do Admin deixa
+passar quando a URL não resolve*. **Não são duplicata** — são as três metades do mesmo problema, e nenhuma
+delas sozinha fecha a porta. Vale executá-las juntas.
+
+- Nenhum outro pré-requisito técnico. **Mas a pergunta 1 bloqueia parte do P0-1**, e a pergunta 2 define o tamanho da fase 2.
 - ⚠️ Este WP toca `config/settings.py` em quatro pontos. **Agrupe as quatro linhas num bloco único, com
   comentário** — o arquivo tem 1.500+ linhas e é disputado por praticamente todo WP; um bloco contíguo torna
   o conflito trivial de resolver.

@@ -244,16 +244,55 @@ flake.
 | **4** | **Permissões — PR único.** `setup_groups` usa `set`: o que sai da lista sai do banco. Seis WPs criam permissão; em seis PRs, o último a mergear revoga os cinco anteriores em silêncio no próximo deploy | **não — branch único** |
 | **5** | UX de excelência | sim |
 
-### Antes da onda 0: duas coisas para resolver
+### Antes da onda 0
 
-**1. Uma frente inteira está solta e não aparece em PR nenhum.** A worktree `confident-pasteur-6cf01c`, na
-branch `claude/critical-fixes-notifications-67d7b2`, tem **85 arquivos não commitados** — incluindo
-`backstage/api`, `backstage/admin`, `pos-nuxt`, e as **migrations 0037, 0038 e 0039** (o main está na 0035).
-Seis destes nove WPs criam permissão, ou seja, migration nova, que **vai colidir** com essas. Trabalho solto
-não aparece em PR, branch nem log — é uma armadilha já catalogada nesta casa. **Essa frente precisa ser
-commitada, virar PR ou ser descartada antes de qualquer execução.**
+**1. A frente que estava solta já está commitada — e mudou a numeração.** *(atualizado 29/08, após
+contato com a sessão `confident-pasteur-6cf01c`.)* Os 85 arquivos que eu tinha visto sem commit viraram
+**quatro PRs**, todos `MERGEABLE`:
 
-**2. A pergunta 1 de §6.** Se o alpha tiver um segundo terminal, o P0 do PDV não é WP: é hotfix, hoje.
+| PR | Conteúdo | Migration |
+|---|---|---|
+| [#393](https://github.com/nelsonboulangerie/django-shopman/pull/393) | cartão dizia "Pagamento autorizado" sem ir ao gateway — **é o bloqueador de go-live do pedido E54** | — |
+| [#394](https://github.com/nelsonboulangerie/django-shopman/pull/394) | select com busca do recebimento no Compras | — |
+| [#395](https://github.com/nelsonboulangerie/django-shopman/pull/395) | trilha de acessos de operador | `backstage 0037`, `shop 0023` |
+| [#396](https://github.com/nelsonboulangerie/django-shopman/pull/396) | trava dura da gaveta | `backstage 0038` |
+
+**Ordem obrigatória: #395 antes de #396** — o #396 está empilhado (base aponta para a branch do #395).
+⚠️ Um PR empilhado mede `MERGEABLE` **contra a própria base**, não contra o `main`: o verde do #396 não
+diz nada sobre conflito com o `main` até o #395 entrar.
+
+**Correção minha:** eu havia lido um buraco na numeração (main na 0035, faltando a 0036). Errado — a
+`0036_audit_stock_permission` **está no `origin/main`**; minha leitura veio de um checkout sem `fetch`.
+Confirmado por `git ls-tree origin/main`.
+
+**Os WPs começam em:** `shopman/backstage` → **0039** · `shopman/shop` → **0024**. E enquanto #395 e #396
+não mergearem, um WP que gere `0037` contra o `main` **vai** colidir — nesse intervalo, escrever contra a
+branch do #396 ou esperar o merge.
+
+**2. Sobreposição declarada com essa frente** — três dos meus WPs encostam nela:
+
+| WP | Encosta em | O que fazer |
+|---|---|---|
+| **WP-02** (PDV/Caixa) | a trava da gaveta do #396 reescreve o fluxo de `drawer_open`/`drawer_unlock` — **duas das oito ações de dinheiro do WP-00 Bloco A** | aplicar o Bloco A **depois** do #396, sobre o fluxo novo |
+| **WP-09** (Admin) | `SignInEventAdmin` (somente leitura) e uma entrada nova em `admin/navigation.py` — o mesmo arquivo que o WP-09 toca | rebasear; sem permissão custom nova do lado dela |
+| **WP-01 / WP-02** | `OperatorLock.vue` + `useOperatorLock.ts` na `operator-kit` — a mesma layer do P2-4 do WP-01 | falar com aquela sessão **antes** de escrever qualquer coisa sobre login/PIN/crachá de operador: é retrabalho garantido |
+
+O modal de falta de insumo **não** foi tocado por ela.
+
+**3. O inventário de fallbacks perigosos é a moldura deste trabalho.** O #393 traz
+`docs/plans/fallbacks-perigosos-go-live.md`: 17 fallbacks que degradam para o permissivo **em silêncio**
+em caminho de dinheiro, auth, fiscal e estoque, ordenados por dano. O princípio que ele abre —
+*"a omissão configura o comportamento restritivo; falhar fechado, ou falhar aberto e gritando"* — é
+exatamente o argumento do **WP-00 Bloco A**: `Action.idempotency` tem default `"none"`, e as oito
+mutações de dinheiro do caixa herdam permissividade por omissão. **É o item 18 daquele inventário**, e
+ele não o alcançou porque olhou adapters e settings, não o contrato de ações do backstage.
+
+Dois itens dele cruzam com WPs meus e **não** são duplicata:
+- **item 13** (o middleware de 2FA do Admin deixa passar quando a URL não resolve) ao lado do WP-09, que
+  tem *não existe check de 2FA no deploy* e *a chave TOTP está exposta*. Os três juntos são a frente de
+  2FA do Admin, e nenhum deles sozinho a fecha.
+- **item 14** (`get_backend(None)` resolve para o console) ao lado do WP-08, que tem PII de destinatário
+  em log no mesmo arquivo.
 
 ---
 

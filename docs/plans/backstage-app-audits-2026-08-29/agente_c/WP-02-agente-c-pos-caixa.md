@@ -49,6 +49,16 @@ sem duplicação de venda por duplo clique — a venda já é idempotente.
 
 ## Pré-requisitos
 
+⚠️ **Sobreposição em voo (29/08):** o [PR #396](https://github.com/nelsonboulangerie/django-shopman/pull/396)
+(sessão `confident-pasteur-6cf01c`) reescreve o fluxo da gaveta — a trava passa a ser **dura**, o PDV para
+até o sensor dizer que fechou. Isso toca `drawer_open` e `drawer_unlock`, que são **duas das oito ações de
+dinheiro** do WP-00 Bloco A, e traz dois tipos de alerta novos em `backstage/models/alerts.py`
+(migration `backstage 0038`). O #396 está **empilhado no #395** — mergear o #395 primeiro. **Aplicar o Bloco A
+sobre o fluxo novo, depois do merge**, não sobre o de hoje. Migrations deste WP começam em `backstage 0039`.
+
+⚠️ E o mesmo PR mexe em `OperatorLock.vue` e `useOperatorLock.ts` na `operator-kit`. **Falar com aquela
+sessão antes de escrever qualquer coisa sobre login, PIN ou crachá de operador** — é retrabalho garantido.
+
 - **WP-00 Bloco A** (idempotência das ações de dinheiro): o P1-2 deste WP é a primeira aplicação concreta dele.
 - **WP-00 Bloco D**: toca `shopman/backstage/api/operations.py` → **onda 2, branch único** com WP-03 e WP-05.
 - **Resposta à pergunta 1** decide se o P0-1 sai antes de tudo, como hotfix.

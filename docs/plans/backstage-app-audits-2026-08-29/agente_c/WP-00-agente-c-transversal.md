@@ -76,6 +76,11 @@ Isso viola frontalmente a régua já escrita da casa (`feedback_falhar_fechado_o
 em dinheiro, auth e fiscal, **omissão tem que ser restritiva**. Um campo de idempotência
 cujo default é "não precisa" é um default invertido.
 
+E não é régua só de memória: `docs/plans/fallbacks-perigosos-go-live.md` (PR #393) inventaria **17
+fallbacks** que degradam para o permissivo em silêncio, abrindo com o princípio *"a omissão configura o
+comportamento restritivo… falhar fechado, ou falhar aberto e gritando. Nunca falhar aberto e calado."*
+Aquele documento olhou adapters e settings; **este bloco é o item 18**, no contrato de ações do backstage.
+
 ### Mecanismo da falha, do balcão até o efeito
 
 O operador lança uma sangria de R$ 200. A rede do salão oscila (é a mesma rede do

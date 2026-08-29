@@ -42,6 +42,11 @@ pergunta 1.
 
 ## Pré-requisitos
 
+📎 O item 14 do inventário `docs/plans/fallbacks-perigosos-go-live.md` (PR #393) —
+*`notifications.get_backend(None)` resolve para o console* — mora no **mesmo arquivo** do P2-4 deste WP (PII
+de destinatário em log). Se os dois forem feitos, que seja no mesmo PR.
+
+
 - **WP-00 Bloco C**: `marketing-nuxt` é um dos dois apps **sem contrato TS gerado** — e não é coincidência que
   os achados de divergência FE↔BE se concentrem aqui. O exportador de schema fecha essa classe por construção.
 - **WP-00 Bloco B**: o P2-1 consome o parser de lá.
