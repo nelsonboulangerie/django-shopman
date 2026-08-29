@@ -12,6 +12,7 @@ import type {
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptMode,
+  ReceiptOutcome,
   Supplier,
   SupplierMaterialCost,
 } from "~/types/purchase";
@@ -26,7 +27,10 @@ import {
   isApproximateCost,
   parseMoneyInput,
   quotePreview as buildQuotePreview,
+  receiptFirstBlocker as receiptFirstReceiptBlocker,
+  receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
+  receiptPendingItems,
   supplierCostRows,
 } from "~/presentation/purchase";
 
@@ -376,8 +380,10 @@ export function usePurchaseDesk() {
   const receiptSupplierRef = useState("purchase-receipt-supplier", () => "SUP-MOINHO-SP");
   const receiptNote = useState("purchase-receipt-note", () => "");
   const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => copy(INVOICE_RECEIPT_LINES));
-  const receiptConfirmedAt = useState<string | null>("purchase-receipt-confirmed-at", () => null);
-  const receiptRejectedAt = useState<string | null>("purchase-receipt-rejected-at", () => null);
+  // Confirmar zera o rascunho, e um rascunho zerado nao sabe dizer o que acabou
+  // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
+  // o aviso de sucesso mostra.
+  const receiptOutcome = useState<ReceiptOutcome | null>("purchase-receipt-outcome", () => null);
   const receiptHydrated = useState("purchase-receipt-hydrated", () => false);
   const purchaseRequestStatuses = useState<Record<string, PurchaseRequestStatus>>(
     "purchase-request-statuses",
@@ -492,22 +498,35 @@ export function usePurchaseDesk() {
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
+  // Um rascunho que ainda nao comecou nao tem pendencia — tem convite. Sem
+  // isto, confirmar a entrada devolvia o rascunho zerado do servidor e a tela
+  // acusava "Ler QR, codigo de barras ou chave da NF" em vermelho logo ACIMA do
+  // "Entrada confirmada" em verde. O operador acertou tudo e levou uma bronca.
+  const receiptIsBlank = computed(() =>
+    receiptIsBlankDraft(receiptLines.value, invoiceInput.value, receiptNote.value),
+  );
+
   // O painel listava as pendências ACHATADAS — dez pílulas "Definir insumo"
   // iguais, sem dizer de qual item, e a lista ficava inútil justamente quando
   // era mais necessária (nota grande). Uma linha por item, com nome e gesto.
-  const receiptPendingLines = computed(() =>
-    receiptLinePreviews.value
-      .filter((preview) => preview.nextStep)
-      .map((preview) => ({
-        id: preview.line.id,
-        label: preview.line.invoiceDescription || preview.material.name || "Item sem descrição",
-        step: preview.nextStep,
-      })),
-  );
+  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value));
   const receiptDocumentBlockers = computed(() =>
-    receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"] : [],
+    receiptIsBlank.value ? []
+    : receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"]
+    : [],
   );
-  const receiptSupplierBlockers = computed(() => (receiptSupplierRef.value ? [] : ["Definir fornecedor"]));
+  const receiptSupplierBlockers = computed(() =>
+    receiptIsBlank.value || receiptSupplierRef.value ? [] : ["Definir fornecedor"],
+  );
+  // O gesto que o botao `Confirmar entrada` responde quando ainda nao da.
+  const receiptFirstBlocker = computed(() =>
+    receiptFirstReceiptBlocker(
+      receiptDocumentBlockers.value,
+      receiptSupplierBlockers.value,
+      receiptPendingLines.value,
+      receiptLinePreviews.value.length > 0,
+    ),
+  );
   const receiptCheckedCount = computed(() => receiptLinePreviews.value.filter((preview) => preview.line.checked).length);
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
@@ -676,8 +695,7 @@ export function usePurchaseDesk() {
       invoiceInput.value = next.activeReceipt.invoiceInput || "";
       receiptNote.value = next.activeReceipt.note || "";
       receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
-      receiptConfirmedAt.value = null;
-      receiptRejectedAt.value = null;
+      receiptOutcome.value = null;
       receiptHydrated.value = true;
     }
     normalizeSelections();
@@ -713,7 +731,7 @@ export function usePurchaseDesk() {
   // vai selecionar. `null` continua sendo o "não deu" dos usos que só testam.
   async function runBackendAction(
     request: () => Promise<PurchaseActionResponse>,
-    options: { receipt?: boolean } = {},
+    options: { receipt?: boolean; quiet?: boolean } = {},
   ): Promise<PurchaseActionResponse | null> {
     if (actionPending.value) return null;
     actionPending.value = true;
@@ -721,7 +739,10 @@ export function usePurchaseDesk() {
     try {
       const response = await request();
       if (response.purchase) applyProjection(response.purchase, options);
-      if (response.message) useSonner.success(response.message);
+      // `quiet`: a própria tela já anuncia o que aconteceu, e em tamanho maior
+      // que um toast. Repetir "Entrada confirmada no estoque" duas vezes na
+      // mesma dobra não é reforço, é ruído.
+      if (response.message && !options.quiet) useSonner.success(response.message);
       await refresh();
       return response;
     } catch (err) {
@@ -768,8 +789,7 @@ export function usePurchaseDesk() {
 
   function setReceiptMode(mode: ReceiptMode) {
     receiptMode.value = mode;
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     if (backendReady.value) {
       receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
       receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
@@ -788,15 +808,13 @@ export function usePurchaseDesk() {
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.map((line) => (line.id === lineId ? { ...line, ...patch } : line));
   }
 
   function setReceiptSupplier(ref: string) {
     receiptSupplierRef.value = ref;
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.map((line) => {
       const currentConversion =
         line.conversionId ? conversions.value.find((conversion) => conversion.id === line.conversionId) : null;
@@ -894,8 +912,7 @@ export function usePurchaseDesk() {
   function addReceiptLine() {
     const materialSku = materials.value[0]?.sku ?? "";
     const conversionId = defaultReceiptConversionId(materialSku);
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.concat({
       id: `receipt-${Date.now()}`,
       materialSku,
@@ -909,8 +926,7 @@ export function usePurchaseDesk() {
   }
 
   function removeReceiptLine(lineId: string) {
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.filter((line) => line.id !== lineId);
   }
 
@@ -924,9 +940,29 @@ export function usePurchaseDesk() {
     await runBackendAction(() => api.scanInvoice({ qrPayload: invoiceInput.value }), { receipt: true });
   }
 
-  async function confirmReceipt() {
-    if (!receiptReady.value) return;
-    if (!requireBackend("confirmar a entrada no estoque")) return;
+  /**
+   * O que a entrada foi, fotografado ANTES de o rascunho zerar.
+   *
+   * A resposta do servidor devolve o recibo em branco (o rascunho nao e
+   * persistido), entao ler `receiptLinePreviews` depois de confirmar so acha
+   * lista vazia. Quem quiser mostrar "7 itens, R$ 1.480,00" tem de guardar
+   * antes.
+   */
+  function receiptSnapshot(kind: ReceiptOutcome["kind"]): ReceiptOutcome {
+    return {
+      kind,
+      at: todayStamp(),
+      mode: receiptMode.value,
+      lineCount: receiptLinePreviews.value.length,
+      totalCostQ: receiptTotalCostQ.value,
+      supplierName: receiptSupplier.value?.name ?? "",
+    };
+  }
+
+  async function confirmReceipt(): Promise<boolean> {
+    if (!receiptReady.value) return false;
+    if (!requireBackend("confirmar a entrada no estoque")) return false;
+    const snapshot = receiptSnapshot("confirmed");
     const ok = await runBackendAction(
       () =>
         api.confirmReceipt({
@@ -936,18 +972,20 @@ export function usePurchaseDesk() {
           note: receiptNote.value,
           lines: receiptLines.value,
         }),
-      { receipt: true },
+      { receipt: true, quiet: true },
     );
-    if (ok) receiptConfirmedAt.value = todayStamp();
+    if (ok) receiptOutcome.value = snapshot;
+    return Boolean(ok);
   }
 
-  async function rejectReceipt() {
-    if (!requireBackend("registrar a devolução")) return;
+  async function rejectReceipt(): Promise<boolean> {
+    if (!requireBackend("registrar a devolução")) return false;
     if (!receiptHasRejectionReason.value) {
       actionError.value = "Descreva o motivo da recusa/devolução antes de registrar.";
       useSonner.error(actionError.value);
-      return;
+      return false;
     }
+    const snapshot = receiptSnapshot("rejected");
     const ok = await runBackendAction(
       () =>
         api.rejectReceipt({
@@ -957,9 +995,15 @@ export function usePurchaseDesk() {
           note: receiptNote.value,
           lines: receiptLines.value,
         }),
-      { receipt: true },
+      { receipt: true, quiet: true },
     );
-    if (ok) receiptRejectedAt.value = todayStamp();
+    if (ok) receiptOutcome.value = snapshot;
+    return Boolean(ok);
+  }
+
+  /** Fecha o aviso de sucesso — o proximo recebimento comeca da tela limpa. */
+  function dismissReceiptOutcome() {
+    receiptOutcome.value = null;
   }
 
   // ── Contagem de insumos (auditoria de estoque, gestor/dono) ──────────────
@@ -1144,8 +1188,10 @@ export function usePurchaseDesk() {
     receiptSupplierRef,
     receiptNote,
     receiptLines,
-    receiptConfirmedAt,
-    receiptRejectedAt,
+    receiptOutcome,
+    receiptIsBlank,
+    receiptFirstBlocker,
+    dismissReceiptOutcome,
     receiptSupplier,
     invoiceStatus,
     receiptLinePreviews,

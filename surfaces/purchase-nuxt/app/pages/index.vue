@@ -5,6 +5,9 @@ import type {
   MaterialTone,
   PurchaseBaseView,
   PurchaseRequestStatus,
+  ReceiptBlocker,
+  ReceiptDocumentAnchor,
+  ReceiptFieldAnchor,
   ReceiptLinePreview,
   ReceiptMode,
   ReceiptWarningTone,
@@ -17,6 +20,7 @@ import {
   formatQty,
   formatQtyDiff,
   formatStockOnHand,
+  receiptOutcomeSummary,
   receiptSettledSummary,
   isApproximateCost,
   purchaseUnitLabel,
@@ -49,8 +53,10 @@ const {
   invoiceInput,
   receiptSupplierRef,
   receiptNote,
-  receiptConfirmedAt,
-  receiptRejectedAt,
+  receiptOutcome,
+  receiptIsBlank,
+  receiptFirstBlocker,
+  dismissReceiptOutcome,
   receiptSupplier,
   invoiceStatus,
   receiptLinePreviews,
@@ -159,8 +165,10 @@ const invoiceShortKey = computed(() =>
 
 // Conta ITENS travados, não avisos: uma linha que precisa de insumo E de
 // validade é um item para resolver, não dois bloqueios. O número tem de bater
-// com o tamanho da lista logo abaixo dele, senão vira ruído.
-const receiptTotalBlockers = computed(
+// com o tamanho da lista logo abaixo dele, senão vira ruído — e com o que
+// realmente segura o `Confirmar entrada`, inclusive a linha pronta que ninguém
+// marcou como conferida.
+const receiptTotalPending = computed(
   () => receiptPendingLines.value.length + receiptDocumentBlockers.value.length + receiptSupplierBlockers.value.length,
 );
 const purchaseTotalQ = computed(() =>
@@ -392,14 +400,131 @@ const uniqueWatchWarnings = computed(() =>
   ),
 );
 
+// O campo que a tela acabou de apontar, marcado por alguns segundos.
+//
+// Rolar até o campo resolve metade do problema: o operador chega lá e ainda
+// precisa achar QUAL dos quatro campos do card é o que falta. O anel some
+// sozinho — é um dedo apontando, não um estado do recebimento.
+const flashedField = ref("");
+let flashTimer: ReturnType<typeof setTimeout> | null = null;
+const FLASH_RING = "rounded-md ring-2 ring-warning ring-offset-2 ring-offset-background";
+
+function flashTarget(key: string) {
+  flashedField.value = key;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    flashedField.value = "";
+  }, 2600);
+}
+
+function fieldRing(lineId: string, field: ReceiptFieldAnchor): string {
+  return flashedField.value === `${lineId}:${field}` ? FLASH_RING : "";
+}
+
+function anchorRing(anchor: ReceiptDocumentAnchor): string {
+  return flashedField.value === anchor ? FLASH_RING : "";
+}
+
+// Salto, e não rolagem suave. O `behavior: "smooth"` é um PEDIDO: onde ele não
+// roda — reduced-motion, webview, e o pane de automação onde isto foi medido —
+// a chamada não faz nada e o campo continua fora da tela, que é exatamente a
+// falha que esta frente veio corrigir. O anel âmbar dá a continuidade que a
+// animação daria, e chega sempre.
+function revealTarget(target: HTMLElement, key: string, block: ScrollLogicalPosition = "center") {
+  target.scrollIntoView({ behavior: "auto", block });
+  target.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button")?.focus({ preventScroll: true });
+  flashTarget(key);
+}
+
 // Clicar na pendência leva ao item — numa nota de dez linhas, achar "aquele
 // que falta a validade" rolando a lista é o trabalho que a tela devia poupar.
-function focusReceiptLine(lineId: string) {
+// Com a âncora do campo, leva ao CAMPO: a linha reabre se estava recolhida, a
+// tela rola até ele e o cursor já pousa dentro.
+async function focusReceiptLine(lineId: string, field: ReceiptFieldAnchor | null = null) {
+  expandReceiptLine(lineId);
+  await nextTick();
   const card = document.querySelector<HTMLElement>(`[data-receipt-line="${lineId}"]`);
   if (!card) return;
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
-  card.querySelector<HTMLElement>("select, input")?.focus({ preventScroll: true });
+  const target = (field && card.querySelector<HTMLElement>(`[data-receipt-field="${field}"]`)) || card;
+  revealTarget(target, field ? `${lineId}:${field}` : lineId);
 }
+
+function focusReceiptAnchor(anchor: ReceiptDocumentAnchor) {
+  const target = document.querySelector<HTMLElement>(`[data-receipt-anchor="${anchor}"]`);
+  if (target) revealTarget(target, anchor);
+}
+
+/**
+ * O que o `Confirmar entrada` responde quando ainda não dá para confirmar.
+ *
+ * O botão cinza era o pior aviso possível: o operador aperta, nada acontece, e
+ * a explicação está no rodapé de uma página longa. Agora o botão sempre
+ * responde — diz o gesto que falta, em cima da tela, e leva até o campo.
+ */
+function reportReceiptBlocker(blocker: ReceiptBlocker) {
+  const goThere = () => {
+    if (blocker.scope === "line") void focusReceiptLine(blocker.lineId, blocker.field);
+    else if (blocker.anchor) focusReceiptAnchor(blocker.anchor);
+  };
+  // O aviso leva na hora; o botão do aviso continua levando depois, para quem
+  // rolou para outro lugar antes de ler.
+  useSonner.error(blocker.step, {
+    description: blocker.label || undefined,
+    action: { label: "Ir até lá", onClick: goThere },
+  });
+  goThere();
+}
+
+async function onConfirmReceipt() {
+  const blocker = receiptFirstBlocker.value;
+  if (blocker) {
+    reportReceiptBlocker(blocker);
+    return;
+  }
+  if (await confirmReceipt()) await revealReceiptOutcome();
+}
+
+async function onRejectReceipt() {
+  if (await rejectReceipt()) await revealReceiptOutcome();
+}
+
+// Deu certo: a tela volta ao topo. O aviso de sucesso mora lá, e logo abaixo
+// dele está o "Escanear NF" — quem acabou de dar entrada numa nota quase sempre
+// tem a próxima na mão. Quem não tem, tem a navegação.
+//
+// Duas escolhas medidas, não superstição:
+//
+// - **Os dois quadros de espera.** Confirmar esvazia o rascunho, e a página
+//   encolhe DEPOIS do render (de 3.855px para 1.677px na medição). Rolar antes
+//   disso é rolar num documento que já não existe.
+// - **Salto, não rolagem suave.** Enquanto a altura muda, a âncora de rolagem
+//   do browser corrige o `scrollTop` para manter o que está à vista — e essa
+//   correção atropela a animação: o `behavior: "smooth"` saía de 697px e
+//   terminava em 818px, mais longe do topo do que começou.
+async function revealReceiptOutcome() {
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+// O convite fala da entrada que ACABOU de acontecer: quem deu baixa numa NF tem
+// a próxima nota na mão; quem lançou sem NF tem o próximo romaneio. Oferecer
+// "escanear NF" a quem acabou de conferir um romaneio de produtor é oferecer a
+// ferramenta errada.
+function startNextReceipt() {
+  const manual = receiptOutcome.value?.mode === "manual";
+  dismissReceiptOutcome();
+  if (!manual) {
+    void openInvoiceScanner();
+    return;
+  }
+  setReceiptMode("manual");
+  addReceiptLine();
+}
+
+onBeforeUnmount(() => {
+  if (flashTimer) clearTimeout(flashTimer);
+});
 
 function stockAfterReceipt(sku: string): number {
   const material = materials.value.find((item) => item.sku === sku);
@@ -467,7 +592,7 @@ onBeforeUnmount(stopInvoiceScanner);
               Receber
             </p>
             <p class="mt-2 text-3xl font-bold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</p>
-            <p class="mt-1 text-xs text-muted-foreground">{{ receiptTotalBlockers }} bloqueios</p>
+            <p class="mt-1 text-xs text-muted-foreground">{{ receiptTotalPending }} pendências</p>
           </button>
           <button type="button" class="rounded-md border border-border bg-card p-4 text-left transition hover:bg-accent" @click="openBase('costs')">
             <p class="flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -613,6 +738,43 @@ onBeforeUnmount(stopInvoiceScanner);
 
     <section v-else-if="view === 'receive'" class="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div class="min-w-0 space-y-4">
+        <!-- Deu certo, e a tela diz isso onde o olho está: no topo, do tamanho
+             do que aconteceu, com o que entrou escrito por extenso. O gesto
+             seguinte fica dentro do próprio aviso — quem deu entrada numa nota
+             quase sempre tem a próxima na mão. -->
+        <section
+          v-if="receiptOutcome"
+          data-receipt-outcome
+          class="scroll-mt-4 rounded-md border p-4"
+          :class="receiptOutcome.kind === 'confirmed' ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'"
+          aria-live="polite"
+        >
+          <div class="flex items-start gap-3">
+            <Icon
+              :name="receiptOutcome.kind === 'confirmed' ? 'lucide:circle-check-big' : 'lucide:undo-2'"
+              class="mt-0.5 size-6 shrink-0"
+              :class="receiptOutcome.kind === 'confirmed' ? 'text-success' : 'text-warning'"
+            />
+            <div class="min-w-0 flex-1">
+              <h2 class="text-lg font-semibold" :class="receiptOutcome.kind === 'confirmed' ? 'text-success' : 'text-warning'">
+                {{ receiptOutcome.kind === "confirmed" ? "Entrada confirmada no estoque" : "Devolução registrada" }}
+              </h2>
+              <p class="mt-1 text-sm text-foreground">{{ receiptOutcomeSummary(receiptOutcome) }}</p>
+              <p class="mt-0.5 text-xs text-muted-foreground">{{ receiptOutcome.at }}</p>
+              <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || actionPending" @click="startNextReceipt">
+                  <Icon :name="receiptOutcome.mode === 'manual' ? 'lucide:clipboard-pen-line' : 'lucide:scan-line'" class="size-4" />
+                  {{ receiptOutcome.mode === "manual" ? "Lançar outra entrada" : "Escanear outra NF" }}
+                </button>
+                <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-semibold hover:bg-accent" @click="dismissReceiptOutcome">
+                  <Icon name="lucide:x" class="size-4" />
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="rounded-md border border-border bg-card">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
             <div>
@@ -642,7 +804,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <p v-if="scannerError" class="rounded-md border border-warning/30 bg-warning/10 p-2 text-sm text-warning">
                 {{ scannerError }}
               </p>
-              <label v-if="receiptMode === 'invoice'" class="block text-sm font-medium">
+              <label v-if="receiptMode === 'invoice'" data-receipt-anchor="invoice" class="block scroll-mt-4 p-0.5 text-sm font-medium transition-shadow" :class="anchorRing('invoice')">
                 QR, código de barras ou chave da NF
                 <textarea v-model="invoiceInput" rows="3" class="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Escaneie, cole ou digite a chave de acesso" />
               </label>
@@ -685,7 +847,7 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
 
             <div class="space-y-3">
-              <label class="block text-sm font-medium">
+              <label data-receipt-anchor="supplier" class="block scroll-mt-4 p-0.5 text-sm font-medium transition-shadow" :class="anchorRing('supplier')">
                 Fornecedor
                 <select :value="receiptSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" @change="onReceiptSupplierChange">
                   <option value="">Definir fornecedor</option>
@@ -778,7 +940,9 @@ onBeforeUnmount(stopInvoiceScanner);
                    ela fala, em vez de flutuar como uma caixa à parte que o
                    operador precisa relacionar de cabeça. -->
               <ReceiptField
-                class="mt-3"
+                data-receipt-field="material"
+                class="mt-3 scroll-mt-4 transition-shadow"
+                :class="fieldRing(preview.line.id, 'material')"
                 :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
                 :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
                 :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
@@ -813,7 +977,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <!-- 3. Só depois do insumo: quanto isso vale na unidade dele.
                    Pedir conversão antes de saber o insumo é pedir o impossível
                    — não há unidade-base para converter PARA. -->
-              <div v-if="preview.line.materialSku" class="mt-3">
+              <div v-if="preview.line.materialSku" data-receipt-field="conversion" class="mt-3 scroll-mt-4 transition-shadow" :class="fieldRing(preview.line.id, 'conversion')">
                 <ReceiptConversion
                   :preview="preview"
                   :conversions="receiptConversionsFor(preview.line.materialSku)"
@@ -828,7 +992,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <!-- 4. Quanto e quanto custou. O custo por unidade-base mora COM o
                    valor, porque é dele que ele deriva — estava misturado com o
                    que entra no estoque, que é outra pergunta. -->
-              <div class="mt-3 grid gap-3 sm:grid-cols-2">
+              <div data-receipt-field="qty" class="mt-3 grid scroll-mt-4 gap-3 transition-shadow sm:grid-cols-2" :class="fieldRing(preview.line.id, 'qty')">
                 <label class="block text-xs font-medium text-muted-foreground">
                   Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}
                   <input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" />
@@ -845,7 +1009,9 @@ onBeforeUnmount(stopInvoiceScanner);
               <!-- 5. De onde veio e até quando vale. Os dois saem do mesmo grupo
                    `rastro` da NF-e e respondem à mesma pergunta. -->
               <ReceiptField
-                class="mt-3"
+                data-receipt-field="expiry"
+                class="mt-3 scroll-mt-4 transition-shadow"
+                :class="fieldRing(preview.line.id, 'expiry')"
                 :attention="preview.needsExpiry"
                 title="Informe a validade"
                 icon="lucide:calendar-clock"
@@ -881,8 +1047,12 @@ onBeforeUnmount(stopInvoiceScanner);
                    tamanho de um gesto: largura inteira no celular, com o estado
                    dito por um ícone e pela cor do card, não por uma caixinha. -->
               <label
-                class="mt-3 flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors"
-                :class="preview.line.checked ? 'border-success/40 bg-success/10 text-success' : 'border-border bg-card hover:bg-accent'"
+                data-receipt-field="check"
+                class="mt-3 flex h-12 w-full cursor-pointer scroll-mt-4 items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors"
+                :class="[
+                  preview.line.checked ? 'border-success/40 bg-success/10 text-success' : 'border-border bg-card hover:bg-accent',
+                  fieldRing(preview.line.id, 'check'),
+                ]"
               >
                 <input
                   :checked="preview.line.checked"
@@ -912,7 +1082,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div><dt class="text-xs text-muted-foreground">Origem</dt><dd class="font-semibold">{{ receiptMode === "invoice" ? "NF" : "Sem NF" }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Itens</dt><dd class="font-semibold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Valor</dt><dd class="font-semibold tabular-nums">{{ formatMoney(receiptTotalCostQ) }}</dd></div>
-          <div><dt class="text-xs text-muted-foreground">Bloqueios</dt><dd class="font-semibold tabular-nums" :class="receiptTotalBlockers ? 'text-destructive' : 'text-success'">{{ receiptTotalBlockers }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">Pendências</dt><dd class="font-semibold tabular-nums" :class="receiptTotalPending ? 'text-destructive' : 'text-success'">{{ receiptTotalPending }}</dd></div>
         </dl>
 
         <div class="mt-4 rounded-md border border-border bg-background p-3">
@@ -925,16 +1095,44 @@ onBeforeUnmount(stopInvoiceScanner);
           <textarea v-model="receiptNote" rows="3" class="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Avaria, falta, devolução, observação na NF/CT-e" />
         </label>
 
-        <div v-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
-          <div v-for="blocker in receiptDocumentBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
-          <div v-for="blocker in receiptSupplierBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
+        <!-- Rascunho em branco não tem pendência: tem convite. Era daqui que
+             saía o vermelho "Ler QR, código de barras ou chave da NF" logo
+             depois de uma entrada dar certo — o rascunho zerava e a tela
+             cobrava do zero. -->
+        <div v-if="receiptIsBlank" class="mt-4 rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+          Nada em conferência. Escaneie a NF da próxima entrega, ou lance sem NF.
+        </div>
+
+        <!-- Toda pendência é um GESTO: clicar leva ao campo que falta, não a
+             uma acusação parada no rodapé. -->
+        <div v-else-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
+          <button
+            v-for="blocker in receiptDocumentBlockers"
+            :key="blocker"
+            type="button"
+            class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
+            :class="receiptWarningClasses.block"
+            @click="focusReceiptAnchor('invoice')"
+          >
+            {{ blocker }}
+          </button>
+          <button
+            v-for="blocker in receiptSupplierBlockers"
+            :key="blocker"
+            type="button"
+            class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
+            :class="receiptWarningClasses.block"
+            @click="focusReceiptAnchor('supplier')"
+          >
+            {{ blocker }}
+          </button>
           <button
             v-for="item in receiptPendingLines"
             :key="`pending-${item.id}`"
             type="button"
             class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
-            :class="receiptWarningClasses.block"
-            @click="focusReceiptLine(item.id)"
+            :class="receiptWarningClasses[item.tone]"
+            @click="focusReceiptLine(item.id, item.field)"
           >
             <span class="block truncate font-medium">{{ item.label }}</span>
             <span class="block text-xs opacity-80">{{ item.step }}</span>
@@ -942,21 +1140,24 @@ onBeforeUnmount(stopInvoiceScanner);
           <div v-for="(warning, index) in uniqueWatchWarnings" :key="`watch-${warning.key}-${index}`" class="rounded-md border p-2 text-sm" :class="receiptWarningClasses[warning.tone]">{{ warning.label }}</div>
         </div>
 
-        <div class="mt-4 border-t border-border pt-4">
-          <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || !receiptReady || actionPending" @click="confirmReceipt">
-            <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:package-check'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
+        <div v-if="!receiptIsBlank" class="mt-4 border-t border-border pt-4">
+          <!-- O botão nunca fica mudo. Se ainda falta algo ele diz o quê, e ao
+               ser apertado leva até o campo — botão cinza que não explica nada
+               é o pior aviso que um formulário pode dar. -->
+          <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-50" :class="receiptReady ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:bg-accent'" :disabled="readonlyFallback || actionPending" @click="onConfirmReceipt">
+            <Icon :name="actionPending ? 'lucide:loader-circle' : receiptReady ? 'lucide:package-check' : 'lucide:list-checks'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
             {{ actionPending ? "Confirmando" : "Confirmar entrada" }}
           </button>
-          <p v-if="receiptConfirmedAt" class="mt-3 rounded-md border border-success/25 bg-success/10 p-2 text-sm font-medium text-success">
-            Entrada confirmada em {{ receiptConfirmedAt }}
+          <p v-if="!receiptReady && receiptFirstBlocker" class="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Icon name="lucide:arrow-right" class="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              {{ receiptFirstBlocker.step }}{{ receiptFirstBlocker.label ? ` em ${receiptFirstBlocker.label}` : "" }}<template v-if="receiptTotalPending > 1"> · e mais {{ receiptTotalPending - 1 }}</template>
+            </span>
           </p>
-          <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50" :disabled="readonlyFallback || !receiptHasRejectionReason || actionPending" @click="rejectReceipt">
+          <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50" :disabled="readonlyFallback || !receiptHasRejectionReason || actionPending" @click="onRejectReceipt">
             <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:undo-2'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
             {{ actionPending ? "Registrando" : "Registrar devolução" }}
           </button>
-          <p v-if="receiptRejectedAt" class="mt-3 rounded-md border border-warning/30 bg-warning/10 p-2 text-sm font-medium text-warning">
-            Devolução registrada em {{ receiptRejectedAt }}
-          </p>
         </div>
       </aside>
     </section>

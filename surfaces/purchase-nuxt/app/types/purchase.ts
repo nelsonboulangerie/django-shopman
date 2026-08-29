@@ -195,6 +195,9 @@ export interface ReceiptLinePreview {
   // O gesto pendente ja esta escrito no card do proprio campo (insumo ou
   // embalagem), entao o aviso do topo da linha se cala para nao repetir.
   nextStepIsOnField: boolean;
+  // EM QUE campo do card mora o gesto que falta. E o que permite a tela levar o
+  // operador ate la em vez de so acusar a falta la embaixo, no rodape.
+  nextStepField: ReceiptFieldAnchor | null;
   // Pereciveis nao entram no estoque sem validade — e a nota nem sempre a traz.
   needsExpiry: boolean;
   conversionSuggestion: ReceiptConversionSuggestion | null;
@@ -219,6 +222,61 @@ export interface ReceiptWarning {
     | "invalid-qty";
   label: string;
   tone: ReceiptWarningTone;
+}
+
+/**
+ * Onde, dentro do card da linha, mora o gesto que falta.
+ *
+ * A ancora e o endereco do campo na TELA — o painel de pendencias e o botao de
+ * confirmar usam isto para rolar ate o campo e focar nele. Sem ela o aviso sabe
+ * o QUE falta e nao sabe ONDE, que era o buraco: "informe a validade" no rodape
+ * de uma nota de dez itens nao diz em qual item.
+ */
+export type ReceiptFieldAnchor = "material" | "conversion" | "qty" | "expiry" | "check";
+
+/** Onde mora um gesto que nao esta dentro de nenhuma linha. */
+export type ReceiptDocumentAnchor = "invoice" | "supplier";
+
+/** Uma pendencia da entrada, com nome do item e endereco do campo. */
+export interface ReceiptPendingItem {
+  id: string;
+  label: string;
+  step: string;
+  field: ReceiptFieldAnchor;
+  tone: ReceiptWarningTone;
+}
+
+/**
+ * O PRIMEIRO gesto que falta para confirmar — o que o botao responde.
+ *
+ * Confirmar com pendencia deixou de ser um botao morto: ele responde com esta
+ * pendencia, e a tela leva o operador ate ela.
+ */
+export interface ReceiptBlocker {
+  scope: "document" | "supplier" | "line";
+  /** O gesto, em uma frase: "Informe a validade". */
+  step: string;
+  /** De que item se trata. Vazio quando a pendencia nao e de uma linha. */
+  label: string;
+  lineId: string;
+  field: ReceiptFieldAnchor | null;
+  anchor: ReceiptDocumentAnchor | null;
+}
+
+/**
+ * O que ENTROU (ou voltou), guardado antes de o rascunho zerar.
+ *
+ * Confirmar limpa o rascunho — e um rascunho vazio nao sabe dizer o que acabou
+ * de acontecer. O resumo e capturado antes da limpeza para o aviso de sucesso
+ * ter o que mostrar: quantos itens, quanto, de quem.
+ */
+export interface ReceiptOutcome {
+  kind: "confirmed" | "rejected";
+  at: string;
+  mode: ReceiptMode;
+  lineCount: number;
+  totalCostQ: number;
+  supplierName: string;
 }
 
 export interface InvoiceProbe {

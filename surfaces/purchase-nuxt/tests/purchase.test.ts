@@ -13,6 +13,10 @@ import {
   formatMoney,
   formatQtyDiff,
   formatStockOnHand,
+  receiptFirstBlocker,
+  receiptIsBlank,
+  receiptOutcomeSummary,
+  receiptPendingItems,
   receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
@@ -661,6 +665,124 @@ describe("purchase presentation", () => {
     );
     expect(PURCHASE_API_ENDPOINTS.count).toBe("/api/v1/backstage/purchase/count/");
     expect(PURCHASE_API_ENDPOINTS.countConfirm).toBe("/api/v1/backstage/purchase/count/confirm/");
+  });
+});
+
+describe("avisos do recebimento", () => {
+  function lineOf(patch: Partial<ReceiptLine> = {}): ReceiptLine {
+    return {
+      id: "line-1",
+      materialSku: "OVOS",
+      conversionId: null,
+      purchaseQty: 2,
+      costInput: "24,00",
+      expiryDate: "2026-10-01",
+      lineNote: "",
+      invoiceDescription: "OVOS BRANCOS CX 30",
+      checked: true,
+      ...patch,
+    };
+  }
+
+  it("a pendencia sabe em QUE campo ela mora, para a tela poder levar ate la", () => {
+    const preview = receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], []);
+
+    expect(preview?.nextStep).toBe("Informe a validade");
+    expect(preview?.nextStepField).toBe("expiry");
+    expect(receiptPendingItems([preview!])).toEqual([
+      { id: "line-1", label: "OVOS BRANCOS CX 30", step: "Informe a validade", field: "expiry", tone: "block" },
+    ]);
+  });
+
+  it("cada bloqueio aponta o campo dele, e nao o topo do card", () => {
+    const semInsumo = receiptLinePreview(lineOf({ materialSku: "" }), "invoice", [ovos], []);
+    const semQuantidade = receiptLinePreview(lineOf({ purchaseQty: 0 }), "invoice", [ovos], []);
+    const semConversao = receiptLinePreview(
+      lineOf({ requiresConversion: true }),
+      "invoice",
+      [ovos],
+      [],
+    );
+
+    expect(semInsumo?.nextStepField).toBe("material");
+    expect(semQuantidade?.nextStepField).toBe("qty");
+    expect(semConversao?.nextStepField).toBe("conversion");
+  });
+
+  // O buraco mais silencioso da tela: a linha estava inteira, o botao ficava
+  // cinza, e NADA na pagina dizia que faltava conferir.
+  it("linha pronta que ninguem conferiu tambem e pendencia — era invisivel", () => {
+    const preview = receiptLinePreview(lineOf({ checked: false }), "invoice", [ovos], []);
+
+    expect(preview?.nextStep).toBe("");
+    expect(receiptPendingItems([preview!])).toEqual([
+      { id: "line-1", label: "OVOS BRANCOS CX 30", step: "Marcar como conferido", field: "check", tone: "watch" },
+    ]);
+  });
+
+  it("linha conferida e sem bloqueio nao pendura nada", () => {
+    const preview = receiptLinePreview(lineOf(), "invoice", [ovos], []);
+
+    expect(receiptPendingItems([preview!])).toEqual([]);
+  });
+
+  // Confirmar zera o rascunho, e o rascunho zerado disparava os mesmos
+  // bloqueios de sempre: vermelho de "escaneie a NF" logo ACIMA do verde de
+  // "entrada confirmada". Rascunho em branco e convite, nao erro.
+  it("rascunho em branco nao e erro", () => {
+    expect(receiptIsBlank([], "", "")).toBe(true);
+    expect(receiptIsBlank([], "  ", "\n")).toBe(true);
+    expect(receiptIsBlank([lineOf()], "", "")).toBe(false);
+    expect(receiptIsBlank([], "35190812...", "")).toBe(false);
+    expect(receiptIsBlank([], "", "Romaneio em papel")).toBe(false);
+  });
+
+  it("o primeiro bloqueio segue a ordem em que a tela pede as coisas", () => {
+    const pending = receiptPendingItems([receiptLinePreview(lineOf({ expiryDate: "" }), "invoice", [ovos], [])!]);
+
+    expect(receiptFirstBlocker(["Ler QR, código de barras ou chave da NF"], ["Definir fornecedor"], pending, true)).toEqual({
+      scope: "document",
+      step: "Ler QR, código de barras ou chave da NF",
+      label: "",
+      lineId: "",
+      field: null,
+      anchor: "invoice",
+    });
+    expect(receiptFirstBlocker([], ["Definir fornecedor"], pending, true)?.anchor).toBe("supplier");
+    expect(receiptFirstBlocker([], [], pending, true)).toEqual({
+      scope: "line",
+      step: "Informe a validade",
+      label: "OVOS BRANCOS CX 30",
+      lineId: "line-1",
+      field: "expiry",
+      anchor: null,
+    });
+  });
+
+  it("sem nada lancado, o bloqueio e ter algo a lancar — nao um botao mudo", () => {
+    expect(receiptFirstBlocker([], [], [], false)?.step).toBe("Lance ao menos um item para dar entrada");
+  });
+
+  it("pronto para confirmar nao inventa bloqueio", () => {
+    expect(receiptFirstBlocker([], [], [], true)).toBeNull();
+  });
+
+  it("o aviso de sucesso diz o que entrou, e nao so que deu certo", () => {
+    expect(
+      receiptOutcomeSummary({
+        kind: "confirmed",
+        at: "2026-08-29",
+        mode: "invoice",
+        lineCount: 7,
+        totalCostQ: 148000,
+        supplierName: "Moinho SP",
+      }),
+      // `formatMoney` para montar a expectativa: o Intl usa espaco NAO-QUEBRAVEL
+    // entre "R$" e o numero (a mesma armadilha do resumo da linha, acima).
+    ).toBe(`7 itens · ${formatMoney(148000)} · Moinho SP`);
+    expect(
+      receiptOutcomeSummary({ kind: "confirmed", at: "2026-08-29", mode: "manual", lineCount: 1, totalCostQ: 0, supplierName: "" }),
+    ).toBe("1 item");
   });
 });
 
