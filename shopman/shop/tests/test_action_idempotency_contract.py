@@ -185,8 +185,6 @@ def test_a_divida_do_caixa_nao_cresce() -> None:
         for _rel, _line, ref, method, idem in _action_sites()
         if method in MUTATING_METHODS and idem == "none"
     }
-    ainda_devendo = com_none & set(DIVIDA_ONDA_2)
-    assert ainda_devendo <= set(DIVIDA_ONDA_2)
     resolvidas = set(DIVIDA_ONDA_2) - com_none
     assert not resolvidas, (
         "estas acoes sairam do 'none' — otimo: remova-as de DIVIDA_ONDA_2 para a "
