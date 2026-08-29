@@ -16,6 +16,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  purge_sign_in_audit       — trilha de acessos de operador fora da retenção
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -92,6 +93,11 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
+    # Higiene, e por isso por último: não tem relação de ordem com nada acima.
+    # A trilha de acessos envelhece por PRAZO e não por clique — se o Admin
+    # pudesse apagar uma linha escolhida a dedo, quem usasse um crachá
+    # esquecido teria, na aba ao lado, o botão de sumir com a própria.
+    "purge_sign_in_audit",
 )
 
 MAINTENANCE_WORKER = "maintenance_worker"

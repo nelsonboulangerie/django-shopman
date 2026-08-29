@@ -1481,3 +1481,40 @@ exata. É o carimbo da Fase 5 do
 pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
 (ADR-024, R3). `projections/purchase.py::_approximate_stock_skus` lê
 `converted_via.approximate` para pôr o `≈` no saldo.
+
+---
+
+## `backstage.SignInEvent.data` — o contexto do acesso
+
+Escrito por `backstage/services/sign_in_audit.py::record`. O que é **coluna** no
+model (`user`, `username`, `method`, `outcome`, `station_ref`, `ip_address`,
+`created_at`) é o que se filtra; o que está aqui é o que se **lê depois de já ter
+achado a linha**, e por isso não vira coluna.
+
+| Chave | Tipo | O que é |
+|-------|------|---------|
+| `user_agent` | `str` (≤300) | navegador/dispositivo de quem entrou. Truncado: o cabeçalho não tem teto e não vale uma linha de 2KB por acesso |
+| `path` | `str` (≤200) | a rota por onde a autenticação passou (`/admin/login/`, `/api/v1/backstage/operator/unlock/`) — separa Admin de balcão sem uma coluna a mais |
+| `reason` | `str` | por que a linha é o que é: `operator_unlock_invalid` (PIN ou crachá que não bateu) ou `not_me` (revogação pedida pelo dono) |
+| `anomalies` | `list[str]` | os códigos que fizeram este acesso ser **destacado**: `failure`, `badge`, `unknown_station`, `outside_hours`, `burst`, `after_failure`. Vazio/ausente = acesso de rotina |
+| `revoked_at` | `str` (ISO) | quando o dono clicou "não fui eu" **sobre este acesso** |
+| `revoked_sign_in_event_id` | `int` | na linha `outcome=revoked`, qual acesso foi repudiado |
+| `sessions_revoked` | `int` | quantas sessões caíram |
+| `requested_by` | `str` | quem pediu a revogação (é sempre o dono da conta — a API recusa o resto) |
+
+`anomalies` mora no JSON e não numa coluna de propósito: é resultado de uma
+**regra editável** (`RuleConfig` `sign_in_highlight`), e virar coluna congelaria
+no banco a resposta de ontem para uma pergunta que o gerente pode mudar hoje. O
+que se filtra — método, estação, resultado — é fato, não julgamento.
+
+Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
+fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
+
+### `shop.UserNotification.action_data` — o payload da ação
+
+| Chave | Quando | O que é |
+|-------|--------|---------|
+| `announcement_id` | categoria `campaign` | o anúncio que as ações `approve`/`reject` decidem |
+| `sign_in_event_id` | categoria `sign_in` | o acesso que a ação `not_me` repudia |
+| `anomalies` | categoria `sign_in` | os códigos de destaque, copiados do evento para a tela não precisar de um segundo fetch |
+| `highlight` | categoria `sign_in` | `bool` — atalho de leitura para `anomalies` não vazio |

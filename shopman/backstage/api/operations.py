@@ -53,6 +53,7 @@ from shopman.utils.monetary import format_money
 from shopman.backstage import station_trust
 from shopman.backstage.api._production_filters import report_filters
 from shopman.backstage.constants import POS_CHANNEL_REF
+from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue
@@ -88,6 +89,7 @@ from shopman.backstage.services import (
 from shopman.backstage.services import (
     production as production_service,
 )
+from shopman.backstage.services import sign_in_audit
 from shopman.backstage.services.exceptions import (
     OrderConflict,
     OrderError,
@@ -475,6 +477,10 @@ class OperatorLoginView(APIView):
                 {"detail": "Usuário ou senha inválidos.", "error": {"code": "operator_login_invalid"}},
                 status=403,
             )
+        # Quem sabe por qual porta a pessoa entrou é quem abre a porta: o
+        # backend de autenticação não distingue senha de PIN nem de crachá. A
+        # linha da trilha quem grava é o receiver do `user_logged_in`.
+        sign_in_audit.mark_method(request, SignInMethod.PASSWORD)
         login(request, user)
         # `operator`, e não `device_user`: entrar com senha é identificar-se como
         # aquela pessoa. Não existe mais conta de máquina para nomear aqui.
@@ -519,18 +525,46 @@ class OperatorUnlockView(APIView):
 
         badge = str(body.get("badge") or "").strip()
         if badge:
+            metodo = SignInMethod.BADGE
+            tentado = ""
+            # Crachá que não bate não tem conta a nomear, e é isso mesmo que a
+            # linha deve dizer: ninguém a ser avisado, só o log registrando que
+            # alguém passou um crachá que não existe.
+            alvo = None
             operator = operator_service.resolve_operator_by_badge(badge, required_perm=perm)
         else:
+            metodo = SignInMethod.PIN
             operator_id = str(body.get("operator_id") or "").strip()
             pin = str(body.get("pin") or "")
             operator = (
                 get_user_model().objects.filter(pk=operator_id, is_active=True).first()
                 if operator_id else None
             )
+            tentado = operator.get_username() if operator is not None else ""
+            # Guardado ANTES da verificação: se o PIN falhar, `operator` vira
+            # None e some a única referência à conta-alvo — que é justamente
+            # quem precisa ser avisado de que alguém errou o PIN dela.
+            alvo = operator
             if operator is not None and not operator_service.verify_operator_pin(operator, pin, required_perm=perm):
                 operator = None
 
         if operator is None:
+            # A recusa de PIN/crachá NÃO passa por `authenticate()`, então não
+            # existe `user_login_failed` para ouvir: é aqui, na única view que a
+            # produz, que ela vira linha. Mesma função de gravação do sucesso —
+            # duas origens para um fato que o Django só anuncia pela metade, e
+            # não dois caminhos de trilha.
+            #
+            # Crachá recusado não tem conta a nomear (o token não bateu com
+            # ninguém), e é isso mesmo que a linha deve dizer.
+            sign_in_audit.record(
+                user=alvo,
+                username=tentado or sign_in_audit.UNKNOWN_SUBJECT,
+                method=metodo,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason="operator_unlock_invalid",
+            )
             return Response(
                 {"detail": "Identificação inválida.", "error": {"code": "operator_unlock_invalid"}},
                 status=403,
@@ -548,6 +582,7 @@ class OperatorUnlockView(APIView):
         # não um backend de autenticação: com dois configurados (OTP de cliente,
         # senha de staff) o Django não adivinha qual gravar na sessão e levanta
         # ``ValueError``. Sem isto, o destrave respondia 500 no balcão.
+        sign_in_audit.mark_method(request, metodo)
         login(request, operator, backend=MODEL_BACKEND)
         return Response({"ok": True, "operator": operator_service.operator_card(operator)})
 
@@ -566,6 +601,80 @@ class OperatorLockView(APIView):
     def post(self, request):
         logout(request)
         return Response({"ok": True})
+
+
+class OperatorBadgeLostView(APIView):
+    """O operador declara que perdeu o crachá, provando o PIN.
+
+    Ativo, não reativo: quem perde o crachá às 6h não espera o ladrão usar.
+    Mesmo efeito do "não fui eu" — sessões caem, crachá morre, PIN fica de pé.
+
+    Gate de ESTAÇÃO e não de sessão, igual à troca de PIN: quem chega sem crachá
+    está na tela de destrave, ainda sem sessão. **Provar o PIN é a autorização** —
+    o crachá é de quem sabe o PIN daquela conta. PIN errado conta para o lockout.
+    """
+
+    permission_classes = [IsTrustedStation]
+
+    def post(self, request):
+        from shopman.backstage.services import operator as operator_service
+
+        body = request.data or {}
+        # Confirmação ANTES do PIN: um cliente que esqueceu a flag não pode
+        # gastar uma tentativa do lockout de quem nem pediu nada.
+        if str(body.get("confirm") or "").lower() not in ("1", "true", "yes"):
+            return Response(
+                {
+                    "ok": False,
+                    "needs_confirmation": True,
+                    "detail": (
+                        "Seu crachá será invalidado e as sessões abertas da sua conta "
+                        "serão encerradas. Seu PIN continua valendo. Um gerente emite "
+                        "outro crachá."
+                    ),
+                },
+                status=409,
+            )
+
+        pin = str(body.get("pin") or "")
+        if not pin:
+            return Response({"detail": "Informe o seu PIN.", "field": "pin"}, status=400)
+
+        alvo = operator_service.resolve_target_for_pin_change(request, body.get("operator_id"))
+        if alvo is None:
+            return Response(
+                {"detail": "Operador não identificado.", "error": {"code": "no_credential"}},
+                status=400,
+            )
+
+        # `required_perm=None`: o crachá é da PESSOA, não da tela. Exigir a
+        # permissão desta superfície deixaria quem opera só a Produção sem poder
+        # matar o próprio crachá a partir do balcão em que está.
+        if not operator_service.verify_operator_pin(alvo, pin, required_perm=None):
+            # Errar o PIN aqui é tentar matar o crachá de alguém: vira linha, e o
+            # dono é avisado como em qualquer recusa.
+            sign_in_audit.record(
+                user=alvo,
+                method=SignInMethod.PIN,
+                outcome=SignInOutcome.FAILED,
+                request=request,
+                reason="badge_lost_invalid",
+            )
+            return Response(
+                {"detail": "PIN inválido.", "error": {"code": "operator_pin_invalid"}},
+                status=403,
+            )
+
+        try:
+            resultado = sign_in_audit.revoke_access(
+                # Provar o PIN É ser o dono — a mesma autorização da troca de PIN.
+                user=alvo, requested_by=alvo,
+                reason=sign_in_audit.REASON_LOST, request=request,
+            )
+        except sign_in_audit.RevokeError as exc:
+            return Response({"detail": str(exc), "error": {"code": exc.code}}, status=400)
+
+        return Response({"ok": True, **resultado})
 
 
 class OperatorPinChangeView(APIView):

@@ -19,7 +19,9 @@ const BADGE = "a1b2c3d4e5f6"; // 12 hex: o formato de `issue_badge`
 
 const unlock = vi.fn();
 const changePin = vi.fn();
+const reportBadgeLost = vi.fn();
 const mustChange = ref(false);
+const lostBadgeError = ref("");
 
 vi.mock("../../app/composables/useOperatorLock", () => ({
   useOperatorLock: () => ({
@@ -31,6 +33,8 @@ vi.mock("../../app/composables/useOperatorLock", () => ({
     unlock,
     changePin,
     changeError: ref(""),
+    reportBadgeLost,
+    lostBadgeError,
     operator: ref(null),
     mustChange,
     busy: ref(false),
@@ -335,5 +339,123 @@ describe("OperatorLock — PIN pelo teclado físico", () => {
     await confirm.trigger("click");
 
     expect(unlock).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+});
+
+// ── A outra metade do par ─────────────────────────────────────────────────
+//
+// ⚠️ Esta tela se confunde com a AUTORIZAÇÃO DO GERENTE do PDV, não com o
+// login: as duas aparecem no meio do expediente, as duas são um teclado de PIN
+// e as duas interrompem quem está atendendo. O teclado é o mesmo componente
+// (`OperatorIdentify`) nas duas, então quem separa é o TEXTO — e ele só separa
+// se as duas metades existirem. A metade de lá é "Você continua como <fulano>".
+
+describe("OperatorLock — diz que a sessão TROCA", () => {
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(true);
+    changePin.mockReset();
+    mustChange.value = false;
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+  });
+
+  it("anuncia que quem entra ASSUME o balcão", async () => {
+    const wrapper = await mount();
+
+    expect(wrapper.text()).toContain("Você assume o balcão.");
+  });
+
+  it("pergunta quem está OPERANDO, não quem autoriza", async () => {
+    const wrapper = await mount();
+
+    expect(wrapper.text()).toContain("Quem está operando?");
+    expect(wrapper.text()).not.toContain("Quem autoriza?");
+  });
+});
+
+// ── "Perdi meu crachá" ───────────────────────────────────────────────────────
+//
+// A saída de quem chega às 6h sem o crachá. Mora na trava porque é ali que a
+// pessoa está: pré-login, sem sessão, olhando a lista de nomes. Provar o PIN é a
+// autorização — o mesmo contrato da troca de PIN.
+describe("OperatorLock — perdi meu crachá", () => {
+  beforeEach(() => {
+    unlock.mockReset().mockResolvedValue(true);
+    changePin.mockReset();
+    reportBadgeLost.mockReset().mockResolvedValue(true);
+    mustChange.value = false;
+    lostBadgeError.value = "";
+    vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
+  });
+
+  afterEach(() => {
+    mounted?.unmount();
+    mounted = null;
+    vi.unstubAllGlobals();
+  });
+
+  /** Escolhe alguém na lista — é o que faz o rodapé (e o pad) aparecerem. */
+  async function pickSomeone(wrapper: Awaited<ReturnType<typeof mountSuspended>>) {
+    const nome = wrapper.findAll("button").find((b) => b.text().includes("Bia Forno"));
+    await nome!.trigger("click");
+  }
+
+  it("o botão é descobrível: texto legível, não menu escondido", async () => {
+    const wrapper = await mount();
+    await pickSomeone(wrapper);
+
+    const botao = wrapper.findAll("button").find((b) => b.text().includes("Perdi meu crachá"));
+    expect(botao).toBeDefined();
+  });
+
+  it("a tela diz o que acontece ANTES de pedir o PIN", async () => {
+    const wrapper = await mount();
+    await pickSomeone(wrapper);
+    const botao = wrapper.findAll("button").find((b) => b.text().includes("Perdi meu crachá"));
+    await botao!.trigger("click");
+
+    const texto = wrapper.text();
+    expect(texto).toContain("Seu crachá para de funcionar agora");
+    expect(texto).toContain("Seu PIN continua valendo");
+    expect(texto).toContain("Um gerente emite outro crachá");
+  });
+
+  it("o leitor de crachá fica desligado aqui — quem está nesta tela não tem o crachá", async () => {
+    const wrapper = await mount();
+    await pickSomeone(wrapper);
+    await wrapper.findAll("button").find((b) => b.text().includes("Perdi meu crachá"))!.trigger("click");
+
+    scan(BADGE);
+
+    expect(unlock).not.toHaveBeenCalled();
+  });
+
+  it("invalida o crachá do operador escolhido, provando o PIN", async () => {
+    const wrapper = await mount();
+    await pickSomeone(wrapper);
+    await wrapper.findAll("button").find((b) => b.text().includes("Perdi meu crachá"))!.trigger("click");
+
+    // Dentro do modo: escolher-se de novo e digitar o PIN.
+    await pickSomeone(wrapper);
+    for (const d of "1234") {
+      await wrapper.findAll("button").find((b) => b.text().trim() === d)!.trigger("click");
+    }
+    await wrapper.find('button[aria-label="Confirmar"]').trigger("click");
+
+    expect(reportBadgeLost).toHaveBeenCalledWith({ operatorId: 1, pin: "1234" });
+  });
+
+  it("cancelar volta para a identificação sem invalidar nada", async () => {
+    const wrapper = await mount();
+    await pickSomeone(wrapper);
+    await wrapper.findAll("button").find((b) => b.text().includes("Perdi meu crachá"))!.trigger("click");
+
+    await wrapper.findAll("button").find((b) => b.text().trim() === "Cancelar")!.trigger("click");
+
+    expect(reportBadgeLost).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Identifique-se para operar");
   });
 });
