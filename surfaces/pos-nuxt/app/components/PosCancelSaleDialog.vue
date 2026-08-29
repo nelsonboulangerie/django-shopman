@@ -17,6 +17,8 @@ const props = defineProps<{
   reason: string;
   maxAgeMinutes?: number;
   managers?: POSManagerProjection[];
+  /** Quem CONTINUA operando depois da assinatura. Ver PosManagerAuthDialog. */
+  operatorName?: string;
   busy?: boolean;
   error?: string;
 }>();
@@ -60,6 +62,10 @@ function onBadge(token: string) {
             Disponível por até {{ maxAgeMinutes }} minutos após a venda; depois, cancele pelo gestor.
           </template>
         </UiDialogDescription>
+        <!-- Autorizar não é logar: a sessão não troca. Ver PosManagerAuthDialog. -->
+        <p v-if="operatorName" class="text-sm font-medium text-foreground">
+          Você continua como {{ operatorName }}.
+        </p>
       </UiDialogHeader>
 
       <div class="flex flex-col items-center gap-4 pb-1">

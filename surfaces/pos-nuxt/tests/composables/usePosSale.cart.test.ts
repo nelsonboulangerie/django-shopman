@@ -158,21 +158,28 @@ describe("usePosSale — a trava da gaveta morde ao INICIAR a venda", () => {
     h.handles.dispose();
   });
 
-  it("'já fechei' com a gaveta fechada abre a comanda que esperava", async () => {
-    stubDrawer({ known: true, open: true, raw: "0x12" });
-    const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
-    const h = makeSale({ projection: drawerProjection(), actionCall });
-    await h.sale.openTab("M1");
-    expect(actionCall).not.toHaveBeenCalled();
+  it("fechar a gaveta abre a comanda que esperava — sozinho, sem clique nem PIN", async () => {
+    // ⚠️ A saída normal da trava não é botão: a tela sonda o sensor e sai
+    // quando a gaveta fecha. Era aqui que morava o "Já fechei", removido por
+    // ser auto-declaração — a mentira que o sensor existe para desmentir.
+    vi.useFakeTimers();
+    try {
+      stubDrawer({ known: true, open: true, raw: "0x12" });
+      const actionCall = vi.fn().mockResolvedValue(makeTabPayload());
+      const h = makeSale({ projection: drawerProjection(), actionCall });
+      await h.sale.openTab("M1");
+      expect(actionCall).not.toHaveBeenCalled();
 
-    stubDrawer({ known: true, open: false, raw: "0x16" });
-    await h.sale.drawerLock.recheck();
-    await nextTick();
+      stubDrawer({ known: true, open: false, raw: "0x16" });
+      await vi.advanceTimersByTimeAsync(400);
+      await nextTick();
 
-    expect(actionCall).toHaveBeenCalledTimes(1);
-    expect(h.sale.hasOpenTab.value).toBe(true);
-    expect(h.sale.drawerLock.open.value).toBe(false);
-    h.handles.dispose();
+      expect(h.sale.hasOpenTab.value).toBe(true);
+      expect(h.sale.drawerLock.open.value).toBe(false);
+      h.handles.dispose();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

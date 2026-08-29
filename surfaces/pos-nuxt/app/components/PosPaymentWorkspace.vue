@@ -72,6 +72,8 @@ const props = defineProps<{
   managerApprovalError: string;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
+  /** Quem CONTINUA operando depois da assinatura do gerente. Ver PosManagerAuthDialog. */
+  operatorName?: string;
   fulfillmentType: "pickup" | "delivery";
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
@@ -1092,8 +1094,10 @@ defineExpose({
   <!-- AUTORIZAÇÃO DO GERENTE -->
   <PosManagerAuthDialog
     v-model:open="managerAuthOpen"
+    action="sale_approval"
     :threshold-q="managerThresholdQ"
     :reasons="review?.approval_reasons"
+    :operator-name="operatorName || ''"
     :managers="managers"
     :busy="loading"
     :error="managerApprovalError"

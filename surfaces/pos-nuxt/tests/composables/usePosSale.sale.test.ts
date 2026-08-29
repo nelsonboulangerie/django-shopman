@@ -387,7 +387,7 @@ const AGENT_DRAWER = {
 };
 
 /** Carrinho pronto para checkout num balcão com o agente local instalado. */
-function saleWithDrawer(actionCall: ReturnType<typeof vi.fn>, drawer = AGENT_DRAWER) {
+async function saleWithDrawer(actionCall: ReturnType<typeof vi.fn>, drawer = AGENT_DRAWER) {
   const projection = makeProjection({
     checkout: {
       intent_version: 1,
@@ -397,8 +397,17 @@ function saleWithDrawer(actionCall: ReturnType<typeof vi.fn>, drawer = AGENT_DRA
   });
   const h = makeSale({ projection, actionCall });
   const pao = h.handles.posValue.value!.products[0]!;
+  // ⚠️ `await`: com agente no balcão, o PRIMEIRO item de uma venda sem comanda
+  // passa pela trava da gaveta (é o "iniciar a venda" deste fluxo), e a leitura
+  // do sensor é assíncrona. Sem esperar, o carrinho ainda está vazio aqui.
   h.sale.addProduct(pao);
+  await flushDrawerRead();
   return h;
+}
+
+/** Dá tempo à leitura do sensor (loopback) antes de seguir. */
+async function flushDrawerRead(): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 describe("usePosSale — a gaveta na venda em dinheiro", () => {
@@ -406,7 +415,17 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
 
   beforeEach(() => {
     kicks = [];
-    vi.stubGlobal("fetch", vi.fn((_url: string, init?: RequestInit) => {
+    vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
+      // A leitura da gaveta (`GET /drawer`) atravessa o mesmo agente desde que a
+      // trava passou a morder no primeiro item da venda sem comanda. Ela não é
+      // um chute: responder aqui mantém `kicks` sendo só o que ABRE a gaveta.
+      if (String(url).endsWith("/drawer")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ known: true, calibrated: true, open: false, raw: "0x16" }),
+        });
+      }
       kicks.push(JSON.parse(init!.body as string).reason);
       return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
     }));
@@ -414,7 +433,7 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("venda em dinheiro abre a gaveta — o momento mais comum de dar troco", async () => {
-    const h = saleWithDrawer(saleRouter());
+    const h = await saleWithDrawer(saleRouter());
     h.sale.cart.paymentMethod = "cash";
     h.sale.tenderAdd(1000);
 
@@ -426,7 +445,7 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
   });
 
   it("venda sem dinheiro NÃO abre a gaveta", async () => {
-    const h = saleWithDrawer(saleRouter());
+    const h = await saleWithDrawer(saleRouter());
     h.sale.cart.paymentMethod = "pix";
 
     await h.sale.submitSale();
@@ -437,7 +456,7 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
   });
 
   it("o dono pode desligar a abertura automática sem perder o botão manual", async () => {
-    const h = saleWithDrawer(saleRouter(), { ...AGENT_DRAWER, open_on_cash_sale: false });
+    const h = await saleWithDrawer(saleRouter(), { ...AGENT_DRAWER, open_on_cash_sale: false });
     h.sale.cart.paymentMethod = "cash";
     h.sale.tenderAdd(1000);
 
@@ -449,7 +468,7 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
   });
 
   it("balcão de gaveta com chave não bate no agente", async () => {
-    const h = saleWithDrawer(saleRouter(), {
+    const h = await saleWithDrawer(saleRouter(), {
       adapter: "manual", can_kick: false, open_on_cash_sale: false,
     } as typeof AGENT_DRAWER);
     h.sale.cart.paymentMethod = "cash";
@@ -459,6 +478,83 @@ describe("usePosSale — a gaveta na venda em dinheiro", () => {
     await h.sale.submitSale();
 
     expect(kicks).toEqual([]);
+    h.handles.dispose();
+  });
+});
+
+
+// ── A trava tem que morder na venda que ESTE balcão faz ───────────────────
+//
+// A trava nasceu presa ao `openTab`, descrito como "o único portão de entrada
+// na venda". Era verdade com comanda obrigatória e deixou de ser: este balcão
+// roda `requires_open_tab_for_cart: false`, então a venda comum (toca o
+// produto, cobra, entrega) nunca passa por `openTab`. A trava existia e não
+// agia justamente na venda que mais acontece — deixar a gaveta aberta não
+// custava nada. O trap certo é o PRIMEIRO item de uma venda nova sem comanda.
+
+describe("usePosSale — a trava da gaveta na venda SEM comanda", () => {
+  function drawerAnswering(open: boolean) {
+    vi.stubGlobal("fetch", vi.fn((url: string) => {
+      if (String(url).endsWith("/drawer")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ known: true, calibrated: true, open, raw: open ? "0x12" : "0x16" }),
+        });
+      }
+      return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({ ok: true }) });
+    }));
+  }
+
+  function makeTabless() {
+    const projection = makeProjection({
+      checkout: {
+        intent_version: 1,
+        capabilities: { tab_lifecycle: { requires_open_tab_for_cart: false, requires_tab_before_save: false } },
+      } as ReturnType<typeof makeProjection>["checkout"],
+      cash_drawer: AGENT_DRAWER as ReturnType<typeof makeProjection>["cash_drawer"],
+    });
+    return makeSale({ projection, actionCall: saleRouter() });
+  }
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("gaveta ABERTA: o primeiro item não entra e o diálogo aparece", async () => {
+    drawerAnswering(true);
+    const h = makeTabless();
+
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await flushDrawerRead();
+
+    expect(h.sale.cart.items).toHaveLength(0);
+    expect(h.sale.drawerLock.open.value).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("gaveta FECHADA: o primeiro item entra normalmente", async () => {
+    drawerAnswering(false);
+    const h = makeTabless();
+
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await flushDrawerRead();
+
+    expect(h.sale.cart.items).toHaveLength(1);
+    expect(h.sale.drawerLock.open.value).toBe(false);
+    h.handles.dispose();
+  });
+
+  it("venda JÁ começada não vira refém: o 2º item entra com a gaveta aberta", async () => {
+    drawerAnswering(false);
+    const h = makeTabless();
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    await flushDrawerRead();
+
+    drawerAnswering(true); // abriram a gaveta no meio da venda
+    h.sale.addProduct(h.handles.posValue.value!.products[1]!);
+    await flushDrawerRead();
+
+    expect(h.sale.cart.items).toHaveLength(2);
+    expect(h.sale.drawerLock.open.value).toBe(false);
     h.handles.dispose();
   });
 });

@@ -40,7 +40,19 @@ export type PrintOutcome = { status: "printed" | "failed" | "skipped"; detail: s
  */
 export type DrawerState =
   | { known: true; open: boolean; raw: string }
-  | { known: false; reason: string };
+  | { known: false; reason: string; calibrated: boolean };
+
+/**
+ * `calibrated` separa dois "não sei" que exigem respostas opostas.
+ *
+ * - `false` — esta estação nunca mediu a gaveta. A trava não existe aqui, e
+ *   isso é fato de instalação: ficar quieto é o certo.
+ * - `true` — a estação MEDIU e o sensor parou de responder. A trava existia e
+ *   sumiu, e essa é a fuga mais barata que existe contra ela: puxar o cabo da
+ *   gaveta custa menos que deixá-la aberta, e desliga a proteção para sempre.
+ *   Continua sem travar o balcão (fila na frente manda), mas não pode ser
+ *   silencioso — "falhar aberto" é aceitável, "falhar aberto e calado" não.
+ */
 
 /**
  * O agente da estação é mais antigo que o recurso que acabou de ser pedido.
@@ -132,7 +144,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    * isto NÃO sabe — a resposta viria pelo canal bidirecional, que um trabalho
    * de spool não tem. Por isso o teste termina no olho do operador.
    */
-  async function probe(): Promise<{ ok: boolean; message: string }> {
+  async function probe(): Promise<{ ok: boolean; message: string; drawerLock?: { calibrated: boolean } }> {
     if (!canKick.value) return { ok: false, message: "Este balcão abre a gaveta com a chave." };
     probing.value = true;
     try {
@@ -141,9 +153,15 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
       // Admin — sem rede, sem pendrive. Comparar o que a estação roda com o que
       // o Admin entrega é a única forma de saber se a máquina está atrasada.
       const versao = payload?.build ? ` Versão ${payload.build}.` : "";
+      // A trava está armada nesta estação? Só o agente sabe (a medição vive no
+      // `agent.json` do balcão), e sem isto o card de saúde não tinha como
+      // mostrar a diferença entre balcão protegido e balcão sem medição.
+      const drawerLock = payload?.drawer_lock
+        ? { calibrated: payload.drawer_lock.calibrated === true }
+        : undefined;
       return payload?.ok
-        ? { ok: true, message: `Fila ${payload.queue} respondendo.${versao}` }
-        : { ok: false, message: (payload?.reason || "A fila não está aceitando trabalho.") + versao };
+        ? { ok: true, message: `Fila ${payload.queue} respondendo.${versao}`, drawerLock }
+        : { ok: false, message: (payload?.reason || "A fila não está aceitando trabalho.") + versao, drawerLock };
     } catch (error) {
       return { ok: false, message: messageOf(error) };
     } finally {
@@ -185,16 +203,23 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
    */
   async function readState(): Promise<DrawerState> {
     if (!import.meta.client || !canKick.value) {
-      return { known: false, reason: "Este balcão não tem agente para ler a gaveta." };
+      return { known: false, reason: "Este balcão não tem agente para ler a gaveta.", calibrated: false };
     }
     try {
       const payload = await callAgent("/drawer", undefined, DRAWER_READ_TIMEOUT_MS);
       if (payload?.known === true && typeof payload.open === "boolean") {
         return { known: true, open: payload.open, raw: String(payload.raw ?? "") };
       }
-      return { known: false, reason: String(payload?.reason || "O agente não sabe o estado da gaveta.") };
+      return {
+        known: false,
+        reason: String(payload?.reason || "O agente não sabe o estado da gaveta."),
+        calibrated: payload?.calibrated === true,
+      };
     } catch (error) {
-      return { known: false, reason: messageOf(error) };
+      // Agente fora do ar / velho demais: não dá para afirmar que ESTA estação
+      // tinha medição, então não acusa regressão. O silêncio aqui é honesto —
+      // e o card de saúde já mostra "agente offline" em vermelho.
+      return { known: false, reason: messageOf(error), calibrated: false };
     }
   }
 

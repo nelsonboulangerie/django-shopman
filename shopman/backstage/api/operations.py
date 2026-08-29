@@ -2156,6 +2156,141 @@ class POSCashDrawerOpenView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
+        summary="Record that someone opened the drawer-lock PIN screen",
+        responses={200: OpenApiResponse(description="Attempt recorded.")},
+    ),
+)
+class POSCashDrawerUnlockAttemptView(APIView):
+    """Alguém abriu a tela de PIN da trava — inclusive quem desistiu.
+
+    A saída de emergência é escondida de propósito (mostrar o botão ensina o
+    bypass), e por isso quem a PROCURA é sinal. Registrar só o destrave que deu
+    certo apagaria o padrão que mais interessa: quem tenta e desiste.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        try:
+            pos_service.record_unlock_attempt(
+                operator=request.user,
+                outcome=str(request.data.get("outcome") or "opened"),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_unlock_attempt_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar a tentativa."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Report a drawer left open between sales",
+        responses={200: OpenApiResponse(description="Alert raised.")},
+    ),
+)
+class POSCashDrawerLeftOpenView(APIView):
+    """A gaveta ficou aberta entre vendas, além do limiar configurado.
+
+    A trava cobre o instante da venda; isto cobre a hora morta. Quem conta o
+    tempo é a página (o sensor vive na loopback do balcão), e o limiar vem da
+    projeção — decisão do dono, não constante de código.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        try:
+            pos_service.report_drawer_left_open(
+                operator=request.user,
+                minutes=request.data.get("minutes") or 0,
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_left_open_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar a gaveta aberta."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Record how long the drawer stayed open and how the block ended",
+        responses={200: OpenApiResponse(description="Block recorded.")},
+    ),
+)
+class POSCashDrawerBlockView(APIView):
+    """O bloqueio por gaveta aberta terminou: quanto durou e como acabou.
+
+    Com a trava dura, quem libera é o mundo físico — o bloqueio cai quando o
+    sensor diz que a gaveta fechou. Isso torna a duração mensurável pela
+    primeira vez: no desenho antigo o PIN cortava a medição no meio.
+
+    Não segura nada: a venda já andou quando isto é chamado, e o dado de B.I.
+    nunca pode custar uma venda.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        try:
+            pos_service.record_drawer_block(
+                operator=request.user,
+                duration_ms=request.data.get("duration_ms"),
+                outcome=str(request.data.get("outcome") or "closed"),
+                drawer_raw=str(request.data.get("drawer_raw") or ""),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_block_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar o bloqueio."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Report that the drawer sensor stopped answering on a calibrated station",
+        responses={200: OpenApiResponse(description="Blindness recorded.")},
+    ),
+)
+class POSCashDrawerBlindView(APIView):
+    """A trava da gaveta caiu numa estação que TINHA medição.
+
+    A trava falha aberta de propósito — sensor ruim nunca pode parar o balcão
+    com fila de cliente na frente. O preço dessa escolha era a fuga mais barata
+    contra ela: puxar o cabo da gaveta desligava a proteção para sempre, em
+    silêncio. Este endpoint é o barulho. A venda já seguiu quando ele é
+    chamado; ele não segura nada e não pode segurar.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        try:
+            pos_service.report_drawer_blind(
+                operator=request.user,
+                reason=str(request.data.get("reason") or ""),
+            )
+        except PosIntentError as exc:
+            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except Exception as exc:
+            logger.debug("pos_drawer_blind_failed user=%s", _actor(request), exc_info=True)
+            return Response({"detail": str(exc) or "Falha ao registrar o sensor cego."}, status=400)
+        return Response({"ok": True})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
         summary="Manager unlocks the next sale while the drawer is still open",
         responses={200: OpenApiResponse(description="Unlock recorded.")},
     ),
@@ -2179,6 +2314,8 @@ class POSCashDrawerUnlockView(APIView):
                 operator=request.user,
                 manager_approval=request.data.get("manager_approval"),
                 drawer_raw=str(request.data.get("drawer_raw") or ""),
+                duration_ms=request.data.get("duration_ms"),
+                outcome=str(request.data.get("outcome") or "manager_override"),
             )
         # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
         # diálogo do gerente em vez de mostrar um toast sem saída.

@@ -91,8 +91,18 @@ export function usePosSale(deps: PosSaleDeps) {
   const drawer = useCounterAgent(pos);
   // A trava da gaveta: o PDV recusa INICIAR a próxima venda enquanto SABE que a
   // gaveta está aberta. Vive num composable próprio (regras + diálogo); aqui só
-  // se decide ONDE ela morde — em `openTab`, o único portão de entrada na venda.
+  // se decide ONDE ela morde — no `openTab` E no primeiro item de uma venda sem
+  // comanda, que neste balcão é a venda comum (ver `addProduct`).
   const drawerLock = useDrawerLock({ drawer, actions, action });
+  // O olho da hora morta: a trava só age quando alguém tenta vender, e gaveta
+  // aberta no balcão parado não seria vista por ninguém.
+  useDrawerIdleWatch({
+    drawer,
+    actions,
+    action,
+    minutes: computed(() => Number(pos.value?.cash_drawer?.idle_open_alert_minutes ?? 0)),
+    blocked: computed(() => drawerLock.open.value),
+  });
 
   const tabInput = ref("");
   const busy = ref(false);
@@ -560,11 +570,38 @@ export function usePosSale(deps: PosSaleDeps) {
     return cart.items.find((item) => item.sku === sku)?.qty || 0;
   }
 
+  /**
+   * ⚠️ A trava da gaveta morde AQUI, e não só no `openTab`.
+   *
+   * A trava nasceu presa ao `openTab` — "o único portão de entrada na venda".
+   * Isso era verdade quando a comanda era obrigatória, e deixou de ser: este
+   * balcão roda com `requires_open_tab_for_cart: false` e
+   * `allows_direct_checkout_without_tab: true`, ou seja, a venda comum de
+   * balcão (toca o produto, cobra, entrega) NUNCA passa por `openTab`. A trava
+   * existia e não agia na venda que mais acontece.
+   *
+   * O ponto certo é o PRIMEIRO item de uma venda nova sem comanda: é o
+   * equivalente exato do `openTab` neste fluxo. A regra decidida não muda —
+   * trava ao INICIAR, nunca no meio: `setQty`, `restoreItem` e os itens
+   * seguintes seguem livres, porque venda começada não vira refém.
+   */
   function addProduct(product: POSProductProjection) {
     if (!canUseCart.value) {
       requestTabAssociation("cart");
       return;
     }
+    // Balcão sem agente não tem trava nenhuma (gaveta de chave): pular o
+    // `guard` aqui não muda o resultado — `readState` responderia "não sei", que
+    // nunca trava — e evita atravessar um `await` no gesto mais quente do PDV.
+    const startsNewSale = drawer.canKick.value && !hasOpenTab.value && !cart.items.length;
+    if (startsNewSale) {
+      void drawerLock.guard(async () => pushProduct(product));
+      return;
+    }
+    pushProduct(product);
+  }
+
+  function pushProduct(product: POSProductProjection) {
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
