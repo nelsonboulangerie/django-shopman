@@ -28,6 +28,7 @@ from shopman.utils.monetary import format_money
 from unfold.contrib.filters.admin.choice_filters import ChoicesRadioFilter
 from unfold.decorators import action, display
 from unfold.enums import ActionVariant
+from unfold.forms import BaseDialogForm
 from unfold.widgets import UnfoldAdminDecimalFieldWidget
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,17 @@ class PaymentTransactionInline(BaseTabularInline):
 # =============================================================================
 
 
+class RefundConfirmForm(BaseDialogForm):
+    """Confirmação do estorno total — sem campo além do próprio "eu confirmo".
+
+    O `BaseDialogForm` já carrega o `_form_submitted` obrigatório, que é o que
+    torna o GET incapaz de validar. Declarar a subclasse explicitamente (em vez de
+    deixar `form_class=None` e herdar o fallback do Unfold) é exigência do gate
+    canônico: uma ação de dialog cujo form não se lê no arquivo é uma ação cujo
+    contrato de confirmação ninguém consegue revisar.
+    """
+
+
 @admin.register(PaymentIntent)
 class PaymentIntentAdmin(BaseModelAdmin):
     """Read-only view of payment intents (mutated via PaymentService)."""
@@ -203,13 +215,48 @@ class PaymentIntentAdmin(BaseModelAdmin):
     actions_row = ["refund_row"]
     actions_detail = ["refund_detail"]
 
+    # ⚠️ `dialog` não é enfeite de UX: é o que faz esta ação exigir POST.
+    #
+    # O Unfold monta a URL de `actions_row` embrulhada só em `admin_site.admin_view`
+    # — `is_active and is_staff`, zero permissão de modelo — e a renderiza como um
+    # `<a href>`. Sem `dialog`, o corpo executava em GET. Com `SESSION_COOKIE_SAMESITE
+    # = "Lax"` o cookie VAI em navegação top-level GET, então um link mandado num
+    # WhatsApp e clicado pelo gestor logado estornava e redirecionava para a lista
+    # como se nada tivesse acontecido.
+    #
+    # Com `dialog`, o GET só renderiza o diálogo (o form nasce inválido, sem
+    # `_form_submitted`); o estorno acontece no POST, com CSRF. Ver
+    # `unfold/decorators.py`.
     @action(
         description=_("Reembolsar (total)"),
         url_path="refund",
         icon="undo",
         variant=ActionVariant.DANGER,
+        # `view` é o mesmo alcance que a TELA já oferecia — o único grupo
+        # não-superusuário com `view_paymentintent` é o Dono, e o RBAC define o
+        # dinheiro como dele. Aqui a URL passa a valer o que a tela já valia, sem
+        # janela em que ninguém consegue estornar. Apertar para uma permissão
+        # dedicada (`refund_paymentintent`) é da onda 4, junto com a concessão.
+        # ⚠️ ONDA 4, ATENÇÃO: apertar isto para `permissions=["change"]` NÃO
+        # funciona — este admin sobrescreve `has_change_permission` para `False`
+        # incondicionalmente (PaymentIntent não se edita à mão), e o decorador do Unfold
+        # chama o MÉTODO quando a permissão vem sem ponto. A ação morreria até para
+        # superusuário. A forma que funciona é a pontuada
+        # (`permissions=["payman.refund_paymentintent"]`), que o Unfold confere direto com
+        # `request.user.has_perm` e não passa pelo método. Verificado por
+        # introspecção em 29/08.
+        permissions=["view"],
+        dialog={
+            "title": _("Reembolsar o total?"),
+            "description": _(
+                "O valor capturado volta inteiro para o cliente pelo gateway. "
+                "Não há desfazer: um estorno a mais só se corrige com uma cobrança nova."
+            ),
+            "form_class": RefundConfirmForm,
+            "form_submit_text": _("Reembolsar"),
+        },
     )
-    def refund_row(self, request, object_id):
+    def refund_row(self, request, form, object_id):
         intent = self.get_object(request, object_id)
         if intent is None:
             messages.error(request, _("Intent não encontrado."))
@@ -222,6 +269,9 @@ class PaymentIntentAdmin(BaseModelAdmin):
         url_path="refund-amount",
         icon="undo",
         variant=ActionVariant.DANGER,
+        # Esta já só estorna em POST (tem página de formulário própria). O que
+        # faltava era a permissão: a URL era alcançável por qualquer staff.
+        permissions=["view"],
     )
     def refund_detail(self, request, object_id):
         """Intermediate page to refund a specific amount (or total if left blank)."""
@@ -260,7 +310,10 @@ class PaymentIntentAdmin(BaseModelAdmin):
         }
         return render(request, "admin/payman/payment_refund.html", context)
 
-    @admin.action(description=_("Reembolsar total dos selecionados"))
+    @admin.action(
+        description=_("Reembolsar total dos selecionados"),
+        permissions=["view"],
+    )
     def refund_selected(self, request, queryset):
         done = 0
         for intent in queryset:

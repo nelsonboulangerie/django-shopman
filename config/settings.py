@@ -1343,6 +1343,29 @@ SHOPMAN_ADMIN_REQUIRE_2FA = (os.environ.get("SHOPMAN_ADMIN_REQUIRE_2FA", "") or 
     "1", "true", "yes", "on",
 }
 
+# ── Portas do Admin que a biblioteca deixa abertas por default ──────────────
+# Quatro linhas, um bloco só de propósito: este arquivo passa de 1.500 linhas e é
+# disputado por praticamente toda frente. Bloco contíguo torna o conflito trivial.
+
+# A tela de TOTPDevice mostrava o SEGREDO e o link do QR de enrollment — default
+# `False` da django-otp, que o projeto nunca definiu. Quem lê a chave de outro
+# usuário gera os códigos dele, o que ANULA o step-up de 2FA como controle: o
+# segundo fator vira o primeiro, para quem já está dentro. Hoje só superusuário
+# alcança a tela, mas o hub de configurações já oferece o card — a intenção é abrir.
+OTP_ADMIN_HIDE_SENSITIVE_DATA = True
+
+# O mixin de import/export do catálogo devolve `True` quando o código de permissão
+# não é definido (`import_export/admin.py:127`) — e o projeto não definia. Um
+# usuário do grupo Caixa POSTava um CSV em /admin/offerman/product/import/ e
+# reescrevia preço, publicação e vendabilidade de TODO o catálogo por SKU.
+#
+# O recorte reusa a permissão que já existe e já está certa: Gerente e Admin de
+# Catálogo têm `change_product` (via `_escrever("offerman", "product", ...)`);
+# Caixa e Cozinha não. Zero mudança em `setup_groups` — importar é editar em
+# massa, e exportar é ler. Permissão dedicada só se o dono quiser separar as duas.
+IMPORT_EXPORT_IMPORT_PERMISSION_CODE = "change"
+IMPORT_EXPORT_EXPORT_PERMISSION_CODE = "view"
+
 # Employee discount — configurable percentage
 SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(
     os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20")

@@ -16,6 +16,7 @@ from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 from unfold.decorators import action, display
 from unfold.enums import ActionVariant
+from unfold.forms import BaseDialogForm
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,14 @@ def _format_date(d):
 # =============================================================================
 # POSITION ADMIN
 # =============================================================================
+
+
+class ReleaseHoldConfirmForm(BaseDialogForm):
+    """Confirmação da liberação da reserva — ver `RefundConfirmForm` no payman.
+
+    Sem campo próprio: o `_form_submitted` do `BaseDialogForm` é o que impede o GET
+    de validar, e é ele que faz a ação exigir POST.
+    """
 
 
 @admin.register(Position)
@@ -396,7 +405,7 @@ class HoldAdmin(BaseModelAdmin):
     def is_demand_display(self, obj):
         return obj.is_demand
 
-    @admin.action(description=_('Liberar reservas selecionadas'))
+    @admin.action(description=_('Liberar reservas selecionadas'), permissions=['view'])
     def release_holds(self, request, queryset):
         from shopman.stockman import stock
 
@@ -410,13 +419,38 @@ class HoldAdmin(BaseModelAdmin):
 
         self.message_user(request, _('{count} hold(s) liberado(s).').format(count=count))
 
+    # ⚠️ `dialog` é o que faz esta ação exigir POST — ver o comentário longo no
+    # `refund_row` do payman. Sem ele, o corpo executava em GET, e o cookie de
+    # sessão (SameSite=Lax) vai em navegação top-level: um link clicado pelo
+    # gestor liberava a reserva e voltava para a lista sem sinal nenhum.
     @action(
         description=_("Liberar"),
         url_path="release-hold",
         icon="lock_open",
         variant=ActionVariant.WARNING,
+        # `view` reproduz o alcance que a TELA já dava (Cozinha e Gerente têm
+        # `view_hold`), e tira a ação de qualquer staff pela URL. Apertar para
+        # `change_hold` — que hoje NINGUÉM tem — é da onda 4, junto com a concessão.
+        # ⚠️ ONDA 4, ATENÇÃO: apertar isto para `permissions=["change"]` NÃO
+        # funciona — este admin sobrescreve `has_change_permission` para `False`
+        # incondicionalmente (Hold não se edita à mão), e o decorador do Unfold
+        # chama o MÉTODO quando a permissão vem sem ponto. A ação morreria até para
+        # superusuário. A forma que funciona é a pontuada
+        # (`permissions=["stockman.change_hold"]`), que o Unfold confere direto com
+        # `request.user.has_perm` e não passa pelo método. Verificado por
+        # introspecção em 29/08.
+        permissions=["view"],
+        dialog={
+            "title": _("Liberar esta reserva?"),
+            "description": _(
+                "A quantidade volta para o estoque disponível e pode ser vendida a "
+                "outro cliente. O pedido que a reservou deixa de ter garantia."
+            ),
+            "form_class": ReleaseHoldConfirmForm,
+            "form_submit_text": _("Liberar"),
+        },
     )
-    def release_hold_row(self, request, object_id):
+    def release_hold_row(self, request, form, object_id):
         hold = self.get_object(request, object_id)
         if hold is None:
             messages.error(request, _("Hold não encontrado."))
