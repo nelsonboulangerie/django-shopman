@@ -793,6 +793,48 @@ class TestStatusColours:
         assert "preparar" not in proj.promise.message.lower()
         assert "depois do pagamento" not in proj.promise.message.lower()
 
+    def test_machine_cancel_code_never_reaches_the_customer(self, order, product):
+        """Código de máquina não vaza para a tela do cliente.
+
+        `cancellation_reason` é campo de AUDITORIA e carrega códigos
+        (`customer_requested`, `pix_timeout`, `card_timeout`,
+        `confirmation_timeout`). O `data-schemas.md` é explícito: "nunca exibir
+        ao cliente". Quem fala com o cliente é `cancellation_note`, escrita pelo
+        operador — a mesma regra que o lifecycle já aplica na notificação.
+
+        Sem nota, a tela não inventa motivo: fica vazia.
+        """
+        from shopman.orderman.models import Order as _Order
+
+        _Order.objects.filter(pk=order.pk).update(
+            status="cancelled",
+            data={**(order.data or {}), "cancellation_reason": "customer_requested"},
+        )
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.cancellation_note == ""
+        assert "customer_requested" not in str(proj.cancellation_note)
+
+    def test_operator_note_is_what_the_customer_reads(self, order, product):
+        """A justificativa escrita pelo operador é o que a tela mostra."""
+        from shopman.orderman.models import Order as _Order
+
+        _Order.objects.filter(pk=order.pk).update(
+            status="cancelled",
+            data={
+                **(order.data or {}),
+                "cancellation_reason": "customer_requested",
+                "cancellation_note": "Sem um dos ingredientes hoje",
+            },
+        )
+        order.refresh_from_db()
+
+        proj = build_order_tracking(order)
+
+        assert proj.cancellation_note == "Sem um dos ingredientes hoje"
+
     def test_todays_batch_does_not_charge_to_hold_a_spot(self, order_with_payment, product):
         """Fornada de HOJE não cobra para garantir vaga (política da casa, 28/08/2026).
 

@@ -204,7 +204,7 @@ class TrackingData:
     # Cancelamento pelo estabelecimento: motivo escolhido no Gestor e estado
     # do estorno (Pix/cartão) visíveis ao cliente — a página não depende da
     # notificação para contar a história.
-    cancellation_reason: str = ""
+    cancellation_note: str = ""
     refund_status_key: str | None = None
     # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
     # existe. A notificação pode não chegar (janela do WhatsApp, número
@@ -262,7 +262,11 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     delivery_distance_km = float(delivery_distance_km) if delivery_distance_km is not None else None
 
     payment_pending, payment_confirmed, payment_status_key, payment_expires_at = _payment_info(order)
-    cancellation_reason = str(order_data.get("cancellation_reason") or "")
+    # ⚠️ `cancellation_reason` carrega CÓDIGO DE MÁQUINA (pix_timeout,
+    # customer_requested…) e é campo de auditoria — data-schemas.md diz "nunca
+    # exibir ao cliente". O que chega ao cliente é a nota do operador, a mesma
+    # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
+    cancellation_note = str(order_data.get("cancellation_note") or "")
     refund_status_key = _refund_status_key(order)
     progress_steps = _build_progress_steps(
         order,
@@ -306,7 +310,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     return TrackingData(
         can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
-        cancellation_reason=cancellation_reason,
+        cancellation_note=cancellation_note,
         refund_status_key=refund_status_key,
         order_ref=interaction.order_ref,
         status=order.status,
