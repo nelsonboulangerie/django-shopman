@@ -104,20 +104,48 @@ class TestAccessLinkExchangeApi:
         assert response.status_code == 400
         assert client.session.get("_auth_user_id") is None
 
-    def test_cart_session_key_adopted_when_session_empty(self, client: Client, customer):
+    def test_cart_session_key_adopted_when_session_empty(self, cart_session, customer):
         # Fluxo do site: o código NB dobrou a sacola anônima na metadata do token.
-        _link, raw_token = self._token(customer, metadata={"cart_session_key": "sk_from_site"})
+        carried = cart_session.session["cart_session_key"]
+        _link, raw_token = self._token(customer, metadata={"cart_session_key": carried})
 
-        response = client.post(self.URL, {"token": raw_token})
+        other = Client()
+        response = other.post(self.URL, {"token": raw_token})
 
         assert response.status_code == 200
-        assert client.session.get("cart_session_key") == "sk_from_site"
+        assert other.session.get("cart_session_key") == carried
 
-    def test_cart_session_key_not_overridden_when_session_has_cart(self, client: Client, customer):
+    def test_carried_cart_wins_over_a_stale_local_one(self, cart_session, customer):
+        """O webview do WhatsApp NÃO chega vazio, e essa premissa custava a sacola.
+
+        Ele tem pote de cookie próprio e persistente, então traz o
+        ``cart_session_key`` de uma visita anterior. Enquanto a adoção só
+        acontecia com a sessão "vazia", a sacola que a pessoa acabou de montar
+        era descartada em favor da velha do mini-navegador.
+
+        Quem ganha é a que VIAJOU: ela é o contexto explícito deste login.
+        """
+        carried = cart_session.session["cart_session_key"]
+        _link, raw_token = self._token(customer, metadata={"cart_session_key": carried})
+
+        webview = Client()
+        stale = webview.session
+        stale["cart_session_key"] = "sacola-de-outro-dia"
+        stale.save()
+
+        response = webview.post(self.URL, {"token": raw_token})
+
+        assert response.status_code == 200
+        assert webview.session.get("cart_session_key") == carried
+
+    def test_a_carried_ref_without_items_does_not_replace_the_local_cart(
+        self, client: Client, customer,
+    ):
+        """Trocar por nada é pior do que não trocar: a ref viajada tem que valer."""
         session = client.session
         session["cart_session_key"] = "sk_local"
         session.save()
-        _link, raw_token = self._token(customer, metadata={"cart_session_key": "sk_from_site"})
+        _link, raw_token = self._token(customer, metadata={"cart_session_key": "sk_sem_sacola"})
 
         response = client.post(self.URL, {"token": raw_token})
 
@@ -498,20 +526,18 @@ class TestBrowserHandoff:
         assert landed.json()["identity_strength"] == "device"
 
     @pytest.mark.django_db
-    def test_the_cart_crosses_over_too(self, client, customer):
+    def test_the_cart_crosses_over_too(self, cart_session, customer):
         """Sessão nova sem sacola é a pior surpresa para quem estava no meio de um pedido."""
         from django.test import Client
 
-        self._sign_in(client, customer)
-        session = client.session
-        session["cart_session_key"] = "sacola-abc"
-        session.save()
+        carried = cart_session.session["cart_session_key"]
+        self._sign_in(cart_session, customer)
 
-        raw = client.post(self.URL, {"next": "/sacola"}).json()["url"].split("?t=")[1]
+        raw = cart_session.post(self.URL, {"next": "/sacola"}).json()["url"].split("?t=")[1]
         other = Client()
         other.post("/api/v1/auth/access/", {"token": raw})
 
-        assert other.session["cart_session_key"] == "sacola-abc"
+        assert other.session["cart_session_key"] == carried
 
     @pytest.mark.django_db
     def test_a_foreign_destination_is_refused(self, client, customer):

@@ -243,15 +243,33 @@ def capture(
 
     stripe = _get_stripe()
 
+    # ⚠️ Capturar exige o ``pi_...``, e o ``gateway_id`` só vira ``pi_`` quando o
+    # webhook ``checkout.session.completed`` chega para promovê-lo. Enquanto ele
+    # não chega (ou não chega nunca — endpoint errado no painel), o id guardado é
+    # a Checkout Session, e capturar com ele falha. A reconciliação existe
+    # justamente para o caso do webhook perdido, então ela não pode depender dele.
+    payment_intent_id = gateway_payment_intent_id(intent_ref) or intent.gateway_id
+    if payment_intent_id and payment_intent_id != intent.gateway_id:
+        try:
+            intent.gateway_id = payment_intent_id
+            intent.save(update_fields=["gateway_id"])
+        except Exception:
+            logger.debug("stripe.capture gateway_id promotion degraded", exc_info=True)
+
     try:
         capture_params = {}
         if amount_q is not None:
             capture_params["amount_to_capture"] = amount_q
 
-        stripe_intent = stripe.PaymentIntent.capture(
-            intent.gateway_id,
-            **capture_params,
-        )
+        # Já capturado no Stripe e não no Payman é divergência a RECONCILIAR, não
+        # a recobrar: mandar ``capture`` de novo devolve erro do provedor, e o
+        # erro fazia a reconciliação desistir de um pedido efetivamente pago.
+        stripe_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        if str(getattr(stripe_intent, "status", "") or "") != "succeeded":
+            stripe_intent = stripe.PaymentIntent.capture(
+                payment_intent_id,
+                **capture_params,
+            )
 
         txn = PaymentService.capture(
             intent_ref,
@@ -417,6 +435,119 @@ def get_status(intent_ref: str, **config) -> dict:
             "refunded_q": 0,
             "currency": "",
         }
+
+
+def check_gateway_status(intent_ref: str) -> str:
+    """O que o STRIPE diz sobre este intent? LEITURA pura, sem efeito colateral.
+
+    Mesmo contrato de ``payment_efi.check_gateway_status``, com um degrau a mais
+    que só o cartão tem: ``authorized``. Devolve ``captured``, ``authorized``,
+    ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+
+    ⚠️ **Este verbo existia na Efí e no mock, e não existia aqui.** Sem ele,
+    NADA no sistema jamais perguntava ao Stripe: ``get_status`` lê o Payman, o
+    webhook é a única escrita, e ``reconcile_payments`` também só lê o Payman.
+    Webhook perdido (endpoint errado no painel, segredo de outro ambiente, 400
+    na assinatura) virava dano permanente — o cliente pagava, voltava para o
+    acompanhamento e continuava lendo "Pagar com cartão", para sempre. E o
+    guard de timeout, sem ninguém a quem perguntar, respondia ``unpaid`` para
+    cartão por construção, autorizando o cancelamento de um pedido pago.
+
+    ``authorized`` é degrau próprio porque ``capture_method="manual"`` é o
+    padrão da casa: o Stripe segura o dinheiro em ``requires_capture`` até
+    alguém capturar. Achatar isso em ``pending`` diria "não pagou" sobre quem
+    pagou; achatar em ``captured`` diria que o dinheiro entrou antes de entrar.
+
+    ``not_found`` e ``error`` seguem sendo respostas DIFERENTES: intent que
+    nunca existiu é ausência de pagamento (cancelar é certo), gateway mudo é
+    incerteza (esperar é certo).
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return "not_found"
+
+    gateway_id = str(intent.gateway_id or "")
+    session_id = str((intent.gateway_data or {}).get("checkout_session_id") or "")
+
+    try:
+        stripe = _get_stripe()
+    except (StripeNotConfigured, ImportError):
+        # Sem credencial não se responde "não pagou": responde-se "não sei".
+        logger.warning("stripe.check_gateway_status_unconfigured intent=%s", intent_ref)
+        return "error"
+
+    try:
+        payment_intent_id = gateway_id if gateway_id.startswith("pi_") else ""
+        if not payment_intent_id:
+            # Antes do webhook o ``gateway_id`` ainda é a Checkout Session; é ela
+            # quem sabe qual PaymentIntent nasceu do checkout.
+            lookup_session = session_id or (gateway_id if gateway_id.startswith("cs_") else "")
+            if not lookup_session:
+                return "not_found"
+            session = stripe.checkout.Session.retrieve(lookup_session)
+            if str(getattr(session, "status", "") or "") == "expired":
+                return "cancelled"
+            payment_intent_id = _stripe_object_id(getattr(session, "payment_intent", None))
+            if not payment_intent_id:
+                # Sessão aberta, cliente ainda não concluiu: não há cobrança.
+                return "pending"
+
+        stripe_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+    except Exception as e:
+        logger.warning("stripe.check_gateway_status_failed intent=%s: %s", intent_ref, e)
+        return "error"
+
+    status = str(getattr(stripe_intent, "status", "") or "")
+    if status == "succeeded" or int(getattr(stripe_intent, "amount_received", 0) or 0) > 0:
+        return "captured"
+    if status == "requires_capture":
+        return "authorized"
+    if status == "canceled":
+        return "cancelled"
+    if status in {
+        "requires_payment_method",
+        "requires_confirmation",
+        "requires_action",
+        "processing",
+    }:
+        return "pending"
+    # Status novo do provedor: incerteza, e incerteza espera.
+    logger.warning("stripe.check_gateway_status_unknown intent=%s status=%s", intent_ref, status)
+    return "error"
+
+
+def gateway_payment_intent_id(intent_ref: str) -> str:
+    """O id do PaymentIntent no Stripe, resolvendo a Checkout Session se preciso.
+
+    Existe para a reconciliação poder CAPTURAR uma autorização cujo webhook se
+    perdeu: o ``gateway_id`` do Payman ainda pode ser o ``cs_...``, e capturar
+    exige o ``pi_...``. Devolve string vazia quando não dá para resolver.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return ""
+
+    gateway_id = str(intent.gateway_id or "")
+    if gateway_id.startswith("pi_"):
+        return gateway_id
+
+    session_id = str((intent.gateway_data or {}).get("checkout_session_id") or "")
+    lookup_session = session_id or (gateway_id if gateway_id.startswith("cs_") else "")
+    if not lookup_session:
+        return ""
+    try:
+        stripe = _get_stripe()
+        session = stripe.checkout.Session.retrieve(lookup_session)
+    except Exception as e:
+        logger.warning("stripe.gateway_payment_intent_lookup_failed intent=%s: %s", intent_ref, e)
+        return ""
+    return _stripe_object_id(getattr(session, "payment_intent", None))
 
 
 def construct_webhook_event(payload: bytes, sig_header: str):

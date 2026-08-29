@@ -152,26 +152,35 @@ def create_hold(
         pk = int(hold_id.split(":")[1])
         hold = Hold.objects.get(pk=pk)
 
-        # Planned holds (AVAILABILITY-PLAN §8): holds on planned quants and
-        # demand-only holds (quant=None) are INDEFINITE. The TTL starts
-        # running only at materialization (``planning.realize()`` fills in
-        # ``expires_at`` when the planned stock is produced). The old 48h
-        # TTL on planned holds meant customers could silently lose their
-        # reservation before production caught up — unacceptable.
+        # Duas reservas SEM PRAZO, e elas não são a mesma coisa (AVAILABILITY-PLAN §8):
         #
-        # ``metadata.planned`` is the durable marker used by the cart
-        # projection to classify the line as "Aguardando confirmação" or
-        # "Tudo pronto! Confirme": once materialize() runs, the hold keeps
-        # the flag AND gets a TTL, which is how the UI distinguishes a
-        # post-materialization hold from a vanilla 30-min cart hold.
+        #   • **fornada planejada** (``quant.target_date`` preenchido) — o pão ainda
+        #     não existe; a pessoa espera o lote sair. Isto É fila de espera.
+        #   • **demanda** (``quant is None``, política ``demand_ok``) — café,
+        #     Jambon-Beurre, croque: montado na hora, não sai de lote nenhum. Não
+        #     existe fila em que entrar, porque não existe lote a esperar.
+        #
+        # Nas duas o TTL fica desligado (a fornada porque o relógio só começa na
+        # materialização, a demanda porque não há o que materializar), e por isso
+        # elas pareciam iguais. Mas só a primeira é fila.
+        #
+        # ⚠️ Enquanto ``metadata.planned`` carimbava as DUAS, um café na sacola lia
+        # "Lista de espera", a revisão do pedido dizia "avisamos quando ficarem
+        # prontos", e o acompanhamento abria o painel de fila (``state_for`` →
+        # ``fermata``) — três telas mentindo a partir de um carimbo só. E o próprio
+        # código já sabia distinguir: ``is_planned`` saía ``False`` para a demanda, e
+        # a distinção era jogada fora na linha seguinte.
+        #
+        # Agora cada uma tem a sua marca. Quem pergunta "isto é fila?" lê
+        # ``planned``; quem pergunta "isto é feito na hora?" lê ``on_demand``.
         is_planned = False
-        is_indefinite = hold.quant is None or (
-            hold.quant is not None and hold.quant.target_date is not None
-        )
+        is_on_demand = hold.quant is None
+        is_indefinite = is_on_demand or hold.quant.target_date is not None
         if is_indefinite:
-            is_planned = hold.quant is not None and hold.quant.target_date is not None
+            is_planned = not is_on_demand
+            marker = "on_demand" if is_on_demand else "planned"
             hold.expires_at = None
-            hold.metadata = {**(hold.metadata or {}), "planned": True}
+            hold.metadata = {**(hold.metadata or {}), marker: True}
             hold.save(update_fields=["expires_at", "metadata"])
 
         return {

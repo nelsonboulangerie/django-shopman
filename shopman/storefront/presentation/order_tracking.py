@@ -285,6 +285,11 @@ class OrderTrackingProjection:
     waitlist_state: str
     waitlist_deadline: str | None
     waitlist_planned_for_display: str | None
+    # Captura simulada (DEBUG/staging). Vem PRONTA da projection do orquestrador,
+    # que é o único dono da pergunta: ambiente + método + estado do pedido. A API
+    # já a sobrescreveu com a resposta só-de-ambiente, e o resultado era o botão
+    # "Simular pagamento" na tela de um pedido de cartão no Stripe real.
+    mock_payment_enabled: bool
     # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente
     # (Pix/cartão) — a página não depende da notificação.
     cancellation_reason: str = ""
@@ -376,6 +381,7 @@ def present_tracking(data: TrackingData) -> OrderTrackingProjection:
         waitlist_state=data.waitlist_state,
         waitlist_deadline=data.waitlist_deadline,
         waitlist_planned_for_display=_waitlist_planned_for_display(data.waitlist_planned_for),
+        mock_payment_enabled=data.can_mock_confirm_payment,
     )
 
 

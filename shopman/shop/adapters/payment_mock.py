@@ -355,8 +355,8 @@ def check_gateway_status(intent_ref: str) -> str:
 
     Mesmo contrato do ``payment_efi.check_gateway_status``: devolve ``captured``,
     ``pending``, ``cancelled``, ``not_found`` ou ``error``. Quem pergunta é
-    ``shop.services.payment.verify_gateway_before_timeout_cancel``, antes de
-    auto-cancelar um PIX vencido.
+    ``shop.services.payment.settle_from_gateway``, antes de
+    auto-cancelar um pedido digital vencido.
 
     ``not_found`` e ``error`` são respostas DIFERENTES e não podem ser a mesma:
     intent que nunca existiu é ausência de pagamento (cancelar é certo), enquanto

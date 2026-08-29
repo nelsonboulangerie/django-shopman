@@ -102,6 +102,11 @@ class CartLineProjection:
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
 
+    # Feito na hora: item de política ``demand_ok`` (café, Jambon-Beurre, croque).
+    # Não sai de fornada, então nunca entra em fila — e merece dizer o que É, que
+    # é bom: preparado no momento do pedido, não tirado da prateleira.
+    is_made_to_order: bool = False
+
 
 @dataclass(frozen=True)
 class CartDiscountLineProjection:
@@ -374,9 +379,15 @@ def _build_line(
     qty = int(Decimal(str(item.get("qty", 0) or 0)))
     name = item.get("name") or names_by_sku.get(sku) or sku
 
+    raw_avail = avail_map.get(sku)
+    # A política é a fonte, não o hold: ela vale mesmo antes de existir reserva,
+    # e não depende de o carimbo do hold ter sido escrito corretamente.
+    is_made_to_order = bool(
+        raw_avail and raw_avail.get("availability_policy") == "demand_ok"
+    )
     is_awaiting, is_ready, deadline_iso, planned_for_date = _planned_hold(session_key, sku)
     is_available, available_qty = _line_availability(
-        sku, qty, avail_map.get(sku), own_holds,
+        sku, qty, raw_avail, own_holds,
     )
 
     disc = discount_items.get(sku)
@@ -393,6 +404,7 @@ def _build_line(
         line_total_q=int(item.get("line_total_q", 0) or 0),
         is_available=is_available,
         available_qty=available_qty,
+        is_made_to_order=is_made_to_order,
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,

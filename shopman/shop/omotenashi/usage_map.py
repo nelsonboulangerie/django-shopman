@@ -57,6 +57,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CART_EMPTY": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
+    "CART_MADE_TO_ORDER": (
+        ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
+    ),
     "CART_UNAVAILABLE_BANNER": (
         ("shopman/storefront/presentation/cart.py", "Loja", "Sacola"),
     ),
@@ -340,6 +343,9 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_GLIMPSE": (
+        ("shopman/storefront/presentation/home.py", "Loja", "Início"),
+    ),
+    "LOGIN_WA_GLIMPSE_WITH_CART": (
         ("shopman/storefront/presentation/home.py", "Loja", "Início"),
     ),
     "LOGIN_WA_MANUAL_INTRO": (

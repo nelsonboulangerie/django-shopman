@@ -293,9 +293,10 @@ def resolve_payment_timeout_if_due(order) -> bool:
     if method == "card" and status == "authorized":
         return False
 
-    # Última linha contra webhook perdido: perguntar ao gateway antes de
-    # cancelar um PIX possivelmente pago. Incerto = não cancelar nesta rodada.
-    gateway_state = payment_service.verify_gateway_before_timeout_cancel(order)
+    # Última linha contra webhook perdido: perguntar ao gateway antes de cancelar
+    # um pedido digital possivelmente pago — PIX e cartão. Incerto = não cancelar
+    # nesta rodada; ``authorized`` (cartão em ``requires_capture``) idem.
+    gateway_state = payment_service.settle_from_gateway(order)
     if gateway_state != "unpaid":
         if gateway_state == "paid":
             order.refresh_from_db()

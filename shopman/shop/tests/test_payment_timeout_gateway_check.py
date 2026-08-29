@@ -116,7 +116,7 @@ def test_intent_that_never_existed_is_unpaid_not_uncertain(overdue_pix_order):
     """
     adapter = _stub_adapter("not_found")
     with patch.object(payment_service, "get_adapter", return_value=adapter):
-        state = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "unpaid"
 
@@ -129,10 +129,10 @@ def test_paid_promotion_dispatches_on_paid_once_under_double_resolve(overdue_pix
     calls = []
     with patch.object(payment_service, "get_adapter", return_value=adapter), \
          patch("shopman.shop.lifecycle.dispatch", side_effect=lambda o, p: calls.append(p)):
-        s1 = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        s1 = payment_service.settle_from_gateway(overdue_pix_order)
         # Segundo resolver, mesmo pedido, já promovido.
         overdue_pix_order.refresh_from_db()
-        s2 = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        s2 = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert s1 == "paid" and s2 == "paid"
     assert calls.count("on_paid") == 1  # nunca duplica
@@ -149,7 +149,7 @@ def test_adapter_without_read_verb_never_invents_payment(overdue_pix_order):
         capture=lambda intent_ref: pytest.fail("capture() não pode ser chamado para PERGUNTAR")
     )
     with patch.object(payment_service, "get_adapter", return_value=exploded):
-        state = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "indeterminate"
     overdue_pix_order.refresh_from_db()
@@ -171,7 +171,7 @@ def test_mock_adapter_unpaid_pix_is_not_promoted_to_paid(overdue_pix_order):
 
     with patch.object(payment_service, "get_adapter", return_value=payment_mock), \
          patch("shopman.shop.lifecycle.dispatch") as dispatched:
-        state = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "unpaid"
     assert not dispatched.called
@@ -204,7 +204,7 @@ def test_mock_adapter_paid_pix_is_still_promoted(overdue_pix_order):
 
     with patch.object(payment_service, "get_adapter", return_value=payment_mock), \
          patch("shopman.shop.lifecycle.dispatch") as dispatched:
-        state = payment_service.verify_gateway_before_timeout_cancel(overdue_pix_order)
+        state = payment_service.settle_from_gateway(overdue_pix_order)
 
     assert state == "paid"
     assert dispatched.called
@@ -278,3 +278,45 @@ def test_tracking_screen_offers_simulation_only_for_the_simulated_method(overdue
     overdue_pix_order.save(update_fields=["data"])
 
     assert _can_mock_confirm_payment(overdue_pix_order) is False
+
+
+@override_settings(DEBUG=False, SHOPMAN_EXPOSE_MOCK_CAPTURE=True, SHOPMAN_PAYMENT_ADAPTERS=_HIBRIDO)
+def test_the_payload_the_customer_receives_respects_the_same_ruler(overdue_pix_order):
+    """A régua certa não vale nada se a API a descartar no caminho.
+
+    ⚠️ E era exatamente isto que acontecia. A projection respondia a pergunta
+    inteira (ambiente + método + estado) e ``storefront/api/tracking.py``
+    sobrescrevia o campo com a resposta só-de-ambiente, logo antes de serializar:
+
+        data["mock_payment_enabled"] = _mock_payment_enabled()   # sem method
+
+    Duas donas para a mesma pergunta, e a errada tinha a última palavra. O
+    resultado no alpha: "Simular pagamento" aparecendo na tela de um pedido de
+    cartão no Stripe REAL — e clicar devolvia 404, porque o endpoint pergunta
+    pelo método. Botão morto na tela do cliente.
+
+    Este teste vive no payload, não na projection, porque o defeito vivia lá.
+    """
+    from shopman.storefront.api.tracking import _tracking_payload
+
+    assert _tracking_payload(overdue_pix_order)["mock_payment_enabled"] is True
+
+    data = dict(overdue_pix_order.data)
+    data["payment"] = {**data["payment"], "method": "card"}
+    overdue_pix_order.data = data
+    overdue_pix_order.save(update_fields=["data"])
+
+    assert _tracking_payload(overdue_pix_order)["mock_payment_enabled"] is False
+
+
+@override_settings(DEBUG=False, SHOPMAN_EXPOSE_MOCK_CAPTURE=True, SHOPMAN_PAYMENT_ADAPTERS=_HIBRIDO)
+def test_a_paid_order_stops_offering_the_test_button(overdue_pix_order):
+    """Pago é pago: a caixa de teste não fica pendurada depois da captura."""
+    from shopman.payman import PaymentService
+
+    from shopman.storefront.api.tracking import _tracking_payload
+
+    PaymentService.authorize("INT-PIX-1", gateway_id="mock-txid")
+    PaymentService.capture("INT-PIX-1")
+
+    assert _tracking_payload(overdue_pix_order)["mock_payment_enabled"] is False

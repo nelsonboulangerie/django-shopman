@@ -53,14 +53,19 @@ class PaymentTimeoutHandler:
             return
 
         # Última linha contra webhook perdido: perguntar ao gateway antes de
-        # cancelar um PIX possivelmente pago.
+        # cancelar um pedido digital possivelmente pago (PIX e cartão).
         from shopman.orderman.exceptions import DirectiveTransientError
 
-        gateway_state = payment_service.verify_gateway_before_timeout_cancel(order)
-        if gateway_state == "paid":
+        gateway_state = payment_service.settle_from_gateway(order)
+        if gateway_state in {"paid", "authorized"}:
+            # ``authorized`` é o cartão em ``requires_capture``: o dinheiro está
+            # reservado para a loja e a captura é do lifecycle. Cancelar aqui
+            # seria devolver "não deu certo" a quem pagou.
             return
         if gateway_state == "indeterminate":
-            raise DirectiveTransientError("gateway indisponível para verificar PIX antes do cancel")
+            raise DirectiveTransientError(
+                "gateway indisponível para verificar pagamento antes do cancel"
+            )
 
         payment_service.cancel(order, reason="payment_timeout")
         cancelled = cancel(

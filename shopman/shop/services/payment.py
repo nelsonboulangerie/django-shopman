@@ -30,6 +30,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
@@ -913,24 +914,88 @@ def can_cancel(order) -> bool:
     return True
 
 
-def verify_gateway_before_timeout_cancel(order) -> str:
-    """Consulta o gateway ANTES de auto-cancelar um PIX por timeout.
+def _record_gateway_authorization(order, *, intent_ref: str) -> str:
+    """Grava no Payman a autorização que o gateway confirma. Retorna o estado.
 
-    Um webhook perdido deixa o pedido "não pago" localmente com o dinheiro
-    capturado na EFI — cancelar seria perda real do cliente. Retorna:
+    Devolve ``"authorized"`` (nem pago nem não-pago): para o timeout isso é
+    "não cancele", e para o acompanhamento é "mostre o degrau de autorizado".
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return "indeterminate"
+
+    if str(intent.status or "").lower() == "authorized":
+        return "authorized"
+
+    try:
+        PaymentService.authorize(intent_ref, gateway_id=intent.gateway_id or intent_ref)
+    except PaymentError as exc:
+        logger.warning(
+            "payment.gateway_authorize_rejected order=%s intent=%s code=%s",
+            order.ref,
+            intent_ref,
+            getattr(exc, "code", ""),
+        )
+        return "indeterminate"
+
+    order.emit_event(
+        event_type="payment.authorized",
+        actor="payment.gateway_reconcile",
+        payload={"intent_ref": intent_ref},
+    )
+    logger.info(
+        "payment.gateway_authorization_recovered order=%s intent=%s", order.ref, intent_ref
+    )
+
+    # Pedido já aceito com autorização recém-descoberta: quem captura é a mesma
+    # regra do lifecycle (``_on_accepted``), que aqui já passou e não voltará.
+    from shopman.orderman.models import Order
+
+    if order.status == Order.Status.ACCEPTED:
+        capture(order)
+        order.refresh_from_db()
+        if has_sufficient_captured_payment(order) is True:
+            from shopman.shop.lifecycle import dispatch
+
+            dispatch(order, "on_paid")
+            return "paid"
+    return "authorized"
+
+
+def settle_from_gateway(order) -> str:
+    """Pergunta ao gateway se este pedido já foi pago e, se foi, liquida.
+
+    É a rede contra webhook perdido, e serve dois chamadores com necessidades
+    opostas: o timeout, que precisa saber se pode cancelar, e o acompanhamento,
+    que precisa mostrar a verdade quando o cliente volta do gateway. Os dois
+    fazem a mesma pergunta e querem a mesma escrita, então há uma implementação
+    só. Retorna:
 
       ``"paid"``          — gateway mostra captura; o Payman foi reconciliado
                             e o caminho de pago (on_paid) foi disparado;
+      ``"authorized"``    — cartão em ``requires_capture``: dinheiro reservado,
+                            autorização gravada no Payman, captura é do
+                            lifecycle. NÃO cancelar;
       ``"unpaid"``        — gateway respondeu e não há pagamento (cancelar ok);
       ``"indeterminate"`` — sem resposta confiável (NÃO cancelar nesta rodada).
+
+    ⚠️ **Vale para PIX e para CARTÃO.** Enquanto a primeira linha era
+    ``if method != "pix": return "unpaid"``, um pedido de cartão pago no Stripe
+    era declarado "não pago" sem que ninguém perguntasse a ninguém — o guard que
+    existe para não cancelar pedido pago autorizava justamente isso. A porta
+    verdadeira nunca foi o método: é o adapter ter ``check_gateway_status``, e
+    agora os três (efí, stripe, mock) têm.
     """
     payment_data = (order.data or {}).get("payment") or {}
     method = str(payment_data.get("method") or "").lower()
     intent_ref = payment_data.get("intent_ref")
-    if method != "pix" or not intent_ref:
+    if method not in {"pix", "card"} or not intent_ref:
         return "unpaid"
 
-    adapter = get_adapter("payment", method="pix")
+    adapter = get_adapter("payment", method=method)
     if adapter is None:
         return "unpaid"
 
@@ -965,6 +1030,18 @@ def verify_gateway_before_timeout_cancel(order) -> str:
         logger.warning("payment.timeout_gateway_check_failed order=%s", order.ref, exc_info=True)
         return "indeterminate"
 
+    if gateway_state == "authorized":
+        # Cartão em ``requires_capture``: o cliente fez a parte dele e o dinheiro
+        # está reservado para a loja, mas ainda NÃO entrou. Aqui só se registra a
+        # autorização — capturar é decisão do lifecycle (``_on_accepted``), que
+        # cobra quando a loja aceita. Reconciliar não pode virar atalho para
+        # cobrar antes do aceite: é exatamente a linha que o caso do pedido E54
+        # ensinou a não cruzar.
+        #
+        # Registrar já muda tudo o que o cliente lê: sem isto o Payman segue em
+        # ``pending``, o degrau da cascata continua sendo "Pagar com cartão", e
+        # quem acabou de pagar no Stripe volta para uma tela que pede pagamento.
+        return _record_gateway_authorization(order, intent_ref=intent_ref)
     if gateway_state != "captured":
         # "pending"/"cancelled": o gateway respondeu e não há pagamento.
         # "not_found": o intent nunca existiu, então também não há pagamento —
@@ -1043,13 +1120,98 @@ def verify_gateway_before_timeout_cancel(order) -> str:
     order.emit_event(
         event_type="payment.captured",
         actor="payment.timeout_gateway_check",
-        payload={"method": "pix", "amount_q": captured_amount_q or order.total_q},
+        payload={"method": method, "amount_q": captured_amount_q or order.total_q},
     )
 
     from shopman.shop.lifecycle import dispatch
 
     dispatch(order, "on_paid")
     return "paid"
+
+
+# Intervalo mínimo entre duas perguntas ao gateway pelo MESMO pedido. Existe para
+# o acompanhamento poder perguntar em toda leitura sem transformar cada refresh do
+# cliente numa chamada de rede ao provedor. Curto de propósito: quem volta do
+# checkout do Stripe tem que ver a verdade no primeiro carregamento, e a última
+# pergunta desse pedido foi lá atrás, na criação do intent.
+GATEWAY_RECHECK_SECONDS = 20
+
+
+def _gateway_recheck_is_due(order) -> bool:
+    payment = (order.data or {}).get("payment") or {}
+    raw = payment.get("gateway_checked_at")
+    if not raw:
+        return True
+    checked_at = parse_datetime(str(raw))
+    if checked_at is None:
+        return True
+    if timezone.is_naive(checked_at):
+        checked_at = timezone.make_aware(checked_at, timezone.get_current_timezone())
+    return (timezone.now() - checked_at).total_seconds() >= GATEWAY_RECHECK_SECONDS
+
+
+def _stamp_gateway_check(order) -> None:
+    """Carimba a hora da pergunta, para o throttle. Best-effort por desenho.
+
+    Falhar aqui não pode impedir a liquidação: o pior que acontece sem o carimbo
+    é perguntar de novo cedo demais.
+    """
+    try:
+        data = dict(order.data or {})
+        payment = dict(data.get("payment") or {})
+        payment["gateway_checked_at"] = timezone.now().isoformat()
+        data["payment"] = payment
+        order.data = data
+        order.save(update_fields=["data", "updated_at"])
+    except Exception:
+        logger.debug("payment.gateway_check_stamp degraded", exc_info=True)
+
+
+def reconcile_with_gateway_if_due(order) -> bool:
+    """Volta do gateway: perguntar se pagou, e liquidar se pagou. Retorna se mudou.
+
+    ⚠️ **Isto é o que faltava para a volta do Stripe fazer sentido.** O
+    ``success_url`` devolve o cliente para o acompanhamento, e o acompanhamento
+    lia só o Payman — que só sabe o que o webhook contou. Webhook atrasado é
+    corrida (o cliente chega antes); webhook quebrado é dano permanente
+    (endpoint errado no painel, segredo de outro ambiente, 400 na assinatura).
+    Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
+
+    A leitura do acompanhamento agora fecha esse buraco sozinha: pedido de cartão
+    aberto e não capturado pergunta ao gateway, no máximo a cada
+    ``GATEWAY_RECHECK_SECONDS``. Não substitui o webhook (que é quem responde
+    rápido e sem cliente na tela) — é o piso por baixo dele.
+
+    **Só cartão, de propósito.** O PIX já tem rede: o cliente não sai do site, o
+    webhook empurra por SSE, e no vencimento ``settle_from_gateway`` pergunta à
+    Efí antes de cancelar. Estender a pergunta preguiçosa ao PIX poria uma
+    chamada à Efí a cada 20s enquanto alguém encara o QR code, para cobrir um
+    caso que já está coberto. O cartão é que não tinha rede nenhuma: o cliente
+    SAI do site, e ao voltar não há sinal nenhum além desta leitura.
+    """
+    from shopman.orderman.models import Order
+
+    payment = (order.data or {}).get("payment") or {}
+    method = str(payment.get("method") or "").lower()
+    if method != "card" or not payment.get("intent_ref"):
+        return False
+    if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
+        return False
+    if has_sufficient_captured_payment(order) is True:
+        return False
+    if not _gateway_recheck_is_due(order):
+        return False
+
+    _stamp_gateway_check(order)
+    try:
+        state = settle_from_gateway(order)
+    except Exception:
+        logger.warning("payment.gateway_reconcile_failed order=%s", order.ref, exc_info=True)
+        return False
+    if state in {"paid", "authorized"}:
+        order.refresh_from_db()
+        return True
+    return False
 
 
 def mock_capture_allowed(method: str | None = None) -> bool:

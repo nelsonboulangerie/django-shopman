@@ -200,6 +200,11 @@ export interface CartItemProjection {
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
+  // Feito na hora (política demand_ok): café, Jambon-Beurre, croque. Nunca vem
+  // junto de is_awaiting_confirmation — o item não sai de fornada, então não há
+  // fila em que entrar.
+  is_made_to_order: boolean
+  made_to_order_label: string
   is_awaiting_confirmation: boolean
   is_ready_for_confirmation: boolean
   confirmation_deadline_iso: string | null
@@ -416,6 +421,7 @@ export interface AuthCopyProjection {
   phone_subtitle: CopyEntryProjection
   wa_cart_kept: CopyEntryProjection
   wa_glimpse: CopyEntryProjection
+  wa_glimpse_with_cart: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection

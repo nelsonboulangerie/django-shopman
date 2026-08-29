@@ -84,6 +84,13 @@ class CartItemProjection:
     planned_for_date: str | None                # ISO date da fornada que a linha espera
     planned_for_notice: str | None              # "Previsto para amanhã" (copy omotenashi + data)
 
+    # Feito na hora (política ``demand_ok``): café, Jambon-Beurre, croque. Não sai
+    # de fornada, então nunca entra em fila de espera — e o selo diz o que É, não
+    # o que falta. Nunca aparece junto de ``is_awaiting_confirmation``: as duas
+    # nascem de perguntas diferentes e são mutuamente exclusivas por construção.
+    is_made_to_order: bool = False
+    made_to_order_label: str = ""
+
 
 @dataclass(frozen=True)
 class MinimumOrderProgressProjection:
@@ -212,8 +219,14 @@ def build_cart(
     planned_notice_template = (
         resolve_copy("CART_WAITLIST_PLANNED_DATE", moment="*", audience="*").message or ""
     ).strip()
+    # Selo do item feito na hora. Configurável no Admin como todo o resto da voz
+    # da casa — o padrão diz o que É, não o que falta.
+    made_to_order_label = (
+        resolve_copy("CART_MADE_TO_ORDER", moment="*", audience="*").title or ""
+    ).strip()
     items = tuple(
-        _present_line(line, image_by_sku, planned_notice_template) for line in data.lines
+        _present_line(line, image_by_sku, planned_notice_template, made_to_order_label)
+        for line in data.lines
     )
 
     min_order = present_minimum_order(data.minimum_order)
@@ -279,6 +292,7 @@ def _present_line(
     line: cart_data.CartLineProjection,
     image_by_sku: dict[str, str | None],
     planned_notice_template: str = "",
+    made_to_order_label: str = "",
 ) -> CartItemProjection:
     # ``is_available`` already reflects the own-hold correction. When false,
     # the stock really fell behind what this session reserved — surface the
@@ -314,6 +328,10 @@ def _present_line(
         is_available=line.is_available,
         availability_warning=warning,
         available_qty=line.available_qty,
+        is_made_to_order=line.is_made_to_order,
+        made_to_order_label=(
+            made_to_order_label if line.is_made_to_order else ""
+        ),
         is_awaiting_confirmation=line.is_awaiting_confirmation,
         is_ready_for_confirmation=line.is_ready_for_confirmation,
         confirmation_deadline_iso=line.confirmation_deadline_iso,

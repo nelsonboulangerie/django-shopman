@@ -213,6 +213,13 @@ class TrackingData:
     waitlist_state: str = "none"
     waitlist_deadline: str | None = None
     waitlist_planned_for: str | None = None
+    # Captura simulada (DEBUG/staging): a resposta completa — ambiente E método E
+    # estado do pedido. Vira campo, e não só action, porque a superfície precisa
+    # dela para decidir se DESENHA a caixa de teste. Enquanto era só action, o
+    # storefront recalculava por conta própria com a pergunta pobre ("estamos em
+    # ambiente de teste?"), e o botão aparecia em pedido de cartão no Stripe real
+    # — botão morto, porque o endpoint pergunta pelo método e devolve 404.
+    can_mock_confirm_payment: bool = False
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
 
@@ -297,6 +304,7 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     return TrackingData(
+        can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
         cancellation_reason=cancellation_reason,
         refund_status_key=refund_status_key,
@@ -338,7 +346,10 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         shop_name=shop_name,
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
-        **_waitlist_info(order),
+        **_waitlist_info(
+            order,
+            payment_unsettled=payment_pending or payment_status_key == "card_authorized",
+        ),
     )
 
 
@@ -1553,17 +1564,39 @@ def _parse_datetime(value) -> datetime | None:
     return dt
 
 
-def _waitlist_info(order) -> dict:
+_WAITLIST_NONE = {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+
+def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
     """Estado da fila para o acompanhamento (WP-P2E §5).
 
     ``planned_for`` vem do HOLD, não do bloco gravado: enquanto a fornada não
     sai, a data que interessa é a do lote, e é ela que o hold carrega.
+
+    ⚠️ **Uma bola de cada vez.** Enquanto há pagamento em aberto, a narrativa da
+    fila não entra em cena. Os dois eixos derivam de sinais diferentes e
+    apareciam JUNTOS na mesma tela: "Pague para confirmar sua reserva" ao lado de
+    "Você está na fila. Nada foi cobrado ainda". Lidos juntos, o segundo desfaz o
+    primeiro — a tela dizia ao cliente que a vaga já era dele e que pagar podia
+    ficar para depois. O pedido é o mesmo, a ordem é que importa: primeiro o
+    pagamento se resolve, depois a fila conta a história dela.
+
+    Isto NÃO muda a política de 28/08 (fornada do dia não cobra para garantir
+    vaga): pedido sem pagamento em aberto continua vendo a fila normalmente. Muda
+    só a ordem de quem fala quando os dois têm o que dizer.
+
+    ``payment_unsettled`` inclui o cartão AUTORIZADO, e não só o pendente: com o
+    dinheiro já reservado no gateway, "Nada foi cobrado ainda" é meia-verdade — e
+    meia-verdade sobre dinheiro é a metade errada.
     """
     from shopman.shop.services import waitlist
 
+    if payment_unsettled:
+        return dict(_WAITLIST_NONE)
+
     state = waitlist.state_for(order)
     if state == waitlist.NONE:
-        return {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+        return dict(_WAITLIST_NONE)
 
     block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
     batch_date = waitlist.planned_batch_date(order)

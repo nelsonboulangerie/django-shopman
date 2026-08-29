@@ -1029,6 +1029,16 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_WA_GLIMPSE": {
         WILDCARD: {WILDCARD: CopyEntry(message="Envie a mensagem pronta e receba um link para entrar.")},
     },
+    # Mesmo lampejo, quando a sacola VIAJA no código NB. Quem está no meio de um
+    # pedido não teme entrar por não saber entrar: teme perder o que montou. Só
+    # aparece com o servidor confirmando que a sacola foi guardada no código
+    # (``has_cart_context``) — prometer sacola sem ela ter viajado seria pior
+    # do que não prometer nada.
+    "LOGIN_WA_GLIMPSE_WITH_CART": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Envie a mensagem pronta: você entra e sua sacola vai junto.",
+        )},
+    },
     # Fallback manual (bloco "OU"): título com peso de seção + subtítulo (o número do
     # WhatsApp é anexado ao subtítulo na tela).
     "LOGIN_WA_MANUAL_TITLE": {
@@ -1345,6 +1355,10 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "AVAILABILITY_AVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Disponível")}},
     "AVAILABILITY_LOW_STOCK": {WILDCARD: {WILDCARD: CopyEntry(title="Últimas unidades")}},
     "AVAILABILITY_PLANNED_OK": {WILDCARD: {WILDCARD: CopyEntry(title="Lista de espera")}},
+    # Selo do item de política ``demand_ok`` — café, Jambon-Beurre, croque. Ele não
+    # sai de fornada, então "Lista de espera" ali era mentira: não há lote a esperar,
+    # o item é montado quando o pedido entra. O selo diz o que É, e o que é, é bom.
+    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Feito na hora")}},
     "AVAILABILITY_UNAVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Indisponível")}},
 }
 

@@ -90,6 +90,12 @@ def resolve_delivery_auto_complete_if_due(order) -> bool:
     return customer_orders.resolve_delivery_auto_complete_if_due(order)
 
 
+def reconcile_payment_with_gateway_if_due(order) -> bool:
+    from shopman.shop.services import payment as payment_service
+
+    return payment_service.reconcile_with_gateway_if_due(order)
+
+
 def resolve_timeouts_if_due(order) -> bool:
     confirmation_resolved = customer_orders.resolve_confirmation_timeout_if_due(order)
     payment_resolved = customer_orders.resolve_payment_timeout_if_due(order)
