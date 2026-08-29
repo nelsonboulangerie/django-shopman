@@ -42,6 +42,7 @@ STATION_LOCKED_CODE = "station_locked"
 
 _MSG_LOCKED = "Estação travada. Identifique-se com PIN ou crachá."
 _MSG_FORBIDDEN = "Acesso restrito a operadores."
+_MSG_SEM_PERMISSAO = "Operador sem permissão para esta ação."
 
 
 def _recusa_travada():
@@ -55,6 +56,28 @@ def _recusa_travada():
     caso para o qual ele existe. Levantar aqui preserva mensagem e código.
     """
     raise PermissionDenied(_MSG_LOCKED, code=STATION_LOCKED_CODE)
+
+
+def _recusa_sem_permissao():
+    """Levanta a recusa por falta de permissão — pelo mesmo motivo da de cima.
+
+    O totem age em nome próprio (``_operador`` resolve a conta pelo
+    ``Terminal.metadata``), mas **não passa por authenticator nenhum**: não há
+    sessão, porque não há quem digite PIN. Devolver ``False`` aqui deixava o DRF
+    aplicar a mesma heurística de autenticação e trocar a recusa por
+    ``NotAuthenticated`` — o totem identificado, e sem permissão, recebia
+    "As credenciais de autenticação não foram fornecidas".
+
+    Isso já custava a MENSAGEM certa. Passou a custar mais quando o
+    ``not_authenticated`` ganhou ``error.code`` (WP-00 Bloco E): a superfície
+    reage ao código, e reagiria oferecendo login a um dispositivo que não tem
+    login — um caminho que não leva a lugar nenhum.
+
+    Para o operador logado nada muda: ali o DRF já escolhia ``PermissionDenied``
+    com esta mesma mensagem. O que muda é que a escolha deixa de depender do
+    estado da autenticação para depender do que a recusa É.
+    """
+    raise PermissionDenied(_MSG_SEM_PERMISSAO)
 
 
 def _operador(request):
@@ -115,6 +138,12 @@ class HasBackstagePermission(BasePermission):
     sessão e conferir contra ele): a sessão É do operador, então ``has_perm``
     pergunta para a pessoa certa por construção — e não existe caminho que
     esqueça de perguntar, que era como o buraco nascia.
+
+    As duas recusas LEVANTAM, em vez de devolver ``False``: estação travada com
+    ``station_locked``, falta de permissão com a mensagem própria. Devolver
+    ``False`` entrega a escolha da exceção ao DRF, que decide pelo estado da
+    autenticação e não pelo que a recusa é — e o totem, que opera sem sessão,
+    recebia as duas recusas travestidas de credencial ausente.
     """
 
     message = _MSG_FORBIDDEN
@@ -128,8 +157,7 @@ class HasBackstagePermission(BasePermission):
             return False
         perms = _required_codes(getattr(view, "required_permission", None))
         if not all(operador.has_perm(code) for code in perms):
-            self.message = "Operador sem permissão para esta ação."
-            return False
+            _recusa_sem_permissao()
         return True
 
 

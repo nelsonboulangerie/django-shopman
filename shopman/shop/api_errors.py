@@ -47,27 +47,42 @@ FALLBACK_DETAIL = "Não conseguimos processar os dados enviados. Confira e tente
 def exception_handler(exc, context):
     """DRF ``EXCEPTION_HANDLER``: converte ValidationError para o dialeto da casa.
 
-    Demais exceções DRF (``NotAuthenticated``, ``Throttled``, ``NotFound``…) já
-    saem do handler default como ``{"detail": ...}`` e passam intactas. O status
-    HTTP nunca muda aqui.
+    Demais exceções DRF (``Throttled``, ``NotFound``…) já saem do handler default
+    como ``{"detail": ...}`` e passam intactas. ``PermissionDenied`` nomeado e
+    ``NotAuthenticated`` ganham o superset ``error.code`` (ver
+    ``_attach_permission_code``). O status HTTP nunca muda aqui.
     """
     response = drf_exception_handler(exc, context)
     if response is None:
         return None
     if isinstance(exc, exceptions.ValidationError):
         response.data = validation_error_payload(exc.detail)
-    elif isinstance(exc, exceptions.PermissionDenied):
+    elif isinstance(exc, (exceptions.PermissionDenied, exceptions.NotAuthenticated)):
         _attach_permission_code(response, exc)
     return response
 
 
 def _attach_permission_code(response, exc) -> None:
-    """Publica o código da recusa em ``error.code`` quando a permissão nomeia um.
+    """Publica o código da recusa em ``error.code`` quando a recusa nomeia um.
 
     Um 403 sem código obriga a tela a adivinhar pela mensagem em português qual
     recusa aconteceu. A estação travada precisa ser distinguível de falta de
     permissão: a primeira se resolve com o PIN na hora, a segunda não. Só o
     superset ``error`` é adicionado — ``detail`` continua onde estava.
+
+    ``NotAuthenticated`` entra aqui pelo mesmo motivo, e por um que é só dele:
+    **o backstage nunca devolve 401.** ``DEFAULT_AUTHENTICATION_CLASSES`` tem uma
+    classe só (``SessionAuthentication``), que não implementa
+    ``authenticate_header()`` — e sem header de desafio o DRF rebaixa o 401 para
+    403. Uma requisição anônima a ``/api/v1/backstage/hub/`` volta 403 com a
+    mesma cara de uma recusa de permissão, e as sete superfícies não têm como
+    separar "sua sessão caiu" (resolve com login) de "você não tem permissão"
+    (login não resolve) sem casar a mensagem em português — que é exatamente o
+    que este superset existe para evitar.
+
+    ``PermissionDenied`` genérico continua saindo SEM ``error``: o guarda abaixo
+    ignora ``code == "permission_denied"``, e é assim que o front distingue a
+    recusa nomeada da recusa comum. Nada foi alargado.
     """
     code = getattr(getattr(exc, "detail", None), "code", "")
     if not code or code == "permission_denied":

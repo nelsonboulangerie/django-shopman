@@ -56,6 +56,42 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+### Recusa nomeada: `error.code` em 403
+
+Nem toda recusa é igual, e o status HTTP sozinho não separa as três que o operador
+enfrenta. `shopman/shop/api_errors.py` publica o código da recusa em `error.code`
+quando ela tem nome:
+
+| `error.code` | O que aconteceu | O que resolve |
+|---|---|---|
+| `not_authenticated` | A sessão do operador caiu (ou nunca existiu) | Login |
+| `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
+| *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
+
+⚠️ **O backstage nunca devolve 401.** `DEFAULT_AUTHENTICATION_CLASSES` tem uma
+classe só (`SessionAuthentication`), que não implementa `authenticate_header()` —
+e sem header de desafio o DRF rebaixa o `NotAuthenticated` para **403**. Por isso a
+sessão expirada chega às superfícies como 403, e a única forma de distingui-la de
+uma recusa de permissão é o `error.code`.
+
+O front decide pelo **código**, nunca pelo status solto: `isUnauthenticatedError`
+aceita 401 **ou** 403 com `not_authenticated`; `isStationLockedError` exige 403 com
+`station_locked` (`surfaces/operator-kit/app/utils/httpError.ts`). Afrouxar isso
+para "todo 403" transformaria toda negativa de permissão em "sessão expirada" e
+mandaria o operador digitar senha para um problema que senha não resolve.
+
+**Recusa de permissão comum continua sem `error`** — o handler ignora
+`code == "permission_denied"` de propósito. É a ausência que diz "não há nada a
+oferecer aqui".
+
+⚠️ **Gate de operador recusa LEVANTANDO, nunca devolvendo `False`.** Um
+`BasePermission` que devolve `False` entrega ao DRF a escolha da exceção, e ele
+escolhe pelo estado da **autenticação**, não pelo que a recusa é: sem authenticator
+bem-sucedido, vira `NotAuthenticated`. A estação autônoma (o totem) opera sem sessão
+— então a recusa por falta de permissão dela saía como credencial ausente, com a
+mensagem certa montada e descartada. `HasBackstagePermission` levanta as duas
+recusas (`station_locked` e falta de permissão) por isso.
+
 ### Superset do storefront (deliberado)
 
 Respostas de **recuperação** e **rate-limit** do storefront agregam metadados de
