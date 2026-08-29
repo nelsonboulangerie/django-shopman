@@ -540,6 +540,7 @@ def _cart_actions(
             enabled=checkout_enabled,
             reason=checkout_reason,
             href="/finalizar",
+            idempotency="none",
         ),
         Action(
             ref="continue_shopping",
@@ -548,6 +549,7 @@ def _cart_actions(
             priority="secondary",
             enabled=True,
             href="/menu",
+            idempotency="none",
         ),
     )
 

@@ -207,6 +207,9 @@ describe("presentation/actions — Action → affordance", () => {
     expect(aff.enabled).toBe(false);
     expect(aff.href).toBe("/fallback/");
     expect(aff.method).toBe("POST");
+    // Ação ausente da projection não pode ler como "não precisa de trava de
+    // replay": o fallback repete o default restritivo do backend.
+    expect(aff.idempotency).toBe("required");
   });
 });
 

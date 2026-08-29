@@ -307,6 +307,7 @@ def _home_notices(
                 label="Ver cardápio",
                 href="/menu",
                 priority="secondary",
+                idempotency="none",
             )
         ]
         if whatsapp_url:
@@ -316,6 +317,7 @@ def _home_notices(
                 label="Falar no WhatsApp",
                 href=whatsapp_url,
                 priority="quiet",
+                idempotency="none",
             ))
 
         notices.append(HomeNoticeProjection(
@@ -341,6 +343,7 @@ def _home_notices(
                     label="Finalizar pedido",
                     href="/finalizar",
                     priority="primary",
+                    idempotency="none",
                 ),
             ),
         ))

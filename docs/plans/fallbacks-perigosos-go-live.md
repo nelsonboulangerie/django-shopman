@@ -21,7 +21,7 @@ O defeito **não** era "existe um mock". Era o padrão que o mock encarnava:
 Cada linha abaixo é uma instância viva do mesmo padrão. Ordenado por dano, não
 por facilidade.
 
-**Legenda:** ✅ corrigido nesta rodada · ⬜ aberto, vira frente própria.
+**Legenda:** ✅ corrigido nesta rodada · 🟨 metade fechada, resto é frente própria · ⬜ aberto, vira frente própria.
 
 ---
 
@@ -256,10 +256,19 @@ por isso Tier 3 — mas é o ramo permissivo escolhido no `except`, em `logger.d
 
 ## Uma classe acima — quando o permissivo não é esquecimento, é o default do tipo
 
-### 18. ⬜ `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
+### 18. 🟨 `Action.idempotency` nasce `"none"`: toda ação nova do PDV nasce sem trava de replay
 
-- `shopman/shop/projections/types.py:91` — `idempotency: str = "none"`
-- `surfaces/pos-nuxt/app/presentation/actions.ts:64` — `idempotency: action?.idempotency ?? "none"`, o mesmo default permissivo repetido na superfície
+> **Metade 1 fechada (29/08).** O default virou `"required"` no dataclass, nas duas
+> fábricas de ação (`storefront/api/actions.py`, `shop/projections/order_tracking.py`)
+> e no fallback da superfície; as 14 ações que legitimamente dispensam trava passaram
+> a declarar `"none"` de propósito. O guarda é
+> `shopman/shop/tests/test_action_idempotency_contract.py`: ação mutável nova com
+> `"none"` reprova o CI, e as oito mutações de caixa estão lá como **dívida nomeada**
+> que só pode encolher. **Metade 2 continua aberta** — é ela que fecha o buraco em
+> runtime, e é a Onda 2 do WP-00 (Bloco A, P0-A2).
+
+- ~~`shopman/shop/projections/types.py:91` — `idempotency: str = "none"`~~ → `"required"` ✅
+- ~~`surfaces/pos-nuxt/app/presentation/actions.ts:64` — `?? "none"`~~ → `?? "required"` ✅
 - `shopman/backstage/projections/pos.py:940-1275` — as 29 ações do `_pos_actions`
 
 **Risco: dinheiro.** Extraindo mecanicamente as 29 ações que o PDV oferece, **três**
@@ -295,11 +304,13 @@ Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamen
 
 **Correção proposta:** duas metades da mesma frente.
 
-1. **Virar o default para o restritivo** — `idempotency: str = "required"` em
-   `types.py:91`, e o mesmo `?? "required"` em `actions.ts:64`. Ação que
-   legitimamente dispensa trava (`customer_lookup`, `reverse_geocode`, as leituras)
-   passa a declarar `none` **de propósito**, e a declaração vira decisão
-   registrada em vez de silêncio.
+1. ✅ **Virar o default para o restritivo** — feito em 29/08. `idempotency: str =
+   "required"` em `types.py`, o mesmo `?? "required"` em `actions.ts`, e as duas
+   fábricas de ação junto (sem elas a inversão seria cosmética: o call site que
+   omite o campo herdaria o default DELAS). Ação que legitimamente dispensa trava
+   (`customer_lookup`, `reverse_geocode`, `review_sale`, as leituras) declara `none`
+   **de propósito**, com a razão escrita na allowlist do teste de contrato — a
+   declaração virou decisão registrada em vez de silêncio.
 2. **Ligar as oito mutações de caixa no replay que já existe** — mais
    `cancel_recent_sale` e `clear_tab`. `shopman/shop/services/pos.py:273-524` já
    faz claim e replay por `client_request_id`, com ponte para o `IdempotencyKey`

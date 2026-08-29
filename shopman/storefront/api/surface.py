@@ -104,6 +104,7 @@ def _stock_error_payload(exc, *, product=None) -> dict:
                     "qty": {"type": "integer", "const": exc.available_qty},
                 },
             },
+            idempotency="none",
         ))
     # "Me avise quando disponível": escassez genuína (não pausa/encomenda, que têm
     # enquadramento próprio) ganha o caminho de reposição — mesmo fluxo do sino da
@@ -122,6 +123,7 @@ def _stock_error_payload(exc, *, product=None) -> dict:
                 "type": "object",
                 "properties": {"phone": {"type": "string"}},
             },
+            idempotency="none",
         ))
     return {
         "detail": reason,
