@@ -390,13 +390,21 @@ def _manual_discount(raw) -> dict | None:
 
 
 def _manager_approval(raw) -> dict | None:
+    """As DUAS portas do desafio gerencial — crachá e usuário+PIN.
+
+    ⚠️ O parser copiava só ``username``/``pin``, então o crachá morria aqui: mesmo que
+    a tela o mandasse, ele nunca chegava ao validador. O gerente com o crachá no
+    pescoço liberava uma sangria encostando o crachá e precisava digitar usuário e PIN
+    para liberar um desconto — e atrito é o que faz o time deixar de chamar o gerente.
+    """
     if not isinstance(raw, dict):
         return None
     username = _text(raw.get("username"), limit=150)
     pin = str(raw.get("pin") or "")
-    if not username and not pin:
+    badge = _text(raw.get("badge"), limit=150)
+    if not username and not pin and not badge:
         return None
-    return {"username": username, "pin": pin}
+    return {"username": username, "pin": pin, "badge": badge}
 
 
 def _fulfillment_type(value) -> str:

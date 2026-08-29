@@ -379,3 +379,44 @@ def test_fechar_o_dia_com_todo_caixa_fechado_nao_alerta(client, setup_stock, clo
 
     assert response.status_code == 200
     assert not OperatorAlert.objects.filter(type="cash_shift_open_at_closing").exists()
+
+
+@pytest.mark.django_db
+def test_quantidade_ilegivel_no_fechamento_devolve_400(client, setup_stock, closing_user):
+    """⚠️ `1O` (letra O) virava 0, em silêncio, e nascia uma venda fantasma.
+
+    O parser devolvia zero, o fluxo tomava o caminho "nada sobrou", nenhum write-off
+    acontecia e o snapshot gravava zero. A divergência aparecia depois na conciliação
+    sem ninguém saber de onde veio — e o operador tinha acabado de contar a sobra.
+
+    É o mesmo defeito que `parse_money_to_q` foi escrito para NÃO cometer.
+    """
+    client.force_login(closing_user)
+
+    response = client.post(
+        "/api/v1/backstage/closing/",
+        {"quantities": {"RECON-SKU": "1O"}},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert "RECON-SKU" in response.json()["detail"]
+    assert not DayClosing.objects.exists()
+
+
+@pytest.mark.django_db
+def test_quantidade_vazia_continua_valendo_zero(client, setup_stock, closing_user):
+    """Assert-positivo: a recusa não pode ter comido o SKU que ninguém contou.
+
+    Campo em branco é "não contei", e isso sempre significou zero. Só o texto que o
+    sistema não consegue ler é que vira pergunta.
+    """
+    client.force_login(closing_user)
+
+    response = client.post(
+        "/api/v1/backstage/closing/",
+        {"quantities": {"RECON-SKU": ""}},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200

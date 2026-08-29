@@ -6,6 +6,8 @@ Operator policy (decided 2026-05-30):
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 
 from shopman.backstage.projections import pos as pos_projection
@@ -74,13 +76,30 @@ class TestBuildSessionOpsStampsDiscount:
         payload = {
             "items": [{"sku": "BAGUETE", "name": "Baguete", "qty": 1, "unit_price_q": 1300,
                        "discount": {"type": "percent", "value": 10, "reason": "cortesia"}}],
-            "manager_approval": {"username": "gerente", "pin": "1234"},
         }
-        ops = pos_service.build_session_ops(payload, operator_username="op")
+        ops = pos_service.build_session_ops(payload, operator_username="op", approved_by="gerente")
         add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "BAGUETE")
         assert add_line["meta"]["manual_discount"]["value"] == 10
         assert add_line["meta"]["manual_discount"]["reason"] == "cortesia"
         assert add_line["meta"]["manual_discount"]["approved_by"] == "gerente"
+
+    def test_o_corpo_sozinho_nao_assina_nada(self) -> None:
+        """⚠️ Era assim que a Joyce aprovava um desconto que nunca viu.
+
+        O validador retorna cedo quando nada exige desafio, mas a construção lia
+        ``manager_approval.username`` do corpo INCONDICIONALMENTE. Um payload montado à
+        mão — ou uma tela com o campo do gerente preenchido e o PIN limpo — gravava a
+        assinatura dela no pedido. Como o nome do corpo coincide com o verificado
+        quando HÁ desafio, o defeito era invisível nos testes.
+        """
+        payload = {
+            "items": [{"sku": "BAGUETE", "name": "Baguete", "qty": 1, "unit_price_q": 1300,
+                       "discount": {"type": "percent", "value": 10, "reason": "cortesia"}}],
+            "manager_approval": {"username": "joyce", "pin": ""},
+        }
+        ops = pos_service.build_session_ops(payload, operator_username="op")
+        add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "BAGUETE")
+        assert "approved_by" not in add_line["meta"]["manual_discount"]
 
     def test_no_meta_discount_without_line_discount(self) -> None:
         payload = {"items": [{"sku": "BAGUETE", "name": "Baguete", "qty": 1, "unit_price_q": 1300}]}
@@ -129,9 +148,8 @@ class TestPriceOverrideIntentAndOps:
         payload = {
             "items": [{"sku": "X", "name": "Item", "qty": 1, "unit_price_q": 500,
                        "price_overridden": True}],
-            "manager_approval": {"username": "gerente", "pin": "1234"},
         }
-        ops = pos_service.build_session_ops(payload, operator_username="op")
+        ops = pos_service.build_session_ops(payload, operator_username="op", approved_by="gerente")
         add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "X")
         assert add_line["unit_price_q"] == 500
         assert add_line["meta"]["price_overridden"] is True
@@ -143,6 +161,11 @@ class TestPriceOverrideIntentAndOps:
         with pytest.raises(PosIntentError) as exc:
             pos_service.validate_manager_approval(payload, operator_username="op")
         assert exc.value.code == "manager_approval_required"
+        # ⚠️ A copy do DESCONTO sobrevive à delegação. O desafio é o mesmo do caixa, mas
+        # o que o operador pode fazer a respeito não é: aqui ele também pode reduzir o
+        # desconto. Sem este assert, delegar apagaria a saída sem ninguém notar.
+        assert "finalizar" in exc.value.recovery
+        assert "venda" in exc.value.message
 
     @pytest.mark.django_db
     def test_override_passes_with_valid_manager_pin(self, monkeypatch) -> None:
@@ -154,15 +177,40 @@ class TestPriceOverrideIntentAndOps:
 
         def _fake(username, pin, *, operator_username=""):
             seen.update(username=username, pin=pin, operator_username=operator_username)
-            return object()
+            # Um User, não um `object()`: o validador DEVOLVE quem assinou, e é esse
+            # nome que vai para a linha. Dublê sem `get_username` esconderia isso.
+            return SimpleNamespace(get_username=lambda: username)
 
         monkeypatch.setattr(pos_service, "_verify_manager_pin", _fake)
         payload = {
             "items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}],
             "manager_approval": {"username": "gerente", "pin": "1234"},
         }
-        pos_service.validate_manager_approval(payload, operator_username="op")  # must not raise
+        aprovador = pos_service.validate_manager_approval(payload, operator_username="op")
         assert seen == {"username": "gerente", "pin": "1234", "operator_username": "op"}
+        assert aprovador.get_username() == "gerente"
+
+    @pytest.mark.django_db
+    def test_o_cracha_tambem_libera_o_desconto(self, monkeypatch) -> None:
+        """⚠️ O crachá morria na porta do desconto.
+
+        O override de caixa aceita crachá OU usuário+PIN; o validador de desconto
+        aceitava só usuário+PIN, e o parser do intent nem copiava o crachá. O gerente
+        com o crachá no pescoço autorizava uma sangria encostando o crachá e tinha de
+        digitar usuário e PIN para liberar um desconto — e atrito é o que faz o time
+        deixar de chamar o gerente.
+        """
+        monkeypatch.setattr(
+            pos_service,
+            "_verify_manager_badge",
+            lambda badge, *, operator_username="": SimpleNamespace(get_username=lambda: "gerente"),
+        )
+        payload = {
+            "items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}],
+            "manager_approval": {"username": "", "pin": "", "badge": "CRACHA-9"},
+        }
+        aprovador = pos_service.validate_manager_approval(payload, operator_username="op")
+        assert aprovador.get_username() == "gerente"
 
 
 @pytest.mark.django_db

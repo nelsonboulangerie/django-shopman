@@ -279,7 +279,10 @@ def close_sale(
         payload, _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     )
     _ensure_resolved_prices(payload)
-    validate_manager_approval(payload, operator_username=operator_username)
+    # Guardado, não descartado: é este nome — o VERIFICADO — que assina a linha do
+    # desconto lá embaixo. Ver `build_session_ops`.
+    approver = validate_manager_approval(payload, operator_username=operator_username)
+    approved_by = approver.get_username() if approver is not None else ""
     _validate_fiscal_delivery_fee(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
@@ -344,6 +347,7 @@ def close_sale(
             actor=actor,
             operator_username=operator_username,
             direct_checkout=direct_checkout,
+            approved_by=approved_by,
         )
         _answer_sale_claim(claim, order_ref=result.order_ref)
 
@@ -494,12 +498,17 @@ def _commit_sale_session(
     actor: str,
     operator_username: str,
     direct_checkout: bool,
+    approved_by: str = "",
 ):
-    """Troca o conteúdo da sessão pelo carrinho do PDV e a commita. Roda sob a trava."""
+    """Troca o conteúdo da sessão pelo carrinho do PDV e a commita. Roda sob a trava.
+
+    ``approved_by`` é o gerente que o ``close_sale`` VERIFICOU nesta request — a única
+    assinatura que pode ir para a linha do desconto.
+    """
     tab_ref = "" if direct_checkout else _session_tab_ref(session)
     tab_display = "" if direct_checkout else _session_tab_display(session)
     fulfillment_type = _payload_fulfillment_type(payload)
-    ops = _replace_session_ops(session, payload, operator_username)
+    ops = _replace_session_ops(session, payload, operator_username, approved_by=approved_by)
     ops.extend([
         {"op": "set_data", "path": "origin_channel", "value": "pos"},
         {"op": "set_data", "path": "fulfillment_type", "value": fulfillment_type},
@@ -1390,11 +1399,20 @@ def reopen_recent_order_for_correction(
     order.save(update_fields=["data", "updated_at"])
 
 
-def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
-    """Build canonical Orderman session ops from a POS cart payload."""
+def build_session_ops(payload: dict, operator_username: str, *, approved_by: str = "") -> list[dict]:
+    """Build canonical Orderman session ops from a POS cart payload.
+
+    ⚠️ ``approved_by`` é o aprovador VERIFICADO, e chega por parâmetro justamente por
+    isso. Antes saía de ``payload["manager_approval"]["username"]``, lido
+    incondicionalmente: como o validador retorna cedo quando nada exige desafio, um
+    corpo com ``{"username": "joyce", "pin": ""}`` gravava no pedido que a Joyce
+    aprovou um desconto que ela nunca viu. O padrão coincidia com o verificado só
+    quando havia desafio — por isso o defeito era invisível nos testes.
+
+    Vazio é a resposta certa quando ninguém assinou. É o mesmo remédio que o
+    cancelamento de venda recente já aplicou: persistir o resolvido, nunca o declarado.
+    """
     ops = []
-    approval = payload.get("manager_approval") or {}
-    approved_by = str(approval.get("username") or "").strip()
     for item in payload.get("items", []):
         op = {
             "op": "add_line",
@@ -1570,8 +1588,6 @@ def build_session_ops(payload: dict, operator_username: str) -> list[dict]:
             {"op": "set_data", "path": "manual_discount.discount_q", "value": int(manual_discount.get("discount_q", 0))},
             {"op": "set_data", "path": "manual_discount.reason", "value": manual_discount.get("reason", "")},
         ])
-        approval = payload.get("manager_approval") or {}
-        approved_by = str(approval.get("username") or "").strip()
         if approved_by:
             ops.append({"op": "set_data", "path": "manual_discount.approved_by", "value": approved_by})
     return ops
@@ -1676,44 +1692,59 @@ def _approval_reasons(payload: dict, *, discount_q: int, threshold_q: int) -> li
     return reasons
 
 
-def validate_manager_approval(payload: dict, *, operator_username: str) -> None:
-    """Require a manager PIN challenge for configured POS discount thresholds."""
+def validate_manager_approval(payload: dict, *, operator_username: str):
+    """O desafio gerencial do desconto. Devolve o ``User`` que assinou, ou ``None``.
+
+    Devolve, e não apenas valida, porque **quem assina a linha é o aprovador
+    verificado** — nunca o nome que veio no corpo. Ver ``build_session_ops``: era de lá
+    que o carimbo saía, lendo ``manager_approval.username`` sem nenhuma verificação.
+
+    Delega ao ``validate_manager_override``, que é a versão madura do MESMO desafio:
+    aceita crachá **ou** usuário+PIN, recusa autoassinatura nas duas portas e devolve o
+    usuário verificado. Eram dois validadores para uma regra só, e o de desconto era o
+    atrasado — pedia PIN mesmo de quem estava com o crachá na mão.
+
+    ``None`` quando não houve motivo para desafio: sem desafio não há assinatura, e é
+    justamente esse o caso em que o carimbo era fabricado.
+    """
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
     reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
     if not reasons:
-        return
+        return None
 
-    approval = payload.get("manager_approval") or {}
-    username = str(approval.get("username") or "").strip()
-    pin = str(approval.get("pin") or "")
-    if not username or not pin:
-        raise PosIntentError(
-            code="manager_approval_required",
-            message="Esta venda exige aprovação gerencial.",
-            field="manager_approval",
-            focus="approval",
-            recovery="Peça a um gerente autorizado para aprovar com o PIN antes de finalizar.",
-        )
-
-    if _verify_manager_pin(username, pin, operator_username=operator_username) is None:
-        raise PosIntentError(
-            code="manager_approval_invalid",
-            message="Aprovação gerencial inválida.",
-            field="manager_approval",
-            focus="approval",
-            recovery="Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço.",
-        )
+    # A copy viaja junto com a delegação. O desafio é o mesmo, mas o que o operador
+    # pode FAZER a respeito não é: no caixa ele chama o gerente; aqui ele também pode
+    # reduzir o desconto. Delegar sem levar o texto trocaria uma saída por um beco.
+    approver = validate_manager_override(
+        payload.get("manager_approval"),
+        operator_username=operator_username,
+        action="discount",
+        message="Esta venda exige aprovação gerencial.",
+        recovery_required=(
+            "Peça a um gerente autorizado para aprovar com o crachá ou o PIN antes de finalizar."
+        ),
+        recovery_invalid="Revise o gerente e o PIN, ou reduza o desconto / ajuste o preço.",
+    )
     logger.info(
         "pos_manager_approval operator=%s approved_by=%s discount_q=%s reasons=%s",
         operator_username,
-        username,
+        approver.get_username(),
         discount_q,
         ",".join(reasons),
     )
+    return approver
 
 
-def validate_manager_override(approval: dict | None, *, operator_username: str, action: str):
+def validate_manager_override(
+    approval: dict | None,
+    *,
+    operator_username: str,
+    action: str,
+    message: str = "Esta operação exige aprovação gerencial.",
+    recovery_required: str = "Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
+    recovery_invalid: str = "Revise o gerente e o PIN.",
+):
     """Gate an exceptional POS operation behind the manager PIN challenge.
 
     Cancelar uma venda fechada é exceção auditada (anti-fraude), não fluxo do
@@ -1736,10 +1767,10 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
     if not badge and (not username or not pin):
         raise PosIntentError(
             code="manager_approval_required",
-            message="Esta operação exige aprovação gerencial.",
+            message=message,
             field="manager_approval",
             focus="approval",
-            recovery="Peça a um gerente autorizado para aprovar com o crachá ou o PIN.",
+            recovery=recovery_required,
         )
     # As duas portas recebem quem OPERA, e pelo mesmo motivo: a segunda
     # assinatura existe para haver duas pessoas. Passar o operador só no PIN
@@ -1756,7 +1787,7 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
             message="Aprovação gerencial inválida.",
             field="manager_approval",
             focus="approval",
-            recovery="Revise o gerente e o PIN.",
+            recovery=recovery_invalid,
         )
     # Quem assina é o APROVADOR resolvido, não o que veio no corpo: com crachá o
     # `username` chega vazio, e a linha de auditoria saía `approved_by=` em
@@ -1772,7 +1803,9 @@ def validate_manager_override(approval: dict | None, *, operator_username: str, 
     return approver
 
 
-def _replace_session_ops(session: Session, payload: dict, operator_username: str) -> list[dict]:
+def _replace_session_ops(
+    session: Session, payload: dict, operator_username: str, *, approved_by: str = ""
+) -> list[dict]:
     """Build ops that replace mutable POS payload fields on an existing session.
 
     Preserva o ``line_id`` por SKU ao reconstruir as linhas: o PDV tem uma linha por
@@ -1808,7 +1841,7 @@ def _replace_session_ops(session: Session, payload: dict, operator_username: str
         {"op": "set_data", "path": "delivery_fee_override_q", "value": None},
         {"op": "set_data", "path": "order_notes", "value": ""},
     ])
-    add_ops = build_session_ops(payload, operator_username)
+    add_ops = build_session_ops(payload, operator_username, approved_by=approved_by)
     for op in add_ops:
         if op.get("op") == "add_line":
             preserved = line_id_by_sku.pop(op.get("sku"), None)  # consome (1 linha/SKU)
