@@ -131,6 +131,26 @@ class ActiveReceiptProjection:
 
 
 @dataclass(frozen=True)
+class ReceiptHistoryProjection:
+    """Uma entrada JÁ registrada — o que responde "essa nota já entrou?".
+
+    ⚠️ A tela não tinha esta lista. O único dado de recebimento era a data da última
+    entrada POR FORNECEDOR, que não responde a pergunta que o operador faz de fato:
+    três horas depois, na dúvida, ele reescaneava a mesma nota — e o estoque
+    dobrava em silêncio.
+    """
+
+    sourceRef: str
+    mode: str
+    supplierRef: str
+    supplierName: str
+    lines: int
+    totalCostQ: int
+    operator: str
+    receivedAtDisplay: str
+
+
+@dataclass(frozen=True)
 class PurchaseProjection:
     materials: tuple[MaterialProjection, ...]
     suppliers: tuple[SupplierProjection, ...]
@@ -138,6 +158,8 @@ class PurchaseProjection:
     costs: tuple[SupplierMaterialCostProjection, ...]
     purchaseRequestStatuses: dict[str, str]
     activeReceipt: ActiveReceiptProjection
+    #: Os últimos recebimentos, do mais novo para o mais velho.
+    receiptHistory: tuple[ReceiptHistoryProjection, ...]
 
 
 def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseProjection:
@@ -215,7 +237,48 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
         costs=costs,
         purchaseRequestStatuses=statuses,
         activeReceipt=_active_receipt(active_receipt, default_supplier_ref=default_supplier_ref),
+        receiptHistory=_receipt_history(),
     )
+
+
+#: Quantos recebimentos a tela mostra. O suficiente para responder "essa nota já
+#: entrou?" no turno, sem virar relatório — o relatório é do B.I.
+RECEIPT_HISTORY_LIMIT = 25
+
+
+def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
+    """Lê a trava de recibo — que é, por construção, o livro dos recebimentos.
+
+    Nenhum modelo novo: a `IdempotencyKey` do orderman guarda `(scope, key)` com
+    unicidade E o corpo da resposta, que é onde `confirm_receipt` escreve o resumo.
+    A mesma linha que impede a segunda entrada é a que conta a primeira.
+    """
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.backstage.services.purchase import RECEIPT_IDEMPOTENCY_SCOPE
+
+    linhas = (
+        IdempotencyKey.objects.filter(scope=RECEIPT_IDEMPOTENCY_SCOPE, status="done")
+        .order_by("-created_at")[:RECEIPT_HISTORY_LIMIT]
+    )
+    historico = []
+    for linha in linhas:
+        corpo = linha.response_body or {}
+        if not isinstance(corpo, dict):
+            continue
+        historico.append(
+            ReceiptHistoryProjection(
+                sourceRef=str(corpo.get("source_ref") or linha.key),
+                mode=str(corpo.get("mode") or ""),
+                supplierRef=str(corpo.get("supplier_ref") or ""),
+                supplierName=str(corpo.get("supplier_name") or ""),
+                lines=int(corpo.get("lines") or 0),
+                totalCostQ=int(corpo.get("total_cost_q") or 0),
+                operator=str(corpo.get("operator") or ""),
+                receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
+            )
+        )
+    return tuple(historico)
 
 
 def _material_projection(

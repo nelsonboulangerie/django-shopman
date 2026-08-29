@@ -11,7 +11,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +26,10 @@ from django.utils.module_loading import import_string
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
+from shopman.shop.services.remote_mutations import (
+    RemoteMutationInProgress,
+    run_idempotent_mutation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +58,15 @@ class ResolvedReceiptLine:
     invoice_product_code: str
     invoice_lot: str
     checked: bool
+
+
+#: Escopo da trava de recibo na `IdempotencyKey` do orderman.
+#:
+#: ⚠️ Nenhum modelo novo e nenhuma migração: a casa já tem esta tabela, com
+#: `UniqueConstraint(scope, key)`, e já tem o envelope genérico
+#: (`shop/services/remote_mutations.run_idempotent_mutation`). É o mesmo
+#: mecanismo do commit de sessão, do replay de webhook e do submit do PDV.
+RECEIPT_IDEMPOTENCY_SCOPE = "purchase.receipt"
 
 
 def parse_invoice_access_key(raw: str) -> str | None:
@@ -112,9 +125,6 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
 def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     """Confirm a material receipt, writing Stockman BUY moves atomically."""
     Supplier = apps.get_model("buyman", "Supplier")
-    Batch = apps.get_model("stockman", "Batch")
-    Move = apps.get_model("stockman", "Move")
-    from shopman.stockman import stock
 
     mode = str(payload.get("mode") or "").strip()
     if mode not in {"invoice", "manual"}:
@@ -139,10 +149,99 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     if not isinstance(raw_lines, list) or not raw_lines:
         raise PurchaseError("Inclua ao menos um item recebido.", code="receipt_empty", field="lines")
 
+    if mode == "invoice":
+        _require_supplier_is_issuer(supplier=supplier, invoice_key=invoice_key)
+
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
     note = str(payload.get("note") or "").strip()
-    source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note)
+    source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
     position = _default_receive_position()
+
+    def _receber() -> tuple[dict[str, Any], int]:
+        _write_receipt(
+            mode=mode,
+            invoice_key=invoice_key,
+            supplier=supplier,
+            lines=lines,
+            note=note,
+            source_ref=source_ref,
+            position=position,
+            user=user,
+        )
+        return (
+            {
+                "source_ref": source_ref,
+                "mode": mode,
+                "supplier_ref": supplier.ref,
+                "supplier_name": supplier.name or supplier.ref,
+                "lines": len(lines),
+                "total_cost_q": sum(line.total_cost_q for line in lines),
+                "operator": (getattr(user, "get_username", lambda: "")() if user else "") or "",
+                "received_at": timezone.now().isoformat(),
+            },
+            200,
+        )
+
+    # ⚠️ A trava é do BANCO, não da tela. A guarda que existia era só o botão
+    # desabilitado enquanto o primeiro clique estava em voo — nenhuma delas
+    # sobrevive a um 504 no proxy, a uma aba fechada, ou a um segundo tablet.
+    #
+    # E o caminho mais provável no chão nem é o retry: três horas depois ninguém
+    # conseguia responder "essa nota já entrou?", e reescanear é o gesto natural de
+    # quem está em dúvida — duplicando o estoque em silêncio.
+    #
+    # Ironia que serviu de prova: `reject_receipt` JÁ era idempotente (dedupe de
+    # directive). RECUSAR duas vezes não duplicava nada; RECEBER duas vezes sim.
+    try:
+        resultado = run_idempotent_mutation(
+            scope=RECEIPT_IDEMPOTENCY_SCOPE, key=source_ref, execute=_receber
+        )
+    except RemoteMutationInProgress as exc:
+        raise PurchaseError(
+            "Esta entrada já está sendo registrada. Aguarde alguns segundos e recarregue.",
+            code="receipt_in_progress",
+            field="invoiceAccessKey" if mode == "invoice" else "note",
+        ) from exc
+
+    if resultado.replayed:
+        # Não é replay silencioso de propósito: responder "deu certo" a quem
+        # REESCANEOU faria o operador acreditar numa entrada nova. Dizer quando e
+        # por quem serve aos dois casos — o retry e a dúvida.
+        raise PurchaseError(
+            _receipt_already_received_message(resultado.response_body),
+            code="receipt_already_received",
+            field="invoiceAccessKey" if mode == "invoice" else "note",
+        )
+
+    return build_purchase()
+
+
+def _receipt_already_received_message(recibo: dict[str, Any]) -> str:
+    quando = _format_receipt_moment(str(recibo.get("received_at") or ""))
+    quem = str(recibo.get("operator") or "").strip()
+    partes = ["Esta nota já entrou"]
+    if quando:
+        partes.append(f"em {quando}")
+    if quem:
+        partes.append(f"por {quem}")
+    return " ".join(partes) + ". Confira o histórico de recebimentos antes de lançar de novo."
+
+
+def _format_receipt_moment(raw: str) -> str:
+    if not raw:
+        return ""
+    try:
+        momento = timezone.localtime(datetime.fromisoformat(raw))
+    except ValueError:
+        return ""
+    return momento.strftime("%d/%m às %H:%M")
+
+
+def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, position, user) -> None:
+    """O corpo do recebimento — o que era o `with transaction.atomic()` de sempre."""
+    Batch = apps.get_model("stockman", "Batch")
+    Move = apps.get_model("stockman", "Move")
+    from shopman.stockman import stock
 
     with transaction.atomic():
         for line in lines:
@@ -193,8 +292,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
                 )
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
-
-    return build_purchase()
 
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
@@ -682,8 +779,17 @@ def _purchase_meta(obj) -> dict[str, Any]:
     return metadata
 
 
-def parse_money_input(value: str) -> int:
-    """Parse BR/US-ish money input into cents."""
+def parse_money_input(value: str, *, field: str = "costInput") -> int:
+    """Dinheiro digitado → centavos. Vazio é zero; ILEGÍVEL é erro.
+
+    ⚠️ A distinção é o achado. Um custo impossível de parsear virava `0` em
+    silêncio, e o confirm simplesmente pulava o custo: digitar
+    ``"12,50 (com frete)"`` gravava a entrada com custo ZERO e não dizia nada.
+    Isso é falhar aberto em dinheiro — contra a régua explícita da casa.
+
+    Vazio continua valendo zero de propósito: "não informei o custo" é uma resposta
+    legítima do balcão, e é diferente de "escrevi algo que ninguém entende".
+    """
     raw = value.strip().replace("R$", "").replace(" ", "")
     if not raw:
         return 0
@@ -695,10 +801,18 @@ def parse_money_input(value: str) -> int:
         normalized = raw.replace(".", "")
     try:
         amount = Decimal(normalized)
-    except InvalidOperation:
-        return 0
-    if amount <= 0:
-        return 0
+    except InvalidOperation as exc:
+        raise PurchaseError(
+            f"Não entendi o valor {value.strip()!r}. Escreva só o número, como 12,50.",
+            code="money_input_invalid",
+            field=field,
+        ) from exc
+    if amount < 0:
+        raise PurchaseError(
+            "O valor não pode ser negativo.",
+            code="money_input_negative",
+            field=field,
+        )
     return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -1072,6 +1186,44 @@ def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
     return ref, True
 
 
+def _require_supplier_is_issuer(*, supplier, invoice_key: str) -> None:
+    """O fornecedor escolhido tem de ser quem EMITIU a nota.
+
+    O confirm validava a chave e validava que o fornecedor existe e está ativo —
+    mas nunca cruzava os dois. Os 14 dígitos do CNPJ do emitente estão DENTRO da
+    própria chave, e o código já sabia disso (`_supplier_ref_from_invoice_key`).
+
+    No chão: o scan preenche o fornecedor certo, e o que volta no confirm é o do
+    dropdown, que o operador pode ter trocado sem perceber ao navegar entre abas. O
+    resultado é movimento com fornecedor errado, custo no fornecedor errado e — o
+    pior — o de-para fiscal aprendido NO FORNECEDOR ERRADO, envenenando o scan de
+    todas as notas futuras daquele fornecedor. O overwrite loga um aviso; o
+    aprendizado inicial não loga nada.
+
+    ⚠️ Fornecedor SEM documento cadastrado não é recusado: recusar quebraria
+    entrada legítima por causa de cadastro incompleto, e a nota não fica melhor
+    guardada por isso. É o único caso em que a checagem se cala — e ela se cala
+    dizendo por quê no log, não em silêncio.
+    """
+    chave = parse_invoice_access_key(invoice_key) or ""
+    if not chave:
+        return
+    emitente = chave[6:20]
+    documento = re.sub(r"\D", "", getattr(supplier, "document", "") or "")
+    if not documento:
+        logger.info(
+            "purchase.issuer_check_skipped supplier=%s reason=sem_documento", supplier.ref
+        )
+        return
+    if documento != emitente:
+        raise PurchaseError(
+            "O fornecedor selecionado não é quem emitiu esta nota. "
+            "Confira o fornecedor antes de dar entrada.",
+            code="supplier_not_issuer",
+            field="supplierRef",
+        )
+
+
 def _supplier_ref_from_invoice_key(access_key: str) -> str:
     Supplier = apps.get_model("buyman", "Supplier")
     issuer_cnpj = access_key[6:20]
@@ -1146,8 +1298,24 @@ def _receipt_rejection_lines(raw_lines: list[Any]) -> str:
     return "\n".join(rows)
 
 
-def _manual_source_ref(*, supplier_ref: str, note: str) -> str:
-    seed = f"{timezone.now().isoformat()}:{supplier_ref}:{note}"
+def _manual_source_ref(*, supplier_ref: str, note: str, lines: list | None = None) -> str:
+    """A identidade de uma entrada SEM nota — derivada do conteúdo, não do relógio.
+
+    ⚠️ Isto carregava `timezone.now()` no seed, então a mesma entrada gerava um ref
+    diferente a cada chamada. Servia para nomear um lote; NÃO serve para responder
+    "essa entrada já foi feita?", que é o que a trava de recibo precisa perguntar.
+
+    Com o conteúdo no seed, dois envios do mesmo recebimento colidem — que é o
+    ponto. Duas entradas legitimamente iguais no mesmo dia (o fornecedor voltou com
+    outra remessa idêntica) também colidem: é o preço, e é o lado seguro do erro.
+    Quem precisa registrar a segunda declara a diferença na observação.
+    """
+    corpo = ""
+    if lines:
+        corpo = "|".join(
+            f"{line.material.sku}:{line.purchase_qty}:{line.total_cost_q}" for line in lines
+        )
+    seed = f"{supplier_ref}:{note}:{corpo}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10].upper()
     return f"MANUAL-{digest}"
 

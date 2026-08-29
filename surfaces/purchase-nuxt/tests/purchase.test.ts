@@ -20,6 +20,7 @@ import {
   receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
+  parseMoneyInput,
   parseQtyInput,
   quotePreview,
   receiptLinePreview,
@@ -783,6 +784,41 @@ describe("avisos do recebimento", () => {
     expect(
       receiptOutcomeSummary({ kind: "confirmed", at: "2026-08-29", mode: "manual", lineCount: 1, totalCostQ: 0, supplierName: "" }),
     ).toBe("1 item");
+  });
+});
+
+describe("parseMoneyInput — a tela e o servidor lendo o mesmo número", () => {
+  // ⚠️ Havia DOIS parsers de dinheiro com regras diferentes. Este removia TODOS os
+  // pontos antes de olhar a vírgula; o do servidor trata ponto como milhar só se
+  // houver vírgula. O operador digita no campo livre (`inputmode="decimal"`) e os
+  // dois lados divergiam em até 100×, sem nenhum deles avisar:
+  //
+  //     "12.50"  tela: R$ 1.250,00   servidor: R$ 12,50
+  //
+  // Havia 30 testes neste arquivo e ZERO sobre dinheiro digitado.
+  it("lê o teclado da casa (vírgula decimal)", () => {
+    expect(parseMoneyInput("12,50")).toBe(1250);
+    expect(parseMoneyInput("1.250,00")).toBe(125000);
+    expect(parseMoneyInput("R$ 360,00")).toBe(36000);
+  });
+
+  it("lê o teclado do sistema (ponto decimal) — era aqui que divergia 100×", () => {
+    expect(parseMoneyInput("12.50")).toBe(1250);
+    expect(parseMoneyInput("12.5")).toBe(1250);
+    expect(parseMoneyInput("360.00")).toBe(36000);
+  });
+
+  it("vírgula presente decide a notação — a mesma regra do parseQtyInput", () => {
+    // Com vírgula, o ponto é milhar.
+    expect(parseMoneyInput("1.250,50")).toBe(125050);
+    // Sem vírgula, o ponto é decimal.
+    expect(parseMoneyInput("1250.50")).toBe(125050);
+  });
+
+  it("vazio é zero, e lixo não vira número", () => {
+    expect(parseMoneyInput("")).toBe(0);
+    expect(parseMoneyInput("   ")).toBe(0);
+    expect(parseMoneyInput("abc")).toBe(0);
   });
 });
 
