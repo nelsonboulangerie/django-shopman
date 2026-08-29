@@ -54,6 +54,7 @@ from shopman.backstage import station_trust
 from shopman.backstage.api._production_filters import report_filters
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
+from shopman.backstage.parsing import as_bool
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
 from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue
@@ -303,8 +304,10 @@ class POSView(APIView):
 
     def get(self, request):
         from shopman.backstage.services.operator import operator_card, pin_must_change
-
-        pos = build_pos(operator=request.user)
+        # A ESTAÇÃO diz qual gaveta é esta — o cookie de confiança carrega o ref. É o
+        # que permite a loja de duas gavetas ler o quadro certo em cada balcão, em vez
+        # de os dois disputarem o primeiro em ordem alfabética.
+        pos = build_pos(operator=request.user, terminal_ref=station_trust.station_ref(request))
         shift = build_pos_shift_summary()
         query = request.query_params.get("q", "")
         tabs = build_pos_tabs(query=query)
@@ -1772,6 +1775,7 @@ class _ProductionActionBase(APIView):
     ),
 )
 class WorkOrderPlanView(_ProductionActionBase):
+
     def post(self, request):
         recipe_id = request.data.get("recipe_id") or request.data.get("recipe")
         quantity = request.data.get("quantity")
@@ -1791,7 +1795,10 @@ class WorkOrderPlanView(_ProductionActionBase):
                 operator_ref=str(request.data.get("operator_ref") or "").strip(),
                 reason=str(request.data.get("reason") or "").strip(),
                 actor=_production_actor(request),
-                force=bool(request.data.get("force")),
+                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
+                # insumos: um cliente que mande a string desliga o guardrail achando
+                # que o ligou. Ver `shopman/backstage/parsing.py`.
+                force=as_bool(request.data, "force", default=False),
                 source_ref="formula:suggestion" if source == "suggested" else "production_matrix",
             )
         except ProductionError as exc:
@@ -1818,6 +1825,7 @@ class WorkOrderPlanView(_ProductionActionBase):
     ),
 )
 class WorkOrderStartView(_ProductionActionBase):
+
     def post(self, request, wo_id: int):
         try:
             wo_ref, quantity = production_service.apply_start(
@@ -1846,6 +1854,7 @@ class WorkOrderStartView(_ProductionActionBase):
     ),
 )
 class WorkOrderFinishView(_ProductionActionBase):
+
     def post(self, request, wo_id: int):
         try:
             partition = request.data.get("partition")
@@ -1853,7 +1862,10 @@ class WorkOrderFinishView(_ProductionActionBase):
                 work_order_id=wo_id,
                 quantity=str(request.data.get("quantity") or "").strip(),
                 actor=_production_actor(request),
-                force=bool(request.data.get("force")),
+                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
+                # insumos: um cliente que mande a string desliga o guardrail achando
+                # que o ligou. Ver `shopman/backstage/parsing.py`.
+                force=as_bool(request.data, "force", default=False),
                 # Classificação da fornada (refs de QualityGrade). Opcional: o
                 # operador fecha sem pensar e cai no grau padrão do catálogo.
                 quality=str(request.data.get("quality") or "").strip(),
@@ -1899,6 +1911,7 @@ class WorkOrderAdvanceStepView(_ProductionActionBase):
     ),
 )
 class WorkOrderQuickFinishView(_ProductionActionBase):
+
     def post(self, request):
         recipe_id = request.data.get("recipe_id")
         quantity = request.data.get("quantity")
@@ -1920,7 +1933,10 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 # Fornada avulsa fechada pelo quiosque de QC: mesma
                 # partição do finish normal (ADR-017 §4).
                 partition=partition if isinstance(partition, list) else None,
-                force=bool(request.data.get("force")),
+                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
+                # insumos: um cliente que mande a string desliga o guardrail achando
+                # que o ligou. Ver `shopman/backstage/parsing.py`.
+                force=as_bool(request.data, "force", default=False),
             )
         except ProductionError as exc:
             shortage = _production_error_response(exc)
@@ -1938,6 +1954,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     ),
 )
 class WorkOrderVoidView(_ProductionActionBase):
+
     def post(self, request, wo_id: int):
         reason = (request.data.get("reason") or "Estornado pelo operador").strip()
         try:
@@ -1995,6 +2012,77 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
 # ── POS cash shift endpoints ──────────────────────────────────────────
 
 
+#: Escopo da trava das mutações de dinheiro do caixa, na `IdempotencyKey` do
+#: orderman — a mesma tabela do commit de sessão, do replay de webhook e do submit
+#: do PDV. Nenhum modelo novo, nenhuma migração.
+CASH_IDEMPOTENCY_SCOPE = "pos.cash"
+
+
+def _cash_idempotent(request, *, acao: str, executar):
+    """Roda uma mutação de dinheiro UMA vez por `client_request_id`.
+
+    ⚠️ As oito mutações de dinheiro do caixa declaravam `idempotency="none"` e não
+    tinham trava nenhuma. O operador lança uma sangria de R$ 200, a rede do salão
+    oscila (é a mesma do kiosk e do KDS), o botão não responde, ele toca de novo —
+    e o livro-caixa aceita as duas linhas. O livro é IMUTÁVEL de propósito, então o
+    conserto não é apagar: é um ajuste, com o gerente, no fechamento, com o dono
+    perguntando por que faltam R$ 200.
+
+    E não havia segunda linha de defesa: as `UniqueConstraint` que o cashman
+    acrescentou depois de um TOCTOU real cobrem só os `kind` que têm `order_ref`.
+    Sangria, suprimento, fundo de troco, devolução e acerto de conta são exatamente
+    os que não têm. A trava de banco que salvou a venda não alcançava o caixa.
+
+    **Replay é SILENCIOSO aqui, e a diferença com o recibo de Compras é o que a
+    chave significa.** Lá a chave é a NOTA — estável para sempre —, então um envio
+    repetido meses depois merece ser contado ao operador. Aqui a chave é ESTE GESTO:
+    a tela a descarta no sucesso, então um segundo envio com a mesma chave só pode
+    ser retry da mesma sangria. Responder o mesmo resultado é a leitura certa dele.
+
+    Sem chave não há o que travar — mesma régua do submit da venda. A tela sempre
+    manda uma; quem chama a API crua sem chave está dizendo que cada envio é uma
+    operação.
+    """
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
+    )
+
+    chave = str(request.data.get("client_request_id") or "").strip()
+    if not chave:
+        return executar()
+
+    def _executar_para_o_claim():
+        resposta = executar()
+        return ({"status": resposta.status_code, "data": resposta.data}, resposta.status_code)
+
+    try:
+        resultado = run_idempotent_mutation(
+            scope=f"{CASH_IDEMPOTENCY_SCOPE}.{acao}",
+            key=chave,
+            execute=_executar_para_o_claim,
+            # Só a resposta BEM-SUCEDIDA vira replay. Guardar um 400 faria o
+            # operador que corrigiu o valor receber o erro antigo de volta.
+            cache_response=lambda corpo, codigo: codigo < 300,
+        )
+    except RemoteMutationInProgress:
+        return Response(
+            {
+                "detail": "Este lançamento já está sendo registrado. Aguarde um instante.",
+                "error": {
+                    "code": "cash_mutation_in_progress",
+                    "message": "Este lançamento já está sendo registrado.",
+                    "focus": "cash",
+                    "recovery": "Aguarde a confirmação antes de tentar de novo.",
+                },
+            },
+            status=409,
+        )
+
+    corpo = resultado.response_body or {}
+    return Response(corpo.get("data"), status=int(corpo.get("status") or 200))
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -2007,37 +2095,43 @@ class POSCashOpenView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        amount = request.data.get("opening_amount", "0")
-        try:
-            session = pos_service.open_cash_shift(
-                operator=request.user,
-                opening_amount_raw=str(amount),
-                terminal_ref=str(request.data.get("terminal_ref") or ""),
-            )
-        except POSError as exc:
-            message = str(exc) or "Falha ao abrir caixa."
-            terminal_occupied = "Terminal POS" in message and "turno aberto" in message
-            return Response(
-                {
-                    "detail": message,
-                    "error": {
-                        "code": "cash_terminal_occupied" if terminal_occupied else "cash_shift_open_failed",
-                        "message": message,
-                        "field": "terminal_ref" if terminal_occupied else "opening_amount",
-                        "focus": "cash",
-                        "recovery": (
-                            "Use o operador correto, feche o turno atual no gestor ou selecione outro terminal antes de vender."
-                            if terminal_occupied
-                            else "Corrija os dados de abertura do caixa e tente novamente."
-                        ),
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar():
+            amount = request.data.get("opening_amount", "0")
+            try:
+                session = pos_service.open_cash_shift(
+                    operator=request.user,
+                    opening_amount_raw=str(amount),
+                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                )
+            except POSError as exc:
+                message = str(exc) or "Falha ao abrir caixa."
+                terminal_occupied = "Terminal POS" in message and "turno aberto" in message
+                return Response(
+                    {
+                        "detail": message,
+                        "error": {
+                            "code": "cash_terminal_occupied" if terminal_occupied else "cash_shift_open_failed",
+                            "message": message,
+                            "field": "terminal_ref" if terminal_occupied else "opening_amount",
+                            "focus": "cash",
+                            "recovery": (
+                                "Use o operador correto, feche o turno atual no gestor ou selecione outro terminal antes de vender."
+                                if terminal_occupied
+                                else "Corrija os dados de abertura do caixa e tente novamente."
+                            ),
+                        },
                     },
-                },
-                status=409 if terminal_occupied else 400,
-            )
-        except Exception as exc:
-            logger.debug("pos_cash_shift_open_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao abrir caixa."}, status=400)
-        return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
+                    status=409 if terminal_occupied else 400,
+                )
+            except Exception as exc:
+                logger.debug("pos_cash_shift_open_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao abrir caixa."}, status=400)
+            return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
+
+        return _cash_idempotent(
+            request, acao="open_cash_shift", executar=lambda: _executar()
+        )
 
 
 @extend_schema_view(
@@ -2052,29 +2146,35 @@ class POSCashCloseView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        from shopman.backstage.services.exceptions import POSPermissionError
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar():
+            from shopman.backstage.services.exceptions import POSPermissionError
 
-        amount = request.data.get("closing_amount", "0")
-        notes = (request.data.get("notes") or "").strip()
-        try:
-            result = pos_service.close_cash_shift(
-                actor_user=request.user,
-                closing_amount_raw=str(amount),
-                notes=notes,
-                terminal_ref=str(request.data.get("terminal_ref") or ""),
-            )
-        except POSPermissionError as exc:
-            # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
-            # distinguir "sem permissão" de "falhou" para pedir a gerente em vez
-            # de tentar de novo — por isso o código estável, não só o 400.
-            return Response(
-                {"detail": str(exc), "error": {"code": "cash_close_forbidden", "message": str(exc)}},
-                status=403,
-            )
-        except Exception as exc:
-            logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao fechar caixa."}, status=400)
-        return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
+            amount = request.data.get("closing_amount", "0")
+            notes = (request.data.get("notes") or "").strip()
+            try:
+                result = pos_service.close_cash_shift(
+                    actor_user=request.user,
+                    closing_amount_raw=str(amount),
+                    notes=notes,
+                    terminal_ref=str(request.data.get("terminal_ref") or ""),
+                )
+            except POSPermissionError as exc:
+                # Fechar o caixa é da gerência (decisão de 21/08). O balcão precisa
+                # distinguir "sem permissão" de "falhou" para pedir a gerente em vez
+                # de tentar de novo — por isso o código estável, não só o 400.
+                return Response(
+                    {"detail": str(exc), "error": {"code": "cash_close_forbidden", "message": str(exc)}},
+                    status=403,
+                )
+            except Exception as exc:
+                logger.debug("pos_cash_shift_close_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao fechar caixa."}, status=400)
+            return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
+
+        return _cash_idempotent(
+            request, acao="close_cash_shift", executar=lambda: _executar()
+        )
 
 
 @extend_schema_view(
@@ -2089,27 +2189,33 @@ class POSMovementView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        kind = (request.data.get("kind") or "").strip()
-        amount = request.data.get("amount", "0")
-        reason = (request.data.get("reason") or "").strip()
-        if kind not in {"sangria", "suprimento"}:
-            return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
-        try:
-            entry = pos_service.register_cash_movement(
-                operator=request.user,
-                movement_type=kind,
-                amount_raw=str(amount),
-                reason=reason,
-                manager_approval=request.data.get("manager_approval"),
-            )
-        # O desafio de PIN da retirada precisa chegar à tela COM o código, para o
-        # PDV abrir o diálogo do gerente em vez de mostrar um toast sem saída.
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except Exception as exc:
-            logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
-        return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar():
+            kind = (request.data.get("kind") or "").strip()
+            amount = request.data.get("amount", "0")
+            reason = (request.data.get("reason") or "").strip()
+            if kind not in {"sangria", "suprimento"}:
+                return Response({"detail": "kind deve ser 'sangria' ou 'suprimento'."}, status=400)
+            try:
+                entry = pos_service.register_cash_movement(
+                    operator=request.user,
+                    movement_type=kind,
+                    amount_raw=str(amount),
+                    reason=reason,
+                    manager_approval=request.data.get("manager_approval"),
+                )
+            # O desafio de PIN da retirada precisa chegar à tela COM o código, para o
+            # PDV abrir o diálogo do gerente em vez de mostrar um toast sem saída.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_cash_movement_failed user=%s kind=%s", _actor(request), kind, exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao registrar movimento."}, status=400)
+            return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
+
+        return _cash_idempotent(
+            request, acao="cash_movement", executar=lambda: _executar()
+        )
 
 
 @extend_schema_view(
@@ -2395,19 +2501,25 @@ class POSChangeRequestView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request):
-        try:
-            entry = pos_service.request_change(
-                operator=request.user,
-                amount_raw=str(request.data.get("amount", "0")),
-                denominations=request.data.get("denominations") or [],
-                note=request.data.get("note") or "",
-            )
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except Exception as exc:
-            logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao pedir troco."}, status=400)
-        return Response({"ok": True, "request_ref": str(entry.pk)})
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar():
+            try:
+                entry = pos_service.request_change(
+                    operator=request.user,
+                    amount_raw=str(request.data.get("amount", "0")),
+                    denominations=request.data.get("denominations") or [],
+                    note=request.data.get("note") or "",
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_change_request_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao pedir troco."}, status=400)
+            return Response({"ok": True, "request_ref": str(entry.pk)})
+
+        return _cash_idempotent(
+            request, acao="request_change", executar=lambda: _executar()
+        )
 
 
 @extend_schema_view(
@@ -2430,20 +2542,26 @@ class POSChangeRequestServeView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request, request_ref: str):
-        try:
-            pos_service.serve_change_request(
-                operator=request.user,
-                request_ref=request_ref,
-                manager_approval=request.data.get("manager_approval"),
-            )
-        # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
-        # diálogo do gerente em vez de mostrar um toast sem saída.
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except Exception as exc:
-            logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao atender o pedido."}, status=400)
-        return Response({"ok": True})
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar(request_ref, ):
+            try:
+                pos_service.serve_change_request(
+                    operator=request.user,
+                    request_ref=request_ref,
+                    manager_approval=request.data.get("manager_approval"),
+                )
+            # O desafio de PIN precisa chegar à tela COM o código, para o PDV abrir o
+            # diálogo do gerente em vez de mostrar um toast sem saída.
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_change_request_serve_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao atender o pedido."}, status=400)
+            return Response({"ok": True})
+
+        return _cash_idempotent(
+            request, acao="serve_change_request", executar=lambda: _executar(request_ref)
+        )
 
 
 @extend_schema_view(
@@ -2464,14 +2582,20 @@ class POSChangeRequestCancelView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request, request_ref: str):
-        try:
-            pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except Exception as exc:
-            logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao cancelar o pedido."}, status=400)
-        return Response({"ok": True})
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar(request_ref, ):
+            try:
+                pos_service.cancel_change_request(operator=request.user, request_ref=request_ref)
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_change_request_cancel_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao cancelar o pedido."}, status=400)
+            return Response({"ok": True})
+
+        return _cash_idempotent(
+            request, acao="cancel_change_request", executar=lambda: _executar(request_ref)
+        )
 
 
 @extend_schema_view(
@@ -2493,18 +2617,24 @@ class POSCashRefundView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request, order_ref: str):
-        try:
-            refunded_q = pos_service.refund_cash(
-                operator=request.user,
-                order_ref=order_ref,
-                manager_approval=request.data.get("manager_approval"),
-            )
-        except PosIntentError as exc:
-            return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
-        except Exception as exc:
-            logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
-            return Response({"detail": str(exc) or "Falha ao devolver o dinheiro."}, status=400)
-        return Response({"ok": True, "refunded_q": refunded_q})
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar(order_ref, ):
+            try:
+                refunded_q = pos_service.refund_cash(
+                    operator=request.user,
+                    order_ref=order_ref,
+                    manager_approval=request.data.get("manager_approval"),
+                )
+            except PosIntentError as exc:
+                return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+            except Exception as exc:
+                logger.debug("pos_cash_refund_failed user=%s", _actor(request), exc_info=True)
+                return Response({"detail": str(exc) or "Falha ao devolver o dinheiro."}, status=400)
+            return Response({"ok": True, "refunded_q": refunded_q})
+
+        return _cash_idempotent(
+            request, acao="refund_cash", executar=lambda: _executar(order_ref)
+        )
 
 
 @extend_schema_view(
@@ -2540,25 +2670,31 @@ class POSAccountSettleView(APIView):
     required_permission = "cashman.operate_pos"
 
     def post(self, request, customer_ref: str):
-        body = request.data or {}
-        try:
-            settlement = pos_service.settle_account(
-                operator=request.user,
-                customer_ref=customer_ref,
-                amount_raw=str(body.get("amount", "")),
-                method=str(body.get("method", "")),
+        # A trava de replay do dinheiro — ver `_cash_idempotent`.
+        def _executar(customer_ref, ):
+            body = request.data or {}
+            try:
+                settlement = pos_service.settle_account(
+                    operator=request.user,
+                    customer_ref=customer_ref,
+                    amount_raw=str(body.get("amount", "")),
+                    method=str(body.get("method", "")),
+                )
+            except POSError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            return Response(
+                {
+                    "ok": True,
+                    "customer_ref": settlement.customer_ref,
+                    "method": settlement.method,
+                    "settled_q": settlement.settled_q,
+                    "remaining_q": settlement.remaining_q,
+                    "intent_refs": list(settlement.intent_refs),
+                }
             )
-        except POSError as exc:
-            return Response({"detail": str(exc)}, status=400)
-        return Response(
-            {
-                "ok": True,
-                "customer_ref": settlement.customer_ref,
-                "method": settlement.method,
-                "settled_q": settlement.settled_q,
-                "remaining_q": settlement.remaining_q,
-                "intent_refs": list(settlement.intent_refs),
-            }
+
+        return _cash_idempotent(
+            request, acao="settle_account", executar=lambda: _executar(customer_ref)
         )
 
 
@@ -2756,7 +2892,7 @@ class POSTabMoveLinesView(APIView):
                 to_session_key=str(body.get("to_session_key") or "").strip(),
                 to_tab_ref=str(body.get("to_tab_ref") or "").strip(),
                 line_ids=body.get("line_ids") or [],
-                close_source_when_empty=bool(body.get("close_source_when_empty")),
+                close_source_when_empty=as_bool(body, "close_source_when_empty", default=False),
                 actor=_actor_pos(request),
                 operator_username=_username(request),
             )

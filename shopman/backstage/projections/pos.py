@@ -437,8 +437,14 @@ _PAYMENT_COLLECTIONS = (
 # ── Builders ───────────────────────────────────────────────────────────
 
 
-def build_pos(*, terminal=None, operator=None) -> POSProjection:
-    """Build the POS terminal projection."""
+def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSProjection:
+    """Build the POS terminal projection.
+
+    ``terminal_ref`` vem da ESTAÇÃO da requisição (o cookie de confiança do
+    dispositivo já carrega o ref da gaveta). Passá-lo é o que permite a loja de
+    duas gavetas funcionar: cada balcão resolve o seu, em vez de os dois
+    disputarem o primeiro em ordem alfabética.
+    """
     products = _load_products()
 
     collections = tuple(
@@ -452,9 +458,17 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
     # resolvia pelo operador e o terminal se deduzia dele —, e era isso que fazia
     # a segunda pessoa do balcão não achar turno nenhum e cair na antessala.
     if terminal is None:
-        from shopman.cashman.models import Terminal
+        # ⚠️ O MESMO resolver que as mutações usam. Eram dois — a projection por
+        # `Terminal.default()`, as mutações pelo primeiro ativo em ordem alfabética —,
+        # e um segundo terminal cadastrado no Admin paralisava o PDV: a tela mostrava
+        # caixa aberto e nada mais podia ser lançado nem fechado.
+        from shopman.backstage.services.pos import resolve_terminal
 
-        terminal = Terminal.default()
+        # `strict=False`: aqui o ref vem do cookie de estação, que é contexto
+        # ambiente. Estação provisionada com terminal que depois sumiu não pode
+        # derrubar a leitura do PDV — ela cai na regra de sempre (uma gaveta ativa
+        # resolve; duas sem estação válida pedem a escolha).
+        terminal = resolve_terminal(terminal_ref, strict=False)
     cash_shift = _active_cash_shift_for_terminal(terminal)
     from shopman.backstage.services.pos_hardware import CashDrawerConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
@@ -1042,8 +1056,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/cash/open/",
-            payload_schema={"optional": ["opening_amount", "terminal_ref"]},
-            idempotency="none",
+            payload_schema={"optional": ["opening_amount", "terminal_ref", "client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="close_cash_shift",
@@ -1052,9 +1066,9 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/cash/close/",
-            payload_schema={"required": ["closing_amount"], "optional": ["notes"]},
+            payload_schema={"required": ["closing_amount"], "optional": ["notes", "client_request_id"]},
             confirmation={"style": "destructive"},
-            idempotency="none",
+            idempotency="client_request_id",
         ),
         Action(
             ref="cash_movement",
@@ -1063,8 +1077,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/movement/",
-            payload_schema={"required": ["kind", "amount", "reason"]},
-            idempotency="none",
+            payload_schema={"required": ["kind", "amount", "reason"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="drawer_open",
@@ -1133,8 +1147,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/refund/{order_ref}/",
-            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
-            idempotency="none",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="settle_account",
@@ -1143,8 +1157,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/accounts/{customer_ref}/settle/",
-            payload_schema={"path": {"customer_ref": "string"}, "required": ["amount", "method"]},
-            idempotency="none",
+            payload_schema={"path": {"customer_ref": "string"}, "required": ["amount", "method"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="request_change",
@@ -1153,8 +1167,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/",
-            payload_schema={"required": ["kind"], "optional": ["amount", "note"]},
-            idempotency="none",
+            payload_schema={"required": ["kind"], "optional": ["amount", "note", "client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="serve_change_request",
@@ -1163,8 +1177,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/{request_ref}/serve/",
-            payload_schema={"path": {"request_ref": "string"}, "required": ["manager_approval"]},
-            idempotency="none",
+            payload_schema={"path": {"request_ref": "string"}, "required": ["manager_approval"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="cancel_change_request",
@@ -1173,8 +1187,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/{request_ref}/cancel/",
-            payload_schema={"path": {"request_ref": "string"}},
-            idempotency="none",
+            payload_schema={"path": {"request_ref": "string"}, "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="customer_lookup",

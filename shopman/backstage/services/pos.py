@@ -57,12 +57,23 @@ def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = "")
 
     # Idempotência agora é por GAVETA: reenviar "abrir" na mesma gaveta devolve
     # o turno que já está lá, seja quem for que apertou.
-    terminal = _terminal(terminal_ref)
+    terminal = resolve_terminal(terminal_ref)
     existing = cash.open_shift_for_terminal(terminal)
     if existing:
         return existing
 
-    float_q = max(0, parse_money_to_q(opening_amount_raw))
+    # ⚠️ Sem `max(0, ...)`. A assimetria era gritante: o FECHAMENTO recusa negativo, e
+    # o docstring do próprio `parse_money_to_q` diz que devolver zero silencioso num
+    # fechamento cego transformaria um erro de digitação numa diferença gigante sem
+    # aviso. A abertura fazia exatamente isso: o operador digitava `-10`, o parser
+    # devolvia -1000, o clamp devolvia 0, o turno abria SEM lançar `FLOAT_IN` nenhum,
+    # e o guard do cashman (`float_q < 0`) nunca via o sinal.
+    #
+    # O operador achava que tinha declarado o fundo; a contagem cega no fim do dia
+    # acusava o fundo real como diferença sem explicação. O `CashError` do pacote já
+    # vira `POSError` no `except` abaixo, e a view devolve 400 com o campo nomeado.
+    # Vazio continua valendo zero.
+    float_q = parse_money_to_q(opening_amount_raw)
     try:
         return cash.open_shift(operator=operator, terminal=terminal, float_q=float_q)
     except CashError as exc:
@@ -673,27 +684,79 @@ def current_shift(terminal_ref: str = ""):
     se reveza, a segunda pessoa do dia não tinha turno seu e o sistema concluía
     que não havia caixa aberto.
 
-    ⚠️ Sem ``terminal_ref``, ``_terminal()`` devolve o primeiro terminal ativo.
+    ⚠️ Sem ``terminal_ref``, ``resolve_terminal()`` devolve o primeiro terminal ativo.
     Com UMA gaveta isso é exato. Quando a loja tiver balcão + totem, quem chama
     precisa passar o ref — e é por isso que o parâmetro existe desde já, em vez
     de um default escondido que só quebraria no dia da segunda gaveta.
     """
     from shopman.cashman import services as cash
 
-    return cash.open_shift_for_terminal(_terminal(terminal_ref))
+    return cash.open_shift_for_terminal(resolve_terminal(terminal_ref))
 
 
-def _terminal(terminal_ref: str = ""):
+class POSTerminalAmbiguous(POSError):
+    """Mais de uma gaveta ativa e ninguém disse em qual se está trabalhando.
+
+    A camada HTTP mapeia por TIPO para 409 — é conflito de estado, não pedido
+    inválido: o operador não errou nada, falta a loja dizer qual é o balcão dele.
+
+    🔭 Declarada e mapeada, ainda NÃO levantada: quem a levanta é a frente que faz o
+    `terminal_ref` atravessar as onze funções de caixa. Ver `resolve_terminal`.
+    """
+
+
+def resolve_terminal(terminal_ref: str = "", *, strict: bool = True):
+    """A gaveta em que se está trabalhando. DONO ÚNICO da pergunta.
+
+    ⚠️ Havia DOIS resolvers, e um segundo terminal cadastrado no Admin paralisava o
+    PDV. A projection resolvia por `Terminal.default()` e mostrava `pdv-main`; toda
+    mutação sem ref resolvia pelo primeiro ativo em ordem alfabética. Bastava a
+    gerente cadastrar `balcao-2` em Equipamentos:
+
+      * o turno abria em `pdv-main` (a tela mandava o ref que ela mostrava);
+      * daí em diante, sangria, suprimento, gaveta, troco e devolução caíam em
+        "Caixa não aberto";
+      * review e close da venda davam 409 — NÃO SE VENDIA MAIS NADA;
+      * e fechar o caixa não manda ref, então o turno aberto não podia ser fechado
+        pela tela.
+
+    O operador lia "abra o caixa antes de finalizar" numa tela que mostrava o caixa
+    aberto. **Não havia saída pela UI.**
+
+    🔭 **O que este conserto NÃO faz, e por quê.** Com 2+ gavetas ativas e nenhuma
+    estação vinculada, um resolver concordante ainda escolhe a errada COM CONVICÇÃO —
+    os dois lados apontam para `balcao-2` consistentemente, e o operador do balcão 1
+    lança sangria na gaveta do balcão 2 sem erro nenhum. Falha silenciosa é pior que
+    falha ruidosa em dinheiro, e a régua da casa manda falhar fechado aí.
+
+    Só que falhar fechado **exige** que o ref atravesse as onze funções de caixa e
+    suas views — hoje elas chamam `current_shift()` sem ref, e levantar ali quebra
+    caminhos legítimos (provado: `test_pedido_de_outro_turno_nao_e_atendido_daqui`
+    passa a receber a ambiguidade em vez da recusa específica). A canalização é
+    frente própria; ESTE conserto já elimina a paralisação, que é o P0, e não regride
+    nada — as mutações já resolviam assim.
+
+    Com UMA gaveta — o caso de hoje — nada muda em nenhuma das duas versões.
+    """
     from shopman.cashman.models import Terminal
 
     ref = str(terminal_ref or "").strip()
     if ref:
         terminal = Terminal.objects.filter(ref=ref, is_active=True).first()
-        if not terminal:
+        if terminal:
+            return terminal
+        # ⚠️ `strict` separa duas coisas que parecem uma. Um ref VINDO DO PAYLOAD é
+        # uma afirmação de quem chama: se não existe, o pedido está errado e tem de
+        # ser recusado. Um ref vindo do COOKIE DE ESTAÇÃO é contexto ambiente — o
+        # dispositivo pode ter sido provisionado com um terminal que depois foi
+        # desativado ou renomeado, e derrubar o PDV inteiro por causa disso seria
+        # trocar um problema por outro maior.
+        if strict:
             raise POSError("Terminal POS inválido.")
-        return terminal
-    terminal = Terminal.objects.filter(is_active=True).order_by("ref").first()
-    return terminal or Terminal.default()
+
+    ativos = list(Terminal.objects.filter(is_active=True).order_by("ref")[:2])
+    return ativos[0] if ativos else Terminal.default()
+
 
 
 def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = False, terminal_ref: str = "") -> dict:
@@ -813,7 +876,7 @@ def _movement_entry(operator, entry_id: int, terminal_ref: str = ""):
     entry = (
         Entry.objects.filter(
             pk=_int_or_none(entry_id),
-            shift__terminal=_terminal(terminal_ref),
+            shift__terminal=resolve_terminal(terminal_ref),
             kind__in=list(MOVEMENT_KIND_BY_API.values()),
         )
         .select_related("shift", "shift__terminal", "operator", "approved_by")
