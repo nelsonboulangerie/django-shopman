@@ -343,6 +343,40 @@ async function mockConfirmPayment () {
   }
 }
 
+// Fila de espera: a fornada saiu e a vaga é do cliente por um prazo. O
+// acompanhamento é a superfície que SEMPRE existe — a notificação pode não ter
+// chegado (janela do WhatsApp, número trocado), e mesmo assim o prazo corre.
+const waitlistPending = ref(false)
+const waitlistState = computed(() => tracking.value?.waitlist_state || 'none')
+const waitlistDeadlineLeft = computed(() => {
+  const deadline = tracking.value?.waitlist_deadline
+  if (!deadline || waitlistState.value !== 'confirming') return ''
+  const ms = new Date(deadline).getTime() - nowMs.value
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+})
+
+async function confirmWaitlistSlot () {
+  if (waitlistPending.value) return
+  waitlistPending.value = true
+  try {
+    const headers = await csrfHeaders()
+    headers['x-idempotency-key'] = newRemoteMutationKey(`waitlist-confirm:${orderRef.value}`)
+    await $fetch(apiPath(`/api/v1/orders/${encodeURIComponent(orderRef.value)}/waitlist-confirm/`), {
+      method: 'POST', headers, credentials: 'include'
+    })
+    await refresh()
+  } catch (e) {
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível confirmar agora.'))
+    await refresh()
+  } finally {
+    waitlistPending.value = false
+  }
+}
+
 function dismissReorderConflict () {
   conflict.value = null
 }
@@ -477,6 +511,57 @@ useSeoMeta({
                     <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
                     {{ tracking.refund_status_label }}
                   </p>
+                </div>
+
+                <!-- Fila de espera: a promessa em duas fases, dita na tela que
+                     sempre existe. Esperar não cobra nada; o chamado tem relógio;
+                     a saída é dita sem culpa e com a porta aberta. -->
+                <div
+                  v-if="waitlistState === 'fermata'"
+                  class="mt-2 space-y-1 rounded-md border bg-muted/40 p-3 text-sm"
+                  data-waitlist="fermata"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_waiting_title }}</p>
+                  <p>{{ tracking.copy.waitlist_waiting_message }}</p>
+                  <p v-if="tracking.waitlist_planned_for_display" class="shop-body">
+                    Fornada prevista para {{ tracking.waitlist_planned_for_display }}.
+                  </p>
+                </div>
+
+                <div
+                  v-else-if="waitlistState === 'confirming'"
+                  class="mt-2 space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm"
+                  data-waitlist="confirming"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_confirm_title }}</p>
+                  <p>{{ tracking.copy.waitlist_confirm_message }}</p>
+                  <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
+                    Confirme em {{ waitlistDeadlineLeft }}
+                  </p>
+                  <UiButton
+                    :disabled="waitlistPending"
+                    :loading="waitlistPending"
+                    @click="confirmWaitlistSlot"
+                  >
+                    {{ tracking.copy.waitlist_confirm_cta }}
+                  </UiButton>
+                </div>
+
+                <p
+                  v-else-if="waitlistState === 'confirmed'"
+                  class="mt-2 rounded-md border bg-muted/40 p-3 text-sm font-semibold"
+                  data-waitlist="confirmed"
+                >
+                  {{ tracking.copy.waitlist_confirmed_title }}
+                </p>
+
+                <div
+                  v-else-if="waitlistState === 'released'"
+                  class="mt-2 space-y-1 rounded-md border bg-muted/40 p-3 text-sm"
+                  data-waitlist="released"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_released_title }}</p>
+                  <p>{{ tracking.copy.waitlist_released_message }}</p>
                 </div>
 
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar

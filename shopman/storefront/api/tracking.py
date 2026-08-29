@@ -326,6 +326,95 @@ class OrderCancelView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["tracking"],
+        summary="Customer confirms a waitlist slot after the batch came out",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="No open confirmation window for this order."),
+        },
+    ),
+)
+class OrderWaitlistConfirmView(APIView):
+    """
+    POST /api/v1/orders/{ref}/waitlist-confirm/
+
+    A fornada saiu e o cliente confirma que quer o dele (WP-P2E §8). Fora da
+    janela — nunca aberta, ou prazo vencido — a confirmação é recusada com
+    409: a vaga já é de outro, e fingir o contrário prometeria o que não há.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-waitlist-confirm",
+            rate="20/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(
+            request,
+            fallback=f"waitlist-confirm:{ref}",
+        )
+
+        def execute_confirm() -> tuple[dict, int]:
+            from shopman.shop.services import waitlist
+
+            if not waitlist.confirm(order):
+                order.refresh_from_db()
+                return (
+                    {
+                        "detail": _copy_message(
+                            "TRACKING_WAITLIST_RELEASED_MESSAGE",
+                            "O prazo de confirmação passou e liberamos a sua vaga. "
+                            "Nada foi cobrado, e você pode entrar na fila da próxima fornada.",
+                        ),
+                        "error_code": "waitlist_window_closed",
+                        "waitlist_state": waitlist.state_for(order),
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+
+            order.refresh_from_db()
+            data = _tracking_payload(order)
+            serializer = OrderTrackingSerializer(data)
+            return dict(serializer.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-waitlist-confirm:{ref}",
+                key=key,
+                execute=execute_confirm,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "Confirmação já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
         summary="Customer confirms a dispatched delivery arrived",
         responses={
             200: OrderTrackingSerializer,

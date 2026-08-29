@@ -37,7 +37,7 @@ from decimal import Decimal
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel
 
-from . import substitutes
+from . import substitutes, waitlist
 
 logger = logging.getLogger(__name__)
 
@@ -227,6 +227,11 @@ def decide(
 ) -> dict:
     """Return a canonical promise decision for one SKU in context."""
     qty_d = Decimal(str(qty))
+    if target_date is None:
+        # Fila de espera (WP-P2E): sem data explícita, a pergunta é o HORIZONTE
+        # de promessa do canal, não "hoje". Com a fila desligada o horizonte É
+        # hoje, então nada muda; ligada, a fornada planejada passa a contar.
+        target_date = waitlist.promise_horizon(channel_ref)
 
     components = _expand_if_bundle(sku, qty_d)
     if components is not None:
@@ -557,6 +562,11 @@ def reserve(
     qty_d = Decimal(str(qty))
     if ttl_minutes is None:
         ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+    if target_date is None:
+        # A pronta-entrega é servida primeiro; só quando ela não cobre o pedido
+        # a reserva ancora na fornada planejada — e ancora na data DELA, não no
+        # horizonte, senão a sacola prometeria um dia que não é o do lote.
+        target_date = waitlist.reserve_target_date(sku, qty_d, channel_ref=channel_ref)
 
     listing_error = _reserve_listing_gate_error(
         sku,

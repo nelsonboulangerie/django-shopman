@@ -270,6 +270,33 @@ stock:
   allowed_positions:      [string] | null  # Posições permitidas (null = todas)
 ```
 
+### 4.3.1 Fila de espera (WP-P2E)
+
+Quanto da fornada AINDA NÃO ASSADA o canal promete. Desligada (o default), o
+canal só promete o que existe ou sai hoje — o comportamento de sempre.
+
+```yaml
+waitlist:
+  enabled:              bool    # Liga a fila neste canal (default: false)
+  horizon_days:         int     # Dias de fornada planejada além de hoje (default: 0)
+                                # Deve ser > 0 quando enabled — fila ligada com
+                                # horizonte 0 é promessa vazia, e o validate recusa.
+  confirmation_minutes: int     # Prazo do cliente para confirmar quando a fornada sai (default: 15)
+  release_policy:       string  # "serve_next" (fila tem preferência) | "store" (volta à gôndola)
+  charge_at:            string  # "confirmation" — nada é cobrado na reserva
+  price_frozen:         bool    # O preço da reserva é o preço da confirmação (default: true)
+```
+
+O `horizon_days` é a pergunta que faltava. O Stockman sempre somou fornada
+planejada em `total_promisable`, mas toda leitura de cliente perguntava "e
+para HOJE?" — e fornada de amanhã, por construção, não conta para hoje. Com o
+horizonte, a leitura pergunta pelo dia certo e a fornada volta a ser promessa.
+
+A reserva ancora na data da FORNADA, não no horizonte: o hold precisa apontar
+para o lote certo para a sacola dizer "Previsto para <dia>" sem mentir. A
+pronta-entrega continua sendo servida primeiro; a fila só é acionada quando
+ela acaba.
+
 ### 4.4 Pipeline (Diretivas por Evento)
 
 ```yaml

@@ -33,6 +33,11 @@ _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
         "order_delivered",
         "order_cancelled",
         "order_rejected",
+        # Fila de espera (WP-P2E): os dois lados do "nunca silencioso". O
+        # chamado tem prazo e a saída tira a vaga — nenhum dos dois pode
+        # depender de o cliente abrir a tela por conta própria.
+        "waitlist_available",
+        "waitlist_released",
     }
 )
 

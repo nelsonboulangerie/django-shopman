@@ -14,6 +14,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
+  sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -83,6 +84,12 @@ MAINTENANCE_COMMANDS = (
     # morta (void com ajuste falho, quant órfão) é zerado pelo ledger — mas só
     # quando nenhuma WO viva nem ledger aberto ainda reivindica o quant.
     "sweep_dead_production_stock",
+    # DEPOIS da produção resgatada, de propósito: é a materialização que abre a
+    # janela de confirmação, e varrer antes dela olharia um estado que este
+    # mesmo ciclo ainda vai criar. A janela é a única parte da fila com
+    # relógio; sem a varredura o prazo seria decorativo e a vaga ficaria presa
+    # a quem não respondeu, com o próximo da fila esperando para sempre.
+    "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
 )

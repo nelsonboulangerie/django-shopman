@@ -143,6 +143,7 @@ for key in (
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
+| `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
 | `nfce_number` | `int` | NFCeEmitHandler | — | Número do documento |
 | `nfce_danfe_url` | `string` | NFCeEmitHandler | — | URL do DANFE PDF |
@@ -203,6 +204,37 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "error": {"message": "...", "at": "iso"}  // falha terminal do despacho; limpo no re-despacho
 }
 ```
+
+### waitlist — detalhamento
+
+A fila é uma compra em DUAS fases. A reserva não cobra nada e não corre
+relógio; a confirmação, sim.
+
+```json
+"waitlist": {
+  "state": "confirming",          // fermata | confirming | confirmed | released
+  "sku": "PAO-FRANCES",           // o SKU que espera a fornada
+  "qty": "2",                     // quantidade reservada (string decimal)
+  "opened_at": "iso",             // quando a fornada saiu e a janela abriu
+  "deadline": "iso",              // só em confirming — prazo do cliente
+  "confirmed_at": "iso",          // só em confirmed
+  "released_at": "iso",           // só em released
+  "release_reason": "confirmation_timeout"
+}
+```
+
+| Estado | De onde vem | O que significa |
+|--------|-------------|-----------------|
+| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança |
+| `confirming` | `waitlist.open_window` (sinal de materialização) | A fornada saiu; o cliente tem `deadline` para confirmar |
+| `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
+| `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
+
+Liberação **nunca é silenciosa**: cliente (`waitlist_released`) e loja
+(`OperatorAlert type="waitlist_released"`) são avisados, e com
+`release_policy=serve_next` a vaga vai ao próximo da fila (FCFS) na hora.
+
+Configuração em `ChannelConfig.waitlist` — ver [business-rules.md §4.3.1](../business-rules.md).
 
 ### Chaves seed-only para QA adversarial
 

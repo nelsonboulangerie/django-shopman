@@ -353,6 +353,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # Depois do resgate: resíduo de processo de WO morta é zerado pelo
         # ledger — só quando nenhuma WO viva nem ledger aberto o reivindica.
         call("sweep_dead_production_stock"),
+        call("sweep_waitlist_windows"),
         call("check_directive_health"),
     ]
 

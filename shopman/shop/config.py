@@ -145,6 +145,32 @@ class ChannelConfig:
         # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
         # não é afetado.
 
+    # ── 4b. Fila de espera (WP-P2E) ──
+    @dataclass
+    class Waitlist:
+        """Fila de espera: quanto da fornada AINDA NÃO ASSADA o canal promete.
+
+        A promessa é do canal, não do estoque: o Stockman sempre soube somar
+        quant planejado (``total_promisable = expected + planned``), mas quem
+        lê sempre perguntou "e para HOJE?" — e fornada de amanhã, por
+        construção, não conta para hoje. ``horizon_days`` é a pergunta certa:
+        até que dia de fornada planejada este canal aceita entrar na fila.
+        """
+
+        enabled: bool = False
+        # Fila desligada = comportamento de sempre (só o que existe/sai hoje).
+        horizon_days: int = 0
+        # Quantos dias de fornada PLANEJADA além de hoje entram na promessa.
+        # 0 com enabled=True é contradição — validate() recusa.
+        confirmation_minutes: int = 15
+        # Prazo do cliente para confirmar quando a fornada sai.
+        release_policy: str = "serve_next"
+        # "serve_next" (fila tem preferência) | "store" (vaga volta à gôndola).
+        charge_at: str = "confirmation"
+        # Onde a cobrança acontece. "confirmation" = nada é cobrado na reserva.
+        price_frozen: bool = True
+        # O preço da reserva é o preço da confirmação.
+
     # ── 5. Notificações ──
     @dataclass
     class Notifications:
@@ -233,6 +259,7 @@ class ChannelConfig:
     payment: Payment = field(default_factory=Payment)
     fulfillment: Fulfillment = field(default_factory=Fulfillment)
     stock: Stock = field(default_factory=Stock)
+    waitlist: Waitlist = field(default_factory=Waitlist)
     notifications: Notifications = field(default_factory=Notifications)
     pricing: Pricing = field(default_factory=Pricing)
     editing: Editing = field(default_factory=Editing)
@@ -271,6 +298,7 @@ class ChannelConfig:
             payment=_safe_init(cls.Payment, data.get("payment", {})),
             fulfillment=_safe_init(cls.Fulfillment, data.get("fulfillment", {})),
             stock=_safe_init(cls.Stock, data.get("stock", {})),
+            waitlist=_safe_init(cls.Waitlist, data.get("waitlist", {})),
             notifications=_safe_init(cls.Notifications, data.get("notifications", {})),
             pricing=_safe_init(cls.Pricing, data.get("pricing", {})),
             editing=_safe_init(cls.Editing, data.get("editing", {})),
@@ -397,6 +425,26 @@ class ChannelConfig:
             raise ValueError("rules.modifiers deve ser uma lista ou null")
         if not isinstance(self.rules.checks, list):
             raise ValueError("rules.checks deve ser uma lista")
+        if not isinstance(self.waitlist.enabled, bool):
+            raise ValueError("waitlist.enabled deve ser true/false")
+        if (
+            isinstance(self.waitlist.horizon_days, bool)
+            or not isinstance(self.waitlist.horizon_days, int)
+            or self.waitlist.horizon_days < 0
+        ):
+            raise ValueError("waitlist.horizon_days deve ser um inteiro >= 0")
+        # Fila ligada com horizonte 0 é promessa vazia: a fila existiria e não
+        # alcançaria nenhuma fornada. Recusa em vez de aceitar calada.
+        if self.waitlist.enabled and self.waitlist.horizon_days <= 0:
+            raise ValueError("waitlist.horizon_days deve ser > 0 quando waitlist.enabled")
+        if self.waitlist.confirmation_minutes <= 0:
+            raise ValueError("waitlist.confirmation_minutes deve ser > 0")
+        if self.waitlist.release_policy not in ("serve_next", "store"):
+            raise ValueError(f"waitlist.release_policy inválido: {self.waitlist.release_policy}")
+        if self.waitlist.charge_at not in ("confirmation",):
+            raise ValueError(f"waitlist.charge_at inválido: {self.waitlist.charge_at}")
+        if not isinstance(self.waitlist.price_frozen, bool):
+            raise ValueError("waitlist.price_frozen deve ser true/false")
 
 
 def _safe_init(cls, data: dict):

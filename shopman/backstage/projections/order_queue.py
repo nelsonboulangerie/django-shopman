@@ -186,6 +186,14 @@ class OrderCardProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # Fila de espera (WP-P2E): o pedido que espera fornada não está parado por
+    # descuido, e o que tem janela de confirmação aberta tem relógio correndo do
+    # lado do CLIENTE. Sem o selo os dois se parecem com "pedido travado" no
+    # board, e alguém cutuca o que não devia.
+    # "" | "fermata" | "confirming" | "confirmed" | "released"
+    waitlist_state: str = ""
+    waitlist_deadline_iso: str = ""
+    waitlist_label: str = ""
 
 
 @dataclass(frozen=True)
@@ -647,6 +655,34 @@ def _commitment_date_display(commitment) -> str:
     return f"{formats.date_format(commitment, 'D')}, {formats.date_format(commitment, 'd/m')}"
 
 
+_WAITLIST_LABELS = {
+    "fermata": "Na fila da fornada",
+    "confirming": "Aguardando o cliente confirmar",
+    "confirmed": "Confirmado pelo cliente",
+    "released": "Vaga liberada",
+}
+
+
+def _waitlist_badge(order: Order) -> tuple[str, str, str]:
+    """Estado da fila para o card do board (WP-P2E).
+
+    Pedido esperando fornada não é pedido travado, e a diferença precisa estar
+    na tela: sem o selo, os dois se parecem, e quem opera cutuca o que não deve.
+    """
+    try:
+        from shopman.shop.services import waitlist
+
+        state = waitlist.state_for(order)
+    except Exception:
+        logger.debug("order_queue._waitlist_badge degraded ref=%s", order.ref, exc_info=True)
+        return "", "", ""
+    if state == "none":
+        return "", "", ""
+    block = (order.data or {}).get("waitlist") or {}
+    deadline = str(block.get("deadline") or "") if state == "confirming" else ""
+    return state, deadline, _WAITLIST_LABELS.get(state, "")
+
+
 def _build_card(
     order: Order,
     deadline: tuple[str, str] | None = None,
@@ -691,6 +727,7 @@ def _build_card(
     fiscal_status, fiscal_status_label, _fiscal_links = _fiscal_status(order)
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
+    waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order)
 
     return OrderCardProjection(
         ref=order.ref,
@@ -739,6 +776,9 @@ def _build_card(
         commitment_date_display=_commitment_date_display(commitment) if is_preorder else "",
         **_courier_change_fields(order, courier_change),
         **_equipment_fields(order),
+        waitlist_state=waitlist_state,
+        waitlist_deadline_iso=waitlist_deadline_iso,
+        waitlist_label=waitlist_label,
     )
 
 

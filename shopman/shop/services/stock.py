@@ -598,13 +598,44 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
     Estende o TTL de carrinho para um backstop longo (não ``None``): o dono
     passa a ser o pedido e o ciclo normal termina por fulfill/release; mas se
     o pedido travar sem resolução, o hold ainda expira e devolve o estoque.
+
+    EXCEÇÃO — a fermata (WP-P2E): reserva de fila espera uma fornada que
+    ainda não saiu, e o relógio dela só começa na materialização
+    (``planning.realize`` preenche o ``expires_at``). Carimbar o backstop
+    aqui daria prazo a quem ainda não recebeu nada para confirmar: a fornada
+    de depois de amanhã morreria no meio do caminho, calada. O hold
+    planejado indefinido segue indefinido; o backstop dele é a própria
+    fornada, e quem libera vaga sem fornada é o sweep.
     """
     from datetime import timedelta
 
     adapter = get_adapter("stock")
     adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY)
+    if _is_fermata_hold(hold_id):
+        return
     backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
     adapter.extend_hold(hold_id, expires_at=backstop)
+
+
+def _is_fermata_hold(hold_id: str) -> bool:
+    """O hold é reserva de fila ainda esperando a fornada?
+
+    Marcador durável: ``metadata.planned`` (carimbado em
+    ``adapters/stock.create_hold``) mais ``expires_at`` nulo — depois da
+    materialização a marca fica e o prazo aparece, e aí ele já não é fermata.
+    """
+    try:
+        from shopman.stockman.models import Hold
+
+        hold = Hold.objects.filter(pk=int(hold_id.split(":")[1])).only(
+            "expires_at", "metadata",
+        ).first()
+    except Exception:
+        logger.debug("stock._is_fermata_hold degraded hold=%s", hold_id, exc_info=True)
+        return False
+    if hold is None:
+        return False
+    return hold.expires_at is None and bool((hold.metadata or {}).get("planned"))
 
 
 def _channel_allows_preorder(order) -> bool:

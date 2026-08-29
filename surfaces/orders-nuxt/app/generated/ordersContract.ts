@@ -102,6 +102,9 @@ export interface OrderCardProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  waitlist_state: string;
+  waitlist_deadline_iso: string;
+  waitlist_label: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
