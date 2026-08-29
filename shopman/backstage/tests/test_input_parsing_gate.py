@@ -29,10 +29,6 @@ HELPER_DUPLICADO = re.compile(r"^def _as_(bool|int)\b", re.MULTILINE)
 
 #: Dívida NOMEADA, com o WP que a resolve. Esta lista só pode ENCOLHER.
 #:
-#: `operations.py` fica para a Onda 2 porque três WPs escrevem no mesmo arquivo de
-#: 113 KB, e branch paralelo ali é a receita documentada do criss-cross que já
-#: derrubou a fila de merge deste repositório.
-#:
 #: A camada de SERVIÇO fica de fora por desenho, não por preguiça: ela já tem
 #: dialeto de entrada próprio (`_as_nullable_int`, `_as_str_list`) que levanta
 #: `CatalogError`, e `services/exceptions.py` documenta que a camada HTTP mapeia
@@ -40,9 +36,11 @@ HELPER_DUPLICADO = re.compile(r"^def _as_(bool|int)\b", re.MULTILINE)
 #: quebraria essa camada para consertar um `bool()`. Cai junto com o WP de cada
 #: serviço.
 DIVIDA = {
-    "api/operations.py": (4, "Onda 2 — `force` de produção e `close_source_when_empty` (WP-00 B2)"),
+    # ✅ `api/operations.py` saiu da lista na Onda 2: o `force` de produção — o que
+    # CONTORNA a checagem de insumos — e o `close_source_when_empty` passaram a usar
+    # `parsing.as_bool`. A camada de API está em ZERO.
     "services/catalog.py": (2, "WP do catálogo — a camada levanta CatalogError, não ValidationError"),
-    "services/purchase.py": (1, "WP-06 Compras (Onda 1d) — mesma razão do catálogo"),
+    "services/purchase.py": (1, "WP-06 Compras — mesma razão do catálogo"),
 }
 
 

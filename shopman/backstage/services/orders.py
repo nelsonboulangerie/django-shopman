@@ -48,11 +48,22 @@ def advance_order(order, *, actor: str, operator=None, change_out_raw: str | Non
     que pede troco vira ``ChangeOutRequired`` → ``OrderChangeOutRequired`` (409
     com a sugestão), para a tela perguntar, e para a API crua não passar calada.
     """
+    from shopman.backstage.services.exceptions import POSError
     from shopman.backstage.services.pos import parse_money_to_q
 
+    # ⚠️ `POSError` é IRMÃ de `OrderError`, não subclasse — e a view só captura
+    # `OrderError`. Com o parser fora do try, digitar "12,,30" no diálogo "Troco
+    # para o entregador" derrubava o servidor: 500, stacktrace no log, e a tela
+    # dizendo "Falha na ação. Tente de novo." sem ninguém saber que foi o campo.
+    #
+    # O mesmo arquivo, logo abaixo, já comenta que a tela "merece o 400 com a
+    # mensagem do pacote, não um 500" — para `CashError`. `POSError` ficou de fora.
     change_out_q = None
     if change_out_raw is not None and str(change_out_raw).strip() != "":
-        change_out_q = parse_money_to_q(str(change_out_raw))
+        try:
+            change_out_q = parse_money_to_q(str(change_out_raw))
+        except POSError as exc:
+            raise OrderError(str(exc) or "Valor de troco inválido.") from exc
     shift = None
     if operator is not None and change_out_q:
         from shopman.backstage.services import pos as pos_service
@@ -141,13 +152,19 @@ def settle_delivery_cash(
     from shopman.cashman.exceptions import CashError
 
     from shopman.backstage.services import pos as pos_service
+    from shopman.backstage.services.exceptions import POSError
     from shopman.backstage.services.pos import parse_money_to_q
 
     shift = pos_service.current_shift()
-    amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
-    change_back_q = None
-    if change_back_raw is not None and str(change_back_raw).strip() != "":
-        change_back_q = parse_money_to_q(str(change_back_raw))
+    # Mesma razão do `advance_order`: sem este try, um typo no campo de acerto
+    # respondia 500 em vez do 400 com a mensagem do pacote.
+    try:
+        amount_q = parse_money_to_q(amount_raw) if str(amount_raw or "").strip() else None
+        change_back_q = None
+        if change_back_raw is not None and str(change_back_raw).strip() != "":
+            change_back_q = parse_money_to_q(str(change_back_raw))
+    except POSError as exc:
+        raise OrderError(str(exc) or "Valor inválido.") from exc
     try:
         return operator_orders.settle_delivery_cash(
             order,

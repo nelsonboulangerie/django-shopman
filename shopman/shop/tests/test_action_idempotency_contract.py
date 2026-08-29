@@ -63,21 +63,15 @@ IDEMPOTENT_BY_NATURE = {
 }
 
 # ── Divida nomeada: mutacao de dinheiro ainda sem chave ────────────────────
-# ⚠️ Esta lista so pode ENCOLHER. Cada entrada e uma mutacao do livro-caixa que
-# hoje aceita replay: rede oscila, o operador toca de novo, e o livro imutavel
-# do cashman fica com duas linhas de R$ 200 que so um ajuste de gerente conserta.
-# Onda 2 do WP-00 (Bloco A, P0-A2) liga o claim de `client_request_id` que a venda
-# ja usa (shopman/shop/services/pos.py) e esvazia esta lista.
-DIVIDA_ONDA_2 = {
-    "open_cash_shift": "WP-00 Bloco A P0-A2 — abertura de caixa duplicada",
-    "close_cash_shift": "WP-00 Bloco A P0-A2 — fechamento de caixa duplicado",
-    "cash_movement": "WP-00 Bloco A P0-A2 — sangria/suprimento duplicados no livro-caixa",
-    "refund_cash": "WP-00 Bloco A P0-A2 — estorno em dinheiro duplicado",
-    "settle_account": "WP-00 Bloco A P0-A2 — acerto de conta duplicado",
-    "request_change": "WP-00 Bloco A P0-A2 — pedido de troco duplicado",
-    "serve_change_request": "WP-00 Bloco A P0-A2 — troco atendido duas vezes",
-    "cancel_change_request": "WP-00 Bloco A P0-A2 — cancelamento de troco duplicado",
-}
+# ✅ ESVAZIADA na Onda 2. As oito mutacoes do caixa passaram a declarar
+# `client_request_id`, e o servidor as embrulha em `_cash_idempotent`
+# (`shopman/backstage/api/operations.py`), que reusa o `run_idempotent_mutation` e a
+# `IdempotencyKey` do orderman — sem modelo novo e sem migracao.
+#
+# A lista fica aqui VAZIA de proposito, e nao apagada: ela e o lugar onde a proxima
+# mutacao de dinheiro sem chave teria de ser escrita, e um dicionario vazio com esta
+# docstring diz isso melhor do que a ausencia do simbolo.
+DIVIDA_ONDA_2: dict[str, str] = {}
 
 ALLOWLIST = {**IDEMPOTENT_BY_NATURE, **DIVIDA_ONDA_2}
 
