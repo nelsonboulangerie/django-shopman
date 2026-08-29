@@ -36,13 +36,27 @@ export function isTransientError(error: unknown): boolean {
 }
 
 /**
- * Autenticação perdida (401): a sessão do operador expirou no meio da
- * operação. Distinto de 403 (autenticado, porém proibido — falta de permissão/gate de
- * PIN), que NÃO deve re-gate para login. Consumido pelo `useOperatorSession` para
- * forçar re-autenticação em vez de falhar gravações no vácuo.
+ * Autenticação perdida: a sessão do operador expirou no meio da operação.
+ * Consumido pelo `useOperatorSession` para forçar re-autenticação em vez de falhar
+ * gravações no vácuo.
+ *
+ * ⚠️ **Na zona de operador isto quase nunca chega como 401.** O Django roda com um
+ * authenticator só (`SessionAuthentication`), que não manda header de desafio — e
+ * sem ele o DRF rebaixa o `NotAuthenticated` para **403**. Enquanto este narrowing
+ * testava só `status === 401` o ramo era inalcançável no backstage, e a sessão
+ * caída caía no tratamento genérico: o operador via erro de rede para um problema
+ * que o login resolveria.
+ *
+ * A correção é por **código**, não por status. Continua distinto de um 403 comum
+ * (falta de permissão, que login NÃO resolve): só o `not_authenticated` que o
+ * servidor nomeia entra aqui. Aceitar "todo 403" mandaria o operador digitar senha
+ * para uma recusa que senha não conserta — mesmo raciocínio do
+ * `isStationLockedError` abaixo.
  */
 export function isUnauthenticatedError(error: unknown): boolean {
-  return httpError(error).status === 401;
+  const { status } = httpError(error);
+  if (status === 401) return true;
+  return status === 403 && httpErrorCode(error) === "not_authenticated";
 }
 
 /**
