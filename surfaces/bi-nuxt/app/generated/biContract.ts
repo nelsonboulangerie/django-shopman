@@ -239,15 +239,16 @@ export interface BIExploreRow {
   value: number;
 }
 
-/** BIExploreMetricOption(key: 'str', label: 'str', unit: 'str', dimensions: 'tuple[str, ...]') */
+/** BIExploreMetricOption(key: 'str', label: 'str', unit: 'str', dimensions: 'tuple[str, ...]', aggregation: 'str' = 'sum') */
 export interface BIExploreMetricOption {
   key: string;
   label: string;
   unit: string;
   dimensions: string[];
+  aggregation: string;
 }
 
-/** BIExploreReport(metric: 'str', metric_label: 'str', unit: 'str', dimension: 'str', dimension_label: 'str', dimension2: 'str', dimension2_label: 'str', date_from: 'str', date_to: 'str', rows: 'tuple[BIExploreRow, ...]', truncated: 'int', metrics: 'tuple[BIExploreMetricOption, ...]') */
+/** BIExploreReport(metric: 'str', metric_label: 'str', unit: 'str', dimension: 'str', dimension_label: 'str', dimension2: 'str', dimension2_label: 'str', date_from: 'str', date_to: 'str', aggregation: 'str', rows: 'tuple[BIExploreRow, ...]', truncated: 'int', metrics: 'tuple[BIExploreMetricOption, ...]') */
 export interface BIExploreReport {
   metric: string;
   metric_label: string;
@@ -258,6 +259,7 @@ export interface BIExploreReport {
   dimension2_label: string;
   date_from: string;
   date_to: string;
+  aggregation: string;
   rows: BIExploreRow[];
   truncated: number;
   metrics: BIExploreMetricOption[];
