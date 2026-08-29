@@ -7,11 +7,15 @@ import type {
   MaterialConversion,
   MaterialIssue,
   MaterialTone,
+  ReceiptBlocker,
   ReceiptConversionSuggestion,
+  ReceiptFieldAnchor,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptLineSuggestion,
   ReceiptMode,
+  ReceiptOutcome,
+  ReceiptPendingItem,
   ReceiptWarning,
   QuotePreview,
   Supplier,
@@ -245,6 +249,107 @@ export function receiptNextStepIsOnField(warnings: ReceiptWarning[]): boolean {
 }
 
 /**
+ * O ENDERECO de cada bloqueio dentro do card da linha.
+ *
+ * Um aviso que sabe o que falta e nao sabe onde nao e um aviso, e uma acusacao:
+ * "informe a validade" no rodape de uma nota de dez itens deixa o operador
+ * rolando a tela para achar qual item e qual campo. Com a ancora, o mesmo aviso
+ * vira um gesto — a tela rola ate o campo e foca nele.
+ */
+const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = {
+  "missing-material": "material",
+  "confirm-suggestion": "material",
+  "confirm-conversion": "conversion",
+  "missing-conversion": "conversion",
+  "invalid-qty": "qty",
+  "missing-expiry": "expiry",
+  "diverging-conversion": null,
+  "missing-cost": null,
+  "approximate-conversion": null,
+  "manual-source": null,
+};
+
+export function receiptNextStepField(warnings: ReceiptWarning[]): ReceiptFieldAnchor | null {
+  const blocker = warnings.find((warning) => warning.tone === "block");
+  return blocker ? BLOCKER_FIELD[blocker.key] : null;
+}
+
+/**
+ * As pendencias da entrada, uma por item, com nome e endereco.
+ *
+ * Entram duas coisas que travam o `Confirmar entrada`, e nao so uma: o bloqueio
+ * de campo (validade, insumo, embalagem, quantidade) e a linha COMPLETA que
+ * ninguem conferiu ainda. A segunda nao aparecia em lugar nenhum — o botao
+ * ficava cinza sem que nada na tela dissesse por que.
+ */
+export function receiptPendingItems(previews: ReceiptLinePreview[]): ReceiptPendingItem[] {
+  return previews.flatMap<ReceiptPendingItem>((preview) => {
+    const label = preview.line.invoiceDescription || preview.material.name || "Item sem descrição";
+    if (preview.nextStep) {
+      return [
+        {
+          id: preview.line.id,
+          label,
+          step: preview.nextStep,
+          field: preview.nextStepField ?? "material",
+          tone: "block",
+        },
+      ];
+    }
+    if (!preview.line.checked) {
+      return [{ id: preview.line.id, label, step: "Marcar como conferido", field: "check", tone: "watch" }];
+    }
+    return [];
+  });
+}
+
+/**
+ * O rascunho ainda nao comecou.
+ *
+ * Confirmar a entrada zera o rascunho, e um rascunho zerado dispara os mesmos
+ * bloqueios de sempre ("Ler QR, codigo de barras ou chave da NF"). O operador
+ * acabava de acertar tudo e recebia um vermelho por cima do verde. Rascunho em
+ * branco nao e erro: e convite.
+ */
+export function receiptIsBlank(lines: ReceiptLine[], invoiceInput: string, note: string): boolean {
+  return lines.length === 0 && !invoiceInput.trim() && !note.trim();
+}
+
+/**
+ * O primeiro gesto que falta para confirmar — na ordem em que a tela os pede.
+ *
+ * Documento e fornecedor vem antes das linhas porque sem eles a entrada nao tem
+ * de onde vir. `null` significa pronto para confirmar.
+ */
+export function receiptFirstBlocker(
+  documentBlockers: string[],
+  supplierBlockers: string[],
+  pending: ReceiptPendingItem[],
+  hasLines: boolean,
+): ReceiptBlocker | null {
+  if (documentBlockers.length) {
+    return { scope: "document", step: documentBlockers[0]!, label: "", lineId: "", field: null, anchor: "invoice" };
+  }
+  if (supplierBlockers.length) {
+    return { scope: "supplier", step: supplierBlockers[0]!, label: "", lineId: "", field: null, anchor: "supplier" };
+  }
+  if (!hasLines) {
+    return { scope: "document", step: "Lance ao menos um item para dar entrada", label: "", lineId: "", field: null, anchor: "invoice" };
+  }
+  const item = pending[0];
+  if (!item) return null;
+  return { scope: "line", step: item.step, label: item.label, lineId: item.id, field: item.field, anchor: null };
+}
+
+/** O recibo em uma frase: "7 itens · R$ 1.480,00 · Moinho SP". */
+export function receiptOutcomeSummary(outcome: ReceiptOutcome): string {
+  const parts = [`${outcome.lineCount} ${outcome.lineCount === 1 ? "item" : "itens"}`];
+  if (outcome.totalCostQ > 0) parts.push(formatMoney(outcome.totalCostQ));
+  if (outcome.supplierName) parts.push(outcome.supplierName);
+  return parts.join(" · ");
+}
+
+/**
  * Em que unidade está a quantidade desta linha — "4 o quê?".
  *
  * A resposta nunca é "não sei": a nota já diz `4 SC` antes de qualquer insumo
@@ -382,6 +487,7 @@ export function receiptLinePreview(
     invoiceSummary: receiptInvoiceSummary(line),
     nextStep: receiptNextStep(warnings),
     nextStepIsOnField: receiptNextStepIsOnField(warnings),
+    nextStepField: receiptNextStepField(warnings),
     needsExpiry: Boolean(matchedMaterial && matchedMaterial.shelfLifeDays !== null && !line.expiryDate),
     conversionSuggestion: receiptConversionSuggestion(line),
     invoiceAxes: receiptInvoiceAxes(line),
