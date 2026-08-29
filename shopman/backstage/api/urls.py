@@ -179,7 +179,7 @@ urlpatterns = [
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS
     path("kds/", KDSIndexView.as_view(), name="api-backstage-kds-index"),
-    path("kds/cliente/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
+    path("kds/pickup/", KDSCustomerStatusView.as_view(), name="api-backstage-kds-customer"),
     path("kds/<slug:ref>/", KDSBoardView.as_view(), name="api-backstage-kds-board"),
     path("kds/tickets/<int:ticket_pk>/items/", KDSTicketItemView.as_view(), name="api-backstage-kds-ticket-item"),
     path("kds/tickets/<int:ticket_pk>/done/", KDSTicketDoneView.as_view(), name="api-backstage-kds-ticket-done"),
