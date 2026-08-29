@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.parsing import as_bool, as_int
 from shopman.backstage.projections.kds import (
     build_kds_board,
     build_kds_customer_status,
@@ -81,13 +82,12 @@ class KDSTicketItemView(APIView):
     required_permission = "backstage.operate_kds"
 
     def post(self, request, ticket_pk: int):
-        try:
-            index = int(request.data.get("index", -1))
-        except (TypeError, ValueError):
-            return Response({"detail": "Index inválido."}, status=status.HTTP_400_BAD_REQUEST)
-        checked = bool(request.data.get("checked", False))
-        if index < 0:
-            return Response({"detail": "Index inválido."}, status=status.HTTP_400_BAD_REQUEST)
+        # `bool("false")` é True, e o tablet da cozinha desmarcava o item marcando.
+        # Nenhum cliente de boa-fé manda isso hoje — o `useKdsBoard` manda booleano
+        # JSON —, mas quem fala com a API direto manda, e o parser estrito recusa
+        # em vez de adivinhar. Ver `shopman/backstage/parsing.py`.
+        index = as_int(request.data, "index", min_value=0, message="Index inválido.")
+        checked = as_bool(request.data, "checked")
         try:
             kds_service.set_ticket_item_checked(
                 ticket_pk=ticket_pk,

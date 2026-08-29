@@ -191,6 +191,37 @@ def test_cell_negative_price_rejected(client, operator, catalog):
     assert resp.status_code == 400
 
 
+def test_preco_ilegivel_e_400_e_nao_um_sucesso_que_nao_mudou_nada(client, operator, catalog):
+    """O `_as_int` antigo devolvia None para lixo, e None significa "não mexe no preço".
+
+    O efeito era o pior possível em dinheiro: a tela recebia 200, o operador via
+    "salvo", e o preço continuava o antigo. Falhar aberto e CALADO — exatamente o que
+    a régua da casa proíbe onde há dinheiro.
+    """
+    antes = ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q
+
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": "abc"})
+
+    assert resp.status_code == 400
+    assert resp.json()["field"] == "price_q"
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == antes
+
+
+def test_preco_ausente_continua_significando_nao_mexa(client, operator, catalog):
+    """Assert-negativo: a chave ausente NÃO virou erro. Só o lixo virou."""
+    antes = ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q
+
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "is_sellable": False})
+
+    assert resp.status_code == 200
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == antes
+
+
+def _post_cell(client, operator, payload):
+    client.force_login(operator)
+    return client.post(CELL_URL, data=payload, content_type="application/json")
+
+
 # ── write: produto ("globalzinho") ─────────────────────────────────────────────
 
 

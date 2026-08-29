@@ -41,6 +41,7 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasBackstagePermission
 from shopman.backstage.api.projections import projection_data
+from shopman.backstage.parsing import as_bool, as_int
 from shopman.backstage.projections import marketing as marketing_projection
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
@@ -169,7 +170,7 @@ class AnnouncementApproveView(_CampaignBase):
                 publish_at=publish_at,
                 # "Publicar agora" vence a janela preferida da regra; sem ele,
                 # aprovar fora do horário aceita a hora que a regra sugeriu.
-                respect_schedule=not _as_bool(request.data.get("publish_now")),
+                respect_schedule=not as_bool(request.data, "publish_now", default=False),
             )
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
@@ -314,7 +315,7 @@ class PreviewView(_CampaignBase):
             str(payload.get("body") or ""),
             sku=str(payload.get("sku") or ""),
             promotion_ref=str(payload.get("promotion_ref") or ""),
-            use_ai=bool(payload.get("use_ai")),
+            use_ai=as_bool(payload, "use_ai", default=False),
         ))
 
 
@@ -616,7 +617,8 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["trigger"] = trigger
 
     if not partial or "template_id" in data:
-        template = AnnouncementTemplate.objects.filter(pk=_as_int(data.get("template_id"))).first()
+        template_id = as_int(data, "template_id", message="Modelo de announcement não encontrado.")
+        template = AnnouncementTemplate.objects.filter(pk=template_id).first()
         if template is None:
             return {}, {"detail": "Modelo de announcement não encontrado.", "field": "template_id"}
         fields["template"] = template
@@ -654,17 +656,16 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         ]
 
     if "requires_approval" in data:
-        fields["requires_approval"] = bool(data.get("requires_approval"))
+        fields["requires_approval"] = as_bool(data, "requires_approval")
     if "is_active" in data:
-        fields["is_active"] = bool(data.get("is_active"))
+        fields["is_active"] = as_bool(data, "is_active")
     if "expires_after_minutes" in data:
-        minutes = _as_int(data.get("expires_after_minutes"))
-        if minutes is None or minutes < 0:
-            return {}, {
-                "detail": "O prazo precisa ser um número de minutos (0 = não expira).",
-                "field": "expires_after_minutes",
-            }
-        fields["expires_after_minutes"] = minutes
+        fields["expires_after_minutes"] = as_int(
+            data,
+            "expires_after_minutes",
+            min_value=0,
+            message="O prazo precisa ser um número de minutos (0 = não expira).",
+        )
 
     return fields, None
 
@@ -701,9 +702,9 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     if "ai_prompt" in data:
         fields["ai_prompt"] = str(data.get("ai_prompt") or "").strip()
     if "use_ai_generation" in data:
-        fields["use_ai_generation"] = bool(data.get("use_ai_generation"))
+        fields["use_ai_generation"] = as_bool(data, "use_ai_generation")
     if "is_active" in data:
-        fields["is_active"] = bool(data.get("is_active"))
+        fields["is_active"] = as_bool(data, "is_active")
 
     return fields, None
 
@@ -778,20 +779,6 @@ def _announcement_or_none(pk: int) -> Announcement | None:
 
 def _rule_or_none(pk: int) -> Campaign | None:
     return Campaign.objects.select_related("template").filter(pk=pk).first()
-
-
-def _as_bool(value) -> bool:
-    """JSON manda ``true``; form-data manda ``"true"``. Os dois valem."""
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes", "on")
-    return bool(value)
-
-
-def _as_int(value) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _limit(request) -> int:
