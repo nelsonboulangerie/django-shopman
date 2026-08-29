@@ -277,6 +277,17 @@ de diagnosticar, porque parece flake.
 **Prescrição:** dividir a matriz `test-backstage` em dois shards **antes da onda 2**.
 É mudança de CI, isolada, sem colisão com nenhum WP, e cabe na onda 0.
 
+⚠️ **Achado ao medir (29/08): a suíte do `shop` não é segura em paralelo.** O alvo do Makefile roda serial
+(`pytest shopman/shop/tests -x -q`) e passa — 2.593 testes. Com `-n auto`, **dois** falham por interferência
+entre workers: `test_operator_order_contract.py::test_cancel_does_not_mutate_orders_that_cannot_transition_to_cancelled`
+e `test_mark_paid.py::test_operator_hot_path_surfaces_do_not_expose_mark_paid_action` — os dois passam
+isolados. Não é regressão; é acoplamento pré-existente que o serial esconde.
+
+Consequência para este bloco: **shardar não é só dividir a matriz.** Se o shard levar paralelismo para dentro
+do alvo, ele acorda esse acoplamento e o sintoma será "flake" — o diagnóstico mais caro. O shard seguro é por
+**arquivo entre jobs**, com cada job continuando serial por dentro. E os dois testes acima merecem isolamento
+próprio antes de qualquer aumento de paralelismo.
+
 ### Ondas propostas
 
 | Onda | Conteúdo | Paralelizável? | Por quê |

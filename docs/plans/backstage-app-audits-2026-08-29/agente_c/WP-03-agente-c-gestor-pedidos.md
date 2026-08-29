@@ -1,6 +1,10 @@
 # WP-03-agente-c — Gestor de Pedidos
 
-**Status:** pronto para implementação · **Autor:** Agente C (terceira leitura, 2026-08-29)
+**Status:** P0-1 e P1-1 **IMPLEMENTADOS** (29/08) · resto pronto para implementação · **Autor:** Agente C
+
+> ✅ **Implementado nesta branch:** o falso-sucesso do cancelamento (P0-1) e as três camadas do
+> cancelamento pelo operador (P1-1), com 10 testes novos. Detalhe no fim do arquivo.
+> ⬜ **Pendente:** P1-2 (iFood), P1-3 (typo → 500), P2-1 a P2-4, P3-1, P3-2.
 **Superfície:** `surfaces/orders-nuxt` + `shopman/backstage/{api,projections,services}/order*` + `shopman/shop/services/operator_orders.py`
 **Objetivo:** quando a tela diz que cancelou, cancelou; quando não dá para cancelar, o botão não está lá; e um erro de digitação num campo de troco não derruba o despacho.
 
@@ -385,3 +389,37 @@ Fases:
 NAO exija motivo no cancelamento de corrida (quebra a unica tela que chama o endpoint).
 NAO tire settle_delivery_cash do Caixa. NAO 409 por equipamento vazio.
 ~~~
+
+---
+
+## Registro de implementação — 29/08/2026
+
+**Feito, com teste:**
+
+| Camada | Arquivo | O quê |
+|---|---|---|
+| Régua | `config/management/commands/seed.py` | `cancelled` entra em `ready` no `lifecycle.transitions` do canal. A régua passa a fechar. |
+| Política | `shopman/shop/services/cancellation.py` | `operator_cancel_policy()` + `OperatorCancelPolicy` + `ADVANCED_CANCEL_STATUSES` + `ADVANCED_CANCEL_PERMISSION`. É a camada que não existia. |
+| Autorização | `shopman/backstage/api/operations.py` | `OrderCancelView` cruza as três; 409 para régua, 403 para permissão, 422 para assinatura pendente. |
+| Falso-sucesso | `operator_orders.py`, `backstage/services/orders.py` | a fachada devolve o booleano e a fronteira levanta `OrderConflict`. |
+| Permissão | `shop/models/shop.py` + migration `0024` + `setup_groups.py` + teste de paridade | `shop.cancel_advanced_order`, concedida ao **Gerente**. |
+| Contrato | `projections/order_queue.py` + `ordersContract.ts` (regerado) | `can_cancel`, `cancel_requires_approval`, `cancel_block_label`. |
+| Tela | `surfaces/orders-nuxt/app/pages/[ref].vue` | o botão passa a obedecer `can_cancel`; quando não dá, a tela **diz por quê**. |
+
+**Testes:** `shopman/backstage/tests/test_api_orders_cancel_policy.py`, 10 casos — 409 em vez do 200
+mentiroso, Caixa barrado em `ready`, Gerente cancelando, a esteira normal como regressão, pedido pago
+exigindo segunda assinatura, leitura de pagamento falhando **fechado**, e a capability diferindo por perfil
+no mesmo pedido.
+
+**Duas decisões tomadas durante a implementação:**
+
+1. **422, não 403, para assinatura pendente.** O `PosIntentError` já tem `status = 422` e o PDV já responde
+   assim no seu próprio desafio de gerente. Inventar 403 aqui daria dois dialetos para o mesmo diálogo de
+   aprovação. Seguir a casa.
+2. **A constante da permissão mora na política**, não na view nem na projection. As duas precisam concordar
+   sobre quem pode, e duas cópias da mesma string concordam só até alguém editar uma delas — que é o modo de
+   falha que este próprio WP critica em outros lugares.
+
+**Não validado localmente:** o typecheck e o vitest de `orders-nuxt` — a worktree não tem `node_modules`.
+O gate de superfícies do CI cobre, e o risco real (o `.vue` lendo campo que não existe no contrato) está
+fechado pelo contrato regerado.

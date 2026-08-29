@@ -129,6 +129,9 @@ export interface OperatorOrderProjection {
   payment_status: string;
   can_confirm: boolean;
   can_advance: boolean;
+  can_cancel: boolean;
+  cancel_requires_approval: boolean;
+  cancel_block_label: string;
   next_action_label: string;
   advance_block_label: string;
   advance_block_reason: string;

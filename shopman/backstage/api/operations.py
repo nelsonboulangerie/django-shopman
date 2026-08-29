@@ -1110,7 +1110,7 @@ class OrderDetailView(APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
-        proj = build_operator_order(order)
+        proj = build_operator_order(order, user=request.user)
         return Response({"order": projection_data(proj)})
 
 
@@ -1264,8 +1264,6 @@ class OrderCancelView(_OrderActionBase):
     caminho de operador em vez de só naquele endpoint.
     """
 
-    ADVANCED_PERMISSION = "shop.cancel_advanced_order"
-
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
@@ -1275,7 +1273,9 @@ class OrderCancelView(_OrderActionBase):
         if not policy.allowed:
             return Response({"detail": policy.reason}, status=409)
 
-        if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(self.ADVANCED_PERMISSION):
+        if cancellation_service.is_advanced_cancel(order) and not request.user.has_perm(
+            cancellation_service.ADVANCED_CANCEL_PERMISSION
+        ):
             return Response(
                 {
                     "detail": f"Cancelar pedido em {order.get_status_display()} é do gerente.",

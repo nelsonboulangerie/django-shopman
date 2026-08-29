@@ -120,6 +120,11 @@ class OperatorCancelPolicy:
 # os dois estragaria a leitura do B.I. depois.
 ADVANCED_CANCEL_STATUSES = frozenset({"ready", "completed"})
 
+# A permissão mora AQUI, junto da regra que ela gateia, e não em cada consumidor:
+# a view e a projection precisam concordar sobre quem pode, e duas cópias da
+# mesma string concordam só até alguém editar uma delas.
+ADVANCED_CANCEL_PERMISSION = "shop.cancel_advanced_order"
+
 
 def operator_cancel_policy(order) -> OperatorCancelPolicy:
     """Avalia se o operador pode cancelar ``order``, e sob que condição.

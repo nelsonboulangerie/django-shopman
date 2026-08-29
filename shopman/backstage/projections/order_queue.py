@@ -227,6 +227,13 @@ class OperatorOrderProjection:
     # mesma fonte, os dois não podem mais discordar sobre o que é possível.
     can_confirm: bool
     can_advance: bool
+    # Cancelar tem três camadas e a tela precisa das três numa resposta só:
+    # `can_cancel` já é régua + política + permissão deste usuário, e
+    # `cancel_requires_approval` avisa que virá o desafio de gerente ANTES do
+    # operador digitar o motivo. Ver `OrderCancelView`.
+    can_cancel: bool
+    cancel_requires_approval: bool
+    cancel_block_label: str
     next_action_label: str
     advance_block_label: str
     advance_block_reason: str
@@ -340,7 +347,44 @@ def build_order_queue(
     )
 
 
-def build_operator_order(order: Order) -> OperatorOrderProjection:
+def _cancel_capability(order: Order, user) -> dict:
+    """Régua + política + permissão numa resposta só, para a tela não adivinhar.
+
+    O botão Cancelar vivia sem guarda nenhuma e o servidor respondia
+    ``200 {"ok": true}`` sem cancelar. Agora a capability é a mesma que a view
+    aplica — e é ela que decide, não a tela.
+
+    ``user`` ausente (projeção fora de request, teste, job) resolve só régua e
+    política: sem ator não há o que autorizar, e um ``True`` otimista aqui
+    devolveria o botão mentiroso pela porta dos fundos.
+    """
+    from shopman.shop.services import cancellation as cancellation_service
+
+    policy = cancellation_service.operator_cancel_policy(order)
+    if not policy.allowed:
+        return {
+            "can_cancel": False,
+            "cancel_requires_approval": False,
+            "cancel_block_label": policy.reason,
+        }
+
+    if cancellation_service.is_advanced_cancel(order):
+        autorizado = bool(user and user.has_perm(cancellation_service.ADVANCED_CANCEL_PERMISSION))
+        if not autorizado:
+            return {
+                "can_cancel": False,
+                "cancel_requires_approval": False,
+                "cancel_block_label": f"Cancelar pedido em {order.get_status_display()} é do gerente.",
+            }
+
+    return {
+        "can_cancel": True,
+        "cancel_requires_approval": policy.requires_approval,
+        "cancel_block_label": "",
+    }
+
+
+def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
     """Build the expanded detail projection for a single order."""
     items = tuple(
         OrderItemProjection(
@@ -395,6 +439,7 @@ def build_operator_order(order: Order) -> OperatorOrderProjection:
         payment_status=payment_status,
         can_confirm=order.status == "new",
         can_advance=bool(next_status),
+        **_cancel_capability(order, user),
         next_action_label=_next_label(order),
         advance_block_label=_advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),

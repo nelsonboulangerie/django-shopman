@@ -215,13 +215,21 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
-             aceito o gesto certo é Cancelar, que segue sempre disponível. -->
+             aceito o gesto certo é Cancelar. -->
         <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
-        <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" @click="openDialog('cancel')">
-          <Icon name="lucide:ban" class="size-4" /> Cancelar
+        <!-- `can_cancel` já é régua + política + permissão, resolvidas no
+             servidor. O botão ficava sempre visível e o servidor respondia
+             "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
+             de oferecer um gesto que não acontece. -->
+        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
+          <Icon name="lucide:ban" class="size-4" />
+          {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
         </button>
+        <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
+          {{ order.cancel_block_label }}
+        </p>
       </section>
 
       <!-- corrida de entrega (logística externa) -->
