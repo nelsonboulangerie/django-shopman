@@ -977,8 +977,22 @@ SHOPMAN_CUSTOMER_STRATEGY_MODULES = _csv_env_list(
 # ── Shopman Adapters ──────────────────────────────────────────────────
 
 SHOPMAN_PAYMENT_ADAPTERS = {
-    "pix": os.environ.get("SHOPMAN_PIX_ADAPTER", "shopman.shop.adapters.payment_mock"),
-    "card": os.environ.get("SHOPMAN_CARD_ADAPTER", "shopman.shop.adapters.payment_mock"),
+    # Pix: a omissão configura o comportamento restritivo. Em DEBUG o simulador
+    # é a conveniência certa de dev; fora de DEBUG, esquecer a env não pode
+    # significar "cobre com gateway de mentira" — significa a Efí, que sem
+    # credencial levanta `EfiNotConfigured` e para o pedido com erro visível.
+    # (O `_DEFAULTS` do registry é o último recurso e nunca é alcançado
+    # enquanto esta chave existir; por isso a trava honesta mora aqui.)
+    "pix": os.environ.get("SHOPMAN_PIX_ADAPTER")
+    or ("shopman.shop.adapters.payment_mock" if DEBUG else "shopman.shop.adapters.payment_efi"),
+    # Cartão nasce apontando para o gateway REAL. Não há cartão simulado: o
+    # `payment_mock` recusa `method="card"` de propósito, porque o que precisa
+    # ser testado no cartão (redirect, 3DS, recusa, webhook) só existe no
+    # gateway — e o Stripe entrega tudo isso em modo de teste (`sk_test_`).
+    # Enquanto o default aqui era o simulador, esquecer de setar a env valia
+    # "pedido pago sem cobrança"; agora vale "pagamento indisponível", que é o
+    # erro certo para um sistema de dinheiro sem gateway.
+    "card": os.environ.get("SHOPMAN_CARD_ADAPTER", "shopman.shop.adapters.payment_stripe"),
     "cash": None,
     "external": None,
 }

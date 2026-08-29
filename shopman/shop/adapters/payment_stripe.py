@@ -68,8 +68,19 @@ def _get_config() -> dict:
     return getattr(settings, "SHOPMAN_STRIPE", {})
 
 
+class StripeNotConfigured(RuntimeError):
+    """Gateway de cartão sem credencial — não há como cobrar, e não se finge."""
+
+
 def _get_stripe():
-    """Lazy import of stripe SDK."""
+    """Lazy import of stripe SDK.
+
+    ⚠️ Sem ``secret_key`` isto levanta ANTES de qualquer chamada de rede. É o
+    contrário do que o simulador fazia: faltando gateway, o certo é o pedido
+    parar com erro visível (``payment.initiate`` grava o erro e o
+    acompanhamento mostra o degrau de falha), nunca seguir em frente. Falhar
+    aqui também evita que a suíte tente falar com api.stripe.com por acidente.
+    """
     try:
         import stripe
     except ImportError as err:
@@ -77,8 +88,33 @@ def _get_stripe():
             "stripe package is required. Install with: pip install stripe"
         ) from err
     config = _get_config()
-    stripe.api_key = config.get("secret_key")
+    secret_key = str(config.get("secret_key") or "").strip()
+    if not secret_key:
+        raise StripeNotConfigured(
+            "Cartão está apontado para o Stripe, mas STRIPE_SECRET_KEY está vazia. "
+            "Configure a credencial (sk_test_ no alpha, sk_live_ em produção)."
+        )
+    stripe.api_key = secret_key
     return stripe
+
+
+def test_mode() -> bool:
+    """O Stripe configurado está em modo de TESTE?
+
+    A verdade vem da própria chave (``pk_test_``/``sk_test_``), nunca de
+    ``DEBUG`` nem de uma flag manual: flag manual é exatamente o tipo de coisa
+    que vaza para produção. Chave ``live`` — ou ausente — responde ``False``.
+    """
+    config = _get_config()
+    publishable = str(config.get("publishable_key") or "").strip()
+    secret = str(config.get("secret_key") or "").strip()
+    if not publishable and not secret:
+        return False
+    # Qualquer lado em `live` derruba o modo de teste: uma configuração
+    # meio-a-meio é erro, e na dúvida a resposta segura é "isto é produção".
+    if publishable.startswith("pk_live_") or secret.startswith("sk_live_"):
+        return False
+    return publishable.startswith("pk_test_") or secret.startswith("sk_test_")
 
 
 def create_intent(
@@ -103,6 +139,14 @@ def create_intent(
     stripe_config = _get_config()
     stripe_currency = currency.lower()
 
+    # ⚠️ Credencial ANTES de escrever no Payman. Enquanto a ordem era a inversa,
+    # um deploy sem `STRIPE_SECRET_KEY` criava a linha de cobrança, falhava ao
+    # falar com o Stripe e deixava um intent órfão — que a recuperação de
+    # `payment.initiate` (`_existing_active_intent`) então adotava como se fosse
+    # boa, limpando o erro do pedido. Cobrança que o gateway nunca viu não pode
+    # virar a cobrança do pedido.
+    stripe = _get_stripe()
+
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
@@ -114,7 +158,6 @@ def create_intent(
     if db_intent.gateway_id and db_intent.gateway_data.get("checkout_url"):
         return _intent_from_db(db_intent, currency=currency)
 
-    stripe = _get_stripe()
     create_options = {"idempotency_key": idempotency_key} if idempotency_key else {}
     session = stripe.checkout.Session.create(
         mode="payment",

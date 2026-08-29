@@ -679,9 +679,18 @@ export interface CheckoutProjection {
   pickup_hint: string
   delivery_hint: string
   card_provider: string
+  // Cartões de teste do Stripe. Vem VAZIO fora do modo de teste — o backend
+  // deriva isso da chave (`pk_test_`), então chave live não manda os números.
+  stripe_test_cards: StripeTestCard[]
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+}
+
+export interface StripeTestCard {
+  label: string
+  number: string
+  hint: string
 }
 
 export interface CheckoutResponse {
