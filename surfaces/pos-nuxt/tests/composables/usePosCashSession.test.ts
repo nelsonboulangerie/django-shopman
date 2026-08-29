@@ -68,7 +68,7 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
     expect(ok).toBe(true);
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/open/",
-      { body: { opening_amount: "50,00", terminal_ref: "T1" } },
+      { body: expect.objectContaining({ opening_amount: "50,00", terminal_ref: "T1" }) },
     );
     expect(refresh).toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("usePosCashSession — sessão de caixa (antesala)", () => {
     await session.registerCashMovement({ kind: "suprimento", amount: "20,00", reason: "troco" });
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/movement/",
-      { body: { kind: "suprimento", amount: "20,00", reason: "troco" } },
+      { body: expect.objectContaining({ kind: "suprimento", amount: "20,00", reason: "troco" }) },
     );
   });
 });
@@ -159,7 +159,7 @@ describe("usePosCashSession — a gaveta nos momentos que não imprimem nada", (
     expect(await session.openDrawerWithoutSale("Troco")).toBe(true);
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/drawer-open/",
-      { body: { reason: "Troco" } },
+      { body: expect.objectContaining({ reason: "Troco" }) },
     );
     expect(kicks).toEqual(["no_sale"]);
   });
@@ -322,7 +322,7 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     expect(ok).toBe(true);
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/change-request/",
-      { body: { amount: "100,00", denominations: [500, 50], note: "acabou moeda" } },
+      { body: expect.objectContaining({ amount: "100,00", denominations: [500, 50], note: "acabou moeda" }) },
     );
   });
 
@@ -350,7 +350,7 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     await session.serveChangeRequest({ ref: "a1", managerApproval: { username: "pablo", pin: "4321" } });
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/change-request/a1/serve/",
-      { body: { manager_approval: { username: "pablo", pin: "4321" } } },
+      { body: expect.objectContaining({ manager_approval: { username: "pablo", pin: "4321" } }) },
     );
   });
 
@@ -373,10 +373,47 @@ describe("usePosCashSession — pedido de troco (o dinheiro fica no balcão)", (
     const { session, actionCall } = makeCashSession();
     const ok = await session.cancelChangeRequest("a1");
     expect(ok).toBe(true);
-    expect(actionCall).toHaveBeenCalledWith(
-      "/api/v1/backstage/pos/cash/change-request/a1/cancel/",
-      { body: {} },
-    );
+    // "Sem corpo de dinheiro" continua valendo: nenhum campo de valor vai junto.
+    // A chave de replay não é dinheiro — é a identidade DESTE gesto.
+    const [, opcoes] = actionCall.mock.calls[0]!;
+    expect(Object.keys(opcoes.body as object)).toEqual(["client_request_id"]);
+  });
+
+  it("todo comando de caixa carrega a chave de replay", async () => {
+    // Sem ela o servidor não tem o que travar, e a sangria em dobro volta.
+    const { session, actionCall } = makeCashSession();
+    await session.registerCashMovement({ kind: "sangria", amount: "50", reason: "cofre" });
+    const [, opcoes] = actionCall.mock.calls[0]!;
+    expect((opcoes.body as Record<string, unknown>).client_request_id).toMatch(/^pos-cash:/);
+  });
+
+  it("o RETRY do mesmo lançamento reusa a chave — é o que impede a linha dobrada", async () => {
+    // O caminho real: o servidor gravou, a resposta se perdeu, o operador toca de
+    // novo. Chave igual = o servidor reconhece o replay e devolve o mesmo resultado.
+    const actionCall = vi.fn().mockRejectedValue(new Error("timeout"));
+    const { session } = makeCashSession({ actionCall });
+    const movimento = { kind: "sangria", amount: "200", reason: "cofre" };
+
+    await session.registerCashMovement(movimento);
+    await session.registerCashMovement(movimento);
+
+    const primeira = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
+    const segunda = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
+    expect(segunda).toBe(primeira);
+  });
+
+  it("depois do SUCESSO a chave é descartada — duas sangrias iguais são duas linhas", async () => {
+    // É o outro lado, e sem ele a trava viraria uma porta fechada: o operador que
+    // precisa fazer a mesma sangria duas vezes de propósito não conseguiria.
+    const { session, actionCall } = makeCashSession();
+    const movimento = { kind: "sangria", amount: "200", reason: "cofre" };
+
+    await session.registerCashMovement(movimento);
+    await session.registerCashMovement(movimento);
+
+    const primeira = (actionCall.mock.calls[0]![1].body as Record<string, unknown>).client_request_id;
+    const segunda = (actionCall.mock.calls[1]![1].body as Record<string, unknown>).client_request_id;
+    expect(segunda).not.toBe(primeira);
   });
 
   it("NENHUMA ação de troco encosta em movimento de caixa nem imprime comprovante", async () => {
@@ -424,7 +461,7 @@ describe("usePosCashSession — devolução em dinheiro de venda cancelada (canc
     await session.refundCash({ orderRef: "A01", managerApproval: { username: "pablo", pin: "4321" } });
     expect(actionCall).toHaveBeenCalledWith(
       "/api/v1/backstage/pos/cash/refund/A01/",
-      { body: { manager_approval: { username: "pablo", pin: "4321" } } },
+      { body: expect.objectContaining({ manager_approval: { username: "pablo", pin: "4321" } }) },
     );
   });
 
