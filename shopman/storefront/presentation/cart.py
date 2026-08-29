@@ -84,7 +84,7 @@ class CartItemProjection:
     planned_for_date: str | None                # ISO date da fornada que a linha espera
     planned_for_notice: str | None              # "Previsto para amanhã" (copy omotenashi + data)
 
-    # Feito na hora (política ``demand_ok``): café, Jambon-Beurre, croque. Não sai
+    # Preparado na hora (política ``demand_ok``): café, Jambon-Beurre, croque. Não sai
     # de fornada, então nunca entra em fila de espera — e o selo diz o que É, não
     # o que falta. Nunca aparece junto de ``is_awaiting_confirmation``: as duas
     # nascem de perguntas diferentes e são mutuamente exclusivas por construção.
@@ -219,7 +219,7 @@ def build_cart(
     planned_notice_template = (
         resolve_copy("CART_WAITLIST_PLANNED_DATE", moment="*", audience="*").message or ""
     ).strip()
-    # Selo do item feito na hora. Configurável no Admin como todo o resto da voz
+    # Selo do item preparado na hora. Configurável no Admin como todo o resto da voz
     # da casa — o padrão diz o que É, não o que falta.
     made_to_order_label = (
         resolve_copy("CART_MADE_TO_ORDER", moment="*", audience="*").title or ""

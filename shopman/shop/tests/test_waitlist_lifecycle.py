@@ -242,3 +242,55 @@ class TestQueueReport:
 
     def test_no_queue_is_an_empty_report_not_a_crash(self):
         assert waitlist.report() == []
+
+
+class TestTheOperatorCannotPrepareWhatIsNotBaked:
+    """⚠️ O selo avisava e o botão continuava vivo — avisar não é barrar.
+
+    Reserva em fermata espera pão que AINDA NÃO EXISTE. O card do Gestor já
+    trazia "Na fila da fornada", mas "Iniciar preparo" seguia clicável ao lado:
+    um toque mandava para o KDS uma separação impossível de fazer, e a linha da
+    cozinha só descobria isso na hora de separar.
+
+    Não é encomenda (não há data combinada com o cliente, então o bloqueio de
+    encomenda não a alcança) nem falta de pagamento (o dinheiro pode já ter
+    entrado). É um terceiro motivo, e por isso é um código próprio.
+    """
+
+    def _accepted(self, ref: str) -> Order:
+        order = _order_in_fermata(ref, "1")
+        Order.objects.filter(pk=order.pk).update(status="accepted")
+        order.refresh_from_db()
+        return order
+
+    def test_the_prep_button_is_barred_while_the_batch_has_not_come_out(self):
+        from shopman.shop.services import operator_orders
+
+        order = self._accepted("W-BTN-1")
+
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.WAITLIST_FERMATA
+        with pytest.raises(ValueError):
+            operator_orders.advance_order(order, actor="operador")
+
+    def test_the_bar_lifts_when_the_window_opens(self):
+        """Contraprova: chamado o cliente, o pão existe e o preparo abre.
+
+        Sem esta metade, barrar a fermata poderia virar barrar a fila inteira.
+        """
+        from shopman.shop.services import operator_orders
+
+        order = self._accepted("W-BTN-2")
+        waitlist.open_window(SKU, qty_available=Decimal("5"))
+        order.refresh_from_db()
+
+        assert waitlist.state_for(order) == waitlist.CONFIRMING
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.NONE
+
+    def test_an_ordinary_order_is_not_barred(self):
+        from shopman.shop.services import operator_orders
+
+        order = Order.objects.create(
+            ref="W-BTN-3", channel_ref="web", status="accepted", total_q=100,
+        )
+
+        assert operator_orders.advance_block(order) == operator_orders.AdvanceBlock.NONE

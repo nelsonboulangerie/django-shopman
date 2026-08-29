@@ -200,7 +200,7 @@ export interface CartItemProjection {
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
-  // Feito na hora (política demand_ok): café, Jambon-Beurre, croque. Nunca vem
+  // Preparado na hora (política demand_ok): café, Jambon-Beurre, croque. Nunca vem
   // junto de is_awaiting_confirmation — o item não sai de fornada, então não há
   // fila em que entrar.
   is_made_to_order: boolean

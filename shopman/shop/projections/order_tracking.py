@@ -771,12 +771,17 @@ def _pending_planned_hold_date(order) -> date | None:
         logger.debug("order_tracking.planned_hold_lookup degraded", exc_info=True)
         return None
 
+    from shopman.shop.services import waitlist
+
     holds = (
         Hold.objects.filter(
             pk__in=hold_pks,
-            metadata__planned=True,
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
             expires_at__isnull=True,
+            # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
+            # demanda (café) carimbado antes da separação de 29/08 devolve a
+            # data de hoje e o acompanhamento abre a narrativa de fornada.
+            **waitlist.WAITLIST_HOLD_FILTER,
         )
         .only("target_date")
     )
@@ -1580,13 +1585,12 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
     ``planned_for`` vem do HOLD, não do bloco gravado: enquanto a fornada não
     sai, a data que interessa é a do lote, e é ela que o hold carrega.
 
-    ⚠️ **Uma bola de cada vez.** Enquanto há pagamento em aberto, a narrativa da
-    fila não entra em cena. Os dois eixos derivam de sinais diferentes e
-    apareciam JUNTOS na mesma tela: "Pague para confirmar sua reserva" ao lado de
-    "Você está na fila. Nada foi cobrado ainda". Lidos juntos, o segundo desfaz o
-    primeiro — a tela dizia ao cliente que a vaga já era dele e que pagar podia
-    ficar para depois. O pedido é o mesmo, a ordem é que importa: primeiro o
-    pagamento se resolve, depois a fila conta a história dela.
+    ⚠️ **Uma bola de cada vez — mas só a bola que atrapalha.** Enquanto há
+    pagamento em aberto, a ESPERA da fila não entra em cena. Os dois eixos
+    derivam de sinais diferentes e apareciam JUNTOS na mesma tela: "Pague para
+    confirmar sua reserva" ao lado de "Você está na fila. Nada foi cobrado
+    ainda". Lidos juntos, o segundo desfaz o primeiro — a tela dizia ao cliente
+    que a vaga já era dele e que pagar podia ficar para depois.
 
     Isto NÃO muda a política de 28/08 (fornada do dia não cobra para garantir
     vaga): pedido sem pagamento em aberto continua vendo a fila normalmente. Muda
@@ -1595,13 +1599,29 @@ def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
     ``payment_unsettled`` inclui o cartão AUTORIZADO, e não só o pendente: com o
     dinheiro já reservado no gateway, "Nada foi cobrado ainda" é meia-verdade — e
     meia-verdade sobre dinheiro é a metade errada.
+
+    ⚠️⚠️ **E o silêncio para em ``fermata``.** Calar a fila inteira custava a
+    vaga do cliente, e custava calado. ``fermata`` é uma FRASE — passiva,
+    dispensável, e é ela que contradiz o pedido de pagamento. ``confirming`` não
+    é frase: é a loja CHAMANDO, com prazo (``waitlist.confirmation_minutes``) e
+    com o único botão que existe para aceitar. A tela do cliente só desenha o
+    botão quando lê ``confirming``; zerar o estado apagava o chamado, o relógio
+    seguia correndo e ``sweep_waitlist_windows`` entregava a vaga ao próximo da
+    fila — por uma decisão de diagramação.
+
+    E o buraco não era hipótese: com ``charge_at="confirmation"`` (o default) a
+    cobrança nasce NA confirmação, então pagamento em aberto é exatamente o
+    estado normal de quem está sendo chamado. O gate cobriria 100% dos casos que
+    ele existe para não atrapalhar.
+
+    ``confirmed`` e ``released`` também ficam: são desfecho, e desfecho de vaga
+    não se esconde de quem esperou por ela.
     """
     from shopman.shop.services import waitlist
 
-    if payment_unsettled:
-        return dict(_WAITLIST_NONE)
-
     state = waitlist.state_for(order)
+    if payment_unsettled and state == waitlist.FERMATA:
+        return dict(_WAITLIST_NONE)
     if state == waitlist.NONE:
         return dict(_WAITLIST_NONE)
 

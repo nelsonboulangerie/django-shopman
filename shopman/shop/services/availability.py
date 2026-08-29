@@ -119,12 +119,16 @@ def classify_planned_hold_for_session_sku(
     """Classify the planned-hold state of the session's holds for a SKU.
 
     Planned holds (AVAILABILITY-PLAN §8) are the "reservation without a
-    running TTL" state that holds on planned production / demand-only
-    quants land on. The marker ``metadata.planned`` is stamped at hold
-    creation by the stock adapter and survives the transition to the
-    ready state — post-materialization the flag remains while
-    ``expires_at`` goes from ``None`` (awaiting confirmation) to a
-    concrete deadline set by ``StockPlanning.realize()``.
+    running TTL" state that holds on planned production land on. The marker
+    ``metadata.planned`` is stamped at hold creation by the stock adapter and
+    survives the transition to the ready state — post-materialization the flag
+    remains while ``expires_at`` goes from ``None`` (awaiting confirmation) to
+    a concrete deadline set by ``StockPlanning.realize()``.
+
+    ⚠️ O carimbo é condição necessária, não suficiente: reserva de DEMANDA
+    (``demand_ok``: café, Jambon-Beurre) também nasce sem prazo, e até 29/08
+    levava o mesmo carimbo. ``waitlist.WAITLIST_HOLD_FILTER`` acrescenta a
+    pergunta que separa as duas — fila espera um LOTE, e lote tem quant.
 
     Returns:
         {
@@ -159,9 +163,9 @@ def classify_planned_hold_for_session_sku(
     holds = list(
         Hold.objects.filter(
             metadata__reference=session_key,
-            metadata__planned=True,
             sku=sku,
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            **waitlist.WAITLIST_HOLD_FILTER,
         )
         .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
     )

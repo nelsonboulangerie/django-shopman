@@ -70,7 +70,7 @@ export type CartLineHold = {
 type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'is_made_to_order' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
 
 export function lineHoldState (line: HoldFields): CartLineHold | null {
-  // Feito na hora não espera fornada nenhuma: sem reserva de lote, sem prazo a
+  // Preparado na hora não espera fornada nenhuma: sem reserva de lote, sem prazo a
   // confirmar. A história de espera é do pão; o café tem a sua, e é outra.
   if (line.is_made_to_order) return null
   if (line.is_ready_for_confirmation) {
@@ -92,7 +92,7 @@ export function reviewWaitlist (
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
-  // Feito na hora não tem fila: não sai de fornada, então não há lote a esperar.
+  // Preparado na hora não tem fila: não sai de fornada, então não há lote a esperar.
   // A guarda é redundante com o backend por desenho — o carimbo do hold já não
   // marca demanda como planejada —, e é barata perto de repetir na revisão o
   // "avisamos quando ficar pronto" para um café.

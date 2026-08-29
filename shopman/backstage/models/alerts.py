@@ -50,6 +50,12 @@ class OperatorAlert(models.Model):
         # a venda começa; a hora morta ficava descoberta — ninguém inicia venda,
         # ninguém vê a gaveta, e ela passa a tarde aberta.
         ("pos_drawer_left_open", "Gaveta ficou aberta sem ninguém vender"),
+        # Fila de espera: a vaga que volta é decisão da loja (servir o próximo
+        # ou pôr na gôndola), e por isso a liberação NUNCA é silenciosa — o
+        # cliente recebe aviso e a loja recebe este alerta. O tipo existia no
+        # código do ``waitlist.release`` e não existia aqui: gravava, mas o
+        # crachá do Admin mostrava o slug cru em vez de uma frase em português.
+        ("waitlist_released", "Fila: vaga liberada"),
         # Alarmes do B.I. (BIAlertRule): o B.I. avisa quando o que aconteceu foge
         # do esperado. O aviso chega pelo mesmo bus, com reconhecimento.
         ("bi_import_silence", "B.I.: importação esperada não chegou"),

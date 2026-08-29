@@ -1358,7 +1358,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # Selo do item de política ``demand_ok`` — café, Jambon-Beurre, croque. Ele não
     # sai de fornada, então "Lista de espera" ali era mentira: não há lote a esperar,
     # o item é montado quando o pedido entra. O selo diz o que É, e o que é, é bom.
-    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Feito na hora")}},
+    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
     "AVAILABILITY_UNAVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Indisponível")}},
 }
 

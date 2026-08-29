@@ -1100,6 +1100,21 @@ class DayClosingView(APIView):
         return Response({"ok": True, "closing_date": closing_date.isoformat()})
 
 
+def _reconcile_payment_if_due(order) -> None:
+    """Pergunta ao gateway (throttled) se este pedido de cartão já foi pago.
+
+    Mesma função que a volta do Stripe usa na loja — um dono só para a regra,
+    duas portas de entrada. Degrada em silêncio: a tela do operador não pode
+    cair porque o provedor não respondeu.
+    """
+    try:
+        from shopman.shop.services import payment as payment_service
+
+        payment_service.reconcile_with_gateway_if_due(order)
+    except Exception:
+        logger.warning("order_detail.gateway_reconcile degraded ref=%s", order.ref, exc_info=True)
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -1115,6 +1130,20 @@ class OrderDetailView(APIView):
         order = orders_service.find_order(ref)
         if order is None:
             return Response({"detail": "Pedido não encontrado."}, status=404)
+        # ⚠️ O OPERADOR TAMBÉM PRECISA PODER PERGUNTAR AO GATEWAY.
+        #
+        # A reconciliação contra webhook perdido nasceu só no acompanhamento do
+        # cliente, e isso deixou a verdade do Gestor pendurada no navegador de
+        # outra pessoa: cliente que paga e fecha a aba (ou paga em outro
+        # aparelho) some do circuito, e o card fica em "Aguardando pagamento…"
+        # sem que exista, na loja, um gesto capaz de resolver. O worker resgata
+        # em minutos; abrir o pedido resolve agora.
+        #
+        # Custo: o mesmo throttle de ``GATEWAY_RECHECK_SECONDS`` do cliente, e
+        # só para cartão em aberto. A fila (``OrderQueueView``) segue fora
+        # disto de propósito — ela relê o board inteiro o tempo todo, e uma
+        # chamada por card viraria enxurrada no provedor.
+        _reconcile_payment_if_due(order)
         proj = build_operator_order(order, user=request.user)
         return Response({"order": projection_data(proj)})
 

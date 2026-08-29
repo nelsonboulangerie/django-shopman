@@ -623,19 +623,25 @@ def _is_fermata_hold(hold_id: str) -> bool:
     Marcador durável: ``metadata.planned`` (carimbado em
     ``adapters/stock.create_hold``) mais ``expires_at`` nulo — depois da
     materialização a marca fica e o prazo aparece, e aí ele já não é fermata.
+
+    ⚠️ E o hold tem de apontar para o LOTE que espera. Reserva de demanda
+    (``demand_ok``) também nasce indefinida, e isentá-la do backstop a deixaria
+    presa para sempre: ela não tem fornada que a resolva.
     """
     try:
         from shopman.stockman.models import Hold
 
+        from shopman.shop.services import waitlist
+
         hold = Hold.objects.filter(pk=int(hold_id.split(":")[1])).only(
-            "expires_at", "metadata",
+            "expires_at", "metadata", "quant",
         ).first()
     except Exception:
         logger.debug("stock._is_fermata_hold degraded hold=%s", hold_id, exc_info=True)
         return False
     if hold is None:
         return False
-    return hold.expires_at is None and bool((hold.metadata or {}).get("planned"))
+    return hold.expires_at is None and waitlist.is_waitlist_hold(hold)
 
 
 def _channel_allows_preorder(order) -> bool:

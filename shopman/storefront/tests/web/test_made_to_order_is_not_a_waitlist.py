@@ -128,8 +128,37 @@ class TestTheCartLine:
         assert cart.has_awaiting_confirmation_items is False
         assert cart.has_ready_for_confirmation_items is False
 
+    def test_a_legacy_coffee_hold_stamped_planned_does_not_raise_the_badge(
+        self, client, channel, cafe,
+    ):
+        """O banco herdou reservas de café carimbadas ``planned``, e elas não expiram.
+
+        Separar as marcas conserta o café que entra na sacola de hoje. Quem já
+        estava lá continuaria lendo "Lista de espera" para sempre — reserva
+        indefinida não tem prazo para morrer. Perguntar pelo LOTE (fila espera
+        lote, lote tem quant) conserta os dois tempos sem migração de dado.
+        """
+        from shopman.stockman.models import Hold
+
+        from shopman.storefront.tests.web.conftest import _ensure_listing_item
+
+        _ensure_listing_item(channel, cafe, price_q=600)
+        _add(client, cafe.sku)
+
+        # Reescreve o carimbo para o de antes de 29/08 — o que está no banco vivo.
+        for hold in Hold.objects.filter(sku=cafe.sku):
+            hold.metadata = {**(hold.metadata or {}), "planned": True}
+            hold.save(update_fields=["metadata"])
+
+        cart = build_cart(request=_request_wearing(client), channel_ref=STOREFRONT_CHANNEL_REF)
+        line = next(item for item in cart.items if item.sku == cafe.sku)
+
+        assert line.is_awaiting_confirmation is False
+        assert cart.has_awaiting_confirmation_items is False
+        assert line.is_made_to_order is True
+
     def test_a_shelf_item_is_not_labelled_made_to_order(self, client, channel, product):
-        """A contraprova: pão de prateleira não ganha o selo de feito na hora."""
+        """A contraprova: pão de prateleira não ganha o selo de preparado na hora."""
         from shopman.storefront.tests.web.conftest import (
             _ensure_listing_item,
             _seed_stock_for_product_sku,
@@ -149,19 +178,42 @@ class TestTheCartLine:
 class TestTheOrderTracking:
     """A fila do acompanhamento lê o carimbo do hold — e lia o carimbo errado."""
 
-    def _hold(self, order, *, marker: str, sku: str = "CAFE-EXPRESSO"):
+    def _hold(self, order, *, marker: str, sku: str = "CAFE-EXPRESSO", batch: bool | None = None):
         """Reserva viva do pedido, sem prazo, com a marca sob teste.
 
         Sem prazo é o que as DUAS reservas indefinidas têm em comum; a marca é o
         que as separa. Montar as duas aqui, lado a lado, é o ponto do teste.
+
+        ⚠️ E a reserva de fila nasce ANCORADA no lote que espera: ``next_batch_date``
+        só devolve data onde existe quant planejado, e o hold ancora nele. Montar
+        uma fila sem quant seria um mundo que a produção não produz — e foi
+        exatamente o que deixou passar o café carimbado de "planned": enquanto o
+        teste aceita fila sem lote, o carimbo sozinho parece bastar.
         """
-        from datetime import date
+        from datetime import date, timedelta
         from decimal import Decimal as D
 
-        from shopman.stockman.models import Hold, HoldStatus
+        from shopman.stockman.models import Hold, HoldStatus, Position, Quant
+
+        # ``batch`` diz se existe LOTE por trás da reserva. Default: a fornada
+        # planejada tem, a demanda não — que é o mundo real. Passar explícito
+        # monta o caso híbrido (carimbo de fila sem lote) que o banco herdou.
+        has_batch = (marker == "planned") if batch is None else batch
+        quant = None
+        if has_batch:
+            position, _ = Position.objects.get_or_create(
+                ref="forno", defaults={"name": "Forno"},
+            )
+            quant = Quant.objects.create(
+                sku=sku,
+                position=position,
+                target_date=date.today() + timedelta(days=1),
+                _quantity=D("10"),
+            )
 
         return Hold.objects.create(
             sku=sku,
+            quant=quant,
             quantity=D("1"),
             status=HoldStatus.PENDING,
             expires_at=None,
@@ -202,3 +254,19 @@ class TestTheOrderTracking:
         self._hold(order, marker="planned", sku="PAO-DE-FORNADA")
 
         assert waitlist.state_for(order) == waitlist.FERMATA
+
+    def test_a_legacy_coffee_stamped_planned_no_longer_reads_as_a_queue(self, channel):
+        """Os holds gravados ANTES da separação seguem vivos no banco.
+
+        Reserva indefinida não expira nunca: o café que entrou na sacola de
+        alguém em 28/08 continua lá, carimbado ``planned``, dizendo "fila" sobre
+        um item que não sai de fornada nenhuma. Separar as marcas conserta quem
+        nasce depois; a pergunta pelo LOTE conserta os dois tempos, e sem
+        migração de dado — fila espera um lote, e lote tem quant.
+        """
+        from shopman.shop.services import waitlist
+
+        order = self._order(channel)
+        self._hold(order, marker="planned", sku="CAFE-EXPRESSO", batch=False)
+
+        assert waitlist.state_for(order) == waitlist.NONE

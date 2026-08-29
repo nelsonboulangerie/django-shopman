@@ -11,6 +11,8 @@ Scenarios:
 3. Partial materialization (mix awaiting + ready) stays awaiting — the line
    only flips to ready when every hold has materialized.
 4. Vanilla cart hold (no ``planned`` marker) → both flags False.
+5. Reserva de DEMANDA (``quant=None``) → both flags False, mesmo carimbada
+   ``planned``: ela não espera lote nenhum, porque não há lote.
 """
 from __future__ import annotations
 
@@ -101,14 +103,25 @@ class TestClassifyPlannedHoldForSessionSku:
 
         assert result["planned_for"] == date.today() + timedelta(days=1)
 
-    def test_demand_only_hold_is_awaiting(self):
-        # quant=None (pure demand) — also a planned hold.
+    def test_a_demand_hold_is_not_a_queue_even_when_stamped_planned(self):
+        """⚠️ Este teste AFIRMAVA O BUG, e por isso ele passou despercebido.
+
+        Reserva de demanda (``quant=None``: café, Jambon-Beurre, croque) não
+        espera lote nenhum — não existe lote. Chamá-la de "aguardando
+        confirmação" é o que punha "Lista de espera" num café na sacola.
+
+        E o carimbo ``planned`` continua aqui de propósito: é o que está gravado
+        nos holds de antes de 29/08, que são indefinidos e não expiram nunca.
+        Quem responde à pergunta é o LOTE (o quant), não a marca — assim o
+        conserto alcança o que já está no banco, sem migração.
+        """
         _make_hold(quant=None, expires_at=None, planned=True)
 
         result = classify_planned_hold_for_session_sku(SESSION_KEY, SKU)
 
-        assert result["is_awaiting_confirmation"] is True
+        assert result["is_awaiting_confirmation"] is False
         assert result["is_ready_for_confirmation"] is False
+        assert result["planned_for"] is None
 
     def test_post_materialization_is_ready(self):
         deadline = timezone.now() + timedelta(minutes=55)

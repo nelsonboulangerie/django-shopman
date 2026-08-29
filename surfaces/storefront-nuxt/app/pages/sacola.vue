@@ -237,7 +237,7 @@ useSeoMeta({
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
 
-                  <!-- Feito na hora: item montado quando o pedido entra (café,
+                  <!-- Preparado na hora: item montado quando o pedido entra (café,
                        Jambon-Beurre, croque). Não sai de fornada, então nunca tem
                        história de espera — o selo diz o que É, não o que falta. -->
                   <div v-if="line.is_made_to_order && line.made_to_order_label" class="mt-2" data-cart-line-made-to-order>

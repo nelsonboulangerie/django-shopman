@@ -102,7 +102,7 @@ class CartLineProjection:
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
 
-    # Feito na hora: item de política ``demand_ok`` (café, Jambon-Beurre, croque).
+    # Preparado na hora: item de política ``demand_ok`` (café, Jambon-Beurre, croque).
     # Não sai de fornada, então nunca entra em fila — e merece dizer o que É, que
     # é bom: preparado no momento do pedido, não tirado da prateleira.
     is_made_to_order: bool = False
