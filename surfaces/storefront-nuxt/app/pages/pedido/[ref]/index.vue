@@ -499,13 +499,13 @@ useSeoMeta({
                 <!-- Cancelamento pelo estabelecimento: motivo + estorno visíveis —
                      o cliente não depende da notificação para saber o porquê. -->
                 <div
-                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_reason || tracking.refund_status_label)"
+                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.refund_status_label)"
                   class="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
                   data-cancellation-info
                 >
-                  <p v-if="tracking.cancellation_reason">
+                  <p v-if="tracking.cancellation_note">
                     <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
-                    {{ tracking.cancellation_reason }}
+                    {{ tracking.cancellation_note }}
                   </p>
                   <p v-if="tracking.refund_status_label">
                     <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>

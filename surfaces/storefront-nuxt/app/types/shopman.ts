@@ -872,7 +872,7 @@ export interface TrackingResponse {
   mock_payment_enabled: boolean
   // Cancelamento pelo estabelecimento: o cliente lê o porquê e o estado do
   // estorno na própria tela, sem depender da notificação.
-  cancellation_reason: string
+  cancellation_note: string
   refund_status_label: string | null
   // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
   // 'released'. Em confirming o deadline é o relógio do cliente.
