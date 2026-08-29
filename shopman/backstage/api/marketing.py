@@ -749,6 +749,15 @@ def _publish_at(raw) -> tuple[object | None, dict | None]:
         }
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    # ⚠️ A validação só conferia o FORMATO. Uma data no passado passava, o despacho
+    # saía IMEDIATAMENTE, e o toast dizia "Anúncio agendado." — o espelho exato do
+    # "Publicar agora" que agendava. Agendar para trás não é agendar: é publicar sem
+    # dizer, e o gestor descobre pelo cliente.
+    if parsed < timezone.now():
+        return None, {
+            "detail": "Essa data já passou. Escolha um horário à frente, ou publique agora.",
+            "field": "publish_at",
+        }
     return parsed, None
 
 

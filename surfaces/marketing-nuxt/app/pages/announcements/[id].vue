@@ -4,6 +4,7 @@
 //
 // O gestor recebe o aviso no celular, toca e cai direto na decisão. Mesmo card
 // do painel: uma única forma de decidir, um único lugar para acertar.
+import { approvalBody, approvalMessage } from "~/presentation/campaign";
 import type { Announcement, AnnouncementEdits } from "~/types/campaign";
 
 const route = useRoute();
@@ -26,15 +27,15 @@ async function decide(
 ) {
   busy.value = true;
   try {
-    await $fetch(`/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`, {
-      method: "POST",
-      body,
-    });
-    useSonner.success(
-      action === "reject" ? "Anúncio recusado."
-      : "publish_at" in body && body.publish_at ? "Anúncio agendado."
-      : "Anúncio publicado.",
+    // As duas decisões — o que ENVIAR e o que DIZER depois — são as mesmas do painel, e
+    // moram em `~/presentation/campaign`. Repeti-las aqui foi como esta tela e o painel
+    // passaram a mentir, cada um do seu jeito, sobre o mesmo botão.
+    const corpo = action === "approve" ? approvalBody(body as AnnouncementEdits) : body;
+    const resposta = await $fetch<{ scheduled?: boolean }>(
+      `/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`,
+      { method: "POST", body: corpo },
     );
+    useSonner.success(action === "reject" ? "Anúncio recusado." : approvalMessage(resposta));
     await navigateTo("/");
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível concluir. Tente de novo."));

@@ -292,13 +292,21 @@ class AnnouncementNotifyHandler:
             rules = chosen
         else:
             rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
-        resolved = audience_service.resolve(rules, sku=sku)
-
-        recipients = {
-            "vip": resolved.vip,
-            "general": resolved.general,
-            "all": resolved.all_recipients(),
-        }.get(wave, ())
+        # ⚠️ `select_wave`, e NÃO um dicionário de três chaves.
+        #
+        # As ondas são produzidas com chave `nome@hora` para quem tem hora preferida e
+        # a regra tem janela. O dicionário só conhecia `vip`, `general` e `all`, então
+        # `general@14` caía no default VAZIO: zero destinatários, a onda gravada com
+        # "0 enviados, 0 falharam", e — como "onda vazia não é falha" — o status virava
+        # `sent` e o anúncio fechava como publicado.
+        #
+        # Ninguém daquela onda recebia, e NADA indicava isso. Relatório de entrega
+        # mentindo é o pior modo de falha que esta superfície tem.
+        #
+        # A função certa já existia, já era descrita no docstring do despacho como se
+        # fosse o contrato em uso, e não tinha um único chamador no repositório — código
+        # morto que a documentação afirmava estar em uso.
+        recipients = audience_service.select_wave(rules, wave, sku=sku)
 
         sent, failed = _send_to(recipients, announcement=announcement)
         _record_wave(announcement, wave, sent=sent, failed=failed,
@@ -411,6 +419,11 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 context={
                     **shared,
                     "action_url": personal or link,
+                    # O link COMUM viaja junto para o ManyChat ter o que PERSISTIR no
+                    # perfil sem levar o token de sessão do cliente para dentro do SaaS.
+                    # Ver `_safe_field_value` no adapter — os canais que interpolam na
+                    # hora (SMS, e-mail) seguem usando o `action_url` pessoal.
+                    "action_url_public": link,
                     "customer_name": getattr(recipient, "first_name", "") or "",
                 },
                 backend=backend,
