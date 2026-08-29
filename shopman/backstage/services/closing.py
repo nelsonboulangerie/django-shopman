@@ -39,7 +39,7 @@ def perform_day_closing(
     with transaction.atomic():
         for item in items:
             sku = item.sku
-            qty_reported = _parse_qty(quantities_by_sku.get(sku, "0"))
+            qty_reported = _parse_qty(quantities_by_sku.get(sku, "0"), sku=sku)
 
             if qty_reported <= 0:
                 snapshot.append(
@@ -141,11 +141,24 @@ def _alert_open_cash_shifts(closing_date: date, open_shifts: list[dict]) -> None
     )
 
 
-def _parse_qty(raw_qty) -> int:
-    try:
-        return max(0, int(str(raw_qty).strip()))
-    except (ValueError, TypeError):
+def _parse_qty(raw_qty, *, sku: str = "") -> int:
+    """A sobra contada pelo operador. Ilegível **grita**, nunca vira zero.
+
+    ⚠️ ``1O`` (letra O) ou ``2,5`` devolviam ``0``: o fluxo tomava o caminho "nada
+    sobrou", nenhum write-off acontecia, e o snapshot gravava zero. A divergência
+    aparecia depois na conciliação como venda fantasma, sem ninguém saber de onde veio.
+
+    É o mesmo defeito que ``parse_money_to_q`` foi escrito para NÃO cometer: número que
+    o sistema não conseguiu ler é pergunta ao operador, não um palpite silencioso.
+    """
+    texto = str(raw_qty).strip()
+    if not texto:
         return 0
+    try:
+        return max(0, int(texto))
+    except (ValueError, TypeError) as exc:
+        onde = f" em {sku}" if sku else ""
+        raise ValueError(f"Quantidade inválida{onde}: {texto!r}. Use um número inteiro.") from exc
 
 
 def _snapshot(
