@@ -81,6 +81,22 @@ fallbacks** que degradam para o permissivo em silêncio, abrindo com o princípi
 comportamento restritivo… falhar fechado, ou falhar aberto e gritando. Nunca falhar aberto e calado."*
 Aquele documento olhou adapters e settings; **este bloco é o item 18**, no contrato de ações do backstage.
 
+E há uma diferença de grau que vale nomear, na formulação da sessão que escreveu o inventário: **os 17 itens
+dela são fallbacks de _configuração_** — alguém esquece uma env e o sistema degrada. **Este é permissivo por
+_default de dataclass_**, o que é pior: toda ação nova nasce insegura sem ninguém decidir nada, e sete ações
+já nem declaram o campo. A versão dura do princípio, portanto:
+
+> **O default de um campo de segurança tem que ser o valor restritivo, senão a omissão vira política.**
+
+É exatamente o que o P0-A1 propõe — inverter o default para `"required"` e obrigar quem não precisa de chave a
+declarar `"none"`. A partir daí o CI trabalha a favor: cada ação nova sem decisão aparece sozinha.
+
+**Tarefa de acoplamento:** quando o [PR #393](https://github.com/nelsonboulangerie/django-shopman/pull/393)
+mergear, `docs/plans/fallbacks-perigosos-go-live.md` estará no `main` — **acrescentar este bloco como item 18
+naquele documento**, no PR deste WP. Combinado com a sessão dona do inventário: o achado fica aqui, e a
+entrada lá é feita por nós depois do merge (commitar nela agora expulsaria o #393 da fila, e ele carrega um
+bloqueador de go-live).
+
 ### Mecanismo da falha, do balcão até o efeito
 
 O operador lança uma sangria de R$ 200. A rede do salão oscila (é a mesma rede do

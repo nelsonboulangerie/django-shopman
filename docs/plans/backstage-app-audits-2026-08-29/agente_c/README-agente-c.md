@@ -259,7 +259,9 @@ contato com a sessão `confident-pasteur-6cf01c`.)* Os 85 arquivos que eu tinha 
 
 **Ordem obrigatória: #395 antes de #396** — o #396 está empilhado (base aponta para a branch do #395).
 ⚠️ Um PR empilhado mede `MERGEABLE` **contra a própria base**, não contra o `main`: o verde do #396 não
-diz nada sobre conflito com o `main` até o #395 entrar.
+diz nada sobre conflito com o `main` até o #395 entrar. *(O risco irmão — squash apagando a base e
+virando criss-cross — foi levantado e **não se aplica**: a fila usa `mergeMethod=MERGE`, verificado por
+`gh api graphql` no `mergeQueue.configuration`.)*
 
 **Correção minha:** eu havia lido um buraco na numeração (main na 0035, faltando a 0036). Errado — a
 `0036_audit_stock_permission` **está no `origin/main`**; minha leitura veio de um checkout sem `fetch`.

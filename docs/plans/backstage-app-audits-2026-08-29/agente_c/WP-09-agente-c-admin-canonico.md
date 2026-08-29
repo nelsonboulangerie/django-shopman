@@ -53,7 +53,9 @@ instância do auto-grant descrito na seção de RBAC). Rebasear sobre o #395. Mi
 no deploy* (P1-6) e *a chave TOTP está exposta* (P1-4). O item 13 do inventário
 `docs/plans/fallbacks-perigosos-go-live.md` (PR #393) traz o terceiro: *o middleware de 2FA do Admin deixa
 passar quando a URL não resolve*. **Não são duplicata** — são as três metades do mesmo problema, e nenhuma
-delas sozinha fecha a porta. Vale executá-las juntas.
+delas sozinha fecha a porta. Vale executá-las juntas. **Confirmado com a sessão dona do inventário: o item 13 é
+deste WP, sem divisão** — ela o inventariou de passagem e não abriu frente. Idem o item 14, que pertence ao
+WP-08. Incorporar o item 13 como P1-7 ao executar.
 
 - Nenhum outro pré-requisito técnico. **Mas a pergunta 1 bloqueia parte do P0-1**, e a pergunta 2 define o tamanho da fase 2.
 - ⚠️ Este WP toca `config/settings.py` em quatro pontos. **Agrupe as quatro linhas num bloco único, com
