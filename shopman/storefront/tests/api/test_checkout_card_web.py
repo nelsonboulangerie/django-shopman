@@ -18,6 +18,7 @@ Precisa de ``transaction=True``: o dispatch de on_commit roda via
 from __future__ import annotations
 
 from decimal import Decimal
+from unittest.mock import MagicMock, patch
 
 import pytest
 from shopman.orderman.models import Order
@@ -38,6 +39,7 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
     from django.utils import timezone
     from shopman.payman import PaymentService
 
+    from shopman.shop.adapters import payment_stripe
     from shopman.shop.models import Shop
 
     _seed_surface(stock_qty=Decimal("10"))
@@ -56,19 +58,31 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
     )
     assert add.status_code == 200, add.content
 
-    resp = client.post(
-        "/api/v1/checkout/",
-        data=with_baseline(client, {
-            "name": "Ana",
-            "phone": "+5543999990001",
-            "fulfillment_type": "delivery",
-            "delivery_address": "Rua das Flores, 1",
-            "delivery_address_structured": ADDRESS,
-            "delivery_date": timezone.localdate().isoformat(),
-            "payment_method": "card",
-        }),
-        content_type="application/json",
-    )
+    # Cartão fala com o Stripe de verdade — não existe cartão simulado. Só o SDK
+    # é dublê, para a suíte não sair para a rede; o adapter, a Checkout Session
+    # e a persistência do `checkout_url` são os de produção.
+    session = MagicMock()
+    session.id = "cs_test_web_card"
+    session.url = "https://checkout.stripe.com/c/pay/cs_test_web_card"
+    session.payment_intent = None
+
+    with patch.object(payment_stripe, "_get_stripe") as mock_get_stripe:
+        mock_get_stripe.return_value = MagicMock(
+            **{"checkout.Session.create.return_value": session},
+        )
+        resp = client.post(
+            "/api/v1/checkout/",
+            data=with_baseline(client, {
+                "name": "Ana",
+                "phone": "+5543999990001",
+                "fulfillment_type": "delivery",
+                "delivery_address": "Rua das Flores, 1",
+                "delivery_address_structured": ADDRESS,
+                "delivery_date": timezone.localdate().isoformat(),
+                "payment_method": "card",
+            }),
+            content_type="application/json",
+        )
     assert resp.status_code == 201, resp.content
 
     order = Order.objects.get(ref=resp.json()["order_ref"])
@@ -76,6 +90,12 @@ def test_card_checkout_on_web_commits_and_initiates_payment(client):
     # O intent de cartão foi iniciado no on_commit (post_commit + card).
     assert order.data["payment"].get("intent_ref")
     assert list(PaymentService.get_by_order(order.ref)), "esperava um intent de cartão"
+    # O cliente PRECISA de para onde ir: sem `checkout_url` não há como pagar, e
+    # foi exatamente esse buraco que virou "Pagamento autorizado" sem cobrança.
+    assert order.data["payment"]["checkout_url"] == session.url
+    # E a cobrança nasce pendente: só o webhook do Stripe autoriza.
+    intent = PaymentService.get(order.data["payment"]["intent_ref"])
+    assert intent.status == "pending"
 
     # O snapshot selado NÃO pode carregar o idempotency_key gravado em order.data:
     # se carregar, o alias voltou e o sealed check quebra de novo.

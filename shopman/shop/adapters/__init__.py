@@ -36,9 +36,14 @@ _SETTINGS_MAP = {
 
 # Defaults when settings are absent
 _DEFAULTS = {
+    # ⚠️ Pagamento não tem default. "Ninguém configurou gateway" não pode
+    # resolver silenciosamente para o simulador: era assim que um deploy sem
+    # SHOPMAN_CARD_ADAPTER caía no payment_mock e dava pedido por pago sem
+    # cobrar. Sem adapter, `payment.initiate` grava o erro e o pedido para —
+    # que é o comportamento certo de um sistema de dinheiro sem gateway.
     "payment": {
-        "pix": "shopman.shop.adapters.payment_mock",
-        "card": "shopman.shop.adapters.payment_mock",
+        "pix": None,
+        "card": None,
         "cash": None,
         "external": None,
     },
@@ -74,20 +79,44 @@ def _from_shop_integrations(adapter_type: str, method=None):
             return None, False
         # Found a value — now resolve it
         if isinstance(value, dict):
-            if method and method in value:
-                return _resolve_module(value[method]), True
-            # "default" key as fallback
-            if "default" in value:
-                return _resolve_module(value["default"]), True
-            for path in value.values():
-                if path is not None:
-                    return _resolve_module(path), True
-            return None, True
+            path, _ = _method_value(value, adapter_type, method)
+            return _resolve_module(path), True
         else:
             return _resolve_module(value), True
     except Exception:
         logger.debug("_from_shop_integrations: DB lookup failed for %s", adapter_type, exc_info=True)
         return None, False
+
+
+# Tipos em que pedir um método que não está configurado NÃO pode cair no
+# primeiro adapter disponível do dicionário. Pagamento é o caso óbvio: pedir
+# "card" numa config que só define "pix" devolvia o adapter do Pix, calado —
+# e um operador editando `Shop.integrations["payment"]` no Admin (JSON livre,
+# prioridade máxima) consegue exatamente isso. Método não configurado é None.
+_NO_METHOD_FALLBACK = {"payment"}
+
+
+def _method_value(mapping: dict, adapter_type: str, method):
+    """Escolhe o caminho do método dentro de um dict de configuração.
+
+    Devolve ``(path, resolved)``. ``resolved=False`` significa "esta camada não
+    respondeu" — quem chama decide se desce para a próxima.
+    """
+    if method and method in mapping:
+        return mapping[method], True
+    if method and adapter_type in _NO_METHOD_FALLBACK:
+        # Método desconhecido num tipo sensível: ausência é ausência.
+        logger.warning(
+            "get_adapter: método %r não configurado para %r — sem adapter.",
+            method, adapter_type,
+        )
+        return None, True
+    if "default" in mapping:
+        return mapping["default"], True
+    for path in mapping.values():
+        if path is not None:
+            return path, True
+    return None, True
 
 
 def get_adapter(adapter_type, method=None, channel=None):
@@ -112,12 +141,8 @@ def get_adapter(adapter_type, method=None, channel=None):
 
     if setting_value is not None:
         if isinstance(setting_value, dict):
-            if method and method in setting_value:
-                return _resolve_module(setting_value[method])
-            for path in setting_value.values():
-                if path is not None:
-                    return _resolve_module(path)
-            return None
+            path, _ = _method_value(setting_value, adapter_type, method)
+            return _resolve_module(path)
         else:
             return _resolve_module(setting_value)
 
@@ -126,10 +151,6 @@ def get_adapter(adapter_type, method=None, channel=None):
     if default is None:
         return None
     if isinstance(default, dict):
-        if method and method in default:
-            return _resolve_module(default[method])
-        for path in default.values():
-            if path is not None:
-                return _resolve_module(path)
-        return None
+        path, _ = _method_value(default, adapter_type, method)
+        return _resolve_module(path)
     return _resolve_module(default)

@@ -1396,6 +1396,30 @@ useSeoMeta({
               </UiRadioGroup>
               <UiFieldError v-if="fieldErrors.payment_method" :errors="fieldErrors.payment_method" />
 
+              <!-- Cartões de teste do Stripe. A lista chega VAZIA quando a chave
+                   não é de teste, então em produção este bloco não existe nem no
+                   HTML — a condição é a chave do gateway, não uma flag de tela. -->
+              <div
+                v-if="state.payment_method === 'card' && checkout.stripe_test_cards?.length"
+                class="shop-stack-tight rounded-lg border border-dashed p-4"
+              >
+                <div class="flex items-start gap-3">
+                  <Icon name="lucide:flask-conical" :size="20" class="mt-0.5 shrink-0 text-muted-foreground" />
+                  <div class="min-w-0 space-y-1">
+                    <p class="shop-item-title font-semibold text-foreground">Ambiente de teste</p>
+                    <p class="shop-meta">Nenhuma cobrança real acontece aqui. Use um destes números no {{ checkout.card_provider || 'gateway' }}.</p>
+                  </div>
+                </div>
+                <ul class="space-y-2">
+                  <li v-for="card in checkout.stripe_test_cards" :key="card.number" class="rounded-lg bg-muted px-3 py-2">
+                    <p class="shop-meta">{{ card.label }}</p>
+                    <p class="font-mono text-sm text-foreground">{{ card.number }}</p>
+                    <p class="shop-meta">{{ card.hint }}</p>
+                  </li>
+                </ul>
+                <p class="shop-meta">Validade: qualquer data futura. CVC: quaisquer 3 dígitos. CEP: qualquer um.</p>
+              </div>
+
               <UiField v-if="state.payment_method === 'cash' && !isPickup" class="mt-3">
                 <UiFieldLabel for="checkout-change-for">Precisa de troco?</UiFieldLabel>
                 <UiInputGroup class="min-w-0">

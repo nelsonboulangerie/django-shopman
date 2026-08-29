@@ -49,6 +49,29 @@ def _get_base_url() -> str:
     return SANDBOX_URL if config.get("sandbox", True) else PRODUCTION_URL
 
 
+class EfiNotConfigured(RuntimeError):
+    """Gateway Pix sem credencial — não há como cobrar, e não se finge."""
+
+
+def _require_credentials(config: dict) -> tuple[str, str]:
+    """Credenciais presentes, ou levanta ANTES de qualquer chamada de rede.
+
+    Mesma regra do Stripe (``payment_stripe._get_stripe``): faltando gateway, o
+    pedido para com erro visível — ``payment.initiate`` grava o erro e o
+    acompanhamento mostra o degrau de falha. Antes daqui um ``client_id`` vazio
+    virava uma tentativa de autenticação contra a Efí com credencial em branco,
+    e um ``KeyError`` cru quando a chave nem existia.
+    """
+    client_id = str(config.get("client_id") or "").strip()
+    client_secret = str(config.get("client_secret") or "").strip()
+    if not client_id or not client_secret:
+        raise EfiNotConfigured(
+            "Pix está apontado para a Efí, mas EFI_CLIENT_ID/EFI_CLIENT_SECRET "
+            "estão vazios. Configure as credenciais do ambiente."
+        )
+    return client_id, client_secret
+
+
 def _get_access_token() -> str:
     """Obtain or renew access token. Token is cached — thread-safe across workers."""
     token = cache.get(_EFI_TOKEN_CACHE_KEY)
@@ -56,8 +79,7 @@ def _get_access_token() -> str:
         return token
 
     config = _get_config()
-    client_id = config["client_id"]
-    client_secret = config["client_secret"]
+    client_id, client_secret = _require_credentials(config)
     certificate_path = config["certificate_path"]
 
     auth = b64encode(f"{client_id}:{client_secret}".encode()).decode()
