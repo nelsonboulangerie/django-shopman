@@ -265,11 +265,9 @@ class AccessLinkExchangeView(APIView):
             _record_identity_strength(request, metadata, customer=result.customer)
 
         # Access link vindo do site: o código NB carregou a sacola anônima na metadata.
-        # A in-app browser que abre o link é sessão nova (sem sacola), então adotamos a
-        # ref — mas só se a sessão atual estiver vazia (não sobrescreve uma sacola local).
         cart_ref = str(metadata.get("cart_session_key") or "") if isinstance(metadata, dict) else ""
-        if cart_ref and hasattr(request, "session") and not request.session.get("cart_session_key"):
-            request.session["cart_session_key"] = cart_ref
+        if cart_ref and hasattr(request, "session"):
+            _adopt_carried_cart(request, cart_ref)
 
         redirect_metadata = _access_link_metadata_for_customer(metadata, result.customer)
         order_ref = str(metadata.get("order_ref") or "") if isinstance(metadata, dict) else ""
@@ -316,6 +314,39 @@ class AccessLinkExchangeView(APIView):
             payload["notice"] = resolve_copy("LOGIN_HANDOFF_EXPIRED", moment="*").message
         response.data = payload
         return response
+
+
+def _adopt_carried_cart(request, cart_ref: str) -> None:
+    """Adota a sacola que viajou no link. Ela GANHA de uma sacola local.
+
+    ⚠️ **A premissa antiga era falsa, e custava a sacola do cliente.** A guarda
+    era ``not request.session.get("cart_session_key")``, apoiada no comentário
+    "a in-app browser que abre o link é sessão nova (sem sacola)". Não é: o
+    webview do WhatsApp tem pote de cookie PRÓPRIO e PERSISTENTE, então ele
+    chega carregando o ``cart_session_key`` de uma visita anterior. A guarda dava
+    falso, a adoção era pulada, e a pessoa que acabou de montar a sacola no
+    navegador do sistema aterrissava numa sacola de dias atrás — a dela,
+    descartada em silêncio. Pior: o handoff de volta ao navegador de verdade
+    então levava adiante a chave velha.
+
+    Quem ganha é a que viajou, porque ela é o CONTEXTO EXPLÍCITO deste login: a
+    pessoa tocou em "entrar" com aquela sacola na mão, segundos atrás. A local é
+    resíduo de sessão anterior. A guarda que sobra é só contra desperdício: uma
+    ref que não aponta para sacola aberta com itens não vale a troca.
+    """
+    from shopman.storefront.cart import CartService
+
+    current = str(request.session.get("cart_session_key") or "")
+    if current == cart_ref:
+        return
+    if not CartService.session_has_items(cart_ref):
+        # Sacola que viajou já foi consumida ou esvaziou: manter o que existe
+        # localmente é melhor do que trocar por nada.
+        logger.info("access_link_cart_carried_empty")
+        return
+    request.session["cart_session_key"] = cart_ref
+    if current:
+        logger.info("access_link_cart_replaced_stale_local")
 
 
 def _normalize_payload_phone(payload: dict) -> str:

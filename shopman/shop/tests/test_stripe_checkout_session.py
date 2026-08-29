@@ -312,3 +312,256 @@ class StripeCheckoutSessionWebhookTests(TestCase):
             ))
 
         mock_dispatch.assert_not_called()
+
+
+# ══════════════════════════════════════════════════════════════
+# A volta do Stripe — reconciliação quando o webhook não chega
+# ══════════════════════════════════════════════════════════════
+#
+# ⚠️ Este bloco existe por um relato de campo: pagamento concluído no ambiente do
+# Stripe, cliente de volta na nossa tela, e a tela continuava pedindo para pagar.
+# A causa não era o Stripe: era que NADA no sistema jamais perguntava a ele. O
+# `get_status` do adapter lia o Payman, o `reconcile_payments` lia o Payman, e a
+# única escrita era o webhook. Webhook perdido (endpoint errado no painel, segredo
+# de outro ambiente, 400 na assinatura) virava dano permanente e silencioso.
+#
+# Os testes abaixo travam as três pontas: o verbo de leitura existe e responde,
+# a leitura do acompanhamento liquida sozinha, e o guard de timeout não cancela
+# mais um pedido de cartão sem antes perguntar.
+
+
+@override_settings(
+    SHOPMAN_STRIPE=STRIPE_SETTINGS,
+    SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    DEBUG=False,
+)
+class StripeGatewayReadbackTests(TestCase):
+    """`check_gateway_status`: o verbo de LEITURA que a Efí tinha e o Stripe não."""
+
+    def _intent(self, order, *, gateway_id: str, gateway_data: dict | None = None):
+        intent = PaymentService.create_intent(
+            order_ref=order.ref,
+            amount_q=order.total_q,
+            method="card",
+            gateway="stripe",
+            gateway_data=gateway_data or {},
+        )
+        intent.gateway_id = gateway_id
+        intent.save(update_fields=["gateway_id"])
+        order.data["payment"] = {"method": "card", "intent_ref": intent.ref}
+        order.save(update_fields=["data", "updated_at"])
+        return intent
+
+    def test_requires_capture_reads_as_authorized_not_as_pending(self) -> None:
+        """`capture_method=manual` é o padrão da casa: o dinheiro fica reservado.
+
+        Achatar `requires_capture` em "pending" diria "não pagou" sobre quem pagou.
+        """
+        from shopman.shop.adapters import payment_stripe
+
+        order = _commit_card_order()
+        intent = self._intent(order, gateway_id="pi_manual_hold")
+
+        stripe = MagicMock()
+        stripe.PaymentIntent.retrieve.return_value = MagicMock(
+            status="requires_capture", amount_received=0,
+        )
+        with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+            assert payment_stripe.check_gateway_status(intent.ref) == "authorized"
+
+    def test_succeeded_reads_as_captured(self) -> None:
+        from shopman.shop.adapters import payment_stripe
+
+        order = _commit_card_order()
+        intent = self._intent(order, gateway_id="pi_done")
+
+        stripe = MagicMock()
+        stripe.PaymentIntent.retrieve.return_value = MagicMock(
+            status="succeeded", amount_received=1000,
+        )
+        with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+            assert payment_stripe.check_gateway_status(intent.ref) == "captured"
+
+    def test_session_id_still_resolves_to_the_payment_intent(self) -> None:
+        """Sem webhook o `gateway_id` continua sendo o `cs_...`, e é preciso resolver.
+
+        É exatamente o caso que a reconciliação existe para atender: se ela
+        dependesse do webhook para saber o `pi_`, não serviria para nada.
+        """
+        from shopman.shop.adapters import payment_stripe
+
+        order = _commit_card_order()
+        intent = self._intent(
+            order,
+            gateway_id="cs_sem_webhook",
+            gateway_data={"checkout_session_id": "cs_sem_webhook"},
+        )
+
+        stripe = MagicMock()
+        stripe.checkout.Session.retrieve.return_value = MagicMock(
+            status="complete", payment_intent="pi_resolvido",
+        )
+        stripe.PaymentIntent.retrieve.return_value = MagicMock(
+            status="requires_capture", amount_received=0,
+        )
+        with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+            assert payment_stripe.check_gateway_status(intent.ref) == "authorized"
+        stripe.PaymentIntent.retrieve.assert_called_once_with("pi_resolvido")
+
+    def test_gateway_silence_is_error_not_unpaid(self) -> None:
+        """Gateway mudo é INCERTEZA. Traduzir silêncio em "não pagou" cancela pedido pago."""
+        from shopman.shop.adapters import payment_stripe
+
+        order = _commit_card_order()
+        intent = self._intent(order, gateway_id="pi_mudo")
+
+        stripe = MagicMock()
+        stripe.PaymentIntent.retrieve.side_effect = RuntimeError("timeout")
+        with patch.object(payment_stripe, "_get_stripe", return_value=stripe):
+            assert payment_stripe.check_gateway_status(intent.ref) == "error"
+
+    def test_missing_credential_is_error_not_unpaid(self) -> None:
+        from shopman.shop.adapters import payment_stripe
+
+        order = _commit_card_order()
+        intent = self._intent(order, gateway_id="pi_sem_chave")
+
+        with patch.object(
+            payment_stripe,
+            "_get_stripe",
+            side_effect=payment_stripe.StripeNotConfigured("sem chave"),
+        ):
+            assert payment_stripe.check_gateway_status(intent.ref) == "error"
+
+
+@override_settings(
+    SHOPMAN_STRIPE=STRIPE_SETTINGS,
+    SHOPMAN_PAYMENT_ADAPTERS=PAYMENT_ADAPTERS_STRIPE_CARD,
+    DEBUG=False,
+)
+class StripeReturnWithoutWebhookTests(TestCase):
+    """O cliente volta do Stripe e a tela tem que contar a verdade."""
+
+    def _order_with_intent(self, *, gateway_id="pi_volta"):
+        order = _commit_card_order()
+        intent = PaymentService.create_intent(
+            order_ref=order.ref,
+            amount_q=order.total_q,
+            method="card",
+            gateway="stripe",
+            gateway_data={},
+        )
+        intent.gateway_id = gateway_id
+        intent.save(update_fields=["gateway_id"])
+        order.data["payment"] = {"method": "card", "intent_ref": intent.ref}
+        order.save(update_fields=["data", "updated_at"])
+        return order, intent
+
+    def test_authorization_lost_with_the_webhook_is_recovered_on_read(self) -> None:
+        """Sem isto, quem pagou volta para uma tela que pede pagamento. Para sempre."""
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, intent = self._order_with_intent()
+        assert intent.status == "pending"  # o webhook nunca chegou
+
+        with patch.object(payment_stripe, "check_gateway_status", return_value="authorized"):
+            changed = payment_service.reconcile_with_gateway_if_due(order)
+
+        assert changed is True
+        intent.refresh_from_db()
+        assert intent.status == "authorized"
+
+    def test_reconciliation_does_not_capture_before_the_store_accepts(self) -> None:
+        """Reconciliar não pode virar atalho para cobrar antes do aceite.
+
+        Foi a linha cruzada no caso do pedido E54: capturar sem humano no circuito.
+        Quem captura é o lifecycle, quando a loja aceita.
+        """
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, intent = self._order_with_intent()
+        assert order.status == Order.Status.NEW
+
+        with patch.object(payment_stripe, "check_gateway_status", return_value="authorized"):
+            payment_service.reconcile_with_gateway_if_due(order)
+
+        assert PaymentService.captured_total(intent.ref) == 0
+
+    def test_a_second_read_does_not_ask_the_gateway_again(self) -> None:
+        """O acompanhamento é relido a cada refresh; perguntar sempre viraria enxurrada."""
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, _intent = self._order_with_intent()
+
+        with patch.object(
+            payment_stripe, "check_gateway_status", return_value="pending",
+        ) as asked:
+            payment_service.reconcile_with_gateway_if_due(order)
+            payment_service.reconcile_with_gateway_if_due(order)
+
+        assert asked.call_count == 1
+
+    def test_a_paid_order_is_not_asked_about_again(self) -> None:
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, intent = self._order_with_intent()
+        PaymentService.authorize(intent.ref, gateway_id=intent.gateway_id)
+        PaymentService.capture(intent.ref, gateway_id=intent.gateway_id)
+
+        with patch.object(payment_stripe, "check_gateway_status") as asked:
+            payment_service.reconcile_with_gateway_if_due(order)
+
+        asked.assert_not_called()
+
+    def test_timeout_no_longer_cancels_a_card_order_without_asking(self) -> None:
+        """`method != "pix" → "unpaid"` autorizava cancelar pedido de cartão PAGO."""
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, _intent = self._order_with_intent()
+
+        with patch.object(payment_stripe, "check_gateway_status", return_value="authorized"):
+            assert payment_service.settle_from_gateway(order) == "authorized"
+
+    def test_timeout_still_cancels_when_the_gateway_says_nobody_paid(self) -> None:
+        from shopman.shop.adapters import payment_stripe
+        from shopman.shop.services import payment as payment_service
+
+        order, _intent = self._order_with_intent()
+
+        with patch.object(payment_stripe, "check_gateway_status", return_value="pending"):
+            assert payment_service.settle_from_gateway(order) == "unpaid"
+
+
+@override_settings(
+    SHOPMAN_STRIPE=STRIPE_SETTINGS,
+    SHOPMAN_PAYMENT_ADAPTERS={"pix": "shopman.shop.adapters.payment_mock"},
+    DEBUG=False,
+)
+class PixIsNotAskedOnEveryReadTests(TestCase):
+    """O PIX fica de fora da pergunta preguiçosa — e isso é decisão, não esquecimento.
+
+    Ele já tem rede: o cliente não sai do site, o webhook empurra por SSE, e no
+    vencimento ``settle_from_gateway`` consulta a Efí antes de cancelar. Perguntar
+    a cada leitura poria uma chamada à Efí a cada 20 segundos enquanto alguém
+    encara o QR code, para cobrir um caso já coberto.
+    """
+
+    def test_a_pix_order_does_not_call_the_gateway_on_read(self) -> None:
+        from shopman.shop.services import payment as payment_service
+
+        order = _commit_card_order()
+        intent = PaymentService.create_intent(
+            order_ref=order.ref, amount_q=order.total_q, method="pix", gateway="efi",
+        )
+        order.data["payment"] = {"method": "pix", "intent_ref": intent.ref}
+        order.save(update_fields=["data", "updated_at"])
+
+        with patch.object(payment_service, "settle_from_gateway") as asked:
+            assert payment_service.reconcile_with_gateway_if_due(order) is False
+
+        asked.assert_not_called()

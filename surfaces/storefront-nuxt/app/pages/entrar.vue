@@ -34,6 +34,7 @@ const {
   message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
+  hasCartContext: waCartTravels,
   status: waStatus,
   start: waStart
 } = useWhatsappVerify()
@@ -100,7 +101,13 @@ const cartHasItems = computed(() => {
   const cart = loginHome.value?.cart
   return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
 })
-const isCheckoutReturnWithCart = computed(() => isCheckoutReturn.value && cartHasItems.value)
+// ⚠️ A copy da sacola pergunta pela SACOLA, não pela rota. Ela era
+// `isCheckoutReturn && cartHasItems`, e `isCheckoutReturn` só é verdade quando o
+// `next` traz /checkout ou /finalizar. Quem entrava pelo cabeçalho ou pelo menu
+// com a sacola cheia — o caminho mais comum — nunca lia "Sua sacola está
+// guardada", e a tela ficava com a voz genérica de quem chega sem nada na mão.
+// Origem de navegação não é contexto; sacola com itens é.
+const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
@@ -112,7 +119,7 @@ const stepDescription = computed(() => {
   if (step.value === 'phone') {
     // Vindo do checkout com sacola real: a sacola é o que importa dizer. Sem itens,
     // a copy fica neutra; origem/rota não pode virar contexto inventado.
-    if (isCheckoutReturnWithCart.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
     if (isCheckoutReturn.value) return copyMessage(authCopy.value?.phone_subtitle, 'Sem senha, rápido e seguro.')
     return ''
   }
@@ -121,13 +128,21 @@ const stepDescription = computed(() => {
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
 // o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.'))
+// O lampejo diz o que vai acontecer. Com sacola VIAJANDO no código (confirmado
+// pelo servidor em `has_cart_context`, não deduzido da tela), o que vai acontecer
+// inclui a sacola chegar junto — e é isso que tira o medo de tocar no botão.
+const waGlimpse = computed(() => {
+  if (waCartTravels.value) {
+    return copyMessage(authCopy.value?.wa_glimpse_with_cart, 'Envie a mensagem pronta: você entra e sua sacola vai junto.')
+  }
+  return copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.')
+})
 const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Quer fazer você mesmo?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Envie esta mensagem diretamente para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
-  isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
+  hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
 ))
 // "O código não chegou?" só cabe no passo de código (SMS). No WhatsApp/telefone não
 // há código enviado ao cliente — ele é quem manda o token —, então o convite à ajuda

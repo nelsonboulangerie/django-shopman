@@ -122,6 +122,7 @@ class AuthCopyProjection:
     phone_subtitle: CopyEntryProjection
     wa_cart_kept: CopyEntryProjection
     wa_glimpse: CopyEntryProjection
+    wa_glimpse_with_cart: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -470,6 +471,7 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         phone_subtitle=_copy_entry("LOGIN_PHONE_SUBTITLE", omotenashi=omotenashi),
         wa_cart_kept=_copy_entry("LOGIN_WA_CART_KEPT", omotenashi=omotenashi),
         wa_glimpse=_copy_entry("LOGIN_WA_GLIMPSE", omotenashi=omotenashi),
+        wa_glimpse_with_cart=_copy_entry("LOGIN_WA_GLIMPSE_WITH_CART", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),

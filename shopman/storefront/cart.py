@@ -232,17 +232,33 @@ class CartService:
         if not session_key:
             return False
 
+        if not CartService.session_has_items(session_key):
+            if cart_mutations.get_open_session(
+                session_key=session_key, channel_ref=CHANNEL_REF
+            ) is None:
+                request.session.pop("cart_session_key", None)
+            return False
+        return True
+
+    @staticmethod
+    def session_has_items(session_key: str) -> bool:
+        """Uma REF de sacola tem linhas com quantidade? Sem tocar na sessão HTTP.
+
+        Existe para quem só tem a ref na mão e nenhuma sessão do dono: a adoção da
+        sacola que viaja no access link precisa saber se vale a troca, e a ref que
+        ela avalia não é a da sessão que está pedindo.
+        """
+        if not session_key:
+            return False
         session = cart_mutations.get_open_session(session_key=session_key, channel_ref=CHANNEL_REF)
         if session is None:
-            request.session.pop("cart_session_key", None)
             return False
-
         for item in session.items:
             try:
                 if Decimal(str(item.get("qty", 0))) > 0:
                     return True
             except Exception:
-                logger.debug("cart.has_items degraded; using fallback", exc_info=True)
+                logger.debug("cart.session_has_items degraded; using fallback", exc_info=True)
                 continue
         return False
 

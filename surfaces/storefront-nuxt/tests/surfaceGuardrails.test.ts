@@ -555,9 +555,16 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('home.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
     expect(login).toContain('const cartHasItems')
-    expect(login).toContain('const isCheckoutReturnWithCart')
-    expect(login).toContain('if (isCheckoutReturnWithCart.value) return copyMessage(authCopy.value?.wa_cart_kept')
-    expect(login).toContain("isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
+    // A copy da sacola pergunta pela SACOLA, não pela rota de origem: quem entra
+    // pelo cabeçalho com a sacola cheia merece ler "Sua sacola está guardada"
+    // tanto quanto quem volta do checkout.
+    expect(login).toContain('const hasCartToKeep')
+    expect(login).not.toContain('isCheckoutReturnWithCart')
+    expect(login).toContain('if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept')
+    expect(login).toContain("hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
+    // O lampejo promete a sacola só quando o SERVIDOR confirma que ela viajou.
+    expect(login).toContain('waCartTravels')
+    expect(login).toContain('wa_glimpse_with_cart')
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
     expect(login).toContain('<UiInputGroup class="bg-background">')

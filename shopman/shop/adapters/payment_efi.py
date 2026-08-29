@@ -487,7 +487,7 @@ def check_gateway_status(intent_ref: str) -> str:
     Check status directly at the Efi gateway (bypasses DB).
 
     Used as safety check before cancelling expired intents — é o verbo de LEITURA
-    que ``shop.services.payment.verify_gateway_before_timeout_cancel`` consulta.
+    que ``shop.services.payment.settle_from_gateway`` consulta.
 
     Devolve ``captured``, ``pending``, ``cancelled``, ``not_found`` ou ``error``.
     ``not_found`` e ``error`` são respostas diferentes de propósito: intent que

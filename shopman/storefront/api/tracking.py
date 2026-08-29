@@ -50,12 +50,6 @@ def _copy_message(key: str, fallback: str) -> str:
         return fallback
 
 
-def _mock_payment_enabled() -> bool:
-    from shopman.storefront.api.payment import mock_payment_enabled
-
-    return mock_payment_enabled()
-
-
 def _alert_low_rating(order, rating: int, comment: str) -> None:
     """Raise a debounced OperatorAlert for a low customer rating (≤2).
 
@@ -117,7 +111,6 @@ def _tracking_payload(order) -> dict:
     # Fusão PAYMENT-TRACKING-MERGE: ``requires_payment_gate``/``payment_gate_url``
     # sumiram (não há mais para onde rotear); o bloco de Pix/cartão é inline, e a
     # captura simulada (DEBUG/staging) é sinalizada por ``mock_payment_enabled``.
-    data["mock_payment_enabled"] = _mock_payment_enabled()
     data["fulfillments"] = [
         {
             "status": f.status,
@@ -180,6 +173,13 @@ class OrderTrackingView(APIView):
             )
 
         order_service.resolve_timeouts_if_due(order)
+        # ⚠️ A VOLTA DO CARTÃO PASSA POR AQUI, e por muito tempo não passava.
+        # O `success_url` do Stripe devolve o cliente para esta tela, e ela lia
+        # só o Payman — que só sabe o que o webhook contou. Webhook atrasado é
+        # corrida (o cliente chega antes); webhook quebrado é dano permanente.
+        # Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
+        # Agora a própria leitura pergunta ao gateway (throttled) e liquida.
+        order_service.reconcile_payment_with_gateway_if_due(order)
         # Fusão PAYMENT-TRACKING-MERGE: o acompanhamento é onde o cliente paga,
         # então é aqui que o intent de pagamento nasce (recovery/idempotente, o
         # mesmo que a antiga tela de pagamento fazia). Sem isto, o Pix de

@@ -1628,6 +1628,11 @@ useSeoMeta({
                     Lista de espera
                   </UiBadge>
                   <span v-if="reviewWaitlist(line, state.delivery_date)?.notice" class="ml-1 shop-meta">{{ reviewWaitlist(line, state.delivery_date)?.notice }}</span>
+                  <!-- Feito na hora: montado quando o pedido entra. Não disputa
+                       fornada, então não tem fila — e vale dizer, porque é bom. -->
+                  <UiBadge v-if="line.is_made_to_order && line.made_to_order_label" variant="outline" class="ml-1 align-middle">
+                    {{ line.made_to_order_label }}
+                  </UiBadge>
                 </li>
               </ul>
 
