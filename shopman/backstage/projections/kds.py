@@ -22,7 +22,7 @@ from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
 from shopman.shop.services.order_helpers import get_fulfillment_type
-from shopman.shop.services.pos import display_tab_ref
+from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
 from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS
 
@@ -323,15 +323,25 @@ def _public_comanda_code(session) -> str:
     """A privacy-safe public code for a pre-commit POS comanda.
 
     The pickup board is a PUBLIC screen, so it must never leak a named tab
-    (``tab_display`` / ``tab_ref`` can be a customer name like "João"). A purely
-    numeric comanda shows its unpadded number ("1012"); anything else (a name)
-    falls back to a short, stable, non-identifying code derived from the session
-    key — deterministic so it stays put across the board's 10s refresh.
+    (``tab_display`` / ``tab_ref`` can be a customer name like "João"). A comanda
+    that has the shape of a NUMBER OF THIS HOUSE shows its unpadded number
+    ("1012"); anything else falls back to a short, stable, non-identifying code
+    derived from the session key — deterministic so it stays put across the
+    board's 10s refresh.
+
+    ⚠️ A pergunta é ``is_numeric_tab_ref``, e NÃO ``isdigit()``. Um telefone tem
+    onze dígitos e é ``isdigit()``; o balcão abre comanda com o telefone do cliente
+    o tempo todo (é o identificador que ele já pediu para o WhatsApp), e a
+    normalização só faz ``zfill`` em numéricos de até oito — acima disso guarda o
+    valor cru. Somando: o telefone ia inteiro para a TV do salão, em fonte de 7rem,
+    por uma função cujo docstring promete proteger contra exatamente isso.
+
+    O assert-negativo de PII que existia não pegava: ele testa nome, não dígito.
     """
     data = session.data or {}
     for candidate in (data.get("tab_ref"), session.handle_ref):
         text = str(candidate or "").strip()
-        if text.isdigit():
+        if is_numeric_tab_ref(text):
             return display_tab_ref(text)
     digest = hashlib.blake2s(str(session.session_key).encode("utf-8"), digest_size=2).hexdigest().upper()
     return f"#{digest}"

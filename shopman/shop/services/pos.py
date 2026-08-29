@@ -129,6 +129,24 @@ class PosUnfireResult:
     fired_lines: tuple[str, ...]
 
 
+#: Quantos dígitos uma comanda NUMÉRICA tem, no máximo. Acima disso o valor não é
+#: número de comanda — é outra coisa que por acaso só tem dígitos (telefone, CPF).
+#: A distinção não é cosmética: o painel público de retirada decide o que pode ir
+#: para a TV a partir dela (ver `_public_comanda_code`).
+MAX_NUMERIC_TAB_REF_DIGITS = 8
+
+
+def is_numeric_tab_ref(value: str) -> bool:
+    """O valor tem a cara de uma comanda numérica desta casa?
+
+    ``isdigit()`` sozinho NÃO responde isso, e a diferença vazou PII: um telefone
+    de 11 dígitos é `isdigit()` e não é comanda. Quem precisa saber "isto é um
+    número de comanda" pergunta aqui, e não ao `str`.
+    """
+    text = str(value or "").strip()
+    return text.isdigit() and len(text) <= MAX_NUMERIC_TAB_REF_DIGITS
+
+
 def normalize_tab_ref(value: str) -> str:
     """Normalize a POS tab reference.
 
@@ -137,8 +155,8 @@ def normalize_tab_ref(value: str) -> str:
     stable lookup across surfaces.
     """
     raw = _clean_tab_ref(value)
-    if raw.isdigit() and len(raw) <= 8:
-        return raw.zfill(8)
+    if is_numeric_tab_ref(raw):
+        return raw.zfill(MAX_NUMERIC_TAB_REF_DIGITS)
     return raw.upper()
 
 
