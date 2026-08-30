@@ -60,15 +60,35 @@ export function useProductionBoard() {
     }
   }
 
+  // ⚠️ `expected_rev` é a revisão que ESTE quadro leu, e é o que impede duas bancadas
+  // de se sobrescreverem. A bancada A ajusta para 40 enquanto a B ajusta para 25 sobre
+  // um quadro de sessenta segundos de idade: sem o número, o último POST vence, sem 409
+  // e sem aviso. Com ele, a segunda recebe "a fornada mudou em outra tela".
+  //
+  // Ausente quando o card não é conhecido (planejar uma linha que ainda não tem
+  // fornada): não há revisão anterior para comparar, e mandar zero afirmaria uma coisa
+  // falsa. O servidor lê ausência como "não confira".
   function plan(
     key: string,
     payload: { recipe_id: number; quantity: string; target_date: string; position_ref?: string; source?: string; force?: boolean },
+    expectedRev?: number,
   ): Promise<BoardActResult> {
-    return post(key, "/api/v1/backstage/production/plan/", payload);
+    return post(key, "/api/v1/backstage/production/plan/", {
+      ...payload,
+      ...(expectedRev === undefined ? {} : { expected_rev: expectedRev }),
+    });
   }
 
-  function start(key: string, woPk: number, quantity: string): Promise<BoardActResult> {
-    return post(key, `/api/v1/backstage/production/${woPk}/start/`, { quantity });
+  function start(
+    key: string,
+    woPk: number,
+    quantity: string,
+    expectedRev?: number,
+  ): Promise<BoardActResult> {
+    return post(key, `/api/v1/backstage/production/${woPk}/start/`, {
+      quantity,
+      ...(expectedRev === undefined ? {} : { expected_rev: expectedRev }),
+    });
   }
 
   return { board, rows, counts, dateDisplay, selectedDate, pending, error, refresh, isBusy, plan, start };

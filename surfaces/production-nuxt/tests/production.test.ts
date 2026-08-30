@@ -8,6 +8,7 @@ import {
   isoForOffset,
   matchesRowQuery,
   parseShortage,
+  plannedWorkOrder,
   resolveDayRollover,
   rowCommitments,
   rowCommittedUnits,
@@ -25,6 +26,7 @@ import type {
 const wo = (over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjection => ({
   pk: 10,
   ref: "WO-010",
+  rev: 0,
   recipe_pk: 5,
   recipe_ref: "pao",
   recipe_name: "Pão",
@@ -145,6 +147,15 @@ describe("grid helpers", () => {
   it("startableWorkOrder returns the first planned WO or null", () => {
     expect(startableWorkOrder(row())).toBeNull();
     expect(startableWorkOrder(row({ planned_orders: [wo()] }))?.pk).toBe(10);
+  });
+
+  it("plannedWorkOrder is the same batch, read as 'the one an adjust would hit'", () => {
+    // Mesmo objeto, nome diferente: é dele que sai o `rev` que o ajuste devolve ao
+    // servidor. Uma implementação só evita que as duas leituras divirjam.
+    const r = row({ planned_orders: [wo({ rev: 7 })] });
+    expect(plannedWorkOrder(r)).toBe(startableWorkOrder(r));
+    expect(plannedWorkOrder(r)?.rev).toBe(7);
+    expect(plannedWorkOrder(row())).toBeNull();
   });
 });
 

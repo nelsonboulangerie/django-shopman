@@ -1762,6 +1762,28 @@ class OrderCommentView(_OrderActionBase):
 # ── Production action endpoints ───────────────────────────────────────
 
 
+def _expected_rev(request) -> int | None:
+    """A revisão que a TELA leu, quando ela a informa.
+
+    ⚠️ `None` NÃO é zero: ele significa "não confira", que é o contrato documentado do
+    craftsman para uso standalone (last-write-wins). Zero é uma revisão legítima — a de
+    uma fornada recém-criada —, e confundir os dois faria toda mutação sem `rev` recusar
+    exatamente as fornadas novas.
+
+    Valor ilegível também vira `None` em vez de 400: o `rev` é reforço de concorrência,
+    e derrubar o gesto do forneiro por causa de um campo que a tela dele talvez nem
+    mande seria trocar uma corrida rara por uma parede diária.
+    """
+    bruto = (request.data if hasattr(request, "data") else {}) or {}
+    valor = bruto.get("expected_rev", bruto.get("rev"))
+    if valor is None or isinstance(valor, bool):
+        return None
+    try:
+        return int(valor)
+    except (TypeError, ValueError):
+        return None
+
+
 class _ProductionActionBase(APIView):
     """Gate compartilhado das ações de produção — superfície E coluna.
 
@@ -1838,6 +1860,7 @@ class WorkOrderPlanView(_ProductionActionBase):
                 # que o ligou. Ver `shopman/backstage/parsing.py`.
                 force=as_bool(request.data, "force", default=False),
                 source_ref="formula:suggestion" if source == "suggested" else "production_matrix",
+                expected_rev=_expected_rev(request),
             )
         except ProductionError as exc:
             shortage = _production_error_response(exc)
@@ -1874,6 +1897,7 @@ class WorkOrderStartView(_ProductionActionBase):
                 operator_ref=str(request.data.get("operator_ref") or "").strip(),
                 note=str(request.data.get("note") or "").strip(),
                 actor=_production_actor(request),
+                expected_rev=_expected_rev(request),
             )
         except ProductionError as exc:
             conflict = _production_error_response(exc)
@@ -1913,6 +1937,7 @@ class WorkOrderFinishView(_ProductionActionBase):
                 # quality_defect_ref, loss}]. Quando presente, `quality` é
                 # ignorado; grupo com loss=true é perda declarada com motivo.
                 partition=partition if isinstance(partition, list) else None,
+                expected_rev=_expected_rev(request),
             )
         except ProductionError as exc:
             shortage = _production_error_response(exc)
@@ -2002,7 +2027,10 @@ class WorkOrderVoidView(_ProductionActionBase):
         reason = (request.data.get("reason") or "Estornado pelo operador").strip()
         try:
             ref = production_service.apply_void(
-                wo_id, actor=_production_actor(request), reason=reason,
+                wo_id,
+                actor=_production_actor(request),
+                reason=reason,
+                expected_rev=_expected_rev(request),
             )
         except ProductionError as exc:
             conflict = _production_error_response(exc)

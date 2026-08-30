@@ -107,13 +107,21 @@ def apply_void(
     *,
     actor: str,
     reason: str = "Estornado via produção rápida",
+    expected_rev: int | None = None,
 ) -> str:
-    """Void a work order from the operator surface."""
+    """Void a work order from the operator surface.
+
+    ⚠️ `expected_rev` é a revisão que a TELA leu. Sem ela, duas bancadas ajustando a
+    mesma fornada sobre um quadro de sessenta segundos de idade fazem o último POST
+    vencer — sem 409 e sem aviso. O core já sabia fazer o compare-and-swap e a tradução
+    para 409 já existia (`STALE_REVISION`); faltava o número atravessar a borda.
+    """
     try:
         return production_core.void_work_order(
             work_order_id,
             actor=actor,
             reason=reason,
+            expected_rev=expected_rev,
         )
     except Exception as exc:
         translated = _operator_error(exc)
@@ -169,8 +177,13 @@ def apply_planned(
     actor: str,
     force: bool = False,
     source_ref: str = "production_matrix",
+    expected_rev: int | None = None,
 ):
-    """Create or adjust the planned work order represented by a matrix cell."""
+    """Create or adjust the planned work order represented by a matrix cell.
+
+    ``expected_rev``: ver ``apply_void``. Alcança só o AJUSTE — criar não tem revisão
+    anterior para comparar.
+    """
     _check_linked_order_coverage(
         recipe_id=recipe_id,
         quantity=quantity,
@@ -189,6 +202,7 @@ def apply_planned(
             reason=reason,
             actor=actor,
             source_ref=source_ref,
+            expected_rev=expected_rev,
         )
     except Exception as exc:
         translated = _operator_error(exc)
@@ -203,12 +217,17 @@ def apply_start(
     operator_ref: str = "",
     note: str = "",
     actor: str,
+    expected_rev: int | None = None,
 ):
-    """Start a planned work order from the operator surface."""
+    """Start a planned work order from the operator surface.
+
+    ``expected_rev``: ver ``apply_void``.
+    """
     try:
         return production_core.start_work_order(
             work_order_id=work_order_id,
             quantity=quantity,
+            expected_rev=expected_rev,
             position_id=position_id,
             operator_ref=operator_ref,
             note=note,
@@ -391,8 +410,13 @@ def apply_finish(
     force: bool = False,
     quality: str = "",
     partition=None,
+    expected_rev: int | None = None,
 ):
     """Finish a work order from the operator surface — escalar ou particionado.
+
+    ``expected_rev``: ver ``apply_void``. Convive com a chave de idempotência sem
+    conflito — uma responde "é o MESMO gesto de novo?", a outra "o quadro que você leu
+    ainda vale?". A primeira devolve o resultado anterior; a segunda recusa.
 
     ``set_quality``/``meta["quality"]`` morreram (ADR-017 §3): a qualidade
     agora viaja nas LINHAS de OUTPUT e é derivada de lá por quem precisa
@@ -422,6 +446,7 @@ def apply_finish(
             idempotency_key=_finish_idempotency_key(
                 work_order, finished_items, wasted_items
             ),
+            expected_rev=expected_rev,
         )
     except Exception as exc:
         if _looks_like_stock_error(exc):

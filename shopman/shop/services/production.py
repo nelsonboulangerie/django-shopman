@@ -168,13 +168,22 @@ def void_work_order(
     *,
     actor: str,
     reason: str = "Estornado via produção rápida",
+    expected_rev: int | None = None,
 ) -> str:
-    """Void a work order and return its reference."""
+    """Void a work order and return its reference.
+
+    ⚠️ ``expected_rev`` é a revisão que a TELA leu. O core faz compare-and-swap com ela
+    (`_check_rev`) e levanta ``StaleRevision`` se o quadro envelheceu. ``None`` mantém o
+    last-write-wins, que é o contrato documentado do craftsman para uso standalone —
+    quem quer a garantia manda o número.
+    """
     from shopman.craftsman.models import WorkOrder
     from shopman.craftsman.services.execution import CraftExecution
 
     work_order = WorkOrder.objects.get(pk=work_order_id)
-    CraftExecution.void(order=work_order, reason=reason, actor=actor)
+    CraftExecution.void(
+        order=work_order, reason=reason, actor=actor, expected_rev=expected_rev
+    )
     return work_order.ref
 
 
@@ -215,8 +224,14 @@ def set_planned_quantity(
     reason: str = "",
     actor: str,
     source_ref: str = "production_matrix",
+    expected_rev: int | None = None,
 ) -> tuple[str, str, Decimal, str]:
-    """Create, adjust, or consolidate the planned WorkOrder behind a matrix cell."""
+    """Create, adjust, or consolidate the planned WorkOrder behind a matrix cell.
+
+    ``expected_rev``: ver ``void_work_order``. Só alcança o AJUSTE de uma fornada que
+    já existe — criar não tem revisão anterior para comparar, e consolidar duplicatas é
+    faxina do próprio serviço, não gesto de tela.
+    """
     from shopman.craftsman.models import WorkOrder
     from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.scheduling import CraftPlanning
@@ -282,6 +297,7 @@ def set_planned_quantity(
             quantity=qty,
             reason=reason or "Planejamento informado na matriz",
             actor=actor,
+            expected_rev=expected_rev,
         )
         adjusted = True
 
@@ -305,8 +321,12 @@ def start_work_order(
     operator_ref: str = "",
     note: str = "",
     actor: str,
+    expected_rev: int | None = None,
 ) -> tuple[str, Decimal]:
-    """Mark a planned WorkOrder as started."""
+    """Mark a planned WorkOrder as started.
+
+    ``expected_rev``: ver ``void_work_order``.
+    """
     from shopman.craftsman.models import WorkOrder
     from shopman.craftsman.services.scheduling import CraftPlanning
 
@@ -321,6 +341,7 @@ def start_work_order(
         operator_ref=operator,
         note=str(note or "").strip(),
         actor=actor,
+        expected_rev=expected_rev,
     )
     return work_order.ref, qty
 
@@ -333,8 +354,13 @@ def finish_work_order(
     finished_items: list[dict] | None = None,
     wasted_items: list[dict] | None = None,
     idempotency_key: str | None = None,
+    expected_rev: int | None = None,
 ) -> tuple[str, Decimal]:
     """Finish an existing WorkOrder — escalar ou particionado (ADR-017).
+
+    ``expected_rev``: ver ``void_work_order``. Convive com ``idempotency_key`` sem
+    conflito — uma responde "é o MESMO gesto de novo?", a outra "o quadro que você
+    leu ainda vale?". A primeira devolve o resultado anterior; a segunda recusa.
 
     O escalar (``quantity``) continua válido e grava uma linha sem grau. Com
     ``finished_items``, cada grupo vira uma linha de OUTPUT carregando
@@ -357,6 +383,7 @@ def finish_work_order(
             wasted=wasted_items or None,
             actor=actor,
             idempotency_key=idempotency_key,
+            expected_rev=expected_rev,
         )
         total = sum(Decimal(str(item["quantity"])) for item in finished_items)
     else:
@@ -366,6 +393,7 @@ def finish_work_order(
             finished=total,
             actor=actor,
             idempotency_key=idempotency_key,
+            expected_rev=expected_rev,
         )
 
     _ensure_stock_ledger_closed(work_order)

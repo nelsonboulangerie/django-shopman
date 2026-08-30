@@ -19,6 +19,7 @@ import {
   matchesRowQuery,
   rowCommitments,
   rowCommittedUnits,
+  plannedWorkOrder,
   startableWorkOrder,
   timerChip,
   timerTone,
@@ -243,7 +244,10 @@ async function confirmPlan() {
       row.suggestion && planQty.value.trim() === row.suggestion.quantity
         ? "suggested"
         : undefined,
-  });
+  },
+  // A revisão da fornada que esta linha JÁ tem, quando tem. Planejar uma linha vazia
+  // não afirma revisão nenhuma — não há o que comparar, e mandar zero mentiria.
+  plannedWorkOrder(row)?.rev);
   if (res.ok) {
     const label =
       planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
@@ -264,7 +268,7 @@ async function confirmStart() {
   const row = startRow.value;
   const wo = row && startableWorkOrder(row);
   if (!row || !wo || !startQty.value.trim()) return;
-  const res = await start(row.output_sku, wo.pk, startQty.value.trim());
+  const res = await start(row.output_sku, wo.pk, startQty.value.trim(), wo.rev);
   if (res.ok) {
     startRow.value = null;
     kds.refresh();
