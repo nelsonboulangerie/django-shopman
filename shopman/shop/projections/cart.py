@@ -386,6 +386,22 @@ def _build_line(
         raw_avail and raw_avail.get("availability_policy") == "demand_ok"
     )
     is_awaiting, is_ready, deadline_iso, planned_for_date = _planned_hold(session_key, sku)
+    # ⚠️ Mas o HOLD tem a última palavra sobre ESTA linha, e as duas coisas não
+    # eram exclusivas "por construção" como se dizia aqui.
+    #
+    # ``demand_ok`` é política de DISPONIBILIDADE ("aceita demanda: vende sem
+    # estoque"), não uma afirmação sobre a natureza do produto. Na casa ela cai
+    # sobre café e sanduíche montado, que de fato são feitos na hora — mas nada
+    # impede marcar um PÃO como ``demand_ok``, e aí, com fornada planejada e
+    # sem estoque hoje, a reserva ancora no quant do lote: fila de verdade.
+    #
+    # A linha então carregava os dois selos ao mesmo tempo, dizendo "preparado
+    # na hora" sobre um pão que só existe amanhã. Entre os dois, quem promete
+    # QUANDO ganha: a espera pela fornada é o compromisso; "na hora" seria a
+    # promessa errada. Resolvido aqui, no backend, e não em cada superfície —
+    # a loja Nuxt tem a mesma guarda, e guarda em dois lugares diverge.
+    if is_awaiting or is_ready:
+        is_made_to_order = False
     is_available, available_qty = _line_availability(
         sku, qty, raw_avail, own_holds,
     )

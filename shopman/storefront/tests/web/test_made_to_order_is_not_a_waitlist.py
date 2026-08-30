@@ -157,6 +157,65 @@ class TestTheCartLine:
         assert cart.has_awaiting_confirmation_items is False
         assert line.is_made_to_order is True
 
+    def test_a_demand_ok_item_waiting_for_a_batch_drops_the_made_to_order_badge(
+        self, client, channel,
+    ):
+        """⚠️ Os dois selos NÃO eram exclusivos "por construção" — eu conferi.
+
+        ``demand_ok`` é política de DISPONIBILIDADE ("aceita demanda: vende sem
+        estoque"), não uma afirmação sobre a natureza do produto. Na casa ela cai
+        sobre café e sanduíche montado, que de fato são feitos na hora — mas nada
+        impede marcar um PÃO como ``demand_ok``. Com fornada planejada e sem
+        estoque hoje, a reserva ancora no quant do lote (fila de verdade) e a
+        linha passava a carregar "Preparado na hora" E "Lista de espera": um pão
+        que só existe amanhã, anunciado como feito na hora.
+
+        Entre os dois, quem promete QUANDO ganha.
+        """
+        from datetime import date, timedelta
+        from decimal import Decimal as D
+
+        from shopman.stockman.models import Position, Quant
+
+        from shopman.storefront.tests.web.conftest import _ensure_listing_item
+
+        pao = Product.objects.create(
+            sku="PAO-DEMAND-OK",
+            name="Pão de forma",
+            base_price_q=1200,
+            is_published=True,
+            is_sellable=True,
+            availability_policy=AvailabilityPolicy.DEMAND_OK,
+        )
+        _ensure_listing_item(channel, pao, price_q=1200)
+
+        position, _ = Position.objects.get_or_create(
+            ref="producao", defaults={"name": "Produção"},
+        )
+        Quant.objects.create(
+            sku=pao.sku,
+            position=position,
+            target_date=date.today() + timedelta(days=1),
+            _quantity=D("20"),
+        )
+        channel.config = {
+            **(channel.config or {}),
+            "waitlist": {"enabled": True, "horizon_days": 2},
+        }
+        channel.save(update_fields=["config"])
+
+        _add(client, pao.sku)
+
+        cart = build_cart(request=_request_wearing(client), channel_ref=STOREFRONT_CHANNEL_REF)
+        line = next(item for item in cart.items if item.sku == pao.sku)
+
+        assert line.is_awaiting_confirmation is True, (
+            "pão com fornada planejada e sem estoque hoje É fila — a política de "
+            "disponibilidade não muda isso"
+        )
+        assert line.is_made_to_order is False
+        assert line.made_to_order_label == ""
+
     def test_a_shelf_item_is_not_labelled_made_to_order(self, client, channel, product):
         """A contraprova: pão de prateleira não ganha o selo de preparado na hora."""
         from shopman.storefront.tests.web.conftest import (
