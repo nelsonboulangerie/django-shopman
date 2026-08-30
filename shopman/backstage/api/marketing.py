@@ -35,6 +35,8 @@ import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import ProtectedError
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -186,6 +188,19 @@ class AnnouncementApproveView(_CampaignBase):
         })
 
 
+# ⚠️ Limite por USUÁRIO, não por IP: o gestor e o balconista saem pelo mesmo IP da
+# padaria, e um bucket de IP puniria os dois pelo gesto de um. O de IP fica junto como
+# rede contra script, no mesmo par que o login de operador já usa.
+def _test_send_user_key(group, request):
+    return str(getattr(request.user, "pk", "") or "anon")
+
+
+@method_decorator(
+    ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"
+)
+@method_decorator(
+    ratelimit(key=_test_send_user_key, rate="5/m", method="POST", block=False), name="dispatch"
+)
 class WhatsAppTestSendView(_CampaignBase):
     """POST campaign/whatsapp-template/test/ → manda UM teste, para UM número.
 
@@ -199,13 +214,20 @@ class WhatsAppTestSendView(_CampaignBase):
     """
 
     def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitos testes seguidos. Espere um minuto — o teste manda "
+                    "mensagem de verdade, e o número do outro lado sente.",
+                },
+                status=429,
+            )
         payload = request.data if isinstance(request.data, dict) else {}
         try:
             outcome = campaign_service.send_test(
                 str(payload.get("recipient") or ""),
                 sku=str(payload.get("sku") or ""),
                 name=str(payload.get("name") or ""),
-                body=str(payload.get("body") or ""),
             )
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)

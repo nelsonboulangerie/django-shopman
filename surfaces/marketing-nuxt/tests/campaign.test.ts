@@ -11,6 +11,7 @@ import {
   announcementOutcome,
   approvalBody,
   approvalMessage,
+  mergeAudienceRules,
   resultLabel,
   resultTone,
   shortDateTime,
@@ -301,6 +302,54 @@ describe("approvalBody", () => {
       body: "Saiu do forno",
       publish_at: "",
       publish_now: true,
+    });
+  });
+});
+
+describe("mergeAudienceRules", () => {
+  it("keeps the keys the form does not own", () => {
+    // ⚠️ O gestor abria "Editar" numa campanha configurada no Admin, mudava só o nome
+    // e salvava: o PATCH sobrescreve o JSON inteiro e dez chaves sumiam.
+    const original = {
+      favorites: false,
+      match: "all",
+      tags: ["vip", "padaria"],
+      rfm_segment: "champions",
+      min_orders: 3,
+    };
+    const resultado = mergeAudienceRules(original, { favorites: true, alerts: false });
+
+    expect(resultado.match).toBe("all");
+    expect(resultado.tags).toEqual(["vip", "padaria"]);
+    expect(resultado.rfm_segment).toBe("champions");
+    expect(resultado.min_orders).toBe(3);
+  });
+
+  it("lets the form win on the keys it owns", () => {
+    const resultado = mergeAudienceRules({ favorites: false }, { favorites: true, alerts: true });
+    expect(resultado.favorites).toBe(true);
+    expect(resultado.alerts).toBe(true);
+  });
+
+  it("removes an owned key the form turned off", () => {
+    // "0 dias" e ausência dizem a mesma coisa ao serviço, mas ausência é o que o
+    // resto do código espera ver — e preservar o valor antigo seria não desligar.
+    const resultado = mergeAudienceRules(
+      { favorites: true, bought_within_days: 30, vip_first_minutes: 15 },
+      { favorites: true, alerts: false },
+    );
+    expect("bought_within_days" in resultado).toBe(false);
+    expect("vip_first_minutes" in resultado).toBe(false);
+  });
+
+  it("works on a campaign that had no rules yet", () => {
+    expect(mergeAudienceRules(null, { favorites: true, alerts: false })).toEqual({
+      favorites: true,
+      alerts: false,
+    });
+    expect(mergeAudienceRules(undefined, { favorites: false, alerts: true })).toEqual({
+      favorites: false,
+      alerts: true,
     });
   });
 });
