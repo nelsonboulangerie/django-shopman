@@ -389,6 +389,7 @@ class ProductAdmin(_ProductImportExportBase):
                     "production_cycle_hours",
                     "is_batch_produced",
                     "allows_next_day_sale",
+                    "made_to_order",
                 ),
                 "classes": ("tab",),
             },

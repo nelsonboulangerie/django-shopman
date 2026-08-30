@@ -866,7 +866,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "image_url", "primary_collection", "primary_collection_name",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
-        "allows_next_day_sale", "nutrition_facts", "social", "fiscal",
+        "allows_next_day_sale", "made_to_order", "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
         "dietary_auto_filled", "nutrition_auto_filled", "fiscal_profiles",
     }
@@ -972,6 +972,27 @@ def _patch(client, sku, payload):
     return client.patch(
         DETAIL_URL.format(sku=sku), data=payload, content_type="application/json"
     )
+
+
+def test_product_detail_patches_the_made_to_order_promise(client, operator, catalog):
+    """"Preparado na hora" é promessa DECLARADA, e o Gestor precisa poder declará-la.
+
+    Ela vive em ``Product.metadata`` (Core é sagrado: sem campo novo no
+    Offerman) e é o ÚNICO sinal que acende o selo na sacola — antes ele era
+    deduzido de ``availability_policy``, que é conferência de estoque. Sem esta
+    porta, a promessa só existiria via Admin/seed.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"made_to_order": True})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["made_to_order"] is True
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["made_to_order"] is True
+
+    # E a política de estoque não é tocada de raspão: os eixos são independentes.
+    assert resp.json()["product"]["availability_policy"] == catalog["pao"].availability_policy
 
 
 def test_product_detail_patch_labelling(client, operator, catalog):

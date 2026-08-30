@@ -200,11 +200,11 @@ export interface CartItemProjection {
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
-  // Preparado na hora: café, Jambon-Beurre, croque. Nasce da política `demand_ok`
-  // ("aceita demanda"), mas o backend tira o selo quando a linha está esperando
-  // uma fornada — política de disponibilidade não é natureza do produto, e um
-  // pão marcado `demand_ok` com lote planejado é fila, não feito na hora. Por
-  // isso nunca vem junto de is_awaiting_confirmation.
+  // Preparado na hora: PROMESSA da casa sobre o produto (finalizado no momento
+  // de servir), declarada em `Product.metadata.made_to_order`. Eixo próprio,
+  // independente de is_awaiting_confirmation: um croque que espera a fornada de
+  // amanhã é as duas coisas — o selo diz o que ele É, a fila diz quando vem.
+  // ⚠️ NÃO deduzir de availability_policy: `demand_ok` é conferência de estoque.
   is_made_to_order: boolean
   made_to_order_label: string
   is_awaiting_confirmation: boolean

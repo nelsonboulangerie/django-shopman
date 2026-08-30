@@ -1,23 +1,35 @@
-"""Café e Jambon-Beurre não entram em fila de espera — eles são FEITOS NA HORA.
+"""Café e croque não entram em fila de espera — e o selo deles não é dedução.
 
 ⚠️ Relato de campo que originou este arquivo: a sacola mostrava "Lista de espera"
 para um Jambon-Beurre e para cafés, a revisão do pedido dizia "avisamos quando
 ficarem prontos", e o acompanhamento abria o painel de fila. Três telas mentindo,
-e uma causa só.
+e uma causa só — o carimbo do hold.
 
-A causa era o carimbo do hold. Duas reservas SEM PRAZO existem no sistema:
+Duas reservas SEM PRAZO existem no sistema, e elas não são a mesma coisa:
 
-  • fornada planejada (``quant.target_date``) — o pão ainda não existe. É fila.
-  • demanda (``quant is None``, política ``demand_ok``) — montado quando o pedido
-    entra. Não há lote a esperar, logo não há fila em que entrar.
+  • fornada planejada (``quant`` datado) — o pão ainda não existe. É fila.
+  • demanda (``quant is None``, política ``demand_ok``) — a casa aprova a venda
+    sem saldo. Não há lote a esperar, logo não há fila em que entrar.
 
-As duas ficam sem TTL, e por isso PARECIAM iguais — mas ``metadata.planned``
-carimbava as duas, e todo mundo que lia esse carimbo depois herdava a confusão.
-O próprio adapter já sabia distinguir (``is_planned`` saía ``False`` para a
-demanda) e jogava a distinção fora na linha seguinte.
+``metadata.planned`` carimbava as duas, e todo mundo que lia esse carimbo depois
+herdava a confusão. Hoje cada uma tem a sua marca, e a pergunta "isto é fila?"
+se responde no DADO (``waitlist.WAITLIST_HOLD_FILTER``: carimbo E lote), o que
+alcança também os holds indefinidos gravados antes da separação.
 
-Agora cada uma tem a sua marca: ``planned`` para a fornada, ``on_demand`` para a
-demanda. Estes testes existem para que ninguém volte a fundi-las.
+⚠️⚠️ **E o selo saiu de cima da política.** "Preparado na hora" era deduzido de
+``availability_policy == "demand_ok"`` — que é conferência de ESTOQUE, não uma
+afirmação sobre o produto. No cardápio da casa as duas coincidem (café, salgados
+de vitrine), mas coincidência não é contrato: um PÃO marcado ``demand_ok`` por
+razão de estoque ganhava o selo, e apertar o croque para ``stock_only`` (o
+natural quando se passa a controlar o estoque dele) tirava o selo, calado.
+
+Agora são dois eixos com duas fontes, e eles não competem:
+
+  • **o que o item É** → ``Product.metadata["made_to_order"]``, declarado pela casa.
+  • **quando ele vem** → o hold desta linha.
+
+Um croque que espera a fornada de amanhã é as duas coisas ao mesmo tempo, e a
+sacola diz as duas. Estes testes existem para que ninguém volte a fundi-las.
 """
 from __future__ import annotations
 
@@ -35,7 +47,14 @@ pytestmark = pytest.mark.django_db
 
 @pytest.fixture
 def cafe(db):
-    """Café expresso: `demand_ok`, como no catálogo real da casa."""
+    """Café expresso, como no catálogo real da casa.
+
+    Duas coisas, de propósito, e elas são independentes: ``demand_ok`` é a
+    política de CONFERÊNCIA DE ESTOQUE (vende mesmo sem saldo) e
+    ``made_to_order`` é a PROMESSA da casa sobre o produto. No café as duas
+    coincidem — e é justamente por coincidirem no catálogo que o selo pôde
+    viver anos pendurado na política errada.
+    """
     return Product.objects.create(
         sku="CAFE-EXPRESSO",
         name="Café expresso",
@@ -43,6 +62,7 @@ def cafe(db):
         is_published=True,
         is_sellable=True,
         availability_policy=AvailabilityPolicy.DEMAND_OK,
+        metadata={"made_to_order": True},
     )
 
 
@@ -157,20 +177,17 @@ class TestTheCartLine:
         assert cart.has_awaiting_confirmation_items is False
         assert line.is_made_to_order is True
 
-    def test_a_demand_ok_item_waiting_for_a_batch_drops_the_made_to_order_badge(
-        self, client, channel,
-    ):
+    def test_the_badge_and_the_queue_are_independent_axes(self, client, channel):
         """⚠️ Os dois selos NÃO eram exclusivos "por construção" — eu conferi.
 
-        ``demand_ok`` é política de DISPONIBILIDADE ("aceita demanda: vende sem
-        estoque"), não uma afirmação sobre a natureza do produto. Na casa ela cai
-        sobre café e sanduíche montado, que de fato são feitos na hora — mas nada
-        impede marcar um PÃO como ``demand_ok``. Com fornada planejada e sem
-        estoque hoje, a reserva ancora no quant do lote (fila de verdade) e a
-        linha passava a carregar "Preparado na hora" E "Lista de espera": um pão
-        que só existe amanhã, anunciado como feito na hora.
+        Enquanto o selo saía de ``availability_policy``, um PÃO marcado
+        ``demand_ok`` (política de estoque: "vende sem saldo") com fornada
+        planejada carregava "Preparado na hora" E "Lista de espera" — a segunda
+        certa, a primeira uma promessa que ninguém tinha feito.
 
-        Entre os dois, quem promete QUANDO ganha.
+        Separados, cada eixo responde à sua pergunta: a casa não declarou este
+        pão como preparado na hora, então ele não ganha selo; e o hold ancorou
+        no lote planejado, então ele É fila.
         """
         from datetime import date, timedelta
         from decimal import Decimal as D
@@ -186,6 +203,8 @@ class TestTheCartLine:
             is_published=True,
             is_sellable=True,
             availability_policy=AvailabilityPolicy.DEMAND_OK,
+            # A casa NÃO declarou: pão não é preparado na hora.
+            metadata={},
         )
         _ensure_listing_item(channel, pao, price_q=1200)
 
@@ -213,8 +232,96 @@ class TestTheCartLine:
             "pão com fornada planejada e sem estoque hoje É fila — a política de "
             "disponibilidade não muda isso"
         )
-        assert line.is_made_to_order is False
+        assert line.is_made_to_order is False, (
+            "o selo é declarado pela casa, não deduzido da política de estoque"
+        )
         assert line.made_to_order_label == ""
+
+    def test_the_showcase_croque_keeps_the_badge(self, client, channel):
+        """O caso que o Pablo levantou: lote pré-preparado na vitrine.
+
+        Croque sai de uma fornada realizada (``Quant.target_date=None``, com
+        Batch) e ainda assim é gratinado no momento de servir. O selo é sobre o
+        ACABAMENTO, e por isso vale mesmo vindo da vitrine. Não é fila: o lote
+        já saiu.
+        """
+        from datetime import date
+        from decimal import Decimal as D
+
+        from shopman.stockman.models import Batch, Position, PositionKind, Quant
+
+        from shopman.storefront.tests.web.conftest import _ensure_listing_item
+
+        croque = Product.objects.create(
+            sku="CMO",
+            name="Croque Monsieur",
+            base_price_q=2400,
+            is_published=True,
+            is_sellable=True,
+            availability_policy=AvailabilityPolicy.DEMAND_OK,
+            metadata={"made_to_order": True},
+        )
+        _ensure_listing_item(channel, croque, price_q=2400)
+
+        position, _ = Position.objects.get_or_create(
+            ref="vitrine",
+            defaults={"name": "Vitrine", "kind": PositionKind.PHYSICAL, "is_saleable": True},
+        )
+        Batch.objects.create(sku="CMO", ref="CMO-20260830", production_date=date.today())
+        # Fornada JÁ REALIZADA: realize() credita quant físico (target_date=None).
+        Quant.objects.create(
+            sku="CMO",
+            position=position,
+            batch="CMO-20260830",
+            target_date=None,
+            _quantity=D("10"),
+        )
+
+        _add(client, croque.sku)
+
+        cart = build_cart(request=_request_wearing(client), channel_ref=STOREFRONT_CHANNEL_REF)
+        line = next(item for item in cart.items if item.sku == croque.sku)
+
+        assert line.is_made_to_order is True
+        assert line.is_awaiting_confirmation is False, (
+            "lote realizado é estoque físico, não fornada a esperar"
+        )
+
+    def test_the_policy_alone_no_longer_grants_the_badge(self, client, channel):
+        """A contraprova do desacoplamento, no sentido que quebrava calado.
+
+        Apertar o croque para ``stock_only`` (o natural quando se passa a
+        controlar o estoque dele) tirava o selo sem ninguém pedir. Agora a
+        política não tem voto: quem declara é a casa.
+        """
+        from decimal import Decimal as D
+
+        from shopman.stockman.models import Position, PositionKind, Quant
+
+        from shopman.storefront.tests.web.conftest import _ensure_listing_item
+
+        croque = Product.objects.create(
+            sku="QQ",
+            name="Queijo-Quente",
+            base_price_q=2600,
+            is_published=True,
+            is_sellable=True,
+            availability_policy=AvailabilityPolicy.STOCK_ONLY,
+            metadata={"made_to_order": True},
+        )
+        _ensure_listing_item(channel, croque, price_q=2600)
+        position, _ = Position.objects.get_or_create(
+            ref="vitrine",
+            defaults={"name": "Vitrine", "kind": PositionKind.PHYSICAL, "is_saleable": True},
+        )
+        Quant.objects.create(sku="QQ", position=position, target_date=None, _quantity=D("5"))
+
+        _add(client, croque.sku)
+
+        cart = build_cart(request=_request_wearing(client), channel_ref=STOREFRONT_CHANNEL_REF)
+        line = next(item for item in cart.items if item.sku == croque.sku)
+
+        assert line.is_made_to_order is True
 
     def test_a_shelf_item_is_not_labelled_made_to_order(self, client, channel, product):
         """A contraprova: pão de prateleira não ganha o selo de preparado na hora."""

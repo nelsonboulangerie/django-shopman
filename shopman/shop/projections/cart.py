@@ -102,9 +102,10 @@ class CartLineProjection:
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
 
-    # Preparado na hora: item de política ``demand_ok`` (café, Jambon-Beurre, croque).
-    # Não sai de fornada, então nunca entra em fila — e merece dizer o que É, que
-    # é bom: preparado no momento do pedido, não tirado da prateleira.
+    # Preparado na hora: promessa DECLARADA da casa
+    # (``Product.metadata["made_to_order"]``) — finalizado no momento de servir.
+    # Eixo próprio, independente da fila: o croque que espera a fornada de amanhã
+    # carrega os dois (o selo diz o que É, a fila diz quando vem).
     is_made_to_order: bool = False
 
 
@@ -234,6 +235,7 @@ def build_cart(
 
     skus = [item.get("sku", "") for item in raw_items]
     names_by_sku = _names_by_sku(skus)
+    made_to_order = _made_to_order_skus(skus)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
 
     pricing = session.pricing or {}
@@ -241,7 +243,10 @@ def build_cart(
     discount_items = {d["sku"]: d for d in discount_data.get("items", [])}
 
     lines = tuple(
-        _build_line(item, names_by_sku, avail_map, own_holds, discount_items, session_key)
+        _build_line(
+            item, names_by_sku, avail_map, own_holds, discount_items, session_key,
+            made_to_order_skus=made_to_order,
+        )
         for item in raw_items
     )
 
@@ -336,6 +341,29 @@ def _names_by_sku(skus: list[str]) -> dict[str, str]:
     }
 
 
+def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
+    """Quais destes SKUs a casa declara como "Preparado na hora".
+
+    Uma consulta para a sacola inteira (o mesmo padrão de ``_names_by_sku``):
+    perguntar por linha faria N+1 numa leitura que roda a cada mexida na
+    sacola. Degrada para vazio — selo é promessa, e promessa que não se pode
+    confirmar não se faz.
+    """
+    if not skus:
+        return frozenset()
+    try:
+        from shopman.offerman.models import Product
+
+        return frozenset(
+            p.sku
+            for p in Product.objects.filter(sku__in=skus).only("sku", "metadata")
+            if (p.metadata or {}).get("made_to_order")
+        )
+    except Exception:
+        logger.warning("cart.made_to_order lookup failed skus=%s", skus, exc_info=True)
+        return frozenset()
+
+
 def _availability(
     skus: list[str], session_key: str, channel_ref: str,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
@@ -374,34 +402,36 @@ def _build_line(
     own_holds: dict[str, Decimal],
     discount_items: dict[str, dict],
     session_key: str,
+    made_to_order_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
     qty = int(Decimal(str(item.get("qty", 0) or 0)))
     name = item.get("name") or names_by_sku.get(sku) or sku
 
     raw_avail = avail_map.get(sku)
-    # A política é a fonte, não o hold: ela vale mesmo antes de existir reserva,
-    # e não depende de o carimbo do hold ter sido escrito corretamente.
-    is_made_to_order = bool(
-        raw_avail and raw_avail.get("availability_policy") == "demand_ok"
-    )
+    # ── Dois eixos, duas fontes. Eles não competem mais. ──
+    #
+    # "Preparado na hora" é PROMESSA DA CASA sobre o produto (finalizado no
+    # momento de servir: gratinado, montado, extraído). Quem declara é o
+    # catálogo — ``Product.metadata["made_to_order"]``.
+    #
+    # "Fila de espera" é ESTADO DA RESERVA desta linha (o hold espera uma
+    # fornada que ainda não saiu). Quem responde é o hold.
+    #
+    # ⚠️ Isto saiu de cima de ``availability_policy == "demand_ok"``, e a troca
+    # não é cosmética. ``demand_ok`` é política de CONFERÊNCIA DE ESTOQUE
+    # ("aprova a venda mesmo sem saldo"). No catálogo da casa ela cai sobre
+    # café e salgados de vitrine, que de fato são finalizados na hora — mas a
+    # coincidência não é contrato, e o acoplamento quebrava nos dois sentidos:
+    # marcar um PÃO como ``demand_ok`` por razão de estoque dava a ele o selo,
+    # e apertar o croque para ``stock_only`` (o natural quando se passa a
+    # controlar o estoque dele) tirava o selo, calado.
+    #
+    # Separados, some a regra de "quem ganha": um croque que espera a fornada
+    # de amanhã é as duas coisas ao mesmo tempo, e a sacola pode dizer as duas
+    # — o que ele É, e quando ele vem.
+    is_made_to_order = sku in made_to_order_skus
     is_awaiting, is_ready, deadline_iso, planned_for_date = _planned_hold(session_key, sku)
-    # ⚠️ Mas o HOLD tem a última palavra sobre ESTA linha, e as duas coisas não
-    # eram exclusivas "por construção" como se dizia aqui.
-    #
-    # ``demand_ok`` é política de DISPONIBILIDADE ("aceita demanda: vende sem
-    # estoque"), não uma afirmação sobre a natureza do produto. Na casa ela cai
-    # sobre café e sanduíche montado, que de fato são feitos na hora — mas nada
-    # impede marcar um PÃO como ``demand_ok``, e aí, com fornada planejada e
-    # sem estoque hoje, a reserva ancora no quant do lote: fila de verdade.
-    #
-    # A linha então carregava os dois selos ao mesmo tempo, dizendo "preparado
-    # na hora" sobre um pão que só existe amanhã. Entre os dois, quem promete
-    # QUANDO ganha: a espera pela fornada é o compromisso; "na hora" seria a
-    # promessa errada. Resolvido aqui, no backend, e não em cada superfície —
-    # a loja Nuxt tem a mesma guarda, e guarda em dois lugares diverge.
-    if is_awaiting or is_ready:
-        is_made_to_order = False
     is_available, available_qty = _line_availability(
         sku, qty, raw_avail, own_holds,
     )

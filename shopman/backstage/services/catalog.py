@@ -422,6 +422,9 @@ def _detail_payload(product) -> dict:
         "serves": str(metadata.get("serves") or ""),
         "approx_dimensions": str(metadata.get("approx_dimensions") or ""),
         "allows_next_day_sale": bool(metadata.get("allows_next_day_sale", False)),
+        # Promessa da casa sobre o produto ("Preparado na hora"), não política de
+        # estoque. Ver docs/reference/data-schemas.md → Product.metadata.
+        "made_to_order": bool(metadata.get("made_to_order", False)),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
@@ -508,6 +511,8 @@ def _apply_labelling(product, data: dict) -> None:
                 metadata.pop(field, None)
     if "allows_next_day_sale" in data:
         metadata["allows_next_day_sale"] = bool(data.get("allows_next_day_sale"))
+    if "made_to_order" in data:
+        metadata["made_to_order"] = bool(data.get("made_to_order"))
 
     # Mesmo sentinel do form do Admin: só congela a derivação quando a rotulagem
     # dietética REALMENTE mudou, para um save qualquer não travar a receita.

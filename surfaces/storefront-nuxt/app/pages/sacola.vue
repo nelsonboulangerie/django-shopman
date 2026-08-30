@@ -237,9 +237,10 @@ useSeoMeta({
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
 
-                  <!-- Preparado na hora: item montado quando o pedido entra (café,
-                       Jambon-Beurre, croque). Não sai de fornada, então nunca tem
-                       história de espera — o selo diz o que É, não o que falta. -->
+                  <!-- Preparado na hora: promessa DECLARADA da casa (finalizado no
+                       momento de servir). Eixo próprio — o croque da vitrine tem o
+                       selo, e o croque que espera a fornada de amanhã tem o selo E
+                       a espera logo abaixo: um diz o que É, a outra diz quando vem. -->
                   <div v-if="line.is_made_to_order && line.made_to_order_label" class="mt-2" data-cart-line-made-to-order>
                     <UiBadge variant="outline">
                       <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
