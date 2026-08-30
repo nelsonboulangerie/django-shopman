@@ -72,6 +72,11 @@ type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_read
 export function lineHoldState (line: HoldFields): CartLineHold | null {
   // Preparado na hora não espera fornada nenhuma: sem reserva de lote, sem prazo a
   // confirmar. A história de espera é do pão; o café tem a sua, e é outra.
+  //
+  // ⚠️ Quem decide entre os dois é o backend, não esta linha: `demand_ok` é
+  // política de DISPONIBILIDADE ("vende sem estoque"), e um produto com ela
+  // pode, sim, acabar esperando uma fornada. Nesse caso o backend já tira o
+  // selo, então este `return null` nunca chega a esconder uma fila de verdade.
   if (line.is_made_to_order) return null
   if (line.is_ready_for_confirmation) {
     return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
@@ -92,10 +97,11 @@ export function reviewWaitlist (
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
-  // Preparado na hora não tem fila: não sai de fornada, então não há lote a esperar.
-  // A guarda é redundante com o backend por desenho — o carimbo do hold já não
-  // marca demanda como planejada —, e é barata perto de repetir na revisão o
-  // "avisamos quando ficar pronto" para um café.
+  // Preparado na hora não tem fila a esperar. A guarda é redundante com o
+  // backend: é lá que a exclusão é DECIDIDA (uma linha esperando fornada perde
+  // o selo, seja qual for a política de disponibilidade do produto — ver
+  // `_build_line`). Aqui ela só evita repetir na revisão o "avisamos quando
+  // ficar pronto" para um café, e nunca decide quem ganha.
   if (line.is_made_to_order) return null
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
