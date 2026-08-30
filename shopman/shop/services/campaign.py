@@ -365,7 +365,7 @@ class TestSend:
 
 
 def send_test(
-    recipient: str, *, sku: str = "", name: str = "", body: str = "", backend: str = "",
+    recipient: str, *, sku: str = "", name: str = "", backend: str = "",
 ) -> TestSend:
     """Mandar UM anúncio de teste para UM destinatário. Sem audiência, sem consentimento.
 
@@ -377,6 +377,18 @@ def send_test(
     **Não é porta dos fundos do consentimento:** um destinatário por chamada, escolhido
     por quem tem a permissão de campanha, e nenhuma resolução de audiência. Serve para o
     gestor testar o próprio número, e é assim que a tela o oferece.
+
+    ⚠️ **O texto não é do chamador.** Havia um parâmetro `body` que virava a mensagem e
+    saía pelo transporte real — texto livre para número livre, sem formato, sem vínculo
+    e sem limite. A tela nunca o mandou: era dívida sem consumidor, e o que ela pedia
+    (ver se o template renderiza) é o oposto de escrever a mensagem à mão.
+
+    ⚠️ **E há um efeito colateral que o número escolhido paga.** Havendo flow
+    configurado, o adapter grava o contexto como CAMPOS PERSONALIZADOS do assinante:
+    testar contra o número de um cliente real sobrescreve nome, produto e link no perfil
+    dele, e a próxima mensagem legítima renderiza com os valores do teste. É por isso
+    que este caminho é limitado por usuário e por IP na borda, e é por isso que a tela
+    diz "seu próprio número".
     """
     from shopman.shop.handlers.campaign import _whatsapp_backend
     from shopman.shop.notifications import notify
@@ -396,9 +408,7 @@ def send_test(
         )
 
     fields = test_fields(sku=sku, name=name)
-    message = (body or "").strip() or (
-        "Teste do Shopman: se você recebeu isto, o template está de pé."
-    )
+    message = "Teste do Shopman: se você recebeu isto, o template está de pé."
     try:
         result = notify(
             event="announcement_published",

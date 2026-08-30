@@ -4,6 +4,7 @@
 // Apresentacional: o pai é dono do fetch e da escrita; aqui mora só o estado do
 // formulário. O vocabulário (gatilhos, plataformas, modelos) vem do backend,
 // nunca hardcoded — gatilho novo no domínio aparece aqui sem deploy de front.
+import { mergeAudienceRules } from "~/presentation/campaign";
 import type { AudienceRules, Campaign, Choice, AnnouncementTemplate } from "~/types/campaign";
 
 const props = defineProps<{
@@ -156,13 +157,17 @@ function submit() {
     // Só mandamos `schedule` quando ele é a causa. Nos gatilhos de evento a chave fica
     // de fora para não apagar um `preferred_hours` configurado no Admin.
     ...(schedules.value ? { schedule: buildSchedule() } : {}),
-    audience_rules: {
+    // ⚠️ POR CIMA das regras que já existiam, nunca do zero: o PATCH sobrescreve o
+    // JSON inteiro, e tags, segmento RFM e `match` vêm do Admin. Ver
+    // `mergeAudienceRules` — perder `match: "all"` troca interseção por união, e o
+    // disparo vai para mais gente do que o gestor pediu.
+    audience_rules: mergeAudienceRules(props.rule?.audience_rules, {
       favorites: favorites.value,
       alerts: alerts.value,
       // Chave ausente quando desligado: o serviço lê "0 dias" como "não usa".
       ...(boughtOn.value ? { bought_within_days: boughtDays.value } : {}),
       ...(vipFirstMinutes.value > 0 ? { vip_first_minutes: vipFirstMinutes.value } : {}),
-    },
+    }),
   });
 }
 </script>

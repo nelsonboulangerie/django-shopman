@@ -250,3 +250,42 @@ export function approvalBody<T extends { publish_at?: string }>(
 ): T & { publish_now?: boolean } {
   return edits.publish_at ? { ...edits } : { ...edits, publish_now: true };
 }
+
+//: As chaves de audiência que ESTE formulário controla. Tudo o que não está aqui foi
+//: configurado em outro lugar (Admin: tags, segmento RFM, `match`) e não é dele para
+//: apagar.
+const AUDIENCE_KEYS_OWNED_BY_THE_FORM = [
+  "favorites",
+  "alerts",
+  "bought_within_days",
+  "vip_first_minutes",
+] as const;
+
+/**
+ * As regras de audiência a enviar: as do formulário POR CIMA das que já existiam.
+ *
+ * ⚠️ O `submit()` montava o objeto DO ZERO com quatro chaves, e o PATCH sobrescreve o
+ * JSON inteiro. O gestor abria "Editar" numa campanha com tags, segmento RFM e
+ * `match: "all"`, mudava só o nome, salvava — e perdia dez chaves.
+ *
+ * ⚠️ E a direção importa: com favoritos, alertas e histórico de compra ligados, perder
+ * `match: "all"` troca INTERSEÇÃO por UNIÃO. O disparo vai para MAIS gente do que o
+ * gestor pediu, sem aviso — o erro que não dá para desfazer depois de a mensagem sair.
+ *
+ * O mesmo cuidado que o `schedule` já tinha ("só mandamos quando ele é a causa, para
+ * não apagar um `preferred_hours` configurado no Admin"), agora aqui.
+ *
+ * Desligar uma chave do formulário a REMOVE, e isso é deliberado: o serviço lê
+ * "0 dias" como "não usa", então mandar zero e omitir dizem a mesma coisa — mas omitir
+ * é o que o resto do código espera ver.
+ */
+export function mergeAudienceRules(
+  original: AudienceRules | null | undefined,
+  doFormulario: AudienceRules,
+): AudienceRules {
+  const merged: AudienceRules = { ...(original ?? {}) };
+  for (const chave of AUDIENCE_KEYS_OWNED_BY_THE_FORM) {
+    delete merged[chave];
+  }
+  return { ...merged, ...doFormulario };
+}

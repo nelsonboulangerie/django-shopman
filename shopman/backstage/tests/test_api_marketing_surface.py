@@ -778,6 +778,19 @@ class TestWhatsAppTestSend:
 
     URL = "/api/v1/backstage/marketing/whatsapp-template/test/"
 
+    @pytest.fixture(autouse=True)
+    def _balde_limpo(self):
+        """O balde do rate-limit é do PROCESSO, não do teste.
+
+        Sem isto, os cinco primeiros testes da classe consomem a cota do gestor e os
+        seguintes recebem 429 — falha que parece do código e é do vizinho.
+        """
+        from django.core.cache import cache
+
+        cache.clear()
+        yield
+        cache.clear()
+
     def test_staff_without_permission_cannot_send(self, client):
         User.objects.create_user(username="caixa2", password="x", is_staff=True)
         client.login(username="caixa2", password="x")
@@ -836,6 +849,59 @@ class TestWhatsAppTestSend:
         assert body["fields"]["customer_name"] == "Pablo"
         assert body["fields"]["product_name"] == "Baguete"
         assert body["fields"]["product_sku"] == "BAGUETE-TEST"
+
+    def test_o_texto_da_mensagem_nao_e_do_chamador(self, client, gestor, monkeypatch):
+        """⚠️ Havia um `body` que virava a mensagem e saía pelo transporte REAL.
+
+        Texto livre para número livre, sem formato, sem vínculo com o operador e sem
+        limite. A tela nunca o mandou — era dívida sem consumidor —, e o que ela pede
+        (ver se o template renderiza) é o oposto de escrever a mensagem à mão.
+        """
+        enviados: list[dict] = []
+        client.force_login(gestor)
+        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+        monkeypatch.setattr(
+            "shopman.shop.notifications.notify",
+            lambda **kw: enviados.append(kw)
+            or type("R", (), {"success": True, "message_id": "m1"})(),
+        )
+
+        response = client.post(
+            self.URL,
+            data={"recipient": "4605528796186498", "body": "COMPRE JÁ, LIQUIDAÇÃO"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert "LIQUIDAÇÃO" not in str(enviados)
+
+    def test_muitos_testes_seguidos_sao_travados(self, client, gestor, monkeypatch):
+        """O teste manda mensagem DE VERDADE, e o número do outro lado sente.
+
+        ⚠️ E há um efeito colateral que o número escolhido paga: havendo flow, o adapter
+        grava o contexto como campos personalizados do assinante. Testar contra o número
+        de um cliente sobrescreve o perfil dele, e a próxima mensagem legítima renderiza
+        com os valores do teste.
+        """
+        client.force_login(gestor)
+        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+        monkeypatch.setattr(
+            "shopman.shop.notifications.notify",
+            lambda **kw: type("R", (), {"success": True, "message_id": "m1"})(),
+        )
+
+        codigos = [
+            client.post(
+                self.URL,
+                data={"recipient": "4605528796186498"},
+                content_type="application/json",
+            ).status_code
+            for _ in range(7)
+        ]
+
+        assert 429 in codigos, codigos
+        # Assert-positivo: o limite morde DEPOIS de o gestor conseguir testar.
+        assert codigos[0] == 200
 
     def test_a_refused_send_is_reported_as_refused(self, client, gestor, monkeypatch):
         client.force_login(gestor)
