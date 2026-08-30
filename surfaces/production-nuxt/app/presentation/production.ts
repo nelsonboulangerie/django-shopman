@@ -192,6 +192,19 @@ export function alertTarget(alert: {
 export function startableWorkOrder(
   row: ProductionMatrixRowProjection,
 ): WorkOrderCardProjection | null {
+  return plannedWorkOrder(row);
+}
+
+/**
+ * A fornada planejada que esta linha AJUSTARIA — a mesma que o "Iniciar" pegaria.
+ *
+ * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
+ * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem
+ * dois nomes; uma implementação só evita que elas divirjam.
+ */
+export function plannedWorkOrder(
+  row: ProductionMatrixRowProjection,
+): WorkOrderCardProjection | null {
   return row.planned_orders[0] ?? null;
 }
 

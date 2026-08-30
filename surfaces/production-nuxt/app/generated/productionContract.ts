@@ -23,6 +23,7 @@ export interface BaseRecipeUsageProjection {
 export interface WorkOrderCardProjection {
   pk: number;
   ref: string;
+  rev: number;
   recipe_pk: number;
   recipe_ref: string;
   recipe_name: string;

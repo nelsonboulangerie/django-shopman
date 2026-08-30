@@ -66,6 +66,11 @@ class WorkOrderCardProjection:
 
     pk: int
     ref: str
+    #: A revisão que ESTE card leu. O cliente a devolve na mutação, e o core compara
+    #: antes de escrever (`_check_rev`). Sem ela, duas bancadas ajustando a mesma
+    #: fornada sobre um quadro de sessenta segundos de idade fazem o último POST vencer
+    #: — sem 409, sem aviso, e sem ninguém saber que o outro número existiu.
+    rev: int
     recipe_pk: int
     recipe_ref: str
     recipe_name: str
@@ -1516,6 +1521,7 @@ def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
     return WorkOrderCardProjection(
         pk=wo.pk,
         ref=wo.ref,
+        rev=int(wo.rev or 0),
         recipe_pk=wo.recipe_id,
         recipe_ref=wo.recipe.ref,
         recipe_name=wo.recipe.output_sku or wo.recipe.ref,
