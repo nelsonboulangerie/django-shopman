@@ -44,6 +44,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework import exceptions
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
@@ -1762,10 +1763,45 @@ class OrderCommentView(_OrderActionBase):
 
 
 class _ProductionActionBase(APIView):
-    """Shared gate for production action endpoints."""
+    """Gate compartilhado das ações de produção — superfície E coluna.
+
+    ⚠️ A ESCRITA da produção não consultava a permissão por coluna. O operador tocava
+    "Planejar" e a cadeia inteira — `apply_planned` → `set_planned_quantity` →
+    `CraftPlanning` → sinal `production_changed` → o handler do stockman criando o
+    Quant planejado — conferia **só** `backstage.operate_production`. Nenhum ponto
+    perguntava por `shop.edit_production_planned`. Idem para start e finish, e finish
+    é a escrita `kind=MAKE` no ledger de estoque.
+
+    O resolvedor de coluna já existia e já era testado (`resolve_production_access`);
+    ele só governava a LEITURA. É buraco de arquitetura de gate, não de exposição
+    ativa hoje — os dois grupos que recebem `operate_production` também recebem as
+    colunas. Mas é o mesmo padrão do tile da Central: o dia em que alguém fizer um
+    grant customizado, ele morde.
+
+    Cada view declara em `production_column` a coluna que ESCREVE; a recusa nomeia a
+    permissão que falta, em vez de dizer só "proibido". **Sem permissão nova.**
+    """
 
     permission_classes = [HasBackstagePermission]
     required_permission = "backstage.operate_production"
+
+    #: A coluna do quadro que esta view escreve ("planned", "started", "finished").
+    #: Vazio = a ação não escreve coluna, e o gate de superfície basta.
+    production_column: str = ""
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        coluna = self.production_column
+        if not coluna:
+            return
+        from shopman.backstage.projections.production import resolve_production_access
+
+        acesso = resolve_production_access(request.user)
+        if not getattr(acesso, f"can_edit_{coluna}", False):
+            raise exceptions.PermissionDenied(
+                f"Falta a permissão de editar a coluna {coluna} da produção "
+                f"(shop.edit_production_{coluna})."
+            )
 
 
 @extend_schema_view(
@@ -1776,6 +1812,7 @@ class _ProductionActionBase(APIView):
     ),
 )
 class WorkOrderPlanView(_ProductionActionBase):
+    production_column = "planned"
 
     def post(self, request):
         recipe_id = request.data.get("recipe_id") or request.data.get("recipe")
@@ -1826,6 +1863,7 @@ class WorkOrderPlanView(_ProductionActionBase):
     ),
 )
 class WorkOrderStartView(_ProductionActionBase):
+    production_column = "started"
 
     def post(self, request, wo_id: int):
         try:
@@ -1855,6 +1893,7 @@ class WorkOrderStartView(_ProductionActionBase):
     ),
 )
 class WorkOrderFinishView(_ProductionActionBase):
+    production_column = "finished"
 
     def post(self, request, wo_id: int):
         try:
@@ -1893,6 +1932,7 @@ class WorkOrderFinishView(_ProductionActionBase):
     ),
 )
 class WorkOrderAdvanceStepView(_ProductionActionBase):
+    production_column = "started"
     def post(self, request, wo_id: int):
         try:
             new_index = production_service.apply_advance_step(
@@ -1912,6 +1952,7 @@ class WorkOrderAdvanceStepView(_ProductionActionBase):
     ),
 )
 class WorkOrderQuickFinishView(_ProductionActionBase):
+    production_column = "finished"
 
     def post(self, request):
         recipe_id = request.data.get("recipe_id")
@@ -1955,6 +1996,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     ),
 )
 class WorkOrderVoidView(_ProductionActionBase):
+    production_column = "finished"
 
     def post(self, request, wo_id: int):
         reason = (request.data.get("reason") or "Estornado pelo operador").strip()

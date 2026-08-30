@@ -85,6 +85,18 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # its full set of fine-grained column perms (can_access_board), so it does
     # NOT need the coarse manage_production grant.
     ("shop.manage_production", {"Cozinha"}),
+    # permissions.can_view_production_reports (OR com shop.manage_production).
+    #
+    # ⚠️ Isto VIVIA na allowlist de "não concedida de propósito", com a justificativa
+    # de que `shop.manage_production` já cobria "Cozinha/Gerente". Só que essa
+    # permissão é da Cozinha apenas — a linha logo acima diz isso —, e a Gerente chega
+    # ao quadro pelas colunas finas, não por ela. Resultado: quem decide o que assar
+    # não conseguia ler o histórico do que foi assado, e o teste que existe para pegar
+    # esse buraco o escondia com uma frase.
+    #
+    # A lição não é sobre esta permissão: uma isenção que cita OUTRO grant precisa ser
+    # verificada contra a tabela, senão ela envelhece sozinha e vira álibi.
+    ("backstage.view_production_reports", {"Gerente"}),
     # resolve_production_access fine-grained columns (f-string perms, not
     # discoverable by the literal scan). Cozinha runs the floor
     # (planned/started/finished); Gerente also plans (suggested) and reconciles
@@ -107,15 +119,6 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
 # hide the very bug this test exists to catch.
 # ---------------------------------------------------------------------------
 UNGRANTED_BY_DESIGN: dict[str, str] = {
-    # can_view_production_reports() accepts this OR shop.manage_production. The
-    # OR-alternative (shop.manage_production) is what the operator groups hold
-    # (Cozinha/Gerente), so the reports gate is reachable without a dedicated
-    # backstage.view_production_reports grant. The perm is a superuser/optional
-    # fine-grained hook, deliberately off the default groups.
-    "backstage.view_production_reports": (
-        "OR-alternative in can_view_production_reports; covered by "
-        "shop.manage_production on Cozinha/Gerente."
-    ),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.
     #

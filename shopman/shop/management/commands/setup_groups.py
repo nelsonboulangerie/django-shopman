@@ -146,6 +146,9 @@ class Command(BaseCommand):
                 *_ver("shop"), *_escrever("shop", "promotion", "coupon", "omotenashicopy"),
                 # O terminal do balcão ("Equipamentos") — ela cadastra a estação.
                 *_ver("cashman", "terminal"), *_escrever("cashman", "terminal"),
+                # A estação de KDS pelo mesmo motivo do terminal: cadastrar o ponto de
+                # cozinha é gesto de gestão, e a Cozinha opera nele sem cadastrá-lo.
+                *_escrever("backstage", "kdsinstance"),
                 shop_shop("manage_orders"),
                 # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
                 # degrau do gerente: o pão foi feito, e às vezes o dinheiro já
@@ -162,6 +165,13 @@ class Command(BaseCommand):
                 shop_dclo("perform_closing"),
                 shop_dclo("operate_production"),
                 shop_dclo("operate_purchase"),
+                # ⚠️ Os relatórios de produção estavam FORA do alcance dela, e o teste
+                # de paridade dizia o contrário: a isenção afirmava que
+                # `shop.manage_production` cobria "Cozinha/Gerente", mas essa permissão
+                # é só da Cozinha (a Gerente chega ao quadro pelas colunas finas). O
+                # portão aceita as duas, e ela não tinha nenhuma — quem decide o que
+                # assar não conseguia ler o histórico do que foi assado.
+                shop_dclo("view_production_reports"),
                 # B.I. (ADR-021): leitura analítica cross-suite é persona de gestão.
                 shop_dclo("view_bi"),
                 # …e o que alimenta o B.I. (lotes de importação, vendas históricas)
