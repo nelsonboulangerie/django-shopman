@@ -452,6 +452,37 @@ def _as_nullable_int(value, label: str) -> int | None:
         raise CatalogError(f"{label} deve ser um número inteiro.") from exc
 
 
+def _as_flag(value, label: str) -> bool:
+    """Booleano estrito de entrada de operador, no dialeto desta camada.
+
+    ``bool()`` cru mente: ``bool("false")`` é ``True``, então quem manda o texto
+    ``"false"`` LIGA a opção em vez de desligar, e nada avisa. Não é explorável
+    pela UI de hoje, que manda JSON de verdade; é explorável por quem fala com a
+    API direto, e vira bug no dia em que alguém trocar um ``fetch`` por
+    ``URLSearchParams``.
+
+    Mesma tabela de tokens do parser canônico (``backstage/parsing.py``), mas
+    levantando ``CatalogError`` — esta camada tem dialeto próprio de entrada, e
+    ``services/exceptions.py`` documenta que a camada HTTP mapeia por TIPO.
+    Importar o parser do DRF aqui quebraria esse mapeamento para consertar um
+    ``bool()``.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    elif isinstance(value, int) and value in (0, 1):
+        # `isinstance(True, int)` é verdade em Python — por isso o bool vem antes.
+        return bool(value)
+    elif value is None:
+        return False
+    raise CatalogError(f"{label} aceita apenas sim ou não.")
+
+
 def _as_str_list(value, label: str) -> list[str]:
     if not isinstance(value, list):
         raise CatalogError(f"{label} deve ser uma lista.")
@@ -510,9 +541,9 @@ def _apply_labelling(product, data: dict) -> None:
             else:
                 metadata.pop(field, None)
     if "allows_next_day_sale" in data:
-        metadata["allows_next_day_sale"] = bool(data.get("allows_next_day_sale"))
+        metadata["allows_next_day_sale"] = _as_flag(data.get("allows_next_day_sale"), "allows_next_day_sale")
     if "made_to_order" in data:
-        metadata["made_to_order"] = bool(data.get("made_to_order"))
+        metadata["made_to_order"] = _as_flag(data.get("made_to_order"), "made_to_order")
 
     # Mesmo sentinel do form do Admin: só congela a derivação quando a rotulagem
     # dietética REALMENTE mudou, para um save qualquer não travar a receita.
@@ -615,7 +646,7 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
             setattr(product, field, _as_nullable_int(data.get(field), field))
     for field in _DETAIL_BOOL_FIELDS:
         if field in data:
-            setattr(product, field, bool(data.get(field)))
+            setattr(product, field, _as_flag(data.get(field), field))
 
     if "nutrition_facts" in data:
         _apply_nutrition(product, data.get("nutrition_facts"))

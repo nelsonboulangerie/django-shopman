@@ -39,7 +39,10 @@ DIVIDA = {
     # ✅ `api/operations.py` saiu da lista na Onda 2: o `force` de produção — o que
     # CONTORNA a checagem de insumos — e o `close_source_when_empty` passaram a usar
     # `parsing.as_bool`. A camada de API está em ZERO.
-    "services/catalog.py": (2, "WP do catálogo — a camada levanta CatalogError, não ValidationError"),
+    # ✅ `services/catalog.py` chegou a ZERO: a camada ganhou `_as_flag`, no dialeto
+    # dela (levanta `CatalogError`, como `_as_nullable_int` e `_as_str_list` ao lado).
+    # O teto fica em 0 para a catraca continuar valendo — acrescentar reprova.
+    "services/catalog.py": (0, "zerado; mantido em 0 para a catraca não afrouxar"),
     "services/purchase.py": (1, "WP-06 Compras — mesma razão do catálogo"),
 }
 
