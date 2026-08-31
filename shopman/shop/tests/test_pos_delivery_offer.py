@@ -155,12 +155,38 @@ def test_zona_de_exclusao_avisa_o_balcao_sem_bloquear(loja):
     assert any(w["code"] == "delivery_out_of_area" for w in review.warnings)
 
 
-def test_retirada_nao_tem_taxa_nem_horario(loja):
+def test_retirada_nao_tem_taxa_mas_TEM_horario(loja):
+    """A retirada não paga frete — mas ela combina hora como qualquer pedido.
+
+    ⚠️ Este teste já afirmou o contrário (`delivery_slots == ()`,
+    `delivery_date == ""`), e afirmava um DEFEITO: a data nasceu dentro do
+    formulário de entrega, então retirada agendada era impossível no balcão. A
+    casa recebe encomenda por telefone para retirar na quinta, e o operador não
+    tinha onde escrever isso. *Quando* é fato do PEDIDO; só *onde* e *quanto*
+    são fatos da entrega.
+    """
     review = _review(fulfillment_type="pickup")
 
     assert review.delivery_fee_q == 0
-    assert review.delivery_slots == ()
-    assert review.delivery_date == ""
+    # Data em branco continua sendo HOJE, e agora ela CHEGA na retirada.
+    assert review.delivery_date == timezone.localdate().isoformat()
+
+
+def test_retirada_agenda_para_data_futura(loja):
+    """A encomenda por telefone para retirar na quinta cabe no balcão.
+
+    Data futura de propósito: as janelas de HOJE dependem do relógio de quem roda
+    a suíte (depois das 11h o expediente desta loja já acabou, e a lista vazia
+    seria correta). O eixo aqui é a retirada, não a hora do CI.
+    """
+    quinta = timezone.localdate() + timezone.timedelta(days=4)
+
+    review = _review(fulfillment_type="pickup", delivery_date=quinta.isoformat())
+
+    assert review.delivery_date == quinta.isoformat()
+    assert [s["ref"] for s in review.delivery_slots] == [
+        "09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00",
+    ]
 
 
 def test_frete_gratis_acima_do_limiar_vale_no_balcao_tambem(loja):

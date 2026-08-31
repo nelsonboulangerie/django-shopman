@@ -80,9 +80,24 @@ grosso da loja ("A partir das") e passa a delegar a prontidão.
 `shopman/shop/services/fulfillment_window.py` — anota as janelas de meia hora do
 `business_calendar` com `enabled` / `reason`, dado o carrinho e a data.
 
-- PDV: `review_sale` anota; `close_sale` **recusa** (falhar fechado).
-- Loja: `_validate_slot` deixa de dar passe livre à entrega.
-- A razão é dita em português de balcão: *"A baguete de tradição sai às 12:00."*
+- PDV: `review_sale` anota; `close_sale` **recusa**.
+- A razão é dita em português de balcão: *"Baguette de Tradition sai às 12:00.
+  Escolha 12:00 às 12:30 ou mais tarde."*
+
+**Calibração descoberta na execução — dois eixos, e só um fecha a porta.**
+A primeira versão recusava também a janela fora da grade do dia, e isso quebrou
+um teste do backstage de um jeito revelador: uma loja com `opening_hours` em
+branco tem grade vazia, e passaria a **recusar toda venda com horário**. Pior, a
+dona no balcão às 18h05 não conseguiria agendar a retirada de amanhã.
+
+- **Prontidão fecha.** É a única promessa que a casa não pode cumprir.
+- **Expediente não fecha.** A grade diz o que se OFERECE (`annotate`), não o que
+  se aceita. Agenda do balcão é da casa.
+
+> **Loja, entrega:** o storefront não oferece janela de horário para entrega (só
+> data), então não há promessa de hora a guardar ali. Ficou intocado de propósito
+> — mexer no `_validate_slot` da loja na véspera do go-live seria risco sem ganho
+> visível. Anotado como pergunta.
 
 ## WP-4 — "Quando" é fato do pedido
 
