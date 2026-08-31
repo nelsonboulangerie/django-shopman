@@ -8,7 +8,7 @@
     "test": "vitest run"
   },
   "devDependencies": {
-    "@nuxt/test-utils": "^4.0.3",
+    "@nuxt/test-utils": "^4.2.0",
     "@vue/test-utils": "^2.4.11",
     "@vueuse/core": "^14.3.0",
     "happy-dom": "^20.10.6",
