@@ -2017,6 +2017,32 @@ class Command(BaseCommand):
                 }
                 product.save(update_fields=["availability_policy", "metadata"])
 
+        # PRONTIDÃO DECLARADA — a que horas o produto fica pronto num dia normal.
+        #
+        # Sem isto a hora saía só da mediana das WorkOrders, e produto sem fornada
+        # nos últimos 30 dias não restringia horário NENHUM: o dado que faltava
+        # LIBERAVA a promessa em vez de fechá-la. Uma baguete de tradição podia
+        # ser prometida para as 9h, e a quebra de contrato só aparecia no balcão,
+        # com o cliente na frente.
+        #
+        # Declarado é PISO, não teto: se a fornada vem saindo mais tarde que o
+        # cadastro diz, vence o histórico (ver ``shop/services/product_readiness``).
+        #
+        # A lista é curta de propósito. Só entra aqui o que a CASA afirmou; o
+        # resto se declara no Admin (aba Configuração) ou no catálogo do Gestor,
+        # sem reseed.
+        ready_from_by_sku = {
+            "BF": "12:00",  # Baguette de Tradition: só sai depois do meio-dia
+        }
+        for sku, ready_from in ready_from_by_sku.items():
+            product = products.get(sku)
+            if product:
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "ready_from": ready_from,
+                }
+                product.save(update_fields=["metadata"])
+
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:
         # ``auto_filled=False`` in nutrition_facts blocks any later derivation.

@@ -133,6 +133,17 @@ class ProductAdminForm(forms.ModelForm):
             "sobre conferir estoque."
         ),
     )
+    ready_from = forms.CharField(
+        label="Pronto a partir de",
+        required=False,
+        widget=UnfoldAdminTextInputWidget,
+        help_text=(
+            "Hora em que este produto fica pronto num dia normal (HH:MM). "
+            "É o que impede o balcão e a loja de prometerem a baguete de "
+            "tradição para as 9h. Em branco, a hora é deduzida do histórico "
+            "de fornadas — declare quando a casa souber a resposta."
+        ),
+    )
 
     # Virtual nutrient fields are declared at class scope (dataclass-driven via
     # NutritionFacts) so the admin fieldsets that reference them validate. The
@@ -173,6 +184,29 @@ class ProductAdminForm(forms.ModelForm):
                 metadata.get("allows_next_day_sale", False)
             )
             self.fields["made_to_order"].initial = bool(metadata.get("made_to_order", False))
+            self.fields["ready_from"].initial = str(metadata.get("ready_from") or "")
+
+    def clean_ready_from(self):
+        """Hora inválida é RECUSADA na porta, não guardada para falhar depois.
+
+        Um "12h" digitado no Admin viraria ausência de declaração lá adiante — o
+        cadastro diria que a casa respondeu e o sistema agiria como se ninguém
+        tivesse respondido. Erro de digitação tem que doer aqui.
+
+        A leitura é local de propósito: o Offerman é Core e não importa o
+        orquestrador. São quatro linhas de ``HH:MM``, não uma regra de negócio.
+        """
+        raw = (self.cleaned_data.get("ready_from") or "").strip()
+        if not raw:
+            return ""
+        parts = raw.split(":")
+        try:
+            hour, minute = int(parts[0]), int(parts[1])
+        except (IndexError, ValueError):
+            raise forms.ValidationError("Use o formato HH:MM. Ex.: 12:00.") from None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            raise forms.ValidationError("Hora fora do dia. Use de 00:00 a 23:59.")
+        return f"{hour:02d}:{minute:02d}"
 
     def clean(self):
         cleaned = super().clean()
@@ -223,6 +257,14 @@ class ProductAdminForm(forms.ModelForm):
 
         metadata["allows_next_day_sale"] = bool(cleaned.get("allows_next_day_sale"))
         metadata["made_to_order"] = bool(cleaned.get("made_to_order"))
+        # Em branco APAGA a declaração (volta a valer só o histórico) — um campo
+        # de texto que não sabe se esvaziar prende a casa na primeira resposta
+        # que ela deu.
+        ready_from = (cleaned.get("ready_from") or "").strip()
+        if ready_from:
+            metadata["ready_from"] = ready_from
+        else:
+            metadata.pop("ready_from", None)
 
         # Manual-override sentinel for the Recipe→Product dietary derivation
         # (mirrors nutrition's ``auto_filled``). Only flip to manual when the

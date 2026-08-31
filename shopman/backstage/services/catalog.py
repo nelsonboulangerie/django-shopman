@@ -425,6 +425,9 @@ def _detail_payload(product) -> dict:
         # Promessa da casa sobre o produto ("Preparado na hora"), não política de
         # estoque. Ver docs/reference/data-schemas.md → Product.metadata.
         "made_to_order": bool(metadata.get("made_to_order", False)),
+        # Hora declarada de prontidão ("HH:MM", "" = deduzir do histórico). É o
+        # que impede prometer a baguete de tradição para as 9h.
+        "ready_from": str(metadata.get("ready_from") or ""),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
@@ -544,6 +547,20 @@ def _apply_labelling(product, data: dict) -> None:
         metadata["allows_next_day_sale"] = _as_flag(data.get("allows_next_day_sale"), "allows_next_day_sale")
     if "made_to_order" in data:
         metadata["made_to_order"] = _as_flag(data.get("made_to_order"), "made_to_order")
+    if "ready_from" in data:
+        # Vazio APAGA a declaração; hora ilegível é recusada em vez de virar
+        # ausência silenciosa (o cadastro diria que a casa respondeu, e o sistema
+        # agiria como se ninguém tivesse respondido).
+        raw = str(data.get("ready_from") or "").strip()
+        if raw:
+            from shopman.shop.services.product_readiness import format_clock, parse_clock
+
+            parsed = parse_clock(raw)
+            if parsed is None:
+                raise CatalogError("Pronto a partir de: use o formato HH:MM. Ex.: 12:00.")
+            metadata["ready_from"] = format_clock(parsed)
+        else:
+            metadata.pop("ready_from", None)
 
     # Mesmo sentinel do form do Admin: só congela a derivação quando a rotulagem
     # dietética REALMENTE mudou, para um save qualquer não travar a receita.
