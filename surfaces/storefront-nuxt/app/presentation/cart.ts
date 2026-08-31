@@ -67,12 +67,18 @@ export type CartLineHold = {
   plannedForNotice: string | null
 }
 
-type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'is_made_to_order' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
+type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
 
 export function lineHoldState (line: HoldFields): CartLineHold | null {
-  // Feito na hora não espera fornada nenhuma: sem reserva de lote, sem prazo a
-  // confirmar. A história de espera é do pão; o café tem a sua, e é outra.
-  if (line.is_made_to_order) return null
+  // ⚠️ Havia aqui um `if (line.is_made_to_order) return null`, e ele passou a
+  // ESCONDER FILA DE VERDADE quando os dois eixos foram separados.
+  //
+  // Enquanto o selo era deduzido de `demand_ok`, "preparado na hora" servia de
+  // atalho para "não há fornada envolvida" — e a guarda parecia inofensiva.
+  // Agora o selo é promessa declarada da casa (`Product.metadata.made_to_order`)
+  // e a fila é estado do hold: um croque que espera a fornada de amanhã é as
+  // duas coisas. Calar a espera porque o item é preparado na hora tiraria da
+  // tela justamente o "quando".
   if (line.is_ready_for_confirmation) {
     return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
   }
@@ -88,15 +94,13 @@ export function lineHoldState (line: HoldFields): CartLineHold | null {
  *  Retorna null (sem história de espera) ou o notice da fornada (pode ser
  *  string vazia quando não há data prevista a mostrar). */
 export function reviewWaitlist (
-  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_made_to_order' | 'planned_for_date' | 'planned_for_notice'>,
+  line: Pick<CartItemProjection, 'is_awaiting_confirmation' | 'planned_for_date' | 'planned_for_notice'>,
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
-  // Feito na hora não tem fila: não sai de fornada, então não há lote a esperar.
-  // A guarda é redundante com o backend por desenho — o carimbo do hold já não
-  // marca demanda como planejada —, e é barata perto de repetir na revisão o
-  // "avisamos quando ficar pronto" para um café.
-  if (line.is_made_to_order) return null
+  // Sem guarda por `is_made_to_order`, pela mesma razão de `lineHoldState`: os
+  // dois eixos são independentes, e a espera é o dado que o cliente precisa
+  // para decidir. Quem manda calar aqui é a DATA, não a natureza do item.
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
   if (deliveryDate && deliveryDate !== batchDate) return null

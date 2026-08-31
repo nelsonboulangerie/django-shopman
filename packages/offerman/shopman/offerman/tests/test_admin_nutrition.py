@@ -130,6 +130,10 @@ def test_form_serializes_remote_purchase_metadata_on_save():
         # Recipe→Product derivation (WP-7) won't overwrite it.
         "dietary_auto_filled": False,
         "allows_next_day_sale": False,
+        # Promessa da casa ("Preparado na hora"): switch próprio, gravado sempre
+        # — inclusive como False. O selo da sacola lê SÓ este campo; deduzi-lo de
+        # `availability_policy` acoplava promessa a política de estoque.
+        "made_to_order": False,
     }
 
 

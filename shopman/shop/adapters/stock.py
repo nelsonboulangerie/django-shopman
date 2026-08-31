@@ -172,7 +172,7 @@ def create_hold(
         # a distinção era jogada fora na linha seguinte.
         #
         # Agora cada uma tem a sua marca. Quem pergunta "isto é fila?" lê
-        # ``planned``; quem pergunta "isto é feito na hora?" lê ``on_demand``.
+        # ``planned``; quem pergunta "isto é preparado na hora?" lê ``on_demand``.
         is_planned = False
         is_on_demand = hold.quant is None
         is_indefinite = is_on_demand or hold.quant.target_date is not None

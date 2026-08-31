@@ -238,12 +238,22 @@ def test_storefront_copy_fact_contract_covers_waitlist_and_card_authorization():
         assert token in parity + tracking_projection + tracking_presentation
 
     for token in [
-        "metadata__planned=True",
+        # O filtro da fila deixou de ser literal em cada leitor e virou UMA
+        # constante (``waitlist.WAITLIST_HOLD_FILTER``): "isto é fila?" pede o
+        # carimbo E o lote, e a resposta não pode divergir entre as telas.
+        "WAITLIST_HOLD_FILTER",
         "expires_at__isnull=True",
         "HoldStatus.PENDING",
         "HoldStatus.CONFIRMED",
     ]:
         assert token in tracking_projection
+
+    waitlist_service = _read(REPO_ROOT / "shopman" / "shop" / "services" / "waitlist.py")
+    for token in ["metadata__planned", "quant__isnull"]:
+        assert token in waitlist_service, (
+            "a fila se reconhece pelo carimbo E pelo lote — sem a segunda metade, "
+            "reserva de demanda volta a ler como fila"
+        )
 
     assert "pending → authorized → captured" in payment_contract
     assert "TRACKING_CARD_AUTHORIZED_WAITLIST_MESSAGE" in tracking_presentation

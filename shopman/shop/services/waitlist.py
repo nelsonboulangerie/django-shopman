@@ -156,6 +156,30 @@ RELEASED = "released"
 WAITLIST_KEY = "waitlist"
 
 
+# ── "Isto é fila?" — a pergunta se responde no DADO, não só no carimbo ──
+#
+# Reserva de fila espera um LOTE, e por isso sempre aponta para o quant desse
+# lote (``next_batch_date`` só devolve data onde existe quant planejado, e o
+# hold ancora nele). Reserva de DEMANDA (política ``demand_ok``: café,
+# Jambon-Beurre, croque) não aponta para lote nenhum — ``quant`` é nulo —
+# porque não existe lote a esperar.
+#
+# ⚠️ O carimbo sozinho não basta, e a razão está no banco. Até 29/08 o
+# ``metadata.planned`` marcava as DUAS, e holds indefinidos não expiram nunca:
+# os que foram gravados antes da separação continuam vivos lá, dizendo "fila"
+# sobre um café. Sem esta cláusula eles seguiriam abrindo "Lista de espera" na
+# sacola, "avisamos quando ficarem prontos" na revisão e o painel de fila no
+# acompanhamento — o mesmo bug de três telas, agora só para quem já era
+# cliente. Perguntar pelo quant conserta os dois tempos de uma vez, sem
+# migração de dado.
+WAITLIST_HOLD_FILTER = {"metadata__planned": True, "quant__isnull": False}
+
+
+def is_waitlist_hold(hold) -> bool:
+    """True quando este hold é reserva de FILA (espera uma fornada)."""
+    return bool((hold.metadata or {}).get("planned")) and hold.quant_id is not None
+
+
 def _order_holds(order, *, sku: str | None = None):
     """Holds vivos deste pedido (opcionalmente de um SKU)."""
     try:
@@ -188,7 +212,7 @@ def state_for(order) -> str:
     if stored in (CONFIRMING, CONFIRMED, RELEASED):
         return stored
     for hold in _order_holds(order):
-        if hold.expires_at is None and (hold.metadata or {}).get("planned"):
+        if hold.expires_at is None and is_waitlist_hold(hold):
             return FERMATA
     return NONE
 
@@ -200,7 +224,7 @@ def planned_batch_date(order) -> date | None:
     hold que a carrega, não o bloco gravado.
     """
     for hold in _order_holds(order):
-        if (hold.metadata or {}).get("planned") and hold.target_date:
+        if is_waitlist_hold(hold) and hold.target_date:
             return hold.target_date
     return None
 
@@ -230,9 +254,9 @@ def queue_for(sku: str, target_date: date | None = None) -> list:
     holds = Hold.objects.filter(
         sku=sku,
         expires_at__isnull=True,
-        metadata__planned=True,
         metadata__reference__startswith="order:",
         status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        **WAITLIST_HOLD_FILTER,
     )
     if target_date is not None:
         holds = holds.filter(target_date__lte=target_date)
@@ -376,7 +400,7 @@ def release(order, *, reason: str) -> list[str]:
     qty = Decimal(str(block.get("qty") or 0))
     if not sku:
         for hold in _order_holds(order):
-            if (hold.metadata or {}).get("planned"):
+            if is_waitlist_hold(hold):
                 sku, qty = hold.sku, hold.quantity
                 break
 
@@ -442,7 +466,7 @@ def _release_holds(order, sku: str) -> Decimal:
     planned = [
         hold
         for hold in _order_holds(order, sku=sku or None)
-        if (hold.metadata or {}).get("planned")
+        if is_waitlist_hold(hold)
     ]
     if not planned:
         return Decimal("0")
@@ -511,9 +535,9 @@ def report() -> list[dict]:
     skus = (
         Hold.objects.filter(
             expires_at__isnull=True,
-            metadata__planned=True,
             metadata__reference__startswith="order:",
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            **WAITLIST_HOLD_FILTER,
         )
         .values_list("sku", flat=True)
         .distinct()

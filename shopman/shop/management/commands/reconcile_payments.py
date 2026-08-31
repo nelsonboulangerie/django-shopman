@@ -5,6 +5,8 @@ Reconcilia pedidos com status pending_payment cujo webhook de pagamento
 pode ter sido perdido (timeout, reinicialização de servidor, falha de rede).
 
 Lógica:
+  0. Pergunta ao GATEWAY sobre todo pedido de cartão em aberto (sem recorte de
+     `--since`): é a rede que não depende de o cliente voltar à tela.
   1. Busca Orders NEW/CONFIRMED criadas antes de `--since` atrás.
   2. Para cada uma, lê intent_ref em order.data["payment"].
   3. Consulta Payman: PaymentService.get(intent_ref). Intent sem gateway
@@ -81,13 +83,18 @@ class Command(BaseCommand):
 
         cutoff = timezone.now() - since_delta
 
+        gateway_updated = self._ask_the_gateway_about_open_card_orders(dry_run=dry_run)
+
         pending = Order.objects.filter(
             status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
             created_at__lt=cutoff,
         )
 
         if not pending.exists():
-            self.stdout.write("Nenhum pedido pending_payment encontrado para reconciliar.")
+            self.stdout.write(
+                "Nenhum pedido pending_payment encontrado para reconciliar."
+                + (f" (cartões atualizados pelo gateway: {gateway_updated})" if gateway_updated else "")
+            )
             return
 
         reconciled = 0
@@ -203,11 +210,72 @@ class Command(BaseCommand):
             since=since_str,
         )
 
-        summary = f"Reconciliados: {reconciled} | Ignorados: {skipped} | Falhas: {failures}"
+        summary = (
+            f"Reconciliados: {reconciled} | Ignorados: {skipped} | Falhas: {failures} "
+            f"| Cartões atualizados pelo gateway: {gateway_updated}"
+        )
         if dry_run:
             self.stdout.write(self.style.WARNING(f"[dry-run] {summary}"))
         else:
             self.stdout.write(self.style.SUCCESS(summary))
+
+    def _ask_the_gateway_about_open_card_orders(self, *, dry_run: bool) -> int:
+        """Pergunta ao gateway sobre todo pedido de CARTÃO ainda em aberto.
+
+        ⚠️ **Esta é a rede que não depende de ninguém estar olhando.**
+
+        A reconciliação contra webhook perdido existia em um lugar só: a
+        leitura do acompanhamento, quando o cliente volta do Stripe. Enquanto
+        for só ali, a verdade do sistema fica pendurada no navegador do
+        cliente — quem paga e fecha a aba, ou paga num aparelho e some, deixa
+        o pedido ACCEPTED com o avanço barrado por "Aguardando pagamento…", e
+        do lado da loja não existe gesto nenhum capaz de destravar. O dinheiro
+        está autorizado no gateway, o pão não sai, e ninguém sabe por quê.
+
+        O passo roda a cada ciclo do ``maintenance_worker`` (5 min) e fica
+        FORA do recorte de ``--since`` de propósito: esperar duas horas para
+        perguntar sobre um pedido que o cliente pagou há dois minutos é a
+        mesma pane, só mais lenta. Quem segura a mão é o throttle por pedido
+        (``GATEWAY_RECHECK_SECONDS``), dentro de
+        ``reconcile_with_gateway_if_due``.
+
+        Só cartão, pela mesma razão que a leitura da loja: o PIX já tem
+        webhook, SSE e a checagem do vencimento. O cartão é o que leva o
+        cliente para fora do site e volta sem sinal nenhum.
+        """
+        from shopman.orderman.models import Order
+
+        from shopman.shop.services import payment as payment_service
+
+        open_card = Order.objects.filter(
+            status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
+            data__payment__method="card",
+        ).exclude(data__payment__intent_ref__isnull=True)
+
+        # "Atualizada", não "liquidada": a resposta do gateway pode ser CAPTURA
+        # (o dinheiro entrou) ou AUTORIZAÇÃO (o cliente pagou, a loja ainda não
+        # cobrou). As duas mudam o que as telas mostram, e chamar as duas de
+        # "liquidada" no relatório do worker seria dizer que entrou dinheiro que
+        # não entrou.
+        updated = 0
+        for order in open_card:
+            if payment_service.has_sufficient_captured_payment(order) is True:
+                continue
+            if dry_run:
+                self.stdout.write(f"[dry-run] order={order.ref} → perguntaria ao gateway")
+                continue
+            try:
+                if payment_service.reconcile_with_gateway_if_due(order):
+                    updated += 1
+                    logger.info("reconcile_payments: order %s atualizada pelo gateway", order.ref)
+                    self.stdout.write(f"order={order.ref} → atualizada pelo gateway")
+            except Exception:
+                logger.warning(
+                    "reconcile_payments: falha ao consultar gateway para order %s",
+                    order.ref,
+                    exc_info=True,
+                )
+        return updated
 
     def _rearm_payment_timeout(self, order, intent) -> bool:
         """Re-arma a directive payment.timeout para uma intent PENDING vencida.

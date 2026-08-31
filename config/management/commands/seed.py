@@ -1994,11 +1994,28 @@ class Command(BaseCommand):
             "QQ", "JB", "PG",
             "PPU", "TI",
         ]
+        # DUAS coisas, e elas são independentes — a lista é a mesma por
+        # coincidência do cardápio, não por dependência:
+        #
+        #   • ``availability_policy = demand_ok`` — conferência de ESTOQUE: se a
+        #     vitrine acabar, a casa monta um; a venda não é recusada por saldo.
+        #   • ``metadata["made_to_order"]`` — PROMESSA da casa ao cliente:
+        #     finalizado no momento de servir (gratinado, montado, extraído).
+        #     Vale mesmo quando o item sai da vitrine, porque é sobre o
+        #     acabamento — e é este, e só este, que acende o selo na sacola.
+        #
+        # Enquanto o selo era deduzido da política, mexer numa mexia na outra:
+        # apertar o croque para ``stock_only`` (o natural quando se passa a
+        # controlar o estoque dele) apagava a promessa, calado.
         for sku in made_to_order_skus:
             product = products.get(sku)
             if product:
                 product.availability_policy = AvailabilityPolicy.DEMAND_OK
-                product.save(update_fields=["availability_policy"])
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "made_to_order": True,
+                }
+                product.save(update_fields=["availability_policy", "metadata"])
 
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:

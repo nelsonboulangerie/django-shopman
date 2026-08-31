@@ -405,6 +405,56 @@ def capture(order) -> None:
         cancel_stale_intents(order, keep_intent_ref=intent_ref)
 
         logger.info("payment.capture: captured %s for order %s", intent_ref, order.ref)
+        return
+
+    # ⚠️ Captura que falha NÃO pode ser silenciosa, e era.
+    #
+    # O docstring já dizia "capture must succeed" e o código, no ``else``
+    # implícito, não fazia nada: sem log, sem alerta, sem exceção. O efeito no
+    # balcão é o pior tipo de pane — a autorização do cliente segue de pé no
+    # gateway, o pedido fica ACCEPTED com o avanço barrado por "Aguardando
+    # pagamento…", e ninguém no mundo é avisado de que o dinheiro não entrou.
+    # O operador vê um pedido parado sem causa e o cliente vê um pedido pago.
+    #
+    # Não levantamos: quem chama é lifecycle/webhook/reconciliação, e derrubar
+    # o handler perderia a fase inteira (o pedido para em pior estado ainda). O
+    # contrato é falhar GRITANDO — a próxima rodada da reconciliação tenta de
+    # novo, e enquanto não conseguir há alerta aberto no Gestor.
+    logger.error(
+        "payment.capture_failed order=%s intent=%s method=%s code=%s",
+        order.ref,
+        intent_ref,
+        method,
+        result.error_code,
+    )
+    _alert_capture_failed(order, intent_ref=intent_ref, method=method, result=result)
+
+
+def _alert_capture_failed(order, *, intent_ref: str, method: str, result) -> None:
+    """Alerta no Gestor para captura recusada pelo gateway.
+
+    Reusa o tipo ``payment_failed`` de propósito: o modelo o define como
+    "cobrança que não passou", e é exatamente o que é. Ganha de graça o
+    fechamento automático — ``_ack_payment_failed_alerts`` roda na captura
+    bem-sucedida, então a rodada da reconciliação que finalmente conseguir
+    apaga o alerta sozinha, sem ninguém ter de reconhecer à mão o que já se
+    resolveu.
+    """
+    from shopman.shop.services.observability import create_operator_alert
+
+    detail = str(getattr(result, "message", "") or getattr(result, "error_code", "") or "")[:200]
+    create_operator_alert(
+        type="payment_failed",
+        severity="error",
+        message=(
+            f"Não foi possível capturar o pagamento {method.upper()} do pedido "
+            f"{order.ref} ({intent_ref}). O cliente autorizou e o dinheiro NÃO "
+            "entrou; o pedido segue barrado em 'Aguardando pagamento'. Confira "
+            f"no painel do gateway antes de entregar. Erro: {detail}"
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"payment_capture_failed:{order.ref}:{intent_ref}",
+    )
 
 
 def refund(

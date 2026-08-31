@@ -122,6 +122,17 @@ class ProductAdminForm(forms.ModelForm):
         widget=UnfoldBooleanSwitchWidget,
         help_text="Produto pode ser vendido no dia seguinte com preço reduzido.",
     )
+    made_to_order = forms.BooleanField(
+        label="Preparado na hora",
+        required=False,
+        widget=UnfoldBooleanSwitchWidget,
+        help_text=(
+            "Finalizado no momento de servir (gratinado, montado, extraído). "
+            "É o que a loja PROMETE sobre o produto — vale mesmo quando ele sai "
+            "da vitrine. Não confundir com a política de disponibilidade, que é "
+            "sobre conferir estoque."
+        ),
+    )
 
     # Virtual nutrient fields are declared at class scope (dataclass-driven via
     # NutritionFacts) so the admin fieldsets that reference them validate. The
@@ -161,6 +172,7 @@ class ProductAdminForm(forms.ModelForm):
             self.fields["allows_next_day_sale"].initial = bool(
                 metadata.get("allows_next_day_sale", False)
             )
+            self.fields["made_to_order"].initial = bool(metadata.get("made_to_order", False))
 
     def clean(self):
         cleaned = super().clean()
@@ -210,6 +222,7 @@ class ProductAdminForm(forms.ModelForm):
             metadata["approx_dimensions"] = approx_dimensions
 
         metadata["allows_next_day_sale"] = bool(cleaned.get("allows_next_day_sale"))
+        metadata["made_to_order"] = bool(cleaned.get("made_to_order"))
 
         # Manual-override sentinel for the Recipe→Product dietary derivation
         # (mirrors nutrition's ``auto_filled``). Only flip to manual when the

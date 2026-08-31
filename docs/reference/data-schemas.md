@@ -1062,6 +1062,7 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `lead_time_hours` | `int` | seed/admin (Offerman) | `shop/services/lead_time.py` (checkout do storefront + gate de demanda em `shop/services/stock.hold`) | Antecedência mínima (horas) para registrar DEMANDA (encomenda para data sem fornada planejada). Sobrescreve `ChannelConfig.stock.default_lead_time_hours`. Não bloqueia encomenda com Quant planejado da data nem venda imediata do estoque físico de hoje. |
+| `made_to_order` | `bool` | seed/admin (Offerman: switch "Preparado na hora"; catálogo do operador) | `shop/projections/cart.py` → selo da sacola e da revisão | Promessa da casa: o item é **finalizado no momento de servir** (gratinado, montado, extraído). Vale mesmo quando ele sai da vitrine — é sobre o acabamento, não sobre a hora em que a massa foi feita. ⚠️ **Eixo próprio, e de propósito.** O selo já foi deduzido de `availability_policy == "demand_ok"`, que é conferência de ESTOQUE ("aprova a venda mesmo sem saldo"): no cardápio da casa as duas coincidem (café, salgados de vitrine), mas a coincidência não é contrato — marcar um pão como `demand_ok` por razão de estoque dava a ele o selo, e apertar o croque para `stock_only` tirava o selo, calado. Independente da fila de espera: um croque que espera a fornada de amanhã carrega os dois (o selo diz o que É, a fila diz quando vem). |
 
 ---
 

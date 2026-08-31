@@ -27,15 +27,32 @@ pytestmark = pytest.mark.django_db
 
 
 def _attach_pending_planned_hold(order, *, sku: str, target_date=None):
+    """Reserva de FORNADA — a que espera o lote sair.
+
+    ⚠️ O ``quant`` não é detalhe do fixture. Reserva de fila nasce ancorada no
+    lote que espera, e é o lote que a separa da reserva de DEMANDA
+    (``demand_ok``: café, Jambon-Beurre), que também nasce sem prazo e, até
+    29/08, levava o mesmo carimbo ``planned``. Fila sem lote é um mundo que a
+    produção não produz — e enquanto o fixture o montava, "esta linha é fila?"
+    parecia responder-se só pelo carimbo.
+    """
     from decimal import Decimal
 
     from django.utils import timezone
-    from shopman.stockman import Hold, HoldStatus
+    from shopman.stockman.models import Hold, HoldStatus, Position, Quant
 
     planned_for = target_date or timezone.localdate()
+    position, _ = Position.objects.get_or_create(ref="forno", defaults={"name": "Forno"})
+    quant, _ = Quant.objects.get_or_create(
+        sku=sku,
+        position=position,
+        target_date=planned_for,
+        batch="",
+        defaults={"metadata": {}},
+    )
     hold = Hold.objects.create(
         sku=sku,
-        quant=None,
+        quant=quant,
         quantity=Decimal("1"),
         target_date=planned_for,
         status=HoldStatus.PENDING,

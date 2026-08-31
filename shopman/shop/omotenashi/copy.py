@@ -1355,10 +1355,12 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "AVAILABILITY_AVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Disponível")}},
     "AVAILABILITY_LOW_STOCK": {WILDCARD: {WILDCARD: CopyEntry(title="Últimas unidades")}},
     "AVAILABILITY_PLANNED_OK": {WILDCARD: {WILDCARD: CopyEntry(title="Lista de espera")}},
-    # Selo do item de política ``demand_ok`` — café, Jambon-Beurre, croque. Ele não
-    # sai de fornada, então "Lista de espera" ali era mentira: não há lote a esperar,
-    # o item é montado quando o pedido entra. O selo diz o que É, e o que é, é bom.
-    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Feito na hora")}},
+    # Selo do item que a casa declara como preparado na hora
+    # (``Product.metadata["made_to_order"]``): café, Jambon-Beurre, croque —
+    # finalizados no momento de servir. Diz o que o item É, e o que é, é bom.
+    # ⚠️ Não é dedução da política de estoque: um croque da vitrine tem o selo, e
+    # um pão que vende sem saldo (``demand_ok``) não tem.
+    "CART_MADE_TO_ORDER": {WILDCARD: {WILDCARD: CopyEntry(title="Preparado na hora")}},
     "AVAILABILITY_UNAVAILABLE": {WILDCARD: {WILDCARD: CopyEntry(title="Indisponível")}},
 }
 

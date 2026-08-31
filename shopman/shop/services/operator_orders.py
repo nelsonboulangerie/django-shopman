@@ -65,6 +65,12 @@ class AdvanceBlock(StrEnum):
     # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
     # (o pedido de sábado não vai pra cozinha na terça). Some sozinho na data.
     PREORDER_NOT_DUE = "preorder_not_due"
+    # Fila de espera, ainda em fermata: o pão que este pedido espera NÃO EXISTE —
+    # está na fornada que ainda não saiu. O card já trazia o selo "Na fila da
+    # fornada", mas o botão de avançar continuava vivo ao lado dele, e avisar
+    # sem barrar não é barreira: um toque mandava para o KDS uma separação
+    # impossível de fazer. Some sozinho quando ``open_window`` chama o cliente.
+    WAITLIST_FERMATA = "waitlist_fermata"
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
@@ -74,6 +80,9 @@ _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     ),
     AdvanceBlock.PREORDER_NOT_DUE: (
         "Encomenda para uma data futura. O preparo abre no dia combinado."
+    ),
+    AdvanceBlock.WAITLIST_FERMATA: (
+        "Reserva na fila da fornada. O preparo abre quando o lote sair."
     ),
 }
 
@@ -190,6 +199,8 @@ def advance_block(order: Order) -> AdvanceBlock:
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
         return AdvanceBlock.PREORDER_NOT_DUE
+    if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order):
+        return AdvanceBlock.WAITLIST_FERMATA
     return AdvanceBlock.NONE
 
 
@@ -751,6 +762,23 @@ def _requires_captured_payment_for_work(order: Order) -> bool:
     from shopman.shop.services import payment as payment_service
 
     return payment_service.has_sufficient_captured_payment(order) is not True
+
+
+def _waiting_for_the_batch(order: Order) -> bool:
+    """True enquanto a reserva de fila espera a fornada sair (``fermata``).
+
+    Não é encomenda (não há data combinada com o cliente, então
+    ``_preorder_not_due`` não a alcança) e não é falta de pagamento: é pão que
+    ainda não foi assado. Degrada para False — pergunta que falha não pode
+    travar o board.
+    """
+    try:
+        from shopman.shop.services import waitlist
+
+        return waitlist.state_for(order) == waitlist.FERMATA
+    except Exception:
+        logger.debug("operator_orders._waiting_for_the_batch degraded ref=%s", order.ref, exc_info=True)
+        return False
 
 
 def _preorder_not_due(order: Order) -> bool:

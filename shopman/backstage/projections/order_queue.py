@@ -1036,6 +1036,7 @@ def _payment_tone(order: Order, method: str, payment_status: str, payment_data: 
 _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
     operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED: "Aguardando pagamento…",
     operator_orders.AdvanceBlock.PREORDER_NOT_DUE: "Encomenda do dia…",
+    operator_orders.AdvanceBlock.WAITLIST_FERMATA: "Esperando a fornada…",
 }
 
 
