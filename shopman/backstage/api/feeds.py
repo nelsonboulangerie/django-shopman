@@ -52,3 +52,21 @@ class FeedCollectionsView(_FeedBase):
         except CatalogError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "ref": ref})
+
+
+class FeedRotationView(_FeedBase):
+    def post(self, request):
+        ref = (request.data.get("ref") or "").strip()
+        rotate_seconds = request.data.get("rotate_seconds")
+        items_per_page = request.data.get("items_per_page")
+        if not ref:
+            return Response({"detail": "ref é obrigatório."}, status=400)
+        try:
+            feed_service.set_rotation(
+                ref, rotate_seconds=rotate_seconds, items_per_page=items_per_page
+            )
+        except CatalogError as exc:
+            return Response({"detail": str(exc)}, status=400)
+        return Response(
+            {"ok": True, "ref": ref, "rotate_seconds": rotate_seconds, "items_per_page": items_per_page}
+        )

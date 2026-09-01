@@ -24,6 +24,11 @@ describe("useFeedBoard", () => {
     [url, opts] = env.fetchMock.mock.calls[1]!;
     expect(String(url)).toBe("/api/v1/backstage/feeds/collections/");
     expect(opts.body).toEqual({ ref: "menu-1", collections: ["c1", "c2"] });
+
+    await s.setRotation("menu-1", 15, 12);
+    [url, opts] = env.fetchMock.mock.calls[2]!;
+    expect(String(url)).toBe("/api/v1/backstage/feeds/rotation/");
+    expect(opts.body).toEqual({ ref: "menu-1", rotate_seconds: 15, items_per_page: 12 });
   });
 
   it("guarda de reentrância por-ref", async () => {
