@@ -157,7 +157,9 @@ useHead({
       <template v-else-if="product && meta">
         <!-- Imagem emoldurada + informações num único card claro. -->
         <article class="-mx-4 overflow-hidden border-b bg-card sm:-mx-6 lg:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch lg:rounded-lg lg:border">
-          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6">
+          <!-- Com carrossel, os pontos já dão o respiro: padding de baixo diminui
+               para a foto não ficar longe do nome no mobile (no lg é lado a lado). -->
+          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6" :class="carouselImages.length ? 'pb-2 sm:pb-3' : ''">
             <div class="drop-shadow-md transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
               <div class="shop-photo-frame">
                 <div class="shop-photo-mat relative block bg-white">
@@ -228,7 +230,7 @@ useHead({
               </div>
             </div>
 
-            <div v-if="carouselImages.length" class="flex justify-center gap-2 pt-4">
+            <div v-if="carouselImages.length" class="flex justify-center gap-2 pt-2">
               <UiButton
                 v-for="(image, index) in carouselImages"
                 :key="image"
