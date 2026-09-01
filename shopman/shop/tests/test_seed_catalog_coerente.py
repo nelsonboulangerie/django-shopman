@@ -183,6 +183,35 @@ def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
     )
 
 
+def test_a_promessa_ao_cliente_nao_e_a_politica_de_estoque(arvore):
+    """⚠️ Duas perguntas, duas listas — e a água é quem prova que são duas.
+
+    ``sells_without_stock_skus`` responde "a venda pode passar sem saldo?".
+    ``made_to_order_skus`` responde "a casa promete finalizar isto na hora?".
+
+    Elas quase coincidem, e a quase-coincidência é a armadilha: enquanto havia
+    uma lista só, a Água saía da sacola anunciada como "Preparado na hora". Ela
+    é ``demand_ok`` porque sempre há outra garrafa na geladeira — não porque
+    alguém a prepare. Era a mesma confusão entre política e promessa que já
+    tinha sido tirada do código, reaparecendo na camada do dado.
+
+    Este teste existe para que ninguém volte a fundir as listas "porque são
+    quase iguais".
+    """
+    politica = _atribuicao(arvore, "sells_without_stock_skus")
+    promessa = _atribuicao(arvore, "made_to_order_skus")
+
+    assert "AG" in politica, "água vende sem saldo: sempre há outra na geladeira"
+    assert "AG" not in promessa, (
+        "ninguém prepara uma água na hora — o selo é sobre o acabamento, e "
+        "garrafa não tem acabamento"
+    )
+    assert set(promessa) != set(politica), (
+        "as duas listas viraram a mesma: é o sinal de que alguém tornou a "
+        "tratar política de estoque e promessa ao cliente como uma coisa só"
+    )
+
+
 def test_produto_sem_foto_e_decisao_nao_esquecimento(arvore):
     """Foto vazia no seed é uma DECISÃO por produto, nunca item esquecido.
 
