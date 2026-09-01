@@ -29,8 +29,9 @@ export interface CatalogItemProjection {
   qty_in_cart: number
   available_qty: number | null
   allergens: string[]
-  // Disponibilidade fina (WP-2): distingue, dentro de unavailable, "pausado pelo
-  // operador" de "esgotado honesto". is_notifiable habilita o CTA "Me avise" (WP-3).
+  // Flag técnico, nunca rótulo: a decisão da casa de suspender o item não aparece
+  // para o cliente (ele lê só "Indisponível"). Serve para separar o esgotado
+  // honesto — é `is_notifiable` que habilita o CTA "Me avise" (WP-3).
   is_paused: boolean
   is_notifiable: boolean
   // "Me avise" já assinado por este viewer — persiste o estado do sino entre reloads.

@@ -1290,9 +1290,6 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "KINTSUGI_PLANNED_OFFER": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Sai fresquinho no próximo lote. Quer garantir o seu?")},
     },
-    "KINTSUGI_PAUSED_COPY": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Temporariamente indisponível", message="Voltamos em breve.")},
-    },
 
     # ── Reorder ──────────────────────────────────────────────────
     "REORDER_CONFLICT_TITLE": {

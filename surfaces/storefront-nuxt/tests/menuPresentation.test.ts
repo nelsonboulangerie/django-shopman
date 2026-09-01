@@ -97,6 +97,17 @@ describe('menu presentation — tileBadge', () => {
     expect(tileBadge(item({ availability: 'unavailable', availability_label: 'Esgotado' })))
       .toEqual({ label: 'Esgotado', variant: 'destructive' })
   })
+
+  it('gives the paused item the same badge as any other unavailable one', () => {
+    // Para o cliente não existe motivo: pausado pela casa e esgotado saem iguais
+    // (AVAILABILITY-PLAN §2). O flag `is_paused` segue no contrato — ele decide o
+    // sino "Me avise", não o rótulo.
+    const paused = item({ availability: 'unavailable', availability_label: 'Indisponível', is_paused: true })
+    const soldOut = item({ availability: 'unavailable', availability_label: 'Indisponível', is_paused: false })
+
+    expect(tileBadge(paused)).toEqual(tileBadge(soldOut))
+    expect(tileBadge(paused)).toEqual({ label: 'Indisponível', variant: 'destructive' })
+  })
 })
 
 describe('menu presentation — sections and filters', () => {

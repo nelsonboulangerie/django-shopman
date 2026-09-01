@@ -276,9 +276,6 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "KINTSUGI_CANCEL_REFUSED": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
-    "KINTSUGI_PAUSED_COPY": (
-        ("shopman/storefront/api/surface.py", "Loja", "Disponibilidade e avisos"),
-    ),
     "KINTSUGI_PLANNED_OFFER": (
         ("shopman/storefront/api/surface.py", "Loja", "Disponibilidade e avisos"),
     ),

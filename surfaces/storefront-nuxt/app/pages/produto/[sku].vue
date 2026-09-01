@@ -39,10 +39,11 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
   : null)
 const currentQty = computed(() => product.value ? qtyForSku(product.value.sku) : 0)
 const badge = computed(() => product.value ? tileBadge(product.value) : null)
-const unavailableCtaLabel = computed(() => product.value?.is_paused ? 'Pausado' : 'Indisponível')
+// O cliente lê o ESTADO, nunca o motivo: esgotado, pausado pela casa ou fora do
+// canal chegam à tela como o mesmo "Indisponível". O porquê é assunto da casa
+// (AVAILABILITY-PLAN §2) e vive nas superfícies de operador.
 const unavailableReason = computed(() => {
   if (!product.value || product.value.can_add_to_cart) return ''
-  if (product.value.is_paused) return 'A loja pausou este item temporariamente.'
   return product.value.availability_label || 'Este item não está disponível agora.'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
@@ -229,7 +230,7 @@ useHead({
                   :qty="currentQty"
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
-                  :add-label="product.can_add_to_cart ? 'Adicionar' : unavailableCtaLabel"
+                  :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
               </div>
@@ -322,7 +323,7 @@ useHead({
               :qty="currentQty"
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
-              :add-label="product.can_add_to_cart ? 'Adicionar' : unavailableCtaLabel"
+              :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
               tone="inverted"
             />
           </div>
