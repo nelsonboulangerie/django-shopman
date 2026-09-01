@@ -57,6 +57,17 @@ class TestEscapeCell:
     def test_already_quoted_dangerous_text_is_escaped_again(self):
         assert escape_cell("'=literal") == "''=literal"
 
+    def test_any_quote_depth_over_dangerous_text_is_escaped(self):
+        assert escape_cell("''=x") == "'''=x"
+        assert escape_cell("'''=x") == "''''=x"
+        assert escape_cell("''-2+cmd") == "'''-2+cmd"
+
+    def test_quotes_over_safe_text_stay_clean(self):
+        assert escape_cell("'texto") == "'texto"
+        assert escape_cell("''texto") == "''texto"
+        assert escape_cell("'-10") == "'-10"
+        assert escape_cell("'''") == "'''"
+
 
 class TestRoundTrip:
     """unescape_cell(escape_cell(x)) == x — a bijeção do cofre."""
@@ -71,7 +82,26 @@ class TestRoundTrip:
             '=HYPERLINK("http://evil","x")',
             "-2+cmd",
             "'=literal",
+            "''=x",
+            "'''=x",
+            "''+cmd",
+            "'-2+cmd",
+            "''-2+cmd",
+            "'-10",
+            "''",
+            "'''",
             "'texto com aspa inofensiva",
             "\ncomeça com quebra",
         ):
             assert unescape_cell(escape_cell(original)) == original
+
+    def test_unescape_strips_exactly_one_quote_per_level(self):
+        """Cada nível de escape desfaz UM nível — indução na contagem de aspas."""
+        assert unescape_cell("'=x") == "=x"
+        assert unescape_cell("''=x") == "'=x"
+        assert unescape_cell("'''=x") == "''=x"
+
+    def test_unescape_leaves_safe_quoted_text_alone(self):
+        assert unescape_cell("'texto") == "'texto"
+        assert unescape_cell("''texto") == "''texto"
+        assert unescape_cell("'-10") == "'-10"
