@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 
@@ -37,10 +39,15 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     transaction.on_commit(lambda: stock_alerts.notify_back_in_stock(sku))
 
 
+@resilient_receiver
 def on_production_finished_for_stock_alerts(
     sender, product_ref, date, action, work_order, **kwargs
 ) -> None:
-    """Avisar quem pediu "me avise quando sair do forno" (F9)."""
+    """Avisar quem pediu "me avise quando sair do forno" (F9).
+
+    Não-crítico: o aviso ao cliente não pode derrubar o ``finish`` da fornada
+    (ver :func:`shopman.shop.handlers._resilient.resilient_receiver`).
+    """
     if action != "finished" or not product_ref:
         return
 

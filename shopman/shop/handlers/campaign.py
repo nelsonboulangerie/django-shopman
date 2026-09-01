@@ -17,6 +17,8 @@ import logging
 
 from django.db import transaction
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,6 +52,7 @@ def connect() -> None:
 # ── Receivers ────────────────────────────────────────────────────────
 
 
+@resilient_receiver
 def on_production_changed(sender, product_ref, date, action, work_order, **kwargs) -> None:
     """Fornada concluída → avalia as regras de ``production_finished``.
 

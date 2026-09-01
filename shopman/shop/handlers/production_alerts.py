@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from shopman.shop.adapters import alert as alert_adapter
 from shopman.shop.directives import PRODUCTION_LATE_CHECK
+from shopman.shop.handlers._resilient import resilient_receiver
 from shopman.shop.production_config import ProductionConfig
 
 logger = logging.getLogger(__name__)
@@ -33,8 +34,14 @@ def connect() -> None:
     )
 
 
+@resilient_receiver
 def on_production_changed(sender, product_ref, date, action, work_order, **kwargs):
-    """Create operator alerts for production lifecycle events."""
+    """Create operator alerts for production lifecycle events.
+
+    Não-crítico: um alerta que falha não pode derrubar o ``finish`` da fornada
+    nem abortar o sync de pedido, que roda logo em seguida (ver
+    :func:`shopman.shop.handlers._resilient.resilient_receiver`).
+    """
     ensure_late_check_scheduled()
     if action == "finished":
         maybe_create_low_yield_alert(work_order)
