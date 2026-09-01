@@ -13,6 +13,7 @@ import type {
   POSProductProjection,
   POSProjection,
   POSSaleReviewProjection,
+  POSScheduleResponse,
   POSSaleReviewResponse,
   POSTabPayload,
   POSTabProjection,
@@ -29,11 +30,14 @@ import {
   resolvePayment,
 } from "~/utils/posIntent";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
+import type { ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
   paymentProofView,
   paymentRemainingQ as computeRemainingQ,
+  splitHint,
+  splitShareQ,
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
@@ -321,16 +325,92 @@ export function usePosSale(deps: PosSaleDeps) {
   const deliveryDateEffective = computed(
     () => cart.deliveryDate || review.value?.delivery_date || pos.value?.delivery_today || "",
   );
-  // As janelas do dia escolhido. Sem review (endereço em branco), as de HOJE
-  // servem enquanto a data for hoje — e nunca se diz "sem janela" só porque a
-  // resposta ainda não chegou: ausência de resposta não é fato.
-  const deliverySlots = computed(() => {
-    if (review.value) return review.value.delivery_slots ?? [];
+  // AGENDAMENTO — as datas que a casa opera e as janelas do dia escolhido, já
+  // anotadas com a prontidão DESTE carrinho.
+  //
+  // A review responde isso, mas só no checkout — e o agendamento acontece na
+  // ABERTURA do atendimento, com o operador no telefone e o carrinho ainda pela
+  // metade. Ficar sem resposta até a tela de pagamento é o que empurrava a data
+  // para o fim do fluxo, onde ela nunca deveria ter morado.
+  const schedule = ref<POSScheduleResponse | null>(null);
+  const scheduleBusy = ref(false);
+  let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
+  let scheduleSeq = 0;
+
+  async function fetchSchedule() {
+    const seq = ++scheduleSeq;
+    scheduleBusy.value = true;
+    try {
+      const skus = [...new Set(cart.items.map((item) => item.sku).filter(Boolean))].join(",");
+      const query = new URLSearchParams();
+      if (cart.deliveryDate) query.set("date", cart.deliveryDate);
+      if (skus) query.set("skus", skus);
+      const response = await $fetch<POSScheduleResponse>(
+        apiPath(`/api/v1/backstage/pos/schedule/?${query.toString()}`),
+        { method: "GET", credentials: "include", headers: requestHeaders },
+      );
+      // Resposta velha chegando depois da nova reescreveria as janelas do dia
+      // ERRADO — o operador troca de data mais rápido que a rede responde.
+      if (seq !== scheduleSeq) return;
+      schedule.value = response;
+    } catch {
+      // Sem resposta a tela diz "carregando", nunca "não há janela": ausência de
+      // resposta não é fato, e o servidor recusa a janela impossível de qualquer
+      // jeito. Falhar aqui não pode travar a venda.
+      if (seq === scheduleSeq) schedule.value = null;
+    } finally {
+      if (seq === scheduleSeq) scheduleBusy.value = false;
+    }
+  }
+
+  function scheduleRefreshSchedule() {
+    if (scheduleTimer) clearTimeout(scheduleTimer);
+    scheduleTimer = setTimeout(() => {
+      scheduleTimer = null;
+      void fetchSchedule();
+    }, 200);
+  }
+
+  // O carrinho entra na pergunta: lançar a baguete de tradição DEPOIS de marcar
+  // as 09:00 tem que apagar aquela janela na hora. Sem isto a escolha virava
+  // impossível em silêncio e o servidor só recusava no fim, com o cliente já
+  // tendo ouvido o horário.
+  //
+  // Mas só quando há agendamento em jogo. A venda dominante do balcão é para
+  // agora e sem hora marcada: buscar a grade a cada item lançado seria uma
+  // requisição por toque no produto para responder uma pergunta que ninguém fez.
+  // Abrir o diálogo também busca (`refreshSchedule`), então quem VAI agendar
+  // encontra a resposta pronta.
+  watch(
+    () => [cart.deliveryDate, cart.deliveryTimeSlot, cart.items.map((item) => item.sku).join(",")].join("|"),
+    () => {
+      if (!cart.deliveryDate && !cart.deliveryTimeSlot) return;
+      scheduleRefreshSchedule();
+    },
+  );
+
+  const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
+  const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
+  const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
+  const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
+
+  // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
+  // último termo é o que faz o formulário abrir já respondendo.
+  // As janelas do dia escolhido. A review manda quando existe (ela conhece o
+  // endereço e a taxa); fora do checkout, o agendamento responde. Nunca se diz
+  // "sem janela" só porque a resposta ainda não chegou.
+  const deliverySlots = computed<ScheduleWindow[]>(() => {
+    if (review.value?.delivery_slots?.length) return review.value.delivery_slots;
+    if (schedule.value && schedule.value.date === deliveryDateEffective.value) {
+      return schedule.value.windows ?? [];
+    }
     const today = pos.value?.delivery_today || "";
     if (today && deliveryDateEffective.value === today) return pos.value?.delivery_slots_today ?? [];
     return [];
   });
-  const deliverySlotsPending = computed(() => !review.value && !deliverySlots.value.length);
+  const deliverySlotsPending = computed(
+    () => scheduleBusy.value || (!review.value && !schedule.value),
+  );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
@@ -348,7 +428,12 @@ export function usePosSale(deps: PosSaleDeps) {
   watch(checkoutMode, (open) => {
     // Fora do checkout o carrinho volta a mudar (itens novos): o total retido
     // ficaria mentindo — zera e a próxima entrada recomeça do zero.
-    if (!open) lastReviewTotalQ.value = 0;
+    if (!open) {
+      lastReviewTotalQ.value = 0;
+      // A divisão é desta conta. Sair do checkout com "3 pessoas" ligado faria a
+      // PRÓXIMA venda lançar um terço no primeiro toque, sem ninguém ter pedido.
+      splitCount.value = 0;
+    }
   });
   const paymentTotalQ = computed(
     () => review.value?.total_q ?? (lastReviewTotalQ.value || cartNetTotalQ(cart.items)),
@@ -379,8 +464,38 @@ export function usePosSale(deps: PosSaleDeps) {
   // editing the amount does. (`_virgin` is internal; stripped before the intent.)
   const selectedTender = () => cart.paymentTenders[selectedTenderIndex.value];
 
+  // DIVIDIR A CONTA — "somos três, cada um paga o seu".
+  //
+  // A divisão não cria três linhas de uma vez: ela muda o tamanho da PRÓXIMA.
+  // Com "3 pessoas" ligado, tocar em Dinheiro lança um terço, tocar em Cartão
+  // lança o segundo, e o terceiro fecha a conta. É o fluxo do Odoo (parcial
+  // sucessivo) com a aritmética feita pela máquina — e compõe com tudo que já
+  // existe: cada pessoa escolhe a SUA forma, o teclado edita qualquer linha, e
+  // "Exato" continua fechando o resto.
+  //
+  // 0 = sem divisão (a próxima linha leva o restante inteiro, como sempre foi).
+  const splitCount = ref(0);
+  const splitNextShareQ = computed(() => splitShareQ(
+    paymentTotalQ.value,
+    splitCount.value,
+    cart.paymentTenders.length,
+    paymentRemainingQ.value,
+  ));
+  const splitNote = computed(() => splitHint(
+    paymentTotalQ.value,
+    splitCount.value,
+    cart.paymentTenders.length,
+    paymentRemainingQ.value,
+  ));
+  function setSplitCount(count: number) {
+    // Tocar de novo no mesmo número DESLIGA. Um botão que só liga obriga o
+    // operador a caçar um "cancelar" quando o cliente muda de ideia — e mudar de
+    // ideia sobre dividir a conta é rotina.
+    splitCount.value = splitCount.value === count ? 0 : Math.max(0, count);
+  }
+
   function addTender(method: string) {
-    const amountQ = Math.max(0, paymentRemainingQ.value);
+    const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
       // Tocar num método com o total já coberto era silêncio absoluto — o
       // operador tocava de novo achando que o botão quebrou. Diz o porquê e o
@@ -1730,7 +1845,16 @@ export function usePosSale(deps: PosSaleDeps) {
     deliverySlots,
     deliverySlotsPending,
     deliveryDateEffective,
+    scheduleToday,
+    scheduleAvailableDates,
+    scheduleBottleneckName,
+    scheduleReadyAt,
+    refreshSchedule: fetchSchedule,
     selectedTenderMethod,
+    splitCount,
+    splitNextShareQ,
+    splitNote,
+    setSplitCount,
     tabDialogTitle,
     tabDialogDescription,
     sortedTabs,

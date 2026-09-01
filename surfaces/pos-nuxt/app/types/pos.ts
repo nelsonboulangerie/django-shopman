@@ -592,6 +592,23 @@ export interface POSIntentCartState {
   clientRequestId: string;
 }
 
+/** Resposta de `/pos/schedule/` — o "quando" perguntado na abertura. */
+export interface POSScheduleResponse {
+  ok: boolean;
+  /** O hoje da LOJA (um tablet com fuso errado agendaria para ontem). */
+  today: string;
+  /** O dia a que estas janelas pertencem. */
+  date: string;
+  max_preorder_days: number;
+  /** Datas em que a casa realmente opera — sem dia fechado, sem feriado. */
+  available_dates: string[];
+  windows: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
+  earliest_window_ref: string;
+  /** O gargalo por extenso, para a tela dizer o porquê uma vez só. */
+  ready_at: string;
+  bottleneck_name: string;
+}
+
 export interface POSSaleReviewProjection {
   intent_version: string;
   tab_ref: string;
@@ -627,7 +644,11 @@ export interface POSSaleReviewProjection {
   /** A data que o servidor usou — em branco no pedido, é hoje pelo relógio da loja. */
   delivery_date: string;
   /** Janelas de meia hora do expediente daquele dia. Vazio = não há janela. */
-  delivery_slots: Array<{ ref: string; label: string }>;
+  // Anotadas com a prontidão do carrinho: a janela que não cabe volta
+  // `enabled: false` com o motivo, nunca some da lista.
+  delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
+  /** A primeira janela oferecível deste dia para este carrinho, ou "". */
+  delivery_earliest_slot?: string;
 }
 
 export interface POSSaleReviewResponse {

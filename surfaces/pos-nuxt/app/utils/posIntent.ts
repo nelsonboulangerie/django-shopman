@@ -127,6 +127,16 @@ export function buildPosSaleIntent(
   if (state.customerEmail.trim()) payload.customer_email = state.customerEmail.trim();
   if (state.customerMemoryAction.trim()) payload.customer_memory_action = state.customerMemoryAction.trim();
 
+  // QUANDO — fato do PEDIDO, e por isso FORA do bloco de entrega.
+  //
+  // Estas duas linhas moravam lá dentro, e era o terceiro portão do mesmo
+  // mal-entendido (os outros dois eram do servidor: a review não respondia para
+  // retirada, e o commit descartava as chaves). O operador combinava quinta às
+  // 10h para retirar, a tela mostrava "Amanhã, 10:00 às 10:30" — e o intent
+  // subia sem data nenhuma. O pedido nascia para hoje, calado.
+  if (state.deliveryDate.trim()) payload.delivery_date = state.deliveryDate.trim();
+  if (state.deliveryTimeSlot.trim()) payload.delivery_time_slot = state.deliveryTimeSlot.trim();
+
   if (state.fulfillmentType === "delivery") {
     payload.delivery_address = state.deliveryAddress.trim();
     payload.delivery_address_structured = {
@@ -134,8 +144,6 @@ export function buildPosSaleIntent(
       complement: state.deliveryComplement.trim() || state.deliveryAddressStructured.complement,
       delivery_instructions: state.deliveryInstructions.trim() || state.deliveryAddressStructured.delivery_instructions,
     };
-    if (state.deliveryDate.trim()) payload.delivery_date = state.deliveryDate.trim();
-    if (state.deliveryTimeSlot.trim()) payload.delivery_time_slot = state.deliveryTimeSlot.trim();
     // A TAXA não viaja daqui. Quem a resolve é o motor de entrega do servidor
     // (zona de CEP → faixa de distância → frete grátis por valor), o mesmo que a
     // loja usa. O que sobe é só a EXCEÇÃO que o operador assumiu — e ela só

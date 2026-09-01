@@ -287,6 +287,7 @@ def _pos_sale_review_payload(review) -> dict:
         "delivery_distance_km": review.delivery_distance_km,
         "delivery_date": review.delivery_date,
         "delivery_slots": list(review.delivery_slots),
+        "delivery_earliest_slot": review.delivery_earliest_slot,
     }
 
 
@@ -1439,6 +1440,33 @@ class OrderRequeueFiscalView(_OrderActionBase):
         responses={200: OpenApiResponse(description="Recent sales list.")},
     ),
 )
+class POSScheduleView(APIView):
+    """As datas e janelas combináveis — perguntado na ABERTURA, não no pagamento.
+
+    ``GET ?date=YYYY-MM-DD&skus=BF,CR``. Os SKUs vêm porque a janela oferecível
+    depende do que está no carrinho: prometer 09:00 com uma baguete de tradição
+    dentro é quebra de contrato com quem aparece às 9h.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def get(self, request):
+        from shopman.backstage.projections.pos import build_pos_schedule
+
+        skus = [
+            sku
+            for raw in str(request.GET.get("skus") or "").split(",")
+            if (sku := raw.strip())
+        ]
+        return Response({
+            "ok": True,
+            **build_pos_schedule(
+                delivery_date=str(request.GET.get("date") or "").strip(), skus=skus
+            ),
+        })
+
+
 class POSRecentSalesView(APIView):
     """Últimas vendas do balcão — a casa da DANFE depois que a tela da venda passou."""
 

@@ -114,9 +114,26 @@ dona no balcão às 18h05 não conseguiria agendar a retirada de amanhã.
 - O bloco de data sai de dentro do formulário de entrega.
 - Janela incompatível aparece desabilitada, com o motivo.
 
+**O portão era TRIPLO, e o terceiro só apareceu no navegador.**
+Dois eram do servidor (a review não respondia para retirada; o commit descartava
+as chaves). O terceiro estava na superfície: `utils/posIntent.ts` montava
+`delivery_date` / `delivery_time_slot` **dentro** do `if (fulfillmentType ===
+"delivery")`. Com os dois primeiros consertados, a barra já mostrava "Amanhã,
+12:00 às 12:30" e o intent subia **sem data nenhuma** — o pedido nascia para
+hoje, calado, e a tela dizia o contrário. Só a verificação no navegador pegou
+isso; as três suítes estavam verdes.
+
 > Chaves persistidas seguem `delivery_date` / `delivery_time_slot`. Renomear
 > agora atinge loja, gestor, fechamento, B.I. e acompanhamento na véspera do
 > go-live. Fica anotado como pergunta para o Pablo.
+
+### Provado no navegador (PDV local, 31/08)
+
+Pedido `PDV-260831-J85`: **retirada** com `delivery_date=2026-09-01` e
+`delivery_time_slot=12:00-12:30`, sem endereço e sem taxa, três tenders
+(453+454+453 = 1360), e `preorder.activate` **enfileirada** para a madrugada da
+data. As janelas das 09:00 às 11:30 voltaram desabilitadas com *"Baguette de
+Tradition sai às 12:00."*
 
 ## WP-5 — dividir a conta
 
@@ -126,6 +143,16 @@ resto dos centavos na primeira. Cada linha recebe sua forma de pagamento.
 
 Odoo faz isso com pagamentos parciais sucessivos; a diferença é só quem faz a
 divisão. Aqui faz o sistema.
+
+**A divisão não cria N linhas de uma vez — ela muda o tamanho da PRÓXIMA.** Com
+"3" ligado, tocar em Dinheiro lança um terço, tocar em Cartão lança o segundo, e
+o terceiro fecha. Isso é o que faz a feature compor com tudo que já existe: cada
+pessoa escolhe a SUA forma, o teclado continua editando qualquer linha, e
+"Exato" continua fechando o resto. Zero regressão de UX.
+
+Os centavos fecham por acumulação (`round(total·k/n) − round(total·(k−1)/n)`), e
+a **última parcela leva o que restou** — é isso que mantém a conta fechada mesmo
+depois de o operador editar uma linha ("esse aqui paga R$ 50, o resto divide").
 
 ---
 

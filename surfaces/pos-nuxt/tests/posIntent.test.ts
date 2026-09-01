@@ -331,6 +331,45 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("o QUANDO viaja na retirada também", () => {
+  it("retirada agendada leva data e janela no intent", () => {
+    // Estas duas linhas moravam dentro do bloco `if (fulfillmentType ===
+    // "delivery")`, e era o terceiro portão do mesmo mal-entendido (os outros
+    // dois eram do servidor). O operador combinava quinta às 10h para retirar, a
+    // barra mostrava "Amanhã, 10:00 às 10:30" — e o intent subia SEM data. O
+    // pedido nascia para hoje, calado, e nada na tela dizia isso.
+    const payload = buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "pickup",
+      deliveryDate: "2026-09-10",
+      deliveryTimeSlot: "10:00-10:30",
+    }) as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_date).toBe("2026-09-10");
+    expect(payload.delivery_time_slot).toBe("10:00-10:30");
+  });
+
+  it("mas a retirada continua sem ENDEREÇO e sem TAXA", () => {
+    // *Onde* e *quanto* seguem sendo fatos da entrega. Só *quando* mudou de lado.
+    const payload = buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "pickup",
+      deliveryDate: "2026-09-10",
+      deliveryAddress: "Rua A, 10",
+      deliveryFeeOverrideQ: 500,
+    }) as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_address).toBeUndefined();
+    expect(payload.delivery_fee_override_q).toBeUndefined();
+    expect(payload.delivery_date).toBe("2026-09-10");
+  });
+
+  it("sem agendamento, nenhuma das duas chaves sobe", () => {
+    const payload = buildPosSaleIntent(baseIntentState() as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_date).toBeUndefined();
+    expect(payload.delivery_time_slot).toBeUndefined();
+  });
+});
+
 describe("resolvePayment (injeção de tenders → contrato)", () => {
   const t = (method: string, amount_q: number) => ({ method, amount_q, collection: "terminal" as const });
 

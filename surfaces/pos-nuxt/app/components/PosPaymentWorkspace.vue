@@ -46,6 +46,8 @@ import {
   lineSavingsQ,
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
+import { scheduleLabel, windowLabel } from "~/presentation/schedule";
+import { SPLIT_PRESETS } from "~/presentation/payment";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -77,6 +79,10 @@ const props = defineProps<{
   fulfillmentType: "pickup" | "delivery";
   paymentCollection: "terminal" | "on_delivery";
   paymentTenders: POSPaymentTenderDraft[];
+  /** Em quantas pessoas a conta está dividida (0 = sem divisão). */
+  splitCount: number;
+  /** "R$ 33,15 · pessoa 1 de 3" — quanto pedir a quem está na frente. */
+  splitNote: string;
   selectedTenderIndex: number;
   selectedTenderMethod: string;
   /** Total a cobrar (review viva → total retido → estimativa líquida local). */
@@ -106,12 +112,18 @@ const props = defineProps<{
   deliveryFeeQ: number;
   deliveryFeeSource: string;
   deliveryDistanceKm: number | null;
-  /** Janelas de meia hora do expediente do dia escolhido. */
-  deliverySlots: Array<{ ref: string; label: string }>;
+  /** Janelas do dia escolhido, já anotadas com a prontidão do carrinho. */
+  deliverySlots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
   /** Ainda não há resposta sobre as janelas (a review está a caminho). */
   deliverySlotsPending: boolean;
   /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
   deliveryDateEffective: string;
+  /** O hoje da LOJA, e as datas que ela realmente opera. */
+  scheduleToday: string;
+  scheduleAvailableDates: string[];
+  /** O item que segura o pedido, e a que horas ele libera. */
+  scheduleBottleneckName: string;
+  scheduleReadyAt: string;
   /** "Troco para quanto?" do dinheiro na entrega (entrada livre em reais). */
   changeForInput: string;
   orderNotes: string;
@@ -131,6 +143,7 @@ const emit = defineEmits<{
   "update:paymentCollection": ["terminal" | "on_delivery"];
   addTender: [string];
   removeTender: [number];
+  setSplitCount: [number];
   selectTender: [number];
   /** Numpad edits the SELECTED tender; decimal entry (reais first, comma → centavos). */
   tenderDigit: [string];
@@ -248,6 +261,13 @@ watch(customerSheetOpen, async (open) => {
   await nextTick();
   focusCustomerControl();
 });
+const scheduleSheetOpen = ref(false);
+// O resumo do "quando" para o atalho dentro do Recebimento se explicar sozinho.
+const scheduleChipLabel = computed(() => scheduleLabel(
+  props.deliveryDate,
+  windowLabel(props.deliverySlots, props.deliveryTimeSlot),
+  props.scheduleToday,
+));
 const discountSheetOpen = ref(false);
 
 // Foco automático no modal de Recebimento: com entrega selecionada, quem recebe
@@ -841,6 +861,35 @@ defineExpose({
           </li>
         </ul>
 
+        <!-- DIVIDIR A CONTA — "somos três, cada um paga o seu".
+             Ligado, cada toque numa forma de pagamento lança UMA parte, já
+             calculada (os centavos fecham sozinhos, e a última parcela leva o
+             que restou mesmo depois de o operador editar alguma linha). O
+             operador não faz conta de cabeça com os três clientes olhando.
+             Tocar de novo no mesmo número desliga: mudar de ideia é rotina. -->
+        <div class="shrink-0 border-t pt-3">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Dividir em
+            </span>
+            <UiButton
+              v-for="n in SPLIT_PRESETS"
+              :key="n"
+              type="button"
+              variant="outline"
+              size="sm"
+              class="h-9 w-9 p-0 tabular-nums"
+              :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
+              :aria-pressed="splitCount === n"
+              :aria-label="`Dividir a conta em ${n} pessoas`"
+              @click="$emit('setSplitCount', n)"
+            >
+              {{ n }}
+            </UiButton>
+            <span v-if="splitNote" class="ml-auto text-sm font-semibold tabular-nums">{{ splitNote }}</span>
+          </div>
+        </div>
+
         <!-- linhas de pagamento + troco/restante -->
         <div v-if="tenderLines.length" class="shrink-0 border-t pt-3">
           <ul class="flex flex-col gap-1.5">
@@ -993,11 +1042,7 @@ defineExpose({
     :delivery-neighborhood="deliveryNeighborhood"
     :delivery-complement="deliveryComplement"
     :delivery-instructions="deliveryInstructions"
-    :delivery-date="deliveryDate"
-    :delivery-date-effective="deliveryDateEffective"
-    :delivery-time-slot="deliveryTimeSlot"
-    :delivery-slots="deliverySlots"
-    :delivery-slots-pending="deliverySlotsPending"
+    :schedule-label="scheduleChipLabel"
     :delivery-fee-override="deliveryFeeOverride"
     :delivery-fee-override-input="deliveryFeeOverrideInput"
     :delivery-fee-q="deliveryFeeQ"
@@ -1011,12 +1056,27 @@ defineExpose({
     @update:delivery-neighborhood="$emit('update:deliveryNeighborhood', $event)"
     @update:delivery-complement="$emit('update:deliveryComplement', $event)"
     @update:delivery-instructions="$emit('update:deliveryInstructions', $event)"
-    @update:delivery-date="$emit('update:deliveryDate', $event)"
-    @update:delivery-time-slot="$emit('update:deliveryTimeSlot', $event)"
     @update:delivery-fee-override="$emit('update:deliveryFeeOverride', $event)"
     @update:delivery-fee-override-input="$emit('update:deliveryFeeOverrideInput', $event)"
     @update:order-notes="$emit('update:orderNotes', $event)"
     @pick-saved-address="$emit('pickSavedAddress', $event)"
+    @open-schedule="scheduleSheetOpen = true"
+  />
+
+  <!-- QUANDO — a MESMA caixa que a tela de venda abre. O agendamento é decidido
+       na abertura do atendimento; aqui ele é revisto, com as mesmas palavras. -->
+  <PosScheduleModal
+    v-model:open="scheduleSheetOpen"
+    :today="scheduleToday"
+    :delivery-date-effective="deliveryDateEffective"
+    :delivery-time-slot="deliveryTimeSlot"
+    :available-dates="scheduleAvailableDates"
+    :windows="deliverySlots"
+    :bottleneck-name="scheduleBottleneckName"
+    :ready-at="scheduleReadyAt"
+    :pending="deliverySlotsPending"
+    @update:delivery-date="$emit('update:deliveryDate', $event)"
+    @update:delivery-time-slot="$emit('update:deliveryTimeSlot', $event)"
   />
 
   <!-- Cliente & fiscal — shared full-screen picker (showFiscal rides the receipt) -->
