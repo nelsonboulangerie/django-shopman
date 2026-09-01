@@ -15,6 +15,10 @@ class OperatorAlert(models.Model):
         ("payment_reconciliation_failed", "Reconciliação de pagamento falhou"),
         ("payment_disputed", "Cartão contestado (disputa)"),
         ("webhook_failed", "Webhook falhou"),
+        # Integração externa de SAÍDA (Google Geocoding, etc.) falhando. O
+        # webhook é o lado de entrada; este é o de saída — que até aqui morria
+        # em `logger.warning` e ninguém ficava sabendo.
+        ("integration_failed", "Integração externa falhou"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
         ("stock_low", "Estoque baixo"),

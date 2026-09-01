@@ -128,6 +128,97 @@ def record_webhook_failure(
     )
 
 
+#: Nome legível de cada integração externa nos alertas/notificações. Fallback é
+#: o próprio ``provider`` — um slug cru ainda é melhor que aviso nenhum.
+_INTEGRATION_PROVIDER_LABELS = {
+    "google_geocoding": "Google Geocoding",
+}
+
+
+def record_integration_failure(
+    *,
+    provider: str,
+    operation: str,
+    detail: str,
+    severity: str = "error",
+    exc: BaseException | None = None,
+    context: dict[str, Any] | None = None,
+):
+    """Log e alerta de falha em integração EXTERNA de saída (Google, etc.).
+
+    Espelha ``record_webhook_failure``: evento estruturado para máquinas +
+    ``OperatorAlert`` com debounce para humanos. Quando o alerta é NOVO (não
+    debounced), também notifica os gestores por ``UserNotification`` + push SSE
+    no canal pessoal — falha de saída não pode morar só no ``logger.warning``.
+
+    Nunca levanta: observabilidade não derruba a request do cliente.
+    """
+    exception_class = exc.__class__.__name__ if exc else ""
+    detail = str(detail or "").strip() or exception_class or "falha desconhecida"
+    details = {
+        "provider": provider,
+        "operation": operation,
+        "detail": detail,
+        "exception_class": exception_class,
+        "context": context or {},
+    }
+    operational_event("integration.failed", level=logging.ERROR, **details)
+    label = _INTEGRATION_PROVIDER_LABELS.get(provider, provider)
+    alert = create_operator_alert(
+        type="integration_failed",
+        severity=severity,
+        message=f"Integração {label} falhando ({operation}): {detail}",
+        dedupe_key=f"{provider}:{operation}:{detail}",
+        **details,
+    )
+    if alert is not None:
+        _notify_integration_failure_admins(
+            provider_label=label, operation=operation, detail=detail
+        )
+    return alert
+
+
+def _notify_integration_failure_admins(*, provider_label: str, operation: str, detail: str) -> None:
+    """Avisar quem gerencia pedidos, NA HORA, pelo canal pessoal.
+
+    Precedente: ``sign_in_audit._notify_badge_reissue`` (with_perm + UserNotification
+    + push SSE ``user-<id>``). A permissão é ``shop.manage_orders`` — a mesma régua
+    do Gestor, a superfície onde o sino pessoal está montado. Defensivo por
+    construção: falha aqui vira log, nunca 500 no checkout do cliente.
+    """
+    try:
+        from django.contrib.auth import get_user_model
+
+        from shopman.shop.models import NotificationCategory, UserNotification
+        from shopman.shop.services.campaign import push_user_notification
+
+        managers = get_user_model().objects.with_perm(
+            "shop.manage_orders",
+            is_active=True,
+            backend="django.contrib.auth.backends.ModelBackend",
+        )
+        for manager in managers:
+            notification = UserNotification.objects.create(
+                user=manager,
+                category=NotificationCategory.SYSTEM,
+                title=f"Integração {provider_label} falhando",
+                message=(
+                    f"{operation}: {detail}\n"
+                    "Veja os alertas operacionais no Gestor ou no Admin."
+                ),
+            )
+            push_user_notification(notification)
+    except Exception:
+        logger.exception(
+            "integration_failure.notify_failed",
+            extra={
+                "event": "integration_failure.notify_failed",
+                "provider_label": provider_label,
+                "operation": operation,
+            },
+        )
+
+
 def record_payment_reconciliation_failure(
     *,
     gateway: str,
@@ -178,6 +269,7 @@ def _without_order_ref(fields: dict[str, Any]) -> dict[str, Any]:
 __all__ = [
     "create_operator_alert",
     "operational_event",
+    "record_integration_failure",
     "record_payment_reconciliation_failure",
     "record_webhook_failure",
 ]
