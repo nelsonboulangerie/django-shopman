@@ -164,6 +164,39 @@ class PublicConfigProjection:
     # DDD padrão da loja (Shop.default_ddd, config admin): o client assume quando o
     # cliente digita um telefone sem DDD, espelhando o Doorman (intents/_phone.py).
     default_ddd: str
+    # AMBIENTE — o aviso de que esta loja não é a de verdade. Vazio em produção,
+    # e a tela não renderiza nada. Ver `_environment_notice`.
+    environment_notice: str = ""
+
+
+#: O que a tarja diz, por ambiente. Só isto: uma frase curta, sem instrução —
+#: quem está na loja não precisa saber o que é "staging".
+_ENVIRONMENT_NOTICES = {
+    "staging": "Ambiente de testes",
+    "development": "Ambiente de desenvolvimento",
+    "dev": "Ambiente de desenvolvimento",
+    "local": "Ambiente local",
+}
+
+
+def _environment_notice() -> str:
+    """A frase da tarja, ou "" quando esta é a loja de verdade.
+
+    Sai de ``SHOPMAN_ENVIRONMENT``, que é a MESMA variável que já decide o gate
+    de deploy, o mock de pagamento e o debug do OTP. Um segundo interruptor só
+    para a tarja seria uma segunda verdade sobre o mesmo fato — e no dia em que
+    alguém virasse um e esquecesse o outro, a loja de verdade estaria dizendo
+    "ambiente de testes" ou, pior, a de teste estaria calada.
+
+    Ambiente desconhecido devolve "" de propósito: uma tarja que aparece sozinha
+    numa loja em produção por causa de um valor digitado errado assusta cliente.
+    Falhar aqui é falhar para o lado silencioso — o oposto do que vale para
+    dinheiro e promessa, porque aqui o dano é o alarme falso.
+    """
+    from django.conf import settings
+
+    ambiente = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
+    return _ENVIRONMENT_NOTICES.get(ambiente, "")
 
 
 @dataclass(frozen=True)
@@ -240,6 +273,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,
         default_ddd=get_default_ddd(),
+        environment_notice=_environment_notice(),
     )
 
     notice_cart_has_items = (
