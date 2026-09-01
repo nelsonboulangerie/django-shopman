@@ -1099,26 +1099,19 @@ class Command(BaseCommand):
         self.stdout.write("  📦 Catálogo...")
 
         # Catálogo real Nelson Boulangerie
-        # Fonte: https://github.com/pablondrina/nb-catalog — os MESMOS arquivos,
-        # servidos pelo static site `nb-catalog-app` da DO (deploy_on_push) atrás
-        # da Cloudflare, em vez do `raw.githubusercontent.com`. O raw não é CDN: o
-        # GitHub limita hotlink, e se estrangular a loja fica sem foto nenhuma.
-        # Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md (o peso dos arquivos —
-        # 12,38 MB em 19 fotos — é o outro problema, resolvido na origem).
+        # As fotos moram no próprio storefront (surfaces/storefront-nuxt/public/
+        # img/products/): 41 webp otimizados (1200px quadrado, q80, sem EXIF),
+        # servidos pela própria loja — deploy atômico com o app, nenhum serviço
+        # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
         #
         # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
         # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
-        # toda foto de produto virou 404). O default é a verdade de HOJE — o
-        # catálogo antigo em cardapio.* — e é dependência de runtime REGISTRADA:
-        # aposentar o nb-catalog-app exige antes mudar a casa das imagens e esta env.
+        # toda foto de produto virou 404). O host é env com default na loja viva.
         image_base = os.environ.get(
             "SHOPMAN_PRODUCT_IMAGE_BASE",
-            "https://cardapio.nelsonboulangerie.com.br/img/products",
+            "https://menu.nelsonboulangerie.com.br/img/products",
         ).rstrip("/")
-        IMG = f"{image_base}/loja"
-        # Acervo completo de fotos da casa (mesmo site, diretório pai do loja/):
-        # cobre as restaurações do Yooga que o conjunto otimizado ainda não tem.
-        ACERVO = image_base
+        IMG = image_base
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
@@ -1183,13 +1176,13 @@ class Command(BaseCommand):
             ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 0, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
             ("FA", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 1, True,
-             f"{ACERVO}/fa.jpg", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+             f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
             ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
-             f"{ACERVO}/anc.jpg", 90, "Melhor consumido no dia"),
+             f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
              f"{IMG}/co.webp", 120, "Melhor consumido no dia. Reaqueça a 180°C por 5min"),
             # ⚠️ O que a fornada produz é a UNIDADE. O pacote é apresentação de
@@ -1298,10 +1291,10 @@ class Command(BaseCommand):
             # Nome e preço são dado real do Yooga (preço mais praticado nos 12
             # meses até 20/07/2026). Coleção, descrição, validade, peso e
             # conservação são proposta — o padrão da coleção, para revisão.
-            # Foto (26/08): primeiro a foto da casa — o conjunto otimizado
-            # (loja/) e o ACERVO completo em img/products/, que cobre quase
-            # todas as restaurações; irmão direto reaproveita a foto da família
-            # (mini folhado → ff.jpg, mini hot dog → ho.webp). Onde a casa não
+            # Foto (26/08): primeiro a foto da casa — o conjunto único e
+            # otimizado em img/products/, que cobre quase todas as
+            # restaurações; irmão direto reaproveita a foto da família
+            # (mini folhado → ff.webp, mini hot dog → ho.webp). Onde a casa não
             # tem foto (bebidas, Kãnfa, alguns pães), Unsplash conferido a olho
             # como placeholder. Só o Porquinho fica sem foto — não há registro
             # dele no acervo e foto errada é pior que sem foto — e cai no card
@@ -1319,25 +1312,25 @@ class Command(BaseCommand):
             ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
              unsplash("photo-1594579629306-07af17998d4a"), 300, ""),
             ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 0, True,
-             f"{ACERVO}/bh.jpg", 90, "Conservar refrigerado. Consumir no dia"),
+             f"{IMG}/bh.webp", 90, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 0, True,
-             f"{ACERVO}/ma.jpg", 95, "Conservar refrigerado. Consumir no dia"),
+             f"{IMG}/ma.webp", 95, "Conservar refrigerado. Consumir no dia"),
             ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
-             f"{ACERVO}/cm.jpg", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/cm.webp", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
-             f"{ACERVO}/bch.jpg", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/bch.webp", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 0, True,
              f"{IMG}/cn.webp", 72, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 0, True,
-             f"{ACERVO}/pr.jpg", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/pr.webp", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 0, True,
              f"{IMG}/co.webp", 53, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CH", "Challah", "Pão trançado de massa enriquecida", 1800, "un", 1, True,
-             f"{ACERVO}/ch.jpg", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/ch.webp", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BN", "Brioche Nanterre", "Brioche em forma, massa amanteigada", 2200, "un", 1, True,
-             f"{ACERVO}/bn.jpg", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/bn.webp", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("ANU", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 0, True,
-             f"{ACERVO}/an.jpg", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/an.webp", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             # Não está sendo feito no momento (dono, 18/08). Nasce fora de venda:
             # o produto existe, guarda a história, e volta com uma flag.
             ("ANP", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 0, False,
@@ -1349,11 +1342,11 @@ class Command(BaseCommand):
             ("BAP", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
              f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BAX", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
-             f"{ACERVO}/bax.jpg", 420, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CF", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
-             f"{ACERVO}/cf.jpg", 265, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cf.webp", 265, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BA", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
-             f"{ACERVO}/ba.jpg", 280, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/ba.webp", 280, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CGR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Melhor consumido no dia. Congele por até 30 dias"),
             # Vienna é CAFÉ GELADO (dono, 26/08) — a curadoria histórica já o
@@ -1368,29 +1361,29 @@ class Command(BaseCommand):
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
              f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{ACERVO}/cbt.jpg", 600, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             f"{ACERVO}/foc.jpg", 475, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{ACERVO}/mif.jpg", 95, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{ACERVO}/micbt.jpg", 160, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIFOC", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
-             f"{ACERVO}/mifoc.jpg", 140, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
-             f"{ACERVO}/cpq.jpg", 80, "Servir quente, imediatamente"),
+             f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
             ("FF", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 115, "Servir quente, imediatamente"),
+             f"{IMG}/ff.webp", 115, "Servir quente, imediatamente"),
             ("MFF", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 70, "Servir quente, imediatamente"),
+             f"{IMG}/ff.webp", 70, "Servir quente, imediatamente"),
             ("HO", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
              f"{IMG}/ho.webp", 100, "Servir quente, imediatamente"),
             ("MIHO", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
              f"{IMG}/ho.webp", 55, "Servir quente, imediatamente"),
             ("DL", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
-             f"{ACERVO}/dl.jpg", 90, "Servir quente, imediatamente"),
+             f"{IMG}/dl.webp", 90, "Servir quente, imediatamente"),
             ("JO", "Caranguejo", "Salgado moldado em caranguejo", 1800, "un", 0, True,
-             f"{ACERVO}/jo.jpg", 35, "Servir quente, imediatamente"),
+             f"{IMG}/jo.webp", 35, "Servir quente, imediatamente"),
         ]
 
         # Keywords by product (for find_alternatives and search)
