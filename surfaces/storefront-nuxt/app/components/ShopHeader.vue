@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { headerCollapsed } from '~/presentation/scroll'
+import { accountNavEntry } from '~/utils/accountNavEntry'
 
 const session = useShopSession()
 const route = useRoute()
@@ -27,20 +28,23 @@ const primaryNav = computed<PrimaryNavItem[]>(() => [
   { to: '/', label: 'Início', icon: 'lucide:home' },
   { to: '/menu', label: 'Cardápio', icon: 'lucide:utensils' },
   { to: '/sacola', label: 'Sacola', icon: 'lucide:shopping-bag', badge: cart.value.is_empty ? '' : String(cart.value.items_count) },
-  { to: '/conta', label: 'Conta e pedidos', icon: 'lucide:user-round' }
+  // Deslogado este item é a PORTA, não a conta — ver `accountNavEntry`.
+  accountNavEntry(session.isAuthenticated.value, route.fullPath, 'Conta e pedidos')
 ])
 
 // Nav desktop (md+): no lugar do hambúrguer, links inline. Início fica no logo, Sacola
 // no ícone do carrinho — aqui só o miolo navegável. "Como funciona" é âncora na home.
-const desktopNav = [
+const desktopNav = computed(() => [
   { to: '/menu', label: 'Cardápio' },
   { to: '/#como-funciona', label: 'Como funciona' },
-  { to: '/conta', label: 'Conta' }
-] as const
+  { to: accountNavEntry(session.isAuthenticated.value, route.fullPath).to, label: session.isAuthenticated.value ? 'Conta' : 'Entrar' }
+])
 
 function navActive (to: string) {
   if (to === '/') return route.path === '/'
-  return route.path.startsWith(to)
+  // O destino de "Entrar" carrega `?next=`; o estado ativo é do CAMINHO.
+  const caminho = to.split('?')[0] || to
+  return route.path.startsWith(caminho)
 }
 
 function closeMenu () {
