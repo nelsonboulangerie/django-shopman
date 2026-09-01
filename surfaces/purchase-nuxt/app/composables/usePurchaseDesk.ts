@@ -31,6 +31,7 @@ import {
   receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
   receiptPendingItems,
+  reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
   supplierCostRows,
 } from "~/presentation/purchase";
@@ -298,6 +299,12 @@ export function usePurchaseDesk() {
   // alta.
   const reorderRows = computed(() =>
     buildReorderRows(materials.value, suppliers.value, costs.value, conversions.value),
+  );
+
+  // Por que a fila está vazia. Só faz sentido depois que o servidor respondeu —
+  // antes disso o vazio é "ainda não chegou", não "não há".
+  const reorderBlockers = computed(() =>
+    backendReady.value ? buildReorderBlockers(materials.value, costs.value) : [],
   );
 
   const supplierSummaries = computed(() =>
@@ -876,6 +883,7 @@ export function usePurchaseDesk() {
     metrics,
     integrityQueue,
     reorderRows,
+    reorderBlockers,
     supplierSummaries,
     projection,
     receiptMode,

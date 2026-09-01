@@ -120,6 +120,21 @@ export interface ReorderRow {
   estimatedCostQ: number | null;
 }
 
+/**
+ * Por que a fila de compra está vazia — e o que fazer a respeito.
+ *
+ * "Nada a comprar" e "não dá para calcular o que comprar" parecem iguais na
+ * tela e são opostos. Cada motivo carrega o número exato e o gesto que o
+ * resolve; sem o gesto, a explicação vira desculpa.
+ */
+export interface ReorderBlocker {
+  key: "no-materials" | "no-consumption" | "no-preferred-cost" | "stocked";
+  headline: string;
+  detail: string;
+  count: number;
+  action: { label: string; baseView: PurchaseBaseView } | null;
+}
+
 export interface SupplierCostRow {
   cost: SupplierMaterialCost;
   supplier: Supplier;

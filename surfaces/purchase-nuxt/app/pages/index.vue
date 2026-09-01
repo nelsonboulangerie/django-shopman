@@ -49,6 +49,7 @@ const {
   metrics,
   integrityQueue,
   reorderRows,
+  reorderBlockers,
   supplierSummaries,
   receiptMode,
   invoiceInput,
@@ -615,6 +616,32 @@ onBeforeUnmount(stopInvoiceScanner);
             <p class="mt-1 text-sm text-muted-foreground">Fila de decisão operacional.</p>
           </div>
           <div class="divide-y divide-border">
+            <!-- A fila de decisão vazia tem de dizer o motivo aqui, onde o
+                 operador olha primeiro — não só na tela Comprar. -->
+            <div
+              v-for="blocker in (reorderRows.length ? [] : reorderBlockers)"
+              :key="`panel-blocker-${blocker.key}`"
+              class="flex items-start gap-3 p-4"
+            >
+              <Icon
+                :name="blocker.key === 'stocked' ? 'lucide:circle-check' : 'lucide:info'"
+                class="mt-0.5 size-5 shrink-0"
+                :class="blocker.key === 'stocked' ? 'text-success' : 'text-info'"
+              />
+              <div class="min-w-0">
+                <p class="font-semibold">{{ blocker.headline }}</p>
+                <p class="mt-1 text-sm text-muted-foreground">{{ blocker.detail }}</p>
+                <button
+                  v-if="blocker.action"
+                  type="button"
+                  class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"
+                  @click="openBase(blocker.action.baseView)"
+                >
+                  <Icon name="lucide:arrow-right" class="size-4" />
+                  {{ blocker.action.label }}
+                </button>
+              </div>
+            </div>
             <button
               v-for="row in reorderRows.slice(0, 5)"
               :key="`panel-buy-${row.material.sku}`"
@@ -692,7 +719,38 @@ onBeforeUnmount(stopInvoiceScanner);
           </span>
         </div>
 
-        <div class="grid gap-3 p-3 md:grid-cols-2 2xl:grid-cols-3">
+        <!-- Zero explicado: sem isto, "não precisa comprar nada" e "o app não
+             consegue calcular" são a mesma tela vazia. -->
+        <div v-if="!reorderRows.length && reorderBlockers.length" class="space-y-3 p-4">
+          <div
+            v-for="blocker in reorderBlockers"
+            :key="`buy-blocker-${blocker.key}`"
+            class="rounded-md border border-border bg-background p-4"
+          >
+            <div class="flex items-start gap-3">
+              <Icon
+                :name="blocker.key === 'stocked' ? 'lucide:circle-check' : 'lucide:info'"
+                class="mt-0.5 size-5 shrink-0"
+                :class="blocker.key === 'stocked' ? 'text-success' : 'text-info'"
+              />
+              <div class="min-w-0">
+                <h2 class="font-semibold">{{ blocker.headline }}</h2>
+                <p class="mt-1 text-sm text-muted-foreground">{{ blocker.detail }}</p>
+                <button
+                  v-if="blocker.action"
+                  type="button"
+                  class="mt-3 inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"
+                  @click="openBase(blocker.action.baseView)"
+                >
+                  <Icon name="lucide:arrow-right" class="size-4" />
+                  {{ blocker.action.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="grid gap-3 p-3 md:grid-cols-2 2xl:grid-cols-3">
           <article v-for="row in reorderRows" :key="row.material.sku" class="rounded-md border border-border bg-background p-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">

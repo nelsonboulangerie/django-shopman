@@ -14,6 +14,7 @@ import {
   formatQtyDiff,
   formatShortDate,
   formatStockOnHand,
+  reorderBlockers,
   reorderRows,
   receiptFirstBlocker,
   receiptIsBlank,
@@ -1007,5 +1008,62 @@ describe("reorderRows", () => {
 
   it("sem insumo nenhum, não há fila de compra", () => {
     expect(reorderRows([], [], [], [])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderBlockers — zero explicado, com o caminho
+// ---------------------------------------------------------------------------
+// Mostrar zero sem dizer por quê é o pecado da tela: o operador não distingue
+// "não precisa comprar nada" de "o app não consegue calcular". São situações
+// opostas e a segunda tem conserto. Cada motivo vem com o gesto que o resolve.
+describe("reorderBlockers", () => {
+  it("cala a boca quando há compra a fazer", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    expect(reorderBlockers([material], [])).toEqual([]);
+  });
+
+  it("diz quando a base está vazia", () => {
+    const blockers = reorderBlockers([], []);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]!.key).toBe("no-materials");
+  });
+
+  it("aponta o consumo não medido como causa da lista vazia", () => {
+    const blockers = reorderBlockers([semConsumo], []);
+    const consumo = blockers.find((item) => item.key === "no-consumption");
+    expect(consumo).toBeDefined();
+    // O número tem de ser o que a tela mostra, não um vago "alguns".
+    expect(consumo!.count).toBe(1);
+    expect(consumo!.action).not.toBeNull();
+  });
+
+  it("conta os insumos sem custo preferencial e manda para Custos", () => {
+    const comConsumo: Material = { ...semConsumo, sku: "FARINHA-T45", dailyUse: 9, suggestedQty: 0 };
+    const blockers = reorderBlockers([semConsumo, comConsumo], []);
+    const custo = blockers.find((item) => item.key === "no-preferred-cost");
+    expect(custo).toBeDefined();
+    expect(custo!.count).toBe(2);
+    expect(custo!.action?.baseView).toBe("costs");
+  });
+
+  it("não acusa falta de custo no insumo que já tem preferencial", () => {
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const blockers = reorderBlockers([semConsumo], [cost]);
+    expect(blockers.find((item) => item.key === "no-preferred-cost")).toBeUndefined();
+  });
+
+  it("ignora insumo inativo na contagem", () => {
+    const inativo: Material = { ...semConsumo, sku: "VELHO", isActive: false };
+    const blockers = reorderBlockers([inativo], []);
+    expect(blockers.find((item) => item.key === "no-materials")).toBeDefined();
   });
 });
