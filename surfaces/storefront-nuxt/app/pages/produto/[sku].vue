@@ -157,9 +157,7 @@ useHead({
       <template v-else-if="product && meta">
         <!-- Imagem emoldurada + informações num único card claro. -->
         <article class="-mx-4 overflow-hidden border-b bg-card sm:-mx-6 lg:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch lg:rounded-lg lg:border">
-          <!-- Com carrossel, os pontos já dão o respiro: padding de baixo diminui
-               para a foto não ficar longe do nome no mobile (no lg é lado a lado). -->
-          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6" :class="carouselImages.length ? 'pb-2 sm:pb-3' : ''">
+          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6">
             <div class="drop-shadow-md transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
               <div class="shop-photo-frame">
                 <div class="shop-photo-mat relative block bg-white">
@@ -207,6 +205,23 @@ useHead({
                     </div>
                   </UiAspectRatio>
                   <template v-if="carouselImages.length">
+                    <!-- Pontos SOBRE a foto (vidro, como a etiqueta Indisponível):
+                         zero altura no fluxo — o vão foto→nome fica idêntico ao
+                         da PDP sem carrossel. -->
+                    <div class="absolute inset-x-0 bottom-2 z-10 flex justify-center">
+                      <div class="flex items-center gap-2 rounded-full bg-background/60 px-2 py-1 shadow-sm backdrop-blur-sm">
+                        <UiButton
+                          v-for="(image, index) in carouselImages"
+                          :key="image"
+                          variant="ghost"
+                          class="h-2 w-2 min-w-0 rounded-full p-0"
+                          :class="index === slideIndex ? 'bg-primary hover:bg-primary' : 'bg-foreground/30 hover:bg-foreground/50'"
+                          :aria-label="`Ir para a foto ${index + 1}`"
+                          :aria-current="index === slideIndex"
+                          @click="goToSlide(index)"
+                        />
+                      </div>
+                    </div>
                     <UiButton
                       variant="ghost"
                       size="icon-sm"
@@ -230,18 +245,6 @@ useHead({
               </div>
             </div>
 
-            <div v-if="carouselImages.length" class="flex justify-center gap-2 pt-2">
-              <UiButton
-                v-for="(image, index) in carouselImages"
-                :key="image"
-                variant="ghost"
-                class="h-2 w-2 min-w-0 rounded-full p-0"
-                :class="index === slideIndex ? 'bg-primary hover:bg-primary' : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'"
-                :aria-label="`Ir para a foto ${index + 1}`"
-                :aria-current="index === slideIndex"
-                @click="goToSlide(index)"
-              />
-            </div>
           </section>
 
           <div class="min-w-0 p-4 sm:p-6">
