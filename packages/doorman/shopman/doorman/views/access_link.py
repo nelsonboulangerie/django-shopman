@@ -238,13 +238,6 @@ class AccessLinkCreateView(View):
                 return None, JsonResponse({"error": "subscriber.id required"}, status=400)
             if not hasattr(resolver, "upsert_manychat_subscriber"):
                 return None, JsonResponse({"error": "ManyChat subscriber resolution unsupported"}, status=400)
-            error_response = cls._manychat_whatsapp_id_guard(
-                source=source,
-                channel=cls._source_channel(data),
-                payload=subscriber,
-            )
-            if error_response:
-                return None, error_response
             try:
                 customer = resolver.upsert_manychat_subscriber(subscriber)
             except ValueError as exc:
@@ -302,6 +295,20 @@ class AccessLinkCreateView(View):
         channel: str,
         payload: dict | None,
     ):
+        """Enriquecimento de um customer JÁ identificado (caminho ``customer_id``).
+
+        Aqui o telefone é o dado que está sendo GRAVADO, então exigi-lo é o certo:
+        enriquecer um cadastro com um whatsapp_id vazio só sujaria o registro.
+
+        ⚠️ Este guard NÃO vale para o caminho do ``subscriber``. Ali ele rejeitava
+        ANTES de saber de quem se tratava, e derrubava quem a casa já conhece: uma
+        pessoa que chegou pelo Instagram tem ``subscriber_id`` e não tem
+        ``whatsapp_id``, e levava 422 mesmo com cadastro e telefone no banco. Quem
+        decide lá é o ``sync_subscriber`` — que já tem a regra certa (cliente
+        conhecido com telefone passa; desconhecido sem telefone é recusado) — mais o
+        ``_guard_resolved_manychat_customer``, que mantém a invariante de que todo
+        access link do ManyChat cai num customer com telefone.
+        """
         if source != AccessLink.Source.MANYCHAT:
             return None
         if channel == "instagram":
