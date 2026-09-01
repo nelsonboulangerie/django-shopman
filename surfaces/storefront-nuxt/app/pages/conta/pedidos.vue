@@ -119,7 +119,7 @@ useSeoMeta({ title: 'Pedidos' })
             <span class="h-px flex-1 bg-border" />
           </li>
           <li
-            class="flex flex-col gap-3 rounded-lg border border-l-2 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+            class="flex flex-col gap-3 rounded-lg border border-l-4 bg-card px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
             :class="rowClass(order)"
           >
           <div class="min-w-0">

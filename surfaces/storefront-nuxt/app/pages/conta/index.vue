@@ -129,7 +129,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
           <li
             v-for="order in activeOrders"
             :key="order.ref"
-            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-l-2 bg-card px-4 py-3"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-l-4 bg-card px-4 py-3"
             :class="orderStatusAccentClass(order.status_tone)"
           >
             <div class="min-w-0">
