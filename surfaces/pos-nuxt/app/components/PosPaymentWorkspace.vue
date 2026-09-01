@@ -124,6 +124,10 @@ const props = defineProps<{
   /** O item que segura o pedido, e a que horas ele libera. */
   scheduleBottleneckName: string;
   scheduleReadyAt: string;
+  /** A busca das janelas falhou — terceiro estado, não é "carregando". */
+  scheduleFailed: boolean;
+  /** Última data encomendável (Admin: `max_preorder_days`). */
+  scheduleMaxDate: string;
   /** "Troco para quanto?" do dinheiro na entrega (entrada livre em reais). */
   changeForInput: string;
   orderNotes: string;
@@ -1076,6 +1080,8 @@ defineExpose({
     :bottleneck-name="scheduleBottleneckName"
     :ready-at="scheduleReadyAt"
     :pending="deliverySlotsPending"
+    :failed="scheduleFailed"
+    :max-date="scheduleMaxDate"
     @update:delivery-date="$emit('update:deliveryDate', $event)"
     @update:delivery-time-slot="$emit('update:deliveryTimeSlot', $event)"
   />

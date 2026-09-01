@@ -607,6 +607,11 @@ export interface POSScheduleResponse {
   /** O gargalo por extenso, para a tela dizer o porquê uma vez só. */
   ready_at: string;
   bottleneck_name: string;
+  /** `"half_hour"` (hoje) ou `"canonical"` (encomenda: os 3 turnos da casa). */
+  grid: "half_hour" | "canonical";
+  is_today: boolean;
+  /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
+  readiness_unavailable: boolean;
 }
 
 export interface POSSaleReviewProjection {

@@ -2017,32 +2017,6 @@ class Command(BaseCommand):
                 }
                 product.save(update_fields=["availability_policy", "metadata"])
 
-        # PRONTIDÃO DECLARADA — a que horas o produto fica pronto num dia normal.
-        #
-        # Sem isto a hora saía só da mediana das WorkOrders, e produto sem fornada
-        # nos últimos 30 dias não restringia horário NENHUM: o dado que faltava
-        # LIBERAVA a promessa em vez de fechá-la. Uma baguete de tradição podia
-        # ser prometida para as 9h, e a quebra de contrato só aparecia no balcão,
-        # com o cliente na frente.
-        #
-        # Declarado é PISO, não teto: se a fornada vem saindo mais tarde que o
-        # cadastro diz, vence o histórico (ver ``shop/services/product_readiness``).
-        #
-        # A lista é curta de propósito. Só entra aqui o que a CASA afirmou; o
-        # resto se declara no Admin (aba Configuração) ou no catálogo do Gestor,
-        # sem reseed.
-        ready_from_by_sku = {
-            "BF": "12:00",  # Baguette de Tradition: só sai depois do meio-dia
-        }
-        for sku, ready_from in ready_from_by_sku.items():
-            product = products.get(sku)
-            if product:
-                product.metadata = {
-                    **(product.metadata if isinstance(product.metadata, dict) else {}),
-                    "ready_from": ready_from,
-                }
-                product.save(update_fields=["metadata"])
-
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:
         # ``auto_filled=False`` in nutrition_facts blocks any later derivation.
@@ -2656,6 +2630,56 @@ class Command(BaseCommand):
                     collection=collections_by_ref[ref], product=products[sku],
                     sort_order=i, is_primary=True,
                 )
+
+        # PRONTIDÃO DECLARADA — em que TURNO cada produto entra na encomenda.
+        #
+        # A encomenda da casa tem três slots (``Shop.defaults["pickup_slots"]``,
+        # editáveis no Admin): *a partir das 09h / 12h / 15h*. O que se declara
+        # aqui é em qual deles o produto cabe num dia normal — a regra do dono:
+        #
+        #   09h → folhados, croissants, madeleines, brioches e a ciabatta
+        #   12h → o restante dos pães doces/macios (a coleção Finos)
+        #   15h → o restante dos rústicos (a coleção Rústicos)
+        #
+        # Sai das COLEÇÕES em vez de uma lista de SKU escrita à mão porque é a
+        # coleção que a casa curou e é ela que vai mudar. Uma lista literal
+        # nasceria certa e envelheceria calada no primeiro produto novo.
+        #
+        # ⚠️ Isto é PISO, não resposta final. A mediana das WorkOrders é mais
+        # precisa e tem preferência: ela EMPURRA o produto para um slot mais
+        # tarde quando a fornada real vem saindo depois (um croissant declarado
+        # 09h que há um mês sai 11h40 é ofertado às 12h). O que ela não faz é
+        # puxar para mais cedo que o declarado — quem pagaria por uma mediana
+        # enviesada seria o cliente na porta. Ver `shop/services/product_readiness`.
+        PRONTOS_AS_09H = [
+            # folhados e croissants
+            "CT", "CM", "PC", "PR", "CN", "CO", "COC", "CPQ", "BH",
+            # brioches
+            "BBB", "BBB2", "BCH", "BN", "MBBBG",
+            # madeleines
+            "MD",
+            # a ciabatta, que é rústica mas sai cedo
+            "CI",
+        ]
+        ready_from_by_sku: dict[str, str] = {}
+        for sku in PRONTOS_AS_09H:
+            if sku in products:
+                ready_from_by_sku[sku] = "09:00"
+        for colecao_ref, hora in (("finos", "12:00"), ("rusticos", "15:00")):
+            colecao = collections_by_ref.get(colecao_ref)
+            if not colecao:
+                continue
+            for item in CollectionItem.objects.filter(collection=colecao).select_related("product"):
+                ready_from_by_sku.setdefault(item.product.sku, hora)
+
+        for sku, ready_from in ready_from_by_sku.items():
+            product = products.get(sku)
+            if product:
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "ready_from": ready_from,
+                }
+                product.save(update_fields=["metadata"])
 
         # Listings
         pdv, _ = Listing.objects.update_or_create(

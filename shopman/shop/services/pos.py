@@ -761,12 +761,24 @@ def _schedule_review_context(payload: dict):
     else:
         day = timezone.localdate()
 
+    # ⚠️ A venda comum de balcão NÃO paga por esta pergunta.
+    #
+    # `annotate` consulta a prontidão, e a metade observada varre 30 dias de
+    # WorkOrder com `django_datetime_cast_date(finished_at)` — não-sargável e
+    # sem cache. Medido: +2 queries em toda review, inclusive nas vendas de
+    # retirada para agora, que são a esmagadora maioria e nunca vão agendar.
+    #
+    # Sem data e sem horário no payload não há agendamento em jogo: devolve o
+    # dia e uma grade vazia. Quem abre o diálogo busca em `/pos/schedule/`.
+    if not raw and not str(payload.get("delivery_time_slot") or "").strip():
+        return day, (), ""
+
     context = fulfillment_window.annotate(day, _payload_skus(payload))
     return day, tuple(context["windows"]), context["earliest_ref"]
 
 
 def _validate_schedule(payload: dict) -> None:
-    """A janela combinada tem que caber no dia E no preparo. Falha FECHADO.
+    """A DATA e a JANELA combinadas têm que ser cumpríveis. Falha FECHADO.
 
     A review já anota o que não cabe, mas review é tela: quem chega aqui é o
     payload, e payload não passa por tela. Uma fila offline que reenvia um
@@ -774,29 +786,61 @@ def _validate_schedule(payload: dict) -> None:
     item depois de escolher o horário — nos três a promessa impossível entraria
     calada, e quem descobria era o cliente na porta.
 
+    ⚠️ **A data é conferida SEMPRE, mesmo sem horário escolhido**, e é a metade
+    que mais custa. Antes ela não era conferida em lugar nenhum: `pos_intent` a
+    trata como texto livre de 32 caracteres, e o commit a gravava como viesse.
+    Um dígito errado em "Outra data" — `2027` no lugar de `2026` — e o pedido
+    nascia `accepted` para daqui a um ano: sem ticket de cozinha, sem baixa de
+    estoque, sem fidelidade, sem notificação, e sem nada que alertasse ninguém.
+    O cliente tinha pago em dinheiro e ido embora com o comprovante.
+
+    A loja sempre guardou contra isso (`storefront/intents/checkout.py`); o
+    balcão era estritamente mais fraco. `max_preorder_days` até viajava na
+    projection do agendamento — e ninguém o aplicava, dos dois lados.
+
     Janela em branco continua passando: "a combinar" é resposta legítima do
     balcão, e exigir hora aqui inventaria fricção que a casa não tem.
     """
     from datetime import date as _date
+    from datetime import timedelta as _timedelta
 
     from shopman.shop.services import fulfillment_window
 
-    window_ref = str(payload.get("delivery_time_slot") or "").strip()
-    if not window_ref:
-        return
-
     raw = str(payload.get("delivery_date") or "").strip()
+    hoje = timezone.localdate()
     if raw:
         try:
             day = _date.fromisoformat(raw)
         except ValueError:
             raise ValueError("Data combinada inválida. Escolha uma data da lista.") from None
+        if day < hoje:
+            raise ValueError("A data combinada já passou. Escolha hoje ou uma data futura.")
+        teto = hoje + _timedelta(days=_max_preorder_days())
+        if day > teto:
+            raise ValueError(
+                f"A casa aceita encomenda até {teto.strftime('%d/%m/%Y')}. Escolha uma data mais próxima."
+            )
     else:
-        day = timezone.localdate()
+        day = hoje
+
+    window_ref = str(payload.get("delivery_time_slot") or "").strip()
+    if not window_ref:
+        return
 
     error = fulfillment_window.validate(day, window_ref, _payload_skus(payload))
     if error:
         raise ValueError(error)
+
+
+def _max_preorder_days() -> int:
+    """Até quantos dias à frente a casa aceita encomenda (Admin, default 30)."""
+    try:
+        from shopman.shop.projections import checkout_context
+
+        return max(0, int(checkout_context.preorder_config()[0]))
+    except Exception:
+        logger.warning("pos: could not read max_preorder_days; using 30", exc_info=True)
+        return 30
 
 
 def _payload_skus(payload: dict) -> list[str]:

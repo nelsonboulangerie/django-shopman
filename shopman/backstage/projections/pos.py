@@ -2473,6 +2473,13 @@ def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None
         # vez de repetir a mesma frase em dez janelas apagadas.
         "ready_at": context["ready_at"],
         "bottleneck_name": context["bottleneck_name"],
+        # Qual grade veio: HOJE fala em janela ("14:00 às 14:30"), encomenda fala
+        # em turno ("a partir das 12h"). A tela usa para escolher a palavra.
+        "grid": context["grid"],
+        "is_today": context["is_today"],
+        # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
+        # "sem restrição" — todas as janelas voltam desabilitadas.
+        "readiness_unavailable": bool(context.get("readiness_unavailable")),
     }
 
 

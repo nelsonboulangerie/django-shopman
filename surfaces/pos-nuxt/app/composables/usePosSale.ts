@@ -334,12 +334,15 @@ export function usePosSale(deps: PosSaleDeps) {
   // para o fim do fluxo, onde ela nunca deveria ter morado.
   const schedule = ref<POSScheduleResponse | null>(null);
   const scheduleBusy = ref(false);
+  /** A última busca falhou — a tela diz isso em vez de "carregando" para sempre. */
+  const scheduleFailed = ref(false);
   let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
   let scheduleSeq = 0;
 
   async function fetchSchedule() {
     const seq = ++scheduleSeq;
     scheduleBusy.value = true;
+    scheduleFailed.value = false;
     try {
       const skus = [...new Set(cart.items.map((item) => item.sku).filter(Boolean))].join(",");
       const query = new URLSearchParams();
@@ -354,10 +357,14 @@ export function usePosSale(deps: PosSaleDeps) {
       if (seq !== scheduleSeq) return;
       schedule.value = response;
     } catch {
-      // Sem resposta a tela diz "carregando", nunca "não há janela": ausência de
-      // resposta não é fato, e o servidor recusa a janela impossível de qualquer
-      // jeito. Falhar aqui não pode travar a venda.
-      if (seq === scheduleSeq) schedule.value = null;
+      // Falhar aqui não pode travar a venda — mas também não pode se disfarçar
+      // de "carregando" para sempre. A tela dizia "Carregando os horários…"
+      // eternamente quando o endpoint errava, e nada distinguia falha de
+      // pendência. O servidor recusa a janela impossível de qualquer jeito.
+      if (seq === scheduleSeq) {
+        schedule.value = null;
+        scheduleFailed.value = true;
+      }
     } finally {
       if (seq === scheduleSeq) scheduleBusy.value = false;
     }
@@ -393,6 +400,12 @@ export function usePosSale(deps: PosSaleDeps) {
   const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
   const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
   const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
+  /** A última data encomendável. O servidor sempre recusa além dela; isto só
+   *  evita que o operador chegue a digitá-la. */
+  const scheduleMaxDate = computed(() => {
+    const dates = schedule.value?.available_dates ?? [];
+    return dates.length ? dates[dates.length - 1]! : "";
+  });
 
   // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
   // último termo é o que faz o formulário abrir já respondendo.
@@ -409,7 +422,7 @@ export function usePosSale(deps: PosSaleDeps) {
     return [];
   });
   const deliverySlotsPending = computed(
-    () => scheduleBusy.value || (!review.value && !schedule.value),
+    () => scheduleBusy.value || (!review.value && !schedule.value && !scheduleFailed.value),
   );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
@@ -433,6 +446,7 @@ export function usePosSale(deps: PosSaleDeps) {
       // A divisão é desta conta. Sair do checkout com "3 pessoas" ligado faria a
       // PRÓXIMA venda lançar um terço no primeiro toque, sem ninguém ter pedido.
       splitCount.value = 0;
+      splitPaidCount.value = 0;
     }
   });
   const paymentTotalQ = computed(
@@ -475,16 +489,28 @@ export function usePosSale(deps: PosSaleDeps) {
   //
   // 0 = sem divisão (a próxima linha leva o restante inteiro, como sempre foi).
   const splitCount = ref(0);
+  // ⚠️ PESSOAS, não linhas — e a diferença não é sutil.
+  //
+  // Isto já foi `cart.paymentTenders.length`, e quebrava na variação mais comum
+  // do balcão: uma pessoa que paga "R$ 20 em dinheiro e o resto no cartão"
+  // gastava DOIS slots. A tela pulava para "pessoa 3 de 3", o operador lia o
+  // valor errado em voz alta, e a terceira pessoa ficava sem ser cobrada. O
+  // caixa fechava (a última parcela absorve o resto); os três clientes não.
+  //
+  // Quem conta é o gesto de cobrar a próxima pessoa, então o contador é
+  // avançado só por `addTender` — a segunda forma da MESMA pessoa entra pelo
+  // teclado ou pelas cédulas, que não mexem aqui.
+  const splitPaidCount = ref(0);
   const splitNextShareQ = computed(() => splitShareQ(
     paymentTotalQ.value,
     splitCount.value,
-    cart.paymentTenders.length,
+    splitPaidCount.value,
     paymentRemainingQ.value,
   ));
   const splitNote = computed(() => splitHint(
     paymentTotalQ.value,
     splitCount.value,
-    cart.paymentTenders.length,
+    splitPaidCount.value,
     paymentRemainingQ.value,
   ));
   function setSplitCount(count: number) {
@@ -492,6 +518,14 @@ export function usePosSale(deps: PosSaleDeps) {
     // operador a caçar um "cancelar" quando o cliente muda de ideia — e mudar de
     // ideia sobre dividir a conta é rotina.
     splitCount.value = splitCount.value === count ? 0 : Math.max(0, count);
+    // Trocar o número de pessoas recomeça a contagem: "na verdade somos quatro"
+    // é dito ANTES de alguém pagar, e herdar a contagem antiga faria a próxima
+    // parcela sair do lugar errado da fila.
+    splitPaidCount.value = 0;
+  }
+  /** Uma pessoa a menos na fila — some junto com a linha que ela pagou. */
+  function splitUnwind() {
+    splitPaidCount.value = Math.max(0, splitPaidCount.value - 1);
   }
 
   function addTender(method: string) {
@@ -506,6 +540,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.paymentTenders.push({ method, amount_q: amountQ, collection: cart.paymentCollection, _virgin: true });
     selectedTenderIndex.value = cart.paymentTenders.length - 1;
     tenderEntry.value = null;
+    // Uma pessoa a mais atendida — só aqui, que é o gesto de cobrar a PRÓXIMA.
+    if (splitCount.value > 0) splitPaidCount.value += 1;
   }
 
   // A cash bill with no tender yet opens a cash line at that bill's value — the
@@ -519,6 +555,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function removeTender(index: number) {
     cart.paymentTenders.splice(index, 1);
+    splitUnwind();
     if (selectedTenderIndex.value >= cart.paymentTenders.length) {
       selectedTenderIndex.value = cart.paymentTenders.length - 1;
     }
@@ -1849,9 +1886,12 @@ export function usePosSale(deps: PosSaleDeps) {
     scheduleAvailableDates,
     scheduleBottleneckName,
     scheduleReadyAt,
+    scheduleFailed,
+    scheduleMaxDate,
     refreshSchedule: fetchSchedule,
     selectedTenderMethod,
     splitCount,
+    splitPaidCount,
     splitNextShareQ,
     splitNote,
     setSplitCount,

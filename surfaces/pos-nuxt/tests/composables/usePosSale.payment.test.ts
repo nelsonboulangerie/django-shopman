@@ -292,3 +292,68 @@ describe("usePosSale — dividir a conta", () => {
     expect(vi.mocked(toast.info)).toHaveBeenCalled();
   });
 });
+
+describe("usePosSale — a divisão conta PESSOAS, não linhas", () => {
+  let h: ReturnType<typeof saleWithTotal1000>;
+
+  beforeEach(() => {
+    h = saleWithTotal1000();
+  });
+  afterEach(() => h.handles.dispose());
+
+  it("uma pessoa pagando com DUAS formas não queima dois slots", () => {
+    // ⚠️ A variação mais comum do balcão: "R$ 2,00 em dinheiro e o resto no
+    // cartão". Contando LINHAS, a tela pulava para "pessoa 3 de 3", o operador
+    // lia o valor errado em voz alta e a terceira pessoa ficava sem ser
+    // cobrada. O caixa fechava (a última parcela absorve o resto); os três
+    // clientes não.
+    const { sale } = h;
+    sale.setSplitCount(3);
+
+    sale.addTender("cash");          // pessoa 1 começa
+    sale.tenderDigit("2");           // ...paga só R$ 2,00 em dinheiro
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(200);
+
+    // A segunda forma da MESMA pessoa entra pelo teclado/cédula, não por
+    // addTender — então a fila não anda.
+    expect(sale.splitPaidCount.value).toBe(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("remover uma linha devolve a pessoa para a fila", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.addTender("card");
+    expect(sale.splitNote.value).toContain("pessoa 3 de 3");
+
+    sale.removeTender(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("trocar o número de pessoas recomeça a fila", () => {
+    // "Na verdade somos quatro" é dito ANTES de alguém pagar; herdar a contagem
+    // faria a próxima parcela sair do lugar errado da fila.
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    expect(sale.splitPaidCount.value).toBe(1);
+
+    sale.setSplitCount(4);
+    expect(sale.splitPaidCount.value).toBe(0);
+    expect(sale.splitNote.value).toContain("pessoa 1 de 4");
+  });
+
+  it("e a conta continua fechando exatamente", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.tenderDigit("2");   // pessoa 1 paga R$ 2,00...
+    sale.addTender("card");  // ...e o resto no cartão dela
+    sale.addTender("pix");
+    sale.addTender("cash");
+
+    expect(sale.paymentRemainingQ.value).toBe(0);
+    expect(sale.cart.paymentTenders.reduce((s, t) => s + t.amount_q, 0)).toBe(1000);
+  });
+});

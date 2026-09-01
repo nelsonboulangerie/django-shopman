@@ -1436,8 +1436,8 @@ class OrderRequeueFiscalView(_OrderActionBase):
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
-        summary="Recent POS sales with fiscal state (print/resend/requeue home)",
-        responses={200: OpenApiResponse(description="Recent sales list.")},
+        summary="Datas e janelas combináveis para o pedido (agendamento do PDV)",
+        responses={200: OpenApiResponse(description="Available dates and readiness-annotated windows.")},
     ),
 )
 class POSScheduleView(APIView):
@@ -1467,6 +1467,13 @@ class POSScheduleView(APIView):
         })
 
 
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Recent POS sales with fiscal state (print/resend/requeue home)",
+        responses={200: OpenApiResponse(description="Recent sales list.")},
+    ),
+)
 class POSRecentSalesView(APIView):
     """Últimas vendas do balcão — a casa da DANFE depois que a tela da venda passou."""
 

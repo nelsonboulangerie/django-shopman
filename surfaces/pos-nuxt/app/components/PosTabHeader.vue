@@ -31,6 +31,9 @@ const props = defineProps<{
   scheduleLabel: string;
   /** O pedido é para outro dia — muda o ícone e o realce do botão. */
   scheduled: boolean;
+  /** O horário escolhido virou impossível (item lançado depois da escolha). */
+  scheduleConflict?: boolean;
+  scheduleConflictReason?: string;
   loading: boolean;
 }>();
 
@@ -168,11 +171,18 @@ function runClear() {
       v-if="hasOpenTab"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
-      :class="scheduled ? 'border-primary bg-primary/5' : 'border-border'"
+      :class="scheduleConflict
+        ? 'border-destructive bg-destructive/10 text-destructive'
+        : (scheduled ? 'border-primary bg-primary/5' : 'border-border')"
       aria-haspopup="dialog"
+      :title="scheduleConflictReason || ''"
       @click="$emit('openSchedule')"
     >
-      <Icon :name="scheduled ? 'lucide:calendar-clock' : 'lucide:clock'" class="size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        :name="scheduleConflict ? 'lucide:triangle-alert' : (scheduled ? 'lucide:calendar-clock' : 'lucide:clock')"
+        class="size-4 shrink-0"
+        :class="scheduleConflict ? '' : 'text-muted-foreground'"
+      />
       <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
     </button>
 

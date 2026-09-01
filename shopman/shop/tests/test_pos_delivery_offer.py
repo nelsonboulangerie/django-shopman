@@ -184,9 +184,9 @@ def test_retirada_agenda_para_data_futura(loja):
     review = _review(fulfillment_type="pickup", delivery_date=quinta.isoformat())
 
     assert review.delivery_date == quinta.isoformat()
-    assert [s["ref"] for s in review.delivery_slots] == [
-        "09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00",
-    ]
+    # Encomenda → slot canônico. O expediente desta loja (09:00-11:00) só
+    # comporta o das 09h.
+    assert [s["ref"] for s in review.delivery_slots] == ["slot-09"]
 
 
 def test_frete_gratis_acima_do_limiar_vale_no_balcao_tambem(loja):
@@ -209,17 +209,43 @@ def test_frete_gratis_acima_do_limiar_vale_no_balcao_tambem(loja):
 # ── Os horários vêm do expediente ─────────────────────────────────────────
 
 
-def test_os_horarios_saem_do_expediente_do_dia_de_meia_em_meia_hora(loja):
-    """Expediente 09:00-11:00 comporta quatro janelas de meia hora."""
+def test_hoje_sai_de_meia_em_meia_hora_do_expediente(loja):
+    """Expediente 09:00-11:00 comporta quatro janelas de meia hora.
+
+    Vale para HOJE, que é quando a granularidade fina serve: "14:00 às 14:30" é
+    o que o operador combina com o entregador. A encomenda usa outra grade — ver
+    o teste seguinte.
+    """
+    from shopman.shop.services import fulfillment_window
+
+    hoje = timezone.localdate()
+    # Cedo de propósito: a antecedência mínima de hoje cortaria as janelas se a
+    # suíte rodasse depois das 10h30.
+    agora = timezone.make_aware(datetime.combine(hoje, time(6, 0)))
+
+    janelas = fulfillment_window.annotate(hoje, [], now=agora)
+
+    assert [s["ref"] for s in janelas["windows"]] == [
+        "09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00",
+    ]
+    assert janelas["windows"][0]["label"] == "09:00 às 09:30"
+    assert janelas["grid"] == "half_hour"
+
+
+def test_a_ENCOMENDA_sai_nos_slots_canonicos_da_casa(loja):
+    """Data futura não é hora marcada, é fornada: o cliente escolhe o TURNO.
+
+    ⚠️ E o expediente do dia ainda limita: esta loja fecha às 11h, então o slot
+    das 12h e o das 15h não são oferecidos — seriam promessa para uma padaria
+    vazia.
+    """
     amanha = timezone.localdate() + timezone.timedelta(days=1)
 
     review = _review(delivery_date=amanha.isoformat())
 
     assert review.delivery_date == amanha.isoformat()
-    assert [s["ref"] for s in review.delivery_slots] == [
-        "09:00-09:30", "09:30-10:00", "10:00-10:30", "10:30-11:00",
-    ]
-    assert review.delivery_slots[0]["label"] == "09:00 às 09:30"
+    assert [s["ref"] for s in review.delivery_slots] == ["slot-09"]
+    assert review.delivery_slots[0]["label"] == "A partir das 09h"
 
 
 def test_data_em_branco_e_hoje_pelo_relogio_da_loja(loja):

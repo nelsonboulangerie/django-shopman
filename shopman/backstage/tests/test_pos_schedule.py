@@ -70,13 +70,20 @@ class POSScheduleTests(TestCase):
         self.assertEqual(resposta.status_code, 200)
         self.assertEqual(resposta.json()["date"], timezone.localdate().isoformat())
 
-    def test_as_janelas_do_dia_escolhido(self) -> None:
+    def test_a_ENCOMENDA_sai_nos_slots_canonicos(self) -> None:
+        """Data futura = turno, não hora marcada. HOJE é que usa a meia hora."""
         payload = self.client.get(URL, {"date": self.amanha}).json()
 
-        refs = [w["ref"] for w in payload["windows"]]
-        self.assertIn("09:00-09:30", refs)
-        self.assertIn("12:00-12:30", refs)
+        self.assertEqual(
+            [w["ref"] for w in payload["windows"]], ["slot-09", "slot-12", "slot-15"]
+        )
+        self.assertEqual(payload["grid"], "canonical")
         self.assertTrue(all(w["enabled"] for w in payload["windows"]))
+
+    def test_HOJE_sai_na_meia_hora_do_expediente(self) -> None:
+        payload = self.client.get(URL).json()
+
+        self.assertEqual(payload["grid"], "half_hour")
 
     def test_a_baguete_desabilita_a_manha_e_diz_por_que(self) -> None:
         """O carrinho entra na pergunta: a janela oferecível DEPENDE do que tem
@@ -84,12 +91,12 @@ class POSScheduleTests(TestCase):
         payload = self.client.get(URL, {"date": self.amanha, "skus": "BF,CR"}).json()
 
         por_ref = {w["ref"]: w for w in payload["windows"]}
-        self.assertFalse(por_ref["09:00-09:30"]["enabled"])
+        self.assertFalse(por_ref["slot-09"]["enabled"])
         self.assertEqual(
-            por_ref["09:00-09:30"]["reason"], "Baguette de Tradition sai às 12:00."
+            por_ref["slot-09"]["reason"], "Baguette de Tradition sai às 12:00."
         )
-        self.assertTrue(por_ref["12:00-12:30"]["enabled"])
-        self.assertEqual(payload["earliest_window_ref"], "12:00-12:30")
+        self.assertTrue(por_ref["slot-12"]["enabled"])
+        self.assertEqual(payload["earliest_window_ref"], "slot-12")
         self.assertEqual(payload["ready_at"], "12:00")
         self.assertEqual(payload["bottleneck_name"], "Baguette de Tradition")
 

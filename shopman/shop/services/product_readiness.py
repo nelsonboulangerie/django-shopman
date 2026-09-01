@@ -38,6 +38,16 @@ from statistics import median
 
 logger = logging.getLogger(__name__)
 
+
+class ReadinessUnavailable(RuntimeError):
+    """A prontidão não pôde ser apurada — e isso NÃO é "sem restrição".
+
+    Existe porque os dois estados eram o mesmo dicionário vazio: "este SKU não
+    tem hora conhecida" (legítimo, libera) e "não consegui perguntar" (falha, e
+    liberar por causa dela é prometer o que a casa não pode cumprir).
+    """
+
+
 #: De quanto em quanto tempo a hora observada é arredondada PARA CIMA. Prometer
 #: 11:07 é precisão que a padaria não tem; 11:30 é promessa que ela cumpre.
 DEFAULT_ROUNDING_MINUTES = 30
@@ -93,13 +103,15 @@ def declared_ready_times(skus: list[str]) -> dict[str, time]:
     """
     if not skus:
         return {}
+    # Mesma razão de `observed_ready_times`: {} aqui significaria "a casa não
+    # declarou nada", que LIBERA qualquer horário. Banco fora do ar não vira
+    # permissão.
     try:
         from shopman.offerman.models import Product
 
-        rows = Product.objects.filter(sku__in=list(skus)).values_list("sku", "metadata")
-    except Exception:
-        logger.warning("product_readiness: declared lookup failed skus=%s", skus, exc_info=True)
-        return {}
+        rows = list(Product.objects.filter(sku__in=list(skus)).values_list("sku", "metadata"))
+    except Exception as exc:
+        raise ReadinessUnavailable("não deu para ler as declarações do catálogo") from exc
 
     out: dict[str, time] = {}
     for sku, metadata in rows:
@@ -131,11 +143,15 @@ def observed_ready_times(
         return {}
 
     cutoff = _local_date() - timedelta(days=max(0, history_days))
+    # ⚠️ Falhar ABERTO aqui seria o pior default possível: prontidão vazia =
+    # nenhuma janela restrita = a baguete das 12h oferecida para as 7h. Este eixo
+    # é PROMESSA ao cliente, e o `except` largo que existia devolvia {} — o mesmo
+    # valor de "não há histórico" — para um banco fora do ar. Quem chama decide o
+    # que fazer, mas precisa SABER que não sabe.
     try:
         work_orders = production.get_finished_work_orders(list(skus), cutoff)
-    except Exception:
-        logger.warning("product_readiness: production history failed", exc_info=True)
-        return {}
+    except Exception as exc:
+        raise ReadinessUnavailable("não deu para ler o histórico de produção") from exc
 
     minutes_by_sku: dict[str, list[float]] = {}
     for sku, finished_at in work_orders:

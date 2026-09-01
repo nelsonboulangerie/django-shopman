@@ -5,7 +5,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
 import { askedMarkFor, shouldAskFulfillment } from "~/presentation/fulfillmentPrompt";
-import { isScheduled, scheduleLabel, windowLabel } from "~/presentation/schedule";
+import { isScheduled, scheduleChipTone, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 import { enterAdvances } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -100,6 +100,8 @@ const {
   scheduleAvailableDates,
   scheduleBottleneckName,
   scheduleReadyAt,
+  scheduleFailed,
+  scheduleMaxDate,
   refreshSchedule,
   splitCount,
   splitNote,
@@ -425,6 +427,15 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+// A escolha que virou impossível SOZINHA (o operador marcou 09:00 e só depois
+// lançou a baguete). O chip é onde ele olha de relance; sem isto ele só
+// descobria num 422 seco no Finalizar, com o cliente já tendo ouvido o horário.
+const scheduleChipConflict = computed(
+  () => scheduleChipTone(deliverySlots.value, cart.deliveryTimeSlot) === "conflict",
+);
+const scheduleConflictReason = computed(
+  () => selectedWindowConflict(deliverySlots.value, cart.deliveryTimeSlot),
+);
 
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
@@ -701,6 +712,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :schedule-conflict="scheduleChipConflict"
+          :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
@@ -809,6 +822,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :schedule-available-dates="scheduleAvailableDates"
         :schedule-bottleneck-name="scheduleBottleneckName"
         :schedule-ready-at="scheduleReadyAt"
+        :schedule-failed="scheduleFailed"
+        :schedule-max-date="scheduleMaxDate"
         :split-count="splitCount"
         :split-note="splitNote"
         :managers="pos?.managers || []"
@@ -1021,6 +1036,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :bottleneck-name="scheduleBottleneckName"
       :ready-at="scheduleReadyAt"
       :pending="deliverySlotsPending"
+      :failed="scheduleFailed"
+      :max-date="scheduleMaxDate"
     />
 
     <PosTabPickerDialog

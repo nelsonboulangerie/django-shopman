@@ -35,8 +35,12 @@ const props = defineProps<{
   /** O item que segura o pedido, e a que horas ele libera. */
   bottleneckName: string;
   readyAt: string;
+  /** Última data que a casa aceita encomendar (Admin: `max_preorder_days`). */
+  maxDate: string;
   /** A resposta ainda está a caminho — não é o mesmo que "não há janela". */
   pending: boolean;
+  /** A busca FALHOU — terceiro estado, e ele não pode se disfarçar de pendência. */
+  failed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -59,11 +63,12 @@ const isToday = computed(() => !props.deliveryDateEffective || props.deliveryDat
 const note = computed(() => readinessNote(props.bottleneckName, props.readyAt));
 const conflict = computed(() => selectedWindowConflict(props.windows, props.deliveryTimeSlot));
 
-// "Sem janela neste dia" é um FATO; "ainda não sei" é outra coisa. Dizer o
-// primeiro enquanto a resposta não chegou faz a tela mentir para o operador no
-// formulário que ele acabou de abrir.
+// Três estados, três frases. "Sem janela neste dia" é um FATO; "ainda não sei" é
+// outra coisa; e "não consegui perguntar" é uma terceira, que estava se passando
+// por "carregando" para sempre quando o endpoint errava.
 const emptyMessage = computed(() => {
   if (props.pending) return "Carregando os horários…";
+  if (props.failed) return "Não deu para carregar os horários. Tente de novo.";
   return "Não há horário combinável neste dia.";
 });
 
@@ -116,6 +121,7 @@ function pickDate(iso: string) {
               :model-value="deliveryDateEffective"
               type="date"
               :min="today"
+              :max="maxDate"
               @update:model-value="pickDate(String($event || ''))"
             />
           </label>

@@ -99,6 +99,22 @@ export function windowLabel(windows: ScheduleWindow[], ref: string): string {
 }
 
 /**
+ * O rótulo do chip QUANDO a escolha virou impossível sozinha.
+ *
+ * O chip mostrava "qui, 10/09, 09:00 às 09:30" com toda a calma depois de o
+ * operador lançar a baguete que empurra o pedido para as 12h. Ele só descobria
+ * num 422 seco no Finalizar — e o cliente já tinha ouvido o horário. O aviso
+ * precisa estar onde ele olha de relance, não só dentro do diálogo que ele
+ * fechou.
+ */
+export function scheduleChipTone(
+  windows: ScheduleWindow[],
+  ref: string,
+): "ok" | "conflict" {
+  return selectedWindowConflict(windows, ref) ? "conflict" : "ok";
+}
+
+/**
  * A janela escolhida ainda cabe?
  *
  * O operador escolhe "09:00 às 09:30" e SÓ DEPOIS lança a baguete de tradição.

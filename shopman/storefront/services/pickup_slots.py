@@ -183,17 +183,16 @@ def is_slot_available_for_today(
 
 
 def get_slots() -> list[dict]:
-    """Return configured pickup slots from Shop.defaults, or defaults."""
-    try:
-        from shopman.shop.models import Shop
-        shop = Shop.load()
-        if shop:
-            slots = (shop.defaults or {}).get("pickup_slots")
-            if slots:
-                return slots
-    except Exception:
-        logger.debug("pickup_slots: could not load configured slots", exc_info=True)
-    return list(DEFAULT_SLOTS)
+    """Os slots de encomenda da casa — UMA fonte, lida do orquestrador.
+
+    Delegado a ``shop/services/fulfillment_window.canonical_slots`` porque o PDV
+    faz a MESMA pergunta e não pode importar o storefront. Duas leituras da mesma
+    configuração acabariam divergindo, e a divergência apareceria como o cliente
+    ouvindo um horário no telefone e lendo outro no acompanhamento.
+    """
+    from shopman.shop.services.fulfillment_window import canonical_slots
+
+    return canonical_slots()
 
 
 def get_slot_config() -> dict:

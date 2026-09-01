@@ -271,11 +271,12 @@ def test_review_desabilita_a_manha_e_aponta_a_primeira_possivel(balcao):
         operator_username="marina",
     )
 
+    # Encomenda → slots canônicos da casa (a grade de meia hora é só de HOJE).
     por_ref = {s["ref"]: s for s in review.delivery_slots}
-    assert por_ref["09:00-09:30"]["enabled"] is False
-    assert por_ref["09:00-09:30"]["reason"] == "Baguette de Tradition sai às 12:00."
-    assert por_ref["12:00-12:30"]["enabled"] is True
-    assert review.delivery_earliest_slot == "12:00-12:30"
+    assert por_ref["slot-09"]["enabled"] is False
+    assert por_ref["slot-09"]["reason"] == "Baguette de Tradition sai às 12:00."
+    assert por_ref["slot-12"]["enabled"] is True
+    assert review.delivery_earliest_slot == "slot-12"
 
 
 # ── A venda de hoje NÃO vira encomenda ───────────────────────────────────────
@@ -331,3 +332,81 @@ def test_a_fronteira_da_encomenda_e_ESTRITAMENTE_futura(balcao):
     assert _physical_work_deferred(_Pedido(hoje + timezone.timedelta(days=1))) is True
     assert _physical_work_deferred(_Pedido(hoje - timezone.timedelta(days=1))) is False
     assert _physical_work_deferred(_Pedido(None)) is False
+
+
+# ── A data também é conferida, e sem ela um pedido pago some ─────────────────
+
+
+def test_data_ABSURDA_e_recusada(balcao):
+    """O achado mais caro da auditoria adversarial, e o mais barato de causar.
+
+    Um dígito errado em "Outra data" — 2027 no lugar de 2026 — e o pedido nascia
+    `accepted` para daqui a um ano: sem ticket de cozinha, sem baixa de estoque,
+    sem fidelidade, sem notificação, e sem NADA que alertasse ninguém. O cliente
+    tinha pago em dinheiro e ido embora com o comprovante na mão.
+
+    A loja sempre guardou contra isso; o balcão era estritamente mais fraco.
+    """
+    operator, shift = balcao
+
+    with pytest.raises(ValueError) as erro:
+        _close(operator, _payload(shift, client_request_id="abs-1", delivery_date="3000-01-01"))
+
+    assert "encomenda até" in str(erro.value)
+    assert Order.objects.count() == 0
+
+
+def test_data_no_PASSADO_e_recusada(balcao):
+    operator, shift = balcao
+    ontem = (timezone.localdate() - timezone.timedelta(days=1)).isoformat()
+
+    with pytest.raises(ValueError) as erro:
+        _close(operator, _payload(shift, client_request_id="abs-2", delivery_date=ontem))
+
+    assert "já passou" in str(erro.value)
+    assert Order.objects.count() == 0
+
+
+def test_data_ilegivel_e_recusada_MESMO_SEM_horario(balcao):
+    """Antes, data podre sem horário passava e era gravada crua no pedido.
+
+    A conferência era feita só quando havia janela escolhida — o caminho mais
+    comum (data sem hora) era justamente o desprotegido.
+    """
+    operator, shift = balcao
+
+    with pytest.raises(ValueError) as erro:
+        _close(
+            operator,
+            _payload(shift, client_request_id="abs-3", delivery_date="amanha de manha"),
+        )
+
+    assert "inválida" in str(erro.value)
+    assert Order.objects.count() == 0
+
+
+def test_o_teto_sai_da_configuracao_da_casa(balcao):
+    """`max_preorder_days` viajava na projection e ninguém aplicava."""
+    from shopman.shop.models import Shop
+
+    shop = Shop.load()
+    shop.defaults = {**(shop.defaults or {}), "max_preorder_days": 3}
+    shop.save(update_fields=["defaults"])
+    operator, shift = balcao
+
+    dentro = (timezone.localdate() + timezone.timedelta(days=3)).isoformat()
+    fora = (timezone.localdate() + timezone.timedelta(days=4)).isoformat()
+
+    assert _close(operator, _payload(shift, client_request_id="teto-ok", delivery_date=dentro))
+    with pytest.raises(ValueError):
+        _close(operator, _payload(shift, client_request_id="teto-no", delivery_date=fora))
+
+
+def test_a_data_limite_EXATA_ainda_passa(balcao):
+    """Fronteira: o dia do teto é aceito, o seguinte não (testado acima)."""
+    operator, shift = balcao
+    limite = (timezone.localdate() + timezone.timedelta(days=30)).isoformat()
+
+    result = _close(operator, _payload(shift, client_request_id="lim-1", delivery_date=limite))
+
+    assert Order.objects.get(ref=result.order_ref).data["delivery_date"] == limite
