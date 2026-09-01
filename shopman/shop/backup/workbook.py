@@ -36,10 +36,16 @@ def _cell_to_text(value) -> str:
     return str(value)
 
 
-def export_datasets() -> dict[str, tablib.Dataset]:
-    """Exporta cada entidade registrada para um Dataset, na ordem do registro."""
+def export_datasets(*, with_read_only: bool = False) -> dict[str, tablib.Dataset]:
+    """Exporta cada entidade registrada para um Dataset, na ordem do registro.
+
+    As abas somente-leitura (transacionais, para conferência) só entram quando
+    pedidas — o arquivo padrão é o cofre curado, que faz round-trip.
+    """
     out: dict[str, tablib.Dataset] = {}
     for entry in registry.entries():
+        if entry.read_only and not with_read_only:
+            continue
         out[entry.name] = entry.resource_class().export()
     return out
 

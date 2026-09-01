@@ -104,6 +104,13 @@ class Command(BaseCommand):
             if entry is None:
                 problems.append(f"aba desconhecida: {name!r}")
                 continue
+            if entry.read_only:
+                problems.append(
+                    f"{name}: aba somente-leitura (transacional) — não importável; "
+                    "restaurar transacional é papel do backup do banco. Para importar "
+                    "só a curadoria deste arquivo, use --only com as abas curadas."
+                )
+                continue
             expected = set(entry.resource_class().get_export_headers())
             got = set(dataset.headers or [])
             missing = expected - got

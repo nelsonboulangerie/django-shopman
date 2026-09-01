@@ -183,8 +183,10 @@ class ShopmanConfig(AppConfig):
 
     def _register_backup_resources(self):
         from shopman.shop.backup.resources import register_shop_resources
+        from shopman.shop.backup.transactional import register_transactional_resources
 
         register_shop_resources()
+        register_transactional_resources()
         logger.info("ShopmanConfig: backup resources registered.")
 
     def _register_handlers(self):

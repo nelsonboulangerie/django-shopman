@@ -54,7 +54,10 @@ class BackupExportView(APIView):
     renderer_classes = [BackupXLSXRenderer, JSONRenderer]
 
     def get(self, request):
-        payload = workbook.write_xlsx(workbook.export_datasets())
+        with_transactional = request.query_params.get("with_transactional") in ("1", "true")
+        payload = workbook.write_xlsx(
+            workbook.export_datasets(with_read_only=with_transactional)
+        )
         stamp = timezone.localtime().strftime("%Y%m%d-%H%M%S")
         return Response(
             payload,

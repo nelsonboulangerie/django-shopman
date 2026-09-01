@@ -36,6 +36,14 @@ class Command(BaseCommand):
             default="",
             help="Entidades específicas, separadas por vírgula (ex.: products,recipes).",
         )
+        parser.add_argument(
+            "--with-transactional",
+            action="store_true",
+            help=(
+                "Inclui as abas somente-leitura de conferência (pedidos, ledger, "
+                "caixa, pagamentos, fornadas). Elas NÃO voltam pelo import."
+            ),
+        )
 
     def handle(self, *args, **options):
         names = [n.strip() for n in options["only"].split(",") if n.strip()]
@@ -46,7 +54,11 @@ class Command(BaseCommand):
                 f"Entidade desconhecida: {', '.join(unknown)}. Registradas: {known}"
             )
 
-        datasets = workbook.export_datasets()
+        # --only nomeando uma aba de conferência já é o pedido por ela.
+        with_read_only = options["with_transactional"] or any(
+            registry.get(n).read_only for n in names
+        )
+        datasets = workbook.export_datasets(with_read_only=with_read_only)
         if names:
             datasets = {n: d for n, d in datasets.items() if n in names}
 

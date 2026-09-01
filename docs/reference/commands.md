@@ -758,10 +758,12 @@ Guia completo: [backup-and-restore.md](../guides/backup-and-restore.md).
 | `--out` | `var/backups` | Diretório de saída |
 | `--format` | `xlsx` | `xlsx` (um arquivo) ou `csv` (um arquivo por entidade, diff em git) |
 | `--only` | — | Entidades específicas, separadas por vírgula |
+| `--with-transactional` | — | Inclui abas somente-leitura de conferência (pedidos, ledger, caixa, pagamentos, fornadas); o import as recusa |
 
 ```bash
 python manage.py export_backup
 python manage.py export_backup --format csv --only products,recipes
+python manage.py export_backup --with-transactional
 ```
 
 O mesmo arquivo sai por `GET /api/v1/backstage/backup/export/` (permissão
