@@ -468,6 +468,29 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     expect(wrapper.text()).not.toContain("Identifique o cliente para agendar");
   });
 
+  it("o aviso da review não fica defasado: identificado o cliente, ele se cala", async () => {
+    // A review só é refeita quando o carrinho muda — identificar o cliente não a
+    // refaz, e o aviso do servidor ficava na tela ao lado do cabeçalho já com o
+    // nome. Com o cliente presente, o aviso de agendado-sem-cliente some mesmo
+    // que a review antiga ainda o carregue.
+    const staleReview = review({
+      warnings: [{
+        code: "customer_required_for_scheduled",
+        field: "customer_phone",
+        message: "Pedido agendado precisa de um cliente identificado — é o contato se algo mudar até a data.",
+      }],
+    });
+    const semCliente = await mountSuspended(PosPaymentWorkspace, {
+      props: scheduled({ review: staleReview }),
+    });
+    expect(semCliente.text()).toContain("precisa de um cliente identificado");
+
+    const comCliente = await mountSuspended(PosPaymentWorkspace, {
+      props: scheduled({ review: staleReview, customerName: "Seu Jorge" }),
+    });
+    expect(comCliente.text()).not.toContain("precisa de um cliente identificado");
+  });
+
   it("para hoje continua anônimo: data de hoje não trava nada", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ deliveryDate: "2026-09-01" }),
