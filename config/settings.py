@@ -77,18 +77,19 @@ DEBUG = _env_bool("DJANGO_DEBUG", False)
 # Ambiente é decisão EXPLÍCITA, nunca inferida de texto livre. `staging` só
 # existe se o spec de deploy (.do/*.yaml) disser `SHOPMAN_ENVIRONMENT=staging`
 # — um host de staging esquecido em DJANGO_ALLOWED_HOSTS não pode rebaixar
-# produção, porque `staging` liga o OTP de debug e desliga as travas de
-# refresh_seed_dates/qa_scenarios/seed --flush/import_backup. Ausência da env
-# fora de DEBUG falha FECHADO: production, nunca staging.
+# produção, porque `staging` desliga as travas de refresh_seed_dates/
+# qa_scenarios/seed --flush/import_backup. Ausência da env fora de DEBUG falha
+# FECHADO: production, nunca staging.
 SHOPMAN_ENVIRONMENT = os.environ.get(
     "SHOPMAN_ENVIRONMENT",
     "development" if DEBUG else "production",
 ).strip().lower()
 
-SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool(
-    "SHOPMAN_EXPOSE_DEBUG_OTP",
-    DEBUG or SHOPMAN_ENVIRONMENT == "staging",
-)
+# Nasce DESLIGADO, sem herdar de DEBUG nem de ambiente: expor OTP na resposta
+# é decisão explícita do spec de deploy (o alpha declara `true`; produção,
+# `false`). O dev local não depende deste default — `_debug_otp_allowed`
+# devolve True em DEBUG antes de ler a flag.
+SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", False)
 
 # O SEGREDO que separa "testável" de "exposto".
 #

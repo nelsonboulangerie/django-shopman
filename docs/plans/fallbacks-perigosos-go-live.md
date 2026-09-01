@@ -70,10 +70,10 @@ venda não declarada, descoberta pelo contador, não pelo sistema.
 `shopman/shop/tests/test_fiscal_focusnfe.py:40,184,219` afirmam a URL
 `homologacao.focusnfe.com.br`. Nenhum teste exige que produção seja alcançável.
 
-### 3. 🟨 `SHOPMAN_EXPOSE_DEBUG_OTP` liga sozinho, e a inferência lia texto livre
+### 3. ✅ `SHOPMAN_EXPOSE_DEBUG_OTP` ligava sozinho, e a inferência lia texto livre
 
-- `config/settings.py:88-91` — `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", DEBUG or SHOPMAN_ENVIRONMENT == "staging")`
-- Consumidor: `shopman/storefront/api/auth.py:363-383` põe o código OTP vivo na resposta JSON
+- Era: `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", DEBUG or SHOPMAN_ENVIRONMENT == "staging")`, com o ambiente inferido por substring de host. Hoje: `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", False)` (`config/settings.py:88-92`)
+- Consumidor: `shopman/storefront/api/auth.py::_debug_otp_allowed` põe o código OTP na resposta JSON — só em DEBUG, ou com flag explícita + segredo apresentado
 
 **Risco: segurança.** É o bloqueador de go-live já registrado. O agravante — **a
 porta abria sozinha por causa de uma string** — está fechado.
@@ -88,10 +88,15 @@ que ainda lista host de staging não rebaixa mais o ambiente — e o guarda
 `shopman/shop/tests/test_shopman_environment.py` (re-executa o módulo de
 settings com env envenenada e afirma `production` + OTP desligado).
 
-**⬜ Resta (frente do bloqueador de go-live):** `SHOPMAN_EXPOSE_DEBUG_OTP`
-ainda herda `True` quando `SHOPMAN_ENVIRONMENT == "staging"` — agora só por
-decisão explícita do spec, que é o comportamento que o alpha precisa hoje. No
-go-live, a proposta segue: nascer `False` sempre, sem herdar de nada.
+**✅ Corrigido (o default):** `SHOPMAN_EXPOSE_DEBUG_OTP` nasce `False` sempre,
+sem herdar de `DEBUG` nem de ambiente (`config/settings.py:88-92`). Ligar é
+decisão explícita do spec de deploy — o alpha declara `true`, produção declara
+`false`, e quem esquecer a env fica com a porta fechada. Nada muda no vivo:
+o dev local não lê este default (`_debug_otp_allowed` devolve `True` em
+`DEBUG` antes de consultar a flag), e por cima ainda vale o segredo
+`SHOPMAN_DEBUG_OTP_TOKEN` (PR #430): fora de `DEBUG`, flag ligada sem token
+apresentado continua recusando. As três camadas — env explícita, flag
+explícita, segredo — falham fechadas de forma independente.
 
 ### 4. ⬜ O adapter de e-mail devolve sucesso enquanto o backend só imprime
 
@@ -371,7 +376,7 @@ conferência antecipada, não a única trava.
 |---|---|---|---|
 | `EFI_SANDBOX` | **`true`** | **nenhuma** | Pix cobra onde não entra dinheiro (item 1) |
 | `FOCUS_NFE_ENVIRONMENT` | **`homologacao`** | **nenhuma** | NFC-e sem validade fiscal (item 2) |
-| `SHOPMAN_EXPOSE_DEBUG_OTP` | **herda de `SHOPMAN_ENVIRONMENT=staging`** | env agora explícita, falha fechado para `production` (item 3) | OTP na resposta ⇒ tomada de conta — exige `staging` declarado no spec |
+| `SHOPMAN_EXPOSE_DEBUG_OTP` | **`false`** (item 3 ✅ — sem herdar de nada) | flag explícita + segredo `SHOPMAN_DEBUG_OTP_TOKEN` (sem token, fora de DEBUG = recusa) | OTP na resposta exige spec com flag `true` E segredo apresentado |
 | `SHOPMAN_PIX_ADAPTER` | `payment_mock` **só em DEBUG** ✅ | `_ensure_simulation_allowed` ✅ | — |
 | `SHOPMAN_CARD_ADAPTER` | `payment_stripe` ✅ | `_refuse_card` + `StripeNotConfigured` ✅ | — |
 | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` | `False` | `payment_mock` ✅ | Reabre o simulador de Pix |
