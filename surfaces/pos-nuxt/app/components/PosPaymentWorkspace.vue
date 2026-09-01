@@ -224,9 +224,21 @@ const managerThresholdQ = computed(() => props.review?.manager_approval_threshol
 // o `paymentTotalQ` (com a review em trânsito, o total 0 fazia toda linha
 // digital virar "excedente" por meio segundo).
 const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
+// Agendado sem cliente: o servidor recusa a encomenda anônima
+// (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
+const scheduledWithoutCustomer = computed(() =>
+  isScheduled(props.deliveryDate, props.scheduleToday)
+  && !props.customerName.trim()
+  && !props.customerPhone.trim());
 const reviewWarnings = computed(() => {
   const fromServer = (props.review?.warnings ?? []).filter(
-    (w) => w.code !== "cash_tendered_amount_blank" && w.code !== "tender_overpaid_non_cash",
+    (w) => w.code !== "cash_tendered_amount_blank" && w.code !== "tender_overpaid_non_cash"
+      // A review só é refeita quando o carrinho muda — identificar o cliente não a
+      // refaz, e o aviso de agendado-sem-cliente ficava defasado na tela ao lado do
+      // cabeçalho já com o nome. Quem vigia essa condição AO VIVO é o bloqueio do
+      // CTA (`scheduledWithoutCustomer`); o aviso do servidor só fala enquanto ela
+      // ainda vale.
+      && (w.code !== "customer_required_for_scheduled" || scheduledWithoutCustomer.value),
   );
   if (nonCashExcess.value <= 0) return fromServer;
   return [
@@ -441,12 +453,6 @@ const ctaLabel = computed(() => {
   if (needsReview.value) return "Atualizando…";
   return needsAuth.value ? "Autorizar e validar" : "Validar";
 });
-// Agendado sem cliente: o servidor recusa a encomenda anônima
-// (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
-const scheduledWithoutCustomer = computed(() =>
-  isScheduled(props.deliveryDate, props.scheduleToday)
-  && !props.customerName.trim()
-  && !props.customerPhone.trim());
 const ctaDisabled = computed(() => {
   if (!props.items.length || props.loading || needsReview.value) return true;
   if (scheduledWithoutCustomer.value) return true;
