@@ -19,6 +19,16 @@ export default defineNuxtConfig({
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || 'http://127.0.0.1:8000'
   },
 
+  // Foto de catálogo é imutável por convenção: trocar a foto = trocar o NOME do
+  // arquivo (ct.v2.webp), nunca sobrescrever — é isso que torna o cache longo
+  // seguro. Sem esta regra o Nitro serve public/ com cache curto e cada volta à
+  // loja rebaixa o catálogo inteiro.
+  routeRules: {
+    '/img/products/**': {
+      headers: { 'cache-control': 'public, max-age=31536000, immutable' }
+    }
+  },
+
   app: {
     baseURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {

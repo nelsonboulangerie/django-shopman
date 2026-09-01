@@ -1,7 +1,18 @@
 # CATALOG-IMAGES-OFF-GITHUB-PLAN — tirar as fotos do GitHub e do exagero
 
-**Status:** 🔖 aberto (2026-08-11). Origem: furo #1 do smoke de alpha
+**Status:** ✅ executado (2026-09-01). Origem: furo #1 do smoke de alpha
 ([ALPHA-READINESS-AUDIT §7](ALPHA-READINESS-AUDIT.md)).
+
+> **Como terminou (2026-09-01):** a casa definitiva das fotos é o próprio
+> storefront — `surfaces/storefront-nuxt/public/img/products/`, 41 webp
+> (19 do conjunto `loja/` + 22 do acervo passados pela mesma receita de
+> 1200px/q80/`-strip`), ~4,5 MB no repo, deploy atômico com a loja e cache
+> `max-age=31536000, immutable` via routeRule (trocar foto = trocar o NOME
+> do arquivo, nunca sobrescrever). O seed aponta por
+> `SHOPMAN_PRODUCT_IMAGE_BASE` (default: a loja viva) e não distingue mais
+> `loja/` de acervo — é um conjunto só, plano. Com isso a loja deixou de
+> depender do `nb-catalog-app` (cardapio.*) em runtime, que pode ser
+> aposentado. O plano abaixo fica como registro do diagnóstico.
 
 São **dois problemas independentes** que costumam ser confundidos num só. Vale
 separar, porque o primeiro é quase de graça e o segundo é trabalho de conteúdo.
