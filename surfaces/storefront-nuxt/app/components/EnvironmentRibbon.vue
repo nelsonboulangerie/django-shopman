@@ -41,13 +41,31 @@ const notice = computed(() => publicConfig.value?.environment_notice || '')
        vazaria para fora da viewport e criaria rolagem horizontal. -->
   <div
     v-if="notice"
-    class="pointer-events-none fixed right-0 top-0 z-50 size-36 overflow-hidden"
+    class="pointer-events-none fixed right-0 top-0 z-50 size-40 overflow-hidden"
     aria-hidden="true"
   >
-    <!-- Os deslocamentos são geometria, não gosto: a 45°, uma barra de 12rem
-         precisa nascer fora da caixa para cruzar o canto de ponta a ponta. -->
+    <!-- ⚠️ GEOMETRIA, não gosto — e ela tem UMA regra que decide se a fita
+         parece fita ou parece retângulo colado torto:
+         **as duas pontas têm que sair PELA TELA.**
+
+         A janela recorta nas quatro bordas, mas só duas delas são borda de
+         viewport (topo e direita). Ponta que termina nas outras duas fica com um
+         corte reto boiando no meio da página — foi o defeito da primeira versão.
+
+         Para a ponta de cima sair pelo TOPO antes de bater na esquerda, e a de
+         baixo sair pela DIREITA antes de bater embaixo, o centro da barra tem de
+         ficar mais perto da direita do que do topo (cx > cy), e a meia-diagonal
+         da barra tem de caber em `max(cy, S−cx) < k < min(cx, S−cy)`.
+
+         Com S=160 (`size-40`), cx≈92 e cy≈58: k≈85 satisfaz 68 < k < 92. Sobra
+         de 36px acima e 22px à direita — folga suficiente para outra fonte ou
+         zoom não trazerem o corte de volta para dentro.
+
+         A LARGURA da janela também define quanto texto cabe: o trecho visível da
+         barra é `(S − cx + cy)·√2` ≈ 178px, e "AMBIENTE DE TESTES" ocupa ~145px.
+         Encolher a janela sem encurtar o texto o corta — foi o segundo defeito. -->
     <div
-      class="absolute -right-8 top-8 w-52 rotate-45 bg-amber-400 py-1 text-center shadow-lg"
+      class="absolute -right-11 top-11 w-60 rotate-45 bg-amber-400 py-1.5 text-center shadow-md"
     >
       <span class="text-xs font-semibold uppercase tracking-wide text-amber-950">
         {{ notice }}
