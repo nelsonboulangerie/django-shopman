@@ -146,7 +146,18 @@ class OrderCardProjection:
     can_settle_delivery_cash: bool
     fiscal_status_label: str
     fiscal_status: str
-    has_notes: bool
+    # Duas notas, dois donos (data-schemas): ``kitchen_note`` é a nota do
+    # OPERADOR; ``order_notes`` é a observação do CLIENTE no checkout. O antigo
+    # ``has_notes`` só olhava a nota do operador — a voz do cliente chegava ao
+    # KDS e nunca ao Gestor. O card só INDICA presença (selo compacto); o
+    # conteúdo mora no detalhe, cada nota com seu nome.
+    has_kitchen_note: bool
+    has_customer_note: bool
+    # Presente: quem embala precisa saber sem abrir o detalhe. O destinatário é
+    # opcional na retirada (gift.py) — o selo distingue "entregar a alguém" de
+    # "só embalar", e o nome/recado ficam no detalhe.
+    is_gift: bool
+    gift_has_recipient: bool
     assigned_operator: str
     awaiting_work_orders: tuple[AwaitingWorkOrderProjection, ...]
     # Prazo da confirmação otimista (só em pedidos NEW com timer agendado). Vazio
@@ -216,6 +227,10 @@ class OperatorOrderProjection:
     items: tuple[OrderItemProjection, ...]
     timeline: tuple[TimelineEventProjection, ...]
     kitchen_note: str
+    # Observação do CLIENTE (``order_notes``, escrita no checkout). Dona
+    # diferente da ``kitchen_note`` (do operador): o Gestor mostra as duas, e
+    # só a da cozinha é editável.
+    customer_note: str
     payment_method: str
     payment_method_label: str
     payment_status: str
@@ -434,6 +449,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         items=items,
         timeline=timeline,
         kitchen_note=order.data.get("kitchen_note", ""),
+        customer_note=str(order.data.get("order_notes", "") or ""),
         payment_method=method,
         payment_method_label=payment_method_label,
         payment_status=payment_status,
@@ -773,6 +789,7 @@ def _build_card(
     commitment = get_commitment_date(order)
     is_preorder = commitment is not None and commitment > timezone.localdate()
     waitlist_state, waitlist_deadline_iso, waitlist_label = _waitlist_badge(order)
+    recipient = order.data.get("recipient") if isinstance(order.data.get("recipient"), dict) else {}
 
     return OrderCardProjection(
         ref=order.ref,
@@ -809,7 +826,10 @@ def _build_card(
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
         fiscal_status=fiscal_status,
-        has_notes=bool(order.data.get("kitchen_note")),
+        has_kitchen_note=bool(order.data.get("kitchen_note")),
+        has_customer_note=bool(str(order.data.get("order_notes", "") or "").strip()),
+        is_gift=bool(order.data.get("is_gift")),
+        gift_has_recipient=bool((recipient or {}).get("name")),
         assigned_operator=str((order.data.get("assignment") or {}).get("operator_name") or ""),
         awaiting_work_orders=_awaiting_work_orders(order),
         confirmation_deadline_iso=deadline[0] if deadline else "",

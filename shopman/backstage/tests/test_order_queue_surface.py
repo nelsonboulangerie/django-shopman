@@ -365,6 +365,98 @@ class OperatorOrderPresetTests(TestCase):
 # terminal não avança, reject só em new) é coberta nos testes de shop/operator_orders.
 
 
+class CustomerNoteAndGiftReachTheOperatorTests(TestCase):
+    """A observação do CLIENTE (``order_notes``) e o presente chegam ao Gestor.
+
+    O CommitService grava ``order_notes`` e o KDS a exibia, mas a fila do
+    operador só olhava ``kitchen_note`` (nota do OPERADOR) — o antigo
+    ``has_notes`` era a nota errada com o nome genérico. O card indica presença
+    (selo compacto); o conteúdo mora no detalhe.
+    """
+
+    def test_card_flags_customer_note_and_kitchen_note_separately(self) -> None:
+        order = _order("NOTE-CARD-1", "new")
+        order.data = {**order.data, "order_notes": "Sem cebola, por favor"}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(order)
+
+        self.assertTrue(card.has_customer_note)
+        self.assertFalse(card.has_kitchen_note)
+
+    def test_card_kitchen_note_does_not_masquerade_as_customer_note(self) -> None:
+        order = _order("NOTE-CARD-2", "new")
+        order.data = {**order.data, "kitchen_note": "Bem assado"}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(order)
+
+        self.assertTrue(card.has_kitchen_note)
+        self.assertFalse(card.has_customer_note)
+
+    def test_card_blank_customer_note_is_not_presence(self) -> None:
+        order = _order("NOTE-CARD-3", "new")
+        order.data = {**order.data, "order_notes": "   "}
+        order.save(update_fields=["data", "updated_at"])
+
+        self.assertFalse(build_order_card(order).has_customer_note)
+
+    def test_card_flags_gift_and_recipient_presence(self) -> None:
+        order = _order("GIFT-CARD-1", "new")
+        order.data = {
+            **order.data,
+            "is_gift": True,
+            "recipient": {"name": "Maria Silva", "phone": "+5543988887777"},
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(order)
+
+        self.assertTrue(card.is_gift)
+        self.assertTrue(card.gift_has_recipient)
+
+    def test_card_gift_without_recipient_is_still_a_gift(self) -> None:
+        # Retirada: destinatário é opcional (storefront/intents/gift.py) — o
+        # selo distingue "entregar a alguém" de "só embalar".
+        order = _order("GIFT-CARD-2", "new")
+        order.data = {**order.data, "is_gift": True}
+        order.save(update_fields=["data", "updated_at"])
+
+        card = build_order_card(order)
+
+        self.assertTrue(card.is_gift)
+        self.assertFalse(card.gift_has_recipient)
+
+    def test_card_without_notes_or_gift_stays_clean(self) -> None:
+        card = build_order_card(_order("NOTE-CARD-4", "new"))
+
+        self.assertFalse(card.has_customer_note)
+        self.assertFalse(card.has_kitchen_note)
+        self.assertFalse(card.is_gift)
+        self.assertFalse(card.gift_has_recipient)
+
+    def test_detail_reads_customer_note_beside_kitchen_note(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        order = _order("NOTE-DET-1", "new")
+        order.data = {
+            **order.data,
+            "order_notes": "Sem cebola, por favor",
+            "kitchen_note": "Cortar ao meio",
+        }
+        order.save(update_fields=["data", "updated_at"])
+
+        proj = build_operator_order(order)
+
+        self.assertEqual(proj.customer_note, "Sem cebola, por favor")
+        self.assertEqual(proj.kitchen_note, "Cortar ao meio")
+
+    def test_detail_without_customer_note_is_empty_string(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        self.assertEqual(build_operator_order(_order("NOTE-DET-2", "new")).customer_note, "")
+
+
 class DeliveryAddressReachesTheOperatorTests(TestCase):
     """Quem despacha precisa saber para onde vai.
 

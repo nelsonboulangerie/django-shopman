@@ -196,6 +196,27 @@ function buttonClass(priority: string): string {
         <Icon name="lucide:hourglass" class="size-3" />
         {{ card.waitlist_label }}
       </span>
+      <!-- indicações mínimas (o conteúdo mora no detalhe): presente e
+           observação do CLIENTE. Ícone só, aria diz o que é — o card fica
+           escaneável sem carregar texto que não cabe aqui. -->
+      <span
+        v-if="card.is_gift"
+        class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-muted-foreground"
+        role="img"
+        :aria-label="card.gift_has_recipient ? 'Presente com destinatário' : 'Embalar para presente'"
+        data-gift-badge
+      >
+        <Icon name="lucide:gift" class="size-3" />
+      </span>
+      <span
+        v-if="card.has_customer_note"
+        class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-muted-foreground"
+        role="img"
+        aria-label="Tem observação do cliente"
+        data-customer-note-badge
+      >
+        <Icon name="lucide:message-square" class="size-3" />
+      </span>
       <span
         v-if="card.payment_method_label"
         class="inline-flex items-center gap-1 rounded-md border px-2 py-0.5"

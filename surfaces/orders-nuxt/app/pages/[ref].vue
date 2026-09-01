@@ -182,10 +182,27 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status || "—" }}</p>
         </div>
 
-        <!-- gift -->
-        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm">
-          <p class="flex items-center gap-1.5 font-medium"><Icon name="lucide:gift" class="size-4" /> Presente para {{ order.gift_recipient_name }}</p>
+        <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
+             pedido continua presente, e a instrução vira "embalar", não
+             "entregar a alguém" com o nome pendurado no vazio. -->
+        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm" data-gift-block>
+          <p class="flex items-center gap-1.5 font-medium">
+            <Icon name="lucide:gift" class="size-4" />
+            {{ order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : "Embalar para presente" }}
+          </p>
+          <p v-if="order.gift_recipient_phone" class="mt-1 flex items-center gap-1.5 text-muted-foreground" data-gift-phone>
+            <Icon name="lucide:phone" class="size-3.5" /> {{ order.gift_recipient_phone }}
+          </p>
           <p v-if="order.gift_message" class="mt-1 text-muted-foreground">“{{ order.gift_message }}”</p>
+          <!-- instrução operacional: nada de valores junto do presente (sem
+               cupom/valor na sacola) — hoje essa vontade do cliente sumia. -->
+          <p
+            v-if="order.gift_hide_values"
+            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-warning/50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            data-gift-hide-values
+          >
+            <Icon name="lucide:eye-off" class="size-3" /> Não mostrar valores
+          </p>
         </div>
       </section>
 
@@ -263,6 +280,16 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <!-- observação do CLIENTE (order_notes, escrita no checkout): somente
+           leitura, dona diferente da nota da cozinha logo abaixo — o operador
+           edita a dele, nunca a do cliente. -->
+      <section v-if="order.customer_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-customer-note>
+        <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
+          <Icon name="lucide:message-square" class="size-4 text-muted-foreground" /> Observação do cliente
+        </h2>
+        <p class="whitespace-pre-line text-sm">{{ order.customer_note }}</p>
       </section>
 
       <!-- kitchen note -->

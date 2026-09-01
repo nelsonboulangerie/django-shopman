@@ -17,6 +17,7 @@ import {
   matchesChannel,
   matchesFulfillment,
   matchesQuery,
+  newOrderPush,
   nextSort,
   preorderGroups,
   resolveShortcut,
@@ -63,7 +64,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   can_settle_delivery_cash: false,
   fiscal_status_label: "",
   fiscal_status: "",
-  has_notes: false,
+  has_kitchen_note: false,
+  has_customer_note: false,
+  is_gift: false,
+  gift_has_recipient: false,
   assigned_operator: "",
   awaiting_work_orders: [],
   change_for_q: 0,
@@ -450,6 +454,27 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
     expect(polling.live).toBe(false);
     expect(polling.label).toContain("automática"); // ainda atualiza, mas não em tempo real
     expect(polling.dotClass).not.toContain("green");
+  });
+});
+
+describe("newOrderPush — só pedido NOVO dispara o aviso", () => {
+  it("kind 'created' devolve o ref do pedido", () => {
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "new", kind: "created" }))).toBe("WEB-9");
+  });
+
+  it("'created' sem ref ainda é pedido novo (ref vazio, aviso genérico)", () => {
+    expect(newOrderPush(JSON.stringify({ kind: "created" }))).toBe("");
+  });
+
+  it("mudança de status NÃO é pedido novo — o som não pode gritar em transição", () => {
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "ready", kind: "status_changed" }))).toBeNull();
+  });
+
+  it("payload imparseável/vazio degrada em silêncio (null)", () => {
+    expect(newOrderPush("not-json")).toBeNull();
+    expect(newOrderPush(undefined)).toBeNull();
+    expect(newOrderPush("")).toBeNull();
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9" }))).toBeNull();
   });
 });
 

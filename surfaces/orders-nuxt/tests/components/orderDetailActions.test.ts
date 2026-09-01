@@ -64,6 +64,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     items: [{ sku: "PAO", name: "Pão francês", qty: 2, unit_price_display: "R$ 1,00", total_display: "R$ 2,00" }],
     timeline: [],
     kitchen_note: "",
+    customer_note: "",
     payment_method: "cash",
     payment_method_label: "Dinheiro",
     payment_status: "pending",
@@ -168,5 +169,59 @@ describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
 
     expect(w.text()).toContain("Retirada");
     expect(w.find("[data-order-address]").exists()).toBe(false);
+  });
+});
+
+describe("detalhe do pedido — observação do cliente (dona diferente da nota da cozinha)", () => {
+  it("observação do cliente aparece em bloco próprio, sem invadir o editor da cozinha", () => {
+    const w = abrir(order({ customer_note: "Sem cebola, por favor", kitchen_note: "" }));
+
+    const bloco = w.find("[data-customer-note]");
+    expect(bloco.exists()).toBe(true);
+    expect(bloco.text()).toContain("Observação do cliente");
+    expect(bloco.text()).toContain("Sem cebola, por favor");
+    // A nota da cozinha continua do operador: o editor não herda o texto do cliente.
+    expect((w.find("#order-notes").element as HTMLTextAreaElement).value).toBe("");
+  });
+
+  it("sem observação do cliente, o bloco não existe", () => {
+    const w = abrir(order({ customer_note: "" }));
+    expect(w.find("[data-customer-note]").exists()).toBe(false);
+  });
+});
+
+describe("detalhe do pedido — presente", () => {
+  it("com destinatário: 'Presente para <nome>' + telefone quando houver", () => {
+    const w = abrir(order({
+      is_gift: true,
+      gift_recipient_name: "Maria Silva",
+      gift_recipient_phone: "(43) 98888-7777",
+    }));
+
+    const bloco = w.find("[data-gift-block]");
+    expect(bloco.text()).toContain("Presente para Maria Silva");
+    expect(w.find("[data-gift-phone]").text()).toContain("(43) 98888-7777");
+  });
+
+  it("presente de retirada sem destinatário: 'Embalar para presente', sem nome pendurado", () => {
+    // Caso legítimo (storefront/intents/gift.py): destinatário é opcional na
+    // retirada. Antes a tela renderizava "Presente para " no vazio.
+    const w = abrir(order({ is_gift: true, gift_recipient_name: "" }));
+
+    const bloco = w.find("[data-gift-block]");
+    expect(bloco.exists()).toBe(true);
+    expect(bloco.text()).toContain("Embalar para presente");
+    expect(bloco.text()).not.toContain("Presente para");
+    expect(w.find("[data-gift-phone]").exists()).toBe(false);
+  });
+
+  it("gift_hide_values vira instrução visível: 'Não mostrar valores'", () => {
+    const w = abrir(order({ is_gift: true, gift_hide_values: true }));
+    expect(w.find("[data-gift-hide-values]").text()).toContain("Não mostrar valores");
+  });
+
+  it("sem hide_values o selo não aparece", () => {
+    const w = abrir(order({ is_gift: true, gift_hide_values: false }));
+    expect(w.find("[data-gift-hide-values]").exists()).toBe(false);
   });
 });
