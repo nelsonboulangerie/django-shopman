@@ -107,6 +107,19 @@ export interface EnrichedMaterial extends Material {
   issues: MaterialIssue[];
 }
 
+/**
+ * Uma linha da fila de compra: o insumo, de quem comprar e quanto.
+ *
+ * `suggestedQty` é a resposta do SERVIDOR (`Material.suggestedQty`), não uma
+ * conta refeita na tela — ver `reorderRows` em `presentation/purchase.ts`.
+ */
+export interface ReorderRow {
+  material: EnrichedMaterial;
+  supplier: Supplier | null;
+  suggestedQty: number;
+  estimatedCostQ: number | null;
+}
+
 export interface SupplierCostRow {
   cost: SupplierMaterialCost;
   supplier: Supplier;

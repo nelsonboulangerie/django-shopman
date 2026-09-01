@@ -17,6 +17,7 @@ import type {
   ReceiptOutcome,
   ReceiptPendingItem,
   ReceiptWarning,
+  ReorderRow,
   QuotePreview,
   Supplier,
   SupplierCostRow,
@@ -684,4 +685,39 @@ export function supplierCostRows(
     })
     .filter((row): row is SupplierCostRow => Boolean(row))
     .sort((a, b) => a.baseCostQ - b.baseCostQ);
+}
+
+/**
+ * A fila de compra — quem precisa ser reposto, quanto e de quem.
+ *
+ * **A quantidade é a do servidor.** `Material.suggestedQty` já é a resposta da
+ * política de reposição (prazo do fornecedor + revisão + segurança, limitada
+ * pela validade do insumo), calculada em `_suggested_qty` na projeção. A tela
+ * mostra esse número; não o recalcula.
+ *
+ * Antes havia duas contas para a mesma pergunta: o servidor respondia uma coisa
+ * e o painel refazia a conta com uma heurística própria
+ * (`ceil(max(minStock*2, dailyUse*7) - stockOnHand)`, sobre um filtro próprio).
+ * O resultado foi o painel anunciar "Comprar 8 · R$ 4.293,97" enquanto a tela
+ * Comprar, com os mesmos dados, mostrava 0 e R$ 0,00 — e um painel que promete
+ * oito e entrega zero queima a confiança no app inteiro. Uma pergunta, um dono.
+ */
+export function reorderRows(
+  materials: Material[],
+  suppliers: Supplier[],
+  costs: SupplierMaterialCost[],
+  conversions: MaterialConversion[],
+): ReorderRow[] {
+  return materials
+    .filter((material) => (material.suggestedQty ?? 0) > 0)
+    .map((material) => {
+      const enriched = enrichMaterial(material, costs, conversions);
+      const preferred = enriched.preferredCost;
+      const supplier = preferred ? (suppliers.find((item) => item.ref === preferred.supplierRef) ?? null) : null;
+      const suggestedQty = material.suggestedQty ?? 0;
+      const estimatedCostQ =
+        enriched.preferredBaseCostQ === null ? null : Math.round(enriched.preferredBaseCostQ * suggestedQty);
+      return { material: enriched, supplier, suggestedQty, estimatedCostQ };
+    })
+    .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
 }

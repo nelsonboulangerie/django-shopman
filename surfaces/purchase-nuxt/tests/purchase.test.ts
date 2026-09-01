@@ -14,6 +14,7 @@ import {
   formatQtyDiff,
   formatShortDate,
   formatStockOnHand,
+  reorderRows,
   receiptFirstBlocker,
   receiptIsBlank,
   receiptOutcomeSummary,
@@ -933,5 +934,78 @@ describe("formatShortDate", () => {
     expect(() => formatShortDate("sem data")).not.toThrow();
     expect(formatShortDate("sem data")).toBe("—");
     expect(formatShortDate("2026-13-45")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderRows — o painel e a tela respondem à MESMA pergunta
+// ---------------------------------------------------------------------------
+// O painel dizia "Comprar 8 · R$ 4.293,97" e a tela Comprar mostrava 0 pedidos
+// e R$ 0,00, com os mesmos dados. Eram dois cálculos diferentes: o servidor
+// respondia `suggestedQty` (política de reposição: prazo + revisão + segurança,
+// limitada pela validade) e a tela ignorava esse número e refazia a conta com
+// uma heurística própria — `ceil(max(minStock*2, dailyUse*7) - stockOnHand)`
+// sobre um filtro próprio. Duas respostas para "o que comprar" é uma a mais.
+// A resposta é do servidor; a tela mostra, não recalcula.
+const semConsumo: Material = {
+  sku: "MANTEIGA-TOURAGE",
+  name: "Manteiga de tourage",
+  unit: "kg",
+  shelfLifeDays: 45,
+  isActive: true,
+  category: "Laticínios",
+  stockOnHand: 22,
+  dailyUse: 0,
+  minStock: 30,
+  recipes: ["Croissant"],
+  suggestedQty: 0,
+};
+
+describe("reorderRows", () => {
+  it("não inventa compra que o servidor não sugeriu", () => {
+    // Estoque (22) abaixo do mínimo (30) faria a heurística antiga sugerir
+    // compra; o servidor diz 0 porque não há consumo medido. Vale o servidor.
+    expect(reorderRows([semConsumo], [], [], [])).toEqual([]);
+  });
+
+  it("mostra a quantidade que o servidor sugeriu, sem recalcular", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    const rows = reorderRows([material], [], [], []);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.suggestedQty).toBe(12);
+  });
+
+  it("estima o custo pelo preferencial, e deixa nulo quando não há", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 10 };
+    const semCusto = reorderRows([material], [], [], []);
+    expect(semCusto[0]!.estimatedCostQ).toBeNull();
+
+    const supplier: Supplier = {
+      ref: "SUP-LAT",
+      name: "Laticínio",
+      document: "",
+      contact: "",
+      leadTimeDays: 2,
+      reliabilityPercent: 100,
+      isActive: true,
+      lastDeliveryAt: "",
+      paymentTerm: "A combinar",
+    };
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const comCusto = reorderRows([material], [supplier], [cost], []);
+    expect(comCusto[0]!.supplier?.ref).toBe("SUP-LAT");
+    expect(comCusto[0]!.estimatedCostQ).toBe(50000);
+  });
+
+  it("sem insumo nenhum, não há fila de compra", () => {
+    expect(reorderRows([], [], [], [])).toEqual([]);
   });
 });
