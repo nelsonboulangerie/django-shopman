@@ -17,11 +17,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from shopman.shop.backup import registry, workbook
+from shopman.shop.environment import environment_name, is_production
 
 #: Quantos erros de linha mostrar por aba antes de resumir.
 _MAX_ROW_ERRORS = 10
@@ -50,13 +50,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         apply = options["apply"]
-        if (
-            apply
-            and getattr(settings, "SHOPMAN_ENVIRONMENT", "") == "production"
-            and not options["force"]
-        ):
+        # `is_production()` e não `== "production"`: valor desconhecido é tratado
+        # como produção. Ver `shopman/shop/environment.py`.
+        if apply and is_production() and not options["force"]:
             raise CommandError(
-                "Ambiente de produção: import_backup --apply exige --force explícito."
+                f"Ambiente de produção (SHOPMAN_ENVIRONMENT={environment_name()!r}): "
+                "import_backup --apply exige --force explícito."
             )
 
         path = Path(options["path"])

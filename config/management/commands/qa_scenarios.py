@@ -51,7 +51,6 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
 from config.management.commands.seed import (
@@ -59,6 +58,7 @@ from config.management.commands.seed import (
     STOREFRONT_STATES,
     apply_storefront_state,
 )
+from shopman.shop.environment import environment_name, is_production
 
 #: Estados que o comando sabe armar, e o SKU padrão de cada um. Os quatro
 #: primeiros herdam o contrato do perfil ``qa`` (mesma tabela, mesmo SKU, para o
@@ -116,10 +116,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "") or "").lower()
-        if environment == "production":
+        # `is_production()` e não `== "production"`: valor desconhecido é tratado
+        # como produção. Ver `shopman/shop/environment.py`.
+        if is_production():
             raise CommandError(
-                "Recusando qa_scenarios em produção (SHOPMAN_ENVIRONMENT=production): "
+                f"Recusando qa_scenarios em produção "
+                f"(SHOPMAN_ENVIRONMENT={environment_name()!r}): "
                 "este comando esgota produto e pausa venda de propósito. "
                 "Não há flag de override, de propósito."
             )

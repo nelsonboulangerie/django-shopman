@@ -36,6 +36,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
   SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
   SHOPMAN_W016  Captura simulada exposta em staging técnico
+  SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
 """
 
 from __future__ import annotations
@@ -45,6 +46,13 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+
+from shopman.shop.environment import (
+    NON_PRODUCTION_ENVIRONMENTS,
+    environment_name,
+    is_production,
+    is_recognized_environment,
+)
 
 _DEV_SECRET_KEY = "dev-secret-key-not-for-production"
 
@@ -468,8 +476,7 @@ def check_debug_otp_exposure(app_configs, **kwargs):
     if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_EXPOSE_DEBUG_OTP está habilitado fora de ambiente não produtivo.",
@@ -506,8 +513,7 @@ def check_staging_autopilot(app_configs, **kwargs):
     if not getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_STAGING_AUTOPILOT está habilitado fora de ambiente não produtivo.",
@@ -546,8 +552,7 @@ def check_mock_capture_exposure(app_configs, **kwargs):
     if settings.DEBUG or not getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_EXPOSE_MOCK_CAPTURE está habilitado fora de ambiente não produtivo.",
@@ -961,3 +966,33 @@ def check_sku_namespace_collision(app_configs, **kwargs):
             )
         )
     return warnings
+
+
+@register(deploy=True)
+def check_environment_name_recognized(app_configs, **kwargs):
+    """Avisa quando ``SHOPMAN_ENVIRONMENT`` não é nenhum nome conhecido.
+
+    Não é Error porque o valor irreconhecível **já** é tratado como produção:
+    `is_production()` só abre a porta para os quatro nomes não-produtivos, então
+    um dedo escorregado falha do lado seguro. Mas falhar fechado em silêncio
+    esconde a causa — quem digitou `stagin` numa máquina de teste veria os
+    comandos de QA recusarem sem entender por quê. Este aviso é o grito.
+    """
+    if is_recognized_environment():
+        return []
+
+    nome = environment_name()
+    conhecidos = ", ".join(sorted(NON_PRODUCTION_ENVIRONMENTS)) + ", production"
+    return [
+        Warning(
+            f"SHOPMAN_ENVIRONMENT={nome!r} não é um ambiente conhecido — "
+            "esta instância está sendo tratada como PRODUÇÃO.",
+            hint=(
+                f"Valores conhecidos: {conhecidos}. Um valor fora dessa lista fecha "
+                "as travas destrutivas (seed --flush, import_backup, qa_scenarios, "
+                "refresh_seed_dates) de propósito. Se esta máquina é de teste, "
+                "corrija a variável; se é produção, escreva 'production'."
+            ),
+            id="SHOPMAN_W017",
+        )
+    ]

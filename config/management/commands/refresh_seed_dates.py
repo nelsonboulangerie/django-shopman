@@ -45,7 +45,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 from decimal import ROUND_CEILING, Decimal
 
-from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -57,6 +56,7 @@ from config.management.commands.seed import (
     material_opening_targets,
     prep_daily_needs,
 )
+from shopman.shop.environment import environment_name, is_production
 
 
 class Command(BaseCommand):
@@ -70,10 +70,12 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, apply: bool = False, **options):
-        environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "") or "").lower()
-        if environment == "production":
+        # `is_production()` e não `== "production"`: valor desconhecido é tratado
+        # como produção. Ver `shopman/shop/environment.py`.
+        if is_production():
             raise CommandError(
-                "Recusando refresh_seed_dates em produção (SHOPMAN_ENVIRONMENT=production): "
+                f"Recusando refresh_seed_dates em produção "
+                f"(SHOPMAN_ENVIRONMENT={environment_name()!r}): "
                 "este comando reescreve estoque e fornadas de um banco de QA semeado. "
                 "Não há flag de override, de propósito."
             )
