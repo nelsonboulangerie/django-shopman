@@ -67,7 +67,7 @@ ver [webhook-auth-status-codes](../reference/webhook-auth-status-codes.md)).
 2. **Merchant** associado ao app (merchant_id / UUID da loja).
 3. **Escopos/módulos** habilitados (Order, Catalog, Merchant).
 4. **Homologação** — passar a certificação do iFood (eles testam o fluxo). É o gate de produção.
-5. (Se webhook) registrar a URL HTTPS — hoje `https://api.staging.nelsonboulangerie.com.br/api/webhooks/ifood/`.
+5. (Se webhook) registrar a URL HTTPS — hoje `https://api.boulangerie.com.br/api/webhooks/ifood/`.
 
 ## ✅ Verificado AO VIVO (2026-06-30) — app de teste + loja "Teste - Nelson Boulangerie"
 

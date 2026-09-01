@@ -7,15 +7,6 @@ domains:
 - domain: alpha.nelsonboulangerie.com.br
   type: PRIMARY
   zone: nelsonboulangerie.com.br
-- domain: staging.nelsonboulangerie.com.br
-  type: ALIAS
-  zone: nelsonboulangerie.com.br
-- domain: api.staging.nelsonboulangerie.com.br
-  type: ALIAS
-  zone: nelsonboulangerie.com.br
-- domain: admin.staging.nelsonboulangerie.com.br
-  type: ALIAS
-  zone: nelsonboulangerie.com.br
 - domain: gestor.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
@@ -53,20 +44,6 @@ ingress:
     match:
       authority:
         exact: alpha.nelsonboulangerie.com.br
-      path:
-        prefix: /
-  - component:
-      name: web
-    match:
-      authority:
-        exact: api.staging.nelsonboulangerie.com.br
-      path:
-        prefix: /
-  - component:
-      name: web
-    match:
-      authority:
-        exact: admin.staging.nelsonboulangerie.com.br
       path:
         prefix: /
   - component:
@@ -155,11 +132,11 @@ envs:
   type: GENERAL
 - key: DJANGO_ALLOWED_HOSTS
   scope: RUN_TIME
-  value: 'api.staging.nelsonboulangerie.com.br,admin.staging.nelsonboulangerie.com.br,api.boulangerie.com.br,admin.boulangerie.com.br'
+  value: 'api.boulangerie.com.br,admin.boulangerie.com.br'
   type: GENERAL
 - key: CSRF_TRUSTED_ORIGINS
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br,https://api.staging.nelsonboulangerie.com.br,https://admin.staging.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://compras.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br'
+  value: 'https://alpha.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://compras.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br'
   type: GENERAL
 - key: DJANGO_TRUST_X_FORWARDED_PROTO
   scope: RUN_TIME
