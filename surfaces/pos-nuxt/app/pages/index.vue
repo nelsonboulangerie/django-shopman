@@ -403,11 +403,18 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
 
+// O chip da barra abre a caixa de quem é DONO dela na tela atual — no checkout, a
+// da tela de pagamento. As duas estão montadas ao mesmo tempo; sem este desvio,
+// o chip abriria a da tela de venda por cima do pagamento, e o "Quando" dentro do
+// Recebimento abriria a outra. Duas caixas para a mesma pergunta na mesma tela é
+// exatamente o que a barra de contexto veio desfazer (mesmo desvio de
+// `openFulfillmentHere`).
 function openScheduleHere() {
-  scheduleSheetOpen.value = true;
   // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
   // dominante do balcão é para agora e não paga por essa pergunta.
   void refreshSchedule();
+  if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
+  else scheduleSheetOpen.value = true;
 }
 // O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
 // campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
@@ -432,6 +439,7 @@ const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
   openFulfillment: () => void;
+  openSchedule: () => void;
   openDiscount: () => void;
   pressMethodKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => void;

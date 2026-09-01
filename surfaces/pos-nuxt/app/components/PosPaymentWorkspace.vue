@@ -38,6 +38,7 @@ import {
   methodShortcuts,
   nonCashExcessQ,
   paymentIcon,
+  SPLIT_PRESETS,
   tenderLineView,
 } from "~/presentation/payment";
 import {
@@ -47,7 +48,6 @@ import {
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
 import { scheduleLabel, windowLabel } from "~/presentation/schedule";
-import { SPLIT_PRESETS } from "~/presentation/payment";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -474,6 +474,7 @@ defineExpose({
   validate: () => { if (!ctaDisabled.value) onCta(); },
   openCustomer: () => { customerSheetOpen.value = true; },
   openFulfillment: () => { fulfillmentSheetOpen.value = true; },
+  openSchedule: () => { scheduleSheetOpen.value = true; },
   openDiscount: () => { discountSheetOpen.value = true; },
   /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
    *  achou dono — o shell só consome a tecla quando ela virou ação. */
