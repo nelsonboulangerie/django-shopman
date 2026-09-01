@@ -1207,6 +1207,19 @@ useSeoMeta({
                     Faltam {{ cart.delivery_minimum_progress.remaining_display }} para o mínimo de entrega
                   </p>
                   <UiProgress :model-value="cart.delivery_minimum_progress.percent" class="mt-2" />
+                  <!-- CTA que resolve (mesmo idioma da sacola): volta ao cardápio para
+                       completar o mínimo. O rascunho do checkout preserva endereço e
+                       escolhas — voltar não perde nada do que já foi preenchido. -->
+                  <UiButton
+                    variant="outline"
+                    size="sm"
+                    icon="lucide:plus"
+                    class="mt-3 w-full"
+                    data-checkout-minimum-add-items
+                    @click="goToMenu"
+                  >
+                    {{ cart.delivery_minimum_progress.add_more_cta || 'Adicionar mais itens' }}
+                  </UiButton>
                   <UiButton
                     v-if="availableFulfillment.includes('pickup')"
                     variant="link"
