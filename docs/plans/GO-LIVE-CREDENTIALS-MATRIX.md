@@ -64,6 +64,40 @@ Inventário completo de variáveis comentadas: [`.env.example`](../../.env.examp
 | `FOCUS_NFE_ENVIRONMENT` | `homologacao` | `producao` |
 | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` | `true` só se sem sandbox real | **ausente** (mock = erro `SHOPMAN_E003`) |
 | `SHOPMAN_EXPOSE_DEBUG_OTP` | permitido em staging (`W007`) | **ausente** (erro `E010`) |
+| `SHOPMAN_DEBUG_OTP_TOKEN` | **obrigatório** se a flag acima estiver ligada | irrelevante (a flag some) |
+| `SHOPMAN_OTP_DELIVERY_CHAIN` | `sms,email` | `sms,email` |
+
+### ⚠️ O debug do OTP deixou de ser "chave para virar no go-live"
+
+Eram duas decisões amarradas numa condição só
+(`EXPOSE_DEBUG_OTP and ENVIRONMENT == "staging"`), e o resultado era um ambiente
+onde **ninguém recebia OTP** (`DELIVERY_CHAIN = []`): o único jeito de entrar era
+lendo o código na resposta HTTP. Por isso o vazamento era silencioso (a vítima
+não recebia mensagem para desconfiar) e por isso "só desligar" era impossível —
+desligar sem religar a entrega deixaria TODO cliente sem conseguir entrar.
+
+Agora são duas chaves independentes:
+
+- **Quem vê o código** → `SHOPMAN_DEBUG_OTP_TOKEN`. Fora de `DEBUG`, o código só
+  volta para quem apresenta o segredo no cabeçalho `X-Shopman-Debug-Otp`. A
+  suíte E2E tem; o público não. **Vazio ⇒ nunca volta** (falha fechado).
+- **Por onde ele é entregue** → `SHOPMAN_OTP_DELIVERY_CHAIN`, que não depende
+  mais da flag de debug.
+
+Consequência prática: o **mesmo ambiente** é seguro e testável, e não há chave
+para virar na manhã do go-live.
+
+### ⚠️ O canal de e-mail só conta como disponível se ENTREGAR
+
+`notification_email.is_available()` era `bool(EMAIL_HOST or EMAIL_BACKEND)` — e
+`EMAIL_BACKEND` tem string por default, então era **incondicionalmente True**. O
+backend de console imprime em stdout, `send()` devolvia sucesso, e esse sucesso
+**curto-circuitava a cadeia inteira**: SMS e WhatsApp nunca eram tentados. O
+cliente não recebia o link de pagamento e o log dizia "Email sent".
+
+Agora `console`/`locmem`/`dummy` e SMTP sem `EMAIL_HOST` devolvem `False`, e a
+cadeia segue. **Sem SMTP configurado o e-mail simplesmente não participa** — que
+é a verdade, dita em voz alta.
 
 O gate de boot recusa produção com chave de teste de pagamento faltando (`SHOPMAN_E009`),
 webhook sem token (`E004`), ManyChat sem segredo (`E005`), Redis ausente (`E006`),

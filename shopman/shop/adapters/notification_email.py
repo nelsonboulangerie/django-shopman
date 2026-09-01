@@ -235,6 +235,30 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         return False
 
 
+#: Backends que NÃO entregam a ninguém. O de console imprime em stdout, o
+#: locmem guarda numa lista, o dummy descarta — todos "com sucesso".
+_BACKENDS_INERTES = ("console", "locmem", "dummy")
+
+
 def is_available(recipient: str | None = None, **config) -> bool:
-    """Email is available if Django email backend is configured."""
-    return bool(getattr(settings, "EMAIL_HOST", None) or getattr(settings, "EMAIL_BACKEND", None))
+    """Este canal ENTREGA de verdade?
+
+    ⚠️ Isto já foi ``bool(EMAIL_HOST or EMAIL_BACKEND)``, e era um fail-open
+    caro: ``EMAIL_BACKEND`` tem string por default (o de console), então a
+    expressão era **incondicionalmente True**. O backend de console imprime em
+    stdout e não levanta, ``send()`` devolvia ``True``, e esse ``True``
+    **curto-circuitava a cadeia inteira de fallback** em
+    ``services/notification.py``: SMS e WhatsApp nunca eram tentados.
+
+    O resultado é o pior possível para quem espera: o cliente NÃO recebe o link
+    de pagamento, o fornecedor NÃO recebe o pedido de compra, e o log diz
+    "Email sent". Um canal inerte tem que devolver ``False`` para a cadeia
+    seguir — é o que ``notification_sms.is_available`` já faz certo.
+    """
+    backend = str(getattr(settings, "EMAIL_BACKEND", "") or "").lower()
+    if any(inerte in backend for inerte in _BACKENDS_INERTES):
+        return False
+    # Um backend SMTP sem host não fala com ninguém — falha na primeira conexão.
+    if "smtp" in backend and not str(getattr(settings, "EMAIL_HOST", "") or "").strip():
+        return False
+    return bool(backend)

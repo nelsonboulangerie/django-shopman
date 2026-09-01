@@ -100,6 +100,15 @@ SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool(
     DEBUG or SHOPMAN_ENVIRONMENT == "staging",
 )
 
+# O SEGREDO que separa "testável" de "exposto".
+#
+# Fora de DEBUG, o código do OTP só volta na resposta para quem apresentar este
+# valor no cabeçalho `X-Shopman-Debug-Otp`. A suíte E2E tem o segredo; o público
+# não. **Vazio = o código nunca volta**, por mais que `SHOPMAN_EXPOSE_DEBUG_OTP`
+# esteja ligado — falhar fechado, porque o que está em jogo é o login de outra
+# pessoa. Ver `storefront/api/auth.py::_debug_otp_allowed`.
+SHOPMAN_DEBUG_OTP_TOKEN = os.environ.get("SHOPMAN_DEBUG_OTP_TOKEN", "").strip()
+
 # ⚠️ PRODUÇÃO: Restringir a domínios reais. "*" é apenas para desenvolvimento.
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -669,13 +678,24 @@ DOORMAN["DELIVERY_SENDERS"] = {
     "whatsapp": "shopman.shop.adapters.otp_manychat.ManychatOTPSender",
     "console": "shopman.doorman.senders.ConsoleSender",
 }
-if SHOPMAN_EXPOSE_DEBUG_OTP and SHOPMAN_ENVIRONMENT == "staging":
-    DOORMAN.update({
-        "MESSAGE_SENDER_CLASS": "shopman.doorman.senders.LogSender",
-        "DELIVERY_CHAIN": [],
-    })
-else:
-    DOORMAN["DELIVERY_CHAIN"] = ["sms", "email"] if not DEBUG else ["sms", "console"]
+# ⚠️ A ENTREGA deixou de depender do debug do OTP, e essa separação é a metade
+# que faltava.
+#
+# Era: `EXPOSE_DEBUG_OTP and ENVIRONMENT == "staging"` ⇒ `DELIVERY_CHAIN = []`.
+# Duas decisões amarradas numa condição só, e o resultado era um ambiente onde
+# **ninguém recebia OTP nenhum**: o único jeito de entrar era lendo o código na
+# resposta HTTP. Foi isso que tornou o vazamento tão grave (a vítima não recebia
+# mensagem para desconfiar) e é isso que torna "só desligar o debug" impossível
+# — desligar sem religar a entrega deixaria TODO cliente sem conseguir entrar.
+#
+# Agora são duas chaves independentes: quem vê o código (segredo no cabeçalho,
+# ver `storefront/api/auth.py`) e por onde ele é entregue (esta cadeia).
+DOORMAN["DELIVERY_CHAIN"] = _csv_env_list(
+    "SHOPMAN_OTP_DELIVERY_CHAIN",
+    "sms,console" if DEBUG else "sms,email",
+)
+if DEBUG:
+    DOORMAN["MESSAGE_SENDER_CLASS"] = "shopman.doorman.senders.LogSender"
 
 LANGUAGE_CODE = "pt-br"
 TIME_ZONE = "America/Sao_Paulo"

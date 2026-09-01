@@ -141,7 +141,14 @@ class TestSystemNotificationDelivery:
         # Não deve levantar: email falha sem SMTP e console absorve.
         NotificationSendHandler().handle(message=directive, ctx={})
 
-    def test_handler_routes_system_event_to_explicit_supplier_recipient(self, monkeypatch):
+    def test_handler_routes_system_event_to_explicit_supplier_recipient(self, monkeypatch, settings):
+        # ⚠️ O canal precisa DIZER que entrega, senão a cadeia o pula antes de
+        # chegar no `notify` — e é isso que este teste mede (o roteamento até o
+        # fornecedor, não a configuração do SMTP). O default da suíte é o backend
+        # de console, que passou a se declarar indisponível de propósito: ele
+        # imprime em stdout e devolvia sucesso, curto-circuitando SMS e WhatsApp.
+        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+        settings.EMAIL_HOST = "smtp.exemplo.test"
         from shopman.shop.handlers.notification import NotificationSendHandler
 
         calls = []
