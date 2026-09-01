@@ -2,10 +2,10 @@
 
 Sem navegador e sem upload manual: uma *service account* do Google assina um
 JWT (RS256, PyJWT + cryptography — ambos já no lock), troca por um access
-token e fala com a API do Drive por HTTPS. O push converte o XLSX do cofre em
-Google Sheets NATIVO e atualiza sempre o MESMO arquivo (URL estável para quem
-cura); o pull exporta a planilha curada de volta como XLSX, pronta para o
-``import_backup``.
+token e fala com a API do Drive por HTTPS. O ``export_backup_to_drive``
+converte o XLSX do cofre em Google Sheets NATIVO e atualiza sempre o MESMO
+arquivo (URL estável para quem cura); o ``import_backup_from_drive`` baixa a
+planilha curada e emenda no ``import_backup`` — os nomes dizem a direção.
 
 Credenciais são dado do deployment, nunca do repositório:
 
@@ -92,7 +92,7 @@ def _find_by_name(token: str, name: str, folder: str) -> dict | None:
     return files[0] if files else None
 
 
-def push_workbook(name: str, xlsx_bytes: bytes) -> str:
+def upload_workbook(name: str, xlsx_bytes: bytes) -> str:
     """Sobe (ou atualiza no lugar) a planilha do cofre. Devolve a URL."""
     creds, folder = _config()
     token = _access_token(creds)
@@ -125,7 +125,7 @@ def push_workbook(name: str, xlsx_bytes: bytes) -> str:
     return payload.get("webViewLink") or f"https://docs.google.com/spreadsheets/d/{payload['id']}"
 
 
-def pull_workbook(name_or_id: str) -> bytes:
+def download_workbook(name_or_id: str) -> bytes:
     """Baixa a planilha curada como XLSX (por nome na pasta, ou por id)."""
     creds, folder = _config()
     token = _access_token(creds)

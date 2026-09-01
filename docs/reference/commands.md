@@ -30,8 +30,8 @@
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
 | [`export_backup`](#export_backup) | shop | Dados | Exporta o cofre de dados curados (XLSX/CSVs, uma aba por entidade) |
 | [`import_backup`](#import_backup) | shop | Dados | Importa o cofre de volta — dry-run por padrão, `--apply` numa transação única |
-| [`push_backup_drive`](#push_backup_drive) | shop | Dados | Sobe o cofre para o Google Drive como Sheets nativo, atualizando no lugar |
-| [`pull_backup_drive`](#pull_backup_drive) | shop | Dados | Baixa a planilha curada do Drive como XLSX (não importa nada) |
+| [`export_backup_to_drive`](#export_backup_to_drive) | shop | Dados | Banco → Drive: sobe o cofre como Sheets nativo, atualizando no lugar |
+| [`import_backup_from_drive`](#import_backup_from_drive) | shop | Dados | Drive → banco: baixa a planilha curada e emenda no `import_backup` (dry-run por padrão) |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
@@ -796,12 +796,12 @@ python manage.py import_backup var/backups/backup-20260901-090000.xlsx --apply
 
 ---
 
-### push_backup_drive
+### export_backup_to_drive
 
 **App:** `shopman.shop`
-**Arquivo:** `shopman/shop/management/commands/push_backup_drive.py`
+**Arquivo:** `shopman/shop/management/commands/export_backup_to_drive.py`
 
-Sobe o cofre para o Google Drive como planilha **Google Sheets nativa**,
+**Banco → Drive.** Sobe o cofre como planilha **Google Sheets nativa**,
 atualizando sempre o mesmo arquivo (URL estável). Exige a ponte configurada
 (`SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE` + `SHOPMAN_BACKUP_DRIVE_FOLDER`); sem
 ela, falha fechado apontando o guia. Zero dependência nova (PyJWT +
@@ -815,20 +815,22 @@ cryptography, já no lock).
 
 ---
 
-### pull_backup_drive
+### import_backup_from_drive
 
 **App:** `shopman.shop`
-**Arquivo:** `shopman/shop/management/commands/pull_backup_drive.py`
+**Arquivo:** `shopman/shop/management/commands/import_backup_from_drive.py`
 
-Baixa a planilha curada do Drive como XLSX em `var/backups/` e aponta o
-próximo passo (`import_backup`, dry-run). **Não importa nada** — puxar é
-inofensivo; escrever no banco continua atrás do dry-run, da transação única e
-do `--force` de produção.
+**Drive → banco.** Baixa a planilha curada como XLSX (fica em `var/backups/`,
+auditável) e emenda no `import_backup`, que continua mandando: **dry-run por
+padrão**, `--apply` numa transação única, `--force` obrigatório em produção.
 
 | Flag | Default | Descrição |
 |------|---------|-----------|
 | `--name` | `shopman-backup` | Nome na pasta do Drive, ou id de arquivo |
-| `--out` | `var/backups` | Diretório de saída |
+| `--out` | `var/backups` | Onde guardar o XLSX baixado |
+| `--apply` | — | Escreve de verdade (sem isso, só relata) |
+| `--only` | — | Entidades específicas |
+| `--force` | — | Obrigatório para `--apply` em produção |
 
 ---
 

@@ -1,8 +1,9 @@
-"""Sobe o cofre de dados curados para o Google Drive como Sheets nativo.
+"""Exporta o cofre de dados curados para o Google Drive como Sheets nativo.
 
-Sempre o MESMO arquivo, atualizado no lugar — quem cura guarda uma URL só.
-Exige a ponte configurada (service account + pasta); sem ela, falha fechado
-com a instrução de setup. Ver ``docs/guides/backup-and-restore.md``.
+O nome diz a direção inteira do fluxo: banco → Drive. Sempre o MESMO arquivo,
+atualizado no lugar — quem cura guarda uma URL só. Exige a ponte configurada
+(service account + pasta); sem ela, falha fechado com a instrução de setup.
+Ver ``docs/guides/backup-and-restore.md``.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from shopman.shop.backup import drive, registry, workbook
 
 
 class Command(BaseCommand):
-    help = "Sobe o cofre para o Google Drive como planilha Google Sheets (atualiza no lugar)."
+    help = "Exporta o cofre para o Google Drive como planilha Google Sheets (atualiza no lugar)."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -42,7 +43,7 @@ class Command(BaseCommand):
         if names:
             datasets = {n: d for n, d in datasets.items() if n in names}
 
-        url = drive.push_workbook(options["name"], workbook.write_xlsx(datasets))
+        url = drive.upload_workbook(options["name"], workbook.write_xlsx(datasets))
         for name, dataset in datasets.items():
             self.stdout.write(f"  {name}: {len(dataset)} linha(s)")
         self.stdout.write(self.style.SUCCESS(f"Planilha atualizada: {url}"))
