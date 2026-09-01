@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { crossSellItems, detailDescription, nutritionTable } from '~/presentation/product'
+import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import { absoluteImage, breadcrumbJsonLd, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
@@ -46,6 +46,12 @@ const unavailableReason = computed(() => {
   return product.value.availability_label || 'Este item não está disponível agora.'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
+// Galeria: a foto exibida é estado local da visita; volta à principal ao trocar
+// de produto. A principal segue sendo image_url — o backend é quem a marca.
+const galleryThumbs = computed(() => product.value ? galleryImages(product.value) : [])
+const shownImage = ref<string | null>(null)
+watch(sku, () => { shownImage.value = null })
+const mainImage = computed(() => shownImage.value || product.value?.image_url || null)
 const nutrition = computed(() => nutritionTable(product.value?.nutrition || null))
 const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
@@ -142,8 +148,8 @@ useHead({
                 <div class="shop-photo-mat relative block bg-white">
                   <UiAspectRatio :ratio="4 / 3" class="overflow-hidden bg-muted">
                     <img
-                      v-if="product.image_url"
-                      :src="product.image_url"
+                      v-if="mainImage"
+                      :src="mainImage"
                       :alt="product.name"
                       class="size-full object-cover"
                       :class="product.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
@@ -167,15 +173,24 @@ useHead({
               </div>
             </div>
 
-            <div v-if="product.gallery.length" class="grid grid-cols-3 gap-3 pt-4">
-              <img
-                v-for="image in product.gallery.slice(0, 3)"
+            <div v-if="galleryThumbs.length" class="grid grid-cols-3 gap-3 pt-4">
+              <UiButton
+                v-for="image in galleryThumbs"
                 :key="image"
-                :src="image"
-                :alt="product.name"
-                class="aspect-[4/3] rounded-lg border object-cover"
-                loading="lazy"
+                variant="ghost"
+                class="block h-auto w-full overflow-hidden rounded-lg border p-0"
+                :class="mainImage === image ? 'ring-2 ring-ring' : ''"
+                :aria-pressed="mainImage === image"
+                :aria-label="`Ver esta foto de ${product.name}`"
+                @click="shownImage = image"
               >
+                <img
+                  :src="image"
+                  :alt="product.name"
+                  class="aspect-[4/3] w-full object-cover"
+                  loading="lazy"
+                >
+              </UiButton>
             </div>
           </section>
 

@@ -254,6 +254,29 @@ class TestAllergenAndConservation:
         assert proj.allergen.serves == "2"
         assert proj.allergen.has_any is True
 
+    def test_gallery_populated_from_metadata(self, listing, product):
+        product.metadata = {
+            "gallery": [
+                "https://menu.example/img/products/ct2.webp",
+                "",
+                42,
+            ],
+        }
+        product.save()
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert proj is not None
+        # Vazios caem; valores não-string são coagidos (a projection não julga).
+        assert proj.gallery == ("https://menu.example/img/products/ct2.webp", "42")
+
+    def test_gallery_empty_when_metadata_absent_or_malformed(self, listing, product):
+        product.metadata = {"gallery": "not-a-list"}
+        product.save()
+        _publish_on_listing(listing, product)
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+        assert proj is not None
+        assert proj.gallery == ()
+
     def test_purchase_measurements_from_metadata(self, listing, product):
         product.unit_weight_g = 400
         product.metadata = {
