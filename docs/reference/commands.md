@@ -28,6 +28,8 @@
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
+| [`export_backup`](#export_backup) | shop | Dados | Exporta o cofre de dados curados (XLSX/CSVs, uma aba por entidade) |
+| [`import_backup`](#import_backup) | shop | Dados | Importa o cofre de volta — dry-run por padrão, `--apply` numa transação única |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
@@ -738,6 +740,55 @@ O script serializa execuções concorrentes com lock de processo porque os smoke
 locais escrevem no banco durante transações com rollback. Isso evita falso
 negativo `database is locked` quando dois operadores ou automações disparam o
 readiness ao mesmo tempo em SQLite local.
+
+---
+
+### export_backup
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/export_backup.py`
+
+Exporta o cofre de dados curados — as entidades não reconstruíveis (catálogo,
+receitas, fornecedores/custos, regras, canais, copy, promoções, de-paras do
+B.I.) — para um XLSX com uma aba por entidade, identidade por chave natural.
+Guia completo: [backup-and-restore.md](../guides/backup-and-restore.md).
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--out` | `var/backups` | Diretório de saída |
+| `--format` | `xlsx` | `xlsx` (um arquivo) ou `csv` (um arquivo por entidade, diff em git) |
+| `--only` | — | Entidades específicas, separadas por vírgula |
+
+```bash
+python manage.py export_backup
+python manage.py export_backup --format csv --only products,recipes
+```
+
+O mesmo arquivo sai por `GET /api/v1/backstage/backup/export/` (permissão
+`backstage.export_backup`) — o caminho sem shell de um deploy.
+
+---
+
+### import_backup
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/import_backup.py`
+
+Importa um arquivo do `export_backup` de volta — upsert por chave natural, sem
+apagar nada. **Dry-run por padrão**; falha fechado em aba desconhecida, coluna
+renomeada e linha inválida (`full_clean` por linha). `--apply` roda numa
+transação única: qualquer erro desfaz o arquivo inteiro.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Escreve de verdade (sem isso, só relata) |
+| `--only` | — | Entidades específicas |
+| `--force` | — | Obrigatório para `--apply` em produção (mesmo contrato do `seed`) |
+
+```bash
+python manage.py import_backup var/backups/backup-20260901-090000.xlsx
+python manage.py import_backup var/backups/backup-20260901-090000.xlsx --apply
+```
 
 ---
 

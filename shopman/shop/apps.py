@@ -74,6 +74,9 @@ class ShopmanConfig(AppConfig):
         #    Material (Buyman) — neither core can see the other (ADR-001)
         self._connect_sku_namespace_guard()
 
+        # 10. Register curated-data backup resources (shop + Core packages)
+        self._register_backup_resources()
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 
@@ -177,6 +180,12 @@ class ShopmanConfig(AppConfig):
             weak=False,
         )
         logger.info("ShopmanConfig: SKU namespace guard connected.")
+
+    def _register_backup_resources(self):
+        from shopman.shop.backup.resources import register_shop_resources
+
+        register_shop_resources()
+        logger.info("ShopmanConfig: backup resources registered.")
 
     def _register_handlers(self):
         """Register all directive handlers, modifiers, validators, and stock signals.
