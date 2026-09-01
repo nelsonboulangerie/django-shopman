@@ -1,6 +1,7 @@
 import type {
   PurchaseActionResponse,
   PurchaseConversionDeclarePayload,
+  PurchaseCostBatchPayload,
   PurchaseCostUpsertPayload,
   PurchaseCountActionResponse,
   PurchaseCountConfirmPayload,
@@ -20,6 +21,7 @@ export const PURCHASE_API_ENDPOINTS = {
   confirmReceipt: `${PURCHASE_API_BASE}receipts/confirm/`,
   rejectReceipt: `${PURCHASE_API_BASE}receipts/reject/`,
   upsertCost: `${PURCHASE_API_BASE}costs/`,
+  upsertCostBatch: `${PURCHASE_API_BASE}costs/batch/`,
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
   count: `${PURCHASE_API_BASE}count/`,
   countConfirm: `${PURCHASE_API_BASE}count/confirm/`,
@@ -100,6 +102,14 @@ export function usePurchaseApi() {
     });
   }
 
+  async function upsertCostBatch(payload: PurchaseCostBatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.upsertCostBatch, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   async function fetchCount() {
     return $fetch<PurchaseCountResponse>(PURCHASE_API_ENDPOINTS.count, fetchOptions());
   }
@@ -121,6 +131,7 @@ export function usePurchaseApi() {
     approveRequest,
     sendRequest,
     upsertCost,
+    upsertCostBatch,
     declareConversion,
     fetchCount,
     confirmCount,

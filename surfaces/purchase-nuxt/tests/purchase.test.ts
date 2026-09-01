@@ -12,6 +12,7 @@ import {
   countSummary,
   formatMoney,
   formatQtyDiff,
+  costBatchPayload,
   formatShortDate,
   formatStockOnHand,
   reorderBlockers,
@@ -1065,5 +1066,38 @@ describe("reorderBlockers", () => {
     const inativo: Material = { ...semConsumo, sku: "VELHO", isActive: false };
     const blockers = reorderBlockers([inativo], []);
     expect(blockers.find((item) => item.key === "no-materials")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// costBatchPayload — a tabela de preços do fornecedor vira um POST
+// ---------------------------------------------------------------------------
+describe("costBatchPayload", () => {
+  it("manda só as linhas preenchidas", () => {
+    const payload = costBatchPayload(
+      "SUP-TAMURA",
+      { "CAFE-GRAO": "45,00", "FARINHA-T45": "", ACUCAR: "   " },
+      {},
+    );
+    expect(payload).toEqual({
+      supplierRef: "SUP-TAMURA",
+      makePreferred: true,
+      costs: [{ materialSku: "CAFE-GRAO", costInput: "45,00", conversionId: null }],
+    });
+  });
+
+  it("leva a unidade de compra escolhida na linha", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, { "CAFE-GRAO": "7" });
+    expect(payload.costs[0]!.conversionId).toBe("7");
+  });
+
+  it("ignora conversão de linha que não foi preenchida", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "" }, { "CAFE-GRAO": "7" });
+    expect(payload.costs).toEqual([]);
+  });
+
+  it("apara o espaço em volta do valor digitado", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {});
+    expect(payload.costs[0]!.costInput).toBe("45,00");
   });
 });

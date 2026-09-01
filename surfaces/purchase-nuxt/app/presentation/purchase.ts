@@ -16,6 +16,7 @@ import type {
   ReceiptMode,
   ReceiptOutcome,
   ReceiptPendingItem,
+  PurchaseCostBatchPayload,
   ReceiptWarning,
   ReorderBlocker,
   ReorderRow,
@@ -721,6 +722,30 @@ export function reorderRows(
       return { material: enriched, supplier, suggestedQty, estimatedCostQ };
     })
     .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
+}
+
+/**
+ * A tabela de preços digitada vira o corpo do POST em lote.
+ *
+ * Só a linha com valor entra: a tela lista todos os insumos justamente para o
+ * operador percorrer a lista e preencher o que sabe, e uma linha em branco é
+ * omissão, não erro. O `makePreferred` é sempre verdadeiro porque o lote existe
+ * para tornar o insumo comprável, e sem custo preferencial ele continua fora do
+ * pedido.
+ */
+export function costBatchPayload(
+  supplierRef: string,
+  inputs: Record<string, string>,
+  conversionIds: Record<string, string>,
+): PurchaseCostBatchPayload {
+  const costs = Object.entries(inputs)
+    .filter(([, value]) => Boolean((value ?? "").trim()))
+    .map(([materialSku, value]) => ({
+      materialSku,
+      costInput: value.trim(),
+      conversionId: conversionIds[materialSku] || null,
+    }));
+  return { supplierRef, makePreferred: true, costs };
 }
 
 /**

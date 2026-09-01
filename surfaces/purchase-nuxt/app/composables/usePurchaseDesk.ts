@@ -3,6 +3,7 @@ import type {
   PurchaseBaseView,
   PurchaseRequestStatus,
   PurchaseActionResponse,
+  PurchaseCostBatchLineError,
   PurchaseProjection,
   PurchaseResponse,
   ConversionKind,
@@ -18,6 +19,7 @@ import type {
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
 import {
+  costBatchPayload as buildCostBatchPayload,
   costPerBaseUnitQ,
   countConfirmPayload,
   countRows,
@@ -118,6 +120,15 @@ export function usePurchaseDesk() {
   const countLoaded = useState("purchase-count-loaded", () => false);
   const countForbidden = useState("purchase-count-forbidden", () => false);
   const countConfirmedAt = useState<string | null>("purchase-count-confirmed-at", () => null);
+  // Lançamento em lote: uma tabela de preços do MESMO fornecedor. É o gesto que
+  // tira 54 insumos do estado "sem custo preferencial" — e portanto fora de
+  // qualquer pedido — sem passar pelo Django Admin.
+  const batchSupplierRef = useState("purchase-batch-supplier", () => "");
+  const batchInputs = useState<Record<string, string>>("purchase-batch-inputs", () => ({}));
+  const batchConversionIds = useState<Record<string, string>>("purchase-batch-conversions", () => ({}));
+  const batchOnlyMissing = useState("purchase-batch-only-missing", () => true);
+  const batchQuery = useState("purchase-batch-query", () => "");
+  const batchLineErrors = useState<Record<string, string>>("purchase-batch-line-errors", () => ({}));
   const countPending = ref(false);
   const api = usePurchaseApi();
   const actionPending = ref(false);
@@ -306,6 +317,94 @@ export function usePurchaseDesk() {
   const reorderBlockers = computed(() =>
     backendReady.value ? buildReorderBlockers(materials.value, costs.value) : [],
   );
+
+  // As linhas da tabela de preços. O filtro nasce em "só os que faltam" porque
+  // é essa a tarefa: fechar o buraco dos insumos sem custo preferencial.
+  const batchRows = computed(() => {
+    const term = batchQuery.value.trim().toLowerCase();
+    return enrichedMaterials.value.filter((material) => {
+      if (!material.isActive) return false;
+      if (batchOnlyMissing.value && material.preferredCost) return false;
+      if (!term) return true;
+      return (
+        material.name.toLowerCase().includes(term) ||
+        material.sku.toLowerCase().includes(term) ||
+        material.category.toLowerCase().includes(term)
+      );
+    });
+  });
+
+  const batchFilledCount = computed(
+    () => Object.values(batchInputs.value).filter((value) => Boolean((value ?? "").trim())).length,
+  );
+
+  const batchReady = computed(() => Boolean(batchSupplierRef.value) && batchFilledCount.value > 0);
+
+  function batchConversionsFor(materialSku: string) {
+    return conversions.value.filter(
+      (conversion) =>
+        conversion.isActive &&
+        conversion.materialSku === materialSku &&
+        (!conversion.supplierRef || conversion.supplierRef === batchSupplierRef.value),
+    );
+  }
+
+  function setBatchInput(materialSku: string, value: string) {
+    batchInputs.value = { ...batchInputs.value, [materialSku]: value };
+    // Editar a linha apaga o erro dela: o aviso descreve o que foi enviado, e o
+    // que está na tela já não é isso.
+    if (batchLineErrors.value[materialSku]) {
+      batchLineErrors.value = Object.fromEntries(
+        Object.entries(batchLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function setBatchConversion(materialSku: string, conversionId: string) {
+    batchConversionIds.value = { ...batchConversionIds.value, [materialSku]: conversionId };
+  }
+
+  function clearCostBatch() {
+    batchInputs.value = {};
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  }
+
+  /**
+   * Lança a tabela inteira num POST.
+   *
+   * O lote é tudo-ou-nada no servidor, então a recusa precisa dizer QUAL linha
+   * errou — senão o operador recebe "corrija as linhas" olhando para quarenta
+   * campos preenchidos. Os erros voltam em `error.lines` e vão para o campo.
+   */
+  async function saveCostBatch() {
+    if (!batchReady.value) return;
+    if (!requireBackend("salvar os custos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    batchLineErrors.value = {};
+    try {
+      const payload = buildCostBatchPayload(batchSupplierRef.value, batchInputs.value, batchConversionIds.value);
+      const response = await api.upsertCostBatch(payload);
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearCostBatch();
+      await refresh();
+    } catch (err) {
+      const data = httpError(err).data as { error?: { lines?: PurchaseCostBatchLineError[] } } | null;
+      const lines = data?.error?.lines ?? [];
+      if (lines.length) {
+        batchLineErrors.value = Object.fromEntries(lines.map((line) => [line.materialSku, line.detail]));
+      }
+      const message = httpErrorMessage(err, "Não foi possível salvar os custos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
 
   const supplierSummaries = computed(() =>
     suppliers.value.map((supplier) => {
@@ -884,6 +983,20 @@ export function usePurchaseDesk() {
     integrityQueue,
     reorderRows,
     reorderBlockers,
+    batchSupplierRef,
+    batchInputs,
+    batchConversionIds,
+    batchOnlyMissing,
+    batchQuery,
+    batchLineErrors,
+    batchRows,
+    batchFilledCount,
+    batchReady,
+    batchConversionsFor,
+    setBatchInput,
+    setBatchConversion,
+    clearCostBatch,
+    saveCostBatch,
     supplierSummaries,
     projection,
     receiptMode,

@@ -355,6 +355,32 @@ export interface PurchaseCostUpsertPayload {
   makePreferred: boolean;
 }
 
+/** Uma linha da tabela de preços do fornecedor. */
+export interface PurchaseCostBatchLine {
+  materialSku: string;
+  costInput: string;
+  conversionId: string | null;
+}
+
+export interface PurchaseCostBatchPayload {
+  supplierRef: string;
+  makePreferred: boolean;
+  costs: PurchaseCostBatchLine[];
+}
+
+/**
+ * Erro de UMA linha do lote, como o servidor devolve em `error.lines`.
+ *
+ * O dialeto `errors` da casa fala por campo; um lote erra por linha, e a linha
+ * não cabe ali sem torcer o contrato.
+ */
+export interface PurchaseCostBatchLineError {
+  index: number;
+  materialSku: string;
+  field: string;
+  detail: string;
+}
+
 export interface PurchaseActionResponse {
   ok: boolean;
   purchase?: PurchaseProjection;

@@ -50,6 +50,20 @@ const {
   integrityQueue,
   reorderRows,
   reorderBlockers,
+  batchSupplierRef,
+  batchInputs,
+  batchConversionIds,
+  batchOnlyMissing,
+  batchQuery,
+  batchLineErrors,
+  batchRows,
+  batchFilledCount,
+  batchReady,
+  batchConversionsFor,
+  setBatchInput,
+  setBatchConversion,
+  clearCostBatch,
+  saveCostBatch,
   supplierSummaries,
   receiptMode,
   invoiceInput,
@@ -1329,7 +1343,128 @@ onBeforeUnmount(stopInvoiceScanner);
         </aside>
       </section>
 
-      <section v-else-if="baseView === 'costs'" class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+      <section v-else-if="baseView === 'costs'" class="space-y-4">
+        <!-- Tabela de preços do fornecedor: o gesto que tira dezenas de insumos
+             do estado "sem custo preferencial" — e portanto fora de qualquer
+             pedido — sem passar pelo Django Admin. -->
+        <section class="rounded-md border border-border bg-card">
+          <div class="flex flex-wrap items-end justify-between gap-3 border-b border-border p-4">
+            <div>
+              <h1 class="text-lg font-semibold">Tabela do fornecedor</h1>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Escolha o fornecedor e preencha os que você sabe. Quem ficar em branco não entra.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-end gap-2">
+              <label class="block text-sm font-medium">Fornecedor
+                <select
+                  v-model="batchSupplierRef"
+                  class="mt-1 h-10 w-56 rounded-md border border-border bg-background px-3 text-sm"
+                >
+                  <option value="">Escolher…</option>
+                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">
+                    {{ supplier.name }}
+                  </option>
+                </select>
+              </label>
+              <input
+                v-model="batchQuery"
+                type="search"
+                placeholder="Buscar insumo"
+                class="h-10 w-48 rounded-md border border-border bg-background px-3 text-sm"
+              />
+              <label class="inline-flex h-10 items-center gap-2 text-sm">
+                <input v-model="batchOnlyMissing" type="checkbox" class="size-4 rounded border-border" />
+                Só os que faltam
+              </label>
+            </div>
+          </div>
+
+          <!-- "Nenhuma linha" tem três causas diferentes e a tela precisa dizer
+               qual: base não carregada, filtro fechando tudo, ou nada a fazer. -->
+          <div v-if="!batchRows.length" class="p-6 text-center text-sm text-muted-foreground">
+            <template v-if="!materials.length">Base de insumos ainda não carregada.</template>
+            <template v-else-if="batchQuery.trim()">Nenhum insumo encontrado para “{{ batchQuery }}”.</template>
+            <template v-else-if="batchOnlyMissing">Todo insumo ativo já tem custo preferencial.</template>
+            <template v-else>Nenhum insumo ativo na base.</template>
+          </div>
+
+          <div v-else class="max-h-[28rem] overflow-y-auto">
+            <table class="min-w-full divide-y divide-border text-sm">
+              <thead class="sticky top-0 bg-muted text-left text-xs font-medium text-muted-foreground">
+                <tr>
+                  <th class="px-3 py-2">Insumo</th>
+                  <th class="px-3 py-2">Unidade de compra</th>
+                  <th class="px-3 py-2 w-40">Valor</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-for="row in batchRows" :key="`batch-${row.sku}`" class="hover:bg-accent/70">
+                  <td class="px-3 py-2">
+                    <span class="font-medium">{{ row.name }}</span>
+                    <span class="ml-1 text-xs text-muted-foreground">{{ row.sku }} · {{ row.unit }}</span>
+                    <p v-if="batchLineErrors[row.sku]" class="mt-0.5 text-xs font-medium text-destructive">
+                      {{ batchLineErrors[row.sku] }}
+                    </p>
+                  </td>
+                  <td class="px-3 py-2">
+                    <select
+                      class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                      :value="batchConversionIds[row.sku] ?? ''"
+                      @change="setBatchConversion(row.sku, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="">Unidade-base ({{ row.unit }})</option>
+                      <option
+                        v-for="conversion in batchConversionsFor(row.sku)"
+                        :key="conversion.id"
+                        :value="conversion.id"
+                      >
+                        {{ conversion.label }}
+                      </option>
+                    </select>
+                  </td>
+                  <td class="px-3 py-2">
+                    <input
+                      inputmode="decimal"
+                      placeholder="0,00"
+                      class="h-9 w-full rounded-md border bg-background px-2 text-sm tabular-nums"
+                      :class="batchLineErrors[row.sku] ? 'border-destructive' : 'border-border'"
+                      :value="batchInputs[row.sku] ?? ''"
+                      @input="setBatchInput(row.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3">
+            <p class="text-sm text-muted-foreground">
+              <template v-if="!batchSupplierRef">Escolha o fornecedor para lançar.</template>
+              <template v-else>{{ batchFilledCount }} valor(es) preenchido(s)</template>
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                :disabled="!batchFilledCount || actionPending"
+                @click="clearCostBatch()"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                :disabled="readonlyFallback || !batchReady || actionPending"
+                @click="saveCostBatch()"
+              >
+                Salvar {{ batchFilledCount || "" }} como padrão
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
         <aside class="rounded-md border border-border bg-card p-4">
           <h1 class="text-lg font-semibold">Lançar custo</h1>
           <div class="mt-3 space-y-3">
@@ -1390,6 +1525,7 @@ onBeforeUnmount(stopInvoiceScanner);
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       </section>
 
