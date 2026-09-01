@@ -151,6 +151,18 @@ Sem as duas variáveis os comandos falham fechado apontando este guia — a pont
 desligada nunca vira um push silencioso para lugar nenhum. O JSON da service
 account é segredo do deployment: fora do repo, fora de planilha.
 
+Duas particularidades da conta pessoal (Gmail): service account **não tem
+cota de armazenamento** — a planilha-alvo precisa nascer da conta do dono
+(uma vez; a ponte só atualiza no lugar, que é o desenho). E o acesso é do
+Google, não nosso: a planilha continua privada às contas com quem o dono a
+compartilhar.
+
+**Atalho de domínio**: `backup.boulangerie.com.br` redireciona (302) para a
+planilha viva — `BackupSheetDomainMiddleware`, dirigido por
+`SHOPMAN_BACKUP_SHEET_HOST` + `SHOPMAN_BACKUP_SHEET_URL`. Sem URL, o host
+responde 404 (falha fechado). O redirect não concede acesso nenhum: quem
+manda é o compartilhamento do Drive.
+
 Esse ciclo cobre os três usos que motivaram o cofre:
 
 1. **Backup periódico da curadoria** — baixar do endpoint do backstage e
