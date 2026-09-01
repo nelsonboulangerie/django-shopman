@@ -33,7 +33,7 @@ from shopman.storefront.presentation.types import (
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CHANNEL_REF = "web"
+from shopman.storefront.constants import STOREFRONT_CHANNEL_REF as _DEFAULT_CHANNEL_REF
 
 TAB_OPTIONS: tuple[tuple[str, str], ...] = (
     ("perfil", "Perfil"),

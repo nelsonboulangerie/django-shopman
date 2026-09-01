@@ -42,8 +42,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CHANNEL_REF = "web"
-
+from shopman.storefront.constants import STOREFRONT_CHANNEL_REF as _DEFAULT_CHANNEL_REF
 
 # ──────────────────────────────────────────────────────────────────────
 # Dataclass

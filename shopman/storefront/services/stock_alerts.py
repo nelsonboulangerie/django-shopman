@@ -12,6 +12,8 @@ import logging
 
 from django.utils import timezone
 
+from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,7 +78,7 @@ def has_pending_for(*, sku: str, customer=None, phone: str = "", alert_type: str
 def subscribe(
     sku: str,
     *,
-    channel_ref: str = "web",
+    channel_ref: str = STOREFRONT_CHANNEL_REF,
     customer=None,
     phone: str = "",
     alert_type: str = "",
@@ -110,7 +112,7 @@ def subscribe(
     return StockAlertSubscription.objects.create(
         sku=sku,
         alert_type=alert_type,
-        channel_ref=channel_ref or "web",
+        channel_ref=channel_ref or STOREFRONT_CHANNEL_REF,
         customer_ref=customer_ref,
         contact_phone=contact,
     )
@@ -163,7 +165,7 @@ def _notify(sku: str, *, alert_type: str) -> int:
     notified = 0
     for sub in pending:
         try:
-            state = sku_state.resolve(sku=sku, channel_ref=sub.channel_ref or "web")
+            state = sku_state.resolve(sku=sku, channel_ref=sub.channel_ref or STOREFRONT_CHANNEL_REF)
         except Exception:
             logger.debug("stock_alerts: availability check failed sku=%s", sku, exc_info=True)
             continue
@@ -243,7 +245,7 @@ def _deliver(
         return False
 
     try:
-        backend = (ChannelConfig.for_channel(sub.channel_ref or "web").notifications.backend) or "manychat"
+        backend = (ChannelConfig.for_channel(sub.channel_ref or STOREFRONT_CHANNEL_REF).notifications.backend) or "manychat"
     except Exception:
         logger.debug("stock_alerts: backend resolve failed, default manychat", exc_info=True)
         backend = "manychat"

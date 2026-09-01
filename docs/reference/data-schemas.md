@@ -750,6 +750,12 @@ ChannelConfig.defaults() ← Shop.defaults ← Channel.config
 O método `ChannelConfig.for_channel(channel_or_ref)` faz o merge profundo (deep_merge).
 Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 
+### 0. Chaves de topo (fora dos aspectos)
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `order_ref_prefix` | `string` | — (ausente = ref do canal em maiúsculas) | Prefixo do ref de pedido gerado no commit (ex.: `"NB"` → `NB-260901-M63`). Escreve: seed/Admin. Lê: `CommitService._do_commit` via config resolvida. Decisão do dono 01/09: pedido da loja online carrega a marca, não o meio. |
+
 ### 1. Confirmation — como o pedido é aceito?
 
 | Campo | Tipo | Default | Descrição |
