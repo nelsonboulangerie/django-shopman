@@ -114,10 +114,40 @@ nunca o contrário. Testes de contrato em `shopman/shop/tests/test_backup.py`.
 
 ## Camada 3 — Google Sheets (e migração assistida)
 
-O XLSX do cofre **é** a integração com o Sheets, sem API, credencial ou
-dependência nova: `drive.google.com` → upload → o arquivo abre com uma aba por
-entidade, editável. Para voltar: **Arquivo → Fazer download → .xlsx** e
-`import_backup` (dry-run primeiro, sempre).
+Dois modos, do manual ao direto:
+
+**Sem configurar nada**: o XLSX do cofre abre no Sheets — `drive.google.com` →
+upload → uma aba por entidade, editável. Para voltar: **Arquivo → Fazer
+download → .xlsx** e `import_backup` (dry-run primeiro, sempre).
+
+**Ponte direta (service account)**: com a ponte configurada, o cofre vira UMA
+planilha viva no Drive, com URL estável, sem navegador e sem arquivo manual:
+
+```bash
+.venv/bin/python manage.py push_backup_drive    # sobe/atualiza a planilha no lugar
+.venv/bin/python manage.py pull_backup_drive    # baixa a versão curada p/ var/backups/
+```
+
+O `pull` **não importa nada** — ele só materializa o XLSX; a escrita continua
+atrás do `import_backup` (dry-run, transação única, `--force` em produção).
+Zero dependência nova: o JWT da service account é assinado com PyJWT +
+cryptography, que o stack fiscal já traz.
+
+Setup (uma vez, ~5 min, feito pelo dono da conta Google):
+
+1. [console.cloud.google.com](https://console.cloud.google.com) → criar/escolher
+   um projeto → **APIs & Services → Library → Google Drive API → Enable**.
+2. **IAM & Admin → Service Accounts → Create** (ex.: `shopman-cofre`) →
+   **Keys → Add key → JSON** → baixar o arquivo.
+3. No Drive, criar a pasta do cofre e **compartilhá-la com o e-mail da service
+   account** (papel Editor). Copiar o id da pasta (o trecho após `/folders/`).
+4. No ambiente que roda os comandos:
+   `SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE=/caminho/sa.json` e
+   `SHOPMAN_BACKUP_DRIVE_FOLDER=<id-da-pasta>`.
+
+Sem as duas variáveis os comandos falham fechado apontando este guia — a ponte
+desligada nunca vira um push silencioso para lugar nenhum. O JSON da service
+account é segredo do deployment: fora do repo, fora de planilha.
 
 Esse ciclo cobre os três usos que motivaram o cofre:
 

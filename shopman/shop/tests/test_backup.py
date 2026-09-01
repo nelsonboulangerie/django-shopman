@@ -237,6 +237,44 @@ def test_import_refuses_read_only_sheets(curated, payment, tmp_path):
     assert Coupon.objects.filter(code="BEMVINDO").exists()
 
 
+def test_formula_injection_is_neutralized_and_roundtrips(curated, tmp_path):
+    """Nome curado começando com '=' não vira fórmula na planilha viva, e volta
+    intacto no restore — achado da frente adversarial do app Produção."""
+    from openpyxl import load_workbook
+
+    product = curated["product"]
+    product.name = "=2+40*HYPERLINK('x')"
+    product.short_description = "-massa +fermento @frio"
+    product.save()
+
+    path = _export_xlsx(tmp_path)
+    book = load_workbook(path)
+    formula_cells = [
+        c.value for sheet in book.worksheets for row in sheet.iter_rows() for c in row
+        if c.data_type == "f"
+    ]
+    assert formula_cells == []
+    cells = [c.value for row in book["products"].iter_rows() for c in row]
+    assert "'=2+40*HYPERLINK('x')" in cells
+
+    product.name = "Trocado"
+    product.short_description = ""
+    product.save()
+    call_command("import_backup", str(path), "--apply", stdout=StringIO())
+    product.refresh_from_db()
+    assert product.name == "=2+40*HYPERLINK('x')"
+    assert product.short_description == "-massa +fermento @frio"
+
+
+def test_negative_numbers_are_not_escaped(curated, tmp_path):
+    from shopman.shop.backup.workbook import _escape_cell, _unescape_cell
+
+    assert _escape_cell("-10") == "-10"
+    assert _escape_cell("-10.5") == "-10.5"
+    assert _escape_cell("-2+cmd") == "'-2+cmd"
+    assert _unescape_cell(_escape_cell("'=literal")) == "'=literal"
+
+
 def _replace_rows(dataset, rows):
     import tablib
 
