@@ -4,6 +4,14 @@ O lojista edita ``NotificationTemplate`` no Admin; TODOS os canais (WhatsApp/
 ManyChat, SMS, e-mail) leem o mesmo template. Placeholder ausente vai literal
 (``{chave}``) em vez de quebrar o envio — melhor mensagem imperfeita que
 cliente sem aviso.
+
+⚠️ E é exatamente por isso que as chaves AUXILIARES (``customer_name_greeting``,
+``tracking_suffix``, ``reorder_suffix``) moram aqui, em ``derive_context``, e não
+dentro de um canal. Elas eram derivadas só no adapter do ManyChat; SMS e e-mail
+liam o MESMO template do Admin e mandavam ``{customer_name_greeting}`` cru para o
+cliente. A política de não quebrar o envio transforma chave faltante em texto
+visível, então derivação que vale em metade das saídas não é derivação: é um
+defeito com data marcada. Chave nova de conveniência entra AQUI.
 """
 
 from __future__ import annotations
@@ -48,15 +56,52 @@ def render_template(tpl: str, context: dict) -> str:
         return tpl
 
 
+def derive_context(context: dict | None) -> dict:
+    """As chaves auxiliares que TODO canal recebe, derivadas do contexto bruto.
+
+    Ponto único: SMS, e-mail e WhatsApp/ManyChat leem o mesmo texto (do Admin ou do
+    fallback do canal), então quem produz as chaves desse texto tem de ser um só.
+    São chaves auto-suprimíveis de propósito — o sufixo some limpo quando o dado não
+    existe, em vez de deixar rótulo solto ("Acompanhe: ") na tela do cliente.
+
+    Idempotente: chamar duas vezes dá o mesmo resultado.
+    """
+    ctx = dict(context or {})
+
+    name = str(ctx.get("customer_name") or "").strip()
+    ctx["customer_name_greeting"] = f", {name}" if name else ""
+
+    tracking_url = str(ctx.get("tracking_url") or "").strip()
+    ctx["tracking_suffix"] = f"\nAcompanhe: {tracking_url}" if tracking_url else ""
+
+    reorder_url = str(ctx.get("reorder_url") or "").strip()
+    ctx["reorder_suffix"] = f"\nPeca de novo: {reorder_url}" if reorder_url else ""
+
+    total_q = ctx.get("total_q")
+    if total_q and not ctx.get("total"):
+        ctx["total"] = f"R$ {total_q / 100:,.2f}"
+
+    # Sufixos que `services/notification._build_context` preenche no fluxo de pedido;
+    # o default vazio cobre a chamada DIRETA ao adapter (produção, compras, campanha),
+    # que não passa por lá e deixaria o rótulo cru na mensagem.
+    ctx.setdefault("courier_tracking_suffix", "")
+    ctx.setdefault("pix_suffix", "")
+    reason = ctx.get("reason")
+    ctx.setdefault("reason_note", f"\n\nMotivo: {reason}" if reason else "")
+
+    return ctx
+
+
 def render_message(event: str, context: dict, fallback_templates: dict[str, str]) -> str:
     """Corpo da mensagem: Admin (DB) → fallback hardcoded do canal → genérico."""
+    ctx = derive_context(context)
     _, body = db_template(event)
     if body:
-        return render_template(body, context)
+        return render_template(body, ctx)
 
     tpl = fallback_templates.get(event)
     if tpl:
-        return render_template(tpl, context)
+        return render_template(tpl, ctx)
 
-    order_ref = (context or {}).get("order_ref", "")
+    order_ref = ctx.get("order_ref", "")
     return f"Notificação: {event} — Pedido {order_ref}" if order_ref else f"Notificação: {event}"

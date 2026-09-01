@@ -45,11 +45,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
     ),
     "order_cancelled": (
-        "Seu pedido {order_ref} foi cancelado.{reason_note}\n\nQualquer dúvida, estamos aqui."
+        "Seu pedido {order_ref} foi cancelado.{reason_note}"
+        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     "order_rejected": (
-        "Seu pedido {order_ref} não pode ser confirmado pelo estabelecimento. "
-        "Motivo: {reason}. Se precisar de ajuda, estamos aqui."
+        "Seu pedido {order_ref} não pôde ser confirmado pelo estabelecimento.{reason_note}"
+        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
     # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
@@ -177,23 +178,14 @@ def _build_message(template: str, context: dict) -> str:
     1. NotificationTemplate DB record (event=template, is_active=True) → body field
     2. MESSAGE_TEMPLATES hardcoded fallback
     3. Generic fallback with order_ref
-    """
-    ctx = dict(context)
-    ctx["customer_name_greeting"] = (
-        f", {ctx['customer_name']}" if ctx.get("customer_name") else ""
-    )
-    ctx["tracking_suffix"] = (
-        f"\nAcompanhe: {ctx['tracking_url']}" if ctx.get("tracking_url") else ""
-    )
-    ctx["reorder_suffix"] = (
-        f"\nPeca de novo: {ctx['reorder_url']}" if ctx.get("reorder_url") else ""
-    )
-    # Definido por notification._build_context; default vazio p/ chamadas diretas.
-    ctx.setdefault("courier_tracking_suffix", "")
 
+    As chaves auxiliares (``customer_name_greeting``, ``tracking_suffix``, …) são
+    derivadas por ``_notification_templates.derive_context``, dentro do
+    ``render_message`` — ponto único para WhatsApp, SMS e e-mail.
+    """
     from shopman.shop.adapters._notification_templates import render_message
 
-    return render_message(template, ctx, MESSAGE_TEMPLATES)
+    return render_message(template, context, MESSAGE_TEMPLATES)
 
 
 def _load_db_flow_ns(event: str) -> str | None:
@@ -235,7 +227,11 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         )
         return True
 
-    ctx = context or {}
+    from shopman.shop.adapters._notification_templates import derive_context
+
+    # Também no caminho de FLOW: as variáveis do template aprovado saem dos campos
+    # personalizados, e `customer_name_greeting` é uma delas nos textos semeados.
+    ctx = derive_context(context)
     subscriber_id = _resolve_subscriber(recipient, mc_config)
     if subscriber_id is None:
         logger.warning("Could not resolve subscriber for: %s", recipient)
