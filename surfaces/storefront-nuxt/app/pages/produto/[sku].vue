@@ -46,12 +46,27 @@ const unavailableReason = computed(() => {
   return product.value.availability_label || 'Este item não está disponível agora.'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
-// Galeria: a foto exibida é estado local da visita; volta à principal ao trocar
-// de produto. A principal segue sendo image_url — o backend é quem a marca.
-const galleryThumbs = computed(() => product.value ? galleryImages(product.value) : [])
-const shownImage = ref<string | null>(null)
-watch(sku, () => { shownImage.value = null })
-const mainImage = computed(() => shownImage.value || product.value?.image_url || null)
+// Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
+// (image_url) abre o carrossel; o índice segue o scroll real do slider.
+const carouselImages = computed(() => product.value ? galleryImages(product.value) : [])
+const sliderEl = ref<HTMLElement | null>(null)
+const slideIndex = ref(0)
+watch(sku, () => {
+  slideIndex.value = 0
+  sliderEl.value?.scrollTo({ left: 0, behavior: 'instant' })
+})
+function onSliderScroll () {
+  const el = sliderEl.value
+  if (!el || !el.clientWidth) return
+  slideIndex.value = Math.min(carouselImages.value.length - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))
+}
+function goToSlide (index: number) {
+  // Otimista: o ponto acende já no clique; o evento de scroll (a verdade do
+  // gesto) corrige se a animação parar no meio. O scroll-smooth do container
+  // anima — smooth é pedido, não garantia.
+  slideIndex.value = Math.min(carouselImages.value.length - 1, Math.max(0, index))
+  sliderEl.value?.scrollTo({ left: slideIndex.value * (sliderEl.value?.clientWidth || 0) })
+}
 const nutrition = computed(() => nutritionTable(product.value?.nutrition || null))
 const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
@@ -142,14 +157,36 @@ useHead({
       <template v-else-if="product && meta">
         <!-- Imagem emoldurada + informações num único card claro. -->
         <article class="-mx-4 overflow-hidden border-b bg-card sm:-mx-6 lg:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch lg:rounded-lg lg:border">
-          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6">
+          <!-- Com carrossel, os pontos já dão o respiro: padding de baixo diminui
+               para a foto não ficar longe do nome no mobile (no lg é lado a lado). -->
+          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6" :class="carouselImages.length ? 'pb-2 sm:pb-3' : ''">
             <div class="drop-shadow-md transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
               <div class="shop-photo-frame">
                 <div class="shop-photo-mat relative block bg-white">
                   <UiAspectRatio :ratio="4 / 3" class="overflow-hidden bg-muted">
+                    <!-- Mais de uma foto: carrossel com swipe (scroll-snap); o
+                         estado segue o scroll REAL, então gesto e setas nunca
+                         divergem do que está na tela. -->
+                    <div
+                      v-if="carouselImages.length"
+                      ref="sliderEl"
+                      class="flex size-full snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                      @scroll.passive="onSliderScroll"
+                    >
+                      <img
+                        v-for="(image, index) in carouselImages"
+                        :key="image"
+                        :src="image"
+                        :alt="`${product.name} — foto ${index + 1} de ${carouselImages.length}`"
+                        class="size-full shrink-0 snap-center object-cover"
+                        :class="product.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
+                        :fetchpriority="index === 0 ? 'high' : undefined"
+                        :loading="index === 0 ? undefined : 'lazy'"
+                      >
+                    </div>
                     <img
-                      v-if="mainImage"
-                      :src="mainImage"
+                      v-else-if="product.image_url"
+                      :src="product.image_url"
                       :alt="product.name"
                       class="size-full object-cover"
                       :class="product.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
@@ -169,28 +206,41 @@ useHead({
                       <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
                     </div>
                   </UiAspectRatio>
+                  <template v-if="carouselImages.length">
+                    <UiButton
+                      variant="ghost"
+                      size="icon-sm"
+                      icon="lucide:chevron-left"
+                      class="absolute top-1/2 left-2 z-10 hidden -translate-y-1/2 rounded-full bg-background/75 shadow-sm backdrop-blur-sm hover:bg-background/90 lg:inline-flex"
+                      :disabled="slideIndex === 0"
+                      aria-label="Foto anterior"
+                      @click="goToSlide(slideIndex - 1)"
+                    />
+                    <UiButton
+                      variant="ghost"
+                      size="icon-sm"
+                      icon="lucide:chevron-right"
+                      class="absolute top-1/2 right-2 z-10 hidden -translate-y-1/2 rounded-full bg-background/75 shadow-sm backdrop-blur-sm hover:bg-background/90 lg:inline-flex"
+                      :disabled="slideIndex === carouselImages.length - 1"
+                      aria-label="Próxima foto"
+                      @click="goToSlide(slideIndex + 1)"
+                    />
+                  </template>
                 </div>
               </div>
             </div>
 
-            <div v-if="galleryThumbs.length" class="grid grid-cols-3 gap-3 pt-4">
+            <div v-if="carouselImages.length" class="flex justify-center gap-2 pt-2">
               <UiButton
-                v-for="image in galleryThumbs"
+                v-for="(image, index) in carouselImages"
                 :key="image"
                 variant="ghost"
-                class="block h-auto w-full overflow-hidden rounded-lg border p-0"
-                :class="mainImage === image ? 'ring-2 ring-ring' : ''"
-                :aria-pressed="mainImage === image"
-                :aria-label="`Ver esta foto de ${product.name}`"
-                @click="shownImage = image"
-              >
-                <img
-                  :src="image"
-                  :alt="product.name"
-                  class="aspect-[4/3] w-full object-cover"
-                  loading="lazy"
-                >
-              </UiButton>
+                class="h-2 w-2 min-w-0 rounded-full p-0"
+                :class="index === slideIndex ? 'bg-primary hover:bg-primary' : 'bg-muted-foreground/30 hover:bg-muted-foreground/50'"
+                :aria-label="`Ir para a foto ${index + 1}`"
+                :aria-current="index === slideIndex"
+                @click="goToSlide(index)"
+              />
             </div>
           </section>
 
