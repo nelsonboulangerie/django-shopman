@@ -115,6 +115,42 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
+  it("recusa com focus=customer (agendado sem cliente) pede a identificação na tela", async () => {
+    // O servidor recusou com o erro tipado `customer_required_for_scheduled`:
+    // além do toast com a recovery, o nonce sobe — é ele que faz a página abrir
+    // o modal de Cliente. Motivo sem caminho de um toque é beco sem saída.
+    const actionCall = vi.fn().mockImplementation(async (path: string) => {
+      if (String(path).includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };
+      if (String(path).includes("/sale/close/")) {
+        throw {
+          data: {
+            detail: "Pedido agendado precisa de um cliente identificado.",
+            error: {
+              code: "customer_required_for_scheduled",
+              message: "Pedido agendado precisa de um cliente identificado.",
+              field: "customer_phone",
+              focus: "customer",
+              recovery: "Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+            },
+          },
+        };
+      }
+      return {};
+    });
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale(); // prepara
+    expect(h.sale.customerFocusNonce.value).toBe(0);
+    await h.sale.submitSale(); // tenta fechar → recusa tipada
+
+    expect(h.sale.customerFocusNonce.value).toBe(1);
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      "Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+    );
+    expect(h.sale.result.value).toBeNull();
+    expect(h.sale.cart.items).toHaveLength(1); // carrinho preservado
+    h.handles.dispose();
+  });
+
   it("venda fechada aponta 'Abrir no gestor' para o orders app (não o Django admin)", async () => {
     const actionCall = saleRouter(null);
     const h = saleReadyForCheckout(actionCall);
