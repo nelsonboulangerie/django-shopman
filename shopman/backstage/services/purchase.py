@@ -1103,8 +1103,13 @@ def _supplier_name_key(name: str) -> str:
 
 
 def _supplier_ref_from_name(name: str) -> str:
+    """Ref limpo, minúsculo, sem prefixo de tipo — o padrão da casa.
+
+    O tipo já mora no lugar certo (a tabela, o ref_type do registro); `SUP-` era
+    ruído de ERP, e o dono normalizou os 4 que nasceram assim (01/09/2026).
+    """
     slug = _supplier_name_key(name)
-    return f"SUP-{slug}" if slug else ""
+    return slug.lower() if slug else ""
 
 
 def _adopt_supplier_by_name(issuer_names: list[str], document_text: str, phone: str) -> str:

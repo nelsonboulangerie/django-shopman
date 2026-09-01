@@ -10,7 +10,7 @@ class Supplier(models.Model):
         ref_type="SUPPLIER",
         unique=True,
         verbose_name=_("Referência"),
-        help_text=_("Identificador do fornecedor (ex.: SUP-MOINHO-SP)."),
+        help_text=_("Identificador do fornecedor (ex.: moinho-sp)."),
     )
     name = models.CharField(max_length=200, verbose_name=_("Nome"))
     document = models.CharField(

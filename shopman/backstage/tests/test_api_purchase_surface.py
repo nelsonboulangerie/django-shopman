@@ -89,7 +89,7 @@ def material(db):
 @pytest.fixture
 def supplier(db):
     return Supplier.objects.create(
-        ref="SUP-MOINHO-SP",
+        ref="moinho-sp",
         name="Moinho São Paulo",
         document="12.345.678/0001-90",
         email="compras@moinho.example",
@@ -136,7 +136,7 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     assert purchase["materials"][0]["sku"] == "FARINHA-T65"
     assert purchase["materials"][0]["stockOnHand"] == 12.0
     assert purchase["materials"][0]["recipes"] == ["Baguete"]
-    assert purchase["suppliers"][0]["ref"] == "SUP-MOINHO-SP"
+    assert purchase["suppliers"][0]["ref"] == "moinho-sp"
     assert purchase["conversions"][0]["label"] == "saco 25 kg"
     assert purchase["costs"][0]["costQ"] == 18000
 
@@ -250,18 +250,18 @@ def test_scan_invoice_registers_unknown_supplier_from_issuer(tmp_path, client, p
     body = response.json()
     assert "fornecedor cadastrado" in body["message"].lower()
     receipt = body["purchase"]["activeReceipt"]
-    assert receipt["supplierRef"] == "SUP-TAMURA"
+    assert receipt["supplierRef"] == "tamura"
     assert "fornecedor nao cadastrado" not in receipt["note"]
     assert receipt["lines"][0]["materialSku"] == ""
 
     Supplier = apps.get_model("buyman", "Supplier")
-    created = Supplier.objects.get(ref="SUP-TAMURA")
+    created = Supplier.objects.get(ref="tamura")
     assert created.document == "84.290.690/0002-28"
     assert created.name.startswith("INDUSTRIA E COMERCIO")
     assert created.phone == "4333221100"
     assert created.is_active is True
     supplier_refs = [supplier["ref"] for supplier in body["purchase"]["suppliers"]]
-    assert "SUP-TAMURA" in supplier_refs
+    assert "tamura" in supplier_refs
 
 
 @pytest.mark.django_db

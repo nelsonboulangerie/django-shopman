@@ -17,7 +17,7 @@ def par(db):
     """O cadastro do dono (sem CNPJ) e o que a NF criou (com CNPJ e histórico)."""
     do_dono = Supplier.objects.create(ref="france-panificacao", name="France Panificação")
     da_nota = Supplier.objects.create(
-        ref="SUP-FRANCE-PANIFICACAO",
+        ref="france-panificacao-nf",
         name="FRANCE PANIFICACAO LTDA",
         document="11.222.333/0001-81",
         phone="4333445566",
