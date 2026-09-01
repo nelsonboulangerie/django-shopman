@@ -36,6 +36,17 @@ def active_order_count_for_customer(
     )
 
 
+def order_count_for_customer(
+    *,
+    customer_ref: str | None = None,
+    phone: str | None = None,
+) -> int:
+    return customer_orders.order_count_for_customer(
+        customer_ref=customer_ref,
+        phone=phone,
+    )
+
+
 def order_history_for_phone(phone: str, *, limit: int = 20) -> list[dict]:
     from shopman.storefront.presentation import account as account_presentation
 

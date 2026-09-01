@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountLoyalty, AccountSummary, Action } from '~/types/shopman'
+import type { AccountLoyalty, AccountSummary, Action, OrderHistoryItem } from '~/types/shopman'
 import {
   ORDER_FILTER_OPTIONS,
   accountGreeting,
@@ -10,10 +10,13 @@ import {
   loyaltyStampSlots,
   loyaltyStampsLabel,
   loyaltyView,
+  orderRowEmphasisClass,
+  ordersCountLabel,
   orderStatusAccentClass,
   orderStatusDotClass,
   ordersEmptyCopy,
-  reorderActionFrom
+  reorderActionFrom,
+  splitOrdersByActive
 } from '~/presentation/account'
 
 function loyalty (overrides: Partial<AccountLoyalty> = {}): AccountLoyalty {
@@ -190,12 +193,66 @@ describe('accountNavCards', () => {
       '/conta/seguranca'
     ])
   })
-  it('mostra a contagem de pedidos do summary', () => {
-    const summary = { recent_order_count: 4 } as AccountSummary
+  it('badge de Pedidos prioriza os em andamento', () => {
+    const summary = { active_order_count: 2, total_order_count: 8 } as AccountSummary
     const cards = accountNavCards(summary)
-    expect(cards[0]!.count).toBe(4)
+    expect(cards[0]!.count).toBe(2)
+  })
+  it('sem ativos, badge cai para o total', () => {
+    const summary = { active_order_count: 0, total_order_count: 8 } as AccountSummary
+    expect(accountNavCards(summary)[0]!.count).toBe(8)
   })
   it('contagem null sem summary', () => {
     expect(accountNavCards(null)[0]!.count).toBeNull()
+  })
+})
+
+describe('ordersCountLabel', () => {
+  it('compõe ativos e total', () => {
+    expect(ordersCountLabel(2, 8)).toBe('2 pedidos em andamento (8 pedidos no total)')
+  })
+  it('singular nos dois eixos', () => {
+    expect(ordersCountLabel(1, 1)).toBe('1 pedido em andamento (1 pedido no total)')
+  })
+  it('sem ativos, só o total', () => {
+    expect(ordersCountLabel(0, 8)).toBe('8 pedidos')
+    expect(ordersCountLabel(0, 1)).toBe('1 pedido')
+  })
+  it('sem pedidos, convite', () => {
+    expect(ordersCountLabel(0, 0)).toBe('Nenhum pedido ainda')
+  })
+  it('nunca mostra total menor que os ativos', () => {
+    expect(ordersCountLabel(3, 0)).toBe('3 pedidos em andamento (3 pedidos no total)')
+  })
+})
+
+describe('splitOrdersByActive', () => {
+  it('agrupa pelo is_active do backend preservando a ordem', () => {
+    const orders = [
+      { ref: 'A', is_active: true },
+      { ref: 'B', is_active: false },
+      { ref: 'C', is_active: true }
+    ] as OrderHistoryItem[]
+    const { active, past } = splitOrdersByActive(orders)
+    expect(active.map(o => o.ref)).toEqual(['A', 'C'])
+    expect(past.map(o => o.ref)).toEqual(['B'])
+  })
+  it('sem a flag, trata como finalizado', () => {
+    const { active, past } = splitOrdersByActive([{ ref: 'X' } as OrderHistoryItem])
+    expect(active).toEqual([])
+    expect(past.map(o => o.ref)).toEqual(['X'])
+  })
+})
+
+describe('orderRowEmphasisClass', () => {
+  it('ativo fica em cor plena', () => {
+    expect(orderRowEmphasisClass(true)).toBe('')
+  })
+  it('finalizado recua e volta no hover/focus', () => {
+    const cls = orderRowEmphasisClass(false)
+    expect(cls).toContain('opacity-70')
+    expect(cls).toContain('saturate-50')
+    expect(cls).toContain('hover:opacity-100')
+    expect(cls).toContain('focus-within:opacity-100')
   })
 })

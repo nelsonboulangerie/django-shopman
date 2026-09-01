@@ -170,6 +170,20 @@ def active_order_count_for_phone(phone: str) -> int:
     return active_order_count_for_customer(phone=phone)
 
 
+def order_count_for_customer(
+    *,
+    customer_ref: str | None = None,
+    phone: str | None = None,
+) -> int:
+    """Count every order (any status) for the authenticated customer identity."""
+    from shopman.orderman.models import Order
+
+    identity = customer_identity_filter(customer_ref=customer_ref, phone=phone)
+    if identity is None:
+        return 0
+    return Order.objects.filter(identity).distinct().count()
+
+
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
     """Return the last old-enough order ref and sealed snapshot items for reorder."""
     try:
@@ -683,6 +697,7 @@ __all__ = [
     "is_cancelled",
     "last_reorder_context",
     "mock_confirm_payment",
+    "order_count_for_customer",
     "order_matches_customer_identity",
     "payment_is_due",
     "resolve_confirmation_timeout_if_due",
