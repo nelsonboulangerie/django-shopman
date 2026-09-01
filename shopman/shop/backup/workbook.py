@@ -13,52 +13,14 @@ from __future__ import annotations
 import csv
 import datetime as _dt
 import io
-import re
 from pathlib import Path
 
 import tablib
 from openpyxl import Workbook, load_workbook
+from shopman.utils.spreadsheet import escape_cell as _escape_cell
+from shopman.utils.spreadsheet import unescape_cell as _unescape_cell
 
 from shopman.shop.backup import registry
-
-#: Primeiro caractere que faz Excel/Sheets tratar o texto como fórmula ativa.
-_FORMULA_CHARS = ("=", "@", "\t", "\r")
-_NUMERIC_RE = re.compile(r"^[+-]?\d+([.,]\d+)?$")
-
-
-def _needs_escape(text: str) -> bool:
-    """Texto que uma planilha interpretaria como fórmula, não como dado.
-
-    ``+``/``-`` só são perigosos quando NÃO formam um número puro: "-10" é o
-    número -10 em qualquer planilha; "-2+cmd()" é fórmula. Escapar o número
-    sujaria a célula sem ganhar nada.
-    """
-    if not text:
-        return False
-    if text[0] in _FORMULA_CHARS:
-        return True
-    return text[0] in "+-" and not _NUMERIC_RE.match(text)
-
-
-def _escape_cell(text: str) -> str:
-    """Prefixa ``'`` no que viraria fórmula ao abrir no Sheets/Excel.
-
-    Sem isto, um nome curado começando com ``=`` executa ao abrir a planilha
-    viva E — pior — volta do import como o VALOR COMPUTADO (o leitor usa
-    ``data_only``), corrompendo o dado no restore. Também escapa ``'`` + texto
-    perigoso, para a des-escapada da leitura ser uma bijeção exata.
-    """
-    if _needs_escape(text) or (text.startswith("'") and _needs_escape(text[1:])):
-        return "'" + text
-    return text
-
-
-def _unescape_cell(text: str) -> str:
-    if text.startswith("'") and (_needs_escape(text[1:]) or (
-        text[1:].startswith("'") and _needs_escape(text[2:])
-    )):
-        return text[1:]
-    return text
 
 
 def _cell_to_text(value) -> str:

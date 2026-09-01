@@ -15,6 +15,7 @@ from decimal import Decimal
 from io import StringIO
 
 from django.utils import timezone
+from shopman.utils.spreadsheet import escape_cell
 
 from shopman.backstage.services.exceptions import ProductionConflict, ProductionError
 from shopman.shop.services import production as production_core
@@ -523,33 +524,14 @@ def apply_advance_step(*, work_order_id, actor: str) -> int:
     return new_index
 
 
-_CSV_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r", "\n")
-
-
-def _is_plain_number(text: str) -> bool:
-    try:
-        return Decimal(text).is_finite()
-    except (ArithmeticError, ValueError):
-        return False
-
-
 def _csv_safe(value) -> str:
-    """Neutraliza injeção de fórmula: uma célula de texto que começa com um
-    gatilho (``= + - @`` ou controle) vira fórmula viva quando o gestor abre o
-    CSV no Excel/Sheets. O prefixo ``'`` força a planilha a tratar como texto.
-    Só o campo textual passa por aqui — número entra formatado e não é tocado.
+    """Neutraliza injeção de fórmula no CSV do relatório.
 
-    Exceção: ``-10``/``+3`` puros são NÚMERO na planilha, não fórmula; escapá-los
-    sujaria uma coluna de inteiro negativo. (Refino trazido da ponte de backup,
-    que bateu no mesmo dilema no round-trip XLSX.)
+    Só o campo textual passa por aqui — número entra formatado e não é tocado.
+    A regra (gatilhos, exceção de número puro) vive em
+    ``shopman.utils.spreadsheet``, compartilhada com o cofre de backup.
     """
-    text = "" if value is None else str(value)
-    lead = text[:1]
-    if lead not in _CSV_FORMULA_TRIGGERS:
-        return text
-    if lead in ("+", "-") and _is_plain_number(text):
-        return text
-    return "'" + text
+    return escape_cell("" if value is None else str(value))
 
 
 def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
