@@ -239,6 +239,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "shopman.shop.middleware.AppPlatformHealthCheckHostMiddleware",
+    "shopman.shop.middleware.BackupSheetDomainMiddleware",
     # Scopes session/CSRF cookies to the operator zone's parent domain (no-op
     # unless SHOPMAN_OPERATOR_COOKIE_DOMAIN). High in the stack so its response
     # phase runs AFTER Session/CSRF middleware set their cookies.
@@ -1377,10 +1378,15 @@ IMPORT_EXPORT_IMPORT_PERMISSION_CODE = "change"
 IMPORT_EXPORT_EXPORT_PERMISSION_CODE = "view"
 
 # Employee discount — configurable percentage
-# Ponte do cofre de dados curados com o Google Drive (push/pull_backup_drive).
+# Ponte do cofre de dados curados com o Google Drive (export/import_backup_*_drive).
 # Vazio = ponte desligada; os comandos falham fechado com a instrução de setup.
 SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE", "")
 SHOPMAN_BACKUP_DRIVE_FOLDER = os.environ.get("SHOPMAN_BACKUP_DRIVE_FOLDER", "")
+
+# Atalho de domínio para a planilha viva do cofre (BackupSheetDomainMiddleware):
+# o host redireciona (302) para a planilha; sem URL configurada, responde 404.
+SHOPMAN_BACKUP_SHEET_HOST = os.environ.get("SHOPMAN_BACKUP_SHEET_HOST", "")
+SHOPMAN_BACKUP_SHEET_URL = os.environ.get("SHOPMAN_BACKUP_SHEET_URL", "")
 
 SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(
     os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20")

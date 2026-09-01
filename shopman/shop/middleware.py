@@ -58,6 +58,34 @@ def _canonical_allowed_host() -> str:
     return "localhost"
 
 
+class BackupSheetDomainMiddleware:
+    """`backup.boulangerie.com.br` → a planilha viva do cofre, num redirect.
+
+    O domínio é só um ATALHO memorável; quem manda no acesso é o Google — a
+    planilha continua privada às contas com quem foi compartilhada, e o
+    redirect não concede nada. Config-driven e falha fechado: sem
+    ``SHOPMAN_BACKUP_SHEET_URL`` o host responde 404, nunca um destino
+    inventado. 302 (não 301) de propósito: se a planilha um dia for recriada,
+    nenhum navegador fica preso num permanente cacheado.
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        host = getattr(settings, "SHOPMAN_BACKUP_SHEET_HOST", "")
+        if host and _strip_port(request.META.get("HTTP_HOST", "")).lower() == host.lower():
+            url = getattr(settings, "SHOPMAN_BACKUP_SHEET_URL", "")
+            if not url:
+                from django.http import HttpResponseNotFound
+
+                return HttpResponseNotFound("Planilha do cofre não configurada.")
+            from django.http import HttpResponseRedirect
+
+            return HttpResponseRedirect(url)
+        return self.get_response(request)
+
+
 class APIVersionHeaderMiddleware:
     """Stamp every `/api/v1/` response with `X-API-Version: 1`.
 
