@@ -401,7 +401,7 @@ def upsert_cost(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier=supplier,
         conversion=conversion,
         cost_q=cost_q,
-        make_preferred=bool(payload.get("makePreferred") or payload.get("make_preferred")),
+        make_preferred=_as_flag(payload, "makePreferred", "make_preferred", field="makePreferred"),
     )
     # Custo de fornecedor é dado de dinheiro: quem alterou fica no log
     # estruturado (o modelo não tem trilha própria — decisão adiada com o
@@ -441,7 +441,7 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
     Supplier = apps.get_model("buyman", "Supplier")
 
     default_supplier_ref = str(payload.get("supplierRef") or payload.get("supplier_ref") or "").strip()
-    make_preferred = bool(payload.get("makePreferred") or payload.get("make_preferred"))
+    make_preferred = _as_flag(payload, "makePreferred", "make_preferred", field="makePreferred")
     raw_lines = payload.get("costs") or payload.get("lines") or []
     if not isinstance(raw_lines, list):
         raise PurchaseError("Lote de custos inválido.", code="cost_batch_invalid", field="costs")
@@ -530,6 +530,96 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         extra={
             "count": len(resolved),
             "suppliers": sorted({supplier.ref for _, supplier, _, _ in resolved}),
+            "user": getattr(user, "username", "") or "anon",
+        },
+    )
+    return {"saved": len(resolved), "purchase": build_purchase()}
+
+
+def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
+    """Declara o estoque mínimo dos insumos — a outra metade da solicitação.
+
+    ``dailyUse`` sai das baixas que a produção lança ao finalizar uma ficha; sem
+    fornada rodando no sistema ele é zero. E aí o cálculo fecha o círculo contra
+    o operador: sem consumo, o mínimo também cai para zero
+    (``daily_use * replenish_at if daily_use > 0 else 0``), o alvo de reposição
+    vira zero e ``suggestedQty`` é zero para sempre. Cadastrar custo e
+    fornecedor não muda isso — o insumo simplesmente não aparece no Compras.
+
+    O mínimo declarado quebra esse círculo: com ele o alvo existe sem histórico
+    nenhum, e o insumo volta a poder virar pedido. Mora em
+    ``Material.metadata["purchase"]["min_stock"]``, que é onde a projeção já o
+    procura — nenhum campo novo, nenhuma migração.
+
+    Zero **apaga** a declaração em vez de gravar zero: os dois levam ao mesmo
+    alvo hoje, mas só o campo ausente volta a seguir o consumo quando a produção
+    começar a rodar.
+    """
+    Material = apps.get_model("buyman", "Material")
+
+    raw_lines = payload.get("minimums") or payload.get("min_stocks") or []
+    if not isinstance(raw_lines, list):
+        raise PurchaseError("Lote de mínimos inválido.", code="min_stock_batch_invalid", field="minimums")
+
+    resolved: list[tuple[Any, Decimal | None]] = []
+    line_errors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for index, raw in enumerate(raw_lines):
+        entry = dict(raw or {})
+        material_sku = str(entry.get("materialSku") or entry.get("material_sku") or "").strip()
+        raw_value = entry.get("minStock", entry.get("min_stock"))
+        text = "" if raw_value is None else str(raw_value)
+        if not text.strip():
+            continue
+
+        def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
+            line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
+
+        material = Material.objects.filter(sku=material_sku).first()
+        if not material:
+            fail("Insumo não encontrado.", field="materialSku")
+            continue
+        if material.sku in seen:
+            fail("Insumo repetido no lote.", field="materialSku")
+            continue
+
+        value = parse_qty_input(text)
+        if value is None:
+            fail("Informe uma quantidade válida.", field="minStock")
+            continue
+
+        seen.add(material.sku)
+        resolved.append((material, None if value == 0 else value))
+
+    if line_errors:
+        raise PurchaseError(
+            "Corrija as linhas indicadas para lançar os mínimos.",
+            code="min_stock_batch_invalid",
+            lines=line_errors,
+        )
+    if not resolved:
+        raise PurchaseError("Informe ao menos um mínimo.", code="min_stock_batch_empty", field="minimums")
+
+    with transaction.atomic():
+        for material, value in resolved:
+            metadata = dict(material.metadata or {})
+            purchase = dict(metadata.get("purchase") or {})
+            if value is None:
+                purchase.pop("min_stock", None)
+                purchase.pop("minStock", None)
+            else:
+                purchase["min_stock"] = str(value)
+                purchase.pop("minStock", None)
+            metadata["purchase"] = purchase
+            material.metadata = metadata
+            material.save(update_fields=["metadata", "updated_at"])
+
+    logger.info(
+        "purchase.min_stock_set",
+        extra={
+            "count": len(resolved),
+            "materials": sorted(material.sku for material, _ in resolved),
             "user": getattr(user, "username", "") or "anon",
         },
     )
@@ -906,6 +996,76 @@ def _purchase_meta(obj) -> dict[str, Any]:
     if isinstance(nested, dict):
         return {**metadata, **nested}
     return metadata
+
+
+#: Casas decimais da quantidade em toda a superfície de Compras.
+QTY_PLACES = Decimal("0.001")
+
+#: O que conta como "sim" e como "não" numa flag vinda do JSON.
+_FLAG_TRUE = {"true", "1", "yes", "on"}
+_FLAG_FALSE = {"false", "0", "no", "off", ""}
+
+
+def _as_flag(payload: dict[str, Any], *keys: str, field: str = "") -> bool:
+    """Flag booleana do payload, no dialeto desta camada (levanta `PurchaseError`).
+
+    O `bool()` cru aceita qualquer coisa e chama de verdade: `"false"` e `"não"`
+    viram `True`, e `[]` vira `False`. Numa flag que decide se o custo vira o
+    preferencial do insumo, isso é o tipo de "sim" que ninguém disse.
+
+    Espelha `parsing.as_bool` da camada de API; o que muda é a exceção — a
+    camada HTTP mapeia por TIPO (`services/exceptions.py`), e importar o parser
+    do DRF aqui quebraria essa separação. Mesmo caminho que `services/catalog.py`
+    seguiu com o seu `_as_flag`.
+    """
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            if value in (0, 1):
+                return bool(value)
+        elif isinstance(value, str):
+            text = value.strip().lower()
+            if text in _FLAG_TRUE:
+                return True
+            if text in _FLAG_FALSE:
+                return False
+        raise PurchaseError(
+            "Valor inválido para uma opção de sim/não.",
+            code="flag_invalid",
+            field=field or key,
+        )
+    return False
+
+
+def parse_qty_input(raw: Any) -> Decimal | None:
+    """Quantidade digitada pelo operador, no teclado da casa ou no do sistema.
+
+    ``None`` é "não informado" — vazio, ilegível ou negativo. Quem chama decide
+    se isso é omissão (linha em branco) ou erro (valor inválido); aqui não dá
+    para saber a diferença.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        text = raw.strip().replace(" ", "")
+        # Vírgula presente = notação pt-BR ("1.250,5"); sem vírgula, o ponto é decimal.
+        if "," in text:
+            text = text.replace(".", "").replace(",", ".")
+    else:
+        text = str(raw)
+    try:
+        value = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    if value < 0:
+        return None
+    return value.quantize(QTY_PLACES)
 
 
 def parse_money_input(value: str, *, field: str = "costInput") -> int:

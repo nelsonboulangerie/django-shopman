@@ -175,6 +175,46 @@ def test_o_mesmo_insumo_duas_vezes_no_lote_e_recusado(supplier, materials):
 
 
 @pytest.mark.django_db
+def test_a_string_false_nao_e_um_sim(supplier, outro_supplier, materials):
+    """`bool("false")` é `True`, e essa flag decide o custo padrão do insumo."""
+    purchase_service.upsert_costs(
+        {
+            "supplierRef": "SUP-TAMURA",
+            "makePreferred": "false",
+            "costs": [{"materialSku": "CAFE-GRAO", "costInput": "45,00"}],
+        }
+    )
+    # Continua preferencial porque é o PRIMEIRO custo do insumo
+    # (`prefer_if_missing`), não porque "false" foi lido como sim.
+    cost = _costs_for("CAFE-GRAO").get()
+    assert cost.is_preferred is True
+
+    # Num insumo que já tem preferencial de outro fornecedor, "false" não rouba.
+    purchase_service.upsert_costs(
+        {
+            "supplierRef": "SUP-COFERPAN",
+            "makePreferred": "false",
+            "costs": [{"materialSku": "CAFE-GRAO", "costInput": "40,00"}],
+        }
+    )
+    assert _costs_for("CAFE-GRAO").get(supplier__ref="SUP-TAMURA").is_preferred is True
+    assert _costs_for("CAFE-GRAO").get(supplier__ref="SUP-COFERPAN").is_preferred is False
+
+
+@pytest.mark.django_db
+def test_flag_sem_sentido_e_recusada(supplier, materials):
+    with pytest.raises(PurchaseError) as excinfo:
+        purchase_service.upsert_costs(
+            {
+                "supplierRef": "SUP-TAMURA",
+                "makePreferred": "talvez",
+                "costs": [{"materialSku": "CAFE-GRAO", "costInput": "45,00"}],
+            }
+        )
+    assert excinfo.value.code == "flag_invalid"
+
+
+@pytest.mark.django_db
 def test_devolve_a_projecao_para_a_tela_nao_precisar_de_outro_round_trip(supplier, materials):
     result = purchase_service.upsert_costs(
         {

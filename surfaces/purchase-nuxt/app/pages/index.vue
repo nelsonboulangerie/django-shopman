@@ -64,6 +64,12 @@ const {
   setBatchConversion,
   clearCostBatch,
   saveCostBatch,
+  minStockInputs,
+  minStockLineErrors,
+  minStockFilledCount,
+  setMinStockInput,
+  clearMinStock,
+  saveMinStock,
   supplierSummaries,
   receiptMode,
   invoiceInput,
@@ -1262,7 +1268,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border text-sm">
               <thead class="bg-muted text-left text-xs font-medium text-muted-foreground">
-                <tr><th class="px-3 py-2">SKU</th><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Estoque</th><th class="px-3 py-2">Cobertura</th><th class="px-3 py-2">Custo-base</th><th class="px-3 py-2">Status</th></tr>
+                <tr><th class="px-3 py-2">SKU</th><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Estoque</th><th class="px-3 py-2">Cobertura</th><th class="px-3 py-2 w-32">Mínimo</th><th class="px-3 py-2">Custo-base</th><th class="px-3 py-2">Status</th></tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-for="material in filteredMaterials" :key="material.sku" class="hover:bg-accent/70">
@@ -1273,6 +1279,21 @@ onBeforeUnmount(stopInvoiceScanner);
                   </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatStockOnHand(material) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ coverageLabel(material.coverageDays) }}</td>
+                  <!-- Sem consumo medido, o alvo de reposição é zero e o insumo
+                       nunca vira sugestão. O mínimo declarado é o que destrava. -->
+                  <td class="px-3 py-2">
+                    <input
+                      inputmode="decimal"
+                      :placeholder="material.minStock ? formatQty(material.minStock, material.unit) : '—'"
+                      class="h-9 w-full rounded-md border bg-background px-2 text-sm tabular-nums"
+                      :class="minStockLineErrors[material.sku] ? 'border-destructive' : 'border-border'"
+                      :value="minStockInputs[material.sku] ?? ''"
+                      @input="setMinStockInput(material.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                    <p v-if="minStockLineErrors[material.sku]" class="mt-0.5 text-xs font-medium text-destructive">
+                      {{ minStockLineErrors[material.sku] }}
+                    </p>
+                  </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatMoney(material.preferredBaseCostQ) }} / {{ material.unit }}</td>
                   <td class="px-3 py-2">
                     <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="toneClasses[material.tone]">{{ toneLabels[material.tone] }}</span>
@@ -1280,6 +1301,33 @@ onBeforeUnmount(stopInvoiceScanner);
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div
+            v-if="minStockFilledCount"
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3"
+          >
+            <p class="text-sm text-muted-foreground">
+              {{ minStockFilledCount }} mínimo(s) para salvar · zero apaga o mínimo do insumo
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                :disabled="actionPending"
+                @click="clearMinStock()"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                :disabled="readonlyFallback || actionPending"
+                @click="saveMinStock()"
+              >
+                Salvar mínimos
+              </button>
+            </div>
           </div>
         </div>
 

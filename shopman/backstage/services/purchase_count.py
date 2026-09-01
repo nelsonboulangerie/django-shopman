@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 from django.apps import apps
@@ -21,7 +21,11 @@ from shopman.backstage.projections.purchase_count import (
     build_purchase_count,
     system_qty_map,
 )
-from shopman.backstage.services.purchase import PurchaseError, _default_receive_position
+from shopman.backstage.services.purchase import (
+    PurchaseError,
+    _default_receive_position,
+    parse_qty_input,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -152,20 +156,6 @@ def _apply_count(line: ResolvedCountLine, *, user) -> bool:
     return True
 
 
-def _parse_qty(raw: Any) -> Decimal | None:
-    if raw is None or raw == "":
-        return None
-    if isinstance(raw, str):
-        text = raw.strip().replace(" ", "")
-        # Vírgula presente = notação pt-BR ("1.250,5"); sem vírgula, o ponto é decimal.
-        if "," in text:
-            text = text.replace(".", "").replace(",", ".")
-    else:
-        text = str(raw)
-    try:
-        value = Decimal(text)
-    except (InvalidOperation, ValueError):
-        return None
-    if value < 0:
-        return None
-    return value.quantize(QTY_PLACES)
+#: O parser da quantidade digitada mora em `services.purchase` — a contagem e o
+#: estoque mínimo leem o mesmo teclado, e duas cópias divergiriam em silêncio.
+_parse_qty = parse_qty_input

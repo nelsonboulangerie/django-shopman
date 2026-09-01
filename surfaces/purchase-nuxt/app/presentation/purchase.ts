@@ -749,6 +749,26 @@ export function costBatchPayload(
 }
 
 /**
+ * Traduz a recusa do lote em "qual linha errou, e por quê".
+ *
+ * O lote é tudo-ou-nada no servidor. Sem apontar a linha, a recusa manda o
+ * operador procurar o erro entre dezenas de campos preenchidos — e o custo de
+ * procurar é maior que o de digitar tudo de novo. O servidor manda os erros em
+ * `error.lines` (o dialeto `errors` fala por campo, e linha não cabe ali);
+ * aqui eles viram um mapa por SKU, que é como a tabela endereça suas linhas.
+ */
+export function costBatchLineErrors(data: unknown): Record<string, string> {
+  const body = data as { error?: { lines?: unknown } } | null | undefined;
+  const lines = body?.error?.lines;
+  if (!Array.isArray(lines)) return {};
+  const entries = lines
+    .map((line) => line as { materialSku?: unknown; detail?: unknown })
+    .filter((line) => typeof line?.materialSku === "string" && typeof line?.detail === "string")
+    .map((line) => [line.materialSku as string, line.detail as string] as const);
+  return Object.fromEntries(entries);
+}
+
+/**
  * O que impede a fila de compra de existir — vazio explicado, com o caminho.
  *
  * Um zero mudo é indistinguível de um app quebrado: o operador não sabe se não

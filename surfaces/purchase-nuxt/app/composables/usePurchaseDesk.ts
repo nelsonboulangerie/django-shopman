@@ -3,7 +3,6 @@ import type {
   PurchaseBaseView,
   PurchaseRequestStatus,
   PurchaseActionResponse,
-  PurchaseCostBatchLineError,
   PurchaseProjection,
   PurchaseResponse,
   ConversionKind,
@@ -19,6 +18,7 @@ import type {
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
 import {
+  costBatchLineErrors as buildCostBatchLineErrors,
   costBatchPayload as buildCostBatchPayload,
   costPerBaseUnitQ,
   countConfirmPayload,
@@ -129,6 +129,10 @@ export function usePurchaseDesk() {
   const batchOnlyMissing = useState("purchase-batch-only-missing", () => true);
   const batchQuery = useState("purchase-batch-query", () => "");
   const batchLineErrors = useState<Record<string, string>>("purchase-batch-line-errors", () => ({}));
+  // Estoque mínimo declarado: sem consumo medido o alvo de reposição é zero e o
+  // insumo nunca vira sugestão. Declarar o mínimo é o que o destrava.
+  const minStockInputs = useState<Record<string, string>>("purchase-min-stock-inputs", () => ({}));
+  const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
   const countPending = ref(false);
   const api = usePurchaseApi();
   const actionPending = ref(false);
@@ -364,6 +368,52 @@ export function usePurchaseDesk() {
     batchConversionIds.value = { ...batchConversionIds.value, [materialSku]: conversionId };
   }
 
+  const minStockFilledCount = computed(
+    () => Object.values(minStockInputs.value).filter((value) => Boolean((value ?? "").trim())).length,
+  );
+
+  function setMinStockInput(materialSku: string, value: string) {
+    minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
+    if (minStockLineErrors.value[materialSku]) {
+      minStockLineErrors.value = Object.fromEntries(
+        Object.entries(minStockLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function clearMinStock() {
+    minStockInputs.value = {};
+    minStockLineErrors.value = {};
+  }
+
+  /** Declara os mínimos digitados. Mesmo contrato do lote de custos. */
+  async function saveMinStock() {
+    if (!minStockFilledCount.value) return;
+    if (!requireBackend("salvar os mínimos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    minStockLineErrors.value = {};
+    try {
+      const minimums = Object.entries(minStockInputs.value)
+        .filter(([, value]) => Boolean((value ?? "").trim()))
+        .map(([materialSku, value]) => ({ materialSku, minStock: value.trim() }));
+      const response = await api.setMinStock({ minimums });
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearMinStock();
+      await refresh();
+    } catch (err) {
+      minStockLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
+      const message = httpErrorMessage(err, "Não foi possível salvar os mínimos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
   function clearCostBatch() {
     batchInputs.value = {};
     batchConversionIds.value = {};
@@ -393,11 +443,7 @@ export function usePurchaseDesk() {
       clearCostBatch();
       await refresh();
     } catch (err) {
-      const data = httpError(err).data as { error?: { lines?: PurchaseCostBatchLineError[] } } | null;
-      const lines = data?.error?.lines ?? [];
-      if (lines.length) {
-        batchLineErrors.value = Object.fromEntries(lines.map((line) => [line.materialSku, line.detail]));
-      }
+      batchLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
       const message = httpErrorMessage(err, "Não foi possível salvar os custos.");
       actionError.value = message;
       useSonner.error(message);
@@ -997,6 +1043,12 @@ export function usePurchaseDesk() {
     setBatchConversion,
     clearCostBatch,
     saveCostBatch,
+    minStockInputs,
+    minStockLineErrors,
+    minStockFilledCount,
+    setMinStockInput,
+    clearMinStock,
+    saveMinStock,
     supplierSummaries,
     projection,
     receiptMode,

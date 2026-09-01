@@ -12,6 +12,7 @@ import {
   countSummary,
   formatMoney,
   formatQtyDiff,
+  costBatchLineErrors,
   costBatchPayload,
   formatShortDate,
   formatStockOnHand,
@@ -1099,5 +1100,36 @@ describe("costBatchPayload", () => {
   it("apara o espaço em volta do valor digitado", () => {
     const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {});
     expect(payload.costs[0]!.costInput).toBe("45,00");
+  });
+});
+
+describe("costBatchLineErrors", () => {
+  it("aponta a linha culpada pelo SKU", () => {
+    const data = {
+      detail: "Corrija as linhas indicadas para lançar o lote.",
+      error: {
+        code: "cost_batch_invalid",
+        lines: [
+          { index: 1, materialSku: "NAO-EXISTE", field: "materialSku", detail: "Insumo não encontrado." },
+          { index: 4, materialSku: "SAL", field: "costInput", detail: "Informe um valor maior que zero." },
+        ],
+      },
+    };
+    expect(costBatchLineErrors(data)).toEqual({
+      "NAO-EXISTE": "Insumo não encontrado.",
+      SAL: "Informe um valor maior que zero.",
+    });
+  });
+
+  it("não estoura com recusa que não fala de linha", () => {
+    expect(costBatchLineErrors({ detail: "Sessão expirada", error: { code: "not_authenticated" } })).toEqual({});
+    expect(costBatchLineErrors(null)).toEqual({});
+    expect(costBatchLineErrors(undefined)).toEqual({});
+    expect(costBatchLineErrors("erro")).toEqual({});
+  });
+
+  it("descarta linha malformada em vez de virar undefined na tela", () => {
+    const data = { error: { lines: [{ index: 0 }, { materialSku: "SAL", detail: "Valor inválido." }] } };
+    expect(costBatchLineErrors(data)).toEqual({ SAL: "Valor inválido." });
   });
 });

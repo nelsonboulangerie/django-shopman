@@ -369,6 +369,17 @@ export interface PurchaseCostBatchPayload {
 }
 
 /**
+ * Estoque mínimo declarado por insumo.
+ *
+ * Sem consumo medido o alvo de reposição é zero e o insumo nunca é sugerido —
+ * declarar o mínimo é o que o traz de volta para o Compras. Valor vazio ou zero
+ * apaga a declaração.
+ */
+export interface PurchaseMinStockPayload {
+  minimums: { materialSku: string; minStock: string }[];
+}
+
+/**
  * Erro de UMA linha do lote, como o servidor devolve em `error.lines`.
  *
  * O dialeto `errors` da casa fala por campo; um lote erra por linha, e a linha

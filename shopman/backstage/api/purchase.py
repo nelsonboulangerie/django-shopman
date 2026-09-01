@@ -148,6 +148,29 @@ class PurchaseCostBatchView(APIView):
         )
 
 
+class PurchaseMinStockView(APIView):
+    """Estoque mínimo declarado — ver `set_min_stock`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Declare the minimum stock of several materials",
+        responses={200: OpenApiResponse(description="Minimums saved and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            result = purchase_service.set_min_stock(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        saved = result["saved"]
+        return _purchase_response(
+            result["purchase"],
+            message="1 mínimo salvo." if saved == 1 else f"{saved} mínimos salvos.",
+        )
+
+
 class PurchaseConversionView(APIView):
     """Declarar uma conversão de unidade sem sair do recebimento.
 

@@ -1215,6 +1215,72 @@ def test_receipt_without_a_supplier_lot_keeps_the_derived_batch_ref(
 
 
 @pytest.mark.django_db
+def test_min_stock_requires_operate_purchase(client, material):
+    bare = User.objects.create_user("bare-min-stock", password="pw", is_staff=True)
+    client.force_login(bare)
+    response = client.post(
+        reverse("api-backstage-purchase-min-stock"),
+        data={"minimums": [{"materialSku": material.sku, "minStock": "10"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
+    client, purchase_operator, supplier, position
+):
+    """O caminho completo do pedido: mínimo, custo, e a solicitação sai.
+
+    É a prova de que as duas metades juntas resolvem o "não consigo fazer uma
+    solicitação de compra": sem consumo medido nenhum insumo é sugerido, e sem
+    custo preferencial a sugestão não vira pedido.
+    """
+    Material.objects.create(sku="ALECRIM", name="Alecrim", unit="g")
+    client.force_login(purchase_operator)
+
+    # Sem mínimo e sem consumo, não há o que pedir.
+    board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    assert alecrim["suggestedQty"] == 0
+
+    assert (
+        client.post(
+            reverse("api-backstage-purchase-min-stock"),
+            data={"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]},
+            content_type="application/json",
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            reverse("api-backstage-purchase-costs-batch"),
+            data={
+                "supplierRef": supplier.ref,
+                "makePreferred": True,
+                "costs": [{"materialSku": "ALECRIM", "costInput": "6,50"}],
+            },
+            content_type="application/json",
+        ).status_code
+        == 200
+    )
+
+    board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    assert alecrim["suggestedQty"] == 500
+
+    # E agora a solicitação sai, em vez de "Defina o custo padrão e o
+    # fornecedor antes de enviar o pedido."
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=["ALECRIM"]),
+        data={},
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    assert Directive.objects.filter(topic=NOTIFICATION_SEND).exists()
+
+
+@pytest.mark.django_db
 def test_cost_batch_requires_operate_purchase(client, material, supplier):
     bare = User.objects.create_user("bare-cost-batch", password="pw", is_staff=True)
     client.force_login(bare)
