@@ -41,7 +41,7 @@ def operador(db):
 def cenario(db):
     material = Material.objects.create(sku="FAR-T65", name="Farinha T65", unit="kg")
     fornecedor = Supplier.objects.create(
-        ref="SUP-MOINHO-SP", name="Moinho São Paulo", document="12.345.678/0001-90"
+        ref="moinho-sp", name="Moinho São Paulo", document="12.345.678/0001-90"
     )
     conversao = MaterialConversion.objects.create(
         material=material, supplier=fornecedor, label="saco 25 kg", to_base_factor=Decimal("25")

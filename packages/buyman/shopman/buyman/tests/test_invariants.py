@@ -20,12 +20,12 @@ def farinha():
 
 @pytest.fixture
 def moinho():
-    return Supplier.objects.create(ref="SUP-MOINHO", name="Moinho SP")
+    return Supplier.objects.create(ref="moinho", name="Moinho SP")
 
 
 @pytest.fixture
 def cooperativa():
-    return Supplier.objects.create(ref="SUP-COOP", name="Cooperativa")
+    return Supplier.objects.create(ref="coop", name="Cooperativa")
 
 
 class TestCustoPositivo:
@@ -98,7 +98,7 @@ class TestPreferencialNaoApontaParaAposentado:
         assert "inativo" in str(exc.value).lower()
 
     def test_fornecedor_inativo_recusa_preferencial(self, farinha):
-        aposentado = Supplier.objects.create(ref="SUP-VELHO", name="Antigo", is_active=False)
+        aposentado = Supplier.objects.create(ref="velho", name="Antigo", is_active=False)
         with pytest.raises(ValidationError) as exc:
             SupplierMaterialCost.objects.create(
                 supplier=aposentado, material=farinha, cost_q=350, is_preferred=True,
@@ -106,14 +106,14 @@ class TestPreferencialNaoApontaParaAposentado:
         assert "inativo" in str(exc.value).lower()
 
     def test_custo_alternativo_de_par_inativo_continua_valido(self, farinha):
-        aposentado = Supplier.objects.create(ref="SUP-VELHO", name="Antigo", is_active=False)
+        aposentado = Supplier.objects.create(ref="velho", name="Antigo", is_active=False)
         cost = SupplierMaterialCost.objects.create(
             supplier=aposentado, material=farinha, cost_q=350,
         )
         assert cost.pk is not None
 
     def test_full_clean_explica_o_veto(self, farinha):
-        aposentado = Supplier.objects.create(ref="SUP-VELHO", name="Antigo", is_active=False)
+        aposentado = Supplier.objects.create(ref="velho", name="Antigo", is_active=False)
         cost = SupplierMaterialCost(
             supplier=aposentado, material=farinha, cost_q=350, is_preferred=True,
         )

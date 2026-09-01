@@ -258,7 +258,7 @@ class TestMiseEnPlaceAnnotation:
     def test_supplier_scoped_conversion_is_not_read_on_the_bench(self, ovos, madeleine):
         from shopman.buyman.models import MaterialConversion, Supplier
 
-        granja = Supplier.objects.create(ref="SUP-GRANJA", name="Granja")
+        granja = Supplier.objects.create(ref="granja", name="Granja")
         MaterialConversion.objects.create(
             material=ovos, supplier=granja, label="ovos", to_base_factor=Decimal("0.05"),
             kind=MaterialConversion.Kind.APPROXIMATE,
