@@ -523,6 +523,35 @@ def apply_advance_step(*, work_order_id, actor: str) -> int:
     return new_index
 
 
+_CSV_FORMULA_TRIGGERS = ("=", "+", "-", "@", "\t", "\r", "\n")
+
+
+def _is_plain_number(text: str) -> bool:
+    try:
+        return Decimal(text).is_finite()
+    except (ArithmeticError, ValueError):
+        return False
+
+
+def _csv_safe(value) -> str:
+    """Neutraliza injeção de fórmula: uma célula de texto que começa com um
+    gatilho (``= + - @`` ou controle) vira fórmula viva quando o gestor abre o
+    CSV no Excel/Sheets. O prefixo ``'`` força a planilha a tratar como texto.
+    Só o campo textual passa por aqui — número entra formatado e não é tocado.
+
+    Exceção: ``-10``/``+3`` puros são NÚMERO na planilha, não fórmula; escapá-los
+    sujaria uma coluna de inteiro negativo. (Refino trazido da ponte de backup,
+    que bateu no mesmo dilema no round-trip XLSX.)
+    """
+    text = "" if value is None else str(value)
+    lead = text[:1]
+    if lead not in _CSV_FORMULA_TRIGGERS:
+        return text
+    if lead in ("+", "-") and _is_plain_number(text):
+        return text
+    return "'" + text
+
+
 def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
     """Export a production report as UTF-8 BOM CSV for spreadsheet tools."""
     from shopman.backstage.projections.production import build_production_reports
@@ -544,8 +573,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         ])
         for row in reports.operator_rows:
             writer.writerow([
-                row.operator_ref,
-                row.operator_name,
+                _csv_safe(row.operator_ref),
+                _csv_safe(row.operator_name),
                 row.wo_count,
                 row.qty_total,
                 row.yield_avg,
@@ -564,10 +593,10 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         ])
         for row in reports.quality_rows:
             writer.writerow([
-                row.recipe_ref,
-                row.recipe_name,
-                row.grade_label,
-                row.defect_label,
+                _csv_safe(row.recipe_ref),
+                _csv_safe(row.recipe_name),
+                _csv_safe(row.grade_label),
+                _csv_safe(row.defect_label),
                 row.quantity,
                 row.share,
             ])
@@ -582,8 +611,8 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         ])
         for row in reports.waste_rows:
             writer.writerow([
-                row.recipe_ref,
-                row.recipe_name,
+                _csv_safe(row.recipe_ref),
+                _csv_safe(row.recipe_name),
                 row.wo_count,
                 row.loss_total,
                 row.yield_avg,
@@ -608,19 +637,19 @@ def export_reports_csv(report_kind: str, filters: dict | None = None) -> bytes:
         ])
         for row in reports.history_rows:
             writer.writerow([
-                row.ref,
-                row.date,
-                row.recipe_ref,
-                row.recipe_name,
-                row.position_ref,
+                _csv_safe(row.ref),
+                _csv_safe(row.date),
+                _csv_safe(row.recipe_ref),
+                _csv_safe(row.recipe_name),
+                _csv_safe(row.position_ref),
                 row.qty_planned,
                 row.qty_started,
                 row.qty_finished,
                 row.qty_loss,
                 row.yield_rate,
-                row.operator_ref,
-                row.started_at,
-                row.finished_at,
+                _csv_safe(row.operator_ref),
+                _csv_safe(row.started_at),
+                _csv_safe(row.finished_at),
                 row.duration_minutes,
             ])
 

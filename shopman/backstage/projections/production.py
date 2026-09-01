@@ -2310,7 +2310,12 @@ def _build_weighing_ticket(
     )
 
     shelf_life = _decimal_meta(recipe.meta, "shelf_life_days")
-    expiry = selected_date + timedelta(days=int(shelf_life) if shelf_life else 1)
+    try:
+        expiry = selected_date + timedelta(days=int(shelf_life) if shelf_life else 1)
+    except (OverflowError, ValueError):
+        # shelf_life_days absurdo (erro de digitação no Admin) não derruba a
+        # pesagem inteira — cai na validade padrão de 1 dia.
+        expiry = selected_date + timedelta(days=1)
     table = {
         "headers": ["Insumo", "Quantidade"],
         "rows": [
@@ -2633,8 +2638,14 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         elif wo.status == WorkOrder.Status.STARTED:
             qty = _wo_started_qty(wo) or wo.quantity
             if duration_min is None:
-                duration_min = int((wo.recipe.meta or {}).get("max_started_minutes") or 0) or None
-            eta = wo.started_at + timedelta(minutes=duration_min) if (wo.started_at and duration_min) else None
+                # `max_started_minutes` é meta editável no Admin: não-numérico
+                # cairia em ValueError e grande demais estouraria o timedelta.
+                # `_decimal_meta` neutraliza o lixo; o try segura o overflow.
+                duration_min = int(_decimal_meta(wo.recipe.meta, "max_started_minutes")) or None
+            try:
+                eta = wo.started_at + timedelta(minutes=duration_min) if (wo.started_at and duration_min) else None
+            except OverflowError:
+                eta = None
             status = "in_progress"
             eta_actual = False
         else:  # planned
