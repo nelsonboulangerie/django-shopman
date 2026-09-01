@@ -1105,10 +1105,20 @@ class Command(BaseCommand):
         # GitHub limita hotlink, e se estrangular a loja fica sem foto nenhuma.
         # Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md (o peso dos arquivos —
         # 12,38 MB em 19 fotos — é o outro problema, resolvido na origem).
-        IMG = "https://menu.nelsonboulangerie.com.br/img/products/loja"
+        #
+        # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
+        # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
+        # toda foto de produto virou 404). O default é a verdade de HOJE — o
+        # catálogo antigo em cardapio.* — e é dependência de runtime REGISTRADA:
+        # aposentar o nb-catalog-app exige antes mudar a casa das imagens e esta env.
+        image_base = os.environ.get(
+            "SHOPMAN_PRODUCT_IMAGE_BASE",
+            "https://cardapio.nelsonboulangerie.com.br/img/products",
+        ).rstrip("/")
+        IMG = f"{image_base}/loja"
         # Acervo completo de fotos da casa (mesmo site, diretório pai do loja/):
         # cobre as restaurações do Yooga que o conjunto otimizado ainda não tem.
-        ACERVO = "https://menu.nelsonboulangerie.com.br/img/products"
+        ACERVO = image_base
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
