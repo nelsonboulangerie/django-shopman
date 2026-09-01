@@ -49,12 +49,12 @@ def catalog(db):
 
     made = {}
     for ref, name in [("bebidas-quentes", "Bebidas quentes"), ("rusticos", "Rústicos"),
-                      ("finos", "Finos"), ("balcao", "Balcão")]:
+                      ("macios", "Macios"), ("balcao", "Balcão")]:
         made[ref] = Collection.objects.create(ref=ref, name=name)
     for sku, name, collections in [
         ("CAFE", "Café", ["bebidas-quentes"]),
         ("PAO", "Pão francês", ["rusticos"]),
-        ("CROISSANT", "Croissant", ["finos"]),
+        ("CROISSANT", "Croissant", ["macios"]),
         ("MISTERIO", "Produto do balcão", ["balcao"]),
         ("DOIS-MUNDOS", "Ambíguo", ["bebidas-quentes", "rusticos"]),
     ]:

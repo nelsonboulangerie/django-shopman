@@ -34,7 +34,6 @@ from shopman.backstage.services.consumption import category_readings
 COLLECTION_READING: dict[str, str] = {
     "bebidas-quentes": "anchor",
     "bebidas-geladas": "anchor",
-    "torneira": "anchor",
     # Correção do dono (17/08): "Salgados" na Nelson é prato quente servido no
     # prato — Croque Monsieur, Croque Madame, Queijo-Quente, Jambon-Beurre,
     # Pain Grillé, Tábua de Iguarias. Quem pede um croque sentou. A proposta
@@ -42,7 +41,10 @@ COLLECTION_READING: dict[str, str] = {
     "salgados": "anchor",
     "rusticos": "takeaway",
     "mercearia": "takeaway",
-    "finos": "hybrid",
+    # finos virou macios e os croissants migraram para folhados (01/09);
+    # as duas herdam a leitura híbrida — o croissant É o híbrido canônico.
+    "macios": "hybrid",
+    "folhados": "hybrid",
     "doces": "hybrid",
 }
 

@@ -22,6 +22,9 @@ from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
 
 from django.conf import settings
+
+# Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
+STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
@@ -357,7 +360,7 @@ def apply_storefront_state(
     sku: str,
     *,
     vitrine,
-    listing_ref: str = "web",
+    listing_ref: str = STOREFRONT_REF,
     reason_prefix: str = "QA vitrine",
 ) -> None:
     """Deixa ``sku`` no estado de vitrine ``state``. Idempotente.
@@ -2496,9 +2499,9 @@ class Command(BaseCommand):
         collection_refs = [
             "bebidas-quentes",
             "bebidas-geladas",
-            "torneira",
             "rusticos",
-            "finos",
+            "macios",
+            "folhados",
             "salgados",
             "doces",
             "combos",
@@ -2506,9 +2509,9 @@ class Command(BaseCommand):
         ]
         # Limpa também as coleções da taxonomia anterior (refs que saíram).
         CollectionItem.objects.filter(
-            collection__ref__in=collection_refs + ["macios", "folhados", "balcao", "despensa"]
+            collection__ref__in=collection_refs + ["finos", "torneira", "folhado-do-dia", "focaccia-do-dia", "salgado-do-dia", "cha-gelado-do-dia", "balcao", "despensa"]
         ).delete()
-        Collection.objects.filter(ref__in=["macios", "folhados", "balcao", "despensa"]).delete()
+        Collection.objects.filter(ref__in=["finos", "torneira", "folhado-do-dia", "focaccia-do-dia", "salgado-do-dia", "cha-gelado-do-dia", "balcao", "despensa"]).delete()
 
         # Cor e ícone padrão da categoria (metadata): a cor vem da paleta NB do
         # brand sheet (hex = leitura do swatch, afinável com o guia oficial); o
@@ -2518,15 +2521,15 @@ class Command(BaseCommand):
         collections_by_ref = {}
         for order, (ref, name, color, icon) in enumerate(
             [
-                ("bebidas-quentes", "Bebidas quentes", "#6B4A2E", "coffee"),       # NB WOOD
-                ("bebidas-geladas", "Bebidas geladas", "#93A98D", "cup-soda"),     # NB CELADON
-                ("torneira", "Sodas artesanais", "#C49A3C", "glass-water"),        # NB MUSTARD
                 ("rusticos", "Rústicos", "#B49B7F", "wheat"),                      # NB KRAFT
-                ("finos", "Finos", "#8B6B2E", "croissant"),                        # NB BRASS
+                ("macios", "Macios", "#C49A3C", "donut"),                          # NB MUSTARD
+                ("folhados", "Folhados", "#8B6B2E", "croissant"),                  # NB BRASS
                 ("salgados", "Salgados", "#42522A", "sandwich"),                   # NB MOSS
                 ("doces", "Doces", "#C48A90", "cake-slice"),                       # NB BOUGAINVILLEA
-                ("combos", "Combos", "#A9743F", "gift"),                           # NB LEATHER
+                ("bebidas-quentes", "Bebidas quentes", "#6B4A2E", "coffee"),       # NB WOOD
+                ("bebidas-geladas", "Bebidas geladas", "#93A98D", "cup-soda"),     # NB CELADON
                 ("mercearia", "Mercearia", "#7C3A40", "shopping-basket"),          # NB BURGUNDY
+                ("combos", "Combos", "#A9743F", "gift"),                           # NB LEATHER
             ],
             start=1,
         ):
@@ -2549,14 +2552,13 @@ class Command(BaseCommand):
             ],
             "bebidas-geladas": ["CE", "FP", "AG",
                 # voltaram do Yooga (18/08)
-                "HI", "CTV", "SE",
+                "HI", "CTV", "SE", "CV", "SO",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
                 # para preparar em casa" — dono, 19/08.
                 "CHAI_A",
             ],
-            "torneira": ["CV", "SO"],
             "rusticos": [
                 # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
                 # de hambúrguer, que o dono classificou aqui apesar da massa macia.
@@ -2566,15 +2568,18 @@ class Command(BaseCommand):
                 # voltaram do Yooga (18/08)
                 "BAP", "BAX", "CF", "BA", "CGR", "PI", "PI4", "BEP", "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",
             ],
-            "finos": [
+            "macios": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
                 "BBB", "PHO", "PHO4", "BBB2",
-                "CT", "PC", "FA",
+                "FA",
                 "KP", "ME", "ANC", "CO",
                 # voltaram do Yooga (18/08)
-                "CM", "BCH", "CN", "PR", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                "CM", "BCH", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
             ],
+            # Croissants e laminados são FOLHADOS, não macios — as keywords do
+            # catálogo já diziam; a coleção passou a existir (dono, 01/09).
+            "folhados": ["CT", "PC", "CN", "PR"],
             "salgados": [
                 "CMO", "CMA", "CCOM",
                 "QQ", "JB", "PG", "TI",
@@ -2599,38 +2604,9 @@ class Command(BaseCommand):
                 "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
             ],
         }
-        # ── As coleções "do dia" ──
-        # O cardápio 2027 tinha "Folhado do dia" como PRODUTO, e isso custava
-        # caro: a fornada precisa de output_sku real, o estoque precisa separar
-        # sobra de falta por item, e os preços divergem (focaccia de alecrim
-        # R$ 28, a de cebola/bacon/tomilho R$ 36). Aqui o rotativo é o que
-        # sempre foi — uma curadoria —, e o produto por baixo é o de verdade.
-        #
-        # ⚠️ Vínculo SECUNDÁRIO: o produto continua morando na sua categoria.
-        # "Chausson" é Finos e aparece em "Folhado do dia"; não é uma coisa ou
-        # outra.
-        colecoes_do_dia = [
-            ("folhado-do-dia", "Folhado do dia", "#A9743F", "croissant", ["CN", "BH", "PR"]),
-            ("focaccia-do-dia", "Focaccia do dia", "#C49A3C", "pizza", ["FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC"]),
-            ("salgado-do-dia", "Salgado do dia", "#42522A", "sandwich", ["DL", "HO", "MIHO", "FF", "MFF"]),
-            ("cha-gelado-do-dia", "Chá gelado do dia", "#93A98D", "leaf", ["HI", "CTV"]),
-        ]
-        for ordem, (ref, nome, cor, icone, skus) in enumerate(colecoes_do_dia, start=len(collections_by_ref)):
-            colecao, _ = Collection.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": nome,
-                    "is_active": True,
-                    "sort_order": ordem,
-                    "metadata": {"color": cor, "icon": icone},
-                },
-            )
-            collections_by_ref[ref] = colecao
-            for i, sku in enumerate(skus):
-                CollectionItem.objects.update_or_create(
-                    collection=colecao, product=products[sku],
-                    defaults={"sort_order": i, "is_primary": False},
-                )
+        # As coleções rotativas "*-do-dia" morreram em 01/09 (decisão do dono):
+        # rotativo é história de VITRINE/fornada (disponibilidade em tempo real),
+        # não taxonomia. Os itens foram absorvidos pelas categorias estáveis.
 
         for ref, skus in collection_skus.items():
             for i, sku in enumerate(skus):
@@ -2673,7 +2649,7 @@ class Command(BaseCommand):
         for sku in PRONTOS_AS_09H:
             if sku in products:
                 ready_from_by_sku[sku] = "09:00"
-        for colecao_ref, hora in (("finos", "12:00"), ("rusticos", "15:00")):
+        for colecao_ref, hora in (("macios", "12:00"), ("rusticos", "15:00")):
             colecao = collections_by_ref.get(colecao_ref)
             if not colecao:
                 continue
@@ -2699,14 +2675,14 @@ class Command(BaseCommand):
             defaults={"name": "iFood", "is_active": True, "priority": 3},
         )
         web, _ = Listing.objects.update_or_create(
-            ref="web",
+            ref=STOREFRONT_REF,
             defaults={"name": "Loja online", "is_active": True, "priority": 7},
         )
 
         # Listing items (all products in all listings)
         # iFood uses pricing.policy="external": the marketplace controls final prices,
         # so listing prices are reference-only — no markup stored on our side.
-        markup_map = {"pdv": 0, "ifood": 0, "web": 0}
+        markup_map = {"pdv": 0, "ifood": 0, STOREFRONT_REF: 0}
 
         # "O produto produzido é a unidade, mas são vendidos em packs" (dono,
         # 19/08). A alavanca disso é o CARDÁPIO, não o estoque: `is_sellable`
@@ -4744,7 +4720,7 @@ class Command(BaseCommand):
         missing = []
         required_metadata = ("allergens", "dietary_info", "serves")
         listed_skus = ListingItem.objects.filter(
-            listing__ref__in=("pdv", "ifood", "web"),
+            listing__ref__in=("pdv", "ifood", STOREFRONT_REF),
             listing__is_active=True,
             is_published=True,
         ).values_list("product__sku", flat=True).distinct()
@@ -4794,7 +4770,7 @@ class Command(BaseCommand):
 
         blocked = []
         web_skus = ListingItem.objects.filter(
-            listing__ref="web",
+            listing__ref=STOREFRONT_REF,
             listing__is_active=True,
             is_published=True,
             is_sellable=True,
@@ -4807,7 +4783,7 @@ class Command(BaseCommand):
             is_sellable=True,
         ).order_by("sku")
         for product in products:
-            raw_availability = catalog_context.availability_for_sku(product.sku, channel_ref="web")
+            raw_availability = catalog_context.availability_for_sku(product.sku, channel_ref=STOREFRONT_REF)
             availability = catalog_context.storefront_availability(
                 raw_availability,
                 is_sellable=product.is_sellable,
@@ -5046,9 +5022,10 @@ class Command(BaseCommand):
             # sozinho ao pagar — o operador dá "Iniciar preparo" no gestor (a tela
             # do cliente só diz "Em preparo" quando alguém de fato encosta). PDV e
             # iFood ficam no default "auto" (operador presente / marketplace).
-            ("web", "Loja online", 2, True, {
+            (STOREFRONT_REF, "Loja online", 2, True, {
                 **_remote_config,
                 "short_name": "Site",
+                "order_ref_prefix": "NB",
                 "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
             }),
             ("ifood", "iFood", 3, True, {
@@ -5104,7 +5081,7 @@ class Command(BaseCommand):
         self.stdout.write("  📺 Canais de exibição...")
 
         pos_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
-        web_ref = "web"
+        web_ref = STOREFRONT_REF
 
         # `short_name` = rótulo da coluna estreita na matriz do Catálogo. O nome
         # completo continua valendo no Admin, onde ele diz QUAL TV é ("TV do Café" vs
@@ -5115,14 +5092,14 @@ class Command(BaseCommand):
         # formato nomeia.
         channels_data = [
             # (ref, name, short_name, format, prices_from, [collection_refs])
-            ("tv-salao", "TV do Salão", "TV2", "", pos_ref,
-             ["rusticos", "finos", "salgados"]),
-            ("tv-cafe", "TV do Café", "TV1", "", pos_ref,
-             ["bebidas-quentes", "bebidas-geladas", "torneira", "doces"]),
+            ("tv-1", "TV do Café", "TV1", "", pos_ref,
+             ["bebidas-quentes", "bebidas-geladas", "doces"]),
+            ("tv-2", "TV do Salão", "TV2", "", pos_ref,
+             ["rusticos", "macios", "folhados", "salgados"]),
             ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
-             ["rusticos", "finos", "salgados", "doces"]),
+             ["rusticos", "macios", "folhados", "salgados", "doces"]),
             ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
-             ["rusticos", "finos", "salgados", "doces"]),
+             ["rusticos", "macios", "folhados", "salgados", "doces"]),
         ]
 
         for ref, name, short_name, fmt, prices_from, collections in channels_data:
@@ -5157,7 +5134,7 @@ class Command(BaseCommand):
         order_count = 0
         customer_list = list(customers.values())
         product_list = list(products.values())
-        channel_list = [channels["pdv"], channels["web"], channels["whatsapp"]]
+        channel_list = [channels["pdv"], channels[STOREFRONT_REF], channels["whatsapp"]]
 
         # Seasonal demand multiplier based on current month
         current_month = now.month
@@ -5605,7 +5582,7 @@ class Command(BaseCommand):
         self.stdout.write("  🧪 Cenários de segurança/confiabilidade...")
 
         now = timezone.now()
-        web = channels.get("web")
+        web = channels.get(STOREFRONT_REF)
         product = products.get("CT") or next(iter(products.values()), None)
         if web is None or product is None:
             self.stdout.write("  ⏭️  Sem canal web/produto para cenários de borda")
@@ -7642,7 +7619,7 @@ class Command(BaseCommand):
 
         settled = self._make_qa_order(
             ref="DLV-ACERTADA",
-            channel_ref="web",
+            channel_ref=STOREFRONT_REF,
             status=Order.Status.READY,
             items=[self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}},
@@ -7662,7 +7639,7 @@ class Command(BaseCommand):
 
         on_the_road = self._make_qa_order(
             ref="DLV-NARUA",
-            channel_ref="web",
+            channel_ref=STOREFRONT_REF,
             status=Order.Status.READY,
             items=[self._qa_line(baguete, 3), self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 10000}},
@@ -8571,7 +8548,7 @@ class Command(BaseCommand):
                 if weekend_only and day.weekday() not in weekend_only:
                     continue
                 ShelfOutage.objects.get_or_create(
-                    sku=sku, channel_ref="web",
+                    sku=sku, channel_ref=STOREFRONT_REF,
                     started_at=self._at(day, soldout_hour),
                     defaults={
                         "reason": OutageReason.SOLD_OUT,
@@ -8582,7 +8559,7 @@ class Command(BaseCommand):
         pausado = "KP"
         if pausado in products:
             ShelfOutage.objects.get_or_create(
-                sku=pausado, channel_ref="web",
+                sku=pausado, channel_ref=STOREFRONT_REF,
                 started_at=self._at(today - timedelta(days=9), 9),
                 defaults={
                     "reason": OutageReason.PAUSED,

@@ -1384,6 +1384,11 @@ IMPORT_EXPORT_EXPORT_PERMISSION_CODE = "view"
 SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE", "")
 SHOPMAN_BACKUP_DRIVE_FOLDER = os.environ.get("SHOPMAN_BACKUP_DRIVE_FOLDER", "")
 
+# Ref do canal da loja online. Env-driven para o rename web→storefront acontecer
+# por deploy (flip da env + rename no banco), sem varrer a suíte inteira num dia
+# de esteira cheia; o default vira "storefront" no follow-up de faxina.
+SHOPMAN_STOREFRONT_CHANNEL_REF = os.environ.get("SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
+
 # Atalho de domínio para a planilha viva do cofre (BackupSheetDomainMiddleware):
 # o host redireciona (302) para a planilha; sem URL configurada, responde 404.
 SHOPMAN_BACKUP_SHEET_HOST = os.environ.get("SHOPMAN_BACKUP_SHEET_HOST", "")
