@@ -149,6 +149,16 @@ export function rowHasActivity(row: ProductionMatrixRowProjection): boolean {
   );
 }
 
+/** O texto que a bancada lê primeiro: o nome da ficha.
+ *  Cai no SKU quando a ficha não tem nome — a linha continua legível, e o
+ *  padeiro vê o código em vez de uma linha em branco. */
+export function rowLabel(row: {
+  recipe_name?: string;
+  output_sku: string;
+}): string {
+  return row.recipe_name?.trim() || row.output_sku;
+}
+
 /** Filter matrix rows by a free-text query over SKU + recipe name + WO refs.
  *  Refs matter for alert deep-links ("WO-2026-00042" lands on its row). */
 export function matchesRowQuery(

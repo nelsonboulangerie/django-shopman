@@ -224,7 +224,14 @@ function refreshAll() {
           <tbody class="divide-y">
             <tr v-for="item in lateOrders" :key="item.pk">
               <td class="px-3 py-2 font-mono text-xs">{{ item.ref }}</td>
-              <td class="px-3 py-2 font-medium">{{ item.output_sku }}</td>
+              <td class="px-3 py-2">
+                <p class="font-medium">
+                  {{ item.recipe_name || item.output_sku }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ item.output_sku }}
+                </p>
+              </td>
               <td class="px-3 py-2 text-right tabular-nums font-semibold text-amber-700 dark:text-amber-300">
                 {{ item.elapsed_minutes }}
               </td>

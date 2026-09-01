@@ -166,6 +166,29 @@ describe("ProductionStageGrid — produce render", () => {
     expect(byText(w, "button", "Processar")).toBeTruthy();
   });
 
+  it("nomeia a linha pelo produto e deixa o SKU na segunda linha", () => {
+    boardRows.value = [
+      row({
+        recipe_name: "Pão de fermentação natural",
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountGrid();
+    const lines = w.findAll("tbody td")[0]!.findAll("p");
+    expect(lines[0]!.text()).toBe("Pão de fermentação natural");
+    expect(lines[1]!.text()).toContain("PAO-001");
+  });
+
+  it("cai no SKU quando a ficha não tem nome — a linha não some", () => {
+    boardRows.value = [
+      row({ recipe_name: "", planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
+    ];
+    const w = mountGrid();
+    const lines = w.findAll("tbody td")[0]!.findAll("p");
+    expect(lines[0]!.text()).toBe("PAO-001");
+  });
+
   it("shows the welcoming empty state when nothing is planned", () => {
     boardRows.value = [];
     const w = mountGrid();

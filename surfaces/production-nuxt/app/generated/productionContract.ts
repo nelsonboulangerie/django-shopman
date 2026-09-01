@@ -304,6 +304,7 @@ export interface ProductionLateWorkOrderProjection {
   pk: number;
   ref: string;
   output_sku: string;
+  recipe_name: string;
   operator_ref: string;
   elapsed_minutes: number;
   target_minutes: number;

@@ -13,8 +13,10 @@ from shopman.craftsman.models import Recipe, WorkOrder
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.projections.production import (
+    build_production_board,
     build_production_dashboard,
     build_production_kds,
+    build_production_reports,
     build_work_order_card,
     resolve_production_access,
 )
@@ -62,6 +64,7 @@ def test_production_dashboard_projection_summarizes_day_and_late_orders(recipe):
     assert dashboard.average_yield_rate == "90%"
     assert dashboard.capacity_percent == 90
     assert dashboard.late_orders[0].ref == started.ref
+    assert dashboard.late_orders[0].recipe_name == "Produto Operacional"
 
 
 @pytest.mark.django_db
@@ -152,3 +155,53 @@ def test_stock_short_alert_created_once(recipe):
     )
 
     assert OperatorAlert.objects.filter(type="production_stock_short").count() == 1
+
+
+# ── Nome do produto nas listas da Produção ─────────────────────────────────
+# A bancada lê NOME; o SKU é o código que confirma qual é. As listas traziam o
+# `output_sku` nas duas linhas porque `recipe_name` era preenchido com o SKU —
+# "SKU / SKU". O nome vem da FICHA (`Recipe.name`), não do catálogo: a maior
+# parte do quadro são massas e pré-preparos, que não têm produto vendável.
+
+
+@pytest.mark.django_db
+def test_linhas_da_producao_trazem_o_nome_da_ficha_e_o_sku(recipe):
+    craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+
+    board = build_production_board(selected_date=date.today())
+    row = next(r for r in board.matrix_rows if r.output_sku == "PROD-OP")
+
+    assert row.recipe_name == "Produto Operacional"
+    assert row.output_sku == "PROD-OP"
+    assert row.planned_orders[0].recipe_name == "Produto Operacional"
+    assert row.planned_orders[0].output_sku == "PROD-OP"
+    assert "Produto Operacional" in {option.name for option in board.recipes}
+    reports = build_production_reports()
+    assert "Produto Operacional" in {option.name for option in reports.available_recipes}
+
+
+@pytest.mark.django_db
+def test_ficha_sem_nome_cai_no_sku_e_a_linha_continua_na_tela(db):
+    """Fallback honesto: sem nome, o SKU é a resposta — a linha nunca some.
+
+    ``Recipe.save`` valida e recusa nome vazio, então a ficha anônima só existe
+    por escrita que pula a validação (import, migração, fixture). O ``update``
+    abaixo é justamente isso: o guardrail é para o dado que chega torto, não
+    para o caminho feliz.
+    """
+    sem_nome = Recipe.objects.create(
+        ref="sem-nome-v1",
+        name="Provisório",
+        output_sku="SEM-NOME",
+        batch_size=Decimal("1"),
+    )
+    Recipe.objects.filter(pk=sem_nome.pk).update(name="")
+    sem_nome.refresh_from_db()
+    craft.plan(sem_nome, 5, date=date.today())
+
+    board = build_production_board(selected_date=date.today())
+    row = next(r for r in board.matrix_rows if r.output_sku == "SEM-NOME")
+
+    assert row.recipe_name == "SEM-NOME"
+    assert row.planned_orders[0].recipe_name == "SEM-NOME"
+    assert "SEM-NOME" in {option.name for option in board.recipes}
