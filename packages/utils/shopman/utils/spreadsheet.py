@@ -51,22 +51,32 @@ def needs_escape(text: str) -> bool:
     return text[0] in "+-" and not is_plain_number(text)
 
 
+def _dangerous_after_quotes(text: str) -> bool:
+    """Removidas TODAS as aspas iniciais, o resto viraria fórmula?
+
+    É a pergunta que os dois lados da bijeção fazem: quantas aspas há na
+    frente não importa — ``'=x``, ``''=x``, ``'''=x`` são todos "aspas +
+    perigo" e precisam do mesmo tratamento, senão o par escape/unescape
+    deixa de ser inverso a partir do segundo nível.
+    """
+    return needs_escape(text.lstrip("'"))
+
+
 def escape_cell(text: str) -> str:
     """Prefixa ``'`` no que viraria fórmula ao abrir no Sheets/Excel.
 
     Sem isto, um texto começando com ``=`` executa ao abrir a planilha E —
     pior, num ciclo de import — volta como o VALOR COMPUTADO, corrompendo o
-    dado. Também escapa ``'`` + texto perigoso, para ``unescape_cell`` ser a
-    inversa exata.
+    dado. Também escapa qualquer quantidade de ``'`` seguida de texto
+    perigoso: escapar sempre que ``unescape_cell`` removeria uma aspa é o
+    que mantém o par bijetivo em todos os níveis.
     """
-    if needs_escape(text) or (text.startswith("'") and needs_escape(text[1:])):
+    if _dangerous_after_quotes(text):
         return "'" + text
     return text
 
 
 def unescape_cell(text: str) -> str:
-    if text.startswith("'") and (needs_escape(text[1:]) or (
-        text[1:].startswith("'") and needs_escape(text[2:])
-    )):
+    if text.startswith("'") and _dangerous_after_quotes(text):
         return text[1:]
     return text
