@@ -1212,3 +1212,66 @@ def test_receipt_without_a_supplier_lot_keeps_the_derived_batch_ref(
     assert response.status_code == 200
     batch = Batch.objects.get(sku=material.sku)
     assert batch.ref.startswith("BUY-")
+
+
+@pytest.mark.django_db
+def test_cost_batch_requires_operate_purchase(client, material, supplier):
+    bare = User.objects.create_user("bare-cost-batch", password="pw", is_staff=True)
+    client.force_login(bare)
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={"supplierRef": supplier.ref, "costs": []},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_cost_batch_saves_many_and_returns_projection(client, purchase_operator, material, supplier):
+    outro = Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={
+            "supplierRef": supplier.ref,
+            "makePreferred": True,
+            "costs": [
+                {"materialSku": material.sku, "costInput": "180,00"},
+                {"materialSku": outro.sku, "costInput": "2,90"},
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    # A tela recebe a projeção junto: um gesto, um round-trip.
+    assert {row["sku"] for row in body["purchase"]["materials"]} >= {material.sku, outro.sku}
+    assert SupplierMaterialCost.objects.filter(is_preferred=True).count() == 2
+
+
+@pytest.mark.django_db
+def test_cost_batch_reports_the_offending_line(client, purchase_operator, material, supplier):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={
+            "supplierRef": supplier.ref,
+            "costs": [
+                {"materialSku": material.sku, "costInput": "180,00"},
+                {"materialSku": "NAO-EXISTE", "costInput": "1,00"},
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "cost_batch_invalid"
+    assert body["error"]["lines"][0]["index"] == 1
+    assert body["error"]["lines"][0]["materialSku"] == "NAO-EXISTE"
+    # Tudo-ou-nada: a linha boa também não entrou.
+    assert not SupplierMaterialCost.objects.exists()
