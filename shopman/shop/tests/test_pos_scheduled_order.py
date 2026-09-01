@@ -276,3 +276,58 @@ def test_review_desabilita_a_manha_e_aponta_a_primeira_possivel(balcao):
     assert por_ref["09:00-09:30"]["reason"] == "Baguette de Tradition sai às 12:00."
     assert por_ref["12:00-12:30"]["enabled"] is True
     assert review.delivery_earliest_slot == "12:00-12:30"
+
+
+# ── A venda de hoje NÃO vira encomenda ───────────────────────────────────────
+
+
+def test_data_de_HOJE_nao_adia_a_venda_de_balcao(balcao):
+    """O caso em que errar quebraria o balcão inteiro.
+
+    Agora que a retirada grava `delivery_date`, uma venda comum poderia passar a
+    escrever a data de HOJE — e se o lifecycle tratasse isso como encomenda, TODA
+    venda de balcão pararia de disparar KDS e baixa de estoque na hora, esperando
+    um despertador para a madrugada seguinte.
+
+    Não acontece porque a condição é `target > localdate()` (estritamente
+    futura). Este teste existe para que ela continue estritamente futura.
+    """
+    from shopman.orderman.models import Directive
+
+    operator, shift = balcao
+    hoje = timezone.localdate().isoformat()
+
+    result = _close(
+        operator,
+        _payload(shift, client_request_id="hoje-1", delivery_date=hoje),
+    )
+
+    order = Order.objects.get(ref=result.order_ref)
+    assert order.data["delivery_date"] == hoje
+    assert not Directive.objects.filter(
+        topic="preorder.activate", payload__order_ref=order.ref
+    ).exists()
+
+
+def test_a_fronteira_da_encomenda_e_ESTRITAMENTE_futura(balcao):
+    """O contraponto, na fronteira exata: hoje não adia, amanhã adia.
+
+    Testado no predicado (`_physical_work_deferred`) e não pelo pedido inteiro
+    de propósito: o agendamento só acontece depois que o pedido é ACEITO, e o
+    canal mínimo desta fixture deixa o pedido em `new`. O que precisa ficar
+    guardado aqui é a COMPARAÇÃO — `>` e não `>=` —, e ela não depende de
+    confirmação nenhuma. O fio inteiro (aceite → directive na madrugada da data)
+    já é coberto pelas suítes de lifecycle, e foi conferido no PDV real.
+    """
+    from shopman.shop.lifecycle import _physical_work_deferred
+
+    hoje = timezone.localdate()
+
+    class _Pedido:
+        def __init__(self, dia):
+            self.data = {"delivery_date": dia.isoformat()} if dia else {}
+
+    assert _physical_work_deferred(_Pedido(hoje)) is False
+    assert _physical_work_deferred(_Pedido(hoje + timezone.timedelta(days=1))) is True
+    assert _physical_work_deferred(_Pedido(hoje - timezone.timedelta(days=1))) is False
+    assert _physical_work_deferred(_Pedido(None)) is False
