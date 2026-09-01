@@ -20,8 +20,11 @@ def _positive_decimal(value, *, field: str = "quantity") -> Decimal:
         quantity = Decimal(str(value))
     except Exception as exc:
         raise CraftError("INVALID_QUANTITY", field=field, quantity=value) from exc
-    if quantity <= 0:
-        raise CraftError("INVALID_QUANTITY", field=field, quantity=float(quantity))
+    # `Decimal` aceita "NaN"/"Infinity" como números legítimos: o NaN estoura na
+    # comparação `<= 0` (InvalidOperation, que não é CraftError e vaza como 500),
+    # e o infinito passa reto e vira quantidade produzida. Não-finito é inválido.
+    if not quantity.is_finite() or quantity <= 0:
+        raise CraftError("INVALID_QUANTITY", field=field, quantity=str(quantity))
     return quantity
 
 

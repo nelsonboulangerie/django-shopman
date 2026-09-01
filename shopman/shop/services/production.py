@@ -512,7 +512,9 @@ def _get_active_recipe(recipe_id):
 def _positive_decimal(value, *, error: str = "quantidade inválida") -> Decimal:
     try:
         qty = Decimal(str(value).strip())
-        if qty <= 0:
+        # `Decimal("Infinity")` passa em `<= 0` (é False) e viraria quantidade
+        # infinita; não-finito é inválido tanto quanto `<= 0`.
+        if not qty.is_finite() or qty <= 0:
             raise ValueError
     except (InvalidOperation, ValueError, TypeError) as exc:
         raise ValueError(error) from exc
@@ -522,7 +524,7 @@ def _positive_decimal(value, *, error: str = "quantidade inválida") -> Decimal:
 def _non_negative_decimal(value, *, error: str = "quantidade inválida") -> Decimal:
     try:
         qty = Decimal(str(value).strip())
-        if qty < 0:
+        if not qty.is_finite() or qty < 0:
             raise ValueError
     except (InvalidOperation, ValueError, TypeError) as exc:
         raise ValueError(error) from exc
