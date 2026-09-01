@@ -174,11 +174,11 @@ useHead({
             </div>
 
             <div v-if="galleryThumbs.length" class="grid grid-cols-3 gap-3 pt-4">
-              <button
+              <UiButton
                 v-for="image in galleryThumbs"
                 :key="image"
-                type="button"
-                class="overflow-hidden rounded-lg border transition-shadow"
+                variant="ghost"
+                class="block h-auto w-full overflow-hidden rounded-lg border p-0"
                 :class="mainImage === image ? 'ring-2 ring-ring' : ''"
                 :aria-pressed="mainImage === image"
                 :aria-label="`Ver esta foto de ${product.name}`"
@@ -187,10 +187,10 @@ useHead({
                 <img
                   :src="image"
                   :alt="product.name"
-                  class="aspect-[4/3] size-full object-cover"
+                  class="aspect-[4/3] w-full object-cover"
                   loading="lazy"
                 >
-              </button>
+              </UiButton>
             </div>
           </section>
 
