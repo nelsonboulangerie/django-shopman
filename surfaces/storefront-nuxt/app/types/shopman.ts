@@ -464,6 +464,8 @@ export interface PublicConfigProjection {
   shop_latitude: number | null
   shop_longitude: number | null
   default_ddd: string
+  /** "Ambiente de testes" e afins. Vazio em produção — a tarja não renderiza. */
+  environment_notice: string
 }
 
 export interface HomeProjection {

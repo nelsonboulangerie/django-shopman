@@ -83,6 +83,11 @@ useSeoMeta({
       <SubstituteSheet />
       <OfflineBanner />
     </ClientOnly>
+    <!-- Fita de ambiente: FLUTUA no canto (fixed), então mora aqui com os
+         overlays e não no fluxo. Some sozinha em produção — o servidor devolve
+         a frase vazia. Fora do ClientOnly de propósito: quem abre a loja de
+         teste tem que ver o aviso no primeiro pixel, não depois da hidratação. -->
+    <EnvironmentRibbon />
     <UiSonner />
   </div>
 </template>
