@@ -85,9 +85,14 @@ class PosSaleReview:
     #: A data que o servidor usou — em branco no pedido, é HOJE (o relógio da
     #: loja, não o do dispositivo do balcão).
     delivery_date: str = ""
-    #: ``({"ref": "14:00-14:30", "label": "14:00 às 14:30"}, …)``. Vazio = não há
-    #: janela combinável nesse dia (fechado, feriado, ou o expediente já acabou).
+    #: ``({"ref", "label", "enabled", "reason"}, …)``. Vazio = não há janela
+    #: combinável nesse dia (fechado, feriado, ou o expediente já acabou) — bem
+    #: diferente de "todas desabilitadas", que é "há expediente, mas ESTE
+    #: carrinho não cabe neste dia".
     delivery_slots: tuple[dict, ...] = ()
+    #: A primeira janela oferecível deste dia para este carrinho, ou "". A tela
+    #: usa para pré-selecionar sem ter que refazer a conta do servidor.
+    delivery_earliest_slot: str = ""
 
 
 @dataclass(frozen=True)
@@ -284,6 +289,7 @@ def close_sale(
     approver = validate_manager_approval(payload, operator_username=operator_username)
     approved_by = approver.get_username() if approver is not None else ""
     _validate_fiscal_delivery_fee(payload)
+    _validate_schedule(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
         payload,
@@ -577,7 +583,7 @@ def review_sale(
     discount_q = _payload_discount_q(payload)
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
-    delivery_day, delivery_slots = _delivery_review_context(payload)
+    delivery_day, delivery_slots, delivery_earliest_slot = _schedule_review_context(payload)
     total_q = _payload_total_q(payload)
     tenders = _payload_tenders(
         payload,
@@ -722,32 +728,128 @@ def review_sale(
         delivery_distance_km=delivery.distance_km,
         delivery_date=delivery_day.isoformat() if delivery_day else "",
         delivery_slots=delivery_slots,
+        delivery_earliest_slot=delivery_earliest_slot,
     )
 
 
-def _delivery_review_context(payload: dict):
-    """A data e as janelas que a tela vai oferecer para esta entrega.
+def _schedule_review_context(payload: dict):
+    """A data e as janelas que a tela vai oferecer para este pedido.
 
     Data em branco no pedido é HOJE — e hoje é o dia da LOJA, lido do relógio do
     servidor. Deixar o dispositivo do balcão decidir parecia inofensivo até se
     lembrar de que um tablet com fuso errado agenda a entrega para ontem.
+
+    ⚠️ **Retirada responde também.** Isto já foi ``_delivery_review_context`` e
+    devolvia ``(None, ())`` para retirada, porque a data nasceu dentro do
+    formulário de entrega. Mas *quando* é fato do PEDIDO: a casa recebe encomenda
+    por telefone para retirar na quinta, e o balcão não tinha onde escrever isso.
+    A tela não oferecia porque o servidor não respondia.
+
+    As janelas vêm anotadas com a prontidão do carrinho: a que não cabe volta
+    desabilitada e com o motivo, nunca some da lista (ver ``fulfillment_window``).
     """
     from datetime import date as _date
 
-    from shopman.shop.services import business_calendar
-
-    if _payload_fulfillment_type(payload) != "delivery":
-        return None, ()
+    from shopman.shop.services import fulfillment_window
 
     raw = str(payload.get("delivery_date") or "").strip()
     if raw:
         try:
             day = _date.fromisoformat(raw)
         except ValueError:
-            return None, ()
+            return None, (), ""
     else:
         day = timezone.localdate()
-    return day, tuple(business_calendar.delivery_slots_for(day))
+
+    # ⚠️ A venda comum de balcão NÃO paga por esta pergunta.
+    #
+    # `annotate` consulta a prontidão, e a metade observada varre 30 dias de
+    # WorkOrder com `django_datetime_cast_date(finished_at)` — não-sargável e
+    # sem cache. Medido: +2 queries em toda review, inclusive nas vendas de
+    # retirada para agora, que são a esmagadora maioria e nunca vão agendar.
+    #
+    # Sem data e sem horário no payload não há agendamento em jogo: devolve o
+    # dia e uma grade vazia. Quem abre o diálogo busca em `/pos/schedule/`.
+    if not raw and not str(payload.get("delivery_time_slot") or "").strip():
+        return day, (), ""
+
+    context = fulfillment_window.annotate(day, _payload_skus(payload))
+    return day, tuple(context["windows"]), context["earliest_ref"]
+
+
+def _validate_schedule(payload: dict) -> None:
+    """A DATA e a JANELA combinadas têm que ser cumpríveis. Falha FECHADO.
+
+    A review já anota o que não cabe, mas review é tela: quem chega aqui é o
+    payload, e payload não passa por tela. Uma fila offline que reenvia um
+    rascunho de ontem, um relógio de tablet fora de hora, um operador que trocou o
+    item depois de escolher o horário — nos três a promessa impossível entraria
+    calada, e quem descobria era o cliente na porta.
+
+    ⚠️ **A data é conferida SEMPRE, mesmo sem horário escolhido**, e é a metade
+    que mais custa. Antes ela não era conferida em lugar nenhum: `pos_intent` a
+    trata como texto livre de 32 caracteres, e o commit a gravava como viesse.
+    Um dígito errado em "Outra data" — `2027` no lugar de `2026` — e o pedido
+    nascia `accepted` para daqui a um ano: sem ticket de cozinha, sem baixa de
+    estoque, sem fidelidade, sem notificação, e sem nada que alertasse ninguém.
+    O cliente tinha pago em dinheiro e ido embora com o comprovante.
+
+    A loja sempre guardou contra isso (`storefront/intents/checkout.py`); o
+    balcão era estritamente mais fraco. `max_preorder_days` até viajava na
+    projection do agendamento — e ninguém o aplicava, dos dois lados.
+
+    Janela em branco continua passando: "a combinar" é resposta legítima do
+    balcão, e exigir hora aqui inventaria fricção que a casa não tem.
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _timedelta
+
+    from shopman.shop.services import fulfillment_window
+
+    raw = str(payload.get("delivery_date") or "").strip()
+    hoje = timezone.localdate()
+    if raw:
+        try:
+            day = _date.fromisoformat(raw)
+        except ValueError:
+            raise ValueError("Data combinada inválida. Escolha uma data da lista.") from None
+        if day < hoje:
+            raise ValueError("A data combinada já passou. Escolha hoje ou uma data futura.")
+        teto = hoje + _timedelta(days=_max_preorder_days())
+        if day > teto:
+            raise ValueError(
+                f"A casa aceita encomenda até {teto.strftime('%d/%m/%Y')}. Escolha uma data mais próxima."
+            )
+    else:
+        day = hoje
+
+    window_ref = str(payload.get("delivery_time_slot") or "").strip()
+    if not window_ref:
+        return
+
+    error = fulfillment_window.validate(day, window_ref, _payload_skus(payload))
+    if error:
+        raise ValueError(error)
+
+
+def _max_preorder_days() -> int:
+    """Até quantos dias à frente a casa aceita encomenda (Admin, default 30)."""
+    try:
+        from shopman.shop.projections import checkout_context
+
+        return max(0, int(checkout_context.preorder_config()[0]))
+    except Exception:
+        logger.warning("pos: could not read max_preorder_days; using 30", exc_info=True)
+        return 30
+
+
+def _payload_skus(payload: dict) -> list[str]:
+    """Os SKUs do carrinho — a pergunta que a prontidão responde."""
+    return [
+        sku
+        for item in (payload.get("items") or [])
+        if isinstance(item, dict) and (sku := str(item.get("sku") or "").strip())
+    ]
 
 
 def open_pos_tab(
@@ -1502,6 +1604,10 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     order_notes = str(payload.get("order_notes") or "").strip()
     if order_notes:
         ops.append({"op": "set_data", "path": "order_notes", "value": order_notes})
+    # QUANDO é fato do pedido — retirada agenda como entrega agenda. Ficava
+    # dentro do bloco de entrega, e por isso a encomenda de retirada combinada no
+    # telefone nascia para hoje, calada.
+    _append_schedule_ops(ops, payload)
     if fulfillment_type == "delivery":
         _append_delivery_ops(ops, payload)
         # A LINHA é a cobrança (``Order.total_q`` é a soma das linhas), então ela
@@ -2881,6 +2987,21 @@ def _int_q(value) -> int:
         return 0
 
 
+def _append_schedule_ops(ops: list[dict], payload: dict) -> None:
+    """A data e a janela combinadas — de QUALQUER recebimento.
+
+    Irmãs de ``order_notes``, e pela mesma razão: ficavam presas ao bloco de
+    entrega, e o balcão perdia as duas na retirada. *Quando* é fato do PEDIDO;
+    só *onde* e *quanto* são fatos da entrega.
+    """
+    delivery_date = str(payload.get("delivery_date") or "").strip()
+    if delivery_date:
+        ops.append({"op": "set_data", "path": "delivery_date", "value": delivery_date})
+    delivery_time_slot = str(payload.get("delivery_time_slot") or "").strip()
+    if delivery_time_slot:
+        ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
+
+
 def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
@@ -2889,12 +3010,6 @@ def _append_delivery_ops(ops: list[dict], payload: dict) -> None:
     structured = payload.get("delivery_address_structured") or {}
     if isinstance(structured, dict) and structured:
         ops.append({"op": "set_data", "path": "delivery_address_structured", "value": structured})
-    delivery_date = str(payload.get("delivery_date") or "").strip()
-    if delivery_date:
-        ops.append({"op": "set_data", "path": "delivery_date", "value": delivery_date})
-    delivery_time_slot = str(payload.get("delivery_time_slot") or "").strip()
-    if delivery_time_slot:
-        ops.append({"op": "set_data", "path": "delivery_time_slot", "value": delivery_time_slot})
     # A taxa gravada é a RESOLVIDA (a mesma que a review mostrou e que entrou no
     # total), nunca um número solto do payload.
     delivery_fee_q = _payload_delivery_fee_q(payload)
@@ -3009,8 +3124,15 @@ def _mark_tab_committed(
         pos_data = dict(order_data.get("pos") or {})
         pos_data["client_request_id"] = client_request_id
         order_data["pos"] = pos_data
+    # Retirada não tem ENDEREÇO nem TAXA — isso continua sendo limpo.
+    #
+    # ⚠️ Mas a DATA e a JANELA ficam. Elas estavam nesta lista, e por isso um
+    # pedido de retirada agendado era literalmente impossível no balcão: o
+    # operador combinava quinta-feira às 10h com o cliente no telefone, e o
+    # commit apagava as duas coisas em silêncio — o pedido nascia para hoje.
+    # *Quando* é fato do PEDIDO; só *onde* e *quanto* são fatos da entrega.
     if order_data.get("fulfillment_type") != "delivery":
-        for key in ("delivery_address", "delivery_address_structured", "delivery_date", "delivery_time_slot", "delivery_fee_q", "delivery_fee_override_q"):
+        for key in ("delivery_address", "delivery_address_structured", "delivery_fee_q", "delivery_fee_override_q"):
             order_data.pop(key, None)
 
     fiscal = session_data.get("fiscal") or {}

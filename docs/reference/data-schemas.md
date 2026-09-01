@@ -19,7 +19,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
 | `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda |
-| `delivery_time_slot` | `string` | CheckoutView | CommitService | Ref do slot configurado em `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`); o label ("A partir das 09h") resolve via `storefront.services.pickup_slots.slot_label` |
+| `delivery_time_slot` | `string` | CheckoutView · PDV | CommitService | **Dois vocabulários na mesma chave, e a DATA decide qual.** Encomenda (data futura, loja e PDV) → ref do slot canônico de `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`; label via `shop.services.fulfillment_window.canonical_slots`). Venda para HOJE no PDV → janela de meia hora do expediente, onde o ref É o par de horas (`"14:00-14:30"`) e por isso se lê sozinho num pedido antigo. Quem escolhe a grade é `fulfillment_window._grid_for`; quem lê deve tolerar as duas formas. ⚠️ Ficou assim porque encomenda é TURNO ("a partir das 12h", promessa de fornada) e a entrega de hoje é JANELA (o combinado com o entregador) — são compromissos diferentes, e unificá-los perderia um dos dois. |
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
@@ -73,7 +73,7 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
   "fulfillment_type": "delivery",
   "delivery_address": "Rua das Flores 123 - Centro - Londrina",
   "delivery_date": "2026-04-01",
-  "delivery_time_slot": "slot-09",
+  "delivery_time_slot": "slot-09",        // encomenda; hoje no PDV vira "14:00-14:30"
   "order_notes": "Sem cebola",
   "origin_channel": "whatsapp",
   "coupon_code": "WELCOME10",
@@ -1063,6 +1063,7 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 |-------|------|-------------|----------|-----------|
 | `lead_time_hours` | `int` | seed/admin (Offerman) | `shop/services/lead_time.py` (checkout do storefront + gate de demanda em `shop/services/stock.hold`) | Antecedência mínima (horas) para registrar DEMANDA (encomenda para data sem fornada planejada). Sobrescreve `ChannelConfig.stock.default_lead_time_hours`. Não bloqueia encomenda com Quant planejado da data nem venda imediata do estoque físico de hoje. |
 | `made_to_order` | `bool` | seed/admin (Offerman: switch "Preparado na hora"; catálogo do operador) | `shop/projections/cart.py` → selo da sacola e da revisão | Promessa da casa: o item é **finalizado no momento de servir** (gratinado, montado, extraído). Vale mesmo quando ele sai da vitrine — é sobre o acabamento, não sobre a hora em que a massa foi feita. ⚠️ **Eixo próprio, e de propósito.** O selo já foi deduzido de `availability_policy == "demand_ok"`, que é conferência de ESTOQUE ("aprova a venda mesmo sem saldo"): no cardápio da casa as duas coincidem (café, salgados de vitrine), mas a coincidência não é contrato — marcar um pão como `demand_ok` por razão de estoque dava a ele o selo, e apertar o croque para `stock_only` tirava o selo, calado. Independente da fila de espera: um croque que espera a fornada de amanhã carrega os dois (o selo diz o que É, a fila diz quando vem). |
+| `ready_from` | `str` `"HH:MM"` | seed/admin (Offerman: campo "Pronto a partir de"; catálogo do operador) | `shop/services/product_readiness.py` → prontidão do SKU → janelas oferecidas na loja e no PDV | A que horas este produto fica pronto num dia normal. É a porta para a casa DIZER o que ela já sabe ("a baguete de tradição só sai depois do meio-dia") e é o que impede prometer esse pão para as 9h. ⚠️ **Piso, não teto.** A outra fonte é a mediana do término das WorkOrders recentes; quando as duas existem vence a **mais tarde** — um pão declarado para as 10h que há um mês sai às 11h30 não pode ser prometido para as 10h só porque o cadastro diz isso. Ausente = deduzir do histórico; e histórico ausente É o caso perigoso, porque antes desta chave ele liberava qualquer horário. Hora ilegível é recusada na porta (Admin e Gestor), nunca guardada — cadastro torto viraria "ninguém respondeu". |
 
 ---
 

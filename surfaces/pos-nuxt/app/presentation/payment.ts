@@ -101,6 +101,71 @@ export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number)
   return excess - Math.min(excess, cashTenderSumQ(tenders));
 }
 
+// ── DIVIDIR A CONTA ──────────────────────────────────────────────────
+//
+// "Somos três, cada um paga o seu." O trilho de tenders já dava conta disso — o
+// que faltava era o operador não ter que dividir 99,45 por 3 de cabeça, com os
+// três clientes olhando.
+//
+// A divisão NÃO cria três linhas de uma vez. Ela muda o tamanho da PRÓXIMA
+// linha: com "3 pessoas" ligado, tocar em Dinheiro lança um terço, tocar em
+// Cartão lança o segundo terço, e assim por diante. É o fluxo do Odoo (pagamento
+// parcial sucessivo), com a conta feita pela máquina — e ele compõe com tudo o
+// que já existe: cada pessoa escolhe a SUA forma, o teclado continua editando
+// qualquer linha, e "Exato" continua fechando o resto.
+
+/** Quantas pessoas a tela oferece com um toque. Acima disso é caso raro. */
+export const SPLIT_PRESETS = [2, 3, 4, 5, 6];
+
+/**
+ * Quanto vale a próxima linha numa conta dividida em ``count`` pessoas.
+ *
+ * A distribuição é por acumulação (``round(total·k/n) − round(total·(k−1)/n)``),
+ * que é o único jeito de os centavos fecharem SEMPRE: dividir 100,00 por 3 dá
+ * 33,34 + 33,33 + 33,33, e nunca 33,33 três vezes com um centavo órfão que o
+ * operador teria que caçar.
+ *
+ * A ÚLTIMA parcela leva o que restou, não a fração nominal. Isso é o que mantém
+ * a conta fechada mesmo depois de o operador editar uma linha no teclado — e
+ * editar acontece o tempo todo ("esse aqui vai pagar os R$ 50, o resto divide").
+ *
+ * ``paidCount`` é quantas linhas já existem; ``remainingQ`` é o que falta.
+ */
+export function splitShareQ(
+  totalQ: number,
+  count: number,
+  paidCount: number,
+  remainingQ: number,
+): number {
+  const restante = Math.max(0, remainingQ);
+  if (count <= 1 || restante <= 0) return restante;
+  // Última parcela (ou já passou do combinado): fecha a conta.
+  if (paidCount >= count - 1) return restante;
+  const share =
+    Math.round((totalQ * (paidCount + 1)) / count) - Math.round((totalQ * paidCount) / count);
+  return Math.min(Math.max(0, share), restante);
+}
+
+/**
+ * "R$ 33,34 · 1 de 3" — o estado da divisão em uma linha.
+ *
+ * O operador precisa saber quanto pedir à PESSOA À SUA FRENTE e quantas faltam,
+ * e essas duas coisas mudam a cada linha lançada.
+ */
+export function splitHint(
+  totalQ: number,
+  count: number,
+  paidCount: number,
+  remainingQ: number,
+): string {
+  if (count <= 1) return "";
+  const restante = Math.max(0, remainingQ);
+  if (restante <= 0) return `Dividido em ${count}. Total coberto.`;
+  const proxima = splitShareQ(totalQ, count, paidCount, restante);
+  const pessoa = Math.min(paidCount + 1, count);
+  return `${formatBRL(proxima)} · pessoa ${pessoa} de ${count}`;
+}
+
 /** UX gate: at least one tender and the total fully covered. */
 export function isPaymentCovered(tenders: POSPaymentTenderDraft[], totalQ: number): boolean {
   return tenders.length > 0 && paymentRemainingQ(tenders, totalQ) <= 0;

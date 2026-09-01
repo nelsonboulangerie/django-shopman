@@ -181,3 +181,179 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
     h.handles.dispose();
   });
 });
+
+describe("usePosSale — dividir a conta", () => {
+  let h: ReturnType<typeof saleWithTotal1000>;
+
+  beforeEach(() => {
+    h = saleWithTotal1000();
+  });
+  afterEach(() => h.handles.dispose());
+
+  it("sem divisão, o primeiro toque continua levando o total inteiro", () => {
+    const { sale } = h;
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+  });
+
+  it("dividido em 2, cada toque lança metade", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(false);
+
+    sale.addTender("card");
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(true);
+    expect(sale.paymentRemainingQ.value).toBe(0);
+  });
+
+  it("cada pessoa escolhe a SUA forma — é o ponto todo da divisão", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    sale.addTender("pix");
+
+    expect(sale.cart.paymentTenders.map((t) => t.method)).toEqual(["cash", "pix"]);
+  });
+
+  it("dividido em 3 numa conta que não fecha redondo, os centavos FECHAM", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.addTender("cash");
+    sale.addTender("cash");
+
+    // Sem isto sobraria um centavo órfão para o operador caçar com os três
+    // clientes olhando.
+    expect(sale.cart.paymentTenders.reduce((sum, t) => sum + t.amount_q, 0)).toBe(1000);
+    expect(sale.paymentRemainingQ.value).toBe(0);
+    expect(sale.paymentCovered.value).toBe(true);
+  });
+
+  it("a última parcela fecha a conta mesmo depois de o operador editar uma linha", () => {
+    // "Esse aqui paga R$ 6,00, o resto divide" — acontece o tempo todo.
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.tenderDigit("6");           // primeira linha vira R$ 6,00
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(600);
+
+    sale.addTender("card");
+    sale.addTender("pix");
+    expect(sale.paymentRemainingQ.value).toBe(0);
+  });
+
+  it("tocar de novo no mesmo número DESLIGA a divisão", () => {
+    // Mudar de ideia sobre dividir é rotina; um botão que só liga obrigaria o
+    // operador a caçar um "cancelar".
+    const { sale } = h;
+    sale.setSplitCount(3);
+    expect(sale.splitCount.value).toBe(3);
+
+    sale.setSplitCount(3);
+    expect(sale.splitCount.value).toBe(0);
+
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+  });
+
+  it("trocar o número de pessoas vale para a PRÓXIMA parcela", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");          // R$ 5,00
+    sale.setSplitCount(4);           // "na verdade somos quatro"
+
+    sale.addTender("card");
+    // Restam R$ 5,00 e já há 1 linha: a parcela 2 de 4 vale R$ 2,50.
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(250);
+  });
+
+  it("a frase diz quanto pedir e de quem é a vez", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    expect(sale.splitNote.value).toContain("pessoa 1 de 2");
+
+    sale.addTender("cash");
+    expect(sale.splitNote.value).toContain("pessoa 2 de 2");
+  });
+
+  it("com o total já coberto, tocar numa forma continua sendo no-op", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    sale.addTender("card");
+    vi.mocked(toast.info).mockClear();
+
+    sale.addTender("pix");
+    expect(sale.cart.paymentTenders).toHaveLength(2);
+    expect(vi.mocked(toast.info)).toHaveBeenCalled();
+  });
+});
+
+describe("usePosSale — a divisão conta PESSOAS, não linhas", () => {
+  let h: ReturnType<typeof saleWithTotal1000>;
+
+  beforeEach(() => {
+    h = saleWithTotal1000();
+  });
+  afterEach(() => h.handles.dispose());
+
+  it("uma pessoa pagando com DUAS formas não queima dois slots", () => {
+    // ⚠️ A variação mais comum do balcão: "R$ 2,00 em dinheiro e o resto no
+    // cartão". Contando LINHAS, a tela pulava para "pessoa 3 de 3", o operador
+    // lia o valor errado em voz alta e a terceira pessoa ficava sem ser
+    // cobrada. O caixa fechava (a última parcela absorve o resto); os três
+    // clientes não.
+    const { sale } = h;
+    sale.setSplitCount(3);
+
+    sale.addTender("cash");          // pessoa 1 começa
+    sale.tenderDigit("2");           // ...paga só R$ 2,00 em dinheiro
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(200);
+
+    // A segunda forma da MESMA pessoa entra pelo teclado/cédula, não por
+    // addTender — então a fila não anda.
+    expect(sale.splitPaidCount.value).toBe(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("remover uma linha devolve a pessoa para a fila", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.addTender("card");
+    expect(sale.splitNote.value).toContain("pessoa 3 de 3");
+
+    sale.removeTender(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("trocar o número de pessoas recomeça a fila", () => {
+    // "Na verdade somos quatro" é dito ANTES de alguém pagar; herdar a contagem
+    // faria a próxima parcela sair do lugar errado da fila.
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    expect(sale.splitPaidCount.value).toBe(1);
+
+    sale.setSplitCount(4);
+    expect(sale.splitPaidCount.value).toBe(0);
+    expect(sale.splitNote.value).toContain("pessoa 1 de 4");
+  });
+
+  it("e a conta continua fechando exatamente", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.tenderDigit("2");   // pessoa 1 paga R$ 2,00...
+    sale.addTender("card");  // ...e o resto no cartão dela
+    sale.addTender("pix");
+    sale.addTender("cash");
+
+    expect(sale.paymentRemainingQ.value).toBe(0);
+    expect(sale.cart.paymentTenders.reduce((s, t) => s + t.amount_q, 0)).toBe(1000);
+  });
+});

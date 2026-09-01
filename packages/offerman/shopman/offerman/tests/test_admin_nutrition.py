@@ -206,3 +206,44 @@ def test_form_rejects_invalid_invariant():
     )
     form = ProductAdminForm(data=data, instance=product)
     assert not form.is_valid()
+
+
+def test_form_declares_the_ready_time():
+    """"Pronto a partir de" chega normalizado ao metadata."""
+    product = Product.objects.create(sku="BF", name="Baguette", base_price_q=1600)
+    form = ProductAdminForm(
+        data=_base_data(sku="BF", name="Baguette", ready_from="9:5"), instance=product
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    saved.refresh_from_db()
+    assert saved.metadata["ready_from"] == "09:05"
+
+
+def test_form_refuses_an_unreadable_ready_time():
+    """Hora ilegível DÓI na porta.
+
+    Guardá-la seria pior: o cadastro diria que a casa respondeu, e o resto do
+    sistema agiria como se ninguém tivesse respondido — que é justamente o estado
+    que libera qualquer horário ao cliente.
+    """
+    product = Product.objects.create(sku="BF2", name="Baguette", base_price_q=1600)
+    form = ProductAdminForm(
+        data=_base_data(sku="BF2", name="Baguette", ready_from="12h"), instance=product
+    )
+    assert not form.is_valid()
+    assert "ready_from" in form.errors
+
+
+def test_form_clears_the_ready_time_when_emptied():
+    """Em branco APAGA — a casa pode devolver a palavra ao histórico."""
+    product = Product.objects.create(
+        sku="BF3", name="Baguette", base_price_q=1600, metadata={"ready_from": "12:00"}
+    )
+    form = ProductAdminForm(
+        data=_base_data(sku="BF3", name="Baguette", ready_from=""), instance=product
+    )
+    assert form.is_valid(), form.errors
+    saved = form.save()
+    saved.refresh_from_db()
+    assert "ready_from" not in saved.metadata

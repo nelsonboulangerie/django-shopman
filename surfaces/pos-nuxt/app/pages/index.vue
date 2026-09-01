@@ -5,6 +5,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
 import { askedMarkFor, shouldAskFulfillment } from "~/presentation/fulfillmentPrompt";
+import { isScheduled, scheduleChipTone, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 import { enterAdvances } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -95,6 +96,16 @@ const {
   deliverySlots,
   deliverySlotsPending,
   deliveryDateEffective,
+  scheduleToday,
+  scheduleAvailableDates,
+  scheduleBottleneckName,
+  scheduleReadyAt,
+  scheduleFailed,
+  scheduleMaxDate,
+  refreshSchedule,
+  splitCount,
+  splitNote,
+  setSplitCount,
   selectedTenderMethod,
   tabDialogTitle,
   tabDialogDescription,
@@ -332,6 +343,10 @@ const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 // abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
 // funcionando lá dentro sem passar por cima desta.
 const fulfillmentSheetOpen = ref(false);
+// QUANDO — terceira caixa da barra, irmã de Cliente e Recebimento. Vive na tela
+// de venda porque agendar acontece na ABERTURA do atendimento (o operador está no
+// telefone), não no fim. O checkout abre a MESMA caixa.
+const scheduleSheetOpen = ref(false);
 
 // A PRIMEIRA PERGUNTA DO ATENDIMENTO — "é pra comer aqui ou pra levar?".
 //
@@ -390,6 +405,38 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
 
+// O chip da barra abre a caixa de quem é DONO dela na tela atual — no checkout, a
+// da tela de pagamento. As duas estão montadas ao mesmo tempo; sem este desvio,
+// o chip abriria a da tela de venda por cima do pagamento, e o "Quando" dentro do
+// Recebimento abriria a outra. Duas caixas para a mesma pergunta na mesma tela é
+// exatamente o que a barra de contexto veio desfazer (mesmo desvio de
+// `openFulfillmentHere`).
+function openScheduleHere() {
+  // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
+  // dominante do balcão é para agora e não paga por essa pergunta.
+  void refreshSchedule();
+  if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
+  else scheduleSheetOpen.value = true;
+}
+// O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
+// campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
+// parecer que falta preencher alguma coisa.
+const scheduleChipLabel = computed(() => scheduleLabel(
+  cart.deliveryDate,
+  windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
+  scheduleToday.value,
+));
+const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+// A escolha que virou impossível SOZINHA (o operador marcou 09:00 e só depois
+// lançou a baguete). O chip é onde ele olha de relance; sem isto ele só
+// descobria num 422 seco no Finalizar, com o cliente já tendo ouvido o horário.
+const scheduleChipConflict = computed(
+  () => scheduleChipTone(deliverySlots.value, cart.deliveryTimeSlot) === "conflict",
+);
+const scheduleConflictReason = computed(
+  () => selectedWindowConflict(deliverySlots.value, cart.deliveryTimeSlot),
+);
+
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
 const fulfillmentChipLabel = computed(() => {
@@ -403,6 +450,7 @@ const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
   openFulfillment: () => void;
+  openSchedule: () => void;
   openDiscount: () => void;
   pressMethodKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => void;
@@ -662,6 +710,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
+          :schedule-label="scheduleChipLabel"
+          :scheduled="scheduleChipActive"
+          :schedule-conflict="scheduleChipConflict"
+          :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
@@ -673,6 +725,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
           @open-fulfillment="openFulfillmentHere"
+          @open-schedule="openScheduleHere"
           @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
@@ -765,6 +818,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:order-notes="cart.orderNotes"
         v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
+        :schedule-today="scheduleToday"
+        :schedule-available-dates="scheduleAvailableDates"
+        :schedule-bottleneck-name="scheduleBottleneckName"
+        :schedule-ready-at="scheduleReadyAt"
+        :schedule-failed="scheduleFailed"
+        :schedule-max-date="scheduleMaxDate"
+        :split-count="splitCount"
+        :split-note="splitNote"
         :managers="pos?.managers || []"
         :operator-name="activeOperator?.name || ''"
         :tab-display="cart.tabDisplay"
@@ -796,6 +857,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @add-tender="addTender"
         @remove-tender="removeTender"
         @select-tender="selectTender"
+        @set-split-count="setSplitCount"
         @tender-digit="tenderDigit"
         @tender-comma="tenderComma"
         @tender-backspace="tenderBackspace"
@@ -947,21 +1009,35 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       v-model:delivery-neighborhood="cart.deliveryNeighborhood"
       v-model:delivery-complement="cart.deliveryComplement"
       v-model:delivery-instructions="cart.deliveryInstructions"
-      v-model:delivery-date="cart.deliveryDate"
-      v-model:delivery-time-slot="cart.deliveryTimeSlot"
       v-model:delivery-fee-override="cart.deliveryFeeOverride"
       v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
       v-model:order-notes="cart.orderNotes"
       :fulfillment-options="pos?.fulfillment_options || []"
       :saved-addresses="customerLookup?.saved_addresses || []"
       :address-autocomplete="addressAutocomplete"
-      :delivery-date-effective="deliveryDateEffective"
-      :delivery-slots="deliverySlots"
-      :delivery-slots-pending="deliverySlotsPending"
+      :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
       :delivery-fee-source="deliveryFeeSource"
       :delivery-distance-km="deliveryDistanceKm"
       @pick-saved-address="applySavedAddress"
+      @open-schedule="openScheduleHere"
+    />
+
+    <!-- QUANDO — data e janela, para retirada E entrega. Extraído do formulário
+         de entrega, onde a retirada agendada era literalmente impossível. -->
+    <PosScheduleModal
+      v-model:open="scheduleSheetOpen"
+      v-model:delivery-date="cart.deliveryDate"
+      v-model:delivery-time-slot="cart.deliveryTimeSlot"
+      :today="scheduleToday"
+      :delivery-date-effective="deliveryDateEffective"
+      :available-dates="scheduleAvailableDates"
+      :windows="deliverySlots"
+      :bottleneck-name="scheduleBottleneckName"
+      :ready-at="scheduleReadyAt"
+      :pending="deliverySlotsPending"
+      :failed="scheduleFailed"
+      :max-date="scheduleMaxDate"
     />
 
     <PosTabPickerDialog

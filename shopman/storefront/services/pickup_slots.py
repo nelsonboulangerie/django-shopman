@@ -1,10 +1,9 @@
-"""Pickup slot service — maps products to time slots based on production history.
+"""Pickup slot service — casa os produtos do carrinho com as janelas da loja.
 
-Each product has a "typical ready time" derived from the median finish time
-of its recent WorkOrders.  When a customer builds a cart with multiple items
-and chooses a date, the earliest available pickup slot is the one that covers
-both the latest typical_ready_time among all items and, only for today, the
-current wall clock.
+Cada produto tem uma hora de prontidão (declarada pela casa em
+``Product.metadata["ready_from"]`` e/ou observada nas WorkOrders recentes — ver
+``shop/services/product_readiness``). Escolhida a data, a janela de retirada mais
+cedo é a que cobre a MAIOR prontidão entre os itens e, só para hoje, o relógio.
 
 Configuration lives in Shop.defaults["pickup_slots"] (admin-editable):
 
@@ -18,8 +17,7 @@ Configuration lives in Shop.defaults["pickup_slots"] (admin-editable):
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, time, timedelta
-from statistics import median
+from datetime import date, datetime, time
 
 logger = logging.getLogger(__name__)
 
@@ -185,17 +183,16 @@ def is_slot_available_for_today(
 
 
 def get_slots() -> list[dict]:
-    """Return configured pickup slots from Shop.defaults, or defaults."""
-    try:
-        from shopman.shop.models import Shop
-        shop = Shop.load()
-        if shop:
-            slots = (shop.defaults or {}).get("pickup_slots")
-            if slots:
-                return slots
-    except Exception:
-        logger.debug("pickup_slots: could not load configured slots", exc_info=True)
-    return list(DEFAULT_SLOTS)
+    """Os slots de encomenda da casa — UMA fonte, lida do orquestrador.
+
+    Delegado a ``shop/services/fulfillment_window.canonical_slots`` porque o PDV
+    faz a MESMA pergunta e não pode importar o storefront. Duas leituras da mesma
+    configuração acabariam divergindo, e a divergência apareceria como o cliente
+    ouvindo um horário no telefone e lendo outro no acompanhamento.
+    """
+    from shopman.shop.services.fulfillment_window import canonical_slots
+
+    return canonical_slots()
 
 
 def get_slot_config() -> dict:
@@ -216,69 +213,27 @@ def get_typical_ready_times(
     history_days: int | None = None,
     rounding_minutes: int | None = None,
 ) -> dict[str, time]:
-    """Compute typical ready time per SKU from WorkOrder finish history.
+    """A que horas cada SKU fica pronto — declarado pela casa e/ou observado.
 
-    Looks at WorkOrders completed in the last ``history_days`` days,
-    takes the median finish time-of-day, and rounds UP to the nearest
-    ``rounding_minutes`` boundary.
+    A conta em si mora em ``shop/services/product_readiness``, porque o PDV faz
+    a MESMA pergunta e não pode importar o storefront. Aqui fica só a leitura da
+    configuração da loja (``pickup_slot_config``), que é vocabulário desta
+    superfície.
 
-    Returns ``{sku: time}`` for SKUs that have production history.
-    SKUs without data are omitted (caller uses fallback slot).
+    Devolve ``{sku: time}`` para os SKUs com hora conhecida. SKU sem declaração
+    E sem histórico é omitido — quem chama decide o que fazer com o silêncio.
     """
+    from shopman.shop.services import product_readiness
+
     config = get_slot_config()
     if history_days is None:
         history_days = config.get("history_days", DEFAULT_HISTORY_DAYS)
     if rounding_minutes is None:
         rounding_minutes = config.get("rounding_minutes", DEFAULT_ROUNDING_MINUTES)
 
-    try:
-        from shopman.shop.adapters import get_adapter
-        production = get_adapter("production")
-    except ImportError:
-        return {}
-
-    cutoff = _local_date() - timedelta(days=history_days)
-
-    # Single query: all finished WorkOrders for these SKUs in the window
-    wos = production.get_finished_work_orders(skus, cutoff)
-
-    # Group finish times by SKU
-    times_by_sku: dict[str, list[float]] = {}
-    for sku, finished_at in wos:
-        # Convert to local time, extract time-of-day as minutes since midnight
-        if hasattr(finished_at, "astimezone"):
-            from django.utils import timezone as tz
-            local_dt = finished_at.astimezone(tz.get_current_timezone())
-        else:
-            local_dt = finished_at
-        minutes = local_dt.hour * 60 + local_dt.minute
-        times_by_sku.setdefault(sku, []).append(minutes)
-
-    result: dict[str, time] = {}
-    for sku, minutes_list in times_by_sku.items():
-        if not minutes_list:
-            continue
-        median_minutes = median(minutes_list)
-        rounded = _round_up_minutes(median_minutes, rounding_minutes)
-        h = min(int(rounded // 60), 23)
-        m = int(rounded % 60)
-        result[sku] = time(h, m)
-
-    return result
-
-
-def _round_up_minutes(minutes: float, granularity: int) -> int:
-    """Round minutes UP to the nearest granularity boundary.
-
-    >>> _round_up_minutes(330, 30)  # 5:30 → 5:30 (exact)
-    330
-    >>> _round_up_minutes(331, 30)  # 5:31 → 6:00
-    360
-    >>> _round_up_minutes(690, 30)  # 11:30 → 11:30 (exact)
-    690
-    """
-    import math
-    return int(math.ceil(minutes / granularity) * granularity)
+    return product_readiness.ready_times_for(
+        skus, history_days=history_days, rounding_minutes=rounding_minutes
+    )
 
 
 def get_earliest_slot_for_skus(

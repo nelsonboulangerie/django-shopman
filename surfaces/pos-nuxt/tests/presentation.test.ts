@@ -40,6 +40,8 @@ import {
   paymentProofView,
   paymentRemainingQ,
   qrCodeSrc,
+  splitHint,
+  splitShareQ,
   tenderLineView,
   tenderSumQ,
 } from "../app/presentation/payment";
@@ -1056,5 +1058,78 @@ describe("atalhos das formas de pagamento", () => {
     const keys = methodShortcuts([m("cash", "Dinheiro"), m("debit", "Débito")]);
     expect(keys).toEqual({ cash: "D" });
     expect(keys.debit).toBeUndefined();
+  });
+});
+
+describe("dividir a conta — a máquina faz a conta, não o operador", () => {
+  it("dois iguais numa conta par", () => {
+    expect(splitShareQ(10000, 2, 0, 10000)).toBe(5000);
+    expect(splitShareQ(10000, 2, 1, 5000)).toBe(5000);
+  });
+
+  it("os centavos FECHAM numa conta que não divide redondo", () => {
+    // 100,00 ÷ 3. Três vezes 33,33 deixaria um centavo órfão para o operador
+    // caçar com três clientes olhando.
+    const total = 10000;
+    let restante = total;
+    const parcelas: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const parcela = splitShareQ(total, 3, i, restante);
+      parcelas.push(parcela);
+      restante -= parcela;
+    }
+    // O centavo sobrando cai na parcela do MEIO — consequência da acumulação
+    // (round(10000·2/3) = 6667). Onde ele cai não importa; que a soma feche, sim.
+    expect(parcelas).toEqual([3333, 3334, 3333]);
+    expect(parcelas.reduce((a, b) => a + b, 0)).toBe(total);
+    expect(restante).toBe(0);
+  });
+
+  it("fecha para qualquer total e qualquer número de pessoas", () => {
+    for (const total of [1, 99, 4245, 9945, 123457]) {
+      for (const n of [2, 3, 4, 5, 6, 7]) {
+        let restante = total;
+        for (let i = 0; i < n; i++) restante -= splitShareQ(total, n, i, restante);
+        expect(restante).toBe(0);
+      }
+    }
+  });
+
+  it("a ÚLTIMA parcela leva o que restou, mesmo depois de o operador editar", () => {
+    // "Esse aqui paga os R$ 50, o resto divide": a primeira linha foi editada
+    // para 5000 num total de 9945, dividido em 3.
+    const total = 9945;
+    // já existem 2 linhas somando 5000 + 2000 → faltam 2945
+    expect(splitShareQ(total, 3, 2, 2945)).toBe(2945);
+  });
+
+  it("nunca lança mais do que falta", () => {
+    expect(splitShareQ(10000, 4, 0, 900)).toBe(900);
+  });
+
+  it("sem divisão, a próxima linha é o restante inteiro", () => {
+    expect(splitShareQ(10000, 1, 0, 10000)).toBe(10000);
+    expect(splitShareQ(10000, 0, 0, 7000)).toBe(7000);
+  });
+
+  it("total já coberto não lança nada", () => {
+    expect(splitShareQ(10000, 3, 1, 0)).toBe(0);
+  });
+});
+
+describe("splitHint — quanto pedir a quem está na frente", () => {
+  it("diz o valor e de quem é a vez", () => {
+    // ⚠️ `formatBRL` separa com espaço NÃO-QUEBRÁVEL. Comparar com um espaço
+    // comum passa despercebido na leitura e reprova no runner.
+    expect(splitHint(9945, 3, 0, 9945)).toBe(`${formatBRL(3315)} · pessoa 1 de 3`);
+    expect(splitHint(9945, 3, 1, 6630)).toBe(`${formatBRL(3315)} · pessoa 2 de 3`);
+  });
+
+  it("coberto, avisa que acabou", () => {
+    expect(splitHint(9945, 3, 3, 0)).toBe("Dividido em 3. Total coberto.");
+  });
+
+  it("sem divisão, sem frase", () => {
+    expect(splitHint(9945, 1, 0, 9945)).toBe("");
   });
 });

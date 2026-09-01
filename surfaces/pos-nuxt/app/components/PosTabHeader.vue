@@ -27,6 +27,13 @@ const props = defineProps<{
   fulfillmentType: "pickup" | "delivery";
   /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
   fulfillmentLabel: string;
+  /** Quando o cliente quer o pedido: "Para hoje", "qui, 10/09, 10:00 às 10:30". */
+  scheduleLabel: string;
+  /** O pedido é para outro dia — muda o ícone e o realce do botão. */
+  scheduled: boolean;
+  /** O horário escolhido virou impossível (item lançado depois da escolha). */
+  scheduleConflict?: boolean;
+  scheduleConflictReason?: string;
   loading: boolean;
 }>();
 
@@ -45,6 +52,7 @@ const emit = defineEmits<{
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
   openFulfillment: [];
+  openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
    *  tela seria a duplicação que esta barra veio justamente desfazer. */
@@ -153,6 +161,29 @@ function runClear() {
     >
       <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
       <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+    </button>
+
+    <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
+         ENTREGA, e por isso a retirada agendada não existia: a casa recebe
+         encomenda por telefone e o balcão não tinha onde escrever isso.
+         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
+    <button
+      v-if="hasOpenTab"
+      type="button"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="scheduleConflict
+        ? 'border-destructive bg-destructive/10 text-destructive'
+        : (scheduled ? 'border-primary bg-primary/5' : 'border-border')"
+      aria-haspopup="dialog"
+      :title="scheduleConflictReason || ''"
+      @click="$emit('openSchedule')"
+    >
+      <Icon
+        :name="scheduleConflict ? 'lucide:triangle-alert' : (scheduled ? 'lucide:calendar-clock' : 'lucide:clock')"
+        class="size-4 shrink-0"
+        :class="scheduleConflict ? '' : 'text-muted-foreground'"
+      />
+      <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
     </button>
 
     <!-- release tab (pushed to the right of the context bar) -->

@@ -2430,6 +2430,65 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
     }
 
 
+def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
+    """O "quando" do pedido, para a tela poder PERGUNTAR em vez de adivinhar.
+
+    A review responde isso no checkout, mas o agendamento acontece na ABERTURA do
+    atendimento — o operador está no telefone com o cliente e ainda nem lançou
+    tudo. Ficar sem resposta até a tela de pagamento é o que empurrava a data
+    para o fim do fluxo, onde ela nunca deveria ter morado.
+
+    Devolve as datas que a casa realmente opera (pula fechado e feriado, com o
+    teto de ``max_preorder_days``) e as janelas do dia escolhido, cada uma já
+    anotada com a prontidão DESTE carrinho.
+    """
+    from datetime import date as _date
+
+    from shopman.shop.services import business_calendar, fulfillment_window
+
+    today = _delivery_today()
+    max_preorder_days, _closed = _preorder_days()
+
+    raw = str(delivery_date or "").strip()
+    try:
+        day = _date.fromisoformat(raw) if raw else today
+    except ValueError:
+        day = today
+
+    context = fulfillment_window.annotate(day, list(skus or []))
+    dates = business_calendar.available_dates(
+        max_count=max_preorder_days + 1, horizon_days=max_preorder_days
+    )
+    return {
+        "today": today.isoformat(),
+        "date": day.isoformat(),
+        "max_preorder_days": max_preorder_days,
+        # As datas OPERANTES, não um intervalo cru: um seletor que oferece o
+        # domingo em que a casa não abre é uma promessa que o calendário já sabia
+        # que era falsa.
+        "available_dates": [d.isoformat() for d in dates],
+        "windows": list(context["windows"]),
+        "earliest_window_ref": context["earliest_ref"],
+        # O gargalo por extenso, para a tela dizer o PORQUÊ uma vez só no topo em
+        # vez de repetir a mesma frase em dez janelas apagadas.
+        "ready_at": context["ready_at"],
+        "bottleneck_name": context["bottleneck_name"],
+        # Qual grade veio: HOJE fala em janela ("14:00 às 14:30"), encomenda fala
+        # em turno ("a partir das 12h"). A tela usa para escolher a palavra.
+        "grid": context["grid"],
+        "is_today": context["is_today"],
+        # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
+        # "sem restrição" — todas as janelas voltam desabilitadas.
+        "readiness_unavailable": bool(context.get("readiness_unavailable")),
+    }
+
+
+def _preorder_days() -> tuple[int, list]:
+    from shopman.shop.projections import checkout_context
+
+    return checkout_context.preorder_config()
+
+
 def build_pos_recent_sales(*, limit: int = 20) -> dict:
     """Últimas vendas do balcão, com o estado FISCAL de cada uma.
 

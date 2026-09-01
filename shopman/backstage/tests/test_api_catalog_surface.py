@@ -866,7 +866,8 @@ def test_product_detail_get_shape(client, operator, catalog):
         "image_url", "primary_collection", "primary_collection_name",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
-        "allows_next_day_sale", "made_to_order", "nutrition_facts", "social", "fiscal",
+        "allows_next_day_sale", "made_to_order", "ready_from",
+        "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
         "dietary_auto_filled", "nutrition_auto_filled", "fiscal_profiles",
     }
@@ -1100,3 +1101,60 @@ def test_product_detail_patch_fiscal_requires_cest_on_resale(client, operator, c
     client.force_login(operator)
     resp = _patch(client, "PAO", {"fiscal": {"profile": "resale", "ncm": "19059090"}})
     assert resp.status_code == 400
+
+
+def test_product_detail_patches_the_declared_ready_time(client, operator, catalog):
+    """A hora em que o produto fica pronto é declaração da CASA, e o Gestor declara.
+
+    Antes desta chave a hora saía só da mediana das WorkOrders, e produto sem
+    fornada recente não restringia horário nenhum: o dado que faltava LIBERAVA a
+    promessa. Sem esta porta, corrigir isso exigiria Admin ou reseed.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "12:00"})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == "12:00"
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["ready_from"] == "12:00"
+
+
+def test_product_detail_normalizes_the_declared_ready_time(client, operator, catalog):
+    """"9:5" é a mesma hora que "09:05" — quem guarda normaliza."""
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "9:5"})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == "09:05"
+
+
+def test_product_detail_refuses_an_unreadable_ready_time(client, operator, catalog):
+    """Hora ilegível é recusada na porta, nunca guardada.
+
+    Guardá-la seria pior que recusá-la: o cadastro diria que a casa respondeu, e
+    o sistema agiria como se ninguém tivesse respondido — que é exatamente o
+    estado sem declaração, o que libera qualquer horário.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "meio-dia"})
+
+    assert resp.status_code == 400
+    catalog["pao"].refresh_from_db()
+    assert "ready_from" not in (catalog["pao"].metadata or {})
+
+
+def test_product_detail_clears_the_declared_ready_time(client, operator, catalog):
+    """Vazio APAGA a declaração — a casa pode voltar a deixar o histórico mandar."""
+    catalog["pao"].metadata = {**(catalog["pao"].metadata or {}), "ready_from": "12:00"}
+    catalog["pao"].save(update_fields=["metadata"])
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": ""})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == ""
+    catalog["pao"].refresh_from_db()
+    assert "ready_from" not in (catalog["pao"].metadata or {})
