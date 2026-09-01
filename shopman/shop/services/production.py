@@ -397,6 +397,7 @@ def finish_work_order(
         )
 
     _ensure_stock_ledger_closed(work_order)
+    _ensure_order_links_closed(work_order)
     return work_order.ref, total
 
 
@@ -431,6 +432,33 @@ def _ensure_stock_ledger_closed(work_order) -> None:
         work_order.ref,
     )
     realize_finished_production(work_order)
+
+
+def _ensure_order_links_closed(work_order) -> None:
+    """Rede de segurança do vínculo pedido↔fornada — irmã de ``_ensure_stock_ledger_closed``.
+
+    O receiver de sinal do sync (``link_work_order_to_orders``) é BLINDADO: um
+    erro nele não derruba o finish. Blindar sozinho deixaria o vínculo órfão se
+    ele estourasse — e o replay idempotente do finish não reemite
+    ``production_changed``. Então, no MESMO caminho guardado que fecha o ledger
+    de estoque (roda logo após o ``.send()`` e também no replay), refazemos o
+    vínculo: ``append-if-absent``, idempotente, uma consulta e nada mais no
+    caminho feliz. Cosmético — a falha vira log, nunca aborta a fornada
+    (ao contrário do estoque, que grita).
+    """
+    try:
+        from shopman.shop.handlers.production_order_sync import (
+            link_active_orders_to_work_order,
+        )
+
+        work_order.refresh_from_db(fields=["meta"])
+        link_active_orders_to_work_order(work_order)
+    except Exception:
+        logger.warning(
+            "production.finish: vínculo de pedido não confirmado em %s (não-fatal)",
+            getattr(work_order, "ref", "?"),
+            exc_info=True,
+        )
 
 
 def _merge_committed_order_links(primary, duplicates: list) -> None:

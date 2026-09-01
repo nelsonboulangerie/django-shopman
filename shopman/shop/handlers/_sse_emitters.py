@@ -27,6 +27,8 @@ from django.core.cache import cache
 from django.db import transaction
 from django.db.models.signals import post_save, pre_save
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 
@@ -325,6 +327,7 @@ def _on_payment_changed(sender, intent=None, order_ref=None, **kwargs):
     )
 
 
+@resilient_receiver
 def _on_production_changed(sender, product_ref, date, action, work_order, **kwargs):
     _emit_backstage(
         "production",

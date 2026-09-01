@@ -8,11 +8,19 @@ from __future__ import annotations
 import logging
 import uuid
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 
+@resilient_receiver
 def on_production_voided(sender, product_ref, date, action, work_order, **kwargs):
-    """When production is voided, release demand holds and notify sessions with planned holds."""
+    """When production is voided, release demand holds and notify sessions with planned holds.
+
+    Best-effort por desenho (a liberação de cada hold já é engolida em DEBUG); o
+    wrapper fecha o único ponto que faltava — a query de topo — para o void de
+    uma WO nunca abortar a cadeia de receivers nem o caller.
+    """
     if action != "voided":
         return
 

@@ -15,6 +15,8 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 ACTIVE_ORDER_STATUSES = ("accepted", "preparing", "ready")
@@ -72,8 +74,17 @@ def link_order_to_work_orders(sender=None, order=None, event_type: str = "", act
         order.save(update_fields=["data", "updated_at"])
 
 
+@resilient_receiver
 def link_work_order_to_orders(sender=None, action: str = "", work_order=None, **kwargs) -> None:
-    """Attach or detach orders when a work order changes state."""
+    """Attach or detach orders when a work order changes state.
+
+    BLINDADO: um erro aqui não pode derrubar o ``finish`` da fornada. Para o
+    ``finished``, a rede de segurança é ``_ensure_order_links_closed`` no caminho
+    guardado do finish (irmã de ``_ensure_stock_ledger_closed``): ela reconstrói
+    o vínculo — idempotente — no MESMO finish caso este receiver estoure, e no
+    replay do operador (que não reemite o sinal). Blindar sem a rede deixaria o
+    vínculo órfão; a rede sem blindar deixaria o cosmético derrubar a fornada.
+    """
     if work_order is None:
         return
 
@@ -84,6 +95,17 @@ def link_work_order_to_orders(sender=None, action: str = "", work_order=None, **
     if action not in {"planned", "adjusted", "started", "finished"}:
         return
 
+    link_active_orders_to_work_order(work_order)
+
+
+def link_active_orders_to_work_order(work_order) -> None:
+    """Liga pedidos ativos elegíveis a esta WO — append-if-absent, idempotente.
+
+    Reutilizado pelo receiver de sinal (acima) e pela rede de segurança do finish
+    (``shopman.shop.services.production._ensure_order_links_closed``). Reexecutar
+    não duplica (só acrescenta o que falta e o leitor deduplica), então o caminho
+    guardado pode chamá-lo de novo sem custo de correção.
+    """
     from shopman.orderman.models import Order
 
     orders = (

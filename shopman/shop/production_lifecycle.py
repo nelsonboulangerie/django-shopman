@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
+from shopman.shop.handlers._resilient import resilient_receiver
 from shopman.shop.services import production as production_svc
 
 logger = logging.getLogger(__name__)
@@ -84,8 +85,13 @@ def dispatch_production(work_order, phase: str) -> None:
     handler(work_order)
 
 
+@resilient_receiver
 def on_production_changed_receiver(sender, product_ref, date, **kwargs):
-    """Receiver for ``production_changed``: map action to lifecycle phase."""
+    """Receiver for ``production_changed``: map action to lifecycle phase.
+
+    Não-crítico: só coordena (log + janela de fila). A escrita real de estoque
+    é a perna craftsman→stockman (receiver #0), que grita por conta própria.
+    """
     work_order = kwargs.get("work_order")
     action = kwargs.get("action")
     if not work_order or not action:
