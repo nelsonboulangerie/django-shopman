@@ -298,7 +298,17 @@ def test_auth_request_code_labels_whatsapp_when_whatsapp_was_used(monkeypatch, c
     assert response.json()["delivery_label"] == "WhatsApp"
 
 
-def test_auth_request_code_exposes_debug_otp_in_staging_only_when_enabled(monkeypatch, settings, client: Client):
+def test_auth_request_code_NAO_expoe_o_otp_so_por_ser_staging(monkeypatch, settings, client: Client):
+    """⚠️ Este teste já afirmou o CONTRÁRIO, e afirmava a vulnerabilidade.
+
+    "staging + flag ligada ⇒ devolve o código" era a regra, e ela não se
+    sustentava porque **não existe deploy de produção separado**: o mesmo
+    processo, com `SHOPMAN_ENVIRONMENT=staging`, atende `api.boulangerie.com.br`.
+    Quem soubesse o telefone de um cliente recebia o código de login DELE na
+    resposta HTTP.
+
+    Agora ambiente não basta: sem segredo configurado, não volta código nenhum.
+    """
     from shopman.storefront.api import auth as auth_api
 
     def fake_request_code(*, phone, delivery_method, ip_address):
@@ -323,8 +333,88 @@ def test_auth_request_code_exposes_debug_otp_in_staging_only_when_enabled(monkey
 
     assert response.status_code == 200
     data = response.json()
+    assert "debug_otp_code" not in data
+    # A VALIDADE continua pública (timeout transparente); o código, não.
+    assert data["code_expires_at"] == "2026-05-18T13:00:00+00:00"
+
+
+def _fake_result():
+    return SimpleNamespace(
+        success=True,
+        delivery_method="whatsapp",
+        debug_code="123456",
+        expires_at="2026-05-18T13:00:00+00:00",
+    )
+
+
+def _pedir_codigo(client: Client, **extra):
+    return client.post(
+        "/api/v1/auth/request-code/",
+        data={"target": "43999998888", "delivery_method": "whatsapp"},
+        content_type="application/json",
+        **extra,
+    )
+
+
+def _armar(monkeypatch, settings, *, token: str):
+    from shopman.storefront.api import auth as auth_api
+
+    settings.DEBUG = False
+    settings.SHOPMAN_ENVIRONMENT = "staging"
+    settings.SHOPMAN_EXPOSE_DEBUG_OTP = True
+    settings.SHOPMAN_DEBUG_OTP_TOKEN = token
+    monkeypatch.setattr(auth_api, "HAS_AUTH", True)
+    monkeypatch.setattr(
+        auth_api.auth_service, "request_code",
+        lambda *, phone, delivery_method, ip_address: _fake_result(),
+    )
+
+
+def test_o_segredo_no_cabecalho_libera_o_codigo_para_a_E2E(monkeypatch, settings, client: Client):
+    """A suíte E2E contra o ambiente vivo continua funcionando — com o segredo.
+
+    É isto que separa "testável" de "exposto", e é o que dispensa virar chave
+    nenhuma no go-live: o MESMO ambiente é seguro e testável.
+    """
+    _armar(monkeypatch, settings, token="segredo-da-suite")
+
+    data = _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="segredo-da-suite").json()
+
     assert data["debug_otp_code"] == "123456"
-    assert data["debug_otp_expires_at"] == "2026-05-18T13:00:00+00:00"
+
+
+def test_sem_o_cabecalho_o_publico_nao_ve_o_codigo(monkeypatch, settings, client: Client):
+    _armar(monkeypatch, settings, token="segredo-da-suite")
+
+    assert "debug_otp_code" not in _pedir_codigo(client).json()
+
+
+def test_cabecalho_ERRADO_nao_libera(monkeypatch, settings, client: Client):
+    _armar(monkeypatch, settings, token="segredo-da-suite")
+
+    data = _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="chute").json()
+
+    assert "debug_otp_code" not in data
+
+
+def test_cabecalho_vazio_nao_casa_com_token_vazio(monkeypatch, settings, client: Client):
+    """Sem token configurado a porta fica FECHADA, e "" não abre "".
+
+    Comparar dois vazios com `==` teria feito qualquer requisição sem cabeçalho
+    passar exatamente no ambiente que ainda não foi configurado.
+    """
+    _armar(monkeypatch, settings, token="")
+
+    assert "debug_otp_code" not in _pedir_codigo(client).json()
+    assert "debug_otp_code" not in _pedir_codigo(client, HTTP_X_SHOPMAN_DEBUG_OTP="").json()
+
+
+def test_em_DEBUG_local_continua_saindo_sem_configurar_nada(monkeypatch, settings, client: Client):
+    """O dev local não pode precisar de segredo para ver o próprio código."""
+    _armar(monkeypatch, settings, token="")
+    settings.DEBUG = True
+
+    assert _pedir_codigo(client).json()["debug_otp_code"] == "123456"
 
 
 def test_auth_request_code_never_exposes_debug_otp_in_production(monkeypatch, settings, client: Client):

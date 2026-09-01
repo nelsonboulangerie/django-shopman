@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import secrets
 
 from django.conf import settings
 from django.contrib.auth import logout as django_logout
@@ -392,18 +393,61 @@ def _delivery_response(delivery_method: str) -> dict:
     }
 
 
-def _debug_otp_allowed() -> bool:
+#: Cabeçalho que a suíte E2E manda para receber o código. O valor tem que bater
+#: com ``SHOPMAN_DEBUG_OTP_TOKEN``.
+DEBUG_OTP_HEADER = "HTTP_X_SHOPMAN_DEBUG_OTP"
+
+
+def _debug_otp_allowed(request=None) -> bool:
+    """O código do OTP pode voltar na resposta HTTP?
+
+    ## Por que isto deixou de ser uma pergunta sobre AMBIENTE
+
+    Era: liga em `staging`, desliga em produção. Só que **não existe deploy de
+    produção separado** — o mesmo processo, com `SHOPMAN_ENVIRONMENT=staging`,
+    atende `api.boulangerie.com.br`. Quem soubesse o telefone de um cliente
+    recebia o código de login DELE na resposta, e como o modo debug esvazia a
+    cadeia de entrega a vítima não recebia mensagem nenhuma: sequestro de conta
+    silencioso.
+
+    Desligar pela env resolvia isso e criava outro problema: as suítes E2E
+    contra o ambiente vivo dependem do código, então "desligar" significava
+    "parar de testar o ambiente que vai para produção" — e ninguém quer fazer
+    essa troca na véspera.
+
+    ## O segredo separa as duas coisas
+
+    Com `SHOPMAN_DEBUG_OTP_TOKEN` configurado, o código só volta para quem
+    apresenta o segredo no cabeçalho `X-Shopman-Debug-Otp`. A E2E tem o segredo;
+    o público não tem. **Não há mais chave para virar no go-live** — o mesmo
+    ambiente é seguro e testável ao mesmo tempo.
+
+    Sem token configurado, mantém-se a regra antiga (env + ambiente não
+    produtivo), porque `DEBUG` local precisa continuar funcionando sem ninguém
+    configurar nada. Mas em qualquer ambiente que não seja `DEBUG`, **a ausência
+    de token agora é recusa**: falhar fechado é o certo quando o que está em jogo
+    é o login de outra pessoa.
+    """
     if getattr(settings, "DEBUG", False):
         return True
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    return bool(
-        getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False)
-        and environment in {"development", "dev", "local", "staging"}
-    )
+
+    if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
+        return False
+
+    token = str(getattr(settings, "SHOPMAN_DEBUG_OTP_TOKEN", "") or "").strip()
+    if not token:
+        # Sem segredo, fora de DEBUG: recusa. É a mudança que fecha
+        # `api.boulangerie.com.br` sem depender de ninguém lembrar de uma env.
+        return False
+
+    apresentado = ""
+    if request is not None:
+        apresentado = str(request.META.get(DEBUG_OTP_HEADER, "") or "").strip()
+    return bool(apresentado) and secrets.compare_digest(apresentado, token)
 
 
-def _debug_otp_response(auth_result=None) -> dict:
-    if not _debug_otp_allowed():
+def _debug_otp_response(auth_result=None, request=None) -> dict:
+    if not _debug_otp_allowed(request):
         return {}
     code = str(getattr(auth_result, "debug_code", "") or "")
     if not code:
@@ -464,7 +508,7 @@ class RequestCodeView(APIView):
             # Timeout transparente: a validade do código é pública (o código não).
             "code_expires_at": getattr(auth_result, "expires_at", None) or "",
             **_delivery_response(actual_method),
-            **_debug_otp_response(auth_result),
+            **_debug_otp_response(auth_result, request),
         })
 
 

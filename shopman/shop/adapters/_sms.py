@@ -6,7 +6,18 @@ stays thin. Provider choice is swappable via DOORMAN['DELIVERY_SENDERS']['sms'].
 
 from __future__ import annotations
 
-DEFAULT_CODE_MESSAGE = "{code} é o seu código de verificação. Válido por {ttl} minutos. Não compartilhe."
+#: O SMS de OTP chega num aparelho cheio de mensagens de remetente desconhecido,
+#: e o que estava aqui não dizia de onde vinha nem para quê: "482913 é o seu
+#: código de verificação" podia ser de qualquer serviço do mundo. Quem recebe sem
+#: reconhecer ou ignora (e não entra) ou desconfia (e reclama).
+#:
+#: A MARCA vai na frente porque a pré-visualização do celular corta o resto — é
+#: o primeiro fragmento que decide se a pessoa abre. Sobre a promessa de curto:
+#: SMS cobra por segmento de 160 caracteres (e 70 se houver acento fora do
+#: GSM-7), então cada palavra a mais pode dobrar o custo de cada envio.
+#:
+#: A casa pode reescrever por `SHOPMAN_SMS_CODE_MESSAGE` sem tocar em código.
+DEFAULT_CODE_MESSAGE = "Nelson Boulangerie: {code} e o seu codigo de acesso. Vale {ttl} min. Nao compartilhe."
 
 
 def ttl_minutes() -> int:

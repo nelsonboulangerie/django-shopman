@@ -17,6 +17,20 @@ concurrency:
   group: alpha-smoke
   cancel-in-progress: true
 
+# ⚠️ A URL da loja é UMA variável, e é de propósito.
+#
+# Ela já esteve escrita à mão em três lugares deste arquivo, e isso transformava
+# uma troca de domínio (alpha.* → menu.*) numa edição de código no momento em que
+# ninguém tem tempo para editar código. Pior: o gate ficaria VERMELHO por apontar
+# para um host morto, ou — o modo de falhar que já aconteceu nesta casa — ficaria
+# VERDE sem testar nada.
+#
+# Para virar o domínio, defina a variável `STOREFRONT_URL` do repositório
+# (Settings → Secrets and variables → Actions → Variables). Sem ela, vale o
+# default abaixo, que é o alpha de hoje.
+env:
+  STOREFRONT_URL: ${{ vars.STOREFRONT_URL || 'https://alpha.nelsonboulangerie.com.br' }}
+
 jobs:
   smoke:
     name: Alpha responde como loja
@@ -68,15 +82,15 @@ jobs:
           # que deixou a loja 4 dias sem conseguir criar pedido.
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -X POST -H 'Content-Type: application/json' -d '{}' \
-            https://alpha.nelsonboulangerie.com.br/api/v1/checkout/)
+            $STOREFRONT_URL/api/v1/checkout/)
           echo "POST /api/v1/checkout/ => $code"
           test "$code" != "404"
 
       - name: A loja renderiza (SSR)
         run: |
-          curl -s --max-time 30 https://alpha.nelsonboulangerie.com.br/ -o home.html
+          curl -s --max-time 30 "$STOREFRONT_URL/" -o home.html
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-            https://alpha.nelsonboulangerie.com.br/)
+            "$STOREFRONT_URL/")
           bytes=$(wc -c < home.html)
           echo "home => $code ($bytes bytes)"
           test "$code" = "200"
