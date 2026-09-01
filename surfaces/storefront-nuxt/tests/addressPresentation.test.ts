@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   addressDraftErrors,
+  addressLabelDisplay,
   composedAddressLine,
   draftFromGooglePlace,
   draftFromSavedAddress,
@@ -288,6 +289,12 @@ describe('label depois', () => {
     expect(savedAddressDisplayLabel({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
   })
 
+  it('names the chosen label for the post-order confirmation', () => {
+    expect(addressLabelDisplay('home')).toBe('Casa')
+    expect(addressLabelDisplay('work')).toBe('Trabalho')
+    expect(addressLabelDisplay('other', ' Casa da mãe ')).toBe('Casa da mãe')
+    expect(addressLabelDisplay('other', '')).toBe('Outro')
+  })
 })
 
 describe('reidratação do rascunho do checkout', () => {

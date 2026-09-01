@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { navigateTo } from '#app'
 import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
-import { labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
+import { addressLabelDisplay, labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
 import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
@@ -937,8 +937,12 @@ async function submitCheckout () {
     // um endereço novo, oferecemos a etiqueta nele antes de seguir.
     const newAddressId = await findNewlySavedAddress()
     if (newAddressId && pendingAddressLabel.value) {
-      // Etiqueta já escolhida ao adicionar o endereço: aplica direto (sem perguntar de novo).
+      // Etiqueta já escolhida ao adicionar o endereço: aplica direto (sem perguntar
+      // de novo) — e CONTA que salvou (transparência: nada de endereço "aparecendo"
+      // salvo em silêncio na próxima compra). O toast sobrevive à navegação.
+      const chosenLabel = addressLabelDisplay(pendingAddressLabel.value.key, pendingAddressLabel.value.custom)
       await applyPendingLabel(newAddressId)
+      if (import.meta.client) useSonner.success(`Endereço salvo como ${chosenLabel}.`)
     } else if (newAddressId) {
       // Sem etiqueta escolhida antes: oferece agora (fallback pós-pedido).
       savedAddressIdForLabel.value = newAddressId
@@ -1259,6 +1263,17 @@ useSeoMeta({
                 @addresses-changed="refresh"
               />
               <UiFieldError v-if="fieldErrors.delivery_address" :errors="fieldErrors.delivery_address" />
+              <!-- Transparência: endereço NOVO é guardado no perfil quando o pedido
+                   fecha (comportamento do Core). O cliente fica sabendo ANTES, aqui,
+                   em vez de o endereço "aparecer" salvo na próxima compra. -->
+              <p
+                v-if="addressSelection && !addressSelection.savedAddressId"
+                class="mt-3 flex items-center gap-2 shop-meta"
+                data-checkout-address-will-save
+              >
+                <Icon name="lucide:bookmark-plus" class="size-3.5 shrink-0" />
+                Vamos guardar este endereço para a sua próxima entrega.
+              </p>
               <p v-if="quotingZone" class="mt-3 flex items-center gap-2 shop-muted">
                 <Icon name="lucide:loader-circle" class="size-4 animate-spin" /> Verificando se entregamos aqui…
               </p>

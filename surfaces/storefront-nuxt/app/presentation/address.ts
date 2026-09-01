@@ -327,6 +327,13 @@ export function labelPatchPayload (key: AddressLabelKey, custom = ''): { label: 
   return { label: key, label_custom: key === 'other' ? custom.trim() : '' }
 }
 
+// Nome legível da etiqueta escolhida — usado na confirmação de transparência
+// ("Endereço salvo como Casa") depois que o pedido fecha.
+export function addressLabelDisplay (key: AddressLabelKey, custom = ''): string {
+  if (key === 'other') return custom.trim() || 'Outro'
+  return key === 'work' ? 'Trabalho' : 'Casa'
+}
+
 export function savedAddressDisplayLabel (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {
   if (address.label_key === 'other' && address.label_custom) return address.label_custom
   return address.label || 'Endereço'
