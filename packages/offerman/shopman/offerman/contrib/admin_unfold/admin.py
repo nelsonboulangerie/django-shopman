@@ -456,9 +456,9 @@ class ProductAdmin(_ProductImportExportBase):
         badges = []
 
         if not obj.is_published:
-            badges.append(unfold_badge("Não publicado", "yellow"))
+            badges.append(unfold_badge("Oculto", "yellow"))
         if not obj.is_sellable:
-            badges.append(unfold_badge("Não vendável", "red"))
+            badges.append(unfold_badge("Pausado", "red"))
 
         if not badges:
             return unfold_badge("Ativo", "green")
@@ -558,7 +558,7 @@ class ProductAdmin(_ProductImportExportBase):
 
     def _bulk_set(self, request, queryset, field, value, label):
         """Itera com save() (não queryset.update()) para disparar product_updated →
-        re-projeção para canais externos (iFood retrai o despublicado) + histórico.
+        re-projeção para canais externos (iFood retrai o produto oculto) + histórico.
         queryset.update() pulava o save() e nada disso acontecia."""
         count = 0
         for product in queryset:
@@ -568,21 +568,21 @@ class ProductAdmin(_ProductImportExportBase):
                 count += 1
         self.message_user(request, f"{count} produto(s) {label}.")
 
-    @admin.action(description=_("Despublicar produtos selecionados"))
+    @admin.action(description=_("Ocultar produtos selecionados"))
     def unpublish_products(self, request, queryset):
-        self._bulk_set(request, queryset, "is_published", False, "despublicado(s)")
+        self._bulk_set(request, queryset, "is_published", False, "oculto(s)")
 
-    @admin.action(description=_("Publicar produtos selecionados"))
+    @admin.action(description=_("Exibir produtos selecionados"))
     def publish_products(self, request, queryset):
-        self._bulk_set(request, queryset, "is_published", True, "publicado(s)")
+        self._bulk_set(request, queryset, "is_published", True, "exibido(s)")
 
-    @admin.action(description=_("Desabilitar venda dos selecionados"))
+    @admin.action(description=_("Pausar venda dos selecionados"))
     def pause_products(self, request, queryset):
-        self._bulk_set(request, queryset, "is_sellable", False, "com venda desabilitada")
+        self._bulk_set(request, queryset, "is_sellable", False, "com venda pausada")
 
-    @admin.action(description=_("Habilitar venda dos selecionados"))
+    @admin.action(description=_("Ativar venda dos selecionados"))
     def resume_products(self, request, queryset):
-        self._bulk_set(request, queryset, "is_sellable", True, "com venda habilitada")
+        self._bulk_set(request, queryset, "is_sellable", True, "com venda ativada")
 
     @admin.action(description=_("Atualizar preço +X%%"))
     def update_price_percent(self, request, queryset):

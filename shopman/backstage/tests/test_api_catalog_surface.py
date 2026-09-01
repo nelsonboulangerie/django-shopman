@@ -589,7 +589,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     )
     assert bolo_tv["available"] is False
 
-    # reativar remove da lista
+    # ativar remove da lista
     resp = client.post(
         CELL_URL,
         data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True},
@@ -600,7 +600,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
 
 
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
-    """Feed não aceita preço/publicação — só pausar/reativar."""
+    """Feed não aceita preço/publicação — só pausar/ativar."""
     client.force_login(operator)
     resp = client.post(
         CELL_URL,

@@ -520,7 +520,7 @@ useHead({ title: "Catálogo · Gestor" });
                       @click="toggleProduct(row)"
                     >
                       <Icon :name="row.is_sellable ? 'lucide:pause' : 'lucide:play'" class="size-4 text-muted-foreground" />
-                      {{ row.is_sellable ? "Pausar em todos os canais" : "Reativar em todos os canais" }}
+                      {{ row.is_sellable ? "Pausar em todos os canais" : "Ativar em todos os canais" }}
                     </button>
                     <button
                       type="button" :disabled="isBusy(productKey(row.sku))"
@@ -528,7 +528,7 @@ useHead({ title: "Catálogo · Gestor" });
                       @click="toggleProductPublish(row)"
                     >
                       <Icon :name="row.is_published ? 'lucide:eye-off' : 'lucide:eye'" class="size-4 text-muted-foreground" />
-                      {{ row.is_published ? "Despublicar do catálogo" : "Publicar no catálogo" }}
+                      {{ row.is_published ? "Ocultar no catálogo" : "Exibir no catálogo" }}
                     </button>
                     <!-- PIM + sync (só quando há plataforma que projeta) -->
                     <template v-if="hasProjectionTargets">
@@ -580,8 +580,8 @@ useHead({ title: "Catálogo · Gestor" });
                   class="relative inline-flex h-4 w-7 shrink-0 items-center rounded-full transition-colors disabled:opacity-40"
                   :class="cell.is_sellable && !rowStatuses[row.sku]?.off ? 'bg-success' : 'bg-muted-foreground/30'"
                   :disabled="isBusy(cellKey(row.sku, cell.surface_ref))"
-                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Reativar neste ${surfaceWord(cell)}`"
-                  :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — reativar neste ${surfaceWord(cell)}`"
+                  :aria-label="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Ativar neste ${surfaceWord(cell)}`"
+                  :title="cell.is_sellable ? `${cellView(row, cell).label} — pausar neste ${surfaceWord(cell)}` : `Pausado — ativar neste ${surfaceWord(cell)}`"
                   @click="toggleCell(row, cell)"
                 >
                   <span class="inline-block size-3 rounded-full bg-white shadow-sm transition-transform" :class="cell.is_sellable ? 'translate-x-3.5' : 'translate-x-0.5'"></span>
@@ -700,7 +700,7 @@ useHead({ title: "Catálogo · Gestor" });
         </div>
         <div class="h-5 w-px bg-background/20"></div>
         <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: false })"><Icon name="lucide:pause" class="size-3.5" /> Pausar</button>
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Reativar</button>
+        <button :disabled="bulkBusy" class="inline-flex h-9 items-center gap-1.5 rounded-md border border-background/25 px-3 text-sm font-medium transition hover:bg-background/10 disabled:opacity-50" @click="bulk({ is_sellable: true })"><Icon name="lucide:play" class="size-3.5" /> Ativar</button>
 
         <!-- Preço e publicação só para canais (transacionam). Feed só pausa/reativa. -->
         <template v-if="!bulkSurfaceIsFeed">
@@ -741,8 +741,8 @@ useHead({ title: "Catálogo · Gestor" });
           </UiPopoverContent>
         </UiPopover>
 
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Despublicar</button>
-        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Publicar</button>
+        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: false })">Ocultar</button>
+        <button :disabled="bulkBusy" class="inline-flex h-9 items-center rounded-md px-3 text-sm font-medium text-background/80 transition hover:bg-background/10 hover:text-background disabled:opacity-50" @click="bulk({ is_published: true })">Exibir</button>
         </template>
         <button class="grid size-9 place-items-center rounded-md text-background/70 transition hover:bg-background/10 hover:text-background" title="Limpar seleção" @click="clearSelection"><Icon name="lucide:x" class="size-4" /></button>
       </div>

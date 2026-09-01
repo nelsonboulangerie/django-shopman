@@ -477,10 +477,10 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </label>
 
             <div class="space-y-2 rounded-lg border border-border p-3">
-              <p :class="sectionClass">Publicação</p>
+              <p :class="sectionClass">Visibilidade</p>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="draft.is_published" type="checkbox" class="size-4 rounded border-border" />
-                Publicado no catálogo
+                Exibido no catálogo
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="draft.is_sellable" type="checkbox" class="size-4 rounded border-border" />

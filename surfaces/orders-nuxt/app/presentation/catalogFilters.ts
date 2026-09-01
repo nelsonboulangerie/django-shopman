@@ -103,7 +103,7 @@ export function catalogDimensions(
   });
 
   dimensions.push(
-    { id: FILTER_PUBLISHED, label: "Publicado", type: "boolean", options: [] },
+    { id: FILTER_PUBLISHED, label: "Exibido", type: "boolean", options: [] },
     { id: FILTER_SELLABLE, label: "À venda", type: "boolean", options: [] },
     {
       id: FILTER_STOCK,
