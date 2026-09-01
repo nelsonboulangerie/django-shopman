@@ -818,6 +818,16 @@ EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
+# Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket
+# herda o timeout do sistema — na prática, dois minutos pendurado.
+#
+# Não é hipótese: a saída de rede de um PaaS pode bloquear a porta 587, e o
+# sintoma dessa política não é uma recusa, é o SILÊNCIO. Um envio que pendura
+# ocupa o worker de directives por dois minutos, e o que era "e-mail não saiu"
+# vira "a fila de directives parou". Quinze segundos são folgados para um SMTP
+# que funciona e curtos o bastante para um que não existe.
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "15"))
+
 # ── REST Framework ─────────────────────────────────────────────────
 
 # Anonymous API throttle is a per-IP guardrail (120/min by default). It can be

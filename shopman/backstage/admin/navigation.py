@@ -60,6 +60,7 @@ def get_sidebar_navigation(request):
     O histórico/CRUD de pedidos segue no grupo "Pedidos".
     """
     from shopman.backstage.admin_console.cash_receipt import CashReceiptVerifyView
+    from shopman.backstage.admin_console.diagnostics import DiagnosticsView
     from shopman.backstage.admin_console.settings_hub import SettingsHubView
 
     live_items = []
@@ -232,6 +233,17 @@ def get_sidebar_navigation(request):
                 )
                 for section in settings_nav_sections()
             ],
+            # Fora da lista de escopos de propósito: os itens acima ajustam a
+            # loja, este PERGUNTA se as integrações estão de pé. A prontidão já
+            # era calculada e não tinha porta — o único jeito de consultá-la era
+            # um comando que exige o console, e o console não recebe segredo.
+            _view_item(
+                "Diagnóstico",
+                "cable",
+                "admin_console_diagnostics",
+                DiagnosticsView,
+                active=_exactly(_url("admin_console_diagnostics")),
+            ),
         ]),
     ]
 

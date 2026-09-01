@@ -1,0 +1,109 @@
+{% extends "admin/base.html" %}
+{% load i18n unfold %}
+
+{% block title %}Diagnóstico | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block content %}
+{% include "unfold/helpers/messages.html" %}
+<main id="diagnostics-main" role="main">
+{% component "unfold/components/container.html" %}
+  <div class="flex flex-col gap-6">
+    <div class="flex flex-col gap-1">
+      {% component "unfold/components/title.html" %}
+        Diagnóstico
+      {% endcomponent %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        O que está configurado, e o que está de fato entregando. Ambiente:
+        {{ diagnostics.environment }}.
+      {% endcomponent %}
+    </div>
+
+    {# Prontidão dos provedores — o serviço já existia; faltava quem mostrasse. #}
+    {% component "unfold/components/card.html" %}
+      <div class="flex flex-col gap-4">
+        {% component "unfold/components/title.html" with class="text-lg" %}
+          Prontidão
+        {% endcomponent %}
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          Isto lê configuração, não entrega. Chave presente não é provedor
+          aceitando.
+        {% endcomponent %}
+        <div class="flex flex-col gap-4">
+          {% for provider in diagnostics.providers %}
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                {% if provider.status == "ready" %}
+                  {% include "unfold/helpers/label.html" with text="Pronto" type="success" %}
+                {% elif provider.status == "blocked" %}
+                  {% include "unfold/helpers/label.html" with text="Bloqueado" type="danger" %}
+                {% else %}
+                  {% include "unfold/helpers/label.html" with text="Atenção" type="warning" %}
+                {% endif %}
+                {% component "unfold/components/text.html" with class="font-semibold" %}
+                  {{ provider.label }}
+                {% endcomponent %}
+              </div>
+              {% component "unfold/components/text.html" with class="text-base-500" %}
+                {{ provider.message }}
+              {% endcomponent %}
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    {% endcomponent %}
+
+    {# E-mail: o único canal com prova possível de dentro da tela. #}
+    {% component "unfold/components/card.html" %}
+      <div class="flex flex-col gap-4">
+        <div class="flex flex-wrap items-center gap-2">
+          {% if diagnostics.email.entrega %}
+            {% include "unfold/helpers/label.html" with text="Entrega" type="success" %}
+          {% else %}
+            {% include "unfold/helpers/label.html" with text="Inerte" type="warning" %}
+          {% endif %}
+          {% component "unfold/components/title.html" with class="text-lg" %}
+            E-mail
+          {% endcomponent %}
+        </div>
+
+        {% component "unfold/components/text.html" with class="text-base-500" %}
+          {{ diagnostics.email.motivo }}
+        {% endcomponent %}
+
+        <div class="flex flex-col gap-2">
+          {% component "unfold/components/text.html" %}
+            Servidor: {{ diagnostics.email.host|default:"—" }}:{{ diagnostics.email.port }}
+            {% if diagnostics.email.use_tls %}(TLS){% endif %}
+          {% endcomponent %}
+          {% component "unfold/components/text.html" %}
+            Autentica como: {{ diagnostics.email.user|default:"—" }}
+          {% endcomponent %}
+          {% component "unfold/components/text.html" %}
+            Remetente: {{ diagnostics.email.sender|default:"—" }}
+          {% endcomponent %}
+          {% component "unfold/components/text.html" %}
+            Senha configurada:
+            {% if diagnostics.email.has_password %}sim{% else %}não{% endif %}
+            · espera até {{ diagnostics.email.timeout_seconds }}s
+          {% endcomponent %}
+        </div>
+
+        <form method="post" class="flex flex-col gap-2">
+          {% csrf_token %}
+          <div class="flex">
+            {% component "unfold/components/button.html" with submit=1 variant="primary" size="sm" icon="outgoing_mail" %}
+              Enviar e-mail de teste para mim
+            {% endcomponent %}
+          </div>
+          {% component "unfold/components/text.html" with class="text-base-500" %}
+            Vai para o endereço do seu usuário do Admin, nunca para cliente. Se
+            chegar, o e-mail funciona de ponta a ponta; se falhar, o erro
+            aparece aqui inteiro.
+          {% endcomponent %}
+        </form>
+      </div>
+    {% endcomponent %}
+  </div>
+{% endcomponent %}
+</main>
+{% endblock %}
