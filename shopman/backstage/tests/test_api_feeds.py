@@ -48,6 +48,7 @@ def board(db):
 BOARD_URL = "/api/v1/backstage/feeds/"
 ACTIVE_URL = "/api/v1/backstage/feeds/active/"
 COLLS_URL = "/api/v1/backstage/feeds/collections/"
+ROTATION_URL = "/api/v1/backstage/feeds/rotation/"
 
 
 def test_board_shape(client, operator, board):
@@ -105,3 +106,73 @@ def test_toggle_unknown_feed(client, operator, board):
         ACTIVE_URL, data={"ref": "ghost", "is_active": True}, content_type="application/json"
     )
     assert resp.status_code == 400
+
+
+# ── Rotação de páginas do quadro ────────────────────────────────────────────────
+
+
+def _rotate(client, body):
+    return client.post(ROTATION_URL, data=body, content_type="application/json")
+
+
+def test_set_rotation_writes_display_config(client, operator, board):
+    client.force_login(operator)
+    resp = _rotate(client, {"ref": "tv", "rotate_seconds": 15, "items_per_page": 12})
+    assert resp.status_code == 200
+    display = Channel.objects.get(ref="tv").config["display"]
+    assert display["rotate_seconds"] == 15
+    assert display["items_per_page"] == 12
+
+
+def test_set_rotation_off_zeroes_both(client, operator, board):
+    client.force_login(operator)
+    _rotate(client, {"ref": "tv", "rotate_seconds": 15, "items_per_page": 12})
+    resp = _rotate(client, {"ref": "tv", "rotate_seconds": 0, "items_per_page": 0})
+    assert resp.status_code == 200
+    display = Channel.objects.get(ref="tv").config["display"]
+    assert display["rotate_seconds"] == 0
+    assert display["items_per_page"] == 0
+
+
+def test_set_rotation_shows_on_the_board(client, operator, board):
+    client.force_login(operator)
+    _rotate(client, {"ref": "tv", "rotate_seconds": 15, "items_per_page": 12})
+    data = client.get(BOARD_URL).json()["board"]
+    tv = next(s for s in data["feeds"] if s["ref"] == "tv")
+    assert tv["rotate_seconds"] == 15
+    assert tv["items_per_page"] == 12
+
+
+def test_set_rotation_rejects_strobe(client, operator, board):
+    """Abaixo de 5s por página ninguém lê: recusa em vez de aceitar calada."""
+    client.force_login(operator)
+    resp = _rotate(client, {"ref": "tv", "rotate_seconds": 3, "items_per_page": 12})
+    assert resp.status_code == 400
+    assert "5 segundos" in resp.json()["detail"]
+
+
+def test_set_rotation_rejects_one_without_the_other(client, operator, board):
+    """Rotação sem teto não tem página; teto sem rotação esconderia o resto."""
+    client.force_login(operator)
+    assert _rotate(client, {"ref": "tv", "rotate_seconds": 10, "items_per_page": 0}).status_code == 400
+    assert _rotate(client, {"ref": "tv", "rotate_seconds": 0, "items_per_page": 12}).status_code == 400
+
+
+def test_set_rotation_rejects_garbage(client, operator, board):
+    client.force_login(operator)
+    assert _rotate(client, {"ref": "tv", "rotate_seconds": "dez", "items_per_page": 12}).status_code == 400
+    assert _rotate(client, {"ref": "tv", "rotate_seconds": -5, "items_per_page": 12}).status_code == 400
+    assert _rotate(client, {"ref": "tv", "items_per_page": 12}).status_code == 400
+
+
+def test_set_rotation_rejects_platform_feed(client, operator, board):
+    """Feed XML (Google/Meta) não tem tela: não há páginas para rotacionar."""
+    client.force_login(operator)
+    resp = _rotate(client, {"ref": "google", "rotate_seconds": 10, "items_per_page": 12})
+    assert resp.status_code == 400
+
+
+def test_set_rotation_requires_manage_catalog(client, plain_staff, board):
+    client.force_login(plain_staff)
+    resp = _rotate(client, {"ref": "tv", "rotate_seconds": 10, "items_per_page": 12})
+    assert resp.status_code == 403

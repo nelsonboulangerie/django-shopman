@@ -76,6 +76,45 @@ def set_collections(ref: str, collection_refs: list[str]) -> None:
         _notify(ref)
 
 
+def _nonneg_int(value, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise CatalogError(f"{label} deve ser um inteiro >= 0.")
+    return value
+
+
+def set_rotation(ref: str, *, rotate_seconds: int, items_per_page: int) -> None:
+    """Configura a rotação de páginas do quadro (menuboard).
+
+    ``rotate_seconds`` = cadência da troca (0 desliga); ``items_per_page`` =
+    teto de itens por tela (0 = tudo numa página). Só faz sentido no quadro —
+    feed de plataforma (XML) não tem tela para rotacionar.
+    """
+    rotate_seconds = _nonneg_int(rotate_seconds, "rotate_seconds")
+    items_per_page = _nonneg_int(items_per_page, "items_per_page")
+    if 0 < rotate_seconds < 5:
+        raise CatalogError("A rotação precisa de pelo menos 5 segundos por página.")
+    # Um sem o outro é promessa vazia: rotação sem teto não tem página para
+    # trocar, e teto sem rotação esconderia tudo além da primeira tela.
+    if (rotate_seconds > 0) != (items_per_page > 0):
+        raise CatalogError(
+            "Defina a cadência E o teto de itens por tela (ou zere os dois para desligar)."
+        )
+
+    sc = _display_channel(ref)
+    display = _display(sc)
+    if display.get("format"):
+        raise CatalogError(f"'{ref}' é um feed de plataforma — não tem páginas para rotacionar.")
+
+    if (
+        display.get("rotate_seconds", 0) != rotate_seconds
+        or display.get("items_per_page", 0) != items_per_page
+    ):
+        display["rotate_seconds"] = rotate_seconds
+        display["items_per_page"] = items_per_page
+        _save_display(sc, display)
+        _notify(ref)
+
+
 def set_item_paused(ref: str, sku: str, *, paused: bool) -> bool:
     """Pausa/reativa UM item neste feed (equivalente a pausar num canal).
 

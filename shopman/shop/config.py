@@ -232,6 +232,14 @@ class ChannelConfig:
         # Ref do canal transacional cujo preço é anunciado.
         paused_skus: list[str] = field(default_factory=list)
         # Exceções por SKU: tirado deste canal sem sair da coleção.
+        rotate_seconds: int = 0
+        # Menuboard: segundos entre a troca de páginas. 0 = sem rotação (tudo
+        # numa tela, comportamento clássico). Quando > 0, mínimo de 5s — abaixo
+        # disso a TV vira estroboscópio, não cardápio.
+        items_per_page: int = 0
+        # Menuboard: teto de itens por página. 0 = tudo numa página. Seções
+        # inteiras se agrupam até o teto; seção maior que o teto quebra em
+        # partes com o mesmo título e sufixo de continuação.
 
     # ── 8. Regras ──
 
@@ -445,6 +453,28 @@ class ChannelConfig:
             raise ValueError(f"waitlist.charge_at inválido: {self.waitlist.charge_at}")
         if not isinstance(self.waitlist.price_frozen, bool):
             raise ValueError("waitlist.price_frozen deve ser true/false")
+        if (
+            isinstance(self.display.rotate_seconds, bool)
+            or not isinstance(self.display.rotate_seconds, int)
+            or self.display.rotate_seconds < 0
+        ):
+            raise ValueError("display.rotate_seconds deve ser um inteiro >= 0")
+        # Rotação ligada abaixo de 5s é strobe, não cardápio: ninguém lê a página.
+        if 0 < self.display.rotate_seconds < 5:
+            raise ValueError("display.rotate_seconds deve ser >= 5 quando > 0")
+        if (
+            isinstance(self.display.items_per_page, bool)
+            or not isinstance(self.display.items_per_page, int)
+            or self.display.items_per_page < 0
+        ):
+            raise ValueError("display.items_per_page deve ser um inteiro >= 0")
+        # Um sem o outro é promessa vazia: rotação sem teto não tem página para
+        # trocar, e teto sem rotação esconderia tudo além da primeira tela.
+        if (self.display.rotate_seconds > 0) != (self.display.items_per_page > 0):
+            raise ValueError(
+                "display.rotate_seconds e display.items_per_page andam juntos: "
+                "defina ambos > 0 (rotação ligada) ou ambos 0 (desligada)"
+            )
 
 
 def _safe_init(cls, data: dict):

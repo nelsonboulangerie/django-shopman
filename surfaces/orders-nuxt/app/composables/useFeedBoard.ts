@@ -36,6 +36,12 @@ export function useFeedBoard() {
     run(ref_, { ref: ref_, is_active: isActive }, "/api/v1/backstage/feeds/active/");
   const setCollections = (ref_: string, collections: string[]) =>
     run(ref_, { ref: ref_, collections }, "/api/v1/backstage/feeds/collections/");
+  const setRotation = (ref_: string, rotateSeconds: number, itemsPerPage: number) =>
+    run(
+      ref_,
+      { ref: ref_, rotate_seconds: rotateSeconds, items_per_page: itemsPerPage },
+      "/api/v1/backstage/feeds/rotation/",
+    );
 
-  return { board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections };
+  return { board, pending, error, refresh, isBusy, errorMsg, setActive, setCollections, setRotation };
 }

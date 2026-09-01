@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Feeds — o lado DISPLAY do cardápio. Um feed empurra um recorte de coleções
-// PARA FORA (📺 menuboard na TV, 🛰 Google/Meta) sem transacionar. No backend o
-// model chama-se ``Feed`` — daí os nomes internos aqui.
-// Aqui o operador liga/pausa, escolhe quais coleções cada um exibe e abre/prevê a
-// saída. A ORDEM das coleções é global (reordenável no Catálogo).
+// PARA FORA (📺 menuboard na TV, 🛰 Google/Meta) sem transacionar. No backend é
+// um ``Channel`` com ``commerce_policy=display`` (ADR-018).
+// Aqui o operador liga/pausa, escolhe quais coleções cada um exibe, configura a
+// rotação de páginas da TV e abre/prevê a saída. A ORDEM das coleções é global
+// (reordenável no Catálogo).
 import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 
-const { board, pending, refresh, isBusy, setActive, setCollections } = useFeedBoard();
+const { board, pending, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
@@ -40,6 +41,20 @@ async function applyEdit(sc: FeedProjection) {
   editRef.value = null;
 }
 
+// rotação de páginas (só menuboard): rascunho local, aplica de uma vez.
+const rotationRef = ref<string | null>(null);
+const draftSeconds = ref(0);
+const draftItems = ref(0);
+function openRotation(sc: FeedProjection) {
+  rotationRef.value = sc.ref;
+  draftSeconds.value = sc.rotate_seconds;
+  draftItems.value = sc.items_per_page;
+}
+async function applyRotation(sc: FeedProjection) {
+  const ok = await setRotation(sc.ref, Number(draftSeconds.value) || 0, Number(draftItems.value) || 0);
+  if (ok) rotationRef.value = null;
+}
+
 useHead({ title: "Feeds · Gestor" });
 </script>
 
@@ -55,9 +70,9 @@ useHead({ title: "Feeds · Gestor" });
         <p class="hidden text-xs text-muted-foreground sm:block">
           <span class="tabular-nums">{{ feeds.length }}</span> feed{{ feeds.length === 1 ? "" : "s" }}
         </p>
-        <!-- criar/configurar a fundo (novo feed, opções) é no Admin -->
+        <!-- criar/configurar a fundo (novo canal de exibição, opções) é no Admin -->
         <a
-          :href="`${adminBase}/admin/shop/feed/`" target="_blank" rel="noopener"
+          :href="`${adminBase}/admin/shop/channel/`" target="_blank" rel="noopener"
           class="inline-flex h-9 items-center gap-1.5 rounded-md border px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           title="Criar / configurar feeds no Admin"
         >
@@ -139,6 +154,48 @@ useHead({ title: "Feeds · Gestor" });
                 <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
                   <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="editRef = null">Cancelar</button>
                   <button type="button" :disabled="isBusy(sc.ref)" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyEdit(sc)">Aplicar</button>
+                </div>
+              </UiPopoverContent>
+            </UiPopover>
+
+            <UiPopover
+              v-if="sc.capability === 'display'"
+              :open="rotationRef === sc.ref" @update:open="(v) => { if (!v) rotationRef = null; else openRotation(sc); }"
+            >
+              <UiPopoverTrigger as-child>
+                <button
+                  type="button" class="inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition hover:bg-accent"
+                  :title="sc.rotate_seconds > 0 ? `Rotação de páginas: a cada ${sc.rotate_seconds} s, ${sc.items_per_page} itens por tela` : 'Rotação de páginas desligada'"
+                >
+                  <Icon name="lucide:timer" class="size-3.5" />
+                  {{ sc.rotate_seconds > 0 ? `${sc.rotate_seconds} s` : "Rotação" }}
+                </button>
+              </UiPopoverTrigger>
+              <UiPopoverContent align="start" :side-offset="6" class="w-64 p-3">
+                <p class="mb-2 text-xs font-medium text-muted-foreground">Rotação de páginas</p>
+                <div class="grid gap-2">
+                  <label class="flex items-center justify-between gap-2 text-sm">
+                    <span>Trocar a cada</span>
+                    <span class="inline-flex items-center gap-1">
+                      <input
+                        v-model.number="draftSeconds" type="number" min="0" step="1" inputmode="numeric"
+                        class="h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
+                      />
+                      <span class="text-xs text-muted-foreground">s</span>
+                    </span>
+                  </label>
+                  <label class="flex items-center justify-between gap-2 text-sm">
+                    <span>Itens por tela</span>
+                    <input
+                      v-model.number="draftItems" type="number" min="0" step="1" inputmode="numeric"
+                      class="h-8 w-16 rounded-md border border-border bg-background px-2 text-right text-sm tabular-nums"
+                    />
+                  </label>
+                </div>
+                <p class="mt-2 text-xs text-muted-foreground/70">Zere os dois para mostrar tudo numa tela só, sem rotação.</p>
+                <div class="mt-2 flex justify-end gap-1.5 border-t border-border pt-2">
+                  <button type="button" class="rounded-md border px-2.5 py-1.5 text-xs font-medium transition hover:bg-accent" @click="rotationRef = null">Cancelar</button>
+                  <button type="button" :disabled="isBusy(sc.ref)" class="rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50" @click="applyRotation(sc)">Aplicar</button>
                 </div>
               </UiPopoverContent>
             </UiPopover>

@@ -37,6 +37,7 @@ from .feeds import (
     FeedActiveView,
     FeedBoardView,
     FeedCollectionsView,
+    FeedRotationView,
 )
 from .hub import HubView
 from .kds import (
@@ -314,6 +315,7 @@ urlpatterns = [
     path("feeds/", FeedBoardView.as_view(), name="api-backstage-feeds"),
     path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
+    path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
     # Orders — operator actions
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),
