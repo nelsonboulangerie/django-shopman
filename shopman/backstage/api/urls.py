@@ -5,6 +5,7 @@ from __future__ import annotations
 from django.urls import path
 
 from .alerts import AlertAckView, AlertListView
+from .backup import BackupExportView
 from .bi import (
     BICashView,
     BIChangeView,
@@ -174,6 +175,8 @@ from .sign_ins import SignInListView
 from .telemetry import ClientErrorView
 
 urlpatterns = [
+    # Cofre de dados curados — persona GESTOR (perm fina backstage.export_backup)
+    path("backup/export/", BackupExportView.as_view(), name="api-backstage-backup-export"),
     # Telemetria — erro de cliente das superfícies de operador (operator-kit)
     path("client-error/", ClientErrorView.as_view(), name="api-backstage-client-error"),
     # Central de Apps — launcher do operador (surfaces/hub-nuxt)

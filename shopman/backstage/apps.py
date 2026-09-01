@@ -84,3 +84,9 @@ class BackstageConfig(AppConfig):
             dispatch_uid="backstage.sign_in_audit.on_login_failed",
             weak=False,
         )
+
+        # A curadoria do backstage (de-paras, vocabulário de consumo, salão)
+        # entra no cofre de dados curados do shop (shopman.shop.backup).
+        from shopman.backstage.backup_resources import register_backstage_resources
+
+        register_backstage_resources()
