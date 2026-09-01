@@ -185,7 +185,13 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
         self.assertTrue(checkout["capabilities"]["supports_split_payment"])
         provider_readiness = {item["provider"]: item for item in checkout["capabilities"]["provider_readiness"]}
-        self.assertEqual(set(provider_readiness), {"focus_nfe", "efi_pix", "stripe_card"})
+        # `otp_delivery` entrou no contrato: o PDV também precisa saber se o
+        # cliente consegue receber o código de login — a tela ficava verde com a
+        # cadeia de OTP vazia.
+        self.assertEqual(
+            set(provider_readiness),
+            {"focus_nfe", "efi_pix", "stripe_card", "otp_delivery"},
+        )
         self.assertIn(provider_readiness["focus_nfe"]["status"], {"ready", "warning", "error"})
         self.assertEqual(checkout["capabilities"]["prepare_checkout_action_ref"], "save_tab")
         self.assertEqual(checkout["capabilities"]["review_action_ref"], "review_sale")

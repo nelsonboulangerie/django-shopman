@@ -50,6 +50,83 @@ def build_provider_readiness(*, mode: ReadinessMode = "runtime") -> tuple[Provid
         focus_nfe_readiness(mode=mode),
         efi_pix_readiness(mode=mode),
         stripe_card_readiness(mode=mode),
+        # ⚠️ O canal por onde o CLIENTE ENTRA faltava aqui, e a ausência era
+        # cara: a tela de prontidão dizia tudo verde enquanto nenhum código de
+        # login saía. Pagamento e fiscal sem login é uma loja que ninguém usa.
+        otp_delivery_readiness(mode=mode),
+    )
+
+
+def otp_delivery_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
+    """O cliente consegue RECEBER o código de login?
+
+    Olha a cadeia inteira (``DOORMAN["DELIVERY_CHAIN"]``), não um provedor —
+    porque a pergunta que importa não é "o Comtele está configurado?", é "alguém
+    entrega?". Um SMS quebrado com e-mail funcionando é aviso; os dois quebrados
+    é loja sem porta de entrada.
+
+    ⚠️ Isto não existia. A tela cobria Focus, Efí, Stripe e NF-e de compras, e
+    ficava verde com a cadeia de OTP vazia — que foi exatamente o estado do
+    alpha: ninguém recebia código, e o único jeito de entrar era ler o código na
+    resposta HTTP (ver `SHOPMAN_DEBUG_OTP_TOKEN`).
+    """
+    doorman = dict(getattr(settings, "DOORMAN", {}) or {})
+    chain = [str(c).strip() for c in (doorman.get("DELIVERY_CHAIN") or []) if str(c).strip()]
+
+    missing: list[str] = []
+    unsafe: list[str] = []
+    entregam: list[str] = []
+
+    if not chain:
+        unsafe.append("DELIVERY_CHAIN_vazia")
+    for canal in chain:
+        if canal == "sms":
+            cfg = dict(getattr(settings, "SHOPMAN_SMS", {}) or {})
+            if str(cfg.get("api_key") or "").strip() and str(cfg.get("route") or "").strip():
+                entregam.append("sms")
+            else:
+                missing.append("COMTELE_API_KEY/COMTELE_ROUTE")
+        elif canal == "email":
+            try:
+                from shopman.shop.adapters import notification_email
+
+                if notification_email.is_available():
+                    entregam.append("email")
+                else:
+                    missing.append("EMAIL_HOST/EMAIL_BACKEND")
+            except Exception:
+                logger.warning("otp_delivery_readiness: email adapter unavailable", exc_info=True)
+                missing.append("EMAIL_HOST/EMAIL_BACKEND")
+        elif canal == "console":
+            # Console entrega para o LOG, não para o cliente. Conta como canal em
+            # DEBUG e como nada em qualquer outro lugar.
+            if getattr(settings, "DEBUG", False):
+                entregam.append("console")
+            else:
+                unsafe.append("DELIVERY_CHAIN_console_fora_de_DEBUG")
+
+    # Nenhum canal entrega ⇒ erro, não aviso. É o cliente sem conseguir entrar.
+    if chain and not entregam:
+        unsafe.append("nenhum_canal_entrega_OTP")
+
+    # ⚠️ Configurado ≠ funcionando. O Comtele já devolveu 401 ("chave inválida /
+    # não pode efetuar requisição à API") com chave e rota presentes — provado
+    # não-nosso. Esta checagem vê PRESENÇA; a prova de entrega é o canário.
+    status = _status(missing=missing, unsafe=unsafe)
+    ambiente = ", ".join(entregam) if entregam else "sem canal"
+    return ProviderReadiness(
+        provider="otp_delivery",
+        label="Entrega do código de login",
+        kind="auth_otp",
+        environment=ambiente,
+        status=status,
+        message=_readiness_message(
+            status=status,
+            environment=ambiente,
+            ready="O cliente consegue receber o código para entrar.",
+            missing=tuple(missing + unsafe),
+        ),
+        missing=tuple(missing + unsafe),
     )
 
 
