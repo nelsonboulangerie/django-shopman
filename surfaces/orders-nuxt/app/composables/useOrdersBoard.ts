@@ -6,7 +6,7 @@
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { newOrderPush, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
 
 export type { CancellationReason };
 
@@ -48,6 +48,67 @@ export function useOrdersBoard() {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: EventSource | null = null;
 
+  // ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
+  // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
+  // SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
+  const { soundOn, soundBlocked, toggleSound: toggleAlertSound, beep } = useAlertSound("gestor_sound");
+
+  function toggleSound() {
+    toggleAlertSound();
+    // Mesmo gesto que destrava o autoplay pede a permissão de notificação: fora
+    // de um gesto do usuário o browser ignora (ou penaliza) o pedido.
+    if (
+      soundOn.value &&
+      import.meta.client &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+
+  // Título piscando enquanto a aba está oculta — restaurado ao voltar (o
+  // listener de visibilitychange abaixo chama stopTitleAlert).
+  let titleTimer: ReturnType<typeof setInterval> | null = null;
+  let baseTitle = "";
+  function stopTitleAlert() {
+    if (!titleTimer) return;
+    clearInterval(titleTimer);
+    titleTimer = null;
+    document.title = baseTitle;
+  }
+  function startTitleAlert(ref_: string) {
+    if (titleTimer) return;
+    baseTitle = document.title;
+    let flip = false;
+    titleTimer = setInterval(() => {
+      flip = !flip;
+      document.title = flip ? `● Pedido novo${ref_ ? ` ${ref_}` : ""}` : baseTitle;
+    }, 1_500);
+  }
+
+  function notifyNewOrder(ref_: string) {
+    // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const n = new Notification(`Pedido novo${ref_ ? ` ${ref_}` : ""}`, {
+        body: "Chegou um pedido novo no quadro.",
+        tag: "gestor-new-order",
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch {
+      // construtor pode lançar (ex.: Android sem service worker) — sem drama
+    }
+  }
+
+  function announceNewOrder(ref_: string) {
+    beep();
+    if (document.visibilityState !== "visible") {
+      notifyNewOrder(ref_);
+      startTitleAlert(ref_);
+    }
+  }
+
   function connectSse() {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/orders.ts) faz streaming do
@@ -56,7 +117,12 @@ export function useOrdersBoard() {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      const onPush = () => refresh();
+      // Todo push refaz o fetch canônico; só o de pedido NOVO também avisa.
+      const onPush = (ev: Event) => {
+        refresh();
+        const created = newOrderPush((ev as MessageEvent).data);
+        if (created !== null) announceNewOrder(created);
+      };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
       source.onopen = () => { realtime.value = "live"; };
       // Erro/desconexão → cai pro poll; o EventSource auto-reconecta e o onopen volta a "live".
@@ -75,7 +141,11 @@ export function useOrdersBoard() {
     watch([pending, error], ([p, e]) => { if (!p && !e) connectSse(); }, { once: true });
   }
 
-  const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+  const onVisible = () => {
+    if (document.visibilityState !== "visible") return;
+    stopTitleAlert(); // o operador voltou — o título para de gritar
+    refresh();
+  };
   onMounted(() => {
     pollTimer = setInterval(() => refresh(), 30_000);
     connectWhenReady();
@@ -87,6 +157,7 @@ export function useOrdersBoard() {
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (source) { source.close(); source = null; }
+    stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
   });
@@ -216,5 +287,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany };
+  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
 }

@@ -7,6 +7,7 @@ import { computed, nextTick, reactive, readonly, ref, shallowRef, watch } from "
 import { httpError, httpErrorMessage } from "../../app/utils/httpError";
 import { retryWithBackoff } from "../../app/utils/retryBackoff";
 import { useStationLock } from "../../app/composables/useStationLock";
+import { useAlertSound } from "../../app/composables/useAlertSound";
 
 /**
  * Harness ÚNICO para testar composables de operador em env `node` — do próprio kit e
@@ -118,6 +119,7 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("httpErrorMessage", httpErrorMessage); // implementação REAL do kit
   vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
   vi.stubGlobal("useStationLock", useStationLock); // implementação REAL do kit (sobre o useState mockado)
+  vi.stubGlobal("useAlertSound", useAlertSound); // implementação REAL do kit (AudioContext ausente em node → beep no-op)
   vi.stubGlobal("reportClientError", env.clientErrorReport);
   vi.stubGlobal("useFetch", () => ({
     data: ref(env.fetchData.value),

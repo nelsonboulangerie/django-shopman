@@ -82,7 +82,10 @@ export interface OrderCardProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
-  has_notes: boolean;
+  has_kitchen_note: boolean;
+  has_customer_note: boolean;
+  is_gift: boolean;
+  gift_has_recipient: boolean;
   assigned_operator: string;
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
@@ -124,6 +127,7 @@ export interface OperatorOrderProjection {
   items: OrderItemProjection[];
   timeline: TimelineEventProjection[];
   kitchen_note: string;
+  customer_note: string;
   payment_method: string;
   payment_method_label: string;
   payment_status: string;

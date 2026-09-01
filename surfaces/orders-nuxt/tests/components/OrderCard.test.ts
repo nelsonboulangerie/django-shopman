@@ -44,7 +44,10 @@ function card(over: Partial<OrderCardProjection> = {}): OrderCardProjection {
     can_settle_delivery_cash: false,
     fiscal_status_label: "",
     fiscal_status: "",
-    has_notes: false,
+    has_kitchen_note: false,
+    has_customer_note: false,
+    is_gift: false,
+    gift_has_recipient: false,
     assigned_operator: "",
     awaiting_work_orders: [],
     confirmation_deadline_iso: "",
@@ -137,6 +140,36 @@ describe("OrderCard — ações emitidas", () => {
     expect(w.find('[role="alert"]').text()).toContain("Pagamento não confirmado");
     await w.find('[aria-label="Dispensar aviso"]').trigger("click");
     expect(w.emitted("dismiss-error")).toBeTruthy();
+  });
+});
+
+describe("OrderCard — indicações mínimas: presente e observação do cliente", () => {
+  // O card só INDICA (selo compacto, ícone + aria); o conteúdo mora no detalhe.
+  // Antes o Gestor não lia `order_notes` em lugar nenhum — a observação do
+  // cliente chegava ao KDS e nunca a quem gerencia a fila.
+  it("presente com destinatário ganha selo e o aria diz que há destinatário", () => {
+    const w = mountCard({ card: card({ is_gift: true, gift_has_recipient: true }) });
+    const badge = w.find("[data-gift-badge]");
+    expect(badge.exists()).toBe(true);
+    expect(badge.attributes("aria-label")).toBe("Presente com destinatário");
+  });
+
+  it("presente sem destinatário (retirada): o aria vira 'Embalar para presente'", () => {
+    const w = mountCard({ card: card({ is_gift: true, gift_has_recipient: false }) });
+    expect(w.find("[data-gift-badge]").attributes("aria-label")).toBe("Embalar para presente");
+  });
+
+  it("observação do cliente vira selo de presença, sem carregar o texto", () => {
+    const w = mountCard({ card: card({ has_customer_note: true }) });
+    const badge = w.find("[data-customer-note-badge]");
+    expect(badge.exists()).toBe(true);
+    expect(badge.attributes("aria-label")).toBe("Tem observação do cliente");
+  });
+
+  it("sem presente nem observação, nenhum selo aparece", () => {
+    const w = mountCard({ card: card() });
+    expect(w.find("[data-gift-badge]").exists()).toBe(false);
+    expect(w.find("[data-customer-note-badge]").exists()).toBe(false);
   });
 });
 
