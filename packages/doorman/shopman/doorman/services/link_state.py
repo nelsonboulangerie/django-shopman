@@ -2,7 +2,8 @@
 
 Fluxo: o site guarda um contexto opaco (ex.: ``{"cart_session_key": ..., "next": ...}``)
 sob um código curto de uso único (``NB-XxXx``); o cliente envia esse código pelo
-WhatsApp; o External Request do ManyChat repassa como ``state_code``; a
+WhatsApp dentro da mensagem ``#menu NB-XxXx``; o External Request do ManyChat repassa
+o texto inteiro como ``access_code``; a
 ``AccessLinkCreateView`` dá ``pop`` no estado e dobra o dict na ``metadata`` do token.
 
 Aqui o dict é **opaco** — quem guarda decide as chaves. Uso único, TTL curto. NUNCA
@@ -48,7 +49,7 @@ def store_state(data: dict, *, ttl_seconds: int | None = None) -> str:
 
 def extract_code(raw: str) -> str:
     """Extrai o código de uma string que pode ser o código puro OU a mensagem inteira
-    do WhatsApp (ex.: "Quero entrar na loja NB-7Q2K9P"). Assim o ManyChat só precisa
+    do WhatsApp (ex.: "#menu NB-7Q2K9P"). Assim o ManyChat só precisa
     repassar o texto da mensagem — sem regex do lado dele."""
     norm = _normalize(raw)
     prefix = _normalize(_prefix())

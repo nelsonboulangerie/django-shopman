@@ -25,7 +25,18 @@ def _config() -> dict:
 
 
 def _wa_number() -> str:
-    """Número (só dígitos, E.164 sem '+') do WhatsApp da loja para o deep link."""
+    """Número (só dígitos, E.164 sem '+') do WhatsApp da loja para o deep link.
+
+    Duas degradações possíveis, e **as duas gritam no log**: o destinatário errado não
+    quebra nada visível — o botão abre o WhatsApp igual, a mensagem sai, e o ManyChat
+    simplesmente nunca é acionado. Sem log, isso é indistinguível de "o cliente desistiu".
+
+    - ``SHOPMAN_WHATSAPP_VERIFY_NUMBER`` vazio → cai para ``Shop.phone``, que é o
+      telefone de CONTATO da loja e pode muito bem ser um fixo, ou um número que não é
+      o conectado ao ManyChat. É palpite, não configuração.
+    - Sem número nenhum → o deep link sai sem destinatário (``wa.me/?text=``) e o
+      WhatsApp abre o seletor de contatos. O login por WhatsApp está inoperante.
+    """
     num = re.sub(r"\D", "", str(_config().get("number") or ""))
     if num:
         return num
@@ -34,9 +45,21 @@ def _wa_number() -> str:
 
         shop = Shop.objects.first()
         if shop and getattr(shop, "phone", ""):
-            return re.sub(r"\D", "", shop.phone)
+            fallback = re.sub(r"\D", "", shop.phone)
+            if fallback:
+                logger.warning(
+                    "wa_access.number_fallback_shop_phone — SHOPMAN_WHATSAPP_VERIFY_NUMBER "
+                    "não configurado; o deep link vai para Shop.phone, que só funciona se "
+                    "for exatamente o número conectado ao ManyChat."
+                )
+                return fallback
     except Exception:
         logger.debug("wa_verify: fallback para Shop.phone degradado", exc_info=True)
+    logger.error(
+        "wa_access.no_number — login por WhatsApp sem destinatário: nem "
+        "SHOPMAN_WHATSAPP_VERIFY_NUMBER nem Shop.phone. O botão abre o seletor de "
+        "contatos e a mensagem nunca chega ao ManyChat."
+    )
     return ""
 
 
