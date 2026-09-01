@@ -416,6 +416,23 @@ class AccountSummaryView(APIView):
 
         account = build_account(customer, reduced_addresses=knows_only_the_number(request))
         last_order = account.recent_orders[0] if account.recent_orders else None
+        # Pedidos em andamento vêm prontos no summary: são o primeiro conteúdo da
+        # tela da conta (e o único acesso razoável quando há mais de um ativo).
+        # Leitura degrada para vazio — a conta responde mesmo com o histórico fora.
+        try:
+            active_orders = order_service.order_history_for_customer(
+                customer_ref=customer.ref,
+                phone=customer.phone,
+                filter_param="ativos",
+                limit=5,
+            )
+        except Exception:
+            logger.warning(
+                "storefront_account_active_orders_failed customer=%s",
+                customer.ref,
+                exc_info=True,
+            )
+            active_orders = []
         loyalty = None
         if account.loyalty:
             loyalty = {
@@ -445,6 +462,15 @@ class AccountSummaryView(APIView):
                 customer_ref=customer.ref,
                 phone=customer.phone,
             ),
+            # Total real (sem o teto de 10 dos recentes) — alimenta a frase
+            # "X em andamento (Y no total)".
+            "total_order_count": order_service.order_count_for_customer(
+                customer_ref=customer.ref,
+                phone=customer.phone,
+            ),
+            "active_orders": OrderHistoryItemSerializer(
+                [_with_order_actions(order) for order in active_orders], many=True
+            ).data,
             "last_order": {
                 "ref": last_order.ref,
                 "created_at_display": last_order.created_at_display,
@@ -662,6 +688,18 @@ class OrderHistoryView(APIView):
         serializer = OrderHistoryItemSerializer([_with_order_actions(order) for order in data], many=True)
         return Response({
             "orders": serializer.data,
+            # Contagens independem do filtro aplicado: a tela mostra
+            # "X em andamento (Y no total)" seja qual for o recorte.
+            "counts": {
+                "total": order_service.order_count_for_customer(
+                    customer_ref=customer.ref,
+                    phone=customer.phone,
+                ),
+                "active": order_service.active_order_count_for_customer(
+                    customer_ref=customer.ref,
+                    phone=customer.phone,
+                ),
+            },
             "copy": {"empty": _history_empty_copy(filter_param)},
         })
 

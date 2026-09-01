@@ -370,6 +370,7 @@ class OrderHistoryItemSerializer(serializers.Serializer):
     status_label = serializers.CharField()
     status_color = serializers.CharField(required=False)
     status_tone = serializers.CharField(required=False)
+    is_active = serializers.BooleanField(required=False)
     item_count = serializers.IntegerField(required=False)
     actions = ActionSerializer(many=True, required=False)
 

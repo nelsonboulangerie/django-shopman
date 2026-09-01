@@ -127,6 +127,35 @@ export function reorderActionFrom (order: Pick<OrderHistoryItem, 'actions'>): Ac
   return order.actions?.find(action => action.ref === 'reorder' && action.enabled) || null
 }
 
+// Frase de contagem: "2 pedidos em andamento (8 pedidos no total)". O que está
+// em andamento lidera; sem nada ativo, só o total; sem nada, convite ao cardápio.
+export function ordersCountLabel (active: number, total: number): string {
+  const safeActive = Math.max(0, active || 0)
+  const safeTotal = Math.max(safeActive, total || 0)
+  if (safeTotal === 0) return 'Nenhum pedido ainda'
+  const totalLabel = safeTotal === 1 ? '1 pedido no total' : `${safeTotal} pedidos no total`
+  if (safeActive === 0) return safeTotal === 1 ? '1 pedido' : `${safeTotal} pedidos`
+  const activeLabel = safeActive === 1 ? '1 pedido em andamento' : `${safeActive} pedidos em andamento`
+  return `${activeLabel} (${totalLabel})`
+}
+
+// A regra "em andamento" tem dono único no backend (`is_active`, espelho de
+// ACTIVE_STATUSES no serviço); aqui só se agrupa — nunca se reinterpreta status.
+export function splitOrdersByActive (orders: OrderHistoryItem[]): { active: OrderHistoryItem[], past: OrderHistoryItem[] } {
+  const active: OrderHistoryItem[] = []
+  const past: OrderHistoryItem[] = []
+  for (const order of orders) (order.is_active ? active : past).push(order)
+  return { active, past }
+}
+
+// Pedido finalizado recua com elegância: menos saturação e opacidade, voltando
+// ao vivo no hover/focus — legível nos dois temas, sem trocar a paleta.
+export function orderRowEmphasisClass (isActive: boolean | undefined): string {
+  return isActive
+    ? ''
+    : 'opacity-70 saturate-50 transition hover:opacity-100 hover:saturate-100 focus-within:opacity-100 focus-within:saturate-100'
+}
+
 export interface OrderFilterOption {
   value: 'todos' | 'ativos' | 'anteriores'
   label: string
@@ -193,9 +222,10 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
     {
       to: '/conta/pedidos',
       label: 'Pedidos',
-      description: 'Acompanhe e repita pedidos',
+      description: 'Histórico completo, acompanhar e repetir',
       icon: 'lucide:receipt',
-      count: summary ? summary.recent_order_count : null
+      // Badge = o que pede atenção agora (ativos); o histórico mora na descrição.
+      count: summary ? summary.active_order_count || summary.total_order_count : null
     },
     {
       to: '/conta/enderecos',

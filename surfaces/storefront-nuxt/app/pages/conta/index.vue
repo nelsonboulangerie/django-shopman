@@ -4,9 +4,11 @@ import {
   accountGreeting,
   accountNavCards,
   loyaltyView,
+  ordersCountLabel,
+  orderStatusAccentClass,
+  orderStatusDotClass,
   reorderActionFrom
 } from '~/presentation/account'
-import { formatCount } from '~/utils/display'
 import { orderTrackingRoute } from '~/utils/routes'
 
 definePageMeta({ middleware: 'account' })
@@ -27,6 +29,13 @@ const greeting = computed(() => accountGreeting(
 ))
 const loyalty = computed(() => loyaltyView(summary.value?.loyalty))
 const navCards = computed(() => accountNavCards(summary.value || null))
+// Pedidos em andamento são o primeiro conteúdo da conta; o "Último pedido"
+// vira fallback quando não há nada ativo (aí sim, Refazer é o convite certo).
+const activeOrders = computed(() => summary.value?.active_orders ?? [])
+const countLabel = computed(() => ordersCountLabel(
+  summary.value?.active_order_count || 0,
+  summary.value?.total_order_count || 0
+))
 const lastOrder = computed(() => summary.value?.last_order || null)
 const lastOrderReorder = computed(() => (lastOrder.value ? reorderActionFrom(lastOrder.value) : null))
 const conflictRef = conflict as Ref<ReorderConflictProjection | null>
@@ -78,7 +87,7 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
           <h1 class="truncate shop-title">{{ greeting }}</h1>
           <p class="mt-0.5 shop-muted">
             <template v-if="pending">Carregando sua conta…</template>
-            <template v-else>{{ formatCount(summary?.recent_order_count || 0, 'pedido recente', 'pedidos recentes') }}</template>
+            <template v-else>{{ countLabel }}</template>
           </p>
         </div>
         <UiButton variant="ghost" size="sm" icon="lucide:log-out" @click="logoutOpen = true">Sair</UiButton>
@@ -104,6 +113,39 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
           </UiAlertDialogFooter>
         </UiAlertDialogContent>
       </UiAlertDialog>
+
+      <!-- Pedidos em andamento: quando existem, são a razão de abrir a Conta —
+           vêm antes de tudo, inclusive da fidelidade. -->
+      <section v-if="activeOrders.length" class="space-y-2" aria-labelledby="active-orders-heading">
+        <div class="flex items-baseline justify-between gap-3">
+          <h2 id="active-orders-heading" class="shop-kicker">
+            {{ activeOrders.length === 1 ? 'Pedido em andamento' : 'Pedidos em andamento' }}
+          </h2>
+          <NuxtLink to="/conta/pedidos" class="shop-muted text-sm underline-offset-4 hover:underline">
+            Ver todos
+          </NuxtLink>
+        </div>
+        <ul class="space-y-2">
+          <li
+            v-for="order in activeOrders"
+            :key="order.ref"
+            class="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-l-2 bg-card px-4 py-3"
+            :class="orderStatusAccentClass(order.status_tone)"
+          >
+            <div class="min-w-0">
+              <p class="flex items-center gap-2 font-semibold">
+                <span class="size-2 shrink-0 rounded-full" :class="orderStatusDotClass(order.status_tone)" aria-hidden="true" />
+                {{ order.status_label }}
+                <span v-if="order.total_display" class="text-muted-foreground">· {{ order.total_display }}</span>
+              </p>
+              <p class="mt-0.5 truncate shop-muted">{{ order.ref }} · {{ order.created_at_display }}</p>
+            </div>
+            <UiButton :to="orderTrackingRoute(order.ref)" size="sm" icon="lucide:radar" class="shrink-0">
+              Acompanhar
+            </UiButton>
+          </li>
+        </ul>
+      </section>
 
       <!-- Vitrine de fidelidade -->
       <section
@@ -145,8 +187,8 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
         </div>
       </section>
 
-      <!-- Último pedido -->
-      <section v-if="lastOrder" class="space-y-2">
+      <!-- Último pedido: fallback quando nada está em andamento -->
+      <section v-if="!activeOrders.length && lastOrder" class="space-y-2">
         <h2 class="shop-kicker">Último pedido</h2>
         <div class="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
           <div class="min-w-0">

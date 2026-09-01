@@ -971,6 +971,8 @@ export interface AccountSummary {
   customer_first_name: string
   recent_order_count: number
   active_order_count: number
+  total_order_count: number
+  active_orders: OrderHistoryItem[]
   last_order: AccountOrderRef | null
   loyalty: AccountLoyalty | null
   food_preferences: AccountFoodPreference[]
@@ -1007,6 +1009,7 @@ export interface OrderHistoryItem {
   status_label: string
   status_color?: string
   status_tone?: 'info' | 'warning' | 'success' | 'danger' | 'neutral' | string
+  is_active?: boolean
   total_display: string
   item_count?: number
   created_at_display?: string
@@ -1020,6 +1023,7 @@ export interface EmptyStateCopy {
 
 export interface OrderHistoryResponse {
   orders: OrderHistoryItem[]
+  counts?: { total: number, active: number }
   copy: { empty: EmptyStateCopy }
 }
 

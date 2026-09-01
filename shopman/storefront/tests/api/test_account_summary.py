@@ -42,10 +42,79 @@ def test_account_summary_returns_customer_memory_contract(client: Client):
     data = response.json()
     assert data["customer_first_name"] == "Ana"
     assert data["recent_order_count"] == 0
+    assert data["active_order_count"] == 0
+    assert data["total_order_count"] == 0
+    assert data["active_orders"] == []
     assert data["last_order"] is None
     assert data["loyalty"] is None
     assert isinstance(data["food_preferences"], list)
     assert isinstance(data["notification_preferences"], list)
+
+
+def _make_order(customer: Customer, *, ref: str, status: str, total_q: int = 2400):
+    from shopman.orderman.models import Order
+
+    return Order.objects.create(
+        ref=ref,
+        channel_ref="web",
+        status=status,
+        total_q=total_q,
+        handle_type="phone",
+        handle_ref=customer.phone,
+        data={},
+    )
+
+
+def test_account_summary_leads_with_active_orders(client: Client):
+    """Pedidos em andamento vêm prontos no summary; o total não tem teto."""
+    customer = Customer.objects.create(
+        ref="CUS-SUMMARY-02",
+        first_name="Bruno",
+        phone="+5543999990013",
+    )
+    _login_as_customer(client, customer)
+    _make_order(customer, ref="ORD-ACT-01", status="preparing")
+    _make_order(customer, ref="ORD-ACT-02", status="ready")
+    _make_order(customer, ref="ORD-DONE-01", status="completed")
+
+    response = client.get("/api/v1/account/summary/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active_order_count"] == 2
+    assert data["total_order_count"] == 3
+    refs = {order["ref"] for order in data["active_orders"]}
+    assert refs == {"ORD-ACT-01", "ORD-ACT-02"}
+    for order in data["active_orders"]:
+        assert order["is_active"] is True
+        assert order["status_label"]
+        assert order["status_tone"]
+
+
+def test_order_history_returns_counts_and_is_active(client: Client):
+    """A lista informa "X em andamento (Y no total)" e marca cada linha."""
+    customer = Customer.objects.create(
+        ref="CUS-HISTORY-01",
+        first_name="Carla",
+        phone="+5543999990014",
+    )
+    _login_as_customer(client, customer)
+    _make_order(customer, ref="ORD-HIS-ACT", status="accepted")
+    _make_order(customer, ref="ORD-HIS-DONE", status="completed")
+
+    response = client.get("/api/v1/account/orders/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["counts"] == {"total": 2, "active": 1}
+    by_ref = {order["ref"]: order for order in data["orders"]}
+    assert by_ref["ORD-HIS-ACT"]["is_active"] is True
+    assert by_ref["ORD-HIS-DONE"]["is_active"] is False
+
+    # As contagens não mudam com o recorte aplicado.
+    filtered = client.get("/api/v1/account/orders/", {"filter": "ativos"}).json()
+    assert filtered["counts"] == {"total": 2, "active": 1}
+    assert [order["ref"] for order in filtered["orders"]] == ["ORD-HIS-ACT"]
 
 
 def test_account_profile_get_returns_editable_fields(client: Client):

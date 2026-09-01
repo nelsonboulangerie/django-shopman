@@ -22,6 +22,7 @@ from django.utils import timezone
 from shopman.shop.projections import customer as customer_projection
 from shopman.shop.projections import customer_context
 from shopman.shop.projections.types import SavedAddressProjection
+from shopman.shop.services.customer_orders import ACTIVE_STATUSES
 from shopman.storefront.presentation.address_privacy import address_projection
 from shopman.storefront.presentation.order_history import present_summary
 from shopman.storefront.presentation.status import status_tone
@@ -176,6 +177,9 @@ def order_history_for_customer(
                 "status_label": rendered.status_label,
                 "status_color": rendered.status_color,
                 "status_tone": status_tone(rendered.status),
+                # Dono único da regra "em andamento": ACTIVE_STATUSES no serviço.
+                # A UI esmaece o que não está ativo sem duplicar a lista no TS.
+                "is_active": rendered.status in ACTIVE_STATUSES,
                 "item_count": rendered.item_count,
             }
         )
