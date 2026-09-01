@@ -9,10 +9,15 @@ from typing import Literal
 
 from django.conf import settings
 
+from shopman.shop.environment import is_production
+
 logger = logging.getLogger(__name__)
 
 ReadinessMode = Literal["runtime", "staging"]
 
+#: Vocabulário do TERCEIRO — como Focus/NF-e rotulam o próprio ambiente. Não
+#: serve para responder "em que ambiente EU estou": essa pergunta é do
+#: `shopman.shop.environment.is_production`.
 _PRODUCTION_NAMES = {"producao", "produção", "production", "prod", "live"}
 
 
@@ -374,9 +379,13 @@ def _requires_staging_safety(mode: ReadinessMode) -> bool:
 
 
 def _requires_production_safety(mode: ReadinessMode) -> bool:
+    # A NOSSA variável passa pelo helper compartilhado (valor irreconhecível =
+    # produção, então a prontidão cobra as credenciais reais em vez de relaxar).
+    # `_is_production_name` continua valendo para o rótulo do TERCEIRO, que fala
+    # o vocabulário dele ("producao" da Focus) — pergunta diferente.
     if mode == "staging":
         return False
-    return _is_production_name(getattr(settings, "SHOPMAN_ENVIRONMENT", "development"))
+    return is_production()
 
 
 def _normalized_environment(value: object) -> str:

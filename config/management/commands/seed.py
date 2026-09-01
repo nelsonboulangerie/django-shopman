@@ -430,16 +430,21 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from django.conf import settings
         from django.core.management.base import CommandError
+
+        from shopman.shop.environment import environment_name, is_production
 
         # Guard destrutivo: --flush apaga TUDO. Em produção, exige --force explícito
         # para não zerar a loja num comando distraído. Staging/dev seguem livres.
+        #
+        # `is_production()` e não `== "production"`: só os quatro nomes conhecidos
+        # de ambiente não-produtivo abrem esta porta. Antes, `prod` ou um valor
+        # digitado errado passava reto e o flush corria sem pedir --force.
         if options["flush"] and not options["force"]:
-            environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "") or "").lower()
-            if environment == "production":
+            if is_production():
                 raise CommandError(
-                    "Recusando `seed --flush` em produção (SHOPMAN_ENVIRONMENT=production): "
+                    f"Recusando `seed --flush` em produção "
+                    f"(SHOPMAN_ENVIRONMENT={environment_name()!r}): "
                     "isto apagaria TODOS os dados da loja. Se é mesmo o que você quer, "
                     "repita com --force."
                 )
