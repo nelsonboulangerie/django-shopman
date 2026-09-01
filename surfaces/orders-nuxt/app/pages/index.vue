@@ -338,6 +338,7 @@ function printQueue() {
           <span class="hidden md:inline">{{ realtimeView.label }}</span>
         </span>
         <AlertsBell />
+        <NotificationBell />
 
         <!-- sort -->
         <div class="relative">

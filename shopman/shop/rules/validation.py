@@ -241,8 +241,23 @@ def _coordinates_match_claimed_address(session_data: dict) -> bool:
         from shopman.shop.services.geocoding import reverse_geocode
 
         resolved = reverse_geocode(float(lat), float(lng))
-    except Exception:
+    except Exception as exc:
+        # Fail-open é decisão de UX do checkout (Google fora do ar não pode
+        # travar pedido legítimo) — mas o antifraude rodando cego é o mais
+        # grave dos pontos cegos, então o gestor fica sabendo NA HORA.
         logger.warning("delivery_zone_rule: reverse geocode indisponível — coerência não verificada")
+        try:
+            from shopman.shop.services.observability import record_integration_failure
+
+            record_integration_failure(
+                provider="google_geocoding",
+                operation="antifraud_delivery_check",
+                detail=f"antifraude de entrega rodou sem verificação ({exc.__class__.__name__}: {exc})",
+                severity="critical",
+                exc=exc,
+            )
+        except Exception:
+            logger.exception("delivery_zone_rule: falha ao registrar alerta de integração")
         return True
 
     resolved_cep = "".join(c for c in str(getattr(resolved, "postal_code", "") or "") if c.isdigit())

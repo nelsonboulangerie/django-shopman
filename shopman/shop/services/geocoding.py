@@ -24,6 +24,27 @@ GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json"
 REQUEST_TIMEOUT_SECONDS = 5
 CACHE_TTL_SECONDS = 60 * 60 * 24  # 24h — reverse geocode is stable for a coordinate.
 
+#: Statuses do Google que denunciam problema DA INTEGRAÇÃO (chave, quota,
+#: request malformado) — não do endereço. Esses nunca viram cache negativo:
+#: uma janela de quota não pode congelar "sem coordenada" por 24h.
+INTEGRATION_ERROR_STATUSES = frozenset(
+    {
+        "REQUEST_DENIED",
+        "OVER_QUERY_LIMIT",
+        "OVER_DAILY_LIMIT",
+        "UNKNOWN_ERROR",
+        "INVALID_REQUEST",
+    }
+)
+
+
+def _record_failure(operation: str, detail: str, *, exc: BaseException | None = None) -> None:
+    from shopman.shop.services.observability import record_integration_failure
+
+    record_integration_failure(
+        provider="google_geocoding", operation=operation, detail=detail, exc=exc
+    )
+
 
 class GeocodingError(Exception):
     """Raised when reverse geocoding cannot produce a canonical result."""
@@ -125,11 +146,13 @@ def reverse_geocode(lat: float, lng: float) -> ReverseGeocodeResult:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — network error surfaces as domain error
         logger.warning("reverse_geocode_http_failed lat=%s lng=%s err=%s", lat, lng, exc)
+        _record_failure("reverse_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         raise GeocodingError("Reverse geocoding request failed.") from exc
 
     status = payload.get("status", "")
     if status != "OK":
         logger.info("reverse_geocode_empty lat=%s lng=%s status=%s", lat, lng, status)
+        _record_failure("reverse_geocode", f"status={status or '-'}")
         raise GeocodingError(f"No result (status={status}).")
 
     results = payload.get("results") or []
@@ -170,13 +193,20 @@ def forward_geocode(address: str) -> tuple[float, float] | None:
             payload = json.loads(resp.read().decode("utf-8"))
     except Exception as exc:  # noqa: BLE001 — rede falha vira "sem coordenada" (fallback)
         logger.warning("forward_geocode_http_failed addr=%s err=%s", address, exc)
+        _record_failure("forward_geocode", f"falha de transporte ({exc.__class__.__name__})", exc=exc)
         return None
 
     results = payload.get("results") or []
     location = ((results[0].get("geometry") or {}).get("location") or {}) if results else {}
     lat, lng = location.get("lat"), location.get("lng")
-    if payload.get("status") != "OK" or lat is None or lng is None:
-        cache.set(key, [], CACHE_TTL_SECONDS)  # cache negativo
+    status = payload.get("status", "")
+    if status != "OK" or lat is None or lng is None:
+        if status in INTEGRATION_ERROR_STATUSES:
+            # Problema da INTEGRAÇÃO (chave/quota), não do endereço: sem cache
+            # negativo — na próxima janela o mesmo endereço volta a resolver.
+            _record_failure("forward_geocode", f"status={status}")
+            return None
+        cache.set(key, [], CACHE_TTL_SECONDS)  # cache negativo: endereço sem coordenada
         return None
 
     coords = (float(lat), float(lng))
