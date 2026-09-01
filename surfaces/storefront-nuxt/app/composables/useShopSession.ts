@@ -111,12 +111,14 @@ export function useShopSession () {
     }
   }
 
-  function setIdentity (next: { name?: string | null, phone?: string | null, isAuthenticated?: boolean }) {
+  function setIdentity (next: { name?: string | null, phone?: string | null, isAuthenticated?: boolean, requiresWelcome?: boolean }) {
     state.value = {
       ...state.value,
       customerName: next.name ?? state.value.customerName,
       customerPhone: next.phone ?? state.value.customerPhone,
-      isAuthenticated: next.isAuthenticated ?? state.value.isAuthenticated
+      isAuthenticated: next.isAuthenticated ?? state.value.isAuthenticated,
+      // Nome confirmado no welcome gate: o convite não deve reaparecer nesta sessão.
+      requiresWelcome: next.requiresWelcome ?? state.value.requiresWelcome
     }
   }
 

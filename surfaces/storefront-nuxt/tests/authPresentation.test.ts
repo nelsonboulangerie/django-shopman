@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   RESEND_COOLDOWN_MS,
+  accessLinkLanding,
   authErrorView,
   authStep,
   codeSentPrefix,
@@ -98,5 +99,27 @@ describe('codeSentPrefix', () => {
     expect(codeSentPrefix('')).toBe('Código enviado para')
     expect(codeSentPrefix(null)).toBe('Código enviado para')
     expect(codeSentPrefix('   ')).toBe('Código enviado para')
+  })
+})
+
+describe('accessLinkLanding', () => {
+  it('keeps the backend destination when no welcome is pending', () => {
+    expect(accessLinkLanding('/finalizar', false)).toBe('/finalizar')
+  })
+
+  it('falls back to home when the redirect is empty', () => {
+    expect(accessLinkLanding('', false)).toBe('/')
+  })
+
+  it('routes through the welcome gate preserving the destination', () => {
+    expect(accessLinkLanding('/pedido/NB-123', true)).toBe('/entrar?welcome=1&next=%2Fpedido%2FNB-123')
+  })
+
+  it('welcomes with home as destination when the redirect is empty', () => {
+    expect(accessLinkLanding('', true)).toBe('/entrar?welcome=1&next=%2F')
+  })
+
+  it('does not re-wrap a destination that is already the login screen', () => {
+    expect(accessLinkLanding('/entrar?welcome=1&next=%2Ffinalizar', true)).toBe('/entrar?welcome=1&next=%2Ffinalizar')
   })
 })

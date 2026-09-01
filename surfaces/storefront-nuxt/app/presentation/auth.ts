@@ -71,6 +71,19 @@ export function welcomeNameValue (raw: string): string {
   return raw.replace(/\s+/g, ' ').trim()
 }
 
+// Aterrissagem do access link (a.vue): quem entra por link e ainda precisa
+// confirmar o nome passa pelo passo de boas-vindas ANTES do destino — o mesmo
+// passo do fluxo OTP, com o destino preservado em `next` para depois do
+// confirmar. Sem boas-vindas pendentes, o destino do servidor vale direto.
+export function accessLinkLanding (redirect: string, requiresWelcome: boolean): string {
+  const destination = redirect || '/'
+  if (!requiresWelcome) return destination
+  // Destino que já é a tela de entrada não é re-embrulhado (evita next aninhado
+  // quando o mesmo caminho atravessa o handoff de navegador e volta para cá).
+  if (destination.startsWith('/entrar')) return destination
+  return `/entrar?welcome=1&next=${encodeURIComponent(destination)}`
+}
+
 export function otpValidUntilDisplay (expiresAtIso: string | null | undefined): string {
   if (!expiresAtIso?.trim()) return ''
   const parsed = Date.parse(expiresAtIso)
