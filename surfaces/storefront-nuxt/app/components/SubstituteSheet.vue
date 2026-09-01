@@ -37,7 +37,7 @@ const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Q
 const title = computed(() => {
   if (isPlanned.value && cartIssue.value?.planned_offer_title) return cartIssue.value.planned_offer_title
   if (hasAvailable.value) return 'Ajuste a quantidade'
-  return cartIssue.value?.shortage_title || 'Esgotou enquanto você escolhia'
+  return cartIssue.value?.shortage_title || 'Ficou indisponível enquanto você escolhia.'
 })
 const description = computed(() => {
   if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message

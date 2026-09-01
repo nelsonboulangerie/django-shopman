@@ -1282,7 +1282,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido já está sendo preparado. Fale conosco para ajustar.")},
     },
     "KINTSUGI_SHORTAGE_GENERIC": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ih, o último acabou de sair")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ficou indisponível enquanto você escolhia.")},
     },
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},

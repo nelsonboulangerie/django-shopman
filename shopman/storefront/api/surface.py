@@ -153,7 +153,7 @@ def _stock_error_payload(exc, *, product=None) -> dict:
         # deduz o motivo que a casa não conta.
         "shortage_title": (
             resolve_copy("KINTSUGI_SHORTAGE_GENERIC", moment="*", audience="*").title
-            or "Esgotou enquanto você escolhia"
+            or "Ficou indisponível enquanto você escolhia."
         ),
         "substitutes_intro": (
             resolve_copy("KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO", moment="*", audience="*").message
