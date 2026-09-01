@@ -1,18 +1,26 @@
 <script setup lang="ts">
+import { accountNavEntry } from '~/utils/accountNavEntry'
+
 const route = useRoute()
 const { cart } = useCartState()
 const { cartPulse } = useCartPulse()
+const { isAuthenticated } = useShopSession()
 
-const items = [
+// O último slot diz a VERDADE sobre o que acontece ao ser tocado: deslogado ele
+// é a porta ("Entrar"), logado ele é a conta. Antes dizia "Conta" nos dois
+// casos, e quem só queria se identificar acabava numa tela que não pediu.
+const items = computed(() => [
   { to: '/', label: 'Início', icon: 'lucide:home', showsCartBadge: false },
   { to: '/menu', label: 'Cardápio', icon: 'lucide:utensils', showsCartBadge: false },
   { to: '/sacola', label: 'Sacola', icon: 'lucide:shopping-bag', showsCartBadge: true },
-  { to: '/conta', label: 'Conta', icon: 'lucide:user-round', showsCartBadge: false }
-]
+  { ...accountNavEntry(isAuthenticated.value, route.fullPath), showsCartBadge: false }
+])
 
 function active (to: string) {
   if (to === '/') return route.path === '/'
-  return route.path.startsWith(to)
+  // O destino de "Entrar" carrega `?next=`; o estado ativo é do CAMINHO.
+  const caminho = to.split('?')[0] || to
+  return route.path.startsWith(caminho)
 }
 </script>
 

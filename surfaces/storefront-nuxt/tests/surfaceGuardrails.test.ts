@@ -470,7 +470,12 @@ describe('surface UX guardrails', () => {
     expect(header).toContain('Como funciona')
     expect(header).toContain('Redes sociais')
     expect(bottomNav).toContain("to: '/menu'")
-    expect(bottomNav).toContain("to: '/conta'")
+    // O slot da conta continua existindo — mas ele deixou de ser um literal.
+    // Deslogado ele é a PORTA ("Entrar", indo direto ao login com a página atual
+    // guardada); logado ele é a conta. Antes dizia "Conta" nos dois casos, e quem
+    // só queria se identificar acabava numa tela que não pediu.
+    expect(bottomNav).toContain('accountNavEntry(')
+    expect(header).toContain('accountNavEntry(')
     expect(header).not.toContain('shopping-basket')
     expect(header).not.toContain('session.shop.value?.tagline')
     expect(header).not.toContain('Compra rápida e acompanhada')
