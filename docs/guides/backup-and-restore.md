@@ -124,12 +124,14 @@ download → .xlsx** e `import_backup` (dry-run primeiro, sempre).
 planilha viva no Drive, com URL estável, sem navegador e sem arquivo manual:
 
 ```bash
-.venv/bin/python manage.py push_backup_drive    # sobe/atualiza a planilha no lugar
-.venv/bin/python manage.py pull_backup_drive    # baixa a versão curada p/ var/backups/
+.venv/bin/python manage.py export_backup_to_drive     # banco → Drive (atualiza no lugar)
+.venv/bin/python manage.py import_backup_from_drive   # Drive → banco (dry-run por padrão)
 ```
 
-O `pull` **não importa nada** — ele só materializa o XLSX; a escrita continua
-atrás do `import_backup` (dry-run, transação única, `--force` em produção).
+Os nomes dizem a direção inteira do fluxo. O `import_backup_from_drive` baixa
+o XLSX (fica em `var/backups/`, auditável) e emenda no `import_backup` — que
+continua mandando: dry-run por padrão, `--apply` numa transação única,
+`--force` obrigatório em produção.
 Zero dependência nova: o JWT da service account é assinado com PyJWT +
 cryptography, que o stack fiscal já traz.
 

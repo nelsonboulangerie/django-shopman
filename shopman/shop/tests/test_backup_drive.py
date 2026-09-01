@@ -54,6 +54,7 @@ class _FakeHTTP:
     def __init__(self, existing_file=None):
         self.calls = []
         self.existing_file = existing_file
+        self.export_content = b"PK-xlsx-fake"
 
     def _response(self, status, payload=None, content=b""):
         return SimpleNamespace(
@@ -73,7 +74,7 @@ class _FakeHTTP:
     def get(self, url, **kwargs):
         self.calls.append(("get", url, kwargs))
         if url.endswith("/export"):
-            return self._response(200, content=b"PK-xlsx-fake")
+            return self._response(200, content=self.export_content)
         files = [self.existing_file] if self.existing_file else []
         return self._response(200, {"files": files})
 
@@ -86,16 +87,16 @@ def test_unconfigured_fails_closed_with_setup_pointer(db, settings):
     settings.SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE = ""
     settings.SHOPMAN_BACKUP_DRIVE_FOLDER = ""
     with pytest.raises(CommandError, match="backup-and-restore"):
-        call_command("push_backup_drive", stdout=StringIO())
+        call_command("export_backup_to_drive", stdout=StringIO())
     with pytest.raises(CommandError, match="backup-and-restore"):
-        call_command("pull_backup_drive", stdout=StringIO())
+        call_command("import_backup_from_drive", stdout=StringIO())
 
 
 def test_push_new_creates_native_sheet_with_signed_jwt(db, bridge, rsa_key, monkeypatch):
     fake = _FakeHTTP()
     monkeypatch.setattr(drive, "requests", fake)
     out = StringIO()
-    call_command("push_backup_drive", stdout=out)
+    call_command("export_backup_to_drive", stdout=out)
 
     token_call = next(c for c in fake.calls if "oauth2" in c[1])
     assertion = token_call[2]["data"]["assertion"]
@@ -119,20 +120,26 @@ def test_push_existing_updates_in_place(db, bridge, monkeypatch):
     fake = _FakeHTTP(existing_file={"id": "velho1", "name": "shopman-backup"})
     monkeypatch.setattr(drive, "requests", fake)
     out = StringIO()
-    call_command("push_backup_drive", stdout=out)
+    call_command("export_backup_to_drive", stdout=out)
     patch_call = next(c for c in fake.calls if c[0] == "patch")
     assert patch_call[1].endswith("/velho1")
     assert not any(c[0] == "post" and "upload" in c[1] for c in fake.calls)
     assert "https://sheets/velho1" in out.getvalue()
 
 
-def test_pull_exports_xlsx_and_imports_nothing(db, bridge, monkeypatch, tmp_path):
+def test_import_from_drive_downloads_and_chains_a_dry_run(db, bridge, monkeypatch, tmp_path):
+    """O nome promete a direção inteira: baixa do Drive E importa — mas o
+    import continua mandando (dry-run por padrão, nada escrito sem --apply)."""
+    from shopman.shop.backup import workbook
+
+    real_xlsx = workbook.write_xlsx(workbook.export_datasets())
     fake = _FakeHTTP(existing_file={"id": "velho1", "name": "shopman-backup"})
+    fake.export_content = real_xlsx
     monkeypatch.setattr(drive, "requests", fake)
     out = StringIO()
-    call_command("pull_backup_drive", "--out", str(tmp_path), stdout=out)
+    call_command("import_backup_from_drive", "--out", str(tmp_path), stdout=out)
     export_call = next(c for c in fake.calls if c[1].endswith("/export"))
     assert export_call[2]["params"]["mimeType"].endswith("spreadsheetml.sheet")
     saved = next(tmp_path.glob("drive-*.xlsx"))
-    assert saved.read_bytes() == b"PK-xlsx-fake"
-    assert "import_backup" in out.getvalue()
+    assert saved.read_bytes() == real_xlsx
+    assert "Dry-run limpo" in out.getvalue()
