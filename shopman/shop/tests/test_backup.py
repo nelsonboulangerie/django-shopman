@@ -195,6 +195,48 @@ def test_shop_integrations_never_leave_the_db(curated, tmp_path):
     assert "segredo" not in path.read_bytes().decode("utf-8", errors="ignore")
 
 
+@pytest.fixture
+def payment(db):
+    from shopman.payman.models import PaymentIntent
+
+    return PaymentIntent.objects.create(
+        ref="pi-1", order_ref="A1", method="pix", amount_q=1500
+    )
+
+
+def test_transactional_sheets_are_opt_in(curated, payment, tmp_path):
+    path = _export_xlsx(tmp_path)
+    assert "payment_intents" not in workbook.read_xlsx(path)
+
+    out = tmp_path / "com-transacional"
+    call_command(
+        "export_backup", "--out", str(out), "--with-transactional", stdout=StringIO()
+    )
+    datasets = workbook.read_xlsx(next(out.glob("backup-*.xlsx")))
+    for sheet in ("orders", "order_items", "stock_moves", "cash_entries",
+                  "payment_intents", "work_orders"):
+        assert sheet in datasets, sheet
+    rows = datasets["payment_intents"]
+    assert rows[0][rows.headers.index("ref")] == "pi-1"
+    assert rows[0][rows.headers.index("amount_q")] == "1500"
+
+
+def test_import_refuses_read_only_sheets(curated, payment, tmp_path):
+    call_command(
+        "export_backup", "--out", str(tmp_path), "--with-transactional", stdout=StringIO()
+    )
+    path = next(tmp_path.glob("backup-*.xlsx"))
+    with pytest.raises(CommandError, match="somente-leitura"):
+        call_command("import_backup", str(path), stdout=StringIO())
+    # O recorte curado do MESMO arquivo continua importável via --only.
+    Coupon.objects.all().delete()
+    call_command(
+        "import_backup", str(path), "--only", "promotions,coupons", "--apply",
+        stdout=StringIO(),
+    )
+    assert Coupon.objects.filter(code="BEMVINDO").exists()
+
+
 def _replace_rows(dataset, rows):
     import tablib
 

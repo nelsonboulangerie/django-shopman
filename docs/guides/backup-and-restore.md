@@ -72,6 +72,21 @@ entidade é gesto de Admin, não de planilha. E falha fechado:
   inteiro; restore pela metade não existe;
 - **em produção, `--apply` exige `--force`** (mesmo contrato do `seed`).
 
+### Conferência dos transacionais (somente leitura)
+
+```bash
+.venv/bin/python manage.py export_backup --with-transactional
+```
+
+Acrescenta ao arquivo as abas `orders`, `order_items`, `stock_moves`,
+`cash_entries`, `payment_intents` e `work_orders` — colunas escolhidas para
+leitura humana (refs e SKUs no lugar de ids). No endpoint do backstage:
+`?with_transactional=1`. Servem para conferir, cruzar e auditar num Sheets.
+**Elas não voltam pelo import** — o `import_backup` as recusa com erro, porque
+o ledger é imutável e o livro-caixa é append-only; a única restauração
+legítima do transacional é a camada 1. Para importar só a curadoria de um
+arquivo que as contenha, use `--only` com as abas curadas.
+
 ### O que entra, o que não entra
 
 Entram as ~32 entidades registradas (a lista viva sai de

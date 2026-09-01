@@ -16,11 +16,17 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class BackupEntry:
-    """Uma entidade do cofre: nome da aba, resource e tier de dependência."""
+    """Uma entidade do cofre: nome da aba, resource e tier de dependência.
+
+    ``read_only`` marca as abas de conferência (transacionais): entram no
+    export sob demanda e o import as RECUSA — restaurar transacional é papel
+    do backup do banco, nunca de planilha.
+    """
 
     name: str
     resource_class: type
     tier: int
+    read_only: bool = False
     order: int = field(compare=False, default=0)
 
 
@@ -30,14 +36,18 @@ _entries: dict[str, BackupEntry] = {}
 _MAX_SHEET_NAME = 31
 
 
-def register(name: str, resource_class: type, *, tier: int) -> None:
+def register(name: str, resource_class: type, *, tier: int, read_only: bool = False) -> None:
     """Registra uma entidade no cofre. Nome duplicado é erro de programação."""
     if name in _entries:
         raise ValueError(f"Entidade de backup já registrada: {name!r}")
     if len(name) > _MAX_SHEET_NAME:
         raise ValueError(f"Nome de aba excede {_MAX_SHEET_NAME} caracteres: {name!r}")
     _entries[name] = BackupEntry(
-        name=name, resource_class=resource_class, tier=tier, order=len(_entries)
+        name=name,
+        resource_class=resource_class,
+        tier=tier,
+        read_only=read_only,
+        order=len(_entries),
     )
 
 
