@@ -10,6 +10,7 @@ import {
   quickCheckoutDateOptions,
   isClosedWeekday,
   isCustomCheckoutDate,
+  notesToggleState,
   paymentMethodHint,
   reconciledPickupSlotRef,
   shouldOfferPickupSwap,
@@ -175,5 +176,23 @@ describe('firstCheckoutError', () => {
 
   it('returns null when there are no errors', () => {
     expect(firstCheckoutError({})).toBeNull()
+  })
+})
+
+describe('notesToggleState', () => {
+  it('stashes the typed note when the toggle closes, and empties the payload field', () => {
+    expect(notesToggleState(false, 'tocar o interfone', '')).toEqual({ notes: '', stashed: 'tocar o interfone' })
+  })
+
+  it('restores the stashed note when the toggle reopens', () => {
+    expect(notesToggleState(true, '', 'tocar o interfone')).toEqual({ notes: 'tocar o interfone', stashed: '' })
+  })
+
+  it('keeps the current note over the stash when reopening with text already present', () => {
+    expect(notesToggleState(true, 'nota atual', 'nota antiga')).toEqual({ notes: 'nota atual', stashed: '' })
+  })
+
+  it('keeps an earlier stash when closing again without new text', () => {
+    expect(notesToggleState(false, '   ', 'nota antiga')).toEqual({ notes: '', stashed: 'nota antiga' })
   })
 })

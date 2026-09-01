@@ -86,8 +86,10 @@ watch(() => props.open, open => {
   <BottomSheet
     :open="open"
     max-width="md"
-    :title="addressId ? 'Endereço salvo' : 'Etiqueta do endereço'"
-    description="Como você quer chamar este endereço?"
+    :title="addressId ? 'Endereço salvo' : 'Vamos guardar este endereço'"
+    :description="addressId
+      ? 'Como você quer chamar este endereço?'
+      : 'Ele fica salvo na sua conta quando o pedido fechar. Como você quer chamá-lo?'"
     data-address-label-sheet
     @update:open="value => emit('update:open', value)"
   >

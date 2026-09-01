@@ -254,6 +254,48 @@ export function selectionFromDraft (draft: AddressDraft, savedAddressId: number 
   }
 }
 
+// Reidratação do rascunho do checkout: reconstrói o AddressDraft a partir da
+// seleção restaurada, para o form do picker reabrir preenchido (endereço NOVO
+// digitado antes de sair da página não pode nascer vazio de novo).
+export function draftFromSelection (selection: AddressSelection): AddressDraft {
+  const structured = selection.structured || {}
+  return {
+    formatted_address: structured.formatted_address || selection.formattedAddress || '',
+    route: structured.route || '',
+    street_number: structured.street_number || '',
+    complement: selection.complement || '',
+    neighborhood: structured.neighborhood || '',
+    city: structured.city || '',
+    state_code: structured.state_code || '',
+    postal_code: maskCepInput(structured.postal_code || ''),
+    latitude: structured.latitude ?? null,
+    longitude: structured.longitude ?? null,
+    place_id: structured.place_id || '',
+    delivery_instructions: selection.deliveryInstructions || ''
+  }
+}
+
+// Seleção vinda do localStorage (rascunho do checkout): dado externo, valida
+// forma antes de virar estado. Sem id salvo E sem linha formatada não há
+// seleção que valha restaurar.
+export function parseStoredAddressSelection (raw: unknown): AddressSelection | null {
+  if (!raw || typeof raw !== 'object') return null
+  const value = raw as Record<string, unknown>
+  const savedAddressId = typeof value.savedAddressId === 'number' ? value.savedAddressId : null
+  const formattedAddress = typeof value.formattedAddress === 'string' ? value.formattedAddress : ''
+  if (!savedAddressId && !formattedAddress.trim()) return null
+  const structured = (value.structured && typeof value.structured === 'object')
+    ? value.structured as StructuredAddressProjection
+    : {} as StructuredAddressProjection
+  return {
+    savedAddressId,
+    formattedAddress,
+    structured,
+    complement: typeof value.complement === 'string' ? value.complement : '',
+    deliveryInstructions: typeof value.deliveryInstructions === 'string' ? value.deliveryInstructions : ''
+  }
+}
+
 // Cascata de pré-seleção resolvida pelo servidor (padrão → geo → último →
 // mais usado). O cliente só respeita o id; cai para o primeiro salvo se o
 // id não estiver mais na lista.
@@ -283,6 +325,13 @@ export const ADDRESS_LABEL_OPTIONS: Array<{ key: AddressLabelKey, label: string,
 
 export function labelPatchPayload (key: AddressLabelKey, custom = ''): { label: AddressLabelKey, label_custom: string } {
   return { label: key, label_custom: key === 'other' ? custom.trim() : '' }
+}
+
+// Nome legível da etiqueta escolhida — usado na confirmação de transparência
+// ("Endereço salvo como Casa") depois que o pedido fecha.
+export function addressLabelDisplay (key: AddressLabelKey, custom = ''): string {
+  if (key === 'other') return custom.trim() || 'Outro'
+  return key === 'work' ? 'Trabalho' : 'Casa'
 }
 
 export function savedAddressDisplayLabel (address: Pick<SavedAddressProjection, 'label' | 'label_key' | 'label_custom'>): string {

@@ -78,6 +78,13 @@ watch(() => loginHome.value, value => {
 }, { immediate: true })
 
 const nextUrl = computed(() => safeInternalPath(route.query.next))
+// Chegada pelo access link com boas-vindas pendentes (`/entrar?welcome=1`, vindo
+// de a.vue): a sessão JÁ está autenticada — não há telefone nem código a pedir.
+// Entramos direto no passo do nome, semeado pela sessão; o destino segue em `next`.
+const welcomeRequested = computed(() => route.query.welcome != null)
+if (import.meta.client && welcomeRequested.value && session.isAuthenticated.value && session.requiresWelcome.value) {
+  enterWelcomeGateFromSession()
+}
 // Zero-telefone: por padrão não pedimos número. A identidade é quem ENVIA a mensagem
 // no WhatsApp. O campo só aparece quando o cliente quer usar OUTRO número (via SMS,
 // o único caminho que mira um número digitado). O deep link é pré-aquecido no mount.
@@ -175,11 +182,26 @@ const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSave
   : ''
 )
 
-onMounted(() => {
+onMounted(async () => {
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client) void waStart(nextUrl.value)
+  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
+  // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
+  // antes de mostrar o passo de telefone a quem já entrou.
+  if (welcomeRequested.value && !welcomeNeeded.value) {
+    const auth = await $fetch<AuthSessionResponse>(apiPath('/api/auth/session/'), {
+      credentials: 'include'
+    }).catch(() => null)
+    if (auth?.is_authenticated) {
+      session.setFromAuthSession(auth)
+      if (auth.requires_welcome) enterWelcomeGateFromSession()
+      // Autenticado e sem nada a confirmar: o convite de boas-vindas já não vale;
+      // segue direto ao destino.
+      else await navigateTo(nextUrl.value)
+    }
+  }
 })
 
 onBeforeUnmount(() => {
@@ -273,6 +295,15 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeNeeded.value = true
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
+}
+
+// Welcome gate a partir da SESSÃO (não de uma resposta de verificação): quem
+// chega já autenticado pelo access link pula telefone e código — `verified`
+// vira true para a máquina de passos aterrissar direto em 'welcome'.
+function enterWelcomeGateFromSession () {
+  verified.value = true
+  welcomeNeeded.value = true
+  welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
 }
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
@@ -393,7 +424,7 @@ async function submitWelcome () {
       credentials: 'include',
       body: { first_name: name }
     })
-    session.setIdentity({ name })
+    session.setIdentity({ name, requiresWelcome: false })
     await navigateTo(nextUrl.value)
   } catch (e) {
     error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')

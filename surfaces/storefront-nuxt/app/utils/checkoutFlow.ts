@@ -454,3 +454,18 @@ export function canContinueCheckoutWhen (
   if (form.fulfillment_type !== 'pickup' || !slots.length) return true
   return !!selectedSlot?.enabled
 }
+
+// Toggle "Adicionar observação": fechar NÃO destrói o texto — ele vai para um
+// rascunho interno e volta ao reabrir. Com o toggle fechado, `notes` fica
+// vazio, então observação dispensada nunca viaja escondida no payload
+// (buildCheckoutPayload envia `state.notes` como está).
+export interface NotesToggleState {
+  notes: string
+  stashed: string
+}
+
+export function notesToggleState (open: boolean, notes: string, stashed: string): NotesToggleState {
+  const kept = notes.trim() ? notes : stashed
+  if (open) return { notes: kept, stashed: '' }
+  return { notes: '', stashed: kept }
+}
