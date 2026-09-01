@@ -4,6 +4,7 @@ import {
   composedAddressLine,
   draftFromGooglePlace,
   draftFromSavedAddress,
+  draftFromSelection,
   draftFromViaCep,
   draftSummaryLine,
   emptyAddressDraft,
@@ -11,6 +12,7 @@ import {
   looksLikeCep,
   maskCepInput,
   mergeReverseGeocode,
+  parseStoredAddressSelection,
   nextFocusAfterSuggestion,
   resolvePreselectedAddress,
   savedAddressDisplayLabel,
@@ -284,5 +286,69 @@ describe('label depois', () => {
   it('prefers the custom label for display', () => {
     expect(savedAddressDisplayLabel({ label: 'Outro', label_key: 'other', label_custom: 'Casa da mãe' })).toBe('Casa da mãe')
     expect(savedAddressDisplayLabel({ label: 'Casa', label_key: 'home', label_custom: '' })).toBe('Casa')
+  })
+
+})
+
+describe('reidratação do rascunho do checkout', () => {
+  const selection = {
+    savedAddressId: null,
+    formattedAddress: 'R. das Flores, 123 - Jardim - Londrina/PR',
+    structured: {
+      formatted_address: 'R. das Flores, 123 - Jardim - Londrina/PR',
+      route: 'R. das Flores',
+      street_number: '123',
+      neighborhood: 'Jardim',
+      city: 'Londrina',
+      state_code: 'PR',
+      postal_code: '86000-000',
+      latitude: -23.31,
+      longitude: -51.16,
+      place_id: 'place-1'
+    },
+    complement: 'ap 42',
+    deliveryInstructions: 'portaria dos fundos'
+  }
+
+  it('rebuilds a full draft from a restored selection', () => {
+    const draft = draftFromSelection(selection)
+    expect(draft.route).toBe('R. das Flores')
+    expect(draft.street_number).toBe('123')
+    expect(draft.complement).toBe('ap 42')
+    expect(draft.delivery_instructions).toBe('portaria dos fundos')
+    expect(draft.postal_code).toBe('86000-000')
+    expect(draft.latitude).toBe(-23.31)
+    expect(draft.place_id).toBe('place-1')
+    // Ida e volta: o draft reidratado produz a MESMA seleção.
+    expect(selectionFromDraft(draft, null)).toEqual(selection)
+  })
+
+  it('accepts a stored selection with the expected shape', () => {
+    expect(parseStoredAddressSelection(selection)).toEqual(selection)
+    const saved = parseStoredAddressSelection({ savedAddressId: 7, formattedAddress: '', structured: {}, complement: '', deliveryInstructions: '' })
+    expect(saved?.savedAddressId).toBe(7)
+  })
+
+  it('rejects stored selections without identity (no id and no formatted line)', () => {
+    expect(parseStoredAddressSelection(null)).toBeNull()
+    expect(parseStoredAddressSelection('endereço')).toBeNull()
+    expect(parseStoredAddressSelection({ savedAddressId: '7', formattedAddress: '   ' })).toBeNull()
+  })
+
+  it('normalizes malformed optional fields instead of failing', () => {
+    const restored = parseStoredAddressSelection({
+      savedAddressId: null,
+      formattedAddress: 'Av. Brasil, 90',
+      structured: 'não-objeto',
+      complement: 42,
+      deliveryInstructions: undefined
+    })
+    expect(restored).toEqual({
+      savedAddressId: null,
+      formattedAddress: 'Av. Brasil, 90',
+      structured: {},
+      complement: '',
+      deliveryInstructions: ''
+    })
   })
 })

@@ -4,6 +4,7 @@ import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman
 import { labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
+import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import {
@@ -30,6 +31,7 @@ import {
   isCheckoutDateUnavailable,
   localDateValue,
   isCustomCheckoutDate,
+  notesToggleState,
   parseClosedDateEntries,
   parseLocalDate,
   paymentIcon as resolvePaymentIcon,
@@ -153,8 +155,15 @@ const confirmOpen = ref(false)
 const receiptOpen = ref(false)
 const datePopoverOpen = ref(false)
 const notesOpen = ref(false)
-// Desligar o toggle é o dismiss: descarta a observação para não enviá-la oculta.
-watch(notesOpen, (open) => { if (!open) state.notes = '' })
+// Desligar o toggle é o dismiss VISUAL, não a destruição do texto: a observação
+// digitada vai para o rascunho interno e volta ao reabrir. Com o toggle fechado,
+// `state.notes` fica vazio — observação dispensada nunca viaja oculta no payload.
+const stashedNotes = ref('')
+watch(notesOpen, (open) => {
+  const next = notesToggleState(open, state.notes, stashedNotes.value)
+  state.notes = next.notes
+  stashedNotes.value = next.stashed
+})
 watch(() => state.name, value => {
   if (value.trim()) clearFieldError('name')
 })
@@ -414,11 +423,9 @@ const stepIcons = checkoutStepIcons
 
 // Rascunho do checkout: sair do navegador e voltar (ou o iOS recarregar a aba por
 // memória) NÃO pode perder o que já foi preenchido. Usa localStorage (sobrevive à aba
-// ser morta/recarregada — sessionStorage é apagado nesses casos). Restaura no onMounted
-// (pós-hidratação, p/ não divergir do HTML do servidor); o save só liga após restaurar,
-// pra não sobrescrever o rascunho antigo com os defaults desta carga. Validade 6h.
-const CHECKOUT_DRAFT_KEY = 'shopman-checkout-draft'
-const CHECKOUT_DRAFT_TTL = 6 * 60 * 60 * 1000
+// ser morta/recarregada — sessionStorage é apagado nesses casos). O parse/validação
+// vive em utils/checkoutDraft (puro, testado); o save só liga após restaurar, pra não
+// sobrescrever o rascunho antigo com os defaults desta carga. Validade 6h.
 let draftRestored = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
@@ -428,25 +435,33 @@ function clearCheckoutDraft () {
 // e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
 if (import.meta.client) {
   try {
-    const raw = localStorage.getItem(CHECKOUT_DRAFT_KEY)
-    if (raw) {
-      const draft = JSON.parse(raw)
-      const fresh = draft.savedAt && (Date.now() - draft.savedAt) < CHECKOUT_DRAFT_TTL
-      if (fresh && draft.state) {
-        Object.assign(state, draft.state)
-        if (draft.activeStep && checkoutSteps(state.fulfillment_type).includes(draft.activeStep)) activeStep.value = draft.activeStep
-        if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
-      } else if (!fresh) {
-        clearCheckoutDraft()
-      }
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY))
+    if (draft) {
+      Object.assign(state, draft.state)
+      if (draft.activeStep) activeStep.value = draft.activeStep
+      if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
+      // A seleção de endereço restaurada alimenta o AddressPicker (prop
+      // `selection`): salvo re-marca o rádio; novo reabre o form preenchido.
+      // Sem ela, o preselect do picker SOBRESCREVIA o endereço do rascunho.
+      if (draft.addressSelection) addressSelection.value = draft.addressSelection
+      // Observação restaurada reabre o toggle — texto nunca viaja escondido.
+      if (draft.notesOpen) notesOpen.value = true
+    } else if (stale) {
+      clearCheckoutDraft()
     }
   } catch { /* rascunho corrompido: ignora */ }
 }
 draftRestored = true
-watch([state, activeStep, pendingAddressLabel], () => {
+watch([state, activeStep, pendingAddressLabel, addressSelection], () => {
   if (!import.meta.client || !draftRestored) return
   try {
-    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify({ state, activeStep: activeStep.value, pendingAddressLabel: pendingAddressLabel.value, savedAt: Date.now() }))
+    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify({
+      state,
+      activeStep: activeStep.value,
+      pendingAddressLabel: pendingAddressLabel.value,
+      addressSelection: addressSelection.value,
+      savedAt: Date.now()
+    }))
   } catch { /* quota/serialização: ignora */ }
 }, { deep: true })
 
