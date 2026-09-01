@@ -70,24 +70,28 @@ venda não declarada, descoberta pelo contador, não pelo sistema.
 `shopman/shop/tests/test_fiscal_focusnfe.py:40,184,219` afirmam a URL
 `homologacao.focusnfe.com.br`. Nenhum teste exige que produção seja alcançável.
 
-### 3. ⬜ `SHOPMAN_EXPOSE_DEBUG_OTP` liga sozinho, e a inferência lê texto livre
+### 3. 🟨 `SHOPMAN_EXPOSE_DEBUG_OTP` liga sozinho, e a inferência lia texto livre
 
-- `config/settings.py:98` — `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", DEBUG or SHOPMAN_ENVIRONMENT == "staging")`
-- `config/settings.py:76-90` — `_default_shopman_environment()` devolve `"staging"` se a **substring** `staging` aparecer em `SHOPMAN_DOMAIN`, `WHATSAPP_STOREFRONT_URL`, `DJANGO_ALLOWED_HOSTS`, `APP_DOMAIN` ou `APP_URL`
+- `config/settings.py:88-91` — `_env_bool("SHOPMAN_EXPOSE_DEBUG_OTP", DEBUG or SHOPMAN_ENVIRONMENT == "staging")`
 - Consumidor: `shopman/storefront/api/auth.py:363-383` põe o código OTP vivo na resposta JSON
 
-**Risco: segurança.** É o bloqueador de go-live já registrado, com um agravante
-novo: **a porta abre sozinha por causa de uma string.**
+**Risco: segurança.** É o bloqueador de go-live já registrado. O agravante — **a
+porta abria sozinha por causa de uma string** — está fechado.
 
-**Hoje, se der errado:** um CNAME esquecido ou um `DJANGO_ALLOWED_HOSTS` que
-ainda lista o host de staging vira `SHOPMAN_ENVIRONMENT=staging`, que liga o OTP
-de debug, e **qualquer pessoa pede código para qualquer telefone e lê a resposta**
-— tomada de conta completa. O guarda `SHOPMAN_E010` lê o *mesmo*
-`SHOPMAN_ENVIRONMENT` envenenado, então não dispara.
+**✅ Corrigido (a inferência):** `SHOPMAN_ENVIRONMENT` não é mais inferido de
+substring. A env é explícita nos specs de deploy (`.do/app.subdomains.yaml`
+= `production`, `.do/app.alpha-subdomains.yaml` = `staging`), e a ausência fora
+de `DEBUG` falha FECHADO: `production`, nunca `staging`
+(`config/settings.py:77-86`). Um CNAME esquecido ou um `DJANGO_ALLOWED_HOSTS`
+que ainda lista host de staging não rebaixa mais o ambiente — e o guarda
+`SHOPMAN_E010` volta a ler um valor confiável, então dispara. Regressão em
+`shopman/shop/tests/test_shopman_environment.py` (re-executa o módulo de
+settings com env envenenada e afirma `production` + OTP desligado).
 
-**Correção proposta:** `SHOPMAN_ENVIRONMENT` deixa de ser inferido de substring —
-env explícita, com `ImproperlyConfigured` na ausência fora de `DEBUG`. E
-`SHOPMAN_EXPOSE_DEBUG_OTP` nasce `False` sempre, sem herdar de nada.
+**⬜ Resta (frente do bloqueador de go-live):** `SHOPMAN_EXPOSE_DEBUG_OTP`
+ainda herda `True` quando `SHOPMAN_ENVIRONMENT == "staging"` — agora só por
+decisão explícita do spec, que é o comportamento que o alpha precisa hoje. No
+go-live, a proposta segue: nascer `False` sempre, sem herdar de nada.
 
 ### 4. ⬜ O adapter de e-mail devolve sucesso enquanto o backend só imprime
 
@@ -344,7 +348,7 @@ Todos em `shopman/shop/checks.py`, com `@register(deploy=True)`: rodam em
 | `check_secret_key` (E001) | `SECRET_KEY` ≠ default de dev | ⚠️ **Sim.** O default é literal (`config/settings.py:71`), e essa chave deriva o HMAC do OTP, do PIN, do link de acesso e da assinatura do comprovante de caixa. Chave conhecida = OTP/PIN/comprovante forjáveis |
 | `check_allowed_hosts` (E002) | sem `*` | ⚠️ **Sim.** Default é `"*"` (`:104`) |
 | `check_payment_adapters` (E003/W006/E009) | adapters + credenciais | ✅ Fechado para o mock (runtime em `payment_mock`). ⚠️ **Não cobre `EFI_SANDBOX` (item 1) nem chave test-vs-live do Stripe** |
-| `check_debug_otp_exposure` (E010) | OTP de debug só em dev/staging | ⚠️ **Sim, e pior:** lê o mesmo `SHOPMAN_ENVIRONMENT` envenenável (item 3), então não dispara |
+| `check_debug_otp_exposure` (E010) | OTP de debug só em dev/staging | ⚠️ **Sim** (só roda em `check --deploy`), mas o valor que ele lê voltou a ser confiável: `SHOPMAN_ENVIRONMENT` é explícito, sem inferência por substring (item 3 ✅) |
 | `check_shared_cache_backend` (E006) | Redis em prod | ⚠️ **Sim.** LocMem em prod faz o `django-ratelimit` virar por-worker: os limites de OTP/login multiplicam pelo número de workers |
 | `check_fiscal_emission_resolver` (E013) | resolver configurado | ⚠️ **Sim** (item 16). E não checa `FOCUS_NFE_ENVIRONMENT` |
 | `check_operator_cookie_domain` (E014) | hosts sob o domínio-pai | ⚠️ Leve — divergência quebra CSRF/sessão em silêncio |
@@ -367,7 +371,7 @@ conferência antecipada, não a única trava.
 |---|---|---|---|
 | `EFI_SANDBOX` | **`true`** | **nenhuma** | Pix cobra onde não entra dinheiro (item 1) |
 | `FOCUS_NFE_ENVIRONMENT` | **`homologacao`** | **nenhuma** | NFC-e sem validade fiscal (item 2) |
-| `SHOPMAN_EXPOSE_DEBUG_OTP` | **herda de env inferida** | mesma env envenenável | OTP na resposta ⇒ tomada de conta (item 3) |
+| `SHOPMAN_EXPOSE_DEBUG_OTP` | **herda de `SHOPMAN_ENVIRONMENT=staging`** | env agora explícita, falha fechado para `production` (item 3) | OTP na resposta ⇒ tomada de conta — exige `staging` declarado no spec |
 | `SHOPMAN_PIX_ADAPTER` | `payment_mock` **só em DEBUG** ✅ | `_ensure_simulation_allowed` ✅ | — |
 | `SHOPMAN_CARD_ADAPTER` | `payment_stripe` ✅ | `_refuse_card` + `StripeNotConfigured` ✅ | — |
 | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS` | `False` | `payment_mock` ✅ | Reabre o simulador de Pix |
