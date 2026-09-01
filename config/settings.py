@@ -74,25 +74,15 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-secret-key-not-for-product
 DEBUG = _env_bool("DJANGO_DEBUG", False)
 
 
-def _default_shopman_environment() -> str:
-    hints = " ".join(
-        os.environ.get(name, "")
-        for name in (
-            "SHOPMAN_DOMAIN",
-            "WHATSAPP_STOREFRONT_URL",
-            "DJANGO_ALLOWED_HOSTS",
-            "APP_DOMAIN",
-            "APP_URL",
-        )
-    ).lower()
-    if "staging" in hints:
-        return "staging"
-    return "development" if DEBUG else "production"
-
-
+# Ambiente é decisão EXPLÍCITA, nunca inferida de texto livre. `staging` só
+# existe se o spec de deploy (.do/*.yaml) disser `SHOPMAN_ENVIRONMENT=staging`
+# — um host de staging esquecido em DJANGO_ALLOWED_HOSTS não pode rebaixar
+# produção, porque `staging` liga o OTP de debug e desliga as travas de
+# refresh_seed_dates/qa_scenarios/seed --flush/import_backup. Ausência da env
+# fora de DEBUG falha FECHADO: production, nunca staging.
 SHOPMAN_ENVIRONMENT = os.environ.get(
     "SHOPMAN_ENVIRONMENT",
-    _default_shopman_environment(),
+    "development" if DEBUG else "production",
 ).strip().lower()
 
 SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool(
