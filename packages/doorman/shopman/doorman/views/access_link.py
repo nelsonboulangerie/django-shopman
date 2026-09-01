@@ -84,6 +84,25 @@ class AccessLinkCreateView(View):
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+        unrendered = self._unrendered_variables(data)
+        if unrendered:
+            logger.warning(
+                "access_link.unrendered_manychat_variables fields=%s", ",".join(unrendered)
+            )
+            return JsonResponse(
+                {
+                    "error": (
+                        "O ManyChat mandou a variavel sem renderizar em: "
+                        + ", ".join(unrendered)
+                        + ". Insira a variavel pelo seletor do ManyChat em vez de digitar "
+                        "o nome entre chaves — nome digitado a mao nao e substituido."
+                    ),
+                    "error_code": "unrendered_variable",
+                    "fields": unrendered,
+                },
+                status=422,
+            )
+
         resolver = get_customer_resolver()
         customer, error_response = self._resolve_customer(data, resolver)
         if error_response:
@@ -166,6 +185,27 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _unrendered_variables(data: dict, _prefix: str = "") -> list[str]:
+        """Campos cujo valor ainda é ``{{alguma_coisa}}`` — variável não substituída.
+
+        No ManyChat, variável DIGITADA à mão no corpo do request não é substituída:
+        chega a string literal. Ela some no `normalize_phone` (vira vazio) e o pedido
+        morre com "faltou whatsapp_id", que manda procurar o campo errado — foi o que
+        escondeu, por dias, um `{{phone}}` num lugar onde o ManyChat nunca teve campo
+        `phone`. Dizer o nome do campo e o que fazer custa uma linha e devolve a tarde.
+        """
+        found: list[str] = []
+        for key, value in (data or {}).items():
+            path = f"{_prefix}{key}"
+            if isinstance(value, dict):
+                found.extend(AccessLinkCreateView._unrendered_variables(value, f"{path}."))
+            elif isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{{") and stripped.endswith("}}"):
+                    found.append(path)
+        return found
 
     @staticmethod
     def _access_code_from_payload(data: dict) -> str:
