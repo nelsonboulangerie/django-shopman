@@ -40,14 +40,14 @@ jobs:
       - name: API pronta (/ready/)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-            https://api.staging.nelsonboulangerie.com.br/ready/)
+            https://api.boulangerie.com.br/ready/)
           echo "/ready/ => $code"
           test "$code" = "200"
 
       - name: Cardápio tem produto e tem disponibilidade
         run: |
           curl -s --max-time 30 -H 'Accept: application/json' \
-            https://api.staging.nelsonboulangerie.com.br/api/v1/storefront/menu/ \
+            https://api.boulangerie.com.br/api/v1/storefront/menu/ \
             -o menu.json
           python3 - <<'EOF'
           import json
