@@ -46,6 +46,16 @@ describe("useOrdersBoard — derivação da fila", () => {
     // Sem componente montado (harness node), o SSE não conecta → sinal honesto de poll.
     expect(useOrdersBoard().realtime.value).toBe("polling");
   });
+
+  it("expõe o som de pedido novo (kit): nasce ligado e o toggle alterna", () => {
+    env.fetchData.value = { queue: emptyZone() };
+    const board = useOrdersBoard();
+    expect(board.soundOn.value).toBe(true);
+    board.toggleSound();
+    expect(board.soundOn.value).toBe(false);
+    board.toggleSound();
+    expect(board.soundOn.value).toBe(true);
+  });
 });
 
 describe("useOrdersBoard — ações (act)", () => {

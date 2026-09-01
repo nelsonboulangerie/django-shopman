@@ -32,7 +32,7 @@ import {
 import type { OrderCardProjection } from "~/types/orders";
 import type { CancellationReason } from "~/composables/useOrdersBoard";
 
-const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut } = useOrdersBoard();
+const { zones, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, assign, unassign, confirmMany, advanceMany, equipmentOut, soundOn, soundBlocked, toggleSound } = useOrdersBoard();
 
 // Sinal honesto de tempo-real vs poll (indicador de degradação do SSE).
 const realtimeView = computed(() => realtimeIndicator(realtime.value));
@@ -337,6 +337,21 @@ function printQueue() {
           <span class="size-1.5 rounded-full" :class="realtimeView.dotClass" />
           <span class="hidden md:inline">{{ realtimeView.label }}</span>
         </span>
+        <!-- som de pedido novo (mesmos 3 estados do KDS): ligado / desligado /
+             ligado-mas-bloqueado pelo autoplay (ponto âmbar até o 1º gesto). O
+             mesmo toque pede a permissão de notificação do browser. -->
+        <button
+          type="button"
+          class="relative grid size-9 place-items-center rounded-md border transition hover:bg-accent hover:text-foreground"
+          :class="soundOn && soundBlocked ? 'border-warning/50 text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+          :aria-label="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : soundOn ? 'Som de pedido novo ativo' : 'Som de pedido novo desativado'"
+          :title="soundOn && soundBlocked ? 'Som bloqueado — toque para ativar' : 'Som de pedido novo'"
+          data-sound-toggle
+          @click="toggleSound"
+        >
+          <Icon :name="soundOn ? 'lucide:volume-2' : 'lucide:volume-x'" class="size-4" />
+          <span v-if="soundOn && soundBlocked" class="absolute -right-1 -top-1 size-2 rounded-full bg-warning" aria-hidden="true" />
+        </button>
         <AlertsBell />
 
         <!-- sort -->

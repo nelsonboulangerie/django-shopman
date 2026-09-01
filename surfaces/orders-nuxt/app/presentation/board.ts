@@ -335,6 +335,25 @@ export function realtimeIndicator(state: RealtimeState): RealtimeIndicatorView {
   return { label: "Atualização automática", live: false, dotClass: "bg-muted-foreground/40", title: "Sem tempo real; o board atualiza sozinho a cada 30s" };
 }
 
+/**
+ * Parse do payload de um push SSE do board (backstage-orders-update): devolve o
+ * ref quando é um pedido NOVO (`kind === "created"`, ver _sse_emitters), "" se é
+ * novo sem ref, e null para qualquer outro push (mudança de status, corrida) —
+ * o aviso de pedido novo (som/notificação) não pode gritar em transição de
+ * status, e um payload imparseável não é pedido novo.
+ */
+export function newOrderPush(data: unknown): string | null {
+  try {
+    const payload = JSON.parse(String(data ?? ""));
+    if (payload && typeof payload === "object" && payload.kind === "created") {
+      return String(payload.ref || "");
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /** Contagem por fulfillment na fila corrente (para os selos dos filtros). */
 export function fulfillmentCounts(cards: OrderCardProjection[]): { delivery: number; pickup: number } {
   let delivery = 0;
