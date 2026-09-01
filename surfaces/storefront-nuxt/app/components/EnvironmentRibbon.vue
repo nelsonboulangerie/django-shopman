@@ -17,14 +17,22 @@
 //   2. **Cobrir botão.** `pointer-events-none` no contêiner inteiro: o toque
 //      atravessa. Ela cobre visualmente o canto do header (a sacola), e isso é
 //      deliberado — mas nunca IMPEDE o toque nele.
-//   3. **Leitor de tela.** `role="status"` no elemento e o texto legível dentro;
-//      a rotação é só transformação visual, não muda a ordem de leitura.
+//   3. **Leitor de tela.** O texto legível sai num `role="status"` à parte; a
+//      rotação é transformação visual e não muda a ordem de leitura.
 //
 // ## Calma, mesmo sendo impossível de ignorar
 //
 // Âmbar e não vermelho. O cliente do alpha vê isso em TODA página; alarme
 // repetido vira ruído e a pessoa para de ler. Chamar atenção pela POSIÇÃO (o
 // canto, sempre ali) custa menos que chamar pela cor.
+//
+// O âmbar vem do token `warning` da casa, não de `amber-400` cru. O default do
+// CSS é o mesmo âmbar (`#f59e0b` claro / `#fbbf24` escuro), mas a MARCA
+// sobrescreve `--warning` em tempo de execução — na Nelson ele chega `#e09a4a`,
+// o dourado da casa. É por isso que o token vale mais que a cor solta: ele
+// acompanha a marca e o tema, e usa o par bg/foreground já provado em Badge e
+// Alert. Custo medido contra o fundo escuro da loja: 7,5:1 em vez dos 10,6:1 do
+// `amber-400` cru. Continua acima de AAA — a fita não perde o grito.
 //
 // A frase vem do SERVIDOR (`public_config.environment_notice`), derivada de
 // `SHOPMAN_ENVIRONMENT` — a mesma variável que já decide o gate de deploy, o
@@ -41,33 +49,41 @@ const notice = computed(() => publicConfig.value?.environment_notice || '')
        vazaria para fora da viewport e criaria rolagem horizontal. -->
   <div
     v-if="notice"
-    class="pointer-events-none fixed right-0 top-0 z-50 size-40 overflow-hidden"
+    class="pointer-events-none fixed right-0 top-0 z-50 size-44 overflow-hidden"
     aria-hidden="true"
   >
-    <!-- ⚠️ GEOMETRIA, não gosto — e ela tem UMA regra que decide se a fita
-         parece fita ou parece retângulo colado torto:
-         **as duas pontas têm que sair PELA TELA.**
+    <!-- ⚠️ GEOMETRIA — os quatro números abaixo (top-11, -right-21, w-72, h-8)
+         são UM sistema. Mexer em um sozinho quebra a fita, e já quebrou duas
+         vezes. `tests/surfaceGuardrails` prende a regra; leia aqui o porquê.
 
-         A janela recorta nas quatro bordas, mas só duas delas são borda de
-         viewport (topo e direita). Ponta que termina nas outras duas fica com um
-         corte reto boiando no meio da página — foi o defeito da primeira versão.
+         A janela recorta nas quatro bordas, mas só DUAS são borda de viewport
+         (topo e direita). Corte nessas some na tela; corte nas outras duas vira
+         uma quina reta boiando no meio da página.
 
-         Para a ponta de cima sair pelo TOPO antes de bater na esquerda, e a de
-         baixo sair pela DIREITA antes de bater embaixo, o centro da barra tem de
-         ficar mais perto da direita do que do topo (cx > cy), e a meia-diagonal
-         da barra tem de caber em `max(cy, S−cx) < k < min(cx, S−cy)`.
+         Daí duas condições, e elas puxam para lados opostos:
 
-         Com S=160 (`size-40`), cx≈92 e cy≈58: k≈85 satisfaz 68 < k < 92. Sobra
-         de 36px acima e 22px à direita — folga suficiente para outra fonte ou
-         zoom não trazerem o corte de volta para dentro.
+         (1) BLEED — as quatro quinas da barra têm de cair fora da tela.
+             Sobra hoje: 30px além de cada borda.
+         (2) CENTRAGEM — o texto está centrado na BARRA, então a barra tem de
+             estar centrada no TRECHO VISÍVEL, senão o texto sai torto. Isso
+             acontece quando o centro cai na antidiagonal do canto, e a conta
+             que garante isso é:
 
-         A LARGURA da janela também define quanto texto cabe: o trecho visível da
-         barra é `(S − cx + cy)·√2` ≈ 178px, e "AMBIENTE DE TESTES" ocupa ~145px.
-         Encolher a janela sem encurtar o texto o corta — foi o segundo defeito. -->
+                 w = 2·(right) + 2·(top) + h        288 = 168 + 88 + 32 ✓
+
+         Encostar mais a barra no canto melhora (1) e encurta o trecho visível;
+         afastar faz o contrário. O comprimento visível é `2·√2·(top + h/2)`
+         ≈ 170px, e a frase ocupa 105px — sobra ~32px de cada lado.
+
+         A JANELA (size-44) só precisa ser grande o bastante para que suas duas
+         bordas falsas fiquem longe: a barra mergulha até 143px, a janela corta
+         em 176px. Aumentar a janela é seguro; DIMINUIR traz a quina de volta. -->
     <div
-      class="absolute -right-11 top-11 w-60 rotate-45 bg-amber-400 py-1.5 text-center shadow-md"
+      class="absolute -right-21 top-11 flex h-8 w-72 rotate-45 items-center justify-center bg-warning shadow-md"
     >
-      <span class="text-xs font-semibold uppercase tracking-wide text-amber-950">
+      <!-- flex/items-center e não padding: o `span` inline assentava na linha de
+           base de uma caixa de 24px e o texto ficava fora do centro vertical. -->
+      <span class="text-xs font-semibold uppercase tracking-wide text-warning-foreground">
         {{ notice }}
       </span>
     </div>
