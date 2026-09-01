@@ -433,6 +433,55 @@ class TestEditingConformance:
             cfg.validate()
 
 
+# ── Aspect 9: Display (rotação de páginas do menuboard) ──
+
+
+class TestDisplayRotationConformance:
+    def test_defaults_are_off(self):
+        cfg = ChannelConfig()
+        assert cfg.display.rotate_seconds == 0
+        assert cfg.display.items_per_page == 0
+        cfg.validate()  # ambos 0 = rotação desligada, combinação válida
+
+    def test_rotation_on_validates(self):
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 10
+        cfg.display.items_per_page = 12
+        cfg.validate()
+
+    def test_rejects_negative_or_non_int(self):
+        for field, value in (
+            ("rotate_seconds", -1), ("rotate_seconds", "10"), ("rotate_seconds", True),
+            ("items_per_page", -1), ("items_per_page", "12"), ("items_per_page", True),
+        ):
+            cfg = ChannelConfig()
+            cfg.display.rotate_seconds = 10
+            cfg.display.items_per_page = 12
+            setattr(cfg.display, field, value)
+            with pytest.raises(ValueError, match=f"display.{field}"):
+                cfg.validate()
+
+    def test_rejects_strobe_cadence(self):
+        """Abaixo de 5s ninguém lê a página: a TV viraria estroboscópio."""
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 3
+        cfg.display.items_per_page = 12
+        with pytest.raises(ValueError, match="display.rotate_seconds deve ser >= 5"):
+            cfg.validate()
+
+    def test_rejects_one_without_the_other(self):
+        """Rotação sem teto não tem página para trocar; teto sem rotação esconde."""
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 10
+        with pytest.raises(ValueError, match="andam juntos"):
+            cfg.validate()
+
+        cfg = ChannelConfig()
+        cfg.display.items_per_page = 12
+        with pytest.raises(ValueError, match="andam juntos"):
+            cfg.validate()
+
+
 # ── Aspect 8: Rules ──
 
 

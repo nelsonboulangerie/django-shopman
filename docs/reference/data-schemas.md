@@ -833,6 +833,22 @@ Lido por: `setup.py` (registro), validators, modifiers.
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
 
+### 8. Display — como um canal `display` exibe
+
+Só faz sentido em canal com `commerce_policy=display` (menuboard/feed — ADR-018).
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `format` | `string` | `""` | Dialeto de XML: `""` (menuboard, rota própria), `"google_merchant"`, `"meta_catalog"` |
+| `collections` | `list[str]` | `[]` | Refs de Collection que compõem a curadoria (ordem de exibição = `Collection.sort_order`) |
+| `prices_from` | `string` | `""` | Ref do canal transacional cujo preço é anunciado. Vazio = `Product.base_price_q` (check W008 avisa) |
+| `paused_skus` | `list[str]` | `[]` | Exceções por SKU: tirado deste canal sem sair da coleção |
+| `rotate_seconds` | `int` | `0` | Menuboard: segundos entre a troca de páginas. `0` = sem rotação; quando > 0, mínimo 5 |
+| `items_per_page` | `int` | `0` | Menuboard: teto de itens por página. `0` = tudo numa página. Anda junto com `rotate_seconds`: ambos > 0 ou ambos 0 |
+
+Lido por: `projections/menuboard.py` (`build_menuboard`), `services/display_prices.py`,
+`views/product_feed.py`, `backstage/projections/feeds.py`, `backstage/services/feeds.py`.
+
 ### Chaves fora do ChannelConfig schema
 
 Estas chaves são lidas diretamente de `channel.config` como dict bruto, sem passar pelo `ChannelConfig`:
