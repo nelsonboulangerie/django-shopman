@@ -21,7 +21,6 @@ from openpyxl import Workbook, load_workbook
 
 from shopman.shop.backup import registry
 
-
 #: Primeiro caractere que faz Excel/Sheets tratar o texto como fórmula ativa.
 _FORMULA_CHARS = ("=", "@", "\t", "\r")
 _NUMERIC_RE = re.compile(r"^[+-]?\d+([.,]\d+)?$")
