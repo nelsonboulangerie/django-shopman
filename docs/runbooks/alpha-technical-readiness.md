@@ -18,7 +18,9 @@ make omotenashi-qa strict=1
 
 - Pix/card podem estar em `payment_mock`, desde que `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true`.
 - Pix mockado precisa ter caminho de conclusao: `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`
-  ou `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true`.
+  ou `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true`. No alpha o caminho e o MANUAL (botao
+  "Simular pagamento"); as duas envs juntas se contradizem — o botao vence e o
+  auto-confirm nao e injetado (`SHOPMAN_W018`).
 - `SHOPMAN_EXPOSE_DEBUG_OTP=true`, `SHOPMAN_STAGING_AUTOPILOT=true` e o botao
   "Simular pagamento" sao warnings de alpha, nao criterio de go-live.
 - Focus NFe homologacao e iFood OAuth continuam bloqueios externos se faltarem,
@@ -39,7 +41,7 @@ SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
 SHOPMAN_EXPOSE_MOCK_CAPTURE=true
-SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true
+SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 
 SHOPMAN_EXPOSE_DEBUG_OTP=true
 SHOPMAN_STAGING_AUTOPILOT=true
@@ -96,7 +98,7 @@ Trocas obrigatorias:
 | Cartao | `payment_mock` ou Stripe test | `payment_stripe` + `sk_live_`/`pk_live_` |
 | Mock | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true` | removido/`false` |
 | Botao simular | `SHOPMAN_EXPOSE_MOCK_CAPTURE=true` | removido/`false` |
-| Auto-confirm Pix | `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true` | removido/`false` |
+| Auto-confirm Pix | `false` (o botao manual e o caminho do alpha) | removido/`false` |
 | Fiscal | Focus homologacao | Focus producao |
 | OTP | debug ou sender de staging | SMS/WhatsApp real, sem debug OTP |
 | Autopilot | opcional | removido/`false` |

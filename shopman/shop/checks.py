@@ -37,6 +37,7 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
   SHOPMAN_W016  Captura simulada exposta em staging técnico
   SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
+  SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
 """
 
 from __future__ import annotations
@@ -574,6 +575,36 @@ def check_mock_capture_exposure(app_configs, **kwargs):
                     "antes de qualquer go-live."
                 ),
                 id="SHOPMAN_W016",
+            )
+        )
+    return messages
+
+
+@register(deploy=True)
+def check_mock_pix_confirm_conflict(app_configs, **kwargs):
+    """As duas confirmações do Pix mock juntas se contradizem — e o relógio ganha.
+
+    ``SHOPMAN_EXPOSE_MOCK_CAPTURE`` promete o botão "Simular pagamento";
+    ``SHOPMAN_MOCK_PIX_AUTO_CONFIRM`` confirma sozinho em segundos. Ligadas ao
+    mesmo tempo, o auto-confirm sempre vence a corrida e o botão nem chega a
+    aparecer. O código já resolve (com o botão exposto, o auto-confirm não é
+    injetado — ver ``_adapter_config`` em services/payment.py); este aviso
+    existe para a config parar de mentir.
+    """
+    messages = []
+    if getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False) and getattr(
+        settings, "SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False
+    ):
+        messages.append(
+            Warning(
+                "SHOPMAN_EXPOSE_MOCK_CAPTURE e SHOPMAN_MOCK_PIX_AUTO_CONFIRM estão ligados juntos; "
+                "o botão manual vence e o auto-confirm do Pix mock é ignorado.",
+                hint=(
+                    "Escolha um: botão \"Simular pagamento\" (SHOPMAN_EXPOSE_MOCK_CAPTURE) ou "
+                    "confirmação automática (SHOPMAN_MOCK_PIX_AUTO_CONFIRM). "
+                    "Desligue SHOPMAN_MOCK_PIX_AUTO_CONFIRM para silenciar este aviso."
+                ),
+                id="SHOPMAN_W018",
             )
         )
     return messages

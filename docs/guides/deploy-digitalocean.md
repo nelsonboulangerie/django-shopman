@@ -121,9 +121,14 @@ explicitamente em mock:
 SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
-SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true
-SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS=8
+SHOPMAN_EXPOSE_MOCK_CAPTURE=true
+SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 ```
+
+O caminho de conclusao do Pix mock no alpha e o MANUAL: o botao "Simular
+pagamento" (`SHOPMAN_EXPOSE_MOCK_CAPTURE`). `SHOPMAN_MOCK_PIX_AUTO_CONFIRM` e a
+alternativa automatica para ambientes sem gente clicando; com o botao exposto o
+auto-confirm nao e injetado (as duas envs juntas emitem `SHOPMAN_W018`).
 
 Isso permite testar checkout, criacao de pedido, tela de pagamento, fila de
 diretivas e transicao para pedido pago sem bloquear por credenciais externas.

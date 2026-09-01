@@ -1634,7 +1634,13 @@ def _adapter_config(order, *, method: str) -> dict:
     config: dict = {}
     if method == "pix":
         config["pix_timeout_minutes"] = cfg.payment.timeout_minutes
-        if getattr(settings, "SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False):
+        # Constraint: o botão "Simular pagamento" (SHOPMAN_EXPOSE_MOCK_CAPTURE)
+        # e o auto-confirm se contradizem — o timer de segundos sempre ganha a
+        # corrida do dedo e anula a afordância manual em silêncio. Com o botão
+        # exposto, quem confirma o Pix mock é a pessoa, nunca o relógio.
+        if getattr(settings, "SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False) and not getattr(
+            settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False
+        ):
             config["mock_pix_auto_confirm"] = True
             config["mock_pix_confirm_delay_seconds"] = getattr(
                 settings,
