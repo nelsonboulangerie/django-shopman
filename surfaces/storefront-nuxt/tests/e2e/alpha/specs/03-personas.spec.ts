@@ -23,7 +23,7 @@ test.describe('personas', () => {
     const errors = collectConsoleErrors(page)
     // instrumenta hydration mismatch com a URL em que ocorreu
     page.on('console', m => {
-      if (/hydrat/i.test(m.text())) console.log(`[report] HYDRATION em ${page.url().replace('https://alpha.nelsonboulangerie.com.br', '')}: ${m.text().slice(0, 120)}`)
+      if (/hydrat/i.test(m.text())) console.log(`[report] HYDRATION em ${new URL(page.url()).pathname}: ${m.text().slice(0, 120)}`)
     })
     await login(page)
     // perfil

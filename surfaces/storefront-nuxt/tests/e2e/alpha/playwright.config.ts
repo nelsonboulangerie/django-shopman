@@ -23,7 +23,10 @@ export default defineConfig({
   reporter: [['list']],
   outputDir: './test-results',
   use: {
-    baseURL: 'https://alpha.nelsonboulangerie.com.br',
+    // ⚠️ Uma variável, não uma constante: trocar o domínio da loja (alpha.* →
+    // menu.*) não pode exigir edição de código no momento do corte. Defina
+    // STOREFRONT_URL no ambiente para apontar a suíte para outro host.
+    baseURL: process.env.STOREFRONT_URL || 'https://alpha.nelsonboulangerie.com.br',
     viewport: { width: 390, height: 844 },
     locale: 'pt-BR',
     timezoneId: 'America/Sao_Paulo',
