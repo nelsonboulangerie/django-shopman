@@ -424,3 +424,54 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     expect(dl.text()).toContain("Desconto do operador");
   });
 });
+
+describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com caminho", () => {
+  // O servidor recusa encomenda anônima (`customer_required_for_scheduled`):
+  // o botão trava ANTES, diz o porquê e oferece o toque que resolve.
+  const scheduled = (overrides: Record<string, unknown> = {}) => props({
+    scheduleToday: "2026-09-01",
+    deliveryDate: "2026-09-02",
+    paymentTenders: [tender],
+    paymentCovered: true,
+    paymentRemainingQ: 0,
+    ...overrides,
+  });
+
+  it("agendado sem nome nem telefone: Validar desabilitado e o motivo na tela", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: scheduled() });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(wrapper.text()).toContain("Identifique o cliente para agendar");
+  });
+
+  it("o motivo não é só texto: 'Identificar cliente' abre o modal de Cliente", async () => {
+    // O UiDialog teleporta para o body e testes anteriores deixam restos lá:
+    // zera antes para que o diálogo encontrado seja o que ESTE clique abriu.
+    document.body.innerHTML = "";
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: scheduled() });
+    const action = wrapper.findAll("button").find((b) => b.text().includes("Identificar cliente"));
+    expect(action).toBeTruthy();
+
+    await action!.trigger("click");
+    await wrapper.vm.$nextTick();
+
+    const dialogs = Array.from(document.querySelectorAll('[role="dialog"]'));
+    expect(dialogs.some((d) => (d.textContent || "").includes("Cliente"))).toBe(true);
+    wrapper.unmount();
+    document.body.innerHTML = "";
+  });
+
+  it("um identificador basta: com telefone o Validar volta", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: scheduled({ customerPhone: "43999990000" }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+    expect(wrapper.text()).not.toContain("Identifique o cliente para agendar");
+  });
+
+  it("para hoje continua anônimo: data de hoje não trava nada", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: scheduled({ deliveryDate: "2026-09-01" }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+  });
+});

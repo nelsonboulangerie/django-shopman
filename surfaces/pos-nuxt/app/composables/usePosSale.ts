@@ -137,6 +137,11 @@ export function usePosSale(deps: PosSaleDeps) {
   // — reabre o diálogo de autorização com a mensagem, senão o CTA vira "Validar" e
   // reenvia o mesmo PIN errado para sempre (beco sem saída).
   const managerApprovalError = ref("");
+  // O servidor recusou com `focus: "customer"` (ex.: agendado sem cliente):
+  // além do toast, a tela ABRE a identificação — motivo sem caminho de um
+  // toque é beco sem saída, mesma filosofia do diálogo do gerente. Nonce, não
+  // boolean: duas recusas seguidas precisam abrir duas vezes.
+  const customerFocusNonce = ref(0);
   // O resultado da venda fechada — a TELA DE RESULTADO fica de pé enquanto ele
   // existe. `changeQ` é o troco CONGELADO no instante do fechamento (o cart
   // reseta logo depois e o troco computado voltaria a zero): uma fonte só para
@@ -1557,13 +1562,18 @@ export function usePosSale(deps: PosSaleDeps) {
         await refresh();
       }
     } catch (error) {
-      const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
+      const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string; focus?: string } } | null)?.error;
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
         // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
         // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
         cart.managerUsername = "";
         cart.managerPin = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
+      } else if (failure?.focus === "customer") {
+        // Recusa que se resolve identificando o cliente (ex.: agendado sem
+        // cliente): o toast diz o porquê e a tela abre a identificação.
+        serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
+        customerFocusNonce.value += 1;
       } else {
         serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
       }
@@ -1839,6 +1849,7 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy,
     serverError,
     managerApprovalError,
+    customerFocusNonce,
     result,
     pendingPixOrderRef,
     checkoutMode,

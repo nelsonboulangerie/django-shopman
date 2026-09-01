@@ -60,6 +60,7 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  customerFocusNonce,
   result,
   pendingPixOrderRef,
   pixStatus,
@@ -403,6 +404,24 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
   if (cart.fulfillmentType !== "delivery") return;
   if (cart.customerName.trim() || cart.customerPhone.trim()) return;
   void nextTick(() => tabHeaderRef.value?.openCustomer());
+});
+// AGENDADO também identifica o cliente — o servidor recusa encomenda anônima
+// (é o contato se algo mudar até a data), então a pergunta vem já na agenda,
+// não como surpresa no Validar. Mesmo desenho do irmão acima: só oferecido.
+watch(scheduleSheetOpen, (open, wasOpen) => {
+  if (open || !wasOpen) return;
+  if (!isScheduled(cart.deliveryDate, scheduleToday.value)) return;
+  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  void nextTick(() => tabHeaderRef.value?.openCustomer());
+});
+// O servidor recusou pedindo o CLIENTE (`focus: "customer"`): abre a
+// identificação de quem é dona dela na tela atual — motivo sem caminho de um
+// toque é beco sem saída (mesmo desvio de `openFulfillmentHere`).
+watch(customerFocusNonce, () => {
+  void nextTick(() => {
+    if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
+    else tabHeaderRef.value?.openCustomer();
+  });
 });
 
 // O chip da barra abre a caixa de quem é DONO dela na tela atual — no checkout, a

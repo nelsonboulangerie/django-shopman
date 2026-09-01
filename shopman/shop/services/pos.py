@@ -290,6 +290,7 @@ def close_sale(
     approved_by = approver.get_username() if approver is not None else ""
     _validate_fiscal_delivery_fee(payload)
     _validate_schedule(payload)
+    _require_customer_if_scheduled(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
         payload,
@@ -614,6 +615,18 @@ def review_sale(
                 "Confira o combinado antes de finalizar."
             ),
         })
+    # Agendado sem cliente é promessa sem destinatário. Aqui é aviso (a review
+    # é tela); a recusa de verdade mora em `_require_customer_if_scheduled`,
+    # no `close_sale` — mesmo code/field, para a UI apontar o mesmo lugar.
+    if _is_scheduled_for_future(payload) and not _payload_identifies_customer(payload):
+        warnings.append({
+            "code": "customer_required_for_scheduled",
+            "field": "customer_phone",
+            "message": (
+                "Pedido agendado precisa de um cliente identificado — "
+                "é o contato se algo mudar até a data."
+            ),
+        })
     # Excesso que NÃO é dinheiro não vira troco (ver `change_q`); avisa para o
     # operador corrigir a linha antes de finalizar, em vez de descobrir depois.
     non_cash_excess_q = max(0, tender_total_q - total_q) - min(
@@ -830,6 +843,58 @@ def _validate_schedule(payload: dict) -> None:
     error = fulfillment_window.validate(day, window_ref, _payload_skus(payload))
     if error:
         raise ValueError(error)
+
+
+def _is_scheduled_for_future(payload: dict) -> bool:
+    """A venda é para OUTRO dia? Data de HOJE não conta — estritamente futura.
+
+    Mesmo predicado do lifecycle (`_physical_work_deferred`): `>` e não `>=`,
+    para que a venda de balcão com a data de hoje continue sendo balcão.
+    """
+    from datetime import date as _date
+
+    raw = str(payload.get("delivery_date") or "").strip()
+    if not raw:
+        return False
+    try:
+        return _date.fromisoformat(raw) > timezone.localdate()
+    except ValueError:
+        # Data ilegível é problema de `_validate_schedule`, que roda antes.
+        return False
+
+
+def _payload_identifies_customer(payload: dict) -> bool:
+    """Algum identificador de cliente veio no payload? Qualquer um dos três vale."""
+    return any(
+        str(payload.get(key) or "").strip()
+        for key in ("customer_ref", "customer_phone", "customer_name")
+    )
+
+
+def _require_customer_if_scheduled(payload: dict) -> None:
+    """Encomenda para outro dia só com cliente identificado; recusa ANTES do commit.
+
+    O agendado é uma promessa que atravessa dias: se a fornada atrasar, se o
+    item acabar, se a casa fechar — alguém precisa AVISAR alguém. Um pedido
+    agendado 100% anônimo é uma promessa sem destinatário: ninguém para chamar
+    quando algo muda, e ninguém para cobrar quando ninguém aparece.
+
+    A venda de agora segue anônima (o cliente está na frente do operador); a
+    data de HOJE também não conta como agendamento (ver
+    `test_data_de_HOJE_nao_adia_a_venda_de_balcao`). Basta UM identificador:
+    nome, telefone ou cadastro — o balcão não vira formulário.
+    """
+    if not _is_scheduled_for_future(payload):
+        return
+    if _payload_identifies_customer(payload):
+        return
+    raise PosIntentError(
+        code="customer_required_for_scheduled",
+        message="Pedido agendado precisa de um cliente identificado.",
+        field="customer_phone",
+        focus="customer",
+        recovery="Identifique o cliente para agendar — é o contato se algo mudar até a data.",
+    )
 
 
 def _max_preorder_days() -> int:

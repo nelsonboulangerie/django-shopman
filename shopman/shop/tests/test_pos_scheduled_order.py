@@ -385,6 +385,92 @@ def test_data_ilegivel_e_recusada_MESMO_SEM_horario(balcao):
     assert Order.objects.count() == 0
 
 
+# ── Encomenda anônima é recusada: promessa precisa de destinatário ──────────
+
+
+def test_agendado_sem_NENHUM_identificador_e_recusado(balcao):
+    """Pedido para outro dia sem nome, telefone nem cadastro não nasce.
+
+    Se a fornada atrasar ou o item acabar, alguém precisa avisar alguém — e um
+    agendado 100% anônimo não tem quem avisar. O erro é tipado no molde do
+    `house_account_not_eligible`: a UI lê code/field/recovery e abre o Cliente.
+    """
+    from shopman.shop.services.pos_intent import PosIntentError
+
+    operator, shift = balcao
+
+    with pytest.raises(PosIntentError) as erro:
+        _close(
+            operator,
+            _payload(
+                shift,
+                client_request_id="anon-1",
+                customer_name="",
+                delivery_date=_amanha(),
+            ),
+        )
+
+    assert erro.value.code == "customer_required_for_scheduled"
+    assert erro.value.field == "customer_phone"
+    assert erro.value.focus == "customer"
+    assert erro.value.recovery
+    assert Order.objects.count() == 0
+
+
+def test_agendado_com_so_o_telefone_passa(balcao):
+    """UM identificador basta — o balcão não vira formulário."""
+    operator, shift = balcao
+    amanha = _amanha()
+
+    result = _close(
+        operator,
+        _payload(
+            shift,
+            client_request_id="anon-2",
+            customer_name="",
+            customer_phone="43999990000",
+            delivery_date=amanha,
+        ),
+    )
+
+    order = Order.objects.get(ref=result.order_ref)
+    assert order.data["delivery_date"] == amanha
+
+
+def test_data_de_HOJE_sem_cliente_passa(balcao):
+    """A venda de agora segue anônima: data de hoje não é agendamento."""
+    operator, shift = balcao
+    hoje = timezone.localdate().isoformat()
+
+    result = _close(
+        operator,
+        _payload(shift, client_request_id="anon-3", customer_name="", delivery_date=hoje),
+    )
+
+    assert Order.objects.get(ref=result.order_ref)
+
+
+def test_review_avisa_o_agendado_sem_cliente(balcao):
+    """A review anota ANTES do commit — mesmo code/field da recusa, para a UI
+    apontar o mesmo lugar."""
+    review = pos_service.review_sale(
+        channel_ref="pdv",
+        payload={
+            "items": [{"sku": "CR", "name": "Croissant", "qty": 1, "unit_price_q": 900}],
+            "fulfillment_type": "pickup",
+            "payment_method": "cash",
+            "delivery_date": _amanha(),
+        },
+        operator_username="marina",
+    )
+
+    aviso = next(
+        (w for w in review.warnings if w["code"] == "customer_required_for_scheduled"), None
+    )
+    assert aviso is not None
+    assert aviso["field"] == "customer_phone"
+
+
 def test_o_teto_sai_da_configuracao_da_casa(balcao):
     """`max_preorder_days` viajava na projection e ninguém aplicava."""
     from shopman.shop.models import Shop

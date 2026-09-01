@@ -47,7 +47,7 @@ import {
   lineSavingsQ,
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
-import { scheduleLabel, windowLabel } from "~/presentation/schedule";
+import { isScheduled, scheduleLabel, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -441,8 +441,15 @@ const ctaLabel = computed(() => {
   if (needsReview.value) return "Atualizando…";
   return needsAuth.value ? "Autorizar e validar" : "Validar";
 });
+// Agendado sem cliente: o servidor recusa a encomenda anônima
+// (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
+const scheduledWithoutCustomer = computed(() =>
+  isScheduled(props.deliveryDate, props.scheduleToday)
+  && !props.customerName.trim()
+  && !props.customerPhone.trim());
 const ctaDisabled = computed(() => {
   if (!props.items.length || props.loading || needsReview.value) return true;
+  if (scheduledWithoutCustomer.value) return true;
   if (!props.paymentCovered) return true; // só habilita quando uma forma cobre o total
   return false;
 });
@@ -450,9 +457,21 @@ const ctaDisabled = computed(() => {
 const ctaBlockReason = computed(() => {
   if (!props.items.length) return "Adicione itens à comanda para cobrar.";
   if (props.loading || needsReview.value) return "";
+  if (scheduledWithoutCustomer.value) return "Identifique o cliente para agendar — é o contato se algo mudar até a data.";
   if (!props.paymentTenders.length) return "Escolha a forma de pagamento.";
   if (!props.paymentCovered) return `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para cobrir o total.`;
   return "";
+});
+// Motivo sem caminho é beco sem saída: quando o bloqueio se resolve numa tela
+// que este componente sabe abrir, a frase vem com o botão que resolve — o
+// operador nunca fica só lendo. (Formas de pagamento e itens já estão à mão
+// na própria tela; por isso só o cliente ganha atalho aqui.)
+const ctaBlockAction = computed(() => {
+  if (!props.items.length || props.loading || needsReview.value) return null;
+  if (scheduledWithoutCustomer.value) {
+    return { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } };
+  }
+  return null;
 });
 function onCta() {
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
@@ -806,7 +825,16 @@ defineExpose({
              problema que era escolher "Dinheiro". Diz-se primeiro o que bloqueia. -->
         <p v-if="ctaBlockReason" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
           <Icon name="lucide:info" class="size-3.5 shrink-0" />
-          {{ ctaBlockReason }}
+          <span class="min-w-0 flex-1">{{ ctaBlockReason }}</span>
+          <UiButton
+            v-if="ctaBlockAction"
+            variant="outline"
+            size="sm"
+            class="h-7 shrink-0 px-2 text-xs"
+            @click="ctaBlockAction.run()"
+          >
+            {{ ctaBlockAction.label }}
+          </UiButton>
         </p>
         <!-- manager approval: when the review demands it, "Autorizar e validar"
              opens a dedicated PIN authorization screen (PosManagerAuthDialog) -->

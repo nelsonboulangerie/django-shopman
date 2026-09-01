@@ -248,7 +248,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_MOCK_PIX_AUTO_CONFIRM
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS
   scope: RUN_TIME
