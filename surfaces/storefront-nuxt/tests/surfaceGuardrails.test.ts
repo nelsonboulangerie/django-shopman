@@ -1257,3 +1257,62 @@ describe('surface UX guardrails', () => {
     expect(gutterOffenders).toEqual([])
   })
 })
+
+describe('environment ribbon', () => {
+  // A fita é um SISTEMA de quatro números, não quatro escolhas. Ela já quebrou
+  // duas vezes por alguém mexer em um só. O raciocínio está no componente; aqui
+  // ficam as desigualdades que dizem quando ele parou de valer.
+  const template = templateOnly(read('app/components/EnvironmentRibbon.vue'))
+  const windowClass = /class="([^"]*\boverflow-hidden\b[^"]*)"/.exec(template)?.[1] || ''
+  const barClass = /class="(absolute\b[^"]*)"/.exec(template)?.[1] || ''
+
+  // Tailwind v4: uma unidade da escala = 0.25rem = 4px.
+  function px (source: string, token: string) {
+    const match = new RegExp(`(?:^|\\s)-?${token}-(\\d+)(?:\\s|$)`).exec(source)
+    expect(match, `classe ${token}-<n> ausente em "${source}"`).not.toBeNull()
+    return Number(match![1]) * 4
+  }
+
+  const janela = px(windowClass, 'size')
+  const right = px(barClass, 'right')
+  const top = px(barClass, 'top')
+  const altura = px(barClass, 'h')
+  const largura = px(barClass, 'w')
+  const centro = top + altura / 2
+
+  it('centres the bar on the corner diagonal so the label sits mid-chord', () => {
+    // O texto é centrado na BARRA; para cair no meio do trecho VISÍVEL, o centro
+    // da barra tem de pousar na antidiagonal do canto. Esta conta garante isso.
+    expect(largura).toBe(2 * right + 2 * top + altura)
+  })
+
+  it('pushes all four corners past the edge of the screen', () => {
+    // Quina que para dentro vira corte reto boiando na página — o defeito de origem.
+    expect((largura - altura) / (2 * Math.SQRT2) - centro).toBeGreaterThan(16)
+  })
+
+  it('keeps the window big enough that its two fake edges never cut the bar', () => {
+    // Só topo e direita da janela coincidem com a tela. Esquerda e baixo são
+    // falsas: se a barra as alcança, o corte aparece. Aumentar a janela é seguro.
+    expect(janela).toBeGreaterThan(centro * 2 + (altura / 2) * Math.SQRT2 + 16)
+  })
+
+  it('leaves the visible chord room for the longest notice the server sends', () => {
+    // Trecho visível = 2·√2·centro. "AMBIENTE DE TESTES" mede ~105px a text-xs.
+    expect(2 * Math.SQRT2 * centro).toBeGreaterThan(150)
+  })
+
+  it('takes its amber from the house token instead of a raw palette colour', () => {
+    expect(barClass).toContain('bg-warning')
+    expect(template).toContain('text-warning-foreground')
+    expect(template).not.toContain('amber')
+  })
+
+  it('centres the label with flex, not padding around an inline span', () => {
+    // Span inline assentava na linha de base de uma caixa de 24px: fora do centro.
+    expect(barClass).toContain('flex')
+    expect(barClass).toContain('items-center')
+    expect(barClass).toContain('justify-center')
+    expect(barClass).not.toMatch(/\bpy-/)
+  })
+})
