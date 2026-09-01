@@ -53,7 +53,7 @@ const CELL_TONES: Record<CellState, string> = {
 const CELL_LABELS: Record<CellState, string> = {
   available: "Disponível",
   paused: "Pausado",
-  unpublished: "Despublicado",
+  unpublished: "Oculto",
   absent: "Não ofertado",
 };
 
@@ -65,7 +65,7 @@ export function cellView(row: CatalogRowProjection, cell: SurfaceCellProjection)
 // ── status do produto (linha) — esmaecer + foto P&B quando está "fora" ─────────
 // Um produto está fora quando NÃO está disponível em nenhum canal. `cell.available`
 // já cruza produto × listing, então um único predicado cobre os três caminhos:
-// despublicado, pausado no nível-produto (globalzinho), OU pausado célula a célula
+// oculto no catálogo, pausado no nível-produto (globalzinho), OU pausado célula a célula
 // em todos os canais. Fonte única do esmaecimento/foto P&B (sem casos especiais).
 
 export function availableAnywhere(row: CatalogRowProjection): boolean {
@@ -79,9 +79,9 @@ export interface RowStatus {
 }
 
 // Escala de estados "fora", do mais deliberado ao mais urgente:
-// Despublicado (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
+// Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
-  if (!row.is_published) return { off: true, label: "Despublicado", tone: "muted" };
+  if (!row.is_published) return { off: true, label: "Oculto", tone: "muted" };
   if (!row.is_sellable) return { off: true, label: "Pausado", tone: "amber" };
   // Esgotado = fato de ESTOQUE, ortogonal à pausa. Danger pra saltar à vista (cliente
   // não consegue comprar agora) e diferenciar do Pausado — mesmo repondo na fornada.

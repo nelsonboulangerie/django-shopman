@@ -181,9 +181,9 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
     expect(rowStatus(r).label).toBe("");
   });
 
-  it("Despublicado quando o produto está despublicado (nível-produto)", () => {
+  it("Oculto quando o produto está oculto no catálogo (nível-produto)", () => {
     const r = row({ is_published: false, cells: cells([{ available: false }]) });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Despublicado", tone: "muted" });
+    expect(rowStatus(r)).toEqual({ off: true, label: "Oculto", tone: "muted" });
   });
 
   it("Pausado quando o produto está pausado (globalzinho)", () => {

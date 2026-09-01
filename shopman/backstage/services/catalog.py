@@ -89,7 +89,7 @@ def set_cell(
 ):
     """Edita uma célula (produto × superfície). save() dispara o auto-trigger.
 
-    Superfície de FEED (menuboard/plataforma) só aceita pausar/reativar: ``is_sellable``
+    Superfície de FEED (menuboard/plataforma) só aceita pausar/ativar: ``is_sellable``
     vira a pausa local do item (não há preço nem publicação — feed não transaciona).
     """
     if _is_display_surface(surface_ref):
@@ -98,7 +98,7 @@ def set_cell(
         from shopman.backstage.services import feeds as display_service
 
         if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         display_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
         # Duck-type com o que a API lê: feed está sempre "publicado", sem preço.
         return SimpleNamespace(is_published=True, is_sellable=bool(is_sellable), price_q=None)
@@ -180,9 +180,9 @@ def bulk_set(
             for ref in _all_channel_refs()
         )
     if _is_display_surface(surface_ref):
-        # Feed: bulk só pausa/reativa (is_sellable). Sem preço/publicação.
+        # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         from shopman.backstage.services import feeds as display_service
 
         return display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
