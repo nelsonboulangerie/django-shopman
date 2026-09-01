@@ -19,6 +19,24 @@ function boardPayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
+describe("useProductionBoard — default date", () => {
+  beforeEach(() => env.reset());
+
+  it("honra a data inicial recebida (Produção abre em HOJE, não no default de planejamento)", () => {
+    env.fetchData.value = boardPayload();
+    const { selectedDate } = useProductionBoard("2026-01-15");
+    // A grade da Produção passa HOJE explicitamente; o composable não force o
+    // default de planejamento (amanhã à tarde) por cima.
+    expect(selectedDate.value).toBe("2026-01-15");
+  });
+
+  it("sem argumento, mantém o default de planejamento (compatível)", () => {
+    env.fetchData.value = boardPayload();
+    const { selectedDate } = useProductionBoard();
+    expect(selectedDate.value).toBe(defaultPlanningDate());
+  });
+});
+
 describe("useProductionBoard — read derivations", () => {
   beforeEach(() => env.reset());
 

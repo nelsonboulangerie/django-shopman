@@ -19,9 +19,9 @@ export function defaultPlanningDate(now = new Date()): string {
   return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
 }
 
-export function useProductionBoard() {
+export function useProductionBoard(initialDate: string = defaultPlanningDate()) {
   const path = "/api/v1/backstage/production/";
-  const selectedDate = ref(defaultPlanningDate());
+  const selectedDate = ref(initialDate);
 
   const { data, pending, error, refresh } = useFetch<ProductionBoardResponse>(path, {
     key: "production-board",

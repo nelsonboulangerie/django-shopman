@@ -37,6 +37,10 @@ const props = defineProps<{
   title: string;
 }>();
 
+// A Produção abre em HOJE (a fornada é do dia); só o Planejamento abre no dia
+// seguinte à tarde, quando o padeiro planeja a próxima leva. Sem isto, a grade
+// herdava o default de planejamento e "Produção" amanhecia em amanhã depois do
+// meio-dia.
 const {
   board,
   rows,
@@ -48,7 +52,9 @@ const {
   isBusy,
   plan,
   start,
-} = useProductionBoard();
+} = useProductionBoard(
+  props.stage === "plan" ? defaultPlanningDate() : isoForOffset(0),
+);
 const kds = useProductionKds();
 
 const access = computed(() => board.value?.access ?? null);
