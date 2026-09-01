@@ -1387,6 +1387,11 @@ IMPORT_EXPORT_IMPORT_PERMISSION_CODE = "change"
 IMPORT_EXPORT_EXPORT_PERMISSION_CODE = "view"
 
 # Employee discount — configurable percentage
+# Ponte do cofre de dados curados com o Google Drive (push/pull_backup_drive).
+# Vazio = ponte desligada; os comandos falham fechado com a instrução de setup.
+SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE = os.environ.get("SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE", "")
+SHOPMAN_BACKUP_DRIVE_FOLDER = os.environ.get("SHOPMAN_BACKUP_DRIVE_FOLDER", "")
+
 SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(
     os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20")
 )
