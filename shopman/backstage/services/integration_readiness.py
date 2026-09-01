@@ -109,23 +109,40 @@ def otp_delivery_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadin
     if chain and not entregam:
         unsafe.append("nenhum_canal_entrega_OTP")
 
-    # ⚠️ Configurado ≠ funcionando. O Comtele já devolveu 401 ("chave inválida /
-    # não pode efetuar requisição à API") com chave e rota presentes — provado
-    # não-nosso. Esta checagem vê PRESENÇA; a prova de entrega é o canário.
-    status = _status(missing=missing, unsafe=unsafe)
+    # ⚠️ UM canal que entrega já é pronto. O que faltar vira nota, não aviso.
+    #
+    # A primeira versão somava tudo em `missing` e devolvia "warning", e isso
+    # transformava uma DECISÃO DA CASA em ruído permanente: o SMS é o canal de
+    # OTP por si (o WhatsApp não pode fazer OTP — o ManyChat não tem template de
+    # Authentication), então um e-mail não configurado não é pendência, é o
+    # desenho. Um painel que fica amarelo por escolha deliberada ensina o gestor
+    # a ignorar o amarelo — e aí ele ignora o amarelo que importa.
+    #
+    # Erro continua sendo erro: nenhum canal entregando é a loja sem porta.
+    # ⚠️ E isto vê PRESENÇA, não entrega: o Comtele já devolveu 401 com chave e
+    # rota presentes (provado não-nosso). A prova de entrega é o canário.
+    status = "error" if unsafe else "ready"
     ambiente = ", ".join(entregam) if entregam else "sem canal"
+    if status == "ready":
+        mensagem = f"{ambiente}: o cliente recebe o código para entrar."
+        if missing:
+            # Dito, não alarmado: o gestor precisa SABER que só há uma perna.
+            mensagem += f" Sem segunda via ({', '.join(missing)})."
+    else:
+        mensagem = _readiness_message(
+            status=status,
+            environment=ambiente,
+            ready="O cliente consegue receber o código para entrar.",
+            missing=tuple(unsafe),
+        )
     return ProviderReadiness(
         provider="otp_delivery",
         label="Entrega do código de login",
         kind="auth_otp",
         environment=ambiente,
         status=status,
-        message=_readiness_message(
-            status=status,
-            environment=ambiente,
-            ready="O cliente consegue receber o código para entrar.",
-            missing=tuple(missing + unsafe),
-        ),
+        message=mensagem,
+        # `missing` segue completo: é o dado; quem decide o tom é o `status`.
         missing=tuple(missing + unsafe),
     )
 

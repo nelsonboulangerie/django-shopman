@@ -60,16 +60,47 @@ def test_sms_e_email_configurados_e_pronto(settings):
     assert r.environment == "sms, email"
 
 
-def test_um_canal_quebrado_e_AVISO_nao_erro(settings):
-    """SMS fora com e-mail de pé ainda deixa o cliente entrar."""
+def test_UM_canal_que_entrega_ja_e_PRONTO(settings):
+    """Decisão da casa: o SMS é o canal de OTP por si.
+
+    ⚠️ Este teste já exigiu "warning", e o "warning" era ruído: um e-mail não
+    configurado é o DESENHO, não pendência (o WhatsApp não pode fazer OTP — o
+    ManyChat não tem template de Authentication). Painel que fica amarelo por
+    escolha deliberada ensina o gestor a ignorar o amarelo, e aí ele ignora o
+    amarelo que importa.
+    """
     _cadeia(settings, "sms", "email")
-    _sms(settings, ok=False)
+    _sms(settings, ok=True)
+    _email(settings, ok=False)
+
+    r = otp_delivery_readiness()
+
+    assert r.status == "ready"
+    assert r.environment == "sms"
+
+
+def test_mas_o_gestor_SABE_que_so_tem_uma_perna(settings):
+    """Pronto sem alarme, e ainda assim transparente. Se o SMS cair, não há
+    segunda via — e isso não pode ser descoberto na hora."""
+    _cadeia(settings, "sms", "email")
+    _sms(settings, ok=True)
+    _email(settings, ok=False)
+
+    r = otp_delivery_readiness()
+
+    assert "Sem segunda via" in r.message
+    assert "EMAIL_HOST/EMAIL_BACKEND" in r.missing
+
+
+def test_com_as_DUAS_pernas_nao_ha_ressalva(settings):
+    _cadeia(settings, "sms", "email")
+    _sms(settings, ok=True)
     _email(settings, ok=True)
 
     r = otp_delivery_readiness()
 
-    assert r.status == "warning"
-    assert r.environment == "email"
+    assert r.status == "ready"
+    assert "Sem segunda via" not in r.message
 
 
 def test_os_DOIS_quebrados_e_ERRO(settings):
