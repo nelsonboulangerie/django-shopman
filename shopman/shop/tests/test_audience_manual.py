@@ -159,7 +159,7 @@ def test_bought_respects_the_window(db):
 
 def test_bought_collections_resolve_through_offerman(db):
     """Coleção é REGRA, não lista — resolver pelo offerman é o que faz a inteligente valer."""
-    coll = Collection.objects.create(ref="finos", name="Finos", is_active=True)
+    coll = Collection.objects.create(ref="macios", name="Macios", is_active=True)
     croissant = Product.objects.create(
         sku="CROISSANT", name="Croissant", base_price_q=900, is_published=True, is_sellable=True
     )
@@ -168,7 +168,7 @@ def test_bought_collections_resolve_through_offerman(db):
     buyer = _customer("+5543999990015", ref="CLI-O")
     _bought(buyer, "CROISSANT", days_ago=3)
 
-    result = audience.resolve({"bought_collections": ["finos"], "bought_within_days": 30})
+    result = audience.resolve({"bought_collections": ["macios"], "bought_within_days": 30})
     assert [r.phone for r in result.general] == [buyer.phone]
 
 

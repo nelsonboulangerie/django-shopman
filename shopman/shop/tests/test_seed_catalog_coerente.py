@@ -226,17 +226,16 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
             ref, _nome, cor, icone = (e.value for e in node.elts)
             fixas[ref] = (cor, icone)
 
+    # Taxonomia do dono (01/09): finos→macios, torneira absorvida, folhados
+    # nasce, e as rotativas "*-do-dia" morreram — rotativo é vitrine, não
+    # taxonomia. A lista espelha as categorias ESTÁVEIS do seed.
     esperadas = {
-        "bebidas-quentes", "bebidas-geladas", "torneira", "rusticos", "finos",
-        "salgados", "doces", "combos", "mercearia",
+        "rusticos", "macios", "folhados", "salgados", "doces",
+        "bebidas-quentes", "bebidas-geladas", "mercearia", "combos",
     }
     assert esperadas <= set(fixas), (
         f"categorias sem (cor, ícone): {sorted(esperadas - set(fixas))}"
     )
     for ref, (cor, icone) in fixas.items():
-        assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
-        assert icone.strip(), f"{ref}: ícone vazio"
-
-    for ref, _nome, cor, icone, _skus in _atribuicao(arvore, "colecoes_do_dia"):
         assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
         assert icone.strip(), f"{ref}: ícone vazio"
