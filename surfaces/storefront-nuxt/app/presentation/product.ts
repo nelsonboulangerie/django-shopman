@@ -34,6 +34,14 @@ export function nutritionTable (nutrition: ProductNutritionProjection | null): N
   return { serving: nutrition?.serving_size_display || '', rows }
 }
 
+// Miniaturas da galeria: a foto principal entra primeiro, seguida das adicionais
+// de `gallery`, sem repetição. Lista vazia = produto de foto única, sem carrossel.
+export function galleryImages (product: Pick<ProductDetailProjection, 'image_url' | 'gallery'>): string[] {
+  const urls = [product.image_url, ...(product.gallery || [])].filter((url): url is string => Boolean(url))
+  const unique = [...new Set(urls)]
+  return unique.length > 1 ? unique : []
+}
+
 export function crossSellItems (product: Pick<ProductDetailProjection, 'cross_sell' | 'sku'>, limit = 4): CatalogItemProjection[] {
   return (product.cross_sell || [])
     .filter(item => item.sku !== product.sku)

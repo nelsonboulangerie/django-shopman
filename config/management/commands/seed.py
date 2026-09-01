@@ -1925,6 +1925,23 @@ class Command(BaseCommand):
             "MIF", "MICBT", "MIFOC", "CPQ", "FF", "MFF", "MIHO", "JO",
         }
 
+        # Galeria da PDP: fotos adicionais da casa em metadata["gallery"] (lidas
+        # por storefront/presentation/product_detail._gallery). A foto principal
+        # continua sendo image_url — promover uma foto = copiar a URL para lá.
+        # São os retratos alternativos do acervo (sufixo 2), na mesma receita webp.
+        gallery_by_sku = {
+            "CBT": [f"{IMG}/cbt2.webp"],
+            "CF": [f"{IMG}/cf2.webp"],
+            "CGO": [f"{IMG}/cgo2.webp"],
+            "CGR": [f"{IMG}/cgr2.webp"],
+            "CN": [f"{IMG}/cn2.webp"],
+            "CT": [f"{IMG}/ct2.webp"],
+            "FA": [f"{IMG}/fa2.webp"],
+            "MA": [f"{IMG}/ma2.webp"],
+            "PH": [f"{IMG}/ph2.webp"],
+            "PHO": [f"{IMG}/pho2.webp"],
+        }
+
         products = {}
         for sku, name, desc, price_q, unit, shelf_life, sellable, image, weight_g, storage in products_data:
             p, _ = Product.objects.update_or_create(
@@ -1950,6 +1967,7 @@ class Command(BaseCommand):
             p.metadata = {
                 **metadata,
                 **PDP_METADATA.get(sku, {}),
+                **({"gallery": gallery_by_sku[sku]} if sku in gallery_by_sku else {}),
                 "fiscal": {
                     **fiscal_metadata_for_sku(sku),
                     **existing_fiscal,
