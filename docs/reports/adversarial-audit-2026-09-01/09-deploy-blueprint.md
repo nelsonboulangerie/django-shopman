@@ -54,6 +54,44 @@ o raciocínio certo.
 Registrado aqui em vez de apagado porque a lição é minha: li o valor antes de ler o comentário
 ao lado dele. Nenhuma alteração foi feita no bloco de pagamentos.
 
+
+## Anexo — a aritmética do `DOORMAN_TRUSTED_PROXY_DEPTH`, calculada
+
+O commit `a665b9e` deixou o número por medir e disse apenas "chutar seria escolher o balde
+errado com confiança". Correto, mas vago demais para agir. A tabela abaixo é a aritmética
+real das duas funções que leem o IP — `doorman.get_client_ip` (`parts[len-depth]`) e o
+`BaseThrottle.get_ident` do DRF (`addrs[-min(n, len)]`) — para cada cadeia possível.
+
+`CLIENT` = correto · `nitro`/`edge` = balde global · `forjado` = o atacante escolhe o balde.
+
+| cenário | XFF que chega ao Django | doorman d=1 | d=2 | DRF n=None | n=1 | n=2 |
+|---|---|---|---|---|---|---|
+| ANTES (BFF não repassava) | `nitro` | nitro | nitro | nitro | nitro | nitro |
+| ANTES + hop de edge | `nitro, edge` | edge | nitro | nitro | edge | nitro |
+| **DEPOIS** (BFF repassa) | `CLIENT, nitro` | nitro | **CLIENT** | CLIENT | nitro | **CLIENT** |
+| DEPOIS + hop de edge | `CLIENT, nitro, edge` | edge | nitro | CLIENT | edge | nitro |
+| DEPOIS + XFF forjado | `forjado, CLIENT, nitro` | nitro | **CLIENT** | **forjado** | nitro | **CLIENT** |
+
+Três leituras que valem mais que o "por medir":
+
+1. **A coluna `n=None` é a que justifica ter mexido no `NUM_PROXIES` no mesmo commit.**
+   Ela acerta o CLIENT na cadeia honesta e entrega `forjado` na cadeia atacada — ou seja,
+   repassar o XFF sem ajustar o DRF teria trocado um balde global por um balde que o
+   atacante escolhe. Era uma regressão de segurança disfarçada de correção.
+
+2. **No alpha, onde `depth=2` já está declarado, a correção provavelmente já vale**
+   (linha 3: `CLIENT` nas duas colunas `d=2`/`n=2`), e vale **mesmo sob XFF forjado**
+   (linha 5) — porque contar da direita ignora o que o cliente escreve à esquerda.
+
+3. **Em produção, onde a chave está comentada, a correção não vale nada ainda** (`d=1` →
+   nitro). Isto é o que "não pior, porém não forjável" significa em números.
+
+O risco de errar a medição é assimétrico e favorável: um `depth` baixo demais devolve o
+**balde global** (linha 4), nunca um balde forjável. Ou seja, o pior caso da medição errada
+é "continua como está", não "abriu um buraco". Por isso o número certo é o que a linha
+`client_ip.diagnostic` disser — esperado `2` se a cadeia for `[cliente, nitro]`, `3` se
+houver um hop de edge — e por isso vale medir sem medo.
+
 ## Verified-safe
 - `manage.py check --deploy` really is wired as a `PRE_DEPLOY` job in both specs, so the
   deploy-time checks are not decorative — they gate the release. This is the mechanism that
