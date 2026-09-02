@@ -28,8 +28,23 @@ concurrency:
 # Para virar o domínio, defina a variável `STOREFRONT_URL` do repositório
 # (Settings → Secrets and variables → Actions → Variables). Sem ela, vale o
 # default abaixo, que é o alpha de hoje.
+#
+# ⚠️ E o PISO do cardápio também é uma variável, pela mesma razão.
+#
+# O número nasceu colado no seed (55 SKUs no cardápio web) com folga de cinco.
+# Em 01/09/2026, entre 09:32 e 09:54, o dono despublicou 11 produtos do alpha
+# pelo catálogo — sodas de torneira, o combo, os doces e a mercearia que a casa
+# não vende de verdade — e pausou outros oito. O cardápio caiu para 44 SKUs e 32
+# vendáveis, que é um cardápio saudável, e o gate ficou vermelho a cada 15 min
+# acusando "raso" um catálogo que só tinha sido CURADO. Um gate que grita por
+# decisão legítima da casa é um gate que se aprende a ignorar.
+#
+# O piso é PISO: existe para acusar catálogo que sumiu (listing errada, canal
+# errado, banco vazio → 0), não para vigiar a curadoria do dono. Ajuste pela
+# variável `MENU_MIN_SKUS` do repositório, sem editar código.
 env:
   STOREFRONT_URL: ${{ vars.STOREFRONT_URL || 'https://alpha.nelsonboulangerie.com.br' }}
+  MENU_MIN_SKUS: ${{ vars.MENU_MIN_SKUS || '30' }}
 
 jobs:
   smoke:
@@ -51,6 +66,7 @@ jobs:
             -o menu.json
           python3 - <<'EOF'
           import json
+          import os
 
           def walk(node):
               if isinstance(node, dict):
@@ -71,7 +87,8 @@ jobs:
           print(f"skus no cardápio: {len(skus)}; com disponibilidade: {len(sellable)}")
           # Cardápio raso ou tudo esgotado é exatamente o sintoma que este
           # smoke existe para acusar — antes do cliente.
-          assert len(skus) >= 50, f"cardápio raso: {len(skus)} skus"
+          minimo = int(os.environ.get("MENU_MIN_SKUS", "30"))
+          assert len(skus) >= minimo, f"cardápio raso: {len(skus)} skus (piso {minimo})"
           assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
           EOF
 
