@@ -406,6 +406,13 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+// ENCOMENDA ANÔNIMA — o servidor recusa (`customer_required_for_scheduled`), e o
+// checkout trava o Validar por isso. A barra é quem tem o botão que resolve, e
+// portanto é ela que chama: o chip pulsa. Mesma condição do bloqueio do CTA, um
+// só dono da verdade.
+const customerRequiredForSchedule = computed(
+  () => scheduleChipActive.value && !cart.customerName.trim() && !cart.customerPhone.trim(),
+);
 // A escolha que virou impossível SOZINHA (o operador marcou 09:00 e só depois
 // lançou a baguete). O chip é onde ele olha de relance; sem isto ele só
 // descobria num 422 seco no Finalizar, com o cliente já tendo ouvido o horário.
@@ -691,6 +698,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :customer-required="customerRequiredForSchedule"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"

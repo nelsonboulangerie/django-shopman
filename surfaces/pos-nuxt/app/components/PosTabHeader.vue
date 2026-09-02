@@ -34,6 +34,10 @@ const props = defineProps<{
   /** O horário escolhido virou impossível (item lançado depois da escolha). */
   scheduleConflict?: boolean;
   scheduleConflictReason?: string;
+  /** A encomenda exige um cliente e ainda não há nenhum. O chip PULSA em vez de
+   *  a tela abrir mais um aviso: o lugar de identificar o cliente já está na
+   *  barra, visível o tempo todo — o que faltava era ele CHAMAR. */
+  customerRequired?: boolean;
   loading: boolean;
 }>();
 
@@ -134,17 +138,31 @@ function runClear() {
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
     <h1 v-else class="truncate text-lg font-semibold leading-tight tracking-tight">Venda rápida</h1>
 
-    <!-- customer chip -->
+    <!-- customer chip — e, na encomenda anônima, o CHAMADO.
+         O checkout tinha um cartaz dizendo "identifique o cliente" a 400px de
+         distância do único botão que faz isso. Dois lugares para uma pendência:
+         um que fala e outro que resolve. Agora quem fala é o próprio botão —
+         ele pulsa, ganha a cor do alerta e diz o porquê no `title`.
+         `motion-safe:` porque pulso é enfeite para quem pediu para a tela parar
+         de se mexer; a cor e a borda seguram o recado sozinhas. -->
     <button
       ref="customerChipRef"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="customerRequired
+        ? 'border-warning bg-warning/15 font-medium text-amber-800 ring-2 ring-warning/40 motion-safe:animate-pulse dark:text-amber-200'
+        : 'border-border'"
       aria-haspopup="dialog"
+      :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
       @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
-      <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
+        class="size-4 shrink-0"
+        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+      />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
-      <span v-else class="shrink-0 text-muted-foreground">Identificar cliente</span>
+      <span v-else class="shrink-0" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
     </button>
 
     <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,

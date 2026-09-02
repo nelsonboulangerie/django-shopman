@@ -233,12 +233,13 @@ const scheduledWithoutCustomer = computed(() =>
 const reviewWarnings = computed(() => {
   const fromServer = (props.review?.warnings ?? []).filter(
     (w) => w.code !== "cash_tendered_amount_blank" && w.code !== "tender_overpaid_non_cash"
-      // A review só é refeita quando o carrinho muda — identificar o cliente não a
-      // refaz, e o aviso de agendado-sem-cliente ficava defasado na tela ao lado do
-      // cabeçalho já com o nome. Quem vigia essa condição AO VIVO é o bloqueio do
-      // CTA (`scheduledWithoutCustomer`); o aviso do servidor só fala enquanto ela
-      // ainda vale.
-      && (w.code !== "customer_required_for_scheduled" || scheduledWithoutCustomer.value),
+      // AGENDADO SEM CLIENTE não fala duas vezes. Quem vigia a condição AO VIVO é
+      // o bloqueio do CTA (`scheduledWithoutCustomer`), e é ele que traz o toque
+      // que resolve. O aviso do servidor dizia a MESMA coisa, com mais palavras,
+      // sem caminho e — porque a review só é refeita quando o CARRINHO muda —
+      // podendo ficar defasado ao lado de um cabeçalho já com o nome do cliente.
+      // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
+      && w.code !== "customer_required_for_scheduled",
   );
   if (nonCashExcess.value <= 0) return fromServer;
   return [
@@ -459,26 +460,98 @@ const ctaDisabled = computed(() => {
   if (!props.paymentCovered) return true; // só habilita quando uma forma cobre o total
   return false;
 });
-// O motivo, em palavras, do botão travado — na ordem em que o operador resolve.
-const ctaBlockReason = computed(() => {
-  if (!props.items.length) return "Adicione itens à comanda para cobrar.";
-  if (props.loading || needsReview.value) return "";
-  if (scheduledWithoutCustomer.value) return "Identifique o cliente para agendar — é o contato se algo mudar até a data.";
-  if (!props.paymentTenders.length) return "Escolha a forma de pagamento.";
-  if (!props.paymentCovered) return `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para cobrir o total.`;
-  return "";
-});
-// Motivo sem caminho é beco sem saída: quando o bloqueio se resolve numa tela
-// que este componente sabe abrir, a frase vem com o botão que resolve — o
-// operador nunca fica só lendo. (Formas de pagamento e itens já estão à mão
-// na própria tela; por isso só o cliente ganha atalho aqui.)
-const ctaBlockAction = computed(() => {
-  if (!props.items.length || props.loading || needsReview.value) return null;
+// O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
+// a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
+// cliente) e o caminho (um toque, quando esta tela sabe abrir a porta).
+// Motivo sem caminho é beco sem saída; motivo comprido não é lido. As duas
+// coisas custavam a mesma venda.
+type CheckoutAction = { label: string; run: () => void };
+const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAction } | null>(() => {
+  if (!props.items.length) {
+    return {
+      message: "Comanda vazia.",
+      hint: "Não há o que cobrar.",
+      action: { label: "Voltar à comanda", run: () => { emit("back"); } },
+    };
+  }
+  if (props.loading || needsReview.value) return null;
   if (scheduledWithoutCustomer.value) {
-    return { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } };
+    return {
+      message: "Encomenda precisa de cliente.",
+      hint: "É o contato se algo mudar até a data.",
+      action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
+    };
+  }
+  if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  if (!props.paymentCovered) {
+    return { message: `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para validar.` };
   }
   return null;
 });
+// ── AS DUAS FAIXAS DA COLUNA DO VALOR ────────────────────────────────────────
+// Em cima o que ACONTECE, embaixo o que FALTA. A separação não é decorativa: são
+// dois tempos verbais e dois humores diferentes, e misturá-los foi o que fez o
+// operador parar de ler os dois. Instrução nunca tem botão; alerta quase sempre
+// tem. Nada é dito duas vezes na mesma tela.
+type CheckoutNote = { key: string; icon: string; accent?: string; message: string };
+type CheckoutAlert = {
+  key: string;
+  tone: "block" | "warn";
+  icon: string;
+  message: string;
+  hint?: string;
+  action?: CheckoutAction;
+};
+
+// INSTRUÇÕES — o que finalizar VAI fazer. Só entra o que MUDA de venda para
+// venda: uma linha que aparece em toda venda vira moldura e some da vista.
+const instructions = computed<CheckoutNote[]>(() => {
+  const notes: CheckoutNote[] = [];
+  if (props.items.length && kitchenNote.value) {
+    notes.push({
+      key: "kitchen",
+      icon: "lucide:flame",
+      accent: firedCount.value ? "text-primary" : "",
+      message: kitchenNote.value,
+    });
+  }
+  // O troco que SAI COM O ENTREGADOR. Era legenda do próprio campo, lá na coluna
+  // que rola; é consequência de finalizar, e por isso mora aqui.
+  if (onDeliveryCash.value && props.changeForInput.trim() && changeForShortfall.value <= 0) {
+    notes.push({ key: "courier", icon: "lucide:banknote", message: "O entregador sai com o troco separado." });
+  }
+  if (wantsPrintedReceipt.value) {
+    notes.push({ key: "print", icon: "lucide:printer", message: "A nota sai na bobina ao autorizar." });
+  }
+  return notes;
+});
+
+// ALERTAS — o que FALTA. O bloqueio primeiro (é ele que segura o Validar), a
+// autorização depois, as ressalvas da review por último.
+const alerts = computed<CheckoutAlert[]>(() => {
+  const list: CheckoutAlert[] = [];
+  const block = ctaBlock.value;
+  if (block) {
+    list.push({ key: "block", tone: "block", icon: "lucide:triangle-alert", ...block });
+  }
+  else if (needsAuth.value) {
+    // Sem botão próprio de propósito: o caminho É o Validar, que neste estado se
+    // chama "Autorizar e validar". Um segundo botão fazendo o mesmo gesto
+    // duplicaria a ação mais delicada da tela — a que chama um gerente.
+    list.push({
+      key: "auth",
+      tone: "block",
+      icon: "lucide:shield-check",
+      message: "Esta venda precisa de um gerente.",
+      hint: "O Validar abre a autorização.",
+    });
+  }
+  for (const [idx, warning] of reviewWarnings.value.entries()) {
+    list.push({ key: `review-${warning.code || idx}`, tone: "warn", icon: "lucide:triangle-alert", message: warning.message });
+  }
+  return list;
+});
+
 function onCta() {
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
   emit("submit");
@@ -573,24 +646,12 @@ defineExpose({
         <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
 
-          <!-- DESCONTO — vizinho do pagamento, não do cliente. Ele é uma operação
-               sobre o VALOR que está sendo cobrado, e é aqui que o gerente é
-               chamado para autorizá-lo.
-               Fica ACIMA das formas, e não colado no "Exato"/"Limpar": aqueles
-               dois agem sobre a LINHA DE PAGAMENTO selecionada, e este age sobre
-               a VENDA. Três botões lado a lado com dois sujeitos diferentes é o
-               clique errado do balcão cheio. -->
-          <button
-            v-if="discountTypes.length"
-            type="button"
-            class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="hasDiscount ? 'border-primary bg-primary/5' : 'bg-card text-muted-foreground'"
-            @click="discountSheetOpen = true"
-          >
-            <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto no pedido ${discountSummary}` : "Desconto no pedido" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
-          </button>
+          <!-- O DESCONTO NÃO MORA MAIS AQUI. Ele era o primeiro botão de uma
+               seção cujo assunto é outro: desconto não é forma de pagamento, é
+               uma operação sobre o VALOR da venda. Ficava sob o cabeçalho
+               "Forma de pagamento" ensinando a categoria errada — e, pior, era
+               o primeiro alvo da coluna do instrumento, acima de Dinheiro.
+               Agora vive no RODAPÉ, ao lado das outras ações da venda. -->
           <!-- ONDE o dinheiro é recebido é FORMA DE PAGAMENTO, não contexto da
                venda: veio da seção "Recebimento", que subiu inteira para a barra
                de contexto. Só aparece quando há mais de uma opção. -->
@@ -628,9 +689,10 @@ defineExpose({
               <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
               Menor que o total: faltam {{ formatBRL(changeForShortfall) }}.
             </span>
-            <span v-else-if="changeForInput.trim()" class="px-1 text-xs text-muted-foreground">
-              O entregador sai com o troco separado.
-            </span>
+            <!-- "O entregador sai com o troco separado" é CONSEQUÊNCIA de
+                 finalizar, não validação deste campo: subiu para as instruções,
+                 no topo da coluna do valor. O que fica aqui é o que só este
+                 campo sabe dizer — que o combinado não cobre o total. -->
           </label>
 
           <div class="flex flex-col gap-1.5">
@@ -786,9 +848,9 @@ defineExpose({
                   @update:model-value="setReceiptChannel('print', $event)"
                 />
               </label>
-              <p v-if="wantsPrintedReceipt" class="mt-1.5 text-xs text-muted-foreground">
-                Sai sozinha na bobina assim que a nota autorizar.
-              </p>
+              <!-- A consequência ("sai na bobina") subiu para as instruções: é o
+                   que finalizar VAI fazer, e o operador precisa disso à vista, não
+                   em 12px dentro de um switch. -->
             </div>
 
             <!-- 3 · Por e-mail -->
@@ -825,109 +887,59 @@ defineExpose({
           </div>
         </section>
 
-        <!-- Por que o botão está travado. O aviso do gerente sozinho enganava: com
-             o botão desabilitado por falta de forma de pagamento, o único texto na
-             tela falava de autorização, e o operador procurava um gerente para um
-             problema que era escolher "Dinheiro". Diz-se primeiro o que bloqueia. -->
-        <p v-if="ctaBlockReason" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-          <Icon name="lucide:info" class="size-3.5 shrink-0" />
-          <span class="min-w-0 flex-1">{{ ctaBlockReason }}</span>
-          <UiButton
-            v-if="ctaBlockAction"
-            variant="outline"
-            size="sm"
-            class="h-7 shrink-0 px-2 text-xs"
-            @click="ctaBlockAction.run()"
-          >
-            {{ ctaBlockAction.label }}
-          </UiButton>
-        </p>
-        <!-- manager approval: when the review demands it, "Autorizar e validar"
-             opens a dedicated PIN authorization screen (PosManagerAuthDialog) -->
-        <p v-else-if="needsAuth" class="flex items-center gap-1.5 px-1 text-xs text-muted-foreground">
-          <Icon name="lucide:shield-check" class="size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
-          Requer autorização do gerente para finalizar.
-        </p>
-
-        <!-- Voltar + Validar (rodapé da coluna, copiando o Back + Validate do Odoo).
-             Meio a meio dava 177px para cada um, e "Autorizar e validar" — o
-             rótulo do caso que EXIGE leitura, porque chama um gerente — vazava
-             do botão. O Voltar cabe no que ele é; o resto é do Validar. -->
-        <div class="flex gap-1.5 pt-1">
-          <UiButton variant="outline" size="lg" class="h-14 shrink-0 gap-2 px-3 text-sm" title="Voltar para a venda (Esc)" @click="$emit('back')">
-            <Icon name="lucide:arrow-left" class="size-5" />
-            Voltar
-            <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
-          </UiButton>
-          <UiButton
-            size="lg"
-            class="h-14 min-w-0 flex-1 gap-2 text-base"
-            :disabled="ctaDisabled"
-            :loading="loading || needsReview"
-            @click="onCta"
-          >
-            {{ ctaLabel }}
-            <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">Enter</kbd>
-          </UiButton>
-        </div>
+        <!-- O MOTIVO DO BOTÃO TRAVADO SAIU DAQUI. Ele era um parágrafo de 12px
+             preso entre a Nota fiscal e o Validar, no fim de uma coluna que
+             ROLA — num monitor de 768px de altura, com a nota aberta, a frase
+             que explicava o bloqueio ficava fora da tela junto com o botão que
+             ela explicava. Agora mora na faixa de ALERTAS da coluna do valor,
+             que não rola, tem largura de sobra e cabe uma ação de um toque.
+             O Voltar/Validar foi para o RODAPÉ FIXO, no fim deste arquivo. -->
       </div>
 
-      <!-- MEIO · VALOR (empilhado: no topo). Fica com a largura que sobra das
-           duas colunas fixas — por isso o total escala com a janela em vez de
-           ter um tamanho só: no `xl` a faixa do meio é a mais estreita das três
-           configurações, e um `text-8xl` ali transbordava. -->
-      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 md:order-none">
-        <!-- valor gigante (estável = total a cobrar), centrado -->
-        <section class="flex flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-          <p class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
-          <p v-if="items.length" class="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Icon name="lucide:flame" class="size-3.5 shrink-0" :class="firedCount ? 'text-primary' : ''" />
-            {{ kitchenNote }}
-          </p>
-        </section>
+      <!-- MEIO · o EIXO DA TELA, em três faixas de altura estável: INSTRUÇÕES no
+           topo (o que finalizar vai fazer), o VALOR no centro (o número que o
+           operador diz em voz alta) e os ALERTAS embaixo (o que falta, com o
+           caminho), encostados no rodapé onde o Validar mora.
 
-        <!-- avisos não-bloqueantes da review (nunca impedem finalizar) -->
-        <ul v-if="reviewWarnings.length" class="shrink-0 flex flex-col gap-1.5">
+           Antes, esses três assuntos estavam em quatro lugares diferentes: a
+           instrução da cozinha era uma linha de 12px sob o total; os avisos da
+           review ficavam soltos no meio da coluna; o motivo do botão travado
+           estava lá na coluna da esquerda, apertado entre a Nota fiscal e o
+           Validar; e as consequências ("sai na bobina", "o entregador leva o
+           troco") viviam como legenda dos próprios campos. Nada disso era lido.
+
+           A regra do lugar único: em cima o que ACONTECE, embaixo o que FALTA.
+           Nesta coluna espaço é o que mais sobra, então o texto tem corpo de
+           leitura — aviso em 12px ao lado de um número em 96px não é aviso.
+
+           A largura é a que resta das duas colunas fixas; por isso o total
+           escala com a janela (no `xl` a faixa do meio é a mais estreita das
+           três configurações, e um `text-8xl` ali transbordava). -->
+      <div class="order-1 flex min-h-0 min-w-0 flex-1 flex-col gap-3 py-1 md:order-none">
+
+        <!-- INSTRUÇÕES — o que finalizar VAI fazer. Consequência, nunca erro:
+             nada aqui pede ação, e por isso nada aqui tem botão. Só entra o que
+             MUDA de venda para venda. -->
+        <ul
+          v-if="instructions.length"
+          class="flex shrink-0 flex-col gap-1.5"
+          aria-label="O que acontece ao finalizar"
+        >
           <li
-            v-for="(w, idx) in reviewWarnings"
-            :key="idx"
-            class="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300"
-            role="status"
+            v-for="note in instructions"
+            :key="note.key"
+            class="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/40 px-3.5 py-2.5 text-sm text-muted-foreground"
           >
-            <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
-            <span>{{ w.message }}</span>
+            <Icon :name="note.icon" class="size-4 shrink-0" :class="note.accent || ''" />
+            <span class="min-w-0 flex-1">{{ note.message }}</span>
           </li>
         </ul>
 
-        <!-- DIVIDIR A CONTA — "somos três, cada um paga o seu".
-             Ligado, cada toque numa forma de pagamento lança UMA parte, já
-             calculada (os centavos fecham sozinhos, e a última parcela leva o
-             que restou mesmo depois de o operador editar alguma linha). O
-             operador não faz conta de cabeça com os três clientes olhando.
-             Tocar de novo no mesmo número desliga: mudar de ideia é rotina. -->
-        <div class="shrink-0 border-t pt-3">
-          <div class="flex flex-wrap items-center gap-1.5">
-            <span class="mr-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Dividir em
-            </span>
-            <UiButton
-              v-for="n in SPLIT_PRESETS"
-              :key="n"
-              type="button"
-              variant="outline"
-              size="sm"
-              class="h-9 w-9 p-0 tabular-nums"
-              :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
-              :aria-pressed="splitCount === n"
-              :aria-label="`Dividir a conta em ${n} pessoas`"
-              @click="$emit('setSplitCount', n)"
-            >
-              {{ n }}
-            </UiButton>
-            <span v-if="splitNote" class="ml-auto text-sm font-semibold tabular-nums">{{ splitNote }}</span>
-          </div>
-        </div>
+        <!-- valor gigante (estável = total a cobrar), centrado -->
+        <section class="flex min-h-0 flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
+          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
+          <p class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
+        </section>
 
         <!-- linhas de pagamento + troco/restante -->
         <div v-if="tenderLines.length" class="shrink-0 border-t pt-3">
@@ -969,6 +981,45 @@ defineExpose({
             </strong>
           </div>
         </div>
+
+        <!-- ALERTAS — o que FALTA, e o caminho de um toque. Um lugar só, colado
+             no rodapé: o olho que vai para o Validar passa por aqui.
+             Bloqueio primeiro (é ele que segura o botão), autorização depois,
+             ressalvas da review por último. Motivo sem caminho é beco sem
+             saída — quando esta tela sabe abrir a porta, a porta vem junto. -->
+        <ul
+          v-if="alerts.length"
+          class="flex shrink-0 flex-col gap-1.5"
+          aria-label="Avisos"
+          aria-live="polite"
+        >
+          <li
+            v-for="alert in alerts"
+            :key="alert.key"
+            class="flex items-center gap-3 rounded-lg border px-3.5 py-2.5"
+            :class="alert.tone === 'block'
+              ? 'border-warning/60 bg-warning/10 text-amber-800 dark:border-warning/50 dark:text-amber-200'
+              : 'border-border bg-muted/40 text-muted-foreground'"
+          >
+            <Icon
+              :name="alert.icon"
+              class="size-5 shrink-0"
+              :class="alert.tone === 'block' ? 'text-amber-600 dark:text-amber-400' : ''"
+            />
+            <span class="min-w-0 flex-1">
+              <span class="block text-sm font-semibold leading-snug">{{ alert.message }}</span>
+              <span v-if="alert.hint" class="mt-0.5 block text-xs leading-snug opacity-80">{{ alert.hint }}</span>
+            </span>
+            <UiButton
+              v-if="alert.action"
+              size="sm"
+              class="h-9 shrink-0"
+              @click="alert.action.run()"
+            >
+              {{ alert.action.label }}
+            </UiButton>
+          </li>
+        </ul>
       </div>
 
       <!-- DIREITA · CONTEXTO — a coluna que faltava. Medido em 1440×900 antes
@@ -1064,6 +1115,91 @@ defineExpose({
         </section>
       </div>
     </div>
+
+    <!-- RODAPÉ FIXO — a barra de comando da tela. Não rola: Voltar e Validar
+         ficam SEMPRE no mesmo pixel, e músculo de balcão depende disso. Antes
+         eles moravam no fim da coluna da esquerda, que ROLA — com a Nota fiscal
+         aberta num monitor de 768px de altura, o Validar saía da tela junto com
+         o aviso que explicava por que ele estava travado.
+
+         O vão do meio é das AÇÕES DA VENDA que a loja habilitou: desconto do
+         pedido (some quando o contrato não oferece nenhum tipo) e divisão da
+         conta. As duas agem sobre o VALOR — é o que as separa do instrumento da
+         esquerda, que age sobre a LINHA de pagamento selecionada. Botão de
+         valor perto de botão de linha é o clique errado do balcão cheio.
+
+         `sticky bottom-0` além do `shrink-0`: abaixo de `md` a tela empilha e
+         rola inteira, e ali o rodapé precisa se segurar sozinho. -->
+    <footer class="sticky bottom-0 z-10 flex shrink-0 flex-wrap items-center gap-2 border-t bg-background pt-3">
+      <UiButton
+        variant="outline"
+        size="lg"
+        class="h-14 shrink-0 gap-2 px-4 text-sm"
+        title="Voltar para a venda (Esc)"
+        @click="$emit('back')"
+      >
+        <Icon name="lucide:arrow-left" class="size-5" />
+        Voltar
+        <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Esc</kbd>
+      </UiButton>
+
+      <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+        <!-- DESCONTO NO PEDIDO — o nome carrega o ESCOPO de propósito: o resumo
+             à direita mostra "Desconto nos itens" (o que já veio na etiqueta) e
+             "Desconto do operador" (linha + pedido). Um botão chamado só
+             "Desconto" ao lado dessas duas linhas volta a ser a ambiguidade que
+             esta tela já pagou uma vez para desfazer. -->
+        <button
+          v-if="discountTypes.length"
+          type="button"
+          class="flex h-14 min-w-0 items-center gap-2 rounded-md border px-4 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+          :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
+          @click="discountSheetOpen = true"
+        >
+          <Icon name="lucide:tag" class="size-4 shrink-0" />
+          <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto no pedido ${discountSummary}` : "Desconto no pedido" }}</span>
+          <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
+        </button>
+
+        <!-- DIVIDIR A CONTA — "somos três, cada um paga o seu".
+             Ligado, cada toque numa forma de pagamento lança UMA parte, já
+             calculada (os centavos fecham sozinhos, e a última parcela leva o
+             que restou mesmo depois de o operador editar alguma linha). O
+             operador não faz conta de cabeça com os três clientes olhando.
+             Tocar de novo no mesmo número desliga: mudar de ideia é rotina.
+             O quanto-pedir fica COLADO nos números que o produzem — é o
+             mostrador deste controle, não um aviso da venda. -->
+        <div class="flex h-14 min-w-0 items-center gap-1.5 rounded-md border bg-card px-3" role="group" aria-label="Dividir a conta">
+          <span class="shrink-0 text-xs font-medium uppercase tracking-wide text-muted-foreground">Dividir em</span>
+          <UiButton
+            v-for="n in SPLIT_PRESETS"
+            :key="n"
+            type="button"
+            variant="outline"
+            size="sm"
+            class="h-9 w-9 shrink-0 p-0 tabular-nums"
+            :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
+            :aria-pressed="splitCount === n"
+            :aria-label="`Dividir a conta em ${n} pessoas`"
+            @click="$emit('setSplitCount', n)"
+          >
+            {{ n }}
+          </UiButton>
+          <span v-if="splitNote" class="min-w-0 truncate pl-1 text-sm font-semibold tabular-nums text-foreground">{{ splitNote }}</span>
+        </div>
+      </div>
+
+      <UiButton
+        size="lg"
+        class="h-14 min-w-0 flex-1 gap-2 text-base md:w-72 md:flex-none"
+        :disabled="ctaDisabled"
+        :loading="loading || needsReview"
+        @click="onCta"
+      >
+        {{ ctaLabel }}
+        <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">Enter</kbd>
+      </UiButton>
+    </footer>
 
   </section>
 

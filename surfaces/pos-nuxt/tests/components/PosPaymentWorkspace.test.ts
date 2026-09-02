@@ -354,15 +354,40 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     expect(wrapper.find(".order-2").text()).not.toContain("Sem cliente");
   });
 
-  it("o DESCONTO fica na seção de pagamento, e não colado no Exato/Limpar", async () => {
-    // Desconto age sobre a VENDA; "Exato" e "Limpar" agem sobre a LINHA DE
-    // PAGAMENTO selecionada. Três botões lado a lado com dois sujeitos
-    // diferentes é o clique errado do balcão cheio.
+  it("o DESCONTO não é forma de pagamento: saiu da coluna do instrumento", async () => {
+    // Ele ficava sob o cabeçalho "Forma de pagamento", ensinando a categoria
+    // errada — e era o primeiro alvo da coluna, acima de Dinheiro. Desconto age
+    // sobre o VALOR da venda; "Exato" e "Limpar" agem sobre a LINHA DE PAGAMENTO
+    // selecionada. Agora ele mora no rodapé, com as outras ações da venda.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
     });
-    const payment = wrapper.find('section[aria-label="Forma de pagamento"]');
-    expect(payment.text()).toContain("Desconto no pedido");
+    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).not.toContain("Desconto");
+    expect(wrapper.find(".order-2").text()).not.toContain("Desconto");
+    expect(wrapper.find("footer").text()).toContain("Desconto no pedido");
+  });
+
+  it("o rodapé é fixo e carrega o comando da tela: Voltar, ações da venda, Validar", async () => {
+    // Eles moravam no fim da coluna da esquerda, que ROLA: num monitor de 768px
+    // de altura, com a Nota fiscal aberta, o Validar saía da tela junto com o
+    // aviso que explicava por que ele estava travado.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
+    });
+    const footer = wrapper.find("footer");
+    expect(footer.exists()).toBe(true);
+    expect(footer.classes()).toContain("sticky");
+    expect(footer.text()).toContain("Voltar");
+    expect(footer.text()).toContain("Validar");
+    expect(footer.text()).toContain("Dividir em");
+    // e nenhuma das três colunas guarda mais o comando
+    expect(wrapper.find(".order-2").text()).not.toContain("Validar");
+    expect(wrapper.find(".order-1").text()).not.toContain("Dividir em");
+  });
+
+  it("sem tipo de desconto no contrato, o rodapé não oferece a porta", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ discountTypes: [] }) });
+    expect(wrapper.find("footer").text()).not.toContain("Desconto");
   });
 
   it("sem tipo de desconto configurado, a entrada de desconto não existe em nenhuma das formas", async () => {
@@ -437,10 +462,18 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     ...overrides,
   });
 
-  it("agendado sem nome nem telefone: Validar desabilitado e o motivo na tela", async () => {
+  it("agendado sem nome nem telefone: Validar desabilitado e o motivo na faixa de alertas", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: scheduled() });
     expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
-    expect(wrapper.text()).toContain("Identifique o cliente para agendar");
+    const alerts = wrapper.find('[aria-label="Avisos"]');
+    expect(alerts.exists()).toBe(true);
+    expect(alerts.text()).toContain("Encomenda precisa de cliente.");
+    // O porquê continua na tela — é o que o operador DIZ ao cliente —, mas em
+    // segunda linha: a frase que trava o botão precisa ser lida de longe.
+    expect(alerts.text()).toContain("É o contato se algo mudar até a data.");
+    // A faixa mora na coluna do valor, colada no rodapé — não mais espremida
+    // acima do Validar, no fim de uma coluna que rola.
+    expect(wrapper.find(".order-1").text()).toContain("Encomenda precisa de cliente.");
   });
 
   it("o motivo não é só texto: 'Identificar cliente' abre o modal de Cliente", async () => {
@@ -465,14 +498,16 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
       props: scheduled({ customerPhone: "43999990000" }),
     });
     expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
-    expect(wrapper.text()).not.toContain("Identifique o cliente para agendar");
+    expect(wrapper.text()).not.toContain("Encomenda precisa de cliente");
   });
 
-  it("o aviso da review não fica defasado: identificado o cliente, ele se cala", async () => {
-    // A review só é refeita quando o carrinho muda — identificar o cliente não a
-    // refaz, e o aviso do servidor ficava na tela ao lado do cabeçalho já com o
-    // nome. Com o cliente presente, o aviso de agendado-sem-cliente some mesmo
-    // que a review antiga ainda o carregue.
+  it("a pendência fala UMA vez: o aviso do servidor não repete o bloqueio", async () => {
+    // Eram dois cartazes para a mesma pendência — um que falava (o aviso da
+    // review, sem caminho e com mais palavras) e outro que resolvia (o bloqueio
+    // do CTA, com o toque que abre o Cliente). Dois avisos para uma coisa é o
+    // que faz o operador parar de ler os dois. Além disso, a review só é refeita
+    // quando o CARRINHO muda: o do servidor podia ficar defasado ao lado de um
+    // cabeçalho já com o nome do cliente.
     const staleReview = review({
       warnings: [{
         code: "customer_required_for_scheduled",
@@ -483,12 +518,14 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
     const semCliente = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ review: staleReview }),
     });
-    expect(semCliente.text()).toContain("precisa de um cliente identificado");
+    expect(semCliente.text()).not.toContain("precisa de um cliente identificado");
+    expect(semCliente.findAll('[aria-label="Avisos"] li')).toHaveLength(1);
 
     const comCliente = await mountSuspended(PosPaymentWorkspace, {
       props: scheduled({ review: staleReview, customerName: "Seu Jorge" }),
     });
     expect(comCliente.text()).not.toContain("precisa de um cliente identificado");
+    expect(comCliente.find('[aria-label="Avisos"]').exists()).toBe(false);
   });
 
   it("para hoje continua anônimo: data de hoje não trava nada", async () => {
@@ -496,5 +533,104 @@ describe("PosPaymentWorkspace — agendado sem cliente trava o Validar, com cami
       props: scheduled({ deliveryDate: "2026-09-01" }),
     });
     expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+  });
+});
+
+describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que falta", () => {
+  // As duas faixas da coluna do valor. Em cima o que ACONTECE ao finalizar,
+  // embaixo o que FALTA. Antes esses dois assuntos estavam em quatro lugares:
+  // legenda de campo, linha de 12px sob o total, lista solta no meio da coluna e
+  // parágrafo espremido acima do Validar, na coluna que rola.
+  const covered = (overrides: Record<string, unknown> = {}) => props({
+    paymentTenders: [tender],
+    paymentCovered: true,
+    paymentRemainingQ: 0,
+    ...overrides,
+  });
+
+  it("a consequência da cozinha é INSTRUÇÃO, e mora no topo da coluna do valor", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: covered() });
+    const instructions = wrapper.find('[aria-label="O que acontece ao finalizar"]');
+    expect(instructions.exists()).toBe(true);
+    expect(instructions.text()).toContain("vai para a cozinha");
+    // Instrução nunca pede ação: é o que a separa do alerta.
+    expect(instructions.findAll("button")).toHaveLength(0);
+  });
+
+  it("a bobina e o troco do entregador deixaram de ser legenda de campo", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        receiptChannels: ["print"],
+        fulfillmentType: "delivery",
+        paymentCollection: "on_delivery",
+        changeForInput: "50,00",
+        paymentTotalQ: 1000,
+      }),
+    });
+    const instructions = wrapper.find('[aria-label="O que acontece ao finalizar"]');
+    expect(instructions.text()).toContain("A nota sai na bobina ao autorizar.");
+    expect(instructions.text()).toContain("O entregador sai com o troco separado.");
+    // e não voltaram a aparecer dentro da coluna do instrumento
+    expect(wrapper.find(".order-2").text()).not.toContain("bobina");
+    expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
+  });
+
+  it("o combinado menor que o total continua colado no campo que o produz", async () => {
+    // Isto NÃO é consequência de finalizar: é o que só aquele campo sabe dizer.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({
+        fulfillmentType: "delivery",
+        paymentCollection: "on_delivery",
+        changeForInput: "5,00",
+        paymentTotalQ: 1000,
+      }),
+    });
+    expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).toContain("Menor que o total");
+    expect(wrapper.find('[aria-label="O que acontece ao finalizar"]').text()).not.toContain("Menor que o total");
+  });
+
+  it("comanda vazia: o alerta diz o que é, e oferece a saída", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ items: [] }) });
+    const alerts = wrapper.find('[aria-label="Avisos"]');
+    expect(alerts.text()).toContain("Comanda vazia.");
+    const back = alerts.findAll("button").find((b) => b.text().includes("Voltar à comanda"));
+    await back!.trigger("click");
+    expect(wrapper.emitted("back")).toHaveLength(1);
+  });
+
+  it("gerente exigido: o alerta explica, mas NÃO duplica o botão que autoriza", async () => {
+    // O caminho É o Validar, que neste estado se chama "Autorizar e validar".
+    // Um segundo botão faria o mesmo gesto — o mais delicado da tela — em dois
+    // lugares, e nenhum dos dois seria o óbvio.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: covered({ review: review({ requires_manager_approval: true }) }),
+    });
+    const alerts = wrapper.find('[aria-label="Avisos"]');
+    expect(alerts.text()).toContain("Esta venda precisa de um gerente.");
+    expect(alerts.findAll("button")).toHaveLength(0);
+    expect(cta(wrapper)!.text()).toContain("Autorizar e validar");
+  });
+
+  it("sem pendência nenhuma, a faixa de alertas não existe", async () => {
+    // Caixa vazia com borda é ruído: o lugar é estável, a presença não.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: covered() });
+    expect(wrapper.find('[aria-label="Avisos"]').exists()).toBe(false);
+  });
+
+  it("o alerta que trava vem antes das ressalvas da review", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [],
+        paymentCovered: false,
+        review: review({
+          warnings: [{ code: "availability", field: "items", message: "Pão pode faltar no balcão." }],
+        }),
+      }),
+    });
+    const rows = wrapper.findAll('[aria-label="Avisos"] li').map((li) => li.text());
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toContain("Escolha a forma de pagamento.");
+    expect(rows[1]).toContain("Pão pode faltar no balcão.");
   });
 });
