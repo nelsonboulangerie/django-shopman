@@ -81,7 +81,9 @@ const ALL_FIRED_LABEL = "Enviado";
 export interface FireBarView {
   /** The channel offers fire, the tab is open, and there are lines. */
   visible: boolean;
-  /** `fire_tab` Action label + the live delta count, or the all-fired label. */
+  /** `fire_tab` Action label, or the all-fired label. A CONTAGEM não entra
+   *  aqui: ela é um badge na tela (número em destaque, colado no rótulo), e
+   *  "Enviar itens (1)" dizia o mesmo com menos leitura. */
   label: string;
   unfired: number;
   fired: number;
@@ -93,8 +95,9 @@ export interface FireBarView {
 /**
  * The progressive fire button. Visible only when the `fire_tab` Action is
  * present, a tab is open, and the ticket has lines. The label is the Action's
- * own copy plus the unfired delta count; when nothing is left to fire it shows
- * the all-fired state and disables. Honors the Action's `enabled` verbatim.
+ * own copy (the unfired delta rides along in `unfired`, which the screen shows
+ * as a badge); when nothing is left to fire it shows the all-fired state and
+ * disables. Honors the Action's `enabled` verbatim.
  */
 export function fireBarView(args: {
   items: POSCartItem[];
@@ -107,7 +110,7 @@ export function fireBarView(args: {
   const visible = args.affordance.present && args.hasOpenTab && args.items.length > 0;
   return {
     visible,
-    label: unfired ? `${args.affordance.label} (${unfired})` : ALL_FIRED_LABEL,
+    label: unfired ? args.affordance.label : ALL_FIRED_LABEL,
     unfired,
     fired,
     disabled: args.busy || !args.affordance.enabled || unfired === 0,

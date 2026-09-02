@@ -669,16 +669,29 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
            spanning their full height — saves a vertical row. -->
       <div v-if="fireBar.visible || (hasOpenTab && items.length)" class="grid grid-cols-2 gap-2">
         <div class="flex flex-col gap-2">
+          <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não
+               enviado é trabalho parado, e o botão neutro dizia isso com a
+               mesma voz de um botão desligado. Emprestamos o idioma de ênfase
+               da casa (borda + fundo primário) em vez de um segundo botão
+               sólido: o sólido é do "Pagamento", e dois blocos cheios lado a
+               lado brigam pela mesma atenção em vez de dirigi-la. A contagem
+               virou badge — o número é o dado, o resto é rótulo. -->
           <UiButton
             v-if="fireBar.visible"
             variant="outline"
             class="justify-center gap-2"
+            :class="fireBar.unfired && !fireBar.disabled ? 'border-primary bg-primary/5 text-primary hover:bg-primary/10' : ''"
             :disabled="fireBar.disabled"
             :loading="firing"
             @click="$emit('fire')"
           >
             <Icon name="lucide:utensils" class="size-4" />
             {{ fireBar.label }}
+            <span
+              v-if="fireBar.unfired"
+              class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground"
+              :aria-label="`${fireBar.unfired} item(ns) a enviar`"
+            >{{ fireBar.unfired }}</span>
           </UiButton>
           <UiButton
             v-if="hasOpenTab && items.length"
