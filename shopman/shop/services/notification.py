@@ -14,6 +14,7 @@ import logging
 
 from django.conf import settings
 from shopman.orderman.models import Directive
+from shopman.utils.monetary import format_money
 
 from shopman.shop.notifications import notify
 
@@ -24,6 +25,9 @@ TOPIC = "notification.send"
 _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
     {
         "payment_requested",
+        # Link de pagamento do pedido remoto anotado no PDV: é a cobrança inteira
+        # — se não chega, a casa fica esperando um dinheiro que ninguém pediu.
+        "payment_link_sent",
         "payment_expired",
         "payment_failed",
         "order_ready",
@@ -353,7 +357,9 @@ def _build_context(order, payload: dict, template: str) -> dict:
             )
 
     if order.total_q:
-        context["total"] = f"R$ {order.total_q / 100:,.2f}"
+        # ⚠️ Era `:,.2f` cru — "R$ 38.00", ponto decimal americano, na mensagem
+        # que o cliente recebe. O formatador da casa é um só.
+        context["total"] = f"R$ {format_money(order.total_q)}"
 
     from shopman.shop.services import storefront_links
 
@@ -370,9 +376,14 @@ def _build_context(order, payload: dict, template: str) -> dict:
         copy_paste = payment.get("copy_paste")
         context["copy_paste"] = copy_paste or ""
         context["pix_suffix"] = f" Código PIX: {copy_paste}" if copy_paste else ""
+        # A URL da COBRANÇA (sessão hospedada do cartão/link), distinta do
+        # `payment_url`, que é o acompanhamento. O aviso do link de pagamento
+        # manda o cliente para cá, não para a tela do pedido.
+        context["checkout_url"] = str(payment.get("checkout_url") or "")
     else:
         context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""
+        context["checkout_url"] = ""
 
     # Mesmo critério do `payment_url` acima: sem magic link (pedido da loja não grava
     # `customer.uuid`, ou a cunhagem do token falhou), o acompanhamento vira o link
