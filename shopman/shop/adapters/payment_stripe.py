@@ -23,6 +23,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from shopman.shop.adapters._payment_link import link_expires_at, link_expires_at_epoch
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 from shopman.shop.services import storefront_links
 
@@ -147,6 +148,15 @@ def create_intent(
     # virar a cobrança do pedido.
     stripe = _get_stripe()
 
+    # O LINK tem prazo, e o prazo é UM: o mesmo instante vai para o Payman
+    # (agenda o `payment.timeout` e aparece no PDV como "vale até …") e para o
+    # Stripe, logo abaixo. Sem mandar, o Stripe expirava a sessão em 24 h por
+    # conta própria e a casa não sabia — o pedido ficava aberto, o estoque
+    # preso, e o cliente ligava dizendo que "o link parou de funcionar".
+    # O cartão da loja online segue sem prazo: lá o cliente está na tela, e o
+    # abandono tem a própria rede (`reconcile_with_gateway_if_due`).
+    expires_at = link_expires_at() if method == "link" else None
+
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
@@ -162,12 +172,17 @@ def create_intent(
         method=method,
         gateway="stripe",
         gateway_data=metadata,
+        expires_at=expires_at,
         idempotency_key=idempotency_key,
     )
     if db_intent.gateway_id and db_intent.gateway_data.get("checkout_url"):
         return _intent_from_db(db_intent, currency=currency)
 
     create_options = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    if expires_at is not None:
+        # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
+        # segundos). Vocabulário de terceiro, na porta de saída.
+        create_options["expires_at"] = link_expires_at_epoch(expires_at)
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
@@ -215,6 +230,7 @@ def create_intent(
         status="pending",
         amount_q=amount_q,
         currency=currency,
+        expires_at=expires_at,
         gateway_id=session.id,
         metadata={"checkout_url": session.url},
     )
@@ -227,6 +243,7 @@ def _intent_from_db(intent, *, currency: str = "BRL") -> PaymentIntent:
         status=intent.status,
         amount_q=intent.amount_q,
         currency=currency or intent.currency,
+        expires_at=intent.expires_at,
         gateway_id=intent.gateway_id,
         metadata={"checkout_url": gateway_data.get("checkout_url", "")},
     )

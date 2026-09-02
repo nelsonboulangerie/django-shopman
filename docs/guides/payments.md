@@ -187,6 +187,32 @@ ChannelConfig.Payment(
 
 O timeout total de hold de estoque deve cobrir: confirmação + pagamento + margem. Veja `confirmation.calculate_hold_ttl()`.
 
+### Validade do link de pagamento
+
+O link (`method="link"`, o pedido remoto anotado no PDV) tem prazo, e o prazo é **um relógio
+escrito nos dois lados**: o adapter grava `PaymentIntent.expires_at` e manda o mesmo instante ao
+Stripe em `Session.create(expires_at=...)`. Sem mandar, o Stripe expirava a sessão em 24 h por conta
+própria e a casa não sabia — dois relógios.
+
+```bash
+SHOPMAN_PAYMENT_LINK_TTL_HOURS=24   # default; o adapter prende à régua do Stripe (30 min a 24 h)
+```
+
+O que o `expires_at` liga (a máquina já existia; faltava o campo):
+
+1. `payment.initiate()` grava `order.data["payment"]["expires_at"]` — a tela do PDV mostra
+   "Vale até amanhã às 9h" e o aviso ao cliente carrega o mesmo prazo;
+2. `_schedule_payment_timeout` agenda a Directive `payment.timeout` com `available_at=expires_at`;
+3. `PaymentTimeoutHandler` re-agenda se chamado cedo, **pergunta ao gateway** antes de cancelar e só
+   cancela com resposta "não pago" — aí libera o estoque e envia `payment_expired`;
+4. `reconcile_payments` re-arma o timeout de intent vencido cuja directive se perdeu;
+5. a reconciliação diária acusa `expired_payment_link` (warning) para o que escapar.
+
+⚠️ A venda de link **nunca é entrega de balcão**: `lifecycle._counter_handoff` recusa o método `link`
+(o pedido remoto tem trajeto pela frente), e o link exige captura antes do trabalho físico mesmo no
+canal `pdv` (`payment.timing="external"`). Sem isso a venda fechava COMPLETED sem um centavo
+capturado, e o vencimento não a alcançava mais.
+
 ## Backends Disponíveis
 
 ### MockPaymentBackend

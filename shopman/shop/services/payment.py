@@ -200,13 +200,17 @@ def _persist_intent(
             or qr_data.get("copy_paste")
             or qr_data.get("qrcode")
         )
-        if intent.expires_at:
-            result["expires_at"] = intent.expires_at.isoformat()
     elif method in _HOSTED_CHECKOUT_METHODS:
         # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
         checkout_url = (intent.metadata or {}).get("checkout_url")
         if checkout_url:
             result["checkout_url"] = checkout_url
+    # O prazo é de quem TEM prazo, não de um método: o QR do Pix e o link de
+    # pagamento vencem, e os dois precisam dizer isso ao cliente ("vale até …")
+    # e ao `payment.timeout` (logo abaixo). Enquanto a chave só era gravada no
+    # ramo do Pix, o link nascia com prazo no Payman e sem prazo no pedido.
+    if intent.expires_at:
+        result["expires_at"] = intent.expires_at.isoformat()
 
     order.data["payment"] = result
     order.save(update_fields=["data", "updated_at"])

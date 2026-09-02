@@ -1,4 +1,4 @@
-"""Payment timeout handler — cancels unpaid digital orders at the payment deadline."""
+"""Payment timeout handler — cancels unpaid digital orders (PIX, card, link) at the payment deadline."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ _UNCERTAIN_STATUSES = {"unknown"}
 
 
 class PaymentTimeoutHandler:
-    """Resolve unpaid PIX/card orders once the displayed payment timer expires."""
+    """Resolve unpaid PIX/card/link orders once the displayed payment timer expires."""
 
     topic = PAYMENT_TIMEOUT
 
