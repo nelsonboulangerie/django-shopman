@@ -21,7 +21,7 @@ pagamento um dono só e deixa a reconciliação financeira enxergar dinheiro.
 | `pix` | Efí (ou mock) | `create_intent` pending → webhook autoriza/captura | `payment.initiate` (loja online, WhatsApp, PDV) | adapter → `PaymentService.refund` |
 | `card` | Stripe Checkout (ou mock) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
 | `credit` / `debit` | **nenhum** — maquininha física do balcão | nasce e captura no mesmo gesto (`settle`, `gateway=""`) | `PaymentService.settle` | reembolso manual, fora do sistema |
-| `link` | `SHOPMAN_LINK_ADAPTER` (default = o do cartão) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
+| `link` | Stripe Checkout via `SHOPMAN_LINK_ADAPTER` (default = o do cartão; simulador em DEBUG) | `create_intent` pending → **captura automática** no gateway (`capture_method="automatic"`, sempre — `STRIPE_CAPTURE_METHOD` vale só para `card`) → webhook confirma | `payment.initiate`, chamado por `close_sale` do PDV (pedido remoto) | adapter → `PaymentService.refund` |
 
 ### O balcão não fala com gateway — e o TEF não vai mudar isso
 
@@ -43,8 +43,29 @@ erro nem alerta. Guardado por
 `test_pos_cash_ledger.py::test_venda_so_em_cartao_do_balcao_liquida_sem_gateway`.
 
 `link` é o oposto: pedido remoto anotado no balcão, sem maquininha e **com**
-gateway. Qual provedor o atende (Stone ou Stripe) é decisão de WP distinto —
-trocar é trocar `SHOPMAN_LINK_ADAPTER`, não o código.
+gateway. No go-live quem o atende é o **Stripe** (WP-PAGAMENTO, frente 1); a
+Stone entra depois, junto do TEF. Trocar de provedor é trocar
+`SHOPMAN_LINK_ADAPTER` — e só, porque tudo o que é do link pergunta ao adapter,
+não ao Stripe:
+
+- a **prontidão** (`payment_link_readiness`, linha `payment_link` do painel de
+  integrações) é resolvida pelo adapter configurado; é ela que a tecla L do PDV
+  consulta para aparecer. Provedor sem prontidão conhecida fica em aviso e o
+  balcão **não oferece** o link — falha fechado, até o provedor novo trazer a
+  própria `*_readiness` para cá;
+- o **webhook** do Stripe e o `reconcile_payments` (rede contra webhook perdido)
+  cobrem toda sessão hospedada — `payment.HOSTED_CHECKOUT_METHODS`, `card` e
+  `link` —, não um literal `"card"`;
+- o **acompanhamento** do cliente oferece o `checkout_url` de um pedido de link
+  como oferece o do cartão (mesmo degrau `payment_card_ready`, `payment_method`
+  próprio).
+
+O link **captura sozinho**: `_adapter_config` manda `capture_method="automatic"`
+para `link` sempre. A venda do balcão já fechou quando a URL nasce; não há um
+aceite posterior da loja que justifique segurar a autorização (que é o que o
+`manual` do cartão da loja online compra). Enquanto herdava o `manual` do bloco
+`SHOPMAN_STRIPE`, o cliente pagava, o intent ficava `authorized`, a autorização
+vencia no Stripe e a padaria nunca recebia.
 | `cash` | nenhum (`gateway=""`) | **capturado no ato** via `PaymentService.settle`, quando a coleta é no terminal (`Order.data.payment.collection == "terminal"`, PDV) e depois do total selado | `payment.initiate`, chamado por `close_sale` do PDV | `PaymentService.refund` direto (sem adapter), no cancel/devolução |
 | `external` | nenhum (`gateway=""`) | idem `cash` (maquininha avulsa recebida no terminal) | idem | idem |
 | `account` | nenhum (`gateway=""`) | **autorizado** na venda (= deve; `PaymentService.charge_to_account`, `gateway_data.customer_ref`) e **capturado** no acerto (= pagou; `capture(gateway_data={settled_with, settled_by})`), FIFO por venda inteira | PDV, só para cliente com `Customer.metadata.house_account` (`shop/services/house_account`) | cancel da venda → `PaymentService.cancel` (a dívida morre; nada a estornar). Saldo devedor = `account_balance_q` (Σ autorizados; derivado, nunca tabela) |
@@ -69,7 +90,7 @@ Representa uma intenção de pagamento vinculada a um pedido.
 |-------|------|-----------|
 | `ref` | str | Identificador único (auto: `PAY-XXXXXXXXXXXX`) |
 | `order_ref` | str | Referência do pedido (string, sem FK) |
-| `method` | str | `pix`, `cash`, `credit`, `debit`, `card`, `external` |
+| `method` | str | `pix`, `cash`, `credit`, `debit`, `card`, `link`, `external` |
 | `status` | str | Estado atual do pagamento |
 | `amount_q` | int | Valor em centavos |
 | `currency` | str | ISO 4217 (default: `BRL`) |
