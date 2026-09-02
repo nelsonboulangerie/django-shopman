@@ -215,14 +215,36 @@ escrito nos dois lados**: o adapter grava `PaymentIntent.expires_at` e manda o m
 Stripe em `Session.create(expires_at=...)`. Sem mandar, o Stripe expirava a sessão em 24 h por conta
 própria e a casa não sabia — dois relógios.
 
-```bash
-SHOPMAN_PAYMENT_LINK_TTL_HOURS=24   # default; o adapter prende à régua do Stripe (30 min a 24 h)
+**O prazo segue o ciclo do atendimento**, não uma env:
+
 ```
+expires_at = min(agora + janela do canal, corte do atendimento)   # preso à régua do Stripe
+```
+
+- **janela do canal** — `ChannelConfig.payment.link_timeout_minutes` (default **120**; o canal
+  `pdv` semeado declara 120). É o teto: um link de 24 h segurava estoque por um dia inteiro para
+  um pão que é para hoje ou para amanhã, e a encomenda remota só é liberada contra o pagamento.
+- **corte do atendimento** (`shop/services/payment_deadline.service_cutoff`) — o instante em que
+  o pedido precisa estar pago para a casa cumprir: o **início da janela combinada** quando existe
+  (`delivery_time_slot`, canônico `"slot-09"` ou meia hora `"14:00-14:30"`); senão o **fechamento
+  da loja no dia do compromisso** (`delivery_date` + `Shop.opening_hours`); sem compromisso
+  nenhum, o fechamento de hoje. Sem expediente conhecido para o dia, não há corte — vale só a
+  janela.
+- **régua do Stripe** — piso 30 min, teto 24 h − 1 min (`shop/adapters/_payment_link.py`). Corte
+  já passado ou a menos de 30 min (venda de link às 17h50 para retirar às 18h) vale o piso: a casa
+  aceita esse caso raro em vez de recusar a venda com o cliente ao telefone.
+
+A janela e o corte chegam ao adapter pelo `_adapter_config` (`link_timeout_minutes` e
+`link_expires_by`, ISO), como o Pix faz com `pix_timeout_minutes` — o adapter não conhece pedido
+nem calendário. O mock segue o mesmo cálculo.
 
 O que o `expires_at` liga (a máquina já existia; faltava o campo):
 
 1. `payment.initiate()` grava `order.data["payment"]["expires_at"]` — a tela do PDV mostra
-   "Vale até amanhã às 9h" e o aviso ao cliente carrega o mesmo prazo;
+   "Pague até hoje às 16h para garantir o pedido", o aviso ao cliente diz a consequência ("Para
+   garantir o pedido, é só pagar até hoje às 16h. Depois disso a reserva é liberada.") e o
+   acompanhamento da loja repete o prazo (`promise.deadline_at`, `deadline_kind="payment"`) com
+   a mesma nota de rodapé;
 2. `_schedule_payment_timeout` agenda a Directive `payment.timeout` com `available_at=expires_at`;
 3. `PaymentTimeoutHandler` re-agenda se chamado cedo, **pergunta ao gateway** antes de cancelar e só
    cancela com resposta "não pago" — aí libera o estoque e envia `payment_expired`;

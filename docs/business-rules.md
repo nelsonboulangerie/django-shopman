@@ -258,6 +258,8 @@ payment:
     # "external" — já pago (marketplace)
     # ["pix", "card"] — múltiplos (cliente escolhe)
   timeout_minutes: int  # Timeout para pagamento PIX (default: 15)
+  link_timeout_minutes: int  # Janela do link de pagamento do PDV (default: 120);
+                             # o link vence em min(agora + janela, corte do atendimento)
 ```
 
 ### 4.3 Estoque
