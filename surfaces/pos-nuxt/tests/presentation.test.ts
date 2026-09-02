@@ -86,7 +86,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -1142,5 +1142,37 @@ describe("splitHint — quanto pedir a quem está na frente", () => {
 
   it("sem divisão, sem frase", () => {
     expect(splitHint(9945, 1, 0, 9945)).toBe("");
+  });
+});
+
+describe("cashLandedInDrawer — a gaveta só abre com dinheiro que ENTROU nela", () => {
+  // ⚠️ A pergunta parece "teve dinheiro?" e não é: é "teve dinheiro AQUI?".
+  // Numa entrega paga na porta o operador ainda precisa lançar uma linha de
+  // dinheiro para liberar o Validar — e a gaveta do balcão chutava e abria com o
+  // dinheiro ainda na rua. Gaveta aberta sem motivo é caixa exposto.
+  const linha = (method: string, collection?: string) => ({ method, amount_q: 1000, collection });
+
+  it("dinheiro no terminal abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("dinheiro NA PORTA não abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "on_delivery")])).toBe(false);
+  });
+
+  it("misto com uma parte na gaveta abre", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("cartão e Pix nunca abrem", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("pix", "terminal")])).toBe(false);
+  });
+
+  it("sem coleta declarada, dinheiro é dinheiro na gaveta (o padrão do balcão)", () => {
+    expect(cashLandedInDrawer([linha("cash")])).toBe(true);
+  });
+
+  it("venda sem pagamento nenhum não abre", () => {
+    expect(cashLandedInDrawer([])).toBe(false);
   });
 });

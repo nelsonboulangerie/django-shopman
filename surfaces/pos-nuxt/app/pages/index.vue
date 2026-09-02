@@ -144,6 +144,7 @@ const {
   repeatCustomerLastOrder,
   prepareCheckout,
   reviewCheckout,
+  reviewFailed,
   submitSale,
   dismissResult,
   onExternalSaleCancelled,
@@ -842,6 +843,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :payment-covered="paymentCovered"
         :loading="busy"
         :lookup-busy="lookupBusy"
+        :review-failed="reviewFailed"
         @back="checkoutMode = false"
         @submit="submitSale"
         @add-tender="addTender"
