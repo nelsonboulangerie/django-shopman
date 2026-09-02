@@ -294,6 +294,14 @@ class ChannelConfig:
     # Vazio = usa o `name` do canal. Ex: "Loja online" → "Site". O nome completo
     # segue valendo em toda lista/tooltip onde há espaço.
 
+    # ── Identidade do pedido ──
+
+    order_ref_prefix: str = ""
+    # Prefixo do ref gerado no commit. Vazio = o próprio `channel_ref` em maiúsculas
+    # (`WEB-260901-M63`), que é o comportamento de sempre. A loja online da Nelson
+    # usa "NB" — o ref que o cliente lê carrega a MARCA, não o meio por onde entrou.
+    # Quem consome: `CommitService._do_commit` via config resolvida.
+
     # ── Serialização ──
 
     def to_dict(self) -> dict:
@@ -316,6 +324,7 @@ class ChannelConfig:
             handle_label=data.get("handle_label", cls.handle_label),
             handle_placeholder=data.get("handle_placeholder", cls.handle_placeholder),
             short_name=data.get("short_name", cls.short_name),
+            order_ref_prefix=data.get("order_ref_prefix", cls.order_ref_prefix),
         )
 
     @classmethod
