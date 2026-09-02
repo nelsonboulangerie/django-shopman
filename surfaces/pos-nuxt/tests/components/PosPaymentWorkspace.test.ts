@@ -82,8 +82,10 @@ function props(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Os quatro rótulos que o botão principal assume. "Tentar de novo" entrou quando
+// a revisão que falha deixou de girar para sempre e virou a própria saída.
 const cta = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
-  w.findAll("button").find((b) => /Validar|Autorizar|Atualizando/.test(b.text()));
+  w.findAll("button").find((b) => /Validar|Autorizar|Atualizando|Tentar de novo/.test(b.text()));
 
 // A FAIXA ÚNICA DE AVISOS, no topo da coluna do valor: o bloqueio primeiro (com
 // o toque que resolve), depois as consequências, depois as ressalvas da review.
@@ -345,6 +347,25 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     expect(wrapper.find('section[aria-label="Resumo do pedido"]').text()).toContain("Nada lançado");
   });
 
+  it("review sem os escopos separados (deploy em voo) volta a UMA linha de desconto", async () => {
+    // Um bloco que abre "Subtotal" e "Taxa" e esconde o desconto não fica
+    // incompleto — fica MENTINDO, porque as linhas visíveis deixam de somar o
+    // total. Somar errado é pior do que detalhar de menos.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        review: review({
+          subtotal_q: 5100, subtotal_display: formatBRL(5100),
+          discount_q: 510, discount_display: formatBRL(510),
+          line_discount_q: 0, order_discount_q: 0,
+          total_q: 4590, total_display: formatBRL(4590),
+        }),
+      }),
+    });
+    const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
+    expect(dl.findAll("dt").map((dt) => dt.text())).toEqual(["Subtotal", "Descontos", "Total"]);
+    expect(dl.text()).toContain(formatBRL(510));
+  });
+
   it("subtotal, desconto e taxa só aparecem quando existem", async () => {
     // Subtotal sozinho ao lado de um total igual a ele é uma linha que não
     // informa nada — a decomposição existe para explicar uma diferença.
@@ -358,6 +379,8 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
           subtotal_display: formatBRL(5100),
           discount_q: 510,
           discount_display: formatBRL(510),
+          order_discount_q: 510,
+          order_discount_display: formatBRL(510),
           delivery_fee_q: 800,
           delivery_fee_display: formatBRL(800),
           total_q: 5390,
@@ -477,6 +500,7 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
         review: review({
           subtotal_q: 1020, subtotal_display: formatBRL(1020),
           discount_q: 102, discount_display: formatBRL(102),
+          order_discount_q: 102, order_discount_display: formatBRL(102),
           delivery_fee_q: 800, delivery_fee_display: formatBRL(800),
           total_q: 1718, total_display: formatBRL(1718),
         }),
@@ -484,8 +508,33 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     });
     const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
     const linhas = dl.findAll("dt").map((dt) => dt.text());
-    expect(linhas).toEqual(["Subtotal", "Descontos", "Taxa de entrega", "Total"]);
+    expect(linhas).toEqual(["Subtotal", "Desconto na venda", "Taxa de entrega", "Total"]);
     expect(dl.text()).toContain(formatBRL(1718));
+  });
+
+  it("cada desconto na sua linha, com o escopo no rótulo", async () => {
+    // A tela lista os itens pelo preço COBRADO e o Subtotal é a soma dos
+    // `unit_price_q` — PRÉ desconto manual de linha. Com cortesia por item,
+    // somar as linhas com o olho não dava o Subtotal, dava o Total: a conta
+    // fechava, mas só para quem soubesse que o desconto tinha duas origens.
+    // Separados, a diferença tem nome.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        items: [discounted()],
+        review: review({
+          subtotal_q: 1020, subtotal_display: formatBRL(1020),
+          discount_q: 200, discount_display: formatBRL(200),
+          line_discount_q: 120, line_discount_display: formatBRL(120),
+          order_discount_q: 80, order_discount_display: formatBRL(80),
+          total_q: 820, total_display: formatBRL(820),
+        }),
+      }),
+    });
+    const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
+    expect(dl.findAll("dt").map((dt) => dt.text()))
+      .toEqual(["Subtotal", "Desconto nos itens", "Desconto na venda", "Total"]);
+    expect(dl.text()).toContain(formatBRL(120));
+    expect(dl.text()).toContain(formatBRL(80));
   });
 });
 
@@ -916,5 +965,46 @@ describe("PosPaymentWorkspace — a tela não promete o que não confere", () =>
     await remover.trigger("click");
     expect(wrapper.emitted("removeTender")?.[0]).toEqual([0]);
     expect(wrapper.emitted("selectTender")).toBeUndefined();
+  });
+});
+
+describe("PosPaymentWorkspace — a revisão que falha tem saída", () => {
+  // ⚠️ O PDV travava para SEMPRE. `scheduleAutoReview` zera a review e agenda o
+  // refetch; se ele lançasse (um piscar de Wi-Fi), o catch emitia um toast que
+  // some em segundos e a review ficava `null` sem ninguém reagendar. O operador
+  // ficava com um botão desabilitado, girando, escrito "Atualizando…" — e o
+  // motivo do bloqueio devolvia string vazia justo nesse ramo. Com o cliente na
+  // frente, a única saída era F4 (não documentado) ou Esc, que derruba o checkout.
+  const falhou = (overrides: Record<string, unknown> = {}) => props({
+    review: null,
+    reviewFailed: true,
+    paymentTenders: [tender],
+    paymentCovered: true,
+    paymentRemainingQ: 0,
+    ...overrides,
+  });
+
+  it("o botão deixa de fingir que carrega e vira o retry", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: falhou() });
+    const botao = cta(wrapper)!;
+    expect(botao.text()).toContain("Tentar de novo");
+    expect(botao.attributes("disabled")).toBeUndefined();
+    await botao.trigger("click");
+    expect(wrapper.emitted("submit")).toHaveLength(1);
+  });
+
+  it("e a tela diz o que aconteceu, em vez de girar calada", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: falhou() });
+    expect(avisos(wrapper).text()).toContain("Não deu para atualizar o total.");
+    expect(avisos(wrapper).text()).toContain("Confira a conexão e tente de novo.");
+  });
+
+  it("review em trânsito (sem falha) continua sendo 'Atualizando…' e travado", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: falhou({ reviewFailed: false }),
+    });
+    const botao = cta(wrapper)!;
+    expect(botao.text()).toContain("Atualizando");
+    expect(botao.attributes("disabled")).toBeDefined();
   });
 });

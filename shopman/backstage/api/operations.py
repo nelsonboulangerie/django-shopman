@@ -262,6 +262,12 @@ def _pos_sale_review_payload(review) -> dict:
         "subtotal_display": f"R$ {format_money(review.subtotal_q)}",
         "discount_q": review.discount_q,
         "discount_display": f"R$ {format_money(review.discount_q)}",
+        # Os dois escopos, para o bloco de totais nomear cada um: o desconto que
+        # o operador deu nos ITENS e o que deu na VENDA. A soma é `discount_q`.
+        "line_discount_q": review.line_discount_q,
+        "line_discount_display": f"R$ {format_money(review.line_discount_q)}",
+        "order_discount_q": review.order_discount_q,
+        "order_discount_display": f"R$ {format_money(review.order_discount_q)}",
         "delivery_fee_q": review.delivery_fee_q,
         "delivery_fee_display": f"R$ {format_money(review.delivery_fee_q)}",
         "total_q": review.total_q,

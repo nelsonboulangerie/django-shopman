@@ -56,6 +56,7 @@ class PosSaleReview:
     intent_version: str
     tab_ref: str
     subtotal_q: int
+    #: O desconto manual TOTAL — é ele que leva o subtotal ao total.
     discount_q: int
     delivery_fee_q: int
     total_q: int
@@ -76,6 +77,19 @@ class PosSaleReview:
     # outro, e o gerente autorizava sem saber o que estava autorizando.
     approval_reasons: tuple[str, ...] = ()
     warnings: tuple[dict, ...] = ()
+    # OS DOIS ESCOPOS DO DESCONTO, separados.
+    #
+    # A tela lista os itens pelo preço COBRADO e mostrava, embaixo, um "Subtotal"
+    # que é a soma dos ``unit_price_q`` — PRÉ desconto manual de linha. Com uma
+    # cortesia por item, somar as linhas com o olho não dava o Subtotal: dava o
+    # Total. A aritmética fechava (subtotal − desconto + taxa = total), mas só
+    # para quem soubesse que o desconto ali dentro tinha duas origens.
+    #
+    # Publicados separados, o bloco de totais nomeia cada um e a diferença deixa
+    # de ser um vão sem explicação. `line_discount_q + order_discount_q ==
+    # discount_q`, sempre.
+    line_discount_q: int = 0
+    order_discount_q: int = 0
     # ENTREGA — o que a tela precisa para PERGUNTAR, em vez de pedir que o
     # operador invente. A taxa vem resolvida (ver `_resolve_delivery_fee`); os
     # horários são as janelas de meia hora que o expediente do dia comporta.
@@ -579,7 +593,9 @@ def review_sale(
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
-    discount_q = _payload_discount_q(payload)
+    line_discount_q = _payload_line_discounts_q(payload)
+    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    discount_q = order_discount_q + line_discount_q
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
     delivery_day, delivery_slots, delivery_earliest_slot = _schedule_review_context(payload)
@@ -712,6 +728,8 @@ def review_sale(
         tab_ref=_session_tab_ref(session) if session is not None else "",
         subtotal_q=subtotal_q,
         discount_q=discount_q,
+        line_discount_q=line_discount_q,
+        order_discount_q=order_discount_q,
         delivery_fee_q=delivery_fee_q,
         total_q=total_q,
         payment_method=payment_method,

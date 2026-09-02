@@ -136,6 +136,9 @@ const props = defineProps<{
   receiptEmail: string;
   loading: boolean;
   lookupBusy: boolean;
+  /** A última revisão FALHOU (rede). Sem isto, a tela ficava com o botão
+   *  desabilitado e o spinner de "Atualizando…" para sempre. */
+  reviewFailed?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -429,6 +432,11 @@ const summaryLines = computed(() =>
     discountLabel: lineDiscountBadge(item, props.discountReasons),
   })),
 );
+// A review separou os dois escopos do desconto? Um payload antigo (em voo no
+// meio de um deploy) traz só o total, e aí o bloco volta a mostrar uma linha só.
+const discountByScope = computed(
+  () => !!props.review && (props.review.line_discount_q > 0 || props.review.order_discount_q > 0),
+);
 const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item.qty, 0));
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
@@ -480,6 +488,9 @@ watch(() => props.managerApprovalError, (message) => {
   if (message) managerAuthOpen.value = true;
 });
 const ctaLabel = computed(() => {
+  // A revisão falhou: o botão deixa de fingir que está carregando e vira a
+  // própria saída. Girar para sempre é a tela mentindo sobre o que está fazendo.
+  if (props.reviewFailed) return "Tentar de novo";
   if (needsReview.value) return "Atualizando…";
   return needsAuth.value ? "Autorizar e validar" : "Validar";
 });
@@ -530,6 +541,12 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       message: "Comanda vazia.",
       hint: "Não há o que cobrar.",
       action: { label: "Voltar à comanda", run: () => { emit("back"); } },
+    };
+  }
+  if (props.reviewFailed) {
+    return {
+      message: "Não deu para atualizar o total.",
+      hint: "Confira a conexão e tente de novo.",
     };
   }
   if (props.loading || needsReview.value) return null;
@@ -672,11 +689,18 @@ const notices = computed<CheckoutNotice[]>(() => {
 // O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
 // Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
 const ctaDisabled = computed(() => {
-  if (!props.items.length || props.loading || needsReview.value) return true;
+  if (!props.items.length || props.loading) return true;
+  // Com a revisão falhada o botão VOLTA a clicar: ele é o retry.
+  if (props.reviewFailed) return false;
+  if (needsReview.value) return true;
   return ctaBlock.value !== null;
 });
 
 function onCta() {
+  // O retry passa pelo MESMO `submit` do shell, que já sabe pedir a revisão
+  // quando ela falta (`submitSale`: sem review, revisa em vez de fechar). Um
+  // caminho paralelo aqui seria um segundo lugar decidindo quando revisar.
+  if (props.reviewFailed) { emit("submit"); return; }
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
   emit("submit");
 }
@@ -1216,38 +1240,45 @@ defineExpose({
               v-if="review && (review.discount_q > 0 || review.delivery_fee_q > 0)"
               class="grid gap-1 border-t px-3 py-2 text-sm"
             >
-              <!-- ⚠️ HAVIA DUAS LINHAS DE DESCONTO, E ELAS CONTAVAM A MESMA
-                   CORTESIA. "Desconto nos itens" era `lineSavingsQ` = etiqueta −
-                   COBRADO, e o cobrado já reflete o desconto manual de linha
-                   quando ele vence. "Desconto do operador" era `review.
-                   discount_q`, que soma o desconto do PEDIDO e o de LINHA. Numa
-                   linha com cortesia de 10% e nenhuma promoção automática, as
-                   duas exibiam EXATAMENTE o mesmo número, uma acima e outra
-                   abaixo do Subtotal, na mesma coluna de valores — e só uma
-                   delas fecha a aritmética. O operador somava as duas com o olho.
+              <!-- CADA DESCONTO NA SUA LINHA, com o escopo no rótulo.
+                   Um mecanismo, dois escopos: o que o operador deu no ITEM (no
+                   carrinho) e o que deu na VENDA (no F8 aqui do lado). Somam o
+                   `discount_q`, e o servidor publica os dois separados.
 
-                   Ficou uma: a do servidor, que é a que leva o subtotal ao
-                   total. O desconto que veio da ETIQUETA continua dito onde ele
-                   acontece — riscado na linha, com o motivo ao lado —, que é
-                   onde o cliente pergunta.
+                   ⚠️ Isto fecha um vão que a tela tinha e não explicava: as
+                   linhas acima são listadas pelo preço COBRADO, e o `Subtotal` é
+                   a soma dos `unit_price_q` — PRÉ desconto manual de linha. Com
+                   uma cortesia por item, somar as linhas com o olho não dava o
+                   Subtotal, dava o Total. A conta fechava, mas só para quem
+                   soubesse que o desconto ali dentro tinha duas origens. Agora a
+                   diferença tem nome.
 
-                   ⚠️ Resíduo conhecido: `subtotal_q` do servidor é a soma dos
-                   `unit_price_q` (PRÉ-desconto manual de linha) e as linhas aqui
-                   em cima mostram o COBRADO (pós). Com cortesia de linha, somar
-                   as linhas com o olho não dá o Subtotal — dá o Total. Fechar
-                   isso pede a review separar `order_discount_q` de
-                   `line_discount_q`, que hoje ela não separa. -->
+                   ⚠️ E houve um erro pior antes disso: "Desconto nos itens" era
+                   calculado na TELA como etiqueta − cobrado, e o cobrado já
+                   refletia a cortesia de linha. Ela e "Desconto do operador"
+                   exibiam o MESMO número, uma acima e outra abaixo do Subtotal.
+                   Os dois números agora vêm do servidor e são disjuntos. -->
               <template v-if="review">
                 <div class="flex items-baseline justify-between gap-2">
                   <dt class="text-muted-foreground">Subtotal</dt>
                   <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
                 </div>
-                <!-- PLURAL, e de propósito: esta linha soma o desconto do ITEM
-                     (dado no carrinho) com o da VENDA (dado aqui). O botão à
-                     esquerda mexe só no segundo, então "Desconto" no singular nos
-                     dois lugares faria o operador procurar por que os números não
-                     batem. Um mecanismo, dois escopos, e cada rótulo diz o seu. -->
-                <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                <template v-if="discountByScope">
+                  <div v-if="review.line_discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                    <dt>Desconto nos itens</dt>
+                    <dd class="tabular-nums">−{{ review.line_discount_display }}</dd>
+                  </div>
+                  <div v-if="review.order_discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
+                    <dt>Desconto na venda</dt>
+                    <dd class="tabular-nums">−{{ review.order_discount_display }}</dd>
+                  </div>
+                </template>
+                <!-- A review não separou os escopos (payload em voo no meio de um
+                     deploy): a linha volta a ser uma só. Um bloco que abre
+                     "Subtotal" e "Taxa" e ESCONDE o desconto não fica incompleto
+                     — fica MENTINDO, porque as três linhas visíveis deixam de
+                     somar o total. Somar errado é pior do que detalhar de menos. -->
+                <div v-else-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
                   <dt>Descontos</dt>
                   <dd class="tabular-nums">−{{ review.discount_display }}</dd>
                 </div>
@@ -1382,7 +1413,7 @@ defineExpose({
           size="lg"
           class="h-14 w-full shrink-0 gap-2 text-base"
           :disabled="ctaDisabled"
-          :loading="loading || needsReview"
+          :loading="(loading || needsReview) && !reviewFailed"
           @click="onCta"
         >
           {{ ctaLabel }}

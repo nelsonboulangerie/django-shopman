@@ -620,8 +620,15 @@ export interface POSSaleReviewProjection {
   tab_ref: string;
   subtotal_q: number;
   subtotal_display: string;
+  /** O desconto manual TOTAL — é ele que leva o subtotal ao total. */
   discount_q: number;
   discount_display: string;
+  /** Os dois escopos do desconto manual, somando `discount_q`: o que o operador
+   *  deu nas LINHAS (no carrinho) e o que deu na VENDA (no checkout). */
+  line_discount_q: number;
+  line_discount_display: string;
+  order_discount_q: number;
+  order_discount_display: string;
   delivery_fee_q: number;
   delivery_fee_display: string;
   total_q: number;

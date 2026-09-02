@@ -13,10 +13,7 @@ import pytest
 from shopman.backstage.projections import pos as pos_projection
 from shopman.shop.modifiers import DiscountModifier
 from shopman.shop.services import pos as pos_service
-from shopman.shop.services.pos_intent import (
-    PosIntentError,
-    parse_pos_sale_intent,
-)
+from shopman.shop.services.pos_intent import parse_pos_sale_intent
 
 
 class TestCalcManual:
@@ -172,8 +169,6 @@ class TestTabPayloadRestore:
         # The surviving source: session.pricing["discount"]["items"]. Only manual
         # records with an original price map; promotion/coupon records are ignored
         # (their baked price is repriced on commit, not restored here).
-        from types import SimpleNamespace
-
         session = SimpleNamespace(pricing={"discount": {"items": [
             {"sku": "X", "type": "manual", "original_price_q": 1300, "discount_q": 1170, "qty": 1},
             {"sku": "Y", "type": "promotion", "original_price_q": 900, "discount_q": 90, "qty": 1},
@@ -182,6 +177,4 @@ class TestTabPayloadRestore:
         assert pos_projection._manual_discount_originals(session) == {"X": 1300}
 
     def test_manual_originals_map_empty_without_pricing(self) -> None:
-        from types import SimpleNamespace
-
         assert pos_projection._manual_discount_originals(SimpleNamespace(pricing=None)) == {}
