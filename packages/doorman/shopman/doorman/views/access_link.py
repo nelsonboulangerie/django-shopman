@@ -164,7 +164,7 @@ class AccessLinkCreateView(View):
                 # `Last Text Input` devolvendo URL de mídia do Instagram passou dias sem
                 # ninguém ver: identidade certa, login certo, sacola no chão.
                 logger.warning(
-                    "access_link.access_code_sem_codigo len=%d inicio=%r — a variável do "
+                    "access_link.access_code_invalid len=%d inicio=%r — a variável do "
                     "ManyChat não está trazendo o texto da mensagem do WhatsApp",
                     len(str(access_code)), str(access_code)[:40],
                 )
