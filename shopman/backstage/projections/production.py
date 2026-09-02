@@ -2294,7 +2294,7 @@ def _build_weighing_ticket(
     ingredients = tuple(
         ProductionWeighingIngredientProjection(
             sku=item.input_sku,
-            name=_ingredient_name(item.input_sku, active_recipes=active_recipes, product_names=product_names),
+            name=_ingredient_label(item.input_sku, active_recipes=active_recipes, product_names=product_names),
             quantity_display=_measure(Decimal(str(item.quantity)) * coefficient, item.unit),
             is_subrecipe=item.input_sku in active_recipes,
         )
@@ -2408,10 +2408,33 @@ def _ingredient_name(
     active_recipes: dict[str, Recipe],
     product_names: dict[str, str],
 ) -> str:
+    """Só o nome legível. O SKU NÃO entra aqui.
+
+    Quem tem campo próprio para o SKU deve usá-lo — o nome com ``(SKU)`` embutido
+    fazia a lista de insumos repetir o código duas vezes na mesma linha, uma no
+    nome e outra logo abaixo. Sem nome cadastrado, o SKU é o nome: melhor a linha
+    feia que a linha ausente.
+    """
     if sku in active_recipes:
         recipe = active_recipes[sku]
-        return f"{recipe.name} ({sku})"
+        return recipe.name or sku
     return product_names.get(sku, sku)
+
+
+def _ingredient_label(
+    sku: str,
+    *,
+    active_recipes: dict[str, Recipe],
+    product_names: dict[str, str],
+) -> str:
+    """Nome e SKU numa linha só — para superfície SEM campo separado para o código.
+
+    É o caso da etiqueta de pesagem: ali o padeiro tem uma linha por insumo e nada
+    mais, e distinguir dois pré-preparos de nome parecido depende do código estar
+    à vista. Quando o nome JÁ é o SKU (sem cadastro), não se repete.
+    """
+    name = _ingredient_name(sku, active_recipes=active_recipes, product_names=product_names)
+    return name if name == sku else f"{name} ({sku})"
 
 
 def _product_names(skus: set[str]) -> dict[str, str]:
