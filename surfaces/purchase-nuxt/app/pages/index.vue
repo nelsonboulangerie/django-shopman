@@ -1284,12 +1284,25 @@ onBeforeUnmount(stopInvoiceScanner);
                   <td class="px-3 py-2">
                     <input
                       inputmode="decimal"
-                      :placeholder="material.minStock ? formatQty(material.minStock, material.unit) : '—'"
+                      :placeholder="material.unit"
                       class="h-9 w-full rounded-md border bg-background px-2 text-sm tabular-nums"
                       :class="minStockLineErrors[material.sku] ? 'border-destructive' : 'border-border'"
                       :value="minStockInputs[material.sku] ?? ''"
                       @input="setMinStockInput(material.sku, ($event.target as HTMLInputElement).value)"
                     />
+                    <!-- Declarado × derivado do consumo. O derivado NÃO vai no
+                         placeholder: pré-preenchido, ele convida a "confirmar"
+                         digitando o mesmo número — e isso congela um mínimo que
+                         era para acompanhar o consumo. -->
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                      <template v-if="material.minStockDeclared">
+                        definido: {{ formatQty(material.minStock, material.unit) }}
+                      </template>
+                      <template v-else-if="material.minStock">
+                        pelo consumo: {{ formatQty(material.minStock, material.unit) }}
+                      </template>
+                      <template v-else>sem mínimo</template>
+                    </p>
                     <p v-if="minStockLineErrors[material.sku]" class="mt-0.5 text-xs font-medium text-destructive">
                       {{ minStockLineErrors[material.sku] }}
                     </p>
@@ -1410,7 +1423,13 @@ onBeforeUnmount(stopInvoiceScanner);
                   class="mt-1 h-10 w-56 rounded-md border border-border bg-background px-3 text-sm"
                 >
                   <option value="">Escolher…</option>
-                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">
+                  <!-- Fornecedor inativo não pode receber custo preferencial; o
+                       servidor recusa. Não oferecer é melhor que recusar. -->
+                  <option
+                    v-for="supplier in suppliers.filter((item) => item.isActive)"
+                    :key="supplier.ref"
+                    :value="supplier.ref"
+                  >
                     {{ supplier.name }}
                   </option>
                 </select>

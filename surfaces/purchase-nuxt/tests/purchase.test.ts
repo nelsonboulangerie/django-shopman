@@ -1073,32 +1073,54 @@ describe("reorderBlockers", () => {
 // ---------------------------------------------------------------------------
 // costBatchPayload — a tabela de preços do fornecedor vira um POST
 // ---------------------------------------------------------------------------
+const TODOS = ["CAFE-GRAO", "FARINHA-T45", "ACUCAR"];
+
 describe("costBatchPayload", () => {
   it("manda só as linhas preenchidas", () => {
     const payload = costBatchPayload(
       "SUP-TAMURA",
       { "CAFE-GRAO": "45,00", "FARINHA-T45": "", ACUCAR: "   " },
       {},
+      TODOS,
     );
     expect(payload).toEqual({
       supplierRef: "SUP-TAMURA",
-      makePreferred: true,
+      makePreferred: false,
       costs: [{ materialSku: "CAFE-GRAO", costInput: "45,00", conversionId: null }],
     });
   });
 
+  // O lote é tudo-ou-nada: uma linha escondida pelo filtro, inválida, derrubaria
+  // o lote inteiro sem ter onde mostrar o próprio erro.
+  it("não manda linha que o filtro escondeu", () => {
+    const payload = costBatchPayload(
+      "SUP-TAMURA",
+      { "CAFE-GRAO": "45,00", "FARINHA-T45": "3,20" },
+      {},
+      ["CAFE-GRAO"],
+    );
+    expect(payload.costs.map((cost) => cost.materialSku)).toEqual(["CAFE-GRAO"]);
+  });
+
+  // `is_preferred` alimenta o custeio de receita. O servidor já promove o
+  // primeiro custo de um insumo; pedir promoção explícita repontaria o custo
+  // canônico de dezenas de insumos num gesto de "atualizar tabela".
+  it("não pede a promoção do custo padrão", () => {
+    expect(costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, {}, TODOS).makePreferred).toBe(false);
+  });
+
   it("leva a unidade de compra escolhida na linha", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, { "CAFE-GRAO": "7" });
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, { "CAFE-GRAO": "7" }, TODOS);
     expect(payload.costs[0]!.conversionId).toBe("7");
   });
 
   it("ignora conversão de linha que não foi preenchida", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "" }, { "CAFE-GRAO": "7" });
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "" }, { "CAFE-GRAO": "7" }, TODOS);
     expect(payload.costs).toEqual([]);
   });
 
   it("apara o espaço em volta do valor digitado", () => {
-    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {});
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {}, TODOS);
     expect(payload.costs[0]!.costInput).toBe("45,00");
   });
 });

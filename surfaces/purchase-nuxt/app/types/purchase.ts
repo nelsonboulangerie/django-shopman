@@ -25,6 +25,14 @@ export interface Material {
   stockOnHand: number;
   dailyUse: number;
   minStock: number;
+  /**
+   * O mínimo foi DECLARADO pelo operador, ou derivado do consumo?
+   *
+   * Sem a distinção a tela exibe um número derivado como se fosse cadastrado, e
+   * o operador que "confirma" o valor digitando o mesmo número CONGELA um
+   * mínimo que era para acompanhar o consumo.
+   */
+  minStockDeclared?: boolean;
   recipes: string[];
   leadTimeDays?: number;
   replenishAtDays?: number;

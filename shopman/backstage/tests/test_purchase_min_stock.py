@@ -112,6 +112,19 @@ def test_insumo_desconhecido_derruba_o_lote_apontando_a_linha(material):
 
 
 @pytest.mark.django_db
+def test_a_projecao_distingue_minimo_declarado_de_derivado(material):
+    """Sem a distinção, a tela oferece o derivado para o operador "confirmar" —
+    e confirmar CONGELA um número que era para acompanhar o consumo."""
+    assert _projected("ALECRIM").minStockDeclared is False
+
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]})
+    assert _projected("ALECRIM").minStockDeclared is True
+
+    purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "0"}]})
+    assert _projected("ALECRIM").minStockDeclared is False
+
+
+@pytest.mark.django_db
 def test_minimo_negativo_e_recusado(material):
     with pytest.raises(PurchaseError) as excinfo:
         purchase_service.set_min_stock({"minimums": [{"materialSku": "ALECRIM", "minStock": "-5"}]})

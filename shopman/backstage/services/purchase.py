@@ -464,6 +464,14 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         if not material:
             fail("Insumo não encontrado.", field="materialSku")
             continue
+        # Insumo e fornecedor aposentados são recusados AQUI, na validação, e
+        # não lá na frente pelo `full_clean` do modelo: um custo preferencial
+        # não pode apontar para par retirado, e essa recusa chegava como
+        # `ValidationError` crua no meio do loop de escrita — sem número de
+        # linha, que é exatamente a busca no escuro que o lote veio eliminar.
+        if not material.is_active:
+            fail("Insumo inativo.", field="materialSku")
+            continue
 
         supplier_ref = (
             str(entry.get("supplierRef") or entry.get("supplier_ref") or "").strip() or default_supplier_ref
@@ -471,6 +479,9 @@ def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier = Supplier.objects.filter(ref=supplier_ref).first()
         if not supplier:
             fail("Fornecedor não encontrado.", field="supplierRef")
+            continue
+        if not supplier.is_active:
+            fail("Fornecedor inativo.", field="supplierRef")
             continue
 
         key = (material.sku, supplier.ref)

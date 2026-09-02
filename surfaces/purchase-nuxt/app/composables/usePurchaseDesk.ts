@@ -338,9 +338,21 @@ export function usePurchaseDesk() {
     });
   });
 
+  // Conta as MESMAS linhas que o payload manda — as visíveis. Um botão que diz
+  // "Salvar 10" e manda 3 é pior que um botão sem número.
   const batchFilledCount = computed(
-    () => Object.values(batchInputs.value).filter((value) => Boolean((value ?? "").trim())).length,
+    () => batchRows.value.filter((row) => Boolean((batchInputs.value[row.sku] ?? "").trim())).length,
   );
+
+  // Trocar de fornecedor invalida a unidade de compra escolhida: a conversão é
+  // do par (insumo, fornecedor). Sem limpar, o `<select>` fica em branco — a
+  // opção sumiu da lista — enquanto o id antigo continua no estado e viaja no
+  // payload, e o servidor recusa o lote inteiro com "conversão pertence a outro
+  // fornecedor" numa linha que na tela diz "Unidade-base".
+  watch(batchSupplierRef, () => {
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  });
 
   const batchReady = computed(() => Boolean(batchSupplierRef.value) && batchFilledCount.value > 0);
 
@@ -368,9 +380,14 @@ export function usePurchaseDesk() {
     batchConversionIds.value = { ...batchConversionIds.value, [materialSku]: conversionId };
   }
 
-  const minStockFilledCount = computed(
-    () => Object.values(minStockInputs.value).filter((value) => Boolean((value ?? "").trim())).length,
+  // Só as linhas visíveis, pelo mesmo motivo do lote de custos: a busca e o
+  // filtro "Atenção" escondem linhas já digitadas, e o erro de uma linha
+  // escondida não teria onde aparecer.
+  const minStockRows = computed(() =>
+    filteredMaterials.value.filter((material) => Boolean((minStockInputs.value[material.sku] ?? "").trim())),
   );
+
+  const minStockFilledCount = computed(() => minStockRows.value.length);
 
   function setMinStockInput(materialSku: string, value: string) {
     minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
@@ -396,9 +413,10 @@ export function usePurchaseDesk() {
     actionError.value = "";
     minStockLineErrors.value = {};
     try {
-      const minimums = Object.entries(minStockInputs.value)
-        .filter(([, value]) => Boolean((value ?? "").trim()))
-        .map(([materialSku, value]) => ({ materialSku, minStock: value.trim() }));
+      const minimums = minStockRows.value.map((material) => ({
+        materialSku: material.sku,
+        minStock: (minStockInputs.value[material.sku] ?? "").trim(),
+      }));
       const response = await api.setMinStock({ minimums });
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);
@@ -436,7 +454,12 @@ export function usePurchaseDesk() {
     actionError.value = "";
     batchLineErrors.value = {};
     try {
-      const payload = buildCostBatchPayload(batchSupplierRef.value, batchInputs.value, batchConversionIds.value);
+      const payload = buildCostBatchPayload(
+        batchSupplierRef.value,
+        batchInputs.value,
+        batchConversionIds.value,
+        batchRows.value.map((row) => row.sku),
+      );
       const response = await api.upsertCostBatch(payload);
       if (response.purchase) applyProjection(response.purchase);
       if (response.message) useSonner.success(response.message);

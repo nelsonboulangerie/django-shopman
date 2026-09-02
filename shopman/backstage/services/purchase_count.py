@@ -29,7 +29,6 @@ from shopman.backstage.services.purchase import (
 
 logger = logging.getLogger(__name__)
 
-QTY_PLACES = Decimal("0.001")
 
 
 @dataclass(frozen=True)

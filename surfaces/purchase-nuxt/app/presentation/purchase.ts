@@ -737,15 +737,29 @@ export function costBatchPayload(
   supplierRef: string,
   inputs: Record<string, string>,
   conversionIds: Record<string, string>,
+  visibleSkus: string[],
 ): PurchaseCostBatchPayload {
+  // Só vai o que está NA TELA. O filtro ("só os que faltam", a busca) esconde
+  // linhas já preenchidas, e mandá-las assim mesmo quebra a promessa do lote:
+  // como ele é tudo-ou-nada, uma linha escondida e inválida derruba tudo, e o
+  // erro dela não tem onde aparecer — o operador lê "corrija as linhas
+  // indicadas" com todas as linhas visíveis limpas.
+  const visible = new Set(visibleSkus);
   const costs = Object.entries(inputs)
-    .filter(([, value]) => Boolean((value ?? "").trim()))
+    .filter(([materialSku, value]) => visible.has(materialSku) && Boolean((value ?? "").trim()))
     .map(([materialSku, value]) => ({
       materialSku,
       costInput: value.trim(),
       conversionId: conversionIds[materialSku] || null,
     }));
-  return { supplierRef, makePreferred: true, costs };
+  // `makePreferred` fica FALSE de propósito. O servidor já promove o primeiro
+  // custo de um insumo (`prefer_if_missing`), que é o que destrava os insumos
+  // sem custo preferencial — o objetivo do lote. Pedir a promoção explícita
+  // repontaria o custo canônico (o que alimenta o custeio de receita) de
+  // dezenas de insumos de uma vez, ao gesto de "atualizar a tabela do
+  // fornecedor". Trocar o padrão é escolha de uma linha só, no formulário
+  // avulso, onde ela tem botão próprio.
+  return { supplierRef, makePreferred: false, costs };
 }
 
 /**

@@ -175,6 +175,69 @@ def test_o_mesmo_insumo_duas_vezes_no_lote_e_recusado(supplier, materials):
 
 
 @pytest.mark.django_db
+def test_fornecedor_inativo_e_recusado_na_validacao_com_a_linha(supplier, materials):
+    """O `full_clean` recusaria isso no MEIO da escrita, sem número de linha."""
+    supplier.is_active = False
+    supplier.save()
+
+    with pytest.raises(PurchaseError) as excinfo:
+        purchase_service.upsert_costs(
+            {
+                "supplierRef": "SUP-TAMURA",
+                "makePreferred": True,
+                "costs": [{"materialSku": "CAFE-GRAO", "costInput": "45,00"}],
+            }
+        )
+
+    assert excinfo.value.code == "cost_batch_invalid"
+    assert excinfo.value.lines[0]["field"] == "supplierRef"
+    assert excinfo.value.lines[0]["index"] == 0
+
+
+@pytest.mark.django_db
+def test_insumo_inativo_e_recusado_na_validacao_com_a_linha(supplier, materials):
+    materials[0].is_active = False
+    materials[0].save()
+
+    with pytest.raises(PurchaseError) as excinfo:
+        purchase_service.upsert_costs(
+            {
+                "supplierRef": "SUP-TAMURA",
+                "makePreferred": True,
+                "costs": [{"materialSku": "CAFE-GRAO", "costInput": "45,00"}],
+            }
+        )
+
+    assert excinfo.value.lines[0]["field"] == "materialSku"
+
+
+@pytest.mark.django_db
+def test_lote_sem_make_preferred_nao_rouba_o_preferencial_existente(supplier, outro_supplier, materials):
+    """A tabela de preços atualiza valor; ela não repõe o custo canônico.
+
+    `is_preferred` alimenta o custeio de receita. Trocá-lo em silêncio, por
+    dezenas de insumos, ao atualizar a tabela de um fornecedor seria uma decisão
+    grande tomada por um gesto pequeno.
+    """
+    purchase_service.upsert_costs(
+        {
+            "supplierRef": "SUP-TAMURA",
+            "costs": [{"materialSku": "CAFE-GRAO", "costInput": "45,00"}],
+        }
+    )
+    assert _costs_for("CAFE-GRAO").get(supplier__ref="SUP-TAMURA").is_preferred is True
+
+    purchase_service.upsert_costs(
+        {
+            "supplierRef": "SUP-COFERPAN",
+            "costs": [{"materialSku": "CAFE-GRAO", "costInput": "40,00"}],
+        }
+    )
+    assert _costs_for("CAFE-GRAO").get(supplier__ref="SUP-TAMURA").is_preferred is True
+    assert _costs_for("CAFE-GRAO").get(supplier__ref="SUP-COFERPAN").is_preferred is False
+
+
+@pytest.mark.django_db
 def test_a_string_false_nao_e_um_sim(supplier, outro_supplier, materials):
     """`bool("false")` é `True`, e essa flag decide o custo padrão do insumo."""
     purchase_service.upsert_costs(

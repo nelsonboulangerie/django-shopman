@@ -36,6 +36,9 @@ class MaterialProjection:
     stockOnHand: float
     dailyUse: float
     minStock: float
+    #: O mínimo foi DECLARADO pelo operador, ou derivado do consumo? Sem essa
+    #: distinção a tela mostra um número derivado como se fosse cadastrado.
+    minStockDeclared: bool
     recipes: tuple[str, ...]
     leadTimeDays: float
     replenishAtDays: float
@@ -294,6 +297,11 @@ def _material_projection(
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
     min_stock = _meta_decimal(meta, "min_stock", "minStock", default=None)
+    # Declarado pelo operador × derivado do consumo. A tela precisa da diferença:
+    # um número derivado exibido como se fosse declarado convida o operador a
+    # "confirmá-lo" digitando o mesmo valor — e aí ele CONGELA um número que era
+    # para acompanhar o consumo, desligando o insumo da reposição automática.
+    min_stock_declared = min_stock is not None
     if min_stock is None:
         min_stock = daily_use * replenish_at if daily_use > 0 else Decimal("0")
     suggested = _suggested_qty(
@@ -314,6 +322,7 @@ def _material_projection(
         stockOnHand=_number(stock_on_hand),
         dailyUse=_number(daily_use),
         minStock=_number(min_stock),
+        minStockDeclared=min_stock_declared,
         recipes=recipes,
         leadTimeDays=_number(lead_time_days),
         replenishAtDays=_number(replenish_at),
