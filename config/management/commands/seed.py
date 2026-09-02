@@ -2593,20 +2593,26 @@ class Command(BaseCommand):
                 "FA",
                 "KP", "ME", "ANC", "CO",
                 # voltaram do Yooga (18/08)
-                "CM", "BCH", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                "BCH", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                # PR é BRIOCHE nesta casa, não massa folhada — o nome francês engana
+                # (decisão do dono, 02/09). Por isso mora aqui e não em Folhados.
+                "PR",
             ],
-            # Croissants e laminados são FOLHADOS, não macios — as keywords do
-            # catálogo já diziam; a coleção passou a existir (dono, 01/09).
-            "folhados": ["CT", "PC", "CN", "PR"],
+            # FOLHADOS é a família da massa laminada, e a massa manda — não o
+            # recheo nem o sabor (dono, 02/09). Por isso o Folhado de Frango sai
+            # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
+            # antes de serem salgado ou doce. E o Pain aux Raisins faz o caminho
+            # inverso, para Macios: o nome é francês, mas o nosso é de brioche.
+            "folhados": ["CT", "PC", "CM", "CN", "FF", "BH"],
             "salgados": [
                 "CMO", "CMA", "CCOM",
                 "QQ", "JB", "PG", "TI",
                 # voltaram do Yooga (18/08)
-                "CPQ", "FF", "MFF", "HO", "MIHO", "DL", "JO",
+                "CPQ", "MFF", "HO", "MIHO", "DL", "JO",
             ],
             "doces": ["PPU", "MS", "MD", "PU", "TJ",
                 # voltaram do Yooga (18/08)
-                "BH", "MA",
+                "MA",
             ],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.

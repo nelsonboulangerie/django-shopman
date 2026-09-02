@@ -239,3 +239,39 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
     for ref, (cor, icone) in fixas.items():
         assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
         assert icone.strip(), f"{ref}: ícone vazio"
+
+
+# ── Folhados: a MASSA manda, não o sabor (decisão do dono, 02/09) ────────────
+#
+# Antes disso a taxonomia seguia o paladar: Folhado de Frango em Salgados,
+# Bichon au Citron em Doces, Croissant Mini em Macios. Três massas laminadas em
+# três categorias diferentes, e nenhuma delas em Folhados. O cliente que abre
+# "Folhados" quer ver folhado.
+#
+# O contraexemplo é o Pain aux Raisins: o nome é francês e o vizinho de vitrine
+# é folhado, mas o NOSSO é feito de brioche. Ele mora em Macios, e é por isso
+# que a regra é sobre a massa e não sobre o nome.
+
+FAMILIA_LAMINADA = {
+    "CT": "Croissant",
+    "PC": "Pain au Chocolat",
+    "CM": "Croissant Mini",
+    "CN": "Chausson",
+    "FF": "Folhado de Frango",
+    "BH": "Bichon au Citron",
+}
+
+
+@pytest.mark.parametrize("sku,nome", sorted(FAMILIA_LAMINADA.items()))
+def test_massa_laminada_mora_em_folhados(sku, nome, colecoes):
+    assert sku in colecoes["folhados"], (
+        f"{nome} ({sku}) é massa laminada e tem de estar em Folhados — "
+        "a categoria segue a massa, não o recheio."
+    )
+
+
+def test_pain_aux_raisins_e_brioche_e_fica_em_macios(colecoes):
+    assert "PR" in colecoes["macios"]
+    assert "PR" not in colecoes["folhados"], (
+        "o nosso Pain aux Raisins é de brioche; o nome francês não decide a categoria"
+    )
