@@ -62,9 +62,10 @@ async function copyLink() {
         <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- No LINK, a mensagem do servidor ("Pagamento criado. Aguarde
              confirmação do gateway antes de tratar como recebido.") é jargão e
-             repete o que a linha abaixo já diz em cinco palavras. Três frases
-             para um fato é o operador parando de ler as três. -->
-        <p v-if="proof.isLink" class="text-xs opacity-90">Aguardando o cliente pagar.</p>
+             repete o que a linha abaixo já diz. A linha diz o que a casa FAZ
+             com a URL (a cadeia WhatsApp → e-mail → SMS enfileirada na venda) e
+             deixa a cópia manual como rede, não como gesto padrão. -->
+        <p v-if="proof.isLink" class="text-xs opacity-90">Enviando o link ao cliente por WhatsApp, e-mail ou SMS. Se preferir, copie e mande você.</p>
         <p v-else-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
