@@ -178,6 +178,15 @@ class AccessLinkCreateView(View):
         # Por isso a intenção é declarada aqui, e não deduzida da origem.
         if data.get("source", AccessLink.Source.MANYCHAT) == AccessLink.Source.MANYCHAT:
             metadata.setdefault("deliver", "manychat")
+            # ENTREGAR PARA QUEM FALOU. Sem isto o envio resolvia o destinatário
+            # pelo TELEFONE — e o resolver, não achando contato com aquele número,
+            # CRIA um assinante novo no ManyChat. Contato nascido há segundos não
+            # tem interação, então o ManyChat recusa o envio com o código 3011
+            # ("última interação há 19521h"). Mandávamos para um estranho enquanto
+            # a pessoa que acabou de escrever esperava.
+            sender_subscriber_id = self._subscriber_id_from_payload(data)
+            if sender_subscriber_id:
+                metadata.setdefault("deliver_to", sender_subscriber_id)
 
         result = AccessLinkService.create_token(
             customer=customer,
@@ -213,6 +222,17 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _subscriber_id_from_payload(data: dict) -> str:
+        """O `subscriber_id` do ManyChat, venha ele aninhado ou no topo."""
+        subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
+        value = (
+            (subscriber.get("id") if isinstance(subscriber, dict) else None)
+            or data.get("manychat_id")
+            or data.get("subscriber_id")
+        )
+        return str(value).strip() if value else ""
 
     @staticmethod
     def _contains_code(value: str) -> bool:
@@ -253,7 +273,7 @@ class AccessLinkCreateView(View):
 
     @staticmethod
     def _unrendered_variables(data: dict, _prefix: str = "") -> list[str]:
-        """Campos cujo valor ainda é ``{{alguma_coisa}}`` — variável não substituída.
+        """Campos cujo value ainda é ``{{alguma_coisa}}`` — variável não substituída.
 
         No ManyChat, variável DIGITADA à mão no corpo do request não é substituída:
         chega a string literal. Ela some no `normalize_phone` (vira vazio) e o pedido

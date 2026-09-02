@@ -128,3 +128,54 @@ class TestPontaAPonta:
             "sem esta marca o handler não sabe distinguir o link PEDIDO do link "
             "embutido numa notificação de pedido"
         )
+
+
+class TestEntregaParaQuemFalou:
+    """02/09: o ManyChat recusou com o código 3011 — "última interação há 19521h".
+
+    O envio resolvia o destinatário pelo TELEFONE, e o resolver, não achando
+    contato com aquele número, CRIA um assinante novo. Contato nascido há
+    segundos não tem janela de 24h, então o ManyChat recusa. Mandávamos para um
+    estranho enquanto quem acabou de escrever esperava.
+    """
+
+    def test_manda_para_o_assinante_gravado_pela_view(self):
+        with patch("shopman.shop.notifications.notify") as notify:
+            notify.return_value = SimpleNamespace(success=True, error=None)
+            on_access_link_created(
+                None,
+                token=_token(deliver="manychat", deliver_to="117684058"),
+                customer=_cliente(phone="+554384128247"),
+                url="https://x/a?t=1",
+            )
+        assert notify.call_args.kwargs["recipient"] == "117684058", (
+            "o telefone faria o adapter procurar — e criar — outro contato"
+        )
+
+    def test_sem_o_assinante_o_telefone_ainda_serve_de_fallback(self):
+        with patch("shopman.shop.notifications.notify") as notify:
+            notify.return_value = SimpleNamespace(success=True, error=None)
+            on_access_link_created(
+                None, token=_token(deliver="manychat"),
+                customer=_cliente(phone="+554384128247"), url="https://x/a?t=1",
+            )
+        assert notify.call_args.kwargs["recipient"] == "+554384128247"
+
+
+@pytest.mark.django_db
+def test_o_endpoint_grava_o_assinante_que_falou(settings):
+    from shopman.doorman.models import AccessLink
+
+    base = dict(getattr(settings, "DOORMAN", {}) or {})
+    base["ACCESS_LINK_API_KEY"] = KEY
+    settings.DOORMAN = base
+
+    r = Client().post(
+        URL,
+        data=json.dumps({"subscriber": {"id": "117684058", "whatsapp_id": "5543984128247"}}),
+        content_type="application/json",
+        HTTP_AUTHORIZATION=f"Bearer {KEY}",
+    )
+    assert r.status_code == 200, r.content
+    link = AccessLink.objects.order_by("-created_at").first()
+    assert link.metadata.get("deliver_to") == "117684058"
