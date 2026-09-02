@@ -20,6 +20,10 @@ ReadinessMode = Literal["runtime", "staging"]
 #: `shopman.shop.environment.is_production`.
 _PRODUCTION_NAMES = {"producao", "produção", "production", "prod", "live"}
 
+#: Adapters de pagamento que a prontidão sabe conferir.
+_STRIPE_ADAPTER = "shopman.shop.adapters.payment_stripe"
+_MOCK_ADAPTER = "shopman.shop.adapters.payment_mock"
+
 
 @dataclass(frozen=True)
 class ProviderReadiness:
@@ -55,6 +59,9 @@ def build_provider_readiness(*, mode: ReadinessMode = "runtime") -> tuple[Provid
         focus_nfe_readiness(mode=mode),
         efi_pix_readiness(mode=mode),
         stripe_card_readiness(mode=mode),
+        # O link de pagamento do balcão tem linha própria: ele resolve o
+        # provedor pelo adapter configurado, e a tecla L do PDV pergunta AQUI.
+        payment_link_readiness(mode=mode),
         # ⚠️ O canal por onde o CLIENTE ENTRA faltava aqui, e a ausência era
         # cara: a tela de prontidão dizia tudo verde enquanto nenhum código de
         # login saía. Pagamento e fiscal sem login é uma loja que ninguém usa.
@@ -266,16 +273,110 @@ def efi_pix_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
 
 def stripe_card_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
     payment_adapters = getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}
+    missing: list[str] = []
+    if not _payment_adapter_contains(payment_adapters, "card", _STRIPE_ADAPTER):
+        missing.append("SHOPMAN_CARD_ADAPTER")
+    stripe_missing, unsafe, environment = _stripe_checkout_issues(mode=mode)
+    missing.extend(stripe_missing)
+
+    issues = tuple(missing + unsafe)
+    status = _status(missing=missing, unsafe=unsafe)
+    return ProviderReadiness(
+        provider="stripe_card",
+        label="Stripe cartões",
+        kind="payment_card",
+        environment=environment,
+        status=status,
+        message=_readiness_message(
+            status=status,
+            environment=environment,
+            ready="Stripe Checkout configurado para cartões e webhooks.",
+            missing=issues,
+        ),
+        missing=issues,
+    )
+
+
+def payment_link_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
+    """O balcão pode gerar um LINK DE PAGAMENTO agora?
+
+    A resposta é do ADAPTER configurado (``SHOPMAN_PAYMENT_ADAPTERS["link"]``),
+    não do Stripe cravado. Enquanto a tecla L do PDV perguntava a
+    ``stripe_card_readiness``, trocar ``SHOPMAN_LINK_ADAPTER`` para outro
+    provedor não trocava nada: o balcão continuava consultando o Stripe do
+    cartão para decidir se o link podia aparecer — e o link sumia exatamente
+    quando o Stripe não estivesse configurado, mesmo com o provedor do link
+    inteiro de pé.
+
+    Três respostas possíveis, todas pelo adapter:
+
+    - **Stripe**: as mesmas chaves e a mesma segurança do cartão
+      (``_stripe_checkout_issues``) — é o mesmo Checkout, só a forma muda.
+    - **Simulador**: em DEBUG ele É a prontidão; fora de DEBUG vale a política
+      de ``SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`` (aviso com opt-in, erro sem).
+    - **Outro** (a Stone, quando vier): sem prontidão conhecida, e isso é
+      aviso, não "pronto". Provedor novo traz a própria prontidão para cá;
+      até lá o balcão não oferece o que não sabe se pode cumprir.
+    """
+    payment_adapters = getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}
+    adapter = ""
+    if isinstance(payment_adapters, dict):
+        adapter = str(payment_adapters.get("link") or "").strip()
+    missing: list[str] = []
+    unsafe: list[str] = []
+
+    if not adapter:
+        environment = "sem adapter"
+        ready = ""
+        missing.append("SHOPMAN_LINK_ADAPTER")
+    elif _path_contains(adapter, _STRIPE_ADAPTER):
+        missing, unsafe, environment = _stripe_checkout_issues(mode=mode)
+        ready = "Stripe Checkout configurado para o link de pagamento do balcão."
+    elif _path_contains(adapter, _MOCK_ADAPTER):
+        environment = "simulador"
+        ready = "Link de pagamento no simulador (só em desenvolvimento)."
+        if not getattr(settings, "DEBUG", False):
+            if getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False):
+                missing.append("SHOPMAN_LINK_ADAPTER_real")
+            else:
+                unsafe.append("SHOPMAN_LINK_ADAPTER_mock_fora_de_DEBUG")
+    else:
+        environment = "desconhecido"
+        ready = ""
+        missing.append("SHOPMAN_LINK_ADAPTER_sem_prontidao_conhecida")
+
+    issues = tuple(missing + unsafe)
+    status = _status(missing=missing, unsafe=unsafe)
+    return ProviderReadiness(
+        provider="payment_link",
+        label="Link de pagamento",
+        kind="payment_link",
+        environment=environment,
+        status=status,
+        message=_readiness_message(
+            status=status,
+            environment=environment,
+            ready=ready,
+            missing=issues,
+        ),
+        missing=issues,
+    )
+
+
+def _stripe_checkout_issues(*, mode: ReadinessMode) -> tuple[list[str], list[str], str]:
+    """Chaves e segurança do Stripe Checkout — a parte que não depende da FORMA.
+
+    Cartão da loja e link do balcão passam pelo mesmo Checkout; o que muda entre
+    eles é o adapter que cada um aponta, e isso quem confere é o chamador.
+    Devolve ``(missing, unsafe, environment)``.
+    """
     config = dict(getattr(settings, "SHOPMAN_STRIPE", {}) or {})
     secret_key = str(config.get("secret_key") or "").strip()
     publishable_key = str(config.get("publishable_key") or "").strip()
     domain = str(config.get("domain") or "").strip()
-    environment = _stripe_environment(secret_key)
     missing: list[str] = []
     unsafe: list[str] = []
 
-    if not _payment_adapter_contains(payment_adapters, "card", "shopman.shop.adapters.payment_stripe"):
-        missing.append("SHOPMAN_CARD_ADAPTER")
     if not secret_key:
         missing.append("STRIPE_SECRET_KEY")
     if not str(config.get("webhook_secret") or "").strip():
@@ -294,22 +395,7 @@ def stripe_card_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadine
         if publishable_key and not publishable_key.startswith("pk_live_"):
             unsafe.append("STRIPE_PUBLISHABLE_KEY_live")
 
-    issues = tuple(missing + unsafe)
-    status = _status(missing=missing, unsafe=unsafe)
-    return ProviderReadiness(
-        provider="stripe_card",
-        label="Stripe cartões",
-        kind="payment_card",
-        environment=environment,
-        status=status,
-        message=_readiness_message(
-            status=status,
-            environment=environment,
-            ready="Stripe Checkout configurado para cartões e webhooks.",
-            missing=issues,
-        ),
-        missing=issues,
-    )
+    return missing, unsafe, _stripe_environment(secret_key)
 
 
 def purchase_nfe_readiness(*, mode: ReadinessMode = "runtime") -> ProviderReadiness:
@@ -353,6 +439,7 @@ def staging_missing(provider: str) -> list[str]:
         "efi_pix": efi_pix_readiness,
         "purchase_nfe": purchase_nfe_readiness,
         "stripe_card": stripe_card_readiness,
+        "payment_link": payment_link_readiness,
     }[provider](mode="staging")
     return list(readiness.missing)
 

@@ -24,6 +24,7 @@ from shopman.backstage.presentation.status import payment_method_label
 from shopman.backstage.services.integration_readiness import (
     build_provider_readiness,
     focus_nfe_readiness,
+    payment_link_readiness,
 )
 from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
@@ -441,21 +442,16 @@ def _link_payment_available() -> bool:
     telefone esperando a URL. Oferecer o que não se pode cumprir é pior do que
     não oferecer.
 
-    ⚠️ O ``domain`` entra na conta porque é ele que monta o ``success_url``: sem
-    domínio certo, o cliente PAGA e volta para lugar nenhum.
+    Quem responde é ``payment_link_readiness``, que resolve a prontidão PELO
+    ADAPTER configurado em ``SHOPMAN_LINK_ADAPTER``. Enquanto esta função
+    perguntava ao ``stripe_card_readiness`` cravado, trocar o provedor do link
+    não trocava a pergunta — e a tecla L sumia do balcão sempre que o Stripe do
+    cartão estivesse fora, mesmo com o provedor do link inteiro de pé.
+
+    ⚠️ O ``domain`` entra na conta (via a prontidão) porque é ele que monta o
+    ``success_url``: sem domínio certo, o cliente PAGA e volta para lugar nenhum.
     """
-    from django.conf import settings
-
-    from shopman.backstage.services.integration_readiness import stripe_card_readiness
-
-    adapter = str((getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}).get("link") or "").strip()
-    if not adapter:
-        return False
-    # Simulador só existe em dev, e lá ele É a prontidão (o `payment_mock` já
-    # recusa a si mesmo fora de DEBUG sem opt-in explícito).
-    if adapter.endswith("payment_mock"):
-        return bool(getattr(settings, "DEBUG", False))
-    return stripe_card_readiness().ready
+    return payment_link_readiness(mode="runtime").ready
 
 
 _PAYMENT_COLLECTIONS = (
