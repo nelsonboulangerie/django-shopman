@@ -1118,11 +1118,14 @@ describe("dividir a conta — a máquina faz a conta, não o operador", () => {
 });
 
 describe("splitHint — quanto pedir a quem está na frente", () => {
-  it("diz o valor e de quem é a vez", () => {
+  it("manda FAZER, e diz de quem é a vez", () => {
     // ⚠️ `formatBRL` separa com espaço NÃO-QUEBRÁVEL. Comparar com um espaço
     // comum passa despercebido na leitura e reprova no runner.
-    expect(splitHint(9945, 3, 0, 9945)).toBe(`${formatBRL(3315)} · pessoa 1 de 3`);
-    expect(splitHint(9945, 3, 1, 6630)).toBe(`${formatBRL(3315)} · pessoa 2 de 3`);
+    // O verbo entrou quando a frase virou a instrução do rodapé do checkout,
+    // lida de longe e dita em voz alta: "R$ 33,15 · pessoa 1 de 3" é etiqueta de
+    // mostrador; "Peça R$ 33,15" é o que fazer agora.
+    expect(splitHint(9945, 3, 0, 9945)).toBe(`Peça ${formatBRL(3315)} · pessoa 1 de 3`);
+    expect(splitHint(9945, 3, 1, 6630)).toBe(`Peça ${formatBRL(3315)} · pessoa 2 de 3`);
   });
 
   it("coberto, avisa que acabou", () => {

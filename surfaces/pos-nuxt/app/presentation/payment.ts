@@ -163,7 +163,10 @@ export function splitHint(
   if (restante <= 0) return `Dividido em ${count}. Total coberto.`;
   const proxima = splitShareQ(totalQ, count, paidCount, restante);
   const pessoa = Math.min(paidCount + 1, count);
-  return `${formatBRL(proxima)} · pessoa ${pessoa} de ${count}`;
+  // O verbo entra porque esta frase virou a INSTRUÇÃO do rodapé, lida de longe
+     // e dita em voz alta ao cliente que está na frente. "R$ 21,00 · pessoa 3 de
+     // 3" é etiqueta de mostrador; "Peça R$ 21,00" é o que fazer agora.
+  return `Peça ${formatBRL(proxima)} · pessoa ${pessoa} de ${count}`;
 }
 
 /** UX gate: at least one tender and the total fully covered. */
