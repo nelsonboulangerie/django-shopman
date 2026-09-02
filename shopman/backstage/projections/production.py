@@ -116,7 +116,9 @@ class RecipeOptionProjection:
 
     pk: int
     ref: str
-    name: str  # output_sku or recipe ref display
+    #: O nome legível da ficha (``Recipe.name``). Cai no SKU produzido, e só
+    #: depois no ref, quando a ficha não tem nome — a linha continua na tela.
+    name: str
 
 
 @dataclass(frozen=True)
@@ -383,6 +385,7 @@ class ProductionLateWorkOrderProjection:
     pk: int
     ref: str
     output_sku: str
+    recipe_name: str
     operator_ref: str
     elapsed_minutes: int
     target_minutes: int
@@ -689,8 +692,8 @@ def build_production_board(
     )
 
     recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("ref")
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
     )
     consumed_recipe_skus = set(
         RecipeItem.objects.filter(recipe__is_active=True)
@@ -1479,8 +1482,8 @@ def build_production_reports(filters: dict | ProductionReportFilters | None = No
     history_rows = tuple(_work_order_report_row(wo) for wo in work_orders)
 
     recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("ref")
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
     )
     positions = tuple(
         PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
@@ -1524,7 +1527,7 @@ def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
         rev=int(wo.rev or 0),
         recipe_pk=wo.recipe_id,
         recipe_ref=wo.recipe.ref,
-        recipe_name=wo.recipe.output_sku or wo.recipe.ref,
+        recipe_name=wo.recipe.name or wo.recipe.output_sku or wo.recipe.ref,
         base_usages=base_usages,
         output_sku=wo.output_sku,
         status=wo.status,
@@ -2005,6 +2008,7 @@ def _late_projection(wo: WorkOrder) -> ProductionLateWorkOrderProjection:
         pk=wo.pk,
         ref=wo.ref,
         output_sku=wo.output_sku,
+        recipe_name=wo.recipe.name or wo.recipe.output_sku or wo.recipe.ref,
         operator_ref=wo.operator_ref or "",
         elapsed_minutes=elapsed_minutes,
         target_minutes=_target_minutes(wo),
@@ -2133,7 +2137,7 @@ def _build_matrix_rows(
     for recipe in recipes:
         row = row_for(recipe.output_sku)
         row["recipe_pk"] = recipe.pk
-        row["recipe_name"] = recipe.output_sku or recipe.ref
+        row["recipe_name"] = recipe.name or recipe.output_sku or recipe.ref
         row["base_usages"] = _base_recipe_usages(recipe)
 
     for suggestion in suggestions:
@@ -2170,7 +2174,11 @@ def _build_matrix_rows(
             finished_qty=_sum_qty(row["finished"], "finished_qty"),
             loss_qty=_sum_qty(row["finished"], "loss"),
         )
-        for output_sku, row in sorted(rows.items(), key=lambda item: item[0])
+        # Ordena pelo texto que a bancada lê (o nome), com o SKU como desempate:
+        # lista ordenada por chave invisível parece embaralhada.
+        for output_sku, row in sorted(
+            rows.items(), key=lambda item: (str(item[1]["recipe_name"]).lower(), item[0])
+        )
     )
 
 

@@ -13,6 +13,7 @@ import {
   rowCommitments,
   rowCommittedUnits,
   rowHasActivity,
+  rowLabel,
   startableWorkOrder,
   timerChip,
   timerTone,
@@ -112,6 +113,12 @@ describe("grid helpers", () => {
     expect(rowHasActivity(row())).toBe(false);
     expect(rowHasActivity(row({ planned_orders: [wo()] }))).toBe(true);
     expect(rowHasActivity(row({ suggestion: { recipe_pk: 5, recipe_ref: "p", recipe_name: "P", base_usages: [], output_sku: "PAO", quantity: "10", committed: "0", avg_demand: "5", confidence: "Alta", sample_size: 3, high_demand_applied: false, explanation_parts: [] } }))).toBe(true);
+  });
+  it("rowLabel names the row by the product, falling back to the SKU", () => {
+    expect(rowLabel(row())).toBe("Pão Francês");
+    // Ficha sem nome: o SKU vira o texto principal — a linha continua legível.
+    expect(rowLabel(row({ recipe_name: "" }))).toBe("PAO");
+    expect(rowLabel(row({ recipe_name: "   " }))).toBe("PAO");
   });
   it("matchesRowQuery filters on sku + name + WO refs (alert deep-link)", () => {
     expect(matchesRowQuery(row(), "")).toBe(true);

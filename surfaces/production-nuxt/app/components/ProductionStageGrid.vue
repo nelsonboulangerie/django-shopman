@@ -19,6 +19,7 @@ import {
   matchesRowQuery,
   rowCommitments,
   rowCommittedUnits,
+  rowLabel,
   plannedWorkOrder,
   startableWorkOrder,
   timerChip,
@@ -258,7 +259,7 @@ async function confirmPlan() {
     const label =
       planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
     planRow.value = null;
-    useSonner.success(`${label}: ${row.output_sku} × ${planQty.value.trim()}`);
+    useSonner.success(`${label}: ${rowLabel(row)} × ${planQty.value.trim()}`);
   } else if (res.shortage) {
     planRow.value = null;
     shortage.value = res.shortage;
@@ -279,7 +280,7 @@ async function confirmStart() {
     startRow.value = null;
     kds.refresh();
     useSonner.success(
-      `Em processo: ${row.output_sku} × ${startQty.value.trim()}`,
+      `Em processo: ${rowLabel(row)} × ${startQty.value.trim()}`,
     );
   }
 }
@@ -306,7 +307,7 @@ async function confirmVoid() {
     voidConfirming.value = false;
     voidReason.value = "";
     refresh();
-    useSonner.success(`Estornado: ${row.output_sku}`);
+    useSonner.success(`Estornado: ${rowLabel(row)}`);
   }
 }
 
@@ -561,16 +562,16 @@ const headerCount = computed(() => {
                 class="hover:bg-muted/30"
               >
                 <td class="px-3 py-1.5">
-                  <p class="font-bold">{{ row.output_sku }}</p>
+                  <p class="font-bold">{{ rowLabel(row) }}</p>
                   <p
                     class="flex items-center gap-1.5 text-xs text-muted-foreground"
                   >
-                    <span class="truncate">{{ row.recipe_name }}</span>
+                    <span class="truncate">{{ row.output_sku }}</span>
                     <button
                       v-if="rowCommittedUnits(row) > 0"
                       type="button"
                       class="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary transition hover:bg-primary/10"
-                      :aria-label="`${rowCommittedUnits(row)} unidades de ${row.output_sku} comprometidas com pedidos`"
+                      :aria-label="`${rowCommittedUnits(row)} unidades de ${rowLabel(row)} comprometidas com pedidos`"
                       @click="commitmentsRow = row"
                     >
                       <Icon name="lucide:shopping-bag" class="size-3" />
@@ -591,7 +592,7 @@ const headerCount = computed(() => {
                         : 'text-muted-foreground',
                       'hover:bg-accent',
                     ]"
-                    :aria-label="`Por que ${row.suggestion.quantity} de ${row.recipe_name}?`"
+                    :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
                     @click="explaining = row.suggestion"
                   >
                     {{ cellQty(row.suggestion.quantity) }}
@@ -622,7 +623,7 @@ const headerCount = computed(() => {
                         : 'text-muted-foreground',
                     ]"
                     :disabled="isBusy(row.output_sku)"
-                    :aria-label="`${ACTION_VERB[stage]} ${row.output_sku}`"
+                    :aria-label="`${ACTION_VERB[stage]} ${rowLabel(row)}`"
                     @click="onAction(row)"
                   >
                     <template v-if="rowValue(row, lens.action.key) !== '0'">
@@ -686,10 +687,10 @@ const headerCount = computed(() => {
         <UiDialogHeader>
           <UiDialogTitle
             >{{ PLAN_TITLE[planMode] }} ·
-            {{ planRow?.output_sku }}</UiDialogTitle
+            {{ planRow ? rowLabel(planRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription>
-            {{ planRow?.recipe_name }} · {{ fullDateLabel(selectedDate) }}
+            {{ planRow?.output_sku }} · {{ fullDateLabel(selectedDate) }}
             <template v-if="planRow?.suggestion">
               · sugestão {{ planRow.suggestion.quantity }}</template
             >
@@ -766,10 +767,12 @@ const headerCount = computed(() => {
     >
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Processar {{ startRow?.output_sku }}</UiDialogTitle>
+          <UiDialogTitle
+            >Processar {{ startRow ? rowLabel(startRow) : "" }}</UiDialogTitle
+          >
           <UiDialogDescription
-            >Quantidade que entra em processo agora — registra o início e
-            materializa o lote.</UiDialogDescription
+            >{{ startRow?.output_sku }} · quantidade que entra em processo agora
+            — registra o início e materializa o lote.</UiDialogDescription
           >
         </UiDialogHeader>
         <div class="flex items-center gap-2">
@@ -832,11 +835,13 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle
-            >{{ startedRow?.output_sku }} em processo</UiDialogTitle
+            >{{ startedRow ? rowLabel(startedRow) : "" }} em
+            processo</UiDialogTitle
           >
           <UiDialogDescription>
             #{{ startedRow?.started_orders[0]?.ref }} ·
-            {{ startedRow?.started_qty }} un. em processo
+            {{ startedRow?.output_sku }} · {{ startedRow?.started_qty }} un. em
+            processo
           </UiDialogDescription>
         </UiDialogHeader>
 
@@ -956,11 +961,12 @@ const headerCount = computed(() => {
         <UiDialogHeader>
           <UiDialogTitle
             >{{ commitmentsRow ? rowCommittedUnits(commitmentsRow) : 0 }} un.
-            comprometidas · {{ commitmentsRow?.output_sku }}</UiDialogTitle
+            comprometidas ·
+            {{ commitmentsRow ? rowLabel(commitmentsRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription
-            >Encomendas confirmadas que dependem desta
-            produção.</UiDialogDescription
+            >{{ commitmentsRow?.output_sku }} · encomendas confirmadas que
+            dependem desta produção.</UiDialogDescription
           >
         </UiDialogHeader>
         <ul class="flex flex-col gap-2 text-sm">
