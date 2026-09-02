@@ -16,6 +16,7 @@ import type { OperatorOrderProjection } from "../../app/types/orders";
 // deixou de oferecer o botão.
 
 const detalhe = ref<OperatorOrderProjection | null>(null);
+const resendPaymentLink = vi.fn();
 
 vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
@@ -38,6 +39,7 @@ vi.stubGlobal("useOrderDetail", () => ({
   settleCash: vi.fn(),
   equipmentBack: vi.fn(),
   requeueFiscal: vi.fn(),
+  resendPaymentLink: resendPaymentLink,
   saveNotes: vi.fn(),
   addComment: vi.fn(),
   courierDispatch: vi.fn(),
@@ -89,6 +91,8 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_out: [],
     equipment_label: "",
     equipment_back_pending: false,
+    can_resend_payment_link: false,
+    payment_link_notice: "",
     ...over,
   } as OperatorOrderProjection;
 }
@@ -223,5 +227,41 @@ describe("detalhe do pedido — presente", () => {
   it("sem hide_values o selo não aparece", () => {
     const w = abrir(order({ is_gift: true, gift_hide_values: false }));
     expect(w.find("[data-gift-hide-values]").exists()).toBe(false);
+  });
+});
+
+describe("detalhe do pedido — link de pagamento", () => {
+  it("pedido de link cobrável: oferece Reenviar e mostra a prova de envio", async () => {
+    resendPaymentLink.mockClear();
+    const w = abrir(order({
+      status: "accepted",
+      can_confirm: false,
+      payment_method: "link",
+      payment_method_label: "Link de pagamento",
+      payment_status: "pending",
+      can_resend_payment_link: true,
+      payment_link_notice: "Link enviado às 14h32",
+    }));
+
+    expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 14h32");
+    const botao = w.find('[data-action="resend-payment-link"]');
+    expect(botao.exists()).toBe(true);
+    expect(botao.text()).toContain("Reenviar link de pagamento");
+    await botao.trigger("click");
+    expect(resendPaymentLink).toHaveBeenCalledTimes(1);
+  });
+
+  it("o servidor negou (pago, vencido, outra forma): nem botão, nem linha vazia", () => {
+    const w = abrir(order({ can_resend_payment_link: false, payment_link_notice: "" }));
+
+    expect(w.find('[data-action="resend-payment-link"]').exists()).toBe(false);
+    expect(w.find("[data-payment-link-notice]").exists()).toBe(false);
+  });
+
+  it("a prova de envio aparece mesmo quando reenviar não dá mais (pedido pago)", () => {
+    const w = abrir(order({ can_resend_payment_link: false, payment_link_notice: "Link enviado às 9h05" }));
+
+    expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 9h05");
+    expect(w.find('[data-action="resend-payment-link"]').exists()).toBe(false);
   });
 });

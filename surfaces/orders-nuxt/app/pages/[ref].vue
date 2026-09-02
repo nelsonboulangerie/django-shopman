@@ -16,7 +16,7 @@ import type { CancellationReason } from "~/types/orders";
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
+const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -180,6 +180,12 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             </span>
           </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status || "—" }}</p>
+          <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
+               às 14h32" ou "falhou — reenvie". Lida da última Directive do
+               aviso; sem aviso nenhum, a linha não existe. -->
+          <p v-if="order.payment_link_notice" class="flex items-center gap-2 text-muted-foreground" data-payment-link-notice>
+            <Icon name="lucide:send" class="size-4" /> {{ order.payment_link_notice }}
+          </p>
         </div>
 
         <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
@@ -230,6 +236,13 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </button>
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
+        </button>
+        <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
+             não pago, não vencido) — o servidor decide, a tela obedece. A
+             cadência (cedo demais, envio em andamento) é recusa da hora do
+             clique, com o motivo no toast. -->
+        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
+          <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
         </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
              aceito o gesto certo é Cancelar. -->

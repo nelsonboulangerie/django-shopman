@@ -162,6 +162,8 @@ export interface OperatorOrderProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  can_resend_payment_link: boolean;
+  payment_link_notice: string;
 }
 
 /** Top-level read model for the operator order queue. */

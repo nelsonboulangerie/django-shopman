@@ -59,3 +59,37 @@ describe("PosPaymentResult — o prazo do link", () => {
     expect(wrapper.text()).not.toContain("Vale até");
   });
 });
+
+describe("PosPaymentResult — reenviar o link", () => {
+  it("o botão fica ao lado de Copiar link e emite resendLink", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, { props: { proof: linkProof(), status: "idle" } });
+
+    const botao = wrapper.find('[data-action="resend-link"]');
+    expect(botao.exists()).toBe(true);
+    expect(botao.text()).toContain("Reenviar");
+    expect(wrapper.text()).toContain("Copiar link");
+    await botao.trigger("click");
+    expect(wrapper.emitted("resendLink")).toHaveLength(1);
+  });
+
+  it("em voo, o botão trava — clique duplo não vira dois reenvios", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: { proof: linkProof(), status: "idle", resending: true },
+    });
+
+    const botao = wrapper.find('[data-action="resend-link"]');
+    expect(botao.attributes("disabled")).toBeDefined();
+    await botao.trigger("click");
+    expect(wrapper.emitted("resendLink")).toBeUndefined();
+  });
+
+  it("o Pix não tem o que reenviar — o QR está na tela", async () => {
+    const wrapper = await mountSuspended(PosPaymentResult, {
+      props: {
+        proof: linkProof({ method: "pix", isPix: true, isLink: false, checkoutUrl: "", copyPaste: "000201..." }),
+        status: "polling",
+      },
+    });
+    expect(wrapper.find('[data-action="resend-link"]').exists()).toBe(false);
+  });
+});

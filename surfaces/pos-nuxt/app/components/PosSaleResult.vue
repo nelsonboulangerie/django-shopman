@@ -26,6 +26,8 @@ const props = defineProps<{
   danfeScreenUrl: string;
   printingReceipt: boolean;
   printingDanfe: boolean;
+  /** Reenvio do link de pagamento em voo (só o pedido de link usa). */
+  resendingLink?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,6 +35,7 @@ const emit = defineEmits<{
   printReceipt: [];
   printDanfe: [];
   cancelSale: [];
+  resendLink: [];
 }>();
 
 const title = computed(() => saleResultTitle(props.result.receipt.customerName));
@@ -114,8 +117,10 @@ function onNewSale() {
       v-if="result.payment?.hasProof"
       :proof="result.payment"
       :status="pixStatus"
+      :resending="resendingLink"
       large
       class="w-full max-w-md text-left"
+      @resend-link="emit('resendLink')"
     />
 
     <!-- Hierarquia única de ações (mesma disciplina do checkout): UM CTA

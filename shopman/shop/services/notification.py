@@ -11,8 +11,11 @@ Adapter: get_adapter("notification", channel=...) → notification_manychat / em
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from django.conf import settings
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from shopman.orderman.models import Directive
 from shopman.utils.monetary import format_money
 
@@ -21,6 +24,13 @@ from shopman.shop.notifications import notify
 logger = logging.getLogger(__name__)
 
 TOPIC = "notification.send"
+
+#: O aviso que leva a cobrança do pedido remoto anotado no PDV.
+PAYMENT_LINK_TEMPLATE = "payment_link_sent"
+
+#: Intervalo mínimo entre dois reenvios do MESMO aviso. Clique duplo, operador
+#: ansioso e cliente que "ainda não viu" em 30 s não podem virar três mensagens.
+RESEND_MIN_INTERVAL_SECONDS = 60
 
 _ACTIVE_NOTIFICATION_TEMPLATES = frozenset(
     {
@@ -117,6 +127,171 @@ def send(order, template: str, **extra) -> None:
         return
 
     logger.info("notification.send: queued %s for order %s", template, order.ref)
+
+
+class NotificationResendRefused(Exception):
+    """Reenvio recusado por um guarda de negócio.
+
+    ``code`` é estável (a tela decide por ele), ``message`` é a frase que o
+    operador lê, ``status`` o HTTP que a view devolve. Não é erro de programa:
+    é a casa dizendo por que NÃO vai mandar de novo.
+    """
+
+    def __init__(self, code: str, message: str, *, status: int = 409):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status = status
+
+
+def latest_delivery(order, template: str) -> Directive | None:
+    """A última Directive deste aviso para este pedido — envio original ou reenvio."""
+    return (
+        Directive.objects.filter(
+            topic=TOPIC,
+            payload__order_ref=order.ref,
+            payload__template=_canonical_template(template),
+        )
+        .order_by("-created_at", "-pk")
+        .first()
+    )
+
+
+def resend(order, template: str, *, min_interval_seconds: int = RESEND_MIN_INTERVAL_SECONDS) -> Directive:
+    """Enfileira de novo um aviso já enviado, apesar do dedupe de ``send``.
+
+    Cada reenvio é UMA Directive nova, com a chave de dedupe do envio original
+    mais um sufixo de tentativa (``…:resend:<n>``, ``n`` = quantas Directives
+    deste pedido+template já existem + 1). Assim retry, backoff e escalada para
+    ``OperatorAlert`` vêm de graça do ``NotificationSendHandler``, e o dedupe do
+    envio original fica intacto — um retry do PDV continua não mandando duas.
+
+    Dois guardas, os dois sobre a HISTÓRIA e não sobre o pedido:
+
+    - envio anterior ainda ``queued``/``running`` → recusa ``notification_send_pending``.
+      Enfileirar por cima faria o cliente receber duas mensagens quando o worker
+      voltasse (ou nenhuma, pelo mesmo motivo da primeira);
+    - último envio há menos de ``min_interval_seconds`` → ``notification_resend_too_soon``.
+
+    O clique duplo no MESMO segundo passa pelos dois guardas com o mesmo ``n``;
+    o UNIQUE parcial do Core recusa o segundo INSERT e devolvemos a Directive
+    que o primeiro criou — nunca duas.
+    """
+    template = _canonical_template(template)
+    history = Directive.objects.filter(topic=TOPIC, payload__order_ref=order.ref, payload__template=template)
+    latest = history.order_by("-created_at", "-pk").first()
+    if latest is not None:
+        if latest.status in (Directive.Status.QUEUED, Directive.Status.RUNNING):
+            raise NotificationResendRefused(
+                "notification_send_pending",
+                "O envio anterior ainda está em andamento. Aguarde um instante.",
+            )
+        age = (timezone.now() - latest.created_at).total_seconds()
+        if age < min_interval_seconds:
+            wait = max(1, int(min_interval_seconds - age))
+            raise NotificationResendRefused(
+                "notification_resend_too_soon",
+                f"Acabamos de enviar. Aguarde {wait} s para reenviar.",
+            )
+
+    attempt = history.count() + 1
+    dedupe_key = f"{_dedupe_key(order, template)}:resend:{attempt}"
+    payload = {
+        "order_ref": order.ref,
+        "channel_ref": order.channel_ref or "",
+        "template": template,
+        "requires_active_notification": _requires_active_notification(template),
+    }
+    origin = (order.data or {}).get("origin_channel")
+    if origin in _ORIGIN_CHANNELS:
+        payload["origin_channel"] = origin
+    customer_ref = _customer_ref(order)
+    if customer_ref:
+        payload["customer_ref"] = customer_ref
+
+    from shopman.shop.directives import create_deduped
+
+    created = create_deduped(topic=TOPIC, payload=payload, dedupe_key=dedupe_key)
+    if created is None:
+        # Corrida: o outro clique do mesmo segundo já enfileirou este reenvio.
+        existing = Directive.objects.filter(topic=TOPIC, dedupe_key=dedupe_key).order_by("-pk").first()
+        if existing is None:  # pragma: no cover — a constraint garante que existe
+            raise NotificationResendRefused("notification_send_pending", "Reenvio já em andamento.")
+        logger.info("notification.resend: joined in-flight resend %s for order %s", template, order.ref)
+        return existing
+
+    logger.info("notification.resend: queued %s #%d for order %s", template, attempt, order.ref)
+    return created
+
+
+def payment_link_resend_refusal(order) -> NotificationResendRefused | None:
+    """Por que este pedido NÃO aceita reenvio do link — ou ``None`` se aceita.
+
+    Só o que é do PEDIDO (forma, URL, cancelamento, captura, vencimento). Os
+    guardas de cadência (envio em andamento, cedo demais) são de ``resend`` e
+    só se decidem na hora do gesto. A projection do gestor usa esta função
+    para mostrar ou esconder o botão; ``resend_payment_link`` usa a mesma para
+    recusar — um dono só para a regra, e a tela nunca oferece o que o servidor
+    vai negar.
+
+    Reenvio manda a MESMA URL enquanto ela vale. Não existe regenerar: link
+    vencido é pedido que a máquina de timeout cancela, e o caminho é refazer a
+    venda.
+    """
+    payment = (order.data or {}).get("payment") or {}
+    if str(payment.get("method") or "").strip().lower() != "link" or not payment.get("checkout_url"):
+        return NotificationResendRefused("payment_link_unavailable", "Este pedido não tem link de pagamento.")
+    if order.status == "cancelled":
+        return NotificationResendRefused(
+            "payment_link_order_cancelled",
+            "Pedido cancelado: o link não vale mais. Refaça a venda para cobrar de novo.",
+        )
+
+    from shopman.shop.services import payment as payment_svc
+
+    if payment_svc.has_sufficient_captured_payment(order):
+        return NotificationResendRefused("payment_link_already_paid", "O cliente já pagou este pedido.")
+
+    expires_at = _parse_expires_at(payment.get("expires_at"))
+    if expires_at is not None and expires_at <= timezone.now():
+        return NotificationResendRefused(
+            "payment_link_expired",
+            "O link venceu. Refaça a venda para gerar um novo.",
+        )
+    return None
+
+
+def resend_payment_link(order) -> Directive:
+    """Reenvia o aviso ``payment_link_sent`` — o gesto do operador quando o cliente diz "não chegou".
+
+    Guardas do pedido (``payment_link_resend_refusal``) e de cadência
+    (``resend``); as recusas de cadência ganham o prefixo do link para a tela
+    falar um vocabulário só (``payment_link_send_pending``,
+    ``payment_link_resend_too_soon``).
+    """
+    refusal = payment_link_resend_refusal(order)
+    if refusal is not None:
+        raise refusal
+    try:
+        return resend(order, PAYMENT_LINK_TEMPLATE)
+    except NotificationResendRefused as exc:
+        raise NotificationResendRefused(
+            exc.code.replace("notification_", "payment_link_", 1), exc.message, status=exc.status
+        ) from exc
+
+
+def _parse_expires_at(raw) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        value = parse_datetime(str(raw))
+    except (TypeError, ValueError):
+        return None
+    if value is None:
+        return None
+    if timezone.is_naive(value):
+        value = timezone.make_aware(value)
+    return value
 
 
 def deliver_order_notification(order, template: str, payload: dict) -> tuple[bool, str | None]:

@@ -17,6 +17,7 @@ POST endpoints (operator actions):
   POST /api/v1/backstage/orders/<ref>/cancel/   → cancel order
   POST /api/v1/backstage/orders/<ref>/settle-delivery-cash/ → settle COD cash
   POST /api/v1/backstage/orders/<ref>/requeue-fiscal/ → requeue NFC-e emission
+  POST /api/v1/backstage/orders/<ref>/resend-payment-link/ → resend the payment-link notice
   POST /api/v1/backstage/orders/<ref>/notes/    → save the operator's kitchen note
   POST /api/v1/backstage/production/plan/                 → plan/adjust matrix cell
   POST /api/v1/backstage/production/<wo_id>/start/        → start a planned WO
@@ -58,7 +59,7 @@ from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
 from shopman.backstage.projections.cash_session import build_cash_session_report
 from shopman.backstage.projections.closing import build_day_closing
-from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue
+from shopman.backstage.projections.order_queue import build_operator_order, build_two_zone_queue, payment_link_notice
 from shopman.backstage.projections.pos import (
     build_open_tab,
     build_pos,
@@ -103,6 +104,7 @@ from shopman.backstage.services.exceptions import (
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
+from shopman.shop.services import notification as notification_service
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import PosRecentSaleNotFound
 from shopman.shop.services.pos_intent import PosIntentError
@@ -1439,6 +1441,46 @@ class OrderRequeueFiscalView(_OrderActionBase):
         return Response({"ok": True, "ref": ref})
 
 
+def _resend_payment_link_response(order) -> Response:
+    """Reenvia o aviso do link e responde no dialeto da casa.
+
+    Uma função para as duas portas (PDV e gestor): a regra mora no service, a
+    recusa sai como ``{detail, error: {code, message}}`` — ``detail`` para quem
+    só lê o canônico, ``error.code`` para a tela distinguir "venceu" de
+    "cedo demais" sem casar a frase em português.
+    """
+    try:
+        notification_service.resend_payment_link(order)
+    except notification_service.NotificationResendRefused as exc:
+        return Response(
+            {"detail": exc.message, "error": {"code": exc.code, "message": exc.message}},
+            status=exc.status,
+        )
+    return Response(
+        {"ok": True, "ref": order.ref, "detail": "Link reenviado ao cliente.", "payment_link_notice": payment_link_notice(order)}
+    )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Resend the payment-link notice to the customer",
+        responses={
+            200: OpenApiResponse(description="Notice queued again."),
+            409: OpenApiResponse(description="Refused: no link, cancelled, paid, expired, pending or too soon."),
+        },
+    ),
+)
+class OrderResendPaymentLinkView(_OrderActionBase):
+    """O cliente disse "não chegou": o gestor manda de novo a MESMA URL, enquanto vale."""
+
+    def post(self, request, ref: str):
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        return _resend_payment_link_response(order)
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["backstage"],
@@ -1699,6 +1741,31 @@ class POSResendFiscalEmailView(APIView):
         if not ok:
             return Response({"detail": message}, status=502)
         return Response({"ok": True, "detail": message})
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Resend the payment-link notice from the POS",
+        responses={
+            200: OpenApiResponse(description="Notice queued again."),
+            409: OpenApiResponse(description="Refused: no link, cancelled, paid, expired, pending or too soon."),
+        },
+    ),
+)
+class POSResendPaymentLinkView(APIView):
+    """Reenvio do link pelo balcão — ao lado do "Copiar link", na tela de resultado."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request, ref: str):
+        from shopman.orderman.models import Order
+
+        order = Order.objects.filter(ref=ref).first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        return _resend_payment_link_response(order)
 
 
 @extend_schema_view(
