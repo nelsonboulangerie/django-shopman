@@ -155,7 +155,16 @@ def create_intent(
     # preso, e o cliente ligava dizendo que "o link parou de funcionar".
     # O cartão da loja online segue sem prazo: lá o cliente está na tela, e o
     # abandono tem a própria rede (`reconcile_with_gateway_if_due`).
-    expires_at = link_expires_at() if method == "link" else None
+    # A janela e o corte do atendimento chegam prontos pelo `_adapter_config`;
+    # aqui só se fecha o `min(agora + janela, corte)` na régua do Stripe.
+    expires_at = (
+        link_expires_at(
+            timeout_minutes=config.get("link_timeout_minutes"),
+            expires_by=config.get("link_expires_by"),
+        )
+        if method == "link"
+        else None
+    )
 
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,

@@ -159,7 +159,7 @@ async function copyLink() {
          dizer ao telefone, e "o link parou de funcionar" vira ligação. -->
     <p v-if="proof.isLink && proof.expiresDisplay" class="flex items-center gap-1 text-xs opacity-80">
       <Icon name="lucide:clock" class="size-3.5" />
-      Vale até {{ proof.expiresDisplay }}
+      Pague até {{ proof.expiresDisplay }} para garantir o pedido
     </p>
   </div>
 </template>

@@ -42,6 +42,7 @@ _DIGITAL_PAYMENT_METHODS = frozenset({"pix"}) | payment_service.HOSTED_CHECKOUT_
 from shopman.shop.services.business_calendar import (
     BusinessCalendarState,
     current_business_state,
+    format_deadline,
     format_next_opening,
     store_review_deferred_state,
 )
@@ -152,6 +153,10 @@ class TrackingPromiseData:
     actions: tuple[Action, ...] = ()
     eta_at: str | None = None  # ISO; preparing ETA
     next_opening_phrase: str = ""  # store_closed; resolved against business calendar
+    # payment_card_ready do LINK: "hoje às 16h" — o `deadline_at` em copy de
+    # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
+    # calendário é lado de escrita; a presentation só lê projections).
+    payment_deadline_phrase: str = ""
     # ── Payment block (só nos degraus em que há o que pagar) ──────────
     payment_method: str = ""  # pix | card | link | "" — o resto do bloco só faz sentido com um método
     pix_qr_code: str | None = None  # data: URI já normalizada
@@ -683,6 +688,7 @@ def _promise(
     actions: tuple[Action, ...] = (),
     eta_at: str | None = None,
     next_opening_phrase: str = "",
+    payment_deadline_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
     pix_copy_paste: str | None = None,
@@ -703,6 +709,7 @@ def _promise(
         actions=actions,
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
+        payment_deadline_phrase=payment_deadline_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
         pix_copy_paste=pix_copy_paste,
@@ -925,9 +932,23 @@ def _build_promise(
             # `payment_card_ready` cobre o link também: é a mesma sessão
             # hospedada, o mesmo botão que abre a URL do gateway. O que muda
             # é o `payment_method`, e é ele que a tela rotula.
+            #
+            # O LINK tem prazo (o cartão da loja online não): o mesmo
+            # `expires_at` que arma o `payment.timeout` vira o prazo da
+            # promessa — "pague até hoje às 16h para garantir o pedido" — e a
+            # consequência (a reserva é liberada) entra na copy, como no Pix.
+            # Sem contagem regressiva: o relógio do link é de horas, e o mm:ss
+            # da tela é instrumento de dez minutos.
+            has_deadline = bool(payment_expires_at)
             return promise(
                 state="payment_card_ready",
                 tone="info",
+                deadline_at=payment_expires_at,
+                deadline_kind="payment" if has_deadline else None,
+                deadline_action="cancel_order_on_timeout" if has_deadline else "none",
+                payment_deadline_phrase=(
+                    format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""
+                ),
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
                 actions=(
