@@ -72,7 +72,6 @@ export const MANAGER_ACTIONS: Record<ManagerAction, ManagerActionCopy> = {
  */
 const REASON_COPY: Record<string, (thresholdQ: number) => string> = {
   discount_over_threshold: (q) => `Desconto acima de ${formatBRL(q)}.`,
-  price_override: () => "Preço alterado à mão.",
 };
 
 export interface ManagerAuthReasonInput {

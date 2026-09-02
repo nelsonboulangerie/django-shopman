@@ -48,7 +48,7 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
-import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
 import { toast } from "vue-sonner";
@@ -533,6 +533,21 @@ export function usePosSale(deps: PosSaleDeps) {
     splitPaidCount.value = Math.max(0, splitPaidCount.value - 1);
   }
 
+  // ⚠️ ONDE O DINHEIRO É RECEBIDO É DA VENDA, e as linhas TÊM que acompanhar.
+  //
+  // A `collection` era congelada no instante em que a linha nascia. Numa entrega
+  // paga em misto: o operador lança Dinheiro R$ 40 + Cartão R$ 26,30 com "No
+  // caixa" marcado, o cliente então diz que paga na porta, ele troca para "Na
+  // entrega" — e as duas linhas continuavam `terminal`. O servidor grava
+  // `status: "received"`, carimba `received_at` e soma os R$ 40 no LIVRO-CAIXA:
+  // dinheiro que nunca entrou na gaveta, e sobra falsa no fechamento do turno.
+  //
+  // A tela oferece UM seletor de coleta para a venda inteira, então nunca há
+  // motivo legítimo para uma linha discordar dele. Trocar reescreve todas.
+  watch(() => cart.paymentCollection, (collection) => {
+    for (const tender of cart.paymentTenders) tender.collection = collection;
+  });
+
   function addTender(method: string) {
     const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
@@ -700,6 +715,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function scheduleAutoReview() {
     if (!checkoutMode.value) return;
     review.value = null;
+    reviewFailed.value = false;
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = setTimeout(() => {
       autoReviewTimer = null;
@@ -807,12 +823,12 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.items.push({ ...item });
   }
 
-  function setLineDiscount(sku: string, value: number, reason: string) {
+  function setLineDiscount(sku: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
     const item = cart.items.find((entry) => entry.sku === sku);
     if (!item) return;
     review.value = null;
     if (value > 0) {
-      item.discount = { value, reason };
+      item.discount = { value, reason, type };
       // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
       // que o automático que já venceu a linha. Sem aviso, o operador digitava a
       // cortesia, o preço não mudava e ele não tinha como saber por quê. A linha
@@ -825,21 +841,6 @@ export function usePosSale(deps: PosSaleDeps) {
     } else {
       delete item.discount;
     }
-  }
-
-  // Operator unit-price override (numpad "Preço"): set the line's price and flag
-  // it when it differs from the catalog — the kernel then freezes it (the pricing
-  // modifier skips re-pricing) and the server review requires manager approval.
-  // Typing the catalog price back clears the override.
-  function setLinePrice(sku: string, priceQ: number) {
-    const item = cart.items.find((entry) => entry.sku === sku);
-    if (!item) return;
-    review.value = null;
-    checkoutMode.value = false;
-    const catalogQ = pos.value?.products.find((product) => product.sku === sku)?.price_q ?? item.price_q;
-    const next = Math.max(0, Math.min(99_999_999, Math.round(priceQ)));
-    item.price_q = next;
-    item.price_overridden = next !== catalogQ;
   }
 
   function resetCart() {
@@ -1464,6 +1465,9 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  /** A última revisão FALHOU e não há total válido na tela. Ver `reviewCheckout`. */
+  const reviewFailed = ref(false);
+
   async function reviewCheckout() {
     if (busy.value) return; // guarda de reentrância
     if (!cart.items.length) return;
@@ -1472,7 +1476,16 @@ export function usePosSale(deps: PosSaleDeps) {
     busy.value = true;
     try {
       await reviewSale();
+      reviewFailed.value = false;
     } catch (error) {
+      // ⚠️ SEM ISTO O PDV TRAVAVA PARA SEMPRE. `scheduleAutoReview` zera a
+      // `review` e agenda o refetch; se ele lançasse (um piscar de Wi-Fi), o
+      // catch emitia um toast que some em segundos e a `review` ficava `null`
+      // sem ninguém reagendar. Resultado: botão desabilitado, com spinner,
+      // escrito "Atualizando…", e o motivo do bloqueio devolvia string vazia
+      // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
+      // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
+      reviewFailed.value = true;
       serverError.value = httpErrorMessage(error, "Falha ao revisar venda.");
     } finally {
       busy.value = false;
@@ -1516,7 +1529,13 @@ export function usePosSale(deps: PosSaleDeps) {
             discountPct: item.discount?.value || 0,
           })),
           totalDisplay: review.value?.total_display || "",
-          payments: cart.paymentTenders.map((tender) => ({ method: tender.method, amount_q: tender.amount_q })),
+          payments: cart.paymentTenders.map((tender) => ({
+            method: tender.method,
+            amount_q: tender.amount_q,
+            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
+            // gaveta de dinheiro que sai com o entregador.
+            collection: tender.collection,
+          })),
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
         };
@@ -1555,7 +1574,8 @@ export function usePosSale(deps: PosSaleDeps) {
         // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
         // do snapshot congelado, não do cart, que a linha abaixo já zerou.
         // Sem await: a venda terminou, e a tela não espera o spooler.
-        if (receipt.payments.some((tender) => tender.method === "cash") && drawer.opensOnCashSale.value) {
+        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
+        if (cashLandedInDrawer(receipt.payments) && drawer.opensOnCashSale.value) {
           void drawer.kick("cash_sale");
         }
         resetCart();
@@ -1857,6 +1877,7 @@ export function usePosSale(deps: PosSaleDeps) {
     moveDialogOpen,
     movePreparing,
     review,
+    reviewFailed,
     customerLookup,
     tabDialogOpen,
     tabDialogReason,
@@ -1928,7 +1949,6 @@ export function usePosSale(deps: PosSaleDeps) {
     restoreItem,
     setLineNotes,
     setLineDiscount,
-    setLinePrice,
     sanitizeTabRef,
     requestTabAssociation,
     openTab,

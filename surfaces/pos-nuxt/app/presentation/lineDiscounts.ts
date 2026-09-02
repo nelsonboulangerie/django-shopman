@@ -24,32 +24,62 @@ export function pricingDiscountBadge(item: POSCartItem): string {
  *  `description`, e exigir o campo forçaria inventar um vazio só para o tipo. */
 export type DiscountReasonOption = { ref: string; label?: string };
 
-/** Rótulo do desconto MANUAL da linha: "Cortesia −10%". "" quando não há. */
+/** Rótulo do desconto MANUAL da linha: "Cortesia −10%" ou "Cortesia −R$ 2,00".
+ *  "" quando não há. O formato do rótulo segue o formato que o operador digitou;
+ *  traduzir um para o outro esconderia o gesto que ele fez. */
 export function manualDiscountLabel(
   item: POSCartItem,
   reasons: readonly DiscountReasonOption[],
 ): string {
-  const pct = item.discount?.value || 0;
-  if (pct <= 0) return "";
+  const value = item.discount?.value || 0;
+  if (value <= 0) return "";
   const reasonRef = item.discount?.reason || "";
   const label = reasons.find((option) => option.ref === reasonRef)?.label || reasonRef || "Desconto";
-  return `${label} −${pct}%`;
+  const amount = item.discount?.type === "fixed" ? formatBRL(Math.round(value * 100)) : `${value}%`;
+  return `${label} −${amount}`;
+}
+
+/** Quanto o desconto MANUAL desta linha tira por unidade, em centavos.
+ *
+ *  A mesma conta do kernel (`DiscountModifier._calc_manual`) e da review
+ *  (`_payload_line_discounts_q`): percentual sobre a ETIQUETA, ou o valor em
+ *  reais direto — e nunca mais do que a etiqueta inteira.
+ */
+export function manualDiscountPerUnitQ(item: POSCartItem): number {
+  const value = item.discount?.value || 0;
+  if (value <= 0) return 0;
+  const listQ = typeof item.list_price_q === "number" ? item.list_price_q : unitChargedQ(item);
+  const asked = item.discount?.type === "fixed"
+    ? Math.round(value * 100)
+    : Math.round((listQ * value) / 100);
+  return Math.min(asked, listQ);
 }
 
 /** O desconto manual desta linha foi DESCARTADO pelo servidor?
  *
  *  A política é "maior desconto ganha, um por item": uma cortesia de 10% numa
- *  linha que já levou "Semana do Pão −15%" não vale. Quem decide é o carimbo do
- *  servidor — `pricing_discount` só existe quando um desconto AUTOMÁTICO venceu
- *  a linha (o tipo "manual" fica fora daquele conjunto). Logo, automático
- *  presente + manual pedido ⇒ o manual perdeu.
+ *  linha que já levou "Semana do Pão −15%" não vale.
+ *
+ *  ⚠️ Isto era um CHUTE — "tem automático carimbado e o operador pediu manual,
+ *  logo o manual perdeu". A heurística acertava por acidente enquanto o manual
+ *  só existia em percentuais pequenos, e passou a errar assim que ele aceitou
+ *  reais: R$ 2,50 numa Tabatière que levava "Semana do Pão −15%" (R$ 0,90)
+ *  GANHA, e o operador ouvia que o desconto dele não valeu. Agora os dois lados
+ *  são medidos, com a régua do kernel.
  *
  *  Isto NÃO vira selo na linha: a linha mostra só o vencedor. Vira o aviso do
  *  MOMENTO em que o operador pede o desconto — feedback onde a ação acontece,
  *  em vez de um selo riscado morando ali para sempre.
  */
 export function manualDiscountWasOverridden(item: POSCartItem): boolean {
-  return Boolean(item.discount?.value && item.pricing_discount?.label);
+  const autoPerUnitQ = item.pricing_discount?.label ? lineListUnitQ(item) - unitChargedQ(item) : 0;
+  if (autoPerUnitQ <= 0) return false;
+  return manualDiscountPerUnitQ(item) <= autoPerUnitQ;
+}
+
+/** A etiqueta por UNIDADE. Cai no cobrado quando o servidor não disse. */
+function lineListUnitQ(item: POSCartItem): number {
+  return typeof item.list_price_q === "number" ? item.list_price_q : unitChargedQ(item);
 }
 
 /** O rótulo do desconto que VENCEU a linha, para o aviso. "" quando não há. */

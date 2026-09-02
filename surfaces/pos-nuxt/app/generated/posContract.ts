@@ -4,7 +4,7 @@
 
 export const POS_SALE_INTENT_VERSION = "pos.sale-intent.v1";
 
-export const POS_PAYMENT_METHODS = ["account", "card", "cash", "external", "mixed", "pix"] as const;
+export const POS_PAYMENT_METHODS = ["account", "card", "cash", "credit", "debit", "external", "link", "mixed", "pix"] as const;
 export type PosPaymentMethod = (typeof POS_PAYMENT_METHODS)[number];
 
 export const POS_PAYMENT_COLLECTIONS = ["on_delivery", "terminal"] as const;

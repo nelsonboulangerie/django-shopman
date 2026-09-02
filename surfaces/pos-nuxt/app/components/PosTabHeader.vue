@@ -34,6 +34,10 @@ const props = defineProps<{
   /** O horário escolhido virou impossível (item lançado depois da escolha). */
   scheduleConflict?: boolean;
   scheduleConflictReason?: string;
+  /** A encomenda exige um cliente e ainda não há nenhum. O chip PULSA em vez de
+   *  a tela abrir mais um aviso: o lugar de identificar o cliente já está na
+   *  barra, visível o tempo todo — o que faltava era ele CHAMAR. */
+  customerRequired?: boolean;
   loading: boolean;
 }>();
 
@@ -134,17 +138,44 @@ function runClear() {
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
     <h1 v-else class="truncate text-lg font-semibold leading-tight tracking-tight">Venda rápida</h1>
 
-    <!-- customer chip -->
+    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
+         aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
+         onde se aprende, não onde se lembra. No balcão quem ensina é a tela: a
+         tecla ao lado do botão é o que faz a mão largar o mouse.
+
+         `aria-hidden` nos três: quem usa leitor de tela navega por foco, e o
+         nome acessível do botão não deve virar "Identificar cliente F6". -->
+
+    <!-- customer chip — e, na encomenda anônima, o CHAMADO.
+         O checkout tinha um cartaz dizendo "identifique o cliente" a 400px de
+         distância do único botão que faz isso. Dois lugares para uma pendência:
+         um que fala e outro que resolve. Agora quem fala é o próprio botão —
+         ele pulsa, ganha a cor do alerta e diz o porquê no `title`.
+         `motion-safe:` porque pulso é enfeite para quem pediu para a tela parar
+         de se mexer; a cor e a borda seguram o recado sozinhas. -->
     <button
       ref="customerChipRef"
+      data-context-entry="customer"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="customerRequired
+        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
+        : 'border-border'"
       aria-haspopup="dialog"
+      :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
       @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
-      <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
+        class="size-4 shrink-0"
+        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+      />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
-      <span v-else class="shrink-0 text-muted-foreground">Identificar cliente</span>
+      <span v-else class="shrink-0" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F6</kbd>
     </button>
 
     <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
@@ -161,6 +192,10 @@ function runClear() {
     >
       <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
       <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F7</kbd>
     </button>
 
     <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
@@ -184,6 +219,10 @@ function runClear() {
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
       <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F8</kbd>
     </button>
 
     <!-- release tab (pushed to the right of the context bar) -->

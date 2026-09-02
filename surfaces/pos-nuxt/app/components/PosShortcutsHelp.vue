@@ -5,6 +5,11 @@
 defineProps<{ open: boolean }>();
 defineEmits<{ "update:open": [boolean] }>();
 
+// O DICIONÁRIO É O CONTRATO das teclas — se uma tecla existe e não está aqui,
+// ela não existe para o operador. Os grupos seguem o fluxo da venda, e dentro do
+// primeiro as teclas seguem a ordem da TELA: navegação (F2–F4), depois os três
+// fatos do pedido (F6–F8), que são os três chips da barra do topo na mesma
+// ordem em que aparecem — quem compra, como recebe, quando quer.
 const groups: Array<{ title: string; items: Array<{ keys: string[]; label: string }> }> = [
   {
     title: "Em toda a venda",
@@ -13,26 +18,30 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
       { keys: ["F3", "/"], label: "Buscar produto" },
       { keys: ["F4"], label: "Abrir o pagamento / atualizar a revisão" },
       { keys: ["F6"], label: "Cliente (buscar, criar, associar)" },
-      { keys: ["Esc"], label: "Voltar (sai do pagamento; fecha diálogos)" },
+      { keys: ["F7"], label: "Recebimento (retirada ou entrega)" },
+      { keys: ["F8"], label: "Quando (hoje ou outra data)" },
+      { keys: ["Esc"], label: "Sair do campo; depois, voltar (sai do pagamento; fecha diálogos)" },
       { keys: ["?"], label: "Esta ajuda" },
     ],
   },
   {
     title: "Na comanda",
     items: [
-      { keys: ["0–9"], label: "Quantidade, desconto ou preço da linha ativa" },
+      { keys: ["0–9"], label: "Quantidade ou desconto da linha ativa" },
       { keys: ["Backspace"], label: "Apagar no teclado da linha" },
+      { keys: ["F9"], label: "Enviar à cozinha" },
+      { keys: ["F10"], label: "Transferir itens para outra comanda" },
     ],
   },
   {
     title: "No pagamento",
     items: [
       { keys: ["0–9", ","], label: "Valor da forma selecionada (vírgula = centavos)" },
-      { keys: ["D", "P", "C"], label: "Lançar a forma pela inicial (Dinheiro, Pix, Cartão)" },
+      { keys: ["R", "P", "C", "D", "L"], label: "Lançar a forma: Reais (dinheiro), Pix, Crédito, Débito, Link" },
       { keys: ["="], label: "Exato: a forma selecionada assume o restante" },
-      { keys: ["F7"], label: "Recebimento (retirada ou entrega)" },
-      { keys: ["F8"], label: "Desconto" },
-      { keys: ["F9"], label: "CPF na nota (liga/desliga)" },
+      { keys: ["F9"], label: "Desconto na venda" },
+      { keys: ["F10"], label: "CPF na nota (liga/desliga)" },
+      { keys: ["I", "M"], label: "Nota Impressa / por e-Mail (liga/desliga)" },
       { keys: ["Backspace"], label: "Apagar um dígito do valor (Limpar, na tela, zera a linha)" },
       { keys: ["Enter"], label: "Validar a venda (com o total coberto)" },
     ],

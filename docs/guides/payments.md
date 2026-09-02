@@ -20,6 +20,31 @@ pagamento um dono só e deixa a reconciliação financeira enxergar dinheiro.
 |--------|---------|---------------------|-----------|---------|
 | `pix` | Efí (ou mock) | `create_intent` pending → webhook autoriza/captura | `payment.initiate` (loja online, WhatsApp, PDV) | adapter → `PaymentService.refund` |
 | `card` | Stripe Checkout (ou mock) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
+| `credit` / `debit` | **nenhum** — maquininha física do balcão | nasce e captura no mesmo gesto (`settle`, `gateway=""`) | `PaymentService.settle` | reembolso manual, fora do sistema |
+| `link` | `SHOPMAN_LINK_ADAPTER` (default = o do cartão) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
+
+### O balcão não fala com gateway — e o TEF não vai mudar isso
+
+`credit` e `debit` são o **gesto de balcão**: a maquininha é física, o cartão é
+passado fora do sistema e o operador atesta o que aconteceu. Eles vivem em
+`PaymentIntent.METHODS_WITHOUT_GATEWAY` e **não têm entrada** em
+`SHOPMAN_PAYMENT_ADAPTERS` — a ausência é a configuração.
+
+Quando o **TEF da Stone** entrar (WP próprio), o que muda é só a ORIGEM DA PROVA:
+a captura deixa de ser atestada pelo operador e passa a vir do terminal, com NSU
+e autorização. O `ref` da forma não muda, a tela não muda, o fechamento do dia
+não muda. O ponto de entrada é a captura do intent (`PaymentService.settle` com
+`gateway_data`) — **não** `payment.initiate`, que é a porta do gateway remoto.
+
+⚠️ Forma de balcão que sai de `METHODS_WITHOUT_GATEWAY` abre um **buraco
+silencioso de receita**: o `PaymentService` pula o intent, a venda commita, o
+cashman grava a linha e o dinheiro some do Payman, do fechamento e do B.I., sem
+erro nem alerta. Guardado por
+`test_pos_cash_ledger.py::test_venda_so_em_cartao_do_balcao_liquida_sem_gateway`.
+
+`link` é o oposto: pedido remoto anotado no balcão, sem maquininha e **com**
+gateway. Qual provedor o atende (Stone ou Stripe) é decisão de WP distinto —
+trocar é trocar `SHOPMAN_LINK_ADAPTER`, não o código.
 | `cash` | nenhum (`gateway=""`) | **capturado no ato** via `PaymentService.settle`, quando a coleta é no terminal (`Order.data.payment.collection == "terminal"`, PDV) e depois do total selado | `payment.initiate`, chamado por `close_sale` do PDV | `PaymentService.refund` direto (sem adapter), no cancel/devolução |
 | `external` | nenhum (`gateway=""`) | idem `cash` (maquininha avulsa recebida no terminal) | idem | idem |
 | `account` | nenhum (`gateway=""`) | **autorizado** na venda (= deve; `PaymentService.charge_to_account`, `gateway_data.customer_ref`) e **capturado** no acerto (= pagou; `capture(gateway_data={settled_with, settled_by})`), FIFO por venda inteira | PDV, só para cliente com `Customer.metadata.house_account` (`shop/services/house_account`) | cancel da venda → `PaymentService.cancel` (a dívida morre; nada a estornar). Saldo devedor = `account_balance_q` (Σ autorizados; derivado, nunca tabela) |
@@ -44,7 +69,7 @@ Representa uma intenção de pagamento vinculada a um pedido.
 |-------|------|-----------|
 | `ref` | str | Identificador único (auto: `PAY-XXXXXXXXXXXX`) |
 | `order_ref` | str | Referência do pedido (string, sem FK) |
-| `method` | str | `pix`, `card`, `cash`, `external` |
+| `method` | str | `pix`, `cash`, `credit`, `debit`, `card`, `external` |
 | `status` | str | Estado atual do pagamento |
 | `amount_q` | int | Valor em centavos |
 | `currency` | str | ISO 4217 (default: `BRL`) |

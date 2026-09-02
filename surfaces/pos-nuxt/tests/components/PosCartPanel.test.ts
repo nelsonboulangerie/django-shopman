@@ -215,13 +215,19 @@ describe("PosCartPanel — a linha do carrinho", () => {
     expect(wrapper.findAll("strong").map((el) => el.text())).toContain(formatBRL(500));
   });
 
-  it("preço alterado à mão continua se anunciando mesmo com uma unidade", async () => {
-    // O "cada" some por redundância, não por censura: com o preço sobrescrito
-    // pelo operador, o unitário é justamente o que precisa ser visto.
+  it("o teclado oferece desconto em % e em R$ — e nenhum PREÇO à mão", async () => {
+    // O terceiro modo era "Preço": o operador digitava o preço unitário. Ele
+    // saiu inteiro — não passava pela régua do desconto (limite da loja, motivo,
+    // "maior desconto ganha"), tinha portão de gerente próprio e ainda
+    // CONGELAVA a linha contra reprecificação. Ficou o mesmo mecanismo em dois
+    // formatos.
     const wrapper = await mountSuspended(PosCartPanel, {
-      props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1, price_overridden: true })] }),
+      props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })] }),
     });
-    expect(wrapper.text()).toContain(`${formatBRL(500)} cada`);
+    const modos = wrapper.findAll("button").map((b) => b.text());
+    expect(modos).toContain("Desc %");
+    expect(modos).toContain("Desc R$");
+    expect(modos).not.toContain("Preço");
   });
 
   it("o nome do produto não divide a linha com os botões — ele tem a faixa de cima inteira", async () => {

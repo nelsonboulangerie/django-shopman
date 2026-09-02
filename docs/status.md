@@ -89,7 +89,6 @@ originou 16 PRs mergeados no mesmo dia (#53–#69), incluindo:
 - dialeto de erro uniforme `{detail, field, errors}` (PR #60);
 - directives: observabilidade, dedupe como garantia, durabilidade de fase (PR #62);
 - lifecycle/SSE/pagamento: `on_commit`, PIX suficiente, SameSite, IP real (PR #57);
-- POS: `price_overridden` derivado do preço canônico no servidor (PR #56);
 - sweep tz-aware `date.today()`/`now().date()` → `timezone.localdate()` (PR #55);
 - suíte hermética ao env do dev + cobertura do `maintenance_worker` (PR #59);
 - surfaces: typecheck total + Surfaces Gate no CI (PRs #61, #63);

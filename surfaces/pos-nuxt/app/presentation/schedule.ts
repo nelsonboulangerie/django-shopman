@@ -127,6 +127,31 @@ export function scheduleChipTone(
  * promessa quebrada (a mesma calibração que o servidor faz em
  * `fulfillment_window.validate`).
  */
+/**
+ * A ENCOMENDA EXIGE CLIENTE — e o servidor aceita QUALQUER UM dos três
+ * identificadores (`customer_ref`, `customer_phone`, `customer_name`;
+ * `pos._payload_identifies_customer`). A tela olhava só nome e telefone, e o
+ * cadastro só-com-CPF existe: com ele o `customer_ref` viajava, o servidor
+ * aceitava, e a tela travava o Validar com o cliente fixado no cabeçalho.
+ * Régua de tela mais apertada que a do servidor é bloqueio falso.
+ *
+ * A regra mora aqui porque dois lugares perguntam a mesma coisa — o chip que
+ * PULSA na barra do topo e o bloqueio do Validar no checkout — e uma regra
+ * escrita duas vezes deixa de ser uma regra.
+ */
+export function scheduledNeedsCustomer(input: {
+  deliveryDate: string;
+  today: string;
+  customerName: string;
+  customerPhone: string;
+  customerRef: string;
+}): boolean {
+  return isScheduled(input.deliveryDate, input.today)
+    && !input.customerName.trim()
+    && !input.customerPhone.trim()
+    && !input.customerRef.trim();
+}
+
 export function selectedWindowConflict(
   windows: ScheduleWindow[],
   ref: string,

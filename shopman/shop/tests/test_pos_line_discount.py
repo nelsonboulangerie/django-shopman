@@ -13,10 +13,7 @@ import pytest
 from shopman.backstage.projections import pos as pos_projection
 from shopman.shop.modifiers import DiscountModifier
 from shopman.shop.services import pos as pos_service
-from shopman.shop.services.pos_intent import (
-    PosIntentError,
-    parse_pos_sale_intent,
-)
+from shopman.shop.services.pos_intent import parse_pos_sale_intent
 
 
 class TestCalcManual:
@@ -119,215 +116,29 @@ class TestManagerApprovalGate:
         pos_service.validate_manager_approval(payload, operator_username="op")
 
 
-class TestPriceOverrideIntentAndOps:
-    """Operator unit-price override (numpad "Preço"): flag survives parsing, is
-    stamped into line meta (so the modifier freezes it), and gates manager PIN."""
-
-    def test_flag_survives_parsing(self) -> None:
-        intent = parse_pos_sale_intent(
-            {"items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}]},
-            for_commit=True,
-        )
-        assert intent.payload["items"][0]["price_overridden"] is True
-
-    def test_absent_flag_not_added(self) -> None:
-        intent = parse_pos_sale_intent(
-            {"items": [{"sku": "X", "qty": 1, "unit_price_q": 1300}]},
-            for_commit=True,
-        )
-        assert "price_overridden" not in intent.payload["items"][0]
-
-    def test_payload_helper_detects_override(self) -> None:
-        payload = {"items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}]}
-        assert pos_service._payload_has_price_override(payload) is True
-        plain = {"items": [{"sku": "X", "qty": 1, "unit_price_q": 1300}]}
-        assert pos_service._payload_has_price_override(plain) is False
-
-    @pytest.mark.django_db
-    def test_build_session_ops_stamps_override_meta(self) -> None:
-        payload = {
-            "items": [{"sku": "X", "name": "Item", "qty": 1, "unit_price_q": 500,
-                       "price_overridden": True}],
-        }
-        ops = pos_service.build_session_ops(payload, operator_username="op", approved_by="gerente")
-        add_line = next(op for op in ops if op["op"] == "add_line" and op["sku"] == "X")
-        assert add_line["unit_price_q"] == 500
-        assert add_line["meta"]["price_overridden"] is True
-        assert add_line["meta"]["price_approved_by"] == "gerente"
-
-    @pytest.mark.django_db
-    def test_override_requires_manager_pin(self) -> None:
-        payload = {"items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}]}
-        with pytest.raises(PosIntentError) as exc:
-            pos_service.validate_manager_approval(payload, operator_username="op")
-        assert exc.value.code == "manager_approval_required"
-        # ⚠️ A copy do DESCONTO sobrevive à delegação. O desafio é o mesmo do caixa, mas
-        # o que o operador pode fazer a respeito não é: aqui ele também pode reduzir o
-        # desconto. Sem este assert, delegar apagaria a saída sem ninguém notar.
-        assert "finalizar" in exc.value.recovery
-        assert "venda" in exc.value.message
-
-    @pytest.mark.django_db
-    def test_override_passes_with_valid_manager_pin(self, monkeypatch) -> None:
-        # O dublê registra COM QUEM o desafio foi feito. Antes ele era
-        # ``lambda u, p``, e por isso a suíte não notou que quem opera não
-        # chegava ao verificador: sem o operador, o gerente que também é caixa
-        # se autorizava.
-        seen: dict = {}
-
-        def _fake(username, pin, *, operator_username=""):
-            seen.update(username=username, pin=pin, operator_username=operator_username)
-            # Um User, não um `object()`: o validador DEVOLVE quem assinou, e é esse
-            # nome que vai para a linha. Dublê sem `get_username` esconderia isso.
-            return SimpleNamespace(get_username=lambda: username)
-
-        monkeypatch.setattr(pos_service, "_verify_manager_pin", _fake)
-        payload = {
-            "items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}],
-            "manager_approval": {"username": "gerente", "pin": "1234"},
-        }
-        aprovador = pos_service.validate_manager_approval(payload, operator_username="op")
-        assert seen == {"username": "gerente", "pin": "1234", "operator_username": "op"}
-        assert aprovador.get_username() == "gerente"
-
-    @pytest.mark.django_db
-    def test_o_cracha_tambem_libera_o_desconto(self, monkeypatch) -> None:
-        """⚠️ O crachá morria na porta do desconto.
-
-        O override de caixa aceita crachá OU usuário+PIN; o validador de desconto
-        aceitava só usuário+PIN, e o parser do intent nem copiava o crachá. O gerente
-        com o crachá no pescoço autorizava uma sangria encostando o crachá e tinha de
-        digitar usuário e PIN para liberar um desconto — e atrito é o que faz o time
-        deixar de chamar o gerente.
-        """
-        monkeypatch.setattr(
-            pos_service,
-            "_verify_manager_badge",
-            lambda badge, *, operator_username="": SimpleNamespace(get_username=lambda: "gerente"),
-        )
-        payload = {
-            "items": [{"sku": "X", "qty": 1, "unit_price_q": 500, "price_overridden": True}],
-            "manager_approval": {"username": "", "pin": "", "badge": "CRACHA-9"},
-        }
-        aprovador = pos_service.validate_manager_approval(payload, operator_username="op")
-        assert aprovador.get_username() == "gerente"
-
-
 @pytest.mark.django_db
-class TestServerSidePriceAuthority:
-    """The price-trust gate stamps ``price_overridden`` for the one manual action
-    that both freezes a line and needs a manager PIN: the operator fixing a unit
-    price by hand off the catalog anchor. It is derived server-side (client intent
-    plus an off-catalog price), never taken raw.
-
-    An automatic system discount (happy-hour/promotion) baked into the reloaded
-    ``unit_price_q`` is NOT a false override (the seed bug B1-2); a crafted low price
-    without the operator intent is repriced by the ``internal`` pricing modifier on
-    commit, so it needs no gate here; a genuine hand-fixed price still fires it.
-    """
-
-    def _channel(self):
-        from shopman.shop.models import Channel
-
-        return Channel.objects.create(ref="pdv", name="Balcão", is_active=True)
-
-    def _product(self, sku="BAGUETE", base_price_q=1300):
-        from shopman.offerman.models import Product
-
-        return Product.objects.create(
-            sku=sku, name=sku, base_price_q=base_price_q,
-            is_published=True, is_sellable=True,
-        )
-
-    def test_operator_override_below_catalog_requires_manager(self) -> None:
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        # Operator hand-fixed the price below catalog (numpad "Preço"): the client
-        # sends the override intent. This freezes the line and needs a manager PIN.
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 100,
-                              "price_overridden": True}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is True
-        with pytest.raises(PosIntentError) as exc:
-            pos_service.validate_manager_approval(payload, operator_username="op")
-        assert exc.value.code == "manager_approval_required"
-
-    def test_low_price_without_override_intent_is_not_gated(self) -> None:
-        # A crafted request that lowers a price WITHOUT the operator intent flag is
-        # not flagged here: it never freezes, so the internal pricing modifier
-        # reprices it back to catalog on commit — it cannot undercharge, so the gate
-        # would be pure friction. (Contrast the flagged case above.)
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 100}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
-        # No friction: gate does not fire.
-        pos_service.validate_manager_approval(payload, operator_username="op")
-
-    def test_catalog_price_is_not_an_override(self) -> None:
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        payload = {"items": [{"sku": "BAGUETE", "qty": 2, "unit_price_q": 1300}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
-        # No friction: gate does not fire for a plain catalog sale.
-        pos_service.validate_manager_approval(payload, operator_username="op")
-
-    def test_baked_promotion_price_is_not_an_override(self) -> None:
-        # THE SEED BUG (B1-2), promotion arm: an active promotion baked the
-        # discounted price into unit_price_q (1000 < 1300 catalog); reloaded with no
-        # override intent. A cart with an item on promotion must not demand a manager.
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1000}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
-        pos_service.validate_manager_approval(payload, operator_username="op")
-
-    def test_client_flag_is_ignored_when_price_matches_catalog(self) -> None:
-        # A stray override flag must not create a false gate when the price is legit:
-        # a hand-fixed price that equals the catalog anchor is a no-op, not a markdown.
-        channel = self._channel()
-        self._product(base_price_q=1300)
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1300,
-                              "price_overridden": True}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
-
-    def test_unknown_sku_without_catalog_anchor_is_an_override(self) -> None:
-        # No catalog price to charge against → conservative: needs manager sign-off,
-        # regardless of intent (the internal modifier cannot reprice it either).
-        channel = self._channel()
-        payload = {"items": [{"sku": "GHOST", "qty": 1, "unit_price_q": 100}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is True
-
-    def test_listing_price_is_the_anchor_over_base(self) -> None:
-        # When a POS ListingItem exists, its price is the canonical anchor; a
-        # hand-fixed line at the base price (below the listing price) is an override.
-        from shopman.offerman.models import Listing, ListingItem
-
-        channel = self._channel()
-        product = self._product(base_price_q=1200)
-        listing = Listing.objects.create(ref="pdv", name="PDV", is_active=True)
-        ListingItem.objects.create(
-            listing=listing, product=product, price_q=1500,
-            is_published=True, is_sellable=True,
-        )
-        payload = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1500}]}
-        pos_service.derive_price_overrides(payload, channel=channel)
-        assert payload["items"][0]["price_overridden"] is False
-        below = {"items": [{"sku": "BAGUETE", "qty": 1, "unit_price_q": 1200,
-                            "price_overridden": True}]}
-        pos_service.derive_price_overrides(below, channel=channel)
-        assert below["items"][0]["price_overridden"] is True
-
-
 class TestTabPayloadRestore:
     def test_line_discount_surfaced_for_restore(self) -> None:
         item = {"sku": "X", "meta": {"manual_discount": {"value": 10, "reason": "cortesia"}}}
-        assert pos_projection._tab_payload_line_discount(item) == {"value": 10, "reason": "cortesia"}
+        assert pos_projection._tab_payload_line_discount(item) == {
+            "value": 10,
+            "reason": "cortesia",
+            "type": "percent",
+        }
+
+    def test_restore_devolve_o_formato_em_reais(self) -> None:
+        # Sem o `type` de volta, uma comanda salva com R$ 2,00 de cortesia voltava
+        # do banco como 2% — o campo estava gravado, e era a projection que o
+        # deixava para trás.
+        item = {
+            "sku": "X",
+            "meta": {"manual_discount": {"value": 2.0, "reason": "qualidade", "type": "fixed"}},
+        }
+        assert pos_projection._tab_payload_line_discount(item) == {
+            "value": 2.0,
+            "reason": "qualidade",
+            "type": "fixed",
+        }
 
     def test_no_discount_returns_none(self) -> None:
         assert pos_projection._tab_payload_line_discount({"sku": "X", "meta": {}}) is None
@@ -358,8 +169,6 @@ class TestTabPayloadRestore:
         # The surviving source: session.pricing["discount"]["items"]. Only manual
         # records with an original price map; promotion/coupon records are ignored
         # (their baked price is repriced on commit, not restored here).
-        from types import SimpleNamespace
-
         session = SimpleNamespace(pricing={"discount": {"items": [
             {"sku": "X", "type": "manual", "original_price_q": 1300, "discount_q": 1170, "qty": 1},
             {"sku": "Y", "type": "promotion", "original_price_q": 900, "discount_q": 90, "qty": 1},
@@ -368,6 +177,4 @@ class TestTabPayloadRestore:
         assert pos_projection._manual_discount_originals(session) == {"X": 1300}
 
     def test_manual_originals_map_empty_without_pricing(self) -> None:
-        from types import SimpleNamespace
-
         assert pos_projection._manual_discount_originals(SimpleNamespace(pricing=None)) == {}

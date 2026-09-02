@@ -1341,8 +1341,22 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "ORDER_STATUS_RETURNED": {WILDCARD: {WILDCARD: CopyEntry(title="Devolvido")}},
 
     # ── Payment method labels (checkout, POS, operator queue) ─────────────
+    #
+    # ⚠️ Chave que não existe aqui não vira rótulo: `build_copy` só monta o
+    # catálogo com as chaves declaradas, e `title(key, fallback)` devolve o
+    # FALLBACK — que é o próprio ref. Sem estas duas linhas, o balcão leria
+    # "credit" e "debit" na tela, em inglês e em minúsculas.
     "PAYMENT_METHOD_PIX": {WILDCARD: {WILDCARD: CopyEntry(title="Pix")}},
+    #: Cartão sem distinção — a loja online, onde o gateway sabe a bandeira e o
+    #: cliente não precisa saber. É também o rótulo do histórico.
     "PAYMENT_METHOD_CARD": {WILDCARD: {WILDCARD: CopyEntry(title="Cartão")}},
+    #: No balcão a distinção existe: prazo e taxa da adquirente são outros, e é
+    #: isso que o fechamento do dia separa.
+    "PAYMENT_METHOD_CREDIT": {WILDCARD: {WILDCARD: CopyEntry(title="Crédito")}},
+    "PAYMENT_METHOD_DEBIT": {WILDCARD: {WILDCARD: CopyEntry(title="Débito")}},
+    #: O pedido remoto anotado no balcão: a cobrança vive numa URL que o cliente
+    #: abre depois. "Link" sozinho seria ambíguo numa tela cheia de links.
+    "PAYMENT_METHOD_LINK": {WILDCARD: {WILDCARD: CopyEntry(title="Link de pagamento")}},
     "PAYMENT_METHOD_CASH": {WILDCARD: {WILDCARD: CopyEntry(title="Dinheiro")}},
     "PAYMENT_METHOD_MIXED": {WILDCARD: {WILDCARD: CopyEntry(title="Pagamento misto")}},
     "PAYMENT_METHOD_EXTERNAL": {WILDCARD: {WILDCARD: CopyEntry(title="Pago online")}},

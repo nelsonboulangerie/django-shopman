@@ -38,6 +38,19 @@ from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 logger = logging.getLogger(__name__)
 
 
+#: Formas que passam por GATEWAY REMOTO: a cobrança nasce numa rede que não é a
+#: nossa, e a verdade volta por webhook. Fora daqui estão as formas do BALCÃO —
+#: dinheiro, crédito e débito na maquininha física —, onde o operador atesta o
+#: que aconteceu e não há webhook para esperar.
+_GATEWAY_METHODS = frozenset({"pix", "card", "link"})
+
+#: Das de gateway, as que vivem numa SESSÃO HOSPEDADA (Stripe Checkout): o
+#: cliente abre uma URL e paga lá. O Pix fica de fora — a prova dele é o QR, e a
+#: cobrança expira sozinha. São estas que têm `checkout_url` para mostrar e que a
+#: reconciliação tardia sabe reconsultar.
+_HOSTED_CHECKOUT_METHODS = frozenset({"card", "link"})
+
+
 def settles_without_gateway(method: str | None) -> bool:
     """True para os métodos que liquidam sem gateway (dinheiro, cobrança externa).
 
@@ -189,8 +202,8 @@ def _persist_intent(
         )
         if intent.expires_at:
             result["expires_at"] = intent.expires_at.isoformat()
-    elif method == "card":
-        # Stripe Checkout (hosted): redirect URL the client clicks to pay.
+    elif method in _HOSTED_CHECKOUT_METHODS:
+        # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
         checkout_url = (intent.metadata or {}).get("checkout_url")
         if checkout_url:
             result["checkout_url"] = checkout_url
@@ -1042,7 +1055,9 @@ def settle_from_gateway(order) -> str:
     payment_data = (order.data or {}).get("payment") or {}
     method = str(payment_data.get("method") or "").lower()
     intent_ref = payment_data.get("intent_ref")
-    if method not in {"pix", "card"} or not intent_ref:
+    # Só o que passou por GATEWAY volta dele. Crédito e débito do balcão não têm
+    # webhook para conciliar: a maquininha é física e a prova é o papel dela.
+    if method not in _GATEWAY_METHODS or not intent_ref:
         return "unpaid"
 
     adapter = get_adapter("payment", method=method)
@@ -1243,7 +1258,7 @@ def reconcile_with_gateway_if_due(order) -> bool:
 
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method != "card" or not payment.get("intent_ref"):
+    if method not in _HOSTED_CHECKOUT_METHODS or not payment.get("intent_ref"):
         return False
     if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
         return False
@@ -1647,7 +1662,7 @@ def _adapter_config(order, *, method: str) -> dict:
                 "SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS",
                 10,
             )
-    if method == "card":
+    if method in _HOSTED_CHECKOUT_METHODS:
         stripe_config = getattr(settings, "SHOPMAN_STRIPE", {}) or {}
         capture_method = str(stripe_config.get("capture_method") or "manual").strip().lower()
         config["capture_method"] = capture_method if capture_method in {"automatic", "manual"} else "manual"

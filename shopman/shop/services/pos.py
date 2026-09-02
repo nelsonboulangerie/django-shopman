@@ -56,6 +56,7 @@ class PosSaleReview:
     intent_version: str
     tab_ref: str
     subtotal_q: int
+    #: O desconto manual TOTAL — é ele que leva o subtotal ao total.
     discount_q: int
     delivery_fee_q: int
     total_q: int
@@ -76,6 +77,19 @@ class PosSaleReview:
     # outro, e o gerente autorizava sem saber o que estava autorizando.
     approval_reasons: tuple[str, ...] = ()
     warnings: tuple[dict, ...] = ()
+    # OS DOIS ESCOPOS DO DESCONTO, separados.
+    #
+    # A tela lista os itens pelo preço COBRADO e mostrava, embaixo, um "Subtotal"
+    # que é a soma dos ``unit_price_q`` — PRÉ desconto manual de linha. Com uma
+    # cortesia por item, somar as linhas com o olho não dava o Subtotal: dava o
+    # Total. A aritmética fechava (subtotal − desconto + taxa = total), mas só
+    # para quem soubesse que o desconto ali dentro tinha duas origens.
+    #
+    # Publicados separados, o bloco de totais nomeia cada um e a diferença deixa
+    # de ser um vão sem explicação. `line_discount_q + order_discount_q ==
+    # discount_q`, sempre.
+    line_discount_q: int = 0
+    order_discount_q: int = 0
     # ENTREGA — o que a tela precisa para PERGUNTAR, em vez de pedir que o
     # operador invente. A taxa vem resolvida (ver `_resolve_delivery_fee`); os
     # horários são as janelas de meia hora que o expediente do dia comporta.
@@ -271,7 +285,6 @@ def close_sale(
     """Create and commit a POS sale from a parsed cart payload."""
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, config = _channel_and_config(channel_ref)
-    derive_price_overrides(payload, channel=channel)
     # A etiqueta que o KERNEL carimbou vale mais que a que o cliente mandou, e o
     # GATE precisa dela tanto quanto a review: sem carimbo, ``_payload_discount_q``
     # media o desconto de linha contra o preco JA descontado. Duas consequencias,
@@ -291,6 +304,7 @@ def close_sale(
     _validate_fiscal_delivery_fee(payload)
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
+    _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
         payload,
@@ -570,7 +584,6 @@ def review_sale(
     """Validate a POS checkout intent without committing the Orderman session."""
     payload = parse_pos_sale_intent(payload, for_commit=True).payload
     channel, _config = _channel_and_config(channel_ref)
-    derive_price_overrides(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None and _payload_has_tab_identity(payload):
         raise ValueError("Abra um POS tab antes de finalizar.")
@@ -581,7 +594,9 @@ def review_sale(
     fulfillment_type = _payload_fulfillment_type(payload)
     payment_collection = _payload_payment_collection(payload, fulfillment_type)
     subtotal_q = _payload_subtotal_q(payload)
-    discount_q = _payload_discount_q(payload)
+    line_discount_q = _payload_line_discounts_q(payload)
+    order_discount_q = int(_payload_manual_discount(payload).get("discount_q", 0) or 0)
+    discount_q = order_discount_q + line_discount_q
     delivery = _resolve_delivery_fee(payload)
     delivery_fee_q = delivery.fee_q
     delivery_day, delivery_slots, delivery_earliest_slot = _schedule_review_context(payload)
@@ -678,7 +693,7 @@ def review_sale(
             "message": "Os pagamentos informados não cobrem o total da venda.",
         })
 
-    approval_reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
+    approval_reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
 
     # Aviso não-bloqueante de disponibilidade (Q1): no balcão a venda vale mesmo
     # sem estoque (a mercadoria já saiu da vitrine e o canal não auto-rejeita),
@@ -714,6 +729,8 @@ def review_sale(
         tab_ref=_session_tab_ref(session) if session is not None else "",
         subtotal_q=subtotal_q,
         discount_q=discount_q,
+        line_discount_q=line_discount_q,
+        order_discount_q=order_discount_q,
         delivery_fee_q=delivery_fee_q,
         total_q=total_q,
         payment_method=payment_method,
@@ -871,6 +888,39 @@ def _payload_identifies_customer(payload: dict) -> bool:
     )
 
 
+def _require_contact_if_payment_link(payload: dict) -> None:
+    """Link de pagamento exige cliente com CONTATO. Recusa ANTES do commit.
+
+    O link não é cobrança de balcão: é uma URL que alguém precisa RECEBER. Sem
+    telefone nem e-mail, a venda fecha aguardando um pagamento que ninguém vai
+    pedir — e a URL só volta pelo gestor. O pedido remoto sempre tem contato
+    (foi por ele que o pedido chegou); exigi-lo é escrever o que já é verdade.
+
+    O nome sozinho NÃO basta, e é essa a diferença para
+    ``_require_customer_if_scheduled``: lá o que se quer é saber DE QUEM é a
+    encomenda; aqui é ter PARA ONDE mandar.
+    """
+    if _payload_payment_method_set(payload) != {"link"}:
+        return
+    if any(str(payload.get(key) or "").strip() for key in ("customer_phone", "customer_email")):
+        return
+    raise PosIntentError(
+        code="link_requires_customer_contact",
+        message="O link precisa de um contato para ser enviado.",
+        field="customer_phone",
+        focus="customer",
+        recovery="Identifique o cliente com telefone ou e-mail.",
+    )
+
+
+def _payload_payment_method_set(payload: dict) -> set[str]:
+    """As formas que a venda usa — pelos tenders, ou pelo método do pedido."""
+    tenders = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
+    if tenders:
+        return {_normalize_payment_method(t.get("method")) for t in tenders}
+    return {_normalize_payment_method(payload.get("payment_method"))}
+
+
 def _require_customer_if_scheduled(payload: dict) -> None:
     """Encomenda para outro dia só com cliente identificado; recusa ANTES do commit.
 
@@ -978,7 +1028,6 @@ def save_pos_tab(
     """Save the current POS cart on its tab and return to the tab grid."""
     payload = parse_pos_sale_intent(payload, for_commit=False).payload
     channel, config = _channel_and_config(channel_ref)
-    derive_price_overrides(payload, channel=channel)
     session = _payload_open_tab_session(channel_ref=channel.ref, payload=payload)
     if session is None:
         raise ValueError("Abra um POS tab antes de deixar em espera.")
@@ -1594,15 +1643,6 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
         notes = str(item.get("notes", "") or "").strip()
         if notes:
             meta["notes"] = notes
-        if item.get("price_overridden"):
-            # Freeze the operator's unit price: the pricing modifier honors this
-            # flag and skips re-pricing. The flag is server-derived
-            # (``derive_price_overrides``) — an operator hand-fixed price off the
-            # catalog anchor, not an automatic promotion discount — so only a
-            # genuine override freezes. Stamp who approved (manager PIN gate).
-            meta["price_overridden"] = True
-            if approved_by:
-                meta["price_approved_by"] = approved_by
         line_discount = _normalize_line_discount(item.get("discount"))
         if line_discount:
             if approved_by:
@@ -1848,18 +1888,22 @@ def _verify_manager_badge(badge: str, *, operator_username: str = ""):
     return user
 
 
-def _approval_reasons(payload: dict, *, discount_q: int, threshold_q: int) -> list[str]:
+def _approval_reasons(*, discount_q: int, threshold_q: int) -> list[str]:
     """Os gatilhos que chamaram o gerente, na ordem em que a tela deve contá-los.
 
     Publicado na review para o diálogo de autorização dizer o que está sendo
     autorizado. Sem isto a tela só sabia QUE precisava de gerente, e a copy
     falava de desconto mesmo quando o gatilho era preço alterado.
+
+    ⚠️ Havia um segundo gatilho, ``price_override`` — o operador digitava o preço
+    unitário à mão. Ele saiu com o mecanismo: preço à mão não passava pela régua
+    do desconto (limite da loja, motivo, "maior desconto ganha"), tinha portão
+    próprio e não aparecia como desconto em lugar nenhum. Um desconto com dois
+    modelos concorrentes é um modelo só mal escrito.
     """
     reasons: list[str] = []
     if threshold_q > 0 and discount_q > threshold_q:
         reasons.append("discount_over_threshold")
-    if _payload_has_price_override(payload):
-        reasons.append("price_override")
     return reasons
 
 
@@ -1880,7 +1924,7 @@ def validate_manager_approval(payload: dict, *, operator_username: str):
     """
     threshold_q = discount_approval_threshold_q()
     discount_q = _payload_discount_q(payload)
-    reasons = _approval_reasons(payload, discount_q=discount_q, threshold_q=threshold_q)
+    reasons = _approval_reasons(discount_q=discount_q, threshold_q=threshold_q)
     if not reasons:
         return None
 
@@ -2074,7 +2118,13 @@ def _payload_discount_q(payload: dict) -> int:
 
 
 def _normalize_line_discount(raw) -> dict:
-    """Normalize an operator per-line discount (percent only) from the intent."""
+    """O desconto manual de LINHA vindo do intent: ``percent`` ou ``fixed``.
+
+    O tipo era ignorado e sobrescrito por ``"percent"`` literal — um desconto de
+    R$ 2,00 chegava aqui e virava 2%. Agora ele atravessa, com a mesma convenção
+    do desconto de pedido: ``value`` é percentual em ``percent`` e REAIS em
+    ``fixed``.
+    """
     if not isinstance(raw, dict):
         return {}
     try:
@@ -2083,8 +2133,11 @@ def _normalize_line_discount(raw) -> dict:
         return {}
     if value <= 0:
         return {}
+    kind = str(raw.get("type") or "percent").strip().lower()
+    if kind not in {"percent", "fixed"}:
+        kind = "percent"
     reason = str(raw.get("reason") or "cortesia").strip()[:120] or "cortesia"
-    return {"type": "percent", "value": value, "reason": reason}
+    return {"type": kind, "value": value, "reason": reason}
 
 
 def _stamp_list_prices_from_session(payload: dict, session) -> None:
@@ -2158,86 +2211,21 @@ def _payload_line_discounts_q(payload: dict) -> int:
         # etiqueta e preço cobrado são o mesmo número.
         list_price_q = _int_q(item.get("list_price_q")) or unit_price_q
         auto_per_unit = max(0, list_price_q - unit_price_q)
-        manual_per_unit = min(
-            int(round(list_price_q * line_discount["value"] / 100)),
-            list_price_q,
-        )
+        # ⚠️ A MESMA CONTA do kernel (``DiscountModifier._calc_manual``), e é por
+        # isso que ela é feita POR UNIDADE também no ``fixed``. Um centavo de
+        # diferença entre esta função e o kernel é troco a mais na mão do
+        # cliente com a gaveta contando outro número — foi o defeito do
+        # PDV-260826-V03 descrito acima.
+        if line_discount["type"] == "fixed":
+            manual_per_unit = min(int(round(line_discount["value"] * 100)), list_price_q)
+        else:
+            manual_per_unit = min(
+                int(round(list_price_q * line_discount["value"] / 100)),
+                list_price_q,
+            )
         gain_per_unit = max(0, manual_per_unit - auto_per_unit)
         total += min(gain_per_unit, unit_price_q) * max(0, qty)
     return total
-
-
-def _payload_has_price_override(payload: dict) -> bool:
-    """True if any line carries a unit-price override requiring manager approval.
-
-    Reads the ``price_overridden`` flag DERIVED server-side by
-    ``derive_price_overrides`` (a comparison of the declared ``unit_price_q``
-    against the canonical POS catalog price). The client's advisory flag is never
-    trusted here — derive first, then gate on the derivation."""
-    return any(item.get("price_overridden") for item in payload.get("items", []))
-
-
-def _canonical_pos_unit_price_q(sku: str, channel: Channel, qty: int) -> int | None:
-    """Resolve the catalog price the POS channel would charge for a line.
-
-    Mirrors the ``pricing.item`` modifier that reprices every non-frozen line on
-    commit: the same customer-agnostic, qty-aware cascade (customer tier is not
-    resolved at commit — POS ``ctx`` carries no customer — so employee pricing
-    stays a post-pricing modifier). This is the price a *legitimate* line already
-    carries in the payload, because happy-hour and employee discounts are
-    applied by later modifiers on commit, never baked into the quoted
-    ``unit_price_q``. Returns ``None`` when the SKU has no catalog anchor.
-    """
-    from shopman.shop.handlers.pricing import OffermanPricingBackend
-
-    try:
-        return OffermanPricingBackend().get_price(sku, channel, qty=max(1, int(qty)))
-    except Exception:
-        logger.debug("pos_canonical_price_lookup_failed sku=%s", sku, exc_info=True)
-        return None
-
-
-def derive_price_overrides(payload: dict, *, channel: Channel) -> None:
-    """Stamp ``price_overridden`` on lines the OPERATOR fixed off the catalog.
-
-    Server-side authority over the price-trust gate. ``price_overridden`` marks the
-    one manual action that both freezes a line (the pricing modifier honors it and
-    skips re-pricing — see ``build_session_ops``) and needs a manager PIN: the
-    operator fixing a unit price by hand (numpad "Preço") away from the catalog
-    anchor. It is DERIVED, never taken raw — stamped only when the client declared
-    that override intent AND the fixed price differs from the canonical POS catalog
-    price (or the SKU has no catalog anchor, so there is no trusted price to charge
-    against, and the line needs manager sign-off).
-
-    Why the intent gate, not a bare catalog comparison:
-
-    * Automatic system discounts (happy-hour, promotion) are NOT operator
-      overrides. They are applied by later modifiers on commit; a previous persist
-      bakes the discounted price into ``unit_price_q`` and the reload echoes it
-      back, so a plain catalog comparison read every promotion line as an
-      override and demanded a manager for a cart nobody discounted (the seed bug
-      B1-2). Those lines carry no override intent, so they no longer read as one.
-    * A crafted request that lowers a price WITHOUT the intent flag cannot
-      undercharge, so it needs no gate here: without the flag the line is never
-      frozen, and the ``internal`` pricing modifier (POS is always internal)
-      reprices it back to catalog − legitimate discounts on commit. The only
-      undercharge vector is a frozen override, and that is exactly what this catches
-      — a flagged line below (or above) the anchor still fires the manager gate.
-    """
-    for item in payload.get("items", []):
-        if _is_delivery_fee_item(item):
-            continue
-        operator_fixed_price = bool(item.get("price_overridden"))
-        try:
-            unit_price_q = int(item.get("unit_price_q", 0))
-            qty = int(item.get("qty", 1))
-        except (TypeError, ValueError):
-            item["price_overridden"] = True
-            continue
-        canonical_q = _canonical_pos_unit_price_q(str(item.get("sku") or ""), channel, qty)
-        item["price_overridden"] = canonical_q is None or (
-            operator_fixed_price and unit_price_q != canonical_q
-        )
 
 
 def _payload_manual_discount(payload: dict) -> dict:
@@ -2305,8 +2293,8 @@ class DeliveryFeeResolution:
 #: Onde a resolução fica guardada DENTRO do payload. O payload atravessa a
 #: review e o commit sendo lido várias vezes, e resolver de novo custaria
 #: consulta ao banco e — no pior caso — uma chamada de geocodificação por
-#: leitura. Mesma técnica do `derive_price_overrides`, que também escreve no
-#: payload em vez de devolver um segundo dado para alguém carregar.
+#: leitura. A técnica é escrever no próprio payload em vez de devolver um
+#: segundo dado para todo chamador carregar adiante.
 _DELIVERY_FEE_RESOLUTION_KEY = "_resolved_delivery_fee"
 
 
@@ -2545,6 +2533,24 @@ def _payload_tenders(
             if entry["collection"] == "terminal":
                 entry["received_at"] = timezone.now().isoformat()
             tenders.append(entry)
+        # ⚠️ O LINK COBRA A VENDA INTEIRA — e a recusa é aqui, não na tela.
+        #
+        # Buraco de receita, se passasse: numa venda MISTA o
+        # `settle_terminal_tenders` liquida toda forma de gateway com
+        # `asserted_at_terminal=True` — o link seria CAPTURADO como se o dinheiro
+        # tivesse entrado, e nenhuma URL seria gerada. A venda fecharia paga, o
+        # cliente nunca receberia link, e o dinheiro nunca chegaria.
+        #
+        # Só a venda sozinha passa por `initiate()`, que é quem cria a cobrança
+        # remota. Então: link é a venda inteira, ou não é link.
+        if len(tenders) > 1 and any(t["method"] == "link" for t in tenders):
+            raise PosIntentError(
+                code="link_requires_full_payment",
+                message="O link de pagamento cobra a venda inteira.",
+                field="payment_tenders",
+                focus="payment",
+                recovery="Remova as outras formas, ou troque o link por uma delas.",
+            )
         paid_q = sum(int(tender["amount_q"]) for tender in tenders)
         if require_complete and total_q > 0 and paid_q < total_q:
             raise PosIntentError(
@@ -2596,7 +2602,7 @@ def _legacy_payment_method(payload: dict, tenders: list[dict]) -> str:
 
 def _normalize_payment_method(value) -> str:
     method = str(value or "cash").strip().lower() or "cash"
-    if method in {"cash", "pix", "card", "external", "account", "mixed"}:
+    if method in {"cash", "pix", "card", "credit", "debit", "link", "external", "account", "mixed"}:
         return method
     return "external"
 
@@ -2711,7 +2717,14 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             _settle_after_shift_closed(order, shift=shift, operator=operator, resettle=False)
         return {}
 
-    gateway_only = method in {"pix", "card"}
+    # QUEM PRECISA DE GATEWAY. Pix sozinho gera cobrança remota; `card` (a forma
+    # indistinta, que o PDV não oferece mais mas o intent ainda aceita) abre uma
+    # sessão do Stripe. Crédito e débito NÃO entram: a maquininha do balcão é
+    # física, o cartão é passado fora do sistema e o operador atesta o que
+    # aconteceu — exatamente o caminho que o `card` já percorria dentro de uma
+    # venda mista. Quem os liquida é o ramo do terminal, logo abaixo, e eles
+    # chegam lá porque estão em `PaymentIntent.METHODS_WITHOUT_GATEWAY`.
+    gateway_only = method in {"pix", "card", "link"}
     payment_result: dict = {}
     if gateway_only:
         # Rede fora de transação: gateway primeiro, linha depois.
@@ -2984,10 +2997,21 @@ def _user_for_actor(actor: str):
     return get_user_model().objects.filter(username=username).first()
 
 
+#: As formas que TÊM o que mostrar ao operador depois da venda: as que passaram
+#: por gateway e voltaram com prova — QR e copia-e-cola do Pix, URL hospedada do
+#: cartão da loja e do LINK do pedido remoto. Dinheiro, crédito e débito não
+#: entram: a prova deles é o papel da maquininha.
+_METHODS_WITH_DISPLAY_PROOF = frozenset({"pix", "card", "link"})
+
+
 def _pos_payment_response(order: Order) -> dict:
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
-    if method not in {"pix", "card"}:
+    # ⚠️ `link` faltava aqui, e era o último degrau que matava o fluxo: o intent
+    # nascia, a URL era gravada no pedido — e esta função devolvia `{}`. O
+    # operador clicava em "Link de pagamento", a venda fechava, e a tela não
+    # tinha nada para ele copiar. O botão existia e o gesto não.
+    if method not in _METHODS_WITH_DISPLAY_PROOF:
         return {}
 
     response = {

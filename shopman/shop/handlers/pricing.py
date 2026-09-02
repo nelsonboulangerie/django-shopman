@@ -75,13 +75,14 @@ class ItemPricingModifier:
         for item in items:
             sku = item["sku"]
 
-            # Operator price override (numpad "Preço", manager-approved): honor the
-            # quoted unit_price_q verbatim — skip backend re-pricing, the same way
-            # move_lines freezes a moved line's price. The line_total is still
-            # recomputed below from the frozen unit price.
-            if (item.get("meta") or {}).get("price_overridden"):
-                pass
-            elif session.pricing_policy == "internal":
+            # ⚠️ Havia aqui um ramo que CONGELAVA a linha: com
+            # ``meta.price_overridden``, o preço digitado à mão pelo operador era
+            # honrado verbatim e o backend não reprecificava. O mecanismo saiu
+            # inteiro — preço à mão não passava pela régua do desconto (limite da
+            # loja, motivo, "maior desconto ganha") e tinha portão próprio. Sem
+            # ele, TODA linha volta a ser precificada pelo backend, que é o único
+            # lugar onde preço é política.
+            if session.pricing_policy == "internal":
                 # Always re-resolve price from backend
                 qty_val = int(item.get("qty", 1))
                 kwargs = {"qty": qty_val}

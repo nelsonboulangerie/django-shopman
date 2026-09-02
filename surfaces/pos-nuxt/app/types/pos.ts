@@ -470,7 +470,11 @@ export interface POSCartItem {
    *  por push (canal SSE `tabs`) — o selo da linha segue o ticket em vez de
    *  congelar no estado do minuto do disparo. */
   kitchen_status?: string;
-  discount?: { value: number; reason: string };
+  /** Desconto MANUAL desta linha. `value` é percentual em `percent` e REAIS em
+   *  `fixed` — a mesma convenção do desconto do pedido. O R$ é POR UNIDADE:
+   *  é assim que ele compete com o automático no "maior desconto ganha", que é
+   *  medido por unidade contra o preço de etiqueta. */
+  discount?: { value: number; reason: string; type?: "percent" | "fixed" };
   /** Desconto AUTOMÁTICO de pricing que venceu a linha (lote/liquidação, happy
    *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
    *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
@@ -482,9 +486,6 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
-  /** Operator overrode the unit price (numpad "Preço"): the kernel freezes it and
-   *  the server review requires manager approval. Survives persist→reload. */
-  price_overridden?: boolean;
 }
 
 export interface POSPaymentTenderDraft {
@@ -619,8 +620,15 @@ export interface POSSaleReviewProjection {
   tab_ref: string;
   subtotal_q: number;
   subtotal_display: string;
+  /** O desconto manual TOTAL — é ele que leva o subtotal ao total. */
   discount_q: number;
   discount_display: string;
+  /** Os dois escopos do desconto manual, somando `discount_q`: o que o operador
+   *  deu nas LINHAS (no carrinho) e o que deu na VENDA (no checkout). */
+  line_discount_q: number;
+  line_discount_display: string;
+  order_discount_q: number;
+  order_discount_display: string;
   delivery_fee_q: number;
   delivery_fee_display: string;
   total_q: number;

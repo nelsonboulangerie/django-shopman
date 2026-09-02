@@ -244,7 +244,7 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 // entrada não exige segunda assinatura (suprimento também não).
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
-const settleMethod = ref<"cash" | "pix" | "card" | "external">("cash");
+const settleMethod = ref<"cash" | "pix" | "credit" | "debit" | "external">("cash");
 const settleCustomer = computed(() => accountBalances.value.find((a) => a.customer_ref === settleCustomerRef.value) ?? null);
 function openSettle(customerRef: string, balanceQ: number) {
   settleCustomerRef.value = customerRef;
@@ -597,7 +597,8 @@ async function confirmClose() {
                         <select v-model="settleMethod" class="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Método do acerto">
                           <option value="cash">Dinheiro</option>
                           <option value="pix">Pix</option>
-                          <option value="card">Cartão</option>
+                          <option value="credit">Crédito</option>
+                          <option value="debit">Débito</option>
                           <option value="external">Outro</option>
                         </select>
                       </label>
