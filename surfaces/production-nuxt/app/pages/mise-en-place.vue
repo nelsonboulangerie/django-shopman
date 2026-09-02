@@ -327,7 +327,9 @@ function refreshAll() {
                       <p
                         class="flex items-center gap-1.5 text-xs text-muted-foreground"
                       >
-                        {{ line.sku }}
+                        <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir
+                             embaixo seria a mesma linha duas vezes. -->
+                        <span v-if="line.name !== line.sku">{{ line.sku }}</span>
                         <UiBadge
                           v-if="line.is_subrecipe"
                           variant="outline"
