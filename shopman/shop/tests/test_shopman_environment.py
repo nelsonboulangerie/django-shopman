@@ -27,6 +27,12 @@ _ANTIGOS_HINTS = (
 
 
 def _load_settings(monkeypatch, **env):
+    # ⚠️ O `.env` do dev não pode entrar nesta prova. `config/settings.py` chama
+    # `load_dotenv()` no topo, então re-executá-lo reinjeta do DISCO justamente
+    # as chaves que este teste acabou de apagar — num checkout com `.env`
+    # (`DJANGO_DEBUG=1`), o teste que afirma "produção falha fechado" passava a
+    # bootar em development e provava o contrário do que promete.
+    monkeypatch.setattr("dotenv.load_dotenv", lambda *a, **k: False)
     for name in (
         *_ANTIGOS_HINTS,
         "SHOPMAN_ENVIRONMENT",
