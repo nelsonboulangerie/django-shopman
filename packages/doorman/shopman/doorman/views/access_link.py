@@ -148,6 +148,18 @@ class AccessLinkCreateView(View):
                     # para o exchange avisar que a sacola não veio (omotenashi: nunca sumir com
                     # a sacola em silêncio). O login em si nunca falha por isso.
                     metadata["handoff_expired"] = True
+            elif not self._looks_like_plain_keyword(access_code):
+                # Veio ALGUMA COISA no lugar do código, e não é o "#menu" seco do login
+                # orgânico. Tratar isso como orgânico faz a sacola sumir CALADA — o cliente
+                # monta o pedido, entra, e o carrinho não está lá. Foi assim que um
+                # `Last Text Input` devolvendo URL de mídia do Instagram passou dias sem
+                # ninguém ver: identidade certa, login certo, sacola no chão.
+                logger.warning(
+                    "access_link.access_code_sem_codigo len=%d inicio=%r — a variável do "
+                    "ManyChat não está trazendo o texto da mensagem do WhatsApp",
+                    len(str(access_code)), str(access_code)[:40],
+                )
+                metadata["handoff_expired"] = True
 
         has_cart_context = bool(metadata.get("cart_session_key"))
 
@@ -185,6 +197,11 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _looks_like_plain_keyword(value: str) -> bool:
+        """O ``#menu`` seco (com ou sem pontuação) é login orgânico legítimo, não defeito."""
+        return len(str(value).strip()) <= 16
 
     @staticmethod
     def _unrendered_variables(data: dict, _prefix: str = "") -> list[str]:

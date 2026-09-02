@@ -115,3 +115,36 @@ def test_elo_6_start_sem_sacola(joyce):
         "access_code": f"#menu {code}",
     })
     print("[E6] start SEM sacola             →", r.status_code, r.content[:220])
+
+
+@pytest.mark.django_db
+def test_elo_7_access_code_com_lixo_nao_passa_por_login_organico(joyce):
+    """URL de mídia do Instagram no lugar do código: a sacola não some calada."""
+    from unittest.mock import patch
+
+    IG = ("https://lookaside.fbsbx.com/ig_messaging_cdn/?asset_id=17977763199107464"
+          "&signature=Ab035A76yatScvNo-tUb5HFGO0gyp0gt")
+    with patch("shopman.doorman.views.access_link.logger") as log:
+        r = _post({
+            "subscriber": {"id": "mc-joyce", "whatsapp_id": "5543999990009"},
+            "access_code": IG,
+        })
+    body = r.json()
+    print("\n[E7] access_code = URL do Instagram →", r.status_code,
+          "handoff_expired=", body["handoff_expired"])
+    assert r.status_code == 200, "o login NUNCA falha por causa da sacola"
+    assert body["handoff_expired"] is True, "a sacola sumiu — e isso tem de ser dito"
+    assert log.warning.called, "e o log tem de gritar, senão ninguém descobre a variável errada"
+    assert "access_code_sem_codigo" in log.warning.call_args[0][0]
+
+
+@pytest.mark.django_db
+def test_elo_8_menu_seco_continua_sendo_login_organico(joyce):
+    """`#menu` puro é entrada legítima pelo WhatsApp: não é handoff falho."""
+    r = _post({
+        "subscriber": {"id": "mc-joyce", "whatsapp_id": "5543999990009"},
+        "access_code": "#menu",
+    })
+    body = r.json()
+    print("[E8] access_code = '#menu' →", r.status_code, "handoff_expired=", body["handoff_expired"])
+    assert body["handoff_expired"] is False
