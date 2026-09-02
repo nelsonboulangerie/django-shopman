@@ -127,5 +127,13 @@ async function copyLink() {
       <Icon name="lucide:external-link" class="size-4" />
       Abrir checkout do cartão
     </a>
+
+    <!-- Até quando o LINK vale — o mesmo relógio do pedido e do gateway, dito
+         como o operador diz ao cliente. Sem o prazo na tela, ele não tem o que
+         dizer ao telefone, e "o link parou de funcionar" vira ligação. -->
+    <p v-if="proof.isLink && proof.expiresDisplay" class="flex items-center gap-1 text-xs opacity-80">
+      <Icon name="lucide:clock" class="size-3.5" />
+      Vale até {{ proof.expiresDisplay }}
+    </p>
   </div>
 </template>
