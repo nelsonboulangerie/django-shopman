@@ -94,6 +94,20 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const contentType = getRequestHeader(event, "content-type");
   if (contentType) headers["content-type"] = contentType;
 
+  // O IP do cliente tem de atravessar o BFF, senão TODO visitante anônimo vira
+  // um balde de rate limit só. O navegador fala com o Nitro same-origin, e o
+  // Nitro abre conexão NOVA para o Django: sem repassar o XFF, o único IP que o
+  // Django vê é o de saída deste processo — idêntico para todo mundo. Efeito
+  // medido: ~20 chamadas em /auth/request-code/ e ninguém mais entra na loja
+  // por uma hora; checkout anônimo em 3/min para a loja INTEIRA.
+  //
+  // Repassar o valor CRU é seguro porque quem lê conta da DIREITA
+  // (`doorman.get_client_ip(trusted_proxy_depth)` e o `NUM_PROXIES` do DRF): o
+  // edge da plataforma acrescenta o IP real à direita, então um XFF forjado
+  // pelo cliente entra à esquerda e não desloca a contagem.
+  const forwardedFor = getRequestHeader(event, "x-forwarded-for");
+  if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
+
   if (isUnsafeMethod) {
     headers.origin = djangoOrigin;
     headers.referer = `${djangoOrigin}/`;

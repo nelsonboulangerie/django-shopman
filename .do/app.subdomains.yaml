@@ -337,8 +337,23 @@ envs:
   # (SHOPMAN_LOG_CLIENT_IP=true → linha `client_ip.diagnostic` → posição do IP
   # real na cadeia `xff=` contando da direita) e replique o número aqui.
   # NÃO ligue SHOPMAN_LOG_CLIENT_IP em produção (loga IP de cliente = dado pessoal).
+  #
+  # ⚠️ RE-MEDIR: a cadeia ficou UM SALTO MAIS LONGA em 01/09. Até então os dois
+  # BFFs Nitro montavam os cabeçalhos do zero e NÃO repassavam o X-Forwarded-For
+  # — o único IP que chegava ao Django era o de saída do Nitro, igual para todo
+  # visitante, e o rate limit anônimo era um balde global (medido: ~20 chamadas
+  # em /auth/request-code/ trancavam a loja inteira por uma hora). Os proxies
+  # passaram a repassar o XFF (`server/utils/djangoProxy.ts` nos dois), então o
+  # IP real do cliente agora ESTÁ na cadeia — mais à esquerda do que estava
+  # quando o `2` do alpha foi medido.
+  #
+  # O número abaixo NÃO foi medido depois dessa mudança, e por isso segue
+  # comentado: chutá-lo é escolher o balde errado com confiança. Meça com o
+  # diagnóstico acima e escreva o valor aqui E no spec do alpha — o
+  # `NUM_PROXIES` do DRF lê a MESMA env (config/settings.py), então os dois
+  # limitadores contam igual por construção.
   # - key: DOORMAN_TRUSTED_PROXY_DEPTH
-  #   value: "2"
+  #   value: "<medir>"
   #   scope: RUN_TIME
   #   type: GENERAL
 

@@ -348,6 +348,11 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# ⚠️ O `2` foi medido QUANDO o BFF ainda não repassava o X-Forwarded-For. Desde
+# 01/09 ele repassa (server/utils/djangoProxy.ts), e a cadeia ficou um salto mais
+# longa — o IP real do cliente está mais à esquerda do que quando este número foi
+# aferido. RE-MEDIR com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
+# O `NUM_PROXIES` do DRF lê esta mesma env, então corrigir aqui corrige os dois.
 - key: DOORMAN_TRUSTED_PROXY_DEPTH
   scope: RUN_TIME
   value: '2'
