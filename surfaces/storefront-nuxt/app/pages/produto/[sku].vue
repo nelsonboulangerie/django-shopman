@@ -205,22 +205,20 @@ useHead({
                     </div>
                   </UiAspectRatio>
                   <template v-if="carouselImages.length">
-                    <!-- Pontos SOBRE a foto (vidro, como a etiqueta Indisponível):
-                         zero altura no fluxo — o vão foto→nome fica idêntico ao
-                         da PDP sem carrossel. -->
-                    <div class="absolute inset-x-0 bottom-2 z-10 flex justify-center">
-                      <div class="flex items-center gap-2 rounded-full bg-background/60 px-2 py-1 shadow-sm backdrop-blur-sm">
-                        <UiButton
-                          v-for="(image, index) in carouselImages"
-                          :key="image"
-                          variant="ghost"
-                          class="h-2 w-2 min-w-0 rounded-full p-0"
-                          :class="index === slideIndex ? 'bg-primary hover:bg-primary' : 'bg-foreground/30 hover:bg-foreground/50'"
-                          :aria-label="`Ir para a foto ${index + 1}`"
-                          :aria-current="index === slideIndex"
-                          @click="goToSlide(index)"
-                        />
-                      </div>
+                    <!-- Pontos SOBRE a foto, sem fundo (pedido do dono): brancos
+                         com sombra para ler em qualquer foto. Zero altura no
+                         fluxo — o vão foto→nome é o da PDP sem carrossel. -->
+                    <div class="absolute inset-x-0 bottom-3 z-10 flex items-center justify-center gap-2">
+                      <UiButton
+                        v-for="(image, index) in carouselImages"
+                        :key="image"
+                        variant="ghost"
+                        class="h-2 w-2 min-w-0 rounded-full p-0 shadow-[0_0_2px_rgba(0,0,0,0.6)]"
+                        :class="index === slideIndex ? 'bg-white hover:bg-white' : 'bg-white/50 hover:bg-white/75'"
+                        :aria-label="`Ir para a foto ${index + 1}`"
+                        :aria-current="index === slideIndex"
+                        @click="goToSlide(index)"
+                      />
                     </div>
                     <UiButton
                       variant="ghost"
