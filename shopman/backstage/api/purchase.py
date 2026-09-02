@@ -36,6 +36,11 @@ def _error_response(exc: PurchaseError) -> Response:
     if exc.field:
         payload["field"] = exc.field
         payload["errors"] = {exc.field: [str(exc)]}
+    if exc.lines:
+        # `errors` é o dialeto da casa e fala por CAMPO; um lote erra por
+        # LINHA, e a linha não cabe ali sem torcer o contrato. Vai como
+        # superset em `error`, no mesmo molde de `error.code`.
+        payload["error"]["lines"] = exc.lines
     return Response(payload, status=exc.status_code)
 
 
@@ -118,6 +123,52 @@ class PurchaseCostView(APIView):
         except PurchaseError as exc:
             return _error_response(exc)
         return _purchase_response(projection, message="Custo salvo.")
+
+
+class PurchaseCostBatchView(APIView):
+    """Tabela de preços do fornecedor num gesto só — ver `upsert_costs`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Create/update several supplier material costs at once",
+        responses={200: OpenApiResponse(description="Costs saved and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            result = purchase_service.upsert_costs(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        saved = result["saved"]
+        return _purchase_response(
+            result["purchase"],
+            message=f"{saved} custo(s) salvo(s)." if saved != 1 else "1 custo salvo.",
+        )
+
+
+class PurchaseMinStockView(APIView):
+    """Estoque mínimo declarado — ver `set_min_stock`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Declare the minimum stock of several materials",
+        responses={200: OpenApiResponse(description="Minimums saved and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            result = purchase_service.set_min_stock(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        saved = result["saved"]
+        return _purchase_response(
+            result["purchase"],
+            message="1 mínimo salvo." if saved == 1 else f"{saved} mínimos salvos.",
+        )
 
 
 class PurchaseConversionView(APIView):

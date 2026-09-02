@@ -43,7 +43,11 @@ DIVIDA = {
     # dela (levanta `CatalogError`, como `_as_nullable_int` e `_as_str_list` ao lado).
     # O teto fica em 0 para a catraca continuar valendo — acrescentar reprova.
     "services/catalog.py": (0, "zerado; mantido em 0 para a catraca não afrouxar"),
-    "services/purchase.py": (1, "WP-06 Compras — mesma razão do catálogo"),
+    # ✅ `services/purchase.py` chegou a ZERO junto com a tabela de preços do
+    # fornecedor: a camada ganhou o seu `_as_flag` (levanta `PurchaseError`, no
+    # dialeto dela), e o `makePreferred` — a flag que decide se o custo vira o
+    # preferencial do insumo — parou de tratar `"false"` como sim.
+    "services/purchase.py": (0, "zerado; mantido em 0 para a catraca não afrouxar"),
 }
 
 

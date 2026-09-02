@@ -1117,6 +1117,23 @@ Perfil do insumo (nutrição TACO/USDA por 100 g, alergênicos, `diet`,
 | `alt_suppliers` | `list[str]` | seed/admin (Buyman) | telas de compra | Fornecedores alternativos (ex.: Anaconda para as farinhas Embramex). |
 | `supplier_note` | `str` | seed | telas de compra | Nota quando não há fornecedor (ex.: "produção própria (jambon blanc da casa)"). |
 
+### Escopo `purchase` — reposição e solicitação
+
+Lidas por `_purchase_meta()` em `shopman/backstage/projections/purchase.py`, que
+achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
+| `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
+| `purchase.request_status` | `str` | `set_purchase_request_status` | projection (`purchaseRequestStatuses`) | `review` \| `approved` \| `sent`. Não há model de solicitação: o estado mora aqui. |
+| `purchase.request_status_at` | `str` ISO 8601 | `set_purchase_request_status` | auditoria | Quando o status mudou. |
+| `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
+| `purchase.request_supplier_ref` | `str` ref | `_queue_supplier_purchase_request` | auditoria | Fornecedor que recebeu o pedido (`Supplier.ref`). |
+| `purchase.request_channel` | `str` | `_queue_supplier_purchase_request` | auditoria | Canal do despacho (`email`/`sms`/`whatsapp`/`console`). |
+| `purchase.request_recipient` | `str` | `_queue_supplier_purchase_request` | auditoria | Endereço/telefone que recebeu. |
+| `purchase.request_dedupe_key` | `str` | `_queue_supplier_purchase_request` | `create_deduped` | Chave de idempotência da directive de notificação; inclui o `cost_q` para que mudança de preço gere novo pedido. |
+
 ---
 
 ## Regras de Governança

@@ -18,6 +18,8 @@ import type {
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
 import {
+  costBatchLineErrors as buildCostBatchLineErrors,
+  costBatchPayload as buildCostBatchPayload,
   costPerBaseUnitQ,
   countConfirmPayload,
   countRows,
@@ -118,6 +120,19 @@ export function usePurchaseDesk() {
   const countLoaded = useState("purchase-count-loaded", () => false);
   const countForbidden = useState("purchase-count-forbidden", () => false);
   const countConfirmedAt = useState<string | null>("purchase-count-confirmed-at", () => null);
+  // Lançamento em lote: uma tabela de preços do MESMO fornecedor. É o gesto que
+  // tira 54 insumos do estado "sem custo preferencial" — e portanto fora de
+  // qualquer pedido — sem passar pelo Django Admin.
+  const batchSupplierRef = useState("purchase-batch-supplier", () => "");
+  const batchInputs = useState<Record<string, string>>("purchase-batch-inputs", () => ({}));
+  const batchConversionIds = useState<Record<string, string>>("purchase-batch-conversions", () => ({}));
+  const batchOnlyMissing = useState("purchase-batch-only-missing", () => true);
+  const batchQuery = useState("purchase-batch-query", () => "");
+  const batchLineErrors = useState<Record<string, string>>("purchase-batch-line-errors", () => ({}));
+  // Estoque mínimo declarado: sem consumo medido o alvo de reposição é zero e o
+  // insumo nunca vira sugestão. Declarar o mínimo é o que o destrava.
+  const minStockInputs = useState<Record<string, string>>("purchase-min-stock-inputs", () => ({}));
+  const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
   const countPending = ref(false);
   const api = usePurchaseApi();
   const actionPending = ref(false);
@@ -306,6 +321,159 @@ export function usePurchaseDesk() {
   const reorderBlockers = computed(() =>
     backendReady.value ? buildReorderBlockers(materials.value, costs.value) : [],
   );
+
+  // As linhas da tabela de preços. O filtro nasce em "só os que faltam" porque
+  // é essa a tarefa: fechar o buraco dos insumos sem custo preferencial.
+  const batchRows = computed(() => {
+    const term = batchQuery.value.trim().toLowerCase();
+    return enrichedMaterials.value.filter((material) => {
+      if (!material.isActive) return false;
+      if (batchOnlyMissing.value && material.preferredCost) return false;
+      if (!term) return true;
+      return (
+        material.name.toLowerCase().includes(term) ||
+        material.sku.toLowerCase().includes(term) ||
+        material.category.toLowerCase().includes(term)
+      );
+    });
+  });
+
+  // Conta as MESMAS linhas que o payload manda — as visíveis. Um botão que diz
+  // "Salvar 10" e manda 3 é pior que um botão sem número.
+  const batchFilledCount = computed(
+    () => batchRows.value.filter((row) => Boolean((batchInputs.value[row.sku] ?? "").trim())).length,
+  );
+
+  // Trocar de fornecedor invalida a unidade de compra escolhida: a conversão é
+  // do par (insumo, fornecedor). Sem limpar, o `<select>` fica em branco — a
+  // opção sumiu da lista — enquanto o id antigo continua no estado e viaja no
+  // payload, e o servidor recusa o lote inteiro com "conversão pertence a outro
+  // fornecedor" numa linha que na tela diz "Unidade-base".
+  watch(batchSupplierRef, () => {
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  });
+
+  const batchReady = computed(() => Boolean(batchSupplierRef.value) && batchFilledCount.value > 0);
+
+  function batchConversionsFor(materialSku: string) {
+    return conversions.value.filter(
+      (conversion) =>
+        conversion.isActive &&
+        conversion.materialSku === materialSku &&
+        (!conversion.supplierRef || conversion.supplierRef === batchSupplierRef.value),
+    );
+  }
+
+  function setBatchInput(materialSku: string, value: string) {
+    batchInputs.value = { ...batchInputs.value, [materialSku]: value };
+    // Editar a linha apaga o erro dela: o aviso descreve o que foi enviado, e o
+    // que está na tela já não é isso.
+    if (batchLineErrors.value[materialSku]) {
+      batchLineErrors.value = Object.fromEntries(
+        Object.entries(batchLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function setBatchConversion(materialSku: string, conversionId: string) {
+    batchConversionIds.value = { ...batchConversionIds.value, [materialSku]: conversionId };
+  }
+
+  // Só as linhas visíveis, pelo mesmo motivo do lote de custos: a busca e o
+  // filtro "Atenção" escondem linhas já digitadas, e o erro de uma linha
+  // escondida não teria onde aparecer.
+  const minStockRows = computed(() =>
+    filteredMaterials.value.filter((material) => Boolean((minStockInputs.value[material.sku] ?? "").trim())),
+  );
+
+  const minStockFilledCount = computed(() => minStockRows.value.length);
+
+  function setMinStockInput(materialSku: string, value: string) {
+    minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
+    if (minStockLineErrors.value[materialSku]) {
+      minStockLineErrors.value = Object.fromEntries(
+        Object.entries(minStockLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function clearMinStock() {
+    minStockInputs.value = {};
+    minStockLineErrors.value = {};
+  }
+
+  /** Declara os mínimos digitados. Mesmo contrato do lote de custos. */
+  async function saveMinStock() {
+    if (!minStockFilledCount.value) return;
+    if (!requireBackend("salvar os mínimos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    minStockLineErrors.value = {};
+    try {
+      const minimums = minStockRows.value.map((material) => ({
+        materialSku: material.sku,
+        minStock: (minStockInputs.value[material.sku] ?? "").trim(),
+      }));
+      const response = await api.setMinStock({ minimums });
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearMinStock();
+      await refresh();
+    } catch (err) {
+      minStockLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
+      const message = httpErrorMessage(err, "Não foi possível salvar os mínimos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
+  function clearCostBatch() {
+    batchInputs.value = {};
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  }
+
+  /**
+   * Lança a tabela inteira num POST.
+   *
+   * O lote é tudo-ou-nada no servidor, então a recusa precisa dizer QUAL linha
+   * errou — senão o operador recebe "corrija as linhas" olhando para quarenta
+   * campos preenchidos. Os erros voltam em `error.lines` e vão para o campo.
+   */
+  async function saveCostBatch() {
+    if (!batchReady.value) return;
+    if (!requireBackend("salvar os custos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    batchLineErrors.value = {};
+    try {
+      const payload = buildCostBatchPayload(
+        batchSupplierRef.value,
+        batchInputs.value,
+        batchConversionIds.value,
+        batchRows.value.map((row) => row.sku),
+      );
+      const response = await api.upsertCostBatch(payload);
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearCostBatch();
+      await refresh();
+    } catch (err) {
+      batchLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
+      const message = httpErrorMessage(err, "Não foi possível salvar os custos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
 
   const supplierSummaries = computed(() =>
     suppliers.value.map((supplier) => {
@@ -884,6 +1052,26 @@ export function usePurchaseDesk() {
     integrityQueue,
     reorderRows,
     reorderBlockers,
+    batchSupplierRef,
+    batchInputs,
+    batchConversionIds,
+    batchOnlyMissing,
+    batchQuery,
+    batchLineErrors,
+    batchRows,
+    batchFilledCount,
+    batchReady,
+    batchConversionsFor,
+    setBatchInput,
+    setBatchConversion,
+    clearCostBatch,
+    saveCostBatch,
+    minStockInputs,
+    minStockLineErrors,
+    minStockFilledCount,
+    setMinStockInput,
+    clearMinStock,
+    saveMinStock,
     supplierSummaries,
     projection,
     receiptMode,

@@ -16,6 +16,7 @@ import type {
   ReceiptMode,
   ReceiptOutcome,
   ReceiptPendingItem,
+  PurchaseCostBatchPayload,
   ReceiptWarning,
   ReorderBlocker,
   ReorderRow,
@@ -721,6 +722,64 @@ export function reorderRows(
       return { material: enriched, supplier, suggestedQty, estimatedCostQ };
     })
     .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
+}
+
+/**
+ * A tabela de preços digitada vira o corpo do POST em lote.
+ *
+ * Só a linha com valor entra: a tela lista todos os insumos justamente para o
+ * operador percorrer a lista e preencher o que sabe, e uma linha em branco é
+ * omissão, não erro. O `makePreferred` é sempre verdadeiro porque o lote existe
+ * para tornar o insumo comprável, e sem custo preferencial ele continua fora do
+ * pedido.
+ */
+export function costBatchPayload(
+  supplierRef: string,
+  inputs: Record<string, string>,
+  conversionIds: Record<string, string>,
+  visibleSkus: string[],
+): PurchaseCostBatchPayload {
+  // Só vai o que está NA TELA. O filtro ("só os que faltam", a busca) esconde
+  // linhas já preenchidas, e mandá-las assim mesmo quebra a promessa do lote:
+  // como ele é tudo-ou-nada, uma linha escondida e inválida derruba tudo, e o
+  // erro dela não tem onde aparecer — o operador lê "corrija as linhas
+  // indicadas" com todas as linhas visíveis limpas.
+  const visible = new Set(visibleSkus);
+  const costs = Object.entries(inputs)
+    .filter(([materialSku, value]) => visible.has(materialSku) && Boolean((value ?? "").trim()))
+    .map(([materialSku, value]) => ({
+      materialSku,
+      costInput: value.trim(),
+      conversionId: conversionIds[materialSku] || null,
+    }));
+  // `makePreferred` fica FALSE de propósito. O servidor já promove o primeiro
+  // custo de um insumo (`prefer_if_missing`), que é o que destrava os insumos
+  // sem custo preferencial — o objetivo do lote. Pedir a promoção explícita
+  // repontaria o custo canônico (o que alimenta o custeio de receita) de
+  // dezenas de insumos de uma vez, ao gesto de "atualizar a tabela do
+  // fornecedor". Trocar o padrão é escolha de uma linha só, no formulário
+  // avulso, onde ela tem botão próprio.
+  return { supplierRef, makePreferred: false, costs };
+}
+
+/**
+ * Traduz a recusa do lote em "qual linha errou, e por quê".
+ *
+ * O lote é tudo-ou-nada no servidor. Sem apontar a linha, a recusa manda o
+ * operador procurar o erro entre dezenas de campos preenchidos — e o custo de
+ * procurar é maior que o de digitar tudo de novo. O servidor manda os erros em
+ * `error.lines` (o dialeto `errors` fala por campo, e linha não cabe ali);
+ * aqui eles viram um mapa por SKU, que é como a tabela endereça suas linhas.
+ */
+export function costBatchLineErrors(data: unknown): Record<string, string> {
+  const body = data as { error?: { lines?: unknown } } | null | undefined;
+  const lines = body?.error?.lines;
+  if (!Array.isArray(lines)) return {};
+  const entries = lines
+    .map((line) => line as { materialSku?: unknown; detail?: unknown })
+    .filter((line) => typeof line?.materialSku === "string" && typeof line?.detail === "string")
+    .map((line) => [line.materialSku as string, line.detail as string] as const);
+  return Object.fromEntries(entries);
 }
 
 /**

@@ -25,6 +25,14 @@ export interface Material {
   stockOnHand: number;
   dailyUse: number;
   minStock: number;
+  /**
+   * O mínimo foi DECLARADO pelo operador, ou derivado do consumo?
+   *
+   * Sem a distinção a tela exibe um número derivado como se fosse cadastrado, e
+   * o operador que "confirma" o valor digitando o mesmo número CONGELA um
+   * mínimo que era para acompanhar o consumo.
+   */
+  minStockDeclared?: boolean;
   recipes: string[];
   leadTimeDays?: number;
   replenishAtDays?: number;
@@ -353,6 +361,43 @@ export interface PurchaseCostUpsertPayload {
   conversionId: string | null;
   costInput: string;
   makePreferred: boolean;
+}
+
+/** Uma linha da tabela de preços do fornecedor. */
+export interface PurchaseCostBatchLine {
+  materialSku: string;
+  costInput: string;
+  conversionId: string | null;
+}
+
+export interface PurchaseCostBatchPayload {
+  supplierRef: string;
+  makePreferred: boolean;
+  costs: PurchaseCostBatchLine[];
+}
+
+/**
+ * Estoque mínimo declarado por insumo.
+ *
+ * Sem consumo medido o alvo de reposição é zero e o insumo nunca é sugerido —
+ * declarar o mínimo é o que o traz de volta para o Compras. Valor vazio ou zero
+ * apaga a declaração.
+ */
+export interface PurchaseMinStockPayload {
+  minimums: { materialSku: string; minStock: string }[];
+}
+
+/**
+ * Erro de UMA linha do lote, como o servidor devolve em `error.lines`.
+ *
+ * O dialeto `errors` da casa fala por campo; um lote erra por linha, e a linha
+ * não cabe ali sem torcer o contrato.
+ */
+export interface PurchaseCostBatchLineError {
+  index: number;
+  materialSku: string;
+  field: string;
+  detail: string;
 }
 
 export interface PurchaseActionResponse {
