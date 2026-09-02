@@ -304,6 +304,7 @@ def close_sale(
     _validate_fiscal_delivery_fee(payload)
     _validate_schedule(payload)
     _require_customer_if_scheduled(payload)
+    _require_contact_if_payment_link(payload)
     _validate_payment_completion(payload)
     _require_house_account_if_on_account(
         payload,
@@ -885,6 +886,39 @@ def _payload_identifies_customer(payload: dict) -> bool:
         str(payload.get(key) or "").strip()
         for key in ("customer_ref", "customer_phone", "customer_name")
     )
+
+
+def _require_contact_if_payment_link(payload: dict) -> None:
+    """Link de pagamento exige cliente com CONTATO. Recusa ANTES do commit.
+
+    O link não é cobrança de balcão: é uma URL que alguém precisa RECEBER. Sem
+    telefone nem e-mail, a venda fecha aguardando um pagamento que ninguém vai
+    pedir — e a URL só volta pelo gestor. O pedido remoto sempre tem contato
+    (foi por ele que o pedido chegou); exigi-lo é escrever o que já é verdade.
+
+    O nome sozinho NÃO basta, e é essa a diferença para
+    ``_require_customer_if_scheduled``: lá o que se quer é saber DE QUEM é a
+    encomenda; aqui é ter PARA ONDE mandar.
+    """
+    if _payload_payment_method_set(payload) != {"link"}:
+        return
+    if any(str(payload.get(key) or "").strip() for key in ("customer_phone", "customer_email")):
+        return
+    raise PosIntentError(
+        code="link_requires_customer_contact",
+        message="O link precisa de um contato para ser enviado.",
+        field="customer_phone",
+        focus="customer",
+        recovery="Identifique o cliente com telefone ou e-mail.",
+    )
+
+
+def _payload_payment_method_set(payload: dict) -> set[str]:
+    """As formas que a venda usa — pelos tenders, ou pelo método do pedido."""
+    tenders = [t for t in (payload.get("payment_tenders") or []) if isinstance(t, dict)]
+    if tenders:
+        return {_normalize_payment_method(t.get("method")) for t in tenders}
+    return {_normalize_payment_method(payload.get("payment_method"))}
 
 
 def _require_customer_if_scheduled(payload: dict) -> None:
@@ -2499,6 +2533,24 @@ def _payload_tenders(
             if entry["collection"] == "terminal":
                 entry["received_at"] = timezone.now().isoformat()
             tenders.append(entry)
+        # ⚠️ O LINK COBRA A VENDA INTEIRA — e a recusa é aqui, não na tela.
+        #
+        # Buraco de receita, se passasse: numa venda MISTA o
+        # `settle_terminal_tenders` liquida toda forma de gateway com
+        # `asserted_at_terminal=True` — o link seria CAPTURADO como se o dinheiro
+        # tivesse entrado, e nenhuma URL seria gerada. A venda fecharia paga, o
+        # cliente nunca receberia link, e o dinheiro nunca chegaria.
+        #
+        # Só a venda sozinha passa por `initiate()`, que é quem cria a cobrança
+        # remota. Então: link é a venda inteira, ou não é link.
+        if len(tenders) > 1 and any(t["method"] == "link" for t in tenders):
+            raise PosIntentError(
+                code="link_requires_full_payment",
+                message="O link de pagamento cobra a venda inteira.",
+                field="payment_tenders",
+                focus="payment",
+                recovery="Remova as outras formas, ou troque o link por uma delas.",
+            )
         paid_q = sum(int(tender["amount_q"]) for tender in tenders)
         if require_complete and total_q > 0 and paid_q < total_q:
             raise PosIntentError(
@@ -2550,7 +2602,7 @@ def _legacy_payment_method(payload: dict, tenders: list[dict]) -> str:
 
 def _normalize_payment_method(value) -> str:
     method = str(value or "cash").strip().lower() or "cash"
-    if method in {"cash", "pix", "card", "external", "account", "mixed"}:
+    if method in {"cash", "pix", "card", "credit", "debit", "link", "external", "account", "mixed"}:
         return method
     return "external"
 
@@ -2665,7 +2717,14 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             _settle_after_shift_closed(order, shift=shift, operator=operator, resettle=False)
         return {}
 
-    gateway_only = method in {"pix", "card"}
+    # QUEM PRECISA DE GATEWAY. Pix sozinho gera cobrança remota; `card` (a forma
+    # indistinta, que o PDV não oferece mais mas o intent ainda aceita) abre uma
+    # sessão do Stripe. Crédito e débito NÃO entram: a maquininha do balcão é
+    # física, o cartão é passado fora do sistema e o operador atesta o que
+    # aconteceu — exatamente o caminho que o `card` já percorria dentro de uma
+    # venda mista. Quem os liquida é o ramo do terminal, logo abaixo, e eles
+    # chegam lá porque estão em `PaymentIntent.METHODS_WITHOUT_GATEWAY`.
+    gateway_only = method in {"pix", "card", "link"}
     payment_result: dict = {}
     if gateway_only:
         # Rede fora de transação: gateway primeiro, linha depois.
@@ -2938,10 +2997,21 @@ def _user_for_actor(actor: str):
     return get_user_model().objects.filter(username=username).first()
 
 
+#: As formas que TÊM o que mostrar ao operador depois da venda: as que passaram
+#: por gateway e voltaram com prova — QR e copia-e-cola do Pix, URL hospedada do
+#: cartão da loja e do LINK do pedido remoto. Dinheiro, crédito e débito não
+#: entram: a prova deles é o papel da maquininha.
+_METHODS_WITH_DISPLAY_PROOF = frozenset({"pix", "card", "link"})
+
+
 def _pos_payment_response(order: Order) -> dict:
     payment = dict((order.data or {}).get("payment") or {})
     method = str(payment.get("method") or "").strip().lower()
-    if method not in {"pix", "card"}:
+    # ⚠️ `link` faltava aqui, e era o último degrau que matava o fluxo: o intent
+    # nascia, a URL era gravada no pedido — e esta função devolvia `{}`. O
+    # operador clicava em "Link de pagamento", a venda fechava, e a tela não
+    # tinha nada para ele copiar. O botão existia e o gesto não.
+    if method not in _METHODS_WITH_DISPLAY_PROOF:
         return {}
 
     response = {

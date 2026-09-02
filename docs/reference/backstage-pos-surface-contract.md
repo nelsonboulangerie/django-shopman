@@ -57,7 +57,7 @@ must match the canonical table above.
 
 - `products[]`: `sku`, `name`, `price_q`, `price_display`, `collection_ref`.
 - `collections[]`: `ref`, `name`.
-- `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `card`,
+- `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `credit`, `debit`,
   `mixed`.
 - `fulfillment_options[]`: `pickup`/`delivery` options and address requirement.
 - `payment_collections[]`: terminal/on-delivery options and compatible methods.
@@ -166,7 +166,9 @@ operator enter checkout when payment is still incomplete; `close_sale` is the
 payment-completion enforcement action.
 
 `close_sale` response may include a `payment` object for terminal digital
-payments:
+payments — i.e. the ones that go through a **remote gateway**. Counter card
+(`credit`/`debit`) never does: the card machine is physical, the operator
+attests what happened, and there is no QR nor link to render.
 
 - `method`: `pix` or `card`;
 - `status`: `pending`, `error` or `unavailable`;

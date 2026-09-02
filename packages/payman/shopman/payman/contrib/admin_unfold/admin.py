@@ -93,7 +93,12 @@ _STATUS_COLORS = {
 _METHOD_COLORS = {
     PaymentIntent.Method.PIX: "green",
     PaymentIntent.Method.CASH: "base",
+    # As três leituras de cartão compartilham a cor: quem varre a lista procura
+    # "foi cartão?" antes de procurar qual. `card` é o histórico e a loja online;
+    # `credit`/`debit` são o balcão, onde prazo e taxa da adquirente diferem.
     PaymentIntent.Method.CARD: "blue",
+    PaymentIntent.Method.CREDIT: "blue",
+    PaymentIntent.Method.DEBIT: "blue",
     PaymentIntent.Method.EXTERNAL: "base",
 }
 

@@ -48,7 +48,15 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "cash_shift_id",
     "pos_terminal_ref",
 }
-_ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "account", "mixed"}
+# ⚠️ `card` continua aceito e NÃO é resíduo: é o vocabulário da loja online
+# (onde o gateway sabe a bandeira e a distinção não muda nada para quem compra) e
+# é o que está gravado no histórico. O que o BALCÃO passa a oferecer são
+# `credit`/`debit` — lá a diferença importa, porque prazo de recebimento e taxa
+# da adquirente são outros. Quem decide o que o PDV OFERECE é
+# `_POS_PAYMENT_METHOD_REFS` na projection; aqui é só o que o intent ACEITA.
+_ALLOWED_PAYMENT_METHODS = {
+    "cash", "pix", "card", "credit", "debit", "link", "external", "account", "mixed",
+}
 _ALLOWED_PAYMENT_COLLECTIONS = {"terminal", "on_delivery"}
 _ALLOWED_RECEIPT_CHANNELS = {"print", "email"}
 

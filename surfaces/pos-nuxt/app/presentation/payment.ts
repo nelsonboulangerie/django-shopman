@@ -20,7 +20,13 @@ import { formatBRL } from "~/utils/posIntent";
 const PAYMENT_ICONS: Record<string, string> = {
   cash: "lucide:banknote",
   pix: "lucide:qr-code",
+  // Três leituras de cartão, dois ícones. `card` (a forma indistinta da loja
+  // online, que o balcão não oferece mais) e o CRÉDITO compartilham o cartão
+  // clássico; o DÉBITO ganha o ícone de conta, porque o dinheiro sai na hora e é
+  // essa a diferença que o operador precisa reconhecer de relance.
   card: "lucide:credit-card",
+  credit: "lucide:credit-card",
+  debit: "lucide:landmark",
   mixed: "lucide:layers",
   external: "lucide:ellipsis",
   account: "lucide:book-user",
@@ -54,6 +60,8 @@ const METHOD_LABEL_FALLBACKS: Record<string, string> = {
   cash: "Dinheiro",
   pix: "Pix",
   card: "Cartão",
+  credit: "Crédito",
+  debit: "Débito",
   mixed: "Misto",
   external: "Outro meio",
   account: "Em conta",
@@ -252,6 +260,8 @@ export interface PaymentProofView {
   checkoutUrl: string;
   isPix: boolean;
   isCard: boolean;
+  /** Link de pagamento: a URL é para ENTREGAR ao cliente, não para abrir aqui. */
+  isLink: boolean;
   /** Has gateway data worth surfacing (QR / copy-paste / checkout link). */
   hasProof: boolean;
 }
@@ -279,7 +289,11 @@ export function paymentProofView(
 ): PaymentProofView | null {
   if (!result || !result.method) return null;
   const method = result.method;
-  if (method !== "pix" && method !== "card") return null;
+  // Só quem gera PROVA REMOTA tem comprovante para mostrar: o Pix (QR + copia e
+  // cola), o `card` da loja online e o LINK do pedido remoto (URL hospedada).
+  // Crédito e débito do balcão não passam por gateway nenhum — a maquininha é
+  // física e o comprovante é o papel que ela imprime.
+  if (method !== "pix" && method !== "card" && method !== "link") return null;
   const qrSrc = qrCodeSrc(result.qr_code || "");
   const copyPaste = result.copy_paste || "";
   const checkoutUrl = result.checkout_url || "";
@@ -295,6 +309,14 @@ export function paymentProofView(
     checkoutUrl,
     isPix: method === "pix",
     isCard: method === "card",
+    // O LINK é para ENTREGAR, não para abrir aqui. O `card` da loja online abre
+    // o checkout numa aba — faz sentido lá, onde quem está na frente da tela é
+    // quem compra. No balcão quem está na frente é o OPERADOR: abrir a página de
+    // pagamento no PDV significaria ele digitando o cartão do cliente, que é
+    // exatamente o que a maquininha existe para não acontecer.
+    // O que ele precisa é passar a URL adiante — pelo QR que o cliente aponta o
+    // celular, ou copiada para o WhatsApp.
+    isLink: method === "link",
     hasProof: Boolean(qrSrc || copyPaste || checkoutUrl),
   };
 }
@@ -309,13 +331,42 @@ export function paymentProofView(
  *  linha errada com o cliente na frente). Acento é normalizado — "Cartão" começa
  *  com C, e o teclado do balcão não tem "Ç" fácil.
  */
+/**
+ * A TECLA DE CADA FORMA — mapa explícito, por `ref`.
+ *
+ * ⚠️ Ela era DERIVADA da inicial do rótulo, e a derivação morreu no dia em que o
+ * balcão passou a distinguir crédito de débito: "Dinheiro" e "Débito" disputam o
+ * D, "Cartão" e "Crédito" disputam o C. O desempate era a ordem da lista — quem
+ * chegasse depois ficava mudo, sem nada na tela dizendo por quê.
+ *
+ * As letras foram escolhidas para não colidirem e para caberem na cabeça:
+ *
+ *   R  Dinheiro   (de Reais — o D já é do débito)
+ *   P  Pix
+ *   C  Crédito
+ *   D  Débito
+ *   L  Link de pagamento
+ *
+ * Formas que o mapa não conhece caem na inicial, como antes: é o caso de "Em
+ * conta" (E), que só aparece para cliente com conta na casa. Colisão com uma
+ * letra já tomada deixa a forma sem atalho — o botão continua lá.
+ */
+const METHOD_KEYS: Record<string, string> = {
+  cash: "R",
+  pix: "P",
+  credit: "C",
+  debit: "D",
+  link: "L",
+  card: "C",
+};
+
 export function methodShortcuts(
   methods: POSPaymentMethodProjection[],
 ): Record<string, string> {
   const taken = new Set<string>();
   const out: Record<string, string> = {};
   for (const method of methods) {
-    const letter = (method.label || method.ref)
+    const letter = METHOD_KEYS[method.ref] || (method.label || method.ref)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim()

@@ -411,7 +411,19 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),
+    "PAYMENT_METHOD_CREDIT": (
+        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "PAYMENT_METHOD_DEBIT": (
+        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
     "PAYMENT_METHOD_EXTERNAL": (
+        ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
+        ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
+    ),
+    "PAYMENT_METHOD_LINK": (
         ("shopman/backstage/presentation/status.py", "Operador", "Rótulos de status"),
         ("shopman/storefront/presentation/status.py", "Loja", "Rótulos de status"),
     ),

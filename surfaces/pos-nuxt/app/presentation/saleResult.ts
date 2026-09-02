@@ -64,6 +64,10 @@ export const AUTO_ADVANCE_SECONDS = 5;
  * - Troco a conferir → NUNCA: a tela não some sozinha em cima do dinheiro.
  * - PIX aguardando ou expirado → NUNCA: prova pendente/não resolvida não é
  *   descartada em silêncio (sair exige toque explícito).
+ * - LINK DE PAGAMENTO → NUNCA: a URL existe para ser COPIADA e mandada ao
+ *   cliente. Uma tela que se fecha sozinha em cima do único lugar onde aquele
+ *   link aparece não é auto-avanço, é perda: o pedido fica aguardando um
+ *   pagamento que ninguém pediu, e recuperar a URL exige ir ao gestor.
  * - `prefers-reduced-motion` → desliga a contagem (a tela espera o toque).
  *
  * Retorna os segundos da contagem, ou 0 = não avança sozinho.
@@ -74,6 +78,7 @@ export function autoAdvanceSeconds(
   if (inputs.reducedMotion) return 0;
   if (inputs.changeQ > 0) return 0;
   if (inputs.payment?.isPix && inputs.payment.hasProof && inputs.pixStatus !== "paid") return 0;
+  if (inputs.payment?.isLink && inputs.payment.hasProof) return 0;
   return AUTO_ADVANCE_SECONDS;
 }
 
@@ -85,5 +90,8 @@ export function autoAdvanceSeconds(
 export function enterAdvances(inputs: SaleResultAdvanceInputs): boolean {
   if (inputs.changeQ > 0) return false;
   if (pixAwaiting(inputs.payment, inputs.pixStatus)) return false;
+  // Mesmo motivo do auto-avanço: o Enter que validou a venda não pode engolir a
+  // tela onde o link mora. Sair dali é gesto deliberado no CTA (ou F2).
+  if (inputs.payment?.isLink && inputs.payment.hasProof) return false;
   return true;
 }

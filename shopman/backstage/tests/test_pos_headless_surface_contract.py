@@ -148,10 +148,32 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(payload["pos"]["products"][0]["price_q"], 1300)
         payment_methods = {method["ref"]: method for method in payload["pos"]["payment_methods"]}
         self.assertEqual(payment_methods["cash"]["label"], "Dinheiro")
+        # O BALCÃO DISTINGUE crédito de débito, e a loja online não: lá o gateway
+        # sabe a bandeira e a diferença não muda nada para quem compra. Aqui ela
+        # muda o prazo de recebimento e a taxa da adquirente, e é isso que o
+        # fechamento do dia separa. Os rótulos vêm do Omotenashi — sem a chave
+        # cadastrada, o operador leria "credit" cru na tela.
+        self.assertEqual(payment_methods["credit"]["label"], "Crédito")
+        self.assertEqual(payment_methods["debit"]["label"], "Débito")
+        # `link` é a forma do PEDIDO REMOTO anotado no balcão: não há maquininha,
+        # há uma URL que o cliente abre depois. É a única das novas que passa por
+        # gateway — e por isso é a única que SOME quando o gateway não está de
+        # pé, como aqui. Botão que existe para falhar no Validar, com o cliente
+        # do outro lado do telefone esperando a URL, é pior do que botão nenhum.
+        self.assertNotIn("link", payment_methods)
+        self.assertNotIn("card", payment_methods)
         self.assertIn("mixed", payment_methods)
         self.assertIn("delivery", {option["ref"] for option in payload["pos"]["fulfillment_options"]})
         payment_collections = {collection["ref"]: collection for collection in payload["pos"]["payment_collections"]}
-        self.assertEqual(payment_collections["terminal"]["payment_method_refs"], ["cash", "pix", "card", "mixed"])
+        # A COLEÇÃO responde "a que recebimento esta forma pertence", e a lista
+        # de formas responde "o que está de pé agora" — duas perguntas
+        # diferentes. Por isso `link` continua aqui mesmo ausente dos botões: a
+        # tela desenha a partir de `payment_methods`, e usa os refs da coleção só
+        # para saber que "Receber no caixa" se aplica à forma escolhida.
+        self.assertEqual(
+            payment_collections["terminal"]["payment_method_refs"],
+            ["cash", "pix", "credit", "debit", "link", "mixed"],
+        )
         self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "mixed"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)

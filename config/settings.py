@@ -1005,6 +1005,29 @@ SHOPMAN_PAYMENT_ADAPTERS = {
     # "pedido pago sem cobrança"; agora vale "pagamento indisponível", que é o
     # erro certo para um sistema de dinheiro sem gateway.
     "card": os.environ.get("SHOPMAN_CARD_ADAPTER", "shopman.shop.adapters.payment_stripe"),
+    # LINK DE PAGAMENTO — a cobrança remota que o balcão gera para um pedido que
+    # o cliente paga depois, do celular. Nasce apontando para o mesmo gateway do
+    # cartão porque é o que já está de pé e já entrega o que o link precisa
+    # (URL hospedada, 3DS, recusa, webhook). Qual provedor fica é decisão de WP
+    # próprio — Stone e Stripe estão os dois na mesa —, e trocar é trocar ESTA
+    # env, não o código: o PDV só sabe que existe um `checkout_url` para mostrar.
+    # Em DEBUG cai no simulador, pelo mesmo motivo do Pix logo acima: o que
+    # precisa ser exercitado no dev é o GESTO do balcão (a URL aparecer, o
+    # operador copiar, o pedido ficar aguardando), e sem isso o fluxo morre no
+    # clique. Fora de DEBUG, esquecer a env NÃO pode significar "cobre com
+    # gateway de mentira" — significa o gateway real do cartão, que sem
+    # credencial para o pedido com erro visível.
+    "link": os.environ.get("SHOPMAN_LINK_ADAPTER")
+    or (
+        "shopman.shop.adapters.payment_mock"
+        if DEBUG
+        else os.environ.get("SHOPMAN_CARD_ADAPTER", "shopman.shop.adapters.payment_stripe")
+    ),
+    # ⚠️ `credit` e `debit` NÃO entram aqui, e a ausência é a configuração: no
+    # balcão a maquininha é FÍSICA e o operador atesta o que aconteceu. Eles
+    # liquidam por `PaymentIntent.METHODS_WITHOUT_GATEWAY`. Quando o TEF da Stone
+    # entrar (WP próprio), a captura passa a vir do terminal — e ainda assim não
+    # é um adapter de gateway remoto que resolve isso.
     "cash": None,
     "external": None,
 }
