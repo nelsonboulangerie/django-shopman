@@ -89,17 +89,25 @@ def test_nenhum_vinculo_de_colecao_repetido(colecoes):
 
 
 def test_um_produto_mora_em_uma_categoria_so(colecoes):
-    # Vale para as categorias, que são vínculo PRIMÁRIO. As coleções "do dia"
-    # são agrupamento rotativo e entram como secundárias — "Chausson" é Finos e
-    # também é "Folhado do dia", sem ambiguidade.
-    dono = {}
-    duplos = {}
+    """Uma categoria PRINCIPAL por produto — as outras são só as outras.
+
+    O produto pode aparecer em mais de uma lista: o Pain au Chocolat é Folhados
+    (a massa) e também é Doces (o sabor). A regra que vale é que ele MORA num
+    lugar só, e esse lugar é a primeira lista em que aparece — é o que o seed
+    grava como `is_primary`. Sem estrutura paralela: a ordem das listas decide.
+    """
+    principal = {}
     for ref, skus in colecoes.items():
         for sku in skus:
-            if sku in dono:
-                duplos[sku] = (dono[sku], ref)
-            dono[sku] = ref
-    assert not duplos, f"produto em duas coleções: {duplos}"
+            principal.setdefault(sku, ref)
+
+    sem_casa = [sku for skus in colecoes.values() for sku in skus if sku not in principal]
+    assert not sem_casa, f"produto sem categoria principal: {sem_casa}"
+
+    # O que a regra proíbe é a MESMA lista repetir o produto — isso é erro de
+    # edição, não taxonomia, e criaria dois vínculos idênticos.
+    for ref, skus in colecoes.items():
+        assert len(skus) == len(set(skus)), f"'{ref}' repete SKU: {sorted({s for s in skus if skus.count(s) > 1})}"
 
 
 def test_o_catalogo_usa_os_codigos_reais(catalogo):
@@ -275,3 +283,26 @@ def test_pain_aux_raisins_e_brioche_e_fica_em_macios(colecoes):
     assert "PR" not in colecoes["folhados"], (
         "o nosso Pain aux Raisins é de brioche; o nome francês não decide a categoria"
     )
+
+
+
+def test_a_categoria_principal_do_laminado_e_folhados(colecoes):
+    """A massa decide onde o produto MORA; o sabor é a categoria adicional."""
+    principal = {}
+    for ref, skus in colecoes.items():
+        for sku in skus:
+            principal.setdefault(sku, ref)
+
+    for sku in ("CT", "PC", "CM", "CN", "FF", "BH", "CPQ"):
+        assert principal[sku] == "folhados", (
+            f"{sku} mora em '{principal[sku]}' — massa laminada mora em Folhados"
+        )
+    assert principal["PR"] == "macios", "o nosso Pain aux Raisins é de brioche"
+
+
+def test_o_sabor_entra_como_categoria_adicional(colecoes):
+    for sku in ("PC", "CM", "CN", "BH", "PR"):
+        assert sku in colecoes["doces"], f"{sku} é recheado doce e também é Doces"
+    for sku in ("FF", "CPQ"):
+        assert sku in colecoes["salgados"], f"{sku} é salgado e também é Salgados"
+    assert "CT" not in colecoes["doces"], "o croissant puro não é doce"
