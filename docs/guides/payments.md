@@ -234,6 +234,27 @@ O que o `expires_at` liga (a máquina já existia; faltava o campo):
 canal `pdv` (`payment.timing="external"`). Sem isso a venda fechava COMPLETED sem um centavo
 capturado, e o vencimento não a alcançava mais.
 
+### Reenviar o link
+
+O aviso `payment_link_sent` sai sozinho na venda (Directive deduplicada por pedido+template), e o
+mesmo dedupe que segura o retry do PDV seguraria o operador quando o cliente diz "não chegou".
+`notification.resend_payment_link(order)` enfileira **uma Directive nova por gesto**, com a chave de
+dedupe do envio original mais `:resend:<n>` — retry, backoff e escalada para `OperatorAlert` vêm de
+graça do `NotificationSendHandler`, e o dedupe do envio original fica intacto. O clique duplo do mesmo
+segundo cai no UNIQUE parcial do Core e devolve a Directive do primeiro clique.
+
+O gesto é do operador, nos dois lugares onde ele está: o botão **Reenviar** ao lado de "Copiar link"
+na tela de resultado do PDV (`POST /pos/orders/<ref>/resend-payment-link/`, `cashman.operate_pos`) e
+**Reenviar link de pagamento** no detalhe do pedido no gestor (`POST /orders/<ref>/resend-payment-link/`,
+`shop.manage_orders`). O gestor só mostra o botão quando o servidor vai aceitar
+(`can_resend_payment_link`, pela mesma `payment_link_resend_refusal`), e a linha `payment_link_notice`
+diz o estado do último aviso — "Enviando…", "Link enviado às 14h32", "falhou — reenvie ou copie".
+
+Reenvio manda a **mesma URL** enquanto ela vale. Não existe regenerar: link vencido é pedido que a
+máquina de timeout cancela, e o caminho é refazer a venda. As recusas (`payment_link_expired`,
+`payment_link_already_paid`, `payment_link_send_pending`, `payment_link_resend_too_soon`…) estão em
+[errors.md](../reference/errors.md).
+
 ## Backends Disponíveis
 
 ### MockPaymentBackend

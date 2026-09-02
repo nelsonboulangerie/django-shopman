@@ -56,6 +56,27 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+### Recusa de negócio nomeada: reenvio do link de pagamento (409)
+
+`POST /api/v1/backstage/pos/orders/<ref>/resend-payment-link/` (PDV) e
+`POST /api/v1/backstage/orders/<ref>/resend-payment-link/` (gestor) recusam no
+canônico mais `error.code` — `detail` é o que a tela mostra no toast; o código
+é para a tela distinguir "venceu" de "cedo demais" sem casar a frase
+(`shopman/shop/services/notification.py::resend_payment_link`):
+
+| `error.code` | O que aconteceu | O que resolve |
+|---|---|---|
+| `payment_link_unavailable` | O pedido não é de `link`, ou a cobrança não nasceu (sem `checkout_url`) | Nada a reenviar; refazer a venda se o gateway falhou |
+| `payment_link_order_cancelled` | Pedido cancelado (o vencimento cancela sozinho) | Refazer a venda |
+| `payment_link_already_paid` | Payman mostra captura cobrindo o total | Nada — o cliente pagou |
+| `payment_link_expired` | `payment.expires_at` no passado | Refazer a venda; não existe regenerar o link |
+| `payment_link_send_pending` | O envio anterior ainda está `queued`/`running` | Aguardar; o worker retenta com backoff |
+| `payment_link_resend_too_soon` | Último envio há menos de 60 s | Aguardar o que o `detail` diz |
+
+Todos saem **409**. O 200 devolve `{ok, ref, detail, payment_link_notice}` — a
+prova de envio ("Enviando o link ao cliente…") que o detalhe do gestor também
+carrega em `payment_link_notice`.
+
 ### Recusa nomeada: `error.code` em 403
 
 Nem toda recusa é igual, e o status HTTP sozinho não separa as três que o operador
