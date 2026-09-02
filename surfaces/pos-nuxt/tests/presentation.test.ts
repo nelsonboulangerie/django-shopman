@@ -26,12 +26,14 @@ import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs,
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
+  cashNoteLabel,
   cashNotesQ,
   cashTenderSumQ,
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
+  machineTenderLines,
   methodLabel,
   nonCashExcessQ,
   paymentChangeQ,
@@ -930,7 +932,9 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     const items = [cartItem({ sku: "A", fired: true }), cartItem({ sku: "B" })];
     const bar = fireBarView({ items, affordance: affordance(), hasOpenTab: true, busy: false });
     expect(bar.visible).toBe(true);
-    expect(bar.label).toBe("Enviar itens (1)");
+    // A contagem saiu do RÓTULO e virou badge na tela — o texto do botão é o
+    // que a Action manda, sem número colado.
+    expect(bar.label).toBe("Enviar itens");
     expect(bar.unfired).toBe(1);
     expect(bar.disabled).toBe(false);
 
@@ -1304,5 +1308,28 @@ describe("vale até — o prazo do link, dito como o operador diz", () => {
       checkout_url: "https://pay.example.com/abc",
     } as never, agora);
     expect(semPrazo!.expiresDisplay).toBe("");
+  });
+});
+
+describe("a maquininha e as cédulas", () => {
+  const linha = (method: string) => ({
+    method,
+    label: method,
+    icon: "lucide:credit-card",
+    amountQ: 2500,
+    amountDisplay: "R$ 25,00",
+  });
+
+  it("só crédito e débito pedem conferência na maquininha", () => {
+    // Pix, dinheiro e link não passam por terminal físico: pedir confirmação
+    // neles seria um clique a mais em todo atendimento do balcão.
+    const lines = [linha("cash"), linha("credit"), linha("pix"), linha("debit"), linha("link")];
+    expect(machineTenderLines(lines).map((l) => l.method)).toEqual(["credit", "debit"]);
+  });
+
+  it("cédula perde o centavo, preset quebrado o mantém", () => {
+    expect(cashNoteLabel(200)).toBe("R$ 2");
+    expect(cashNoteLabel(10000)).toBe("R$ 100");
+    expect(cashNoteLabel(250)).toBe(formatBRL(250));
   });
 });

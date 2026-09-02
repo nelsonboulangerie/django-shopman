@@ -32,9 +32,11 @@ import type {
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import {
   cashNotesQ as contractCashNotesQ,
+  cashNoteLabel,
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
+  machineTenderLines,
   methodShortcuts,
   nonCashExcessQ,
   paymentIcon,
@@ -472,6 +474,18 @@ const deliveryCollections = computed(() => collectionsForFulfillment(props.payme
 // A tela impede antes, e SEM apagar o que o operador já digitou: quem estiver
 // lançado desabilita o outro lado. O servidor recusa de todo jeito
 // (`link_requires_full_payment`); isto aqui é a gêmea, não a trava.
+// A CONFERÊNCIA DA MAQUININHA. Crédito e débito não passam por gateway: o
+// cartão é passado no terminal físico e o valor é DIGITADO à mão. Errar um
+// dígito ali é cobrar do cliente um valor que a venda não conhece — e o sistema
+// só descobre no fechamento do dia, quando a adquirente não bate com o livro.
+// Um passo visual antes de fechar é o que separa "o operador leu o valor" de
+// "o operador lembrou o valor".
+//
+// ⚠️ Sai de cena inteiro quando o TEF da Stone entrar: ali o terminal recebe o
+// valor pela API e não há o que conferir. Ver docs/plans/WP-PAGAMENTO-LINK-E-TEF.md.
+const machineTenders = computed(() => machineTenderLines(tenderLines.value));
+const machineConfirmOpen = ref(false);
+
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
 const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
 /** Este método está indisponível AGORA por causa da exclusividade do link? */
@@ -736,12 +750,23 @@ function onCta() {
   // caminho paralelo aqui seria um segundo lugar decidindo quando revisar.
   if (props.reviewFailed) { emit("submit"); return; }
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
+  proceed();
+}
+/** O último degrau antes de fechar: a maquininha, quando ela é quem cobra.
+ *  Depois da autorização do gerente, nunca antes — o cartão só é passado quando
+ *  a venda já está liberada. */
+function proceed() {
+  if (machineTenders.value.length) { machineConfirmOpen.value = true; return; }
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
   emit("update:managerUsername", username);
   emit("update:managerPin", pin);
   managerAuthOpen.value = false;
+  proceed();
+}
+function onMachineConfirmed() {
+  machineConfirmOpen.value = false;
   emit("submit");
 }
 
@@ -954,7 +979,8 @@ defineExpose({
           <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
                cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
           <div class="flex gap-1.5">
-          <div class="grid grid-cols-3 gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'" role="group" aria-label="Teclado de valor">
+          <div class="grid gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'">
+          <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Teclado de valor">
             <button
               v-for="digit in digitKeys"
               :key="digit"
@@ -971,32 +997,41 @@ defineExpose({
             <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
+          </div>
             <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
                  (venda coberta, troco zero) — tecla '='. Limpar (C): zera a linha
-                 inteira para digitar; o Backspace apaga um dígito por vez. -->
+                 inteira para digitar; o Backspace apaga um dígito por vez.
+                 ⚠️ Os dois saíram de DENTRO da grade de 3 colunas. Lá o "Limpar"
+                 vivia numa coluna de dígito — largura de um "7" — com ícone,
+                 rótulo e o texto vazando por cima da borda assim que o trilho de
+                 cédulas aparecia e estreitava o teclado. Em linha própria, cada
+                 um tem metade da largura do teclado e o rótulo cabe em qualquer
+                 zoom; `min-w-0` + `truncate` fecham a porta do estouro. -->
+            <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
               aria-label="Exato: a linha assume o restante"
               title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
               <Icon name="lucide:equal" class="size-4 shrink-0 text-muted-foreground" />
-              Exato
-              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
+              <span class="truncate">Exato</span>
+              <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
             </button>
             <button
               type="button"
-              class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
               @click="$emit('tenderClear')"
             >
               <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
-              Limpar
+              <span class="truncate">Limpar</span>
             </button>
+            </div>
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
                verde dinheiro + ícone de nota -->
@@ -1017,7 +1052,7 @@ defineExpose({
               @click="$emit('tenderAdd', note)"
             >
               <Icon name="lucide:banknote" class="size-3.5 shrink-0 opacity-70" />
-              {{ formatBRL(note) }}
+              {{ cashNoteLabel(note) }}
             </button>
           </div>
           </div>
@@ -1225,10 +1260,16 @@ defineExpose({
                Com troco na mesa esta linha se cala — o troco virou o herói ali
                em cima, e o mesmo número em dois tamanhos na mesma coluna é o
                operador procurando qual dos dois vale. -->
-          <div v-if="payState !== 'change'" class="mt-2 flex items-center justify-between gap-2 px-1">
-            <span class="text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
+          <!-- ⚠️ `flex-wrap`: o número é grande e a coluna do meio encolhe. Em
+               1024px (e em qualquer zoom que aperte a coluna) "RESTANTE" mais um
+               valor em `text-3xl` não cabiam na linha — e como texto não quebra
+               nem encolhe sozinho, o valor VAZAVA por cima do botão Validar, na
+               coluna vizinha. Quebrando, o número desce para a própria linha em
+               vez de invadir o botão que fecha a venda. -->
+          <div v-if="payState !== 'change'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
+            <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
-              class="text-3xl font-bold tabular-nums"
+              class="ml-auto text-3xl font-bold tabular-nums"
               :class="payState === 'ready' ? 'text-muted-foreground' : ''"
             >
               {{ formatBRL(Math.max(0, paymentRemainingQ)) }}
@@ -1575,6 +1616,40 @@ defineExpose({
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
   />
+
+  <!-- MODAL: MAQUININHA — o valor que o operador vai digitar no terminal.
+       Um passo, um número, um botão. Existe porque entre a tela e a maquininha
+       hoje não há fio nenhum: quem transporta o valor é a memória de quem está
+       atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
+       certo — se a maquininha recusar, o operador fecha o diálogo e troca a
+       forma; a venda ainda não foi registrada. -->
+  <UiDialog v-model:open="machineConfirmOpen">
+    <UiDialogContent class="sm:max-w-sm">
+      <UiDialogHeader>
+        <UiDialogTitle>Passe na maquininha</UiDialogTitle>
+        <UiDialogDescription>Digite este valor no terminal e conclua a operação com o cliente.</UiDialogDescription>
+      </UiDialogHeader>
+      <div class="grid gap-2">
+        <div
+          v-for="line in machineTenders"
+          :key="line.method"
+          class="grid justify-items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-4 py-6"
+        >
+          <p class="text-4xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
+          <p class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
+            <Icon :name="line.icon" class="size-4" />
+            {{ line.label }}
+          </p>
+        </div>
+      </div>
+      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+        <UiButton size="lg" class="h-12 text-base" @click="onMachineConfirmed">
+          OK, cobrei na maquininha
+        </UiButton>
+        <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
 
   <!-- MODAL: Desconto -->
   <UiDialog v-model:open="discountSheetOpen">

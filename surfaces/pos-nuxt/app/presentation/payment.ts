@@ -214,6 +214,30 @@ export function tenderLineView(
   };
 }
 
+/**
+ * As formas que exigem A MAQUININHA — o cartão passa fora do sistema, e o valor
+ * é digitado à mão no terminal físico.
+ *
+ * ⚠️ Esta lista é o interruptor do passo de conferência: quando o TEF da Stone
+ * entrar, o terminal passa a receber o valor pela API e a confirmação some
+ * daqui, de um lugar só. Não espalhe o par `credit`/`debit` pela tela.
+ */
+export function machineTenderLines(lines: TenderLineView[]): TenderLineView[] {
+  return lines.filter((line) => line.method === "credit" || line.method === "debit");
+}
+
+/**
+ * A cédula como o operador a chama: "R$ 50", não "R$ 50,00".
+ *
+ * Centavo em nota é ruído — não existe cédula quebrada, e o `,00` repetido seis
+ * vezes num trilho estreito rouba a largura de que os rótulos precisam. Um
+ * preset quebrado (se o contrato da loja trouxer um) volta ao formato cheio: aí
+ * o centavo é informação.
+ */
+export function cashNoteLabel(q: number): string {
+  return q % 100 === 0 ? `R$ ${Math.trunc(q / 100)}` : formatBRL(q);
+}
+
 // The Brazilian cash notes, in cents — the fallback when the channel contract
 // does not carry a denomination set. These are the bills the customer hands
 // over: tapping a note ADDS it to the received amount (Odoo's +10/+20/+50
