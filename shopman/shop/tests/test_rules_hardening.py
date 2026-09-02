@@ -127,6 +127,40 @@ class TestRuleConfigAdminPermission(TestCase):
         assert not admin_instance.has_add_permission(request)
         assert not admin_instance.has_delete_permission(request)
 
+    def test_acoes_em_lote_tambem_exigem_manage_rules(self):
+        """O portão tem de valer na PORTA, não só no formulário.
+
+        ⚠️ Os `has_*_permission` acima gateiam a tela de edição. As ações em
+        lote passam por FORA deles: `@admin.action` sem `permissions=` não é
+        filtrada pelo Django (`contrib/admin/options.py`), aparece no seletor, e
+        `get_actions` é o único portão de `response_action`.
+
+        Consequência viva antes deste teste: a Gerente tem `view_ruleconfig` por
+        `_ver("shop")` (`setup_groups.py`) e NÃO tem `manage_rules` — o portão do
+        WP-GAP-06, que existe porque regra de preço EXECUTA expressão. Ela
+        selecionava tudo e ligava/desligava regra de preço pelo seletor.
+
+        Este teste bate na porta (`get_actions`), e não nos métodos: era
+        justamente a diferença entre os dois que deixava o buraco passar verde.
+        """
+        from django.contrib.admin.sites import AdminSite
+
+        from shopman.shop.admin.rules import RuleConfigAdmin
+
+        admin_instance = RuleConfigAdmin(RuleConfig, AdminSite())
+        rf = RequestFactory()
+
+        request = rf.get("/admin/shop/ruleconfig/")
+        request.user = self.staff_user
+        acoes_sem_perm = admin_instance.get_actions(request)
+        assert "enable_rules" not in acoes_sem_perm
+        assert "disable_rules" not in acoes_sem_perm
+
+        request.user = self.privileged_user
+        acoes_com_perm = admin_instance.get_actions(request)
+        assert "enable_rules" in acoes_com_perm
+        assert "disable_rules" in acoes_com_perm
+
     def test_staff_with_perm_can_change(self):
         from django.contrib.admin.sites import AdminSite
 
