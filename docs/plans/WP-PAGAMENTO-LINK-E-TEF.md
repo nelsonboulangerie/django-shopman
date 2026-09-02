@@ -1,9 +1,22 @@
 # WP-PAGAMENTO — Link de pagamento (provedor, entrega, prazo) e TEF no balcão
 
-> Estado: **proposto, aguardando decisões do Pablo**. Escrito às vésperas do go-live,
-> em cima do que a branch `claude/checkout-pdv-refinements-491373` acabou de pôr de pé.
-> Quatro frentes independentes; a 1 e a 3 são gate de go-live, a 2 é o que faz o
-> link valer a pena, a 4 é pós-go-live com data marcada.
+> Estado: **frentes 1, 2 e 3 em execução (02/09/2026)**, empilhadas sobre o PR #484
+> (a branch `claude/checkout-pdv-refinements-491373`, que pôs o link de pé). A frente 4
+> segue pós-go-live. As sete perguntas do fim foram respondidas com as **recomendações
+> do próprio plano** — a ordem de executar veio sem ressalva, e nenhuma resposta
+> alternativa mudava o que dá para fazer antes do go-live. Se o Pablo discordar de
+> alguma (Stripe × Stone, 24 h, cancelar sozinho), o gesto de virar está anotado em cada
+> frente.
+>
+> | # | Pergunta | Assumido |
+> |---|---|---|
+> | 1 | Provedor do link | **Stripe** (a Stone entra com o TEF, frente 4) |
+> | 2 | Captura do link | **`automatic`**, sempre — não é env, é a natureza da forma |
+> | 3 | Validade | **24 h**, gravadas no intent E mandadas ao Stripe (`SHOPMAN_PAYMENT_LINK_TTL_HOURS`) |
+> | 4 | Link vencido | **cancela sozinho** pela máquina existente + check `expired_payment_link` na reconciliação |
+> | 5 | Reenvio manual pelo Gestor | **fora** — próximo passo |
+> | 6 | Balcão COMPLETED com link pendente | **não** — `_counter_handoff` recusa venda de link |
+> | 7 | Cadeia do canal PDV | **WhatsApp → e-mail → SMS** |
 
 ## O que já está no ar (não replanejar)
 
