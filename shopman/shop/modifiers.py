@@ -49,12 +49,6 @@ def _is_non_merchandise_line(item: dict) -> bool:
     return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") in {"delivery_fee"}
 
 
-def _price_is_frozen(item: dict) -> bool:
-    """Operator fixed this line's unit price (numpad "Preço", manager-approved):
-    the price is FINAL — no auto discount (happy-hour, promo) applies on top."""
-    return bool((item.get("meta") or {}).get("price_overridden"))
-
-
 def _discount_label(copy_key: str, fallback: str) -> str:
     """Resolve a customer-facing discount label from OmotenashiCopy.
 
@@ -349,7 +343,7 @@ def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) ->
     won_total_q = 0
     modified = False
     for item in items:
-        if _is_non_merchandise_line(item) or _price_is_frozen(item):
+        if _is_non_merchandise_line(item):
             continue
         list_q = _list_price_q(item)
         if list_q <= 0:
@@ -415,7 +409,7 @@ class LotDiscountModifier:
         won_total_q = 0
         modified = False
         for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
+            if _is_non_merchandise_line(item):
                 continue
             batch_ref = (item.get("meta") or {}).get("batch_ref") or ""
             if not batch_ref:
@@ -584,7 +578,7 @@ class DiscountModifier:
         session.pricing = pricing
 
         for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
+            if _is_non_merchandise_line(item):
                 continue
             sku = item.get("sku", "")
             # Percentuais competem sobre o preço de LISTA e vencem a linha em
@@ -678,7 +672,6 @@ class DiscountModifier:
                 item
                 for item in items
                 if not _is_non_merchandise_line(item)
-                and not _price_is_frozen(item)
                 # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
                 # de pedido não empilha sobre promo/cupom/manual já aplicados.
                 and not (item.get("meta") or {}).get("_disc")
@@ -892,13 +885,24 @@ class DiscountModifier:
 
     @staticmethod
     def _calc_manual(manual: dict, price_q: int) -> int:
-        """Per-unit discount from an operator manual line discount (percent only)."""
+        """Desconto POR UNIDADE do manual de linha — em % ou em R$.
+
+        O R$ é por unidade de propósito: é assim que ele compete com o automático
+        no "maior desconto ganha", que mede tudo por unidade contra o preço de
+        etiqueta. Rateio de um valor pela linha inteira existe para o desconto de
+        PEDIDO (``ManualDiscountModifier``), que não disputa linha com ninguém.
+
+        ``value`` segue a convenção do desconto do pedido: percentual em
+        ``percent``, REAIS em ``fixed``.
+        """
         try:
             value = float(manual.get("value") or 0)
         except (TypeError, ValueError):
             return 0
         if value <= 0:
             return 0
+        if str(manual.get("type") or "percent").strip().lower() == "fixed":
+            return min(int(round(value * 100)), price_q)
         return min(monetary_div(int(round(price_q * value)), 100), price_q)
 
 
@@ -1303,7 +1307,7 @@ class LoyaltyRedeemModifier:
         subtotal_q = sum(
             item.get("line_total_q", 0)
             for item in items
-            if not _is_non_merchandise_line(item) and not _price_is_frozen(item)
+            if not _is_non_merchandise_line(item)
         )
 
         # Clamp: never redeem more than the order total
@@ -1324,7 +1328,6 @@ class LoyaltyRedeemModifier:
         eligible = [
             item for item in items
             if not _is_non_merchandise_line(item)
-            and not _price_is_frozen(item)
             and item.get("line_total_q", 0) > 0
         ]
         touched = _spread_order_discount(eligible, redeem_q, at_least=False)
@@ -1396,7 +1399,7 @@ class ManualDiscountModifier:
         subtotal_q = sum(
             item.get("line_total_q", 0)
             for item in items
-            if not _is_non_merchandise_line(item) and not _price_is_frozen(item)
+            if not _is_non_merchandise_line(item)
         )
         discount_q = min(discount_q, subtotal_q)
         if discount_q <= 0:
@@ -1409,7 +1412,6 @@ class ManualDiscountModifier:
         eligible = [
             item for item in items
             if not _is_non_merchandise_line(item)
-            and not _price_is_frozen(item)
             and item.get("line_total_q", 0) > 0
         ]
         touched = _spread_order_discount(eligible, discount_q, at_least=False)

@@ -2174,12 +2174,21 @@ def _int_q(value) -> int:
 
 
 def _tab_payload_line_discount(item: dict) -> dict | None:
-    """Surface the operator's per-line manual discount (percent) for restore."""
+    """O desconto manual da LINHA, para restaurar a comanda salva.
+
+    ⚠️ O ``type`` viaja de volta. Sem ele, uma comanda salva com desconto de
+    R$ 2,00 voltava do banco como 2% — o campo estava gravado, e era a projection
+    que o deixava para trás.
+    """
     manual = (item.get("meta") or {}).get("manual_discount") or {}
     value = manual.get("value")
     if not value:
         return None
-    return {"value": value, "reason": manual.get("reason", "cortesia")}
+    return {
+        "value": value,
+        "reason": manual.get("reason", "cortesia"),
+        "type": str(manual.get("type") or "percent"),
+    }
 
 
 # Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
@@ -2320,7 +2329,6 @@ def build_open_tab(session: Session) -> dict:
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
             "charged_price_q": _int_q(item.get("unit_price_q", 0)),
-            "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])
         if not _is_delivery_fee_item(item)
