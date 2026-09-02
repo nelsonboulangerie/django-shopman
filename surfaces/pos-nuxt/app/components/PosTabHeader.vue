@@ -144,7 +144,7 @@ function runClear() {
     >
       <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
-      <span v-else class="shrink-0 text-muted-foreground">Adicionar cliente</span>
+      <span v-else class="shrink-0 text-muted-foreground">Identificar cliente</span>
     </button>
 
     <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
