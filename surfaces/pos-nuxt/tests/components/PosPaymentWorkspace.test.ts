@@ -1008,3 +1008,72 @@ describe("PosPaymentWorkspace — a revisão que falha tem saída", () => {
     expect(botao.attributes("disabled")).toBeDefined();
   });
 });
+
+describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
+  // ⚠️ Em venda MISTA o servidor liquidaria o link com `asserted_at_terminal`,
+  // como se o dinheiro tivesse entrado — e sem gerar URL nenhuma. Venda paga,
+  // cliente sem link, dinheiro que nunca chega. O servidor recusa
+  // (`link_requires_full_payment`); a tela impede antes de chegar lá.
+  const comLink = { method: "link", amount_q: 1000, collection: "terminal" as const };
+  const metodos = [
+    { ref: "cash", label: "Dinheiro" },
+    { ref: "link", label: "Link de pagamento" },
+  ];
+  const botao = (w: Awaited<ReturnType<typeof mountSuspended>>, texto: string) =>
+    w.findAll("button").find((b) => b.text().includes(texto))!;
+
+  it("com link lançado, as outras formas ficam indisponíveis", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    expect(botao(wrapper, "Dinheiro").attributes("disabled")).toBeDefined();
+    expect(botao(wrapper, "Dinheiro").attributes("title")).toContain("venda inteira");
+  });
+
+  it("com outra forma lançada, o link fica indisponível", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [tender] }),
+    });
+    expect(botao(wrapper, "Link de pagamento").attributes("disabled")).toBeDefined();
+  });
+
+  it("nada é apagado: se as duas convivem, o Validar trava com o motivo", async () => {
+    // Desabilitar não pode ser a única defesa — a comanda restaurada pode
+    // chegar com as duas. Aí a recusa é dita, não escondida.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentMethods: metodos,
+        paymentTenders: [tender, comLink],
+        paymentCovered: true, paymentRemainingQ: 0,
+        customerPhone: "43999990000",
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(avisos(wrapper).text()).toContain("O link cobra a venda inteira.");
+  });
+
+  it("o link exige contato — é uma URL que alguém precisa RECEBER", async () => {
+    const semContato = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    expect(cta(semContato)!.attributes("disabled")).toBeDefined();
+    expect(avisos(semContato).text()).toContain("O link precisa de um contato.");
+    expect(avisos(semContato).findAll("button").some((b) => b.text().includes("Identificar cliente"))).toBe(true);
+
+    // ⚠️ Nome NÃO basta: o que se quer aqui é PARA ONDE mandar, não de quem é.
+    const soNome = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0, customerName: "Seu Jorge" }),
+    });
+    expect(avisos(soNome).text()).toContain("O link precisa de um contato.");
+
+    const comTelefone = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0, customerPhone: "43999990000" }),
+    });
+    expect(cta(comTelefone)!.attributes("disabled")).toBeUndefined();
+
+    const comEmail = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0, customerEmail: "jorge@casa.com" }),
+    });
+    expect(cta(comEmail)!.attributes("disabled")).toBeUndefined();
+  });
+});

@@ -462,6 +462,23 @@ const methodKeys = computed(() => methodShortcuts(injectableMethods.value));
 const tenderLines = computed(() => props.paymentTenders.map((tender) => tenderLineView(tender, injectableMethods.value)));
 const deliveryCollections = computed(() => collectionsForFulfillment(props.paymentCollections, props.fulfillmentType));
 
+// ── O LINK COBRA A VENDA INTEIRA ─────────────────────────────────────────
+//
+// Ele é a única forma do balcão que depende de uma cobrança REMOTA, e ela só é
+// criada quando a venda é dele sozinho (`payment.initiate`). Em venda MISTA o
+// servidor liquidaria o link como se o dinheiro já tivesse entrado, sem gerar
+// URL nenhuma — venda paga, cliente sem link, dinheiro que nunca chega.
+//
+// A tela impede antes, e SEM apagar o que o operador já digitou: quem estiver
+// lançado desabilita o outro lado. O servidor recusa de todo jeito
+// (`link_requires_full_payment`); isto aqui é a gêmea, não a trava.
+const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
+const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
+/** Este método está indisponível AGORA por causa da exclusividade do link? */
+function blockedByLink(ref: string): boolean {
+  return ref === "link" ? hasNonLinkTender.value : hasLinkTender.value;
+}
+
 // "Troco para quanto?" só existe no dinheiro NA ENTREGA. O aviso (< total) é o
 // mesmo da review do servidor; aqui aparece NA DIGITAÇÃO, sem esperar round-trip.
 const onDeliveryCash = computed(
@@ -587,6 +604,23 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
     };
   }
   if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  // `link_requires_full_payment` — a gêmea. Ver `hasLinkTender` acima.
+  if (hasLinkTender.value && hasNonLinkTender.value) {
+    return {
+      message: "O link cobra a venda inteira.",
+      hint: "Remova as outras formas, ou troque o link por uma delas.",
+    };
+  }
+  // `link_requires_customer_contact` — o link é uma URL que alguém precisa
+  // RECEBER. Sem telefone nem e-mail, a venda fecha aguardando um pagamento que
+  // ninguém vai pedir, e a URL só volta pelo gestor.
+  if (hasLinkTender.value && !props.customerPhone.trim() && !props.customerEmail.trim()) {
+    return {
+      message: "O link precisa de um contato.",
+      hint: "Telefone ou e-mail — é por onde ele vai.",
+      action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
+    };
+  }
   // Excedente em cartão/Pix não tem troco que o desfaça: é digitação errada, e
   // o servidor grava o valor inflado como recebido. Era um aviso amarelo ao lado
   // de "Restante R$ 0,00" e de um Validar verde — três estados discordando.
@@ -728,7 +762,7 @@ defineExpose({
   openDiscount: () => { discountSheetOpen.value = true; },
   /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
    *  achou dono — o shell só consome a tecla quando ela virou ação. */
-  /** F9 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão.
+  /** F10 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão.
    *  E LEVA O FOCO ao campo que acabou de aparecer. Sem isso o foco ficava no
    *  `body`, e o shell captura todo dígito fora de input quando há linha de
    *  pagamento selecionada: o operador apertava F9, digitava o CPF de reflexo, e
@@ -744,6 +778,32 @@ defineExpose({
     if (!ref) return false;
     emit("addTender", ref);
     return true;
+  },
+  /** I e M — os dois canais do comprovante, pela letra.
+   *
+   *  Não são teclas de função porque não sobrou nenhuma: F1 é ajuda, F5 é
+   *  reload, F11 é tela-cheia (que o quiosque usa) e F12 abre o DevTools ANTES
+   *  de a página ver a tecla. De F2 a F10 está tudo tomado.
+   *
+   *  ⚠️ E não é "E" de e-mail: o E já é a inicial de "Em conta", que aparece
+   *  para cliente com conta na casa. Seriam duas ações na mesma tecla, e a
+   *  errada dispararia calada — o defeito que as letras das formas de pagamento
+   *  acabaram de deixar de ter.
+   *
+   *  Devolve se a tecla teve dono: sem NFC-e no contrato, a seção não existe e a
+   *  letra segue o caminho dela (a busca de produto). */
+  pressReceiptKey: (letter: string) => {
+    if (!supportsFiscalDocument.value) return false;
+    if (letter === "I") { setReceiptChannel("print", !wantsPrintedReceipt.value); return true; }
+    if (letter === "M") {
+      const next = !wantsEmailReceipt.value;
+      setReceiptChannel("email", next);
+      // Ligar o canal e não ter onde escrever é um bloqueio a caminho: leva o
+      // foco ao campo, como o F10 faz com o CPF.
+      if (next) focusByAriaLabel("E-mail que recebe a nota");
+      return true;
+    }
+    return false;
   },
 });
 </script>
@@ -873,8 +933,12 @@ defineExpose({
               :key="method.ref"
               type="button"
               class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
-              :disabled="onDeliveryCash && method.ref !== 'cash'"
-              :title="onDeliveryCash && method.ref !== 'cash' ? 'Na entrega só dinheiro; receba no caixa para usar esta forma' : undefined"
+              :disabled="(onDeliveryCash && method.ref !== 'cash') || blockedByLink(method.ref)"
+              :title="onDeliveryCash && method.ref !== 'cash'
+                ? 'Na entrega só dinheiro; receba no caixa para usar esta forma'
+                : blockedByLink(method.ref)
+                  ? 'O link de pagamento cobra a venda inteira'
+                  : undefined"
               @click="$emit('addTender', method.ref)"
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
@@ -982,7 +1046,7 @@ defineExpose({
           >
             <Icon name="lucide:tag" class="size-4 shrink-0" />
             <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto na venda ${discountSummary}` : "Desconto na venda" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
+            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F9</kbd>
           </button>
 
           <!-- DIVIDIR A CONTA — "somos três, cada um paga o seu".
@@ -1003,6 +1067,8 @@ defineExpose({
               size="sm"
               class="h-9 min-w-0 flex-1 p-0 tabular-nums"
               :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
+              :disabled="hasLinkTender"
+              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
               :aria-pressed="splitCount === n"
               :aria-label="`Dividir a conta em ${n} pessoas`"
               @click="$emit('setSplitCount', n)"
@@ -1316,7 +1382,7 @@ defineExpose({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0 text-muted-foreground" />
                   CPF na nota?
                 </span>
-                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F9</kbd>
+                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F10</kbd>
                 <UiSwitch
                   :model-value="wantsCpfOnInvoice"
                   aria-label="CPF na nota"
@@ -1352,6 +1418,7 @@ defineExpose({
                   <Icon name="lucide:printer" class="size-4 shrink-0 text-muted-foreground" />
                   Impressa?
                 </span>
+                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">I</kbd>
                 <UiSwitch
                   :model-value="wantsPrintedReceipt"
                   aria-label="Nota impressa"
@@ -1370,6 +1437,7 @@ defineExpose({
                   <Icon name="lucide:mail" class="size-4 shrink-0 text-muted-foreground" />
                   Por e-mail?
                 </span>
+                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">M</kbd>
                 <UiSwitch
                   :model-value="wantsEmailReceipt"
                   aria-label="Nota por e-mail"
