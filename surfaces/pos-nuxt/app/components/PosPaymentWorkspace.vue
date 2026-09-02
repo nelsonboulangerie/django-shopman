@@ -328,6 +328,12 @@ const cashSelected = computed(() => props.selectedTenderMethod === "cash");
 // O teclado só vale quando há uma linha de pagamento selecionada para editar.
 const numpadActive = computed(() => props.selectedTenderIndex >= 0 && props.selectedTenderIndex < props.paymentTenders.length);
 
+// A MÁSCARA E O VALOR GUARDADO precisam parar no mesmo dígito. A máscara fazia
+// `slice(0, 14)` e o que era emitido não: digitando um 15º dígito a tela seguia
+// exibindo um CNPJ completo enquanto o valor guardado tinha 15 — e o eco logo
+// abaixo dizia "Documento incompleto" sobre um número que parecia perfeito.
+// Guardamos só dígitos (é o que o intent envia de qualquer jeito) e cortamos na
+// origem.
 const invoiceTaxIdMasked = computed(() => {
   const d = props.invoiceTaxId.replace(/\D/g, "").slice(0, 14);
   if (d.length <= 11) {
@@ -953,7 +959,8 @@ defineExpose({
                   class="h-11 tabular-nums"
                   placeholder="000.000.000-00"
                   aria-label="CPF que sai na nota"
-                  @update:model-value="$emit('update:invoiceTaxId', String($event || ''))"
+                  :maxlength="18"
+                  @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
                 />
                 <!-- Eco do documento: o operador lê de volta o que vai sair e diz
                      ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
