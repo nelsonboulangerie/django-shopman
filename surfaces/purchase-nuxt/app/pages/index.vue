@@ -19,6 +19,7 @@ import {
   formatMoney,
   formatQty,
   formatQtyDiff,
+  formatShortDate,
   formatStockOnHand,
   receiptOutcomeSummary,
   receiptSettledSummary,
@@ -214,10 +215,6 @@ const scannerVideo = ref<HTMLVideoElement | null>(null);
 const scannerFileInput = ref<HTMLInputElement | null>(null);
 let scannerControls: { stop: () => void; switchTorch?: (onOff: boolean) => Promise<void> } | null = null;
 let scannerAccepted = false;
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
-}
 
 function openBase(tab: PurchaseBaseView) {
   baseView.value = tab;
@@ -1254,7 +1251,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div><dt class="text-xs text-muted-foreground">Prazo</dt><dd class="font-semibold">{{ selectedSupplier.leadTimeDays }} dia(s)</dd></div>
             <div><dt class="text-xs text-muted-foreground">Entrega</dt><dd class="font-semibold">{{ selectedSupplier.reliabilityPercent }}%</dd></div>
-            <div><dt class="text-xs text-muted-foreground">Última</dt><dd class="font-semibold">{{ formatDate(selectedSupplier.lastDeliveryAt) }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Última</dt><dd class="font-semibold">{{ formatShortDate(selectedSupplier.lastDeliveryAt) }}</dd></div>
             <div><dt class="text-xs text-muted-foreground">Pagamento</dt><dd class="font-semibold">{{ selectedSupplier.paymentTerm }}</dd></div>
           </dl>
           <div class="mt-4 border-t border-border pt-4">

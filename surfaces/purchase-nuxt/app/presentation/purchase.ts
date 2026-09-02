@@ -83,6 +83,25 @@ export function formatFactor(value: number, unit: string, approximate = false): 
   return `${prefix}${quantityFormatter.format(value)} ${unit}`;
 }
 
+const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+
+/**
+ * Data curta (dd/mm) para carimbo de tela — "—" quando não há data.
+ *
+ * `Intl.DateTimeFormat.format()` **lança** `RangeError: Invalid time value`
+ * diante de um Invalid Date, em vez de devolver texto. Como a projeção manda
+ * `lastDeliveryAt: ""` para todo fornecedor que ainda não entregou, formatar
+ * sem checar derrubava o render inteiro da aba Fornecedores. Ausência de data é
+ * um estado normal do domínio, não um erro: ela vira travessão, não exceção.
+ */
+export function formatShortDate(value: string | null | undefined): string {
+  const text = (value ?? "").trim();
+  if (!text) return "—";
+  const parsed = new Date(`${text}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return shortDateFormatter.format(parsed);
+}
+
 export function coverageDays(material: Pick<Material, "stockOnHand" | "dailyUse">): number {
   if (material.dailyUse <= 0) return Number.POSITIVE_INFINITY;
   return material.stockOnHand / material.dailyUse;

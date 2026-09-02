@@ -12,6 +12,7 @@ import {
   countSummary,
   formatMoney,
   formatQtyDiff,
+  formatShortDate,
   formatStockOnHand,
   receiptFirstBlocker,
   receiptIsBlank,
@@ -898,5 +899,39 @@ describe("contagem de insumos", () => {
     expect(formatQtyDiff(-1.5, "kg")).toBe("−1,5 kg");
     expect(formatQtyDiff(2, "un")).toBe("+2 un");
     expect(formatQtyDiff(0, "kg")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatShortDate — a data que faltava derrubava a tela
+// ---------------------------------------------------------------------------
+// 14 dos 15 fornecedores cadastrados nunca entregaram, e a projeção manda
+// `lastDeliveryAt: ""` para todos eles (`last_delivery.get(supplier.ref, "")`
+// em `_supplier_projection`). O formatador antigo montava a data por
+// interpolação de string, que para "" vira Invalid Date — e
+// `Intl.DateTimeFormat.format(Invalid Date)` NÃO devolve "—": ele lança
+// `RangeError: Invalid time value` no meio do render, derrubando a árvore de
+// componentes. Era o "não clica, não abre" da aba Fornecedores.
+describe("formatShortDate", () => {
+  it("formata a data que existe", () => {
+    expect(formatShortDate("2026-08-27")).toBe("27/08");
+  });
+
+  it("não estoura com fornecedor que nunca entregou (string vazia)", () => {
+    expect(() => formatShortDate("")).not.toThrow();
+    expect(formatShortDate("")).toBe("—");
+  });
+
+  it("não estoura com campo ausente vindo da API", () => {
+    expect(() => formatShortDate(undefined)).not.toThrow();
+    expect(() => formatShortDate(null)).not.toThrow();
+    expect(formatShortDate(undefined)).toBe("—");
+    expect(formatShortDate(null)).toBe("—");
+  });
+
+  it("não estoura com data impossível de ler", () => {
+    expect(() => formatShortDate("sem data")).not.toThrow();
+    expect(formatShortDate("sem data")).toBe("—");
+    expect(formatShortDate("2026-13-45")).toBe("—");
   });
 });
