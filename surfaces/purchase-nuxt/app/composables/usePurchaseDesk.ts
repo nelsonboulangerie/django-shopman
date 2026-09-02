@@ -31,301 +31,10 @@ import {
   receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
   receiptPendingItems,
+  reorderBlockers as buildReorderBlockers,
+  reorderRows as buildReorderRows,
   supplierCostRows,
 } from "~/presentation/purchase";
-
-const MATERIALS: Material[] = [
-  {
-    sku: "FARINHA-T65",
-    name: "Farinha T65",
-    unit: "kg",
-    shelfLifeDays: 180,
-    isActive: true,
-    category: "Farinhas",
-    stockOnHand: 78,
-    dailyUse: 18,
-    minStock: 60,
-    recipes: ["Baguete", "Croissant", "Pain de campagne"],
-  },
-  {
-    sku: "MANTEIGA-TOURAGE",
-    name: "Manteiga de tourage",
-    unit: "kg",
-    shelfLifeDays: 45,
-    isActive: true,
-    category: "Laticínios",
-    stockOnHand: 22,
-    dailyUse: 9,
-    minStock: 30,
-    recipes: ["Croissant", "Pain au chocolat"],
-  },
-  {
-    // Comprado por cartela e contado em kg: a ponte e aproximada, e o saldo
-    // carrega o "≈" por causa disso (ADR-024, R3).
-    stockIsApproximate: true,
-    sku: "OVOS",
-    name: "Ovos",
-    unit: "kg",
-    shelfLifeDays: 21,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 16,
-    dailyUse: 4,
-    minStock: 12,
-    recipes: ["Quiche", "Brioche", "Creme confeiteiro"],
-  },
-  {
-    sku: "FERMENTO-NAT",
-    name: "Fermento natural",
-    unit: "kg",
-    shelfLifeDays: 14,
-    isActive: true,
-    category: "Fermentação",
-    stockOnHand: 7,
-    dailyUse: 2.4,
-    minStock: 8,
-    recipes: ["Levain", "Pain de campagne"],
-  },
-  {
-    // Pesado em kg e comprado em pacote, e sem conversao cadastrada: e o estado
-    // que a linha do recebimento precisa saber mostrar, e o que o QA de 27/08
-    // encontrou quebrado (10 unidades lidas como 10 kg).
-    sku: "FERMENTO-BIO",
-    name: "Fermento biológico",
-    unit: "kg",
-    shelfLifeDays: 45,
-    isActive: true,
-    category: "Fermentação",
-    stockOnHand: 2.5,
-    dailyUse: 0.6,
-    minStock: 2,
-    recipes: ["Brioche", "Croissant"],
-  },
-  {
-    sku: "SAL",
-    name: "Sal",
-    unit: "kg",
-    shelfLifeDays: null,
-    isActive: true,
-    category: "Secos",
-    stockOnHand: 55,
-    dailyUse: 1.1,
-    minStock: 20,
-    recipes: ["Todas as massas"],
-  },
-  {
-    sku: "CANELA",
-    name: "Canela",
-    unit: "g",
-    shelfLifeDays: 180,
-    isActive: true,
-    category: "Especiarias",
-    stockOnHand: 750,
-    dailyUse: 90,
-    minStock: 600,
-    recipes: ["Pain perdu", "Rabanada"],
-  },
-  {
-    sku: "ALECRIM",
-    name: "Alecrim fresco",
-    unit: "g",
-    shelfLifeDays: 14,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 260,
-    dailyUse: 120,
-    minStock: 400,
-    recipes: ["Focaccia", "Pão de alecrim"],
-  },
-  {
-    sku: "LEITE-INTEGRAL",
-    name: "Leite integral",
-    unit: "l",
-    shelfLifeDays: 7,
-    isActive: true,
-    category: "Laticínios",
-    stockOnHand: 14,
-    dailyUse: 8,
-    minStock: 30,
-    recipes: ["Creme confeiteiro", "Chocolate quente"],
-  },
-  {
-    sku: "QUEIJO-ARTESANAL",
-    name: "Queijo artesanal",
-    unit: "kg",
-    shelfLifeDays: 18,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 5.5,
-    dailyUse: 1.3,
-    minStock: 8,
-    recipes: ["Quiche", "Tartine", "Sanduíche de queijo"],
-  },
-];
-
-const SUPPLIERS: Supplier[] = [
-  {
-    ref: "SUP-MOINHO-SP",
-    name: "Moinho São Paulo",
-    document: "12.345.678/0001-90",
-    contact: "compras@moinhosp.example",
-    leadTimeDays: 2,
-    reliabilityPercent: 96,
-    isActive: true,
-    lastDeliveryAt: "2026-08-22",
-    paymentTerm: "14 dias",
-  },
-  {
-    ref: "SUP-COOP-NORTE",
-    name: "Cooperativa Norte",
-    document: "43.210.987/0001-12",
-    contact: "pedidos@coopnorte.example",
-    leadTimeDays: 3,
-    reliabilityPercent: 91,
-    isActive: true,
-    lastDeliveryAt: "2026-08-20",
-    paymentTerm: "7 dias",
-  },
-  {
-    ref: "SUP-LATICINIOS",
-    name: "Laticínios Aurora",
-    document: "18.190.200/0001-05",
-    contact: "aurora@laticinios.example",
-    leadTimeDays: 1,
-    reliabilityPercent: 98,
-    isActive: true,
-    lastDeliveryAt: "2026-08-24",
-    paymentTerm: "à vista",
-  },
-  {
-    ref: "SUP-CEASA-LONDRINA",
-    name: "Ceasa Londrina",
-    document: "09.001.002/0001-33",
-    contact: "banca27@ceasa.example",
-    leadTimeDays: 1,
-    reliabilityPercent: 86,
-    isActive: true,
-    lastDeliveryAt: "2026-08-24",
-    paymentTerm: "7 dias",
-  },
-  {
-    ref: "SUP-DISTRIBUIDORA",
-    name: "Distribuidora Paraná",
-    document: "33.444.555/0001-44",
-    contact: "industrial@parana.example",
-    leadTimeDays: 4,
-    reliabilityPercent: 89,
-    isActive: true,
-    lastDeliveryAt: "2026-08-18",
-    paymentTerm: "21 dias",
-  },
-  {
-    ref: "SUP-FAZENDA-BOA-VISTA",
-    name: "Fazenda Boa Vista",
-    document: "entrega informal",
-    contact: "WhatsApp do produtor",
-    leadTimeDays: 1,
-    reliabilityPercent: 88,
-    isActive: true,
-    lastDeliveryAt: "2026-08-25",
-    paymentTerm: "à vista",
-  },
-];
-
-const CONVERSIONS: MaterialConversion[] = [
-  { id: "conv-farinha-moinho-25", materialSku: "FARINHA-T65", supplierRef: "SUP-MOINHO-SP", label: "saco 25 kg", toBaseFactor: 25, kind: "conventional", isActive: true },
-  { id: "conv-farinha-coop-20", materialSku: "FARINHA-T65", supplierRef: "SUP-COOP-NORTE", label: "saco 20 kg", toBaseFactor: 20, kind: "conventional", isActive: true },
-  { id: "conv-manteiga-caixa-10", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-LATICINIOS", label: "caixa 10 kg", toBaseFactor: 10, kind: "conventional", isActive: true },
-  { id: "conv-manteiga-pacote-5", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-DISTRIBUIDORA", label: "pacote 5 kg", toBaseFactor: 5, kind: "conventional", isActive: true },
-  { id: "conv-ovos-cartela", materialSku: "OVOS", supplierRef: null, label: "cartela", toBaseFactor: 1.5, kind: "approximate", isActive: true },
-  { id: "conv-ovos-caixa", materialSku: "OVOS", supplierRef: "SUP-DISTRIBUIDORA", label: "caixa 12 cartelas", toBaseFactor: 18, kind: "approximate", isActive: true },
-  { id: "conv-canela-pacote", materialSku: "CANELA", supplierRef: "SUP-DISTRIBUIDORA", label: "pacote 500 g", toBaseFactor: 500, kind: "conventional", isActive: true },
-  { id: "conv-leite-caixa", materialSku: "LEITE-INTEGRAL", supplierRef: "SUP-LATICINIOS", label: "caixa 12 l", toBaseFactor: 12, kind: "conventional", isActive: true },
-  { id: "conv-alecrim-maco", materialSku: "ALECRIM", supplierRef: "SUP-CEASA-LONDRINA", label: "maço", toBaseFactor: 80, kind: "approximate", isActive: true },
-  { id: "conv-queijo-peca", materialSku: "QUEIJO-ARTESANAL", supplierRef: "SUP-FAZENDA-BOA-VISTA", label: "peça", toBaseFactor: 0.9, kind: "approximate", isActive: true },
-];
-
-const COSTS: SupplierMaterialCost[] = [
-  { id: "cost-farinha-moinho", materialSku: "FARINHA-T65", supplierRef: "SUP-MOINHO-SP", conversionId: "conv-farinha-moinho-25", costQ: 18000, isPreferred: true, updatedAt: "2026-08-22" },
-  { id: "cost-farinha-coop", materialSku: "FARINHA-T65", supplierRef: "SUP-COOP-NORTE", conversionId: "conv-farinha-coop-20", costQ: 15200, isPreferred: false, updatedAt: "2026-08-20" },
-  { id: "cost-manteiga-laticinios", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-LATICINIOS", conversionId: "conv-manteiga-caixa-10", costQ: 69000, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-manteiga-distribuidora", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-manteiga-pacote-5", costQ: 36500, isPreferred: false, updatedAt: "2026-08-16" },
-  { id: "cost-ovos-ceasa", materialSku: "OVOS", supplierRef: "SUP-CEASA-LONDRINA", conversionId: "conv-ovos-cartela", costQ: 2400, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-ovos-distribuidora", materialSku: "OVOS", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-ovos-caixa", costQ: 25200, isPreferred: false, updatedAt: "2026-08-18" },
-  { id: "cost-sal-distribuidora", materialSku: "SAL", supplierRef: "SUP-DISTRIBUIDORA", conversionId: null, costQ: 290, isPreferred: true, updatedAt: "2026-08-12" },
-  { id: "cost-canela-distribuidora", materialSku: "CANELA", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-canela-pacote", costQ: 2250, isPreferred: true, updatedAt: "2026-08-12" },
-  { id: "cost-leite-laticinios", materialSku: "LEITE-INTEGRAL", supplierRef: "SUP-LATICINIOS", conversionId: "conv-leite-caixa", costQ: 10800, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-alecrim-ceasa", materialSku: "ALECRIM", supplierRef: "SUP-CEASA-LONDRINA", conversionId: "conv-alecrim-maco", costQ: 650, isPreferred: false, updatedAt: "2026-08-24" },
-  { id: "cost-queijo-fazenda", materialSku: "QUEIJO-ARTESANAL", supplierRef: "SUP-FAZENDA-BOA-VISTA", conversionId: "conv-queijo-peca", costQ: 4200, isPreferred: true, updatedAt: "2026-08-25" },
-];
-
-const INVOICE_ACCESS_KEY = "41260812345678000190550010000012341000123459";
-
-const INVOICE_RECEIPT_LINES: ReceiptLine[] = [
-  {
-    id: "receipt-farinha",
-    materialSku: "FARINHA-T65",
-    conversionId: "conv-farinha-moinho-25",
-    purchaseQty: 2,
-    costInput: "360,00",
-    expiryDate: "2027-02-25",
-    lineNote: "",
-    checked: true,
-  },
-  {
-    id: "receipt-ovos",
-    materialSku: "OVOS",
-    conversionId: "conv-ovos-cartela",
-    purchaseQty: 4,
-    costInput: "96,00",
-    expiryDate: "2026-09-10",
-    lineNote: "",
-    checked: false,
-  },
-  {
-    id: "receipt-fermento",
-    materialSku: "FERMENTO-BIO",
-    conversionId: null,
-    requiresConversion: true,
-    conversionSuggestion: {
-      label: "un 500 g",
-      factor: "0.5",
-      kind: "conventional",
-      source: "invoice-tax-pair",
-      note: "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
-    },
-    purchaseQty: 10,
-    costInput: "60,00",
-    expiryDate: "2026-10-05",
-    lineNote: "Confirmar a conversao sugerida (un 500 g). NF: FERM BIOL FRESCO MAURI 500G; unidade UN; tributavel 5 KG.",
-    invoiceUnit: "UN",
-    invoiceProductCode: "FERM-500",
-    checked: false,
-  },
-];
-
-const MANUAL_RECEIPT_LINES: ReceiptLine[] = [
-  {
-    id: "receipt-manual-ovos",
-    materialSku: "OVOS",
-    conversionId: "conv-ovos-cartela",
-    purchaseQty: 2,
-    costInput: "48,00",
-    expiryDate: "2026-09-08",
-    lineNote: "Produtor entregou romaneio em papel.",
-    checked: false,
-  },
-  {
-    id: "receipt-manual-queijo",
-    materialSku: "QUEIJO-ARTESANAL",
-    conversionId: "conv-queijo-peca",
-    purchaseQty: 3,
-    costInput: "126,00",
-    expiryDate: "2026-09-06",
-    lineNote: "",
-    checked: false,
-  },
-];
 
 function copy<T>(items: T[]): T[] {
   return items.map((item) => ({ ...item }));
@@ -366,20 +75,17 @@ export function usePurchaseDesk() {
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
   const onlyAlerts = useState("purchase-only-alerts", () => false);
-  const selectedMaterialSku = useState("purchase-selected-material", () => "FARINHA-T65");
-  const selectedSupplierRef = useState("purchase-selected-supplier", () => "SUP-MOINHO-SP");
-  const noteMaterialSku = useState("purchase-note-material", () => "FARINHA-T65");
-  const noteSupplierRef = useState("purchase-note-supplier", () => "SUP-MOINHO-SP");
-  const noteConversionId = useState("purchase-note-conversion", () => "conv-farinha-moinho-25");
-  const noteCostInput = useState("purchase-note-cost", () => "180,00");
+  const selectedMaterialSku = useState("purchase-selected-material", () => "");
+  const selectedSupplierRef = useState("purchase-selected-supplier", () => "");
+  const noteMaterialSku = useState("purchase-note-material", () => "");
+  const noteSupplierRef = useState("purchase-note-supplier", () => "");
+  const noteConversionId = useState("purchase-note-conversion", () => "");
+  const noteCostInput = useState("purchase-note-cost", () => "");
   const receiptMode = useState<ReceiptMode>("purchase-receipt-mode", () => "invoice");
-  const invoiceInput = useState(
-    "purchase-invoice-input",
-    () => `https://www.fazenda.pr.gov.br/nfce/qrcode?p=${INVOICE_ACCESS_KEY}|2|1|1|A1B2C3D4E5`,
-  );
-  const receiptSupplierRef = useState("purchase-receipt-supplier", () => "SUP-MOINHO-SP");
+  const invoiceInput = useState("purchase-invoice-input", () => "");
+  const receiptSupplierRef = useState("purchase-receipt-supplier", () => "");
   const receiptNote = useState("purchase-receipt-note", () => "");
-  const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => copy(INVOICE_RECEIPT_LINES));
+  const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => []);
   // Confirmar zera o rascunho, e um rascunho zerado nao sabe dizer o que acabou
   // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
   // o aviso de sucesso mostra.
@@ -390,10 +96,19 @@ export function usePurchaseDesk() {
     () => ({}),
   );
 
-  const materials = useState<Material[]>("purchase-materials", () => copy(MATERIALS));
-  const suppliers = useState<Supplier[]>("purchase-suppliers", () => copy(SUPPLIERS));
-  const conversions = useState<MaterialConversion[]>("purchase-conversions", () => copy(CONVERSIONS));
-  const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => copy(COSTS));
+  // A base nasce VAZIA e só o servidor a preenche.
+  //
+  // Estas quatro listas já nasceram com um catálogo de demonstração dentro
+  // (farinha, manteiga, ovos, leite, alecrim...), e como a busca é client-side
+  // (`server: false`) esse catálogo era o que a primeira pintura mostrava — em
+  // número grande, sem nenhuma marca de que era exemplo. O painel anunciava
+  // "Comprar 8 · R$ 4.293,97" com insumos que a padaria não tinha, e quando a
+  // resposta real chegava o mesmo painel virava 0. Nada mudara nos dados: o
+  // primeiro número nunca fora real. Dado inventado não é estado de partida.
+  const materials = useState<Material[]>("purchase-materials", () => []);
+  const suppliers = useState<Supplier[]>("purchase-suppliers", () => []);
+  const conversions = useState<MaterialConversion[]>("purchase-conversions", () => []);
+  const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => []);
   // Contagem: a posição vem CRUA do ledger (endpoint próprio, restrito ao
   // gestor/dono) — o stockOnHand do board desconta hold e lote vencido e não
   // bateria com o ajuste lançado.
@@ -428,7 +143,7 @@ export function usePurchaseDesk() {
     if (backendErrorStatus.value === 401) {
       return "Entre novamente para carregar dados reais e registrar ações.";
     }
-    return "A tela está em consulta com dados de exemplo. Ações como receber, enviar pedidos e definir custos ficam bloqueadas até reconectar ao Django.";
+    return "A tela não conseguiu carregar a base de insumos, fornecedores e custos. Nada é exibido enquanto não houver dado real. Toque em Atualizar para tentar de novo.";
   });
 
   const enrichedMaterials = computed(() =>
@@ -578,19 +293,18 @@ export function usePurchaseDesk() {
       }),
   );
 
+  // A fila de compra vem inteira de `presentation/` e é a resposta do SERVIDOR
+  // (`Material.suggestedQty`). Ver `reorderRows` lá: painel e tela Comprar
+  // faziam duas contas diferentes para a mesma pergunta, e discordavam em voz
+  // alta.
   const reorderRows = computed(() =>
-    enrichedMaterials.value
-      .filter((material) => material.stockOnHand < material.minStock || material.coverageDays <= 5)
-      .map((material) => {
-        const preferred = material.preferredCost;
-        const supplier = preferred ? suppliers.value.find((item) => item.ref === preferred.supplierRef) : null;
-        const target = Math.max(material.minStock * 2, material.dailyUse * 7);
-        const suggestedQty = Math.max(0, Math.ceil(target - material.stockOnHand));
-        const estimatedCostQ =
-          preferred && material.preferredBaseCostQ ? Math.round(material.preferredBaseCostQ * suggestedQty) : null;
-        return { material, supplier, suggestedQty, estimatedCostQ };
-      })
-      .sort((a, b) => a.material.coverageDays - b.material.coverageDays),
+    buildReorderRows(materials.value, suppliers.value, costs.value, conversions.value),
+  );
+
+  // Por que a fila está vazia. Só faz sentido depois que o servidor respondeu —
+  // antes disso o vazio é "ainda não chegou", não "não há".
+  const reorderBlockers = computed(() =>
+    backendReady.value ? buildReorderBlockers(materials.value, costs.value) : [],
   );
 
   const supplierSummaries = computed(() =>
@@ -790,21 +504,9 @@ export function usePurchaseDesk() {
   function setReceiptMode(mode: ReceiptMode) {
     receiptMode.value = mode;
     receiptOutcome.value = null;
-    if (backendReady.value) {
-      receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
-      receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
-      receiptLines.value = [];
-      return;
-    }
-    if (mode === "manual") {
-      receiptSupplierRef.value = "SUP-FAZENDA-BOA-VISTA";
-      receiptNote.value = "Romaneio em papel conferido na entrega";
-      receiptLines.value = copy(MANUAL_RECEIPT_LINES);
-      return;
-    }
-    receiptSupplierRef.value = "SUP-MOINHO-SP";
-    receiptNote.value = "";
-    receiptLines.value = copy(INVOICE_RECEIPT_LINES);
+    receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
+    receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
+    receiptLines.value = [];
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
@@ -1181,6 +883,7 @@ export function usePurchaseDesk() {
     metrics,
     integrityQueue,
     reorderRows,
+    reorderBlockers,
     supplierSummaries,
     projection,
     receiptMode,

@@ -17,6 +17,8 @@ import type {
   ReceiptOutcome,
   ReceiptPendingItem,
   ReceiptWarning,
+  ReorderBlocker,
+  ReorderRow,
   QuotePreview,
   Supplier,
   SupplierCostRow,
@@ -684,4 +686,109 @@ export function supplierCostRows(
     })
     .filter((row): row is SupplierCostRow => Boolean(row))
     .sort((a, b) => a.baseCostQ - b.baseCostQ);
+}
+
+/**
+ * A fila de compra — quem precisa ser reposto, quanto e de quem.
+ *
+ * **A quantidade é a do servidor.** `Material.suggestedQty` já é a resposta da
+ * política de reposição (prazo do fornecedor + revisão + segurança, limitada
+ * pela validade do insumo), calculada em `_suggested_qty` na projeção. A tela
+ * mostra esse número; não o recalcula.
+ *
+ * Antes havia duas contas para a mesma pergunta: o servidor respondia uma coisa
+ * e o painel refazia a conta com uma heurística própria
+ * (`ceil(max(minStock*2, dailyUse*7) - stockOnHand)`, sobre um filtro próprio).
+ * O resultado foi o painel anunciar "Comprar 8 · R$ 4.293,97" enquanto a tela
+ * Comprar, com os mesmos dados, mostrava 0 e R$ 0,00 — e um painel que promete
+ * oito e entrega zero queima a confiança no app inteiro. Uma pergunta, um dono.
+ */
+export function reorderRows(
+  materials: Material[],
+  suppliers: Supplier[],
+  costs: SupplierMaterialCost[],
+  conversions: MaterialConversion[],
+): ReorderRow[] {
+  return materials
+    .filter((material) => (material.suggestedQty ?? 0) > 0)
+    .map((material) => {
+      const enriched = enrichMaterial(material, costs, conversions);
+      const preferred = enriched.preferredCost;
+      const supplier = preferred ? (suppliers.find((item) => item.ref === preferred.supplierRef) ?? null) : null;
+      const suggestedQty = material.suggestedQty ?? 0;
+      const estimatedCostQ =
+        enriched.preferredBaseCostQ === null ? null : Math.round(enriched.preferredBaseCostQ * suggestedQty);
+      return { material: enriched, supplier, suggestedQty, estimatedCostQ };
+    })
+    .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
+}
+
+/**
+ * O que impede a fila de compra de existir — vazio explicado, com o caminho.
+ *
+ * Um zero mudo é indistinguível de um app quebrado: o operador não sabe se não
+ * precisa comprar nada ou se a conta não fecha por falta de cadastro. Os dois
+ * estados pedem reações opostas, e só um deles tem conserto do lado dele.
+ *
+ * A ordem é a da causa: sem insumo não há o que medir; sem consumo medido não
+ * há sugestão; sem custo preferencial a sugestão não vira pedido. Quando há
+ * fila, não há o que explicar — a lista fala por si.
+ */
+export function reorderBlockers(materials: Material[], costs: SupplierMaterialCost[]): ReorderBlocker[] {
+  if (materials.some((material) => (material.suggestedQty ?? 0) > 0)) return [];
+
+  const active = materials.filter((material) => material.isActive);
+  if (!active.length) {
+    return [
+      {
+        key: "no-materials",
+        headline: "Nenhum insumo ativo na base",
+        detail: "Sem insumo cadastrado não há o que repor. Cadastre os insumos para o Compras ter o que calcular.",
+        count: 0,
+        action: { label: "Abrir Insumos", baseView: "materials" },
+      },
+    ];
+  }
+
+  const blockers: ReorderBlocker[] = [];
+
+  // O consumo não é digitado: sai das baixas de estoque que a produção lança ao
+  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto a fornada não for
+  // fechada no sistema, o insumo tem consumo zero e o Compras não sugere nada.
+  const semConsumo = active.filter((material) => material.dailyUse <= 0);
+  if (semConsumo.length) {
+    blockers.push({
+      key: "no-consumption",
+      headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
+      detail:
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando uma fornada é finalizada na Produção. Sem fornada fechada, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+      count: semConsumo.length,
+      action: { label: "Abrir Insumos", baseView: "materials" },
+    });
+  }
+
+  const preferidos = new Set(costs.filter((cost) => cost.isPreferred).map((cost) => cost.materialSku));
+  const semCusto = active.filter((material) => !preferidos.has(material.sku));
+  if (semCusto.length) {
+    blockers.push({
+      key: "no-preferred-cost",
+      headline: `${semCusto.length} de ${active.length} insumos sem custo preferencial`,
+      detail:
+        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos — dá para lançar vários de uma vez pelo mesmo fornecedor.",
+      count: semCusto.length,
+      action: { label: "Abrir Custos", baseView: "costs" },
+    });
+  }
+
+  if (!blockers.length) {
+    blockers.push({
+      key: "stocked",
+      headline: "Nenhum insumo abaixo do ponto de reposição",
+      detail: "Todo insumo com consumo medido tem estoque para cobrir o prazo de entrega. Não há o que comprar agora.",
+      count: 0,
+      action: null,
+    });
+  }
+
+  return blockers;
 }

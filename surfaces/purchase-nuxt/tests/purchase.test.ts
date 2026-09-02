@@ -14,6 +14,8 @@ import {
   formatQtyDiff,
   formatShortDate,
   formatStockOnHand,
+  reorderBlockers,
+  reorderRows,
   receiptFirstBlocker,
   receiptIsBlank,
   receiptOutcomeSummary,
@@ -933,5 +935,135 @@ describe("formatShortDate", () => {
     expect(() => formatShortDate("sem data")).not.toThrow();
     expect(formatShortDate("sem data")).toBe("—");
     expect(formatShortDate("2026-13-45")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderRows — o painel e a tela respondem à MESMA pergunta
+// ---------------------------------------------------------------------------
+// O painel dizia "Comprar 8 · R$ 4.293,97" e a tela Comprar mostrava 0 pedidos
+// e R$ 0,00, com os mesmos dados. Eram dois cálculos diferentes: o servidor
+// respondia `suggestedQty` (política de reposição: prazo + revisão + segurança,
+// limitada pela validade) e a tela ignorava esse número e refazia a conta com
+// uma heurística própria — `ceil(max(minStock*2, dailyUse*7) - stockOnHand)`
+// sobre um filtro próprio. Duas respostas para "o que comprar" é uma a mais.
+// A resposta é do servidor; a tela mostra, não recalcula.
+const semConsumo: Material = {
+  sku: "MANTEIGA-TOURAGE",
+  name: "Manteiga de tourage",
+  unit: "kg",
+  shelfLifeDays: 45,
+  isActive: true,
+  category: "Laticínios",
+  stockOnHand: 22,
+  dailyUse: 0,
+  minStock: 30,
+  recipes: ["Croissant"],
+  suggestedQty: 0,
+};
+
+describe("reorderRows", () => {
+  it("não inventa compra que o servidor não sugeriu", () => {
+    // Estoque (22) abaixo do mínimo (30) faria a heurística antiga sugerir
+    // compra; o servidor diz 0 porque não há consumo medido. Vale o servidor.
+    expect(reorderRows([semConsumo], [], [], [])).toEqual([]);
+  });
+
+  it("mostra a quantidade que o servidor sugeriu, sem recalcular", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    const rows = reorderRows([material], [], [], []);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.suggestedQty).toBe(12);
+  });
+
+  it("estima o custo pelo preferencial, e deixa nulo quando não há", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 10 };
+    const semCusto = reorderRows([material], [], [], []);
+    expect(semCusto[0]!.estimatedCostQ).toBeNull();
+
+    const supplier: Supplier = {
+      ref: "SUP-LAT",
+      name: "Laticínio",
+      document: "",
+      contact: "",
+      leadTimeDays: 2,
+      reliabilityPercent: 100,
+      isActive: true,
+      lastDeliveryAt: "",
+      paymentTerm: "A combinar",
+    };
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const comCusto = reorderRows([material], [supplier], [cost], []);
+    expect(comCusto[0]!.supplier?.ref).toBe("SUP-LAT");
+    expect(comCusto[0]!.estimatedCostQ).toBe(50000);
+  });
+
+  it("sem insumo nenhum, não há fila de compra", () => {
+    expect(reorderRows([], [], [], [])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderBlockers — zero explicado, com o caminho
+// ---------------------------------------------------------------------------
+// Mostrar zero sem dizer por quê é o pecado da tela: o operador não distingue
+// "não precisa comprar nada" de "o app não consegue calcular". São situações
+// opostas e a segunda tem conserto. Cada motivo vem com o gesto que o resolve.
+describe("reorderBlockers", () => {
+  it("cala a boca quando há compra a fazer", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    expect(reorderBlockers([material], [])).toEqual([]);
+  });
+
+  it("diz quando a base está vazia", () => {
+    const blockers = reorderBlockers([], []);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]!.key).toBe("no-materials");
+  });
+
+  it("aponta o consumo não medido como causa da lista vazia", () => {
+    const blockers = reorderBlockers([semConsumo], []);
+    const consumo = blockers.find((item) => item.key === "no-consumption");
+    expect(consumo).toBeDefined();
+    // O número tem de ser o que a tela mostra, não um vago "alguns".
+    expect(consumo!.count).toBe(1);
+    expect(consumo!.action).not.toBeNull();
+  });
+
+  it("conta os insumos sem custo preferencial e manda para Custos", () => {
+    const comConsumo: Material = { ...semConsumo, sku: "FARINHA-T45", dailyUse: 9, suggestedQty: 0 };
+    const blockers = reorderBlockers([semConsumo, comConsumo], []);
+    const custo = blockers.find((item) => item.key === "no-preferred-cost");
+    expect(custo).toBeDefined();
+    expect(custo!.count).toBe(2);
+    expect(custo!.action?.baseView).toBe("costs");
+  });
+
+  it("não acusa falta de custo no insumo que já tem preferencial", () => {
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const blockers = reorderBlockers([semConsumo], [cost]);
+    expect(blockers.find((item) => item.key === "no-preferred-cost")).toBeUndefined();
+  });
+
+  it("ignora insumo inativo na contagem", () => {
+    const inativo: Material = { ...semConsumo, sku: "VELHO", isActive: false };
+    const blockers = reorderBlockers([inativo], []);
+    expect(blockers.find((item) => item.key === "no-materials")).toBeDefined();
   });
 });

@@ -107,6 +107,34 @@ export interface EnrichedMaterial extends Material {
   issues: MaterialIssue[];
 }
 
+/**
+ * Uma linha da fila de compra: o insumo, de quem comprar e quanto.
+ *
+ * `suggestedQty` é a resposta do SERVIDOR (`Material.suggestedQty`), não uma
+ * conta refeita na tela — ver `reorderRows` em `presentation/purchase.ts`.
+ */
+export interface ReorderRow {
+  material: EnrichedMaterial;
+  supplier: Supplier | null;
+  suggestedQty: number;
+  estimatedCostQ: number | null;
+}
+
+/**
+ * Por que a fila de compra está vazia — e o que fazer a respeito.
+ *
+ * "Nada a comprar" e "não dá para calcular o que comprar" parecem iguais na
+ * tela e são opostos. Cada motivo carrega o número exato e o gesto que o
+ * resolve; sem o gesto, a explicação vira desculpa.
+ */
+export interface ReorderBlocker {
+  key: "no-materials" | "no-consumption" | "no-preferred-cost" | "stocked";
+  headline: string;
+  detail: string;
+  count: number;
+  action: { label: string; baseView: PurchaseBaseView } | null;
+}
+
 export interface SupplierCostRow {
   cost: SupplierMaterialCost;
   supplier: Supplier;
