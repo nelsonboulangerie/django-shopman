@@ -8,7 +8,20 @@
 #   STORE_DOMAIN            → storefront-nuxt (loja Nuxt)        [apex, PRIMARY]
 #   api.STORE_DOMAIN        → web (Django headless: /api, webhooks, health)
 #   admin.STORE_DOMAIN      → web (Django admin/operador)
-#   pdv.STORE_DOMAIN        → pos-nuxt (PDV Nuxt)
+#   pdv.STORE_DOMAIN        → pos-nuxt        (PDV)
+#   kds.STORE_DOMAIN        → kds-nuxt        (cozinha)
+#   gestor.STORE_DOMAIN     → orders-nuxt     (gestor de pedidos)
+#   prod.STORE_DOMAIN       → production-nuxt (produção/fornadas)
+#   compras.STORE_DOMAIN    → purchase-nuxt   (compras)
+#   central.STORE_DOMAIN    → hub-nuxt        (Central de Apps)
+#   mkt.STORE_DOMAIN        → marketing-nuxt  (marketing)
+#   bi.STORE_DOMAIN         → bi-nuxt         (B.I.)
+#
+# ⚠️ Este bloco já descreveu só as quatro primeiras linhas, enquanto a loja viva
+#    rodava dez superfícies. Um blueprint que descreve menos do que existe não é
+#    um blueprint incompleto — é um que, se usado, entrega uma padaria sem
+#    cozinha, sem gestor de pedidos e sem produção. A topologia de referência é
+#    a mesma do `.do/app.alpha-subdomains.yaml`.
 #
 # COMO USAR:
 #   1. Troque TODAS as ocorrências de `STORE_DOMAIN` pelo seu domínio real
@@ -47,6 +60,27 @@ domains:
   - domain: pdv.STORE_DOMAIN
     type: ALIAS
     zone: STORE_DOMAIN
+  - domain: kds.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: gestor.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: prod.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: compras.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: central.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: mkt.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  - domain: bi.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
 
 ingress:
   rules:
@@ -74,6 +108,62 @@ ingress:
           prefix: /
       component:
         name: pos-nuxt
+    # kds-nuxt — host kds.
+    - match:
+        authority:
+          exact: kds.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: kds-nuxt
+    # orders-nuxt — host gestor.
+    - match:
+        authority:
+          exact: gestor.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: orders-nuxt
+    # production-nuxt — host prod.
+    - match:
+        authority:
+          exact: prod.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: production-nuxt
+    # purchase-nuxt — host compras.
+    - match:
+        authority:
+          exact: compras.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: purchase-nuxt
+    # hub-nuxt — host central.
+    - match:
+        authority:
+          exact: central.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: hub-nuxt
+    # marketing-nuxt — host mkt.
+    - match:
+        authority:
+          exact: mkt.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: marketing-nuxt
+    # bi-nuxt — host bi.
+    - match:
+        authority:
+          exact: bi.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: bi-nuxt
     # Loja Nuxt — apex (em /). Última regra = catch-all do domínio primário.
     - match:
         path:
@@ -119,6 +209,53 @@ envs:
     type: GENERAL
   - key: AUTH_DEFAULT_DOMAIN
     value: "STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  # ── Superfícies de operador ────────────────────────────────────────────
+  # O cookie de sessão do operador é emitido no DOMÍNIO-PAI para valer nos
+  # subdomínios (pdv./kds./gestor./prod./compras./central./mkt./bi.). Sem esta
+  # chave o operador precisa entrar de novo em cada superfície — e o
+  # `check_operator_cookie_domain` (SHOPMAN_E014) reprova o deploy.
+  - key: SHOPMAN_OPERATOR_COOKIE_DOMAIN
+    value: ".STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_OPERATOR_API_HOST
+    value: "api.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_ADMIN_HOST
+    value: "admin.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  # Os endereços que o Django usa para APONTAR de uma superfície para outra
+  # (Central de Apps, links em alerta e notificação de operador).
+  - key: SHOPMAN_POS_BASE_URL
+    value: "https://pdv.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_KDS_BASE_URL
+    value: "https://kds.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_ORDERS_BASE_URL
+    value: "https://gestor.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_PRODUCTION_BASE_URL
+    value: "https://prod.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_PURCHASE_BASE_URL
+    value: "https://compras.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_MARKETING_BASE_URL
+    value: "https://mkt.STORE_DOMAIN"
+    scope: RUN_TIME
+    type: GENERAL
+  - key: SHOPMAN_BI_BASE_URL
+    value: "https://bi.STORE_DOMAIN"
     scope: RUN_TIME
     type: GENERAL
   - key: WHATSAPP_STOREFRONT_URL
@@ -208,11 +345,21 @@ envs:
 services:
   - name: web
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /
-    run_command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+    # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
+    # O access log do daphne grava o request-target CRU, com query string
+    # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
+    # — `?token=<EFI_WEBHOOK_TOKEN>` — porque é assim que a EFI cadastra a URL.
+    # Esse token é a autenticação ÚNICA do webhook de Pix (a allowlist de IP nasce
+    # vazia e o mTLS é advisory), então cada chamada legítima da EFI escrevia o
+    # segredo em texto puro no stream de log da plataforma. Quem lê o log forja
+    # "Pix recebido" e o pedido se paga sozinho.
+    # O `before_send` do Sentry redige isso PARA O SENTRY; não faz nada pelo stdout.
+    # Verbosity fica em 1: o log da APLICAÇÃO segue em INFO, só o access log morre.
+    run_command: daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application
     http_port: 8000
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
@@ -245,7 +392,7 @@ services:
         window: TEN_MINUTES
   - name: storefront-nuxt
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     source_dir: /surfaces/storefront-nuxt
     build_command: npm ci && npm run build
@@ -278,7 +425,7 @@ services:
         window: TEN_MINUTES
   - name: pos-nuxt
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     source_dir: /surfaces/pos-nuxt
     build_command: npm ci && npm run build
@@ -308,11 +455,292 @@ services:
         operator: GREATER_THAN
         value: 2
         window: TEN_MINUTES
+  - name: kds-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/kds-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: orders-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/orders-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_ADMIN_BASE_URL
+        value: "https://admin.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: production-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/production-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: purchase-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/purchase-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_ORDERS_URL
+        value: "https://gestor.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_PRODUCTION_URL
+        value: "https://prod.STORE_DOMAIN/"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: hub-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/hub-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: marketing-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/marketing-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
+  - name: bi-nuxt
+    git:
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
+      branch: main
+    source_dir: /surfaces/bi-nuxt
+    build_command: npm ci && npm run build
+    run_command: node .output/server/index.mjs
+    http_port: 3000
+    instance_count: 1
+    instance_size_slug: apps-s-1vcpu-0.5gb
+    envs:
+      - key: NUXT_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_APP_BASE_URL
+        value: /
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_DJANGO_BASE_URL
+        value: "https://api.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+      - key: NUXT_PUBLIC_OPERATOR_HUB_URL
+        value: "https://central.STORE_DOMAIN"
+        scope: RUN_TIME
+        type: GENERAL
+    health_check:
+      http_path: /
+      initial_delay_seconds: 30
+      period_seconds: 10
+      timeout_seconds: 5
+      success_threshold: 1
+      failure_threshold: 5
+    alerts:
+      - rule: RESTART_COUNT
+        operator: GREATER_THAN
+        value: 2
+        window: TEN_MINUTES
 
 workers:
   - name: directive-worker
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /
@@ -327,7 +755,7 @@ workers:
 
   - name: maintenance-worker
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /
@@ -346,7 +774,7 @@ workers:
   # Roda ao lado do directive-worker, que entrega os callbacks de status.
   - name: ifood-poll-worker
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /
@@ -363,7 +791,7 @@ jobs:
   - name: release
     kind: PRE_DEPLOY
     git:
-      repo_clone_url: https://github.com/pablondrina/django-shopman.git
+      repo_clone_url: https://github.com/nelsonboulangerie/django-shopman.git
       branch: main
     dockerfile_path: Dockerfile
     source_dir: /

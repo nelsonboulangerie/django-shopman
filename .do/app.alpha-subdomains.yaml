@@ -418,7 +418,17 @@ services:
     success_threshold: 1
     timeout_seconds: 5
   name: web
-  run_command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+  # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
+  # O access log do daphne grava o request-target CRU, com query string
+  # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
+  # — `?token=<EFI_WEBHOOK_TOKEN>` — porque é assim que a EFI cadastra a URL.
+  # Esse token é a autenticação ÚNICA do webhook de Pix (a allowlist de IP nasce
+  # vazia e o mTLS é advisory), então cada chamada legítima da EFI escrevia o
+  # segredo em texto puro no stream de log da plataforma. Quem lê o log forja
+  # "Pix recebido" e o pedido se paga sozinho.
+  # O `before_send` do Sentry redige isso PARA O SENTRY; não faz nada pelo stdout.
+  # Verbosity fica em 1: o log da APLICAÇÃO segue em INFO, só o access log morre.
+  run_command: daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application
   image:
     registry_type: DOCR
     repository: shopman
