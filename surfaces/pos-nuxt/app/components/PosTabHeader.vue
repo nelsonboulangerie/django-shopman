@@ -151,7 +151,7 @@ function runClear() {
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="customerRequired
-        ? 'border-warning bg-warning/15 font-medium text-amber-800 ring-2 ring-warning/40 motion-safe:animate-pulse dark:text-amber-200'
+        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
         : 'border-border'"
       aria-haspopup="dialog"
       :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"

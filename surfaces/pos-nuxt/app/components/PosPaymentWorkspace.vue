@@ -1060,7 +1060,7 @@ defineExpose({
           <li
             v-for="note in instructions"
             :key="note.key"
-            class="flex items-center gap-2.5 rounded-lg border border-border/60 bg-muted/40 px-3.5 py-2.5 text-sm text-muted-foreground"
+            class="flex items-center gap-2 rounded-md border border-border bg-muted p-3 text-sm font-medium text-muted-foreground"
           >
             <Icon :name="note.icon" class="size-4 shrink-0" :class="note.accent || ''" />
             <span class="min-w-0 flex-1">{{ note.message }}</span>
@@ -1164,10 +1164,10 @@ defineExpose({
           <li
             v-for="alert in alerts"
             :key="alert.key"
-            class="flex items-center gap-3 rounded-lg border px-3.5 py-2.5"
+            class="flex items-center gap-3 rounded-md border p-3"
             :class="alert.tone === 'block'
               ? 'border-warning/60 bg-warning/10 text-amber-700 dark:text-amber-400'
-              : 'border-border bg-muted/40 text-muted-foreground'"
+              : 'border-border bg-muted text-muted-foreground'"
           >
             <Icon
               :name="alert.icon"
@@ -1175,8 +1175,8 @@ defineExpose({
               :class="alert.tone === 'block' ? 'text-amber-600 dark:text-amber-400' : ''"
             />
             <span class="min-w-0 flex-1">
-              <span class="block text-sm font-semibold leading-snug">{{ alert.message }}</span>
-              <span v-if="alert.hint" class="mt-0.5 block text-xs leading-snug opacity-80">{{ alert.hint }}</span>
+              <span class="block text-lg font-semibold leading-snug">{{ alert.message }}</span>
+              <span v-if="alert.hint" class="mt-0.5 block text-sm leading-snug opacity-80">{{ alert.hint }}</span>
             </span>
             <UiButton
               v-if="alert.action"
@@ -1302,7 +1302,7 @@ defineExpose({
       <UiButton
         variant="outline"
         size="lg"
-        class="h-14 shrink-0 gap-2 px-4 text-sm"
+        class="h-14 shrink-0 gap-2 px-3 text-sm"
         title="Voltar para a venda (Esc)"
         @click="$emit('back')"
       >
@@ -1320,7 +1320,7 @@ defineExpose({
         <button
           v-if="discountTypes.length"
           type="button"
-          class="flex h-14 min-w-0 items-center gap-2 rounded-md border px-4 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+          class="flex h-14 min-w-0 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
           :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
           @click="discountSheetOpen = true"
         >
