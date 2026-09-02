@@ -221,6 +221,9 @@ def _register_fiscal_publication_gate() -> None:
 
     fiscal_gate.connect()
 
+    from shopman.shop.handlers import access_link as access_link_handler
+    access_link_handler.connect()
+
 
 def _register_accounting_handler() -> None:
     backend = _load_optional_backend("SHOPMAN_ACCOUNTING_BACKEND", "accounting")

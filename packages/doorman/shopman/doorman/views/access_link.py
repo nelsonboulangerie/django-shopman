@@ -172,6 +172,13 @@ class AccessLinkCreateView(View):
 
         has_cart_context = bool(metadata.get("cart_session_key"))
 
+        # QUEM PEDE O LINK RECEBE O LINK. Só as entradas por este endpoint pedem
+        # entrega — o `{tracking_url}` de uma notificação de pedido nasce pelo
+        # mesmo serviço, com a mesma `source`, e não pode virar mensagem extra.
+        # Por isso a intenção é declarada aqui, e não deduzida da origem.
+        if data.get("source", AccessLink.Source.MANYCHAT) == AccessLink.Source.MANYCHAT:
+            metadata.setdefault("deliver", "manychat")
+
         result = AccessLinkService.create_token(
             customer=customer,
             audience=data.get("audience", AccessLink.Audience.WEB_GENERAL),
