@@ -5,7 +5,6 @@ Access link views.
 import json
 import logging
 import secrets as secrets_mod
-from urllib.parse import urlencode
 
 from django.conf import settings as django_settings
 from django.http import JsonResponse
@@ -220,8 +219,12 @@ class AccessLinkCreateView(View):
 
     @staticmethod
     def _build_access_url(token: str | None) -> str:
-        base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
-        return f"{base}/a?{urlencode({'t': token})}"
+        """Delega: a URL de entrada tem UM construtor.
+
+        Eram dois, e discordavam — a resposta trazia `{loja}/a?t=`, a mensagem
+        trazia `{domínio}/auth/access/?t=`. Quem clicou na segunda tomou 404.
+        """
+        return AccessLinkService._build_url(token or "")
 
     @staticmethod
     def _subscriber_id_from_payload(data: dict) -> str:
