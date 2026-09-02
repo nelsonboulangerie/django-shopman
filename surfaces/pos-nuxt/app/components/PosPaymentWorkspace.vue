@@ -1016,7 +1016,6 @@ defineExpose({
               title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
-              <Icon name="lucide:equal" class="size-4 shrink-0 text-muted-foreground" />
               <span class="truncate">Exato</span>
               <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
             </button>
@@ -1630,16 +1629,21 @@ defineExpose({
         <UiDialogDescription>Digite este valor no terminal e conclua a operação com o cliente.</UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-2">
+        <!-- As DUAS coisas que o operador vai reproduzir na maquininha têm o
+             mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
+             e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
+             cheia: é a primeira escolha no teclado do terminal, e a única que a
+             maquininha não perdoa em silêncio. -->
         <div
           v-for="line in machineTenders"
           :key="line.method"
-          class="grid justify-items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-4 py-6"
+          class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
         >
-          <p class="text-4xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
-          <p class="flex items-center gap-1.5 text-sm font-medium text-muted-foreground">
-            <Icon :name="line.icon" class="size-4" />
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+            <Icon :name="line.icon" class="size-5 shrink-0" />
             {{ line.label }}
           </p>
+          <p class="text-5xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
         </div>
       </div>
       <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
