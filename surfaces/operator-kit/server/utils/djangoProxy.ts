@@ -6,6 +6,7 @@
 // do apiVersion.ts ao lado).
 import {
   appendResponseHeader,
+  createError,
   getQuery,
   getRequestHeader,
   readRawBody,
@@ -71,11 +72,46 @@ async function ensureDjangoCsrfCookie(
   return { cookie: mergedCookie, token: token ? decodeURIComponent(token) : "" };
 }
 
+/**
+ * O caminho tenta ESCAPAR do prefixo em que foi admitido?
+ *
+ * O catch-all do Nitro entrega `event.context.params.path` CRU e sem
+ * normalizar, e o parser de URL do `$fetch` colapsa `..` ao montar o alvo. Sem
+ * esta trava, `GET /api/v1/cart/../backstage/pos/cash/movement/` passava pela
+ * allowlist (começa com `cart/`) e chegava no backstage — e é o PRÓPRIO BFF que
+ * fornece o `X-CSRFToken` e forja `Origin`/`Referer`. Como o cookie de operador
+ * é de domínio-pai, um foothold same-site na loja deixava de "incomodar o
+ * cliente" e passava a MOVER DINHEIRO no caixa.
+ *
+ * Decodifica até estabilizar (no máximo 3 voltas) porque `%2e%2e` e
+ * `%252e%252e` são o mesmo pedido escrito de outro jeito. Percent-encoding
+ * malformado é recusa, não tentativa de adivinhação.
+ */
+export function hasPathTraversal (path: string): boolean {
+  let current = path;
+  for (let i = 0; i < 3; i++) {
+    if (current.includes("\\")) return true;
+    if (current.split("/").some((seg) => seg === "." || seg === "..")) return true;
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      return true; // encoding malformado: recusa, não adivinha
+    }
+    if (next === current) return false;
+    current = next;
+  }
+  return true // não estabilizou em 3 voltas: recusa
+}
+
 export async function proxyDjangoApi(event: H3Event, path: string) {
   return proxyDjangoPath(event, `/api/v1/${path}`);
 }
 
 export async function proxyDjangoPath(event: H3Event, fullPath: string) {
+  if (hasPathTraversal(fullPath)) {
+    throw createError({ statusCode: 400, statusMessage: "Bad Request" });
+  }
   const config = useRuntimeConfig(event);
   const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl);
   const method = event.method || "GET";
