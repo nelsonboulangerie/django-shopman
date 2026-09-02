@@ -807,12 +807,12 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.items.push({ ...item });
   }
 
-  function setLineDiscount(sku: string, value: number, reason: string) {
+  function setLineDiscount(sku: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
     const item = cart.items.find((entry) => entry.sku === sku);
     if (!item) return;
     review.value = null;
     if (value > 0) {
-      item.discount = { value, reason };
+      item.discount = { value, reason, type };
       // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
       // que o automático que já venceu a linha. Sem aviso, o operador digitava a
       // cortesia, o preço não mudava e ele não tinha como saber por quê. A linha
@@ -825,21 +825,6 @@ export function usePosSale(deps: PosSaleDeps) {
     } else {
       delete item.discount;
     }
-  }
-
-  // Operator unit-price override (numpad "Preço"): set the line's price and flag
-  // it when it differs from the catalog — the kernel then freezes it (the pricing
-  // modifier skips re-pricing) and the server review requires manager approval.
-  // Typing the catalog price back clears the override.
-  function setLinePrice(sku: string, priceQ: number) {
-    const item = cart.items.find((entry) => entry.sku === sku);
-    if (!item) return;
-    review.value = null;
-    checkoutMode.value = false;
-    const catalogQ = pos.value?.products.find((product) => product.sku === sku)?.price_q ?? item.price_q;
-    const next = Math.max(0, Math.min(99_999_999, Math.round(priceQ)));
-    item.price_q = next;
-    item.price_overridden = next !== catalogQ;
   }
 
   function resetCart() {
@@ -1928,7 +1913,6 @@ export function usePosSale(deps: PosSaleDeps) {
     restoreItem,
     setLineNotes,
     setLineDiscount,
-    setLinePrice,
     sanitizeTabRef,
     requestTabAssociation,
     openTab,

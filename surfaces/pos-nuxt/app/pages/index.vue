@@ -128,7 +128,6 @@ const {
   restoreItem,
   setLineNotes,
   setLineDiscount,
-  setLinePrice,
   requestTabAssociation,
   openTab,
   openTabFromDialog,
@@ -943,7 +942,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @set-qty="(sku, qty) => setQty(sku, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
-            @set-price="setLinePrice"
             @prepare="prepareCheckout"
             @move="openMoveDialog"
             @fire="fireTab"

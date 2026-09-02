@@ -32,9 +32,9 @@ const emit = defineEmits<{
   setQty: [string, number];
   /** Observação da linha (padrão Odoo Note): viaja no intent e chega ao KDS. */
   setNotes: [string, string];
-  setDiscount: [string, number, string];
+  /** sku, valor (% ou reais, conforme o formato), motivo, formato. */
+  setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
-  setPrice: [string, number];
   prepare: [];
   move: [];
   fire: [];
@@ -122,14 +122,30 @@ const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
 function discountBadge(item: POSCartItem) {
   return lineDiscountBadge(item, reasonOptions.value);
 }
-// Numpad targets the selected line. Three modes (Odoo's Qty/%/Price): "qty"
-// (integer, first digit replaces), "disc" (percent), "price" (unit-price override
-// — decimal entry, reais first, comma → centavos; flips manager approval on).
+// O teclado age sobre a linha selecionada, em três modos: "qty" (inteiro, o
+// primeiro dígito substitui), "disc" (desconto em %) e "disc_brl" (desconto em
+// R$ — entrada decimal, reais primeiro, vírgula → centavos).
+//
+// ⚠️ O terceiro modo era PREÇO: o operador digitava o preço unitário à mão. Ele
+// saiu inteiro. Preço à mão não passava pela régua do desconto — não tinha
+// limite da loja, não tinha motivo, não competia no "maior desconto ganha", não
+// aparecia como desconto em lugar nenhum, e ainda CONGELAVA a linha contra
+// reprecificação, com um portão de gerente só dele. Eram dois modelos
+// concorrentes para a mesma pergunta ("quanto o cliente paga a menos"), e o
+// segundo furava a régua do primeiro.
+//
+// O que ficou é o MESMO mecanismo em dois formatos: % ou R$, com motivo, com
+// limite, e com o gerente sendo chamado pela mesma régua. A entrada decimal com
+// vírgula é herança direta do modo preço — ela some do preço e reaparece aqui.
 const MAX_QTY = 999;
 const selectedSku = ref("");
 const numpadBuffer = ref("");
 const numpadFresh = ref(true);
-const numpadMode = ref<"qty" | "disc" | "price">("qty");
+const numpadMode = ref<"qty" | "disc" | "disc_brl">("qty");
+/** O formato que o teclado está digitando agora. */
+const discountKind = computed<"percent" | "fixed">(() => (numpadMode.value === "disc_brl" ? "fixed" : "percent"));
+/** Os dois modos de desconto, para os guardas que não se importam com o formato. */
+const inDiscountMode = computed(() => numpadMode.value !== "qty");
 
 const defaultReasons = [
   { ref: "cortesia", label: "Cortesia" },
@@ -164,14 +180,19 @@ function syncBufferToMode() {
   numpadFresh.value = true;
   if (numpadMode.value === "qty") {
     numpadBuffer.value = String(qtyOf(activeSku.value));
-  } else if (numpadMode.value === "price") {
-    const item = activeItem.value;
-    numpadBuffer.value = item ? (item.price_q / 100).toFixed(2).replace(".", ",") : "";
-  } else {
-    const item = activeItem.value;
-    numpadBuffer.value = item?.discount?.value ? String(item.discount.value) : "";
-    discountReason.value = item?.discount?.reason || reasonOptions.value[0]?.ref || "cortesia";
+    return;
   }
+  const item = activeItem.value;
+  discountReason.value = item?.discount?.reason || reasonOptions.value[0]?.ref || "cortesia";
+  // Só semeia o campo com o desconto que já existe se ele for do MESMO formato:
+  // um "10" de dez por cento aparecendo como dez reais ao trocar de aba é o
+  // operador dando um desconto que ele não pediu.
+  const vigente = item?.discount?.value && (item.discount.type || "percent") === discountKind.value
+    ? item.discount.value
+    : 0;
+  numpadBuffer.value = vigente
+    ? (discountKind.value === "fixed" ? vigente.toFixed(2).replace(".", ",") : String(vigente))
+    : "";
 }
 
 watch(activeSku, () => syncBufferToMode());
@@ -182,7 +203,7 @@ function selectLine(sku: string) {
   syncBufferToMode();
 }
 
-function setMode(mode: "qty" | "disc" | "price") {
+function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
 }
 
@@ -273,32 +294,30 @@ function commitQty() {
 // Discount targets: the whole selection in multi-select, else the active line.
 const discountTargets = computed(() => (selectMode.value ? selection.value.skus : (activeSku.value ? [activeSku.value] : [])));
 
+// O valor em REAIS que o operador digitou (vírgula → centavos, no máximo duas
+// casas). O contrato do desconto fixo fala em reais, igual ao do pedido.
+function moneyEntryToReais(entry: string): number {
+  const n = Number.parseFloat((entry || "0").replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? Math.min(999_999, Math.round(n * 100) / 100) : 0;
+}
+
 function commitDiscount() {
   const targets = discountTargets.value;
   if (!targets.length) return;
-  const value = clampPercent(numpadBuffer.value);
-  targets.forEach((sku) => emit("setDiscount", sku, value, discountReason.value || "cortesia"));
+  const value = discountKind.value === "fixed"
+    ? moneyEntryToReais(numpadBuffer.value)
+    : clampPercent(numpadBuffer.value);
+  targets.forEach((sku) => emit("setDiscount", sku, value, discountReason.value || "cortesia", discountKind.value));
 }
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
-const numpadCanType = computed(() => (numpadMode.value === "disc" ? discountTargets.value.length > 0 : !!activeSku.value));
+const numpadCanType = computed(() => (inDiscountMode.value ? discountTargets.value.length > 0 : !!activeSku.value));
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
-const numpadSubject = computed(() =>
-  numpadMode.value === "disc" ? "desconto" : numpadMode.value === "price" ? "preço" : "quantidade",
-);
-
-// Price mode = decimal money entry (reais first, comma → centavos, ≤2 places).
-function priceEntryToQ(entry: string): number {
-  const n = Number.parseFloat((entry || "0").replace(",", "."));
-  return Number.isFinite(n) && n >= 0 ? Math.min(99_999_999, Math.round(n * 100)) : 0;
-}
-function commitPrice() {
-  if (activeSku.value) emit("setPrice", activeSku.value, priceEntryToQ(numpadBuffer.value));
-}
+const numpadSubject = computed(() => (inDiscountMode.value ? "desconto" : "quantidade"));
 
 function onDigit(digit: string) {
   if (!numpadCanType.value) return;
-  if (numpadMode.value === "price") {
+  if (numpadMode.value === "disc_brl") {
     const entry = numpadFresh.value ? "" : numpadBuffer.value;
     if (entry.includes(",")) {
       if ((entry.split(",")[1] ?? "").length >= 2) return;
@@ -307,7 +326,7 @@ function onDigit(digit: string) {
     }
     numpadBuffer.value = entry + digit;
     numpadFresh.value = false;
-    commitPrice();
+    commitDiscount();
     return;
   }
   numpadBuffer.value = pushDigit(numpadBuffer.value, digit, { fresh: numpadFresh.value, maxLength: 3 });
@@ -316,22 +335,23 @@ function onDigit(digit: string) {
   else commitDiscount();
 }
 
-// The comma key (price mode only): switch to centavos.
+// A tecla de vírgula existe só no desconto em R$: o teclado compartilhado é
+// inteiro, e centavos precisam de separador.
 function onComma() {
-  if (numpadMode.value !== "price" || !numpadCanType.value) return;
+  if (numpadMode.value !== "disc_brl" || !numpadCanType.value) return;
   let entry = numpadFresh.value ? "0" : (numpadBuffer.value || "0");
   if (!entry.includes(",")) entry += ",";
   numpadBuffer.value = entry;
   numpadFresh.value = false;
-  commitPrice();
+  commitDiscount();
 }
 
 function onBackspace() {
   if (!numpadCanType.value) return;
-  if (numpadMode.value === "price") {
+  if (numpadMode.value === "disc_brl") {
     numpadBuffer.value = (numpadFresh.value ? "" : numpadBuffer.value).slice(0, -1);
     numpadFresh.value = false;
-    commitPrice();
+    commitDiscount();
     return;
   }
   numpadBuffer.value = popDigit(numpadBuffer.value);
@@ -345,22 +365,16 @@ function onClear() {
     if (activeSku.value) askRemove(activeSku.value);
     return;
   }
-  if (numpadMode.value === "price") {
-    numpadBuffer.value = "";
-    numpadFresh.value = true;
-    commitPrice();
-    return;
-  }
   const targets = discountTargets.value;
   if (!targets.length) return;
   numpadBuffer.value = "";
   numpadFresh.value = true;
-  targets.forEach((sku) => emit("setDiscount", sku, 0, discountReason.value || "cortesia"));
+  targets.forEach((sku) => emit("setDiscount", sku, 0, discountReason.value || "cortesia", discountKind.value));
 }
 
 function pickReason(reason: string) {
   discountReason.value = reason;
-  if (numpadMode.value === "disc" && discountTargets.value.length) commitDiscount();
+  if (inDiscountMode.value && discountTargets.value.length) commitDiscount();
 }
 
 // Entering multi-select switches the numpad to its discount (batch) mode, since
@@ -491,11 +505,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <!-- faixa 2 — unitário à esquerda, controles à direita -->
             <div class="flex items-center gap-2">
               <span
-                v-if="item.qty > 1 || item.price_overridden"
-                class="min-w-0 flex-1 truncate text-xs tabular-nums"
-                :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'"
+                v-if="item.qty > 1"
+                class="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground"
               >
-                <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ formatBRL(unitChargedQ(item)) }} cada
+                {{ formatBRL(unitChargedQ(item)) }} cada
               </span>
               <span v-else class="flex-1" />
 
@@ -594,10 +607,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         <button
           type="button"
           class="flex-1 rounded-md border py-1.5 text-sm font-medium transition"
-          :class="numpadMode === 'price' ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
-          @click="setMode('price')"
+          :class="numpadMode === 'disc_brl' ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
+          @click="setMode('disc_brl')"
         >
-          Preço
+          Desc R$
         </button>
         <button
           type="button"
@@ -610,9 +623,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         </button>
       </div>
       <p v-else class="px-1 text-xs font-medium text-muted-foreground">
-        Desconto em {{ selection.count }} {{ selection.count === 1 ? "item selecionado" : "itens selecionados" }} — digite o %
+        Desconto em {{ selection.count }} {{ selection.count === 1 ? "item selecionado" : "itens selecionados" }} — digite o valor
       </p>
-      <div v-if="numpadMode === 'disc' && discountTargets.length" class="flex flex-wrap gap-1">
+      <div v-if="inDiscountMode && discountTargets.length" class="flex flex-wrap gap-1">
         <button
           v-for="reason in reasonOptions"
           :key="reason.ref"
@@ -624,9 +637,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           {{ reason.label }}
         </button>
       </div>
-      <!-- price mode: a comma key for centavos (the shared numpad is integer-only) -->
-      <div v-if="numpadMode === 'price' && !selectMode" class="flex items-center gap-1">
-        <span class="flex-1 px-1 text-xs text-muted-foreground">Preço unitário — vírgula p/ centavos · gerente aprova</span>
+      <!-- desconto em R$: a tecla de vírgula (o teclado compartilhado é inteiro) -->
+      <div v-if="numpadMode === 'disc_brl'" class="flex items-center gap-1">
+        <span class="flex-1 px-1 text-xs text-muted-foreground">Desconto por unidade — vírgula p/ centavos</span>
         <button
           type="button"
           class="rounded-md border bg-card px-4 py-1.5 text-base font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"

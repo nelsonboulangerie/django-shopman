@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosManagerAuthDialog from "~/components/PosManagerAuthDialog.vue";
+import { formatBRL } from "~/utils/posIntent";
 
 const MANAGERS = [
   { username: "marina", name: "Marina" },
@@ -11,7 +12,7 @@ const MANAGERS = [
 function props(overrides: Record<string, unknown> = {}) {
   return {
     open: true,
-    reasons: ["price_override"],
+    reasons: ["discount_over_threshold"],
     managers: MANAGERS,
     busy: false,
     error: "",
@@ -75,8 +76,8 @@ describe("PosManagerAuthDialog — quem assina vem da lista", () => {
   });
 
   it("mostra o motivo da autorização vindo do servidor", async () => {
-    await open();
-    expect(document.body.textContent).toContain("Preço alterado à mão.");
+    await open({ thresholdQ: 5000 });
+    expect(document.body.textContent).toContain(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
   // Lista vazia (leitura negada, nenhum gerente com PIN) não pode fechar a única

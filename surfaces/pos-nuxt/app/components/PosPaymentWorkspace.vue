@@ -957,7 +957,7 @@ defineExpose({
             @click="discountSheetOpen = true"
           >
             <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto global ${discountSummary}` : "Desconto global" }}</span>
+            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto na venda ${discountSummary}` : "Desconto na venda" }}</span>
             <kbd class="ml-auto shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F8</kbd>
           </button>
 
@@ -1242,8 +1242,13 @@ defineExpose({
                   <dt class="text-muted-foreground">Subtotal</dt>
                   <dd class="tabular-nums">{{ review.subtotal_display }}</dd>
                 </div>
+                <!-- PLURAL, e de propósito: esta linha soma o desconto do ITEM
+                     (dado no carrinho) com o da VENDA (dado aqui). O botão à
+                     esquerda mexe só no segundo, então "Desconto" no singular nos
+                     dois lugares faria o operador procurar por que os números não
+                     batem. Um mecanismo, dois escopos, e cada rótulo diz o seu. -->
                 <div v-if="review.discount_q > 0" class="flex items-baseline justify-between gap-2 text-primary">
-                  <dt>Desconto</dt>
+                  <dt>Descontos</dt>
                   <dd class="tabular-nums">−{{ review.discount_display }}</dd>
                 </div>
                 <div v-if="review.delivery_fee_q > 0" class="flex items-baseline justify-between gap-2">

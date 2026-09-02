@@ -756,8 +756,8 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   // parou, é isso que o gerente precisa ler, não a frase genérica da exceção.
   it("prefers the review codes over the action's fixed reason", () => {
     expect(
-      managerAuthReason({ action: "cash_out", reasons: ["price_override"] }),
-    ).toBe("Preço alterado à mão.");
+      managerAuthReason({ action: "cash_out", reasons: ["discount_over_threshold"], thresholdQ: 5000 }),
+    ).toBe(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
   // ⚠️ Frase curta, sem explicação. A copy antiga explicava a política dentro do
@@ -778,10 +778,18 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   });
 
   it("spells out the review codes, threshold included", () => {
-    const text = managerAuthReason({ reasons: ["discount_over_threshold", "price_override"], thresholdQ: 1500 });
+    const text = managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 1500 });
     expect(text).toContain("Desconto acima de");
     expect(text).toContain("15,00");
-    expect(text).toContain("Preço alterado à mão.");
+  });
+
+  // ⚠️ Havia um segundo código, `price_override` — o operador digitava o preço à
+  // mão. O mecanismo saiu inteiro: preço à mão não passava pela régua do
+  // desconto (limite da loja, motivo, "maior desconto ganha") e tinha portão
+  // próprio. Código sem tradução cai na frase genérica, que é o certo: dizer
+  // pouco é melhor que dizer errado.
+  it("um código que a tela não conhece cai no genérico, não inventa motivo", () => {
+    expect(managerAuthReason({ reasons: ["price_override"] })).toBe("Precisa de um gerente.");
   });
 
   // Dizer pouco é melhor que dizer errado: o diálogo já afirmou "desconto acima de

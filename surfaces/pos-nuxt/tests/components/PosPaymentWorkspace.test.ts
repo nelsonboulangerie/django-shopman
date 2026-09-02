@@ -391,7 +391,7 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     });
     expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).not.toContain("Desconto");
     const acoes = wrapper.find('section[aria-label="Ações da venda"]');
-    expect(acoes.text()).toContain("Desconto global");
+    expect(acoes.text()).toContain("Desconto na venda");
     expect(acoes.text()).toContain("Dividir conta");
   });
 
@@ -421,7 +421,7 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
   it("sem tipo de desconto no contrato, a seção de ações não existe", async () => {
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ discountTypes: [] }) });
     expect(wrapper.find('section[aria-label="Ações da venda"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("Desconto global");
+    expect(wrapper.text()).not.toContain("Desconto na venda");
   });
 });
 
@@ -484,7 +484,7 @@ describe("PosPaymentWorkspace — o resumo diz o preço normal, o cobrado e o po
     });
     const dl = wrapper.find('section[aria-label="Resumo do pedido"] dl');
     const linhas = dl.findAll("dt").map((dt) => dt.text());
-    expect(linhas).toEqual(["Subtotal", "Desconto", "Taxa de entrega", "Total"]);
+    expect(linhas).toEqual(["Subtotal", "Descontos", "Taxa de entrega", "Total"]);
     expect(dl.text()).toContain(formatBRL(1718));
   });
 });
