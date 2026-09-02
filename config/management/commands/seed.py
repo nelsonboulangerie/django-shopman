@@ -7226,16 +7226,24 @@ class Command(BaseCommand):
             "order_preparing": {"subject": "Pedido {order_ref} em preparo", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está sendo preparado.\n\nAvisaremos quando estiver pronto!"},
             "order_ready_pickup": {"subject": "Pedido {order_ref} pronto para retirada", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto para retirada! \U0001f389\n\nVenha buscar. Obrigado!"},
             "order_ready_delivery": {"subject": "Pedido {order_ref} pronto para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto e aguardando entregador. Assim que sair para entrega avisamos. \U0001f4e6"},
-            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!\n\nEm breve estará com você!"},
+            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!{courier_tracking_suffix}\n\nQuando receber, é só confirmar por aqui: {tracking_url}"},
             "order_delivered": {"subject": "Pedido {order_ref} entregue", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferência."},
             "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
             "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
             "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Olá{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
-            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nSeu pedido seguirá para preparo. Obrigado!"},
+            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"},
             "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Olá{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
             "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
             "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
-            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*!"},
+            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*.\n\nSeu saldo fica aqui: {account_url}"},
+            # Quatro eventos que viviam só no fallback do código: sem linha aqui, o
+            # lojista não os enxerga no Admin, não reescreve o texto e não tem onde
+            # colar o flow do ManyChat. Mesmo motivo pelo qual announcement_published
+            # e stock_arrived já estavam na lista.
+            "waitlist_available": {"subject": "Sua fornada saiu — confirme o pedido {order_ref}", "body": "Olá{customer_name_greeting}! Sua fornada saiu 🥐\n\nConfirme o pedido *{order_ref}* para garantir o seu: {tracking_url}"},
+            "waitlist_released": {"subject": "Pedido {order_ref}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
+            "preorder_reminder": {"subject": "Lembrete: pedido {order_ref} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},
+            "payment_reminder": {"subject": "Pedido {order_ref} aguarda pagamento", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* aguarda o pagamento.\n\nConclua por aqui: {payment_url}{pix_suffix}"},
             # Produção → operador (notification.send de sistema, WP-PE2).
             # Opt-in via Shop.defaults["production"]["notifications"].
             "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},

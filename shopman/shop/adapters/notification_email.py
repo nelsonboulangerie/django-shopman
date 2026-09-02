@@ -70,7 +70,7 @@ BODY_TEMPLATES: dict[str, str] = {
         "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} saiu para entrega."
         "{courier_tracking_suffix}\n\n"
-        "Acompanhe pelo link de rastreamento.\n"
+        "Quando receber, é só confirmar por aqui: {tracking_url}\n"
     ),
     "order_delivered": (
         "Olá{customer_name_greeting}!\n\n"
@@ -89,7 +89,7 @@ BODY_TEMPLATES: dict[str, str] = {
     "payment_confirmed": (
         "Olá{customer_name_greeting}!\n\n"
         "O pagamento do pedido {order_ref} foi confirmado.\n\n"
-        "Seu pedido seguirá para preparo.\n\n"
+        "Avisamos a cada passo. Acompanhe por aqui: {tracking_url}\n\n"
         "Obrigado!\n"
     ),
     "payment_requested": (
