@@ -86,6 +86,28 @@ Judged against "what would a thoughtful host have already said":
 
 These are the owner's call on tone; they are recorded as concrete gaps, not applied.
 
+## O que a suíte modelava errado — e por que o N-1 sobreviveu tanto tempo
+
+Três testes independentes descreviam "e-mail configurado" montando **backend + host**
+e deixando o remetente no default falso de `config/settings.py` (`noreply@shopman.local`):
+
+| arquivo | o que afirmava |
+|---|---|
+| `shopman/shop/tests/test_notification_email_availability.py` | `test_smtp_COM_host_esta_disponivel` — "SMTP com host ⇒ disponível" |
+| `shopman/shop/tests/test_production_notifications.py` | o roteamento do pedido de compra ao fornecedor |
+| `shopman/backstage/tests/test_otp_delivery_readiness.py` | o helper `_email(ok=True)`, usado por metade do arquivo |
+
+Nenhum deles estava errado sobre o que queria medir. Os três estavam errados sobre o que
+**"configurado" significa** — e por isso o canal com remetente inentregável passava como
+pronto em três lugares ao mesmo tempo, inclusive no painel de prontidão que o gestor lê.
+
+É a mesma lição do P0 do `E54`, registrada em `fallbacks-perigosos-go-live.md`: *um teste
+que afirma o defeito jamais o pega*. Aqui a forma é mais sutil — nenhum teste afirmava o
+defeito, eles apenas **descreviam o mundo com uma perna a menos**, e a perna que faltava
+era exatamente a defeituosa. Cobertura não mostra isso: as três linhas estavam cobertas.
+
+Os três foram corrigidos junto com o N-1.
+
 ## Verified-safe
 - Item 4 of the fallbacks doc **is fixed**: `notification_email.is_available` now rejects
   console/locmem/dummy backends via `_BACKENDS_INERTES` (`notification_email.py:236-247`). The
