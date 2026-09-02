@@ -226,22 +226,6 @@ class AccessLinkCreateView(View):
 
     @staticmethod
     def _access_code_from_payload(data: dict) -> str:
-        """O NB-XxXx, venha ele no campo combinado ou em qualquer outro do corpo.
-
-        A ordem abaixo é a PREFERÊNCIA, não a exigência. Quem manda o corpo é um
-        fluxo do ManyChat, e ali a variável certa depende do canal, da versão da
-        conta e de qual item o seletor oferece naquele bloco — coisa que muda sem
-        aviso e que já custou dias quando o `Last Text Input` de um contato
-        cross-channel devolveu a mídia do Instagram em vez da mensagem do WhatsApp.
-
-        Então: se o campo preferido não trouxer um código, varremos o corpo inteiro
-        atrás de um. O lojista pode jogar duas ou três variáveis candidatas no JSON
-        e a que tiver o código vence — sem precisar adivinhar qual é.
-
-        A varredura é segura porque o código é namespaced (`NB-`), de uso único e
-        de vida curta: um valor solto que "pareça" um código ou não existe no cache
-        (e vira handoff expirado, com aviso) ou é o próprio código que buscávamos.
-        """
         fields = (
             "access_code",
             "state_code",
@@ -251,14 +235,9 @@ class AccessLinkCreateView(View):
             "message",
             "text",
         )
-        from ..services.link_state import contains_code
-
-        preferred = ""
         for field in fields:
             value = data.get(field)
-            if value and not preferred:
-                preferred = str(value)
-            if value and contains_code(str(value)):
+            if value:
                 return str(value)
 
         for container_name in ("metadata", "custom_fields", "fields"):
@@ -267,38 +246,8 @@ class AccessLinkCreateView(View):
                 continue
             for field in fields:
                 value = container.get(field)
-                if value and not preferred:
-                    preferred = str(value)
-                if value and contains_code(str(value)):
+                if value:
                     return str(value)
-
-        # Nenhum campo conhecido trouxe o código: procura em QUALQUER valor do corpo.
-        found = AccessLinkCreateView._scan_for_code(data)
-        if found:
-            logger.info("access_link.code_found_by_scan — o campo combinado não trazia o código")
-            return found
-
-        return preferred
-
-    @staticmethod
-    def _scan_for_code(value, _depth: int = 0) -> str:
-        """Primeiro valor de string, em qualquer profundidade, que contenha um código."""
-        from ..services.link_state import contains_code
-
-        if _depth > 4:
-            return ""
-        if isinstance(value, str):
-            return value if contains_code(value) else ""
-        if isinstance(value, dict):
-            for item in value.values():
-                found = AccessLinkCreateView._scan_for_code(item, _depth + 1)
-                if found:
-                    return found
-        elif isinstance(value, (list, tuple)):
-            for item in value:
-                found = AccessLinkCreateView._scan_for_code(item, _depth + 1)
-                if found:
-                    return found
         return ""
 
     @classmethod
