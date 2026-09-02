@@ -10,7 +10,18 @@ import type { PaymentProofView } from "~/presentation/payment";
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
 // não pollam → 'idle'. `large` = palco da tela de resultado: QR maior, para o
 // cliente escanear de longe.
-const props = defineProps<{ proof: PaymentProofView; status?: "idle" | "polling" | "paid" | "expired"; large?: boolean }>();
+// `resending` = o reenvio do link está em voo (o composable manda; a tela só
+// trava o botão para o clique duplo não virar dois pedidos).
+const props = defineProps<{
+  proof: PaymentProofView;
+  status?: "idle" | "polling" | "paid" | "expired";
+  large?: boolean;
+  resending?: boolean;
+}>();
+
+// O reenvio é um GESTO de rede (Directive nova no servidor), não estado local:
+// sobe para quem tem o transporte (usePosSale), como todo comando do balcão.
+const emit = defineEmits<{ resendLink: [] }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
@@ -113,6 +124,21 @@ async function copyLink() {
       <UiButton variant="outline" size="sm" class="shrink-0 gap-2" @click="copyLink">
         <Icon name="lucide:copy" class="size-4" />
         Copiar link
+      </UiButton>
+      <!-- "Não chegou": manda de novo a MESMA URL pela cadeia da casa
+           (WhatsApp → e-mail → SMS). O servidor recusa link vencido, pedido
+           pago/cancelado e clique cedo demais — a recusa vira toast com o
+           motivo, não botão escondido. -->
+      <UiButton
+        variant="outline"
+        size="sm"
+        class="shrink-0 gap-2"
+        :disabled="resending"
+        data-action="resend-link"
+        @click="emit('resendLink')"
+      >
+        <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
+        Reenviar
       </UiButton>
     </div>
 

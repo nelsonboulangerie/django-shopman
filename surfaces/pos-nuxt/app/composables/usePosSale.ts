@@ -214,6 +214,28 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
   }
 
+  // Reenvio do link de pagamento — "não chegou". O servidor enfileira UMA
+  // Directive nova (mesma URL, mesma cadeia WhatsApp → e-mail → SMS) e recusa
+  // com motivo quando não deve: link vencido, pedido pago/cancelado, envio
+  // ainda em andamento, clique cedo demais. A recusa é toast com o `detail`
+  // do servidor; o botão não some, porque o motivo muda com o tempo.
+  const resendingLink = ref(false);
+  async function resendPaymentLink(): Promise<boolean> {
+    const orderRef = result.value?.orderRef;
+    if (!orderRef || resendingLink.value) return false;
+    resendingLink.value = true;
+    try {
+      await action.call(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/resend-payment-link/`);
+      toast.success("Link reenviado ao cliente");
+      return true;
+    } catch (error) {
+      toast.error(httpErrorMessage(error, "Não foi possível reenviar o link. Copie e mande você."));
+      return false;
+    } finally {
+      resendingLink.value = false;
+    }
+  }
+
   /**
    * Uma venda cancelada FORA da tela de resultado (Últimas vendas): se era a
    * venda em cena — palco, chip ou polling — o vestígio dela sai junto.
@@ -1969,6 +1991,8 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewCheckout,
     submitSale,
     dismissResult,
+    resendingLink,
+    resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
     openMoveDialog,
