@@ -129,6 +129,15 @@ class AccessLinkCreateView(View):
         # cart_session_key) viaja opaco.
         handoff_attempted = False
         access_code = self._access_code_from_payload(data)
+        if not access_code or not self._contains_code(access_code):
+            # O corpo não trouxe o código. Em vez de exigir que o fluxo saiba QUAL
+            # variável carrega o texto da mensagem — nome que muda por canal e por
+            # conta, e que já custou dias aqui —, perguntamos ao ManyChat. Assim o
+            # request precisa carregar só o `subscriber_id`, que ninguém erra.
+            from_api = self._last_input_text_from_manychat(data, resolver)
+            if from_api and self._contains_code(from_api):
+                logger.info("access_link.code_from_manychat_api")
+                access_code = from_api
         if access_code:
             from ..services.link_state import contains_code, pop_state
 
@@ -197,6 +206,38 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _contains_code(value: str) -> bool:
+        from ..services.link_state import contains_code
+
+        return bool(value) and contains_code(str(value))
+
+    @staticmethod
+    def _last_input_text_from_manychat(data: dict, resolver) -> str:
+        """A última mensagem do assinante, pedida ao ManyChat pelo `subscriber_id`.
+
+        Capacidade OPCIONAL do resolver (mesmo padrão de `upsert_manychat_subscriber`):
+        sem ela, nada muda. Nunca derruba o login — o access link vale mesmo sem a
+        sacola, e uma API lenta não pode virar porta fechada.
+        """
+        if data.get("source", AccessLink.Source.MANYCHAT) != AccessLink.Source.MANYCHAT:
+            return ""
+        subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
+        subscriber_id = (
+            (subscriber.get("id") if isinstance(subscriber, dict) else None)
+            or data.get("manychat_id")
+            or data.get("subscriber_id")
+        )
+        if not subscriber_id or not hasattr(resolver, "manychat_last_input_text"):
+            return ""
+        try:
+            return str(resolver.manychat_last_input_text(str(subscriber_id)) or "")
+        except Exception:
+            logger.warning(
+                "access_link.manychat_last_input_failed subscriber=%s", subscriber_id, exc_info=True
+            )
+            return ""
 
     @staticmethod
     def _looks_like_plain_keyword(value: str) -> bool:
