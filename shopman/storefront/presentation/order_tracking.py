@@ -39,6 +39,7 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
+from shopman.shop.services.business_calendar import format_deadline
 from shopman.storefront.presentation.status import order_status_label, status_color
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
@@ -569,7 +570,9 @@ _PROMISE_COVERS: dict[str, frozenset[str]] = {
     "preorder_scheduled": frozenset(),
     # Bola do cliente: o código/link existe e ele precisa pagar.
     "payment_pix_ready": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
-    "payment_card_ready": frozenset({NEXT_STEP, NOTIFICATION}),
+    # O link do balcão tem prazo com consequência (a reserva é liberada); o
+    # cartão da loja online não tem prazo e a nota fica vazia para ele.
+    "payment_card_ready": frozenset({NEXT_STEP, CONSEQUENCE, NOTIFICATION}),
     "payment_retry": frozenset({NEXT_STEP}),
     "payment_preparing": frozenset({NOTIFICATION}),
     # Bola do gateway: cartão autorizado, capturando.
@@ -648,6 +651,10 @@ _PROMISE_FOOTNOTE: dict[str, tuple[str, str]] = {
         "TRACKING_PROMISE_PAYMENT_FOOTNOTE",
         "Se o prazo acabar, o pedido cancela automaticamente e avisamos você.",
     ),
+    "payment_card_ready": (
+        "TRACKING_PROMISE_LINK_FOOTNOTE",
+        "Se o prazo passar, liberamos a reserva e avisamos você.",
+    ),
     "payment_expired": (
         "TRACKING_PROMISE_EXPIRED_FOOTNOTE",
         "Você pode pedir de novo quando quiser.",
@@ -659,6 +666,10 @@ def _promise_footnote(data: TrackingPromiseData, *, copy: CopyCatalog) -> str:
     """Complemento opcional do estado — vazio na maioria deles, de propósito."""
     spec = _PROMISE_FOOTNOTE.get(data.state)
     if not spec:
+        return ""
+    if data.state == "payment_card_ready" and data.deadline_action in {"", "none"}:
+        # A nota é do LINK (tem prazo); o cartão da loja online não tem, e
+        # prometer consequência sem prazo seria informação solta.
         return ""
     key, fallback = spec
     return copy.message(key, fallback)
@@ -730,6 +741,24 @@ def _promise_copy(
         return copy.title("TRACKING_PAYMENT_REQUESTED", "Pague com Pix"), message
 
     if state == "payment_card_ready":
+        if data.payment_method == "link":
+            # O link é o pedido REMOTO anotado no balcão: a casa anotou, o
+            # cliente paga do celular, e a encomenda só é liberada contra o
+            # pagamento. A frase diz até quando — o mesmo prazo do aviso e da
+            # tela do PDV — e a nota de rodapé diz a consequência.
+            title = copy.title("TRACKING_PROMISE_LINK_TITLE", "Pague pelo link")
+            deadline = format_deadline(parse_datetime(data.deadline_at) if data.deadline_at else None)
+            if deadline:
+                message = copy.message(
+                    "TRACKING_PROMISE_LINK_MESSAGE_DEADLINE",
+                    "Anotamos seu pedido. Pague até {deadline} para garantir.",
+                ).replace("{deadline}", deadline)
+            else:
+                message = copy.message(
+                    "TRACKING_PROMISE_LINK_MESSAGE",
+                    "Anotamos seu pedido. Finalize o pagamento no ambiente seguro para garantir.",
+                )
+            return title, message
         if _is_preorder_wait(data):
             message = _payment_wait_message(
                 data,

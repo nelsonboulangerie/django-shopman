@@ -925,9 +925,20 @@ def _build_promise(
             # `payment_card_ready` cobre o link também: é a mesma sessão
             # hospedada, o mesmo botão que abre a URL do gateway. O que muda
             # é o `payment_method`, e é ele que a tela rotula.
+            #
+            # O LINK tem prazo (o cartão da loja online não): o mesmo
+            # `expires_at` que arma o `payment.timeout` vira o prazo da
+            # promessa — "pague até hoje às 16h para garantir o pedido" — e a
+            # consequência (a reserva é liberada) entra na copy, como no Pix.
+            # Sem contagem regressiva: o relógio do link é de horas, e o mm:ss
+            # da tela é instrumento de dez minutos.
+            has_deadline = bool(payment_expires_at)
             return promise(
                 state="payment_card_ready",
                 tone="info",
+                deadline_at=payment_expires_at,
+                deadline_kind="payment" if has_deadline else None,
+                deadline_action="cancel_order_on_timeout" if has_deadline else "none",
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
                 actions=(
