@@ -357,6 +357,10 @@ def _build_context(order, payload: dict, template: str) -> dict:
 
     from shopman.shop.services import storefront_links
 
+    # Destino do aviso de fidelidade: os pontos são mostrados em /conta, e um aviso
+    # que anuncia saldo sem dizer onde vê-lo é promessa sem porta.
+    context["account_url"] = storefront_links.account_url()
+
     # PAYMENT-TRACKING-MERGE: o link de pagamento é o do próprio acompanhamento
     # (o Pix/cartão vivem lá inline). Sem tela /pagamento.
     payment = order.data.get("payment")

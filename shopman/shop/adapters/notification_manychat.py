@@ -39,7 +39,8 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     "order_dispatched": (
         "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
-        " entrega! \U0001f697{courier_tracking_suffix}{tracking_suffix}"
+        " entrega! \U0001f697{courier_tracking_suffix}"
+        "\nQuando receber, é só confirmar por aqui: {tracking_url}"
     ),
     "order_delivered": (
         "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
@@ -62,9 +63,12 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "O prazo de confirmação do pedido {order_ref} passou e liberamos a sua vaga. "
         "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
     ),
+    # Pagar não é o mesmo que ser aceito: enquanto o pedido está `new`, a tela diz
+    # "estamos conferindo a disponibilidade". Prometer preparo aqui era prometer o
+    # que a tela não cumpre.
     "payment_confirmed": (
-        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido. "
-        "Seu pedido seguirá para preparo."
+        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido."
+        "\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"
     ),
     "payment_requested": (
         "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
