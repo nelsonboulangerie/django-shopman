@@ -7269,7 +7269,10 @@ class Command(BaseCommand):
             # colidiria com o aviso da loja online. `{payment_deadline_note}` some
             # sozinho quando não há prazo gravado.
             "payment_link_sent": {"subject": "Pedido {order_ref}: link de pagamento", "body": "Olá{customer_name_greeting}! Anotamos seu pedido *{order_ref}* — total *{total}*.\n\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}\n\nQualquer coisa, é só responder esta mensagem. 🥖"},
-            "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Olá{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
+            # Prazo vencido sem pagamento (Pix da loja ou link do balcão): a casa
+            # LIBEROU a reserva — é o que acontece e é o que o cliente entende.
+            # "Expirou / cancelado automaticamente" era vocabulário de sistema.
+            "payment_expired": {"subject": "Pedido {order_ref}: reserva liberada", "body": "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido *{order_ref}* dentro do prazo, então liberamos a reserva. Se ainda quiser, é só falar com a gente que refazemos o pedido. 🥖"},
             "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
             "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
             "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*.\n\nSeu saldo fica aqui: {account_url}"},

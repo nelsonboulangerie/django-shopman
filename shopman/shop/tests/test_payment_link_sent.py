@@ -7,8 +7,9 @@ curto-circuita a cadeia: nenhum aviso de PDV alcançava o cliente.
 
 Cinco coisas, cada uma com o seu teste:
 
-1. o prazo em copy de cliente ("hoje às 18h", "amanhã às 9h") — e a frase
-   inteira SOME quando não há prazo, em vez de sair "O link vale até .";
+1. o prazo em copy de cliente ("hoje às 18h", "amanhã às 9h") — com a
+   consequência ("depois disso a reserva é liberada") — e a frase inteira SOME
+   quando não há prazo, em vez de sair "é só pagar até .";
 2. o contexto exporta `checkout_url` (a cobrança), distinto do `payment_url`
    (o acompanhamento);
 3. o canal `pdv` semeado avisa por WhatsApp → e-mail → SMS, e pula o backend
@@ -125,7 +126,9 @@ class TestDeriveContextPrazo:
         ctx = derive_context({"payment": {"method": "link", "expires_at": expires_at}})
 
         assert ctx["payment_deadline"], "o prazo cru é o campo personalizado do ManyChat"
-        assert ctx["payment_deadline_note"] == f"\nO link vale até {ctx['payment_deadline']}."
+        assert ctx["payment_deadline_note"] == (
+            f"\nPara garantir o pedido, é só pagar até {ctx['payment_deadline']}. Depois disso a reserva é liberada."
+        )
 
     def test_sem_prazo_as_duas_chaves_sao_vazias(self):
         ctx = derive_context({"payment": {"method": "link", "checkout_url": CHECKOUT_URL}})
@@ -197,19 +200,23 @@ class TestRenderDosTresCanais:
     def without_deadline(self):
         return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_link_sent")
 
-    def test_com_prazo_todo_canal_diz_ate_quando(self, with_deadline):
+    def test_com_prazo_todo_canal_diz_ate_quando_e_a_consequencia(self, with_deadline):
+        """A encomenda remota só é liberada contra o pagamento: o cliente lê até
+        quando E o que acontece depois — não um detalhe técnico do link."""
         for channel, text in _renders(with_deadline).items():
             if channel == "email.subject":
                 continue
-            assert "O link vale até " in text, f"{channel}: {text!r}"
-            assert "vale até ." not in text, f"{channel}: {text!r}"
+            assert "é só pagar até " in text, f"{channel}: {text!r}"
+            assert "a reserva é liberada" in text, f"{channel}: {text!r}"
+            assert "pagar até ." not in text, f"{channel}: {text!r}"
             assert CHECKOUT_URL in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
 
     def test_sem_prazo_nenhum_canal_deixa_rotulo_pendurado(self, without_deadline):
-        """"O link vale até ." é proibido — a frase inteira some."""
+        """"é só pagar até ." é proibido — a frase inteira some."""
         for channel, text in _renders(without_deadline).items():
-            assert "vale até" not in text, f"{channel}: {text!r}"
+            assert "pagar até" not in text, f"{channel}: {text!r}"
+            assert "reserva" not in text, f"{channel}: {text!r}"
             assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
             if channel != "email.subject":
                 assert CHECKOUT_URL in text, f"{channel}: {text!r}"
@@ -234,6 +241,45 @@ class TestRenderDosTresCanais:
         sms = notification_sms._build_message("payment_link_sent", without_deadline)
         assert "*" not in sms
         assert "PDV-1" in sms and CHECKOUT_URL in sms
+
+
+def _renders_expired(context: dict) -> dict[str, str]:
+    ctx = derive_context(context)
+    return {
+        "whatsapp": notification_manychat._build_message("payment_expired", ctx),
+        "sms": notification_sms._build_message("payment_expired", ctx),
+        "email.body": render_message("payment_expired", ctx, notification_email.BODY_TEMPLATES),
+        "email.subject": render_template(notification_email.SUBJECT_TEMPLATES["payment_expired"], ctx),
+        "seed": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["body"], ctx),
+        "seed.subject": render_template(_seed_assignment("FALLBACK_TEMPLATES")["payment_expired"]["subject"], ctx),
+    }
+
+
+@pytest.mark.django_db
+class TestPrazoVencidoEmTodoCanal:
+    """O vencimento é copy da casa: "liberamos a reserva", não "expirou /
+    cancelado automaticamente" — e o cliente sabe que basta falar com a gente."""
+
+    @pytest.fixture
+    def expired(self):
+        return _build_context(_order(), {"order_ref": "PDV-1"}, "payment_expired")
+
+    def test_todo_canal_diz_que_a_reserva_foi_liberada(self, expired):
+        for channel, text in _renders_expired(expired).items():
+            assert "{" not in text, f"placeholder cru em {channel}: {text!r}"
+            assert "PDV-1" in text, f"{channel}: {text!r}"
+            assert "expirou" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
+            assert "cancelado" not in text.lower(), f"vocabulário de sistema em {channel}: {text!r}"
+            if channel.endswith("subject"):
+                assert "reserva liberada" in text, f"{channel}: {text!r}"
+            else:
+                assert "liberamos a reserva" in text, f"{channel}: {text!r}"
+                assert "refazemos o pedido" in text, f"{channel}: {text!r}"
+
+    def test_o_sms_e_uma_linha_sem_acento(self, expired):
+        sms = _renders_expired(expired)["sms"]
+        assert "\n" not in sms
+        assert sms.isascii(), sms
 
 
 class TestSeedDoTemplate:

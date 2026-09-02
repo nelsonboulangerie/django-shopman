@@ -30,7 +30,7 @@ SUBJECT_TEMPLATES: dict[str, str] = {
     "payment_confirmed": "Pagamento do pedido {order_ref} confirmado",
     "payment_requested": "Pedido {order_ref}: pagamento liberado",
     "payment_link_sent": "Pedido {order_ref}: link de pagamento",
-    "payment_expired": "Pagamento do pedido {order_ref} expirado",
+    "payment_expired": "Pedido {order_ref}: reserva liberada",
     "payment_failed": "Falha ao preparar pagamento do pedido {order_ref}",
     "preorder_reminder": "Lembrete: pedido {order_ref} agendado para amanhã",
     "stock_alert": "Alerta de estoque: {sku}",
@@ -108,8 +108,9 @@ BODY_TEMPLATES: dict[str, str] = {
     ),
     "payment_expired": (
         "Olá{customer_name_greeting}!\n\n"
-        "O prazo de pagamento do pedido {order_ref} expirou.\n\n"
-        "Caso ainda deseje comprar, faça um novo pedido.\n"
+        "Não recebemos o pagamento do pedido {order_ref} dentro do prazo, "
+        "então liberamos a reserva.\n\n"
+        "Se ainda quiser, é só falar com a gente que refazemos o pedido.\n"
     ),
     "payment_failed": (
         "Olá{customer_name_greeting}!\n\n"
