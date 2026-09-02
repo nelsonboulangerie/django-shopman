@@ -264,6 +264,39 @@ export interface PaymentProofView {
   isLink: boolean;
   /** Has gateway data worth surfacing (QR / copy-paste / checkout link). */
   hasProof: boolean;
+  /** "amanhã às 9h" — até quando o LINK vale, dito como o operador diz ao
+   *  cliente. Só o link: o Pix tem o próprio relógio na tela (polling). */
+  expiresDisplay: string;
+}
+
+const DIAS_CURTOS = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
+
+/**
+ * "hoje às 18h" / "amanhã às 9h" / "sáb. 6/9 às 14h" — quando o link vence.
+ *
+ * Sem prazo dito, "o link parou de funcionar" vira ligação para o balcão. O
+ * prazo é o MESMO que o pedido e o gateway carregam (`payment.expires_at`);
+ * aqui só se traduz para a frase que o operador fala ao telefone: "hoje" e
+ * "amanhã" por nome, e do dia seguinte em diante o dia da semana, que é o que
+ * o cliente pergunta. Minuto só aparece quando não é cheio ("9h30").
+ *
+ * `now` entra por parâmetro para a função ser pura (e testável em qualquer dia).
+ */
+export function paymentDeadlineLabel(iso: string, now: Date = new Date()): string {
+  if (!iso) return "";
+  const deadline = new Date(iso);
+  if (Number.isNaN(deadline.getTime())) return "";
+  const minutes = deadline.getMinutes();
+  const hora = minutes === 0
+    ? `${deadline.getHours()}h`
+    : `${deadline.getHours()}h${String(minutes).padStart(2, "0")}`;
+  // Dias entre as MEIAS-NOITES locais: "amanhã" é o dia civil seguinte, não
+  // "daqui a 24 h" — às 23h, um link que vence às 0h30 já é "amanhã".
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dias = Math.round((startOfDay(deadline) - startOfDay(now)) / 86_400_000);
+  if (dias === 0) return `hoje às ${hora}`;
+  if (dias === 1) return `amanhã às ${hora}`;
+  return `${DIAS_CURTOS[deadline.getDay()]} ${deadline.getDate()}/${deadline.getMonth() + 1} às ${hora}`;
 }
 
 /**
@@ -286,6 +319,7 @@ export function qrCodeSrc(qrCode: string): string {
  */
 export function paymentProofView(
   result: POSPaymentResultProjection | null | undefined,
+  now: Date = new Date(),
 ): PaymentProofView | null {
   if (!result || !result.method) return null;
   const method = result.method;
@@ -318,6 +352,7 @@ export function paymentProofView(
     // celular, ou copiada para o WhatsApp.
     isLink: method === "link",
     hasProof: Boolean(qrSrc || copyPaste || checkoutUrl),
+    expiresDisplay: method === "link" ? paymentDeadlineLabel(result.expires_at || "", now) : "",
   };
 }
 
