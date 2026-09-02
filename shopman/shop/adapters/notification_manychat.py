@@ -274,7 +274,18 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "subscriber_id": subscriber_id,
             "data": {
                 "version": "v2",
-                "content": {"messages": [{"type": "text", "text": message}]},
+                "content": {
+                    # ⚠️ DECLARAR O CANAL. Sem esta linha o ManyChat trata o envio
+                    # como Messenger e avalia a janela de 24h DE LÁ — que para um
+                    # assinante de WhatsApp nunca abriu. O sintoma foi um 400 com
+                    # o código 3011 dizendo "última interação há 19521h" (mais de
+                    # dois anos) para alguém que tinha ACABADO de mandar mensagem.
+                    # A pista estava na própria recusa: ela fala em "message tag",
+                    # que é conceito do Messenger — o WhatsApp tem template e
+                    # janela, não tag.
+                    "type": "whatsapp",
+                    "messages": [{"type": "text", "text": message}],
+                },
             },
         }
         result = _api_call("/sending/sendContent", payload, mc_config)
