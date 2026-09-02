@@ -1,5 +1,14 @@
 # Auditoria adversarial — Storefront (cliente) · Nelson Boulangerie
 
+> ⚠️ **SEVERIDADE REVISADA — leia [`verify-04-05-ux.md`](verify-04-05-ux.md) antes de agir por este laudo.**
+> 
+> Um passe de refutação em 01/09 atacou cada P0 deste arquivo com uma régua única
+> (P0 = perde dinheiro, corrompe dado, viola segurança, ou impede tarefa central sem
+> contorno). **5 P0 alegados → 1 sobreviveu**, e esse não é defeito de engenharia (é o aval do dono no texto de privacidade). O do OTP de debug foi refutado: falha fechado.
+> 
+> As contagens NO CORPO deste arquivo são as originais e estão infladas. O fato de
+> cada achado quase sempre se sustenta; a **severidade** não.
+
 Escopo: `surfaces/storefront-nuxt/` (20 páginas, 28 componentes de app, 17 composables,
 11 módulos de presentation) + copy de apoio em `shopman/storefront/presentation/` e
 `shopman/shop/omotenashi/`. Leitura estática — o dev server e a suíte NÃO foram executados

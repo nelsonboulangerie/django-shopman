@@ -23,6 +23,29 @@ para produção amanhã.
 | [09](09-deploy-blueprint.md) | Blueprint de deploy | 0 | topologia, envs, observabilidade |
 | [10](10-notifications.md) | Notificações | 1 | remetente, custo de SMS, markup entre canais, omotenashi da mensagem |
 
+## ⚠️ Antes de agir por qualquer laudo: leia o passe de refutação
+
+Os laudos abaixo são a metade **achar** do método. A metade **refutar** rodou depois,
+com três céticos independentes e uma régua única de severidade, e derrubou a maior
+parte dos P0:
+
+| laudo | P0 alegados | sobreviveram | refutação |
+|---|---|---|---|
+| 03 backstage | 11 | 2 | [verify-03-backstage.md](verify-03-backstage.md) |
+| 02 loja + 06 Admin | 9 | 2 (um já corrigido) | [verify-02-06-storefront-admin.md](verify-02-06-storefront-admin.md) |
+| 04 + 05 UX | 17 | 1 (e não é código) | [verify-04-05-ux.md](verify-04-05-ux.md) |
+
+**43 P0 alegados no total; 3 seguem abertos.** As contagens dentro de cada laudo são as
+originais e estão infladas — cada arquivo leva um aviso no topo. O **fato** de cada achado
+quase sempre se sustenta; a **severidade** não.
+
+Casos em que o auditor tinha o fato ao contrário, e que valem mais que a estatística:
+a entrada de compras "sem idempotência" (o serviço usa `run_idempotent_mutation`), o
+estorno em massa que "devolve dinheiro pelo gateway" (não há gateway; o dano é inverso),
+e o reajuste de preço em massa, onde o mecanismo que SALVA foi registrado como agravante.
+
+A lição está em `feedback_achar_sem_refutar_nao_e_auditoria` na memória do projeto.
+
 ## Como ler
 
 Cada relatório separa **CONFIRMADO** de **SUSPEITO**, e termina com uma seção

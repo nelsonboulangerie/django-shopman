@@ -1,5 +1,14 @@
 # Backstage ↔ operator-surfaces contract audit
 
+> ⚠️ **SEVERIDADE REVISADA — leia [`verify-03-backstage.md`](verify-03-backstage.md) antes de agir por este laudo.**
+> 
+> Um passe de refutação em 01/09 atacou cada P0 deste arquivo com uma régua única
+> (P0 = perde dinheiro, corrompe dado, viola segurança, ou impede tarefa central sem
+> contorno). **11 P0 alegados → 2 sobreviveram.** Nove foram rebaixados por severidade (o fato costuma estar certo; a consequência, não). Nenhum foi refutado por inteiro.
+> 
+> As contagens NO CORPO deste arquivo são as originais e estão infladas. O fato de
+> cada achado quase sempre se sustenta; a **severidade** não.
+
 Scope: `shopman/backstage/` (Django, `/api/v1/backstage/` + SSE `/events/`) against
 `surfaces/{pos,kds,orders,production,hub,marketing,bi,purchase}-nuxt` and `surfaces/operator-kit`.
 

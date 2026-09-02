@@ -1,5 +1,14 @@
 # Auditoria adversarial de UX de operador — superfícies Nuxt
 
+> ⚠️ **SEVERIDADE REVISADA — leia [`verify-04-05-ux.md`](verify-04-05-ux.md) antes de agir por este laudo.**
+> 
+> Um passe de refutação em 01/09 atacou cada P0 deste arquivo com uma régua única
+> (P0 = perde dinheiro, corrompe dado, viola segurança, ou impede tarefa central sem
+> contorno). **12 P0 alegados → 0 sobreviveram como P0.** A entrada de compras "sem idempotência" foi REFUTADA por inteiro: `confirm_receipt` usa `run_idempotent_mutation`. Este laudo é o que mais sofreu com calibragem de severidade.
+> 
+> As contagens NO CORPO deste arquivo são as originais e estão infladas. O fato de
+> cada achado quase sempre se sustenta; a **severidade** não.
+
 Escopo: `surfaces/pos-nuxt`, `kds-nuxt`, `orders-nuxt`, `production-nuxt`, `hub-nuxt`,
 `marketing-nuxt`, `bi-nuxt`, `purchase-nuxt` e a layer compartilhada `operator-kit`.
 Leitura estática (read-only). Nenhum teste executado, nenhum arquivo alterado.

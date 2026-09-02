@@ -1,5 +1,14 @@
 # Auditoria adversarial do contrato do storefront
 
+> ⚠️ **SEVERIDADE REVISADA — leia [`verify-02-06-storefront-admin.md`](verify-02-06-storefront-admin.md) antes de agir por este laudo.**
+> 
+> Um passe de refutação em 01/09 atacou cada P0 deste arquivo com uma régua única
+> (P0 = perde dinheiro, corrompe dado, viola segurança, ou impede tarefa central sem
+> contorno). **5 P0 alegados → 1 sobreviveu** (o PATCH de perfil, e ele JÁ está corrigido em `eb98961fb`). O de alérgenos foi refutado: o seed preenche `food_safety_notice`, então o painel sempre desenha.
+> 
+> As contagens NO CORPO deste arquivo são as originais e estão infladas. O fato de
+> cada achado quase sempre se sustenta; a **severidade** não.
+
 **Escopo:** `shopman/storefront/` (Django, `/api/v1/`) ↔ `surfaces/storefront-nuxt/` (Nuxt 4.5.2 + BFF Nitro).
 **Método:** leitura completa de `api/urls.py` e de todas as views/serializers atrás dele; leitura das páginas, composables, `presentation/`, `utils/` e `server/` do app Nuxt; diff campo a campo.
 **Somente leitura.** Nenhum arquivo do repositório foi alterado, nenhum teste foi executado.

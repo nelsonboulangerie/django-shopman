@@ -1,5 +1,14 @@
 # Auditoria adversarial — Django Admin (django-unfold)
 
+> ⚠️ **SEVERIDADE REVISADA — leia [`verify-02-06-storefront-admin.md`](verify-02-06-storefront-admin.md) antes de agir por este laudo.**
+> 
+> Um passe de refutação em 01/09 atacou cada P0 deste arquivo com uma régua única
+> (P0 = perde dinheiro, corrompe dado, viola segurança, ou impede tarefa central sem
+> contorno). **4 P0 alegados → 1 sobreviveu**, com escopo corrigido de "~20 ações" para **5 escalações vivas**. O estorno em massa NÃO chama gateway — o dano é inverso. O reajuste de preço em massa foi refutado: o preço de prateleira vem de `ListingItem.price_q`.
+> 
+> As contagens NO CORPO deste arquivo são as originais e estão infladas. O fato de
+> cada achado quase sempre se sustenta; a **severidade** não.
+
 Escopo: `shopman/backstage/admin/`, `shopman/backstage/admin_console/`, `shopman/shop/admin/`,
 `shopman/storefront/admin/`, todo `admin.py` / `contrib/admin_unfold` sob `packages/*`, todo template
 Admin do repositório, `shopman/backstage/projections/` consumidas por páginas Admin, e a máquina do
