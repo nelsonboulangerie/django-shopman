@@ -2286,6 +2286,11 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 # insumos: um cliente que mande a string desliga o guardrail achando
                 # que o ligou. Ver `shopman/backstage/parsing.py`.
                 force=as_bool(request.data, "force", default=False),
+                # Trava de replay do GESTO. Esta é a única operação composta da
+                # produção (cria a WO e a fecha na mesma requisição), então a
+                # chave do core — que inclui o pk da WO — nasce diferente a cada
+                # tentativa e nunca alcança a trava. Ver `apply_quick_finish`.
+                client_request_id=str(request.data.get("client_request_id") or "").strip(),
             )
         except ProductionError as exc:
             shortage = _production_error_response(exc)

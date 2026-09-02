@@ -237,6 +237,88 @@ def test_quick_finish_plans_and_finishes(client, recipe, production_operator, po
 
 
 @pytest.mark.django_db
+def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(
+    client, recipe, production_operator, position
+):
+    """O duplo toque no quiosque não pode virar duas fornadas.
+
+    ⚠️ Esta é a única operação COMPOSTA da produção: cria a WO e a fecha na
+    mesma requisição. A trava do core (`WorkOrderEvent.idempotency_key`, com
+    `unique` no banco) é correta e defensiva — ela até levanta
+    `IDEMPOTENCY_CONFLICT` se a mesma chave aparecer em outra WO. Só que
+    `_finish_idempotency_key` inclui o `work_order.pk`, e aqui o pk é **novo a
+    cada tentativa**: chave nova, trava do core nunca alcançada.
+
+    Sem a trava de REQUISIÇÃO, o segundo toque produzia uma segunda WorkOrder,
+    um segundo `production_changed(action="finished")` e portanto um segundo
+    `kind=MAKE` no ledger — mais um segundo consumo de insumo. O livro é
+    imutável de propósito, então o conserto seria um ajuste no fechamento, com
+    o dono perguntando por que faltou farinha.
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    client.force_login(production_operator)
+    corpo = {
+        "recipe_id": recipe.pk,
+        "quantity": "5",
+        "position_id": position.pk,
+        "client_request_id": "quiosque-gesto-abc123",
+    }
+
+    primeira = client.post(
+        reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json"
+    )
+    assert primeira.status_code == 200
+
+    segunda = client.post(
+        reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json"
+    )
+    assert segunda.status_code == 200
+
+    # O replay devolve a MESMA fornada, não uma nova.
+    assert segunda.json()["wo_ref"] == primeira.json()["wo_ref"]
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1, (
+        "o segundo toque criou uma segunda fornada — dois MAKE no ledger imutável"
+    )
+
+
+@pytest.mark.django_db
+def test_quick_finish_com_chave_nova_assa_de_novo(
+    client, recipe, production_operator, position
+):
+    """Duas fornadas avulsas iguais no mesmo dia são DUAS assadeiras de verdade.
+
+    É por isso que a chave é do GESTO e não derivada do conteúdo: consolidar por
+    (receita, posição, dia, quantidade) engoliria em silêncio a segunda fornada
+    legítima. O `chaveDoGesto` do PDV descarta a chave no sucesso exatamente por
+    isso — o próximo lançamento nasce com chave nova.
+
+    E é por isso também que `CraftPlanning.plan` do core NÃO deve consolidar: o
+    core é primitiva de criação, e quem decide "criar ou reaproveitar" é o
+    orquestrador (ver `set_planned_quantity`, que procura antes de criar).
+    """
+    from shopman.craftsman.models import WorkOrder
+
+    client.force_login(production_operator)
+    base = {"recipe_id": recipe.pk, "quantity": "5", "position_id": position.pk}
+
+    primeira = client.post(
+        reverse("api-backstage-wo-quick-finish"),
+        data={**base, "client_request_id": "gesto-1"},
+        content_type="application/json",
+    )
+    segunda = client.post(
+        reverse("api-backstage-wo-quick-finish"),
+        data={**base, "client_request_id": "gesto-2"},
+        content_type="application/json",
+    )
+
+    assert primeira.status_code == 200 and segunda.status_code == 200
+    assert primeira.json()["wo_ref"] != segunda.json()["wo_ref"]
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 2
+
+
+@pytest.mark.django_db
 def test_void_work_order(client, recipe, production_operator):
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     client.force_login(production_operator)

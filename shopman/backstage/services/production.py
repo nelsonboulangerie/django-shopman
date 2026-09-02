@@ -129,6 +129,11 @@ def apply_void(
         raise translated from (None if translated is exc else exc)
 
 
+#: Escopo do replay da fornada avulsa. Separado do escopo do caixa e do de
+#: compras porque a chave vem de outra superfície e outro gesto.
+QUICK_FINISH_IDEMPOTENCY_SCOPE = "production.quick_finish"
+
+
 def apply_quick_finish(
     *,
     recipe_id,
@@ -137,6 +142,7 @@ def apply_quick_finish(
     actor: str,
     partition=None,
     force: bool = False,
+    client_request_id: str = "",
 ):
     """Plan and immediately finish a work order from the operator surface.
 
@@ -149,22 +155,73 @@ def apply_quick_finish(
     ``apply_finish`` — e a fornada avulsa era o único fechamento da casa que
     fechava sem farinha no estoque, calado. A mesma ação era barrada no
     quiosque de QC (que manda partição) e livre no grid do gestor.
+
+    ## Por que o replay mora AQUI, e não no core
+
+    Esta é a única operação COMPOSTA da produção: ela **cria** a WO e a fecha na
+    mesma requisição. Isso derrota a trava do core sem que o core tenha culpa:
+
+    * ``CraftExecution.finish`` tem a trava certa — ``idempotency_key`` com
+      ``unique`` no banco, ``select_for_update``, devolve a WO existente no
+      replay, e ainda levanta ``IDEMPOTENCY_CONFLICT`` se a mesma chave aparecer
+      em OUTRA work order. O core se defende de quem reusa chave entre fornadas.
+    * Só que ``_finish_idempotency_key`` inclui o ``work_order.pk``, e aqui o pk
+      é **novo a cada tentativa** — chave nova, trava do core nunca alcançada.
+      Para o ``apply_finish`` normal aquele pk está certo (escopa a chave àquela
+      fornada); é este caminho que não podia depender dele.
+    * E ``CraftPlanning.plan`` **não deve** consolidar: duas fornadas avulsas da
+      mesma receita no mesmo dia são duas assadeiras de verdade. Onde consolidar
+      É o certo — a célula da matriz — quem procura antes de criar é o
+      orquestrador (``shop/services/production.set_planned_quantity``), não o
+      core. Mesma primitiva, uso diferente, e os dois corretos.
+
+    Então a trava é de REQUISIÇÃO, sobre as duas pernas juntas: sem ela, morrer
+    entre o plan e o finish deixaria a primeira WO órfã em PLANNED e o retry
+    criaria uma segunda. ``run_idempotent_mutation`` é a mesma primitiva que
+    guarda a entrada de mercadoria em Compras.
+
+    Sem ``client_request_id`` o comportamento é o de antes — a superfície que
+    não manda chave não ganha trava, e isso é explícito em vez de silencioso.
     """
-    try:
-        work_order = production_core.quick_plan(
-            recipe_id=recipe_id, quantity=quantity, position_id=position_id
+
+    def _executar():
+        try:
+            work_order = production_core.quick_plan(
+                recipe_id=recipe_id, quantity=quantity, position_id=position_id
+            )
+        except Exception as exc:
+            translated = _operator_error(exc)
+            raise translated from (None if translated is exc else exc)
+        wo_ref, total = apply_finish(
+            work_order_id=work_order.pk,
+            quantity=quantity,
+            actor=actor,
+            force=force,
+            partition=partition,
         )
-    except Exception as exc:
-        translated = _operator_error(exc)
-        raise translated from (None if translated is exc else exc)
-    wo_ref, total = apply_finish(
-        work_order_id=work_order.pk,
-        quantity=quantity,
-        actor=actor,
-        force=force,
-        partition=partition,
+        return {"output_sku": work_order.output_sku, "wo_ref": wo_ref, "quantity": str(total)}, 200
+
+    chave = str(client_request_id or "").strip()
+    if not chave:
+        corpo, _ = _executar()
+        return corpo["output_sku"], corpo["wo_ref"], Decimal(corpo["quantity"])
+
+    from shopman.shop.services.remote_mutations import (
+        RemoteMutationInProgress,
+        run_idempotent_mutation,
     )
-    return work_order.output_sku, wo_ref, total
+
+    try:
+        resultado = run_idempotent_mutation(
+            scope=QUICK_FINISH_IDEMPOTENCY_SCOPE, key=chave, execute=_executar
+        )
+    except RemoteMutationInProgress as exc:
+        raise ProductionError(
+            "Esta fornada já está sendo registrada. Aguarde alguns segundos e recarregue."
+        ) from exc
+
+    corpo = resultado.response_body or {}
+    return corpo.get("output_sku", ""), corpo.get("wo_ref", ""), Decimal(str(corpo.get("quantity") or "0"))
 
 
 def apply_planned(
