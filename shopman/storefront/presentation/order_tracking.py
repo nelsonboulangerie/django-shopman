@@ -39,7 +39,6 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.shop.services.business_calendar import format_deadline
 from shopman.storefront.presentation.status import order_status_label, status_color
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
@@ -747,7 +746,7 @@ def _promise_copy(
             # pagamento. A frase diz até quando — o mesmo prazo do aviso e da
             # tela do PDV — e a nota de rodapé diz a consequência.
             title = copy.title("TRACKING_PROMISE_LINK_TITLE", "Pague pelo link")
-            deadline = format_deadline(parse_datetime(data.deadline_at) if data.deadline_at else None)
+            deadline = data.payment_deadline_phrase
             if deadline:
                 message = copy.message(
                     "TRACKING_PROMISE_LINK_MESSAGE_DEADLINE",
