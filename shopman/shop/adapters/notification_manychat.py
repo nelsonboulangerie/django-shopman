@@ -55,6 +55,13 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
     # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
+    # Entrada na loja pelo WhatsApp: a pessoa mandou a palavra e recebe o acesso.
+    # Uso único e vida curta — dizer isso evita o link guardado que não abre depois.
+    "access_link": (
+        "Olá{customer_name_greeting}! Aqui está seu acesso à loja:"
+        "\n{access_url}{cart_note}"
+        "\n\nO link é só seu e vale por poucos minutos."
+    ),
     "waitlist_available": (
         "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
         "Confirme o pedido {order_ref} para garantir o seu: {tracking_url}"

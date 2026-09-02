@@ -141,6 +141,7 @@ class AccessLinkService:
             customer=customer,
             audience=audience,
             source=source,
+            url=url,
         )
 
         logger.info(
