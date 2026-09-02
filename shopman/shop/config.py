@@ -70,6 +70,14 @@ class ChannelConfig:
         # "at_commit"   — initiate payment at commit time
         # "external"    — no digital payment (local counter / marketplace)
         timeout_minutes: int = 10  # só para method=pix
+        # Janela do LINK de pagamento (pedido remoto anotado no balcão), em
+        # minutos, contada da venda. É o teto: o link vence em
+        # ``min(agora + janela, corte do atendimento)`` — o corte é o início da
+        # janela combinada de retirada/entrega ou o fechamento da loja no dia do
+        # compromisso (``services/payment_deadline``). Duas horas porque o pão é
+        # para hoje ou para amanhã e a encomenda remota só é liberada contra o
+        # pagamento: um link de 24 h segurava estoque por um dia inteiro.
+        link_timeout_minutes: int = 120
 
         @property
         def available_methods(self) -> list[str]:
@@ -389,6 +397,8 @@ class ChannelConfig:
                 raise ValueError(f"payment.method inválido: {m}")
         if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
             raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if self.payment.link_timeout_minutes <= 0:
+            raise ValueError("payment.link_timeout_minutes deve ser > 0")
         valid_timings = {"at_commit", "post_commit", "external"}
         if self.payment.timing not in valid_timings:
             raise ValueError(f"payment.timing inválido: {self.payment.timing}")

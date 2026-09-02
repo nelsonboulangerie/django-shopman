@@ -9,7 +9,10 @@ e vem buscar. Então:
 1. a venda NÃO fecha: fica ACCEPTED aguardando o ``on_paid``, com o estoque
    reservado (não baixado) e sem ticket de cozinha;
 2. o prazo do link chega ao pedido (``payment.expires_at``), à tela do PDV e à
-   Directive ``payment.timeout`` — armada exatamente para o vencimento;
+   Directive ``payment.timeout`` — armada exatamente para o vencimento. O prazo
+   segue o ciclo do atendimento: a janela do canal (default 120 min) e, quando
+   a casa conhece o expediente, o corte do atendimento; a loja deste teste não
+   tem horário cadastrado, então vale a janela;
 3. vencido o prazo, o handler pergunta ao gateway e, com "não pago", cancela o
    pedido, avisa o cliente (``payment_expired``) e devolve o estoque.
 
@@ -67,7 +70,7 @@ def _hold_rows(order: Order) -> list[Hold]:
     return list(Hold.objects.filter(pk__in=ids))
 
 
-@override_settings(SHOPMAN_PAYMENT_ADAPTERS=MOCK_LINK_ADAPTERS, SHOPMAN_PAYMENT_LINK_TTL_HOURS=24)
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS=MOCK_LINK_ADAPTERS)
 class LinkSaleExpiryIntegrationTests(TransactionTestCase):
     """``TransactionTestCase`` de propósito: o lifecycle dispara via
     ``transaction.on_commit`` ao sair da transação do commit — ANTES de o
@@ -135,8 +138,8 @@ class LinkSaleExpiryIntegrationTests(TransactionTestCase):
         self.assertTrue(payment["checkout_url"].startswith("http"))
         expires_at = datetime.fromisoformat(payment["expires_at"])
         self.assertTrue(timezone.is_aware(expires_at))
-        self.assertLess(timedelta(hours=23, minutes=50), expires_at - timezone.now())
-        self.assertLessEqual(expires_at - timezone.now(), timedelta(hours=24))
+        self.assertLess(timedelta(minutes=110), expires_at - timezone.now())
+        self.assertLessEqual(expires_at - timezone.now(), timedelta(minutes=120))
 
         intent = PaymentIntent.objects.get(order_ref=order.ref)
         self.assertEqual(intent.status, PaymentIntent.Status.PENDING)

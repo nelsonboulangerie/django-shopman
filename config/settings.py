@@ -1177,21 +1177,6 @@ SHOPMAN_PIX_EXPIRY_SECONDS = int(
     os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600")
 )
 
-# Validade do LINK de pagamento (pedido remoto anotado no PDV), em horas.
-# É UM relógio escrito nos dois lados: vira `PaymentIntent.expires_at` (agenda
-# a Directive `payment.timeout`, que cancela o pedido depois de perguntar ao
-# gateway, e aparece no PDV como "vale até …") e vai ao Stripe no
-# `Session.create(expires_at=...)`. Sem mandar, o Stripe expira em 24 h por
-# conta própria e a casa passa a ter dois relógios — era o defeito.
-# O Stripe aceita de 30 min a 24 h; o adapter prende o valor a essa régua
-# (`shopman/shop/adapters/_payment_link.py`). Aceita fração ("0.5" = 30 min).
-try:
-    SHOPMAN_PAYMENT_LINK_TTL_HOURS = float(
-        os.environ.get("SHOPMAN_PAYMENT_LINK_TTL_HOURS", "").strip() or "24"
-    )
-except ValueError:
-    SHOPMAN_PAYMENT_LINK_TTL_HOURS = 24.0
-
 SHOPMAN_STRIPE = {
     "publishable_key": STRIPE_PUBLISHABLE_KEY,
     "secret_key": STRIPE_SECRET_KEY,

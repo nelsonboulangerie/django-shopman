@@ -4958,7 +4958,13 @@ class Command(BaseCommand):
         channels = {}
         _pos_config = {
             "confirmation": {"mode": "immediate"},
-            "payment": {"method": "cash", "timing": "external"},
+            # `link_timeout_minutes`: quanto o LINK de pagamento do pedido remoto
+            # vale, contado da venda — e é só o teto, porque o link vence antes
+            # se o compromisso do pedido chegar antes (início da janela
+            # combinada, ou o fechamento da loja no dia). Duas horas: o pão é
+            # para hoje ou para amanhã, e a encomenda remota só é liberada
+            # contra o pagamento.
+            "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
             # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
             # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
             # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica

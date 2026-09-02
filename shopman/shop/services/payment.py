@@ -34,6 +34,7 @@ from django.utils.dateparse import parse_datetime
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.services import payment_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -1681,6 +1682,16 @@ def _adapter_config(order, *, method: str) -> dict:
         # padrão), o cliente pagava, o intent ficava `authorized`, a autorização
         # vencia no Stripe em ~7 dias e a padaria NUNCA recebia.
         config["capture_method"] = "automatic"
+        # O prazo do link segue o CICLO DO ATENDIMENTO, não uma env: a janela é
+        # do canal (`payment.link_timeout_minutes`) e o corte é o que a casa já
+        # sabe do pedido — o início da janela combinada ou o fechamento da loja
+        # no dia do compromisso. O adapter recebe os dois prontos e faz
+        # `min(agora + janela, corte)` preso à régua do Stripe; ele não precisa
+        # conhecer pedido nem calendário (`adapters/_payment_link`).
+        config["link_timeout_minutes"] = cfg.payment.link_timeout_minutes
+        cutoff = payment_deadline.service_cutoff(order)
+        if cutoff is not None:
+            config["link_expires_by"] = cutoff.isoformat()
     elif method in HOSTED_CHECKOUT_METHODS:
         # Cartão da loja online: a captura é decisão do lifecycle (`_on_accepted`
         # cobra quando a loja aceita), e o `manual` é o que permite recusar o
