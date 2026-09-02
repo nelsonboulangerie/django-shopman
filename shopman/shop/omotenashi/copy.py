@@ -1282,16 +1282,13 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
         WILDCARD: {WILDCARD: CopyEntry(message="Seu pedido já está sendo preparado. Fale conosco para ajustar.")},
     },
     "KINTSUGI_SHORTAGE_GENERIC": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Ih, o último acabou de sair")},
+        WILDCARD: {WILDCARD: CopyEntry(title="Ficou indisponível enquanto você escolhia.")},
     },
     "KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO": {
         WILDCARD: {WILDCARD: CopyEntry(message="Que tal um destes no lugar?")},
     },
     "KINTSUGI_PLANNED_OFFER": {
         WILDCARD: {WILDCARD: CopyEntry(title="Já vem quentinho", message="Sai fresquinho no próximo lote. Quer garantir o seu?")},
-    },
-    "KINTSUGI_PAUSED_COPY": {
-        WILDCARD: {WILDCARD: CopyEntry(title="Temporariamente indisponível", message="Voltamos em breve.")},
     },
 
     # ── Reorder ──────────────────────────────────────────────────

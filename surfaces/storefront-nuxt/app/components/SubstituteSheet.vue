@@ -25,8 +25,6 @@ const substitutes = computed(() => cartIssue.value?.substitutes ?? [])
 // Planejado = há próximo lote conhecido. Enquadra a escassez como pré-reserva
 // ("garantir o seu"), não como "esgotou". A reserva é o planned-hold do carrinho.
 const isPlanned = computed(() => !!cartIssue.value?.is_planned)
-// Pausado ≠ esgotado: a casa tirou o item por ora ("voltamos em breve"), não acabou.
-const isPaused = computed(() => !!cartIssue.value?.is_paused)
 // Esgotado honesto e assinável (WP-3): oferece "Me avise quando disponível" no lugar
 // de um beco sem saída. O StockNotifyButton já faz o POST para o sku do item.
 const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable)
@@ -34,18 +32,18 @@ const isNotifiable = computed(() => !!cartIssue.value?.isNotifiable)
 // o fallback cobre só o intervalo até o payload chegar.
 const substitutesIntro = computed(() => cartIssue.value?.substitutes_intro || 'Que tal um destes no lugar?')
 
+// Sem saldo, o aviso é o mesmo para todo mundo: o cliente nunca sabe se o item
+// esgotou, se a casa o pausou ou se ele saiu do canal (AVAILABILITY-PLAN §2).
 const title = computed(() => {
   if (isPlanned.value && cartIssue.value?.planned_offer_title) return cartIssue.value.planned_offer_title
-  if (isPaused.value) return cartIssue.value?.paused_title || 'Temporariamente indisponível'
   if (hasAvailable.value) return 'Ajuste a quantidade'
-  return cartIssue.value?.shortage_title || 'Esgotou enquanto você escolhia'
+  return cartIssue.value?.shortage_title || 'Ficou indisponível enquanto você escolhia.'
 })
 const description = computed(() => {
   if (isPlanned.value && cartIssue.value?.planned_offer_message) return cartIssue.value.planned_offer_message
-  if (isPaused.value) return cartIssue.value?.paused_message || 'Voltamos em breve.'
   return hasAvailable.value
     ? `Agora temos ${formatCount(availableQty.value!, 'unidade', 'unidades')} de ${itemName.value}.`
-    : `O ${itemName.value} acabou agora. Veja boas alternativas.`
+    : `${itemName.value} está indisponível agora. Veja boas alternativas.`
 })
 const primaryQtyLabel = computed(() => {
   const n = formatCount(availableQty.value!, 'unidade', 'unidades')

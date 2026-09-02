@@ -60,14 +60,15 @@ def _cart_payload(request) -> dict:
 
 
 def _stock_reason(exc) -> str:
-    if getattr(exc, "is_paused", False):
-        return "Item pausado pela casa no momento."
+    # O cliente lê o estado, nunca o motivo: esgotado, pausado pela casa e fora do
+    # canal saem como o mesmo "indisponível" (AVAILABILITY-PLAN §2). Encomenda é
+    # exceção porque não é indisponibilidade — é oferta com data.
     if getattr(exc, "is_planned", False):
         return "Disponível por encomenda, com limite para esta data."
     available_qty = getattr(exc, "available_qty", None)
     if available_qty is not None and available_qty > 0:
         return f"Estoque disponível agora: {_unit_count_label(available_qty)}."
-    return "Sem estoque disponível para a quantidade solicitada."
+    return "Item indisponível no momento."
 
 
 def _stock_error_payload(exc, *, product=None) -> dict:
@@ -148,18 +149,12 @@ def _stock_error_payload(exc, *, product=None) -> dict:
             or "Sai fresquinho no próximo lote. Quer garantir o seu?"
         ) if exc.is_planned else "",
         # Kintsugi: enquadra a escassez com voz acolhedora (registro, admin-configurável).
-        # Pausado é diferente de esgotado — "voltamos em breve", não "acabou".
+        # Um enquadramento só — a pausa não ganha manchete própria, senão o cliente
+        # deduz o motivo que a casa não conta.
         "shortage_title": (
             resolve_copy("KINTSUGI_SHORTAGE_GENERIC", moment="*", audience="*").title
-            or "Esgotou enquanto você escolhia"
+            or "Ficou indisponível enquanto você escolhia."
         ),
-        "paused_title": (
-            resolve_copy("KINTSUGI_PAUSED_COPY", moment="*", audience="*").title or "Temporariamente indisponível"
-        ) if exc.is_paused else "",
-        "paused_message": (
-            resolve_copy("KINTSUGI_PAUSED_COPY", moment="*", audience="*").message
-            or "Voltamos em breve."
-        ) if exc.is_paused else "",
         "substitutes_intro": (
             resolve_copy("KINTSUGI_SHORTAGE_SUBSTITUTES_INTRO", moment="*", audience="*").message
             or "Que tal um destes no lugar?"

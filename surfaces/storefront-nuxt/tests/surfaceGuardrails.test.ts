@@ -1316,3 +1316,60 @@ describe('environment ribbon', () => {
     expect(barClass).not.toMatch(/\bpy-/)
   })
 })
+
+// A loja do CLIENTE não conta por que o item sumiu. Esgotado, pausado pela casa
+// ou fora do canal chegam à tela como o mesmo "Indisponível" (AVAILABILITY-PLAN
+// §2, tabela de estados: "um único texto"). O WP-2 furou a regra em 17/06 com o
+// selo "Pausado" e a frase "A loja pausou este item temporariamente"; este teste
+// existe para que a próxima tentativa falhe aqui, e não na PDP em produção.
+describe('customer surface never names the reason behind unavailability', () => {
+  function collectSourceFiles (dir: string): string[] {
+    const absolute = join(root, dir)
+    const files: string[] = []
+    for (const entry of readdirSync(absolute)) {
+      const path = join(absolute, entry)
+      const rel = relative(root, path)
+      if (rel.startsWith('app/components/Ui')) continue
+      if (statSync(path).isDirectory()) {
+        files.push(...collectSourceFiles(rel))
+        continue
+      }
+      if (path.endsWith('.vue') || path.endsWith('.ts')) files.push(rel)
+    }
+    return files
+  }
+
+  // Comentário pode (e deve) explicar a regra em português; o proibido é a copy
+  // que o cliente lê. Por isso o teste olha o código sem os comentários.
+  function withoutComments (source: string) {
+    return source
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+  }
+
+  const forbidden = /pausad|pausou|em pausa/i
+
+  it('keeps "pausado" out of every string the storefront renders', () => {
+    const offenders = collectSourceFiles('app')
+      .filter(file => forbidden.test(withoutComments(read(file))))
+
+    expect(offenders).toEqual([])
+  })
+
+  it('shows one label for every unavailable cause on the product page', () => {
+    const pdp = read('app/pages/produto/[sku].vue')
+
+    expect(pdp).not.toContain('unavailableCtaLabel')
+    expect(pdp).not.toContain('is_paused')
+    expect((pdp.match(/'Adicionar' : 'Indisponível'/g) || [])).toHaveLength(2)
+  })
+
+  it('does not branch the shortage sheet on the pause flag', () => {
+    const sheet = read('app/components/SubstituteSheet.vue')
+
+    expect(sheet).not.toContain('is_paused')
+    expect(sheet).not.toContain('paused_title')
+    expect(sheet).not.toContain('paused_message')
+  })
+})

@@ -29,7 +29,6 @@ export const operationalCopy = {
     unavailableForReorder: 'Indisponível para recompra agora.',
     noStockForRequestedQty: 'Sem disponibilidade para a quantidade solicitada.',
     insufficientStock: 'Disponibilidade insuficiente para esse pedido.',
-    paused: 'Item pausado pela loja no momento.',
     plannedLimit: 'Disponível por encomenda, com limite para esta data.',
     reviewItem: 'Revise este item'
   },

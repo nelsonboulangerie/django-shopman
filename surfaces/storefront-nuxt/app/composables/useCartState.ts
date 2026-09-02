@@ -16,8 +16,6 @@ interface CartIssue {
   planned_offer_title: string
   planned_offer_message: string
   shortage_title: string
-  paused_title: string
-  paused_message: string
   substitutes_intro: string
   substitutes: SubstituteProjection[]
   actions: Action[]
@@ -167,8 +165,6 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
     planned_offer_title: String(d.planned_offer_title || ''),
     planned_offer_message: String(d.planned_offer_message || ''),
     shortage_title: String(d.shortage_title || ''),
-    paused_title: String(d.paused_title || ''),
-    paused_message: String(d.paused_message || ''),
     substitutes_intro: String(d.substitutes_intro || ''),
     substitutes: normalizeSubstitutes(d.substitutes),
     actions: Array.isArray(d.actions) ? (d.actions as Action[]) : [],

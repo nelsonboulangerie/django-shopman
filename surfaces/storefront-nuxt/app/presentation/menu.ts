@@ -213,15 +213,12 @@ export function collectionTargetForSearchOption (option: SearchListOption): stri
 
 // Badge só quando informa: disponível é o estado default e não ganha selo.
 // Aceita qualquer projeção com estado de disponibilidade (item de catálogo, PDP).
-// WP-2: dentro de `unavailable`, "pausado pelo operador" ganha rótulo próprio
-// ("Pausado", neutro — é temporário) e se separa do esgotado honesto (destrutivo).
-export function tileBadge (item: Pick<CatalogItemProjection, 'availability' | 'availability_label'> & Partial<Pick<CatalogItemProjection, 'is_paused'>>): TileBadge | null {
+// `unavailable` tem UM rótulo só (AVAILABILITY-PLAN §2): esgotado, pausado pela
+// casa e fora do canal chegam ao cliente iguais — o motivo é assunto do operador.
+export function tileBadge (item: Pick<CatalogItemProjection, 'availability' | 'availability_label'>): TileBadge | null {
   if (item.availability === 'low_stock') return { label: item.availability_label, variant: 'warning' }
   if (item.availability === 'planned_ok') return { label: item.availability_label, variant: 'outline' }
-  if (item.availability === 'unavailable') {
-    if (item.is_paused) return { label: 'Pausado', variant: 'outline' }
-    return { label: item.availability_label, variant: 'destructive' }
-  }
+  if (item.availability === 'unavailable') return { label: item.availability_label, variant: 'destructive' }
   return null
 }
 
