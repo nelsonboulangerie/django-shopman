@@ -69,6 +69,9 @@ function props(overrides: Record<string, unknown> = {}) {
     deliveryDate: "",
     deliveryTimeSlot: "",
     deliveryFeeInput: "",
+    deliveryFeeQ: 0,
+    deliverySlots: [],
+    scheduleToday: "",
     changeForInput: "",
     orderNotes: "",
     receiptChannels: [],
@@ -181,7 +184,12 @@ describe("PosPaymentWorkspace — gate do Validar", () => {
   });
 
   it("coberto + review presente → 'Validar' habilita e emite submit", async () => {
-    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ paymentCovered: true }) });
+    // Com tender: `isPaymentCovered` exige pelo menos uma linha, e o bloqueio do
+    // CTA e o `disabled` passaram a ser a MESMA lista — sem linha nenhuma o
+    // botão travava por "Escolha a forma de pagamento", que é o certo.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: [tender], paymentCovered: true, paymentRemainingQ: 0 }),
+    });
     const button = cta(wrapper)!;
     expect(button.text()).toContain("Validar");
     expect(button.attributes("disabled")).toBeUndefined();
@@ -569,10 +577,10 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
       }),
     });
     const instructions = wrapper.find('[aria-label="O que acontece ao finalizar"]');
-    expect(instructions.text()).toContain("A nota sai na bobina ao autorizar.");
+    expect(instructions.text()).toContain("Se sair nota, ela imprime sozinha.");
     expect(instructions.text()).toContain("O entregador sai com o troco separado.");
     // e não voltaram a aparecer dentro da coluna do instrumento
-    expect(wrapper.find(".order-2").text()).not.toContain("bobina");
+    expect(wrapper.find(".order-2").text()).not.toContain("imprime sozinha");
     expect(wrapper.find(".order-2").text()).not.toContain("troco separado");
   });
 
@@ -632,5 +640,238 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
     expect(rows).toHaveLength(2);
     expect(rows[0]).toContain("Escolha a forma de pagamento.");
     expect(rows[1]).toContain("Pão pode faltar no balcão.");
+  });
+});
+
+describe("PosPaymentWorkspace — toda recusa do commit tem gêmea na tela", () => {
+  // O servidor recusa a venda em oito portões; a tela replicava três. Os outros
+  // cinco viravam 422 seco com o cliente na frente, depois de o combinado já ter
+  // sido feito em voz alta.
+  const ready = (overrides: Record<string, unknown> = {}) => props({
+    paymentTenders: [tender],
+    paymentCovered: true,
+    paymentRemainingQ: 0,
+    ...overrides,
+  });
+  const alerts = (w: Awaited<ReturnType<typeof mountSuspended>>) => w.find('[aria-label="Avisos"]');
+
+  it("nota com CPF + taxa de entrega trava — era o portão que a tela CONTRADIZIA", async () => {
+    // `pos._validate_fiscal_delivery_fee` aborta a venda. A tela escrevia "Sai
+    // na nota: CPF …" logo abaixo do switch e deixava o Validar verde.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+        wantsCpfOnInvoice: true,
+        invoiceTaxId: "52998224725",
+        fulfillmentType: "delivery",
+        deliveryFeeQ: 800,
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(alerts(wrapper).text()).toContain("Nota com CPF e taxa de entrega, não.");
+
+    const tirar = alerts(wrapper).findAll("button").find((b) => b.text().includes("Tirar o CPF"));
+    await tirar!.trigger("click");
+    expect(wrapper.emitted("update:wantsCpfOnInvoice")?.[0]).toEqual([false]);
+  });
+
+  it("comprovante por e-mail sem endereço nenhum trava", async () => {
+    // `pos_intent` recusa com `receipt_email_required`. O composable cobre o
+    // caso comum (cai no e-mail do cadastro); com os dois vazios, vinha 422.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({ receiptChannels: ["email"], receiptEmail: "", customerEmail: "" }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(alerts(wrapper).text()).toContain("Falta o e-mail do comprovante.");
+
+    // com o e-mail do cadastro, o commit passa — e a tela também
+    const comCadastro = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({ receiptChannels: ["email"], receiptEmail: "", customerEmail: "jorge@casa.com" }),
+    });
+    expect(cta(comCadastro)!.attributes("disabled")).toBeUndefined();
+  });
+
+  it("horário que virou impossível trava, e oferece trocar", async () => {
+    // `_validate_schedule` recusa. O chip do topo já ficava vermelho; o Validar
+    // seguia verde, e a recusa subia como 422 sem campo nenhum.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        deliveryTimeSlot: "09:00",
+        deliverySlots: [{ ref: "09:00", label: "09:00 às 09:30", enabled: false, reason: "A baguete só fica pronta 10:30." }],
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(alerts(wrapper).text()).toContain("O horário combinado não cabe mais.");
+    expect(alerts(wrapper).text()).toContain("A baguete só fica pronta 10:30.");
+    expect(alerts(wrapper).findAll("button").some((b) => b.text().includes("Escolher horário"))).toBe(true);
+  });
+
+  it("excedente em cartão/Pix TRAVA — não há troco que o desfaça", async () => {
+    // Era um aviso amarelo convivendo com "Restante R$ 0,00" e um Validar verde:
+    // três estados discordando sobre o mesmo dinheiro. O servidor grava o valor
+    // inflado como recebido.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        paymentTenders: [{ method: "card", amount_q: 4200, collection: "terminal" as const }],
+        paymentTotalQ: 1000,
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeDefined();
+    expect(alerts(wrapper).text()).toContain(`Cartão ou Pix ${formatBRL(3200)} acima do total.`);
+  });
+
+  it("na entrega, cartão e Pix nem são oferecidos", async () => {
+    // `invalid_on_delivery_tender_payment`: só dinheiro. A tela oferecia os três,
+    // o operador combinava por telefone, e a recusa vinha no Validar.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ fulfillmentType: "delivery", paymentCollection: "on_delivery" }),
+    });
+    const method = (label: string) => wrapper.findAll("button").find((b) => b.text().includes(label))!;
+    expect(method("Dinheiro").attributes("disabled")).toBeUndefined();
+    expect(method("Cartão").attributes("disabled")).toBeDefined();
+    expect(method("PIX").attributes("disabled")).toBeDefined();
+  });
+
+  it("o cadastro só-com-CPF identifica a encomenda: o servidor aceita, a tela também", async () => {
+    // O servidor aceita qualquer um dos três (`_payload_identifies_customer`).
+    // A tela olhava só nome e telefone, e travava com o cliente já fixado.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        scheduleToday: "2026-09-01",
+        deliveryDate: "2026-09-02",
+        customerLookup: { ref: "cust-1", name: "", phone: "", email: "", tax_id: "52998224725" },
+      }),
+    });
+    expect(cta(wrapper)!.attributes("disabled")).toBeUndefined();
+  });
+
+  it("o alerta do gerente diz O QUE ele vai assinar", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        review: review({
+          requires_manager_approval: true,
+          approval_reasons: ["discount_over_threshold"],
+          manager_approval_threshold_q: 5000,
+        }),
+      }),
+    });
+    expect(alerts(wrapper).text()).toContain(`Desconto acima de ${formatBRL(5000)}.`);
+  });
+
+  it("avisos de pagamento do servidor não sobrevivem: a tela responde por eles ao vivo", async () => {
+    // A review só é refeita quando o CARRINHO muda. Um aviso "os pagamentos não
+    // cobrem o total" ficava congelado dez centímetros acima de um "Restante
+    // R$ 0,00" vivo e de um Validar verde — sem gesto capaz de calá-lo.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: ready({
+        review: review({
+          warnings: [
+            { code: "payment_tenders_total_mismatch", field: "payment_tenders", message: "Os pagamentos informados não cobrem o total da venda." },
+            { code: "change_for_below_total", field: "change_for_q", message: "Troco para R$ 30,00 é menor que o total." },
+            { code: "availability", field: "items", message: "Pão pode faltar no balcão." },
+          ],
+        }),
+      }),
+    });
+    const text = wrapper.text();
+    expect(text).not.toContain("não cobrem o total");
+    expect(text).not.toContain("é menor que o total");
+    expect(alerts(wrapper).text()).toContain("Pão pode faltar no balcão.");
+  });
+});
+
+describe("PosPaymentWorkspace — o número que muda é o herói", () => {
+  it("com troco na mesa, o TROCO assume o tamanho grande e o total recolhe", async () => {
+    // O troco nasce agora, é dito agora e sai da gaveta; o total o operador já
+    // leu na tela de venda e ele volta nas linhas e no resumo. A hierarquia
+    // estava invertida bem onde o erro custa dinheiro.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [{ ...tender, amount_q: 5000 }],
+        selectedTenderIndex: 0,
+        paymentCovered: true,
+        paymentChangeQ: 4000,
+      }),
+    });
+    const hero = wrapper.find('[aria-label="Troco"]');
+    expect(hero.exists()).toBe(true);
+    expect(hero.text()).toContain(formatBRL(4000));
+    // o total não some — vira linha de conferência dentro do próprio herói
+    expect(hero.text()).toContain("Total a cobrar");
+    // e o mesmo número não aparece duas vezes em dois tamanhos
+    expect(wrapper.text()).not.toContain("Restante");
+  });
+
+  it("sem troco, o herói continua sendo o total", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: [tender], selectedTenderIndex: 0, paymentCovered: true, paymentRemainingQ: 0 }),
+    });
+    expect(wrapper.find('[aria-label="Total a cobrar"]').exists()).toBe(true);
+    expect(wrapper.text()).toContain("Restante");
+  });
+});
+
+describe("PosPaymentWorkspace — a tela não promete o que não confere", () => {
+  const fiscal = (taxId: string) => props({
+    checkoutContract: { capabilities: { supports_fiscal_document: true }, receipt_channels: [] },
+    wantsCpfOnInvoice: true,
+    invoiceTaxId: taxId,
+  });
+
+  it("documento com dígito verificador errado não vira 'Sai na nota'", async () => {
+    // Onze dígitos quaisquer viravam um check verde. O operador lia de volta com
+    // confiança e a rejeição da NFC-e chegava com o cliente já na rua.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: fiscal("11111111111") });
+    expect(wrapper.text()).toContain("Documento inválido — confira com o cliente.");
+    expect(wrapper.text()).not.toContain("Sai na nota");
+  });
+
+  it("CPF válido é ecoado por inteiro, pontuado", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, { props: fiscal("52998224725") });
+    expect(wrapper.text()).toContain("Sai na nota: CPF 529.982.247-25");
+  });
+
+  it("a cédula fala português: R$ e centavos, não '25.5'", async () => {
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: { capabilities: {}, receipt_channels: [], cash_tender_delta_presets_q: [2550] },
+        paymentTenders: [tender],
+        selectedTenderIndex: 0,
+        selectedTenderMethod: "cash",
+      }),
+    });
+    const rail = wrapper.find('[aria-label="Cédulas recebidas"]');
+    expect(rail.text()).toContain(formatBRL(2550));
+    expect(rail.text()).not.toContain("25.5");
+  });
+
+  it("o desconto em reais é formatado e não passa do subtotal", async () => {
+    // "R$ 5.5" (ponto, sem centavos) e "R$ 50" numa venda de R$ 20 — o servidor
+    // aplica min(subtotal, pedido) e a coluna que mostra o aplicado só existe a
+    // partir de `lg`. Abaixo de 1280px o operador só via o número errado.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        discountTypes: [{ ref: "fixed", label: "Valor" }],
+        discountType: "fixed",
+        discountValue: "50",
+        review: review({ subtotal_q: 2000 }),
+      }),
+    });
+    expect(wrapper.find("footer").text()).toContain(formatBRL(2000));
+    expect(wrapper.find("footer").text()).not.toContain("R$ 50 ");
+  });
+
+  it("remover um pagamento não é filho do botão que o seleciona", async () => {
+    // `<button>` dentro de `<button>` é markup inválido: o nome acessível da
+    // linha vinha contaminado, e o gesto que APAGA dividia alvo com o que só
+    // seleciona.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ paymentTenders: [tender], selectedTenderIndex: 0 }),
+    });
+    const remover = wrapper.findAll("button").find((b) => (b.attributes("aria-label") || "").startsWith("Remover"))!;
+    expect(remover.element.closest("button")).toBe(remover.element);
+    await remover.trigger("click");
+    expect(wrapper.emitted("removeTender")?.[0]).toEqual([0]);
+    expect(wrapper.emitted("selectTender")).toBeUndefined();
   });
 });

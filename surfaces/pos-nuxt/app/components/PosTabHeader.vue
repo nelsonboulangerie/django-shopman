@@ -147,6 +147,7 @@ function runClear() {
          de se mexer; a cor e a borda seguram o recado sozinhas. -->
     <button
       ref="customerChipRef"
+      data-context-entry="customer"
       type="button"
       class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
       :class="customerRequired

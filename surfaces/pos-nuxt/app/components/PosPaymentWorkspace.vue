@@ -47,7 +47,9 @@ import {
   lineSavingsQ,
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
-import { isScheduled, scheduleLabel, windowLabel } from "~/presentation/schedule";
+import { managerAuthReason } from "~/presentation/managerAuth";
+import { isValidTaxId } from "~/presentation/taxId";
+import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -206,33 +208,49 @@ const approvalBlocking = computed(() =>
   && (!props.managerUsername.trim() || !props.managerPin.trim()),
 );
 const managerThresholdQ = computed(() => props.review?.manager_approval_threshold_q || 0);
-// Avisos não-bloqueantes da review (disponibilidade no balcão, pagamento): o
-// operador VÊ a ressalva antes de finalizar; nunca bloqueiam a venda.
-// O aviso "valor recebido em dinheiro não informado" NÃO cabe nesta tela.
-// Ele nasce de uma review tirada antes de existir qualquer forma de pagamento
-// (sem tender o servidor assume `cash`), e a review só é refeita quando o
-// CARRINHO muda — mexer nas linhas de pagamento não a renova. Resultado: a
-// frase ficava congelada ao lado de um "TROCO R$ 30,00" vivo, dizendo que o
-// fechamento assumiria valor exato. E em pagamento misto era pior, porque não
-// havia gesto capaz de calá-la. Quem responde "quanto entrou na mão" aqui é a
-// linha de dinheiro, e quanto volta está no RESTANTE/TROCO logo abaixo — este
-// aviso só teria dono numa superfície sem tenders. O contrato do servidor fica
-// como está (outros consumidores da review continuam recebendo o código).
-// Excedente em cartão/Pix é erro de digitação, e o operador precisa vê-lo NA HORA
-// em que digita — a review só é refeita quando o carrinho muda, então o aviso do
-// servidor chegaria tarde. Mesma conta dos dois lados (`nonCashExcessQ`), sobre
-// o `paymentTotalQ` (com a review em trânsito, o total 0 fazia toda linha
-// digital virar "excedente" por meio segundo).
+// AVISOS DA REVIEW QUE ESTA TELA NÃO CONSEGUE RENOVAR.
+//
+// A review só é refeita quando muda o CARRINHO (item, desconto, entrega). Mexer
+// nas linhas de pagamento, no troco-para ou no numpad NÃO a renova — então todo
+// aviso do servidor que fala de PAGAMENTO nasce com data de validade e não tem
+// gesto capaz de calá-lo. O sintoma é sempre o mesmo e sempre o pior possível:
+// uma frase congelada dizendo que falta dinheiro, dez centímetros acima de um
+// "RESTANTE R$ 0,00" vivo e de um Validar verde. O operador aprende a não ler
+// nenhuma das duas.
+//
+// Quem responde por cada um deles AO VIVO já existe nesta tela:
+//   · cobertura e troco → a leitura RESTANTE/TROCO e o herói;
+//   · excedente sem troco possível → o bloqueio do Validar (abaixo);
+//   · combinado da porta menor que o total → a legenda do próprio campo.
+// O contrato do servidor fica como está: outros consumidores da review — e o
+// commit, que é quem de fato recusa — continuam recebendo os códigos.
+const STALE_BY_CONSTRUCTION = new Set([
+  "cash_tendered_amount_blank",
+  "tender_overpaid_non_cash",
+  "payment_tenders_required",
+  "payment_tenders_total_mismatch",
+  "change_for_below_total",
+]);
+// Excedente em cartão/Pix é erro de digitação, e não existe troco para desfazê-lo:
+// o operador precisa vê-lo NA HORA em que digita. Conta local (`nonCashExcessQ`)
+// sobre o `paymentTotalQ` — com a review em trânsito, o total 0 fazia toda linha
+// digital virar "excedente" por meio segundo.
 const nonCashExcess = computed(() => nonCashExcessQ(props.paymentTenders, props.paymentTotalQ));
 // Agendado sem cliente: o servidor recusa a encomenda anônima
 // (`customer_required_for_scheduled`) — o botão trava ANTES, com o motivo.
-const scheduledWithoutCustomer = computed(() =>
-  isScheduled(props.deliveryDate, props.scheduleToday)
-  && !props.customerName.trim()
-  && !props.customerPhone.trim());
+// A REGRA é a mesma do chip que pulsa na barra do topo, e por isso vem da
+// mesma função. O `ref` do cadastro conta: o servidor aceita qualquer um dos
+// três identificadores, e o cadastro só-com-CPF (sem telefone) existe.
+const scheduledWithoutCustomer = computed(() => scheduledNeedsCustomer({
+  deliveryDate: props.deliveryDate,
+  today: props.scheduleToday,
+  customerName: props.customerName,
+  customerPhone: props.customerPhone,
+  customerRef: props.customerLookup?.ref || "",
+}));
 const reviewWarnings = computed(() => {
   const fromServer = (props.review?.warnings ?? []).filter(
-    (w) => w.code !== "cash_tendered_amount_blank" && w.code !== "tender_overpaid_non_cash"
+    (w) => !STALE_BY_CONSTRUCTION.has(w.code)
       // AGENDADO SEM CLIENTE não fala duas vezes. Quem vigia a condição AO VIVO é
       // o bloqueio do CTA (`scheduledWithoutCustomer`), e é ele que traz o toque
       // que resolve. O aviso do servidor dizia a MESMA coisa, com mais palavras,
@@ -241,15 +259,7 @@ const reviewWarnings = computed(() => {
       // Dois avisos para uma pendência é o que faz o operador parar de ler os dois.
       && w.code !== "customer_required_for_scheduled",
   );
-  if (nonCashExcess.value <= 0) return fromServer;
-  return [
-    {
-      code: "tender_overpaid_non_cash",
-      field: "payment_tenders",
-      message: `Pagamento sem dinheiro acima do total em ${formatBRL(nonCashExcess.value)}. Não há troco para cartão ou Pix; ajuste o valor da linha.`,
-    },
-    ...fromServer,
-  ];
+  return fromServer;
 });
 
 // On-demand sale-data drawers (Odoo-style: customer/fulfillment/discount are
@@ -333,16 +343,23 @@ const invoiceTaxIdMasked = computed(() => {
     .replace(/^(\d{2})\.(\d{3})\.(\d{3})\/(\d{4})(\d)/, "$1.$2.$3/$4-$5");
 });
 
+// "Sai na nota" é uma PROMESSA, e promessa se confere. Onze dígitos quaisquer
+// viravam um check verde: o operador lia de volta com confiança, o cliente
+// confirmava, e a rejeição da NFC-e chegava com ele já na rua. Contar dígito não
+// é conferir documento — quem confere é o dígito verificador.
 const taxIdEcho = computed<{ ok: boolean; text: string }>(() => {
   const digits = props.invoiceTaxId.replace(/\D/g, "");
+  if (!digits) return { ok: false, text: "Digite o documento — sem ele a nota sai sem CPF." };
+  if (digits.length !== 11 && digits.length !== 14) {
+    return { ok: false, text: "Documento incompleto — a nota sai sem CPF." };
+  }
+  if (!isValidTaxId(digits)) {
+    return { ok: false, text: "Documento inválido — confira com o cliente." };
+  }
   if (digits.length === 11) {
     return { ok: true, text: `Sai na nota: CPF ${digits.slice(0, 3)}.${digits.slice(3, 6)}.${digits.slice(6, 9)}-${digits.slice(9)}` };
   }
-  if (digits.length === 14) {
-    return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
-  }
-  if (!digits) return { ok: false, text: "Digite o documento — sem ele a nota sai sem CPF." };
-  return { ok: false, text: "Documento incompleto — a nota sai sem CPF." };
+  return { ok: true, text: `Sai na nota: CNPJ ${digits.slice(0, 2)}.${digits.slice(2, 5)}.${digits.slice(5, 8)}/${digits.slice(8, 12)}-${digits.slice(12)}` };
 });
 
 // "Do cadastro" só se o valor ainda É o do cadastro: assim que o operador troca,
@@ -379,9 +396,17 @@ const discountValueNum = computed(
   () => Number(String(props.discountValue).replace(",", ".").replace(/[^0-9.]/g, "")) || 0,
 );
 const hasDiscount = computed(() => discountValueNum.value > 0);
-const discountSummary = computed(() =>
-  props.discountType === "fixed" ? `R$ ${props.discountValue}` : `${props.discountValue}%`,
-);
+// A ETIQUETA DO BOTÃO diz o que vai ser tirado, não o que foi digitado.
+// `R$ ${discountValue}` cru devolvia "R$ 5.5" (ponto, sem centavos) para quem
+// digitou 5,5 — e, pior, "R$ 50" numa venda de R$ 20, enquanto o servidor
+// aplica `min(subtotal, pedido)` e o resumo à direita (que só existe a partir
+// de `lg`) mostrava R$ 20,00. Abaixo de 1280px o operador só via o errado.
+const discountSummary = computed(() => {
+  if (props.discountType !== "fixed") return `${discountValueNum.value}%`;
+  const asked = moneyInputToQ(props.discountValue);
+  const cap = props.review?.subtotal_q ?? asked;
+  return formatBRL(Math.min(asked, cap));
+});
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
 // o total: um número sem os itens que o compõem, justo na hora em que o cliente
@@ -431,6 +456,7 @@ const deliveryCollections = computed(() => collectionsForFulfillment(props.payme
 const onDeliveryCash = computed(
   () => props.fulfillmentType === "delivery" && props.paymentCollection === "on_delivery",
 );
+
 const changeForShortfall = computed(() =>
   onDeliveryCash.value
     ? changeForShortfallQ(moneyInputToQ(props.changeForInput), props.paymentTotalQ)
@@ -454,18 +480,47 @@ const ctaLabel = computed(() => {
   if (needsReview.value) return "Atualizando…";
   return needsAuth.value ? "Autorizar e validar" : "Validar";
 });
-const ctaDisabled = computed(() => {
-  if (!props.items.length || props.loading || needsReview.value) return true;
-  if (scheduledWithoutCustomer.value) return true;
-  if (!props.paymentCovered) return true; // só habilita quando uma forma cobre o total
-  return false;
-});
 // O QUE SEGURA O BOTÃO — na ordem em que o operador resolve, em três partes:
 // a frase (curta, é o que ele lê de longe), o porquê (miúdo, é o que ele DIZ ao
 // cliente) e o caminho (um toque, quando esta tela sabe abrir a porta).
 // Motivo sem caminho é beco sem saída; motivo comprido não é lido. As duas
 // coisas custavam a mesma venda.
+// O horário escolhido virou impossível sem ninguém tocar nele. Mesmo helper que
+// pinta o chip do topo de vermelho — a tela não pode ter duas opiniões sobre a
+// mesma janela.
+const scheduleConflictReason = computed(
+  () => selectedWindowConflict(props.deliverySlots, props.deliveryTimeSlot),
+);
+// O CPF só viaja no intent quando o switch está ligado (`usePosSale`), e a taxa
+// é a RESOLVIDA pelo servidor — as duas metades exatas de
+// `_validate_fiscal_delivery_fee`.
+const fiscalWithDeliveryFee = computed(
+  () => props.wantsCpfOnInvoice
+    && !!props.invoiceTaxId.replace(/\D/g, "")
+    && props.fulfillmentType === "delivery"
+    && props.deliveryFeeQ > 0,
+);
+// Levar o foco ao campo que resolve. Por `aria-label` porque é o nome que o
+// campo já carrega para quem não enxerga — um `ref` a mais seria um segundo
+// nome para a mesma coisa, e o primeiro a envelhecer.
+function focusByAriaLabel(label: string) {
+  if (!import.meta.client) return;
+  void nextTick(() => {
+    const field = document.querySelector<HTMLInputElement>(`[aria-label="${label}"]`);
+    field?.focus();
+    field?.scrollIntoView({ block: "center", behavior: "auto" });
+  });
+}
+
 type CheckoutAction = { label: string; run: () => void };
+// TODA RECUSA DO COMMIT TEM QUE TER GÊMEA AQUI. O servidor recusa a venda em
+// oito portões; a tela replicava três. Os outros cinco viravam 422 seco com o
+// cliente na frente, depois de o combinado já ter sido feito em voz alta — e um
+// deles ("Fiscal com taxa de entrega") a tela até CONTRADIZIA, escrevendo "Sai
+// na nota: CPF …" enquanto o Validar ficava verde.
+//
+// A ordem é a da conversa do balcão: quem é o cliente, o que foi prometido, o
+// que sai na nota, e só então o dinheiro.
 const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAction } | null>(() => {
   if (!props.items.length) {
     return {
@@ -482,7 +537,45 @@ const ctaBlock = computed<{ message: string; hint?: string; action?: CheckoutAct
       action: { label: "Identificar cliente", run: () => { customerSheetOpen.value = true; } },
     };
   }
+  // O horário virou impossível SOZINHO (o operador combinou 09:00 e só depois
+  // lançou a baguete). O chip do topo já ficava vermelho; o Validar seguia
+  // verde, e a recusa (`_validate_schedule`) sobe como 422 sem campo nenhum.
+  if (scheduleConflictReason.value) {
+    return {
+      message: "O horário combinado não cabe mais.",
+      hint: scheduleConflictReason.value,
+      action: { label: "Escolher horário", run: () => { scheduleSheetOpen.value = true; } },
+    };
+  }
+  // `_validate_fiscal_delivery_fee`: nota com CPF + taxa de entrega ainda passa
+  // pela conferência do gestor. É o único portão que a tela não só ignorava como
+  // desmentia, com o eco "Sai na nota" logo abaixo do switch.
+  if (fiscalWithDeliveryFee.value) {
+    return {
+      message: "Nota com CPF e taxa de entrega, não.",
+      hint: "O gestor precisa conferir antes. Finalize sem o CPF.",
+      action: { label: "Tirar o CPF", run: () => { emit("update:wantsCpfOnInvoice", false); } },
+    };
+  }
+  // `receipt_email_required`: o canal ligado sem endereço nenhum. O composable
+  // cobre o caso comum (cai no e-mail do cadastro); quando os dois estão vazios,
+  // a recusa vinha no Validar.
+  if (wantsEmailReceipt.value && !props.receiptEmail.trim() && !props.customerEmail.trim()) {
+    return {
+      message: "Falta o e-mail do comprovante.",
+      action: { label: "Preencher", run: () => { focusByAriaLabel("E-mail que recebe a nota"); } },
+    };
+  }
   if (!props.paymentTenders.length) return { message: "Escolha a forma de pagamento." };
+  // Excedente em cartão/Pix não tem troco que o desfaça: é digitação errada, e
+  // o servidor grava o valor inflado como recebido. Era um aviso amarelo ao lado
+  // de "Restante R$ 0,00" e de um Validar verde — três estados discordando.
+  if (nonCashExcess.value > 0) {
+    return {
+      message: `Cartão ou Pix ${formatBRL(nonCashExcess.value)} acima do total.`,
+      hint: "Não há troco para forma digital; ajuste a linha.",
+    };
+  }
   if (!props.paymentCovered) {
     return { message: `Faltam ${formatBRL(Math.max(0, props.paymentRemainingQ))} para validar.` };
   }
@@ -521,7 +614,11 @@ const instructions = computed<CheckoutNote[]>(() => {
     notes.push({ key: "courier", icon: "lucide:banknote", message: "O entregador sai com o troco separado." });
   }
   if (wantsPrintedReceipt.value) {
-    notes.push({ key: "print", icon: "lucide:printer", message: "A nota sai na bobina ao autorizar." });
+    // "A nota sai na bobina" prometia papel que o auto-print não garante: ele é
+    // guardado por `fiscalExpected` (dinheiro sem CPF não gera nota nenhuma), e
+    // a tela de resultado já se recusa a fazer essa promessa. O "se" é a
+    // diferença entre informar e mentir.
+    notes.push({ key: "print", icon: "lucide:printer", message: "Se sair nota, ela imprime sozinha." });
   }
   return notes;
 });
@@ -543,13 +640,23 @@ const alerts = computed<CheckoutAlert[]>(() => {
       tone: "block",
       icon: "lucide:shield-check",
       message: "Esta venda precisa de um gerente.",
-      hint: "O Validar abre a autorização.",
+      // O QUE ele vai assinar. A review manda os códigos (`approval_reasons`) e
+      // o diálogo já os traduz; o alerta os ignorava, e o operador tinha de
+      // chamar o gerente para só então descobrir o motivo.
+      hint: managerAuthReason({ reasons: props.review?.approval_reasons, thresholdQ: managerThresholdQ.value }),
     });
   }
   for (const [idx, warning] of reviewWarnings.value.entries()) {
     list.push({ key: `review-${warning.code || idx}`, tone: "warn", icon: "lucide:triangle-alert", message: warning.message });
   }
   return list;
+});
+
+// O botão está travado sempre que HÁ motivo — não há segunda lista de regras.
+// Era assim que o excedente em cartão escapava: ele avisava, e deixava passar.
+const ctaDisabled = computed(() => {
+  if (!props.items.length || props.loading || needsReview.value) return true;
+  return ctaBlock.value !== null;
 });
 
 function onCta() {
@@ -580,8 +687,17 @@ defineExpose({
   openDiscount: () => { discountSheetOpen.value = true; },
   /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
    *  achou dono — o shell só consome a tecla quando ela virou ação. */
-  /** F9 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão. */
-  toggleCpfOnInvoice: () => { emit("update:wantsCpfOnInvoice", !props.wantsCpfOnInvoice); },
+  /** F9 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão.
+   *  E LEVA O FOCO ao campo que acabou de aparecer. Sem isso o foco ficava no
+   *  `body`, e o shell captura todo dígito fora de input quando há linha de
+   *  pagamento selecionada: o operador apertava F9, digitava o CPF de reflexo, e
+   *  os onze dígitos entravam no numpad — R$ 66,30 virava R$ 5.299.822,47 com um
+   *  "TROCO" a condizer. Um Enter depois, por hábito, e a venda fechava. */
+  toggleCpfOnInvoice: () => {
+    const next = !props.wantsCpfOnInvoice;
+    emit("update:wantsCpfOnInvoice", next);
+    if (next) focusByAriaLabel("CPF que sai na nota");
+  },
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
@@ -643,7 +759,11 @@ defineExpose({
              baixo da dobra, justo as perguntas que se faz com o cliente na
              frente. Aqui custam 36px e continuam mostrando o ESTADO: ver que é
              entrega não exige abrir nada. -->
-        <section class="mt-auto grid gap-1.5" aria-label="Forma de pagamento">
+        <!-- `mt-auto` saiu: ele empurrava a coluna para baixo de quando o
+             pagamento era a ÚLTIMA seção. Com a Nota fiscal depois dela, o que
+             ele produzia em 1920×1080 era ~170px de espaço morto no topo — e as
+             três colunas deixando de compartilhar linha de base. -->
+        <section class="grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
 
           <!-- O DESCONTO NÃO MORA MAIS AQUI. Ele era o primeiro botão de uma
@@ -696,12 +816,24 @@ defineExpose({
           </label>
 
           <div class="flex flex-col gap-1.5">
+            <!-- Tocar aqui ADICIONA uma linha; não escolhe "a forma" da venda.
+                 O realce seguia `selectedTenderMethod` — o método da linha em
+                 EDIÇÃO —, e numa conta dividida em três pagando tudo em dinheiro
+                 o "Dinheiro" ficava permanentemente aceso, lendo-se como forma
+                 escolhida. Agora o realce é só o anel de foco/hover; quem diz o
+                 que está selecionado são as linhas de pagamento, que é onde a
+                 seleção de fato mora.
+
+                 NA ENTREGA só dinheiro é aceito (`invalid_on_delivery_tender_payment`,
+                 recusado no commit). A tela oferecia cartão e Pix, o operador
+                 combinava por telefone, e a recusa vinha no Validar. -->
             <button
               v-for="method in injectableMethods"
               :key="method.ref"
               type="button"
-              class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px"
-              :class="method.ref === selectedTenderMethod ? 'border-primary bg-primary/5' : ''"
+              class="flex h-11 items-center gap-3 rounded-md border bg-card px-3 text-left text-sm font-medium transition hover:border-primary/50 hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="onDeliveryCash && method.ref !== 'cash'"
+              :title="onDeliveryCash && method.ref !== 'cash' ? 'Na entrega só dinheiro; receba no caixa para usar esta forma' : undefined"
               @click="$emit('addTender', method.ref)"
             >
               <Icon :name="paymentIcon(method.ref)" class="size-5 shrink-0 text-muted-foreground" />
@@ -780,7 +912,7 @@ defineExpose({
               @click="$emit('tenderAdd', note)"
             >
               <Icon name="lucide:banknote" class="size-3.5 shrink-0 opacity-70" />
-              {{ note / 100 }}
+              {{ formatBRL(note) }}
             </button>
           </div>
           </div>
@@ -935,49 +1067,85 @@ defineExpose({
           </li>
         </ul>
 
-        <!-- valor gigante (estável = total a cobrar), centrado -->
-        <section class="flex min-h-0 flex-1 flex-col items-center justify-center text-center" aria-label="Total a cobrar">
-          <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Total a cobrar</p>
-          <p class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl">{{ review ? review.total_display : interimTotalDisplay }}</p>
+        <!-- O NÚMERO QUE MUDA É O HERÓI. O total é estável — o operador já o leu
+             em voz alta na tela de venda, e ele volta nas linhas de pagamento e
+             no resumo à direita. O TROCO não: ele nasce agora, é dito agora, e
+             é dinheiro que sai da gaveta. Ele ocupava `text-3xl` num canto
+             enquanto o total, três vezes maior, dominava a tela — a hierarquia
+             invertida bem na hora em que o erro custa dinheiro de verdade.
+             Com troco na mesa, os dois trocam de lugar; o total não some, só
+             recolhe para uma linha de conferência. -->
+        <section
+          class="flex min-h-0 flex-1 flex-col items-center justify-center text-center"
+          :aria-label="payState === 'change' ? 'Troco' : 'Total a cobrar'"
+          aria-live="polite"
+        >
+          <p class="text-xs font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
+            {{ payState === "change" ? "Troco" : "Total a cobrar" }}
+          </p>
+          <p
+            class="text-4xl font-bold tabular-nums tracking-tight xl:text-6xl 2xl:text-8xl"
+            :class="payState === 'change' ? 'text-primary' : ''"
+          >
+            {{ payState === "change" ? formatBRL(paymentChangeQ) : (review ? review.total_display : interimTotalDisplay) }}
+          </p>
+          <p v-if="payState === 'change'" class="mt-2 text-sm tabular-nums text-muted-foreground">
+            Total a cobrar {{ review ? review.total_display : interimTotalDisplay }}
+          </p>
         </section>
 
         <!-- linhas de pagamento + troco/restante -->
         <div v-if="tenderLines.length" class="shrink-0 border-t pt-3">
           <ul class="flex flex-col gap-1.5">
-            <li v-for="(tender, idx) in tenderLines" :key="idx">
+            <!-- SELECIONAR e REMOVER são irmãos, não pai e filho. O remover
+                 era um `<button>` dentro do `<button>` da linha: markup
+                 inválido, nome acessível da linha contaminado pelo do remover, e
+                 o gesto que APAGA uma forma de pagamento dividindo alvo com o
+                 que apenas a seleciona — separados só por um `@click.stop`. -->
+            <li
+              v-for="(tender, idx) in tenderLines"
+              :key="idx"
+              class="flex h-11 items-center gap-1 rounded-md border pr-1 transition"
+              :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
+            >
               <button
                 type="button"
-                class="flex h-11 w-full items-center justify-between gap-2 rounded-md border px-3 text-left transition"
-                :class="idx === selectedTenderIndex ? 'border-primary bg-primary/5' : 'hover:bg-accent/60'"
+                class="flex h-full min-w-0 flex-1 items-center justify-between gap-2 rounded-l-md px-3 text-left"
                 :aria-current="idx === selectedTenderIndex ? 'true' : undefined"
+                :aria-label="`Editar ${tender.label} de ${tender.amountDisplay}`"
                 @click="$emit('selectTender', idx)"
               >
                 <span class="flex min-w-0 items-center gap-2 text-sm font-medium">
                   <Icon :name="tender.icon" class="size-4 shrink-0" />
                   <span class="truncate">{{ tender.label }}</span>
                 </span>
-                <span class="flex shrink-0 items-center gap-2">
-                  <strong class="text-lg tabular-nums">{{ tender.amountDisplay }}</strong>
-                  <UiButton variant="ghost" size="icon-xs" aria-label="Remover pagamento" @click.stop="$emit('removeTender', idx)">
-                    <Icon name="lucide:x" class="size-3.5 text-destructive" />
-                  </UiButton>
-                </span>
+                <strong class="shrink-0 text-lg tabular-nums">{{ tender.amountDisplay }}</strong>
               </button>
+              <UiButton
+                variant="ghost"
+                size="icon-sm"
+                class="shrink-0"
+                :aria-label="`Remover ${tender.label} de ${tender.amountDisplay}`"
+                @click="$emit('removeTender', idx)"
+              >
+                <Icon name="lucide:x" class="size-4 text-destructive" />
+              </UiButton>
             </li>
           </ul>
-          <!-- Uma linha, três estados. O rótulo e o número precisam concordar: com
-               o total coberto era "Pago R$ 0,00", que se lê como "não pagou nada"
-               justo quando o cliente acabou de entregar o dinheiro. O que zera ali
-               é o que FALTA, então o rótulo é "Restante". -->
-          <div class="mt-2 flex items-center justify-between gap-2 px-1">
-            <span class="text-sm font-medium uppercase tracking-wide" :class="payState === 'change' ? 'text-primary' : 'text-muted-foreground'">
-              {{ payState === "change" ? "Troco" : "Restante" }}
-            </span>
+          <!-- O que FALTA. O rótulo e o número precisam concordar: com o total
+               coberto era "Pago R$ 0,00", que se lê como "não pagou nada" justo
+               quando o cliente acabou de entregar o dinheiro. O que zera ali é o
+               que falta, então o rótulo é "Restante".
+               Com troco na mesa esta linha se cala — o troco virou o herói ali
+               em cima, e o mesmo número em dois tamanhos na mesma coluna é o
+               operador procurando qual dos dois vale. -->
+          <div v-if="payState !== 'change'" class="mt-2 flex items-center justify-between gap-2 px-1">
+            <span class="text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
               class="text-3xl font-bold tabular-nums"
-              :class="payState === 'change' ? 'text-primary' : payState === 'ready' ? 'text-muted-foreground' : ''"
+              :class="payState === 'ready' ? 'text-muted-foreground' : ''"
             >
-              {{ payState === "change" ? formatBRL(paymentChangeQ) : formatBRL(Math.max(0, paymentRemainingQ)) }}
+              {{ formatBRL(Math.max(0, paymentRemainingQ)) }}
             </strong>
           </div>
         </div>
@@ -998,7 +1166,7 @@ defineExpose({
             :key="alert.key"
             class="flex items-center gap-3 rounded-lg border px-3.5 py-2.5"
             :class="alert.tone === 'block'
-              ? 'border-warning/60 bg-warning/10 text-amber-800 dark:border-warning/50 dark:text-amber-200'
+              ? 'border-warning/60 bg-warning/10 text-amber-700 dark:text-amber-400'
               : 'border-border bg-muted/40 text-muted-foreground'"
           >
             <Icon
@@ -1291,7 +1459,10 @@ defineExpose({
     <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
       <UiDialogHeader>
         <UiDialogTitle>Desconto</UiDialogTitle>
-        <UiDialogDescription>Tipo, valor e motivo. O backend revisa e aplica.</UiDialogDescription>
+        <!-- "backend" era a única palavra de implementação em toda a copy do
+             PDV. E o diálogo fechava sem dizer o número que o operador vai falar
+             em voz alta — ele aplicava 15% e só descobria o total depois. -->
+        <UiDialogDescription>Tipo, valor e motivo. A loja confere e aplica.</UiDialogDescription>
       </UiDialogHeader>
       <div class="grid gap-4">
         <div class="grid grid-cols-2 gap-2">
@@ -1322,7 +1493,10 @@ defineExpose({
             </UiButton>
           </div>
         </div>
-        <UiDialogFooter>
+        <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+          <p v-if="review" class="text-center text-sm text-muted-foreground">
+            Fica <strong class="font-semibold tabular-nums text-foreground">{{ review.total_display }}</strong>
+          </p>
           <UiButton class="w-full" @click="discountSheetOpen = false">Concluir</UiButton>
         </UiDialogFooter>
       </UiDialogContent>
