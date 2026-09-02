@@ -1,6 +1,9 @@
 # WP-IDENT-PT-BR — Identificador em português nas superfícies
 
 > **Estado:** proposto (02/09/2026), pré-go-live. Não iniciado.
+> **Não depende de ninguém lembrar:** a dívida está travada por catraca em
+> `surfaces/operator-kit/tests/guardrails.identifiers.test.ts`, que roda na suíte
+> e reprova se o número subir — ou se cair sem o baseline descer junto.
 > **Origem:** a pergunta do dono ao ver `chaveDoGesto` citado num relatório —
 > *"existe assim no código, em pt-br?"*. Existe, e não está sozinho.
 
@@ -13,7 +16,7 @@ da Efí sobrevive porque é o contrato deles, e morre na porta de entrada).
 
 `chaveDoGesto` não é nenhuma das três.
 
-## O tamanho real: 36 declarações em 20 arquivos
+## O tamanho real: 35 declarações em 20 arquivos
 
 ⚠️ **O grep cru mente por um fator de ~10, e a primeira medição desta auditoria
 caiu nisso.** Contar `\bresposta\b` devolve 94 ocorrências em 58 arquivos —
@@ -21,16 +24,16 @@ quase tudo **comentário e string**, que a regra da casa manda deixar em
 português. Medir identificador exige remover comentários e literais primeiro e
 contar só DECLARAÇÕES.
 
-Medido em 02/09, dessa forma:
+Medido em 02/09, dessa forma (e **excluindo `.nuxt`/`.output`** — ver aviso abaixo):
 
 | superfície | declarações | arquivos |
 |---|---|---|
 | `pos-nuxt` | 20 | 8 |
 | `marketing-nuxt` | 6 | 3 |
-| `storefront-nuxt` | 5 | 5 |
+| `storefront-nuxt` | 4 | 4 |
 | `operator-kit` | **3** | 2 |
 | `orders-nuxt` | 2 | 2 |
-| **total** | **36** | **20** |
+| **total** | **35** | **20** |
 
 Os nomes: `duracao` (4), `resposta` (3), `corpo` (3), `linhas` (3),
 `resultado` (3), `ultimaTentativa` (2), `primeira` (2), `prefereMenosMovimento`
@@ -76,6 +79,7 @@ declarações. Rodar antes e depois de cada PR:
 ```python
 import re, pathlib, collections
 S = pathlib.Path("surfaces")
+BUILD = {".nuxt", ".output"}  # código GERADO não é fonte — ver aviso acima
 PT = {"resposta","resultado","linhas","corpo","assinatura","movimento","opcoes","secao",
       "chamada","chaveDoGesto","novaChave","comChave","ultimaTentativa","abrirTela",
       "cancelarComAprovacao","ehRotaDeAutenticacao","prefereMenosMovimento","aprovacao",
@@ -91,10 +95,17 @@ def strip_noise(t):
 c = collections.Counter()
 for f in S.rglob("*"):
     if f.suffix not in (".ts", ".vue") or "node_modules" in f.parts: continue
+    if BUILD & set(f.parts): continue
     for n in DECL.findall(strip_noise(f.read_text(encoding="utf-8"))):
         if n in PT: c[n] += 1
 print(sum(c.values()), "declarações"); print(c.most_common())
 ```
+
+⚠️ **Excluir `.nuxt`/`.output`.** A primeira contagem deu 36 porque varreu um
+`.d.ts` gerado pelo Nuxt (`storefront-nuxt/.nuxt/types/imports.d.ts`, que espelha
+um auto-import). Código gerado não é fonte, e contá-lo infla a dívida — foi a
+catraca automatizada que pegou o erro do script manual, o que é exatamente o
+argumento para ela existir.
 
 ⚠️ `PT` é uma **allowlist**, não um detector. Ela pega o que já se sabe existir.
 Um nome novo em pt-br não aparece aqui — a defesa contra isso é a revisão, e a
