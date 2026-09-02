@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canPayForReal,
   canSimulatePayment,
+  isHostedCheckout,
   paymentMethodLabel,
   showsPaymentBlock
 } from '~/presentation/payment'
@@ -13,6 +14,7 @@ describe('payment presentation — method label', () => {
   it('labels payment methods warmly instead of raw enums', () => {
     expect(paymentMethodLabel('pix')).toBe('Pix')
     expect(paymentMethodLabel('card')).toBe('Cartão de crédito')
+    expect(paymentMethodLabel('link')).toBe('Link de pagamento')
     expect(paymentMethodLabel('cash')).toBe('Pagamento')
     expect(paymentMethodLabel(null)).toBe('Pagamento')
   })
@@ -23,6 +25,19 @@ const pixSemCodigo = { payment_method: 'pix' }
 const cartaoComLink = { payment_method: 'card', checkout_url: 'https://pay.stripe.com/x' }
 // O `payment_mock` não gera página de gateway: cartão em staging chega assim.
 const cartaoMock = { payment_method: 'card', mock_payment_enabled: true }
+// Link de pagamento do balcão: pedido remoto anotado no PDV, o cliente paga do
+// celular. É a mesma sessão hospedada do cartão, com outro rótulo.
+const linkComUrl = { payment_method: 'link', checkout_url: 'https://pay.stripe.com/l' }
+
+describe('payment presentation — sessão hospedada', () => {
+  it('cartão e link abrem a URL do gateway; o resto não', () => {
+    expect(isHostedCheckout('card')).toBe(true)
+    expect(isHostedCheckout('link')).toBe(true)
+    expect(isHostedCheckout('pix')).toBe(false)
+    expect(isHostedCheckout('cash')).toBe(false)
+    expect(isHostedCheckout(null)).toBe(false)
+  })
+})
 
 describe('payment presentation — pagar de verdade', () => {
   it('exige código no Pix e link do gateway no cartão', () => {
@@ -30,6 +45,13 @@ describe('payment presentation — pagar de verdade', () => {
     expect(canPayForReal(pixSemCodigo)).toBe(false)
     expect(canPayForReal(cartaoComLink)).toBe(true)
     expect(canPayForReal(cartaoMock)).toBe(false)
+  })
+
+  it('o link do balcão paga de verdade pela mesma URL do gateway', () => {
+    // Regressão: o pedido de link chegava com `checkout_url` e a página não
+    // desenhava botão nenhum — quem voltava ao pedido não achava onde pagar.
+    expect(canPayForReal(linkComUrl)).toBe(true)
+    expect(canPayForReal({ payment_method: 'link' })).toBe(false)
   })
 })
 
@@ -65,5 +87,11 @@ describe('payment presentation — bloco inline', () => {
     expect(showsPaymentBlock(pixSemCodigo)).toBe(true)
     expect(showsPaymentBlock(cartaoComLink)).toBe(true)
     expect(showsPaymentBlock({ payment_method: '' })).toBe(false)
+  })
+
+  it('mostra o bloco do link com URL, e nunca sem URL nem simulador', () => {
+    expect(showsPaymentBlock(linkComUrl)).toBe(true)
+    expect(showsPaymentBlock({ payment_method: 'link' })).toBe(false)
+    expect(showsPaymentBlock({ payment_method: 'link', mock_payment_enabled: true })).toBe(true)
   })
 })

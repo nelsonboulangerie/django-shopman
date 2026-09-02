@@ -153,6 +153,56 @@ def test_state_payment_retry_card_without_link(make_order, patch_payment):
     assert _promise_state(order) == "payment_retry"
 
 
+# ── O link de pagamento do balcão: a mesma sessão hospedada do cartão ───
+#
+# Pedido remoto anotado no PDV; o cliente paga do celular pela URL do gateway.
+# A cascata testava `method == "card"` cravado em cinco pontos, e quem abria o
+# acompanhamento de um pedido de link não encontrava botão nenhum para pagar.
+
+
+def test_state_payment_card_ready_for_link(make_order, patch_payment):
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link", "checkout_url": "https://pay"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_card_ready"
+    # O método próprio viaja: é ele que a tela rotula ("Link de pagamento").
+    assert promise.payment_method == "link"
+    assert promise.checkout_url == "https://pay"
+    assert any(action.href == "https://pay" for action in promise.actions)
+
+
+def test_state_payment_retry_link_without_url(make_order, patch_payment):
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_retry"
+    assert promise.payment_method == "link"
+
+
+def test_state_payment_authorized_for_link(make_order, patch_payment):
+    patch_payment(live_status="authorized")
+    order = make_order(status="accepted", payment={"method": "link", "status": "authorized"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_authorized"
+    assert promise.payment_method == "link"
+
+
+def test_state_payment_expired_for_link(make_order, patch_payment):
+    """O link é digital: prazo vencido sem captura é `payment_expired`, não "recebemos"."""
+    patch_payment(deadline_passed=True)
+    order = make_order(status="accepted", payment={"method": "link", "checkout_url": "https://pay"})
+    assert _promise_state(order) == "payment_expired"
+
+
+def test_link_pending_shows_payment_as_pending(make_order, patch_payment):
+    """`_payment_info` também alcança o link: o passo de pagamento aparece e fica pendente."""
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link", "intent_ref": "PAY-LINK", "checkout_url": "https://pay"})
+    tracking = build_tracking(order)
+    assert tracking.payment_pending is True
+    assert tracking.payment_status_key == "payment_pending"
+
+
 def test_state_payment_authorized(make_order, patch_payment):
     patch_payment(live_status="authorized")
     order = make_order(status="accepted", payment={"method": "card", "status": "authorized"})

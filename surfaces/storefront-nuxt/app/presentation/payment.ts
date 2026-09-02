@@ -8,7 +8,16 @@
 export function paymentMethodLabel (method: string | null | undefined): string {
   if (method === 'pix') return 'Pix'
   if (method === 'card') return 'Cartão de crédito'
+  if (method === 'link') return 'Link de pagamento'
   return 'Pagamento'
+}
+
+// Sessão HOSPEDADA: o cliente abre a URL do gateway e paga lá. O cartão da loja
+// online e o link do balcão (pedido remoto anotado no PDV) são a mesma coisa
+// para esta tela — muda o rótulo, não o botão. Enquanto só `card` contava, o
+// pedido de link chegava com `checkout_url` e a página não desenhava nada.
+export function isHostedCheckout (method: string | null | undefined): boolean {
+  return method === 'card' || method === 'link'
 }
 
 // O que o bloco de pagamento precisa saber para decidir o que desenhar.
@@ -31,7 +40,7 @@ function hasPixCode (s: PaymentBlockState): boolean {
 // do cartão. É isto que decide os botões que o cliente usa em produção.
 export function canPayForReal (s: PaymentBlockState): boolean {
   if (s.payment_method === 'pix') return hasPixCode(s)
-  if (s.payment_method === 'card') return Boolean(s.checkout_url)
+  if (isHostedCheckout(s.payment_method)) return Boolean(s.checkout_url)
   return false
 }
 
@@ -49,8 +58,9 @@ export function canSimulatePayment (s: PaymentBlockState): boolean {
 // gateway caía fora do bloco na página E fora da caixa de teste no componente.
 export function showsPaymentBlock (s: PaymentBlockState): boolean {
   if (s.payment_method === 'pix') return true
-  if (s.payment_method !== 'card') return false
-  // Cartão: o link real do gateway, ou a captura simulada. Com o `payment_mock`
-  // não existe checkout_url — sem o segundo braço o testador não via nada.
+  if (!isHostedCheckout(s.payment_method)) return false
+  // Sessão hospedada: a URL real do gateway, ou a captura simulada. Com o
+  // `payment_mock` não existe checkout_url — sem o segundo braço o testador
+  // não via nada.
   return Boolean(s.checkout_url) || canSimulatePayment(s)
 }

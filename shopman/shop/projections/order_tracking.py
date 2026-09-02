@@ -31,6 +31,14 @@ from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import payment_status
+
+#: Formas DIGITAIS do acompanhamento: o cliente paga por conta própria, e o
+#: pedido espera por isso. Pix (QR na tela) mais as sessões hospedadas
+#: (cartão da loja online e link do balcão — o cliente abre uma URL e paga lá).
+#: Era um literal `{"pix", "card"}` repetido em cinco pontos deste arquivo, e
+#: o `link` ficava fora de todos: quem abria o acompanhamento de um pedido de
+#: link não encontrava botão nenhum para pagar.
+_DIGITAL_PAYMENT_METHODS = frozenset({"pix"}) | payment_service.HOSTED_CHECKOUT_METHODS
 from shopman.shop.services.business_calendar import (
     BusinessCalendarState,
     current_business_state,
@@ -145,11 +153,11 @@ class TrackingPromiseData:
     eta_at: str | None = None  # ISO; preparing ETA
     next_opening_phrase: str = ""  # store_closed; resolved against business calendar
     # ── Payment block (só nos degraus em que há o que pagar) ──────────
-    payment_method: str = ""  # pix | card | "" — o resto do bloco só faz sentido com um método
+    payment_method: str = ""  # pix | card | link | "" — o resto do bloco só faz sentido com um método
     pix_qr_code: str | None = None  # data: URI já normalizada
     pix_copy_paste: str | None = None  # copia-e-cola
     pix_expires_at: str | None = None  # ISO; prazo do Pix
-    checkout_url: str | None = None  # cartão: ambiente seguro externo
+    checkout_url: str | None = None  # sessão hospedada (cartão/link): ambiente seguro externo
     # Fulfillment wait context. Empty for ready-stock orders; "preorder" for
     # future commitments, "planned_batch" for same-day planned holds not yet
     # materialized. Presentation uses this to avoid stock-shelf copy for bakery
@@ -392,13 +400,13 @@ def _display_status_key(order) -> str:
 
     if _is_payment_timeout_cancelled(order):
         return "payment_expired"
-    if order.status == "new" and method in {"pix", "card"}:
+    if order.status == "new" and method in _DIGITAL_PAYMENT_METHODS:
         if payment_captured or live_payment_status == "authorized" or not has_intent:
             return "waiting_store_confirmation"
         return "payment_pending"
-    if method == "card" and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
+    if method in payment_service.HOSTED_CHECKOUT_METHODS and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
         return "card_authorized"
-    if order.status == "accepted" and method in {"pix", "card"} and not payment_captured and live_payment_status != "authorized":
+    if order.status == "accepted" and method in _DIGITAL_PAYMENT_METHODS and not payment_captured and live_payment_status != "authorized":
         return "payment_pending"
     if order.status == "new":
         return "waiting_store_confirmation"
@@ -424,7 +432,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
+    if method not in _DIGITAL_PAYMENT_METHODS:
         return False, False, None, None
 
     if _is_payment_timeout_cancelled(order):
@@ -439,7 +447,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     status = (payment_status.get_payment_status(order) or "").lower()
     if payment_status.has_sufficient_captured_payment(order):
         return False, True, "payment_confirmed", payment.get("expires_at") or None
-    if status == "authorized" and method == "card":
+    if status == "authorized" and method in payment_service.HOSTED_CHECKOUT_METHODS:
         return False, False, "card_authorized", payment.get("expires_at") or None
     if not (payment.get("intent_ref") or payment.get("status")) and order.status == "new":
         return False, False, None, None
@@ -477,7 +485,7 @@ def _can_mock_confirm_payment(order) -> bool:
         return False
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"} or not payment.get("intent_ref"):
+    if method not in _DIGITAL_PAYMENT_METHODS or not payment.get("intent_ref"):
         return False
     # O ambiente E o método: simular captura de um método cujo gateway é real
     # gravaria no Payman uma captura que o gateway não tem.
@@ -823,7 +831,7 @@ def _build_promise(
     """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    is_digital = method in {"pix", "card"}
+    is_digital = method in _DIGITAL_PAYMENT_METHODS
     pix_qr, pix_copy = _pix_payload(payment)
     has_pix_code = bool(pix_qr or pix_copy)
     checkout_url = payment.get("checkout_url") or None
@@ -881,7 +889,10 @@ def _build_promise(
     # O pagamento só é a bola de alguém enquanto não foi capturado e o pedido
     # ainda está aberto (o invariante ``payment_is_due ⇒ new|accepted``).
     payment_open = is_digital and not is_captured and order.status in {"new", "accepted"}
-    card_authorized = payment_open and method == "card" and live_state == "authorized"
+    # Sessão hospedada autorizada e ainda não capturada (cartão em `manual`;
+    # o link só cai aqui se o gateway segurar a captura por conta própria).
+    is_hosted = method in payment_service.HOSTED_CHECKOUT_METHODS
+    card_authorized = payment_open and is_hosted and live_state == "authorized"
 
     # ── 3. BOLA DO CLIENTE — precisa agir AGORA (pagar, tentar) ─────
     if payment_open and not card_authorized:
@@ -910,7 +921,10 @@ def _build_promise(
                 pix_copy_paste=pix_copy,
                 pix_expires_at=payment_expires_at,
             )
-        if method == "card" and checkout_url:
+        if is_hosted and checkout_url:
+            # `payment_card_ready` cobre o link também: é a mesma sessão
+            # hospedada, o mesmo botão que abre a URL do gateway. O que muda
+            # é o `payment_method`, e é ele que a tela rotula.
             return promise(
                 state="payment_card_ready",
                 tone="info",
@@ -925,18 +939,18 @@ def _build_promise(
                         idempotency="none",
                     ),
                 ),
-                payment_method="card",
+                payment_method=method,
                 checkout_url=checkout_url,
             )
-        if method == "card":
-            # Cartão sem link ainda (o botão do Stripe está nascendo): a mesma
-            # ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
-            return _payment_retry_promise(order, method="card")
+        if is_hosted:
+            # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
+            # mesma ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
+            return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
-        return promise(state="payment_authorized", tone="info", payment_method="card")
+        return promise(state="payment_authorized", tone="info", payment_method=method)
 
     # ── 5. BOLA DA LOJA — o cliente só espera ───────────────────────
     # Chegamos aqui sem bola do cliente pendente; a loja é quem age.
@@ -1024,7 +1038,7 @@ def _build_promise(
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
-    """intent_error + card sem link: reabrir o acompanhamento regenera o intent."""
+    """intent_error + sessão hospedada sem URL: reabrir o acompanhamento regenera o intent."""
     return _promise(
         state="payment_retry",
         tone="warning",
@@ -1190,7 +1204,7 @@ def _active_progress_key(
 def _should_show_payment_step(order) -> bool:
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method in {"pix", "card", "external"}:
+    if method in _DIGITAL_PAYMENT_METHODS or method == "external":
         return True
     status = str(payment.get("status") or "").lower()
     return status in {"authorized", "captured", "paid"}
