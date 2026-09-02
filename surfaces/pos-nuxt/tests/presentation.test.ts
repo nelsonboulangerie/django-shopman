@@ -66,8 +66,8 @@ import {
   requiresOpenShiftForSale,
   sessionScreenState,
 } from "../app/presentation/cash";
-import type { ManagerAction } from "../app/presentation/managerAuth";
-import { MANAGER_ACTIONS, managerAuthReason, managerAuthTitle } from "../app/presentation/managerAuth";
+import type { ManagerAction } from "../../operator-kit/app/presentation/managerAuth";
+import { MANAGER_ACTIONS, managerAuthReason, managerAuthTitle } from "../../operator-kit/app/presentation/managerAuth";
 import {
   availableMoveModes,
   buildMovePayload,

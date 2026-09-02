@@ -3,7 +3,7 @@
 //
 // Este componente existe porque a mesma pergunta era feita em dois lugares por
 // dois componentes diferentes: a tela de bloqueio (`OperatorLock`) e o diálogo
-// de autorização do gerente (`PosManagerAuthDialog`). Os dois desenhavam o mesmo
+// de autorização do gerente (`OperatorManagerAuth`). Os dois desenhavam o mesmo
 // seletor e o mesmo teclado — e só um sabia ler crachá.
 //
 // A consequência não era estética. Sangria e pedido de troco são a hora em que o

@@ -17,8 +17,18 @@ import type { CancellationReason } from "~/types/orders";
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
+const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
+
+// Cancelar pedido PAGO pede segunda assinatura. O diálogo é o MESMO do PDV
+// (`OperatorManagerAuth`, no operator-kit): mesma lista, mesmo teclado, mesmo
+// crachá. Antes disto o gerente lia "Falha na ação" e não tinha onde assinar.
+async function signWithPin(username: string, pin: string) {
+  await authorize({ username, pin });
+}
+async function signWithBadge(badge: string) {
+  await authorize({ badge });
+}
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
@@ -598,5 +608,19 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+
+    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV. A lista de gerentes
+         vem vazia aqui (o Gestor não carrega a projeção do PDV), e o componente
+         cai no campo livre de propósito — esconder a única porta deixaria o
+         gerente sem saída no meio de um cancelamento. -->
+    <OperatorManagerAuth
+      :open="!!managerChallenge"
+      action="cancel_sale"
+      :busy="busy"
+      :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
+      @update:open="(aberto: boolean) => { if (!aberto) dismissManagerChallenge(); }"
+      @authorize="signWithPin"
+      @authorize-badge="signWithBadge"
+    />
   </main>
 </template>

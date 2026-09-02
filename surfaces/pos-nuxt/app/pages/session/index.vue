@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { ManagerAction } from "~/presentation/managerAuth";
+import type { ManagerAction } from "../../../../operator-kit/app/presentation/managerAuth";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -1021,7 +1021,7 @@ async function confirmClose() {
       </div>
     </div>
 
-    <PosManagerAuthDialog
+    <OperatorManagerAuth
       v-model:open="managerAuthOpen"
       :action="managerAuthAction"
       :operator-name="activeOperator?.name || ''"

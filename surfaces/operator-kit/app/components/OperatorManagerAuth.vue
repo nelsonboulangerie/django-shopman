@@ -19,9 +19,9 @@
 // O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
 // (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
 // deixaria o balcão sem saída no meio de uma sangria.
-import type { ManagerAction } from "~/presentation/managerAuth";
-import { managerAuthReason, managerAuthTitle } from "~/presentation/managerAuth";
-import type { POSManagerProjection } from "~/types/pos";
+import type { ManagerAction } from "../presentation/managerAuth";
+import { managerAuthReason, managerAuthTitle } from "../presentation/managerAuth";
+import type { ManagerOption } from "../types/manager";
 
 const props = defineProps<{
   open: boolean;
@@ -43,7 +43,7 @@ const props = defineProps<{
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
   /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
-  managers?: POSManagerProjection[];
+  managers?: ManagerOption[];
   busy?: boolean;
   error?: string;
 }>();

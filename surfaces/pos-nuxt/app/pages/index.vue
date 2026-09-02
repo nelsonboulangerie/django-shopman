@@ -1095,7 +1095,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       @update:open="(value) => { if (!value) drawerLock.dismiss(); }"
       @manager="drawerLock.askManager"
     />
-    <PosManagerAuthDialog
+    <OperatorManagerAuth
       :open="drawerLock.managerOpen.value"
       action="drawer_unlock"
       :operator-name="activeOperator?.name || ''"

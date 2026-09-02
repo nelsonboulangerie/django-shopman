@@ -3,12 +3,13 @@ import { POS_SALE_INTENT_VERSION } from "~/generated/posContract";
 
 export { POS_SALE_INTENT_VERSION };
 
-export function formatBRL(amountQ: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format((Number.isFinite(amountQ) ? amountQ : 0) / 100);
-}
+// `formatBRL` mora no operator-kit: é a MESMA formatação em toda superfície de
+// operador, e era ela que prendia o diálogo de autorização do gerente ao PDV.
+// Repassado daqui — e não duplicado — para os call sites do PDV seguirem
+// intactos com uma implementação só. Ver `operator-kit/app/utils/money.ts`.
+export { formatBRL } from "../../../operator-kit/app/utils/money";
+
+
 
 export function cartTotalQ(items: POSCartItem[]): number {
   return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);

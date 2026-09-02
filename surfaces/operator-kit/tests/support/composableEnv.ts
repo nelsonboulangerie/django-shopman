@@ -4,7 +4,7 @@ import { computed, nextTick, reactive, readonly, ref, shallowRef, watch } from "
 // Utilitários REAIS do kit (auto-imports em runtime) — implementação verdadeira (não
 // mock) para o teste exercitar o narrowing/mensagem de fato (os `catch` dos composables
 // dos apps usam httpError/httpErrorMessage do kit).
-import { httpError, httpErrorMessage } from "../../app/utils/httpError";
+import { httpError, httpErrorCode, httpErrorMessage } from "../../app/utils/httpError";
 import { retryWithBackoff } from "../../app/utils/retryBackoff";
 import { useStationLock } from "../../app/composables/useStationLock";
 import { useAlertSound } from "../../app/composables/useAlertSound";
@@ -117,6 +117,9 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("useAdaptivePoll", env.adaptivePoll);
   vi.stubGlobal("httpError", httpError); // implementação REAL do kit (narrowing tipado)
   vi.stubGlobal("httpErrorMessage", httpErrorMessage); // implementação REAL do kit
+  // O código TIPADO do erro — é por ele que a superfície distingue um desafio
+  // de gerente (`manager_approval_required`) de uma falha de verdade.
+  vi.stubGlobal("httpErrorCode", httpErrorCode); // implementação REAL do kit
   vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
   vi.stubGlobal("useStationLock", useStationLock); // implementação REAL do kit (sobre o useState mockado)
   vi.stubGlobal("useAlertSound", useAlertSound); // implementação REAL do kit (AudioContext ausente em node → beep no-op)
