@@ -40,6 +40,7 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento.{reason_note}\nVeja os detalhes: {tracking_url}",
     "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Avisamos a cada passo: {tracking_url}",
     "payment_requested": "Pedido {order_ref}: disponibilidade confirmada. Pague aqui: {payment_url}",
+    "payment_link_sent": "Anotamos o pedido {order_ref}, {total}. Pague aqui: {checkout_url}{payment_deadline_note}",
     "payment_expired": "Pedido {order_ref} cancelado: o prazo de pagamento expirou.",
     "payment_failed": "Nao conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
     "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",

@@ -81,6 +81,13 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
         "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
     ),
+    # Pedido remoto anotado no PDV: a venda já fechou, falta o cliente pagar pelo
+    # link. "Anotamos", não "conferimos a disponibilidade" — o pão já está separado.
+    "payment_link_sent": (
+        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref} — total {total}."
+        "\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}"
+        "\nQualquer coisa, é só responder esta mensagem. \U0001f956"
+    ),
     "payment_reminder": (
         "Olá{customer_name_greeting}! Seu pedido {order_ref} aguarda"
         " pagamento PIX. Use o código: {copy_paste}"

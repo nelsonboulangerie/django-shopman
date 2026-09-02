@@ -314,6 +314,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `gateway_checked_at` | `string` | throttle | `payment.reconcile_with_gateway_if_due()` | o próprio (janela mínima entre perguntas) | ISO datetime da última pergunta ao gateway pelo estado deste pagamento. Existe para o acompanhamento poder reconciliar em toda leitura sem transformar cada refresh do cliente numa chamada ao provedor (`GATEWAY_RECHECK_SECONDS`). **Não é status**: quem diz se a venda está paga é o Payman |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
+| `checkout_url` | `string` | display | `payment.initiate()` (métodos hospedados: `card`, `link`) | resultado da venda no PDV (`_pos_payment_response`), aviso `payment_link_sent` (`notification._build_context` → `{checkout_url}`) | URL da sessão hospedada (Stripe Checkout) que o cliente abre para pagar. Distinta do `payment_url` do aviso, que é o acompanhamento |
 | `collection` | `string` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega) |
 | `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`), acerto de entrega | POS, leitura X/Z, reconciliação | Linhas do pagamento: `{method, amount_q, collection, status, terminal_ref?, received_at?, reference?, intent_ref?}`. `intent_ref` é o intent do Payman daquele método (um por método; venda mista tem um por linha de método). **Sem `cash_shift_id`**: turno é lançamento no livro do `cashman` |
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
@@ -588,8 +589,8 @@ Write-back: `intent_ref` (string)
 
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,
-`"payment_confirmed"`, `"payment_expired"`, `"payment.reminder"`, `"preorder_reminder"`,
-`"production_cancelled"`, `"generic"`.
+`"payment_confirmed"`, `"payment_link_sent"`, `"payment_expired"`, `"payment.reminder"`,
+`"preorder_reminder"`, `"production_cancelled"`, `"generic"`.
 
 #### `notification.send` (system notification)
 

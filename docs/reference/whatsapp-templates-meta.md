@@ -73,6 +73,13 @@ Formato de cada um: **Nome · Corpo · Variáveis (sample) · Botão**. Idioma `
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042`
 - Botão URL (dinâmico): `Pagar pedido` → `https://nelsonboulangerie.com.br/pedido/{{1}}/pagar` (sample `NB-1042`)
 
+### `link_pagamento_enviado`
+Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
+- Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para confirmar, é só pagar pelo botão abaixo. O link vale até {{4}}. Qualquer coisa, é só responder esta mensagem.`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
+- Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
+- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name_greeting`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2). `payment_deadline` só é gravado quando há prazo.
+
 ### `pagamento_confirmado`
 - Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Ele seguirá para o preparo.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042`
@@ -102,6 +109,7 @@ Vai em `MANYCHAT_FLOW_MAP` (Flows do ManyChat) ou `SHOPMAN_WHATSAPP['templates']
 | `order_delivered` | `pedido_entregue` |
 | `order_cancelled` | `pedido_cancelado` |
 | `payment_requested` | `pagamento_solicitado` |
+| `payment_link_sent` | `link_pagamento_enviado` |
 | `payment_confirmed` | `pagamento_confirmado` |
 | `payment_reminder` | `pagamento_lembrete` |
 | `payment_expired` | `pagamento_expirado` |
