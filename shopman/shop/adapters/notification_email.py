@@ -79,13 +79,12 @@ BODY_TEMPLATES: dict[str, str] = {
     "order_cancelled": (
         "Olá{customer_name_greeting}!\n\n"
         "Seu pedido {order_ref} foi cancelado.{reason_note}\n\n"
-        "Em caso de dúvidas, entre em contato.\n"
+        "Veja os detalhes do pedido por aqui: {tracking_url}\n"
     ),
     "order_rejected": (
         "Olá{customer_name_greeting}!\n\n"
-        "O estabelecimento não conseguiu confirmar o pedido {order_ref}.\n\n"
-        "Motivo: {reason}\n\n"
-        "Em caso de dúvidas, entre em contato.\n"
+        "O estabelecimento não conseguiu confirmar o pedido {order_ref}.{reason_note}\n\n"
+        "Veja os detalhes do pedido por aqui: {tracking_url}\n"
     ),
     "payment_confirmed": (
         "Olá{customer_name_greeting}!\n\n"
@@ -148,30 +147,13 @@ BODY_TEMPLATES: dict[str, str] = {
 }
 
 
-def _enrich_context(context: dict[str, Any]) -> dict[str, Any]:
-    """Add computed fields to template context."""
-    ctx = dict(context)
-
-    if ctx.get("customer_name"):
-        ctx["customer_name_greeting"] = f", {ctx['customer_name']}"
-    else:
-        ctx["customer_name_greeting"] = ""
-
-    total_q = ctx.get("total_q")
-    if total_q and not ctx.get("total"):
-        ctx["total"] = f"R$ {total_q / 100:,.2f}"
-
-    # Definido por notification._build_context; default vazio p/ chamadas diretas.
-    ctx.setdefault("courier_tracking_suffix", "")
-
-    return ctx
-
-
 def _render_html(template: str, context: dict[str, Any]) -> str | None:
     """Try to render a Django HTML template for this event."""
+    from shopman.shop.adapters._notification_templates import derive_context
+
     template_name = f"notifications/email/{template}.html"
     try:
-        return render_to_string(template_name, _enrich_context(context))
+        return render_to_string(template_name, derive_context(context))
     except TemplateDoesNotExist:
         return None
 
@@ -190,11 +172,16 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
     """
     from shopman.shop.adapters._notification_templates import (
         db_template,
+        derive_context,
         render_message,
         render_template,
     )
 
-    ctx = _enrich_context(context or {})
+    # As chaves auxiliares (`customer_name_greeting`, `total`, sufixos) vêm do ponto
+    # único compartilhado com SMS e WhatsApp — o assunto precisa delas explicitamente
+    # porque `render_template` é primitiva crua; o corpo já deriva dentro de
+    # `render_message`.
+    ctx = derive_context(context)
 
     # Assunto e corpo editados no Admin (NotificationTemplate) valem para
     # e-mail também; os dicts hardcoded são o fallback. render_template protege

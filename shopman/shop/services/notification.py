@@ -341,7 +341,16 @@ def _build_context(order, payload: dict, template: str) -> dict:
             context["payment_url"] = build_payment_access_url(auth_customer, order_ref)
             context["reorder_url"] = build_reorder_access_url(auth_customer, order_ref)
         except Exception:
-            logger.debug("access_urls: could not build tracking/reorder URLs", exc_info=True)
+            # ⚠️ Isto era `logger.debug` e engoliu em silêncio o defeito que chegou ao
+            # cliente: sem estas URLs o template do Admin manda `{tracking_url}` cru.
+            # Falhar fechado não é opção aqui (o aviso tem de sair), então falha
+            # GRITANDO — e o fallback logo abaixo garante um link comum no lugar.
+            logger.warning(
+                "access_urls: magic link não gerado para o pedido %s; "
+                "os links do aviso caem para o link comum de acompanhamento",
+                order.ref,
+                exc_info=True,
+            )
 
     if order.total_q:
         context["total"] = f"R$ {order.total_q / 100:,.2f}"
@@ -360,6 +369,15 @@ def _build_context(order, payload: dict, template: str) -> dict:
     else:
         context["payment_url"] = context.get("payment_url") or storefront_links.order_tracking_url(order.ref)
         context["pix_suffix"] = ""
+
+    # Mesmo critério do `payment_url` acima: sem magic link (pedido da loja não grava
+    # `customer.uuid`, ou a cunhagem do token falhou), o acompanhamento vira o link
+    # COMUM do pedido. Sem este fallback a chave sumia do contexto e o texto do Admin
+    # entregava `{tracking_url}` literal na tela do cliente — link comum é pior que
+    # magic link e MUITO melhor que placeholder cru.
+    context["tracking_url"] = context.get("tracking_url") or storefront_links.order_tracking_url(
+        order.ref
+    )
 
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
