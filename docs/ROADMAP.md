@@ -52,6 +52,7 @@
 | ManyChat webhook ainda pulado | Fluxo ManyChat → session → confirmação não reimplementado. | Retomar junto com canais externos. |
 | Playwright E2E opcional | A suite existe, mas só roda quando Playwright está instalado. | Decidir se vira gate antes de piloto público. |
 | Migração futura para CSP nativo do Django 6 | `django-csp` funciona, mas Django 6 tem CSP nativo a avaliar. | Avaliar isoladamente, sem misturar com features. |
+| **Identificador em pt-br nas superfícies** (35 declarações, 20 arquivos) | Quebra a convenção "identificador em inglês" do `CLAUDE.md`. As 3 do `operator-kit` são as caras: sete apps importam o layer, então a convenção quebrada é **herdada**. Não cresce: catraca em `surfaces/operator-kit/tests/guardrails.identifiers.test.ts` reprova acima de 35. | [`plans/WP-IDENT-PT-BR.md`](plans/WP-IDENT-PT-BR.md) — **primeira janela de faxina pós-go-live**; começar pelo `operator-kit`, um PR por superfície, gate é `nuxi typecheck`. |
 | Media persistente na App Platform | Static resolvido por WhiteNoise; uploads não devem depender de filesystem efêmero. | Decidir Spaces/S3-compatible antes de piloto público com uploads reais. |
 
 ## Visão de produto (registro de intenção — dono: Pablo)

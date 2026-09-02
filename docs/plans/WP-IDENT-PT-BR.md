@@ -52,7 +52,21 @@ abertos e ~45 worktrees sujas, mexer em 20 arquivos hoje gera conflito em
 frentes que não têm nada a ver com isto — e às vésperas do go-live o custo do
 conflito é maior que o do nome errado.
 
-**Gatilho de execução:** fila de merge vazia. Não "quando der".
+**Gatilho de execução: a primeira janela de faxina pós-go-live** — um EVENTO do
+projeto, com dono, não uma coincidência.
+
+⚠️ A primeira versão deste WP dizia "quando a fila de merge estiver vazia". Era um
+gatilho ruim, e vale registrar por quê: fila vazia é **estado transitório**. É
+verdade num instante e falsa no minuto seguinte, quando alguém abre um PR — então
+ninguém pode "esperar por ela", e uma tarefa que espera por coincidência não
+acontece. Fila vazia é **pré-condição** de quem começa (para o rename não gerar
+conflito), não o momento que convoca o trabalho.
+
+Rastreado em `docs/ROADMAP.md` → *Dívida Técnica Viva*, que é onde a casa já
+registra trabalho adiado com dono e prazo (Buyman Fases 2–4 está lá, marcado
+pós-go-live). É esse índice que alguém lê, não este arquivo.
+
+Ao começar, confira a pré-condição: `gh pr list --state open --json number --jq 'length'`.
 
 ## Procedimento seguro
 
