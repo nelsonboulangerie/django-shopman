@@ -1,20 +1,21 @@
 # WP-PAGAMENTO — Link de pagamento (provedor, entrega, prazo) e TEF no balcão
 
-> Estado: **frentes 1, 2 e 3 em execução (02/09/2026)**, empilhadas sobre o PR #484
+> Estado: **frentes 1, 2 e 3 executadas (02/09/2026)**, empilhadas sobre o PR #484
 > (a branch `claude/checkout-pdv-refinements-491373`, que pôs o link de pé). A frente 4
-> segue pós-go-live. As sete perguntas do fim foram respondidas com as **recomendações
-> do próprio plano** — a ordem de executar veio sem ressalva, e nenhuma resposta
-> alternativa mudava o que dá para fazer antes do go-live. Se o Pablo discordar de
-> alguma (Stripe × Stone, 24 h, cancelar sozinho), o gesto de virar está anotado em cada
-> frente.
+> segue pós-go-live. As sete perguntas do fim foram respondidas com as recomendações do
+> próprio plano, e o Pablo reviu duas na mesma noite: **o prazo do link segue o ciclo
+> do atendimento, não 24 h** ("normalmente o pão é para hoje ou para o dia seguinte, e
+> só liberamos a encomenda remota contra o pagamento; isso precisa ser transparente e
+> elegante para o cliente") e **o reenvio manual entra** ("pode ser muito importante").
+> As duas viraram frentes próprias (3b e 5), abaixo.
 >
 > | # | Pergunta | Assumido |
 > |---|---|---|
 > | 1 | Provedor do link | **Stripe** (a Stone entra com o TEF, frente 4) |
 > | 2 | Captura do link | **`automatic`**, sempre — não é env, é a natureza da forma |
-> | 3 | Validade | **24 h**, gravadas no intent E mandadas ao Stripe (`SHOPMAN_PAYMENT_LINK_TTL_HOURS`) |
+> | 3 | Validade | **`min(agora + janela do canal, corte do atendimento)`** — janela `ChannelConfig.payment.link_timeout_minutes` (PDV: 120), corte = início do slot de retirada/entrega ou o fechamento da loja no dia do compromisso; régua do Stripe por cima (30 min – 24 h). UM relógio, escrito no intent e no Stripe |
 > | 4 | Link vencido | **cancela sozinho** pela máquina existente + check `expired_payment_link` na reconciliação |
-> | 5 | Reenvio manual pelo Gestor | **fora** — próximo passo |
+> | 5 | Reenvio manual | **entra** (frente 5): `notification.resend`, botão no PDV e no gestor de pedidos; a mesma URL enquanto vale — link vencido é pedido cancelado, o caminho é refazer a venda |
 > | 6 | Balcão COMPLETED com link pendente | **não** — `_counter_handoff` recusa venda de link |
 > | 7 | Cadeia do canal PDV | **WhatsApp → e-mail → SMS** |
 
