@@ -10,6 +10,7 @@ import logging
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import TYPE_CHECKING
+from urllib.parse import urlencode
 
 from django.contrib.auth import get_user_model, login
 from django.db import transaction
@@ -158,8 +159,27 @@ class AccessLinkService:
 
     @classmethod
     def _build_url(cls, token: str) -> str:
-        """Build the exchange URL for a token."""
-        # Try to get domain from Sites framework
+        """A URL de ENTRADA — a da loja, e não a rota interna do Django.
+
+        Havia dois construtores para a mesma coisa, e eles discordavam. Este
+        montava `{domínio}/auth/access/?t=` (a rota do Django); o da view montava
+        `{loja}/a?t=`. Como o domínio configurado é o da LOJA, o link saía com o
+        host certo e o caminho errado — 404 na cara de quem clicou, em 02/09.
+
+        E o estrago não era só do WhatsApp: este mesmo valor alimenta o magic
+        link por e-mail (`_send_access_link_email`) e o `send_access_link` dos
+        adapters. Todos apontavam para uma rota que a loja não serve.
+
+        A entrada tem de ser a da loja por desenho, não por acaso: é lá que o
+        cookie de sessão precisa nascer (ver o docstring de
+        `shopman/shop/services/access_urls.py`).
+        """
+        entry = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
+        if entry:
+            return f"{entry}/a?{urlencode({'t': token})}"
+
+        # Sem entrada configurada (instalação sem storefront), a rota do próprio
+        # Django ainda responde — é o caminho de quem não tem loja Nuxt na frente.
         try:
             from django.contrib.sites.models import Site
 
