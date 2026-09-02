@@ -77,6 +77,15 @@ def derive_context(context: dict | None) -> dict:
     reorder_url = str(ctx.get("reorder_url") or "").strip()
     ctx["reorder_suffix"] = f"\nPeca de novo: {reorder_url}" if reorder_url else ""
 
+    # Compras: do outro lado do pedido tem uma pessoa, e ela tem nome. Quando
+    # ninguém foi cadastrado, cumprimenta-se a casa pelo nome fantasia — nunca
+    # a razão social, que é nome de contrato e não de gente.
+    contact_name = str(ctx.get("contact_name") or "").strip()
+    supplier_name = str(ctx.get("supplier_name") or "").strip()
+    ctx["supplier_greeting"] = contact_name or supplier_name
+    supplier_contact = str(ctx.get("supplier_contact") or "").strip()
+    ctx["supplier_contact_note"] = f"\n\nFalar com: {supplier_contact}" if supplier_contact else ""
+
     total_q = ctx.get("total_q")
     if total_q and not ctx.get("total"):
         ctx["total"] = f"R$ {total_q / 100:,.2f}"

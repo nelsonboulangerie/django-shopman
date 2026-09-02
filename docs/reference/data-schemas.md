@@ -1132,6 +1132,7 @@ achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
 | `purchase.request_supplier_ref` | `str` ref | `_queue_supplier_purchase_request` | auditoria | Fornecedor que recebeu o pedido (`Supplier.ref`). |
 | `purchase.request_channel` | `str` | `_queue_supplier_purchase_request` | auditoria | Canal do despacho (`email`/`sms`/`whatsapp`/`console`). |
 | `purchase.request_recipient` | `str` | `_queue_supplier_purchase_request` | auditoria | Endereço/telefone que recebeu. |
+| `purchase.request_contact_name` | `str` | `_queue_supplier_purchase_request` | auditoria | Nome da pessoa (`SupplierContact`) a quem o pedido foi endereçado. Vazio = caiu na central da empresa, e a mensagem cumprimentou a casa, não uma pessoa. |
 | `purchase.request_dedupe_key` | `str` | `_queue_supplier_purchase_request` | `create_deduped` | Chave de idempotência da directive de notificação; inclui o `cost_q` para que mudança de preço gere novo pedido. |
 
 ---

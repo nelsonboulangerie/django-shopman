@@ -48,8 +48,9 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
     "announcement_published": "{body} {cta} {action_url}",
     "purchase_request": (
-        "Pedido {purchase_ref}: {material_name} {purchase_qty_display}. "
-        "Confirme disponibilidade e prazo. {shop_name}"
+        "Ola, {supplier_greeting}! Pedido {purchase_ref} da {shop_name}: "
+        "{material_name} {purchase_qty_display}. "
+        "Pode confirmar disponibilidade e prazo?"
     ),
     "purchase_receipt_rejected": "Devolução {receipt_ref}: {supplier_name}. Motivo: {reason}",
 }
