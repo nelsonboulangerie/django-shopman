@@ -819,7 +819,10 @@ class OperatorPinResetView(APIView):
         try:
             temp_pin = operator_service.reset_operator_pin(target, temp_pin=body.get("temp_pin"))
         except operator_service.PinChangeError as exc:
-            status = 404 if exc.code == "no_target" else 400
+            # `superuser_target` é recusa de AUTORIZAÇÃO, não pedido malformado: quem
+            # tem `manage_operators` não tem, por isso, poder sobre a conta que
+            # administra o sistema. 403 é o código honesto.
+            status = {"no_target": 404, "superuser_target": 403}.get(exc.code, 400)
             return Response({"detail": str(exc), "error": {"code": exc.code}}, status=status)
         except PinCredentialError as exc:
             return Response({"detail": str(exc), "error": {"code": "pin_policy"}}, status=400)

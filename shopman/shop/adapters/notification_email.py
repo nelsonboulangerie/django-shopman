@@ -240,6 +240,30 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 #: locmem guarda numa lista, o dummy descarta — todos "com sucesso".
 _BACKENDS_INERTES = ("console", "locmem", "dummy")
 
+#: Domínios de remetente que NÃO existem no DNS público. `.local` é TLD
+#: reservado para mDNS (RFC 6762) e `example.*` é reservado para documentação
+#: (RFC 2606) — nenhum dos dois tem SPF, DKIM ou DMARC possível, então o
+#: receptor rejeita ou joga em spam.
+_DOMINIOS_DE_REMETENTE_INERTES = (".local", "example.com", "example.org", "example.net")
+
+
+def _remetente_entrega(from_email: str) -> bool:
+    """O endereço de remetente é capaz de sair da casa?
+
+    Um backend SMTP vivo com remetente `noreply@shopman.local` é o mesmo
+    fail-open do backend de console, por outra porta: o relay ACEITA a mensagem,
+    `send_mail` não levanta, `send()` devolve ``True`` — e esse ``True``
+    interrompe a cadeia de fallback antes do SMS e do WhatsApp. O cliente não
+    recebe o link de pagamento, e o log diz "Email sent".
+    """
+    dominio = from_email.rpartition("@")[2].strip().lower().rstrip(">")
+    if not dominio:
+        return False
+    return not any(
+        dominio == mau or dominio.endswith(mau)
+        for mau in _DOMINIOS_DE_REMETENTE_INERTES
+    )
+
 
 def is_available(recipient: str | None = None, **config) -> bool:
     """Este canal ENTREGA de verdade?
@@ -261,5 +285,16 @@ def is_available(recipient: str | None = None, **config) -> bool:
         return False
     # Um backend SMTP sem host não fala com ninguém — falha na primeira conexão.
     if "smtp" in backend and not str(getattr(settings, "EMAIL_HOST", "") or "").strip():
+        return False
+    # Remetente que não existe no DNS = canal inerte, mesmo com SMTP de pé.
+    remetente = str(
+        config.get("from_email") or getattr(settings, "DEFAULT_FROM_EMAIL", "") or ""
+    ).strip()
+    if not _remetente_entrega(remetente):
+        logger.warning(
+            "E-mail indisponível: remetente %r não é entregável (domínio reservado ou ausente). "
+            "Defina DEFAULT_FROM_EMAIL com um domínio real; a cadeia segue para SMS/WhatsApp.",
+            remetente,
+        )
         return False
     return bool(backend)

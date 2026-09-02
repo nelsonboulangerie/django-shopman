@@ -816,6 +816,17 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# ⚠️ O default é DELIBERADAMENTE não-entregável, e não deve ser "consertado"
+# para um domínio real. `.local` é TLD reservado a mDNS (RFC 6762): sem DNS
+# público, sem SPF, sem DMARC. `notification_email.is_available()` reconhece
+# esse domínio e devolve False — então "ninguém declarou o remetente" degrada
+# para "canal indisponível", a cadeia de fallback segue para SMS/WhatsApp, e o
+# cliente recebe o link de pagamento por outro caminho.
+#
+# Trocar isto por um endereço de aparência real reabre o fail-open: o relay
+# aceitaria, `send()` devolveria True, a cadeia pararia no e-mail — e o cliente
+# não receberia nada, com o log dizendo "Email sent".
+# Em produção, declare `DEFAULT_FROM_EMAIL` no spec de deploy.
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
 # Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket

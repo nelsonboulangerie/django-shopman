@@ -753,11 +753,18 @@ class Command(BaseCommand):
                 "phone": "554333231997",
                 "email": "nelson@boulangerie.com.br",
                 "default_ddd": "43",
+                # Só o que é VERDADE. As três linhas de `example` que moravam
+                # aqui não eram inertes: `build_shop_projection` as entrega ao
+                # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
+                # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
+                # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
+                # o perfil oficial da Nelson. Link errado é pior que link
+                # nenhum: com a lista vazia o rodapé não desenha a seção
+                # (`v-if="socialLinks.length"`) e o `sameAs` some.
+                # O dono acrescenta os perfis reais no Admin (Loja → Redes
+                # sociais), que é um ArrayWidget feito para isso.
                 "social_links": [
                     "https://wa.me/554333231997",
-                    "https://instagram.com/example",
-                    "https://www.facebook.com/example",
-                    "http://www.example.com.br",
                 ],
                 "cancellation_presets": [
                     "Item indisponível no momento",
@@ -924,7 +931,9 @@ class Command(BaseCommand):
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser(
                 username="admin",
-                email="admin@example.com",
+                # O e-mail da casa, não `example.com`: é o endereço que um fluxo
+                # de recuperação de senha do Admin usaria.
+                email="nelson@boulangerie.com.br",
                 password=password,
             )
             self.stdout.write("  ✅ Superuser 'admin' criado")
