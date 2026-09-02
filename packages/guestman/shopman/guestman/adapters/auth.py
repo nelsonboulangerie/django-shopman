@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -10,6 +11,8 @@ if TYPE_CHECKING:
 from shopman.guestman.models import Customer
 from shopman.guestman.services import customer as customer_service
 from shopman.guestman.services import identity as identity_service
+
+logger = logging.getLogger(__name__)
 
 
 class CustomerResolver:
@@ -57,10 +60,55 @@ class CustomerResolver:
     def upsert_manychat_subscriber(self, subscriber_data: dict) -> AuthCustomerInfo | None:
         from shopman.guestman.contrib.manychat.service import ManychatService
 
-        customer, _created = ManychatService.sync_subscriber(subscriber_data)
+        customer, _created = ManychatService.sync_subscriber(
+            self._enriched_subscriber(subscriber_data)
+        )
         if not customer or not customer.is_active:
             return None
         return self._to_info(customer)
+
+    def manychat_last_input_text(self, subscriber_id: str) -> str:
+        """A última mensagem que o contato mandou, direto do ManyChat.
+
+        O access link precisa do `NB-XxXx` que a pessoa enviou. Pedir isso ao FLUXO
+        significa depender de qual variável o seletor do ManyChat oferece naquele
+        bloco — que muda por canal e por conta. Perguntar à API tira a adivinhação:
+        o corpo do request passa a carregar só o `subscriber_id`.
+        """
+        from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
+
+        info = ManychatSubscriberResolver.fetch_subscriber_info(subscriber_id)
+        text = (info or {}).get("last_input_text")
+        return text.strip() if isinstance(text, str) else ""
+
+    @staticmethod
+    def _enriched_subscriber(subscriber_data: dict) -> dict:
+        """Completa o telefone do assinante consultando o ManyChat, quando falta.
+
+        Contato de WhatsApp tem `whatsapp_phone` preenchido e `phone` NULO — medido
+        num contato real. Um fluxo que mande o campo errado (ou variável não
+        renderizada) chegava aqui sem telefone e a pessoa era recusada, mesmo com o
+        ManyChat sabendo o número o tempo todo. Agora a gente pergunta.
+        """
+        payload = dict(subscriber_data or {})
+        if str(payload.get("whatsapp_id") or "").strip():
+            return payload
+
+        subscriber_id = str(payload.get("id") or "").strip()
+        if not subscriber_id:
+            return payload
+
+        from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
+
+        info = ManychatSubscriberResolver.fetch_subscriber_info(subscriber_id)
+        phone = ManychatSubscriberResolver.phone_from_subscriber_info(info)
+        if phone:
+            logger.info("manychat: telefone do assinante %s veio do getInfo", subscriber_id)
+            payload["whatsapp_id"] = phone
+        for key in ("ig_id", "ig_username", "first_name", "last_name", "email"):
+            if not payload.get(key) and (info or {}).get(key):
+                payload[key] = info[key]
+        return payload
 
     def create_for_phone(self, phone: str) -> AuthCustomerInfo:
         c = customer_service.create(

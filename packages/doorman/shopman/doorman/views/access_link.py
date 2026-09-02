@@ -84,6 +84,25 @@ class AccessLinkCreateView(View):
         except json.JSONDecodeError:
             return JsonResponse({"error": "Invalid JSON"}, status=400)
 
+        unrendered = self._unrendered_variables(data)
+        if unrendered:
+            logger.warning(
+                "access_link.unrendered_manychat_variables fields=%s", ",".join(unrendered)
+            )
+            return JsonResponse(
+                {
+                    "error": (
+                        "O ManyChat mandou a variavel sem renderizar em: "
+                        + ", ".join(unrendered)
+                        + ". Insira a variavel pelo seletor do ManyChat em vez de digitar "
+                        "o nome entre chaves — nome digitado a mao nao e substituido."
+                    ),
+                    "error_code": "unrendered_variable",
+                    "fields": unrendered,
+                },
+                status=422,
+            )
+
         resolver = get_customer_resolver()
         customer, error_response = self._resolve_customer(data, resolver)
         if error_response:
@@ -110,6 +129,15 @@ class AccessLinkCreateView(View):
         # cart_session_key) viaja opaco.
         handoff_attempted = False
         access_code = self._access_code_from_payload(data)
+        if not access_code or not self._contains_code(access_code):
+            # O corpo não trouxe o código. Em vez de exigir que o fluxo saiba QUAL
+            # variável carrega o texto da mensagem — nome que muda por canal e por
+            # conta, e que já custou dias aqui —, perguntamos ao ManyChat. Assim o
+            # request precisa carregar só o `subscriber_id`, que ninguém erra.
+            from_api = self._last_input_text_from_manychat(data, resolver)
+            if from_api and self._contains_code(from_api):
+                logger.info("access_link.code_from_manychat_api")
+                access_code = from_api
         if access_code:
             from ..services.link_state import contains_code, pop_state
 
@@ -129,6 +157,18 @@ class AccessLinkCreateView(View):
                     # para o exchange avisar que a sacola não veio (omotenashi: nunca sumir com
                     # a sacola em silêncio). O login em si nunca falha por isso.
                     metadata["handoff_expired"] = True
+            elif not self._looks_like_plain_keyword(access_code):
+                # Veio ALGUMA COISA no lugar do código, e não é o "#menu" seco do login
+                # orgânico. Tratar isso como orgânico faz a sacola sumir CALADA — o cliente
+                # monta o pedido, entra, e o carrinho não está lá. Foi assim que um
+                # `Last Text Input` devolvendo URL de mídia do Instagram passou dias sem
+                # ninguém ver: identidade certa, login certo, sacola no chão.
+                logger.warning(
+                    "access_link.access_code_sem_codigo len=%d inicio=%r — a variável do "
+                    "ManyChat não está trazendo o texto da mensagem do WhatsApp",
+                    len(str(access_code)), str(access_code)[:40],
+                )
+                metadata["handoff_expired"] = True
 
         has_cart_context = bool(metadata.get("cart_session_key"))
 
@@ -166,6 +206,64 @@ class AccessLinkCreateView(View):
     def _build_access_url(token: str | None) -> str:
         base = (get_doorman_settings().ACCESS_LINK_ENTRY_URL or "").rstrip("/")
         return f"{base}/a?{urlencode({'t': token})}"
+
+    @staticmethod
+    def _contains_code(value: str) -> bool:
+        from ..services.link_state import contains_code
+
+        return bool(value) and contains_code(str(value))
+
+    @staticmethod
+    def _last_input_text_from_manychat(data: dict, resolver) -> str:
+        """A última mensagem do assinante, pedida ao ManyChat pelo `subscriber_id`.
+
+        Capacidade OPCIONAL do resolver (mesmo padrão de `upsert_manychat_subscriber`):
+        sem ela, nada muda. Nunca derruba o login — o access link vale mesmo sem a
+        sacola, e uma API lenta não pode virar porta fechada.
+        """
+        if data.get("source", AccessLink.Source.MANYCHAT) != AccessLink.Source.MANYCHAT:
+            return ""
+        subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
+        subscriber_id = (
+            (subscriber.get("id") if isinstance(subscriber, dict) else None)
+            or data.get("manychat_id")
+            or data.get("subscriber_id")
+        )
+        if not subscriber_id or not hasattr(resolver, "manychat_last_input_text"):
+            return ""
+        try:
+            return str(resolver.manychat_last_input_text(str(subscriber_id)) or "")
+        except Exception:
+            logger.warning(
+                "access_link.manychat_last_input_failed subscriber=%s", subscriber_id, exc_info=True
+            )
+            return ""
+
+    @staticmethod
+    def _looks_like_plain_keyword(value: str) -> bool:
+        """O ``#menu`` seco (com ou sem pontuação) é login orgânico legítimo, não defeito."""
+        return len(str(value).strip()) <= 16
+
+    @staticmethod
+    def _unrendered_variables(data: dict, _prefix: str = "") -> list[str]:
+        """Campos cujo valor ainda é ``{{alguma_coisa}}`` — variável não substituída.
+
+        No ManyChat, variável DIGITADA à mão no corpo do request não é substituída:
+        chega a string literal. Ela some no `normalize_phone` (vira vazio) e o pedido
+        morre com "faltou whatsapp_id", que manda procurar o campo errado — foi o que
+        escondeu, por dias, um `{{phone}}` num lugar onde o ManyChat nunca teve campo
+        `phone`. Dizer o nome do campo e o que fazer custa uma linha e devolve a tarde.
+        """
+        found: list[str] = []
+        for key, value in (data or {}).items():
+            path = f"{_prefix}{key}"
+            if isinstance(value, dict):
+                found.extend(AccessLinkCreateView._unrendered_variables(value, f"{path}."))
+            elif isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("{{") and stripped.endswith("}}"):
+                    found.append(path)
+        return found
 
     @staticmethod
     def _access_code_from_payload(data: dict) -> str:
@@ -238,13 +336,6 @@ class AccessLinkCreateView(View):
                 return None, JsonResponse({"error": "subscriber.id required"}, status=400)
             if not hasattr(resolver, "upsert_manychat_subscriber"):
                 return None, JsonResponse({"error": "ManyChat subscriber resolution unsupported"}, status=400)
-            error_response = cls._manychat_whatsapp_id_guard(
-                source=source,
-                channel=cls._source_channel(data),
-                payload=subscriber,
-            )
-            if error_response:
-                return None, error_response
             try:
                 customer = resolver.upsert_manychat_subscriber(subscriber)
             except ValueError as exc:
@@ -302,6 +393,20 @@ class AccessLinkCreateView(View):
         channel: str,
         payload: dict | None,
     ):
+        """Enriquecimento de um customer JÁ identificado (caminho ``customer_id``).
+
+        Aqui o telefone é o dado que está sendo GRAVADO, então exigi-lo é o certo:
+        enriquecer um cadastro com um whatsapp_id vazio só sujaria o registro.
+
+        ⚠️ Este guard NÃO vale para o caminho do ``subscriber``. Ali ele rejeitava
+        ANTES de saber de quem se tratava, e derrubava quem a casa já conhece: uma
+        pessoa que chegou pelo Instagram tem ``subscriber_id`` e não tem
+        ``whatsapp_id``, e levava 422 mesmo com cadastro e telefone no banco. Quem
+        decide lá é o ``sync_subscriber`` — que já tem a regra certa (cliente
+        conhecido com telefone passa; desconhecido sem telefone é recusado) — mais o
+        ``_guard_resolved_manychat_customer``, que mantém a invariante de que todo
+        access link do ManyChat cai num customer com telefone.
+        """
         if source != AccessLink.Source.MANYCHAT:
             return None
         if channel == "instagram":

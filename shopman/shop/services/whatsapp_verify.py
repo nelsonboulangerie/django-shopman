@@ -25,7 +25,17 @@ def _config() -> dict:
 
 
 def _wa_number() -> str:
-    """Número (só dígitos, E.164 sem '+') do WhatsApp da loja para o deep link."""
+    """Número (só dígitos, E.164 sem '+') do WhatsApp da loja para o deep link.
+
+    Sem ``SHOPMAN_WHATSAPP_VERIFY_NUMBER``, cai para ``Shop.phone`` — e isso é normal,
+    não degradação: a casa pode ter UM número só, e um fixo com WhatsApp Business é o
+    caso da Nelson. A env existe para quando o WhatsApp do bot é diferente do telefone
+    de contato publicado.
+
+    O que é defeito de verdade é não ter número NENHUM: o deep link sai sem
+    destinatário (``wa.me/?text=``), o WhatsApp abre o seletor de contatos, e o login
+    por WhatsApp fica inoperante — sem nada quebrar na tela. Esse caso grita.
+    """
     num = re.sub(r"\D", "", str(_config().get("number") or ""))
     if num:
         return num
@@ -34,9 +44,17 @@ def _wa_number() -> str:
 
         shop = Shop.objects.first()
         if shop and getattr(shop, "phone", ""):
-            return re.sub(r"\D", "", shop.phone)
+            fallback = re.sub(r"\D", "", shop.phone)
+            if fallback:
+                logger.info("wa_access.number_from_shop_phone")
+                return fallback
     except Exception:
         logger.debug("wa_verify: fallback para Shop.phone degradado", exc_info=True)
+    logger.error(
+        "wa_access.no_number — login por WhatsApp sem destinatário: nem "
+        "SHOPMAN_WHATSAPP_VERIFY_NUMBER nem Shop.phone. O botão abre o seletor de "
+        "contatos e a mensagem nunca chega ao ManyChat."
+    )
     return ""
 
 

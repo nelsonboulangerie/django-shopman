@@ -220,7 +220,7 @@ class TestManychatServiceSync:
 
     def test_partial_data_only_manychat_id(self, subscriber_partial):
         """Scenario 5: Minimal data (only ID) is rejected to avoid garbage customers."""
-        with pytest.raises(ValueError, match="requires a valid whatsapp_id"):
+        with pytest.raises(ValueError, match="identificar este assinante"):
             ManychatService.sync_subscriber(subscriber_partial)
 
         assert Customer.objects.count() == 0
@@ -255,7 +255,7 @@ class TestManychatServiceSync:
             "whatsapp_id": "not-a-phone",
         }
 
-        with pytest.raises(ValueError, match="requires a valid whatsapp_id"):
+        with pytest.raises(ValueError, match="identificar este assinante"):
             ManychatService.sync_subscriber(data)
 
         assert not CustomerIdentifier.objects.filter(
@@ -379,4 +379,4 @@ class TestManychatWebhook:
 
         assert response.status_code == 400
         data = json.loads(response.content)
-        assert "valid whatsapp_id" in data["error"]
+        assert "identificar este assinante" in data["error"]
