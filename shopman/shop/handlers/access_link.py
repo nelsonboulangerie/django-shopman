@@ -42,7 +42,11 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
     if metadata.get("deliver") != "manychat":
         return
 
-    recipient = getattr(customer, "phone", "") or ""
+    # O assinante que MANDOU a mensagem, gravado pela view. O telefone é só
+    # fallback: resolver por número faz o adapter procurar (e, não achando,
+    # CRIAR) um contato no ManyChat — e contato recém-criado não tem janela de
+    # 24h aberta, então o envio é recusado com o código 3011.
+    recipient = str(metadata.get("deliver_to") or "") or (getattr(customer, "phone", "") or "")
     if not url or not recipient:
         logger.error(
             "access_link.entrega_sem_destino url=%s tem_telefone=%s — o link foi criado "

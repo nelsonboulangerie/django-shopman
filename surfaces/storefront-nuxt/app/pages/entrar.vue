@@ -499,6 +499,7 @@ useSeoMeta({
             :manual-intro="waManualIntro"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Entrar pelo WhatsApp')"
             @regenerate="() => waStart(nextUrl)"
+            @used="() => waStart(nextUrl)"
           />
 
           <!-- Alternativa: usar OUTRO número = via SMS (o único caminho que mira um número
