@@ -2357,6 +2357,7 @@ def build_open_tab(session: Session) -> dict:
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
     fired_lines = set(data.get("fired_lines") or [])
+    fired_qty = {str(k): int(v) for k, v in (data.get("fired_qty") or {}).items()}
     kitchen_by_sku = _kitchen_status_by_sku(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
@@ -2368,6 +2369,12 @@ def build_open_tab(session: Session) -> dict:
             "qty": int(item.get("qty", 1)),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
+            # QUANTO da linha já está na cozinha. O booleano acima responde "já
+            # foi?", e não bastava: a linha do PDV é uma por SKU, então pedir
+            # mais um do mesmo item aumenta a QUANTIDADE de uma linha já
+            # enviada. Sem este número, a tela dizia "Enviado" com um item ainda
+            # por fazer.
+            "fired_qty": fired_qty.get(item.get("line_id", ""), 0),
             "kitchen_status": kitchen_by_sku.get(item["sku"], ""),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),

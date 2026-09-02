@@ -49,6 +49,7 @@ import {
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { pendingKitchenQty } from "~/presentation/kitchen";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
 import { toast } from "vue-sonner";
@@ -1716,9 +1717,15 @@ export function usePosSale(deps: PosSaleDeps) {
   async function freshLineIdsForSkus(skus: string[], firedState: "fired" | "unfired"): Promise<string[]> {
     await persistTab(true);
     await reloadCurrentTab();
+    // "unfired" aqui significa TEM O QUE ENVIAR, não "nunca foi": uma linha que
+    // foi à cozinha e depois cresceu (mais um do mesmo item) ainda tem uma
+    // parte por despachar, e ficava de fora do envio em lote por ser `fired`.
     const wantFired = firedState === "fired";
     return cart.items
-      .filter((item) => skus.includes(item.sku) && item.line_id && Boolean(item.fired) === wantFired)
+      .filter((item) => {
+        if (!skus.includes(item.sku) || !item.line_id) return false;
+        return wantFired ? Boolean(item.fired) : pendingKitchenQty(item) > 0;
+      })
       .map((item) => item.line_id as string);
   }
 

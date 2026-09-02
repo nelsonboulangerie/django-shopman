@@ -20,14 +20,33 @@ export function firedCount(items: POSCartItem[]): number {
   return items.filter((item) => item.fired).length;
 }
 
-/** Lines still to be sent (the delta a fire would dispatch). */
-export function unfiredCount(items: POSCartItem[]): number {
-  return items.filter((item) => !item.fired).length;
+/**
+ * Quanto DESTA LINHA ainda não foi para a cozinha.
+ *
+ * ⚠️ A pergunta não é "esta linha já foi?", é "quanto dela já foi". O PDV tem
+ * uma linha por SKU (invariante do servidor), então pedir mais um chá AUMENTA a
+ * quantidade de uma linha que talvez já esteja na cozinha. Enquanto isto era um
+ * booleano, o segundo chá ficava dentro de uma linha marcada "enviada": o botão
+ * dizia "Enviado", o fire deduplicava por `line_id`, e ninguém nunca fazia o
+ * segundo chá.
+ *
+ * `fired_qty` ausente (comanda antiga, payload de outra origem) cai no
+ * comportamento anterior — linha marcada como enviada conta como enviada
+ * inteira.
+ */
+export function pendingKitchenQty(item: POSCartItem): number {
+  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
+  return Math.max(0, item.qty - firedQty);
 }
 
-/** Every line is in the kitchen (and there is at least one line). */
+/** Unidades ainda a enviar — o que um fire despacharia agora. */
+export function unfiredCount(items: POSCartItem[]): number {
+  return items.reduce((total, item) => total + pendingKitchenQty(item), 0);
+}
+
+/** Nada mais a enviar (e há ao menos uma linha). */
 export function allLinesFired(items: POSCartItem[]): boolean {
-  return items.length > 0 && items.every((item) => item.fired);
+  return items.length > 0 && items.every((item) => pendingKitchenQty(item) === 0);
 }
 
 export type KitchenLineState = "unfired" | "fired" | "fired_cancellable";
@@ -61,6 +80,13 @@ export interface KitchenBadgeView {
 }
 
 export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
+  // Linha PELA METADE: parte na cozinha, parte ainda não. Um selo que diz só
+  // "Na cozinha" numa linha de 2 com 1 feito é a metade da verdade, e é a
+  // metade que faz o operador não pedir o resto.
+  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
+  if (firedQty > 0 && pendingKitchenQty(item) > 0) {
+    return { label: `${firedQty} de ${item.qty} na cozinha`, tone: "neutral" };
+  }
   switch (item.kitchen_status) {
     case "done":
       return { label: "Pronto", tone: "success" };

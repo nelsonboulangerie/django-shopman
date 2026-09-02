@@ -151,6 +151,136 @@ class POSFireTabTests(TestCase):
         self.assertEqual(third.fired_count, 0)
         self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 2)
 
+    def test_pedir_mais_do_mesmo_item_manda_a_diferenca_para_a_cozinha(self) -> None:
+        """O segundo chá. O defeito: o PDV tem UMA linha por SKU, então pedir
+        mais um do mesmo item aumenta a QUANTIDADE de uma linha já enviada — e o
+        ledger do KDS deduplica por `line_id`. O fire virava no-op e o segundo
+        item simplesmente nunca era feito, sem erro e sem aviso, com o cliente
+        esperando. A tela ainda dizia "Enviado".
+        """
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        session.refresh_from_db()
+        line_id = next(it["line_id"] for it in session.items if it["sku"] == "FIRE-A")
+        self.assertEqual(session.data["fired_qty"][line_id], 1)
+
+        # O operador toca no mesmo produto de novo: a linha vai a 2.
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload={
+                "items": [
+                    {"sku": "FIRE-A", "name": "Fire A", "qty": 2, "unit_price_q": 1000},
+                    {"sku": "FIRE-B", "name": "Fire B", "qty": 1, "unit_price_q": 1000},
+                ],
+                "customer_name": "Ana",
+                "payment_method": "cash",
+                "manual_discount": None,
+                "tab_ref": "2001",
+                "tab_session_key": session.session_key,
+            },
+            actor="pos:alice", operator_username="alice",
+        )
+        again = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+
+        # A cozinha recebe UM ticket novo, com UMA unidade — a diferença, nunca
+        # a linha inteira (que reimprimiria o chá já feito).
+        self.assertEqual(again.fired_count, 1)
+        rodada = KDSTicket.objects.filter(session_key=session.session_key).order_by("-id").first()
+        self.assertEqual([it["qty"] for it in rodada.items], [1])
+        self.assertTrue(rodada.items[0]["line_id"].startswith(f"{line_id}#r"))
+        session.refresh_from_db()
+        self.assertEqual(session.data["fired_qty"][line_id], 2)
+
+        # E agora não há mais o que enviar.
+        self.assertEqual(
+            pos_service.fire_pos_tab(
+                channel_ref="pdv", session_key=session.session_key,
+                actor="pos:alice", operator_username="alice",
+            ).fired_count,
+            0,
+        )
+
+    def test_comanda_disparada_antes_do_contador_nao_redispara(self) -> None:
+        """Transição: comanda com `fired_lines` e sem `fired_qty`.
+
+        Ler a ausência como "nada foi" faria o primeiro fire depois do deploy
+        calcular a linha inteira como diferença. O dedupe do KDS engoliria o
+        disparo (a raiz já está no ledger) e o ledger passaria a afirmar que
+        aquilo foi para a cozinha — mentira gravada, e o item nunca feito.
+        """
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        session.refresh_from_db()
+        # Simula a comanda que atravessou o deploy: o contador não existia.
+        data = dict(session.data or {})
+        data.pop("fired_qty", None)
+        session.data = data
+        session.save(update_fields=["data"])
+
+        de_novo = pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+
+        self.assertEqual(de_novo.fired_count, 0)
+        self.assertEqual(KDSTicket.objects.filter(session_key=session.session_key).count(), 1)
+        session.refresh_from_db()
+        self.assertEqual(session.data.get("fired_qty", {}), {})
+
+    def test_cancelar_o_envio_leva_as_rodadas_junto(self) -> None:
+        """Linha que foi em duas levas some da cozinha INTEIRA ao cancelar.
+
+        Cancelar só o `line_id` raiz deixaria a segunda leva viva: a tela
+        mostraria a linha livre para reenviar e a cozinha continuaria com metade
+        dela na mão.
+        """
+        session = self._open_tab_with_two_items()
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+        session.refresh_from_db()
+        line_id = next(it["line_id"] for it in session.items if it["sku"] == "FIRE-A")
+        pos_service.save_pos_tab(
+            channel_ref="pdv",
+            payload={
+                "items": [
+                    {"sku": "FIRE-A", "name": "Fire A", "qty": 2, "unit_price_q": 1000},
+                    {"sku": "FIRE-B", "name": "Fire B", "qty": 1, "unit_price_q": 1000},
+                ],
+                "customer_name": "Ana",
+                "payment_method": "cash",
+                "manual_discount": None,
+                "tab_ref": "2001",
+                "tab_session_key": session.session_key,
+            },
+            actor="pos:alice", operator_username="alice",
+        )
+        pos_service.fire_pos_tab(
+            channel_ref="pdv", session_key=session.session_key,
+            actor="pos:alice", operator_username="alice",
+        )
+
+        pos_service.cancel_fired_pos_tab_lines(
+            channel_ref="pdv", session_key=session.session_key,
+            line_ids=[line_id], actor="pos:alice", operator_username="alice",
+        )
+        session.refresh_from_db()
+        vivos = set()
+        for ticket in KDSTicket.objects.filter(session_key=session.session_key).exclude(status="cancelled"):
+            vivos.update(it["line_id"] for it in ticket.items)
+        self.assertFalse(any(str(lid).startswith(line_id) for lid in vivos))
+        self.assertNotIn(line_id, session.data.get("fired_qty", {}))
+
     def test_close_after_fire_does_not_refire_to_kitchen(self) -> None:
         """Regressão: comanda disparada e DEPOIS fechada não pode re-disparar.
 

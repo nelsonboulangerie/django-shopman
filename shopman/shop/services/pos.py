@@ -1382,17 +1382,49 @@ def fire_pos_tab(
             focus="cart",
         )
 
-    tickets = kds_service.fire_lines(session_key=session.session_key, lines=lines)
+    # ⚠️ A SEGUNDA RODADA DA MESMA LINHA. O PDV tem uma linha por SKU (ver
+    # `_replace_session_ops`), então pedir "mais um chá" AUMENTA a quantidade da
+    # linha que já foi para a cozinha — não cria linha nova. E o ledger do KDS
+    # deduplica por `line_id`: a linha já estava lá, o fire virava no-op, e o
+    # segundo chá simplesmente NUNCA era feito. Sem erro, sem aviso, com o
+    # cliente esperando.
+    #
+    # Agora cada fire manda só o que FALTA daquela linha, sob um id de rodada
+    # (`<line_id>#r<quanto_já_foi>`). O sufixo é único por construção — o total
+    # já enviado cresce a cada rodada —, então o dedupe por line_id continua
+    # valendo dentro de cada rodada, e a cozinha recebe um ticket novo com a
+    # diferença, que é exatamente o que ela precisa preparar.
+    fired_qty = {str(k): int(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()}
+    # ⚠️ Comanda ABERTA ANTES desta mudança tem `fired_lines` e não tem
+    # `fired_qty`. Ler a ausência como "nada foi" faria o primeiro fire depois do
+    # deploy calcular a linha INTEIRA como diferença — o dedupe do KDS engoliria
+    # o disparo (a raiz já está no ledger, nenhum ticket nasce) e o ledger
+    # passaria a afirmar que aquilo foi para a cozinha. Ausência vale o
+    # comportamento antigo: linha no ledger conta como enviada inteira.
+    ledger = kds_service.fired_line_ids(session.session_key)
+    to_fire = []
+    for line in lines:
+        done_q = fired_qty.get(line["line_id"], int(line["qty"]) if line["line_id"] in ledger else 0)
+        delta_q = int(line["qty"]) - done_q
+        if delta_q <= 0:
+            continue
+        round_id = line["line_id"] if done_q == 0 else f'{line["line_id"]}#r{done_q}'
+        to_fire.append({**line, "qty": delta_q, "line_id": round_id, "root_line_id": line["line_id"]})
+
+    tickets = kds_service.fire_lines(session_key=session.session_key, lines=to_fire)
+
+    for line in to_fire:
+        fired_qty[line["root_line_id"]] = fired_qty.get(line["root_line_id"], 0) + int(line["qty"])
 
     # Mirror the fired-line ledger onto the comanda for the cart UI. The kitchen
     # tickets stay authoritative; this marker is a cheap read for the projection
     # and is written directly (no re-pricing of the open comanda).
     fired = sorted(kds_service.fired_line_ids(session.session_key))
-    session.data = {**(session.data or {}), "fired_lines": fired}
+    session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
     session.emit_event("fired", actor=operator_username, payload={
-        "lines": [{"sku": ln["sku"], "name": ln["name"], "qty": ln["qty"]} for ln in lines],
+        "lines": [{"sku": ln["sku"], "name": ln["name"], "qty": ln["qty"]} for ln in to_fire],
         "count": len(tickets),
     })
 
@@ -1445,9 +1477,22 @@ def cancel_fired_pos_tab_lines(
         {"sku": i.get("sku"), "name": i.get("name"), "qty": _audit_qty(i)}
         for i in session.items if i.get("line_id") in target_set
     ]
-    result = kds_service.unfire_lines(session_key=session.session_key, line_ids=targets)
+    # As RODADAS da linha vêm junto. Uma linha que foi à cozinha em duas levas
+    # tem no ledger `X` e `X#r1`; cancelar só `X` deixaria a segunda leva viva —
+    # a tela mostraria a linha livre para reenviar e a cozinha continuaria com
+    # metade dela na mão.
+    rounds = {
+        lid for lid in kds_service.fired_line_ids(session.session_key)
+        if any(str(lid).startswith(f"{target}#r") for target in targets)
+    }
+    result = kds_service.unfire_lines(session_key=session.session_key, line_ids=[*targets, *sorted(rounds)])
     fired = sorted(kds_service.fired_line_ids(session.session_key))
-    session.data = {**(session.data or {}), "fired_lines": fired}
+    fired_qty = {
+        str(k): int(v)
+        for k, v in ((session.data or {}).get("fired_qty") or {}).items()
+        if str(k) not in target_set
+    }
+    session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
     session.emit_event("unfired", actor=operator_username, payload={

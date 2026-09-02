@@ -82,6 +82,7 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  pendingKitchenQty,
   fireBarView,
   firedCount,
   kitchenBadge,
@@ -891,6 +892,37 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     expect(allLinesFired(items)).toBe(false);
     expect(allLinesFired([cartItem({ sku: "A", fired: true })])).toBe(true);
     expect(allLinesFired([])).toBe(false);
+  });
+
+  it("a linha que CRESCEU depois de ir para a cozinha ainda tem o que enviar", () => {
+    // ⚠️ O defeito que isto tranca: o PDV tem uma linha por SKU, então pedir
+    // mais um chá aumenta a QUANTIDADE de uma linha já enviada. Enquanto a
+    // conta era por linha, o botão dizia "Enviado" e o segundo chá nunca era
+    // feito — o fire deduplicava por `line_id` e virava no-op.
+    const meio = cartItem({ sku: "CHA", qty: 2, fired: true, fired_qty: 1 });
+    expect(pendingKitchenQty(meio)).toBe(1);
+    expect(unfiredCount([meio])).toBe(1);
+    expect(allLinesFired([meio])).toBe(false);
+    expect(kitchenBadge(meio)).toEqual({ label: "1 de 2 na cozinha", tone: "neutral" });
+
+    const bar = fireBarView({ items: [meio], affordance: affordance(), hasOpenTab: true, busy: false });
+    expect(bar.disabled).toBe(false);
+    expect(bar.unfired).toBe(1);
+  });
+
+  it("a contagem é de UNIDADES, não de linhas", () => {
+    // "Enviar 1" com três croissants pendentes é o número errado: o que a
+    // cozinha vai fazer são três.
+    const items = [cartItem({ sku: "CROISSANT", qty: 3 })];
+    expect(unfiredCount(items)).toBe(3);
+  });
+
+  it("comanda sem `fired_qty` mantém o comportamento antigo", () => {
+    // Payload de outra origem (ou comanda aberta antes desta mudança): linha
+    // marcada como enviada conta como enviada inteira, nunca como pendente.
+    const antiga = cartItem({ sku: "CHA", qty: 2, fired: true });
+    expect(pendingKitchenQty(antiga)).toBe(0);
+    expect(allLinesFired([antiga])).toBe(true);
   });
 
   it("derives per-line kitchen state", () => {

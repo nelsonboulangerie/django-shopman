@@ -465,6 +465,10 @@ export interface POSCartItem {
   notes: string;
   line_id?: string;
   fired?: boolean;
+  /** QUANTAS unidades desta linha já estão na cozinha. A linha do PDV é uma por
+   *  SKU, então "mais um chá" aumenta a QUANTIDADE de uma linha talvez já
+   *  enviada — e o booleano acima não distingue "foi inteira" de "foi metade". */
+  fired_qty?: number;
   /** Em que pé a COZINHA está com este SKU nesta comanda: "" (nada disparado),
    *  "pending", "in_progress", "done", "cancelled". Vem do ticket do KDS e chega
    *  por push (canal SSE `tabs`) — o selo da linha segue o ticket em vez de
