@@ -2641,14 +2641,14 @@ class Command(BaseCommand):
         # Folhados e também é Doces. A PRIMEIRA aparição é a principal — é onde
         # ele mora; as outras são as outras. Sem estrutura paralela, sem conceito
         # novo: a ordem das listas já diz tudo (regra do dono, 02/09).
-        ja_tem_principal: set[str] = set()
+        has_primary: set[str] = set()
         for ref, skus in collection_skus.items():
             for i, sku in enumerate(skus):
                 CollectionItem.objects.create(
                     collection=collections_by_ref[ref], product=products[sku],
-                    sort_order=i, is_primary=sku not in ja_tem_principal,
+                    sort_order=i, is_primary=sku not in has_primary,
                 )
-                ja_tem_principal.add(sku)
+                has_primary.add(sku)
 
         # PRONTIDÃO DECLARADA — em que TURNO cada produto entra na encomenda.
         #

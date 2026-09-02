@@ -45,7 +45,7 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
     recipient = getattr(customer, "phone", "") or ""
     if not url or not recipient:
         logger.error(
-            "access_link.entrega_sem_destino url=%s tem_telefone=%s — o link foi criado "
+            "access_link.delivery_no_recipient url=%s tem_telefone=%s — o link foi criado "
             "e não há como entregá-lo",
             bool(url), bool(recipient),
         )
@@ -65,13 +65,13 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
     try:
         result = notify(event=EVENT, recipient=recipient, context=context, backend="manychat")
     except Exception:
-        logger.exception("access_link.entrega_falhou recipient=%s", recipient[:6])
+        logger.exception("access_link.delivery_failed recipient=%s", recipient[:6])
         return
 
     if result.success:
-        logger.info("access_link.entregue via manychat")
+        logger.info("access_link.delivered via manychat")
     else:
         logger.error(
-            "access_link.entrega_recusada erro=%s — o cliente NÃO recebeu o link",
+            "access_link.delivery_rejected erro=%s — o cliente NÃO recebeu o link",
             result.error,
         )

@@ -135,7 +135,7 @@ def test_elo_7_access_code_com_lixo_nao_passa_por_login_organico(joyce):
     assert r.status_code == 200, "o login NUNCA falha por causa da sacola"
     assert body["handoff_expired"] is True, "a sacola sumiu — e isso tem de ser dito"
     assert log.warning.called, "e o log tem de gritar, senão ninguém descobre a variável errada"
-    assert "access_code_sem_codigo" in log.warning.call_args[0][0]
+    assert "access_code_without_code" in log.warning.call_args[0][0]
 
 
 @pytest.mark.django_db
