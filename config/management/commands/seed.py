@@ -2603,16 +2603,21 @@ class Command(BaseCommand):
             # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
             # antes de serem salgado ou doce. E o Pain aux Raisins faz o caminho
             # inverso, para Macios: o nome é francês, mas o nosso é de brioche.
-            "folhados": ["CT", "PC", "CM", "CN", "FF", "BH"],
+            "folhados": ["CT", "PC", "CM", "CN", "FF", "BH", "CPQ"],
             "salgados": [
                 "CMO", "CMA", "CCOM",
                 "QQ", "JB", "PG", "TI",
                 # voltaram do Yooga (18/08)
-                "CPQ", "MFF", "HO", "MIHO", "DL", "JO",
+                "MFF", "HO", "MIHO", "DL", "JO",
+                # Também folhados (a massa é a categoria principal deles).
+                "FF", "CPQ",
             ],
             "doces": ["PPU", "MS", "MD", "PU", "TJ",
                 # voltaram do Yooga (18/08)
                 "MA",
+                # Recheados: doces de sabor, folhados/brioche de massa — e a massa
+                # é a categoria principal deles.
+                "PC", "CM", "CN", "BH", "PR",
             ],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
@@ -2632,12 +2637,18 @@ class Command(BaseCommand):
         # rotativo é história de VITRINE/fornada (disponibilidade em tempo real),
         # não taxonomia. Os itens foram absorvidos pelas categorias estáveis.
 
+        # Um produto pode aparecer em mais de uma lista: o croissant recheado é
+        # Folhados e também é Doces. A PRIMEIRA aparição é a principal — é onde
+        # ele mora; as outras são as outras. Sem estrutura paralela, sem conceito
+        # novo: a ordem das listas já diz tudo (regra do dono, 02/09).
+        ja_tem_principal: set[str] = set()
         for ref, skus in collection_skus.items():
             for i, sku in enumerate(skus):
                 CollectionItem.objects.create(
                     collection=collections_by_ref[ref], product=products[sku],
-                    sort_order=i, is_primary=True,
+                    sort_order=i, is_primary=sku not in ja_tem_principal,
                 )
+                ja_tem_principal.add(sku)
 
         # PRONTIDÃO DECLARADA — em que TURNO cada produto entra na encomenda.
         #
