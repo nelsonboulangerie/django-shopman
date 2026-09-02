@@ -32,14 +32,14 @@ describe("PosPaymentResult — o prazo do link", () => {
     const wrapper = await mountSuspended(PosPaymentResult, { props: { proof: linkProof(), status: "idle" } });
     const text = wrapper.text();
     expect(text).toContain("https://pay.example.com/abc");
-    expect(text).toContain("Vale até amanhã às 9h");
+    expect(text).toContain("Pague até amanhã às 9h para garantir o pedido");
   });
 
   it("sem prazo, não inventa um", async () => {
     const wrapper = await mountSuspended(PosPaymentResult, {
       props: { proof: linkProof({ expiresDisplay: "" }), status: "idle" },
     });
-    expect(wrapper.text()).not.toContain("Vale até");
+    expect(wrapper.text()).not.toContain("Pague até");
   });
 
   it("o Pix não ganha a linha — o relógio dele é o polling", async () => {
@@ -56,6 +56,6 @@ describe("PosPaymentResult — o prazo do link", () => {
         status: "polling",
       },
     });
-    expect(wrapper.text()).not.toContain("Vale até");
+    expect(wrapper.text()).not.toContain("Pague até");
   });
 });
