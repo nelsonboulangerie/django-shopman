@@ -6,6 +6,7 @@ from shopman.shop.admin.campaign import (  # noqa: F401
     CampaignAdmin,
 )
 from shopman.shop.admin.channel import ChannelAdmin  # noqa: F401
+from shopman.shop.admin.concierge import ConversationAdmin  # noqa: F401
 from shopman.shop.admin.delivery import (  # noqa: F401
     DeliveryDistanceBandAdmin,
     DeliveryZoneAdmin,

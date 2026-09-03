@@ -13,6 +13,7 @@
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
+| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
@@ -223,6 +224,25 @@ python manage.py process_directives --watch --interval 5 --limit 100 --max-attem
 ```
 
 **Veja também:** [ADR-003 — Directives sem Celery](../decisions/adr-003-directives-sem-celery.md)
+
+---
+
+### bootstrap_whatsapp_channel
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/bootstrap_whatsapp_channel.py`
+
+Põe de pé, no banco vivo, o canal de venda dos pedidos do [concierge de WhatsApp](../guides/whatsapp-concierge.md):
+`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, confirmação `auto_confirm` em 5 min)
+e o listing `whatsapp` espelhando o da web. Idempotente: cria o que falta, ativa o que está inativo,
+não sobrescreve config existente. É o equivalente ao que o `seed` faz num banco novo, para quem
+não pode reseedar (produção/alpha).
+
+```bash
+python manage.py bootstrap_whatsapp_channel
+```
+
+**Veja também:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md)
 
 ---
 
