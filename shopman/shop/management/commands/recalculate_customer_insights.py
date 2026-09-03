@@ -36,6 +36,9 @@ Uso::
     python manage.py recalculate_customer_insights --force    # ignora a janela
     python manage.py recalculate_customer_insights --dry-run  # só conta
     python manage.py recalculate_customer_insights --all      # base inteira (backfill manual)
+
+``--all`` não aceita ``--dry-run``: ``recalculate_all`` não tem ensaio, e deixar o
+par passar recalcularia tudo em silêncio para quem só queria contar.
 """
 
 from __future__ import annotations
@@ -43,7 +46,7 @@ from __future__ import annotations
 import logging
 from datetime import timedelta
 
-from django.core.management.base import BaseCommand
+from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
 logger = logging.getLogger(__name__)
@@ -100,6 +103,15 @@ class Command(BaseCommand):
             return
 
         if options["all"]:
+            # `--all --dry-run` pedia uma contagem e recalculava a base inteira em
+            # silêncio: `recalculate_all` não tem ensaio, e o curto-circuito do
+            # `--all` passava por cima do dry-run. Recusar alto é a resposta —
+            # errar para o lado de reescrever a base é o pior lado.
+            if options["dry_run"]:
+                raise CommandError(
+                    "--all não tem ensaio: `recalculate_all` recalcula a base inteira. "
+                    "Use --dry-run sozinho para contar os vencidos."
+                )
             total = InsightService.recalculate_all()
             logger.info("insights.sweep: recalculate_all processou %s clientes", total)
             self.stdout.write(self.style.SUCCESS(f"Base inteira: {total} cliente(s) recalculado(s)."))

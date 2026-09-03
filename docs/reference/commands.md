@@ -376,6 +376,9 @@ python manage.py recalculate_customer_insights --dry-run  # só conta os vencido
 python manage.py recalculate_customer_insights --all      # base inteira (backfill manual)
 ```
 
+`--all` **recusa** `--dry-run`: `recalculate_all` não tem ensaio, e deixar o par passar
+recalcularia a base inteira em silêncio para quem só queria contar.
+
 Roda no `maintenance_worker`, depois do `check_directive_health`. Está no ciclo de 5
 min mas **não trabalha a cada 5 min**: carrega a própria janela (03h–05h local) e o
 próprio teto de lote (200 por execução). Três decisões valem registro:

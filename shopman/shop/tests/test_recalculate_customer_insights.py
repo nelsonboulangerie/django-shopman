@@ -227,3 +227,18 @@ def test_quem_sumiu_vira_em_risco_sem_ninguem_mexer() -> None:
     assert insight.rfm_recency <= 2
     assert insight.rfm_segment == "at_risk"
     # E o Gestor passa a mostrar o selo âmbar sem que ninguém tenha tocado nela.
+
+
+def test_all_com_dry_run_recusa_alto_em_vez_de_reescrever_a_base() -> None:
+    """`recalculate_all` não tem ensaio. O par `--all --dry-run` pedia uma
+    contagem e recalculava tudo em silêncio — errar para o lado de reescrever a
+    base é o pior lado, então a recusa é explícita."""
+    from django.core.management.base import CommandError
+
+    with patch(
+        "shopman.guestman.contrib.insights.InsightService.recalculate_all"
+    ) as recalc_all:
+        with pytest.raises(CommandError, match="não tem ensaio"):
+            _rodar(all=True, dry_run=True)
+
+    recalc_all.assert_not_called()
