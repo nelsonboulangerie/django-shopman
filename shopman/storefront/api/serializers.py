@@ -92,6 +92,12 @@ class ProductListItemSerializer(serializers.Serializer):
     can_add_to_cart = serializers.BooleanField()
     available_qty = serializers.IntegerField(allow_null=True, required=False)
     is_featured = serializers.BooleanField()
+    # O card que sabe dizer "Indisponível" tem de saber oferecer a saída: sem estes
+    # dois, um cliente deste endpoint renderiza o selo e nunca o sino "Me avise"
+    # (`is_notifiable` chega `undefined` → falso). `is_paused` fica de fora de
+    # propósito — o motivo da indisponibilidade é do operador, nunca do cliente.
+    is_notifiable = serializers.BooleanField()
+    is_notify_subscribed = serializers.BooleanField()
 
 
 @extend_schema_serializer(component_name="StorefrontCollection")

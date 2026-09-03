@@ -288,6 +288,7 @@ def build_catalog(
         qty_in_cart_by_sku=qty_in_cart_by_sku,
         favorite_skus=_favorite_skus(request),
         subscribed_skus=_notify_subscribed_skus(request),
+        session_key=_session_key(request),
         active_food_prefs=_active_food_prefs(request),
     )
 
@@ -393,6 +394,7 @@ def build_catalog_items_for_skus(
             qty_in_cart_by_sku=qty_in_cart_by_sku,
             favorite_skus=_favorite_skus(request),
             subscribed_skus=_notify_subscribed_skus(request),
+            session_key=_session_key(request),
             active_food_prefs=_active_food_prefs(request),
         )
     )
@@ -411,12 +413,16 @@ def _build_items(
     qty_in_cart_by_sku: dict[str, int] | None = None,
     favorite_skus: set[str] | None = None,
     subscribed_skus: set[str] | None = None,
+    session_key: str = "",
     active_food_prefs=frozenset(),
 ) -> list[CatalogItemProjection]:
     qty_in_cart_by_sku = qty_in_cart_by_sku or {}
     favorite_skus = favorite_skus or set()
     subscribed_skus = subscribed_skus or set()
     skus = [p.sku for p in products]
+
+    # Batch: hold da PRÓPRIA sessão, para não contar contra quem o fez (uma query).
+    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key else {}
 
     # Batch: collections per SKU (used as `category` and for pricing context).
     sku_collections = catalog_context.collection_refs_by_sku(skus)
@@ -480,7 +486,15 @@ def _build_items(
 
         effective_q = price.final_unit_price_q
 
-        raw_avail = avail_map.get(p.sku)
+        # O hold da própria sessão não pode fazer o card mentir: quem colocou as
+        # duas últimas unidades na sacola tem de continuar vendo o stepper com "2",
+        # e não um selo "Indisponível" com sino para ser avisado do que já é dele.
+        # A PDP (`product_detail`) e a sacola (`cart._line_availability`) já
+        # corrigiam; o card do cardápio era a única superfície que não — e as três
+        # respondiam coisas diferentes sobre o mesmo SKU no mesmo segundo.
+        raw_avail = catalog_context.availability_with_own_hold(
+            avail_map.get(p.sku), int(own_holds.get(p.sku, 0))
+        )
         effective_is_sellable = p.is_sellable and listing_sellable.get(p.sku, True)
         availability = _resolve_availability(
             raw_avail,
@@ -788,6 +802,17 @@ def _active_food_prefs(request: HttpRequest | None):
     except Exception:
         logger.debug("catalog._active_food_prefs failed", exc_info=True)
         return frozenset()
+
+
+def _session_key(request: HttpRequest | None) -> str:
+    """Chave de sessão do carrinho, ou string vazia (navegação anônima)."""
+    if request is None:
+        return ""
+    try:
+        return request.session.get("cart_session_key") or ""
+    except Exception:
+        logger.debug("catalog_projection_session_key_failed", exc_info=True)
+        return ""
 
 
 def _cart_qty_by_sku(request: HttpRequest | None) -> dict[str, int]:
