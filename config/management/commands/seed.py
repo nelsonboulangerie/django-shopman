@@ -4041,7 +4041,7 @@ class Command(BaseCommand):
         # Os líquidos da casa (água, leite, azeite, creme de leite) também contam
         # em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a bancada os PESA, e é isso que a
         # R1 pergunta. A ponte da densidade saiu da produção diária e foi para o
-        # recebimento, como uma MaterialConversion "litro" declarada abaixo.
+        # recebimento, como uma MaterialConversion "litros" declarada abaixo.
         material_attrs = {
             "FARINHA-T65": ("kg", 180), "FARINHA-T55": ("kg", 180),
             "FARINHA-T45": ("kg", 180), "FARINHA-INT": ("kg", 120),
