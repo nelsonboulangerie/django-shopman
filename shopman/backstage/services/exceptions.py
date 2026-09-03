@@ -86,3 +86,27 @@ class AiAssistNotConfigured(BackstageServiceError):
 
 class AiAssistError(BackstageServiceError):
     """Raised when the AI assist call fails (provider error, empty completion)."""
+
+
+class RecipeBookServiceError(BackstageServiceError):
+    """Recusa do inventário de receitas, já traduzida para a porta HTTP.
+
+    Embrulha o ``RecipeBookError`` do Craftsman: ``detail`` é a mensagem ao
+    operador, ``field`` o campo ofensor (``items[2].sku``) e ``code`` o código
+    original, que a camada HTTP usa para escolher 400 (campo) ou 409 (estado,
+    ex.: ``VERSION_NOT_DRAFT``).
+    """
+
+    def __init__(self, detail: str, *, field: str = "", code: str = ""):
+        super().__init__(detail)
+        self.detail = detail
+        self.field = field
+        self.code = code
+
+
+class RecipeEntryNotFound(BackstageServiceError):
+    """Receita inexistente no inventário. A camada HTTP mapeia para 404."""
+
+
+class RecipeVersionNotFound(BackstageServiceError):
+    """Versão inexistente na receita. A camada HTTP mapeia para 404."""

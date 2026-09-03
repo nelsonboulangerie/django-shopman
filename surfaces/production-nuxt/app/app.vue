@@ -11,6 +11,7 @@ const OPERATOR_PERM = "backstage.operate_production";
 const { canIdentify, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
+const { canView: recipesAllowed } = useRecipeBookAccess();
 
 const route = useRoute();
 const isPublicBoard = computed(() => route.path.startsWith("/menuboard"));
@@ -28,6 +29,10 @@ async function goToBoard() {
 
 async function goToReports() {
   await navigateTo("/reports");
+}
+
+async function goToRecipes() {
+  await navigateTo("/recipes");
 }
 </script>
 
@@ -52,14 +57,22 @@ async function goToReports() {
           @lock="lock"
         >
           <!-- O que não é etapa do fluxo sai das abas e mora aqui: o Letreiro
-               (kiosk de TV, tela cheia) e os Relatórios (persona gestor, só
-               aparece com a perm fina — a sonda pergunta ao backend). -->
+               (kiosk de TV, tela cheia), as Receitas (o inventário da casa, só
+               com o acesso de leitura — a sonda pergunta ao backend) e os
+               Relatórios (persona gestor, só com a perm fina). -->
           <template #nav>
             <RailItem
               icon="tower-control"
               label="Letreiro"
               :active="route.path.startsWith('/board')"
               @activate="goToBoard"
+            />
+            <RailItem
+              v-if="recipesAllowed"
+              icon="book-open"
+              label="Receitas"
+              :active="route.path.startsWith('/recipes')"
+              @activate="goToRecipes"
             />
             <RailItem
               v-if="reportsAllowed"

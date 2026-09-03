@@ -621,7 +621,13 @@ def _resolve_recipient(order, backend_name: str = "") -> str | None:
     if backend_name == "manychat":
         if order.handle_type == "manychat" and order.handle_ref:
             return order.handle_ref
-        return customer_data.get("phone") or order.data.get("customer_phone")
+        # ⚠️ O telefone vai em E.164 COM o "+". O contrato do adapter (e do
+        # resolver do guestman) é: dígitos puros = `subscriber_id` do ManyChat;
+        # "+55…" = telefone a resolver. O PDV grava o telefone sem o "+"
+        # ("5543984049009"), e o adapter o tomava por subscriber_id — o ManyChat
+        # respondia "Subscriber does not exist", a cadeia caía para o e-mail, e
+        # um cliente COM WhatsApp cadastrado nunca recebia o link por lá.
+        return _manychat_phone(customer_data.get("phone") or order.data.get("customer_phone"))
 
     if backend_name == "email":
         email = customer_data.get("email")
@@ -632,6 +638,20 @@ def _resolve_recipient(order, backend_name: str = "") -> str | None:
         or order.data.get("customer_phone")
         or (order.handle_ref if order.handle_type in ("customer", "phone") else None)
     )
+
+
+def _manychat_phone(raw) -> str | None:
+    """Telefone em E.164 com "+" para o ManyChat, ou ``None`` quando não há."""
+    value = str(raw or "").strip()
+    if not value:
+        return None
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(value)
+    if normalized:
+        return normalized
+    digits = "".join(ch for ch in value if ch.isdigit())
+    return f"+{digits}" if digits else None
 
 
 def _canonical_template(template: str) -> str:

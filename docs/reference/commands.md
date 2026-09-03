@@ -12,6 +12,8 @@
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
+| [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
+| [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
@@ -191,6 +193,32 @@ python manage.py load_crafting_demo --clear
 ```
 
 ---
+
+### bootstrap_recipe_book
+
+Percorre as `Recipe` (fichas de execução) e cria, para cada uma que ainda não tem, uma
+`RecipeEntry` com a versão 1 **publicada** e `source.kind="ficha"` — o inventário das
+fichas que já existem (ADR-026). A fórmula nasce na forma **base**: partes com ficha
+própria (levain, pasta autolisada, yudane) são dissolvidas e sua farinha entra na soma.
+Ordem por dependência (partes antes das massas que as usam). **Não escreve na `Recipe`**.
+
+```bash
+python manage.py bootstrap_recipe_book             # cria o que falta
+python manage.py bootstrap_recipe_book --dry-run   # só conta
+```
+
+Idempotente: entry com o mesmo `ref` é pulada. O `seed` chama isto no fim das receitas.
+
+### export_recipe_book_schema
+
+Renderiza as dataclasses de `shopman/backstage/projections/recipe_book.py` em
+`surfaces/production-nuxt/app/generated/recipeBookContract.ts`. Mesmo padrão do
+`export_production_schema`; o teste de deriva `test_recipe_book_schema_export` falha
+quando o arquivo gerado está velho.
+
+```bash
+python manage.py export_recipe_book_schema
+```
 
 ### process_directives
 

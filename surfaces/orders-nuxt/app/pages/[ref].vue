@@ -179,7 +179,7 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
               <span v-if="order.delivery_instructions" class="block text-muted-foreground">{{ order.delivery_instructions }}</span>
             </span>
           </p>
-          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status || "—" }}</p>
+          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
           <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
                às 14h32" ou "falhou — reenvie". Lida da última Directive do
                aviso; sem aviso nenhum, a linha não existe. -->
