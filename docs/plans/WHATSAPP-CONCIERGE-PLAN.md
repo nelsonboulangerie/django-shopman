@@ -44,12 +44,12 @@ plano anterior não conseguia dar.
 | SDK da Anthropic | dependência | `anthropic` (já usado pelo assist de texto do Gestor) |
 
 O que é novo: `Conversation`/`ConversationMessage` (`shopman/shop/models/concierge.py`),
-o service (`shopman/shop/concierge/service.py`), o transporte
-(`shopman/shop/concierge/transport.py`), o agente e o prompt
-(`shopman/shop/concierge/agent.py`, `prompt.py`), as ferramentas
-(`shopman/shop/concierge/tools.py`), o webhook
-(`shopman/shop/webhooks/manychat.py`), o handler da diretiva
-`concierge.turn`, o Admin (`shopman/shop/admin/concierge.py`), o canal `whatsapp`
+o service (`shopman/storefront/concierge/service.py`), o transporte
+(`shopman/storefront/concierge/transport.py`), o agente e o prompt
+(`shopman/storefront/concierge/agent.py`, `prompt.py`), as ferramentas
+(`shopman/storefront/concierge/tools.py`), o webhook
+(`shopman/storefront/concierge/webhook.py`), o handler da diretiva
+`concierge.turn`, o Admin (`shopman/storefront/admin/concierge.py`), o canal `whatsapp`
 no seed e o comando `bootstrap_whatsapp_channel`.
 
 ## Arquitetura
@@ -195,7 +195,7 @@ Todas legíveis a partir de `Conversation`/`ConversationMessage` e dos pedidos c
 | Fase | Entrega | Gate |
 |---|---|---|
 | **F1** | Código no ar (models, service, agente, ferramentas, webhook, handler, Admin, copy, seed do canal). Canal `whatsapp` ativo no banco vivo (`bootstrap_whatsapp_channel`). `SHOPMAN_CONCIERGE_ENABLED=false`: o endpoint responde `disabled`, nada roda. | `make test`, `make admin`, deploy |
-| **F2** | Flow no ManyChat (guia, passo a passo) + `CONCIERGE_API_KEY` + `SHOPMAN_CONCIERGE_ENABLED=true`. Teste com o número do Pablo: pedido de retirada, Pix, handoff e volta pelo Admin. | o Pablo fecha um pedido e lê a transcrição |
+| **F2** | Flow no ManyChat (guia, passo a passo) + `SHOPMAN_CONCIERGE_ENABLED=true` em **piloto fechado** (tag `concierge-piloto` no flow + `CONCIERGE_ALLOWED_SUBSCRIBERS` na casa: ninguém fora da lista entra). Teste com o número do Pablo: pedido de retirada, Pix, handoff e volta pelo Admin. | o Pablo fecha um pedido e lê a transcrição |
 | **F3** | Piloto com amigos/alpha. Uma semana medindo as métricas acima; ajuste de prompt e copy pelo Admin, sem deploy. | limiares da ADR-026 |
 | **F4** | Áudio via transcrição; endereço estruturado na entrega (hoje só texto + coordenada, sem complemento/ponto de referência); resumo de conversas longas (o campo `summary` existe, a janela ainda é só por contagem); "o de sempre?" proativo na abertura para recorrentes. | pós-piloto |
 

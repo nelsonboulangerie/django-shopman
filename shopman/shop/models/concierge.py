@@ -11,7 +11,7 @@ ferramenta), na ordem. Guardar o formato de replay evita uma segunda
 tradução, e é a transcrição que o gestor lê no Admin.
 
 Nada de regra de pedido mora aqui. Preço, estoque, prazo e pagamento são das
-ferramentas em ``shopman/shop/concierge/tools.py``, que só chamam services.
+ferramentas em ``shopman/storefront/concierge/tools.py``, que só chamam services.
 """
 
 from __future__ import annotations
@@ -54,14 +54,14 @@ class Conversation(models.Model):
     turns_today = models.IntegerField("turnos no dia", default=0)
     consecutive_failures = models.IntegerField("falhas seguidas", default=0)
 
-    input_tokens = models.BigIntegerField(default=0)
-    output_tokens = models.BigIntegerField(default=0)
-    cache_read_tokens = models.BigIntegerField(default=0)
+    input_tokens = models.BigIntegerField("tokens de entrada", default=0)
+    output_tokens = models.BigIntegerField("tokens de saída", default=0)
+    cache_read_tokens = models.BigIntegerField("tokens lidos do cache", default=0)
 
     last_inbound_at = models.DateTimeField("última mensagem do cliente", null=True, blank=True)
     last_outbound_at = models.DateTimeField("última resposta", null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField("criada em", auto_now_add=True)
+    updated_at = models.DateTimeField("atualizada em", auto_now=True)
 
     class Meta:
         verbose_name = "conversa do concierge"
@@ -93,24 +93,26 @@ class ConversationMessage(models.Model):
         TOOL_RESULT = "tool_result", "Resultado de ferramenta"
         NOTE = "note", "Nota da casa"
 
-    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
+    conversation = models.ForeignKey(
+        Conversation, on_delete=models.CASCADE, related_name="messages", verbose_name="conversa"
+    )
     #: Papel no replay para o modelo. Resultado de ferramenta viaja como ``user``,
     #: chamada de ferramenta como ``assistant`` (formato da API).
-    role = models.CharField(max_length=16, choices=Role.choices)
-    kind = models.CharField(max_length=16, choices=Kind.choices)
+    role = models.CharField("papel", max_length=16, choices=Role.choices)
+    kind = models.CharField("tipo", max_length=16, choices=Kind.choices)
     #: Texto legível (a mensagem do cliente, a resposta enviada). Vazio em
     #: chamadas/resultados de ferramenta, que vivem em ``content``.
-    text = models.TextField(blank=True)
+    text = models.TextField("texto", blank=True)
     #: Blocos de conteúdo no formato da API (text / tool_use / tool_result).
-    content = models.JSONField(default=list, blank=True)
+    content = models.JSONField("conteúdo", default=list, blank=True)
     #: Id externo da mensagem inbound (ou hash), para não responder duas vezes ao
     #: mesmo evento quando o ManyChat reenvia.
-    external_id = models.CharField(max_length=80, blank=True)
+    external_id = models.CharField("id externo", max_length=80, blank=True)
     #: Para respostas: o envio pelo ManyChat foi aceito? ``None`` = não enviada
     #: (nota interna, ferramenta), ``False`` = recusa registrada no log.
-    delivered = models.BooleanField(null=True, blank=True)
-    usage = models.JSONField(default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    delivered = models.BooleanField("entregue", null=True, blank=True)
+    usage = models.JSONField("consumo", default=dict, blank=True)
+    created_at = models.DateTimeField("criada em", auto_now_add=True, db_index=True)
 
     class Meta:
         verbose_name = "mensagem do concierge"

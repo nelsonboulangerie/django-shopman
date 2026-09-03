@@ -65,6 +65,54 @@ def copy_message(key: str) -> str:
     return (entry.message or entry.title or "").strip()
 
 
+# ── Piloto fechado ────────────────────────────────────────────────────
+
+
+def allowed_subscribers() -> list[str]:
+    return [str(v).strip() for v in (config().get("allowed_subscribers") or []) if str(v).strip()]
+
+
+def is_allowed(subscriber_id: str, profile: dict | None = None) -> bool:
+    """Com a lista vazia, todos entram. Com lista, só quem está nela (id ou telefone).
+
+    Antes de qualquer escrita: quem não está na lista não ganha conversa, nem
+    mensagem guardada, nem cliente sincronizado. Para comparar por telefone, o
+    número vem do corpo (``whatsapp_phone``/``whatsapp_id``) ou do ``getInfo``,
+    que é só leitura.
+    """
+    allowed = allowed_subscribers()
+    if not allowed:
+        return True
+    subscriber_id = str(subscriber_id or "").strip()
+    if subscriber_id in allowed:
+        return True
+    phones = {v for v in allowed if v.startswith("+")}
+    if not phones:
+        return False
+    from shopman.utils.phone import normalize_phone
+
+    profile = profile or {}
+    candidates = [profile.get("whatsapp_phone"), profile.get("whatsapp_id"), profile.get("phone")]
+    if not any(candidates):
+        try:
+            from shopman.guestman.adapters.auth import CustomerResolver
+
+            candidates.append(CustomerResolver().manychat_phone(subscriber_id))
+        except Exception:
+            logger.debug("concierge.is_allowed: getInfo degraded", exc_info=True)
+    for raw in candidates:
+        if not raw:
+            continue
+        try:
+            phone = normalize_phone(str(raw))
+        except Exception:
+            logger.debug("concierge.is_allowed: telefone ilegível %r", raw)
+            phone = ""
+        if phone and phone in phones:
+            return True
+    return False
+
+
 # ── Intake ────────────────────────────────────────────────────────────
 
 
@@ -73,7 +121,7 @@ class IntakeResult:
     conversation_id: int | None
     message_id: int | None
     queued: bool
-    reason: str  # queued | duplicate | handoff | disabled | empty
+    reason: str  # queued | duplicate | handoff | disabled | not_allowed | empty
 
 
 def _external_id(subscriber_id: str, text: str, external_id: str) -> str:
@@ -101,6 +149,9 @@ def receive_inbound(
     if not is_enabled():
         logger.info("concierge.disabled subscriber=%s", subscriber_id)
         return IntakeResult(None, None, False, "disabled")
+    if not is_allowed(subscriber_id, profile or {}):
+        logger.info("concierge.not_allowed subscriber=%s", subscriber_id)
+        return IntakeResult(None, None, False, "not_allowed")
 
     conversation = _get_or_create_conversation(subscriber_id, profile or {})
 
@@ -245,7 +296,7 @@ def run_turn(conversation_id: int, *, client=None) -> TurnResult:
     if turns > int(config().get("max_turns_per_day") or 80):
         return _reply_with_copy(conversation, result, "CONCIERGE_TURN_LIMIT", fallback="turn_limit")
 
-    from shopman.shop.concierge import agent as agent_module
+    from shopman.storefront.concierge import agent as agent_module
 
     history = agent_module.history_for(conversation)
     try:
@@ -305,7 +356,7 @@ def _persist_outcome(conversation: Conversation, outcome) -> None:
 
 
 def _send_reply(conversation: Conversation, text: str) -> ConversationMessage:
-    from shopman.shop.concierge import transport
+    from shopman.storefront.concierge import transport
 
     delivered = transport.send_text(conversation.subscriber_id, text)
     message = ConversationMessage.objects.create(
@@ -345,7 +396,7 @@ def _reply_with_copy(conversation: Conversation, result: TurnResult, key: str, *
 
 def mark_handoff(conversation: Conversation, reason: str) -> None:
     """Passa a conversa para a equipe: estado, alerta e o campo no ManyChat."""
-    from shopman.shop.concierge import transport
+    from shopman.storefront.concierge import transport
 
     conversation.state = Conversation.State.HANDOFF
     conversation.handoff_reason = (reason or "")[:200]
@@ -364,7 +415,7 @@ def mark_handoff(conversation: Conversation, reason: str) -> None:
 
 def return_to_concierge(conversation: Conversation) -> None:
     """A equipe devolve a conversa ao bot (ação do Admin)."""
-    from shopman.shop.concierge import transport
+    from shopman.storefront.concierge import transport
 
     conversation.state = Conversation.State.ACTIVE
     conversation.handoff_reason = ""
@@ -381,8 +432,13 @@ def return_to_concierge(conversation: Conversation) -> None:
 
 def _alert(conversation: Conversation, alert_type: str, message: str) -> None:
     try:
-        from shopman.backstage.services.alerts import create_alert
+        from shopman.shop.services.observability import create_operator_alert
 
-        create_alert(type=alert_type, severity="warning", message=message)
+        create_operator_alert(
+            type=alert_type,
+            severity="warning",
+            message=message,
+            dedupe_key=f"concierge:{conversation.pk}:{alert_type}",
+        )
     except Exception:
         logger.warning("concierge.alert_failed type=%s conversation=%s", alert_type, conversation.pk, exc_info=True)

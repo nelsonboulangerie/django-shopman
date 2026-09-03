@@ -81,6 +81,17 @@ class CustomerResolver:
         text = (info or {}).get("last_input_text")
         return text.strip() if isinstance(text, str) else ""
 
+    def manychat_phone(self, subscriber_id: str) -> str:
+        """O telefone (E.164) do assinante, direto do ManyChat. Só leitura.
+
+        O concierge usa isto para o piloto fechado: comparar o número de quem
+        escreveu com a lista de convidados ANTES de criar qualquer registro.
+        """
+        from shopman.guestman.contrib.manychat.resolver import ManychatSubscriberResolver
+
+        info = ManychatSubscriberResolver.fetch_subscriber_info(subscriber_id)
+        return ManychatSubscriberResolver.phone_from_subscriber_info(info)
+
     @staticmethod
     def _enriched_subscriber(subscriber_data: dict) -> dict:
         """Completa o telefone do assinante consultando o ManyChat, quando falta.

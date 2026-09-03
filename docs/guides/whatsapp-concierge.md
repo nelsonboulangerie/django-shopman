@@ -157,6 +157,26 @@ o orçamento vigente; **Consumo**, os contadores.
 
 Nada se edita ali. A única ação é devolver ao concierge.
 
+## Piloto fechado: testar sem nenhum cliente entrar
+
+Duas trancas, uma em cada ponta. Qualquer uma sozinha já segura; as duas juntas
+deixam o teste pleno sem estranheza para quem escreve à casa.
+
+1. **No ManyChat, a tag.** Crie a tag `concierge-piloto` e aplique só nos contatos
+   de teste (o seu, o da equipe). No flow, ANTES do External Request, uma Condition
+   "tem a tag concierge-piloto"; quem não tem segue pelo caminho de sempre do
+   Default Reply, como se o concierge não existisse. Para abrir ao público depois,
+   basta remover a Condition, sem mexer em mais nada.
+2. **Na casa, a lista.** `CONCIERGE_ALLOWED_SUBSCRIBERS` com os ids do ManyChat
+   e/ou telefones em E.164 (com `+`), separados por vírgula. Quem não está na lista
+   recebe `{"status": "not_allowed"}` e a casa não cria conversa, mensagem nem
+   cliente: mesmo que a Condition do flow falhe, ninguém "testa sem querer". Lista
+   vazia = aberto a todos.
+
+Teste também o handoff nesse piloto: peça "quero falar com alguém", confira o
+alerta no Admin e o campo `concierge_handoff` = "1" no seu contato, e devolva a
+conversa pela ação do Admin.
+
 ## Kill switch
 
 `SHOPMAN_CONCIERGE_ENABLED=false` e redeploy: o webhook responde `202` com
@@ -187,6 +207,6 @@ concierge se considera desligado.
 make test-framework   # service, agente (cliente fake), ferramentas, webhook, admin
 ```
 
-Admin: `shopman/shop/tests/test_concierge_admin.py`. Receita de teste local com
+Admin: `shopman/storefront/tests/test_concierge_admin.py`. Receita de teste local com
 túnel: seção "Como testar localmente" do
 [plano](../plans/WHATSAPP-CONCIERGE-PLAN.md#como-testar-localmente).

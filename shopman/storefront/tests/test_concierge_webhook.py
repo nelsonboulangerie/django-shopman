@@ -9,8 +9,8 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from shopman.shop.concierge import service
-from shopman.shop.webhooks import manychat as webhook
+from shopman.storefront.concierge import webhook
+from shopman.storefront.concierge import service
 
 pytestmark = pytest.mark.django_db
 
@@ -28,7 +28,7 @@ def _clean_cache():
 
 @pytest.fixture
 def url():
-    return reverse("webhooks:manychat-conversation")
+    return reverse("concierge:manychat-conversation")
 
 
 @pytest.fixture

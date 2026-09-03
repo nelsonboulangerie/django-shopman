@@ -17,8 +17,8 @@ import logging
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
-from shopman.shop.concierge import service
 from shopman.shop.models import Conversation
+from shopman.storefront.concierge import service
 
 logger = logging.getLogger(__name__)
 

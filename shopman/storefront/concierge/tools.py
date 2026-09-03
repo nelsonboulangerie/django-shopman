@@ -204,6 +204,7 @@ def _catalog_item(ctx: ToolContext, sku: str):
 
         product = Product.objects.filter(sku__iexact=sku).first()
     except Exception:
+        logger.debug("concierge.catalog_item: busca por sku degradada", exc_info=True)
         product = None
     if product is None:
         return None
@@ -297,6 +298,7 @@ def _slot_label(fulfillment_type: str, slot_ref: str) -> str:
     try:
         return slot_label(slot_ref) or slot_ref
     except Exception:
+        logger.debug("concierge.slot_label degraded slot=%s", slot_ref, exc_info=True)
         return slot_ref
 
 

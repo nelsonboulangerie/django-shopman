@@ -24,7 +24,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django_ratelimit.core import is_ratelimited
 
-from shopman.shop.concierge import service
+from shopman.storefront.concierge import service
 
 logger = logging.getLogger(__name__)
 

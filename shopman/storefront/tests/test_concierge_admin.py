@@ -8,8 +8,8 @@ from django.contrib.auth.models import User
 from django.test import Client, RequestFactory
 from django.urls import reverse
 
-from shopman.shop.admin.concierge import ConversationAdmin, message_summary
 from shopman.shop.models import Conversation, ConversationMessage, Shop
+from shopman.storefront.admin.concierge import ConversationAdmin, message_summary
 
 
 @pytest.fixture
@@ -94,7 +94,7 @@ def test_message_summary_clips_tool_result(conversation):
 def test_return_to_concierge_action_flips_handoff(admin_client, conversation, monkeypatch):
     calls: list[tuple[str, bool]] = []
     monkeypatch.setattr(
-        "shopman.shop.concierge.transport.set_handoff",
+        "shopman.storefront.concierge.transport.set_handoff",
         lambda subscriber_id, on: calls.append((subscriber_id, on)) or True,
     )
     conversation.state = Conversation.State.HANDOFF

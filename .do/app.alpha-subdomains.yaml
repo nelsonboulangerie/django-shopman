@@ -374,6 +374,11 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# Piloto fechado: só estes assinantes/telefones recebem o concierge (vazio = todos).
+- key: CONCIERGE_ALLOWED_SUBSCRIBERS
+  scope: RUN_TIME
+  value: ''
+  type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET

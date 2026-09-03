@@ -137,7 +137,7 @@ def _fill(text: str, **values: str) -> str:
 
 def build_system(conversation: Conversation, *, is_first_turn: bool, cart_summary: str) -> list[dict]:
     """Os blocos de sistema: estável (cacheado) e dinâmico (por turno)."""
-    from shopman.shop.concierge.service import copy_message
+    from shopman.storefront.concierge.service import copy_message
 
     shop = _shop()
     shop_name = (getattr(shop, "name", "") or "").strip()

@@ -105,6 +105,29 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "CHECKOUT_WHEN_REQUIRED": (
         ("shopman/storefront/presentation/checkout.py", "Loja", "Checkout"),
     ),
+    "CONCIERGE_GREETING": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/prompt.py", "WhatsApp", "Concierge: abertura da conversa"),
+    ),
+    "CONCIERGE_HANDOFF_ACK": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
+    ),
+    "CONCIERGE_MEDIA_UNSUPPORTED": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
+    ),
+    "CONCIERGE_NO_PHONE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+    ),
+    "CONCIERGE_TURN_LIMIT": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
+    ),
+    "CONCIERGE_UNAVAILABLE": (
+        ("shopman/storefront/admin/concierge.py", "Admin", "Conversas do concierge"),
+        ("shopman/storefront/concierge/service.py", "WhatsApp", "Concierge: respostas da casa"),
+    ),
     "CONFIRMATION_SHARE_CTA": (
         ("shopman/storefront/api/tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

@@ -937,6 +937,13 @@ SHOPMAN_CONCIERGE = {
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
     # em milissegundos e a diretiva fica para o worker (nunca inline no request).
     "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
+    # Piloto fechado: só estes assinantes (ids do ManyChat) ou telefones (E.164, com
+    # "+") recebem o concierge; todo o resto volta `not_allowed` sem tocar em nada.
+    # Vazio = aberto a todos. É a segunda tranca, além da tag no flow do ManyChat:
+    # um gatilho errado lá não vira cliente "testando" sem querer aqui.
+    "allowed_subscribers": [
+        v.strip() for v in os.environ.get("CONCIERGE_ALLOWED_SUBSCRIBERS", "").split(",") if v.strip()
+    ],
 }
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────

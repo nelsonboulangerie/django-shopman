@@ -34,11 +34,11 @@ request.
 ## Decisão
 
 1. **O modelo decide a língua e a próxima ferramenta. Só isso.** O agente
-   (`shopman/shop/concierge/agent.py`) recebe a transcrição e escolhe o que
+   (`shopman/storefront/concierge/agent.py`) recebe a transcrição e escolhe o que
    dizer e qual ferramenta chamar. Ele **nunca** calcula preço, afirma estoque,
    promete prazo ou gera artefato de pagamento. Todo número, disponibilidade,
    janela e código Pix que aparece na conversa veio de um resultado de
-   ferramenta, e cada ferramenta (`shopman/shop/concierge/tools.py`) é código
+   ferramenta, e cada ferramenta (`shopman/storefront/concierge/tools.py`) é código
    determinístico que só chama services existentes do Shopman: catálogo por
    listing, sessão do Orderman no canal `whatsapp`, disponibilidade com hold,
    `checkout.process`, `payment.initiate`. O prompt diz isso ao modelo; o código

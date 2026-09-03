@@ -7,12 +7,12 @@ from types import SimpleNamespace
 import anthropic
 import httpx
 import pytest
+from shopman.orderman import registry
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 
-from shopman.shop.concierge import service
-from shopman.shop.handlers import ALL_HANDLERS
-from shopman.shop.handlers.concierge import MAX_LOOPS, ConciergeTurnHandler
 from shopman.shop.models import Conversation
+from shopman.storefront.concierge import service
+from shopman.storefront.concierge.handler import MAX_LOOPS, ConciergeTurnHandler
 
 
 def _directive(conversation_id=1):
@@ -21,7 +21,9 @@ def _directive(conversation_id=1):
 
 def test_handler_registrado_com_o_topico_do_service():
     assert ConciergeTurnHandler.topic == service.TURN_TOPIC == "concierge.turn"
-    assert "shopman.shop.handlers.concierge.ConciergeTurnHandler" in ALL_HANDLERS
+    # Registrado pelo `StorefrontConfig.ready()` (superfície de cliente), não pelo
+    # `shop.handlers`: o worker acha o handler pelo tópico no registro do Orderman.
+    assert isinstance(registry.get_directive_handler(service.TURN_TOPIC), ConciergeTurnHandler)
 
 
 def test_roda_de_novo_enquanto_ha_mensagem_pendente(monkeypatch):

@@ -24,10 +24,10 @@ from django.test import override_settings
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, Order, Session
 
-from shopman.shop.concierge import agent as agent_module
-from shopman.shop.concierge import service, tools
-from shopman.shop.concierge.tools import ToolContext
 from shopman.shop.models import Channel, Conversation, ConversationMessage, Shop
+from shopman.storefront.concierge import agent as agent_module
+from shopman.storefront.concierge import service, tools
+from shopman.storefront.concierge.tools import ToolContext
 
 pytestmark = pytest.mark.django_db
 
@@ -131,8 +131,8 @@ def ctx(conversation):
 def outbox(monkeypatch):
     sent: list[str] = []
     flags: list[bool] = []
-    monkeypatch.setattr("shopman.shop.concierge.transport.send_text", lambda sid, text: sent.append(text) or True)
-    monkeypatch.setattr("shopman.shop.concierge.transport.set_handoff", lambda sid, on: flags.append(on) or True)
+    monkeypatch.setattr("shopman.storefront.concierge.transport.send_text", lambda sid, text: sent.append(text) or True)
+    monkeypatch.setattr("shopman.storefront.concierge.transport.set_handoff", lambda sid, on: flags.append(on) or True)
     return SimpleNamespace(sent=sent, flags=flags)
 
 
@@ -434,6 +434,30 @@ def test_receive_inbound_queues_one_deferred_directive_per_conversation(surface,
     assert directive.payload == {"conversation_id": first.conversation_id}
     assert directive.status == "queued"  # não rodou inline no request
     assert ConversationMessage.objects.filter(kind="inbound").count() == 2
+
+
+@override_settings(
+    SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "allowed_subscribers": ["1962036908", "+5543984049009"]},
+    AI_ASSIST_API_KEY="sk-teste",
+)
+def test_pilot_allowlist_keeps_everyone_else_out_without_side_effects(surface, monkeypatch):
+    """Piloto fechado: quem não está na lista não ganha conversa, mensagem nem cliente."""
+    monkeypatch.setattr(service, "identify", lambda conversation, profile=None: conversation)
+    monkeypatch.setattr(
+        "shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.fetch_subscriber_info",
+        lambda subscriber_id: {"whatsapp_phone": "+5543984049009"} if subscriber_id == "777" else {},
+    )
+    by_id = service.receive_inbound(subscriber_id="1962036908", text="oi", external_id="a")
+    by_phone_in_body = service.receive_inbound(
+        subscriber_id="555", text="oi", external_id="b", profile={"whatsapp_phone": "+55 43 98404-9009"}
+    )
+    by_phone_from_getinfo = service.receive_inbound(subscriber_id="777", text="oi", external_id="c")
+    stranger = service.receive_inbound(subscriber_id="999", text="oi", external_id="d")
+
+    assert by_id.queued and by_phone_in_body.queued and by_phone_from_getinfo.queued
+    assert stranger.reason == "not_allowed" and stranger.conversation_id is None
+    assert not Conversation.objects.filter(subscriber_id="999").exists()
+    assert Conversation.objects.count() == 3
 
 
 @override_settings(SHOPMAN_CONCIERGE={**CONCIERGE_SETTINGS, "enabled": False}, AI_ASSIST_API_KEY="sk-teste")

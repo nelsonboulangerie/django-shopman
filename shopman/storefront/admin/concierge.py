@@ -223,7 +223,7 @@ class ConversationAdmin(ModelAdmin):
 
     @admin.action(description=_("Devolver ao concierge"), permissions=["view"])
     def return_to_concierge_selected(self, request, queryset):
-        from shopman.shop.concierge.service import return_to_concierge
+        from shopman.storefront.concierge.service import return_to_concierge
 
         done = 0
         skipped = 0
