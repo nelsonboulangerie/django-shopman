@@ -1166,7 +1166,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | ~~`batch_ref`/`batch_quantity`/`expiry_date`~~ | — | **REMOVIDAS (ADR-017 §5, 2026-08-13)** | — | O lote sai da LINHA de OUTPUT (`WorkOrderItem.batch_ref`), um `Batch` por linha — a fórmula no meta só admitia um lote por ordem. Validade vive em `Batch.expiry_date`; grupo com desconto congela `Batch.nonconformity_percent`/`_reason`. |
 | `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
 | `consolidated_work_order_refs` | `list[string]` | `set_planned_quantity` | auditoria | Refs de WOs planned duplicadas consolidadas nesta. |
-| `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`) | BOM congelada no plan — **gerida pelo Core, nunca editar**. |
+| `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`), B.I. | BOM congelada no plan — **gerida pelo Core, nunca editar**. Carrega `version_ref` (`"<ref>@<n>"`, copiado de `Recipe.meta["version_ref"]`, vazio para ficha nunca publicada pelo inventário) para o B.I. cruzar fornada × versão da receita (ADR-026). |
 | `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. O `seed` grava `FINISHED` direto no banco (sem passar pelo handler) e por isso **carimba os dois na mão** — sem o carimbo o sweeper reconsumia a história inteira. |
 | `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
 | `unfinished_alerted_at` | `string` (ISO 8601) | `shop/handlers/production_alerts.py` (`check_unfinished_started_orders`) | idem (guarda de idempotência) | Carimbo do alerta `production_unfinished`: WO `started` com `target_date` vencida alerta UMA vez por WO (o operador decide: concluir tarde ou void) — dedup por janela re-alertaria todo turno até alguém agir. |
@@ -1197,6 +1197,30 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `production_lifecycle` | `string` | admin de receitas (contrib Unfold, campo provider-driven) | `dispatch_production` (`shop/production_lifecycle.py`) | Variante de lifecycle do orquestrador: `standard` (default, chave omitida) \| `forecast` \| `subcontract` (ADR-007). O campo só existe porque `CRAFTSMAN["PRODUCTION_LIFECYCLE_PROVIDER"]` aponta para `production_lifecycle_choices()` do orquestrador — pacote standalone não o renderiza. |
 | `requires_batch_tracking` | `bool` | admin de receitas (contrib Unfold) | `backstage.services.production` | Cria lote ao concluir a produção. |
 | `shelf_life_days` | `int` | admin de receitas (contrib Unfold) | `backstage.services.production` | Validade do lote produzido, em dias. |
+| `output_unit` | `string` | seed (pré-preparo), `publish_version` (inventário) | `Recipe._validate_mass_balance` | Unidade declarada da saída quando o SKU não está no catálogo (ADR-024 §R4: declarar, nunca deduzir). Liga o invariante de massa da ficha. |
+| `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`ficha_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-026). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
+
+## RecipeItem.meta
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `allergens`, `diet` | ver `craftsman/dietary.py` | seed (`INGREDIENT_PROFILES`), admin (contrib Unfold) | `shop.services.dietary_from_recipe` | Perfil dietético do insumo (ADR-008). **Preservado** pelo `publish_version` quando o SKU continua na ficha. |
+| `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
+| `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
+| `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+
+## RecipeVersion.formula / .origin / .source
+
+Schema completo em [RECIPE-INVENTORY-PLAN §3](../plans/RECIPE-INVENTORY-PLAN.md). Resumo:
+`formula = {anchor: {kind: flour|total|ingredient, sku?}, basis_g, standardized, items: [{sku, name,
+role, quantity, unit, note?, grams_per_unit?, density_g_per_ml?}], parts: [{sku, entry_ref, kind:
+preferment|autolyse|soaker|old_dough, flour_pct?, quantity?, unit?, cap_pct?}]}`. `origin` é a
+receita **como foi informada** (imutável). `source = {kind: manual|note|photo|ficha|import,
+text?, language?, image_name?, model?, recipe_ref?, copied_from?}` — `recipe_ref` é a ficha de
+origem no bootstrap (`kind=ficha`); `copied_from` é o `"<ref>@<n>"` da versão copiada quando a
+API cria uma versão com `from_version` (`backstage.services.recipe_book`). Validação:
+`craftsman.models.recipe_book.validate_formula`.
 
 ## DayClosing.data
 
