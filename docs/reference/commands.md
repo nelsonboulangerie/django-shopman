@@ -34,6 +34,7 @@
 | [`import_backup`](#import_backup) | shop | Dados | Importa o cofre de volta — dry-run por padrão, `--apply` numa transação única |
 | [`export_backup_to_drive`](#export_backup_to_drive) | shop | Dados | Banco → Drive: sobe o cofre como Sheets nativo, atualizando no lugar |
 | [`import_backup_from_drive`](#import_backup_from_drive) | shop | Dados | Drive → banco: baixa a planilha curada e emenda no `import_backup` (dry-run por padrão) |
+| [`convert_material_base_unit`](#convert_material_base_unit) | shop | Dados | Troca a unidade-base de um insumo e reexpressa tudo que o conta (ensaio por padrão) |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
@@ -193,6 +194,39 @@ python manage.py load_crafting_demo --clear
 ```
 
 ---
+
+### convert_material_base_unit
+
+Troca a **unidade-base** de um insumo num banco já povoado e reexpressa, na mesma
+transação, tudo que conta aquele insumo: ledger (`Move`, `Quant`), reservas, alertas de
+mínimo, fichas técnicas, o BOM congelado das fornadas **abertas**, o mínimo do Compras e o
+custo por fornecedor. Fecha deixando a unidade antiga cadastrada como `MaterialConversion`,
+para a nota fiscal seguinte não travar (ADR-024 R4).
+
+**Ensaio por padrão** (como o `refresh_seed_dates`): sem `--apply` ele só relata.
+
+```bash
+python manage.py convert_material_base_unit LEITE AZEITE --to kg              # ensaio
+python manage.py convert_material_base_unit LEITE AZEITE --to kg --apply      # executa
+python manage.py convert_material_base_unit AGUA-FILTRADA --to kg --apply --no-bridge
+```
+
+O fator sai da física (`shopman.utils.units`) quando a dimensão é a mesma, e da
+`density_g_per_ml` declarada no cadastro quando atravessa volume↔massa. **Sem densidade
+declarada ele recusa**, nomeando o que cadastrar; contagem não atravessa nunca. É genérico:
+não conhece SKU da Nelson nem tem tabela de densidade embutida.
+
+`--no-bridge` converte sem deixar a conversão para trás. É para insumo que **não entra por
+nota** (água de torneira): a ponte só viraria anotação sem informação na tela de separação.
+
+O que ele deliberadamente **não** reescreve, e anuncia a cada rodada: item de fornada já
+concluída, a prova de conversão no `Move.metadata`, a `RecipeVersion` publicada do livro de
+receitas, o snapshot do `DayClosing` e os `params` de regra. História não se reescreve.
+
+⚠️ **Depois de rodar, re-exporte o cofre** (`export_backup`): uma planilha anterior
+reimportada escreve a unidade antiga por cima, e como ela reverte cadastro e ficha juntos,
+os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
+[WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md).
 
 ### bootstrap_recipe_book
 
