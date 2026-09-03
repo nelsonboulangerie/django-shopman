@@ -538,7 +538,19 @@ class DiscountModifier:
                 coupon_code, now, channel_ref=channel_ref
             )
 
-        if not promotions and not coupon_promo:
+        # ⚠️ O DESCONTO DO OPERADOR NÃO DEPENDE DE HAVER PROMOÇÃO NO AR. Esta
+        # saída antecipada existe para limpar pricing velho quando não há nada
+        # automático a aplicar — e ela estava passando por cima do desconto
+        # manual de linha, que é avaliado no laço LOGO ABAIXO. Numa padaria sem
+        # campanha ativa (o caso comum), o operador dava 50% de cortesia num
+        # item, a linha guardava o desconto em `meta.manual_discount`, e o
+        # pedido cobrava o preço cheio. Cortesia prometida ao cliente, caixa
+        # cobrando integral, e nenhum erro em lugar nenhum.
+        manual_lines = any(
+            ((item.get("meta") or {}).get("manual_discount") or {}).get("value")
+            for item in (session.items or [])
+        )
+        if not promotions and not coupon_promo and not manual_lines:
             if not session.pricing:
                 session.pricing = {}
             session.pricing.pop("coupon", None)

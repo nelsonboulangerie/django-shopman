@@ -253,8 +253,9 @@ class POSFireTabTests(TestCase):
 
         from shopman.shop.models import Promotion
 
-        # O motor de desconto só roda quando há promoção/cupom ativos, e é ele
-        # quem escreve o registro que este teste lê.
+        # A promoção existe para a linha IRMÃ ganhar um desconto automático — é
+        # o que prova que os dois caminhos convivem sem se confundir. O manual
+        # sozinho também vale (ver `TestManualDiscountWithoutPromotions`).
         Promotion.objects.create(
             ref="semana", name="Semana do Pão", is_active=True, type="percent", value=5,
             valid_from=_tz.now() - _tz.timedelta(days=1),

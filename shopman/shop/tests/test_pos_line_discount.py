@@ -238,3 +238,56 @@ class TestTabPayloadRestore:
 
     def test_manual_originals_map_empty_without_pricing(self) -> None:
         assert pos_projection._manual_discount_originals(SimpleNamespace(pricing=None)) == {}
+
+
+@pytest.mark.django_db
+class TestManualDiscountWithoutPromotions:
+    """A cortesia do operador não pode depender de haver campanha no ar.
+
+    ⚠️ O defeito, medido com número: numa padaria sem promoção ativa — o caso
+    comum —, 50% de cortesia num item de R$ 12,00 fechava a venda cobrando
+    R$ 12,00. O `DiscountModifier` saía cedo quando não havia promoção nem
+    cupom, e o laço que avalia o desconto manual vinha DEPOIS dessa saída. O
+    desconto ficava gravado na linha (`meta.manual_discount`), a tela o exibia,
+    e o caixa cobrava integral. Cortesia prometida ao cliente e não dada.
+    """
+
+    class _Session:
+        """O mínimo de sessão que o modifier toca: itens, data, pricing e a
+        escrita de volta."""
+
+        def __init__(self, item):
+            self.items = [item]
+            self.data: dict = {}
+            self.pricing: dict = {}
+
+        def update_items(self, items):
+            self.items = items
+
+    def _session(self, *, discount):
+        item = {"sku": "PAO", "qty": 1, "unit_price_q": 1200, "line_total_q": 1200, "meta": {"_list_q": 1200}}
+        if discount:
+            item["meta"]["manual_discount"] = discount
+        return self._Session(item)
+
+    def _apply(self, session):
+        DiscountModifier().apply(channel=SimpleNamespace(ref="pdv"), session=session, ctx={})
+        return session.items[0]
+
+    def test_a_cortesia_vale_sem_promocao_nenhuma_no_ar(self) -> None:
+        linha = self._apply(self._session(discount={"value": 50, "reason": "cortesia", "type": "percent"}))
+        assert linha["unit_price_q"] == 600
+        assert linha["line_total_q"] == 600
+
+    def test_em_reais_tambem(self) -> None:
+        linha = self._apply(self._session(discount={"value": 2.0, "reason": "qualidade", "type": "fixed"}))
+        assert linha["unit_price_q"] == 1000
+
+    def test_sem_desconto_nenhum_a_saida_antecipada_continua_limpando(self) -> None:
+        # A saída existe para não deixar pricing velho de pé; ela só não pode
+        # atropelar o manual.
+        session = self._session(discount=None)
+        session.pricing = {"discount": {"items": [{"sku": "VELHO"}]}, "coupon": {"code": "X"}}
+        self._apply(session)
+        assert "discount" not in session.pricing
+        assert "coupon" not in session.pricing
