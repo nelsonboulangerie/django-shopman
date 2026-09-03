@@ -9,8 +9,7 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from django.urls import reverse
 
-from shopman.storefront.concierge import webhook
-from shopman.storefront.concierge import service
+from shopman.storefront.concierge import service, webhook
 
 pytestmark = pytest.mark.django_db
 
