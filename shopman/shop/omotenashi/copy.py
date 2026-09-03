@@ -1082,7 +1082,7 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     # ── Concierge de WhatsApp ──────────────────────────────────────────
     # O que o concierge diz SEM o modelo: abertura sugerida ao prompt e as saídas
     # fixas de política (modelo fora, mídia, equipe, teto diário, contato sem
-    # telefone). Tudo aqui é lido por ``shopman/shop/concierge/service.py`` via
+    # telefone). Tudo aqui é lido por ``shopman/storefront/concierge/service.py`` via
     # ``copy_message(key)``; a conversa em si é do modelo, com o dinheiro nas
     # ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
     # ``{shop_name}`` interpolado pelo prompt do agente (o nome da casa é dado do

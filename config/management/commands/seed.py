@@ -5096,7 +5096,7 @@ class Command(BaseCommand):
                 "editing": {"policy": "locked"},
             }),
             # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
-            # `shopman/shop/concierge/`). Canal ATIVO porque existe implementação;
+            # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;
             # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
             # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
             ("whatsapp", "WhatsApp", 4, True, _whatsapp_config),
