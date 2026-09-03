@@ -177,6 +177,27 @@ def test_completed_sale_without_the_transition_still_refuses_cancel():
         pos_service.cancel_recent_order(order_ref=order.ref, actor="op", max_age_minutes=10)
 
 
+def test_link_sale_keeps_the_esteira():
+    """O LINK é o pedido remoto anotado no balcão: o cliente não está na loja,
+    paga depois pelo celular e vem buscar. Nunca é entrega de balcão — sem esta
+    regra a venda fechava COMPLETED sem um centavo capturado, e o vencimento do
+    link (``payment.timeout`` só alcança NEW/ACCEPTED) passava sem efeito."""
+    order = _counter_order(
+        ref="PDV-TEST-10",
+        data_extra={"payment": {"method": "link", "collection": "terminal", "amount_q": 1000}},
+    )
+    config = ChannelConfig.for_channel("pdv")
+
+    lifecycle._on_accepted(order, config)
+
+    order.refresh_from_db()
+    assert order.status == Order.Status.ACCEPTED
+    # E o aviso da loja online não sai daqui: o do balcão nasce junto com a URL.
+    assert not Directive.objects.filter(
+        topic="notification.send", payload__order_ref=order.ref, payload__template="payment_requested"
+    ).exists()
+
+
 def test_customer_holds_the_goods_predicate():
     from shopman.shop.services.kds import _customer_holds_the_goods
 
@@ -188,3 +209,9 @@ def test_customer_holds_the_goods_predicate():
 
     web = _counter_order(ref="WEB-TEST-7", data_extra={"origin_channel": "web"})
     assert _customer_holds_the_goods(web) is False
+
+    link = _counter_order(
+        ref="PDV-TEST-11",
+        data_extra={"payment": {"method": "link", "collection": "terminal", "amount_q": 1000}},
+    )
+    assert _customer_holds_the_goods(link) is False

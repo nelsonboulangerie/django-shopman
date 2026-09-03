@@ -17,6 +17,7 @@ defeito com data marcada. Chave nova de conveniência entra AQUI.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -79,7 +80,26 @@ def derive_context(context: dict | None) -> dict:
 
     total_q = ctx.get("total_q")
     if total_q and not ctx.get("total"):
-        ctx["total"] = f"R$ {total_q / 100:,.2f}"
+        from shopman.utils.monetary import format_money
+
+        ctx["total"] = f"R$ {format_money(int(total_q))}"
+
+    # Prazo do pagamento ("hoje às 18h", "amanhã às 9h"), lido do `expires_at` que
+    # `payment.initiate()` grava em `order.data["payment"]`. Duas chaves de
+    # propósito: `payment_deadline` é o valor cru, para o campo personalizado do
+    # ManyChat; `payment_deadline_note` é a frase inteira, auto-suprimível — sem
+    # prazo gravado, o aviso não pode sair com "pagar até ." pendurado.
+    # A frase diz a CONSEQUÊNCIA, não só a hora: a encomenda remota só é
+    # liberada contra o pagamento, e o cliente precisa saber que a reserva
+    # dele tem prazo — "o link vale até" soava como detalhe técnico do link.
+    if not ctx.get("payment_deadline"):
+        ctx["payment_deadline"] = _payment_deadline(ctx.get("payment"))
+    deadline = ctx["payment_deadline"]
+    ctx["payment_deadline_note"] = (
+        f"\nPara garantir o pedido, é só pagar até {deadline}. Depois disso a reserva é liberada."
+        if deadline
+        else ""
+    )
 
     # Sufixos que `services/notification._build_context` preenche no fluxo de pedido;
     # o default vazio cobre a chamada DIRETA ao adapter (produção, compras, campanha),
@@ -90,6 +110,24 @@ def derive_context(context: dict | None) -> dict:
     ctx.setdefault("reason_note", f"\n\nMotivo: {reason}" if reason else "")
 
     return ctx
+
+
+def _payment_deadline(payment) -> str:
+    """O `expires_at` do pagamento em copy de cliente, ou vazio quando não há prazo."""
+    if not isinstance(payment, dict):
+        return ""
+    raw = str(payment.get("expires_at") or "").strip()
+    if not raw:
+        return ""
+    try:
+        expires_at = datetime.fromisoformat(raw)
+    except ValueError:
+        logger.debug("notification_templates: expires_at ilegível: %r", raw)
+        return ""
+
+    from shopman.shop.services.business_calendar import format_deadline
+
+    return format_deadline(expires_at)
 
 
 def render_message(event: str, context: dict, fallback_templates: dict[str, str]) -> str:

@@ -23,6 +23,22 @@ import pytest
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 
+
+@pytest.fixture(autouse=True)
+def _leave_the_schema_at_the_head():
+    """Este teste anda o banco para TRÁS e, sem isto, o deixava lá.
+
+    O pytest-django roda os testes transacionais por último e no mesmo banco:
+    quem vier depois deste no worker herda um schema velho (``cashman`` sem
+    ``Shift.opened_by``, ``backstage`` sem as tabelas novas) e quebra com
+    ``no such column`` — longe daqui, em teste que nada tem a ver com migração.
+    Devolver o banco à folha é responsabilidade de quem o moveu.
+    """
+    yield
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())
+
+
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # O estado "antes" precisa enxergar cashman/orderman/auth também: a 0029 não

@@ -238,6 +238,17 @@ class AccessLinkCreateView(View):
         return str(value).strip() if value else ""
 
     @staticmethod
+    def _subscriber_id_from_payload(data: dict) -> str:
+        """O `subscriber_id` do ManyChat, venha ele aninhado ou no topo."""
+        subscriber = data.get("subscriber") or data.get("manychat_subscriber") or {}
+        value = (
+            (subscriber.get("id") if isinstance(subscriber, dict) else None)
+            or data.get("manychat_id")
+            or data.get("subscriber_id")
+        )
+        return str(value).strip() if value else ""
+
+    @staticmethod
     def _contains_code(value: str) -> bool:
         from ..services.link_state import contains_code
 

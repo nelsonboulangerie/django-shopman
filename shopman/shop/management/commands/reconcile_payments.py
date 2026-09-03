@@ -83,7 +83,7 @@ class Command(BaseCommand):
 
         cutoff = timezone.now() - since_delta
 
-        gateway_updated = self._ask_the_gateway_about_open_card_orders(dry_run=dry_run)
+        gateway_updated = self._ask_the_gateway_about_open_hosted_checkouts(dry_run=dry_run)
 
         pending = Order.objects.filter(
             status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
@@ -219,7 +219,7 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS(summary))
 
-    def _ask_the_gateway_about_open_card_orders(self, *, dry_run: bool) -> int:
+    def _ask_the_gateway_about_open_hosted_checkouts(self, *, dry_run: bool) -> int:
         """Pergunta ao gateway sobre todo pedido de CARTÃO ainda em aberto.
 
         ⚠️ **Esta é a rede que não depende de ninguém estar olhando.**
@@ -239,17 +239,19 @@ class Command(BaseCommand):
         (``GATEWAY_RECHECK_SECONDS``), dentro de
         ``reconcile_with_gateway_if_due``.
 
-        Só cartão, pela mesma razão que a leitura da loja: o PIX já tem
-        webhook, SSE e a checagem do vencimento. O cartão é o que leva o
-        cliente para fora do site e volta sem sinal nenhum.
+        Só sessão hospedada (cartão da loja e link do balcão), pela mesma
+        razão que a leitura da loja: o PIX já tem webhook, SSE e a checagem do
+        vencimento. A sessão hospedada é o que leva o cliente para fora do site
+        e volta sem sinal nenhum — e o link nem tem "volta": o cliente paga do
+        celular, num aparelho que nunca abriu o acompanhamento.
         """
         from shopman.orderman.models import Order
 
         from shopman.shop.services import payment as payment_service
 
-        open_card = Order.objects.filter(
+        open_hosted = Order.objects.filter(
             status__in=(Order.Status.NEW, Order.Status.ACCEPTED),
-            data__payment__method="card",
+            data__payment__method__in=sorted(payment_service.HOSTED_CHECKOUT_METHODS),
         ).exclude(data__payment__intent_ref__isnull=True)
 
         # "Atualizada", não "liquidada": a resposta do gateway pode ser CAPTURA
@@ -258,7 +260,7 @@ class Command(BaseCommand):
         # "liquidada" no relatório do worker seria dizer que entrou dinheiro que
         # não entrou.
         updated = 0
-        for order in open_card:
+        for order in open_hosted:
             if payment_service.has_sufficient_captured_payment(order) is True:
                 continue
             if dry_run:

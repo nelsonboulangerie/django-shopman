@@ -21,7 +21,7 @@ pagamento um dono só e deixa a reconciliação financeira enxergar dinheiro.
 | `pix` | Efí (ou mock) | `create_intent` pending → webhook autoriza/captura | `payment.initiate` (loja online, WhatsApp, PDV) | adapter → `PaymentService.refund` |
 | `card` | Stripe Checkout (ou mock) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
 | `credit` / `debit` | **nenhum** — maquininha física do balcão | nasce e captura no mesmo gesto (`settle`, `gateway=""`) | `PaymentService.settle` | reembolso manual, fora do sistema |
-| `link` | `SHOPMAN_LINK_ADAPTER` (default = o do cartão) | `create_intent` pending → webhook captura | `payment.initiate` | adapter → `PaymentService.refund` |
+| `link` | Stripe Checkout via `SHOPMAN_LINK_ADAPTER` (default = o do cartão; simulador em DEBUG) | `create_intent` pending → **captura automática** no gateway (`capture_method="automatic"`, sempre — `STRIPE_CAPTURE_METHOD` vale só para `card`) → webhook confirma | `payment.initiate`, chamado por `close_sale` do PDV (pedido remoto) | adapter → `PaymentService.refund` |
 
 ### O balcão não fala com gateway — e o TEF não vai mudar isso
 
@@ -43,8 +43,29 @@ erro nem alerta. Guardado por
 `test_pos_cash_ledger.py::test_venda_so_em_cartao_do_balcao_liquida_sem_gateway`.
 
 `link` é o oposto: pedido remoto anotado no balcão, sem maquininha e **com**
-gateway. Qual provedor o atende (Stone ou Stripe) é decisão de WP distinto —
-trocar é trocar `SHOPMAN_LINK_ADAPTER`, não o código.
+gateway. No go-live quem o atende é o **Stripe** (WP-PAGAMENTO, frente 1); a
+Stone entra depois, junto do TEF. Trocar de provedor é trocar
+`SHOPMAN_LINK_ADAPTER` — e só, porque tudo o que é do link pergunta ao adapter,
+não ao Stripe:
+
+- a **prontidão** (`payment_link_readiness`, linha `payment_link` do painel de
+  integrações) é resolvida pelo adapter configurado; é ela que a tecla L do PDV
+  consulta para aparecer. Provedor sem prontidão conhecida fica em aviso e o
+  balcão **não oferece** o link — falha fechado, até o provedor novo trazer a
+  própria `*_readiness` para cá;
+- o **webhook** do Stripe e o `reconcile_payments` (rede contra webhook perdido)
+  cobrem toda sessão hospedada — `payment.HOSTED_CHECKOUT_METHODS`, `card` e
+  `link` —, não um literal `"card"`;
+- o **acompanhamento** do cliente oferece o `checkout_url` de um pedido de link
+  como oferece o do cartão (mesmo degrau `payment_card_ready`, `payment_method`
+  próprio).
+
+O link **captura sozinho**: `_adapter_config` manda `capture_method="automatic"`
+para `link` sempre. A venda do balcão já fechou quando a URL nasce; não há um
+aceite posterior da loja que justifique segurar a autorização (que é o que o
+`manual` do cartão da loja online compra). Enquanto herdava o `manual` do bloco
+`SHOPMAN_STRIPE`, o cliente pagava, o intent ficava `authorized`, a autorização
+vencia no Stripe e a padaria nunca recebia.
 | `cash` | nenhum (`gateway=""`) | **capturado no ato** via `PaymentService.settle`, quando a coleta é no terminal (`Order.data.payment.collection == "terminal"`, PDV) e depois do total selado | `payment.initiate`, chamado por `close_sale` do PDV | `PaymentService.refund` direto (sem adapter), no cancel/devolução |
 | `external` | nenhum (`gateway=""`) | idem `cash` (maquininha avulsa recebida no terminal) | idem | idem |
 | `account` | nenhum (`gateway=""`) | **autorizado** na venda (= deve; `PaymentService.charge_to_account`, `gateway_data.customer_ref`) e **capturado** no acerto (= pagou; `capture(gateway_data={settled_with, settled_by})`), FIFO por venda inteira | PDV, só para cliente com `Customer.metadata.house_account` (`shop/services/house_account`) | cancel da venda → `PaymentService.cancel` (a dívida morre; nada a estornar). Saldo devedor = `account_balance_q` (Σ autorizados; derivado, nunca tabela) |
@@ -69,7 +90,7 @@ Representa uma intenção de pagamento vinculada a um pedido.
 |-------|------|-----------|
 | `ref` | str | Identificador único (auto: `PAY-XXXXXXXXXXXX`) |
 | `order_ref` | str | Referência do pedido (string, sem FK) |
-| `method` | str | `pix`, `cash`, `credit`, `debit`, `card`, `external` |
+| `method` | str | `pix`, `cash`, `credit`, `debit`, `card`, `link`, `external` |
 | `status` | str | Estado atual do pagamento |
 | `amount_q` | int | Valor em centavos |
 | `currency` | str | ISO 4217 (default: `BRL`) |
@@ -186,6 +207,75 @@ ChannelConfig.Payment(
 ```
 
 O timeout total de hold de estoque deve cobrir: confirmação + pagamento + margem. Veja `confirmation.calculate_hold_ttl()`.
+
+### Validade do link de pagamento
+
+O link (`method="link"`, o pedido remoto anotado no PDV) tem prazo, e o prazo é **um relógio
+escrito nos dois lados**: o adapter grava `PaymentIntent.expires_at` e manda o mesmo instante ao
+Stripe em `Session.create(expires_at=...)`. Sem mandar, o Stripe expirava a sessão em 24 h por conta
+própria e a casa não sabia — dois relógios.
+
+**O prazo segue o ciclo do atendimento**, não uma env:
+
+```
+expires_at = min(agora + janela do canal, corte do atendimento)   # preso à régua do Stripe
+```
+
+- **janela do canal** — `ChannelConfig.payment.link_timeout_minutes` (default **120**; o canal
+  `pdv` semeado declara 120). É o teto: um link de 24 h segurava estoque por um dia inteiro para
+  um pão que é para hoje ou para amanhã, e a encomenda remota só é liberada contra o pagamento.
+- **corte do atendimento** (`shop/services/payment_deadline.service_cutoff`) — o instante em que
+  o pedido precisa estar pago para a casa cumprir: o **início da janela combinada** quando existe
+  (`delivery_time_slot`, canônico `"slot-09"` ou meia hora `"14:00-14:30"`); senão o **fechamento
+  da loja no dia do compromisso** (`delivery_date` + `Shop.opening_hours`); sem compromisso
+  nenhum, o fechamento de hoje. Sem expediente conhecido para o dia, não há corte — vale só a
+  janela.
+- **régua do Stripe** — piso 30 min, teto 24 h − 1 min (`shop/adapters/_payment_link.py`). Corte
+  já passado ou a menos de 30 min (venda de link às 17h50 para retirar às 18h) vale o piso: a casa
+  aceita esse caso raro em vez de recusar a venda com o cliente ao telefone.
+
+A janela e o corte chegam ao adapter pelo `_adapter_config` (`link_timeout_minutes` e
+`link_expires_by`, ISO), como o Pix faz com `pix_timeout_minutes` — o adapter não conhece pedido
+nem calendário. O mock segue o mesmo cálculo.
+
+O que o `expires_at` liga (a máquina já existia; faltava o campo):
+
+1. `payment.initiate()` grava `order.data["payment"]["expires_at"]` — a tela do PDV mostra
+   "Pague até hoje às 16h para garantir o pedido", o aviso ao cliente diz a consequência ("Para
+   garantir o pedido, é só pagar até hoje às 16h. Depois disso a reserva é liberada.") e o
+   acompanhamento da loja repete o prazo (`promise.deadline_at`, `deadline_kind="payment"`) com
+   a mesma nota de rodapé;
+2. `_schedule_payment_timeout` agenda a Directive `payment.timeout` com `available_at=expires_at`;
+3. `PaymentTimeoutHandler` re-agenda se chamado cedo, **pergunta ao gateway** antes de cancelar e só
+   cancela com resposta "não pago" — aí libera o estoque e envia `payment_expired`;
+4. `reconcile_payments` re-arma o timeout de intent vencido cuja directive se perdeu;
+5. a reconciliação diária acusa `expired_payment_link` (warning) para o que escapar.
+
+⚠️ A venda de link **nunca é entrega de balcão**: `lifecycle._counter_handoff` recusa o método `link`
+(o pedido remoto tem trajeto pela frente), e o link exige captura antes do trabalho físico mesmo no
+canal `pdv` (`payment.timing="external"`). Sem isso a venda fechava COMPLETED sem um centavo
+capturado, e o vencimento não a alcançava mais.
+
+### Reenviar o link
+
+O aviso `payment_link_sent` sai sozinho na venda (Directive deduplicada por pedido+template), e o
+mesmo dedupe que segura o retry do PDV seguraria o operador quando o cliente diz "não chegou".
+`notification.resend_payment_link(order)` enfileira **uma Directive nova por gesto**, com a chave de
+dedupe do envio original mais `:resend:<n>` — retry, backoff e escalada para `OperatorAlert` vêm de
+graça do `NotificationSendHandler`, e o dedupe do envio original fica intacto. O clique duplo do mesmo
+segundo cai no UNIQUE parcial do Core e devolve a Directive do primeiro clique.
+
+O gesto é do operador, nos dois lugares onde ele está: o botão **Reenviar** ao lado de "Copiar link"
+na tela de resultado do PDV (`POST /pos/orders/<ref>/resend-payment-link/`, `cashman.operate_pos`) e
+**Reenviar link de pagamento** no detalhe do pedido no gestor (`POST /orders/<ref>/resend-payment-link/`,
+`shop.manage_orders`). O gestor só mostra o botão quando o servidor vai aceitar
+(`can_resend_payment_link`, pela mesma `payment_link_resend_refusal`), e a linha `payment_link_notice`
+diz o estado do último aviso — "Enviando…", "Link enviado às 14h32", "falhou — reenvie ou copie".
+
+Reenvio manda a **mesma URL** enquanto ela vale. Não existe regenerar: link vencido é pedido que a
+máquina de timeout cancela, e o caminho é refazer a venda. As recusas (`payment_link_expired`,
+`payment_link_already_paid`, `payment_link_send_pending`, `payment_link_resend_too_soon`…) estão em
+[errors.md](../reference/errors.md).
 
 ## Backends Disponíveis
 

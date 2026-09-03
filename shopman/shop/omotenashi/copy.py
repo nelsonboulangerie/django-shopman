@@ -630,6 +630,29 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
             ),
         },
     },
+    # O LINK de pagamento (pedido remoto anotado no balcão): a encomenda só é
+    # liberada contra o pagamento, e o cliente lê até quando — o mesmo prazo do
+    # aviso por WhatsApp e da tela do PDV.
+    "TRACKING_PROMISE_LINK_TITLE": {
+        WILDCARD: {WILDCARD: CopyEntry(title="Pague pelo link")},
+    },
+    "TRACKING_PROMISE_LINK_MESSAGE_DEADLINE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Anotamos seu pedido. Pague até {deadline} para garantir.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_LINK_MESSAGE": {
+        WILDCARD: {
+            WILDCARD: CopyEntry(
+                message="Anotamos seu pedido. Finalize o pagamento no ambiente seguro para garantir.",
+            ),
+        },
+    },
+    "TRACKING_PROMISE_LINK_FOOTNOTE": {
+        WILDCARD: {WILDCARD: CopyEntry(message="Se o prazo passar, liberamos a reserva e avisamos você.")},
+    },
     "TRACKING_PROMISE_CARD_PREORDER_MESSAGE": {
         WILDCARD: {
             WILDCARD: CopyEntry(

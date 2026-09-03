@@ -44,6 +44,7 @@ from uuid import uuid4
 from django.conf import settings
 from django.utils import timezone
 
+from shopman.shop.adapters._payment_link import link_expires_at
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 
 logger = logging.getLogger(__name__)
@@ -129,7 +130,19 @@ def create_intent(
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     pix_timeout = config.get("pix_timeout_minutes", 30)
-    expires_at = timezone.now() + timedelta(minutes=pix_timeout) if method == "pix" else None
+    if method == "pix":
+        expires_at = timezone.now() + timedelta(minutes=pix_timeout)
+    elif method == "link":
+        # O link simulado vence no MESMO prazo do real (janela do canal e corte
+        # do atendimento, vindos do `_adapter_config`): quem desenvolve o balcão
+        # precisa ver o "pague até …" na tela e o `payment.timeout` cancelar o
+        # pedido vencido — sem isso o vencimento só existiria em produção.
+        expires_at = link_expires_at(
+            timeout_minutes=config.get("link_timeout_minutes"),
+            expires_by=config.get("link_expires_by"),
+        )
+    else:
+        expires_at = None
 
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,

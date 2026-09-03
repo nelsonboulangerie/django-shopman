@@ -2742,6 +2742,8 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             }
         order = Order.objects.get(ref=order.ref)
         payment = dict((order.data or {}).get("payment") or {})
+        if method == "link" and payment.get("checkout_url"):
+            _send_payment_link(order)
         intents = {method: payment["intent_ref"]} if payment.get("intent_ref") else {}
         try:
             _record_sale(order, shift=shift, operator=operator, cash_q=0, payment_ref=intents.get(method, ""), intents=intents)
@@ -2789,6 +2791,29 @@ def _settle_pos_sale(order: Order, *, shift, operator_username: str) -> dict:
             recovery="NÃO refaça a venda. Chame o gerente e confira o pedido no gestor antes de continuar.",
         ) from None
     return {}
+
+
+def _send_payment_link(order: Order) -> None:
+    """Enfileira o aviso com o link de pagamento para o cliente do pedido remoto.
+
+    Directive, nunca envio síncrono: a venda já fez a ida à rede obrigatória (o
+    `initiate`, que precisa devolver a URL para a tela); o ENVIO não precisa
+    travar o balcão com o cliente na frente, e retry, idempotência e escalada
+    para `OperatorAlert` já vêm de graça no `NotificationSendHandler`. O dedupe
+    por (pedido, template) garante que um retry do PDV não manda o link duas
+    vezes. Só é chamado com `checkout_url` gravada: sem cobrança criada não há o
+    que mandar.
+
+    Falha ao enfileirar não derruba a venda: ela já commitou e a cobrança já
+    existe — a tela continua mostrando a URL com "Copiar link", que é a rede
+    para o operador mandar à mão.
+    """
+    from shopman.shop.services import notification
+
+    try:
+        notification.send(order, "payment_link_sent")
+    except Exception:
+        logger.exception("pos_payment_link_notification_failed order=%s", order.ref)
 
 
 def _settle_after_shift_closed(order: Order, *, shift, operator, resettle: bool = True) -> None:

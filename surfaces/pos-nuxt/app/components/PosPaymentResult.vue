@@ -10,7 +10,18 @@ import type { PaymentProofView } from "~/presentation/payment";
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
 // não pollam → 'idle'. `large` = palco da tela de resultado: QR maior, para o
 // cliente escanear de longe.
-const props = defineProps<{ proof: PaymentProofView; status?: "idle" | "polling" | "paid" | "expired"; large?: boolean }>();
+// `resending` = o reenvio do link está em voo (o composable manda; a tela só
+// trava o botão para o clique duplo não virar dois pedidos).
+const props = defineProps<{
+  proof: PaymentProofView;
+  status?: "idle" | "polling" | "paid" | "expired";
+  large?: boolean;
+  resending?: boolean;
+}>();
+
+// O reenvio é um GESTO de rede (Directive nova no servidor), não estado local:
+// sobe para quem tem o transporte (usePosSale), como todo comando do balcão.
+const emit = defineEmits<{ resendLink: [] }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
@@ -62,9 +73,10 @@ async function copyLink() {
         <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
         <!-- No LINK, a mensagem do servidor ("Pagamento criado. Aguarde
              confirmação do gateway antes de tratar como recebido.") é jargão e
-             repete o que a linha abaixo já diz em cinco palavras. Três frases
-             para um fato é o operador parando de ler as três. -->
-        <p v-if="proof.isLink" class="text-xs opacity-90">Aguardando o cliente pagar.</p>
+             repete o que a linha abaixo já diz. A linha diz o que a casa FAZ
+             com a URL (a cadeia WhatsApp → e-mail → SMS enfileirada na venda) e
+             deixa a cópia manual como rede, não como gesto padrão. -->
+        <p v-if="proof.isLink" class="text-xs opacity-90">Enviando o link ao cliente por WhatsApp, e-mail ou SMS. Se preferir, copie e mande você.</p>
         <p v-else-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
@@ -113,6 +125,21 @@ async function copyLink() {
         <Icon name="lucide:copy" class="size-4" />
         Copiar link
       </UiButton>
+      <!-- "Não chegou": manda de novo a MESMA URL pela cadeia da casa
+           (WhatsApp → e-mail → SMS). O servidor recusa link vencido, pedido
+           pago/cancelado e clique cedo demais — a recusa vira toast com o
+           motivo, não botão escondido. -->
+      <UiButton
+        variant="outline"
+        size="sm"
+        class="shrink-0 gap-2"
+        :disabled="resending"
+        data-action="resend-link"
+        @click="emit('resendLink')"
+      >
+        <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
+        Reenviar
+      </UiButton>
     </div>
 
     <!-- Card: hosted checkout link (delegated; no capture here) -->
@@ -126,5 +153,13 @@ async function copyLink() {
       <Icon name="lucide:external-link" class="size-4" />
       Abrir checkout do cartão
     </a>
+
+    <!-- Até quando o LINK vale — o mesmo relógio do pedido e do gateway, dito
+         como o operador diz ao cliente. Sem o prazo na tela, ele não tem o que
+         dizer ao telefone, e "o link parou de funcionar" vira ligação. -->
+    <p v-if="proof.isLink && proof.expiresDisplay" class="flex items-center gap-1 text-xs opacity-80">
+      <Icon name="lucide:clock" class="size-3.5" />
+      Pague até {{ proof.expiresDisplay }} para garantir o pedido
+    </p>
   </div>
 </template>

@@ -210,9 +210,11 @@ class POSHeadlessSurfaceContractTests(TestCase):
         # `otp_delivery` entrou no contrato: o PDV também precisa saber se o
         # cliente consegue receber o código de login — a tela ficava verde com a
         # cadeia de OTP vazia.
+        # E `payment_link` também: é a linha que a tecla L do balcão consulta,
+        # resolvida pelo adapter do link e não pelo Stripe do cartão.
         self.assertEqual(
             set(provider_readiness),
-            {"focus_nfe", "efi_pix", "stripe_card", "otp_delivery"},
+            {"focus_nfe", "efi_pix", "stripe_card", "payment_link", "otp_delivery"},
         )
         self.assertIn(provider_readiness["focus_nfe"]["status"], {"ready", "warning", "error"})
         self.assertEqual(checkout["capabilities"]["prepare_checkout_action_ref"], "save_tab")

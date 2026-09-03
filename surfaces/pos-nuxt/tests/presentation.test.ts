@@ -37,6 +37,7 @@ import {
   paymentChangeQ,
   methodShortcuts,
   paymentIcon,
+  paymentDeadlineLabel,
   paymentProofView,
   paymentRemainingQ,
   qrCodeSrc,
@@ -1242,5 +1243,66 @@ describe("formas de pagamento do balcão — o que vai ao gateway e o que não v
     } as never);
     expect(proof!.isCard).toBe(true);
     expect(proof!.isLink).toBe(false);
+  });
+});
+
+describe("vale até — o prazo do link, dito como o operador diz", () => {
+  // Terça, 2 de setembro de 2026, 15:00 no fuso local da tela.
+  const agora = new Date(2026, 8, 2, 15, 0, 0);
+  const local = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).toISOString();
+
+  it("hoje, amanhã, e depois o dia da semana com a data curta", () => {
+    expect(paymentDeadlineLabel(local(2026, 9, 2, 18), agora)).toBe("hoje às 18h");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 9), agora)).toBe("amanhã às 9h");
+    expect(paymentDeadlineLabel(local(2026, 9, 5, 14), agora)).toBe("sáb. 5/9 às 14h");
+    expect(paymentDeadlineLabel(local(2026, 9, 10, 8), agora)).toBe("qui. 10/9 às 8h");
+  });
+
+  it("minuto só aparece quando não é cheio", () => {
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 9, 30), agora)).toBe("amanhã às 9h30");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 0, 5), agora)).toBe("amanhã às 0h05");
+  });
+
+  it("'amanhã' é o dia civil seguinte, não 'daqui a 24 h'", () => {
+    // Às 23h, um link que vence à 0h30 já é amanhã — e o das 15h de amanhã também.
+    const tarde = new Date(2026, 8, 2, 23, 0, 0);
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 0, 30), tarde)).toBe("amanhã às 0h30");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 15), tarde)).toBe("amanhã às 15h");
+  });
+
+  it("lê o ISO com fuso do servidor e traduz para a hora local da tela", () => {
+    // O servidor grava tz-aware (UTC); a tela fala na hora do balcão.
+    const utc = new Date(2026, 8, 3, 9, 0, 0).toISOString();
+    expect(paymentDeadlineLabel(utc, agora)).toBe("amanhã às 9h");
+  });
+
+  it("sem prazo (ou lixo), sem frase", () => {
+    expect(paymentDeadlineLabel("", agora)).toBe("");
+    expect(paymentDeadlineLabel("ontem", agora)).toBe("");
+  });
+
+  it("o comprovante do LINK carrega o prazo; o do Pix, não", () => {
+    const link = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+      expires_at: local(2026, 9, 3, 9),
+    } as never, agora);
+    expect(link!.expiresDisplay).toBe("amanhã às 9h");
+
+    const pix = paymentProofView({
+      method: "pix",
+      status: "pending",
+      copy_paste: "000201",
+      expires_at: local(2026, 9, 2, 15, 30),
+    } as never, agora);
+    expect(pix!.expiresDisplay).toBe("");
+
+    const semPrazo = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+    } as never, agora);
+    expect(semPrazo!.expiresDisplay).toBe("");
   });
 });

@@ -36,7 +36,7 @@ Pronto — sem deploy. Mapeie só os eventos que quiser; os demais caem no texto
 
 `order_confirmed`, `order_preparing`, `order_ready_pickup`, `order_ready_delivery`,
 `order_dispatched`, `order_delivered`, `order_cancelled`, `payment_requested`,
-`payment_confirmed`, `payment_reminder`, `payment_expired`.
+`payment_link_sent`, `payment_confirmed`, `payment_reminder`, `payment_expired`.
 
 > OTP (login) **não** vai por WhatsApp (ManyChat não tem categoria Authentication) — vai
 > por SMS (Comtele).

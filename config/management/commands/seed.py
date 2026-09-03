@@ -4958,7 +4958,13 @@ class Command(BaseCommand):
         channels = {}
         _pos_config = {
             "confirmation": {"mode": "immediate"},
-            "payment": {"method": "cash", "timing": "external"},
+            # `link_timeout_minutes`: quanto o LINK de pagamento do pedido remoto
+            # vale, contado da venda — e é só o teto, porque o link vence antes
+            # se o compromisso do pedido chegar antes (início da janela
+            # combinada, ou o fechamento da loja no dia). Duas horas: o pão é
+            # para hoje ou para amanhã, e a encomenda remota só é liberada
+            # contra o pagamento.
+            "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
             # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
             # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
             # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica
@@ -4974,6 +4980,14 @@ class Command(BaseCommand):
             },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
+            # Por onde o aviso do pedido de balcão SAI da casa. Sem esta chave o
+            # canal herdava o `console` da loja — que sempre "dá certo" e
+            # curto-circuita a cadeia: nenhum aviso de PDV alcançava o cliente,
+            # inclusive o link de pagamento do pedido remoto. WhatsApp e e-mail
+            # entregam a URL clicável e de graça; o SMS custa e trunca, então é
+            # a última rede. Cliente só com e-mail cai no e-mail sozinho: o
+            # backend sem destinatário é pulado pelo mecanismo.
+            "notifications": {"backend": "manychat", "fallback_chain": ["email", "sms"]},
             # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
             # com a maquininha; o despacho pergunta e a custódia fica no pedido.
             "fulfillment": {"equipment": ["card_machine"]},
@@ -7249,7 +7263,16 @@ class Command(BaseCommand):
             "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
             "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Olá{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
             "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"},
-            "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Olá{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
+            # Pedido remoto anotado no PDV: a venda fechou e o cliente paga pelo link.
+            # Evento próprio, não o `payment_requested` — a copy é outra ("anotamos",
+            # não "conferimos a disponibilidade") e o dedupe por (pedido, template)
+            # colidiria com o aviso da loja online. `{payment_deadline_note}` some
+            # sozinho quando não há prazo gravado.
+            "payment_link_sent": {"subject": "Pedido {order_ref}: link de pagamento", "body": "Olá{customer_name_greeting}! Anotamos seu pedido *{order_ref}* — total *{total}*.\n\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}\n\nQualquer coisa, é só responder esta mensagem. 🥖"},
+            # Prazo vencido sem pagamento (Pix da loja ou link do balcão): a casa
+            # LIBEROU a reserva — é o que acontece e é o que o cliente entende.
+            # "Expirou / cancelado automaticamente" era vocabulário de sistema.
+            "payment_expired": {"subject": "Pedido {order_ref}: reserva liberada", "body": "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido *{order_ref}* dentro do prazo, então liberamos a reserva. Se ainda quiser, é só falar com a gente que refazemos o pedido. 🥖"},
             "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
             "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
             "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*.\n\nSeu saldo fica aqui: {account_url}"},

@@ -304,7 +304,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `amount_q` | `int` | **canonical** | `payment.initiate()`, POS (`_reconcile_order_payment_to_total`) | PaymentView, templates, emissão de NFC-e (`shop/services/fiscal`) | Valor em centavos. **Tem de ser o valor final da venda** (ver invariante acima): a NFC-e deriva o desconto dele. Em venda mista quem manda é a soma dos `tenders` |
 | `qr_code` | `string` | display | `payment.initiate()` | PaymentView template | QR code image (data URI) — PIX only |
 | `copy_paste` | `string` | display | `payment.initiate()` | PaymentView template | Brcode PIX copia-e-cola — PIX only |
-| `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração) | ISO datetime de expiração do QR — PIX only |
+| `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração), PDV (`_pos_payment_response` → "Pague até …"), acompanhamento (`promise.deadline_at`), `payment.timeout` (agendamento) | ISO datetime (tz-aware) de vencimento da cobrança — o QR do **Pix** e o **link de pagamento**. No link é UM relógio escrito nos dois lados: o mesmo instante vai ao Stripe (`Session.create(expires_at=...)`) e ao `PaymentIntent.expires_at`; vale `min(agora + payment.link_timeout_minutes do canal, corte do atendimento)` preso à régua do Stripe (30 min–24 h) — ver `docs/guides/payments.md`. Vencido, a Directive `payment.timeout` pergunta ao gateway e cancela (`payment_expired`); a reconciliação diária acusa o que escapar (`expired_payment_link`) |
 | `client_secret` | `string` | display | `payment.initiate()` | PaymentView template | Stripe PaymentIntent secret — card only |
 | `e2e_id` | `string` | audit + idempotency | `EfiPixWebhookView` | EfiPixWebhookView (deduplicação) | End-to-end ID da transação PIX |
 | `pix_receipts` | `object` | audit + idempotency | `confirm_pix` | `confirm_pix` (soma dos recebimentos) | Um Pix por chave (`e2e_id`, ou `txid:<txid>` quando o chamador não tem e2e) → centavos. Existe para que dois Pix parciais SOMEM até cobrir a cobrança sem que a reapresentação do mesmo Pix conte duas vezes |
@@ -314,6 +314,7 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 | `gateway_checked_at` | `string` | throttle | `payment.reconcile_with_gateway_if_due()` | o próprio (janela mínima entre perguntas) | ISO datetime da última pergunta ao gateway pelo estado deste pagamento. Existe para o acompanhamento poder reconciliar em toda leitura sem transformar cada refresh do cliente numa chamada ao provedor (`GATEWAY_RECHECK_SECONDS`). **Não é status**: quem diz se a venda está paga é o Payman |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
+| `checkout_url` | `string` | display | `payment.initiate()` (métodos hospedados: `card`, `link`) | resultado da venda no PDV (`_pos_payment_response`), aviso `payment_link_sent` (`notification._build_context` → `{checkout_url}`) | URL da sessão hospedada (Stripe Checkout) que o cliente abre para pagar. Distinta do `payment_url` do aviso, que é o acompanhamento |
 | `collection` | `string` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega) |
 | `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`), acerto de entrega | POS, leitura X/Z, reconciliação | Linhas do pagamento: `{method, amount_q, collection, status, terminal_ref?, received_at?, reference?, intent_ref?}`. `intent_ref` é o intent do Payman daquele método (um por método; venda mista tem um por linha de método). **Sem `cash_shift_id`**: turno é lançamento no livro do `cashman` |
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
@@ -588,8 +589,8 @@ Write-back: `intent_ref` (string)
 
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,
-`"payment_confirmed"`, `"payment_expired"`, `"payment.reminder"`, `"preorder_reminder"`,
-`"production_cancelled"`, `"generic"`.
+`"payment_confirmed"`, `"payment_link_sent"`, `"payment_expired"`, `"payment.reminder"`,
+`"preorder_reminder"`, `"production_cancelled"`, `"generic"`.
 
 #### `notification.send` (system notification)
 
@@ -772,6 +773,7 @@ Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation
 |-------|------|---------|-----------|
 | `method` | `string \| list[str]` | `"counter"` | `"counter"`, `"pix"`, `"card"`, `"external"`, ou lista |
 | `timeout_minutes` | `int` | `15` | Timeout para PIX/card. Card timeout = `timeout_minutes * 2` |
+| `link_timeout_minutes` | `int` | `120` | Janela do **link de pagamento** (pedido remoto do PDV), contada da venda. É o teto: o link vence em `min(agora + janela, corte do atendimento)` — início da janela combinada ou fechamento da loja no dia do compromisso (`shop/services/payment_deadline`) — preso à régua do Stripe (30 min–24 h). Deve ser > 0 |
 
 Property: `available_methods` → sempre retorna lista.
 

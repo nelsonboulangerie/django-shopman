@@ -86,18 +86,14 @@ def _customer_holds_the_goods(order) -> bool:
     remoto/agendado que alguém precisa separar, não para a sacola que o cliente
     já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
     de 5 minutos para uma mercadoria já entregue.
+
+    A resposta é a MESMA que o lifecycle usa para fechar a venda no ato
+    (``order_helpers.customer_holds_the_goods``): o pedido de link, por exemplo,
+    é remoto — alguém precisa separá-lo quando o cliente pagar.
     """
-    data = order.data or {}
-    if data.get("origin_channel") != "pos":
-        return False
-    if (data.get("fulfillment_type") or "pickup") != "pickup":
-        return False
-    from django.utils import timezone
+    from shopman.shop.services.order_helpers import customer_holds_the_goods
 
-    from shopman.shop.services.order_helpers import get_commitment_date
-
-    commitment = get_commitment_date(order)
-    return not (commitment and commitment > timezone.localdate())
+    return customer_holds_the_goods(order)
 
 
 def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) -> list:

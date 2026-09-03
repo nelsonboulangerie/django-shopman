@@ -420,7 +420,7 @@ Não há dispatch por classes `Flow`; `lifecycle.py` usa `ChannelConfig.for_chan
 | Seção | Campos principais | Descrição |
 |-------|-------------------|-----------|
 | `confirmation` | `mode` (immediate\|auto_confirm\|auto_cancel\|manual), `timeout_minutes` | Modo de confirmação |
-| `payment` | `method` (cash\|pix\|card\|external ou lista), `timing`, `timeout_minutes` | Método e timing de pagamento |
+| `payment` | `method` (cash\|pix\|card\|external ou lista), `timing`, `timeout_minutes`, `link_timeout_minutes` | Método e timing de pagamento; janela do link de pagamento do PDV (default 120 min, teto — o link vence antes se o compromisso do pedido chegar antes) |
 | `stock` | `hold_ttl_minutes`, `safety_margin`, `planned_hold_ttl_hours` | Configuração de reservas |
 | `pipeline` | `on_commit`, `on_confirmed`, `on_payment_confirmed`, `on_ready`, `on_dispatched`, `on_delivered`, `on_completed`, `on_cancelled`, `on_returned` | Handlers por evento do ciclo de vida |
 | `notifications` | `backend`, `fallback_chain`, `routing` | Roteamento de notificações |

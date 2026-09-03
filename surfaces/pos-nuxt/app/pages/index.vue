@@ -147,6 +147,8 @@ const {
   reviewFailed,
   submitSale,
   dismissResult,
+  resendingLink,
+  resendPaymentLink,
   onExternalSaleCancelled,
   clearCurrentTab,
   openMoveDialog,
@@ -809,10 +811,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :danfe-screen-url="resultDanfeScreenUrl"
           :printing-receipt="printingReceipt"
           :printing-danfe="printingDanfe"
+          :resending-link="resendingLink"
           @new-sale="startNextSale"
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
+          @resend-link="resendPaymentLink"
         />
       </div>
 

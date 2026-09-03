@@ -73,6 +73,14 @@ Formato de cada um: **Nome · Corpo · Variáveis (sample) · Botão**. Idioma `
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042`
 - Botão URL (dinâmico): `Pagar pedido` → `https://nelsonboulangerie.com.br/pedido/{{1}}/pagar` (sample `NB-1042`)
 
+### `link_pagamento_enviado`
+Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e o cliente paga pelo link.
+- Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
+- Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
+- Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
+- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name_greeting`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+- ⚠️ `{{4}}` é o `payment_deadline` cru ("hoje às 16h"), e a Meta não aceita variável vazia nem com quebra de linha — o template aprovado PRESSUPÕE prazo. Todo link nasce com `expires_at` (`min(agora + janela do canal, corte do atendimento)`, ver `docs/guides/payments.md`); o único caso sem prazo é um adapter que falhou ao gravá-lo, e aí o texto direto (`sendContent`) sai com a frase auto-suprimida.
+
 ### `pagamento_confirmado`
 - Corpo: `Olá, {{1}}! Recebemos o pagamento do seu pedido {{2}}. Ele seguirá para o preparo.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042`
@@ -83,7 +91,7 @@ Formato de cada um: **Nome · Corpo · Variáveis (sample) · Botão**. Idioma `
 - Botão URL (dinâmico): `Concluir pagamento` → `https://nelsonboulangerie.com.br/pedido/{{1}}/pagar` (sample `NB-1042`)
 
 ### `pagamento_expirado`
-- Corpo: `Olá, {{1}}! O seu pedido {{2}} foi cancelado porque o pagamento via PIX não foi confirmado a tempo.`
+- Corpo: `Olá, {{1}}! Não recebemos o pagamento do pedido {{2}} dentro do prazo, então liberamos a reserva. Se ainda quiser, é só falar com a gente que refazemos o pedido.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-1042`
 
 ---
@@ -102,6 +110,7 @@ Vai em `MANYCHAT_FLOW_MAP` (Flows do ManyChat) ou `SHOPMAN_WHATSAPP['templates']
 | `order_delivered` | `pedido_entregue` |
 | `order_cancelled` | `pedido_cancelado` |
 | `payment_requested` | `pagamento_solicitado` |
+| `payment_link_sent` | `link_pagamento_enviado` |
 | `payment_confirmed` | `pagamento_confirmado` |
 | `payment_reminder` | `pagamento_lembrete` |
 | `payment_expired` | `pagamento_expirado` |

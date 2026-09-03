@@ -60,6 +60,15 @@ export function useOrderDetail(orderRef: string) {
     });
   const requeueFiscal = () => act("requeue-fiscal");
 
+  // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
+  // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
+  // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
+  async function resendPaymentLink(): Promise<boolean> {
+    const ok = await act("resend-payment-link");
+    if (ok) useSonner.success("Link reenviado ao cliente.");
+    return ok;
+  }
+
   // Valid cancellation reasons for this order: for iFood, the live per-order coded
   // list ({code, description}); empty for channels without reason codes.
   async function fetchCancellationReasons(): Promise<CancellationReason[]> {
@@ -105,5 +114,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote };
+  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote };
 }

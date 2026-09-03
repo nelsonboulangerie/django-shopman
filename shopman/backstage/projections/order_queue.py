@@ -289,6 +289,15 @@ class OperatorOrderProjection:
     equipment_out: tuple[str, ...] = ()
     equipment_label: str = ""
     equipment_back_pending: bool = False
+    # Link de pagamento do pedido remoto (WP-PAGAMENTO, frente 5). O botão
+    # "Reenviar link" só existe quando o servidor vai aceitar o gesto
+    # (``notification.payment_link_resend_refusal``): forma ``link`` com URL,
+    # pedido vivo, não pago, link não vencido. A cadência (cedo demais, envio
+    # em andamento) é recusa da hora do clique, com toast — não esconde botão.
+    # ``payment_link_notice`` é a prova de envio, lida da última Directive do
+    # aviso: "Enviando…", "Link enviado às 14h32" ou "falhou — reenvie".
+    can_resend_payment_link: bool = False
+    payment_link_notice: str = ""
 
 
 @dataclass(frozen=True)
@@ -474,6 +483,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         courier=_courier_block(order),
         **_courier_change_fields(order),
         **_equipment_fields(order),
+        **_payment_link_fields(order, method),
     )
 
 
@@ -1096,6 +1106,50 @@ def _can_settle_delivery_cash(order: Order, payment_data: dict) -> bool:
         and not payment_data.get("cod_settled_at")
         and order.status in {Order.Status.DISPATCHED, Order.Status.DELIVERED, Order.Status.COMPLETED}
     )
+
+
+def _payment_link_fields(order: Order, method: str) -> dict:
+    """Só o pedido de LINK paga o custo (uma leitura no Payman + uma Directive)."""
+    if method != "link":
+        return {}
+    from shopman.shop.services import notification as notification_svc
+
+    return {
+        "can_resend_payment_link": notification_svc.payment_link_resend_refusal(order) is None,
+        "payment_link_notice": payment_link_notice(order),
+    }
+
+
+def payment_link_notice(order: Order) -> str:
+    """O estado do último aviso ``payment_link_sent``, na frase que o operador lê.
+
+    Lê a Directive mais recente do aviso (envio original ou reenvio): em fila
+    ou rodando é "Enviando…"; concluída é "Link enviado às 14h32" (o handler
+    não grava POR QUAL canal saiu — só que saiu); falhou é o convite ao gesto.
+    Sem Directive nenhuma, nada: o pedido de link da loja online não passa por
+    este aviso.
+    """
+    from shopman.shop.services import notification as notification_svc
+
+    directive = notification_svc.latest_delivery(order, notification_svc.PAYMENT_LINK_TEMPLATE)
+    if directive is None:
+        return ""
+    if directive.status in ("queued", "running"):
+        return "Enviando o link ao cliente…"
+    if directive.status == "done":
+        return f"Link enviado {_format_time_of_day(directive.updated_at)}"
+    return "O envio do link falhou. Reenvie ou copie o link."
+
+
+def _format_time_of_day(dt) -> str:
+    """"às 14h32" hoje; "em 02/09 às 14h32" em outro dia."""
+    if dt is None:
+        return ""
+    local = timezone.localtime(dt)
+    hour = f"{local.hour}h{local.minute:02d}"
+    if local.date() == timezone.localdate():
+        return f"às {hour}"
+    return f"em {local:%d/%m} às {hour}"
 
 
 def _fiscal_status(order: Order) -> tuple[str, str, tuple[dict[str, str], ...]]:

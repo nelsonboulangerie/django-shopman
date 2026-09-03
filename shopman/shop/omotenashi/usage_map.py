@@ -772,6 +772,18 @@ USAGE: dict[str, tuple[tuple[str, str, str], ...]] = {
     "TRACKING_PROMISE_LABEL_DEADLINE": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),
+    "TRACKING_PROMISE_LINK_FOOTNOTE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_LINK_MESSAGE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_LINK_MESSAGE_DEADLINE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
+    "TRACKING_PROMISE_LINK_TITLE": (
+        ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
+    ),
     "TRACKING_PROMISE_PAYMENT_CONFIRMED_MESSAGE_CONFIRMED": (
         ("shopman/storefront/presentation/order_tracking.py", "Loja", "Acompanhamento do pedido"),
     ),

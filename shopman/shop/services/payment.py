@@ -34,6 +34,7 @@ from django.utils.dateparse import parse_datetime
 
 from shopman.shop.adapters import get_adapter
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
+from shopman.shop.services import payment_deadline
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +49,13 @@ _GATEWAY_METHODS = frozenset({"pix", "card", "link"})
 #: cliente abre uma URL e paga lá. O Pix fica de fora — a prova dele é o QR, e a
 #: cobrança expira sozinha. São estas que têm `checkout_url` para mostrar e que a
 #: reconciliação tardia sabe reconsultar.
-_HOSTED_CHECKOUT_METHODS = frozenset({"card", "link"})
+#:
+#: Público de propósito: o webhook do Stripe, o `reconcile_payments` e o
+#: acompanhamento do cliente perguntam "é sessão hospedada?" a ESTE conjunto.
+#: Enquanto cada um tinha o seu literal `"card"`, o `link` ficava de fora dos
+#: três — pago no gateway e nunca capturado, sem rede contra webhook perdido e
+#: sem botão de pagar para quem voltava ao pedido.
+HOSTED_CHECKOUT_METHODS = frozenset({"card", "link"})
 
 
 def settles_without_gateway(method: str | None) -> bool:
@@ -200,13 +207,17 @@ def _persist_intent(
             or qr_data.get("copy_paste")
             or qr_data.get("qrcode")
         )
-        if intent.expires_at:
-            result["expires_at"] = intent.expires_at.isoformat()
-    elif method in _HOSTED_CHECKOUT_METHODS:
+    elif method in HOSTED_CHECKOUT_METHODS:
         # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
         checkout_url = (intent.metadata or {}).get("checkout_url")
         if checkout_url:
             result["checkout_url"] = checkout_url
+    # O prazo é de quem TEM prazo, não de um método: o QR do Pix e o link de
+    # pagamento vencem, e os dois precisam dizer isso ao cliente ("vale até …")
+    # e ao `payment.timeout` (logo abaixo). Enquanto a chave só era gravada no
+    # ramo do Pix, o link nascia com prazo no Payman e sem prazo no pedido.
+    if intent.expires_at:
+        result["expires_at"] = intent.expires_at.isoformat()
 
     order.data["payment"] = result
     order.save(update_fields=["data", "updated_at"])
@@ -1258,7 +1269,7 @@ def reconcile_with_gateway_if_due(order) -> bool:
 
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method not in _HOSTED_CHECKOUT_METHODS or not payment.get("intent_ref"):
+    if method not in HOSTED_CHECKOUT_METHODS or not payment.get("intent_ref"):
         return False
     if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
         return False
@@ -1662,7 +1673,29 @@ def _adapter_config(order, *, method: str) -> dict:
                 "SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS",
                 10,
             )
-    if method in _HOSTED_CHECKOUT_METHODS:
+    if method == "link":
+        # ⚠️ O LINK CAPTURA SOZINHO, sempre. Não é botão de env: é a natureza da
+        # forma. A venda do balcão já fechou quando a URL nasce — não existe um
+        # "aceite" posterior da loja para justificar segurar a autorização, que
+        # é o que o `manual` do cartão da loja online compra. Enquanto o link
+        # herdava o `capture_method` do bloco `SHOPMAN_STRIPE` (`manual` por
+        # padrão), o cliente pagava, o intent ficava `authorized`, a autorização
+        # vencia no Stripe em ~7 dias e a padaria NUNCA recebia.
+        config["capture_method"] = "automatic"
+        # O prazo do link segue o CICLO DO ATENDIMENTO, não uma env: a janela é
+        # do canal (`payment.link_timeout_minutes`) e o corte é o que a casa já
+        # sabe do pedido — o início da janela combinada ou o fechamento da loja
+        # no dia do compromisso. O adapter recebe os dois prontos e faz
+        # `min(agora + janela, corte)` preso à régua do Stripe; ele não precisa
+        # conhecer pedido nem calendário (`adapters/_payment_link`).
+        config["link_timeout_minutes"] = cfg.payment.link_timeout_minutes
+        cutoff = payment_deadline.service_cutoff(order)
+        if cutoff is not None:
+            config["link_expires_by"] = cutoff.isoformat()
+    elif method in HOSTED_CHECKOUT_METHODS:
+        # Cartão da loja online: a captura é decisão do lifecycle (`_on_accepted`
+        # cobra quando a loja aceita), e o `manual` é o que permite recusar o
+        # pedido sem ter cobrado.
         stripe_config = getattr(settings, "SHOPMAN_STRIPE", {}) or {}
         capture_method = str(stripe_config.get("capture_method") or "manual").strip().lower()
         config["capture_method"] = capture_method if capture_method in {"automatic", "manual"} else "manual"
