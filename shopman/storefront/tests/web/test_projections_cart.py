@@ -7,6 +7,7 @@ the default product, so the projection builder has a real Orderman session
 from __future__ import annotations
 
 import json
+from decimal import Decimal
 
 import pytest
 from django.test import RequestFactory
@@ -255,6 +256,78 @@ class TestAvailabilityOwnHoldCorrection:
             "session holding all its own stock must NOT be flagged unavailable"
         )
         assert item.availability_warning is None
+
+
+class TestUnavailableLineOffersTheBell:
+    """A linha que caiu por FALTA ganha o "Me avise" ali mesmo.
+
+    Antes, a sacola pintava a foto em sépia, escrevia "Indisponível" em vermelho,
+    travava o stepper — e a única saída era a lixeira. O sino existia no cardápio
+    e na PDP, mas o payload da sacola não carregava o campo que o habilita.
+    """
+
+    def _cart_with_availability(self, client, sku, raw):
+        from unittest.mock import patch
+
+        request = _request_with_cart_session(client)
+        with patch(
+            "shopman.shop.projections.cart._availability",
+            return_value=({sku: raw}, {}),
+        ):
+            return build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)
+
+    def test_external_stockout_line_offers_the_bell(self, cart_session, product):
+        proj = self._cart_with_availability(cart_session, product.sku, {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),
+            "is_planned": False,
+        })
+        item = proj.items[0]
+
+        assert item.is_available is False
+        assert item.availability_warning == "Indisponível"
+        assert item.is_notifiable is True
+        assert item.is_notify_subscribed is False
+
+    def test_paused_line_never_promises_a_comeback(self, cart_session, product):
+        """Pausa é decisão do operador. Mesmo "Indisponível" na tela, sem sino."""
+        proj = self._cart_with_availability(cart_session, product.sku, {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),
+            "is_paused": True,
+        })
+        item = proj.items[0]
+
+        assert item.is_available is False
+        assert item.is_notifiable is False
+
+    def test_unsellable_product_never_promises_a_comeback(self, cart_session, product):
+        """Pausa comercial mora no produto — o mapa do Stockman não a enxerga."""
+        product.is_sellable = False
+        product.save(update_fields=["is_sellable"])
+
+        proj = self._cart_with_availability(cart_session, product.sku, {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),
+            "is_planned": False,
+        })
+        item = proj.items[0]
+
+        assert item.is_available is False
+        assert item.is_notifiable is False
+
+    def test_partial_stock_keeps_the_clamp_instead_of_the_bell(self, cart_session, product):
+        """Sobrou 1 de 2: o avanço é "Usar 1 disponível", não esperar a volta."""
+        proj = self._cart_with_availability(cart_session, product.sku, {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("1"),
+            "is_planned": False,
+        })
+        item = proj.items[0]
+
+        assert item.is_available is False
+        assert item.available_qty == 1
+        assert item.is_notifiable is False
 
 
 class TestAwaitingConfirmationIsNotUnavailable:

@@ -284,6 +284,16 @@ useSeoMeta({
                     >
                       Usar {{ line.available_qty }} disponíve{{ line.available_qty > 1 ? 'is' : 'l' }}
                     </UiButton>
+                    <!-- Sem sobra nenhuma, "Usar N" não existe e a linha ficava sem
+                         saída: aviso vermelho e a lixeira. O sino é o caminho de
+                         volta — e só aparece na falta honesta, nunca na pausa. -->
+                    <StockNotifyButton
+                      v-if="line.is_notifiable && !holdFor(line)"
+                      :sku="line.sku"
+                      :name="line.name"
+                      :subscribed="line.is_notify_subscribed"
+                      compact
+                    />
                     <p class="ml-auto shop-price" :class="cart.summary_pending ? 'opacity-60' : ''">{{ line.total_display }}</p>
                   </div>
                   <p

@@ -23,6 +23,7 @@ from shopman.shop.omotenashi import resolve_copy
 from shopman.shop.projections import cart as cart_data
 from shopman.shop.projections import catalog_context
 from shopman.shop.projections.types import Action, Availability
+from shopman.storefront.presentation.catalog import notify_subscribed_skus
 
 if TYPE_CHECKING:
     from django.http import HttpRequest  # noqa: F401
@@ -70,6 +71,11 @@ class CartItemProjection:
     is_available: bool
     availability_warning: str | None  # short message when qty > stock
     available_qty: int | None         # how many are actually available (None = demand-based, no ceiling)
+    # Esgotado honesto: dá para assinar o retorno daqui mesmo, sem voltar ao
+    # cardápio. Pausado não entra — o cliente vê o mesmo "Indisponível", mas não
+    # ganha promessa de volta sobre uma decisão do operador.
+    is_notifiable: bool
+    is_notify_subscribed: bool
 
     # Planned-hold lifecycle state (AVAILABILITY-PLAN §8): the line is
     # either awaiting confirmation of planned production
@@ -226,8 +232,14 @@ def build_cart(
     made_to_order_label = (
         resolve_copy("CART_MADE_TO_ORDER", moment="*", audience="*").title or ""
     ).strip()
+    # Quem já pediu o aviso vê "Anotado" também na sacola — mesmo dono da
+    # pergunta que o card e a PDP usam.
+    subscribed_skus = notify_subscribed_skus(request)
     items = tuple(
-        _present_line(line, image_by_sku, planned_notice_template, made_to_order_label)
+        _present_line(
+            line, image_by_sku, planned_notice_template, made_to_order_label,
+            subscribed_skus=subscribed_skus,
+        )
         for line in data.lines
     )
 
@@ -295,6 +307,7 @@ def _present_line(
     image_by_sku: dict[str, str | None],
     planned_notice_template: str = "",
     made_to_order_label: str = "",
+    subscribed_skus: frozenset[str] | set[str] = frozenset(),
 ) -> CartItemProjection:
     # ``is_available`` already reflects the own-hold correction. When false,
     # the stock really fell behind what this session reserved — surface the
@@ -330,6 +343,8 @@ def _present_line(
         is_available=line.is_available,
         availability_warning=warning,
         available_qty=line.available_qty,
+        is_notifiable=line.is_notifiable,
+        is_notify_subscribed=line.is_notifiable and line.sku in subscribed_skus,
         is_made_to_order=line.is_made_to_order,
         made_to_order_label=(
             made_to_order_label if line.is_made_to_order else ""

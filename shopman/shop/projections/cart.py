@@ -108,6 +108,12 @@ class CartLineProjection:
     # carrega os dois (o selo diz o que É, a fila diz quando vem).
     is_made_to_order: bool = False
 
+    # Esgotado honesto: a linha caiu por FALTA — não por pausa (decisão do
+    # operador) nem por disponibilidade parcial, que tem o "Usar N" como saída.
+    # Mesma régua do card e da PDP; sem ela a sacola dizia "Indisponível" e a
+    # única saída era a lixeira.
+    is_notifiable: bool = False
+
 
 @dataclass(frozen=True)
 class CartDiscountLineProjection:
@@ -236,6 +242,7 @@ def build_cart(
     skus = [item.get("sku", "") for item in raw_items]
     names_by_sku = _names_by_sku(skus)
     made_to_order = _made_to_order_skus(skus)
+    sellable = _sellable_skus(skus)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
 
     pricing = session.pricing or {}
@@ -246,6 +253,7 @@ def build_cart(
         _build_line(
             item, names_by_sku, avail_map, own_holds, discount_items, session_key,
             made_to_order_skus=made_to_order,
+            sellable_skus=sellable,
         )
         for item in raw_items
     )
@@ -341,6 +349,28 @@ def _names_by_sku(skus: list[str]) -> dict[str, str]:
     }
 
 
+def _sellable_skus(skus: list[str]) -> frozenset[str]:
+    """Quais destes SKUs a casa ainda vende (``Product.is_sellable``).
+
+    O mapa de disponibilidade vem do Stockman e só conhece pausa de ESTOQUE; a
+    pausa comercial mora no produto. Sem esta leitura, um item despublicado pela
+    operação ganharia o sino "Me avise" — e o cliente sairia esperando a volta de
+    algo que foi decisão, não falta.
+    """
+    if not skus:
+        return frozenset()
+    try:
+        from shopman.offerman.models import Product
+
+        return frozenset(
+            p.sku
+            for p in Product.objects.filter(sku__in=skus, is_sellable=True).only("sku")
+        )
+    except Exception:
+        logger.warning("cart.sellable lookup failed skus=%s", skus, exc_info=True)
+        return frozenset()
+
+
 def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
     """Quais destes SKUs a casa declara como "Preparado na hora".
 
@@ -403,6 +433,7 @@ def _build_line(
     discount_items: dict[str, dict],
     session_key: str,
     made_to_order_skus: frozenset[str] = frozenset(),
+    sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
     qty = int(Decimal(str(item.get("qty", 0) or 0)))
@@ -435,6 +466,14 @@ def _build_line(
     is_available, available_qty = _line_availability(
         sku, qty, raw_avail, own_holds,
     )
+    # "Me avise" só para escassez de verdade: pausa é decisão (e nem o hold
+    # próprio reabre a linha), e sobra parcial já tem o "Usar N" como avanço.
+    is_notifiable = (
+        not is_available
+        and not (raw_avail or {}).get("is_paused", False)
+        and not available_qty
+        and sku in sellable_skus
+    )
 
     disc = discount_items.get(sku)
     original_price_q = int(disc["original_price_q"]) if disc else None
@@ -451,6 +490,7 @@ def _build_line(
         is_available=is_available,
         available_qty=available_qty,
         is_made_to_order=is_made_to_order,
+        is_notifiable=is_notifiable,
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,

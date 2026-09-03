@@ -201,6 +201,11 @@ export interface CartItemProjection {
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
+  // Esgotado honesto na sacola: caiu por FALTA, não por pausa, e não sobrou
+  // nenhuma unidade para o "Usar N" — é o único caso em que a linha oferece o
+  // sino. Pausado continua vendo só "Indisponível", sem promessa de volta.
+  is_notifiable: boolean
+  is_notify_subscribed: boolean
   // Preparado na hora: PROMESSA da casa sobre o produto (finalizado no momento
   // de servir), declarada em `Product.metadata.made_to_order`. Eixo próprio,
   // independente de is_awaiting_confirmation: um croque que espera a fornada de

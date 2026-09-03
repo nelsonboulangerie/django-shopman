@@ -1439,6 +1439,18 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(tracking).toContain('timelineStepStateLabel(step.state)')
   })
 
+  it('offers the notify bell on a bag line that fell to a real stockout', () => {
+    // A linha caída mostrava foto em sépia, aviso vermelho e stepper travado —
+    // e a única saída era a lixeira. O sino só entra na falta honesta: pausado
+    // segue vendo o mesmo "Indisponível", sem promessa de volta.
+    const bag = read('app/pages/sacola.vue')
+
+    expect(bag).toContain('<StockNotifyButton')
+    expect(bag).toContain('line.is_notifiable')
+    expect(bag).toContain(':subscribed="line.is_notify_subscribed"')
+    expect(bag).not.toContain('line.is_paused')
+  })
+
   it('keeps the progress timeline readable by assistive tech', () => {
     // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
     // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
