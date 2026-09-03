@@ -631,6 +631,10 @@ def _name_for(sku: str) -> str:
 
 def _entry_kind(ref: str, name: str) -> str:
     text = normalize_text(f"{ref} {name}")
+    # Pré-fermento e pré-preparo de massa são padaria, antes de qualquer outra
+    # pista: "creme-levain" não é creme, é o levain.
+    if any(word in text for word in ("levain", "poolish", "biga", "yudane", "tangzhong", "autoliz", "autolys", "massa velha")):
+        return "bread"
     if any(word in text for word in ("croissant", "folhad", "brioche", "danish", "viennois")):
         return "viennoiserie"
     if text.startswith("recheio") or "recheio" in text:

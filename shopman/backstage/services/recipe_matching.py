@@ -211,7 +211,7 @@ def role_for(name: str, sku: str = "", metadata: dict | None = None) -> str:
 
 def _active_materials() -> list[IngredientCandidate]:
     """Os insumos ativos como candidatos sem nota. Sem tabela ou sem linha, lista vazia."""
-    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+    from shopman.craftsman.models import normalize_recipe_item_unit
 
     try:
         from shopman.buyman.models import Material
