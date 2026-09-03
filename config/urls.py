@@ -123,6 +123,8 @@ urlpatterns += _include_optional("api/auth/", "shopman.doorman.api.urls")
 urlpatterns += _include_optional("auth/", "shopman.doorman.urls")
 
 urlpatterns += _include_optional("api/webhooks/", "shopman.shop.webhooks.urls")
+# Concierge de WhatsApp (superfície de cliente): /api/webhooks/manychat/conversation/
+urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.urls")
 # ManyChat inbound webhook (subscriber sync). HMAC + replay gated; without
 # MANYCHAT_WEBHOOK_SECRET it fails CLOSED outside DEBUG (rejects unsigned payloads);
 # only local dev (DEBUG) skips the signature. The conversational ORDER flow

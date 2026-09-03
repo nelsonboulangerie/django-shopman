@@ -367,6 +367,18 @@ envs:
 - key: AI_ASSIST_API_KEY
   scope: RUN_TIME
   type: SECRET
+# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). Nasce desligado; a
+# chave S2S do webhook é a mesma do access link (DOORMAN_ACCESS_LINK_API_KEY)
+# enquanto CONCIERGE_API_KEY não for definida.
+- key: SHOPMAN_CONCIERGE_ENABLED
+  scope: RUN_TIME
+  value: 'false'
+  type: GENERAL
+# Piloto fechado: só estes assinantes/telefones recebem o concierge (vazio = todos).
+- key: CONCIERGE_ALLOWED_SUBSCRIBERS
+  scope: RUN_TIME
+  value: ''
+  type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
@@ -828,7 +840,7 @@ jobs:
   kind: PRE_DEPLOY
   name: release
   run_command: sh -c 'python manage.py check --deploy && python manage.py migrate
-    --noinput && python manage.py setup_groups'
+    --noinput && python manage.py setup_groups && python manage.py bootstrap_whatsapp_channel'
   image:
     registry_type: DOCR
     repository: shopman

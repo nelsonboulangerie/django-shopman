@@ -128,6 +128,8 @@ def get_sidebar_navigation(request):
             _model_item("Clientes", "person_search", "guestman.Customer"),
             _model_item("Contas de fidelidade", "loyalty", "customer_loyalty.LoyaltyAccount"),
             _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
+            # Concierge de WhatsApp: a transcrição de cada conversa e a volta ao bot.
+            _model_item("Conversas do WhatsApp", "chat", "shop.Conversation"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.

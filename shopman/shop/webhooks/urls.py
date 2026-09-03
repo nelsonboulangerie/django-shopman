@@ -18,4 +18,6 @@ urlpatterns = [
     path("ifood/events/", IFoodEventsWebhookView.as_view(), name="ifood-events-webhook"),
     # Courier (Machine): status/posição das corridas de entrega.
     path("machine/", MachineWebhookView.as_view(), name="machine-webhook"),
+    # do ManyChat). Não colide com o include do guestman em
+    # `api/webhooks/manychat/webhook/` (sync de assinante): caminho distinto.
 ]

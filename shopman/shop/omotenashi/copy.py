@@ -1078,6 +1078,45 @@ OMOTENASHI_DEFAULTS: dict[str, dict[str, dict[str, CopyEntry]]] = {
     "LOGIN_PHONE_CTA_WA": {
         WILDCARD: {WILDCARD: CopyEntry(title="Entrar pelo WhatsApp")},
     },
+
+    # ── Concierge de WhatsApp ──────────────────────────────────────────
+    # O que o concierge diz SEM o modelo: abertura sugerida ao prompt e as saídas
+    # fixas de política (modelo fora, mídia, equipe, teto diário, contato sem
+    # telefone). Tudo aqui é lido por ``shopman/storefront/concierge/service.py`` via
+    # ``copy_message(key)``; a conversa em si é do modelo, com o dinheiro nas
+    # ferramentas. Voz da casa: curta, calorosa, sem emoji, sem alarde.
+    # ``{shop_name}`` interpolado pelo prompt do agente (o nome da casa é dado do
+    # ``Shop``, nunca copy fixa; tenant é config, não código).
+    "CONCIERGE_GREETING": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Olá, aqui é o concierge da {shop_name}, um assistente da casa. O que você gostaria de pedir hoje?",
+        )},
+    },
+    "CONCIERGE_UNAVAILABLE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Nosso concierge está fora do ar por alguns minutos. Se preferir, peça pelo site; ou siga por aqui, que a equipe continua o atendimento.",
+        )},
+    },
+    "CONCIERGE_MEDIA_UNSUPPORTED": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Por enquanto eu leio só mensagens de texto. Pode escrever o seu pedido por aqui que eu sigo com você.",
+        )},
+    },
+    "CONCIERGE_HANDOFF_ACK": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Claro. Alguém da equipe continua com você por aqui em instantes.",
+        )},
+    },
+    "CONCIERGE_TURN_LIMIT": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Chegamos ao limite de mensagens do assistente por hoje nesta conversa. A equipe segue com você por aqui, ou, se preferir, o pedido pode ser feito pelo site.",
+        )},
+    },
+    "CONCIERGE_NO_PHONE": {
+        WILDCARD: {WILDCARD: CopyEntry(
+            message="Este contato não tem um número de telefone associado, e eu preciso dele para registrar o pedido. Para pedir, entre pelo site com o seu número.",
+        )},
+    },
     "LOGIN_PHONE_CTA_SMS": {
         WILDCARD: {WILDCARD: CopyEntry(title="Receber por SMS")},
     },

@@ -407,6 +407,7 @@ def _register_campaign() -> None:
     logger.info("shopman.handlers: connected campaign receivers.")
 
 
+
 def _register_catalog_signals() -> None:
     """Wire Offerman product_created / price_changed → catalog projection directives."""
     try:

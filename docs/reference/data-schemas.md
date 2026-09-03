@@ -22,6 +22,7 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `delivery_time_slot` | `string` | CheckoutView · PDV | CommitService | **Dois vocabulários na mesma chave, e a DATA decide qual.** Encomenda (data futura, loja e PDV) → ref do slot canônico de `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`; label via `shop.services.fulfillment_window.canonical_slots`). Venda para HOJE no PDV → janela de meia hora do expediente, onde o ref É o par de horas (`"14:00-14:30"`) e por isso se lê sozinho num pedido antigo. Quem escolhe a grade é `fulfillment_window._grid_for`; quem lê deve tolerar as duas formas. ⚠️ Ficou assim porque encomenda é TURNO ("a partir das 12h", promessa de fornada) e a entrega de hoje é JANELA (o combinado com o entregador) — são compromissos diferentes, e unificá-los perderia um dos dois. |
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
+| `concierge` | `dict` | `storefront.concierge.tools` (sessão aberta pelo concierge de WhatsApp) | Admin da conversa, diagnóstico | `{conversation_id}`: a `Conversation` que abriu esta sacola. Só presente em sessões do canal `whatsapp` criadas pelo concierge; acompanha `origin_channel = "whatsapp"`. Ver [Concierge de WhatsApp](#concierge-de-whatsapp) |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) | CommitService | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}` |
@@ -90,6 +91,24 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
   "issues": []
 }
 ```
+
+### Concierge de WhatsApp
+
+O concierge ([plano](../plans/WHATSAPP-CONCIERGE-PLAN.md), [ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md))
+guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversation`
+(uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
+orçamento vigente `quote`, estado, contadores de turno e tokens) e
+`ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+
+| Chave | Valor | Para quê |
+|---|---|---|
+| `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
+| `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+
+O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
+na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
 
 ---
 

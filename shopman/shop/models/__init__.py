@@ -9,6 +9,7 @@ from .campaign import (
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
+from .concierge import Conversation, ConversationMessage
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
@@ -30,6 +31,8 @@ from .user_notification import NotificationCategory, UserNotification
 
 __all__ = [
     "Shop",
+    "Conversation",
+    "ConversationMessage",
     "Channel",
     "Promotion",
     "Coupon",
