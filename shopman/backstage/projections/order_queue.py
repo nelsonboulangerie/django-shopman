@@ -220,8 +220,10 @@ class CustomerProfileProjection:
     Duas armadilhas moldam o formato:
 
     1. **Insight é estado OPCIONAL.** Ele nasce no ``customer.ensure`` de cada
-       pedido e não há cron de ``recalculate_all`` — cliente importado ou
-       semeado sem pedido simplesmente não tem insight. Sem ele os campos
+       pedido — quem nunca comprou (cliente importado, semeado, criado à mão no
+       cadastro) simplesmente não tem insight, e nenhuma varredura o cria: sem
+       pedido, os scores RFM sairiam ``1/1/1`` e o carimbo seria "Perdido", que
+       é sobre quem foi embora, não sobre quem nunca chegou. Sem ele os campos
        derivados saem VAZIOS, nunca zero: "R$ 0,00" em ticket médio afirmaria
        que o cliente não gasta nada, que é o oposto de "ainda não sabemos".
     2. **"Última compra" não é ESTE pedido.** O insight guarda ``last_order_at``,
@@ -689,8 +691,7 @@ def _customer_profile(order: Order) -> CustomerProfileProjection | None:
     * o **cadastro** (nota, restrição alimentar, aniversário), que é o mesmo que
       o PDV mostra ao balcão;
     * o **insight** (contagem, ticket médio, favorito, segmento RFM), materializado
-      pelo ``InsightService`` a cada pedido — e ausente é estado NORMAL, porque
-      não há cron de ``recalculate_all``;
+      pelo ``InsightService`` — e ausente é estado NORMAL, não erro;
     * o **pedido anterior**, que responde "quando comprou pela última vez" sem
       confundir a resposta com o pedido aberto na tela.
 
