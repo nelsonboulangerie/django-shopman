@@ -115,6 +115,22 @@ declarada, o leite passa a aparecer como `3,502 kg · ≈ 3,4 litros`, exatament
 aparece como `≈ 6 ovos`. É informação para quem despeja de caixa de 1 L, não ruído.
 A água não ganha a ponte (não entra por nota), então não ganha anotação.
 
+## O que fica UM clique mais caro no recebimento (e por que está certo assim)
+
+Hoje a nota de leite chega com `uCom="LT"`, o insumo conta em `l`, e a física resolve
+sozinha. Depois da troca, litro e quilo são dimensões diferentes: a linha **trava** e o
+operador escolhe a conversão "litros" na tela. É a R4 funcionando, não um defeito.
+
+O casamento automático não pega esse caso porque `MaterialConversion` **não guarda de qual
+unidade converte** — só o rótulo livre e o fator. O `_conversion_by_text` procura o rótulo
+dentro do nome e da unidade da nota, e "LT" não contém a palavra "litros".
+
+**Não foi resolvido de propósito.** Fazer o sistema aplicar a densidade sozinho ao ver "LT"
+melhora o clique e piora a R3: uma equivalência aproximada passaria a entrar sem gesto
+humano. Se o clique semanal incomodar, o caminho honesto é dar à `MaterialConversion` um
+campo dizendo de que unidade ela parte (`from_unit`), e aí o casamento é por dado
+declarado, não por adivinhação de texto. É WP próprio, com migração no Core.
+
 ## Fora deste WP
 
 Outros insumos em volume que a casa venha a cadastrar; a decisão de comprar leite por kg

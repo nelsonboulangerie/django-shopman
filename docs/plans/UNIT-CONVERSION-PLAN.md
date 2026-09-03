@@ -49,8 +49,12 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   `unit` **explícito** na criação do `RecipeItem` em vez de cair no default, e o teste do
   seed prova que toda ficha de insumo pesado bate com a base (`full_clean()` em cada
   linha).
-- ✅ Os líquidos (`AGUA-FILTRADA`, `LEITE`, `AZEITE`) passam a falar `L` na ficha, na
-  mesma base `l` do insumo. Destravou porque o perfil ganhou `density_g_per_ml` — a
+- ✅ Os líquidos (`AGUA-FILTRADA`, `LEITE`, `AZEITE`) passaram a falar `L` na ficha, na
+  mesma base `l` do insumo. ⚠️ **Corrigido em 03/09** — eles são PESADOS na bancada, então
+  a base honesta é `kg` e não `l`; ver a Calibração no fim deste documento e o
+  [WP-BASE-UNIT-LIQUIDS-KG](WP-BASE-UNIT-LIQUIDS-KG.md). O que segue nesta linha é o
+  raciocínio da época, e continua valendo para qualquer insumo que a casa **meça em
+  volume** de verdade. Destravou porque o perfil ganhou `density_g_per_ml` — a
   ponte volume→massa que a nutrição precisa
   (`nutrition_from_recipe.py::_item_quantity_grams`). Sem a densidade o item continua
   ficando **de fora** da soma, que é o comportamento certo: melhor rótulo incompleto do
