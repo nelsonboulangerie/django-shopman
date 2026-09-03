@@ -101,6 +101,18 @@ from shopman.utils import units
 #: Casas decimais dos campos de quantidade tocados (``DecimalField(decimal_places=3)``).
 _QUANT_EXP = Decimal("0.001")
 
+#: Como o operador CHAMA a unidade antiga na bancada. O rótulo é lido tal como
+#: escrito na anotação da tela de separação ("≈ 2,9 litros"), ao lado de "≈ 6
+#: ovos" e "≈ 2 limões" — então vai no plural, como os vizinhos. O ``label`` do
+#: model (`Material.Unit`) é singular porque nomeia a unidade, não a contagem.
+_ROTULO_DA_UNIDADE = {
+    "l": "litros",
+    "ml": "mililitros",
+    "kg": "quilos",
+    "g": "gramas",
+    "un": "unidades",
+}
+
 #: Casas decimais de ``MaterialConversion.to_base_factor``.
 _FACTOR_EXP = Decimal("0.000001")
 
@@ -595,9 +607,8 @@ class Command(BaseCommand):
                 f"'{atual}' é a mesma dimensão da base nova, e física não vira tabela."
             ]
 
-        Material = apps.get_model("buyman", "Material")
         Conversion = apps.get_model("buyman", "MaterialConversion")
-        rotulo = str(Material.Unit(atual).label)
+        rotulo = _ROTULO_DA_UNIDADE.get(atual, atual)
         conversao, criada = Conversion.objects.update_or_create(
             material=material,
             supplier=None,

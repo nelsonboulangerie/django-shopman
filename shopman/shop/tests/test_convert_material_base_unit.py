@@ -256,7 +256,7 @@ def test_o_minimo_declarado_no_compras_acompanha_a_troca(leite, cenario):
 def test_a_conversao_litro_nasce_com_o_fator_e_o_carimbo(leite, cenario):
     call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply")
 
-    conversao = MaterialConversion.objects.get(material=leite, label="litro")
+    conversao = MaterialConversion.objects.get(material=leite, label="litros")
     assert conversao.to_base_factor == Decimal("1.030000")
     assert conversao.kind == MaterialConversion.Kind.APPROXIMATE
     assert conversao.supplier_id is None
@@ -332,7 +332,7 @@ def test_no_bridge_converte_sem_deixar_a_conversao_para_tras(leite, cenario):
 
     leite.refresh_from_db()
     assert leite.unit == "kg"
-    assert not MaterialConversion.objects.filter(material=leite, label="litro").exists()
+    assert not MaterialConversion.objects.filter(material=leite, label="litros").exists()
     # A conversão do saldo acontece do mesmo jeito: a ponte é só o cadastro da compra.
     quant = Quant.objects.get(sku="LEITE")
     assert quant.quantity == Decimal("8.240")
