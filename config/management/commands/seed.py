@@ -2903,7 +2903,7 @@ class Command(BaseCommand):
                     ("FARINHA-T55", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("4.000")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("AZEITE", Decimal("0.250")),
+                    ("AZEITE", Decimal("0.228")),
                     ("SAL", Decimal("0.100")),
                 ],
             },
@@ -2919,7 +2919,7 @@ class Command(BaseCommand):
                     # Com yudane (dono, 26/08) — proposta de bancada.
                     ("FARINHA-T55", Decimal("4.400")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.800")),
+                    ("LEITE", Decimal("1.854")),
                     ("MANTEIGA-FR", Decimal("0.700")),
                     ("ACUCAR", Decimal("0.350")),
                     ("FERMENTO-BIO", Decimal("0.150")),
@@ -2935,7 +2935,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FR", Decimal("2.400")),
-                    ("LEITE", Decimal("1.200")),
+                    ("LEITE", Decimal("1.236")),
                     ("ACUCAR", Decimal("0.450")),
                     ("FERMENTO-BIO", Decimal("0.180")),
                     ("SAL", Decimal("0.090")),
@@ -2968,7 +2968,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T55", Decimal("4.200")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.800")),
+                    ("LEITE", Decimal("1.854")),
                     ("MANTEIGA-FR", Decimal("0.600")),
                     ("ACUCAR", Decimal("0.400")),
                     ("CHOCOLATE-70", Decimal("0.400")),
@@ -3033,7 +3033,7 @@ class Command(BaseCommand):
                 "output_sku": "CREME-BAUNILHA",
                 "batch_size": Decimal("5"),
                 "items": [
-                    ("LEITE", Decimal("3.400")),
+                    ("LEITE", Decimal("3.502")),
                     ("ACUCAR", Decimal("0.800")),
                     ("OVOS", Decimal("0.500")),
                     ("FARINHA-T45", Decimal("0.300")),
@@ -3206,7 +3206,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.5"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
-                    ("LEITE", Decimal("1.600")),
+                    ("LEITE", Decimal("1.648")),
                     ("MANTEIGA-FR", Decimal("1.200")),
                     ("OVOS", Decimal("0.400")),
                     ("ACUCAR", Decimal("0.400")),
@@ -3223,7 +3223,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("3.000")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                     ("FERMENTO-BIO", Decimal("0.100")),
                     ("SAL", Decimal("0.100")),
                     ("ACUCAR", Decimal("0.050")),
@@ -3238,7 +3238,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FRANGO", Decimal("3.600")),
                     ("CEBOLA-ROXA", Decimal("0.300")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                     ("SAL", Decimal("0.040")),
                 ],
             },
@@ -3251,7 +3251,7 @@ class Command(BaseCommand):
                     ("CEBOLA-ROXA", Decimal("1.800")),
                     ("BACON", Decimal("1.000")),
                     ("TOMILHO", Decimal("0.060")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                 ],
             },
             {
@@ -3262,7 +3262,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CEBOLA-ROXA", Decimal("2.200")),
                     ("AZEITONA", Decimal("0.700")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                 ],
             },
             {
@@ -3271,7 +3271,7 @@ class Command(BaseCommand):
                 "output_sku": "MOLHO-BECHAMEL",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("2.600")),
+                    ("LEITE", Decimal("2.678")),
                     ("MANTEIGA-FR", Decimal("0.200")),
                     ("FARINHA-T55", Decimal("0.200")),
                     ("SAL", Decimal("0.020")),
@@ -3283,7 +3283,7 @@ class Command(BaseCommand):
                 "output_sku": "CREME-CHOCOLATE",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("1.500")),
+                    ("LEITE", Decimal("1.545")),
                     ("CHOCOLATE-70", Decimal("1.200")),
                     ("ACUCAR", Decimal("0.200")),
                     ("MANTEIGA-FR", Decimal("0.150")),
@@ -3296,8 +3296,8 @@ class Command(BaseCommand):
                 "output_sku": "CREME-LEITE-OVOS",
                 "batch_size": Decimal("2"),
                 "items": [
-                    ("CREME-DE-LEITE", Decimal("0.800")),
-                    ("LEITE", Decimal("0.600")),
+                    ("CREME-DE-LEITE", Decimal("0.808")),
+                    ("LEITE", Decimal("0.618")),
                     ("OVOS", Decimal("0.500")),
                     ("ACUCAR", Decimal("0.150")),
                 ],
@@ -3321,7 +3321,7 @@ class Command(BaseCommand):
                 "output_sku": "VINAGRETE-FRANCES",
                 "batch_size": Decimal("0.9"),
                 "items": [
-                    ("AZEITE", Decimal("0.700")),
+                    ("AZEITE", Decimal("0.637")),
                     ("MT", Decimal("0.100")),
                     ("LIMAO", Decimal("0.150")),
                     ("SAL", Decimal("0.010")),
@@ -3736,7 +3736,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.020")),
+                    ("LEITE", Decimal("0.021")),
                 ],
             },
             {
@@ -3758,7 +3758,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.150")),
+                    ("LEITE", Decimal("0.155")),
                 ],
             },
             {
@@ -3769,7 +3769,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.150")),
+                    ("LEITE", Decimal("0.155")),
                     ("CHOCOLATE-70", Decimal("0.020")),
                 ],
             },
@@ -3781,7 +3781,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.180")),
+                    ("LEITE", Decimal("0.185")),
                     ("CHOCOLATE-70", Decimal("0.025")),
                 ],
             },
@@ -3793,7 +3793,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.220")),
+                    ("LEITE", Decimal("0.227")),
                 ],
             },
             {
@@ -3803,7 +3803,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("LEITE", Decimal("0.220")),
+                    ("LEITE", Decimal("0.227")),
                     ("CHOCOLATE-70", Decimal("0.030")),
                 ],
             },
@@ -3886,7 +3886,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.050")),
+                    ("LEITE", Decimal("0.052")),
                     ("AGUA-FILTRADA", Decimal("0.200")),
                 ],
             },
@@ -4037,12 +4037,17 @@ class Command(BaseCommand):
         # anotação "≈ 6 ovos" é derivada na tela de mise-en-place, nunca gravada.
         # Canela e alecrim também são pesados: base kg, e a precisão de custo é
         # problema do eixo de compra, não da unidade-base.
+        #
+        # Os líquidos da casa (água, leite, azeite, creme de leite) também contam
+        # em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a bancada os PESA, e é isso que a
+        # R1 pergunta. A ponte da densidade saiu da produção diária e foi para o
+        # recebimento, como uma MaterialConversion "litros" declarada abaixo.
         material_attrs = {
             "FARINHA-T65": ("kg", 180), "FARINHA-T55": ("kg", 180),
             "FARINHA-T45": ("kg", 180), "FARINHA-INT": ("kg", 120),
             "CENTEIO": ("kg", 120), "MALTE": ("kg", 365),
             "ACUCAR": ("kg", None), "SAL": ("kg", None), "GERGELIM": ("kg", 180),
-            "AGUA-FILTRADA": ("l", None), "LEITE": ("l", 7), "AZEITE": ("l", 540),
+            "AGUA-FILTRADA": ("kg", None), "LEITE": ("kg", 7), "AZEITE": ("kg", 540),
             "FERMENTO-NAT": ("kg", 7), "FERMENTO-BIO": ("kg", 14),
             "MANTEIGA-FR": ("kg", 60), "OVOS": ("kg", 28),
             "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
@@ -4058,7 +4063,7 @@ class Command(BaseCommand):
             "SALSINHA-DESID": ("kg", 365), "TOMILHO": ("kg", 14),
             "PASSAS": ("kg", 365), "GOTAS-CHOCOLATE": ("kg", 365),
             "BATON-CHOCOLATE": ("kg", 365), "BAUNILHA": ("kg", 365),
-            "CREME-DE-LEITE": ("l", 10), "CAFE-GRAO": ("kg", 90),
+            "CREME-DE-LEITE": ("kg", 10), "CAFE-GRAO": ("kg", 90),
             "CHA-CAMILLE": ("kg", 365), "CHA-ROUGE": ("kg", 365),
             "CHA-SOPHIE": ("kg", 365), "CHA-BLEU": ("kg", 365),
             "CHA-HIBISCO": ("kg", 365), "CHA-CHAI": ("kg", 365),
@@ -4120,6 +4125,47 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
 
+        # Equivalências APROXIMADAS de volume: os líquidos contam em kg porque a
+        # bancada os pesa, mas a NOTA fala em litro. Sem o fator declarado a
+        # primeira nota em litro trava, e travar é o comportamento certo — a R4 da
+        # ADR-024 manda recusar em vez de adivinhar. Então declaramos aqui o que a
+        # casa já sabe: o fator é a densidade do próprio perfil do insumo.
+        #
+        # É APPROXIMATE, e não CONVENTIONAL, porque densidade é equivalência
+        # física com incerteza (leite mais gordo pesa diferente), e a R3 manda o
+        # número carregar o "≈" até a tela. Efeito visível e desejado: a linha de
+        # mise en place do leite passa a anotar "≈ 3,4 litros" ao lado do peso,
+        # que é como o padeiro despeja da caixa.
+        #
+        # AGUA-FILTRADA fica de FORA de propósito: ela é da torneira, não tem
+        # fornecedor (ver SUPPLIER_BY_MATERIAL) e nunca entra por nota. Fator que
+        # ninguém usa é configuração morta; se um dia a água vier numa nota, a R4
+        # trava e alguém declara o fator no gesto.
+        # O rótulo sai TAL COMO ESCRITO na anotação da separação, ao lado de
+        # "≈ 17 ovos" e "≈ 1,5 limões" — daí o plural, que é como o padeiro fala.
+        volume_conversions = {
+            sku: (
+                "litros",
+                Decimal(str(INGREDIENT_PROFILES[sku]["density_g_per_ml"])),
+            )
+            for sku in ("LEITE", "AZEITE", "CREME-DE-LEITE")
+        }
+        for sku, (label, factor) in volume_conversions.items():
+            material = Material.objects.filter(sku=sku).first()
+            if material is None:
+                continue
+            MaterialConversion.objects.update_or_create(
+                material=material,
+                supplier=None,
+                label=label,
+                defaults={
+                    "to_base_factor": factor,
+                    "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write(f"  ✅ {len(volume_conversions)} conversões de volume (litro → kg)")
+
         # O saldo de abertura de insumo entra DEPOIS do mise en place (abaixo):
         # ele deriva do plano do dia expandido pelas fichas, que ainda não
         # existem neste ponto do método.
@@ -4132,13 +4178,15 @@ class Command(BaseCommand):
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
-            Insumo pesado responde `kg`; líquido responde `l`, que a ficha grafa
-            `L` (`normalize_recipe_item_unit`). Entrada que não é Material
-            (pré-preparo, produto) fica em kg, que é como a massa é medida.
+            Insumo pesado responde `kg`, e desde o WP-BASE-UNIT-LIQUIDS-KG isso
+            inclui os líquidos da casa: a bancada os pesa. Entrada que não é
+            Material (pré-preparo, produto) fica em kg, que é como a massa é
+            medida.
 
-            Os líquidos só puderam falar em litro porque o perfil ganhou
-            `density_g_per_ml`: é ela que leva o item até a nutrição, que conta
-            em grama.
+            A função continua respeitando o cadastro em vez de assumir peso: um
+            insumo que um dia nasça com base de volume responde `l`, que a ficha
+            grafa `L` (`normalize_recipe_item_unit`), e a `density_g_per_ml` do
+            perfil o leva até a nutrição, que conta em grama.
             """
             unit = material_attrs.get(input_sku, ("kg", None))[0]
             return normalize_recipe_item_unit(unit)
