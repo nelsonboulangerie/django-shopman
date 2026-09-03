@@ -202,14 +202,15 @@ export function isCheckoutDateUnavailable (
 
 export function quickCheckoutDateOptions (
   bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'>,
-  entries: ClosedDateEntry[]
+  entries: ClosedDateEntry[],
+  closedWeekdays: number[] | readonly number[] = []
 ): CheckoutQuickDateOption[] {
   return [
     { label: 'Hoje', value: bounds.todayValue },
     { label: 'Amanhã', value: bounds.tomorrowValue }
   ].filter(option => option.value <= bounds.maxDateValue).map(option => ({
     ...option,
-    disabled: isCheckoutDateUnavailable(option.value, bounds, entries)
+    disabled: isCheckoutDateUnavailable(option.value, bounds, entries, closedWeekdays)
   }))
 }
 

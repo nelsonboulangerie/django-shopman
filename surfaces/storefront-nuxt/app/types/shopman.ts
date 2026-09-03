@@ -869,8 +869,10 @@ export interface TrackingResponse {
   payment_pending: boolean
   payment_expired: boolean
   payment_confirmed: boolean
+  // `payment_status` NÃO viaja neste payload: o rótulo humano já carrega o estado,
+  // e o nome cru colide com o `payment_status` (enum) do 409 de cancelamento —
+  // o mesmo nome com dois significados (ver api/tracking.py::_tracking_payload).
   payment_status_label: string | null
-  payment_status: string | null
   payment_expires_at: string | null
   // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
   // pagamento" dentro do bloco inline.

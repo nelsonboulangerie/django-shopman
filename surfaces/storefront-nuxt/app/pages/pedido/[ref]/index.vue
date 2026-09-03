@@ -190,7 +190,7 @@ const summaryRows = computed(() => {
   if (t.delivery_fee_display) {
     rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
   }
-  const paymentLabel = t.payment_status_label || t.payment_status
+  const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
   return rows
 })

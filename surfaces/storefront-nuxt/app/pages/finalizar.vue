@@ -383,7 +383,7 @@ const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(clos
 const quickDateOptions = computed(() => {
   const available = checkout.value?.available_dates || []
   if (!available.length) {
-    return quickCheckoutDateOptions(dateBounds.value, closedDateEntries.value)
+    return quickCheckoutDateOptions(dateBounds.value, closedDateEntries.value, closedWeekdays.value)
       .map(option => ({ value: option.value, title: option.label, disabled: option.disabled }))
   }
   const today = dateBounds.value.todayValue

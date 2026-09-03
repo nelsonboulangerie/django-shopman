@@ -1386,3 +1386,46 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(sheet).not.toContain('paused_message')
   })
 })
+
+// Semântica: o que a tela AFIRMA tem de estar escrito no contrato que ela recebeu.
+// Cada caso aqui nasceu de uma tela dizendo mais (ou outra coisa) do que o payload.
+describe('surface claims stay inside what the projection actually says', () => {
+  it('never invites "Adicionar" on a card the contract says is not addable', () => {
+    // `can_add_to_cart` falso só ocorre com `availability === 'unavailable'`
+    // (presentation/catalog.py). O card mostrava o botão cinza escrito
+    // "Adicionar" ao lado do próprio selo "Indisponível" — convite e recusa na
+    // mesma peça. A PDP já fazia certo; só o tile mentia.
+    const tile = read('app/components/ProductTile.vue')
+
+    expect(tile).toContain("'Adicionar' : 'Indisponível'")
+    expect(tile).not.toContain('is_paused')
+  })
+
+  it('does not announce availability in a count that includes unavailable items', () => {
+    // O `aria-live` do cardápio contava TODOS os cards da seção — inclusive os
+    // indisponíveis — e chamava o número de "itens disponíveis".
+    const menu = read('app/pages/menu.vue')
+
+    expect(menu).not.toContain('itens disponíveis')
+    expect(menu).toContain('itens no cardápio')
+  })
+
+  it('does not read payment_status, a field deliberately dropped from tracking', () => {
+    // api/tracking.py::_tracking_payload removeu o campo de propósito: o nome
+    // colide com o `payment_status` (enum cru) do 409 de cancelamento. Enquanto
+    // o tipo o declarava, bastava alguém reintroduzir para a tela exibir
+    // "payment_pending" ao cliente.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+    const types = read('app/types/shopman.ts')
+
+    expect(tracking).not.toMatch(/t\.payment_status(?!_label)/)
+    expect(types).not.toMatch(/^\s*payment_status: /m)
+  })
+
+  it('speaks the product name, not the SKU, in the favorite control', () => {
+    const heart = read('app/components/FavoriteHeart.vue')
+
+    expect(heart).not.toContain('`Remover ${sku} dos favoritos`')
+    expect(heart).toContain('${spoken} dos favoritos')
+  })
+})
