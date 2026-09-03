@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { HomeResponse } from '~/types/shopman'
+import { absoluteImage } from '~/presentation/seo'
 import { NELSON_FALLBACK_SHOP } from '~/utils/nelsonFallback'
 
 const apiPath = useShopmanApiPath()
@@ -8,6 +9,7 @@ const { setFromServer, refreshCart } = useCartState()
 const { watchConnectivity } = useConnectivity()
 const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : undefined
 const route = useRoute()
+const requestUrl = useRequestURL()
 const AUTH_SHELL_ROUTES = new Set(['/entrar', '/a'])
 const authShellRoute = computed(() => AUTH_SHELL_ROUTES.has(route.path))
 
@@ -55,10 +57,39 @@ const brandName = computed(() => session.shop.value?.brand_name || NELSON_FALLBA
 useHead({
   titleTemplate: title => (title && title !== brandName.value ? `${title} | ${brandName.value}` : brandName.value)
 })
+// PREVIEW DO LINK — todo link que a casa manda vira CARTÃO, não URL crua.
+//
+// Só a home declarava og:title/description/image. Todo o resto — o `/a` do login,
+// o `/menu`, o acompanhamento do pedido — saía sem nada, e o WhatsApp, sem ter o
+// que desenhar, mostrava a URL inteira, longa e feia. Justamente as páginas que a
+// gente MANDA por mensagem eram as sem preview; a única que ninguém manda era a
+// que tinha.
+//
+// O padrão mora aqui, no shell, porque assim vale para a página que ainda não
+// existe. Página com algo melhor a dizer (produto, pedido) sobrescreve: o
+// `useSeoMeta` da página resolve depois e vence.
+const brandDescription = computed(
+  () => session.shop.value?.description || NELSON_FALLBACK_SHOP.description
+)
+// A mesma imagem que a home usa: o primeiro destaque, que é foto de produto de
+// verdade. Logo em cartão de link vira quadradinho sem graça; pão, não.
+const brandOgImage = computed(() => absoluteImage(
+  requestUrl.origin,
+  shellHome.value?.featured_items?.[0]?.image_url || session.shop.value?.logo_url
+))
+
 useSeoMeta({
   ogSiteName: () => brandName.value,
   ogLocale: 'pt_BR',
-  themeColor: () => themeColor.value
+  themeColor: () => themeColor.value,
+  ogTitle: () => brandName.value,
+  ogDescription: () => brandDescription.value,
+  ogType: 'website',
+  ogImage: () => brandOgImage.value || undefined,
+  twitterCard: 'summary_large_image',
+  twitterTitle: () => brandName.value,
+  twitterDescription: () => brandDescription.value,
+  twitterImage: () => brandOgImage.value || undefined
 })
 
 </script>

@@ -415,9 +415,16 @@ async function compartilhar (event: MouseEvent) {
   await shareNatively(shareText.value)
 }
 
+// O cartão do link repete o que a mensagem já disse: o número do pedido. É o link
+// que a casa mais manda, e chegar como "Pedido NB-260903-A19" em vez do nome da
+// loja é o que faz o cliente reconhecer antes de tocar.
 useSeoMeta({
   title: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
-  description: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido'
+  description: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido',
+  ogTitle: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
+  ogDescription: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido',
+  twitterTitle: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
+  twitterDescription: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido'
 })
 </script>
 
