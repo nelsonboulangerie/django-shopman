@@ -176,6 +176,20 @@ from .purchase import (
     PurchaseRequestSendView,
     PurchaseScanInvoiceView,
 )
+from .recipe_book import (
+    FormulaLensView,
+    FormulaStandardizeView,
+    IngredientOptionsView,
+    RecipeBookAccessView,
+    RecipeBookListView,
+    RecipeCaptureView,
+    RecipeCompareView,
+    RecipeEntryView,
+    RecipeReferenceView,
+    RecipeVersionCreateView,
+    RecipeVersionPublishView,
+    RecipeVersionView,
+)
 from .sign_ins import SignInListView
 from .telemetry import ClientErrorView
 
@@ -238,6 +252,24 @@ urlpatterns = [
         "production/weighing/blind-map/",
         ProductionBlindMapView.as_view(),
         name="api-backstage-production-blind-map",
+    ),
+    # Inventário de receitas (RECIPE-INVENTORY-PLAN §8) — app de Produção, telas /recipes.
+    # As rotas fixas vêm ANTES de recipes/<slug:ref>/: "lens" também é um slug válido.
+    path("recipes/access/", RecipeBookAccessView.as_view(), name="api-backstage-recipes-access"),
+    path("recipes/lens/", FormulaLensView.as_view(), name="api-backstage-recipes-lens"),
+    path("recipes/standardize/", FormulaStandardizeView.as_view(), name="api-backstage-recipes-standardize"),
+    path("recipes/compare/", RecipeCompareView.as_view(), name="api-backstage-recipes-compare"),
+    path("recipes/reference/", RecipeReferenceView.as_view(), name="api-backstage-recipes-reference"),
+    path("recipes/ingredients/", IngredientOptionsView.as_view(), name="api-backstage-recipes-ingredients"),
+    path("recipes/capture/", RecipeCaptureView.as_view(), name="api-backstage-recipes-capture"),
+    path("recipes/", RecipeBookListView.as_view(), name="api-backstage-recipes"),
+    path("recipes/<slug:ref>/", RecipeEntryView.as_view(), name="api-backstage-recipe"),
+    path("recipes/<slug:ref>/versions/", RecipeVersionCreateView.as_view(), name="api-backstage-recipe-versions"),
+    path("recipes/<slug:ref>/versions/<int:number>/", RecipeVersionView.as_view(), name="api-backstage-recipe-version"),
+    path(
+        "recipes/<slug:ref>/versions/<int:number>/publish/",
+        RecipeVersionPublishView.as_view(),
+        name="api-backstage-recipe-version-publish",
     ),
     # Compras — recebimento/reposição sobre Buyman + Stockman.
     path("purchase/", PurchaseBoardView.as_view(), name="api-backstage-purchase"),
