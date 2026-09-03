@@ -64,6 +64,10 @@ const stepsText = ref("");
 const notes = ref("");
 const label = ref("");
 const seededNumber = ref<number | null>(null);
+// O "antes" da padronização (desfazer). Declarado ANTES do watch abaixo: com o
+// rascunho já carregado no servidor, o watch imediato roda durante o setup e
+// tocava em `before` antes da inicialização (500 na página inteira).
+const before = ref<{ formula: Formula; anchorTotal: number; total: number; yieldQuantity: string } | null>(null);
 
 watch(
   draft,
@@ -185,17 +189,30 @@ function partMatchedName(index: number): string {
 }
 
 // ── Padronizar para 1000 g (antes/depois + desfazer) ────────────────────────
-const before = ref<{ formula: Formula; anchorTotal: number; total: number } | null>(null);
 async function standardizeToHouse() {
-  const snapshot = { formula: formula.value, anchorTotal: localAnchorTotal.value, total: localTotal.value };
+  const snapshot = {
+    formula: formula.value,
+    anchorTotal: localAnchorTotal.value,
+    total: localTotal.value,
+    yieldQuantity: yieldQuantity.value,
+  };
   const next = await standardize(HOUSE_BASIS_G);
   if (!next) return;
   before.value = snapshot;
   formula.value = next;
+  // O rendimento acompanha a fórmula: 5 kg de creme sobre 5,2 kg de insumos
+  // viram ~0,96 kg sobre 1 kg. Sem isto a ficha renderia mais do que pesa e a
+  // publicação recusaria pelo invariante de massa.
+  const factor = snapshot.anchorTotal > 0 ? HOUSE_BASIS_G / snapshot.anchorTotal : 0;
+  const current = Number(String(yieldQuantity.value).replace(",", "."));
+  if (factor > 0 && Number.isFinite(current) && current > 0) {
+    yieldQuantity.value = String(Math.round(current * factor * 1000) / 1000);
+  }
 }
 function undoStandardize() {
   if (!before.value) return;
   formula.value = before.value.formula;
+  yieldQuantity.value = before.value.yieldQuantity;
   before.value = null;
 }
 const origin = computed(() => (draft.value ? originLines(draft.value.origin) : []));
