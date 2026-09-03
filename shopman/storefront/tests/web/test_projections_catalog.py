@@ -489,6 +489,22 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is False
         assert item.is_notifiable is True
 
+    def test_planned_batch_card_has_no_stepper_ceiling(self, channel):
+        """Card de encomenda não pode nascer com teto 0: o "+" morre na 1ª unidade."""
+        self._product("NOTIF-PLANNED")
+        item = self._build(
+            "NOTIF-PLANNED",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("0"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.PLANNED_OK
+        assert item.can_add_to_cart is True
+        assert item.available_qty is None
+
     def test_not_sellable_is_not_notifiable(self, channel):
         self._product("NOTIF-NS", sellable=False)
         item = self._build(

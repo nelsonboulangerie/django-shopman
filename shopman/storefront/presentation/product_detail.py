@@ -285,7 +285,9 @@ def build_product_detail(
         Availability.LOW_STOCK,
         Availability.PLANNED_OK,
     )
-    available_qty = catalog_context.promisable_int(raw_avail_session)
+    available_qty = catalog_context.orderable_ceiling(
+        raw_avail_session, can_add=can_add_to_cart
+    )
     # Pausado = decisão do operador (publicado mas não vendável, ou stock pausado);
     # distingue-se do esgotado honesto que habilita "Me avise".
     is_paused = (not product.is_sellable) or bool(

@@ -176,6 +176,49 @@ class TestAvailability:
         assert proj.availability is Availability.UNAVAILABLE
         assert proj.can_add_to_cart is False
 
+    def test_demand_ok_has_no_stepper_ceiling(self, listing, product):
+        """``demand_ok`` promete pela demanda, não pela prateleira: teto é None.
+
+        Lendo ``total_promisable`` cru, a PDP projetava ``available_qty: 0`` num
+        item "Disponível" e adicionável — e o "+" morria no primeiro toque com
+        "Só temos 0 disponíveis". O card já guardava contra isso; a PDP não.
+        """
+        from unittest.mock import patch
+
+        _publish_on_listing(listing, product)
+        raw = {"availability_policy": "demand_ok", "total_promisable": Decimal("0")}
+        with patch(
+            "shopman.storefront.presentation.product_detail._availability",
+            return_value=raw,
+        ):
+            proj = build_product_detail(sku=product.sku, channel_ref="web")
+
+        assert proj is not None
+        assert proj.availability is Availability.AVAILABLE
+        assert proj.can_add_to_cart is True
+        assert proj.available_qty is None
+
+    def test_planned_batch_has_no_stepper_ceiling(self, listing, product):
+        """Encomenda: sem prateleira, com lote. Teto 0 travaria o "+" na 1ª unidade."""
+        from unittest.mock import patch
+
+        _publish_on_listing(listing, product)
+        raw = {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),
+            "is_planned": True,
+        }
+        with patch(
+            "shopman.storefront.presentation.product_detail._availability",
+            return_value=raw,
+        ):
+            proj = build_product_detail(sku=product.sku, channel_ref="web")
+
+        assert proj is not None
+        assert proj.availability is Availability.PLANNED_OK
+        assert proj.can_add_to_cart is True
+        assert proj.available_qty is None
+
 
 # ──────────────────────────────────────────────────────────────────────
 # Promotions

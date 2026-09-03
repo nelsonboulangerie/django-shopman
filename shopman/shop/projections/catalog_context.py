@@ -718,6 +718,31 @@ def promisable_int(raw_avail: dict | None) -> int | None:
         return None
 
 
+def orderable_ceiling(raw_avail: dict | None, *, can_add: bool) -> int | None:
+    """Teto do stepper: quantas unidades ainda cabem, ou ``None`` (sem teto).
+
+    ``None`` é "sem teto conhecido", e é a resposta certa para ``demand_ok`` (a
+    promessa não é prateleira), para pausado (a porta já fechou por outro eixo)
+    e para ``planned_ok`` — sem prateleira, mas com lote.
+
+    Projetar ``0`` num item que PODE ser adicionado é o pior dos dois mundos: o
+    "+" morre no primeiro toque com "Só temos 0 disponíveis" enquanto o selo ao
+    lado promete a fornada. É a mesma armadilha que a sacola já corrigiu em
+    ``cart._line_availability`` (WP-P2E F1); aqui ela sobrevivia no card e na
+    PDP, que ainda liam ``total_promisable`` cru.
+    """
+    if raw_avail is None or raw_avail.get("is_paused", False):
+        return None
+    if raw_avail.get("availability_policy", "planned_ok") == "demand_ok":
+        return None
+    total = promisable_int(raw_avail)
+    if total is None:
+        return None
+    if can_add and total <= 0:
+        return None
+    return total
+
+
 def product_tags(product) -> tuple[str, ...]:
     # Sorted for a deterministic order: tags are a search-only index (never a
     # price or badge), and taggit's default ``.all()`` order is the through-table

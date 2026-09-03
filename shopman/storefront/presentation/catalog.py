@@ -514,16 +514,7 @@ def _build_items(
         is_notifiable = (
             availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
         )
-        available_qty: int | None = None
-        if raw_avail is not None and not raw_avail.get("is_paused", False):
-            policy = raw_avail.get("availability_policy", "planned_ok")
-            if policy != "demand_ok":
-                total = raw_avail.get("total_promisable")
-                if total is not None:
-                    try:
-                        available_qty = int(Decimal(str(total)))
-                    except (TypeError, ValueError):
-                        available_qty = None
+        available_qty = catalog_context.orderable_ceiling(raw_avail, can_add=can_add)
 
         primary = primary_by_sku.get(p.sku)
         primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
