@@ -26,6 +26,7 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation import (
     build_cart,
     build_catalog,
+    build_catalog_items_for_skus,
     build_checkout,
     build_home,
     build_product_detail,
@@ -214,6 +215,37 @@ def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> 
         method=method,
         increment=True,
     ))
+
+
+def _skipped_offer_items(skipped, *, request) -> list[dict]:
+    """O que a oferta não montou, nomeado e com saída.
+
+    A tela só conseguia CONTAR ("alguns itens ficaram de fora"); quem clicou num
+    anúncio ficava sem saber o quê, e sem nada a fazer. O card canônico responde
+    as duas coisas com a régua de sempre — pausado não ganha sino, esgotado
+    honesto ganha, e quem já pediu o aviso vê "Anotado".
+    """
+    if not skipped:
+        return []
+
+    cards = {
+        card.sku: card
+        for card in build_catalog_items_for_skus(
+            [item.sku for item in skipped],
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            request=request,
+        )
+    }
+    return [
+        {
+            "sku": item.sku,
+            "name": (card.name if card else item.name),
+            "is_notifiable": bool(card and card.is_notifiable),
+            "is_notify_subscribed": bool(card and card.is_notify_subscribed),
+        }
+        for item in skipped
+        for card in [cards.get(item.sku)]
+    ]
 
 
 def _skipped_reorder_items(skipped: list[str]) -> list[dict]:
@@ -533,7 +565,7 @@ class OfferClaimView(APIView):
                     "ok": result.assembled,
                     "offer": {"ref": promotion.ref, "name": promotion.name},
                     "added": list(result.added),
-                    "skipped": list(result.skipped),
+                    "skipped": _skipped_offer_items(result.skipped, request=request),
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,

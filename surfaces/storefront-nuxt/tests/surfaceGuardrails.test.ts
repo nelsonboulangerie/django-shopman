@@ -1479,6 +1479,17 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(tracking).toContain('t.eta_display')
   })
 
+  it('names what the offer could not add, and offers a way out', () => {
+    // `skipped` chegava como lista de strings e a tela só CONTAVA ("alguns itens
+    // ficaram de fora"). Quem clicou num anúncio ficava sem saber o quê e sem
+    // nada a fazer.
+    const offer = read('app/pages/oferta/[ref].vue')
+
+    expect(offer).toContain('v-for="item in skipped"')
+    expect(offer).toContain('<StockNotifyButton')
+    expect(offer).not.toContain('ref<string[]>([])')
+  })
+
   it('keeps the progress timeline readable by assistive tech', () => {
     // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
     // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
