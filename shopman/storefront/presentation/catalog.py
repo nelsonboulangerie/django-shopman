@@ -370,7 +370,15 @@ def build_catalog_items_for_skus(
         return ()
 
     products_by_sku = catalog_context.products_by_sku(skus, only_published=True)
-    ordered = [products_by_sku[sku] for sku in skus if sku in products_by_sku]
+    # Mesmo portão do cardápio: oculto no canal não vira card. Sem isto, favoritos
+    # e cross-sell montavam card de SKU que nunca foi para esta vitrine — com
+    # preço e "Adicionar" ativo — e o toque caía na PDP em 404.
+    visible = catalog_context.visible_skus_in_channel(skus, channel_ref)
+    ordered = [
+        products_by_sku[sku]
+        for sku in skus
+        if sku in products_by_sku and (visible is None or sku in visible)
+    ]
     if not ordered:
         return ()
 

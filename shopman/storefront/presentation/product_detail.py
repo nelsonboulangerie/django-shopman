@@ -208,18 +208,21 @@ def build_product_detail(
 
     Returns ``None`` when:
     - the product does not exist or is unpublished, OR
-    - the product is not present in this channel's listing (no ``ListingItem``
-      or the listing item is unpublished / not sellable). AVAILABILITY-PLAN §5
-      folds "fora do canal" into 404 — coerência total: search não mostra,
-      menu não lista, PDP via URL direta devolve 404.
+    - the product está OCULTO neste canal (sem ``ListingItem`` ou com o item
+      não publicado). AVAILABILITY-PLAN §5: ocultar é o eixo do sumiço —
+      search não mostra, menu não lista, URL direta devolve 404.
 
-    Callers convert ``None`` into a 404. Paused/sold-out remain projection
-    state (the PDP renders with an "Indisponível" badge).
+    ⚠️ Pausar NÃO é ocultar. Item pausado (no produto, no estoque ou só neste
+    canal) continua na vitrine e continua tendo PDP: ela renderiza com o selo
+    "Indisponível", como o card. Enquanto o portão exigia ``is_sellable``, o
+    card do cardápio linkava para uma PDP que devolvia 404 no toque.
+
+    Callers convert ``None`` into a 404.
     """
     product = catalog_context.get_published_product(sku)
     if product is None:
         return None
-    if not _sku_listed_in_channel(product, channel_ref):
+    if not _sku_visible_in_channel(product, channel_ref):
         return None
 
     config = ChannelConfig.for_channel(channel_ref)
@@ -274,9 +277,16 @@ def build_product_detail(
         catalog_context.own_holds_by_sku(session_key, [product.sku]).get(product.sku, 0)
     ) if session_key else 0
     raw_avail_session = catalog_context.availability_with_own_hold(raw_avail, own_hold)
+    # Pausa comercial tem dois níveis, e a PDP só enxergava um: `Product.is_sellable`
+    # é global, o `ListingItem.is_sellable` pausa só esta vitrine. O card já lia os
+    # dois — sem isto, a PDP diria "Disponível" no item que o cardápio ao lado marca
+    # "Indisponível". Espelha `presentation/catalog._build_items`.
+    effective_is_sellable = product.is_sellable and catalog_context.listing_sellable_map(
+        [product.sku], channel_ref,
+    ).get(product.sku, True)
     availability = _resolve_availability(
         raw_avail_session,
-        is_sellable=product.is_sellable,
+        is_sellable=effective_is_sellable,
         low_stock_threshold=low_stock_threshold,
     )
     availability_label = resolve_availability_label(availability)
@@ -290,11 +300,11 @@ def build_product_detail(
     )
     # Pausado = decisão do operador (publicado mas não vendável, ou stock pausado);
     # distingue-se do esgotado honesto que habilita "Me avise".
-    is_paused = (not product.is_sellable) or bool(
+    is_paused = (not effective_is_sellable) or bool(
         raw_avail_session and raw_avail_session.get("is_paused")
     )
     is_notifiable = (
-        availability == Availability.UNAVAILABLE and product.is_sellable and not is_paused
+        availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
     )
 
     # Bundle components — expand only if the product declares itself a bundle.
@@ -384,14 +394,13 @@ def _availability(sku: str, channel_ref: str) -> dict | None:
     return catalog_context.availability_for_sku(sku, channel_ref=channel_ref)
 
 
-def _sku_listed_in_channel(product: Any, channel_ref: str) -> bool:
-    """Is this SKU available in the given channel's listing?
+def _sku_visible_in_channel(product: Any, channel_ref: str) -> bool:
+    """O SKU aparece neste canal? (só ``is_published``, nunca ``is_sellable``)
 
-    Channels without a ``Listing`` configured fall through to ``True`` so
-    internal/fallback channels (e.g. POS) keep working. Strict gating only
-    applies when a Listing actually exists with the channel's ref.
+    Canais sem ``Listing`` configurado caem em ``True``, para internos/fallback
+    (ex.: PDV) seguirem funcionando.
     """
-    return catalog_context.listed_in_channel(
+    return catalog_context.visible_in_channel(
         product,
         channel_ref,
         fallback_when_listing_missing=True,

@@ -167,6 +167,47 @@ class TestAvailability:
         assert proj.availability is Availability.LOW_STOCK
         assert proj.can_add_to_cart is True
 
+    def test_channel_paused_renders_the_page_as_unavailable(self, listing, product):
+        """Pausar não é ocultar: o item continua na vitrine e continua tendo PDP.
+
+        Enquanto o portão do canal exigia ``is_sellable``, o card do cardápio
+        (que mostra o pausado como "Indisponível", de propósito) linkava para uma
+        PDP que devolvia 404 no toque.
+        """
+        ListingItem.objects.create(
+            listing=listing,
+            product=product,
+            price_q=product.base_price_q,
+            is_published=True,
+            is_sellable=False,
+        )
+        _seed_stock(product.sku, Decimal("50"))
+
+        proj = build_product_detail(sku=product.sku, channel_ref="web")
+
+        assert proj is not None, "pausado no canal não pode virar 404"
+        assert proj.availability is Availability.UNAVAILABLE
+        assert proj.can_add_to_cart is False
+        assert proj.is_paused is True
+        # Pausa é decisão do operador — nem aqui vira promessa de volta.
+        assert proj.is_notifiable is False
+
+    def test_hidden_in_channel_is_a_404(self, listing, product):
+        """Ocultar (o antigo "despublicar") É o eixo do sumiço."""
+        ListingItem.objects.create(
+            listing=listing,
+            product=product,
+            price_q=product.base_price_q,
+            is_published=False,
+            is_sellable=True,
+        )
+
+        assert build_product_detail(sku=product.sku, channel_ref="web") is None
+
+    def test_absent_from_the_channel_is_a_404(self, listing, product):
+        """Sem linha no listing, o produto nunca foi para esta vitrine."""
+        assert build_product_detail(sku=product.sku, channel_ref="web") is None
+
     def test_unsellable_product_is_unavailable(self, listing, product_unavailable):
         _publish_on_listing(listing, product_unavailable)
         proj = build_product_detail(

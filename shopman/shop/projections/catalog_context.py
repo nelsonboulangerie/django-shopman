@@ -335,6 +335,31 @@ def listing_sellable_map(
     return result
 
 
+def visible_skus_in_channel(skus: list[str], channel_ref: str) -> set[str] | None:
+    """Quais destes SKUs APARECEM no canal, em lote. ``None`` = canal sem listing.
+
+    Mesmo eixo de :func:`visible_in_channel` (só ``is_published``), na forma que
+    as listas ad-hoc precisam: favoritos, cross-sell e trilhos da home montam
+    cards a partir de um conjunto explícito de SKUs, sem passar pelo filtro de
+    listing que o cardápio usa. Sem esta leitura, um SKU que nunca foi para a
+    vitrine nascia com card, preço e botão "Adicionar" ativo — e o toque caía
+    em 404. ``None`` (canal sem ``Listing``) mantém canais internos funcionando.
+    """
+    from shopman.offerman.models import ListingItem
+
+    if not skus or not channel_ref or not listing_exists(channel_ref):
+        return None
+
+    return set(
+        ListingItem.objects.filter(
+            listing__ref=channel_ref,
+            listing__is_active=True,
+            product__sku__in=skus,
+            is_published=True,
+        ).values_list("product__sku", flat=True)
+    )
+
+
 def price_q_for_product(product, *, listing_ref: str | None) -> int | None:
     """List price (``_q`` cents) for a product on a channel listing.
 
@@ -349,8 +374,18 @@ def price_q_for_product(product, *, listing_ref: str | None) -> int | None:
     return product.base_price_q
 
 
-def listed_in_channel(product, channel_ref: str, *, fallback_when_listing_missing: bool = True) -> bool:
-    """Return whether a product is publishable/sellable in a channel listing."""
+def visible_in_channel(product, channel_ref: str, *, fallback_when_listing_missing: bool = True) -> bool:
+    """O produto APARECE neste canal?
+
+    ⚠️ Só ``is_published``. Ocultar (o antigo "despublicar") é o eixo do sumiço:
+    item oculto não é listado, não é buscado e a URL direta devolve 404. Pausar
+    (``is_sellable=False``) é outro eixo — o item continua na vitrine, dizendo
+    "Indisponível". Misturar os dois fazia o card aparecer no cardápio e a PDP
+    do mesmo item devolver 404 no toque.
+
+    Canal sem ``Listing`` configurado cai em ``True``, para canais internos/de
+    fallback (ex.: PDV) seguirem funcionando.
+    """
     from shopman.offerman.models import ListingItem
 
     if fallback_when_listing_missing and not listing_exists(channel_ref):
@@ -361,7 +396,6 @@ def listed_in_channel(product, channel_ref: str, *, fallback_when_listing_missin
         listing__is_active=True,
         product=product,
         is_published=True,
-        is_sellable=True,
     ).exists()
 
 

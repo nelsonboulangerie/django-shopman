@@ -578,6 +578,56 @@ class TestAvailabilityNotifiability:
         assert item.available_qty == 2
 
 
+class TestAdHocSkuCardsRespectTheChannelGate:
+    """Favoritos, cross-sell e trilhos da home montam cards a partir de uma lista
+    explícita de SKUs — e escapavam do portão do canal que o cardápio aplica.
+
+    Um SKU que nunca foi para a vitrine (ou que foi OCULTO nela) nascia com card,
+    preço e "Adicionar" ativo; o toque caía na PDP em 404 e o add falhava.
+    """
+
+    def _product(self, sku):
+        return Product.objects.create(
+            sku=sku, name="Pão Teste", base_price_q=500,
+            is_published=True, is_sellable=True,
+        )
+
+    def _cards(self, sku, channel):
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        return build_catalog_items_for_skus([sku], channel_ref=channel.ref)
+
+    def test_sku_absent_from_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-ABSENT")
+        assert self._cards(product.sku, channel) == ()
+
+    def test_sku_hidden_in_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-HIDDEN")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=False, is_sellable=True,
+        )
+        assert self._cards(product.sku, channel) == ()
+
+    def test_paused_sku_still_becomes_a_card(self, channel, listing):
+        """Pausar não é ocultar: o item continua na vitrine, dizendo "Indisponível"."""
+        product = self._product("ADHOC-PAUSED")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=True, is_sellable=False,
+        )
+        items = self._cards(product.sku, channel)
+
+        assert len(items) == 1
+        assert items[0].availability == Availability.UNAVAILABLE
+        assert items[0].is_paused is True
+
+    def test_channel_without_a_listing_keeps_working(self, channel):
+        """Canal interno/fallback (ex.: PDV) não tem Listing — nada é filtrado."""
+        product = self._product("ADHOC-NO-LISTING")
+        assert len(self._cards(product.sku, channel)) == 1
+
+
 class TestCategoryPresentation:
     """``category_color``/``category_icon`` vêm da coleção PRIMÁRIA do produto.
 
