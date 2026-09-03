@@ -43,7 +43,7 @@ import {
   SPLIT_PRESETS,
   tenderLineView,
 } from "~/presentation/payment";
-import { kitchenSurplusQty } from "~/presentation/kitchen";
+import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -447,17 +447,14 @@ const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
-const firedCount = computed(() => props.items.filter((item) => item.fired).length);
+/** Unidades que a cozinha já tem em mãos — acende o destaque da frase. */
+const firedUnits = computed(() => firedKitchenQty(props.items));
 /** Unidades que o fogão está fazendo e a conta não cobra — ver `kitchenSurplusQty`. */
 const kitchenSurplus = computed(() => props.items.reduce((total, item) => total + kitchenSurplusQty(item), 0));
-const kitchenNote = computed(() => {
-  const total = props.items.length;
-  if (!total) return "";
-  const fired = firedCount.value;
-  if (fired === 0) return `Ao finalizar, ${total === 1 ? "o item vai" : "os itens vão"} para a cozinha.`;
-  if (fired < total) return `${fired} ${fired === 1 ? "item já está" : "itens já estão"} na cozinha; o restante vai ao finalizar.`;
-  return total === 1 ? "O item já está na cozinha." : "Todos os itens já estão na cozinha.";
-});
+// A frase é presentation PURA (`kitchenHandoffNote`): ela conta unidades, como o
+// botão de enviar, e não linhas — "1 item já está na cozinha" com três chás numa
+// linha só era o número errado no lugar onde o operador confere o que já saiu.
+const kitchenNote = computed(() => kitchenHandoffNote(props.items));
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -726,7 +723,7 @@ const notices = computed<CheckoutNotice[]>(() => {
     notes.push({
       key: "kitchen",
       icon: "lucide:flame",
-      accent: firedCount.value ? "text-primary" : "",
+      accent: firedUnits.value ? "text-primary" : "",
       message: kitchenNote.value,
     });
   }

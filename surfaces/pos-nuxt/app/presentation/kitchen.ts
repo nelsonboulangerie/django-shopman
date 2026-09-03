@@ -21,6 +21,44 @@ export function firedCount(items: POSCartItem[]): number {
 }
 
 /**
+ * Unidades que a cozinha TEM em mãos — o que ela já está fazendo.
+ *
+ * `fired_qty` é a quantidade no instante do disparo; a linha pode ter encolhido
+ * depois (ver `kitchenSurplusQty`), e quem está no fogão não encolheu junto.
+ */
+export function firedKitchenQty(items: POSCartItem[]): number {
+  return items.reduce((total, item) => total + (item.fired_qty ?? (item.fired ? item.qty : 0)), 0);
+}
+
+/** "1 item" / "3 itens" — a unidade em que o balcão fala. */
+function unidades(qty: number): string {
+  return qty === 1 ? "1 item" : `${qty} itens`;
+}
+
+/**
+ * O que finalizar VAI FAZER com a cozinha, dito ao operador antes do Validar.
+ *
+ * ⚠️ Conta UNIDADES, e é o ponto todo desta função. A frase contava LINHAS, e
+ * dizia "1 item já está na cozinha" quando o que estava lá eram três chás de uma
+ * linha só — número errado, na tela onde ele confere o que já saiu. Pior depois
+ * da identidade por linha: o mesmo produto agora ocupa duas linhas, e "linha"
+ * virou artefato interno, que ninguém fala em voz alta. O botão de enviar já
+ * conta unidades; esta frase concorda com ele.
+ */
+export function kitchenHandoffNote(items: POSCartItem[]): string {
+  if (!items.length) return "";
+  const naCozinha = firedKitchenQty(items);
+  const aEnviar = unfiredCount(items);
+  if (!naCozinha) {
+    return `Ao finalizar, ${aEnviar === 1 ? "o item vai" : `os ${aEnviar} itens vão`} para a cozinha.`;
+  }
+  if (aEnviar) {
+    return `${unidades(naCozinha)} já ${naCozinha === 1 ? "está" : "estão"} na cozinha; mais ${aEnviar === 1 ? "1 vai" : `${aEnviar} vão`} ao finalizar.`;
+  }
+  return naCozinha === 1 ? "O item já está na cozinha." : `Os ${naCozinha} itens já estão na cozinha.`;
+}
+
+/**
  * Unidades ainda a enviar — o que um fire despacharia agora.
  *
  * ⚠️ A conta é de UNIDADES, não de linhas: "Enviar 1" com três croissants

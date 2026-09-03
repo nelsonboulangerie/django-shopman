@@ -82,6 +82,7 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenHandoffNote,
   kitchenSurplusQty,
   fireBarView,
   firedCount,
@@ -1401,5 +1402,44 @@ describe("a maquininha e as cédulas", () => {
     expect(cashNoteLabel(200)).toBe("R$ 2");
     expect(cashNoteLabel(10000)).toBe("R$ 100");
     expect(cashNoteLabel(250)).toBe(formatBRL(250));
+  });
+});
+
+describe("a frase da cozinha no checkout conta unidades", () => {
+  // ⚠️ Ela contava LINHAS: com três chás numa linha só, dizia "1 item já está na
+  // cozinha" — número errado justamente na tela onde o operador confere o que já
+  // saiu. E depois da identidade por linha, "linha" virou artefato interno: o
+  // mesmo produto ocupa duas, e ninguém fala "linha" em voz alta.
+  const linha = (o: Partial<POSCartItem> & { sku: string }) => cartItem(o);
+
+  it("nada enviado: anuncia o que vai sair", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })]))
+      .toBe("Ao finalizar, os 3 itens vão para a cozinha.");
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })]))
+      .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("parte na cozinha: os dois números, ambos em unidades", () => {
+    const note = kitchenHandoffNote([
+      linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),
+      linha({ sku: "PAO", qty: 2 }),
+    ]);
+    expect(note).toBe("3 itens já estão na cozinha; mais 2 vão ao finalizar.");
+  });
+
+  it("tudo enviado: fala do total, não de 'todos'", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("a linha que encolheu não some da conta: a cozinha tem o que tem", () => {
+    // O fogão está fazendo 3; a conta cobra 1. A frase fala do FOGÃO — quem
+    // avisa da diferença é o selo âmbar da linha.
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("carrinho vazio não fala", () => {
+    expect(kitchenHandoffNote([])).toBe("");
   });
 });
