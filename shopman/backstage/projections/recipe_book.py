@@ -26,6 +26,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from shopman.craftsman.models import Recipe, RecipeEntry, RecipeVersion
 from shopman.craftsman.services.recipe_book import (
+    BAKERY_KINDS,
     REFERENCE_RANGES,
     FormulaAnalysis,
     FormulaDiffMetric,
@@ -538,10 +539,11 @@ def _output_names(skus: set[str]) -> dict[str, str]:
 def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
     """A fórmula lida pela lente do padeiro, pronta para a tela.
 
-    A lente vem do conteúdo (§1): âncora ``flour`` liga as métricas de padaria
-    (``is_bakery``); com outra âncora as métricas saem em tom ``muted``. As
-    faixas de referência são as do ``kind`` da receita; fora da faixa é tom
-    ``warning``, nunca bloqueio.
+    A lente vem do conteúdo (§1): âncora ``flour`` numa receita de padaria liga
+    as métricas do padeiro (``is_bakery``); um creme com âncora de farinha
+    continua creme, e as métricas saem em tom ``muted``. As faixas de
+    referência são as do ``kind`` da receita; fora da faixa é tom ``warning``,
+    nunca bloqueio.
     """
     formula = formula if isinstance(formula, dict) else {}
     kind = kind or RecipeEntry.Kind.OTHER
@@ -554,7 +556,7 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
 
     basis = _decimal(formula.get("basis_g"))
     return FormulaLensProjection(
-        is_bakery=anchor_kind == "flour",
+        is_bakery=anchor_kind == "flour" and kind in BAKERY_KINDS,
         anchor_kind=anchor_kind,
         anchor_label=_anchor_label(anchor_kind, anchor_sku, analysis),
         basis_display=f"{_number(basis)} g" if basis else "",
@@ -988,7 +990,7 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
     flour_g = sum((g for role, g in grams if role == "flour" and g is not None), Decimal(0))
     total_g = sum((g for _, g in grams if g is not None), Decimal(0))
     formula = {
-        "anchor": {"kind": suggest_anchor_kind(flour_g, total_g)},
+        "anchor": {"kind": suggest_anchor_kind(flour_g, total_g, captured.kind)},
         "basis_g": None,
         "standardized": False,
         "items": formula_items,

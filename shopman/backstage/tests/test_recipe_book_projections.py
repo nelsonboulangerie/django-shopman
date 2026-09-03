@@ -438,3 +438,21 @@ def test_access_rule():
     assert resolve_recipe_book_access(superuser).can_edit is True
     assert resolve_recipe_book_access(AnonymousUser()).can_view is False
     assert resolve_recipe_book_access(viewer).capture_available is False
+
+
+def test_a_cream_with_a_flour_anchor_is_not_a_bakery_lens():
+    """Creme com muita farinha continua creme: sem métricas de padaria, mesmo com âncora de farinha."""
+    formula = {
+        "anchor": {"kind": "flour"},
+        "items": [
+            {"sku": "FARINHA-T55", "name": "Farinha", "role": "flour", "quantity": 300, "unit": "g"},
+            {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 1000, "unit": "g"},
+            {"sku": "ACUCAR", "name": "Açúcar", "role": "sugar", "quantity": 250, "unit": "g"},
+        ],
+        "parts": [],
+    }
+    assert projections.build_formula_lens(formula, "bread").is_bakery is True
+    lens = projections.build_formula_lens(formula, "cream")
+    assert lens.is_bakery is False
+    assert lens.anchor_kind == "flour"
+    assert lens.items[0].pct_display == "100%"

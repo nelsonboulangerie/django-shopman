@@ -88,6 +88,13 @@ const { lens, pending: lensPending, error: lensError, standardizing, standardize
 const localAnchorTotal = computed(() => anchorTotalOf(formula.value));
 const localTotal = computed(() => totalMassOf(formula.value));
 const anchorIsFlour = computed(() => formula.value.anchor.kind === "flour");
+// O padrão da casa vale para qualquer âncora: 1000 g de farinha no pão, 1000 g
+// de massa total num creme, 1000 g do ingrediente-âncora numa ganache.
+const anchorNoun = computed(() => {
+  if (formula.value.anchor.kind === "flour") return "de farinha";
+  if (formula.value.anchor.kind === "ingredient") return "do ingrediente âncora";
+  return "de massa total";
+});
 const unmatchedCount = computed(() => (lens.value ? unmatchedItems(lens.value.items).length : 0));
 
 // ── Itens ───────────────────────────────────────────────────────────────────
@@ -552,19 +559,18 @@ const selectClass = "h-9 rounded-md border bg-background px-2 text-sm text-foreg
             <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">Prévia da lente</p>
             <Icon v-if="lensPending" name="lucide:loader-circle" class="size-4 animate-spin text-muted-foreground" />
             <button
-              v-if="anchorIsFlour"
               type="button"
               class="ml-auto inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent disabled:opacity-50"
               :disabled="standardizing || !formula.items.length"
               @click="standardizeToHouse"
             >
               <Icon name="lucide:scale" class="size-4" />
-              {{ standardizing ? "Padronizando…" : `Padronizar para ${HOUSE_BASIS_G} g de farinha` }}
+              {{ standardizing ? "Padronizando…" : `Padronizar para ${HOUSE_BASIS_G} g ${anchorNoun}` }}
             </button>
           </div>
 
           <div v-if="before" class="grid gap-1 rounded-md border bg-muted/40 px-3 py-2 text-sm">
-            <p class="font-medium">Padronizada para {{ gramsLabel(HOUSE_BASIS_G) }} de farinha</p>
+            <p class="font-medium">Padronizada para {{ gramsLabel(HOUSE_BASIS_G) }} {{ anchorNoun }}</p>
             <p class="tabular-nums text-muted-foreground">
               Antes: âncora {{ gramsLabel(before.anchorTotal) }} · massa {{ gramsLabel(before.total) }}
               <br />

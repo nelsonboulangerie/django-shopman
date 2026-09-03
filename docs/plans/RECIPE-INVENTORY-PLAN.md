@@ -30,9 +30,12 @@ uma ganache). Não há botão "modo padaria" para esquecer ligado, nem tela para
 divergir. O que muda é:
 
 - **a âncora** (`formula.anchor.kind`): `flour` (soma das farinhas), `total` (massa total) ou
-  `ingredient` (um SKU). Sugerida pelo conteúdo (`suggest_anchor_kind`: farinha é âncora
-  quando é **estrutura**, ≥ 15% da massa; num béchamel com 7% ela é espessante e a âncora
-  nasce `total`), editável;
+  `ingredient` (um SKU). Sugerida pelo conteúdo **e pelo tipo** (`suggest_anchor_kind`:
+  farinha é âncora só em pão, viennoiserie e massa doce, e quando é **estrutura**, ≥ 15%
+  da massa; num béchamel com 7% ela é espessante, e um creme com 30% de farinha continua
+  creme e fala em % da massa total), editável. O padrão da casa (1000 g) vale para qualquer
+  âncora: 1000 g de farinha no pão, 1000 g de massa total no creme, 1000 g do
+  ingrediente-âncora numa ganache;
 - **os painéis** que aparecem: métricas de padaria só com âncora `flour`; "partes" só quando
   há parte; "mistura final" só quando alguma parte tem fórmula conhecida;
 - **as referências** (`kind` da receita): pão, viennoiserie, massa doce, recheio, creme,

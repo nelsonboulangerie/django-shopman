@@ -466,3 +466,17 @@ class TestWorkOrderSnapshot:
         recipe = Recipe.objects.create(ref="pao-simples", name="Pão simples", output_sku="PAO", batch_size=Decimal("1"))
         work_order = craft.plan(recipe, 1)
         assert work_order.meta["_recipe_snapshot"]["version_ref"] == ""
+
+
+class TestAnchorSuggestion:
+    """A lente de padaria vem do conteúdo E do tipo: creme com farinha continua creme."""
+
+    def test_flour_is_the_anchor_only_when_it_is_structure_in_a_bakery_kind(self):
+        assert recipe_book.suggest_anchor_kind(Decimal("1000"), Decimal("1700"), "bread") == "flour"
+        assert recipe_book.suggest_anchor_kind(Decimal("1000"), Decimal("1700")) == "flour"
+        # Béchamel: 7% de farinha é espessante, não estrutura.
+        assert recipe_book.suggest_anchor_kind(Decimal("70"), Decimal("1000"), "sauce") == "total"
+        assert recipe_book.suggest_anchor_kind(Decimal("70"), Decimal("1000")) == "total"
+        # Creme com 30% de farinha: muita farinha, mas o tipo manda; fala em % da massa total.
+        assert recipe_book.suggest_anchor_kind(Decimal("300"), Decimal("1000"), "cream") == "total"
+        assert recipe_book.suggest_anchor_kind(Decimal("0"), Decimal("1000"), "bread") == "total"

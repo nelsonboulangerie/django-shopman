@@ -47,6 +47,7 @@ from shopman.craftsman.exceptions import RecipeBookError
 
 __all__ = [
     "ANCHOR_KINDS",
+    "BAKERY_KINDS",
     "PART_KINDS",
     "REFERENCE_RANGES",
     "ROLES",
@@ -589,7 +590,7 @@ def bootstrap_entry_from_recipe(recipe):
         items = [_formula_item(entry) for entry in base.values()]
         flour_total = sum((g for g in (item_grams(it) for it in items if it["role"] == "flour") if g is not None), _ZERO)
         mass_total = sum((g for g in (item_grams(it) for it in items) if g is not None), _ZERO)
-        anchor_kind = suggest_anchor_kind(flour_total, mass_total)
+        anchor_kind = suggest_anchor_kind(flour_total, mass_total, _entry_kind(recipe.ref, recipe.name))
         for part in parts:
             flour_g = part.pop("_flour_g")
             if anchor_kind == "flour" and flour_g > 0:
@@ -731,9 +732,20 @@ def _name_for(sku: str) -> str:
 #: de padaria vem do conteúdo, e um molho com 7% de farinha não é padaria.
 FLOUR_ANCHOR_MIN_SHARE = Decimal("0.15")
 
+#: Os tipos em que a farinha é a base da fórmula (porcentagem do padeiro). Um
+#: creme pode levar muita farinha e continua creme: fala em % da massa total.
+BAKERY_KINDS = ("bread", "viennoiserie", "sweet_dough")
 
-def suggest_anchor_kind(flour_g: Decimal, total_g: Decimal) -> str:
-    """``flour`` quando a farinha é estrutura (≥ 15% da massa); senão ``total``."""
+
+def suggest_anchor_kind(flour_g: Decimal, total_g: Decimal, kind: str = "") -> str:
+    """``flour`` só em receita de padaria com farinha como estrutura; senão ``total``.
+
+    Duas condições, e as duas contam: o **tipo** (pão, viennoiserie, massa doce)
+    e a **proporção** (farinha ≥ 15% da massa). Sem tipo declarado, vale só a
+    proporção.
+    """
+    if kind and kind not in BAKERY_KINDS:
+        return "total"
     if flour_g > 0 and total_g > 0 and flour_g / total_g >= FLOUR_ANCHOR_MIN_SHARE:
         return "flour"
     return "total"
