@@ -2713,11 +2713,17 @@ class Command(BaseCommand):
             ref=STOREFRONT_REF,
             defaults={"name": "Loja online", "is_active": True, "priority": 7},
         )
+        # WhatsApp: a vitrine do concierge. Espelha a loja online (mesmo recorte,
+        # mesmo preço) porque é o mesmo cliente remoto, só que conversando.
+        whatsapp, _ = Listing.objects.update_or_create(
+            ref="whatsapp",
+            defaults={"name": "WhatsApp", "is_active": True, "priority": 5},
+        )
 
         # Listing items (all products in all listings)
         # iFood uses pricing.policy="external": the marketplace controls final prices,
         # so listing prices are reference-only — no markup stored on our side.
-        markup_map = {"pdv": 0, "ifood": 0, STOREFRONT_REF: 0}
+        markup_map = {"pdv": 0, "ifood": 0, STOREFRONT_REF: 0, "whatsapp": 0}
 
         # "O produto produzido é a unidade, mas são vendidos em packs" (dono,
         # 19/08). A alavanca disso é o CARDÁPIO, não o estoque: `is_sellable`
@@ -2727,7 +2733,7 @@ class Command(BaseCommand):
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
         so_no_balcao = {"PHO", "BBB", "PI"}
 
-        for listing_obj in [pdv, ifood, web]:
+        for listing_obj in [pdv, ifood, web, whatsapp]:
             ListingItem.objects.filter(listing=listing_obj).delete()
             markup = Decimal(markup_map[listing_obj.ref]) / 100
             for _sku, product in products.items():
@@ -4754,8 +4760,11 @@ class Command(BaseCommand):
 
         missing = []
         required_metadata = ("allergens", "dietary_info", "serves")
+        # Todo produto publicado num canal onde o cliente compra de longe precisa
+        # dos dados de compra remota (alergênicos, porções, fiscal). O WhatsApp
+        # entra na lista porque o concierge vende sem o cliente ver a vitrine.
         listed_skus = ListingItem.objects.filter(
-            listing__ref__in=("pdv", "ifood", STOREFRONT_REF),
+            listing__ref__in=("pdv", "ifood", STOREFRONT_REF, "whatsapp"),
             listing__is_active=True,
             is_published=True,
         ).values_list("product__sku", flat=True).distinct()
@@ -5054,7 +5063,11 @@ class Command(BaseCommand):
         }
         _whatsapp_config = {
             "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
-            "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
+            # O link de Pix/cartão aparece no chat logo depois do pedido, como o
+            # link de pagamento do PDV. `at_commit` também faz a confirmação
+            # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
+            # o concierge não promete fornada a pedido que ainda não pagou.
+            "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
             "notifications": {"backend": "manychat"},
             "stock": _remote_stock,
         }
@@ -5082,10 +5095,11 @@ class Command(BaseCommand):
                 "pricing": {"policy": "external"},
                 "editing": {"policy": "locked"},
             }),
-            # WhatsApp fica INATIVO: não há nada implementado para ele ainda (nem entrada
-            # de pedido, nem sync). Canal inativo some da matriz do Catálogo — ligar aqui
-            # é o gesto único para trazê-lo de volta quando existir implementação.
-            ("whatsapp", "WhatsApp", 4, False, _whatsapp_config),
+            # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
+            # `shopman/shop/concierge/`). Canal ATIVO porque existe implementação;
+            # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
+            # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
+            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config),
         ]
 
         for ref, name, display_order, is_active, config_data in channels_data:

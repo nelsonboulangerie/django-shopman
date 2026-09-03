@@ -61,6 +61,8 @@ ALL_HANDLERS = [
     "shopman.shop.handlers.fiscal.NFCeCancelHandler",
     # Accounting (requires SHOPMAN_ACCOUNTING_BACKEND)
     "shopman.shop.handlers.accounting.PurchaseToPayableHandler",
+    # Concierge de WhatsApp
+    "shopman.shop.handlers.concierge.ConciergeTurnHandler",
     # Pricing modifiers
     "shopman.shop.handlers.pricing.ItemPricingModifier",
     "shopman.shop.handlers.pricing.OffermanPricingBackend",
@@ -109,6 +111,7 @@ def register_all() -> None:
     _register_catalog_signals()
     _register_ifood_status_callbacks()
     _register_campaign()
+    _register_concierge_handler()
 
 
 # ── Individual registrations ──
@@ -405,6 +408,18 @@ def _register_campaign() -> None:
     registry.register_directive_handler(campaign.AnnouncementNotifyHandler())
     registry.register_directive_handler(campaign.CampaignOccurrenceHandler())
     logger.info("shopman.handlers: connected campaign receivers.")
+
+
+def _register_concierge_handler() -> None:
+    """Concierge de WhatsApp: o turno roda no worker, nunca no request.
+
+    Sempre registrado: a diretiva só entra na fila quando o concierge está
+    ligado (``receive_inbound`` checa), e gatear aqui deixaria diretiva órfã
+    com ``handler_not_found`` se alguém desligasse a chave com fila cheia.
+    """
+    from shopman.shop.handlers.concierge import ConciergeTurnHandler
+
+    registry.register_directive_handler(ConciergeTurnHandler())
 
 
 def _register_catalog_signals() -> None:

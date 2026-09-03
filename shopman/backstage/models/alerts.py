@@ -67,6 +67,10 @@ class OperatorAlert(models.Model):
         ("bi_source_conflict", "B.I.: pedido nativo apagou histórico"),
         ("bi_cash_variance", "B.I.: quebra de caixa acumulada passou da régua"),
         ("bi_curation_pending", "B.I.: de-para de produto pendente"),
+        # Concierge de WhatsApp: o cliente pediu gente (o bot calou e a conversa
+        # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
+        ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),
+        ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

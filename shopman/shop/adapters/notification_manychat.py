@@ -404,3 +404,119 @@ def is_available(recipient: str | None = None, **config) -> bool:
     """Check if ManyChat adapter is configured and available."""
     mc_config = _get_config()
     return bool(mc_config.get("api_token"))
+
+
+# ── Concierge de WhatsApp ───────────────────────────────────────────────
+#
+# Dois verbos que a conversa por IA precisa e que as notificações de pedido não
+# tinham: texto LIVRE (a resposta do turno, sem template) e o campo personalizado
+# que o flow do ManyChat consulta antes de chamar a casa (o gate do handoff).
+
+#: Teto de caracteres de uma mensagem de texto no WhatsApp (via ManyChat).
+TEXT_MAX_CHARS = 4000
+
+
+def _prepare_call(subscriber_id: str | int, what: str) -> tuple[dict | None, int | None]:
+    """Config + assinante como int, ou ``(None, None)`` quando não dá para chamar.
+
+    ``what`` só serve para o log. Sem token a chamada nem sai (aviso no log,
+    ``False`` para quem chamou); em dev a trava ``inert`` deixa tudo no log.
+    """
+    mc_config = _get_config()
+    if not mc_config.get("api_token"):
+        logger.warning("ManyChat API token not configured (%s)", what)
+        return None, None
+    # Só dígitos: "+5543..." é telefone, não assinante (ver `_resolve_subscriber`).
+    raw = str(subscriber_id or "").strip()
+    if not raw.isdigit():
+        logger.warning("ManyChat %s: subscriber_id inválido: %r", what, subscriber_id)
+        return None, None
+    return mc_config, int(raw)
+
+
+def send_text(subscriber_id: str | int, text: str) -> bool:
+    """Manda um texto livre ao assinante pelo WhatsApp (``sendContent``).
+
+    É a resposta do concierge. Ela nasce dentro da janela de 24 h por construção
+    (o cliente acabou de escrever), então não precisa de template aprovado: vai
+    como mensagem comum, do jeito que o modelo escreveu. A declaração
+    ``"type": "whatsapp"`` é a mesma do ``send`` e é o que faz o ManyChat avaliar
+    a janela do WhatsApp, e não a do Messenger.
+
+    Texto acima de ``TEXT_MAX_CHARS`` é cortado com aviso no log: o ManyChat
+    recusa a mensagem inteira em vez de quebrá-la, e resposta nenhuma é pior que
+    resposta sem o rabo.
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+    mc_config, subscriber = _prepare_call(subscriber_id, "send_text")
+    if mc_config is None:
+        return False
+
+    if len(text) > TEXT_MAX_CHARS:
+        logger.warning(
+            "ManyChat send_text: texto com %d caracteres cortado em %d (subscriber=%s)",
+            len(text), TEXT_MAX_CHARS, subscriber,
+        )
+        text = text[:TEXT_MAX_CHARS]
+
+    from ._external import inert
+
+    if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
+        logger.info("ManyChat externo inerte (trava dev/seed): send_text -> %s: %s", subscriber, text[:120])
+        return True
+
+    payload = {
+        "subscriber_id": subscriber,
+        "data": {
+            "version": "v2",
+            "content": {
+                "type": "whatsapp",
+                "messages": [{"type": "text", "text": text}],
+            },
+        },
+    }
+    result = _api_call("/sending/sendContent", payload, mc_config)
+    if not result["success"]:
+        logger.warning("ManyChat send_text failed: %s", result.get("error"))
+    return bool(result["success"])
+
+
+def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> bool:
+    """Grava UM campo personalizado do assinante (``setCustomFieldByName``).
+
+    O concierge usa isso para o handoff: não existe API do ManyChat para pausar a
+    automação de um contato, então o combinado entre o flow e a casa é um campo
+    (``SHOPMAN_CONCIERGE["handoff_field"]``) que o flow lê ANTES de chamar o
+    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; vazio = o
+    concierge responde. O campo precisa existir no ManyChat com o mesmo nome.
+    """
+    field_name = (field_name or "").strip()
+    if not field_name:
+        logger.warning("ManyChat set_custom_field: field_name vazio")
+        return False
+    mc_config, subscriber = _prepare_call(subscriber_id, "set_custom_field")
+    if mc_config is None:
+        return False
+
+    from ._external import inert
+
+    if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
+        logger.info(
+            "ManyChat externo inerte (trava dev/seed): set_custom_field %s=%r -> %s",
+            field_name, value, subscriber,
+        )
+        return True
+
+    result = _api_call(
+        "/subscriber/setCustomFieldByName",
+        {"subscriber_id": subscriber, "field_name": field_name, "field_value": "" if value is None else str(value)},
+        mc_config,
+    )
+    if not result.get("success"):
+        logger.warning(
+            "ManyChat custom field não gravado: %s (%s). Crie o campo com este nome no ManyChat.",
+            field_name, result.get("error"),
+        )
+    return bool(result.get("success"))
