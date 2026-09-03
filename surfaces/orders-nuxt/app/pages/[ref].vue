@@ -5,6 +5,7 @@
 import {
   appendTag,
   changeBackSuggestionQ,
+  joinFacts,
   lucideIcon,
   moneyInput,
   splitRef,
@@ -121,6 +122,23 @@ async function submitDispatch(value: string | null) {
   const ok = await advance(changeOut, dispatchEquipment.value);
   if (ok) dialog.value = "";
 }
+
+// Quem é este cliente (WP-360). O servidor manda os fatos já em português e só
+// os que sabe; aqui montamos as duas linhas, deixando de fora o que faltou —
+// nunca "R$ 0,00" ou "0 pedidos" no lugar de "ainda não sabemos".
+const profile = computed(() => order.value?.customer_profile ?? null);
+const profileHistory = computed(() =>
+  joinFacts(
+    profile.value?.orders_label,
+    profile.value?.last_order_display ? `última compra ${profile.value.last_order_display}` : "",
+  ),
+);
+const profileHabits = computed(() =>
+  joinFacts(
+    profile.value?.average_ticket_display ? `ticket médio ${profile.value.average_ticket_display}` : "",
+    profile.value?.favorite_product ? `costuma levar ${profile.value.favorite_product}` : "",
+  ),
+);
 
 // Estação travada pelo servidor: não é "pedido não encontrado".
 const { denied: stationLocked } = useStationLock();
@@ -259,6 +277,46 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </button>
         <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
           {{ order.cancel_block_label }}
+        </p>
+      </section>
+
+      <!-- quem é este cliente (WP-360) — o operador abria o detalhe sem saber se
+           quem está do outro lado é da casa ou comprou pela primeira vez. O
+           bloco só existe com cliente identificado, e cada linha só aparece com
+           o dado que o servidor de fato tem. -->
+      <section v-if="profile" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4 text-sm" data-customer-profile>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
+            <Icon name="lucide:user-round" class="size-4 text-muted-foreground" /> Cliente
+          </h2>
+          <!-- Selo só nos segmentos que mudam o atendimento (fiel/campeão, em
+               risco/perdido). Regular e recente não ganham selo: badge que
+               aparece sempre deixa de ser lido. -->
+          <span
+            v-if="profile.segment_tone"
+            class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium"
+            :class="toneBadge(profile.segment_tone)"
+            data-customer-segment
+          >
+            {{ profile.segment_label }}
+          </span>
+        </div>
+        <p v-if="profileHistory" data-customer-history>{{ profileHistory }}</p>
+        <p v-if="profileHabits" class="text-muted-foreground" data-customer-habits>{{ profileHabits }}</p>
+        <!-- Aniversário: no dia, é gesto de casa; fora dele, é só cadastro. -->
+        <p v-if="profile.birthday_display" class="flex items-center gap-1.5" :class="profile.is_birthday_today ? 'font-medium' : 'text-muted-foreground'" data-customer-birthday>
+          <Icon name="lucide:cake" class="size-3.5 shrink-0" />
+          {{ profile.is_birthday_today ? "Faz aniversário hoje" : `Aniversário em ${profile.birthday_display}` }}
+        </p>
+        <!-- Restrição alimentar é a única linha deste bloco que pode virar
+             incidente se passar batido — por isso tom de atenção, não cinza. -->
+        <p v-if="profile.dietary_restrictions" class="flex items-start gap-1.5 font-medium text-amber-700 dark:text-amber-400" data-customer-restrictions>
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+          <span>{{ profile.dietary_restrictions }}</span>
+        </p>
+        <p v-if="profile.notes" class="flex items-start gap-1.5 text-muted-foreground" data-customer-notes>
+          <Icon name="lucide:sticky-note" class="mt-0.5 size-3.5 shrink-0" />
+          <span>{{ profile.notes }}</span>
         </p>
       </section>
 

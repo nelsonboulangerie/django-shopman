@@ -555,3 +555,18 @@ export function appendTag(current: string, tag: string): string {
   if (base.toLowerCase().includes(t.toLowerCase())) return base;
   return `${base}, ${t}`;
 }
+
+// ── Customer profile (quem é este cliente) ──────────────────────────────────
+
+/** Junta fatos opcionais numa linha só, com " · " entre os que existem.
+ *
+ *  O bloco do cliente é feito de dados que faltam com frequência: cliente sem
+ *  insight não tem ticket médio nem favorito, e cliente novo não tem recência.
+ *  Interpolar direto no template produziria " · " solto ou uma linha vazia com
+ *  separador — o vazio precisa DESAPARECER, não virar pontuação. */
+export function joinFacts(...parts: (string | null | undefined)[]): string {
+  return parts
+    .map((part) => (part ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+}

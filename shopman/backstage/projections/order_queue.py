@@ -210,6 +210,50 @@ class OrderCardProjection:
 
 
 @dataclass(frozen=True)
+class CustomerProfileProjection:
+    """Quem é este cliente, para o operador decidir como tratá-lo.
+
+    Só APRESENTA o que já está materializado — ``CustomerInsight``
+    (guestman/contrib/insights) e o cadastro do Guestman. Este bloco não
+    calcula segmento, ticket nem favorito: o cálculo já existe e tem dono.
+
+    Duas armadilhas moldam o formato:
+
+    1. **Insight é estado OPCIONAL.** Ele nasce no ``customer.ensure`` de cada
+       pedido e não há cron de ``recalculate_all`` — cliente importado ou
+       semeado sem pedido simplesmente não tem insight. Sem ele os campos
+       derivados saem VAZIOS, nunca zero: "R$ 0,00" em ticket médio afirmaria
+       que o cliente não gasta nada, que é o oposto de "ainda não sabemos".
+    2. **"Última compra" não é ESTE pedido.** O insight guarda ``last_order_at``,
+       que depois do ``ensure`` deste pedido é este mesmo pedido — dizer
+       "última compra hoje" no detalhe dele é ruído. A recência vem do pedido
+       ANTERIOR, e é ela também que decide ``is_first_order``: sem pedido
+       anterior é primeira compra, com ou sem insight.
+    """
+
+    # Recorrência. ``orders_label`` já vem pronto ("Primeira compra",
+    # "12 pedidos") e é vazio quando não há contagem confiável.
+    is_first_order: bool
+    total_orders: int
+    orders_label: str
+    # "há 12 dias" / "ontem" / "há 4 meses" — do pedido anterior, nunca deste.
+    last_order_display: str
+    average_ticket_display: str
+    favorite_product: str
+    # Selo de segmento RFM só quando ele muda o atendimento: fiel/campeão
+    # (``success``) e em risco/perdido (``warning``). "Regular" e "recente" não
+    # ganham selo — badge que aparece sempre não informa nada.
+    segment: str
+    segment_label: str
+    segment_tone: str  # "success" | "warning"
+    # Cadastro: o que o PDV já mostra ao balcão e muda o atendimento.
+    notes: str
+    dietary_restrictions: str
+    birthday_display: str
+    is_birthday_today: bool
+
+
+@dataclass(frozen=True)
 class OperatorOrderProjection:
     """Expanded detail for a single order (operator side-panel)."""
 
@@ -267,6 +311,11 @@ class OperatorOrderProjection:
     gift_hide_values: bool
     cancellation_presets: tuple[str, ...]
     kitchen_note_tags: tuple[str, ...]
+    # Quem é este cliente (WP-360): recorrência, recência, ticket, favorito e o
+    # que o cadastro sabe. ``None`` quando o pedido não tem cliente identificado
+    # (venda de balcão anônima) ou o cadastro sumiu — a tela omite o bloco em
+    # vez de desenhar um perfil vazio.
+    customer_profile: CustomerProfileProjection | None
     # Corrida de entrega na logística externa (Machine). None quando não se
     # aplica (retirada, ou canal sem adapter courier e sem corrida registrada).
     courier: dict | None = None
@@ -484,6 +533,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         gift_hide_values=bool(order.data.get("gift_hide_values")),
         cancellation_presets=_cancellation_presets(),
         kitchen_note_tags=_kitchen_note_tags(),
+        customer_profile=_customer_profile(order),
         courier=_courier_block(order),
         **_courier_change_fields(order),
         **_equipment_fields(order),
@@ -611,6 +661,203 @@ def _kitchen_note_tags() -> tuple[str, ...]:
         logger.debug("orders.kitchen_note_tags_read_failed", exc_info=True)
         return ()
     return tuple(str(t).strip() for t in tags if str(t).strip())
+
+
+#: Segmentos RFM que mudam o atendimento, com rótulo e tom já resolvidos.
+#:
+#: Fora deste mapa (``regular``, ``recent_customer``, sem segmento) não há selo:
+#: badge que aparece em todo pedido vira moldura, e o operador para de lê-la. O
+#: rótulo vem de ``RFM_SEGMENTS`` no Guestman — o mesmo que o Admin e o público
+#: de campanha mostram —, então esta tabela guarda só o TOM.
+_SEGMENT_TONES: dict[str, str] = {
+    "champion": "success",
+    "loyal_customer": "success",
+    "at_risk": "warning",
+    "lost": "warning",
+}
+
+
+def _customer_profile(order: Order) -> CustomerProfileProjection | None:
+    """Quem é este cliente, do que já está materializado (WP-360).
+
+    Uma cliente real fez pedido no alpha e o detalhe do Gestor não sabia dizer se
+    ela era nova ou de casa. O dado existia — em ``CustomerInsight``, no cadastro
+    e no histórico do Orderman —, só não chegava à tela de quem atende.
+
+    Três leituras, cada uma com seu dono, nenhuma recalcula nada:
+
+    * o **cadastro** (nota, restrição alimentar, aniversário), que é o mesmo que
+      o PDV mostra ao balcão;
+    * o **insight** (contagem, ticket médio, favorito, segmento RFM), materializado
+      pelo ``InsightService`` a cada pedido — e ausente é estado NORMAL, porque
+      não há cron de ``recalculate_all``;
+    * o **pedido anterior**, que responde "quando comprou pela última vez" sem
+      confundir a resposta com o pedido aberto na tela.
+
+    Devolve ``None`` quando não há cliente identificado: a tela omite o bloco em
+    vez de desenhar um perfil vazio.
+    """
+    data = order.data or {}
+    customer_ref = str(
+        data.get("customer_ref")
+        or (data.get("customer") or {}).get("ref")
+        or ""
+    ).strip()
+    if not customer_ref:
+        return None
+
+    try:
+        from shopman.guestman.models import Customer
+
+        customer = Customer.objects.filter(ref=customer_ref).first()
+    except Exception:
+        logger.debug("order_queue.customer_profile_read_failed ref=%s", order.ref, exc_info=True)
+        return None
+    if customer is None:
+        return None
+
+    # ``insight`` é OneToOne reverso e opcional: sem insight (ou sem o app
+    # contrib instalado) o descritor levanta AttributeError, e o getattr devolve
+    # None — o mesmo guard de ``shop.services.audience._profile``.
+    insight = getattr(customer, "insight", None)
+
+    previous_at = _previous_order_at(customer_ref, exclude_ref=order.ref)
+    total_orders = int(getattr(insight, "total_orders", 0) or 0)
+    # "Primeira compra" é afirmação, e as duas fontes precisam concordar antes de
+    # fazê-la. O histórico é indexado por ``data.customer_ref`` — o vínculo
+    # canônico —, então um pedido que só carregue ``customer.ref`` devolve
+    # histórico vazio e faria a tela chamar de novato um cliente de dez anos. O
+    # insight desempata: com contagem acima de um, não é a primeira vez, mesmo
+    # sem saber QUANDO foi a anterior.
+    is_first_order = previous_at is None and total_orders <= 1
+
+    segment = str(getattr(insight, "rfm_segment", "") or "")
+    segment_tone = _SEGMENT_TONES.get(segment, "")
+    average_ticket_q = int(getattr(insight, "average_ticket_q", 0) or 0)
+
+    return CustomerProfileProjection(
+        is_first_order=is_first_order,
+        total_orders=total_orders,
+        orders_label=_orders_label(total_orders, is_first_order=is_first_order),
+        last_order_display=_elapsed_since_label(previous_at),
+        # Vazio, não "R$ 0,00": sem insight ainda não SABEMOS o ticket, e zero
+        # afirmaria que o cliente não gasta nada.
+        average_ticket_display=_money(average_ticket_q) if average_ticket_q > 0 else "",
+        favorite_product=_favorite_product(insight),
+        segment=segment if segment_tone else "",
+        segment_label=_segment_label(segment) if segment_tone else "",
+        segment_tone=segment_tone,
+        notes=str(getattr(customer, "notes", "") or "").strip(),
+        **_customer_registry_fields(customer),
+    )
+
+
+def _customer_registry_fields(customer) -> dict:
+    """Restrição alimentar e aniversário, com a MESMA leitura do PDV.
+
+    São as duas coisas do cadastro que mudam o atendimento na hora, e o balcão já
+    as lê — reusar os helpers do ``pos`` é o que mantém as duas telas dizendo a
+    mesma coisa sobre a mesma pessoa. Import tardio: só o detalhe do pedido paga
+    o custo, e nunca há ciclo entre as projections.
+    """
+    try:
+        from shopman.backstage.projections.pos import (
+            _birthday_projection,
+            _dietary_restrictions,
+        )
+
+        birthday = _birthday_projection(customer)
+        return {
+            "dietary_restrictions": _dietary_restrictions(customer),
+            "birthday_display": str(birthday.get("birthday_display") or ""),
+            "is_birthday_today": bool(birthday.get("is_birthday_today")),
+        }
+    except Exception:
+        logger.debug("order_queue.customer_registry_read_failed", exc_info=True)
+        return {"dietary_restrictions": "", "birthday_display": "", "is_birthday_today": False}
+
+
+def _previous_order_at(customer_ref: str, *, exclude_ref: str):
+    """Quando este cliente comprou ANTES do pedido aberto na tela.
+
+    O ``last_order_at`` do insight não serve aqui: ele é recalculado no
+    ``customer.ensure`` deste mesmo pedido, então no detalhe dele diria "última
+    compra hoje" — que é verdade sobre o pedido que o operador está lendo, e
+    ruído sobre a relação com o cliente. Lê o contrato público de histórico do
+    Orderman (o mesmo do PDV) e pula o pedido atual.
+    """
+    try:
+        from shopman.orderman.services import CustomerOrderHistoryService
+
+        recent = CustomerOrderHistoryService.list_customer_orders(customer_ref, limit=3)
+    except Exception:
+        logger.debug("order_queue.previous_order_read_failed ref=%s", exclude_ref, exc_info=True)
+        return None
+    for record in recent:
+        if record.order_ref != exclude_ref and record.ordered_at:
+            return record.ordered_at
+    return None
+
+
+def _orders_label(total_orders: int, *, is_first_order: bool) -> str:
+    """"Primeira compra" / "12 pedidos" — vazio quando não há contagem confiável.
+
+    A contagem vem do insight, que pode não existir. Cliente com pedido anterior e
+    sem insight cai no vazio de propósito: dizer "primeira compra" seria falso, e
+    "0 pedidos" seria pior.
+    """
+    if is_first_order:
+        return "Primeira compra"
+    if total_orders > 1:
+        return f"{total_orders} pedidos"
+    return ""
+
+
+def _elapsed_since_label(moment) -> str:
+    """"hoje" / "ontem" / "há 12 dias" / "há 4 meses" / "há 2 anos"."""
+    if not moment:
+        return ""
+    try:
+        days = (timezone.localdate() - timezone.localtime(moment).date()).days
+    except Exception:
+        logger.debug("order_queue.elapsed_label_failed", exc_info=True)
+        return ""
+    if days <= 0:
+        return "hoje"
+    if days == 1:
+        return "ontem"
+    if days < 60:
+        return f"há {days} dias"
+    if days < 730:
+        months = days // 30
+        return f"há {months} meses"
+    years = days // 365
+    return "há 1 ano" if years == 1 else f"há {years} anos"
+
+
+def _favorite_product(insight) -> str:
+    """Nome do produto mais comprado, do topo de ``CustomerInsight.favorite_products``.
+
+    A lista é ``[{sku, name, qty, last_order_at}]`` (o help_text do campo é o
+    contrato). Sem nome, o SKU serve — o operador reconhece os dois.
+    """
+    products = getattr(insight, "favorite_products", None) or []
+    if not isinstance(products, list) or not products:
+        return ""
+    top = products[0]
+    if not isinstance(top, dict):
+        return ""
+    return str(top.get("name") or top.get("sku") or "").strip()
+
+
+def _segment_label(segment: str) -> str:
+    """Rótulo pt-BR do segmento — de ``RFM_SEGMENTS``, o mesmo do Admin."""
+    try:
+        from shopman.guestman.contrib.insights.models import RFM_SEGMENTS
+
+        return dict(RFM_SEGMENTS).get(segment, "")
+    except (ImportError, RuntimeError):
+        return ""
 
 
 def build_order_card(order: Order) -> OrderCardProjection:
