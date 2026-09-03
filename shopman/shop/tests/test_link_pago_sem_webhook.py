@@ -116,6 +116,29 @@ class TestCapturaPromoveIntentPendente:
         intent.refresh_from_db()
         assert intent.status == "captured"
 
+    def test_intent_vencido_no_payman_ainda_captura_o_que_o_gateway_pagou(self):
+        """O K65 de verdade: pago às 05:35, prazo às 07:30, reconciliado às 08:10.
+
+        `authorize` recusa intent vencido — e a primeira versão do conserto
+        morria aí. O cliente pagou dentro do prazo; só a casa soube tarde.
+        """
+        from datetime import timedelta
+
+        from django.utils import timezone
+
+        intent = self._intent()
+        intent.expires_at = timezone.now() - timedelta(hours=1)
+        intent.save(update_fields=["expires_at"])
+        with patch.object(payment_stripe, "_get_stripe", return_value=self._stripe("succeeded")), patch.object(
+            payment_stripe, "gateway_payment_intent_id", return_value="pi_test_k65"
+        ):
+            result = payment_stripe.capture(intent.ref)
+
+        assert result.success, result.message
+        assert result.amount_q == 600
+        intent.refresh_from_db()
+        assert intent.status == "captured"
+
     def test_intent_ja_autorizado_nao_autoriza_de_novo(self):
         from shopman.payman import PaymentService
 

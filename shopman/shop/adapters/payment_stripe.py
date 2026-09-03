@@ -312,9 +312,28 @@ def capture(
         # errado no painel, ou nunca cadastrado — o intent fica `pending` e a
         # reconciliação, que existe para ESSE caso, morria aqui com
         # `invalid_transition`: gateway pago, casa "aguardando", para sempre.
-        # A autorização aqui é o mesmo fato que o webhook registraria.
+        #
+        # E não é `authorize` + `capture`: `authorize` recusa intent VENCIDO
+        # (`intent_expired`), e quem chega aqui atrasado chega justamente depois
+        # do prazo — o cliente pagou dentro dele (o Stripe fecha a sessão no
+        # mesmo instante que o nosso), só a casa ficou sabendo tarde. O verbo
+        # certo é o snapshot do gateway: `reconcile_gateway_status` leva o
+        # intent de `pending` a `captured` com a transação, sem inventar um
+        # "agora" para a autorização.
         if str(intent.status) == "pending":
-            PaymentService.authorize(intent_ref, gateway_id=stripe_intent.id)
+            captured_q = int(getattr(stripe_intent, "amount_received", 0) or 0) or intent.amount_q
+            PaymentService.reconcile_gateway_status(
+                intent_ref,
+                gateway_status="captured",
+                captured_q=captured_q,
+                gateway_id=stripe_intent.id,
+                capture_gateway_id=str(getattr(stripe_intent, "latest_charge", "") or ""),
+            )
+            return PaymentResult(
+                success=True,
+                transaction_id=stripe_intent.latest_charge,
+                amount_q=PaymentService.captured_total(intent_ref),
+            )
 
         txn = PaymentService.capture(
             intent_ref,
