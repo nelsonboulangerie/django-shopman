@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
+from shopman.utils.phone import normalize_phone
 
 from shopman.backstage.presentation.status import (
     order_status_label,
@@ -264,6 +265,24 @@ class OperatorOrderProjection:
     status_label: str
     status_color: str
     customer_name: str
+    # Contato do cliente que fez ESTE pedido. O dado sempre esteve em
+    # ``Order.data["customer"]``; a projection é que não o publicava, e o
+    # operador que abria o detalhe para resolver um problema não tinha como
+    # falar com a pessoa — nem o telefone na tela. (A ironia é que o telefone do
+    # PRESENTEADO já aparecia, em ``gift_recipient_phone``.)
+    #
+    # ``customer_phone`` é para ler em voz alta; ``customer_phone_uri`` e
+    # ``customer_whatsapp_url`` são para clicar. Vazios quando o pedido não tem
+    # telefone — a tela some com o bloco em vez de oferecer botão que não liga
+    # para lugar nenhum.
+    customer_phone: str
+    customer_phone_uri: str
+    customer_whatsapp_url: str
+    customer_email: str
+    # Ref do Customer no cadastro, quando o pedido está ligado a um. É o que
+    # deixa a tela oferecer "abrir cadastro" no Admin — hoje o único lugar onde
+    # se busca, edita e cria cliente.
+    customer_ref: str
     channel_ref: str
     channel_icon: str
     fulfillment_label: str
@@ -502,6 +521,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         status_label=order_status_label(order.status),
         status_color=status_color(order.status),
         customer_name=customer_name,
+        **_customer_contact(order, customer_data),
         channel_ref=order.channel_ref or "",
         channel_icon=CHANNEL_ICONS.get(order.channel_ref or "", _DEFAULT_CHANNEL_ICON),
         fulfillment_label=_fulfillment_label(is_delivery),
@@ -1466,6 +1486,50 @@ def _latest_fiscal_directive_status(order_ref: str) -> str:
         .first()
     )
     return directive.status if directive else ""
+
+
+def _customer_contact(order: Order, customer_data: dict) -> dict[str, str]:
+    """Telefone/e-mail/ref do cliente, prontos para a tela do operador.
+
+    O telefone vem do SNAPSHOT do pedido (``Order.data["customer"]``), não do
+    cadastro: é o número que a pessoa deu para ESTE pedido, e é por ele que se
+    fala sobre este pedido. O cadastro só entra como reserva, quando o snapshot
+    veio sem telefone.
+
+    O e-mail é o oposto: nenhum escritor de ``Order.data["customer"]`` grava
+    e-mail (ver ``docs/reference/data-schemas.md``), então ele só existe pelo
+    cadastro — e só quando o pedido está ligado a um.
+    """
+    phone_raw = str(
+        customer_data.get("phone") or order.data.get("customer_phone") or ""
+    ).strip()
+    customer_ref = str(customer_data.get("ref") or "").strip()
+    email = ""
+
+    if customer_ref:
+        # Uma consulta, e só no DETALHE (o board nunca passa por aqui): o e-mail
+        # só existe no cadastro, e o telefone às vezes falta no snapshot.
+        # Cliente apagado do cadastro não é erro — é um pedido que continua
+        # existindo, e a tela segue com o que o snapshot deu.
+        try:
+            from shopman.guestman.services import customer as customer_service
+
+            customer = customer_service.get(customer_ref)
+        except ImportError:
+            customer = None
+        if customer is not None:
+            phone_raw = phone_raw or str(getattr(customer, "phone", "") or "").strip()
+            email = str(getattr(customer, "email", "") or "").strip()
+
+    e164 = normalize_phone(phone_raw) if phone_raw else ""
+    digits = e164.lstrip("+")
+    return {
+        "customer_phone": _format_customer_display(phone_raw) if phone_raw else "",
+        "customer_phone_uri": f"tel:{e164}" if e164 else "",
+        "customer_whatsapp_url": f"https://wa.me/{digits}" if digits else "",
+        "customer_email": email,
+        "customer_ref": customer_ref,
+    }
 
 
 def _format_customer_display(value: str) -> str:

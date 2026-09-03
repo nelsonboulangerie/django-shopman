@@ -457,6 +457,97 @@ class CustomerNoteAndGiftReachTheOperatorTests(TestCase):
         self.assertEqual(build_operator_order(_order("NOTE-DET-2", "new")).customer_note, "")
 
 
+class CustomerContactReachesTheOperatorTests(TestCase):
+    """O operador que abre o detalhe consegue falar com quem fez o pedido.
+
+    Um pedido de cliente real chegou no alpha e o operador, com o detalhe
+    aberto na frente, não tinha telefone, e-mail nem caminho para o cadastro.
+    O dado estava em ``Order.data["customer"]`` desde sempre — a projection é
+    que não publicava.
+    """
+
+    def test_detail_publishes_phone_to_read_and_links_to_click(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(_phone_order("CT-PHONE", "+5543984049009"))
+
+        self.assertEqual(proj.customer_phone, "(43) 98404-9009")
+        self.assertEqual(proj.customer_phone_uri, "tel:+5543984049009")
+        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543984049009")
+
+    def test_phone_without_country_code_still_reaches_whatsapp(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(_phone_order("CT-NATIONAL", "43984049009"))
+
+        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/5543984049009")
+
+    def test_international_phone_keeps_its_own_country(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(_phone_order("CT-INTL", "+14155552671"))
+
+        self.assertEqual(proj.customer_whatsapp_url, "https://wa.me/14155552671")
+
+    def test_order_without_phone_offers_no_button_that_dials_nowhere(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        proj = build_operator_order(_order("CT-NOPHONE", "new"))
+
+        self.assertEqual(proj.customer_phone, "")
+        self.assertEqual(proj.customer_phone_uri, "")
+        self.assertEqual(proj.customer_whatsapp_url, "")
+        self.assertEqual(proj.customer_email, "")
+        self.assertEqual(proj.customer_ref, "")
+
+    def test_customer_ref_from_the_order_snapshot_reaches_the_screen(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        order = _order("CT-REF", "new")
+        order.data = {**order.data, "customer": {"name": "Cristiane", "ref": "CLI-42"}}
+        order.save(update_fields=["data", "updated_at"])
+
+        self.assertEqual(build_operator_order(order).customer_ref, "CLI-42")
+
+    def test_email_comes_from_the_record_because_the_snapshot_has_none(self) -> None:
+        from shopman.guestman.models import Customer
+
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        Customer.objects.create(
+            ref="CLI-MAIL", first_name="Cristiane", email="cristiane@example.com"
+        )
+        order = _order("CT-MAIL", "new")
+        order.data = {**order.data, "customer": {"name": "Cristiane", "ref": "CLI-MAIL"}}
+        order.save(update_fields=["data", "updated_at"])
+
+        self.assertEqual(build_operator_order(order).customer_email, "cristiane@example.com")
+
+    def test_record_fills_the_phone_the_snapshot_did_not_carry(self) -> None:
+        from shopman.guestman.models import Customer
+
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        Customer.objects.create(ref="CLI-TEL", first_name="Ana", phone="+5543999990001")
+        order = _order("CT-FILL", "new")
+        order.data = {**order.data, "customer": {"name": "Ana", "ref": "CLI-TEL"}}
+        order.save(update_fields=["data", "updated_at"])
+
+        self.assertEqual(build_operator_order(order).customer_phone, "(43) 99999-0001")
+
+    def test_deleted_customer_is_not_an_error_the_snapshot_still_answers(self) -> None:
+        from shopman.backstage.projections.order_queue import build_operator_order
+
+        order = _phone_order("CT-GONE", "+5543984049009")
+        order.data = {**order.data, "customer": {**order.data["customer"], "ref": "CLI-SUMIU"}}
+        order.save(update_fields=["data", "updated_at"])
+
+        proj = build_operator_order(order)
+
+        self.assertEqual(proj.customer_phone, "(43) 98404-9009")
+        self.assertEqual(proj.customer_email, "")
+
+
 class DeliveryAddressReachesTheOperatorTests(TestCase):
     """Quem despacha precisa saber para onde vai.
 

@@ -135,6 +135,11 @@ export interface OperatorOrderProjection {
   status_label: string;
   status_color: string;
   customer_name: string;
+  customer_phone: string;
+  customer_phone_uri: string;
+  customer_whatsapp_url: string;
+  customer_email: string;
+  customer_ref: string;
   channel_ref: string;
   channel_icon: string;
   fulfillment_label: string;

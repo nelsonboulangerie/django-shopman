@@ -34,6 +34,27 @@ async function submitComment() {
 
 const code = computed(() => splitRef(orderRef.value));
 
+// Cadastro do cliente: hoje o CRUD de cliente mora no Admin, e o Gestor precisa
+// pelo menos APONTAR para lá — quem está atendendo quer saber quem é a pessoa,
+// e descobrir isso não pode custar caçar a URL do Admin de cabeça. O dia em que
+// o Gestor tiver a própria tela de clientes, este link some.
+const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+const customerAdminUrl = computed(() => {
+  const ref_ = order.value?.customer_ref;
+  if (!ref_ || !adminBaseUrl) return "";
+  return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(ref_)}`;
+});
+// Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece — vale
+// mais uma tela honesta do que uma fileira de botões que não fazem nada.
+const hasCustomerContact = computed(() =>
+  Boolean(
+    order.value?.customer_phone_uri ||
+      order.value?.customer_whatsapp_url ||
+      order.value?.customer_email ||
+      customerAdminUrl.value,
+  ),
+);
+
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
 const notes = ref("");
@@ -186,7 +207,12 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <span class="ml-auto text-xl font-bold tabular-nums">{{ order.total_display }}</span>
         </div>
         <div class="grid gap-1 text-sm">
-          <p class="flex items-center gap-2"><Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}</p>
+          <p class="flex items-center gap-2">
+            <Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}
+            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name" class="text-muted-foreground tabular-nums" data-customer-phone>
+              · {{ order.customer_phone }}
+            </span>
+          </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:package" class="size-4" /> {{ order.fulfillment_label }}</p>
           <!-- Para onde vai. Quem despacha não tinha o endereço em tela nenhuma
                do Gestor, embora o pedido sempre o carregasse. -->
@@ -204,6 +230,49 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <p v-if="order.payment_link_notice" class="flex items-center gap-2 text-muted-foreground" data-payment-link-notice>
             <Icon name="lucide:send" class="size-4" /> {{ order.payment_link_notice }}
           </p>
+        </div>
+
+        <!-- Falar com o cliente. Um pedido é um combinado com uma pessoa, e
+             quem abre o detalhe abre justamente quando algo precisa ser dito:
+             o item acabou, o endereço não fecha, a entrega vai atrasar. Cada
+             botão só existe quando tem para onde levar. -->
+        <div v-if="hasCustomerContact" class="flex flex-wrap gap-2 border-t pt-3" data-customer-contact>
+          <a
+            v-if="order.customer_whatsapp_url"
+            :href="order.customer_whatsapp_url"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-whatsapp
+          >
+            <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
+          </a>
+          <a
+            v-if="order.customer_phone_uri"
+            :href="order.customer_phone_uri"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-phone
+          >
+            <Icon name="lucide:phone" class="size-4" /> Ligar
+          </a>
+          <a
+            v-if="order.customer_email"
+            :href="`mailto:${order.customer_email}`"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-email
+          >
+            <Icon name="lucide:mail" class="size-4" /> E-mail
+          </a>
+          <a
+            v-if="customerAdminUrl"
+            :href="customerAdminUrl"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            data-contact-cadastro
+          >
+            <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
+          </a>
         </div>
 
         <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
