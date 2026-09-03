@@ -113,3 +113,26 @@ describe("enterAdvances — o Enter que validou não engole a tela do troco", ()
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "paid" })).toBe(true);
   });
 });
+
+describe("a tela do LINK não some sozinha", () => {
+  // ⚠️ Era este o defeito que fazia o fluxo do link "morrer": a venda fechava, a
+  // URL aparecia — e cinco segundos depois a tela se fechava sozinha, antes de o
+  // operador copiar. O pedido ficava aguardando um pagamento que ninguém pediu,
+  // e recuperar a URL exigia ir ao gestor.
+  const comLink = { isPix: false, isLink: true, hasProof: true } as never;
+
+  it("o auto-avanço não conta com um link na tela", () => {
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: comLink, pixStatus: "idle", reducedMotion: false })).toBe(0);
+  });
+
+  it("nem o Enter engole a tela do link", () => {
+    expect(enterAdvances({ changeQ: 0, payment: comLink, pixStatus: "idle" })).toBe(false);
+  });
+
+  it("sem prova para entregar, a venda comum continua avançando sozinha", () => {
+    const semProva = { isPix: false, isLink: false, hasProof: false } as never;
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: semProva, pixStatus: "idle", reducedMotion: false }))
+      .toBeGreaterThan(0);
+    expect(enterAdvances({ changeQ: 0, payment: semProva, pixStatus: "idle" })).toBe(true);
+  });
+});

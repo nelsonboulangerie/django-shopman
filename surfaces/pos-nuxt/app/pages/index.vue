@@ -4,7 +4,7 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { isScheduled, scheduleChipTone, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { isScheduled, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 import { enterAdvances } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
@@ -128,7 +128,6 @@ const {
   restoreItem,
   setLineNotes,
   setLineDiscount,
-  setLinePrice,
   requestTabAssociation,
   openTab,
   openTabFromDialog,
@@ -145,6 +144,7 @@ const {
   repeatCustomerLastOrder,
   prepareCheckout,
   reviewCheckout,
+  reviewFailed,
   submitSale,
   dismissResult,
   onExternalSaleCancelled,
@@ -406,6 +406,17 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   scheduleToday.value,
 ));
 const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+// ENCOMENDA ANÔNIMA — o servidor recusa (`customer_required_for_scheduled`), e o
+// checkout trava o Validar por isso. A barra é quem tem o botão que resolve, e
+// portanto é ela que chama: o chip pulsa. A REGRA é a mesma do bloqueio do CTA
+// porque as duas chamam a mesma função — um dono só, em `presentation/schedule`.
+const customerRequiredForSchedule = computed(() => scheduledNeedsCustomer({
+  deliveryDate: cart.deliveryDate,
+  today: scheduleToday.value,
+  customerName: cart.customerName,
+  customerPhone: cart.customerPhone,
+  customerRef: cart.customerRef,
+}));
 // A escolha que virou impossível SOZINHA (o operador marcou 09:00 e só depois
 // lançou a baguete). O chip é onde ele olha de relance; sem isto ele só
 // descobria num 422 seco no Finalizar, com o cliente já tendo ouvido o horário.
@@ -432,6 +443,7 @@ const paymentWorkspaceRef = ref<{
   openSchedule: () => void;
   openDiscount: () => void;
   pressMethodKey: (letter: string) => boolean;
+  pressReceiptKey: (letter: string) => boolean;
   toggleCpfOnInvoice: () => void;
 } | null>(null);
 const shortcutsHelpOpen = ref(false);
@@ -538,7 +550,15 @@ function onGlobalKeydown(event: KeyboardEvent) {
     && !event.metaKey && !event.ctrlKey && !event.altKey
     && /^[a-zA-Z]$/.test(event.key)
   ) {
-    if (paymentWorkspaceRef.value?.pressMethodKey(event.key.toUpperCase())) {
+    const letra = event.key.toUpperCase();
+    if (paymentWorkspaceRef.value?.pressMethodKey(letra)) {
+      event.preventDefault();
+      return;
+    }
+    // I (impressa) e M (e-mail) — os canais do comprovante. Vêm DEPOIS das
+    // formas de pagamento de propósito: lançar dinheiro é o gesto de toda venda,
+    // e nenhuma forma usa I nem M.
+    if (paymentWorkspaceRef.value?.pressReceiptKey(letra)) {
       event.preventDefault();
       return;
     }
@@ -559,6 +579,20 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
   switch (event.key) {
     case "Escape":
+      // ⚠️ DENTRO DE UM CAMPO, Esc SAI DO CAMPO — não da tela.
+      //
+      // As letras de atalho são desligadas enquanto se digita, e têm que ser:
+      // sem isso, escrever "cliente@email.com" ligaria e desligaria coisas pelo
+      // caminho. Mas o operador que entra no CPF ficava PRESO ali, porque o
+      // gesto instintivo de sair (Esc) derrubava o checkout inteiro — perder o
+      // pagamento por querer apertar "I" é caro demais para um reflexo.
+      // Agora Esc tira o foco do campo e a tela continua de pé; o Esc seguinte,
+      // já fora do campo, é que volta para a venda.
+      if (isEditing) {
+        event.preventDefault();
+        (event.target as HTMLElement | null)?.blur();
+        return;
+      }
       if (checkoutMode.value) {
         event.preventDefault();
         checkoutMode.value = false;
@@ -582,23 +616,44 @@ function onGlobalKeydown(event: KeyboardEvent) {
       if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
       else if (inSaleView.value) tabHeaderRef.value?.openCustomer();
       return;
-    // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
-    // os três chips da linha de contexto do checkout, na mesma ordem.
-    // F7 vale na venda TAMBÉM: recebimento deixou de ser assunto do checkout.
+    // ── F6·F7·F8 — OS TRÊS FATOS DO PEDIDO, na ordem dos chips da barra ──
+    //
+    // Quem compra · como recebe · quando quer. É a ordem da conversa do balcão,
+    // é a ordem em que os três aparecem no topo da tela, e agora é a ordem das
+    // teclas. O "Quando" era o único dos três sem tecla — nasceu depois dos
+    // outros dois e ficou órfão —, então ele entra no F8 e as duas ações do
+    // checkout (desconto, CPF) andam uma casa. Pré-go-live, ninguém decorou
+    // nada, e o dicionário (tecla `?`) é quem ensina.
+    //
+    // Os três valem na VENDA também: são fatos decididos na abertura do
+    // atendimento, revistos de relance daí em diante — não são assunto do
+    // checkout.
     case "F7":
       if (!inSaleView.value) return;
       event.preventDefault();
       openFulfillmentHere();
       return;
     case "F8":
-      if (!checkoutMode.value) return;
+      if (!inSaleView.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.openDiscount();
+      openScheduleHere();
       return;
+    // ── F9·F10 — AS DUAS AÇÕES DA TELA EM QUE SE ESTÁ ───────────────────
+    //
+    // Na comanda: mandar para a cozinha e transferir linhas. No pagamento:
+    // desconto e CPF na nota. As duas telas nunca coexistem, e o par sempre
+    // significa a mesma coisa — "as duas ações daqui". Foi a saída possível:
+    // de F2 a F8 está tudo tomado, F5 é reload, F11 é tela-cheia (que o
+    // quiosque usa) e F12 abre o DevTools antes de a página ver a tecla.
     case "F9":
-      if (!checkoutMode.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.toggleCpfOnInvoice();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
+      else if (inSaleView.value && cart.items.length) fireTab();
+      return;
+    case "F10":
+      event.preventDefault();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.toggleCpfOnInvoice();
+      else if (inSaleView.value && cart.items.length) openMoveDialog();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -691,6 +746,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :fulfillment-label="fulfillmentChipLabel"
           :schedule-label="scheduleChipLabel"
           :scheduled="scheduleChipActive"
+          :customer-required="customerRequiredForSchedule"
           :schedule-conflict="scheduleChipConflict"
           :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
@@ -831,6 +887,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :payment-covered="paymentCovered"
         :loading="busy"
         :lookup-busy="lookupBusy"
+        :review-failed="reviewFailed"
         @back="checkoutMode = false"
         @submit="submitSale"
         @add-tender="addTender"
@@ -931,7 +988,6 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @set-qty="(sku, qty) => setQty(sku, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
-            @set-price="setLinePrice"
             @prepare="prepareCheckout"
             @move="openMoveDialog"
             @fire="fireTab"

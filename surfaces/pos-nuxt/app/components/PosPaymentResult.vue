@@ -29,6 +29,16 @@ async function copyCode() {
     toast.error("Não foi possível copiar. Selecione e copie manualmente.");
   }
 }
+
+async function copyLink() {
+  if (!props.proof.checkoutUrl) return;
+  try {
+    await navigator.clipboard.writeText(props.proof.checkoutUrl);
+    toast.success("Link copiado — mande para o cliente");
+  } catch {
+    toast.error("Não foi possível copiar. Selecione e copie manualmente.");
+  }
+}
 </script>
 
 <template>
@@ -49,8 +59,13 @@ async function copyCode() {
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Pagamento por cartão" }} · {{ proof.amountDisplay }}</p>
-        <p v-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
+        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <!-- No LINK, a mensagem do servidor ("Pagamento criado. Aguarde
+             confirmação do gateway antes de tratar como recebido.") é jargão e
+             repete o que a linha abaixo já diz em cinco palavras. Três frases
+             para um fato é o operador parando de ler as três. -->
+        <p v-if="proof.isLink" class="text-xs opacity-90">Aguardando o cliente pagar.</p>
+        <p v-else-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
@@ -79,6 +94,26 @@ async function copyCode() {
         </UiButton>
       </div>
     </template>
+
+    <!-- LINK DE PAGAMENTO: para ENTREGAR, não para abrir aqui.
+         Ele é a forma do PEDIDO REMOTO — encomenda por telefone, WhatsApp —, e
+         nesse pedido o cliente NÃO está no balcão: não há para quem mostrar um
+         QR. O gesto real é copiar e mandar pela mesma conversa em que o pedido
+         chegou. Abrir a página aqui seria o operador digitando o cartão do
+         cliente, o oposto do que a maquininha existe para evitar. -->
+    <!-- Uma faixa só: a URL (que ninguém lê — truncada) e o botão que a leva
+         embora. Eram três blocos empilhados dizendo a mesma coisa; o gesto é
+         um só, e ele cabe numa linha. -->
+    <!-- `min-w-0` no próprio contêiner: filho de grid nasce com `min-width:auto`
+         e o `truncate` do filho não segura nada — a faixa cresce além do cartão
+         e o botão sai pela borda. -->
+    <div v-else-if="proof.isLink && proof.checkoutUrl" class="flex min-w-0 items-center gap-2">
+      <p class="min-w-0 flex-1 truncate rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.checkoutUrl }}</p>
+      <UiButton variant="outline" size="sm" class="shrink-0 gap-2" @click="copyLink">
+        <Icon name="lucide:copy" class="size-4" />
+        Copiar link
+      </UiButton>
+    </div>
 
     <!-- Card: hosted checkout link (delegated; no capture here) -->
     <a

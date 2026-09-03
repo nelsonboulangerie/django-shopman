@@ -48,7 +48,15 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "cash_shift_id",
     "pos_terminal_ref",
 }
-_ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "account", "mixed"}
+# ⚠️ `card` continua aceito e NÃO é resíduo: é o vocabulário da loja online
+# (onde o gateway sabe a bandeira e a distinção não muda nada para quem compra) e
+# é o que está gravado no histórico. O que o BALCÃO passa a oferecer são
+# `credit`/`debit` — lá a diferença importa, porque prazo de recebimento e taxa
+# da adquirente são outros. Quem decide o que o PDV OFERECE é
+# `_POS_PAYMENT_METHOD_REFS` na projection; aqui é só o que o intent ACEITA.
+_ALLOWED_PAYMENT_METHODS = {
+    "cash", "pix", "card", "credit", "debit", "link", "external", "account", "mixed",
+}
 _ALLOWED_PAYMENT_COLLECTIONS = {"terminal", "on_delivery"}
 _ALLOWED_RECEIPT_CHANNELS = {"print", "email"}
 
@@ -285,12 +293,6 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         list_price_q = _optional_nonnegative_int(item.get("list_price_q"), f"items.{idx}.list_price_q")
         if list_price_q:
             entry["list_price_q"] = list_price_q
-        if item.get("price_overridden"):
-            # Advisory UI hint that the operator fixed this line's price. It is
-            # NOT trusted: the POS service re-derives ``price_overridden`` from the
-            # canonical catalog price (``derive_price_overrides``) before the
-            # manager gate, so a crafted price without this flag is still caught.
-            entry["price_overridden"] = True
         line_discount = _line_discount(item.get("discount"))
         if line_discount:
             entry["discount"] = line_discount
@@ -299,7 +301,13 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
 
 
 def _line_discount(raw) -> dict | None:
-    """Operator per-line manual discount (percent only), clamped to 0–100%."""
+    """Desconto manual de LINHA: ``percent`` (0–100) ou ``fixed`` (reais/unidade).
+
+    ⚠️ O teto de 100 vale SÓ para percentual. Aplicado sem olhar o tipo, ele
+    destruía um desconto em reais silenciosamente — R$ 150,00 numa linha cara
+    virava R$ 100,00, e nada na tela dizia por quê. O ``fixed`` é clampado onde
+    ele tem significado: contra o preço da própria linha, no kernel.
+    """
     if not isinstance(raw, dict):
         return None
     try:
@@ -308,9 +316,12 @@ def _line_discount(raw) -> dict | None:
         return None
     if value <= 0:
         return None
+    kind = str(raw.get("type") or "percent").strip().lower()
+    if kind not in {"percent", "fixed"}:
+        kind = "percent"
     return {
-        "type": "percent",
-        "value": min(100.0, value),
+        "type": kind,
+        "value": value if kind == "fixed" else min(100.0, value),
         "reason": _text(raw.get("reason"), limit=120) or "cortesia",
     }
 

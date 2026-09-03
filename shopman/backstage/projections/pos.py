@@ -413,8 +413,50 @@ class POSProjection:
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-_POS_PAYMENT_METHOD_REFS = ("cash", "pix", "card", "mixed")
-_POS_TENDER_METHOD_REFS = ("cash", "pix", "card", "external")
+# ── O QUE O BALCÃO OFERECE ─────────────────────────────────────────────
+#
+# O PDV herdou o `card` indistinto da loja online, onde ele faz sentido: lá o
+# gateway sabe se foi crédito ou débito e a diferença não muda nada para quem
+# compra. No BALCÃO ela importa — prazo de recebimento e taxa da adquirente são
+# outros, e é isso que o fechamento do dia precisa separar. O operador, aliás,
+# já tem a informação na mão: ele viu o cliente escolher na maquininha.
+#
+# `card` SAI da oferta e continua aceito pelo intent: é o vocabulário do
+# histórico (e o da loja online), então a venda antiga segue legível e o B.I.
+# mostra as duas leituras lado a lado, sem backfill.
+#
+# `link` é a forma do PEDIDO REMOTO anotado no balcão — encomenda por telefone,
+# WhatsApp, o cliente que vai pagar do celular. Ela não é do gesto de balcão:
+# não há maquininha, há uma URL, e o dinheiro chega quando o cliente paga.
+_POS_PAYMENT_METHOD_REFS = ("cash", "pix", "credit", "debit", "link", "mixed")
+_POS_TENDER_METHOD_REFS = ("cash", "pix", "credit", "debit", "link", "external")
+
+
+def _link_payment_available() -> bool:
+    """O balcão pode oferecer LINK DE PAGAMENTO agora?
+
+    Link é a única forma do PDV que depende de uma rede que não é nossa. Sem
+    adapter, ou com o gateway pela metade (chave, webhook, domínio de retorno),
+    o botão existiria para falhar no Validar — com o cliente do outro lado do
+    telefone esperando a URL. Oferecer o que não se pode cumprir é pior do que
+    não oferecer.
+
+    ⚠️ O ``domain`` entra na conta porque é ele que monta o ``success_url``: sem
+    domínio certo, o cliente PAGA e volta para lugar nenhum.
+    """
+    from django.conf import settings
+
+    from shopman.backstage.services.integration_readiness import stripe_card_readiness
+
+    adapter = str((getattr(settings, "SHOPMAN_PAYMENT_ADAPTERS", {}) or {}).get("link") or "").strip()
+    if not adapter:
+        return False
+    # Simulador só existe em dev, e lá ele É a prontidão (o `payment_mock` já
+    # recusa a si mesmo fora de DEBUG sem opt-in explícito).
+    if adapter.endswith("payment_mock"):
+        return bool(getattr(settings, "DEBUG", False))
+    return stripe_card_readiness().ready
+
 
 _PAYMENT_COLLECTIONS = (
     POSPaymentCollectionProjection(
@@ -920,13 +962,19 @@ def _load_products() -> list[POSProductProjection]:
 
 
 def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
-    """Return POS tender methods accepted by the canonical POS intent contract."""
+    """As formas que o balcão OFERECE agora — não as que o contrato aceita.
+
+    `link` some quando o gateway não está de pé (ver `_link_payment_available`):
+    o intent continua aceitando o ref, para a venda antiga seguir legível, mas o
+    operador não vê um botão que vai falhar.
+    """
     return tuple(
         POSPaymentMethodProjection(
             ref=ref,
             label=payment_method_label(ref),
         )
         for ref in _POS_PAYMENT_METHOD_REFS
+        if ref != "link" or _link_payment_available()
     )
 
 
@@ -2174,12 +2222,21 @@ def _int_q(value) -> int:
 
 
 def _tab_payload_line_discount(item: dict) -> dict | None:
-    """Surface the operator's per-line manual discount (percent) for restore."""
+    """O desconto manual da LINHA, para restaurar a comanda salva.
+
+    ⚠️ O ``type`` viaja de volta. Sem ele, uma comanda salva com desconto de
+    R$ 2,00 voltava do banco como 2% — o campo estava gravado, e era a projection
+    que o deixava para trás.
+    """
     manual = (item.get("meta") or {}).get("manual_discount") or {}
     value = manual.get("value")
     if not value:
         return None
-    return {"value": value, "reason": manual.get("reason", "cortesia")}
+    return {
+        "value": value,
+        "reason": manual.get("reason", "cortesia"),
+        "type": str(manual.get("type") or "percent"),
+    }
 
 
 # Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
@@ -2320,7 +2377,6 @@ def build_open_tab(session: Session) -> dict:
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
             "charged_price_q": _int_q(item.get("unit_price_q", 0)),
-            "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])
         if not _is_delivery_fee_item(item)

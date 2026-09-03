@@ -102,9 +102,17 @@ export function buildPosSaleIntent(
       // prometia abatimento que a venda não dava.
       ...(typeof item.list_price_q === "number" ? { list_price_q: item.list_price_q } : {}),
       notes: item.notes,
-      ...(item.price_overridden ? { price_overridden: true } : {}),
       ...(item.discount && item.discount.value > 0
-        ? { discount: { type: "percent", value: item.discount.value, reason: item.discount.reason } }
+        ? {
+            discount: {
+              // O formato viaja: "percent" (0-100) ou "fixed" (reais por
+              // unidade). Era fixo em "percent", e um desconto em R$ subia como
+              // percentual — R$ 2,00 virava 2%.
+              type: item.discount.type || "percent",
+              value: item.discount.value,
+              reason: item.discount.reason,
+            },
+          }
         : {}),
     })),
     fulfillment_type: state.fulfillmentType,

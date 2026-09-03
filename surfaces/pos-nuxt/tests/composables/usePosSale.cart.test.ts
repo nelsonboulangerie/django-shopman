@@ -38,26 +38,23 @@ describe("usePosSale — mutações de carrinho", () => {
     h.handles.dispose();
   });
 
-  it("setLinePrice marca override só quando difere do catálogo", () => {
-    const h = makeSale({ projection: freeCartProjection() });
-    const pao = h.handles.posValue.value!.products[0]!; // catálogo 500
-    h.sale.addProduct(pao);
-    h.sale.setLinePrice("PAO", 700);
-    expect(h.sale.cart.items[0]!.price_q).toBe(700);
-    expect(h.sale.cart.items[0]!.price_overridden).toBe(true);
-    h.sale.setLinePrice("PAO", 500); // volta ao catálogo → limpa override
-    expect(h.sale.cart.items[0]!.price_overridden).toBe(false);
-    h.handles.dispose();
-  });
-
   it("setLineDiscount adiciona e remove o desconto da linha", () => {
     const h = makeSale({ projection: freeCartProjection() });
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
     h.sale.setLineDiscount("PAO", 10, "cortesia");
-    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia" });
+    // O formato viaja com o desconto: sem ele, R$ 2,00 subia como 2%.
+    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
     h.sale.setLineDiscount("PAO", 0, "");
     expect(h.sale.cart.items[0]!.discount).toBeUndefined();
+    h.handles.dispose();
+  });
+
+  it("setLineDiscount guarda o desconto em REAIS como reais", () => {
+    const h = makeSale({ projection: freeCartProjection() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.setLineDiscount("PAO", 2.5, "qualidade", "fixed");
+    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 2.5, reason: "qualidade", type: "fixed" });
     h.handles.dispose();
   });
 

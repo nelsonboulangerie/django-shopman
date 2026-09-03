@@ -150,7 +150,16 @@ def create_intent(
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
-        method="card",
+        # ⚠️ O MÉTODO É O QUE O CHAMADOR PEDIU, não "card" cravado. O literal
+        # aqui era invisível enquanto só o cartão da loja usava este adapter; com
+        # o LINK do balcão apontando para cá, ele gravava a cobrança do link como
+        # `card` e a distinção morria no Payman, no fechamento do dia e no B.I.
+        #
+        # `payment_method_types=["card"]` logo abaixo continua "card" de
+        # propósito: aquilo é vocabulário do STRIPE (o instrumento que a sessão
+        # aceita), e vocabulário de terceiro morre na porta de entrada. O nosso
+        # `method` diz de que forma a CASA está cobrando.
+        method=method,
         gateway="stripe",
         gateway_data=metadata,
         idempotency_key=idempotency_key,

@@ -18,6 +18,8 @@ export interface PosReceiptItem {
 
 export interface PosReceiptPayment {
   method: string;
+  /** ONDE foi recebido: "terminal" (gaveta) ou "on_delivery" (na porta). */
+  collection?: string;
   amount_q: number;
 }
 
@@ -39,6 +41,21 @@ export interface ReceiptLineView {
   unitDisplay: string;
   totalDisplay: string;
   discountPct: number;
+}
+
+/**
+ * Entrou dinheiro NA GAVETA nesta venda?
+ *
+ * ⚠️ A pergunta parece "teve dinheiro?" e não é: é "teve dinheiro AQUI?". Numa
+ * entrega paga na porta o operador ainda precisa lançar uma linha de dinheiro
+ * para liberar o Validar — e a gaveta do balcão chutava e abria com o dinheiro
+ * ainda na rua. Gaveta aberta sem motivo é caixa exposto e ruído de auditoria.
+ *
+ * A decisão mora aqui, e não dentro do fluxo de venda, porque ela é uma regra —
+ * e regra se prova sem subir a venda inteira.
+ */
+export function cashLandedInDrawer(payments: readonly PosReceiptPayment[]): boolean {
+  return payments.some((tender) => tender.method === "cash" && tender.collection !== "on_delivery");
 }
 
 /** Net line total in cents, applying the per-line percentage discount. */

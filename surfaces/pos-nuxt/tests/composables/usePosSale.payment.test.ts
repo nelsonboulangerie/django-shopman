@@ -357,3 +357,65 @@ describe("usePosSale — a divisão conta PESSOAS, não linhas", () => {
     expect(sale.cart.paymentTenders.reduce((s, t) => s + t.amount_q, 0)).toBe(1000);
   });
 });
+
+describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu primeiro", () => {
+  // ⚠️ Regressão de LIVRO-CAIXA. A `collection` era congelada no instante em que
+  // a linha nascia. Numa entrega paga em misto: o operador lança Dinheiro R$ 40
+  // + Cartão R$ 26,30 com "No caixa" marcado, o cliente então diz que paga na
+  // porta, ele troca para "Na entrega" — e as duas linhas continuavam
+  // `terminal`. O servidor grava `status: "received"`, carimba `received_at` e
+  // soma os R$ 40 no livro-caixa: dinheiro que nunca entrou na gaveta, e sobra
+  // falsa no fechamento do turno.
+  /** Projeção que oferece as DUAS coletas na entrega (o balcão real oferece). */
+  function entregaComDuasColetas() {
+    const base = freeCartProjection();
+    return makeProjection({
+      checkout: base.checkout,
+      payment_collections: [
+        ...base.payment_collections,
+        {
+          ref: "on_delivery" as (typeof base.payment_collections)[number]["ref"],
+          label: "Na entrega",
+          description: "",
+          fulfillment_types: ["delivery"],
+          payment_method_refs: ["cash", "pix", "card"],
+        },
+      ],
+    });
+  }
+
+  it("trocar a coleta reescreve as linhas já lançadas", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.addProduct(pao);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.cart.paymentTenders[0]!.amount_q = 400; // sobra para a segunda forma
+    h.sale.addTender("card");
+    expect(h.sale.cart.paymentTenders.map((t) => t.collection)).toEqual(["terminal", "terminal"]);
+
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    expect(h.sale.cart.paymentTenders.map((t) => t.collection)).toEqual(["on_delivery", "on_delivery"]);
+
+    // e volta junto quando o cliente muda de ideia de novo
+    h.sale.cart.paymentCollection = "terminal";
+    await nextTick();
+    expect(h.sale.cart.paymentTenders.every((t) => t.collection === "terminal")).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("linha lançada DEPOIS da troca já nasce com a coleta certa", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    expect(h.sale.cart.paymentTenders[0]!.collection).toBe("on_delivery");
+    h.handles.dispose();
+  });
+});

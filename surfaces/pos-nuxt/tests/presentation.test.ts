@@ -86,7 +86,7 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
@@ -756,8 +756,8 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   // parou, é isso que o gerente precisa ler, não a frase genérica da exceção.
   it("prefers the review codes over the action's fixed reason", () => {
     expect(
-      managerAuthReason({ action: "cash_out", reasons: ["price_override"] }),
-    ).toBe("Preço alterado à mão.");
+      managerAuthReason({ action: "cash_out", reasons: ["discount_over_threshold"], thresholdQ: 5000 }),
+    ).toBe(`Desconto acima de ${formatBRL(5000)}.`);
   });
 
   // ⚠️ Frase curta, sem explicação. A copy antiga explicava a política dentro do
@@ -778,10 +778,18 @@ describe("presentation/managerAuth — o que se assina e quem assina", () => {
   });
 
   it("spells out the review codes, threshold included", () => {
-    const text = managerAuthReason({ reasons: ["discount_over_threshold", "price_override"], thresholdQ: 1500 });
+    const text = managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 1500 });
     expect(text).toContain("Desconto acima de");
     expect(text).toContain("15,00");
-    expect(text).toContain("Preço alterado à mão.");
+  });
+
+  // ⚠️ Havia um segundo código, `price_override` — o operador digitava o preço à
+  // mão. O mecanismo saiu inteiro: preço à mão não passava pela régua do
+  // desconto (limite da loja, motivo, "maior desconto ganha") e tinha portão
+  // próprio. Código sem tradução cai na frase genérica, que é o certo: dizer
+  // pouco é melhor que dizer errado.
+  it("um código que a tela não conhece cai no genérico, não inventa motivo", () => {
+    expect(managerAuthReason({ reasons: ["price_override"] })).toBe("Precisa de um gerente.");
   });
 
   // Dizer pouco é melhor que dizer errado: o diálogo já afirmou "desconto acima de
@@ -1041,23 +1049,39 @@ describe("troco não é sangria", () => {
 describe("atalhos das formas de pagamento", () => {
   const m = (ref: string, label: string) => ({ ref, label }) as never;
 
-  it("a tecla é a inicial do RÓTULO, vinda do contrato", () => {
-    // Derivado, não fixo no código: a casa renomeia "Dinheiro" ou ganha uma
-    // forma nova e o atalho acompanha, em vez de disparar a linha errada.
-    expect(methodShortcuts([m("cash", "Dinheiro"), m("pix", "Pix"), m("card", "Cartão")]))
-      .toEqual({ cash: "D", pix: "P", card: "C" });
+  it("as quatro formas do balcão têm tecla, e nenhuma disputa a do vizinho", () => {
+    // ⚠️ A tecla era DERIVADA da inicial do rótulo, e a derivação morreu no dia
+    // em que o balcão passou a distinguir crédito de débito: "Dinheiro" e
+    // "Débito" disputam o D, "Cartão" e "Crédito" disputam o C. Quem chegasse
+    // depois ficava mudo, sem nada na tela dizendo por quê. O dinheiro virou R,
+    // de Reais, e o D ficou com o débito.
+    expect(methodShortcuts([
+      m("cash", "Dinheiro"),
+      m("pix", "Pix"),
+      m("credit", "Crédito"),
+      m("debit", "Débito"),
+    ])).toEqual({ cash: "R", pix: "P", credit: "C", debit: "D" });
   });
 
-  it("acento não atrapalha — 'Cartão' é C", () => {
-    expect(methodShortcuts([m("card", "Cartão")])).toEqual({ card: "C" });
+  it("a tecla vem do REF, não do rótulo — renomear a forma não move a tecla", () => {
+    // O músculo do operador é da tecla, não da palavra. Se a casa resolver
+    // chamar de "Cartão de crédito", o C continua sendo o C.
+    expect(methodShortcuts([m("credit", "Cartão de crédito")])).toEqual({ credit: "C" });
+    expect(methodShortcuts([m("cash", "Espécie")])).toEqual({ cash: "R" });
   });
 
-  it("colisão deixa o segundo SEM atalho, nunca com o do vizinho", () => {
+  it("forma fora do mapa cai na inicial do rótulo, como antes", () => {
+    // "Em conta" (E) é o caso vivo: só aparece para cliente com conta na casa.
+    expect(methodShortcuts([m("account", "Em conta")])).toEqual({ account: "E" });
+  });
+
+  it("colisão ainda deixa o segundo SEM atalho, nunca com o do vizinho", () => {
     // Melhor sem tecla do que com uma que lança a forma errada com o cliente na
-    // frente. Quem chega primeiro fica com a letra.
-    const keys = methodShortcuts([m("cash", "Dinheiro"), m("debit", "Débito")]);
-    expect(keys).toEqual({ cash: "D" });
-    expect(keys.debit).toBeUndefined();
+    // frente. `card` e `credit` compartilham o C de propósito — eles nunca
+    // aparecem juntos, porque o balcão só oferece um dos dois.
+    const keys = methodShortcuts([m("credit", "Crédito"), m("card", "Cartão")]);
+    expect(keys).toEqual({ credit: "C" });
+    expect(keys.card).toBeUndefined();
   });
 });
 
@@ -1118,11 +1142,14 @@ describe("dividir a conta — a máquina faz a conta, não o operador", () => {
 });
 
 describe("splitHint — quanto pedir a quem está na frente", () => {
-  it("diz o valor e de quem é a vez", () => {
+  it("manda FAZER, e diz de quem é a vez", () => {
     // ⚠️ `formatBRL` separa com espaço NÃO-QUEBRÁVEL. Comparar com um espaço
     // comum passa despercebido na leitura e reprova no runner.
-    expect(splitHint(9945, 3, 0, 9945)).toBe(`${formatBRL(3315)} · pessoa 1 de 3`);
-    expect(splitHint(9945, 3, 1, 6630)).toBe(`${formatBRL(3315)} · pessoa 2 de 3`);
+    // O verbo entrou quando a frase virou a instrução do rodapé do checkout,
+    // lida de longe e dita em voz alta: "R$ 33,15 · pessoa 1 de 3" é etiqueta de
+    // mostrador; "Peça R$ 33,15" é o que fazer agora.
+    expect(splitHint(9945, 3, 0, 9945)).toBe(`Peça ${formatBRL(3315)} · pessoa 1 de 3`);
+    expect(splitHint(9945, 3, 1, 6630)).toBe(`Peça ${formatBRL(3315)} · pessoa 2 de 3`);
   });
 
   it("coberto, avisa que acabou", () => {
@@ -1131,5 +1158,89 @@ describe("splitHint — quanto pedir a quem está na frente", () => {
 
   it("sem divisão, sem frase", () => {
     expect(splitHint(9945, 1, 0, 9945)).toBe("");
+  });
+});
+
+describe("cashLandedInDrawer — a gaveta só abre com dinheiro que ENTROU nela", () => {
+  // ⚠️ A pergunta parece "teve dinheiro?" e não é: é "teve dinheiro AQUI?".
+  // Numa entrega paga na porta o operador ainda precisa lançar uma linha de
+  // dinheiro para liberar o Validar — e a gaveta do balcão chutava e abria com o
+  // dinheiro ainda na rua. Gaveta aberta sem motivo é caixa exposto.
+  const linha = (method: string, collection?: string) => ({ method, amount_q: 1000, collection });
+
+  it("dinheiro no terminal abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("dinheiro NA PORTA não abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "on_delivery")])).toBe(false);
+  });
+
+  it("misto com uma parte na gaveta abre", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("cartão e Pix nunca abrem", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("pix", "terminal")])).toBe(false);
+  });
+
+  it("sem coleta declarada, dinheiro é dinheiro na gaveta (o padrão do balcão)", () => {
+    expect(cashLandedInDrawer([linha("cash")])).toBe(true);
+  });
+
+  it("venda sem pagamento nenhum não abre", () => {
+    expect(cashLandedInDrawer([])).toBe(false);
+  });
+});
+
+describe("formas de pagamento do balcão — o que vai ao gateway e o que não vai", () => {
+  const m = (ref: string, label: string) => ({ ref, label }) as never;
+
+  it("as cinco formas do balcão têm tecla própria", () => {
+    expect(methodShortcuts([
+      m("cash", "Dinheiro"),
+      m("pix", "Pix"),
+      m("credit", "Crédito"),
+      m("debit", "Débito"),
+      m("link", "Link de pagamento"),
+    ])).toEqual({ cash: "R", pix: "P", credit: "C", debit: "D", link: "L" });
+  });
+
+  it("crédito e débito NÃO têm comprovante remoto — a maquininha é física", () => {
+    // A prova deles é o papel que a maquininha imprime. Oferecer um QR ou um
+    // link ali seria a tela prometendo uma cobrança que não existe.
+    for (const method of ["credit", "debit", "cash"]) {
+      expect(paymentProofView({ method, status: "pending" } as never)).toBeNull();
+    }
+  });
+
+  it("o LINK tem comprovante: é uma URL para o cliente abrir depois", () => {
+    // Ele é o oposto do cartão de balcão — não há maquininha, há gateway, e o
+    // dinheiro chega quando o cliente paga.
+    const proof = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+      amount_display: "R$ 63,00",
+    } as never);
+    expect(proof).not.toBeNull();
+    expect(proof!.isPix).toBe(false);
+    expect(proof!.isLink).toBe(true);
+    // ⚠️ NÃO é `isCard`. O cartão da loja online ABRE o checkout numa aba — faz
+    // sentido lá, onde quem está na frente da tela é quem compra. No balcão quem
+    // está na frente é o OPERADOR, e abrir a página de pagamento ali significaria
+    // ele digitando o cartão do cliente — o oposto do que a maquininha existe
+    // para evitar. O link é para ENTREGAR: copiar e mandar.
+    expect(proof!.isCard).toBe(false);
+    expect(proof!.checkoutUrl).toBe("https://pay.example.com/abc");
+    expect(proof!.hasProof).toBe(true);
+  });
+
+  it("o cartão da loja online continua sendo para ABRIR, não para entregar", () => {
+    const proof = paymentProofView({
+      method: "card", status: "pending", checkout_url: "https://pay.stripe.com/x",
+    } as never);
+    expect(proof!.isCard).toBe(true);
+    expect(proof!.isLink).toBe(false);
   });
 });

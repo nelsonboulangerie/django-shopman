@@ -154,3 +154,85 @@ class TestOGateMedeOMesmoDinheiroQueAReview:
         # Sem o carimbo o gate veria 1,10 e poderia exigir gerente por um desconto
         # que a venda nunca daria.
         assert visto["discount_q"] == 0
+
+
+# ── O MESMO, em REAIS ────────────────────────────────────────────────────────
+#
+# O desconto de linha passou a aceitar R$ além de %. O valor é POR UNIDADE, de
+# propósito: é assim que ele compete com o automático no "maior desconto ganha",
+# que mede tudo por unidade contra a etiqueta. Rateio de um valor pela linha
+# inteira existe para o desconto de PEDIDO, que não disputa linha com ninguém.
+#
+# Cada caso abaixo é o espelho de um caso percentual acima. A régua é a mesma: um
+# centavo de diferença entre esta função e `DiscountModifier._calc_manual` é
+# troco a mais na mão do cliente com a gaveta contando outro número.
+
+
+def test_reais_que_PERDE_do_automatico_nao_entra_na_conta():
+    # Etiqueta 6,00; automático já tirou 0,90 (unit 5,10). Manual de R$ 0,60 por
+    # unidade < 0,90 → o kernel descarta, e a review não pode prometer.
+    payload = _payload(
+        list_price_q=600,
+        discount={"type": "fixed", "value": 0.60, "reason": "cortesia"},
+    )
+    assert _payload_line_discounts_q(payload) == 0
+
+
+def test_reais_que_GANHA_entra_pela_DIFERENCA():
+    # Etiqueta 6,00; automático 0,90. Manual de R$ 1,80 > 0,90 → substitui.
+    # Sai a diferença: 1,80 − 0,90 = 0,90 por unidade, × 2 unidades.
+    payload = _payload(
+        list_price_q=600,
+        discount={"type": "fixed", "value": 1.80, "reason": "cortesia"},
+    )
+    assert _payload_line_discounts_q(payload) == 180
+
+
+def test_reais_sem_automatico_sai_inteiro_por_unidade():
+    payload = _payload(
+        list_price_q=510,
+        discount={"type": "fixed", "value": 1.00, "reason": "qualidade"},
+    )
+    assert _payload_line_discounts_q(payload) == 200
+
+
+def test_reais_acima_da_etiqueta_nao_passa_do_preco():
+    # R$ 50,00 numa linha de R$ 5,10: o desconto para na etiqueta, e o ganho
+    # sobre o automático nunca passa do que a linha cobra.
+    payload = _payload(
+        list_price_q=510,
+        discount={"type": "fixed", "value": 50.0, "reason": "cortesia"},
+    )
+    assert _payload_line_discounts_q(payload) == 510 * 2
+
+
+def test_centavo_a_centavo_a_review_bate_com_o_kernel_em_reais():
+    # A prova que dá nome a este arquivo, agora no formato novo: a conta da
+    # review e a do kernel são a MESMA para o valor fixo.
+    from shopman.shop.modifiers import DiscountModifier
+
+    for reais, etiqueta in ((0.60, 600), (1.80, 600), (2.55, 1275), (50.0, 510)):
+        manual = {"type": "fixed", "value": reais, "reason": "cortesia"}
+        do_kernel = DiscountModifier._calc_manual(manual, etiqueta)
+        da_review = min(int(round(reais * 100)), etiqueta)
+        assert do_kernel == da_review, f"{reais} sobre {etiqueta}"
+
+
+def test_o_teto_de_100_nao_estraga_o_valor_em_reais():
+    # `pos_intent._line_discount` clampava em 100 sem olhar o tipo: R$ 150,00
+    # virava R$ 100,00 em silêncio. O clamp é do percentual.
+    from shopman.shop.services.pos_intent import _line_discount
+
+    assert _line_discount({"type": "fixed", "value": 150.0, "reason": "cortesia"}) == {
+        "type": "fixed",
+        "value": 150.0,
+        "reason": "cortesia",
+    }
+    assert _line_discount({"type": "percent", "value": 150.0, "reason": "cortesia"})["value"] == 100.0
+
+
+def test_formato_desconhecido_cai_em_percentual():
+    from shopman.shop.services.pos_intent import _line_discount
+
+    assert _line_discount({"type": "esquisito", "value": 10, "reason": "x"})["type"] == "percent"
+    assert pos_service._normalize_line_discount({"type": "esquisito", "value": 10})["type"] == "percent"

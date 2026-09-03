@@ -5,6 +5,7 @@ import {
   isScheduled,
   parseLocalDate,
   readinessNote,
+  scheduledNeedsCustomer,
   scheduleLabel,
   selectedWindowConflict,
   shortDate,
@@ -152,5 +153,38 @@ describe("readinessNote", () => {
   it("sem gargalo, sem frase", () => {
     expect(readinessNote("", "")).toBe("");
     expect(readinessNote("Croissant", "")).toBe("");
+  });
+});
+
+describe("scheduledNeedsCustomer — a régua da tela não pode ser mais apertada que a do servidor", () => {
+  const base = {
+    deliveryDate: "2026-09-02",
+    today: "2026-09-01",
+    customerName: "",
+    customerPhone: "",
+    customerRef: "",
+  };
+
+  it("encomenda anônima pede cliente", () => {
+    expect(scheduledNeedsCustomer(base)).toBe(true);
+  });
+
+  it("qualquer um dos TRÊS identificadores basta — é o que o servidor aceita", () => {
+    // `pos._payload_identifies_customer` aceita ref, telefone ou nome. A tela
+    // olhava só dois, e o cadastro só-com-CPF (sem telefone) existe: com ele o
+    // `customer_ref` viajava, o servidor aceitava, e a tela travava o Validar
+    // com o cliente já fixado no cabeçalho.
+    expect(scheduledNeedsCustomer({ ...base, customerName: "Seu Jorge" })).toBe(false);
+    expect(scheduledNeedsCustomer({ ...base, customerPhone: "43999990000" })).toBe(false);
+    expect(scheduledNeedsCustomer({ ...base, customerRef: "cust-1" })).toBe(false);
+  });
+
+  it("espaço em branco não identifica ninguém", () => {
+    expect(scheduledNeedsCustomer({ ...base, customerName: "   " })).toBe(true);
+  });
+
+  it("para hoje segue anônimo: a regra é da ENCOMENDA, não de toda venda", () => {
+    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "2026-09-01" })).toBe(false);
+    expect(scheduledNeedsCustomer({ ...base, deliveryDate: "" })).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 """
-Gateway **de Pix** simulado, para desenvolvimento e teste.
+Gateway simulado de **Pix** e de **link de pagamento**, para dev e teste.
 
 Persiste via PaymentService (DB) e simula o lado do gateway em memória.
 
@@ -149,7 +149,23 @@ def create_intent(
     gateway_data = {**metadata}
     intent_metadata = {}
     client_secret = None
-    if method == "pix":
+    if method == "link":
+        # LINK DE PAGAMENTO simulado: uma URL para o operador copiar e mandar.
+        #
+        # ⚠️ Por que isto NÃO repete o erro do cartão. O desastre do cartão foi o
+        # mock AUTORIZAR: o intent nascia autorizado, a confirmação otimista
+        # capturava, e o pedido ficava pago sem ninguém ter cobrado. Aqui o
+        # intent nasce e FICA `pending` — não há auto-confirmação, e o gatilho da
+        # captura otimista é "cartão + autorizado", que este intent nunca
+        # satisfaz. Sem dinheiro inventado.
+        #
+        # E existe porque o que precisa ser exercitado no link não é a cobrança
+        # (essa é do gateway): é o gesto do BALCÃO — a URL aparecer, o operador
+        # copiar, o pedido ficar aguardando. Isso o simulador reproduz inteiro.
+        checkout_url = f"https://pagamento.exemplo/simulado/{gateway_id}"
+        gateway_data["checkout_url"] = checkout_url
+        intent_metadata = {"checkout_url": checkout_url}
+    elif method == "pix":
         mock_brcode = (
             f"00020126580014br.gov.bcb.pix0136mock-{gateway_id}"
             f"5204000053039865404{amount_q / 100:.2f}"

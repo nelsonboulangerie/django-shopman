@@ -163,6 +163,16 @@ class FinancialReconciliationReport:
         }
 
 
+#: As formas cuja cobrança tem que DEIXAR RASTRO no Payman — é sobre elas que a
+#: auditoria pergunta "pago sem intent?" e "capturou menos que o total?".
+#:
+#: As três leituras de cartão entram: `card` é o histórico e a loja online,
+#: `credit`/`debit` são o balcão. Eram dois literais `{"pix", "card"}` em pontos
+#: distantes do arquivo — dois donos da mesma lista envelhecem separados, e o
+#: segundo a ser esquecido abre o buraco calado.
+_AUDITED_METHODS = frozenset({"pix", "card", "credit", "debit", "link"})
+
+
 def build_financial_reconciliation(
     *,
     reconciliation_date: date,
@@ -367,7 +377,7 @@ def _check_order_payment_link(
     referenced = _referenced_intent_refs(payment)
     order_intents = intents_by_order.get(order.ref, [])
 
-    if method in {"pix", "card"} and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED):
+    if method in _AUDITED_METHODS and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED):
         if not referenced and not order_intents:
             issues.append(
                 FinancialReconciliationIssue(
@@ -633,7 +643,7 @@ def _check_intent(
         Order.Status.DELIVERED,
         Order.Status.COMPLETED,
     }
-    if order.status in strict_paid_statuses and _payment_method(order) in {"pix", "card"} and net_q < order.total_q:
+    if order.status in strict_paid_statuses and _payment_method(order) in _AUDITED_METHODS and net_q < order.total_q:
         issues.append(
             FinancialReconciliationIssue(
                 code="fulfilled_digital_order_underpaid",
