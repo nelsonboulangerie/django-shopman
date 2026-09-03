@@ -113,6 +113,12 @@ useHead({
           innerHTML: JSON.stringify(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
+            ...(product.value.breadcrumb_category
+              ? [{
+                  name: product.value.breadcrumb_category.name,
+                  url: `${requestUrl.origin}${product.value.breadcrumb_category.url}`
+                }]
+              : []),
             { name: product.value.name, url: canonicalUrl.value }
           ]))
         }
@@ -128,10 +134,16 @@ useHead({
          antes do card contido, no mesmo ritmo da tela de conta. -->
     <div v-if="product" class="shop-breadcrumb-bar lg:mb-6">
       <div class="shop-container py-2">
+        <!-- A coleção do produto vem pronta em `breadcrumb_category`; a trilha
+             fixa Início/Cardápio/nome descartava esse nível e tirava do cliente
+             o caminho de volta para a categoria. -->
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
             { label: 'Cardápio', link: '/menu' },
+            ...(product.breadcrumb_category
+              ? [{ label: product.breadcrumb_category.name, link: product.breadcrumb_category.url }]
+              : []),
             { label: product.name }
           ]"
         />

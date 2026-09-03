@@ -1451,6 +1451,15 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(bag).not.toContain('line.is_paused')
   })
 
+  it('puts the product collection back in the breadcrumb, on screen and in JSON-LD', () => {
+    // `breadcrumb_category` já vinha calculado e ninguém lia: a trilha fixa
+    // Início/Cardápio/nome tirava do cliente o caminho de volta para a coleção,
+    // e o rich-result saía sem o nível que o servidor tinha resolvido.
+    const pdp = read('app/pages/produto/[sku].vue')
+
+    expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
   it('keeps the progress timeline readable by assistive tech', () => {
     // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
     // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
