@@ -52,7 +52,7 @@ Multiplicam pelo fator (a mesma quantidade física, dita na unidade nova):
 
 - ``stockman.Move.delta`` — o ledger, primeiro;
 - ``stockman.Quant._quantity`` — recalculado a partir do ledger já convertido
-  (ver :meth:`_converter_saldos`);
+  (ver :meth:`_converter_movimentos_e_saldos`);
 - ``stockman.Hold.quantity`` — reserva é saldo comprometido;
 - ``stockman.StockAlert.min_quantity`` e
   ``buyman.Material.metadata["purchase"]["min_stock"]`` — os dois limiares são
@@ -394,7 +394,7 @@ class Command(BaseCommand):
         linha que tenha escapado disso no passado seria corrompida por um fator
         que não é o dela.
         """
-        from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+        from shopman.craftsman.models import normalize_recipe_item_unit
 
         RecipeItem = apps.get_model("craftsman", "RecipeItem")
         grafia_alvo = normalize_recipe_item_unit(alvo)
@@ -425,7 +425,7 @@ class Command(BaseCommand):
         foi convertido. Reescrever os dois seria contar a mesma correção duas
         vezes, e a segunda por cima da história.
         """
-        from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+        from shopman.craftsman.models import normalize_recipe_item_unit
 
         WorkOrder = apps.get_model("craftsman", "WorkOrder")
         WorkOrderItem = apps.get_model("craftsman", "WorkOrderItem")
