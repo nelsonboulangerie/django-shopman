@@ -51,7 +51,17 @@ export function useOrdersBoard() {
   // ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
   // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
   // SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
-  const { soundOn, soundBlocked, toggleSound: toggleAlertSound, beep } = useAlertSound("gestor_sound");
+  //
+  // Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
+  // está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
+  // a vida dela, e um toque único já deixou passar pedido de cliente real.
+  // O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
+  const {
+    soundOn,
+    soundBlocked,
+    toggleSound: toggleAlertSound,
+    startAlert,
+  } = useAlertSound("gestor_sound");
 
   function toggleSound() {
     toggleAlertSound();
@@ -102,7 +112,7 @@ export function useOrdersBoard() {
   }
 
   function announceNewOrder(ref_: string) {
-    beep();
+    startAlert();
     if (document.visibilityState !== "visible") {
       notifyNewOrder(ref_);
       startTitleAlert(ref_);

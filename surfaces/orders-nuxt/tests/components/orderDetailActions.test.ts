@@ -22,6 +22,7 @@ vi.stubGlobal("computed", computed);
 vi.stubGlobal("ref", ref);
 vi.stubGlobal("watch", watch);
 vi.stubGlobal("useRoute", () => ({ params: { ref: "WEB-1" } }));
+vi.stubGlobal("useRuntimeConfig", () => ({ public: { adminBaseUrl: "https://api.exemplo" } }));
 vi.stubGlobal("useOrderEvents", () => {});
 vi.stubGlobal("useStationLock", () => ({ denied: ref(false) }));
 vi.stubGlobal("useSonner", { error: vi.fn(), success: vi.fn() });
@@ -56,6 +57,11 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     status_label: "Novo",
     status_color: "",
     customer_name: "Ana",
+    customer_phone: "",
+    customer_phone_uri: "",
+    customer_whatsapp_url: "",
+    customer_email: "",
+    customer_ref: "",
     channel_ref: "web",
     channel_icon: "language",
     fulfillment_label: "Retirada",
@@ -263,5 +269,65 @@ describe("detalhe do pedido — link de pagamento", () => {
 
     expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 9h05");
     expect(w.find('[data-action="resend-payment-link"]').exists()).toBe(false);
+  });
+});
+
+describe("detalhe do pedido — falar com o cliente", () => {
+  // Um pedido de cliente real chegou no alpha e o operador, com o detalhe
+  // aberto, não tinha como alcançar a pessoa: nem telefone na tela. O dado
+  // estava no pedido desde sempre — a projection é que não o publicava.
+  it("com telefone: oferece WhatsApp e ligação apontando para o número certo", () => {
+    const tela = abrir(
+      order({
+        customer_phone: "(43) 98404-9009",
+        customer_phone_uri: "tel:+5543984049009",
+        customer_whatsapp_url: "https://wa.me/5543984049009",
+      }),
+    );
+
+    expect(tela.find("[data-customer-contact]").exists()).toBe(true);
+    expect(tela.find("[data-contact-whatsapp]").attributes("href")).toBe(
+      "https://wa.me/5543984049009",
+    );
+    expect(tela.find("[data-contact-phone]").attributes("href")).toBe("tel:+5543984049009");
+    expect(tela.find("[data-customer-phone]").text()).toContain("(43) 98404-9009");
+  });
+
+  it("com e-mail: oferece mailto", () => {
+    const tela = abrir(order({ customer_email: "cristiane@exemplo.com" }));
+
+    expect(tela.find("[data-contact-email]").attributes("href")).toBe(
+      "mailto:cristiane@exemplo.com",
+    );
+  });
+
+  it("com cadastro: leva ao CRUD do cliente no Admin", () => {
+    const tela = abrir(order({ customer_ref: "CLI-42" }));
+
+    expect(tela.find("[data-contact-cadastro]").attributes("href")).toBe(
+      "https://api.exemplo/admin/guestman/customer/?q=CLI-42",
+    );
+  });
+
+  // Botão que não leva a lugar nenhum é pior do que botão nenhum: o operador
+  // clica na hora do aperto e não acontece nada.
+  it("sem nenhum caminho até a pessoa, o bloco não existe", () => {
+    const tela = abrir(order());
+
+    expect(tela.find("[data-customer-contact]").exists()).toBe(false);
+  });
+
+  it("telefone anônimo (o nome JÁ é o número) não é repetido ao lado de si mesmo", () => {
+    const tela = abrir(
+      order({
+        customer_name: "(43) 98404-9009",
+        customer_phone: "(43) 98404-9009",
+        customer_phone_uri: "tel:+5543984049009",
+        customer_whatsapp_url: "https://wa.me/5543984049009",
+      }),
+    );
+
+    expect(tela.find("[data-customer-phone]").exists()).toBe(false);
+    expect(tela.find("[data-contact-whatsapp]").exists()).toBe(true);
   });
 });
