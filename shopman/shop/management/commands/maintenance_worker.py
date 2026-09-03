@@ -18,6 +18,7 @@ manutenção num loop (default: a cada 5 minutos):
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
+  recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -95,6 +96,15 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
+    # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
+    # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
+    # congelado no dia da última visita, porque não comprar não dispara nada.
+    #
+    # Está na lista do ciclo de 5 min mas NÃO trabalha a cada 5 min: o comando
+    # carrega a própria janela (madrugada) e o próprio teto de lote — fora da
+    # janela ele volta na hora. Sem esse portão interno, entrar aqui significaria
+    # varrer a base inteira 288 vezes por dia. Ver o topo do comando.
+    "recalculate_customer_insights",
     # Higiene, e por isso por último: não tem relação de ordem com nada acima.
     # A trilha de acessos envelhece por PRAZO e não por clique — se o Admin
     # pudesse apagar uma linha escolhida a dedo, quem usasse um crachá
