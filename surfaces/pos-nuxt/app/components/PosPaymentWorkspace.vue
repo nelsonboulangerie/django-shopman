@@ -1107,24 +1107,47 @@ defineExpose({
                Tocar de novo no mesmo número desliga: mudar de ideia é rotina.
                Quanto pedir a quem está na frente é a INSTRUÇÃO do momento, e
                por isso vai para o rodapé, em letra que se lê de longe. -->
-          <div class="flex items-center gap-1.5 rounded-md border bg-card p-1.5" role="group" aria-label="Dividir conta">
-            <span class="shrink-0 px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Dividir conta</span>
-            <UiButton
-              v-for="n in SPLIT_PRESETS"
-              :key="n"
-              type="button"
-              variant="outline"
-              size="sm"
-              class="h-9 min-w-0 flex-1 p-0 tabular-nums"
-              :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
-              :disabled="hasLinkTender"
-              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
-              :aria-pressed="splitCount === n"
-              :aria-label="`Dividir a conta em ${n} pessoas`"
-              @click="$emit('setSplitCount', n)"
-            >
-              {{ n }}
-            </UiButton>
+          <!-- ⚠️ VESTE A MESMA ROUPA DO DESCONTO, logo acima. Isto era uma CAIXA
+               dentro da seção: moldura própria, rótulo em micro-caixa-alta — que
+               nesta escala é o papel de TÍTULO DE SEÇÃO, o mesmo do "Ações da
+               venda" três linhas acima — e mais uma moldura em cada número.
+               Três níveis de borda para uma ação só, ao lado de uma irmã que é
+               uma linha limpa.
+               Agora é linha: mesma altura, ícone à esquerda, rótulo em corpo de
+               texto, e os números à direita onde a irmã põe o atalho. Os números
+               perderam a borda individual e viraram opções segmentadas — o
+               escolhido é o único cheio. E o estado subiu para a LINHA (borda e
+               fundo primários, o idioma de seleção da casa): dá para ver que a
+               conta está dividida sem procurar qual quadradinho está aceso. -->
+          <div
+            class="flex h-11 items-center gap-2 rounded-md border px-3 transition"
+            :class="splitCount ? 'border-primary bg-primary/5' : 'bg-card'"
+            role="group"
+            aria-label="Dividir conta"
+          >
+            <Icon name="lucide:users" class="size-4 shrink-0 text-muted-foreground" />
+            <span
+              class="min-w-0 truncate text-sm font-medium"
+              :class="splitCount ? 'text-foreground' : 'text-muted-foreground'"
+            >Dividir conta</span>
+            <div class="ml-auto flex shrink-0 items-center gap-0.5">
+              <button
+                v-for="n in SPLIT_PRESETS"
+                :key="n"
+                type="button"
+                class="grid h-8 w-8 place-items-center rounded-md text-sm tabular-nums transition disabled:opacity-40"
+                :class="splitCount === n
+                  ? 'bg-primary font-bold text-primary-foreground'
+                  : 'font-medium text-muted-foreground hover:bg-accent'"
+                :disabled="hasLinkTender"
+                :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
+                :aria-pressed="splitCount === n"
+                :aria-label="`Dividir a conta em ${n} pessoas`"
+                @click="$emit('setSplitCount', n)"
+              >
+                {{ n }}
+              </button>
+            </div>
           </div>
         </section>
 

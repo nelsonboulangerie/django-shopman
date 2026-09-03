@@ -1052,6 +1052,46 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
     expect(avisos(wrapper).text()).toContain("O link cobra a venda inteira.");
   });
 
+  it("dividir a conta veste a mesma roupa do desconto, e o estado é da LINHA", async () => {
+    // ⚠️ Isto era uma CAIXA dentro da seção — moldura própria, rótulo em
+    // micro-caixa-alta (o papel de TÍTULO nesta escala) e mais uma moldura em
+    // cada número: três níveis de borda ao lado de uma irmã que é uma linha
+    // limpa. Agora é linha, e o "ligado" mora nela: dá para ver que a conta
+    // está dividida sem procurar qual quadradinho está aceso.
+    const desligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "%" }] }),
+    });
+    const linha = () => desligado.find('[role="group"][aria-label="Dividir conta"]');
+    expect(linha().exists()).toBe(true);
+    expect(linha().classes()).not.toContain("border-primary");
+    expect(linha().findAll("button").map((b) => b.attributes("aria-pressed"))).toEqual(
+      ["false", "false", "false", "false", "false"],
+    );
+
+    const ligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
+    });
+    const grupo = ligado.find('[role="group"][aria-label="Dividir conta"]');
+    expect(grupo.classes()).toContain("border-primary");
+    const tres = grupo.findAll("button").find((b) => b.text() === "3")!;
+    expect(tres.attributes("aria-pressed")).toBe("true");
+    expect(tres.classes()).toContain("bg-primary");
+  });
+
+  it("com link lançado, dividir a conta fica indisponível", async () => {
+    // O link cobra a venda inteira: dividir seria oferecer o que o Validar
+    // recusa depois.
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        discountTypes: [{ ref: "percent", label: "%" }],
+        paymentMethods: metodos,
+        paymentTenders: [comLink],
+      }),
+    });
+    const grupo = w.find('[role="group"][aria-label="Dividir conta"]');
+    expect(grupo.findAll("button").every((b) => b.attributes("disabled") !== undefined)).toBe(true);
+  });
+
   it("a sobra na cozinha é dita ao lado do Validar, sem travar a venda", async () => {
     // ⚠️ A linha foi com 3 e a conta cobra 1: o operador está prestes a cobrar
     // por 1 o que o fogão fez 3 vezes. Não trava — reduzir a linha é gesto
