@@ -31,6 +31,9 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     is_available: true,
     availability_warning: null,
     available_qty: null,
+    // Linha otimista nasce disponível; o sino é resposta do servidor.
+    is_notifiable: false,
+    is_notify_subscribed: false,
     is_made_to_order: false,
     made_to_order_label: '',
     is_awaiting_confirmation: false,

@@ -5,6 +5,7 @@ import {
   pollIntervalMs,
   ratingThanksView,
   timelineActiveStep,
+  timelineStepStateLabel,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
@@ -187,10 +188,17 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
+  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
+  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
+  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
+  // há previsão.
+  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
   if (t.delivery_fee_display) {
     rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
   }
-  const paymentLabel = t.payment_status_label || t.payment_status
+  const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
   return rows
 })
@@ -698,7 +706,9 @@ useSeoMeta({
                           class="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5"
                         />
                         <UiTimelineDate v-if="step.timestamp_display">{{ step.timestamp_display }}</UiTimelineDate>
-                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">{{ step.label }}</UiTimelineTitle>
+                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">
+                          {{ step.label }}<span class="sr-only">, {{ timelineStepStateLabel(step.state) }}</span>
+                        </UiTimelineTitle>
                         <!-- Passo cancelado: indicador próprio (X destrutivo), nunca um
                              check verde de "concluído" — a timeline não pode contradizer
                              o painel de status em tom danger. -->
@@ -707,6 +717,15 @@ useSeoMeta({
                           class="flex size-6 items-center justify-center border-none bg-destructive text-destructive-foreground group-data-[orientation=vertical]/timeline:-left-7"
                         >
                           <Icon name="lucide:x" :size="16" />
+                        </UiTimelineIndicator>
+                        <!-- Passo ATUAL: o contrato separa `current` de `completed`, e
+                             carimbar o check no passo em andamento dizia "já foi" sobre
+                             o que está acontecendo agora. Ponto cheio, não ✓. -->
+                        <UiTimelineIndicator
+                          v-else-if="step.state === 'current'"
+                          class="flex size-6 items-center justify-center border-none bg-primary text-primary-foreground group-data-[orientation=vertical]/timeline:-left-7"
+                        >
+                          <span class="size-2 rounded-full bg-primary-foreground" />
                         </UiTimelineIndicator>
                         <UiTimelineIndicator
                           v-else

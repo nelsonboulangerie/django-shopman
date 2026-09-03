@@ -26,10 +26,12 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 from shopman.storefront.presentation import (
     build_cart,
     build_catalog,
+    build_catalog_items_for_skus,
     build_checkout,
     build_home,
     build_product_detail,
     build_reorder_conflict,
+    notify_subscribed_skus,
 )
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
@@ -71,7 +73,7 @@ def _stock_reason(exc) -> str:
     return "Item indisponível no momento."
 
 
-def _stock_error_payload(exc, *, product=None) -> dict:
+def _stock_error_payload(exc, *, product=None, request=None) -> dict:
     item_name = getattr(product, "name", None) or getattr(exc, "sku", "")
     reason = _stock_reason(exc)
     actions = [
@@ -137,6 +139,10 @@ def _stock_error_payload(exc, *, product=None) -> dict:
         "is_paused": exc.is_paused,
         "is_planned": exc.is_planned,
         "is_notifiable": is_notifiable,
+        # Sem isto o sino do 409 nascia sempre em "Me avise", mesmo para quem já
+        # tinha pedido o aviso — e reassinava — enquanto o card e a PDP mostravam
+        # "Anotado" para o mesmo SKU no mesmo instante.
+        "is_notify_subscribed": is_notifiable and exc.sku in notify_subscribed_skus(request),
         "planned_target_date": exc.planned_target_date,
         # Pré-reserva: item planejado tem próximo lote conhecido. Enquadra a escassez
         # como oferta ("garantir o seu") em vez de só "esgotou". A reserva de fato é o
@@ -209,6 +215,37 @@ def _request_is_rate_limited(request, *, group: str, rate: str, method: str) -> 
         method=method,
         increment=True,
     ))
+
+
+def _skipped_offer_items(skipped, *, request) -> list[dict]:
+    """O que a oferta não montou, nomeado e com saída.
+
+    A tela só conseguia CONTAR ("alguns itens ficaram de fora"); quem clicou num
+    anúncio ficava sem saber o quê, e sem nada a fazer. O card canônico responde
+    as duas coisas com a régua de sempre — pausado não ganha sino, esgotado
+    honesto ganha, e quem já pediu o aviso vê "Anotado".
+    """
+    if not skipped:
+        return []
+
+    cards = {
+        card.sku: card
+        for card in build_catalog_items_for_skus(
+            [item.sku for item in skipped],
+            channel_ref=STOREFRONT_CHANNEL_REF,
+            request=request,
+        )
+    }
+    return [
+        {
+            "sku": item.sku,
+            "name": (card.name if card else item.name),
+            "is_notifiable": bool(card and card.is_notifiable),
+            "is_notify_subscribed": bool(card and card.is_notify_subscribed),
+        }
+        for item in skipped
+        for card in [cards.get(item.sku)]
+    ]
 
 
 def _skipped_reorder_items(skipped: list[str]) -> list[dict]:
@@ -528,7 +565,7 @@ class OfferClaimView(APIView):
                     "ok": result.assembled,
                     "offer": {"ref": promotion.ref, "name": promotion.name},
                     "added": list(result.added),
-                    "skipped": list(result.skipped),
+                    "skipped": _skipped_offer_items(result.skipped, request=request),
                     "cart": _cart_payload(request),
                 },
                 status.HTTP_200_OK,
@@ -769,7 +806,11 @@ class CartSkuQtyView(APIView):
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except CartMutationUnavailable as unavailable:
             return Response(
-                _stock_error_payload(unavailable.stock_error, product=unavailable.product),
+                _stock_error_payload(
+                    unavailable.stock_error,
+                    product=unavailable.product,
+                    request=request,
+                ),
                 status=status.HTTP_409_CONFLICT,
             )
 

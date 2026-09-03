@@ -39,7 +39,11 @@ from shopman.shop.projections.types import (
     OrderItemProjection,
     TimelineEventProjection,
 )
-from shopman.storefront.presentation.status import order_status_label, status_color
+from shopman.storefront.presentation.status import (
+    order_status_label,
+    payment_method_label,
+    status_color,
+)
 from shopman.storefront.presentation.types import (
     FulfillmentProjection,
     OrderProgressStepProjection,
@@ -230,6 +234,11 @@ class OrderTrackingPromiseProjection:
     # O acompanhamento renderiza Pix/cartão inline; a antiga tela de pagamento
     # deixou de existir. Vazio na esmagadora maioria dos estados.
     payment_method: str = ""
+    # Rótulo humano do método, resolvido pelo registro omotenashi (editável no
+    # Admin). Sem ele, o acompanhamento reimplementava o de-para no cliente e o
+    # mesmo pedido ganhava dois nomes: o checkout obedecia o Admin, a tela de
+    # acompanhamento não.
+    payment_method_label: str = ""
     pix_qr_code: str | None = None
     pix_copy_paste: str | None = None
     pix_expires_at: str | None = None
@@ -636,6 +645,9 @@ def _present_promise(
         actions=data.actions,
         footnote=footnote,
         payment_method=data.payment_method,
+        payment_method_label=(
+            payment_method_label(data.payment_method) if data.payment_method else ""
+        ),
         pix_qr_code=data.pix_qr_code,
         pix_copy_paste=data.pix_copy_paste,
         pix_expires_at=data.pix_expires_at,

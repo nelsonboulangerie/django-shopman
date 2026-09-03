@@ -3,22 +3,15 @@ import {
   canPayForReal,
   canSimulatePayment,
   isHostedCheckout,
-  paymentMethodLabel,
   showsPaymentBlock
 } from '~/presentation/payment'
 
 // PAYMENT-TRACKING-MERGE apagou a tela de pagamento: estado terminal, poll e tom
 // do alerta agora vivem no acompanhamento (o promise carrega tudo). O que sobra
-// aqui é o rótulo do método e as regras de quando o bloco/caixa de teste aparecem.
-describe('payment presentation — method label', () => {
-  it('labels payment methods warmly instead of raw enums', () => {
-    expect(paymentMethodLabel('pix')).toBe('Pix')
-    expect(paymentMethodLabel('card')).toBe('Cartão de crédito')
-    expect(paymentMethodLabel('link')).toBe('Link de pagamento')
-    expect(paymentMethodLabel('cash')).toBe('Pagamento')
-    expect(paymentMethodLabel(null)).toBe('Pagamento')
-  })
-})
+// aqui são as regras de quando o bloco/caixa de teste aparecem — o RÓTULO do
+// método saiu daqui de propósito: o de-para vivia duplicado no cliente e o
+// operador que renomeasse "Cartão" no Admin via o checkout obedecer e o
+// acompanhamento não. Agora vem pronto em `promise.payment_method_label`.
 
 const pixComCodigo = { payment_method: 'pix', pix_copy_paste: '000201...' }
 const pixSemCodigo = { payment_method: 'pix' }

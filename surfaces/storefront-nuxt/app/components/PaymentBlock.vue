@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TrackingPromiseProjection, TrackingCopyProjection } from '~/types/shopman'
-import { canSimulatePayment, isHostedCheckout, paymentMethodLabel } from '~/presentation/payment'
+import { canSimulatePayment, isHostedCheckout } from '~/presentation/payment'
 
 // Bloco de pagamento INLINE no acompanhamento (PAYMENT-TRACKING-MERGE). Não é
 // mais uma tela: o promise carrega o método e o payload (QR/copia-e-cola/link do
@@ -46,7 +46,7 @@ async function copyPix () {
     <UiCardHeader>
       <p class="shop-muted text-sm">{{ copy.total_label }}</p>
       <UiCardTitle>{{ totalDisplay }}</UiCardTitle>
-      <UiCardDescription>{{ paymentMethodLabel(method) }}</UiCardDescription>
+      <UiCardDescription>{{ promise.payment_method_label || 'Pagamento' }}</UiCardDescription>
     </UiCardHeader>
     <UiCardContent class="space-y-4">
       <!-- Cartão ou link: ambiente seguro externo (Stripe). -->

@@ -287,7 +287,8 @@ def build_catalog(
         low_stock_threshold=low_stock_threshold,
         qty_in_cart_by_sku=qty_in_cart_by_sku,
         favorite_skus=_favorite_skus(request),
-        subscribed_skus=_notify_subscribed_skus(request),
+        subscribed_skus=notify_subscribed_skus(request),
+        session_key=_session_key(request),
         active_food_prefs=_active_food_prefs(request),
     )
 
@@ -369,7 +370,15 @@ def build_catalog_items_for_skus(
         return ()
 
     products_by_sku = catalog_context.products_by_sku(skus, only_published=True)
-    ordered = [products_by_sku[sku] for sku in skus if sku in products_by_sku]
+    # Mesmo portão do cardápio: oculto no canal não vira card. Sem isto, favoritos
+    # e cross-sell montavam card de SKU que nunca foi para esta vitrine — com
+    # preço e "Adicionar" ativo — e o toque caía na PDP em 404.
+    visible = catalog_context.visible_skus_in_channel(skus, channel_ref)
+    ordered = [
+        products_by_sku[sku]
+        for sku in skus
+        if sku in products_by_sku and (visible is None or sku in visible)
+    ]
     if not ordered:
         return ()
 
@@ -392,7 +401,8 @@ def build_catalog_items_for_skus(
             low_stock_threshold=low_stock_threshold,
             qty_in_cart_by_sku=qty_in_cart_by_sku,
             favorite_skus=_favorite_skus(request),
-            subscribed_skus=_notify_subscribed_skus(request),
+            subscribed_skus=notify_subscribed_skus(request),
+            session_key=_session_key(request),
             active_food_prefs=_active_food_prefs(request),
         )
     )
@@ -411,12 +421,16 @@ def _build_items(
     qty_in_cart_by_sku: dict[str, int] | None = None,
     favorite_skus: set[str] | None = None,
     subscribed_skus: set[str] | None = None,
+    session_key: str = "",
     active_food_prefs=frozenset(),
 ) -> list[CatalogItemProjection]:
     qty_in_cart_by_sku = qty_in_cart_by_sku or {}
     favorite_skus = favorite_skus or set()
     subscribed_skus = subscribed_skus or set()
     skus = [p.sku for p in products]
+
+    # Batch: hold da PRÓPRIA sessão, para não contar contra quem o fez (uma query).
+    own_holds = catalog_context.own_holds_by_sku(session_key, skus) if session_key else {}
 
     # Batch: collections per SKU (used as `category` and for pricing context).
     sku_collections = catalog_context.collection_refs_by_sku(skus)
@@ -480,7 +494,15 @@ def _build_items(
 
         effective_q = price.final_unit_price_q
 
-        raw_avail = avail_map.get(p.sku)
+        # O hold da própria sessão não pode fazer o card mentir: quem colocou as
+        # duas últimas unidades na sacola tem de continuar vendo o stepper com "2",
+        # e não um selo "Indisponível" com sino para ser avisado do que já é dele.
+        # A PDP (`product_detail`) e a sacola (`cart._line_availability`) já
+        # corrigiam; o card do cardápio era a única superfície que não — e as três
+        # respondiam coisas diferentes sobre o mesmo SKU no mesmo segundo.
+        raw_avail = catalog_context.availability_with_own_hold(
+            avail_map.get(p.sku), int(own_holds.get(p.sku, 0))
+        )
         effective_is_sellable = p.is_sellable and listing_sellable.get(p.sku, True)
         availability = _resolve_availability(
             raw_avail,
@@ -500,16 +522,7 @@ def _build_items(
         is_notifiable = (
             availability == Availability.UNAVAILABLE and effective_is_sellable and not is_paused
         )
-        available_qty: int | None = None
-        if raw_avail is not None and not raw_avail.get("is_paused", False):
-            policy = raw_avail.get("availability_policy", "planned_ok")
-            if policy != "demand_ok":
-                total = raw_avail.get("total_promisable")
-                if total is not None:
-                    try:
-                        available_qty = int(Decimal(str(total)))
-                    except (TypeError, ValueError):
-                        available_qty = None
+        available_qty = catalog_context.orderable_ceiling(raw_avail, can_add=can_add)
 
         primary = primary_by_sku.get(p.sku)
         primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
@@ -740,7 +753,7 @@ def _favorite_skus(request: HttpRequest | None) -> set[str]:
         return set()
 
 
-def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
+def notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
     """SKUs com 'Me avise' já pedido por este viewer — persiste o estado do sino.
 
     Logado: por customer_ref/telefone da conta. Anônimo: contato + SKU gravados
@@ -769,7 +782,7 @@ def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
                     skus.add(sku)
         return skus
     except Exception:
-        logger.debug("catalog._notify_subscribed_skus failed", exc_info=True)
+        logger.debug("catalog.notify_subscribed_skus failed", exc_info=True)
         return set()
 
 
@@ -788,6 +801,17 @@ def _active_food_prefs(request: HttpRequest | None):
     except Exception:
         logger.debug("catalog._active_food_prefs failed", exc_info=True)
         return frozenset()
+
+
+def _session_key(request: HttpRequest | None) -> str:
+    """Chave de sessão do carrinho, ou string vazia (navegação anônima)."""
+    if request is None:
+        return ""
+    try:
+        return request.session.get("cart_session_key") or ""
+    except Exception:
+        logger.debug("catalog_projection_session_key_failed", exc_info=True)
+        return ""
 
 
 def _cart_qty_by_sku(request: HttpRequest | None) -> dict[str, int]:

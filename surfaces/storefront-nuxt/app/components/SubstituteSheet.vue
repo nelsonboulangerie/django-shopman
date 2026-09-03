@@ -119,6 +119,7 @@ function tryAgain () {
         v-if="isNotifiable && !hasAvailable && cartIssue"
         :sku="cartIssue.sku"
         :name="cartIssue.name"
+        :subscribed="cartIssue.isNotifySubscribed"
       />
 
       <UiButton

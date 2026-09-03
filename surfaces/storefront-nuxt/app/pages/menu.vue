@@ -80,7 +80,9 @@ const menuFocusLabel = computed(() => {
   const count = formatCount(activeSectionCount.value, 'item encontrado', 'itens encontrados')
   if (hasAppliedFilters.value) return `${count} no filtro ativo.`
   if (activeSection.value !== 'all') return `${count} em ${activeSectionLabel.value}.`
-  return `${formatCount(filteredCount.value, 'item disponível', 'itens disponíveis')}.`
+  // Neutro de propósito: a contagem é de cards na tela, e a seção mostra também
+  // o que está indisponível — dizer "disponíveis" afirmava o que não foi medido.
+  return `${formatCount(filteredCount.value, 'item no cardápio', 'itens no cardápio')}.`
 })
 
 function sectionDomId (ref: string) {

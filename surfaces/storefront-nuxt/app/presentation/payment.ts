@@ -1,16 +1,12 @@
 // Lógica pura do bloco de pagamento inline. Depois da fusão
 // PAYMENT-TRACKING-MERGE a tela de pagamento deixou de existir: o Pix/cartão
 // viraram um degrau do próprio acompanhamento, então o estado, o poll e o
-// countdown vivem na página de acompanhamento (o promise carrega tudo). O que
-// sobra aqui é o rótulo acolhedor do método.
-
-// Rótulo acolhedor do método (omotenashi) em vez do enum cru "pix"/"card".
-export function paymentMethodLabel (method: string | null | undefined): string {
-  if (method === 'pix') return 'Pix'
-  if (method === 'card') return 'Cartão de crédito'
-  if (method === 'link') return 'Link de pagamento'
-  return 'Pagamento'
-}
+// countdown vivem na página de acompanhamento (o promise carrega tudo).
+//
+// O rótulo do método NÃO mora mais aqui: o de-para vivia duplicado no cliente e
+// o operador que renomeasse "Cartão" no Admin via o checkout obedecer e o
+// acompanhamento não — dois nomes para o mesmo pedido. Agora vem pronto em
+// `promise.payment_method_label`.
 
 // Sessão HOSPEDADA: o cliente abre a URL do gateway e paga lá. O cartão da loja
 // online e o link do balcão (pedido remoto anotado no PDV) são a mesma coisa

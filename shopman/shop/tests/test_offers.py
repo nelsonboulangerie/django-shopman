@@ -191,7 +191,9 @@ def test_what_is_not_sellable_is_reported_not_hidden(croissant):
     result = offers.add_offer_items(None, promotion, cart_service=cart, channel_ref="web")
 
     assert result.added == ("CRO-001",)
-    assert result.skipped == ("FANTASMA",)
+    # O SKU viaja junto do nome: sem ele a tela só conta, não nomeia nem oferece
+    # o "Me avise" (aqui o produto nem existe, então nome == sku).
+    assert [(i.sku, i.name) for i in result.skipped] == [("FANTASMA", "FANTASMA")]
 
 
 def test_what_stock_refuses_is_reported_not_hidden(croissant, pao):
@@ -202,7 +204,7 @@ def test_what_stock_refuses_is_reported_not_hidden(croissant, pao):
     result = offers.add_offer_items(None, promotion, cart_service=cart, channel_ref="web")
 
     assert result.added == ("CRO-001",)
-    assert result.skipped == ("Pão francês",)
+    assert [(i.sku, i.name) for i in result.skipped] == [("PAO-001", "Pão francês")]
     assert result.assembled is True
 
 

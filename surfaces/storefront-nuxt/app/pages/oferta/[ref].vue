@@ -17,17 +17,25 @@ const { setFromServer } = useCartState()
 
 const offerRef = computed(() => String(route.params.ref || ''))
 
+/** Item que a oferta não conseguiu montar — nomeado, e com saída quando houver. */
+type SkippedOfferItem = {
+  sku: string
+  name: string
+  is_notifiable: boolean
+  is_notify_subscribed: boolean
+}
+
 type ClaimResponse = {
   ok: boolean
   offer: { ref: string; name: string }
   added: string[]
-  skipped: string[]
+  skipped: SkippedOfferItem[]
   cart: CartProjection
 }
 
 const pending = ref(true)
 const offerName = ref('')
-const skipped = ref<string[]>([])
+const skipped = ref<SkippedOfferItem[]>([])
 const problem = ref('')
 /** Sacola já tinha itens: quem decide somar ou trocar é o cliente, não nós. */
 const conflict = ref(false)
@@ -118,13 +126,32 @@ useSeoMeta({ title: 'Sua oferta', robots: 'noindex, nofollow' })
           </UiButton>
         </section>
 
-        <!-- Entrou parcial: contamos o que ficou de fora em vez de deixar o cliente
-             descobrir na sacola. -->
-        <section v-else-if="skipped.length" class="text-center">
-          <h1 class="shop-title">{{ offerName || 'Oferta' }} na sua sacola</h1>
-          <p class="mt-2 shop-muted">
-            Alguns itens não estavam disponíveis agora e ficaram de fora.
-          </p>
+        <!-- Entrou parcial: nomeamos o que ficou de fora, em vez de deixar o cliente
+             descobrir na sacola — e quem pode ser avisado é avisado daqui mesmo. -->
+        <section v-else-if="skipped.length">
+          <div class="text-center">
+            <h1 class="shop-title">{{ offerName || 'Oferta' }} na sua sacola</h1>
+            <p class="mt-2 shop-muted">
+              {{ skipped.length === 1 ? 'Um item não estava disponível agora e ficou de fora:' : 'Alguns itens não estavam disponíveis agora e ficaram de fora:' }}
+            </p>
+          </div>
+          <ul class="mt-4 divide-y rounded-lg border">
+            <li
+              v-for="item in skipped"
+              :key="item.sku"
+              class="flex items-center justify-between gap-3 px-4 py-3"
+            >
+              <span class="min-w-0 flex-1 truncate shop-item-title">{{ item.name }}</span>
+              <StockNotifyButton
+                v-if="item.is_notifiable"
+                :sku="item.sku"
+                :name="item.name"
+                :subscribed="item.is_notify_subscribed"
+                compact
+              />
+              <span v-else class="shrink-0 shop-meta">Indisponível</span>
+            </li>
+          </ul>
           <UiButton size="lg" class="mt-4 w-full justify-center" to="/sacola">
             Ver minha sacola
           </UiButton>

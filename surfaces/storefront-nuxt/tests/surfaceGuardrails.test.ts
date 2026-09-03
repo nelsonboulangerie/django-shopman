@@ -668,6 +668,19 @@ describe('surface UX guardrails', () => {
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
 
+  it('pins Sair to the top-right of the account header, on the greeting line', () => {
+    const account = read('app/pages/conta/index.vue')
+    const header = account.slice(account.indexOf('<header'), account.indexOf('</header>'))
+
+    // `flex-wrap` decide a quebra pelo tamanho MÁXIMO do conteúdo: assim que a
+    // contagem de pedidos cresce, o botão "Sair" desce para a linha de baixo.
+    expect(header).toContain('class="flex items-start justify-between gap-3"')
+    expect(header).not.toContain('flex-wrap')
+    // A coluna da saudação encolhe; o botão nunca.
+    expect(header).toContain('min-w-0 flex-1')
+    expect(header).toMatch(/<UiButton[^>]*icon="lucide:log-out"[^>]*class="shrink-0"/)
+  })
+
   it('keeps auth routes themed without letting shell home clobber auth/cart state', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
@@ -1371,5 +1384,120 @@ describe('customer surface never names the reason behind unavailability', () => 
     expect(sheet).not.toContain('is_paused')
     expect(sheet).not.toContain('paused_title')
     expect(sheet).not.toContain('paused_message')
+  })
+})
+
+// Semântica: o que a tela AFIRMA tem de estar escrito no contrato que ela recebeu.
+// Cada caso aqui nasceu de uma tela dizendo mais (ou outra coisa) do que o payload.
+describe('surface claims stay inside what the projection actually says', () => {
+  it('never invites "Adicionar" on a card the contract says is not addable', () => {
+    // `can_add_to_cart` falso só ocorre com `availability === 'unavailable'`
+    // (presentation/catalog.py). O card mostrava o botão cinza escrito
+    // "Adicionar" ao lado do próprio selo "Indisponível" — convite e recusa na
+    // mesma peça. A PDP já fazia certo; só o tile mentia.
+    const tile = read('app/components/ProductTile.vue')
+
+    expect(tile).toContain("'Adicionar' : 'Indisponível'")
+    expect(tile).not.toContain('is_paused')
+  })
+
+  it('does not announce availability in a count that includes unavailable items', () => {
+    // O `aria-live` do cardápio contava TODOS os cards da seção — inclusive os
+    // indisponíveis — e chamava o número de "itens disponíveis".
+    const menu = read('app/pages/menu.vue')
+
+    expect(menu).not.toContain('itens disponíveis')
+    expect(menu).toContain('itens no cardápio')
+  })
+
+  it('does not read payment_status, a field deliberately dropped from tracking', () => {
+    // api/tracking.py::_tracking_payload removeu o campo de propósito: o nome
+    // colide com o `payment_status` (enum cru) do 409 de cancelamento. Enquanto
+    // o tipo o declarava, bastava alguém reintroduzir para a tela exibir
+    // "payment_pending" ao cliente.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+    const types = read('app/types/shopman.ts')
+
+    expect(tracking).not.toMatch(/t\.payment_status(?!_label)/)
+    expect(types).not.toMatch(/^\s*payment_status: /m)
+  })
+
+  it('speaks the product name, not the SKU, in the favorite control', () => {
+    const heart = read('app/components/FavoriteHeart.vue')
+
+    expect(heart).not.toContain('`Remover ${sku} dos favoritos`')
+    expect(heart).toContain('${spoken} dos favoritos')
+  })
+
+  it('does not stamp the completed check on the step that is happening now', () => {
+    // `OrderProgressStepProjection.state` separa completed/current/pending/
+    // cancelled. A timeline marcava `data-completed` até no passo atual, então
+    // "Em preparo" saía com o mesmo ✓ verde de um passo já feito.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain("v-else-if=\"step.state === 'current'\"")
+    expect(tracking).toContain('timelineStepStateLabel(step.state)')
+  })
+
+  it('offers the notify bell on a bag line that fell to a real stockout', () => {
+    // A linha caída mostrava foto em sépia, aviso vermelho e stepper travado —
+    // e a única saída era a lixeira. O sino só entra na falta honesta: pausado
+    // segue vendo o mesmo "Indisponível", sem promessa de volta.
+    const bag = read('app/pages/sacola.vue')
+
+    expect(bag).toContain('<StockNotifyButton')
+    expect(bag).toContain('line.is_notifiable')
+    expect(bag).toContain(':subscribed="line.is_notify_subscribed"')
+    expect(bag).not.toContain('line.is_paused')
+  })
+
+  it('puts the product collection back in the breadcrumb, on screen and in JSON-LD', () => {
+    // `breadcrumb_category` já vinha calculado e ninguém lia: a trilha fixa
+    // Início/Cardápio/nome tirava do cliente o caminho de volta para a coleção,
+    // e o rich-result saía sem o nível que o servidor tinha resolvido.
+    const pdp = read('app/pages/produto/[sku].vue')
+
+    expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('takes the payment-method name from the server, not a client map', () => {
+    // O de-para vivia duplicado: renomear "Cartão" no Admin mudava o checkout e
+    // não o acompanhamento — dois nomes para o mesmo pedido.
+    const payment = read('app/presentation/payment.ts')
+    const block = read('app/components/PaymentBlock.vue')
+
+    expect(payment).not.toContain("=== 'pix') return 'Pix'")
+    expect(block).toContain('promise.payment_method_label')
+  })
+
+  it('shows WHEN the order was promised for, not just what and how much', () => {
+    // `when_display` e `eta_display` vinham prontos do servidor e não apareciam
+    // em tela nenhuma: o resumo listava entrega, taxa e pagamento, nunca quando.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain('t.when_display')
+    expect(tracking).toContain('t.eta_display')
+  })
+
+  it('names what the offer could not add, and offers a way out', () => {
+    // `skipped` chegava como lista de strings e a tela só CONTAVA ("alguns itens
+    // ficaram de fora"). Quem clicou num anúncio ficava sem saber o quê e sem
+    // nada a fazer.
+    const offer = read('app/pages/oferta/[ref].vue')
+
+    expect(offer).toContain('v-for="item in skipped"')
+    expect(offer).toContain('<StockNotifyButton')
+    expect(offer).not.toContain('ref<string[]>([])')
+  })
+
+  it('keeps the progress timeline readable by assistive tech', () => {
+    // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
+    // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
+    // separador, esses sim decorativos, seguem escondidos.
+    const item = read('app/components/Ui/Timeline/Item.vue')
+    const indicator = read('app/components/Ui/Timeline/Indicator.vue')
+
+    expect(item.replace(/<!--[\s\S]*?-->/g, '')).not.toContain('aria-hidden')
+    expect(indicator).toContain('aria-hidden="true"')
   })
 })

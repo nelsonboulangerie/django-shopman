@@ -12,6 +12,8 @@ interface CartIssue {
   is_paused: boolean
   // Esgotado honesto e assinável: habilita o CTA "Me avise quando disponível" (WP-3).
   isNotifiable: boolean
+  // "Me avise" já pedido por este viewer — o sino nasce em "Anotado", como no card.
+  isNotifySubscribed: boolean
   is_planned: boolean
   planned_offer_title: string
   planned_offer_message: string
@@ -161,6 +163,7 @@ function issueFromPayload (data: Record<string, unknown> | null | undefined, met
     available_qty: numberOrNull(d.available_qty),
     is_paused: !!d.is_paused,
     isNotifiable: Boolean(d.is_notifiable),
+    isNotifySubscribed: Boolean(d.is_notify_subscribed),
     is_planned: !!d.is_planned,
     planned_offer_title: String(d.planned_offer_title || ''),
     planned_offer_message: String(d.planned_offer_message || ''),

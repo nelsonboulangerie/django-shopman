@@ -224,7 +224,9 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
       label: 'Pedidos',
       description: 'Histórico completo, acompanhar e repetir',
       icon: 'lucide:receipt',
-      // Badge = o que pede atenção agora (ativos); o histórico mora na descrição.
+      // Badge = o que pede atenção agora (ativos); sem ativos, cai para o total
+      // (decisão pinada em accountPresentation.test.ts: o cartão é a porta do
+      // histórico, e um badge vazio ali não ajudaria ninguém).
       count: summary ? summary.active_order_count || summary.total_order_count : null
     },
     {

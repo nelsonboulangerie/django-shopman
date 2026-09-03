@@ -53,6 +53,20 @@ describe('checkout flow view model', () => {
     ])
   })
 
+  it('disables the quick date shortcuts on a weekday the shop does not open', () => {
+    // Fallback local do "Quando" (só entra quando `available_dates` vem vazia).
+    // Sem repassar `closed_weekdays`, "Amanhã" nascia clicável num dia fechado e
+    // o passo travava sem dizer por quê — enquanto o calendário ao lado, que
+    // recebe o mesmo fato, já pintava o dia como indisponível.
+    const bounds = checkoutDateBounds({ max_preorder_days: 2 }, now)
+    const thursday = 3 // 2026-05-21, convenção Python (segunda = 0)
+
+    expect(quickCheckoutDateOptions(bounds, [], [thursday])).toEqual([
+      { label: 'Hoje', value: '2026-05-20', disabled: false },
+      { label: 'Amanhã', value: '2026-05-21', disabled: true }
+    ])
+  })
+
   it('keeps the progressive section order canonical for pickup and delivery', () => {
     expect(checkoutSteps('pickup')).toEqual(['fulfillment', 'when', 'payment'])
     expect(checkoutSteps('delivery')).toEqual(['fulfillment', 'address', 'when', 'payment'])

@@ -56,12 +56,25 @@ class OfferUnavailable(Exception):
 
 
 @dataclass(frozen=True)
+class SkippedOfferItem:
+    """Um item que a oferta não conseguiu montar.
+
+    Carrega o SKU junto do nome: sem ele a tela só conseguia CONTAR o que ficou
+    de fora ("alguns itens não estavam disponíveis"), sem poder nomear nem
+    oferecer o "Me avise" — o link do anúncio terminava em beco.
+    """
+
+    sku: str
+    name: str
+
+
+@dataclass(frozen=True)
 class OfferItems:
     """O que a oferta consegue montar, e o que ela não conseguiu."""
 
     added: tuple[str, ...] = ()
-    #: Nomes (ou SKUs) que ficaram de fora — sem venda, sem estoque, sem preço.
-    skipped: tuple[str, ...] = ()
+    #: O que ficou de fora — sem venda, sem estoque, sem preço.
+    skipped: tuple[SkippedOfferItem, ...] = ()
 
     @property
     def assembled(self) -> bool:
@@ -145,12 +158,12 @@ def add_offer_items(
     from shopman.shop.services import customer_orders
 
     added: list[str] = []
-    skipped: list[str] = []
+    skipped: list[SkippedOfferItem] = []
 
     for sku in offer_skus(promotion):
         product = customer_orders._sellable_product(sku)
         if product is None:
-            skipped.append(sku)
+            skipped.append(SkippedOfferItem(sku=sku, name=sku))
             continue
 
         try:
@@ -166,7 +179,7 @@ def add_offer_items(
             # ser montada inteira ainda vale pelo que couber — melhor sacola parcial
             # explicada que erro na cara de quem clicou num anúncio.
             logger.info("offer.add_item_failed promotion=%s sku=%s", promotion.ref, sku, exc_info=True)
-            skipped.append(product.name or sku)
+            skipped.append(SkippedOfferItem(sku=sku, name=product.name or sku))
             continue
 
         added.append(sku)

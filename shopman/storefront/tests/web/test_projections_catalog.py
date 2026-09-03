@@ -489,6 +489,22 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is False
         assert item.is_notifiable is True
 
+    def test_planned_batch_card_has_no_stepper_ceiling(self, channel):
+        """Card de encomenda não pode nascer com teto 0: o "+" morre na 1ª unidade."""
+        self._product("NOTIF-PLANNED")
+        item = self._build(
+            "NOTIF-PLANNED",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("0"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.PLANNED_OK
+        assert item.can_add_to_cart is True
+        assert item.available_qty is None
+
     def test_not_sellable_is_not_notifiable(self, channel):
         self._product("NOTIF-NS", sellable=False)
         item = self._build(
@@ -521,10 +537,95 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is True
         assert item.is_notifiable is False
 
+    def test_own_hold_does_not_make_the_card_lie(self, cart_session, channel, product):
+        """Quem tem as últimas unidades na sacola continua vendo o card vendável.
 
-# ──────────────────────────────────────────────────────────────────────
-# Category presentation (Collection.metadata → card-fallback sem foto)
-# ──────────────────────────────────────────────────────────────────────
+        ``total_promisable`` já desconta o hold da PRÓPRIA sessão, então o card do
+        cardápio dizia "Indisponível" (com sino "Me avise") para o SKU que a pessoa
+        acabou de reservar — enquanto PDP e sacola, que corrigem o hold próprio,
+        diziam o contrário sobre o mesmo SKU no mesmo segundo. Pior: o stepper com
+        "2" era SUBSTITUÍDO pelo sino, e não dava para diminuir a partir do card.
+        """
+        from unittest.mock import patch
+
+        from django.test import RequestFactory
+
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        request = RequestFactory().get("/menu/")
+        request.session = cart_session.session  # type: ignore[attr-defined]
+
+        raw = {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),  # zerado PELO hold desta sessão
+            "is_planned": False,
+        }
+        with patch(
+            "shopman.storefront.presentation.catalog._batch_availability",
+            return_value={product.sku: raw},
+        ):
+            item = build_catalog_items_for_skus(
+                [product.sku], channel_ref=channel.ref, request=request,
+            )[0]
+
+        assert item.qty_in_cart == 2
+        # Com as 2 unidades devolvidas, o card volta a ser vendável (aqui LOW_STOCK,
+        # que é a leitura honesta de "restam 2") — o que não pode é UNAVAILABLE.
+        assert item.availability != Availability.UNAVAILABLE
+        assert item.can_add_to_cart is True
+        assert item.is_notifiable is False
+        # O teto do stepper volta somado, senão o "+" trava em 0 com 2 na sacola.
+        assert item.available_qty == 2
+
+
+class TestAdHocSkuCardsRespectTheChannelGate:
+    """Favoritos, cross-sell e trilhos da home montam cards a partir de uma lista
+    explícita de SKUs — e escapavam do portão do canal que o cardápio aplica.
+
+    Um SKU que nunca foi para a vitrine (ou que foi OCULTO nela) nascia com card,
+    preço e "Adicionar" ativo; o toque caía na PDP em 404 e o add falhava.
+    """
+
+    def _product(self, sku):
+        return Product.objects.create(
+            sku=sku, name="Pão Teste", base_price_q=500,
+            is_published=True, is_sellable=True,
+        )
+
+    def _cards(self, sku, channel):
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        return build_catalog_items_for_skus([sku], channel_ref=channel.ref)
+
+    def test_sku_absent_from_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-ABSENT")
+        assert self._cards(product.sku, channel) == ()
+
+    def test_sku_hidden_in_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-HIDDEN")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=False, is_sellable=True,
+        )
+        assert self._cards(product.sku, channel) == ()
+
+    def test_paused_sku_still_becomes_a_card(self, channel, listing):
+        """Pausar não é ocultar: o item continua na vitrine, dizendo "Indisponível"."""
+        product = self._product("ADHOC-PAUSED")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=True, is_sellable=False,
+        )
+        items = self._cards(product.sku, channel)
+
+        assert len(items) == 1
+        assert items[0].availability == Availability.UNAVAILABLE
+        assert items[0].is_paused is True
+
+    def test_channel_without_a_listing_keeps_working(self, channel):
+        """Canal interno/fallback (ex.: PDV) não tem Listing — nada é filtrado."""
+        product = self._product("ADHOC-NO-LISTING")
+        assert len(self._cards(product.sku, channel)) == 1
 
 
 class TestCategoryPresentation:

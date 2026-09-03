@@ -108,6 +108,12 @@ class CartLineProjection:
     # carrega os dois (o selo diz o que É, a fila diz quando vem).
     is_made_to_order: bool = False
 
+    # Esgotado honesto: a linha caiu por FALTA — não por pausa (decisão do
+    # operador) nem por disponibilidade parcial, que tem o "Usar N" como saída.
+    # Mesma régua do card e da PDP; sem ela a sacola dizia "Indisponível" e a
+    # única saída era a lixeira.
+    is_notifiable: bool = False
+
 
 @dataclass(frozen=True)
 class CartDiscountLineProjection:
@@ -236,6 +242,7 @@ def build_cart(
     skus = [item.get("sku", "") for item in raw_items]
     names_by_sku = _names_by_sku(skus)
     made_to_order = _made_to_order_skus(skus)
+    sellable = _sellable_skus(skus)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
 
     pricing = session.pricing or {}
@@ -246,6 +253,7 @@ def build_cart(
         _build_line(
             item, names_by_sku, avail_map, own_holds, discount_items, session_key,
             made_to_order_skus=made_to_order,
+            sellable_skus=sellable,
         )
         for item in raw_items
     )
@@ -341,6 +349,28 @@ def _names_by_sku(skus: list[str]) -> dict[str, str]:
     }
 
 
+def _sellable_skus(skus: list[str]) -> frozenset[str]:
+    """Quais destes SKUs a casa ainda vende (``Product.is_sellable``).
+
+    O mapa de disponibilidade vem do Stockman e só conhece pausa de ESTOQUE; a
+    pausa comercial mora no produto. Sem esta leitura, um item despublicado pela
+    operação ganharia o sino "Me avise" — e o cliente sairia esperando a volta de
+    algo que foi decisão, não falta.
+    """
+    if not skus:
+        return frozenset()
+    try:
+        from shopman.offerman.models import Product
+
+        return frozenset(
+            p.sku
+            for p in Product.objects.filter(sku__in=skus, is_sellable=True).only("sku")
+        )
+    except Exception:
+        logger.warning("cart.sellable lookup failed skus=%s", skus, exc_info=True)
+        return frozenset()
+
+
 def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
     """Quais destes SKUs a casa declara como "Preparado na hora".
 
@@ -403,6 +433,7 @@ def _build_line(
     discount_items: dict[str, dict],
     session_key: str,
     made_to_order_skus: frozenset[str] = frozenset(),
+    sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
     qty = int(Decimal(str(item.get("qty", 0) or 0)))
@@ -435,6 +466,14 @@ def _build_line(
     is_available, available_qty = _line_availability(
         sku, qty, raw_avail, own_holds,
     )
+    # "Me avise" só para escassez de verdade: pausa é decisão (e nem o hold
+    # próprio reabre a linha), e sobra parcial já tem o "Usar N" como avanço.
+    is_notifiable = (
+        not is_available
+        and not (raw_avail or {}).get("is_paused", False)
+        and not available_qty
+        and sku in sellable_skus
+    )
 
     disc = discount_items.get(sku)
     original_price_q = int(disc["original_price_q"]) if disc else None
@@ -451,6 +490,7 @@ def _build_line(
         is_available=is_available,
         available_qty=available_qty,
         is_made_to_order=is_made_to_order,
+        is_notifiable=is_notifiable,
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,
@@ -685,9 +725,17 @@ def build_upsell_suggestion(
 
     Resolves the listed price via ``ListingItem`` so the suggestion carries
     the same price the checkout would charge.
+
+    ⚠️ Só sugere o que dá para ADICIONAR agora. O trilho desenha um CTA ativo
+    ("Que tal adicionar?") sem receber campo nenhum de disponibilidade, então
+    sugerir esgotado virava convite que termina em 409 — e o cliente lê "Ficou
+    indisponível enquanto você escolhia", que é falso: já estava. Aqui a
+    disponibilidade é filtro de CANDIDATO, não estado a renderizar: um upsell
+    desabilitado não é sugestão, é ruído.
     """
     from shopman.offerman.models import ListingItem, Product
 
+    from shopman.shop.projections import catalog_context
     from shopman.shop.projections.storefront_context import popular_skus
 
     popular = popular_skus(limit=10)
@@ -695,11 +743,30 @@ def build_upsell_suggestion(
     if not candidates:
         return None
 
+    # Mesmo portão do cardápio: oculto no canal não é sugerido; pausado no canal
+    # também não (aqui a pausa não vira "Indisponível" — vira "não sugira").
+    visible = catalog_context.visible_skus_in_channel(candidates, channel_ref)
+    listing_sellable = catalog_context.listing_sellable_map(candidates, channel_ref)
+    avail_map, _own = _availability(candidates, "", channel_ref)
+
     for sku in candidates:
+        if visible is not None and sku not in visible:
+            continue
+        if not listing_sellable.get(sku, True):
+            continue
         product = Product.objects.filter(
             sku=sku, is_published=True, is_sellable=True,
         ).first()
         if product is None:
+            continue
+        resolved = catalog_context.basic_availability(
+            avail_map.get(sku),
+            is_sellable=True,
+            # O limiar só separa AVAILABLE de LOW_STOCK, e os dois são
+            # adicionáveis — a pergunta aqui é só "dá para pôr na sacola?".
+            low_stock_threshold=Decimal("0"),
+        )
+        if not resolved.can_add_to_cart:
             continue
         item = (
             ListingItem.objects.filter(

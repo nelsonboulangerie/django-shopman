@@ -179,10 +179,19 @@ def test_replace_starts_a_fresh_bag(client, croissant):
 
 
 def test_what_could_not_be_added_comes_back_to_be_explained(client, croissant):
-    """A tela precisa poder contar o que ficou de fora, em vez de o cliente descobrir."""
+    """A tela precisa NOMEAR o que ficou de fora — e oferecer uma saída.
+
+    Contar ("alguns itens ficaram de fora") deixava quem clicou num anúncio sem
+    saber o quê e sem nada a fazer.
+    """
     _promotion(skus=["CRO-001", "FANTASMA-404"])
 
     body = _claim(client).json()
 
     assert body["added"] == ["CRO-001"]
-    assert body["skipped"] == ["FANTASMA-404"]
+    assert body["skipped"] == [{
+        "sku": "FANTASMA-404",
+        "name": "FANTASMA-404",
+        "is_notifiable": False,
+        "is_notify_subscribed": False,
+    }]
