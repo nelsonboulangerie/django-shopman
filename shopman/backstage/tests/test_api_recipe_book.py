@@ -66,6 +66,7 @@ def materials(db):
         ("FARINHA-T55", "Farinha de trigo T55", "kg"),
         ("FARINHA-T65", "Farinha de trigo T65", "kg"),
         ("AGUA-FILTRADA", "Água filtrada", "l"),
+        ("LEITE", "Leite integral", "l"),
         ("SAL", "Sal", "kg"),
         ("MANTEIGA-FR", "Manteiga francesa", "kg"),
     ]
@@ -684,13 +685,34 @@ def test_publish_writes_the_sheet_in_the_materials_unit(client, editor, material
     }
 
 
-def test_publish_refuses_a_mass_line_for_a_material_sold_by_volume_and_names_the_row(client, editor, materials):
-    """Grama não vira litro sem densidade declarada: a ficha recusa e a fórmula aponta a linha."""
+def test_publish_weighs_water_in_grams_against_a_material_sold_by_litre(client, editor, materials):
+    """O padeiro pesa a água (700 g sobre 1000 g de farinha); o insumo é litro. Água a 1,0 g/ml é física."""
     entry = craftsman.create_entry(ref="pao-agua-em-g", name="Pão água em g", kind="bread", output_sku="PAO-AGUA-G")
     craftsman.create_version(entry, formula=flour_formula(), yield_quantity="1.7", yield_unit="kg")
     client.force_login(editor)
     response = _post(client, f"{LIST_URL}pao-agua-em-g/versions/1/publish/", {})
+    assert response.status_code == 200, response.content
+    water = Recipe.objects.get(ref="pao-agua-em-g").items.get(input_sku="AGUA-FILTRADA")
+    assert (water.quantity, water.unit) == (Decimal("0.7"), "L")
+
+
+def test_publish_refuses_a_mass_line_for_a_liquid_without_declared_density_and_names_the_row(client, editor, materials):
+    """Leite em grama contra insumo em litro só atravessa com densidade declarada; sem ela, recusa apontando a linha."""
+    entry = craftsman.create_entry(ref="pao-de-leite", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE")
+    formula = flour_formula()
+    formula["items"][1] = {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
+    client.force_login(editor)
+    response = _post(client, f"{LIST_URL}pao-de-leite/versions/1/publish/", {})
     assert response.status_code == 400, response.content
     assert response.json()["field"] == "items[1].unit"
     assert "(L)" in response.json()["detail"]
-    assert not Recipe.objects.filter(ref="pao-agua-em-g").exists()
+    assert not Recipe.objects.filter(ref="pao-de-leite").exists()
+
+    # Com a densidade declarada na linha, a mesma fórmula publica em litro.
+    formula["items"][1]["density_g_per_ml"] = "1.03"
+    version = craftsman.update_draft(entry.versions.get(number=1), formula=formula)
+    response = _post(client, f"{LIST_URL}pao-de-leite/versions/{version.number}/publish/", {})
+    assert response.status_code == 200, response.content
+    milk = Recipe.objects.get(ref="pao-de-leite").items.get(input_sku="LEITE")
+    assert (milk.quantity, milk.unit) == (Decimal("0.66"), "L")

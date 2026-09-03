@@ -628,6 +628,9 @@ def _bom_items(base: list[dict], remaining: dict, parts: list[FormulaPartAnalysi
             "role": item["role"],
             "quantity": quantize(quantity),
             "unit": item["unit"],
+            # A densidade viaja com a linha: é ela que leva "700 g de água" até o
+            # insumo cadastrado em litro na hora de publicar.
+            "density_g_per_ml": to_decimal(item.get("density_g_per_ml")),
             "is_optional": False,
             "meta": {},
         })

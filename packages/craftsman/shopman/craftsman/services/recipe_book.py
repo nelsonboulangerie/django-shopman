@@ -277,7 +277,10 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis):
     existing_meta = {item.input_sku: dict(item.meta or {}) for item in recipe.items.all()}
     recipe.items.all().delete()
     for sort_order, line in enumerate(_merge_bom_lines(analysis.bom, entry, version)):
-        quantity, unit = _in_catalog_unit(line["sku"], line["quantity"], line["unit"])
+        quantity, unit = _in_catalog_unit(
+            line["sku"], line["quantity"], line["unit"],
+            density_g_per_ml=_density_for(line, existing_meta.get(line["sku"], {})),
+        )
         item = RecipeItem(
             recipe=recipe,
             input_sku=line["sku"],
@@ -331,22 +334,56 @@ def _formula_field_for_sku(formula: dict, sku: str, attribute: str = "") -> str:
     return "items"
 
 
-def _in_catalog_unit(sku: str, quantity: Decimal, unit: str) -> tuple[Decimal, str]:
+def _in_catalog_unit(sku: str, quantity: Decimal, unit: str, *,
+                     density_g_per_ml: Decimal | None = None) -> tuple[Decimal, str]:
     """A linha na unidade em que o insumo é cadastrado (a ficha fala a unidade do SKU).
 
     A fórmula fala em grama; o insumo do Buyman é cadastrado em kg ou L, e o
     ``RecipeItem.clean`` exige a unidade do cadastro. Mesma dimensão converte
-    pela física; dimensão diferente (contagem, volume sem densidade) fica como
-    está, e a ficha recusa com a mensagem dela.
+    pela física. Massa contra volume (a água do padeiro é pesada; o insumo é
+    litro) atravessa pela densidade DECLARADA (ADR-024: a ponte é do insumo);
+    sem densidade, ou contra contagem, a linha fica como está e a ficha recusa
+    com a mensagem dela.
     """
     from shopman.craftsman.models.recipe import _catalog_unit_for_sku, normalize_recipe_item_unit
     from shopman.utils import units
 
     unit = normalize_recipe_item_unit(unit)
     catalog_unit = normalize_recipe_item_unit(_catalog_unit_for_sku(sku))
-    if not catalog_unit or catalog_unit == unit or not units.same_dimension(catalog_unit, unit):
+    if not catalog_unit or catalog_unit == unit:
         return quantity, unit
-    return quantize(units.convert(quantity, unit, catalog_unit)), catalog_unit
+    if units.same_dimension(catalog_unit, unit):
+        return quantize(units.convert(quantity, unit, catalog_unit)), catalog_unit
+    dimensions = {units.dimension(unit), units.dimension(catalog_unit)}
+    if dimensions != {units.MASS, units.VOLUME} or not density_g_per_ml or density_g_per_ml <= 0:
+        return quantity, unit
+    if units.dimension(unit) == units.MASS:
+        milliliters = units.convert(quantity, unit, "g") / density_g_per_ml
+        return quantize(units.convert(milliliters, "ml", catalog_unit)), catalog_unit
+    grams = units.convert(quantity, unit, "ml") * density_g_per_ml
+    return quantize(units.convert(grams, "g", catalog_unit)), catalog_unit
+
+
+_WATER_WORDS = ("agua", "water", "eau", "水")
+
+
+def _density_for(line: dict, existing_meta: dict) -> Decimal | None:
+    """Densidade da linha: a declarada nela, a que a ficha já tinha, ou 1,0 para água.
+
+    Água a 1,0 g/ml é física, não palpite; para qualquer outro líquido a
+    densidade precisa estar declarada (na linha ou no ``RecipeItem.meta`` que
+    o seed/Admin gravou), senão a publicação recusa apontando a linha.
+    """
+    declared = to_decimal(line.get("density_g_per_ml"))
+    if declared and declared > 0:
+        return declared
+    known = to_decimal(existing_meta.get("density_g_per_ml"))
+    if known and known > 0:
+        return known
+    text = normalize_text(f"{line.get('sku', '')} {line.get('name', '')}")
+    if any(word in text for word in _WATER_WORDS):
+        return Decimal(1)
+    return None
 
 
 def _merge_bom_lines(bom, entry, version) -> list[dict]:
