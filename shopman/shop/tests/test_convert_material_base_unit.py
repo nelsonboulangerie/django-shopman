@@ -319,3 +319,20 @@ def test_a_ficha_continua_validando_depois_da_troca(leite, cenario):
     # deixa de validar aqui, e é isso que torna a troca segura.
     for item in recipe.items.all():
         item.full_clean()
+
+
+def test_no_bridge_converte_sem_deixar_a_conversao_para_tras(leite, cenario):
+    """Insumo fora da nota (água de torneira) não ganha ponte: seria anotação sem informação.
+
+    A tela de separação anota a linha pela conversão declarada de menor fator, e
+    para um insumo cuja densidade é 1 a anotação repetiria o mesmo número com um
+    ``≈`` na frente, mentindo sobre a precisão.
+    """
+    call_command("convert_material_base_unit", "LEITE", "--to", "kg", "--apply", "--no-bridge")
+
+    leite.refresh_from_db()
+    assert leite.unit == "kg"
+    assert not MaterialConversion.objects.filter(material=leite, label="litro").exists()
+    # A conversão do saldo acontece do mesmo jeito: a ponte é só o cadastro da compra.
+    quant = Quant.objects.get(sku="LEITE")
+    assert quant.quantity == Decimal("8.240")

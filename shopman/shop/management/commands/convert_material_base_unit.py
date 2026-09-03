@@ -168,6 +168,14 @@ class Command(BaseCommand):
             "--apply", action="store_true",
             help="Executa. Sem esta flag o comando só relata o que faria.",
         )
+        parser.add_argument(
+            "--no-bridge", action="store_true",
+            help=(
+                "Não deixa a unidade antiga cadastrada como conversão. Use para "
+                "insumo que NÃO entra por nota fiscal (água de torneira, por "
+                "exemplo): a ponte só serviria de anotação sem informação."
+            ),
+        )
 
     def handle(self, *args, **options):
         alvo = units.normalize(options["alvo"])
@@ -184,7 +192,7 @@ class Command(BaseCommand):
 
         with transaction.atomic():
             for sku in options["skus"]:
-                for linha in self._converter_insumo(sku, alvo):
+                for linha in self._converter_insumo(sku, alvo, ponte=not options["no_bridge"]):
                     self.stdout.write(linha)
             if not aplicar:
                 transaction.set_rollback(True)
@@ -199,7 +207,7 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────────
     # Um insumo
     # ────────────────────────────────────────────────────────────────────
-    def _converter_insumo(self, sku: str, alvo: str) -> list[str]:
+    def _converter_insumo(self, sku: str, alvo: str, *, ponte: bool = True) -> list[str]:
         Material = apps.get_model("buyman", "Material")
         material = Material.objects.filter(sku=sku).first()
         if material is None:
@@ -230,7 +238,7 @@ class Command(BaseCommand):
         material.save(update_fields=["unit", "metadata", "updated_at"])
         linhas.append(f"  Material.unit gravado como '{alvo}'")
 
-        linhas += self._declarar_unidade_antiga(material, atual, fator, aproximada)
+        linhas += self._declarar_unidade_antiga(material, atual, fator, aproximada, ponte=ponte)
         linhas += self._varrer_o_resto(sku)
         return linhas
 
@@ -563,14 +571,24 @@ class Command(BaseCommand):
         return [f"  mínimo do Compras:        {antes} → {depois}"]
 
     def _declarar_unidade_antiga(
-        self, material, atual: str, fator: Decimal, aproximada: bool
+        self, material, atual: str, fator: Decimal, aproximada: bool, *, ponte: bool = True
     ) -> list[str]:
         """Deixa a unidade antiga cadastrada como conversão, para a nota seguinte.
 
         Só quando a troca atravessou dimensão. kg↔g é física: declarar isso numa
         tabela editável seria abrir a porta para alguém salvar "1 kg = 900 g" e o
         sistema obedecer calado — a ADR-024 proíbe, e por isso não criamos linha.
+
+        ``ponte=False`` (a flag ``--no-bridge``) é para insumo que não entra por
+        nota: água de torneira não tem nota para destravar, e a linha só serviria
+        de anotação na tela de separação ("≈ 3,5 litros" ao lado de "3,5 kg"),
+        que é ruído — e um ``≈`` numa equivalência exata mente sobre a precisão.
         """
+        if not ponte:
+            return [
+                "  conversão da unidade antiga: não criada — "
+                "insumo declarado como fora da nota fiscal (--no-bridge)."
+            ]
         if not aproximada:
             return [
                 "  conversão da unidade antiga: não criada — "
