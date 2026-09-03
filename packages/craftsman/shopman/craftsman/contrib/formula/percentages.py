@@ -85,9 +85,20 @@ _ROLE_KEYWORDS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ),
     ("liquid", ("agua", "water", "eau", "leite", "milk", "lait"), ("水", "牛乳")),
     ("salt", ("sal", "salt", "sel"), ("塩",)),
+    # Fermento natural (a cultura, o levain como ingrediente) NÃO é fermento
+    # biológico: fica fora da métrica de fermento e da faixa de 0,5 a 3%. Vem
+    # antes de "fermento" porque "fermento natural" contém a palavra.
+    (
+        "other",
+        (
+            "fermento natural", "fermento nat", "levain", "sourdough", "masa madre",
+            "lievito madre", "starter", "isca",
+        ),
+        ("サワー種", "ルヴァン"),
+    ),
     (
         "yeast",
-        ("fermento", "levure", "yeast", "levain", "sourdough", "levedura", "lievito"),
+        ("fermento", "levure", "yeast", "levedura", "lievito"),
         ("イースト", "酵母"),
     ),
     ("egg", ("ovo", "ovos", "egg", "eggs", "oeuf", "oeufs", "gema", "gemas", "yolk", "yolks"), ("卵",)),
@@ -562,6 +573,12 @@ def analyze(formula: dict, part_formulas: dict[str, dict] | None = None) -> Form
             flour_g=quantize(part_flour_g), cap_pct=None, has_formula=True, contents=tuple(contents),
         ))
 
+    # O que sobrou de cada item depois das partes; resíduo de arredondamento
+    # (inclusive o "-0" do Decimal) vira zero, não linha negativa na tela.
+    remaining = {
+        key: (_ZERO if grams is not None and abs(grams) < _BOM_RESIDUE_G else grams)
+        for key, grams in remaining.items()
+    }
     final_mix = tuple(
         _final_mix_item(it, remaining[it["key"]], anchor_total)
         for it in base

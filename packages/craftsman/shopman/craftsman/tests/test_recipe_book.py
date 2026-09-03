@@ -363,7 +363,9 @@ class TestBootstrap:
         assert items["FARINHA-T65"]["unit"] == "g"
         assert items["AGUA-FILTRADA"]["quantity"] == "3958.824"
         assert items["FERMENTO-NAT"]["quantity"] == "500"
-        assert items["FERMENTO-NAT"]["role"] == "yeast"
+        # A cultura (fermento natural) não é fermento biológico: fica fora da
+        # métrica de fermento e da faixa de 0,5 a 3%.
+        assert items["FERMENTO-NAT"]["role"] == "other"
         assert items["SAL"]["quantity"] == "100"
 
         parts = {part["sku"]: part for part in formula["parts"]}

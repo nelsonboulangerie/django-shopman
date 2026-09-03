@@ -37,8 +37,10 @@ from shopman.craftsman.services.recipe_book import (
     check_references,
     classify_ingredient,
     diff_versions,
+    item_grams,
     part_formulas_for,
     reference_for,
+    suggest_anchor_kind,
 )
 
 from shopman.backstage.services.exceptions import RecipeEntryNotFound, RecipeVersionNotFound
@@ -982,9 +984,11 @@ def build_capture_draft(captured: CapturedRecipe) -> RecipeCaptureDraftProjectio
                 line["note"] = item.note
             formula_items.append(line)
 
-    has_flour = any(line["role"] == "flour" for line in formula_items)
+    grams = [(line["role"], item_grams(line)) for line in formula_items]
+    flour_g = sum((g for role, g in grams if role == "flour" and g is not None), Decimal(0))
+    total_g = sum((g for _, g in grams if g is not None), Decimal(0))
     formula = {
-        "anchor": {"kind": "flour" if has_flour else "total"},
+        "anchor": {"kind": suggest_anchor_kind(flour_g, total_g)},
         "basis_g": None,
         "standardized": False,
         "items": formula_items,

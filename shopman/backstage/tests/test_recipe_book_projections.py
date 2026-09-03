@@ -389,7 +389,7 @@ def test_capture_draft_matches_ingredients_and_builds_a_flour_formula(published_
     assert flour.match_confidence.endswith("%")
     assert flour.candidates[0].sku == "FARINHA-T65"
     assert (water.sku, water.role) == ("AGUA-FILTRADA", "liquid")
-    assert (levain.sku, levain.role) == ("LEVAIN", "yeast")
+    assert (levain.sku, levain.role) == ("LEVAIN", "other")
     assert any(candidate.is_part and candidate.entry_ref == "creme-levain" for candidate in levain.candidates)
     assert (pepper.sku, pepper.quantity, pepper.match_confidence) == ("", "", "")
 

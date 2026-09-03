@@ -640,7 +640,8 @@ def test_capture_reads_a_french_note_and_matches_the_ingredients(client, editor,
 
     levain = items["Levain"]
     assert levain["sku"] == "LEVAIN"
-    assert levain["role"] == "yeast"
+    # Fermento natural não é fermento biológico: fica fora da métrica de fermento.
+    assert levain["role"] == "other"
     assert any(c["sku"] == "LEVAIN" and c["is_part"] and c["entry_ref"] == "creme-levain" for c in levain["candidates"])
 
     seeds = items["Sementes de girassol"]

@@ -73,6 +73,7 @@ __all__ = [
     "reference_for",
     "scale",
     "standardize",
+    "suggest_anchor_kind",
     "update_draft",
     "validate_formula",
 ]
@@ -579,7 +580,8 @@ def bootstrap_entry_from_recipe(recipe):
 
         items = [_formula_item(entry) for entry in base.values()]
         flour_total = sum((g for g in (item_grams(it) for it in items if it["role"] == "flour") if g is not None), _ZERO)
-        anchor_kind = "flour" if flour_total > 0 else "total"
+        mass_total = sum((g for g in (item_grams(it) for it in items) if g is not None), _ZERO)
+        anchor_kind = suggest_anchor_kind(flour_total, mass_total)
         for part in parts:
             flour_g = part.pop("_flour_g")
             if anchor_kind == "flour" and flour_g > 0:
@@ -716,6 +718,19 @@ def _name_for(sku: str) -> str:
     return str(name or sku)
 
 
+#: Fração mínima de farinha na massa total para a âncora nascer "farinha".
+#: Abaixo disso a farinha é espessante (béchamel, creme), não estrutura: a lente
+#: de padaria vem do conteúdo, e um molho com 7% de farinha não é padaria.
+FLOUR_ANCHOR_MIN_SHARE = Decimal("0.15")
+
+
+def suggest_anchor_kind(flour_g: Decimal, total_g: Decimal) -> str:
+    """``flour`` quando a farinha é estrutura (≥ 15% da massa); senão ``total``."""
+    if flour_g > 0 and total_g > 0 and flour_g / total_g >= FLOUR_ANCHOR_MIN_SHARE:
+        return "flour"
+    return "total"
+
+
 def _entry_kind(ref: str, name: str) -> str:
     text = normalize_text(f"{ref} {name}")
     # Pré-fermento e pré-preparo de massa são padaria, antes de qualquer outra
@@ -732,9 +747,18 @@ def _entry_kind(ref: str, name: str) -> str:
         return "sauce"
     if any(word in text for word in ("cafe", "cha ", "espresso", "latte", "bebida", "gelado", "suco")):
         return "beverage"
-    if text.startswith("massa") or "pao" in text or "pain" in text or "bread" in text:
+    if text.startswith("massa") or any(word in text for word in _BREAD_WORDS):
         return "bread"
     return "other"
+
+
+# Nomes de pão da casa e da literatura: o que não é massa doce nem viennoiserie
+# e sai do forno como pão.
+_BREAD_WORDS = (
+    "pao", "pain", "bread", "baguet", "batard", "ciabatta", "focaccia", "campagne", "challah",
+    "pita", "shokupan", "kuro", "tradition", "tradicao", "rustic", "integral", "italiano",
+    "fendu", "tabatiere", "cornet", "hot dog", "hamburguer", "burger", "bun", "brot", "miche",
+)
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
