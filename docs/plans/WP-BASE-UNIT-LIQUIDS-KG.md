@@ -93,6 +93,28 @@ concluída **não** é reescrita: ela contou no que contava.
 `commands.md`, nota no `UNIT-CONVERSION-PLAN`, e QA no banco semeado (publicar uma receita
 com líquido e conferir ficha, mise en place e baixa).
 
+## ⚠️ A armadilha: o cofre reverte a base em silêncio
+
+`export_backup`/`import_backup` levam **`materials`** (com a unidade), **`recipe_items`**
+(quantidade **e** unidade) e **`supplier_material_costs`** (dinheiro por unidade-base).
+Não levam estoque.
+
+Logo, **uma planilha do cofre exportada ANTES desta mudança, reimportada DEPOIS, escreve
+litro por cima de kg** — e como ela reverte o cadastro *e* a ficha na mesma passada, os
+dois voltam a concordar entre si e nada grita. O saldo do estoque, que o cofre não toca,
+é que fica 3% errado, calado.
+
+**Regra operacional:** assim que esta frente entrar no ar, **re-exportar o cofre** e
+descartar as planilhas anteriores. Os XLSX que já estão no Sheets são pré-mudança.
+
+## Efeito colateral esperado (e desejado)
+
+A tela de separação anota a linha pela conversão declarada de menor fator
+(`_counting_conversions`, `backstage/projections/production.py`). Com a ponte "litro"
+declarada, o leite passa a aparecer como `3,502 kg · ≈ 3,4 litros`, exatamente como o ovo
+aparece como `≈ 6 ovos`. É informação para quem despeja de caixa de 1 L, não ruído.
+A água não ganha a ponte (não entra por nota), então não ganha anotação.
+
 ## Fora deste WP
 
 Outros insumos em volume que a casa venha a cadastrar; a decisão de comprar leite por kg
