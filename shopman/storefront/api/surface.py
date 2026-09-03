@@ -30,6 +30,7 @@ from shopman.storefront.presentation import (
     build_home,
     build_product_detail,
     build_reorder_conflict,
+    notify_subscribed_skus,
 )
 from shopman.storefront.services import catalog as catalog_service
 from shopman.storefront.services.cart_mutations import (
@@ -71,7 +72,7 @@ def _stock_reason(exc) -> str:
     return "Item indisponível no momento."
 
 
-def _stock_error_payload(exc, *, product=None) -> dict:
+def _stock_error_payload(exc, *, product=None, request=None) -> dict:
     item_name = getattr(product, "name", None) or getattr(exc, "sku", "")
     reason = _stock_reason(exc)
     actions = [
@@ -137,6 +138,10 @@ def _stock_error_payload(exc, *, product=None) -> dict:
         "is_paused": exc.is_paused,
         "is_planned": exc.is_planned,
         "is_notifiable": is_notifiable,
+        # Sem isto o sino do 409 nascia sempre em "Me avise", mesmo para quem já
+        # tinha pedido o aviso — e reassinava — enquanto o card e a PDP mostravam
+        # "Anotado" para o mesmo SKU no mesmo instante.
+        "is_notify_subscribed": is_notifiable and exc.sku in notify_subscribed_skus(request),
         "planned_target_date": exc.planned_target_date,
         # Pré-reserva: item planejado tem próximo lote conhecido. Enquadra a escassez
         # como oferta ("garantir o seu") em vez de só "esgotou". A reserva de fato é o
@@ -769,7 +774,11 @@ class CartSkuQtyView(APIView):
             return Response({"detail": "Produto não encontrado."}, status=status.HTTP_404_NOT_FOUND)
         except CartMutationUnavailable as unavailable:
             return Response(
-                _stock_error_payload(unavailable.stock_error, product=unavailable.product),
+                _stock_error_payload(
+                    unavailable.stock_error,
+                    product=unavailable.product,
+                    request=request,
+                ),
                 status=status.HTTP_409_CONFLICT,
             )
 

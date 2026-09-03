@@ -287,7 +287,7 @@ def build_catalog(
         low_stock_threshold=low_stock_threshold,
         qty_in_cart_by_sku=qty_in_cart_by_sku,
         favorite_skus=_favorite_skus(request),
-        subscribed_skus=_notify_subscribed_skus(request),
+        subscribed_skus=notify_subscribed_skus(request),
         session_key=_session_key(request),
         active_food_prefs=_active_food_prefs(request),
     )
@@ -393,7 +393,7 @@ def build_catalog_items_for_skus(
             low_stock_threshold=low_stock_threshold,
             qty_in_cart_by_sku=qty_in_cart_by_sku,
             favorite_skus=_favorite_skus(request),
-            subscribed_skus=_notify_subscribed_skus(request),
+            subscribed_skus=notify_subscribed_skus(request),
             session_key=_session_key(request),
             active_food_prefs=_active_food_prefs(request),
         )
@@ -745,7 +745,7 @@ def _favorite_skus(request: HttpRequest | None) -> set[str]:
         return set()
 
 
-def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
+def notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
     """SKUs com 'Me avise' já pedido por este viewer — persiste o estado do sino.
 
     Logado: por customer_ref/telefone da conta. Anônimo: contato + SKU gravados
@@ -774,7 +774,7 @@ def _notify_subscribed_skus(request: HttpRequest | None) -> set[str]:
                     skus.add(sku)
         return skus
     except Exception:
-        logger.debug("catalog._notify_subscribed_skus failed", exc_info=True)
+        logger.debug("catalog.notify_subscribed_skus failed", exc_info=True)
         return set()
 
 

@@ -182,7 +182,7 @@ def test_endpoint_404_for_unknown_sku(client):
 def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
     from django.contrib.sessions.middleware import SessionMiddleware
 
-    from shopman.storefront.presentation.catalog import _notify_subscribed_skus
+    from shopman.storefront.presentation.catalog import notify_subscribed_skus
 
     sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE)
     request = rf.get("/")
@@ -196,12 +196,12 @@ def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
         }
     ]
 
-    assert _notify_subscribed_skus(request) == {"SKU-PENDING-MARK"}
+    assert notify_subscribed_skus(request) == {"SKU-PENDING-MARK"}
 
     sub.notified_at = timezone.now()
     sub.save(update_fields=["notified_at"])
 
-    assert _notify_subscribed_skus(request) == set()
+    assert notify_subscribed_skus(request) == set()
 
 
 # ── trigger (Move receiver) ─────────────────────────────────────────

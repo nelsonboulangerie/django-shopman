@@ -28,6 +28,7 @@ from .catalog import (
     build_catalog,
     build_catalog_items_for_skus,
     get_channel_listing_ref,
+    notify_subscribed_skus,
 )
 from .checkout import CheckoutProjection, build_checkout
 from .fomo import FomoBadge, badges_for_product
@@ -114,6 +115,7 @@ __all__ = [
     "build_cart",
     "build_catalog",
     "build_catalog_items_for_skus",
+    "notify_subscribed_skus",
     "get_channel_listing_ref",
     "build_checkout",
     "build_home",

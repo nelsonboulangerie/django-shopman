@@ -37,9 +37,9 @@ from .catalog import (
     _active_food_prefs,
     _cart_qty_by_sku,
     _favorite_skus,
-    _notify_subscribed_skus,
     _resolve_availability,
     build_catalog_items_for_skus,
+    notify_subscribed_skus,
 )
 from .dietary import dietary_warnings as _dietary_warnings
 
@@ -318,7 +318,7 @@ def build_product_detail(
 
     qty_in_cart = int(_cart_qty_by_sku(request).get(product.sku, 0))
     is_favorite = product.sku in _favorite_skus(request)
-    is_notify_subscribed = is_notifiable and product.sku in _notify_subscribed_skus(request)
+    is_notify_subscribed = is_notifiable and product.sku in notify_subscribed_skus(request)
     _meta = product.metadata if isinstance(product.metadata, dict) else {}
     dietary_warns = _dietary_warnings(
         _active_food_prefs(request),
