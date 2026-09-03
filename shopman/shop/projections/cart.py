@@ -725,9 +725,17 @@ def build_upsell_suggestion(
 
     Resolves the listed price via ``ListingItem`` so the suggestion carries
     the same price the checkout would charge.
+
+    ⚠️ Só sugere o que dá para ADICIONAR agora. O trilho desenha um CTA ativo
+    ("Que tal adicionar?") sem receber campo nenhum de disponibilidade, então
+    sugerir esgotado virava convite que termina em 409 — e o cliente lê "Ficou
+    indisponível enquanto você escolhia", que é falso: já estava. Aqui a
+    disponibilidade é filtro de CANDIDATO, não estado a renderizar: um upsell
+    desabilitado não é sugestão, é ruído.
     """
     from shopman.offerman.models import ListingItem, Product
 
+    from shopman.shop.projections import catalog_context
     from shopman.shop.projections.storefront_context import popular_skus
 
     popular = popular_skus(limit=10)
@@ -735,11 +743,30 @@ def build_upsell_suggestion(
     if not candidates:
         return None
 
+    # Mesmo portão do cardápio: oculto no canal não é sugerido; pausado no canal
+    # também não (aqui a pausa não vira "Indisponível" — vira "não sugira").
+    visible = catalog_context.visible_skus_in_channel(candidates, channel_ref)
+    listing_sellable = catalog_context.listing_sellable_map(candidates, channel_ref)
+    avail_map, _own = _availability(candidates, "", channel_ref)
+
     for sku in candidates:
+        if visible is not None and sku not in visible:
+            continue
+        if not listing_sellable.get(sku, True):
+            continue
         product = Product.objects.filter(
             sku=sku, is_published=True, is_sellable=True,
         ).first()
         if product is None:
+            continue
+        resolved = catalog_context.basic_availability(
+            avail_map.get(sku),
+            is_sellable=True,
+            # O limiar só separa AVAILABLE de LOW_STOCK, e os dois são
+            # adicionáveis — a pergunta aqui é só "dá para pôr na sacola?".
+            low_stock_threshold=Decimal("0"),
+        )
+        if not resolved.can_add_to_cart:
             continue
         item = (
             ListingItem.objects.filter(

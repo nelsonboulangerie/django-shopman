@@ -165,6 +165,58 @@ class TestPopulatedCart:
         with pytest.raises(FrozenInstanceError):
             proj.items[0].qty = 99  # type: ignore[misc]
 
+    def test_upsell_never_suggests_what_cannot_be_added(self, cart_session, croissant):
+        """Sugerir esgotado é convite que termina em 409.
+
+        O trilho desenha o CTA ativo sem receber campo de disponibilidade, e a
+        folha de erro então diz "Ficou indisponível enquanto você escolhia" —
+        falso: já estava. A disponibilidade vira filtro de candidato.
+        """
+        from unittest.mock import patch
+
+        from shopman.offerman.models import Listing, ListingItem
+
+        from shopman.shop.projections.cart import build_upsell_suggestion
+
+        # `cart_session` já criou o listing do canal; pedir a fixture colidiria.
+        listing = Listing.objects.get(ref=STOREFRONT_CHANNEL_REF)
+        ListingItem.objects.get_or_create(
+            listing=listing, product=croissant,
+            defaults={"price_q": 800, "is_published": True, "is_sellable": True},
+        )
+
+        esgotado = {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),
+            "is_planned": False,
+        }
+        with (
+            patch(
+                "shopman.shop.projections.storefront_context.popular_skus",
+                return_value=[croissant.sku],
+            ),
+            patch(
+                "shopman.shop.projections.cart._availability",
+                return_value=({croissant.sku: esgotado}, {}),
+            ),
+        ):
+            assert build_upsell_suggestion(set(), channel_ref=STOREFRONT_CHANNEL_REF) is None
+
+        disponivel = {"availability_policy": "demand_ok"}
+        with (
+            patch(
+                "shopman.shop.projections.storefront_context.popular_skus",
+                return_value=[croissant.sku],
+            ),
+            patch(
+                "shopman.shop.projections.cart._availability",
+                return_value=({croissant.sku: disponivel}, {}),
+            ),
+        ):
+            suggestion = build_upsell_suggestion(set(), channel_ref=STOREFRONT_CHANNEL_REF)
+
+        assert suggestion is not None and suggestion.sku == croissant.sku
+
     def test_upsell_includes_unit_price_for_surface_mutation(
         self, cart_session, croissant, monkeypatch,
     ):
