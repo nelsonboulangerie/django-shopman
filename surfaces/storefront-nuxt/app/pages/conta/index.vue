@@ -82,15 +82,19 @@ useSeoMeta({ title: () => summary.value?.copy.page_title || 'Minha Conta' })
       </div>
     </div>
     <div class="shop-container shop-stack-block">
-      <header class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
+      <!-- Sair mora no canto superior direito, na linha da saudação. Sem `flex-wrap`:
+           com wrap, o flexbox quebra a linha assim que a contagem de pedidos cresce
+           (a decisão é tomada no tamanho *máximo* do texto, antes de encolher), e o
+           botão descia. Aqui a coluna da esquerda encolhe e o botão fica ancorado. -->
+      <header class="flex items-start justify-between gap-3">
+        <div class="min-w-0 flex-1">
           <h1 class="truncate shop-title">{{ greeting }}</h1>
           <p class="mt-0.5 shop-muted">
             <template v-if="pending">Carregando sua conta…</template>
             <template v-else>{{ countLabel }}</template>
           </p>
         </div>
-        <UiButton variant="ghost" size="sm" icon="lucide:log-out" @click="logoutOpen = true">Sair</UiButton>
+        <UiButton variant="ghost" size="sm" icon="lucide:log-out" class="shrink-0" @click="logoutOpen = true">Sair</UiButton>
       </header>
 
       <!-- Travessia de navegador: só aparece quando o browser embutido atrapalha uma pessoa

@@ -668,6 +668,19 @@ describe('surface UX guardrails', () => {
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
 
+  it('pins Sair to the top-right of the account header, on the greeting line', () => {
+    const account = read('app/pages/conta/index.vue')
+    const header = account.slice(account.indexOf('<header'), account.indexOf('</header>'))
+
+    // `flex-wrap` decide a quebra pelo tamanho MÁXIMO do conteúdo: assim que a
+    // contagem de pedidos cresce, o botão "Sair" desce para a linha de baixo.
+    expect(header).toContain('class="flex items-start justify-between gap-3"')
+    expect(header).not.toContain('flex-wrap')
+    // A coluna da saudação encolhe; o botão nunca.
+    expect(header).toContain('min-w-0 flex-1')
+    expect(header).toMatch(/<UiButton[^>]*icon="lucide:log-out"[^>]*class="shrink-0"/)
+  })
+
   it('keeps auth routes themed without letting shell home clobber auth/cart state', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
