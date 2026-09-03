@@ -30,7 +30,9 @@ uma ganache). Não há botão "modo padaria" para esquecer ligado, nem tela para
 divergir. O que muda é:
 
 - **a âncora** (`formula.anchor.kind`): `flour` (soma das farinhas), `total` (massa total) ou
-  `ingredient` (um SKU). Sugerida pelo conteúdo, editável;
+  `ingredient` (um SKU). Sugerida pelo conteúdo (`suggest_anchor_kind`: farinha é âncora
+  quando é **estrutura**, ≥ 15% da massa; num béchamel com 7% ela é espessante e a âncora
+  nasce `total`), editável;
 - **os painéis** que aparecem: métricas de padaria só com âncora `flour`; "partes" só quando
   há parte; "mistura final" só quando alguma parte tem fórmula conhecida;
 - **as referências** (`kind` da receita): pão, viennoiserie, massa doce, recheio, creme,
@@ -266,12 +268,19 @@ Produção"). Sem permissão nova, sem migração de permissão. Erros no dialet
 
 ## 10. Frentes e ordem
 
-| WP | Onde | Depende de |
+| WP | Onde | Estado |
 |---|---|---|
-| R1 modelos + serviços + math + bootstrap + testes | `packages/craftsman` | — |
-| R2 UI | `surfaces/production-nuxt` | contrato §7/§8 (o gerado é regenerado na integração) |
-| R3 captura + casamento + projections + API + export + testes + seed | `shopman/backstage`, `config` | R1 |
-| R4 docs (ADR-026, data-schemas, commands) + integração + QA | raiz | R1–R3 |
+| R1 modelos + serviços + math + bootstrap + testes | `packages/craftsman` | ✅ entregue (migração `0007`, +114 testes) |
+| R2 UI | `surfaces/production-nuxt` | ✅ entregue (`/recipes`, `/recipes/new`, `/recipes/[ref]`, `/recipes/[ref]/edit`, `/recipes/compare`; +66 testes) |
+| R3 captura + casamento + projections + API + export + testes + seed | `shopman/backstage`, `config` | ✅ entregue (`export_recipe_book_schema`, +133 testes) |
+| R4 docs (ADR-026, data-schemas, commands) + integração + QA | raiz | ✅ QA no navegador sobre o seed real: bootstrap de 67 fichas, rascunho → padronizar → associar SKU → publicar → ficha com `version_ref`, comparação |
+
+Decisões tomadas na integração (03/09): fermento natural (cultura) não é `yeast` (fica fora da
+faixa de fermento biológico); `prefermented_flour_pct` soma só partes `preferment` (autólise
+e yudane não fermentam); água pesada em grama publica contra insumo em litro pela densidade
+(1,0 é física; outro líquido precisa de densidade declarada na linha, no `RecipeItem.meta` ou
+no `Material.metadata`); publicar leva o perfil do insumo (`Material.metadata`) para a linha
+nova da ficha; massa velha vai para a ficha como linha **opcional** (fora do consumo).
 
 ## 11. Fora deste plano (dito, não esquecido)
 
