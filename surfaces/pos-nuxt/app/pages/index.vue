@@ -122,7 +122,7 @@ const {
   tenderClear,
   tenderAdd,
   tenderExact,
-  productQty,
+  lineQty,
   addProduct,
   setQty,
   restoreItem,
@@ -988,11 +988,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
-            @increment="(sku) => setQty(sku, productQty(sku) + 1)"
-            @decrement="(sku) => setQty(sku, productQty(sku) - 1)"
-            @remove="(sku) => setQty(sku, 0)"
+            @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
+            @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
+            @remove="(lineId) => setQty(lineId, 0)"
             @restore="restoreItem"
-            @set-qty="(sku, qty) => setQty(sku, qty)"
+            @set-qty="(lineId, qty) => setQty(lineId, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @prepare="prepareCheckout"

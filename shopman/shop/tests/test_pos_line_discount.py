@@ -13,7 +13,7 @@ import pytest
 from shopman.backstage.projections import pos as pos_projection
 from shopman.shop.modifiers import DiscountModifier
 from shopman.shop.services import pos as pos_service
-from shopman.shop.services.pos_intent import parse_pos_sale_intent
+from shopman.shop.services.pos_intent import PosIntentError, parse_pos_sale_intent
 
 
 class TestCalcManual:
@@ -57,6 +57,48 @@ class TestIntentPreservesLineDiscount:
             for_commit=True,
         )
         assert "discount" not in intent.payload["items"][0]
+
+
+class TestIntentPreservesLineIdentity:
+    """O `line_id` é a identidade da linha, e ela nasce no cliente.
+
+    Este parser copia campo a campo: o que ele não nomeia morre na porta. Sem o
+    `line_id` aqui, o servidor regerava a identidade a cada save — duas linhas do
+    mesmo SKU trocavam de dono e a comanda re-disparava para a cozinha no
+    fechamento.
+    """
+
+    def test_line_id_survives_parsing(self) -> None:
+        intent = parse_pos_sale_intent(
+            {"items": [
+                {"line_id": "L-AAA", "sku": "CHA", "qty": 1, "unit_price_q": 1400},
+                {"line_id": "L-BBB", "sku": "CHA", "qty": 1, "unit_price_q": 1400},
+            ]},
+            for_commit=True,
+        )
+        assert [i["line_id"] for i in intent.payload["items"]] == ["L-AAA", "L-BBB"]
+
+    def test_sem_line_id_o_kernel_gera(self) -> None:
+        intent = parse_pos_sale_intent(
+            {"items": [{"sku": "CHA", "qty": 1, "unit_price_q": 1400}]}, for_commit=True
+        )
+        assert "line_id" not in intent.payload["items"][0]
+
+    def test_duas_linhas_com_a_mesma_identidade_sao_recusadas(self) -> None:
+        """Repetido não é ambíguo: uma das duas SOME.
+
+        O `_persist_items` do kernel indexa por `line_id` — duas linhas com o
+        mesmo id viram uma só, sem erro, e o item comido não é cobrado nem feito.
+        """
+        with pytest.raises(PosIntentError) as exc:
+            parse_pos_sale_intent(
+                {"items": [
+                    {"line_id": "L-AAA", "sku": "CHA", "qty": 1, "unit_price_q": 1400},
+                    {"line_id": "L-AAA", "sku": "CAFE", "qty": 1, "unit_price_q": 900},
+                ]},
+                for_commit=True,
+            )
+        assert exc.value.code == "duplicate_line_id"
 
 
 class TestPayloadDiscountHelpers:
@@ -148,17 +190,34 @@ class TestTabPayloadRestore:
         # base price from session.pricing (NOT from the item's modifiers_applied,
         # which is stripped on save) so the descriptor is not double-applied (B1-3).
         item = {
+            "line_id": "L-1",
             "sku": "X",
             "unit_price_q": 1170,  # 1300 - 10%
             "meta": {"manual_discount": {"value": 10, "reason": "cortesia"}},
         }
-        originals = {"X": 1300}
+        originals = {"L-1": 1300}
         assert pos_projection._tab_line_display_price_q(item, originals) == 1300
+
+    def test_duas_linhas_do_mesmo_sku_restauram_precos_proprios(self) -> None:
+        """A cortesia dada numa linha não vaza para a outra do mesmo produto.
+
+        Enquanto o registro de desconto era chaveado por SKU, o da segunda linha
+        sobrescrevia o da primeira: a linha SEM desconto voltava do banco com o
+        preço pré-desconto da outra, e a com desconto voltava sem.
+        """
+        cortesia = {
+            "line_id": "L-1", "sku": "X", "unit_price_q": 1170,
+            "meta": {"manual_discount": {"value": 10, "reason": "cortesia"}},
+        }
+        cheia = {"line_id": "L-2", "sku": "X", "unit_price_q": 1300, "meta": {}}
+        originals = {"L-1": 1300}
+        assert pos_projection._tab_line_display_price_q(cortesia, originals) == 1300
+        assert pos_projection._tab_line_display_price_q(cheia, originals) == 1300
 
     def test_display_price_falls_back_when_no_pricing_record(self) -> None:
         # No surviving pricing record → fall back to the stored (baked) unit price
         # rather than guessing; the descriptor path only triggers with an original.
-        item = {"sku": "X", "unit_price_q": 1170, "meta": {"manual_discount": {"value": 10}}}
+        item = {"line_id": "L-1", "sku": "X", "unit_price_q": 1170, "meta": {"manual_discount": {"value": 10}}}
         assert pos_projection._tab_line_display_price_q(item, {}) == 1170
 
     def test_display_price_falls_back_to_unit_price(self) -> None:
@@ -168,13 +227,14 @@ class TestTabPayloadRestore:
     def test_manual_originals_map_from_session_pricing(self) -> None:
         # The surviving source: session.pricing["discount"]["items"]. Only manual
         # records with an original price map; promotion/coupon records are ignored
-        # (their baked price is repriced on commit, not restored here).
+        # (their baked price is repriced on commit, not restored here). A chave é
+        # a LINHA: duas linhas do mesmo SKU têm descontos independentes.
         session = SimpleNamespace(pricing={"discount": {"items": [
-            {"sku": "X", "type": "manual", "original_price_q": 1300, "discount_q": 1170, "qty": 1},
-            {"sku": "Y", "type": "promotion", "original_price_q": 900, "discount_q": 90, "qty": 1},
-            {"sku": "", "type": "coupon", "original_price_q": 0, "discount_q": 500, "qty": 1},
+            {"line_id": "L-1", "sku": "X", "type": "manual", "original_price_q": 1300, "discount_q": 1170, "qty": 1},
+            {"line_id": "L-2", "sku": "Y", "type": "promotion", "original_price_q": 900, "discount_q": 90, "qty": 1},
+            {"line_id": "", "sku": "", "type": "coupon", "original_price_q": 0, "discount_q": 500, "qty": 1},
         ]}})
-        assert pos_projection._manual_discount_originals(session) == {"X": 1300}
+        assert pos_projection._manual_discount_originals(session) == {"L-1": 1300}
 
     def test_manual_originals_map_empty_without_pricing(self) -> None:
         assert pos_projection._manual_discount_originals(SimpleNamespace(pricing=None)) == {}

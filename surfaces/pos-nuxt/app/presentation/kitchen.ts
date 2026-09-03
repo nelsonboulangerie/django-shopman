@@ -7,9 +7,9 @@
 //
 // Fire is the named, auditable act (food to the kitchen before payment), so the
 // state must be unambiguous: the operator always sees exactly what has gone to
-// the kitchen and what is still pending. Firing dispatches only the unfired
-// delta (the Core dedups by `fired_line_ids_for_session`, so nothing duplicates);
-// unfire cancels a single still-cancellable line. Zero policy — capability and
+// the kitchen and what is still pending. Firing dispatches the lines that have
+// not gone yet (the Core dedups by `line_id`, so nothing duplicates); unfire
+// cancels a single still-cancellable line. Zero policy — capability and
 // per-line `fired` come from the Projection; this module only shapes them.
 
 import type { POSCartItem } from "~/types/pos";
@@ -21,40 +21,31 @@ export function firedCount(items: POSCartItem[]): number {
 }
 
 /**
- * Quanto DESTA LINHA ainda não foi para a cozinha.
+ * Unidades ainda a enviar — o que um fire despacharia agora.
  *
- * ⚠️ A pergunta não é "esta linha já foi?", é "quanto dela já foi". O PDV tem
- * uma linha por SKU (invariante do servidor), então pedir mais um chá AUMENTA a
- * quantidade de uma linha que talvez já esteja na cozinha. Enquanto isto era um
- * booleano, o segundo chá ficava dentro de uma linha marcada "enviada": o botão
- * dizia "Enviado", o fire deduplicava por `line_id`, e ninguém nunca fazia o
- * segundo chá.
- *
- * `fired_qty` ausente (comanda antiga, payload de outra origem) cai no
- * comportamento anterior — linha marcada como enviada conta como enviada
- * inteira.
+ * ⚠️ A conta é de UNIDADES, não de linhas: "Enviar 1" com três croissants
+ * pendentes é o número errado, porque o que a cozinha vai fazer são três. Mas a
+ * pergunta por LINHA é binária — ela foi ou não foi. Já houve aqui um
+ * `pendingKitchenQty` que respondia "quanto dela já foi", e ele só existia
+ * porque a linha era uma por SKU: pedir mais um chá aumentava a quantidade de
+ * uma linha já disparada. Agora o segundo chá é uma linha nova, e meia-linha
+ * deixou de existir.
  */
-export function pendingKitchenQty(item: POSCartItem): number {
-  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
-  return Math.max(0, item.qty - firedQty);
-}
-
-/** Unidades ainda a enviar — o que um fire despacharia agora. */
 export function unfiredCount(items: POSCartItem[]): number {
-  return items.reduce((total, item) => total + pendingKitchenQty(item), 0);
+  return items.reduce((total, item) => total + (item.fired ? 0 : item.qty), 0);
 }
 
 /** Nada mais a enviar (e há ao menos uma linha). */
 export function allLinesFired(items: POSCartItem[]): boolean {
-  return items.length > 0 && items.every((item) => pendingKitchenQty(item) === 0);
+  return items.length > 0 && items.every((item) => Boolean(item.fired));
 }
 
 export type KitchenLineState = "unfired" | "fired" | "fired_cancellable";
 
 /**
  * Per-line kitchen state. A fired line is cancellable only when the channel
- * offers unfire AND the line carries a server `line_id` to target; otherwise it
- * shows as a non-interactive "in the kitchen" marker.
+ * offers unfire; otherwise it shows as a non-interactive "in the kitchen"
+ * marker.
  *
  * Uma linha que a cozinha já ENCERROU (pronta ou cancelada) deixa de ser
  * cancelável: desfazer o envio de algo que já saiu do fogão não é um gesto de
@@ -63,7 +54,7 @@ export type KitchenLineState = "unfired" | "fired" | "fired_cancellable";
 export function kitchenLineState(item: POSCartItem, options: { canUnfire: boolean }): KitchenLineState {
   if (!item.fired) return "unfired";
   const settled = item.kitchen_status === "done" || item.kitchen_status === "cancelled";
-  return options.canUnfire && Boolean(item.line_id) && !settled ? "fired_cancellable" : "fired";
+  return options.canUnfire && !settled ? "fired_cancellable" : "fired";
 }
 
 /** O que o selo da linha DIZ, e a cor funcional que ele merece.
@@ -88,23 +79,15 @@ export interface KitchenBadgeView {
  * segue com 3 e a conta cobra 1. Dois pães a menos no caixa e ninguém sabe.
  */
 export function kitchenSurplusQty(item: POSCartItem): number {
-  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
-  return Math.max(0, firedQty - item.qty);
+  return Math.max(0, (item.fired_qty ?? 0) - item.qty);
 }
 
 export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
-  // Linha PELA METADE: parte na cozinha, parte ainda não. Um selo que diz só
-  // "Na cozinha" numa linha de 2 com 1 feito é a metade da verdade, e é a
-  // metade que faz o operador não pedir o resto.
-  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
-  if (firedQty > 0 && pendingKitchenQty(item) > 0) {
-    return { label: `${firedQty} de ${item.qty} na cozinha`, tone: "neutral" };
-  }
   // A COZINHA FAZ MAIS DO QUE A CONTA COBRA. Enquanto isto ficava calado, o
   // selo dizia "Na cozinha" — verdade pela metade, e a metade que não avisa
   // ninguém de que há comida saindo sem cobrança.
   if (kitchenSurplusQty(item) > 0) {
-    return { label: `${firedQty} na cozinha · ${item.qty} na conta`, tone: "warning" };
+    return { label: `${item.fired_qty} na cozinha · ${item.qty} na conta`, tone: "warning" };
   }
   switch (item.kitchen_status) {
     case "done":

@@ -561,21 +561,23 @@ def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSPro
     )
 
 
-def _kitchen_status_by_sku(session_key: str) -> dict[str, str]:
-    """Em que pé a COZINHA está, por SKU desta comanda.
+def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
+    """Em que pé a COZINHA está, por LINHA desta comanda.
 
     O balcão marcava a linha disparada com um selo fixo, "Na cozinha", e ele
     ficava lá até a venda fechar: o ticket virava "Pronto" ou era cancelado e o
     operador só descobria clicando em "Atualizar" — ou não descobria.
 
-    O ticket do KDS não carrega `line_id` (ele nasce com uma lista de itens), e
-    inventar essa costura agora seria mudar o KDS para uma pergunta do PDV. O que
-    o balcão precisa saber cabe no SKU: "o pão que eu mandei já está pronto?".
+    A chave é o `line_id`: cada ITEM do ticket carrega o da linha que o originou
+    (o mesmo que o ledger de disparo usa para deduplicar). Isso já era verdade
+    quando o estado era resolvido por SKU — e resolver por SKU passou a mentir no
+    dia em que duas linhas do mesmo produto puderam existir lado a lado: o
+    segundo chá, ainda por enviar, herdava o "Pronto" do primeiro.
 
-    Quando o mesmo SKU aparece em mais de um ticket (estações diferentes), vence o
-    MENOS avançado — uma linha só está pronta quando toda a cozinha terminou com
-    ela. Cancelado é exceção e vence tudo: é o único estado que pede ação de quem
-    está no caixa.
+    Quando a MESMA linha aparece em mais de um ticket (estações diferentes, um
+    combo que se abre), vence o MENOS avançado — a linha só está pronta quando
+    toda a cozinha terminou com ela. Cancelado é exceção e vence tudo: é o único
+    estado que pede ação de quem está no caixa.
     """
     if not session_key:
         return {}
@@ -589,12 +591,12 @@ def _kitchen_status_by_sku(session_key: str) -> dict[str, str]:
         if status not in rank:
             continue
         for entry in ticket.items or []:
-            sku = str((entry or {}).get("sku") or "")
-            if not sku:
+            line_id = str((entry or {}).get("line_id") or "")
+            if not line_id:
                 continue
-            current = out.get(sku)
+            current = out.get(line_id)
             if current is None or rank[status] < rank[current]:
-                out[sku] = status
+                out[line_id] = status
     return out
 
 
@@ -2278,19 +2280,24 @@ def _tab_payload_pricing_discount(item: dict) -> dict | None:
 
 
 def _manual_discount_originals(session: Session) -> dict[str, int]:
-    """Map ``sku -> pre-discount unit price`` for manual per-line discounts.
+    """Map ``line_id -> pre-discount unit price`` for manual per-line discounts.
 
     Sourced from ``session.pricing["discount"]["items"]``, which the
     DiscountModifier writes precisely because the item-level ``modifiers_applied``
     does NOT survive the session save (extra line fields are stripped on
-    ``update_items``). ``original_price_q`` is the price the discount was computed
-    against, deterministic per SKU, so a SKU key is unambiguous.
+    ``update_items``).
+
+    A chave é a LINHA, não o SKU: o desconto manual é digitado numa linha (a
+    cortesia é "este segundo chá", não "todo chá"), e duas linhas do mesmo
+    produto podem ter descontos diferentes — ou uma ter e a outra não. Com o SKU
+    por chave, o registro de uma sobrescrevia o da outra e o preço pré-desconto
+    de uma linha voltava para a outra.
     """
     records = ((session.pricing or {}).get("discount") or {}).get("items") or []
     return {
-        rec["sku"]: int(rec["original_price_q"])
+        rec["line_id"]: int(rec["original_price_q"])
         for rec in records
-        if rec.get("type") == "manual" and rec.get("sku") and rec.get("original_price_q")
+        if rec.get("type") == "manual" and rec.get("line_id") and rec.get("original_price_q")
     }
 
 
@@ -2305,7 +2312,7 @@ def _tab_line_display_price_q(item: dict, manual_originals: dict[str, int]) -> i
     never from the item's ``modifiers_applied`` (stripped on save)."""
     manual = (item.get("meta") or {}).get("manual_discount") or {}
     if manual.get("value"):
-        original = manual_originals.get(item.get("sku", ""))
+        original = manual_originals.get(item.get("line_id", ""))
         if original:
             return int(original)
     return int(item.get("unit_price_q", 0))
@@ -2358,7 +2365,7 @@ def build_open_tab(session: Session) -> dict:
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
     fired_lines = set(data.get("fired_lines") or [])
     fired_qty = {str(k): int(v) for k, v in (data.get("fired_qty") or {}).items()}
-    kitchen_by_sku = _kitchen_status_by_sku(session.session_key)
+    kitchen_by_line = _kitchen_status_by_line(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
         {
@@ -2369,13 +2376,13 @@ def build_open_tab(session: Session) -> dict:
             "qty": int(item.get("qty", 1)),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
-            # QUANTO da linha já está na cozinha. O booleano acima responde "já
-            # foi?", e não bastava: a linha do PDV é uma por SKU, então pedir
-            # mais um do mesmo item aumenta a QUANTIDADE de uma linha já
-            # enviada. Sem este número, a tela dizia "Enviado" com um item ainda
-            # por fazer.
+            # QUANTAS unidades desta linha foram para a cozinha. O booleano acima
+            # já responde "foi?" (a linha vai inteira, não existe meia-linha), e
+            # este número responde a OUTRA pergunta: a linha enviada encolheu
+            # depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a
+            # sobra que o balcão precisa ver antes de fechar a venda.
             "fired_qty": fired_qty.get(item.get("line_id", ""), 0),
-            "kitchen_status": kitchen_by_sku.get(item["sku"], ""),
+            "kitchen_status": kitchen_by_line.get(item.get("line_id", ""), ""),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),

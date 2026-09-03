@@ -4,7 +4,7 @@ import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
-import { fireBarView, kitchenBadge, type KitchenBadgeView, kitchenLineState, kitchenSurplusQty } from "~/presentation/kitchen";
+import { fireBarView, kitchenBadge, type KitchenBadgeView, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
 import { lineDiscountBadge, lineListTotalDisplay, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
@@ -23,6 +23,10 @@ const props = defineProps<{
   discountReasons?: Array<{ ref: string; label?: string } | string>;
 }>();
 
+// ⚠️ Cada evento de linha carrega o `line_id`, nunca o sku. Com duas linhas do
+// mesmo produto na comanda — que é o que este WP passou a permitir — o sku
+// endereça as duas ao mesmo tempo: o desconto do segundo chá caía no primeiro e
+// a observação aparecia nos dois.
 const emit = defineEmits<{
   increment: [string];
   decrement: [string];
@@ -32,55 +36,55 @@ const emit = defineEmits<{
   setQty: [string, number];
   /** Observação da linha (padrão Odoo Note): viaja no intent e chega ao KDS. */
   setNotes: [string, string];
-  /** sku, valor (% ou reais, conforme o formato), motivo, formato. */
+  /** line_id, valor (% ou reais, conforme o formato), motivo, formato. */
   setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
   prepare: [];
   move: [];
   fire: [];
   unfire: [string];
-  /** Multi-select batch (spec §2.2): fire/unfire exactly these cart skus. The
-   *  shell resolves their fresh server line_ids (regenerated on save). */
+  /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
   fireLines: [string[]];
   unfireLines: [string[]];
   requestTab: [];
 }>();
 
-// Multi-select (spec §2.2): selection is screen state (a set of cart skus); the
-// batch toolbar is shaped purely (presentation/selection). Tapping a line's
-// checkbox toggles it without arming the numpad; the toolbar acts on all chosen.
+// Multi-select (spec §2.2): selection is screen state (um conjunto de
+// `line_id`s); the batch toolbar is shaped purely (presentation/selection).
+// Tapping a line's checkbox toggles it without arming the numpad; the toolbar
+// acts on all chosen.
 const selected = ref<Set<string>>(new Set());
 const selection = computed(() => selectionView(props.items, selected.value));
 const selectMode = computed(() => selection.value.count > 0);
-function isSelected(sku: string) {
-  return selected.value.has(sku);
+function isSelected(lineId: string) {
+  return selected.value.has(lineId);
 }
-function toggleSelect(sku: string) {
-  selected.value = toggleSelected(selected.value, sku);
+function toggleSelect(lineId: string) {
+  selected.value = toggleSelected(selected.value, lineId);
 }
 function clearSelection() {
   selected.value = new Set();
 }
 // Keep the selection consistent when the cart changes (removed lines drop out).
 watch(
-  () => props.items.map((item) => item.sku).join("|"),
+  () => props.items.map((item) => item.line_id).join("|"),
   () => { selected.value = pruneSelection(selected.value, props.items); },
 );
 function batchFire() {
-  if (selection.value.canFire) emit("fireLines", selection.value.skus);
+  if (selection.value.canFire) emit("fireLines", selection.value.lineIds);
   clearSelection();
 }
 function batchUnfire() {
-  if (selection.value.canUnfire) emit("unfireLines", selection.value.skus);
+  if (selection.value.canUnfire) emit("unfireLines", selection.value.lineIds);
   clearSelection();
 }
 // Remover o LOTE é gesto largo: confirma antes (a seleção pode ter linha já
 // enviada à cozinha e o operador pode ter marcado a mais).
 function batchRemove() {
-  const skus = selection.value.skus;
-  if (!skus.length) return;
-  const hasFired = skus.some((sku) => props.items.find((item) => item.sku === sku)?.fired);
-  confirmAction.value = { kind: "batch", skus, hasFired };
+  const lineIds = selection.value.lineIds;
+  if (!lineIds.length) return;
+  const hasFired = lineIds.some((lineId) => props.items.find((item) => item.line_id === lineId)?.fired);
+  confirmAction.value = { kind: "batch", lineIds, hasFired };
 }
 
 // Kitchen handoff (spec §2.5): the fire bar and per-line state are shaped from
@@ -142,7 +146,7 @@ function discountBadge(item: POSCartItem) {
 // limite, e com o gerente sendo chamado pela mesma régua. A entrada decimal com
 // vírgula é herança direta do modo preço — ela some do preço e reaparece aqui.
 const MAX_QTY = 999;
-const selectedSku = ref("");
+const selectedLineId = ref("");
 const numpadBuffer = ref("");
 const numpadFresh = ref(true);
 const numpadMode = ref<"qty" | "disc" | "disc_brl">("qty");
@@ -168,22 +172,22 @@ const discountReason = ref("");
 // The numpad always targets a line: the explicitly selected one, or — when none
 // is selected — the last added/edited line. So a single-item ticket is editable
 // without tapping it first.
-const activeSku = computed(() => {
-  if (selectedSku.value && props.items.some((item) => item.sku === selectedSku.value)) {
-    return selectedSku.value;
+const activeLineId = computed(() => {
+  if (selectedLineId.value && props.items.some((item) => item.line_id === selectedLineId.value)) {
+    return selectedLineId.value;
   }
-  return props.items[props.items.length - 1]?.sku ?? "";
+  return props.items[props.items.length - 1]?.line_id ?? "";
 });
-const activeItem = computed(() => props.items.find((item) => item.sku === activeSku.value) || null);
+const activeItem = computed(() => props.items.find((item) => item.line_id === activeLineId.value) || null);
 
-function qtyOf(sku: string): number {
-  return props.items.find((item) => item.sku === sku)?.qty || 0;
+function qtyOf(lineId: string): number {
+  return props.items.find((item) => item.line_id === lineId)?.qty || 0;
 }
 
 function syncBufferToMode() {
   numpadFresh.value = true;
   if (numpadMode.value === "qty") {
-    numpadBuffer.value = String(qtyOf(activeSku.value));
+    numpadBuffer.value = String(qtyOf(activeLineId.value));
     return;
   }
   const item = activeItem.value;
@@ -199,11 +203,11 @@ function syncBufferToMode() {
     : "";
 }
 
-watch(activeSku, () => syncBufferToMode());
+watch(activeLineId, () => syncBufferToMode());
 watch(numpadMode, () => syncBufferToMode());
 
-function selectLine(sku: string) {
-  selectedSku.value = sku;
+function selectLine(lineId: string) {
+  selectedLineId.value = lineId;
   syncBufferToMode();
 }
 
@@ -213,17 +217,17 @@ function setMode(mode: "qty" | "disc" | "disc_brl") {
 
 // Observação da linha (Odoo Note): diálogo simples de texto para a linha ativa.
 // O dado já existia (POSCartItem.notes, intent, KDS) — só faltava quem editasse.
-const noteDialog = ref<{ sku: string; name: string; text: string } | null>(null);
+const noteDialog = ref<{ lineId: string; name: string; text: string } | null>(null);
 function openNoteDialog() {
   const item = activeItem.value;
   if (!item) return;
-  noteDialog.value = { sku: item.sku, name: item.name, text: item.notes || "" };
+  noteDialog.value = { lineId: item.line_id, name: item.name, text: item.notes || "" };
 }
 function saveNote() {
   const dialog = noteDialog.value;
   noteDialog.value = null;
   if (!dialog) return;
-  emit("setNotes", dialog.sku, dialog.text.trim());
+  emit("setNotes", dialog.lineId, dialog.text.trim());
 }
 
 // Remover item PERGUNTA, sempre. Já foi "direto com Desfazer", e o balcão
@@ -232,28 +236,28 @@ function saveNote() {
 // procurando um toast que já tinha passado. Um modal custa um toque; recontar o
 // pedido do cliente custa a venda.
 const confirmAction = ref<
-  | { kind: "line"; sku: string; name: string; fired: boolean }
-  | { kind: "batch"; skus: string[]; hasFired: boolean }
+  | { kind: "line"; lineId: string; name: string; fired: boolean }
+  | { kind: "batch"; lineIds: string[]; hasFired: boolean }
   | null
 >(null);
 const confirmTitle = computed(() => {
   const action = confirmAction.value;
   if (!action) return "";
   if (action.kind === "batch") {
-    return action.skus.length === 1 ? "Remover o item selecionado?" : `Remover ${action.skus.length} itens selecionados?`;
+    return action.lineIds.length === 1 ? "Remover o item selecionado?" : `Remover ${action.lineIds.length} itens selecionados?`;
   }
   // Item já na cozinha é outra conversa: sair da tela não o tira do fogão.
   return action.fired ? "Remover item enviado à cozinha?" : `Remover ${action.name}?`;
 });
 const confirmCta = computed(() =>
-  confirmAction.value?.kind === "batch" && confirmAction.value.skus.length > 1 ? "Remover itens" : "Remover item",
+  confirmAction.value?.kind === "batch" && confirmAction.value.lineIds.length > 1 ? "Remover itens" : "Remover item",
 );
-function askRemove(sku: string) {
-  const item = props.items.find((entry) => entry.sku === sku);
+function askRemove(lineId: string) {
+  const item = props.items.find((entry) => entry.line_id === lineId);
   if (!item) return;
   confirmAction.value = {
     kind: "line",
-    sku,
+    lineId,
     name: item.name || "item",
     fired: Boolean(item.fired),
   };
@@ -262,8 +266,8 @@ function askRemove(sku: string) {
  *  impossível, só deliberado. */
 function removeWithUndo(item: POSCartItem) {
   const snapshot: POSCartItem = { ...item };
-  if (selectedSku.value === item.sku) selectedSku.value = "";
-  emit("remove", item.sku);
+  if (selectedLineId.value === item.line_id) selectedLineId.value = "";
+  emit("remove", item.line_id);
   toast(`${snapshot.name} removido.`, {
     action: { label: "Desfazer", onClick: () => emit("restore", snapshot) },
   });
@@ -276,27 +280,27 @@ function runConfirm() {
   confirmAction.value = null;
   if (!action) return;
   if (action.kind === "batch") {
-    action.skus.forEach((sku) => emit("remove", sku));
+    action.lineIds.forEach((lineId) => emit("remove", lineId));
     clearSelection();
     return;
   }
-  const item = props.items.find((entry) => entry.sku === action.sku);
+  const item = props.items.find((entry) => entry.line_id === action.lineId);
   if (item) removeWithUndo(item);
 }
 
 function commitQty() {
-  const sku = activeSku.value;
-  if (!sku) return;
+  const lineId = activeLineId.value;
+  if (!lineId) return;
   const next = clampQty(numpadBuffer.value, MAX_QTY);
   if (next <= 0) {
-    askRemove(sku);
+    askRemove(lineId);
     return;
   }
-  emit("setQty", sku, next);
+  emit("setQty", lineId, next);
 }
 
 // Discount targets: the whole selection in multi-select, else the active line.
-const discountTargets = computed(() => (selectMode.value ? selection.value.skus : (activeSku.value ? [activeSku.value] : [])));
+const discountTargets = computed(() => (selectMode.value ? selection.value.lineIds : (activeLineId.value ? [activeLineId.value] : [])));
 
 // O valor em REAIS que o operador digitou (vírgula → centavos, no máximo duas
 // casas). O contrato do desconto fixo fala em reais, igual ao do pedido.
@@ -311,11 +315,11 @@ function commitDiscount() {
   const value = discountKind.value === "fixed"
     ? moneyEntryToReais(numpadBuffer.value)
     : clampPercent(numpadBuffer.value);
-  targets.forEach((sku) => emit("setDiscount", sku, value, discountReason.value || "cortesia", discountKind.value));
+  targets.forEach((lineId) => emit("setDiscount", lineId, value, discountReason.value || "cortesia", discountKind.value));
 }
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
-const numpadCanType = computed(() => (inDiscountMode.value ? discountTargets.value.length > 0 : !!activeSku.value));
+const numpadCanType = computed(() => (inDiscountMode.value ? discountTargets.value.length > 0 : !!activeLineId.value));
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
 const numpadSubject = computed(() => (inDiscountMode.value ? "desconto" : "quantidade"));
 
@@ -366,14 +370,14 @@ function onBackspace() {
 
 function onClear() {
   if (numpadMode.value === "qty") {
-    if (activeSku.value) askRemove(activeSku.value);
+    if (activeLineId.value) askRemove(activeLineId.value);
     return;
   }
   const targets = discountTargets.value;
   if (!targets.length) return;
   numpadBuffer.value = "";
   numpadFresh.value = true;
-  targets.forEach((sku) => emit("setDiscount", sku, 0, discountReason.value || "cortesia", discountKind.value));
+  targets.forEach((lineId) => emit("setDiscount", lineId, 0, discountReason.value || "cortesia", discountKind.value));
 }
 
 function pickReason(reason: string) {
@@ -389,17 +393,17 @@ watch(selectMode, (on) => {
   numpadFresh.value = true;
 });
 
-function bump(sku: string, emitName: "increment" | "decrement") {
-  selectedSku.value = sku;
+function bump(lineId: string, emitName: "increment" | "decrement") {
+  selectedLineId.value = lineId;
   if (emitName === "decrement") {
-    if (qtyOf(sku) <= 1) {
-      askRemove(sku);
+    if (qtyOf(lineId) <= 1) {
+      askRemove(lineId);
       return;
     }
-    emit("decrement", sku);
+    emit("decrement", lineId);
     return;
   }
-  emit("increment", sku);
+  emit("increment", lineId);
 }
 
 // Physical keyboard feeds the active line (Odoo-style): select/add a product,
@@ -412,7 +416,7 @@ function onWindowKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null;
   const editing = !!target
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-  if (editing || !props.items.length || !activeSku.value) return;
+  if (editing || !props.items.length || !activeLineId.value) return;
   if (event.key >= "0" && event.key <= "9") {
     event.preventDefault();
     onDigit(event.key);
@@ -466,19 +470,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
              "R$ 15,00" é a mesma frase duas vezes). -->
         <li
           v-for="item in items"
-          :key="item.sku"
+          :key="item.line_id"
           class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-2 rounded-md border border-transparent px-2 py-0.5 transition"
-          :class="isSelected(item.sku) ? 'border-primary bg-primary/10' : (activeSku === item.sku ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
-          :aria-current="activeSku === item.sku ? 'true' : undefined"
-          @click="selectLine(item.sku)"
+          :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
+          :aria-current="activeLineId === item.line_id ? 'true' : undefined"
+          @click="selectLine(item.line_id)"
         >
           <button
             type="button"
             class="mt-1 grid size-6 shrink-0 place-items-center rounded-md border transition"
-            :class="isSelected(item.sku) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
+            :class="isSelected(item.line_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
             :aria-label="`Selecionar ${item.name}`"
-            :aria-pressed="isSelected(item.sku)"
-            @click.stop="toggleSelect(item.sku)"
+            :aria-pressed="isSelected(item.line_id)"
+            @click.stop="toggleSelect(item.line_id)"
           >
             <Icon name="lucide:check" class="size-4" />
           </button>
@@ -519,14 +523,14 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
                    APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
               <div class="flex shrink-0 items-center gap-1" @click.stop>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
+                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')">
                   <Icon name="lucide:minus" class="size-4" />
                 </UiButton>
                 <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
+                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.line_id, 'increment')">
                   <Icon name="lucide:plus" class="size-4" />
                 </UiButton>
-                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.sku)">
+                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.line_id)">
                   <Icon name="lucide:trash-2" class="size-4 text-destructive" />
                 </UiButton>
               </div>
@@ -549,7 +553,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                 class="group inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                 :disabled="firing"
                 :aria-label="`${unfireAction.label}: ${item.name}`"
-                @click.stop="$emit('unfire', item.line_id || '')"
+                @click.stop="$emit('unfire', item.line_id)"
               >
                 <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
                 <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />

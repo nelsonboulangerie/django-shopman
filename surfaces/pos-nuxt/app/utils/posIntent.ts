@@ -14,6 +14,24 @@ export function cartTotalQ(items: POSCartItem[]): number {
   return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);
 }
 
+/**
+ * A identidade de uma linha nova do carrinho — `L-` + 8 caracteres.
+ *
+ * Quem gera é o CLIENTE, e é isto que sustenta o modelo: duas linhas do mesmo
+ * SKU precisam nascer distintas aqui, na tela, no instante do toque. Deduzir a
+ * identidade do SKU (como era) fazia "mais um chá" virar `qty: 2` numa linha já
+ * disparada — o servidor deduplicava por `line_id` e a cozinha nunca via o
+ * segundo. O servidor preserva o id que recebe.
+ *
+ * O formato é curto de propósito (cabe num log e num payload de comanda) e
+ * estável: `crypto.randomUUID` quando existe, relógio + aleatório quando não.
+ */
+export function newLineId(): string {
+  const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
+    ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  return `L-${random.slice(0, 8)}`;
+}
+
 export function moneyInputToQ(value: string): number {
   const raw = String(value || "").trim();
   const normalized = raw.includes(",") ? raw.replace(/\./g, "").replace(",", ".") : raw;
@@ -92,6 +110,10 @@ export function buildPosSaleIntent(
     tab_ref: state.tabRef,
     tab_session_key: state.tabSessionKey,
     items: state.items.map((item) => ({
+      // A identidade viaja SEMPRE. Sem ela o servidor gerava um id novo a cada
+      // save e perdia o vínculo com o ticket de KDS já disparado — era por isso
+      // que ele precisava adivinhar qual linha era qual pelo SKU.
+      line_id: item.line_id,
       sku: item.sku,
       name: item.name,
       qty: item.qty,

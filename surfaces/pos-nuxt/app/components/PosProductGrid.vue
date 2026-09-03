@@ -6,7 +6,7 @@
 // the active collection are grid-local presentation state. Emits `add`; the
 // shell resolves the session command.
 import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
-import { enterTargetProduct, filterProducts, orderCollections } from "~/presentation/catalog";
+import { cartQtyForSku, enterTargetProduct, filterProducts, orderCollections } from "~/presentation/catalog";
 
 const props = defineProps<{
   products: POSProductProjection[];
@@ -51,7 +51,7 @@ const filteredProducts = computed(() =>
 );
 
 function productQty(sku: string): number {
-  return props.cartItems.find((item) => item.sku === sku)?.qty || 0;
+  return cartQtyForSku(props.cartItems, sku);
 }
 
 // F3 focuses the search field (the shell owns the shortcut, the grid the field).

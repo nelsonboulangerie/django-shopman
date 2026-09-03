@@ -425,7 +425,10 @@ const discountSummary = computed(() => {
 // mostra, não recalcula.
 const summaryLines = computed(() =>
   props.items.map((item) => ({
-    sku: item.sku,
+    // A CHAVE é a linha, não o produto: duas linhas do mesmo item na comanda
+    // (uma já na cozinha, outra nova) davam `:key` repetido, e o Vue passava a
+    // reaproveitar o nó errado ao reordenar o resumo.
+    lineId: item.line_id,
     name: item.name,
     qty: item.qty,
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -1329,7 +1332,7 @@ defineExpose({
 
           <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
             <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
-              <li v-for="line in summaryLines" :key="line.sku" class="px-3 py-2">
+              <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
                   <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>

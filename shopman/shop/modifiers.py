@@ -650,6 +650,13 @@ class DiscountModifier:
 
                 qty = int(item.get("qty", 1))
                 discounts_applied.append({
+                    # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
+                    # a única fonte que sobrevive ao save (a linha perde campos
+                    # extras no ``update_items``), e quem o relê é a comanda do
+                    # PDV para restaurar o preço PRÉ-desconto. Identificado só
+                    # pelo SKU, o registro de uma linha respondia pela outra do
+                    # mesmo produto — a cortesia dada num café aparecia nos dois.
+                    "line_id": item.get("line_id", ""),
                     "sku": sku,
                     "type": source_type,
                     "name": source_name,
@@ -695,9 +702,10 @@ class DiscountModifier:
             )
             if applied_q > 0:
                 modified = True
-                # sku="" — an order-level record: it aggregates into the cart's
-                # discount total/line but matches no per-line SKU (no strikethrough).
+                # sku=""/line_id="" — an order-level record: it aggregates into the
+                # cart's discount total/line but matches no line (no strikethrough).
                 discounts_applied.append({
+                    "line_id": "",
                     "sku": "",
                     "type": src_type,
                     "name": src_name,

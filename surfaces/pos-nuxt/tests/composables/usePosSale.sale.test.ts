@@ -249,7 +249,7 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
     h.sale.cart.tenderedAmountInput = "20,00";
 
     resolveOpen(makeTabPayload({
-      items: [{ sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
+      items: [{ line_id: "L-pao-1", sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
     }));
     await pending;
 
@@ -265,7 +265,7 @@ describe("usePosSale — checkout otimista (sem flash)", () => {
       if (p.includes("/tabs/save/")) return {};
       if (p.includes("/open/")) {
         return makeTabPayload({
-          items: [{ sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
+          items: [{ line_id: "L-pao-1", sku: "PAO", name: "Pão", qty: 2, unit_price_q: 500, price_q: 500 }],
         });
       }
       if (p.includes("/sale/review/")) return { review: { total_q: 1000, total_display: "R$ 10,00" } };

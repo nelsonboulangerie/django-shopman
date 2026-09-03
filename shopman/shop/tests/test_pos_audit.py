@@ -63,6 +63,40 @@ class TestAuditLineDiff:
         pos_service._audit_line_diff(s, before=line, after=line, actor="op")
         assert s.events == []
 
+    def test_duas_linhas_do_mesmo_sku_somam_na_trilha(self) -> None:
+        """A trilha fala em produto e quantidade — e conta as duas linhas.
+
+        Desde que a linha ganhou identidade própria, o mesmo SKU pode aparecer
+        duas vezes (o segundo chá, pedido depois de o primeiro ir à cozinha).
+        Guardando só a última linha do SKU, partir uma linha de 2 em duas de 1
+        não mexia em nada na trilha — e somir com uma delas também não.
+        """
+        s = _StubSession()
+        pos_service._audit_line_diff(
+            s,
+            before=[{"line_id": "L1", "sku": "CHA", "name": "Chá", "qty": 2}],
+            after=[
+                {"line_id": "L1", "sku": "CHA", "name": "Chá", "qty": 1},
+                {"line_id": "L2", "sku": "CHA", "name": "Chá", "qty": 1},
+            ],
+            actor="op",
+        )
+        assert s.events == []  # 2 continua sendo 2
+
+        s = _StubSession()
+        pos_service._audit_line_diff(
+            s,
+            before=[
+                {"line_id": "L1", "sku": "CHA", "name": "Chá", "qty": 1},
+                {"line_id": "L2", "sku": "CHA", "name": "Chá", "qty": 1},
+            ],
+            after=[{"line_id": "L1", "sku": "CHA", "name": "Chá", "qty": 1}],
+            actor="op",
+        )
+        assert [e["type"] for e in s.events] == ["qty_changed"]
+        assert s.events[0]["payload"]["qty_before"] == 2
+        assert s.events[0]["payload"]["qty_after"] == 1
+
     def test_ignores_delivery_fee_line(self) -> None:
         s = _StubSession()
         pos_service._audit_line_diff(
