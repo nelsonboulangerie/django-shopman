@@ -1052,6 +1052,22 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
     expect(avisos(wrapper).text()).toContain("O link cobra a venda inteira.");
   });
 
+  it("a sobra na cozinha é dita ao lado do Validar, sem travar a venda", async () => {
+    // ⚠️ A linha foi com 3 e a conta cobra 1: o operador está prestes a cobrar
+    // por 1 o que o fogão fez 3 vezes. Não trava — reduzir a linha é gesto
+    // legítimo (o cliente desistiu) —, mas ninguém fecha sem ter lido.
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        items: [item({ sku: "PAO", name: "Pão", qty: 1, fired: true, fired_qty: 3 })],
+        paymentTenders: [{ method: "cash", amount_q: 1000, collection: "terminal" }],
+        paymentCovered: true,
+        paymentRemainingQ: 0,
+      }),
+    });
+    expect(avisos(w).text()).toContain("A cozinha preparou 2 itens a mais do que esta conta cobra.");
+    expect(cta(w)!.attributes("disabled")).toBeUndefined();
+  });
+
   it("o link exige contato — é uma URL que alguém precisa RECEBER", async () => {
     const semContato = await mountSuspended(PosPaymentWorkspace, {
       props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0 }),

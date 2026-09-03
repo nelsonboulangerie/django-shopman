@@ -4,7 +4,7 @@ import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
-import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
+import { fireBarView, kitchenBadge, type KitchenBadgeView, kitchenLineState, kitchenSurplusQty } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
 import { lineDiscountBadge, lineListTotalDisplay, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
@@ -97,14 +97,18 @@ function lineKitchenState(item: POSCartItem) {
 
 // Cor só onde tem significado (PDV neutro): pronto é verde, cancelado é
 // vermelho, o resto é cinza como toda a tela.
-function badgeTone(tone: "neutral" | "success" | "destructive"): string {
+function badgeTone(tone: KitchenBadgeView["tone"]): string {
   if (tone === "success") return "bg-success/10 text-success";
   if (tone === "destructive") return "bg-destructive/10 text-destructive";
+  // Divergência não é erro da cozinha nem cancelamento: é uma conta que não
+  // fecha, e pede o âmbar de "olhe para isto", não o vermelho de "deu errado".
+  if (tone === "warning") return "bg-warning/10 text-amber-800 dark:text-amber-300";
   return "bg-muted text-muted-foreground";
 }
-function badgeIcon(tone: "neutral" | "success" | "destructive"): string {
+function badgeIcon(tone: KitchenBadgeView["tone"]): string {
   if (tone === "success") return "lucide:check";
   if (tone === "destructive") return "lucide:x";
+  if (tone === "warning") return "lucide:triangle-alert";
   return "lucide:flame";
 }
 

@@ -82,6 +82,7 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenSurplusQty,
   pendingKitchenQty,
   fireBarView,
   firedCount,
@@ -915,6 +916,21 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     // cozinha vai fazer são três.
     const items = [cartItem({ sku: "CROISSANT", qty: 3 })];
     expect(unfiredCount(items)).toBe(3);
+  });
+
+  it("a cozinha fazendo MAIS do que a conta cobra aparece na linha", () => {
+    // ⚠️ A diferença NEGATIVA: a linha foi com 3 e o operador baixou para 1
+    // (cliente desistiu, digitou errado). Nada é disparado — certo, ninguém quer
+    // duplicar — e nada é desfeito: o fogão segue com 3 e a conta cobra 1. Sem
+    // este selo, a tela dizia só "Na cozinha" e dois pães saíam sem pagamento.
+    const sobra = cartItem({ sku: "PAO", qty: 1, fired: true, fired_qty: 3 });
+    expect(kitchenSurplusQty(sobra)).toBe(2);
+    expect(pendingKitchenQty(sobra)).toBe(0);
+    expect(kitchenBadge(sobra)).toEqual({ label: "3 na cozinha · 1 na conta", tone: "warning" });
+
+    // Nada a mais na cozinha, nada a dizer.
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 3, fired: true, fired_qty: 3 }))).toBe(0);
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 4, fired: true, fired_qty: 3 }))).toBe(0);
   });
 
   it("comanda sem `fired_qty` mantém o comportamento antigo", () => {

@@ -43,6 +43,7 @@ import {
   SPLIT_PRESETS,
   tenderLineView,
 } from "~/presentation/payment";
+import { kitchenSurplusQty } from "~/presentation/kitchen";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -444,6 +445,8 @@ const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
 const firedCount = computed(() => props.items.filter((item) => item.fired).length);
+/** Unidades que o fogão está fazendo e a conta não cobra — ver `kitchenSurplusQty`. */
+const kitchenSurplus = computed(() => props.items.reduce((total, item) => total + kitchenSurplusQty(item), 0));
 const kitchenNote = computed(() => {
   const total = props.items.length;
   if (!total) return "";
@@ -702,6 +705,19 @@ const notices = computed<CheckoutNotice[]>(() => {
   // fala em voz alta, e ela some sozinha quando a conta fecha.
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
+  }
+  // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
+  // porque é ali que a diferença vira prejuízo: o operador está prestes a cobrar
+  // por 1 o que o fogão fez 3 vezes. Não trava a venda — reduzir a linha é
+  // gesto legítimo (o cliente desistiu) —, mas ninguém fecha sem ter lido.
+  if (kitchenSurplus.value > 0) {
+    notes.push({
+      key: "kitchen_surplus",
+      tone: "warn",
+      icon: "lucide:triangle-alert",
+      message: `A cozinha preparou ${kitchenSurplus.value} ${kitchenSurplus.value === 1 ? "item" : "itens"} a mais do que esta conta cobra.`,
+      hint: "Cancele o envio da linha, ou avise o preparo — a diferença sai sem pagamento.",
+    });
   }
   if (props.items.length && kitchenNote.value) {
     notes.push({

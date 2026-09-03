@@ -76,7 +76,20 @@ export function kitchenLineState(item: POSCartItem, options: { canUnfire: boolea
  */
 export interface KitchenBadgeView {
   label: string;
-  tone: "neutral" | "success" | "destructive";
+  tone: "neutral" | "success" | "destructive" | "warning";
+}
+
+/**
+ * A cozinha está fazendo MAIS do que a conta cobra?
+ *
+ * ⚠️ O caminho da diferença NEGATIVA: a linha foi para a cozinha com 3 e o
+ * operador baixou para 1 (cliente desistiu, digitou errado). Nada é disparado —
+ * até aí certo, ninguém quer duplicar —, só que nada é DESFEITO também: o fogão
+ * segue com 3 e a conta cobra 1. Dois pães a menos no caixa e ninguém sabe.
+ */
+export function kitchenSurplusQty(item: POSCartItem): number {
+  const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
+  return Math.max(0, firedQty - item.qty);
 }
 
 export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
@@ -86,6 +99,12 @@ export function kitchenBadge(item: POSCartItem): KitchenBadgeView {
   const firedQty = item.fired_qty ?? (item.fired ? item.qty : 0);
   if (firedQty > 0 && pendingKitchenQty(item) > 0) {
     return { label: `${firedQty} de ${item.qty} na cozinha`, tone: "neutral" };
+  }
+  // A COZINHA FAZ MAIS DO QUE A CONTA COBRA. Enquanto isto ficava calado, o
+  // selo dizia "Na cozinha" — verdade pela metade, e a metade que não avisa
+  // ninguém de que há comida saindo sem cobrança.
+  if (kitchenSurplusQty(item) > 0) {
+    return { label: `${firedQty} na cozinha · ${item.qty} na conta`, tone: "warning" };
   }
   switch (item.kitchen_status) {
     case "done":
