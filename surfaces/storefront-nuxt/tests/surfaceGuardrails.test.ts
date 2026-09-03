@@ -1460,6 +1460,25 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
   })
 
+  it('takes the payment-method name from the server, not a client map', () => {
+    // O de-para vivia duplicado: renomear "Cartão" no Admin mudava o checkout e
+    // não o acompanhamento — dois nomes para o mesmo pedido.
+    const payment = read('app/presentation/payment.ts')
+    const block = read('app/components/PaymentBlock.vue')
+
+    expect(payment).not.toContain("=== 'pix') return 'Pix'")
+    expect(block).toContain('promise.payment_method_label')
+  })
+
+  it('shows WHEN the order was promised for, not just what and how much', () => {
+    // `when_display` e `eta_display` vinham prontos do servidor e não apareciam
+    // em tela nenhuma: o resumo listava entrega, taxa e pagamento, nunca quando.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain('t.when_display')
+    expect(tracking).toContain('t.eta_display')
+  })
+
   it('keeps the progress timeline readable by assistive tech', () => {
     // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
     // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o

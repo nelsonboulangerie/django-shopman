@@ -195,6 +195,7 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     # Bloco de pagamento inline (só nos degraus com o que pagar): a antiga tela
     # de pagamento virou dado dentro do próprio acompanhamento.
     payment_method = serializers.CharField(allow_blank=True, required=False)
+    payment_method_label = serializers.CharField(allow_blank=True, required=False)
     pix_qr_code = serializers.CharField(allow_null=True, required=False)
     pix_copy_paste = serializers.CharField(allow_null=True, required=False)
     pix_expires_at = serializers.CharField(allow_null=True, required=False)

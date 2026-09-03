@@ -735,6 +735,9 @@ export interface TrackingPromiseProjection {
   // Bloco de pagamento inline (PAYMENT-TRACKING-MERGE): a tela de pagamento
   // deixou de existir. Preenchido só nos degraus com o que pagar.
   payment_method: string
+  // Rótulo humano do método, resolvido pelo registro omotenashi (editável no
+  // Admin) — dono único do nome, o mesmo que o checkout mostra.
+  payment_method_label: string
   pix_qr_code: string | null
   pix_copy_paste: string | null
   pix_expires_at: string | null

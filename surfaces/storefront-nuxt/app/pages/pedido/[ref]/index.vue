@@ -188,6 +188,13 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
+  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
+  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
+  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
+  // há previsão.
+  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
   if (t.delivery_fee_display) {
     rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
   }
