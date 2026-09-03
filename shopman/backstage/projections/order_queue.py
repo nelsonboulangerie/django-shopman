@@ -20,6 +20,7 @@ from shopman.utils.monetary import format_money
 from shopman.backstage.presentation.status import (
     order_status_label,
     payment_method_label,
+    payment_status_label,
     status_color,
 )
 from shopman.shop.projections.types import (
@@ -134,6 +135,7 @@ class OrderCardProjection:
     payment_method: str
     payment_method_label: str
     payment_status: str
+    payment_status_label: str
     payment_pending: bool
     # Tom do pill de pagamento. Três estados, não dois: dinheiro/externo não é
     # "pago" nem "devendo" — é cobrança fora do site, e pintá-lo de verde diria
@@ -234,6 +236,7 @@ class OperatorOrderProjection:
     payment_method: str
     payment_method_label: str
     payment_status: str
+    payment_status_label: str
     # As MESMAS respostas que o board usa, calculadas pelo mesmo serviço. O
     # detalhe não as tinha e a tela chutava: a guarda do "Avançar" era
     # ``can_settle_delivery_cash !== undefined``, que é sempre verdadeira, e o
@@ -462,6 +465,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         payment_method=method,
         payment_method_label=payment_method_label,
         payment_status=payment_status,
+        payment_status_label=payment_status_label(payment_status),
         can_confirm=order.status == "new",
         can_advance=bool(next_status),
         **_cancel_capability(order, user),
@@ -829,6 +833,7 @@ def _build_card(
         payment_method=method,
         payment_method_label=payment_method_label,
         payment_status=payment_status,
+        payment_status_label=payment_status_label(payment_status),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
         advance_block_label=_advance_block_label(bloqueio),

@@ -306,6 +306,16 @@ def capture(
                 **capture_params,
             )
 
+        # ⚠️ O Payman só captura o que está `authorized`, e o degrau de
+        # autorização é do webhook. Com `capture_method="automatic"` (o link) o
+        # Stripe vai direto a `succeeded`; se o webhook não chega — endpoint
+        # errado no painel, ou nunca cadastrado — o intent fica `pending` e a
+        # reconciliação, que existe para ESSE caso, morria aqui com
+        # `invalid_transition`: gateway pago, casa "aguardando", para sempre.
+        # A autorização aqui é o mesmo fato que o webhook registraria.
+        if str(intent.status) == "pending":
+            PaymentService.authorize(intent_ref, gateway_id=stripe_intent.id)
+
         txn = PaymentService.capture(
             intent_ref,
             amount_q=amount_q,
