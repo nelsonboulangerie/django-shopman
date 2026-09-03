@@ -40,7 +40,15 @@ class Command(BaseCommand):
                 entry = bootstrap_entry_from_recipe(recipe)
                 if entry is None:
                     skipped += 1
-                    self.stdout.write(f"  - {recipe.ref}: pulada (inativa ou sem unidade de saída declarada)")
+                    # O motivo importa: sem unidade declarada, a ficha fica fora E
+                    # quem a consome a vê como insumo opaco (a farinha dela não entra
+                    # na base). O conserto é declarar `Recipe.meta["output_unit"]`.
+                    reason = (
+                        "inativa" if not recipe.is_active
+                        else "sem unidade de saída declarada; defina Recipe.meta['output_unit'] "
+                             "(as massas que a usam ficaram com ela como insumo opaco)"
+                    )
+                    self.stdout.write(f"  - {recipe.ref}: pulada ({reason})")
                     continue
                 created += 1
                 existing_refs.add(entry.ref)
