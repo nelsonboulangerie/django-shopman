@@ -4185,6 +4185,22 @@ class Command(BaseCommand):
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
 
+        # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
+        # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
+        # Idempotente: ficha que já tem entry é pulada, então o reseed não duplica.
+        # As fichas de produto sem unidade declarada no catálogo ficam de fora, e
+        # o bootstrap diz quais.
+        from io import StringIO
+
+        from shopman.craftsman.models import RecipeEntry
+
+        entries_before = RecipeEntry.objects.count()
+        call_command("bootstrap_recipe_book", stdout=StringIO())
+        self.stdout.write(
+            f"  ✅ Inventário de receitas: {RecipeEntry.objects.count() - entries_before} entries criadas"
+            f" ({RecipeEntry.objects.count()} no total)"
+        )
+
         # Production data is intentionally time-relative. Re-running the seed on
         # another day creates the same operational story around that new date:
         # history behind, a busy current day, and planned work ahead.

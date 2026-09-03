@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.utils import timezone
 from shopman.craftsman.contrib.formula.percentages import (
@@ -257,7 +258,6 @@ def publish_version(version, *, actor: str = ""):
 def _write_recipe(entry, version, analysis: FormulaAnalysis):
     """Upsert da ficha de execução a partir do BOM derivado."""
     from shopman.craftsman.models import Recipe, RecipeItem
-    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
 
     Recipe.objects.filter(output_sku=entry.output_sku, is_active=True).exclude(ref=entry.ref).update(is_active=False)
 
@@ -277,16 +277,26 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis):
     existing_meta = {item.input_sku: dict(item.meta or {}) for item in recipe.items.all()}
     recipe.items.all().delete()
     for sort_order, line in enumerate(_merge_bom_lines(analysis.bom, entry, version)):
+        quantity, unit = _in_catalog_unit(line["sku"], line["quantity"], line["unit"])
         item = RecipeItem(
             recipe=recipe,
             input_sku=line["sku"],
-            quantity=line["quantity"],
-            unit=normalize_recipe_item_unit(line["unit"]),
+            quantity=quantity,
+            unit=unit,
             sort_order=sort_order,
             is_optional=line["is_optional"],
             meta={**existing_meta.get(line["sku"], {}), **line["meta"]},
         )
-        item.full_clean()
+        try:
+            item.full_clean()
+        except ValidationError as exc:
+            # A recusa da ficha (unidade do cadastro, SKU inválido) volta apontando a
+            # LINHA da fórmula, que é o que o editor consegue acender.
+            attribute, message = _first_validation_message(exc)
+            raise RecipeBookError(
+                "FORMULA_INVALID", field=_formula_field_for_sku(version.formula, line["sku"], attribute),
+                message=message,
+            ) from exc
         item.save()
 
     recipe.name = entry.name
@@ -297,6 +307,46 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis):
     recipe.meta = {**(recipe.meta or {}), **version_meta}
     recipe.save()
     return recipe
+
+
+def _first_validation_message(exc: ValidationError) -> tuple[str, str]:
+    """O primeiro ``(campo, mensagem)`` de um ``ValidationError`` de modelo."""
+    if hasattr(exc, "message_dict"):
+        for attribute, messages in exc.message_dict.items():
+            for message in messages:
+                return ("" if attribute == "__all__" else attribute), str(message)
+    messages = list(getattr(exc, "messages", []) or [])
+    return "", (str(messages[0]) if messages else "A ficha recusou o item.")
+
+
+def _formula_field_for_sku(formula: dict, sku: str, attribute: str = "") -> str:
+    """O caminho na fórmula (``items[2].unit``, ``parts[0]``) do SKU que a ficha recusou."""
+    suffix = f".{attribute}" if attribute else ""
+    for index, item in enumerate(list((formula or {}).get("items") or [])):
+        if str(item.get("sku") or "").strip() == sku:
+            return f"items[{index}]{suffix}"
+    for index, part in enumerate(list((formula or {}).get("parts") or [])):
+        if str(part.get("sku") or "").strip() == sku:
+            return f"parts[{index}]{suffix}"
+    return "items"
+
+
+def _in_catalog_unit(sku: str, quantity: Decimal, unit: str) -> tuple[Decimal, str]:
+    """A linha na unidade em que o insumo é cadastrado (a ficha fala a unidade do SKU).
+
+    A fórmula fala em grama; o insumo do Buyman é cadastrado em kg ou L, e o
+    ``RecipeItem.clean`` exige a unidade do cadastro. Mesma dimensão converte
+    pela física; dimensão diferente (contagem, volume sem densidade) fica como
+    está, e a ficha recusa com a mensagem dela.
+    """
+    from shopman.craftsman.models.recipe import _catalog_unit_for_sku, normalize_recipe_item_unit
+    from shopman.utils import units
+
+    unit = normalize_recipe_item_unit(unit)
+    catalog_unit = normalize_recipe_item_unit(_catalog_unit_for_sku(sku))
+    if not catalog_unit or catalog_unit == unit or not units.same_dimension(catalog_unit, unit):
+        return quantity, unit
+    return quantize(units.convert(quantity, unit, catalog_unit)), catalog_unit
 
 
 def _merge_bom_lines(bom, entry, version) -> list[dict]:

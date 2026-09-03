@@ -249,6 +249,21 @@ raise BaseError(code="SOME_CODE", message="descrição", extra_key="valor")
 
 **Subclasse:** `StaleRevision(CraftError)` — levantada com `code="STALE_REVISION"` automaticamente, recebe `(order, expected_rev)`.
 
+**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
+
+| Código | Quando ocorre | Na API do backstage (`/api/v1/backstage/recipes/*`) |
+|--------|--------------|------|
+| `FORMULA_INVALID` | Fórmula fora do schema, rendimento/unidade inválidos, ou a ficha recusou uma linha ao publicar (unidade do cadastro) | 400 com `field` |
+| `ITEM_WITHOUT_SKU` | Ingrediente ou parte sem insumo associado ao publicar | 400 com `field` |
+| `ENTRY_WITHOUT_SKU` | Receita sem SKU de saída ao publicar | 400 com `field=output_sku` |
+| `PART_WITHOUT_FORMULA` | Parte cuja receita não tem versão publicada | 400 com `field` |
+| `PART_EXCEEDS_BASE` | Parte leva mais de um ingrediente do que a base declara | 400 com `field` |
+| `ANCHOR_EMPTY` | Âncora soma zero; não há como padronizar | 400 com `field=anchor` |
+| `VERSION_NOT_DRAFT` | Editar ou publicar versão que não é rascunho | 409 com `error.code=version_not_draft` |
+| `ENTRY_ARCHIVED` | Criar versão ou publicar em receita arquivada | 409 com `error.code=entry_archived` |
+
+A tradução vive em `shopman/backstage/services/recipe_book.py` (`RecipeBookServiceError`). Receita ou versão inexistente é 404; leitura por IA sem credencial é 503 e provedor em falha é 502 (o mesmo mapeamento do assist do catálogo).
+
 **Guia:** [craftsman.md](../guides/craftsman.md)
 
 ---

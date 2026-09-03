@@ -1217,7 +1217,10 @@ Schema completo em [RECIPE-INVENTORY-PLAN §3](../plans/RECIPE-INVENTORY-PLAN.md
 role, quantity, unit, note?, grams_per_unit?, density_g_per_ml?}], parts: [{sku, entry_ref, kind:
 preferment|autolyse|soaker|old_dough, flour_pct?, quantity?, unit?, cap_pct?}]}`. `origin` é a
 receita **como foi informada** (imutável). `source = {kind: manual|note|photo|ficha|import,
-text?, language?, image_name?, model?}`. Validação: `craftsman.models.recipe_book.validate_formula`.
+text?, language?, image_name?, model?, recipe_ref?, copied_from?}` — `recipe_ref` é a ficha de
+origem no bootstrap (`kind=ficha`); `copied_from` é o `"<ref>@<n>"` da versão copiada quando a
+API cria uma versão com `from_version` (`backstage.services.recipe_book`). Validação:
+`craftsman.models.recipe_book.validate_formula`.
 
 ## DayClosing.data
 
