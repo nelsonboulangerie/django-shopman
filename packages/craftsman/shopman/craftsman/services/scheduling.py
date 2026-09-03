@@ -118,6 +118,7 @@ class CraftPlanning:
         # Freeze BOM into meta._recipe_snapshot
         snapshot = {
             "batch_size": str(recipe.batch_size),
+            "version_ref": (recipe.meta or {}).get("version_ref", ""),
             "items": [
                 {"input_sku": ri.input_sku, "quantity": str(ri.quantity), "unit": ri.unit}
                 for ri in recipe.items.filter(is_optional=False).order_by("sort_order")
