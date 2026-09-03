@@ -75,6 +75,7 @@ export interface OrderCardProjection {
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
+  payment_status_label: string;
   payment_pending: boolean;
   payment_tone: string;
   advance_block_label: string;
@@ -131,6 +132,7 @@ export interface OperatorOrderProjection {
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
+  payment_status_label: string;
   can_confirm: boolean;
   can_advance: boolean;
   can_cancel: boolean;
