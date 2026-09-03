@@ -306,9 +306,41 @@ def update_draft_from_payload(version: RecipeVersion, data: dict) -> RecipeVersi
 
 
 def publish(version: RecipeVersion, *, actor: str = ""):
-    """``POST .../publish/``: escreve a ficha de execução e vira a versão atual."""
+    """``POST .../publish/``: escreve a ficha de execução e vira a versão atual.
+
+    Leva junto o perfil de cada insumo (``Material.metadata``: alérgenos, dieta,
+    nutrição, densidade) para o ``RecipeItem.meta`` de linha nova. Sem isso uma
+    receita nova publicada não teria de onde tirar o rótulo do PDP (ADR-008)
+    nem a ponte volume/massa do leite ao publicar.
+    """
     with translating_errors():
-        return craftsman.publish_version(version, actor=actor)
+        return craftsman.publish_version(
+            version, actor=actor, default_item_meta=material_profiles_for(version.formula or {}),
+        )
+
+
+#: O que do cadastro do insumo viaja para a linha da ficha ao publicar.
+_MATERIAL_PROFILE_KEYS = ("allergens", "diet", "nutrition", "density_g_per_ml")
+
+
+def material_profiles_for(formula: dict) -> dict[str, dict]:
+    """``sku`` → perfil do insumo (só as chaves que a ficha lê), para os SKUs da fórmula."""
+    from shopman.buyman.models import Material
+
+    skus = {
+        str(line.get("sku") or "").strip()
+        for line in [*list(formula.get("items") or []), *list(formula.get("parts") or [])]
+        if str(line.get("sku") or "").strip()
+    }
+    if not skus:
+        return {}
+    profiles: dict[str, dict] = {}
+    for material in Material.objects.filter(sku__in=skus):
+        metadata = material.metadata or {}
+        profile = {key: metadata[key] for key in _MATERIAL_PROFILE_KEYS if key in metadata}
+        if profile:
+            profiles[material.sku] = profile
+    return profiles
 
 
 # ── Lente e padronização ─────────────────────────────────────────────────────

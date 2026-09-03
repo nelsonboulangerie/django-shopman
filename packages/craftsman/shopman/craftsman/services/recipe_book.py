@@ -207,7 +207,7 @@ def update_draft(version, *, formula: dict | None = None, yield_quantity=None, y
     return version
 
 
-def publish_version(version, *, actor: str = ""):
+def publish_version(version, *, actor: str = "", default_item_meta: dict[str, dict] | None = None):
     """Publica a versão: escreve a ficha de execução e vira a atual da receita.
 
     Recusa (``RecipeBookError``): versão que não é rascunho, receita arquivada
@@ -215,6 +215,10 @@ def publish_version(version, *, actor: str = ""):
     parte maior que a base. A unidade de cada item ainda passa pelo
     ``RecipeItem.clean`` (a unidade do SKU no catálogo fala lá) e a ficha pelo
     invariante de massa do ``Recipe.save``.
+
+    ``default_item_meta`` (``sku`` → meta) é o perfil do insumo que o
+    orquestrador conhece (alérgenos, dieta, nutrição, densidade): entra no
+    ``RecipeItem.meta`` de linha NOVA, sem sobrescrever o que a ficha já tinha.
     """
     from shopman.craftsman.models import RecipeVersion
 
@@ -242,7 +246,7 @@ def publish_version(version, *, actor: str = ""):
 
     now = timezone.now()
     with transaction.atomic():
-        recipe = _write_recipe(entry, version, analysis)
+        recipe = _write_recipe(entry, version, analysis, default_item_meta or {})
         entry.versions.filter(status=RecipeVersion.Status.PUBLISHED).exclude(pk=version.pk).update(
             status=RecipeVersion.Status.SUPERSEDED,
         )
@@ -256,7 +260,7 @@ def publish_version(version, *, actor: str = ""):
     return recipe
 
 
-def _write_recipe(entry, version, analysis: FormulaAnalysis):
+def _write_recipe(entry, version, analysis: FormulaAnalysis, default_item_meta: dict[str, dict] | None = None):
     """Upsert da ficha de execução a partir do BOM derivado."""
     from shopman.craftsman.models import Recipe, RecipeItem
 
@@ -275,7 +279,11 @@ def _write_recipe(entry, version, analysis: FormulaAnalysis):
             meta=version_meta,
         )
 
+    # O meta da linha: o perfil do insumo que o orquestrador conhece embaixo, o
+    # que a ficha já tinha por cima (alérgenos e nutrição editados à mão vencem).
     existing_meta = {item.input_sku: dict(item.meta or {}) for item in recipe.items.all()}
+    for sku, defaults in (default_item_meta or {}).items():
+        existing_meta[sku] = {**dict(defaults or {}), **existing_meta.get(sku, {})}
     recipe.items.all().delete()
     for sort_order, line in enumerate(_merge_bom_lines(analysis.bom, entry, version)):
         quantity, unit = _in_catalog_unit(

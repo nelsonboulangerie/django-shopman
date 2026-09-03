@@ -717,3 +717,28 @@ def test_publish_refuses_a_mass_line_for_a_liquid_without_declared_density_and_n
     assert response.status_code == 200, response.content
     milk = Recipe.objects.get(ref="pao-de-leite").items.get(input_sku="LEITE")
     assert (milk.quantity, milk.unit) == (Decimal("0.66"), "L")
+
+
+def test_publish_carries_the_material_profile_into_new_sheet_lines(client, editor, materials):
+    """O cadastro do insumo (densidade, alérgenos, dieta, nutrição) viaja para o RecipeItem.meta da linha nova.
+
+    É a densidade do cadastro que leva o leite pesado em grama até o litro; e é o
+    perfil dele que dá ao PDP alérgeno e nutrição de uma receita recém-publicada.
+    """
+    materials["LEITE"].metadata = {
+        "density_g_per_ml": 1.03, "allergens": ["leite"], "diet": "vegetarian",
+        "nutrition": {"energy_kcal": 61}, "supplier_note": "não viaja",
+    }
+    materials["LEITE"].save()
+    entry = craftsman.create_entry(ref="pao-de-leite-2", name="Pão de leite", kind="bread", output_sku="PAO-DE-LEITE-2")
+    formula = flour_formula()
+    formula["items"][1] = {"sku": "LEITE", "name": "Leite", "role": "liquid", "quantity": 680, "unit": "g"}
+    craftsman.create_version(entry, formula=formula, yield_quantity="1.6", yield_unit="kg")
+    client.force_login(editor)
+    response = _post(client, f"{LIST_URL}pao-de-leite-2/versions/1/publish/", {})
+    assert response.status_code == 200, response.content
+    milk = Recipe.objects.get(ref="pao-de-leite-2").items.get(input_sku="LEITE")
+    assert (milk.quantity, milk.unit) == (Decimal("0.66"), "L")
+    assert milk.meta == {
+        "density_g_per_ml": 1.03, "allergens": ["leite"], "diet": "vegetarian", "nutrition": {"energy_kcal": 61},
+    }

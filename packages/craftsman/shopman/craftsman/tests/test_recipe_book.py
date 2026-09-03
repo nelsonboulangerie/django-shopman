@@ -166,6 +166,26 @@ class TestPublish:
         assert items["FARINHA-T55"].quantity == Decimal("1000")
         assert Recipe.objects.count() == 1
 
+    def test_publish_seeds_new_lines_with_the_default_item_meta_without_overriding(self, entry, draft):
+        """O perfil do insumo entra na linha nova; o que a ficha já tinha à mão vence."""
+        recipe = Recipe.objects.create(ref="massa-tradicao", name="Antiga", output_sku="MASSA-TRADICAO",
+                                       batch_size=Decimal("1"), meta={"output_unit": "kg"})
+        RecipeItem.objects.create(recipe=recipe, input_sku="FARINHA-T55", quantity=Decimal("0.9"), unit="kg",
+                                  meta={"allergens": ["gluten", "soja"]})
+
+        published = recipe_book.publish_version(draft, default_item_meta={
+            "FARINHA-T55": {"allergens": ["gluten"], "diet": "vegan"},
+            "SAL": {"diet": "vegan", "nutrition": {"sodium_mg": 38758}},
+            "AGUA-FILTRADA": {"density_g_per_ml": 1.0},
+        })
+
+        items = {item.input_sku: item for item in published.items.all()}
+        # A linha que já existia mantém a edição manual e ganha só o que faltava.
+        assert items["FARINHA-T55"].meta == {"allergens": ["gluten", "soja"], "diet": "vegan"}
+        # Linha nova nasce com o perfil inteiro do insumo.
+        assert items["SAL"].meta == {"diet": "vegan", "nutrition": {"sodium_mg": 38758}}
+        assert items["AGUA-FILTRADA"].meta == {"density_g_per_ml": 1.0}
+
     def test_publish_deactivates_another_sheet_for_the_same_sku(self, entry, draft):
         other = Recipe.objects.create(ref="massa-tradicao-antiga", name="Antiga", output_sku="MASSA-TRADICAO",
                                       batch_size=Decimal("1"), meta={"output_unit": "kg"})
