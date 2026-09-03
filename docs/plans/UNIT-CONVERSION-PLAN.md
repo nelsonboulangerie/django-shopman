@@ -204,6 +204,19 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   §Evidência 4](../decisions/adr-024-material-unit-base-and-purchase.md). Elas
   continuam valendo — o que muda com elas é o vocabulário inicial, não o mecanismo.
 
+## Calibração do cadastro (03/09/2026) — os líquidos pesados vão para kg
+
+O mecanismo ficou pronto; o **cadastro da Nelson** ainda tinha água, leite, azeite e
+creme de leite em `l`, enquanto a bancada os **pesa**. Pela R1 a base é a do momento da
+verdade, então a base estava no eixo errado, e a ponte de densidade caía na produção
+diária em vez de no recebimento. A correção é de dado, não de código:
+[WP-BASE-UNIT-LIQUIDS-KG](WP-BASE-UNIT-LIQUIDS-KG.md).
+
+Vale como precedente: **a base errada não aparece como erro**, aparece como uma tela que
+mostra dois números para a mesma coisa (`3,4 L (3502 g)`). Quando a anotação da Fase 4
+precisa existir para o operador entender a linha, a suspeita certa é a unidade-base, não
+a anotação.
+
 ## Ordem recomendada
 
 ```
