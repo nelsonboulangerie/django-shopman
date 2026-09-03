@@ -905,6 +905,40 @@ AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
 
+# ── Concierge de WhatsApp (venda conversacional) ─────────────────────
+#
+# O atendente que vende pelo chat. A LÍNGUA é do modelo; o DINHEIRO é do código:
+# preço, disponibilidade, sacola, prazo e pagamento saem das ferramentas
+# (services do Shopman), nunca do texto gerado. Desligado por padrão: ligar é
+# `SHOPMAN_CONCIERGE_ENABLED=true` + credencial da Anthropic (`AI_ASSIST_API_KEY`)
+# + chave S2S que o ManyChat apresenta (`CONCIERGE_API_KEY`, ou a mesma do access
+# link). Sem chave S2S fora de DEBUG o endpoint falha FECHADO.
+SHOPMAN_CONCIERGE = {
+    "enabled": _env_bool("SHOPMAN_CONCIERGE_ENABLED", False),
+    # Chave que o External Request do ManyChat apresenta (X-Api-Key). Default: a
+    # mesma do access link, que já é a chave "ManyChat → casa".
+    "api_key": os.environ.get("CONCIERGE_API_KEY", "") or os.environ.get("DOORMAN_ACCESS_LINK_API_KEY", ""),
+    # Modelo do concierge. Sonnet 5 por padrão: latência de chat e custo de
+    # centavos por conversa. `claude-opus-5` é troca de env, sem deploy de código.
+    "model": os.environ.get("CONCIERGE_MODEL", "claude-sonnet-5"),
+    "effort": os.environ.get("CONCIERGE_EFFORT", "low"),
+    "max_tokens": int(os.environ.get("CONCIERGE_MAX_TOKENS", "1024")),
+    # Canal de VENDA dos pedidos do chat (Channel.ref). Confirmação, pagamento e
+    # estoque vêm da config desse canal, como em qualquer superfície.
+    "channel_ref": os.environ.get("CONCIERGE_CHANNEL_REF", "whatsapp"),
+    # Janela de memória enviada ao modelo (mensagens) e teto diário por conversa.
+    "window_messages": int(os.environ.get("CONCIERGE_WINDOW_MESSAGES", "40")),
+    "max_turns_per_day": int(os.environ.get("CONCIERGE_MAX_TURNS_PER_DAY", "80")),
+    # Máximo de idas ao modelo num turno (cada ida pode chamar ferramentas).
+    "max_iterations": int(os.environ.get("CONCIERGE_MAX_ITERATIONS", "6")),
+    # Campo personalizado do ManyChat que o flow consulta ANTES de chamar a casa:
+    # "1" = conversa com a equipe, o bot não responde.
+    "handoff_field": os.environ.get("CONCIERGE_HANDOFF_FIELD", "concierge_handoff"),
+    # Segundos entre a chegada da mensagem e o processamento: o webhook responde
+    # em milissegundos e a diretiva fica para o worker (nunca inline no request).
+    "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
+}
+
 # ── Craftsman (micro-MRP integration) ──────────────────────────────
 
 CRAFTSMAN = {
