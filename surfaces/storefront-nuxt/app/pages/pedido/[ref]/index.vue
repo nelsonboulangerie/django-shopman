@@ -5,6 +5,7 @@ import {
   pollIntervalMs,
   ratingThanksView,
   timelineActiveStep,
+  timelineStepStateLabel,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
@@ -698,7 +699,9 @@ useSeoMeta({
                           class="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5"
                         />
                         <UiTimelineDate v-if="step.timestamp_display">{{ step.timestamp_display }}</UiTimelineDate>
-                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">{{ step.label }}</UiTimelineTitle>
+                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">
+                          {{ step.label }}<span class="sr-only">, {{ timelineStepStateLabel(step.state) }}</span>
+                        </UiTimelineTitle>
                         <!-- Passo cancelado: indicador próprio (X destrutivo), nunca um
                              check verde de "concluído" — a timeline não pode contradizer
                              o painel de status em tom danger. -->
@@ -707,6 +710,15 @@ useSeoMeta({
                           class="flex size-6 items-center justify-center border-none bg-destructive text-destructive-foreground group-data-[orientation=vertical]/timeline:-left-7"
                         >
                           <Icon name="lucide:x" :size="16" />
+                        </UiTimelineIndicator>
+                        <!-- Passo ATUAL: o contrato separa `current` de `completed`, e
+                             carimbar o check no passo em andamento dizia "já foi" sobre
+                             o que está acontecendo agora. Ponto cheio, não ✓. -->
+                        <UiTimelineIndicator
+                          v-else-if="step.state === 'current'"
+                          class="flex size-6 items-center justify-center border-none bg-primary text-primary-foreground group-data-[orientation=vertical]/timeline:-left-7"
+                        >
+                          <span class="size-2 rounded-full bg-primary-foreground" />
                         </UiTimelineIndicator>
                         <UiTimelineIndicator
                           v-else

@@ -1428,4 +1428,25 @@ describe('surface claims stay inside what the projection actually says', () => {
     expect(heart).not.toContain('`Remover ${sku} dos favoritos`')
     expect(heart).toContain('${spoken} dos favoritos')
   })
+
+  it('does not stamp the completed check on the step that is happening now', () => {
+    // `OrderProgressStepProjection.state` separa completed/current/pending/
+    // cancelled. A timeline marcava `data-completed` até no passo atual, então
+    // "Em preparo" saía com o mesmo ✓ verde de um passo já feito.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain("v-else-if=\"step.state === 'current'\"")
+    expect(tracking).toContain('timelineStepStateLabel(step.state)')
+  })
+
+  it('keeps the progress timeline readable by assistive tech', () => {
+    // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
+    // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
+    // separador, esses sim decorativos, seguem escondidos.
+    const item = read('app/components/Ui/Timeline/Item.vue')
+    const indicator = read('app/components/Ui/Timeline/Indicator.vue')
+
+    expect(item.replace(/<!--[\s\S]*?-->/g, '')).not.toContain('aria-hidden')
+    expect(indicator).toContain('aria-hidden="true"')
+  })
 })

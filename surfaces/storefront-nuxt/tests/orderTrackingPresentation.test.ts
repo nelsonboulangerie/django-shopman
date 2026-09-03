@@ -5,6 +5,7 @@ import {
   ratingThanksView,
   shouldCelebrateRating,
   timelineActiveStep,
+  timelineStepStateLabel,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
@@ -70,6 +71,15 @@ describe('order tracking presentation — timeline & polling', () => {
     expect(timelineActiveStep([step('completed'), step('completed'), step('pending')])).toBe(2)
     expect(timelineActiveStep([step('pending'), step('pending')])).toBe(1)
     expect(timelineActiveStep([step('completed'), step('cancelled')])).toBe(2)
+  })
+
+  it('says the step state out loud, since the check mark is visual only', () => {
+    // O passo `current` recebia o mesmo ✓ do `completed` — a tela dizia "já foi"
+    // sobre o que está acontecendo agora, contra o próprio contrato.
+    expect(timelineStepStateLabel('completed')).toBe('concluído')
+    expect(timelineStepStateLabel('current')).toBe('em andamento')
+    expect(timelineStepStateLabel('cancelled')).toBe('cancelado')
+    expect(timelineStepStateLabel('pending')).toBe('ainda não')
   })
 
   it('respects stale_after_seconds with a 15s floor', () => {
