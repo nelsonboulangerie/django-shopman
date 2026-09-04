@@ -199,9 +199,12 @@ def test_browse_menu_reads_price_and_availability_from_the_listing(ctx):
     assert item["available_qty"] == 10
 
 
-def test_browse_menu_without_query_lists_collections(ctx):
-    result = tools.browse_menu(ctx, "", "")
+def test_browse_menu_without_arguments_is_an_overview_by_collection(ctx):
+    result = tools.browse_menu(ctx)
+    assert result["overview"] is True and result["available_count"] == 1
     assert [c["ref"] for c in result["collections"]] == ["paes"]
+    assert result["collections"][0]["available_count"] == 1
+    assert result["collections"][0]["examples"][0]["sku"] == SKU
 
 
 def test_browse_menu_accepts_the_collection_by_label_and_ignores_unknown_ones(ctx):
@@ -388,13 +391,36 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     assert first["output_config"] == {"effort": "low"}
     assert first["thinking"] == {"type": "adaptive"}
     assert [t["name"] for t in first["tools"]] == list(tools.TOOL_NAMES)
-    assert all(t["strict"] is True for t in first["tools"])
+    # Sem `strict` e só o obrigatório em `required`: parâmetro que o modelo quer
+    # omitir não pode virar string preenchida com sintaxe interna.
+    assert all("strict" not in t for t in first["tools"])
+    browse = next(t for t in first["tools"] if t["name"] == "browse_menu")
+    assert browse["input_schema"]["required"] == []
     # A segunda ida leva a chamada e o resultado da ferramenta de volta.
     assert client.requests[1]["messages"][-1]["content"][0]["type"] == "tool_result"
 
 
 LEAK_TAG = "<" + "/antml:parameter>"
 LEAK_NAME = 'name="browse_menu">'
+
+
+def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation):
+    """Transcrição com lixo não volta ao modelo como exemplo do formato."""
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
+    )
+    ConversationMessage.objects.create(
+        conversation=conversation,
+        role="assistant",
+        kind="tool_call",
+        content=[{"type": "tool_use", "id": "t1", "name": "browse_menu", "input": {"query": LEAK_TAG + "pao", "collection": ""}}],
+    )
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="tool_result",
+        content=[{"type": "tool_result", "tool_use_id": "t1", "content": "{}"}],
+    )
+    history = agent_module.history_for(conversation)
+    assert history[1]["content"][0]["input"] == {"query": "", "collection": ""}
 
 
 def test_clean_text_and_arguments_drop_leaked_tool_syntax():
