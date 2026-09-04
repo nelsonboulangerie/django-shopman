@@ -45,6 +45,11 @@ async function goToCashSession() {
   await navigateTo("/session");
 }
 
+// Filipetas do pedido remoto: o lote da semana para o painel físico da padaria.
+async function goToOrderTickets() {
+  await navigateTo("/tickets");
+}
+
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
@@ -695,6 +700,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
       @board="goToTabs"
       @cash="goToCashSession"
+      @tickets="goToOrderTickets"
       @lock="lock()"
       @refresh="refresh()"
     />

@@ -126,6 +126,10 @@ async function goToCashReport() {
   await navigateTo("/session/report");
 }
 
+async function goToOrderTickets() {
+  await navigateTo("/tickets");
+}
+
 async function goToDayClosing() {
   await navigateTo("/session/closing");
 }
@@ -396,6 +400,7 @@ async function confirmClose() {
       view="session"
       @board="goToSaleBoard"
       @cash="() => {}"
+      @tickets="goToOrderTickets"
       @lock="lock()"
       @refresh="refresh()"
     />

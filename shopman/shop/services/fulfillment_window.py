@@ -113,6 +113,73 @@ def canonical_slots() -> list[dict]:
     return list(DEFAULT_CANONICAL_SLOTS)
 
 
+def _hour_pair(slot_ref: str) -> tuple[time, time] | None:
+    """``"14:00-14:30"`` → as duas pontas; qualquer outra coisa → ``None``.
+
+    A meia hora do expediente se lê SOZINHA porque o ref dela É o par de horas
+    — inclusive num pedido antigo, depois de a casa ter mudado o expediente.
+    Já o canônico partido no hífen dá ``"slot"``, que não é hora nenhuma: por
+    isso as duas pontas precisam ler como relógio para o par valer.
+    """
+    from shopman.shop.services.product_readiness import parse_clock
+
+    inicio, _, fim = str(slot_ref or "").strip().partition("-")
+    if not fim:
+        return None
+    hora_inicio, hora_fim = parse_clock(inicio), parse_clock(fim)
+    if hora_inicio is None or hora_fim is None:
+        return None
+    return hora_inicio, hora_fim
+
+
+def window_label(slot_ref: str | None) -> str:
+    """Rótulo humano da janela combinada — tolerando os DOIS vocabulários da chave.
+
+    ``Order.data["delivery_time_slot"]`` carrega duas grades (data-schemas):
+    encomenda usa o ref canônico (``"slot-09"``), venda do dia no PDV usa o par
+    de horas (``"14:00-14:30"``). Quem mostra ao cliente — tela, papel, aviso —
+    **não pode escolher uma das duas**: "slot-09" impresso na filipeta é
+    identificador vazando na cara de quem vem buscar o pão.
+
+    Quem decide é a FORMA do ref, não o tipo de recebimento. Ler pelo
+    ``fulfillment_type`` erra na encomenda de ENTREGA (ref canônico num pedido
+    de entrega) e na retirada de hoje no balcão (par de horas numa retirada).
+
+    Ref desconhecido devolve o próprio ref: um ref cru é feio, uma janela em
+    branco é o compromisso sumindo do papel.
+    """
+    ref = str(slot_ref or "").strip()
+    if not ref:
+        return ""
+    par = _hour_pair(ref)
+    if par is not None:
+        return f"{par[0]:%H:%M} às {par[1]:%H:%M}"
+    for slot in canonical_slots():
+        if str(slot.get("ref") or "") == ref:
+            return str(slot.get("label") or "").strip() or ref
+    return ref
+
+
+def window_start_time(slot_ref: str | None) -> time | None:
+    """A que horas a janela COMEÇA — a chave de ordenação de um lote de pedidos.
+
+    Mesmo par de vocabulários de :func:`window_label`. ``None`` quando o pedido
+    não combinou janela (ou o ref não resolve): ausência de hora é "não
+    combinado", nunca meia-noite — ordenar um pedido sem janela como se fosse
+    de madrugada o jogaria para o topo do painel sem motivo.
+    """
+    ref = str(slot_ref or "").strip()
+    if not ref:
+        return None
+    par = _hour_pair(ref)
+    if par is not None:
+        return par[0]
+    for slot in canonical_slots():
+        if str(slot.get("ref") or "") == ref:
+            return _window_start(slot)
+    return None
+
+
 def _grid_for(day: date, *, now: datetime | None = None, shop=None) -> list[dict]:
     """A grade que vale para ``day``: meia hora hoje, slot canônico no resto.
 

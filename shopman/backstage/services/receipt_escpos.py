@@ -264,6 +264,212 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
     return bytes(out)
 
 
+def _commitment_headline(order) -> tuple[str, str]:
+    """As duas linhas de longe do painel: ``(dia, janela)``, em caixa alta.
+
+    ⚠️ **Não existe campo ``scheduled_for``.** O compromisso mora em
+    ``Order.data["delivery_date"]`` e quem o lê é ``get_commitment_date`` — ler
+    a chave crua é como o agendamento se perde numa superfície nova.
+
+    Pedido SEM data combinada não vira "HOJE": a venda anotada há três dias e
+    nunca agendada apareceria no topo do painel como trabalho de agora. Ele diz
+    o que é — ``SEM AGENDAMENTO`` — e a data de criação sai no corpo.
+    """
+    from datetime import timedelta
+
+    from django.utils import formats, timezone
+
+    from shopman.shop.services.fulfillment_window import window_label
+    from shopman.shop.services.order_helpers import get_commitment_date
+
+    janela = window_label((order.data or {}).get("delivery_time_slot")).upper()
+
+    compromisso = get_commitment_date(order)
+    if compromisso is None:
+        return "SEM AGENDAMENTO", janela
+
+    hoje = timezone.localdate()
+    if compromisso == hoje:
+        return "HOJE", janela
+    if compromisso == hoje + timedelta(days=1):
+        return "AMANHÃ", janela
+    dia = f"{formats.date_format(compromisso, 'D')}, {formats.date_format(compromisso, 'd/m')}"
+    return dia.upper(), janela
+
+
+def _headline_name(name: str, width: int) -> str:
+    """Nome que ainda se lê a três metros: encurta pelo MEIO, nunca pelo fim.
+
+    O corpo duplo cabe ``width`` caracteres. "Maria Aparecida da Silva Xavier"
+    cortado no fim vira "Maria Aparecida da Silv" — que é o nome de ninguém.
+    Primeiro-e-último ("Maria Xavier") é como a padaria chama a pessoa.
+    """
+    label = " ".join(str(name or "").split())
+    if len(label) <= width:
+        return label
+    partes = label.split(" ")
+    if len(partes) > 1:
+        curto = f"{partes[0]} {partes[-1]}"
+        if len(curto) <= width:
+            return curto
+    return label[:width]
+
+
+def order_ticket(order, *, shop_name: str = "", tracking_url: str = "", reprint: bool = False) -> bytes:
+    """Filipeta do pedido REMOTO — o comprovante que vai para o painel físico.
+
+    Irmã do :func:`sale_receipt`, e o parentesco para aí: o recibo é a projeção
+    do que já foi VENDIDO e PAGO; a filipeta sai ANTES do pagamento, para
+    entrega, retirada ou encomenda agendada. É o papel que a padaria prega no
+    painel para enxergar a semana, e por isso ela é desenhada para ser lida de
+    longe: dia, janela, nome e recebimento saem em corpo duplo; o resto é corpo.
+
+    ⚠️ **Ela diz o que NÃO é.** Impressa antes do pagamento, um papel com o
+    total impresso passa facilmente por comprovante de pagamento — e o cliente
+    que a guarda tem toda razão em achar que quitou. Então o papel afirma as
+    duas coisas: não é documento fiscal e não comprova pagamento. Quando o
+    pedido está em aberto, ele grita isso mais uma vez, emoldurado.
+
+    ``tracking_url`` é o acompanhamento do pedido na loja — e, no pedido de
+    link em aberto, é a MESMA página onde se paga. Vazio quando o deployment
+    não configurou a base da loja: o papel sai sem QR em vez de com um QR mudo.
+    """
+    from shopman.utils.monetary import format_money
+
+    from shopman.backstage.presentation.status import payment_method_label, payment_status_label
+    from shopman.shop.services import payment as payment_svc
+    from shopman.shop.services.order_helpers import get_fulfillment_type
+
+    data = order.data or {}
+    out = bytearray()
+    out += bytes([ESC, ord("@")])  # reset: não herda estado do job anterior
+    out += bytes([ESC, ord("t"), CODE_PAGE])
+
+    out += _centered((shop_name or "NELSON BOULANGERIE").upper())
+    out += _centered("Comprovante de pedido")
+    if reprint:
+        # Mesma regra do recibo e da DANFE: sem a marca, dois papéis idênticos
+        # circulam e a segunda via passa por original. Num painel de parede isso
+        # é o pedido aparecendo duas vezes e alguém preparando dobrado.
+        out += _centered("*** 2a VIA ***")
+    out += _rule()
+
+    # ── O bloco de longe ──────────────────────────────────────────────
+    # Quatro linhas em corpo duplo, e não mais: quando tudo é destaque, nada é.
+    dia, janela = _commitment_headline(order)
+    out += _line("")
+    out += _double(dia)
+    if janela:
+        out += _double(janela)
+    is_delivery = get_fulfillment_type(order) == "delivery"
+    out += _double("ENTREGA" if is_delivery else "RETIRADA")
+    customer = data.get("customer") if isinstance(data.get("customer"), dict) else {}
+    nome = str(customer.get("name") or "").strip()
+    if nome:
+        out += _double(_headline_name(nome, COLUMNS // 2))
+    out += _line("")
+    out += _rule()
+
+    # ── O corpo ───────────────────────────────────────────────────────
+    out += _pair(f"Pedido {order.ref}", f"feito {_local(order.created_at)}")
+    if nome:
+        for pedaco in _wrap(f"Cliente: {nome}", COLUMNS):
+            out += _line(pedaco)
+    telefone = str(customer.get("phone") or data.get("customer_phone") or "").strip()
+    if telefone:
+        out += _line(f"Telefone: {telefone}"[:COLUMNS])
+    out += _rule()
+
+    itens = list(order.items.all())
+    out += _line(f"ITENS ({len(itens)})")
+    for item in itens:
+        qty = item.qty.normalize() if hasattr(item.qty, "normalize") else item.qty
+        # Quantidade na FRENTE: quem separa a sacola lê "3 x" antes do nome, e
+        # o nome longo quebra sem empurrar o número para a linha de baixo.
+        #
+        # 14 colunas de goteira para o valor, não 12: "R$ 12.345,67" tem 12, e
+        # com o nome ocupando o resto o `_pair` cortaria a linha em 48 comendo o
+        # último dígito do PREÇO. Encomenda de festa chega nessa casa.
+        pedacos = _wrap(f"{qty} x {item.name}", COLUMNS - 14)
+        out += _pair(pedacos[0], f"R$ {format_money(int(item.line_total_q or 0))}")
+        for pedaco in pedacos[1:]:
+            out += _line(f"    {pedaco}"[:COLUMNS])
+    out += _rule()
+
+    if is_delivery:
+        endereco, instrucoes = _delivery_lines(data)
+        out += _line("ENTREGAR EM:")
+        for pedaco in _wrap(endereco or "-", COLUMNS):
+            out += _line(pedaco)
+        if instrucoes:
+            for pedaco in _wrap(f"Referência: {instrucoes}", COLUMNS):
+                out += _line(pedaco)
+        out += _rule()
+
+    # As duas notas são de DONOS diferentes (data-schemas) e por isso saem com
+    # nome: ``order_notes`` é a voz do cliente no checkout, ``kitchen_note`` é o
+    # recado do operador para dentro. Fundi-las apagaria quem pediu o quê.
+    nota_cliente = str(data.get("order_notes") or "").strip()
+    nota_cozinha = str(data.get("kitchen_note") or "").strip()
+    if nota_cliente or nota_cozinha:
+        if nota_cliente:
+            out += _line("Observação do cliente:")
+            for pedaco in _wrap(nota_cliente, COLUMNS):
+                out += _line(pedaco)
+        if nota_cozinha:
+            out += _line("Nota da cozinha:")
+            for pedaco in _wrap(nota_cozinha, COLUMNS):
+                out += _line(pedaco)
+        out += _rule()
+
+    out += _line("")
+    out += _double(f"TOTAL R$ {format_money(int(order.total_q or 0))}")
+    out += _line("")
+
+    payment = data.get("payment") if isinstance(data.get("payment"), dict) else {}
+    metodo = str(payment.get("method") or "")
+    if metodo:
+        out += _pair("Pagamento", payment_method_label(metodo)[: COLUMNS // 2])
+    status = payment_svc.get_payment_status(order) or ""
+    pago = status in {"captured", "paid"}
+    if pago:
+        out += _pair("Situação", payment_status_label(status)[: COLUMNS // 2])
+    else:
+        out += _line("")
+        out += _centered("*** PAGAMENTO PENDENTE ***")
+        out += _line("")
+    out += _rule()
+
+    # ⚠️ O que este papel NÃO é. Ele nasce antes do pagamento e traz um total
+    # impresso — sem estas duas linhas, é indistinguível de um comprovante.
+    out += _centered("Este papel não é documento fiscal")
+    out += _centered("e não comprova pagamento.")
+
+    if tracking_url:
+        out += _centered("Pague e acompanhe pelo QR" if not pago else "Acompanhe o pedido pelo QR")
+        out += _qr(tracking_url)
+
+    out += bytes([ESC, ord("d"), 4])
+    out += bytes([GS, ord("V"), 1])  # corte parcial — a filipeta seguinte começa limpa
+    return bytes(out)
+
+
+def _delivery_lines(data: dict) -> tuple[str, str]:
+    """Endereço e referência da entrega, do jeito que o Gestor já os monta.
+
+    Mesma regra de ``backstage.projections.order_queue._delivery_address``: o
+    complemento é o que faz achar a porta e nem sempre entra no texto formatado
+    do Places, então é anexado quando ainda não está lá.
+    """
+    estruturado = data.get("delivery_address_structured")
+    estruturado = estruturado if isinstance(estruturado, dict) else {}
+    endereco = str(data.get("delivery_address") or estruturado.get("formatted_address") or "").strip()
+    complemento = str(estruturado.get("complement") or "").strip()
+    if complemento and complemento.lower() not in endereco.lower():
+        endereco = f"{endereco} - {complemento}" if endereco else complemento
+    return endereco, str(estruturado.get("delivery_instructions") or "").strip()
+
+
 def danfe_nfce(doc, *, reprint: bool = False) -> bytes:
     """DANFE NFC-e em bobina — a projeção IMPRESSA de ``DanfeDocument``.
 
