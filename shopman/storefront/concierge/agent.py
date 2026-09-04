@@ -112,8 +112,26 @@ def history_for(conversation: Conversation) -> list[dict]:
         content = row.content or ([{"type": "text", "text": row.text}] if row.text else [])
         if not content:
             continue
-        messages.append({"role": row.role, "content": content})
+        messages.append({"role": row.role, "content": _clean_history_content(content)})
     return messages
+
+
+def _clean_history_content(content: list) -> list:
+    """Transcrição antiga pode carregar sintaxe vazada; ela não volta ao modelo."""
+    cleaned = []
+    for block in content:
+        if not isinstance(block, dict):
+            cleaned.append(block)
+            continue
+        kind = block.get("type")
+        if kind == "tool_use" and isinstance(block.get("input"), dict):
+            cleaned.append({**block, "input": clean_arguments(block["input"])})
+        elif kind == "text":
+            text = clean_text(block.get("text", ""))
+            cleaned.append({**block, "text": text or "…"})
+        else:
+            cleaned.append(block)
+    return cleaned
 
 
 # ── Serialização ──────────────────────────────────────────────────────
@@ -122,9 +140,12 @@ def history_for(conversation: Conversation) -> list[dict]:
 def _block_to_dict(block) -> dict | None:
     kind = getattr(block, "type", "")
     if kind == "text":
-        return {"type": "text", "text": block.text}
+        return {"type": "text", "text": clean_text(block.text)}
     if kind == "tool_use":
-        return {"type": "tool_use", "id": block.id, "name": block.name, "input": block.input}
+        # Persistido LIMPO: a transcrição volta ao modelo como exemplo do formato, e
+        # exemplo com lixo ensina lixo (foi assim que um turno ruim virou três).
+        arguments = block.input if isinstance(block.input, dict) else {}
+        return {"type": "tool_use", "id": block.id, "name": block.name, "input": clean_arguments(arguments)}
     # thinking / redacted_thinking e afins: fora da transcrição (ver docstring).
     return None
 

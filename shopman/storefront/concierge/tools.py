@@ -348,12 +348,19 @@ def _error(code: str, message: str, **extra) -> dict:
 # ── Ferramentas ───────────────────────────────────────────────────────
 
 
-def browse_menu(ctx: ToolContext, query: str = "", collection: str = "") -> dict:
+def browse_menu(
+    ctx: ToolContext, query: str = "", collection: str = "", available_only: bool = False
+) -> dict:
     """O cardápio de agora: nome, preço e disponibilidade viva, do listing do canal.
 
+    Sem ``query`` e sem ``collection`` devolve a VISÃO GERAL: cada coleção com
+    quantos itens tem disponíveis agora e até três exemplos. Uma fatia dos
+    primeiros doze itens do catálogo era o que fazia "o que tem hoje?" virar
+    lista de cafés (a ordem do catálogo começa nas bebidas).
+
     ``collection`` aceita a ref ("paes") ou o rótulo ("Pães", "folhados"); o que não
-    casa com nada é ignorado, com aviso no resultado. Melhor o cardápio inteiro
-    filtrado pela busca do que uma lista vazia por causa de um nome chutado.
+    casa com nada é ignorado, com aviso no resultado. ``available_only`` tira do
+    resultado o que não pode ser pedido agora. Itens disponíveis vêm primeiro.
     """
     from shopman.storefront.presentation.catalog import build_catalog
 
@@ -382,6 +389,9 @@ def browse_menu(ctx: ToolContext, query: str = "", collection: str = "") -> dict
         else:
             collection_note = f"Coleção '{collection}' não existe; mostrando sem esse filtro."
     needle = _fold(query)
+    if not needle and not wanted:
+        return _menu_overview(items, catalog, available_only=available_only)
+
     if needle:
         terms = [t for t in needle.split() if t]
 
@@ -395,27 +405,59 @@ def browse_menu(ctx: ToolContext, query: str = "", collection: str = "") -> dict
 
         items = [item for item in items if matches(item)]
 
+    if available_only:
+        items = [item for item in items if item.can_add_to_cart]
+    items.sort(key=lambda item: (0 if item.can_add_to_cart else 1))
+
     payload = {
         "ok": True,
         "count": len(items),
+        "available_count": sum(1 for item in items if item.can_add_to_cart),
         "items": [_item_payload(item) for item in items[:MAX_MENU_ITEMS]],
         "truncated": len(items) > MAX_MENU_ITEMS,
     }
     if collection_note:
         payload["note"] = collection_note
-    if not needle:
-        payload["collections"] = [
-            {
-                "ref": getattr(cat, "ref", "") or "",
-                "label": getattr(cat, "label", "") or getattr(cat, "name", "") or "",
-            }
-            for cat in catalog.categories
-        ]
     if catalog.happy_hour is not None:
         label = getattr(catalog.happy_hour, "label", "") or getattr(catalog.happy_hour, "message", "")
         if label:
             payload["happy_hour"] = str(label)
     return payload
+
+
+def _menu_overview(items: list, catalog, *, available_only: bool) -> dict:
+    """Coleções com contagem de disponíveis e exemplos, no lugar de uma fatia cega."""
+    by_collection: dict[str, list] = {}
+    for item in items:
+        by_collection.setdefault(_fold(item.category or ""), []).append(item)
+    collections = []
+    for cat in catalog.categories:
+        ref = getattr(cat, "ref", "") or ""
+        label = getattr(cat, "label", "") or getattr(cat, "name", "") or ref
+        members = by_collection.get(_fold(label)) or by_collection.get(_fold(ref)) or []
+        available = [item for item in members if item.can_add_to_cart]
+        if available_only and not available:
+            continue
+        collections.append(
+            {
+                "ref": ref,
+                "label": label,
+                "available_count": len(available),
+                "total_count": len(members),
+                "examples": [
+                    {"sku": item.sku, "name": item.name, "price": item.price_display}
+                    for item in (available or members)[:3]
+                ],
+            }
+        )
+    return {
+        "ok": True,
+        "overview": True,
+        "available_count": sum(1 for item in items if item.can_add_to_cart),
+        "total_count": len(items),
+        "collections": collections,
+        "hint": "Para listar itens, chame de novo com `collection` (ref ou rótulo) ou `query`.",
+    }
 
 
 def view_cart(ctx: ToolContext) -> dict:
@@ -1010,6 +1052,13 @@ def handoff_to_human(ctx: ToolContext, reason: str = "") -> dict:
 
 
 def _schema(properties: dict, required: list[str]) -> dict:
+    """Esquema de ferramenta SEM ``strict``, e só o obrigatório em ``required``.
+
+    Medido em 04/09/2026: com ``strict`` e todo parâmetro obrigatório, o modelo,
+    querendo omitir um filtro, era obrigado pela gramática a preencher a string e
+    preenchia com a própria sintaxe interna de chamada (tags), turno após turno.
+    Parâmetro opcional fica opcional; a função tem default.
+    """
     return {
         "type": "object",
         "properties": properties,
@@ -1023,24 +1072,24 @@ TOOL_SPECS: list[dict] = [
         "name": "browse_menu",
         "description": (
             "Lista o cardápio de agora com preço e disponibilidade reais. Use antes de falar de "
-            "qualquer produto, preço ou saldo. `query` filtra por nome/descrição (\"\" para tudo); "
-            "`collection` filtra por uma coleção do cardápio, pela ref ou pelo rótulo que a própria "
-            "resposta lista em `collections` (\"\" para todas)."
+            "qualquer produto, preço ou saldo. Sem argumentos devolve a visão geral por coleção "
+            "(quantos disponíveis e exemplos). `query` busca por nome/descrição; `collection` "
+            "filtra por uma coleção, pela ref ou pelo rótulo; `available_only` mostra só o que "
+            "pode ser pedido agora."
         ),
         "input_schema": _schema(
             {
-                "query": {"type": "string", "description": "Termo de busca, ou \"\"."},
-                "collection": {"type": "string", "description": "Ref ou rótulo da coleção, ou \"\"."},
+                "query": {"type": "string", "description": "Termo de busca por nome ou descrição."},
+                "collection": {"type": "string", "description": "Ref ou rótulo da coleção."},
+                "available_only": {"type": "boolean", "description": "Só o que pode ser pedido agora."},
             },
-            ["query", "collection"],
+            [],
         ),
-        "strict": True,
     },
     {
         "name": "view_cart",
         "description": "Mostra a sacola atual: itens, totais, entrega/retirada escolhida e o que falta para fechar.",
         "input_schema": _schema({}, []),
-        "strict": True,
     },
     {
         "name": "set_item",
@@ -1055,7 +1104,6 @@ TOOL_SPECS: list[dict] = [
             },
             ["sku", "qty"],
         ),
-        "strict": True,
     },
     {
         "name": "list_pickup_slots",
@@ -1066,12 +1114,11 @@ TOOL_SPECS: list[dict] = [
         ),
         "input_schema": _schema(
             {
-                "delivery_date": {"type": "string", "description": "AAAA-MM-DD ou \"\"."},
+                "delivery_date": {"type": "string", "description": "AAAA-MM-DD; omita para hoje."},
                 "fulfillment_type": {"type": "string", "enum": ["pickup", "delivery"]},
             },
-            ["delivery_date", "fulfillment_type"],
+            [],
         ),
-        "strict": True,
     },
     {
         "name": "set_fulfillment",
@@ -1087,9 +1134,8 @@ TOOL_SPECS: list[dict] = [
                 "slot_ref": {"type": "string", "description": "Ref do horário, ou \"\"."},
                 "address": {"type": "string", "description": "Endereço completo (entrega), ou \"\"."},
             },
-            ["fulfillment_type", "delivery_date", "slot_ref", "address"],
+            ["fulfillment_type"],
         ),
-        "strict": True,
     },
     {
         "name": "review_order",
@@ -1099,7 +1145,6 @@ TOOL_SPECS: list[dict] = [
             "explícita ANTES de place_order."
         ),
         "input_schema": _schema({}, []),
-        "strict": True,
     },
     {
         "name": "place_order",
@@ -1114,9 +1159,8 @@ TOOL_SPECS: list[dict] = [
                 "payment_method": {"type": "string", "description": "Ref de payment_methods (ex.: pix, card)."},
                 "order_notes": {"type": "string", "description": "Observação do cliente para a cozinha, ou \"\"."},
             },
-            ["quote_token", "payment_method", "order_notes"],
+            ["quote_token", "payment_method"],
         ),
-        "strict": True,
     },
     {
         "name": "order_status",
@@ -1125,16 +1169,14 @@ TOOL_SPECS: list[dict] = [
             "oficial, prazo e link de acompanhamento."
         ),
         "input_schema": _schema(
-            {"order_ref": {"type": "string", "description": "Ref do pedido, ou \"\" para os últimos."}},
-            ["order_ref"],
+            {"order_ref": {"type": "string", "description": "Ref do pedido; omita para os últimos."}},
+            [],
         ),
-        "strict": True,
     },
     {
         "name": "last_order",
         "description": "Itens do último pedido do cliente, para repetir (\"o de sempre\").",
         "input_schema": _schema({}, []),
-        "strict": True,
     },
     {
         "name": "send_web_link",
@@ -1144,9 +1186,8 @@ TOOL_SPECS: list[dict] = [
         ),
         "input_schema": _schema(
             {"destination": {"type": "string", "enum": ["menu", "checkout", "account"]}},
-            ["destination"],
+            [],
         ),
-        "strict": True,
     },
     {
         "name": "handoff_to_human",
@@ -1154,8 +1195,7 @@ TOOL_SPECS: list[dict] = [
             "Passa a conversa para a equipe da casa. Use quando o cliente pedir uma pessoa, reclamar, "
             "ou quando você não consegue resolver com as outras ferramentas."
         ),
-        "input_schema": _schema({"reason": {"type": "string", "description": "Motivo, em uma frase."}}, ["reason"]),
-        "strict": True,
+        "input_schema": _schema({"reason": {"type": "string", "description": "Motivo, em uma frase."}}, []),
     },
 ]
 
