@@ -101,9 +101,9 @@ sem ficha por SKU.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | `ProductAffinity` + comando noturno + `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
+| F1 | facetas natureza/sabor no registro de vocação (migração + carga derivada das coleções + revisão no Admin), porque as regras de adicional dependem delas; `ProductAffinity` + comando noturno; `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
 | F2 | `suggest("substitute")` unificando `find_substitutes` (keywords + coleção + fuzz + preço + disponibilidade); estoque e concierge consomem | item esgotado devolve até três à altura |
-| F3 | facetas natureza/sabor no registro de vocação (migração + carga derivada das coleções + revisão no Admin); assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
+| F3 | assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
 | F4 (opcional) | `pairs_with` / `substitute_for` como ajuste fino, e contexto de salão para o PDV | só se F1–F3 pedirem |
 
 ## Respostas do dono (04/09/2026)
