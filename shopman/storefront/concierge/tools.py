@@ -187,7 +187,7 @@ def _item_payload(item) -> dict:
         "description": item.short_description or "",
         "promotion": item.promotion_label or "",
         "unit": item.unit_weight_label or "",
-        "category": item.category or "",
+        "collection": item.category or "",
     }
 
 
@@ -348,18 +348,39 @@ def _error(code: str, message: str, **extra) -> dict:
 # ── Ferramentas ───────────────────────────────────────────────────────
 
 
-def browse_menu(ctx: ToolContext, query: str = "", category: str = "") -> dict:
-    """O cardápio de agora: nome, preço e disponibilidade viva, do listing do canal."""
+def browse_menu(ctx: ToolContext, query: str = "", collection: str = "") -> dict:
+    """O cardápio de agora: nome, preço e disponibilidade viva, do listing do canal.
+
+    ``collection`` aceita a ref ("paes") ou o rótulo ("Pães", "folhados"); o que não
+    casa com nada é ignorado, com aviso no resultado. Melhor o cardápio inteiro
+    filtrado pela busca do que uma lista vazia por causa de um nome chutado.
+    """
     from shopman.storefront.presentation.catalog import build_catalog
 
     ref = _catalog_channel_ref(ctx.channel_ref)
     try:
-        catalog = build_catalog(channel_ref=ref, collection_ref=(category or None))
+        catalog = build_catalog(channel_ref=ref)
     except Exception:
         logger.exception("concierge.browse_menu failed")
         return _error("catalog_unavailable", "Não consegui ler o cardápio agora.")
 
     items = list(catalog.items)
+    collection_note = ""
+    wanted = _fold(collection)
+    if wanted:
+        match = next(
+            (
+                cat
+                for cat in catalog.categories
+                if _fold(getattr(cat, "ref", "")) == wanted or _fold(getattr(cat, "label", "") or getattr(cat, "name", "")) == wanted
+            ),
+            None,
+        )
+        if match is not None:
+            match_ref = getattr(match, "ref", "")
+            items = [item for item in items if _fold(item.category or "") in (wanted, _fold(match_ref), _fold(getattr(match, "label", "") or ""))]
+        else:
+            collection_note = f"Coleção '{collection}' não existe; mostrando sem esse filtro."
     needle = _fold(query)
     if needle:
         terms = [t for t in needle.split() if t]
@@ -380,8 +401,10 @@ def browse_menu(ctx: ToolContext, query: str = "", category: str = "") -> dict:
         "items": [_item_payload(item) for item in items[:MAX_MENU_ITEMS]],
         "truncated": len(items) > MAX_MENU_ITEMS,
     }
+    if collection_note:
+        payload["note"] = collection_note
     if not needle:
-        payload["categories"] = [
+        payload["collections"] = [
             {
                 "ref": getattr(cat, "ref", "") or "",
                 "label": getattr(cat, "label", "") or getattr(cat, "name", "") or "",
@@ -1000,15 +1023,16 @@ TOOL_SPECS: list[dict] = [
         "name": "browse_menu",
         "description": (
             "Lista o cardápio de agora com preço e disponibilidade reais. Use antes de falar de "
-            "qualquer produto, preço ou saldo. `query` filtra por nome/descrição (deixe \"\" para tudo); "
-            "`category` filtra por ref de categoria (\"\" para todas)."
+            "qualquer produto, preço ou saldo. `query` filtra por nome/descrição (\"\" para tudo); "
+            "`collection` filtra por uma coleção do cardápio, pela ref ou pelo rótulo que a própria "
+            "resposta lista em `collections` (\"\" para todas)."
         ),
         "input_schema": _schema(
             {
                 "query": {"type": "string", "description": "Termo de busca, ou \"\"."},
-                "category": {"type": "string", "description": "Ref da categoria, ou \"\"."},
+                "collection": {"type": "string", "description": "Ref ou rótulo da coleção, ou \"\"."},
             },
-            ["query", "category"],
+            ["query", "collection"],
         ),
         "strict": True,
     },

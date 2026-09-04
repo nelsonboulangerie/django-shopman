@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 
 from django.conf import settings
@@ -32,6 +33,34 @@ from .tools import ToolContext
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_RESULT_CHARS = 6000
+
+#: Sintaxe interna de chamada de ferramenta que o modelo pode vazar como texto ou
+#: dentro de argumentos (tags de parâmetro, `name="tool">`). Medido em 04/09/2026:
+#: seis chamadas com `category` contendo a tag e a resposta final com o lixo.
+#: Montado por partes para o próprio arquivo não carregar a sequência literal.
+_TAG_OPEN = "<" + "/?" + "\\w*" + "antml" + "[^>]*>"
+_LEAK_RE = re.compile(_TAG_OPEN + "|<" + "/?parameter[^>]*>|<" + "/?invoke[^>]*>|" + 'name="[a-z_]+">', re.I)
+#: Quantas vezes a mesma chamada (ferramenta + argumentos) pode se repetir num turno.
+MAX_REPEATED_CALLS = 2
+
+
+def clean_text(value: str) -> str:
+    """Remove sintaxe vazada e linhas que sobraram só com ela."""
+    text = _LEAK_RE.sub("", str(value or ""))
+    lines = [ln for ln in text.splitlines() if ln.strip() not in ("", "?", '"', "{}")]
+    return "\n".join(lines).strip()
+
+
+def clean_arguments(arguments: dict) -> dict:
+    """Argumentos com sintaxe vazada viram vazio: melhor a ferramenta responder
+    "sem filtro" do que buscar a categoria "<tag>"."""
+    cleaned = {}
+    for key, value in (arguments or {}).items():
+        if isinstance(value, str):
+            cleaned[key] = "" if _LEAK_RE.search(value) else value
+        else:
+            cleaned[key] = value
+    return cleaned
 
 
 class AgentRefused(Exception):
@@ -177,6 +206,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     messages: list[dict] = list(history)
     outcome = AgentOutcome(reply_text="")
     usage: dict = {}
+    seen_calls: dict[str, int] = {}
 
     for iteration in range(max_iterations + 1):
         request: dict = {
@@ -188,6 +218,11 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         }
         if effort:
             request["output_config"] = {"effort": effort}
+        if cfg.get("adaptive_thinking", True):
+            # Com o raciocínio desligado o modelo às vezes escreve a chamada de
+            # ferramenta como TEXTO, ou vaza tags nos argumentos. Ligado, a chamada
+            # sai como bloco `tool_use`. Haiku 4.5 não aceita: desligue na config.
+            request["thinking"] = {"type": "adaptive"}
         if iteration == max_iterations:
             # Teto de iterações: a última ida sai em texto, sem ferramenta.
             request["tool_choice"] = {"type": "none"}
@@ -201,7 +236,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
         tool_uses = [b for b in response.content if getattr(b, "type", "") == "tool_use"]
         if stop != "tool_use" or not tool_uses:
-            text = _text_of(response)
+            text = clean_text(_text_of(response))
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
             outcome.reply_text = text
@@ -213,8 +248,19 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
 
         results = []
         for use in tool_uses:
-            arguments = use.input if isinstance(use.input, dict) else {}
-            result = tools_module.execute(use.name, arguments, ctx)
+            arguments = clean_arguments(use.input if isinstance(use.input, dict) else {})
+            signature = f"{use.name}:{json.dumps(arguments, sort_keys=True, ensure_ascii=False)}"
+            seen_calls[signature] = seen_calls.get(signature, 0) + 1
+            if seen_calls[signature] > MAX_REPEATED_CALLS:
+                # Repetir a mesma pergunta não muda a resposta: devolve ao modelo a
+                # ordem de responder ao cliente com o que já tem.
+                result = {
+                    "ok": False,
+                    "error": "repeated_call",
+                    "message": "Esta chamada já foi feita com os mesmos argumentos. Responda ao cliente com o que já tem.",
+                }
+            else:
+                result = tools_module.execute(use.name, arguments, ctx)
             outcome.tool_events.append({"name": use.name, "input": arguments, "ok": result.get("ok", True)})
             results.append(
                 {
@@ -230,7 +276,7 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         if ctx.handoff:
             # A equipe assume: fecha o turno com o texto que o modelo já tinha (se
             # houver) e deixa a casa mandar a confirmação de handoff.
-            outcome.reply_text = _text_of(response)
+            outcome.reply_text = clean_text(_text_of(response))
             break
 
     outcome.usage = usage

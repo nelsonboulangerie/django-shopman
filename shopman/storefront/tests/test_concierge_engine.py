@@ -199,9 +199,16 @@ def test_browse_menu_reads_price_and_availability_from_the_listing(ctx):
     assert item["available_qty"] == 10
 
 
-def test_browse_menu_without_query_lists_categories(ctx):
+def test_browse_menu_without_query_lists_collections(ctx):
     result = tools.browse_menu(ctx, "", "")
-    assert [c["ref"] for c in result["categories"]] == ["paes"]
+    assert [c["ref"] for c in result["collections"]] == ["paes"]
+
+
+def test_browse_menu_accepts_the_collection_by_label_and_ignores_unknown_ones(ctx):
+    by_label = tools.browse_menu(ctx, "", "Pães")
+    assert by_label["count"] == 1 and "note" not in by_label
+    unknown = tools.browse_menu(ctx, "", "folhados")
+    assert unknown["count"] == 1 and "não existe" in unknown["note"]
 
 
 def test_set_item_reserves_stock_and_tells_the_real_balance(ctx, conversation):
@@ -358,7 +365,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
         content=[{"type": "text", "text": "tem pão francês?"}],
     )
     client = ScriptedClient(
-        _response(_tool("browse_menu", {"query": "pão", "category": ""}), stop_reason="tool_use"),
+        _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
         _response(_text("Temos sim. Quantos você quer?"), stop_reason="end_turn"),
     )
     with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
@@ -371,7 +378,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     tool_result = outcome.messages[1]["content"][0]
     assert tool_result["type"] == "tool_result" and tool_result["tool_use_id"] == "toolu_1"
     assert json.loads(tool_result["content"])["items"][0]["sku"] == SKU
-    assert outcome.tool_events == [{"name": "browse_menu", "input": {"query": "pão", "category": ""}, "ok": True}]
+    assert outcome.tool_events == [{"name": "browse_menu", "input": {"query": "pão", "collection": ""}, "ok": True}]
     assert outcome.usage["input_tokens"] == 200 and outcome.usage["cache_read_input_tokens"] == 100
 
     first = client.requests[0]
@@ -379,10 +386,39 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     assert first["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert "Nelson Boulangerie" in first["system"][0]["text"]
     assert first["output_config"] == {"effort": "low"}
+    assert first["thinking"] == {"type": "adaptive"}
     assert [t["name"] for t in first["tools"]] == list(tools.TOOL_NAMES)
     assert all(t["strict"] is True for t in first["tools"])
     # A segunda ida leva a chamada e o resultado da ferramenta de volta.
     assert client.requests[1]["messages"][-1]["content"][0]["type"] == "tool_result"
+
+
+LEAK_TAG = "<" + "/antml:parameter>"
+LEAK_NAME = 'name="browse_menu">'
+
+
+def test_clean_text_and_arguments_drop_leaked_tool_syntax():
+    dirty = f"{LEAK_NAME}{{}}\n\n?\n\nDeixa eu confirmar, Pablo.\n{LEAK_TAG}\nPeço desculpa pela demora."
+    assert agent_module.clean_text(dirty) == "Deixa eu confirmar, Pablo.\nPeço desculpa pela demora."
+    args = agent_module.clean_arguments({"query": "croissant", "collection": LEAK_TAG + "\n"})
+    assert args == {"query": "croissant", "collection": ""}
+
+
+def test_run_agent_stops_repeating_the_same_call(conversation):
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="inbound", text="folhados?", content=[{"type": "text", "text": "folhados?"}]
+    )
+    same = {"query": "", "collection": "folhados"}
+    script = [_response(_tool("browse_menu", same, f"toolu_{i}"), stop_reason="tool_use") for i in range(4)]
+    script.append(_response(_text("Hoje não temos folhados."), stop_reason="end_turn"))
+    client = ScriptedClient(*script)
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation, history=agent_module.history_for(conversation), client=client
+        )
+    # As duas primeiras rodam; da terceira em diante a ferramenta devolve "já feito".
+    assert [e["ok"] for e in outcome.tool_events] == [True, True, False, False]
+    assert outcome.reply_text == "Hoje não temos folhados."
 
 
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
@@ -471,7 +507,7 @@ def test_run_turn_answers_everything_pending_and_persists_the_transcript(convers
     for i, text in enumerate(("oi", "tem pão?")):
         service.receive_inbound(subscriber_id=conversation.subscriber_id, text=text, external_id=f"m{i}")
     client = ScriptedClient(
-        _response(_tool("browse_menu", {"query": "pão", "category": ""}), stop_reason="tool_use"),
+        _response(_tool("browse_menu", {"query": "pão", "collection": ""}), stop_reason="tool_use"),
         _response(_text("Temos pão francês a R$ 0,90. Quantos?"), stop_reason="end_turn"),
     )
 

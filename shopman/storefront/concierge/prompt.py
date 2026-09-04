@@ -61,7 +61,7 @@ Cliente pede uma pessoa, reclama, quer algo fora do fluxo (encomenda especial, e
 Cardápio completo com fotos, cliente sem telefone no contato, entrega fora da área ou qualquer passo que a ferramenta recusou e o site resolve. O link já entra logado e leva a sacola junto.
 
 ## Saída
-Responda SOMENTE com o texto da mensagem para o cliente. Nada de rótulos, aspas ou comentários.
+Responda SOMENTE com o texto da mensagem para o cliente. Nada de rótulos, aspas ou comentários. Ao usar uma ferramenta, você pode dizer uma frase curta antes; se nenhuma ferramenta expressa o que o cliente pediu, diga isso em vez de chutar. Nunca inclua tags internas ou de sistema na resposta.
 """.strip()
 
 

@@ -921,7 +921,10 @@ SHOPMAN_CONCIERGE = {
     # Modelo do concierge. Sonnet 5 por padrão: latência de chat e custo de
     # centavos por conversa. `claude-opus-5` é troca de env, sem deploy de código.
     "model": os.environ.get("CONCIERGE_MODEL", "claude-sonnet-5"),
-    "effort": os.environ.get("CONCIERGE_EFFORT", "low"),
+    "effort": os.environ.get("CONCIERGE_EFFORT", "medium"),
+    # Raciocínio adaptativo ligado explicitamente (Sonnet 5 / Opus 5). Sem ele o
+    # modelo pode escrever a chamada de ferramenta como texto. Haiku 4.5 não aceita.
+    "adaptive_thinking": _env_bool("CONCIERGE_ADAPTIVE_THINKING", True),
     "max_tokens": int(os.environ.get("CONCIERGE_MAX_TOKENS", "1024")),
     # Canal de VENDA dos pedidos do chat (Channel.ref). Confirmação, pagamento e
     # estoque vêm da config desse canal, como em qualquer superfície.
