@@ -102,9 +102,27 @@ sem ficha por SKU.
 | Fase | Entrega | Gate |
 |---|---|---|
 | F1 | facetas natureza/sabor no registro de vocação (migração + carga derivada das coleções + revisão no Admin), porque as regras de adicional dependem delas; `ProductAffinity` + comando noturno; `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
-| F2 | `suggest("substitute")` unificando `find_substitutes` (keywords + coleção + fuzz + preço + disponibilidade); estoque e concierge consomem | item esgotado devolve até três à altura |
+| F2 | **Refino do Core aprovado pelo dono (04/09):** `find_substitutes` do Offerman deixa de exigir palavra-chave (coleção sozinha já é sinal), a coleção vira preferência em vez de filtro duro (dentro primeiro, fora como reserva), o peso por unidade entra na pontuação (mais próximo ganha) e uma função irmã devolve pontuação e motivos; assinatura atual preservada, um teste por defeito na suíte do Offerman, nota no guia. Por cima, `shop/services/substitutes.find` (que já faz disponibilidade e preço de canal) ganha sabor igual (atributo do tenant). Estoque e concierge consomem | item esgotado devolve até três à altura; produto sem palavra-chave passa a ter substituto |
 | F3 | assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
 | F4 (opcional) | `pairs_with` / `substitute_for` como ajuste fino, e contexto de salão para o PDV | só se F1–F3 pedirem |
+
+## Refino do Core: o que entra e o que não entra (aprovado em 04/09/2026)
+
+A divisão já existente está certa e fica: o Offerman pontua similaridade de
+catálogo (`contrib/substitutes`), o orquestrador aplica a política do tenant
+(`shop/services/substitutes.find`: disponibilidade e preço do canal). O Core
+muda só onde tem defeito medível hoje:
+
+| Defeito no Core | Refino |
+|---|---|
+| `if not product_keywords: return []` — produto sem palavra-chave não tem substituto | palavras-chave opcionais; coleção sozinha gera candidatos |
+| `same_collection=True` é filtro duro — fora da coleção é impossível | coleção vira preferência (já pontua); fora entra como reserva |
+| `unit_weight_g` ignorado | distância relativa de peso na pontuação; o mais próximo ganha |
+| só produtos, sem explicação | função irmã devolve `(produto, pontuação, motivos)`; `find_substitutes` mantém a assinatura |
+
+Fora do Core, de propósito: sabor (atributo do tenant, em `shop`), disponibilidade
+e preço de canal (já em `shop`), similaridade de nome (o docstring do Offerman
+explica por que infla "Pão X/Pão Y").
 
 ## Respostas do dono (04/09/2026)
 
