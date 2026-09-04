@@ -1611,3 +1611,42 @@ fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
 | `sign_in_event_id` | categoria `sign_in` | o acesso que a ação `not_me` repudia |
 | `anomalies` | categoria `sign_in` | os códigos de destaque, copiados do evento para a tela não precisar de um segundo fetch |
 | `highlight` | categoria `sign_in` | `bool` — atalho de leitura para `anomalies` não vazio |
+
+## `Product.metadata["attributes"]` — os atributos com definição
+
+O registro é `shop.AttributeDefinition`; **a única porta é
+`shopman.shop.services.attributes`** (`get`, `set`, `get_many`). Ninguém lê nem
+escreve estas chaves à mão — é o registro que decide o que existe, que tipo tem
+e onde o valor mora.
+
+```json
+"attributes": {
+  "sabor":          {"value": "doce", "source": "ai", "reviewed": false},
+  "natureza":       {"value": "comida", "source": "derived", "reviewed": false},
+  "peso_unidade_g": {"source": "manual", "reviewed": true}
+}
+```
+
+| Chave do registro | Tipo | O que é |
+|-------------------|------|---------|
+| `value` | conforme a definição | **ausente** quando o `storage` da definição aponta para outro lugar (uma coluna ou uma chave legada): duplicar o valor seria criar duas verdades |
+| `source` | `manual` · `ai` · `derived` · `recipe` | de onde o valor veio. Ausente lê como `manual` — está lá e ninguém disse o contrário |
+| `reviewed` | `bool` | se uma proposta da IA já foi aprovada. `manual` é revisado por definição |
+
+### Onde cada valor mora (o `storage` da definição)
+
+| `storage` | Atributos hoje | Valor em |
+|---|---|---|
+| `attributes` | `natureza`, `sabor`, `temperatura` | `metadata["attributes"][ref]["value"]` |
+| `column:<campo>` | `peso_unidade_g` | a coluna `Product.unit_weight_g` — fato físico, integridade no banco |
+| `metadata:<chave>` | `alergenos`, `dieta`, `porcoes` | `metadata["allergens"]`, `["dietary_info"]`, `["serves"]` |
+
+⚠️ As três chaves com ponteiro são as **legadas**: elas já existiam e continuam
+sendo escritas pelo `ProductAdminForm` do Offerman (o editor de rótulo) e pelo
+`dietary_from_recipe`. Nada se moveu na F1 — mover exige tocar o Core, e isso é
+o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
+
+⚠️ `metadata["dietary_auto_filled"]` **continua** sendo a palavra final do
+`dietary_from_recipe`, e o service de atributos não o toca. Duas fontes
+escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
+`source`/`reviewed` é do WP de rename.
