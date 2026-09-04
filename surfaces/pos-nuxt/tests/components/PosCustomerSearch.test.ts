@@ -1,8 +1,9 @@
-// O cliente em dois Enters — o COMPONENTE: Enter decide (seleciona / cria por
-// CPF / transfere / conclui), ↑/↓ navegam no padrão combobox, e o flush do
-// debounce faz o Enter disparar a busca sem esperar os 350ms. A regra pura mora
-// em `presentation/customerSearch` (testada à parte); aqui o assunto é o fio
-// entre teclado, debounce e emits.
+// A tecla e o botão fazem a MESMA coisa — o COMPONENTE: Enter decide (seleciona
+// / cria por CPF / transfere o telefone / cadastra só com o nome / conclui), ↑/↓
+// navegam no padrão combobox, e o flush do debounce faz o Enter disparar a busca
+// sem esperar os 350ms. A regra pura mora em `presentation/customerSearch`
+// (testada à parte); aqui o assunto é o fio entre teclado, debounce, botão e
+// emits.
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -78,18 +79,68 @@ describe("PosCustomerSearch — Enter decide", () => {
     expect(wrapper.emitted("transfer")?.[0]).toEqual([{ field: "phone", value: "43999990000" }]);
   });
 
-  it("0 resultados + nome → transfere para o campo de nome", async () => {
+  it("0 resultados + nome → cadastro só com o nome (ato nomeado)", async () => {
     const wrapper = await mount();
     const input = await type(wrapper, "Maria Silva");
     vi.advanceTimersByTime(400);
     await input.trigger("keydown", { key: "Enter" });
-    expect(wrapper.emitted("transfer")?.[0]).toEqual([{ field: "name", value: "Maria Silva" }]);
+    expect(wrapper.emitted("createNameOnly")?.[0]).toEqual(["Maria Silva"]);
   });
 
-  it("cliente já associado + campo vazio → Enter conclui", async () => {
-    const wrapper = await mount({ hasCustomer: true });
+  it("cadastro já associado + campo vazio → Enter conclui", async () => {
+    const wrapper = await mount({ hasCustomerRef: true });
     await wrapper.find("input").trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("conclude")).toHaveLength(1);
+  });
+
+  // ⚠️ A inércia dos dois Enters: nome no formulário, nenhum cadastro, e o
+  // Enter "concluía" — criando um cliente que ninguém pediu.
+  it("nome no formulário SEM cadastro: Enter no campo vazio nomeia, não conclui", async () => {
+    const wrapper = await mount({ pendingName: "João" });
+    await wrapper.find("input").trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("conclude")).toBeUndefined();
+    expect(wrapper.emitted("createNameOnly")?.[0]).toEqual(["João"]);
+  });
+});
+
+describe("PosCustomerSearch — sem resultado, o ato vira BOTÃO", () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it("o botão diz o RESULTADO, traz o Enter de affordance e a ressalva", async () => {
+    const wrapper = await mount();
+    await type(wrapper, "Maria Silva");
+    vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain("Nenhum cadastro encontrado.");
+    expect(wrapper.text()).toContain("Cadastrar «Maria Silva» só com o nome");
+    expect(wrapper.text()).toContain("Sem WhatsApp");
+    // A copy do mecanismo morreu: nada de "Enter preenche o cadastro novo…".
+    expect(wrapper.text()).not.toContain("Enter preenche");
+    expect(wrapper.text()).not.toContain("Enter cria");
+  });
+
+  it("clicar no botão faz exatamente o que a tecla faria", async () => {
+    const wrapper = await mount();
+    await type(wrapper, "Maria Silva");
+    vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick();
+
+    await wrapper.findAll("button").at(-1)!.trigger("click");
+    expect(wrapper.emitted("createNameOnly")?.[0]).toEqual(["Maria Silva"]);
+  });
+
+  it("CPF sem cadastro: o botão cadastra com o documento, sem falar de tecla", async () => {
+    const wrapper = await mount();
+    await type(wrapper, "529.982.247-25");
+    vi.advanceTimersByTime(400);
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain("Nenhum cadastro com este CPF.");
+    expect(wrapper.text()).toContain("Cadastrar cliente novo com este CPF");
+    await wrapper.findAll("button").at(-1)!.trigger("click");
+    expect(wrapper.emitted("resolveCpf")?.[0]).toEqual([CPF]);
   });
 
   it("Enter no meio do debounce espera a resposta antes de decidir", async () => {
@@ -117,6 +168,9 @@ describe("PosCustomerSearch — máscara e aviso de CPF", () => {
     await wrapper.vm.$nextTick();
     expect((input.element as HTMLInputElement).value).toBe("529.982.247-25");
     expect(wrapper.text()).toContain("CPF válido");
+    // O aviso afirma o FATO; o que fazer com ele é o botão, quando não houver
+    // cadastro. Antes a frase explicava a tecla ("Enter busca o cadastro…").
+    expect(wrapper.text()).not.toContain("Enter busca");
   });
 
   it("CPF com verificador errado ganha o aviso, não a máscara", async () => {

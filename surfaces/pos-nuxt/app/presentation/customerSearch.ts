@@ -1,7 +1,8 @@
-// Presentation — o cliente em dois Enters. Transforms puros da busca de cliente
-// do PDV: detecção e validação de CPF, máscara, a decisão do que o Enter faz e a
-// transferência da query para o campo certo do cadastro. Sem rede e sem DOM — o
-// componente (PosCustomerSearch) é dono do I/O; isto é dono da regra.
+// Presentation — o cliente num gesto NOMEADO. Transforms puros da busca de
+// cliente do PDV: detecção e validação de CPF, máscara, e a decisão do que a
+// tecla faz — que é sempre a mesma coisa que o botão visível ao lado dela faz.
+// Sem rede e sem DOM: o componente (PosCustomerSearch) é dono do I/O; isto é
+// dono da regra e das duas frases que a nomeiam.
 
 export function digitsOnly(value: string): string {
   return (value || "").replace(/\D/g, "");
@@ -60,19 +61,31 @@ export function cpfTail(value: string): string {
 export type CustomerSearchEnterAction =
   | { type: "pick"; index: number }
   | { type: "resolve_cpf"; cpf: string }
-  | { type: "transfer"; field: "phone" | "name"; value: string }
+  | { type: "transfer"; field: "phone"; value: string }
+  | { type: "create_name_only"; name: string }
   | { type: "conclude" }
   | { type: "none" };
 
 /** A decisão do Enter na busca, em ordem de intenção:
  *  1 resultado → seleciona; N → seleciona o destacado; 0 + CPF válido → cria/
- *  resolve direto pelo CPF; 0 + telefone/nome → transfere para o cadastro novo;
- *  query vazia com cliente já associado → concluir (fecha o modal). */
+ *  resolve direto pelo CPF; 0 + telefone → transfere para o cadastro novo;
+ *  0 + nome → cadastro SÓ COM O NOME, que é um ato nomeado e não a inércia de
+ *  dois Enters; query vazia com cadastro associado → concluir (fecha o modal).
+ *
+ *  ⚠️ **`hasCustomerRef` é o cadastro DE VERDADE (com ref), não um nome no
+ *  formulário.** Enquanto os dois eram a mesma coisa, o Enter com o campo vazio
+ *  "concluía" — e concluir, com nome digitado e sem cadastro, CRIAVA um cliente
+ *  sem que ninguém tivesse pedido. Dois Enters, um cliente novo, zero perguntas:
+ *  é assim que nasce o terceiro "João" da semana. Agora essa tecla cai no mesmo
+ *  ato NOMEADO que o botão visível oferece. */
 export function enterAction(input: {
   query: string;
   resultsCount: number;
   highlightedIndex: number;
-  hasCustomer: boolean;
+  /** Já existe cadastro associado (com ref): Enter com o campo vazio conclui. */
+  hasCustomerRef: boolean;
+  /** Nome no formulário ainda SEM cadastro — a criação pendente. */
+  pendingName?: string;
 }): CustomerSearchEnterAction {
   const query = (input.query || "").trim();
   if (input.resultsCount === 1) return { type: "pick", index: 0 };
@@ -80,13 +93,34 @@ export function enterAction(input: {
     const index = Math.min(Math.max(input.highlightedIndex, 0), input.resultsCount - 1);
     return { type: "pick", index };
   }
-  if (!query) return input.hasCustomer ? { type: "conclude" } : { type: "none" };
+  if (!query) {
+    if (input.hasCustomerRef) return { type: "conclude" };
+    const pending = (input.pendingName || "").trim();
+    return pending ? { type: "create_name_only", name: pending } : { type: "none" };
+  }
   if (isValidCpf(query)) return { type: "resolve_cpf", cpf: digitsOnly(query) };
   const digits = digitsOnly(query);
   if (isNumericQuery(query) && (digits.length === 10 || digits.length === 11)) {
     return { type: "transfer", field: "phone", value: digits };
   }
-  return { type: "transfer", field: "name", value: query };
+  return { type: "create_name_only", name: query };
+}
+
+/** O RESULTADO da tecla, em voz de balcão — o rótulo do botão visível que faz a
+ *  mesma coisa. Sai daqui para que a tecla e o botão nunca divirjam: o `<kbd>`
+ *  fica de affordance ao lado do rótulo, em vez de a frase explicar a tecla. */
+export function enterActionLabel(action: CustomerSearchEnterAction): string {
+  if (action.type === "resolve_cpf") return "Cadastrar cliente novo com este CPF";
+  if (action.type === "transfer") return `Cadastrar cliente novo com o ${action.value}`;
+  if (action.type === "create_name_only") return `Cadastrar «${action.name}» só com o nome`;
+  return "";
+}
+
+/** A RESSALVA do cadastro só com o nome. Não bloqueia — informa o que fica de
+ *  fora, que é o que o operador não tem como adivinhar sozinho. */
+export function enterActionCaveat(action: CustomerSearchEnterAction): string {
+  if (action.type !== "create_name_only") return "";
+  return "Sem WhatsApp: o cliente não recebe aviso de pronto, e um xará vira outro cadastro.";
 }
 
 /** Navegação ↑/↓ da lista (padrão combobox, com volta pelas pontas). */

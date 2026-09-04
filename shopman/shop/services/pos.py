@@ -3308,20 +3308,56 @@ def _sale_fiscal_hint(order: Order | None) -> str:
     return ""
 
 
+class PosCustomerConflict(ValueError):
+    """Os dados digitados apontam para MAIS DE UM cadastro.
+
+    Carrega a estrutura que a tela precisa para oferecer a saída de um toque —
+    quem está na comanda, quem é dono do valor digitado, e por qual campo eles
+    discordam. Subclasse de ``ValueError`` porque o commit já trata a recusa por
+    aí; quem quiser o detalhe estruturado captura o tipo específico.
+    """
+
+    def __init__(self, message: str, *, field: str = "", candidates: list[dict] | None = None):
+        super().__init__(message)
+        self.field = field
+        self.candidates = candidates or []
+
+
 def resolve_or_create_customer(
-    *, name: str = "", phone: str = "", tax_id: str = "", email: str = "", operator_username: str,
+    *,
+    ref: str = "",
+    name: str = "",
+    phone: str = "",
+    tax_id: str = "",
+    email: str = "",
+    contact_correction: bool = False,
+    operator_username: str,
 ) -> dict:
     """Get-or-create a POS customer JUST-IN-TIME — when the operator defines them
     on the counter, not deferred to order commit. Resolves by phone/CPF/email or
     creates a fresh record, and returns the customer dict (ref/name/phone/tax_id/
     email/tier). Idempotent (same identifiers → same customer). Reuses the exact
-    commit-time logic so the just-in-time customer is identical to the final one."""
+    commit-time logic so the just-in-time customer is identical to the final one.
+
+    ⚠️ ``ref`` é o cliente JÁ ASSOCIADO à comanda, e ele não é decoração: sem
+    ele, digitar no campo WhatsApp o telefone de outra pessoa achava UM único
+    candidato e TROCAVA o dono do pedido em silêncio. Com o ref viajando, os
+    dois candidatos aparecem e a recusa (``PosCustomerConflict``) devolve a
+    escolha para quem está no balcão. Trocar de cliente continua possível — pelo
+    caminho EXPLÍCITO da busca, ou confirmando a recusa na tela.
+
+    ``contact_correction`` é a permissão explícita do operador para CORRIGIR o
+    contato do cliente associado (o telefone digitado errado ontem). Sem ela o
+    merge só preenche lacuna.
+    """
     return _persist_customer_from_payload(
         {
+            "customer_ref": ref,
             "customer_name": name,
             "customer_phone": phone,
             "customer_tax_id": tax_id,
             "customer_email": email,
+            "customer_contact_correction": contact_correction,
         },
         operator_username=operator_username,
     )
@@ -3343,6 +3379,11 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     raw_ref = str(payload.get("customer_ref") or "").strip()
+    # CORRIGIR contato (não é o mesmo que preencher lacuna) — só com a palavra
+    # explícita do operador, dita na tela antes de acontecer, e só sobre o
+    # cliente identificado por REF. Sem ref não há "de quem" para corrigir, e um
+    # telefone digitado num formulário nunca vira mudança de identidade sozinho.
+    wants_contact_correction = bool(payload.get("customer_contact_correction")) and bool(raw_ref)
 
     if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
@@ -3379,6 +3420,10 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             email=email,
         )
         created = customer is None
+        # A correção vale para o cadastro que o REF apontou — e para mais
+        # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
+        # contato reescreveria o contato de quem não estava em jogo.
+        correct_contact = wants_contact_correction and customer is not None and customer.ref == raw_ref
         if customer is None:
             first_name, last_name = _split_name(name)
             fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
@@ -3400,6 +3445,14 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 },
             )
         else:
+            if correct_contact:
+                # ⚠️ ORDEM IMPORTA. `Customer.save()` espelha o `phone` num
+                # ContactPoint `is_primary=True`, e o cadastro já tem um — dois
+                # principais do mesmo tipo violam `unique_primary_per_type`. Por
+                # isso o principal antigo é demovido ANTES; ele segue existindo,
+                # como histórico, e o novo nasce sozinho no posto.
+                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
+                _release_primary_contact(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
             _merge_pos_customer_fields(
                 customer,
                 name=name,
@@ -3407,12 +3460,17 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 tax_id=fill_tax_id,
                 email=fill_email,
                 operator_username=operator_username,
+                correct_contact=correct_contact,
             )
 
         if phone:
-            _ensure_contact_point(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
+            _ensure_contact_point(
+                ContactPoint, customer, ContactPoint.Type.PHONE, phone, promote=correct_contact,
+            )
         if fill_email:
-            _ensure_contact_point(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
+            _ensure_contact_point(
+                ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email, promote=correct_contact,
+            )
         if fill_tax_id:
             _ensure_customer_identifier(customer.ref, "cpf", fill_tax_id)
         if address:
@@ -3495,10 +3553,59 @@ def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email:
         f"{getattr(customer, 'ref', customer_id)} via {'/'.join(sorted(evidence.get(customer_id, ())))}"
         for customer_id, customer in candidates.items()
     )
-    raise ValueError(
-        "Dados do cliente apontam para cadastros diferentes. "
-        f"Revise telefone, CPF/CNPJ ou e-mail antes de fechar. ({detail})"
+    logger.info("pos_customer_conflict %s", detail)
+    raise _pos_customer_conflict(candidates, evidence)
+
+
+# Qual campo digitado brigou com o cadastro associado — e como isso se chama no
+# balcão. A frase é curta de propósito: o operador tem cliente na frente e as
+# saídas de um toque estão logo abaixo dela, na tela.
+_CONFLICT_FIELDS: dict[str, tuple[str, str]] = {
+    "phone": ("customer_phone", "Este WhatsApp já é de outro cadastro."),
+    "document": ("customer_tax_id", "Este CPF/CNPJ já é de outro cadastro."),
+    "cpf": ("customer_tax_id", "Este CPF/CNPJ já é de outro cadastro."),
+    "email": ("customer_email", "Este e-mail já é de outro cadastro."),
+}
+
+
+def _pos_customer_conflict(candidates: dict, evidence: dict) -> PosCustomerConflict:
+    """Monta a recusa com a estrutura que a TELA precisa para dar a saída.
+
+    Um 422 com frase seca deixaria o operador sem caminho: ele digitou um
+    telefone e o sistema disse não. A recusa carrega quem está na comanda
+    (achado pelo ``ref``), quem é dono do valor digitado, e por qual campo os
+    dois discordam — as três coisas que a gêmea na tela precisa nomear.
+    """
+    ref_pk = next((pk for pk, sources in evidence.items() if "ref" in sources), None)
+    intruding = set()
+    for pk, sources in evidence.items():
+        if pk != ref_pk:
+            intruding |= sources - {"ref"}
+
+    field = ""
+    message = (
+        "Os dados do cliente apontam para cadastros diferentes. "
+        "Revise telefone, CPF/CNPJ ou e-mail antes de fechar."
     )
+    if len(intruding) == 1:
+        source = next(iter(intruding))
+        field, message = _CONFLICT_FIELDS.get(source, ("", message))
+
+    rows = []
+    for pk, customer in candidates.items():
+        sources = sorted(evidence.get(pk, ()))
+        rows.append({
+            "ref": customer.ref,
+            "name": customer.name,
+            "phone": customer.phone,
+            "email": customer.email,
+            "tax_id": customer.document,
+            "matched_by": sources,
+            # "É o que está na comanda" × "é o dono do que você digitou": a tela
+            # nomeia os dois lados, e é isso que faz a escolha ser do operador.
+            "is_current": "ref" in sources,
+        })
+    return PosCustomerConflict(message, field=field, candidates=rows)
 
 
 def _merge_pos_customer_fields(
@@ -3509,7 +3616,16 @@ def _merge_pos_customer_fields(
     tax_id: str,
     email: str,
     operator_username: str,
+    correct_contact: bool = False,
 ) -> None:
+    """Preenche LACUNA por padrão; CORRIGE só com ``correct_contact``.
+
+    A regra normal é só-preenche-lacuna: o CPF pedido nesta venda não reescreve
+    o cadastro de ninguém. Mas isso deixava o telefone errado sem conserto pelo
+    balcão — o operador via o número trocado na tela e a única saída era o
+    Admin. ``correct_contact`` é a palavra explícita do operador (confirmada na
+    tela, com os dois valores nomeados) para o cliente identificado por ref.
+    """
     first_name, last_name = _split_name(name)
     updates: list[str] = []
 
@@ -3523,12 +3639,15 @@ def _merge_pos_customer_fields(
         customer.last_name = last_name
         updates.append("last_name")
 
-    if phone and not customer.phone:
+    if phone and (not customer.phone or (correct_contact and phone != customer.phone)):
         customer.phone = phone
         updates.append("phone")
-    if email and not customer.email:
+    if email and (not customer.email or (correct_contact and email != customer.email)):
         customer.email = email
         updates.append("email")
+    # ⚠️ O documento NUNCA entra na correção, nem com a palavra do operador: o
+    # CPF pedido nesta venda pode ser o do marido, o da empresa, o de quem for —
+    # é pedido de NOTA, não identidade. Corrigir documento é gesto de cadastro.
     if tax_id and not customer.document:
         customer.document = tax_id
         updates.append("document")
@@ -3553,10 +3672,38 @@ def _merge_pos_customer_fields(
         updates.append("metadata")
 
     if updates:
-        customer.save(update_fields=sorted(set(updates + ["updated_at"])))
+        try:
+            customer.save(update_fields=sorted(set(updates + ["updated_at"])))
+        except IntegrityError as exc:
+            # `unique_customer_phone` — o número corrigido já é o cache de outro
+            # cadastro (inativo, ou sem ContactPoint, e por isso invisível para
+            # o resolve). Vira a MESMA recusa dos contatos.
+            raise ValueError("Contato já pertence a outro cliente.") from exc
 
 
-def _ensure_contact_point(ContactPoint, customer, contact_type: str, value: str) -> None:
+def _release_primary_contact(ContactPoint, customer, contact_type: str, value: str) -> None:
+    """Libera o posto de principal para o contato NOVO, na correção.
+
+    Só mexe quando há valor novo e ele é diferente do principal de hoje: sem
+    isso a função demoveria o próprio contato que está sendo confirmado.
+    """
+    if not value:
+        return
+    ContactPoint.objects.filter(
+        customer=customer, type=contact_type, is_primary=True,
+    ).exclude(value_normalized=value).update(is_primary=False)
+
+
+def _ensure_contact_point(
+    ContactPoint, customer, contact_type: str, value: str, *, promote: bool = False,
+) -> None:
+    """Garante o contato do cliente — e, na CORREÇÃO, promove-o a principal.
+
+    ``promote`` só chega ligado quando o operador confirmou a troca na tela: o
+    novo número passa a ser o principal (o antigo fica no histórico, demovido
+    pelo ``set_as_primary``) e o cache do ``Customer`` acompanha. Sem isso o
+    cadastro teria dois telefones e continuaria mandando WhatsApp para o errado.
+    """
     try:
         contact, created = ContactPoint.objects.get_or_create(
             type=contact_type,
@@ -3573,6 +3720,8 @@ def _ensure_contact_point(ContactPoint, customer, contact_type: str, value: str)
         raise ValueError("Contato já pertence a outro cliente.")
     if created and contact.is_primary:
         contact._sync_to_customer()
+    elif promote and not contact.is_primary:
+        contact.set_as_primary()
 
 
 def _ensure_customer_identifier(customer_ref: str, identifier_type: str, identifier_value: str) -> None:

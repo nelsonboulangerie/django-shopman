@@ -5,6 +5,7 @@
 // sheet, and "liberar comanda" (with confirmation). It renders
 // what the read-side hands it and emits intent; the shell resolves the commands.
 import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/types/pos";
+import type { CustomerDecision } from "~/presentation/customerDecision";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -20,6 +21,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** A escolha pendente do operador (conflito/correção de contato). */
+  customerDecision?: CustomerDecision | null;
   /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
    *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
   readOnly?: boolean;
@@ -51,6 +54,8 @@ const emit = defineEmits<{
   clearCustomer: [];
   lookupCustomer: [];
   resolveCustomer: [];
+  decisionConfirm: [];
+  decisionCancel: [];
   search: [string];
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
@@ -249,6 +254,7 @@ function runClear() {
       :search-busy="searchBusy"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
+      :customer-decision="readOnly ? null : customerDecision"
       @update:customer-name="$emit('update:customerName', $event)"
       @update:customer-phone="$emit('update:customerPhone', $event)"
       @update:customer-tax-id="$emit('update:customerTaxId', $event)"
@@ -257,6 +263,8 @@ function runClear() {
       @select-result="$emit('selectResult', $event)"
       @clear="$emit('clearCustomer')"
       @resolve-customer="$emit('resolveCustomer')"
+      @decision-confirm="$emit('decisionConfirm')"
+      @decision-cancel="$emit('decisionCancel')"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
     />

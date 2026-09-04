@@ -1273,7 +1273,18 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/customer/resolve/",
-            payload_schema={"optional": ["customer_name", "customer_phone", "customer_tax_id", "customer_email"]},
+            payload_schema={"optional": [
+                # `customer_ref` é o cliente já associado à comanda: sem ele o
+                # servidor não tem como saber que o telefone digitado aponta
+                # para OUTRA pessoa.
+                "customer_ref",
+                "customer_name",
+                "customer_phone",
+                "customer_tax_id",
+                "customer_email",
+                # Palavra explícita do operador para CORRIGIR o contato.
+                "customer_contact_correction",
+            ]},
             idempotency="required",
         ),
         Action(

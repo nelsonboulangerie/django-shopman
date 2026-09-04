@@ -106,7 +106,7 @@ from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
 from shopman.shop.services import pos as pos_tabs_service
-from shopman.shop.services.pos import PosRecentSaleNotFound
+from shopman.shop.services.pos import PosCustomerConflict, PosRecentSaleNotFound
 from shopman.shop.services.pos_intent import PosIntentError
 
 from .permissions import HasBackstagePermission, IsBackstageOperator, IsTrustedStation
@@ -3300,11 +3300,32 @@ class POSCustomerResolveView(APIView):
         body = request.data or {}
         try:
             customer = pos_tabs_service.resolve_or_create_customer(
+                # ⚠️ O cliente JÁ ASSOCIADO viaja. Sem ele, um telefone digitado
+                # no formulário de edição achava um único candidato e trocava o
+                # dono do pedido em silêncio — a detecção de conflito existia e
+                # nunca era alcançada.
+                ref=str(body.get("customer_ref") or "").strip(),
                 name=str(body.get("customer_name") or "").strip(),
                 phone=str(body.get("customer_phone") or "").strip(),
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
+                contact_correction=bool(body.get("customer_contact_correction")),
                 operator_username=_username(request),
+            )
+        except PosCustomerConflict as exc:
+            # A gêmea na tela lê `candidates`: quem está na comanda, quem é dono
+            # do valor digitado, e por qual campo discordam.
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field or None,
+                    "error": {
+                        "code": "customer_conflict",
+                        "field": exc.field,
+                        "candidates": exc.candidates,
+                    },
+                },
+                status=422,
             )
         except ValueError as exc:
             return Response(

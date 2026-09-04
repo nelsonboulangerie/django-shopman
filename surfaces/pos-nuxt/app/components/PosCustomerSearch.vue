@@ -3,16 +3,23 @@
 // matches any unique key (name/phone/CPF/email), debounced, returning a list to
 // pick from. Picking fills the cart + runs the full lookup by ref.
 //
-// O CLIENTE EM DOIS ENTERS: o Enter decide pela regra pura de
-// `presentation/customerSearch` — 1 resultado seleciona; N seleciona o
-// destacado (↑/↓ navegam, padrão combobox); 0 + CPF válido cria/resolve direto;
-// 0 + telefone/nome transfere a query para o cadastro novo; com cliente já
-// associado e campo vazio, Enter conclui. O segundo Enter fecha o modal.
+// A TECLA E O BOTÃO FAZEM A MESMA COISA, E ELA TEM NOME: o Enter decide pela
+// regra pura de `presentation/customerSearch` — 1 resultado seleciona; N
+// seleciona o destacado (↑/↓ navegam, padrão combobox); 0 + CPF válido
+// cria/resolve direto; 0 + telefone transfere a query para o cadastro novo; 0 +
+// nome cadastra SÓ COM O NOME; com cadastro associado e campo vazio, conclui.
+//
+// ⚠️ Sem resultado, o ato aparece como BOTÃO, com o rótulo dizendo o que vai
+// acontecer e o `<kbd>Enter</kbd>` de affordance ao lado. A copy anterior
+// falava do MECANISMO ("Enter preenche o cadastro novo com o que você
+// digitou"), e quem está com o cliente na frente não lê isso como instrução.
 // Used by both the comanda header and the payment screen's customer modal.
 import type { POSCustomerSearchResult } from "~/types/pos";
 import {
   cpfHint,
   enterAction,
+  enterActionCaveat,
+  enterActionLabel,
   maskQueryIfCpf,
   moveHighlight,
 } from "~/presentation/customerSearch";
@@ -20,8 +27,11 @@ import {
 const props = defineProps<{
   results: POSCustomerSearchResult[];
   busy: boolean;
-  /** Já existe cliente associado: Enter com o campo vazio conclui. */
-  hasCustomer?: boolean;
+  /** Já existe cadastro ASSOCIADO (com ref): Enter com o campo vazio conclui. */
+  hasCustomerRef?: boolean;
+  /** Nome já no formulário e ainda sem cadastro — a criação pendente, que o
+   *  Enter com o campo vazio passa a NOMEAR em vez de executar de inércia. */
+  pendingName?: string;
 }>();
 
 const emit = defineEmits<{
@@ -29,9 +39,11 @@ const emit = defineEmits<{
   select: [POSCustomerSearchResult];
   /** 0 resultados + CPF válido: criar/resolver direto pelo documento. */
   resolveCpf: [string];
-  /** 0 resultados + query não-CPF: levar o que foi digitado ao cadastro novo. */
-  transfer: [{ field: "phone" | "name"; value: string }];
-  /** Cliente já associado + Enter no campo vazio: concluir e fechar. */
+  /** 0 resultados + telefone: levar o número ao cadastro novo. */
+  transfer: [{ field: "phone"; value: string }];
+  /** Cadastrar só com o nome — ato NOMEADO, oferecido como botão visível. */
+  createNameOnly: [string];
+  /** Cadastro já associado + Enter no campo vazio: concluir e fechar. */
   conclude: [];
 }>();
 
@@ -96,13 +108,18 @@ watch(() => props.busy, (busy, was) => {
 
 const hint = computed(() => cpfHint(query.value));
 
-function decide() {
-  const action = enterAction({
-    query: query.value,
-    resultsCount: props.results.length,
-    highlightedIndex: highlighted.value,
-    hasCustomer: Boolean(props.hasCustomer),
-  });
+/** O ato pendente — a MESMA fonte para a tecla e para o botão visível. */
+const pendingAction = computed(() => enterAction({
+  query: query.value,
+  resultsCount: props.results.length,
+  highlightedIndex: highlighted.value,
+  hasCustomerRef: Boolean(props.hasCustomerRef),
+  pendingName: props.pendingName,
+}));
+const emptyStateLabel = computed(() => enterActionLabel(pendingAction.value));
+const emptyStateCaveat = computed(() => enterActionCaveat(pendingAction.value));
+
+function run(action: ReturnType<typeof enterAction>) {
   if (action.type === "pick") {
     const result = props.results[action.index];
     if (result) pick(result);
@@ -112,9 +129,16 @@ function decide() {
   } else if (action.type === "transfer") {
     query.value = "";
     emit("transfer", { field: action.field, value: action.value });
+  } else if (action.type === "create_name_only") {
+    query.value = "";
+    emit("createNameOnly", action.name);
   } else if (action.type === "conclude") {
     emit("conclude");
   }
+}
+
+function decide() {
+  run(pendingAction.value);
 }
 
 function onEnter(event: KeyboardEvent) {
@@ -192,7 +216,7 @@ onBeforeUnmount(() => {
     </div>
     <p v-if="hint === 'valid'" class="flex items-center gap-1.5 text-xs text-muted-foreground">
       <Icon name="lucide:id-card" class="size-3.5 shrink-0" />
-      CPF válido. Enter busca o cadastro ou cria um novo com este CPF.
+      CPF válido.
     </p>
     <p v-else-if="hint === 'invalid'" class="flex items-center gap-1.5 text-xs text-destructive" role="status">
       <Icon name="lucide:triangle-alert" class="size-3.5 shrink-0" />
@@ -228,10 +252,28 @@ onBeforeUnmount(() => {
         </span>
       </button>
     </div>
-    <p v-else-if="query.trim().length >= 2 && !busy" class="text-center text-xs text-muted-foreground">
-      {{ hint === "valid"
-        ? "Nenhum cadastro com este CPF. Enter cria um novo na hora."
-        : "Nenhum cadastro encontrado. Enter preenche o cadastro novo com o que você digitou." }}
-    </p>
+    <!-- SEM RESULTADO: o que fazer agora vira BOTÃO, com o resultado no rótulo.
+         O `<kbd>` é affordance da mesma ação — a tecla nunca promete outra
+         coisa, porque as duas leem o mesmo `pendingAction`. -->
+    <div v-else-if="query.trim().length >= 2 && !busy" class="grid gap-2">
+      <p class="text-center text-xs text-muted-foreground">
+        {{ hint === "valid" ? "Nenhum cadastro com este CPF." : "Nenhum cadastro encontrado." }}
+      </p>
+      <UiButton
+        v-if="emptyStateLabel"
+        type="button"
+        variant="outline"
+        class="h-11 w-full justify-center gap-2 whitespace-normal text-sm"
+        @click="run(pendingAction)"
+      >
+        <Icon name="lucide:user-round-plus" class="size-4 shrink-0" />
+        <span class="min-w-0">{{ emptyStateLabel }}</span>
+        <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">Enter</kbd>
+      </UiButton>
+      <p v-if="emptyStateCaveat" class="flex items-start gap-1.5 text-center text-xs text-muted-foreground">
+        <Icon name="lucide:info" class="mt-0.5 size-3.5 shrink-0" />
+        <span class="min-w-0 text-left">{{ emptyStateCaveat }}</span>
+      </p>
+    </div>
   </div>
 </template>

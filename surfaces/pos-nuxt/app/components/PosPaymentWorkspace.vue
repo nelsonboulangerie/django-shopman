@@ -47,6 +47,7 @@ import {
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "~/presentation/managerAuth";
+import type { CustomerDecision } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
@@ -64,6 +65,8 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** A escolha pendente do operador (conflito/correção de contato). */
+  customerDecision?: CustomerDecision | null;
   review: POSSaleReviewProjection | null;
   discountTypes: POSCheckoutOptionProjection[];
   discountReasons: POSCheckoutOptionProjection[];
@@ -184,6 +187,8 @@ const emit = defineEmits<{
   submit: [];
   lookupCustomer: [];
   resolveCustomer: [];
+  decisionConfirm: [];
+  decisionCancel: [];
   clearCustomer: [];
   search: [string];
   selectResult: [POSCustomerSearchResult];
@@ -1559,6 +1564,7 @@ defineExpose({
     :search-busy="searchBusy"
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
+    :customer-decision="customerDecision"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
@@ -1572,6 +1578,8 @@ defineExpose({
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"
     @resolve-customer="$emit('resolveCustomer')"
+    @decision-confirm="$emit('decisionConfirm')"
+    @decision-cancel="$emit('decisionCancel')"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
   />
