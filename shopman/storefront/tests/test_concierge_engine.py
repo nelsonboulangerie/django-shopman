@@ -276,6 +276,28 @@ def test_place_order_creates_the_order_and_sends_the_pix_apart(ctx, conversation
     assert conversation.session_key == "" and conversation.quote == {}
 
 
+def test_the_add_on_suggestion_is_offered_once_per_conversation(ctx, conversation, monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from shopman.shop.projections import cart as cart_projection
+
+    original = cart_projection.build_cart
+
+    def with_upsell(session_key, channel_ref="web"):
+        cart = original(session_key, channel_ref)
+        return type(cart)(**{**cart.__dict__, "upsell": NS(sku="CAFE", name="Café", price_display="R$ 8,00")})
+
+    monkeypatch.setattr("shopman.shop.projections.cart.build_cart", with_upsell)
+    tools.set_item(ctx, SKU, 1)
+    tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
+    first = tools.review_order(ctx)
+    assert first["suggestion"]["name"] == "Café"
+    conversation.refresh_from_db()
+    assert conversation.flags == {"suggestion_offered": True}
+    second = tools.review_order(ctx)
+    assert "suggestion" not in second
+
+
 def test_place_order_refuses_a_stale_quote(ctx):
     review = _pickup_ready(ctx)
     token = review["quote_token"]
