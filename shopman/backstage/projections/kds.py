@@ -21,10 +21,11 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
+from shopman.shop.services import operator_orders
 from shopman.shop.services.order_helpers import get_fulfillment_type
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
-from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS
+from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS, advance_block_label
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class KDSExpeditionCardProjection:
     # Discriminante explícito da união ticket|expedição (ver KDSTicketProjection).
     # Card de expedição é sempre True.
     is_expedition: bool = True
+    # A gêmea na tela do gate de pagamento (``payment_gate``): quando o servidor
+    # vai recusar a saída da mercadoria, o card diz isso ANTES do toque, com o
+    # mesmo rótulo curto e o mesmo motivo que o Gestor mostra. Régua de servidor
+    # mais apertada do que a da tela inventa recusa seca com o cliente esperando.
+    # "" quando a ação está liberada.
+    advance_block_label: str = ""
+    advance_block_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -522,6 +530,8 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         for item in items
     )
 
+    bloqueio = operator_orders.advance_block(order)
+
     return KDSExpeditionCardProjection(
         pk=order.pk,
         order_ref=order.ref,
@@ -534,6 +544,8 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         line_count=len(items),
         total_display=_money(order.total_q),
         items=item_projections,
+        advance_block_label=advance_block_label(bloqueio),
+        advance_block_reason=operator_orders.advance_block_message(bloqueio),
     )
 
 
