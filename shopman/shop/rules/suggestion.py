@@ -49,7 +49,11 @@ impede uma regra de citar ``sabour`` e falhar em silêncio para sempre.
 
 from __future__ import annotations
 
+import logging
+
 from shopman.shop.rules import BaseRule
+
+logger = logging.getLogger(__name__)
 
 COMPLEMENT_REF = "suggestion.complement"
 SUBSTITUTE_REF = "suggestion.substitute"
@@ -71,13 +75,24 @@ def _known_attributes() -> dict:
     """``{ref: definição}`` do registro, ou ``{}`` se ele ainda não existe.
 
     Vazio quando o banco não está pronto (boot, migração): a validação
-    estrutural continua valendo, e a semântica volta no próximo save.
+    estrutural continua valendo, e a semântica volta no próximo save. Só isso
+    justifica engolir a falha aqui — e mesmo assim ela vai para o log, porque
+    uma validação que se desliga em silêncio é uma validação que não existe.
     """
+    from django.db import OperationalError, ProgrammingError
+
     try:
         from shopman.shop.services import attributes
 
         return {d.ref: d for d in attributes.registry()}
+    except (OperationalError, ProgrammingError):
+        # Tabela ainda não migrada: condição de boot, esperada.
+        logger.debug("suggestion: registro de atributos indisponível; validando só a forma.")
+        return {}
     except Exception:
+        logger.warning(
+            "suggestion: registro de atributos ilegível; validando só a forma.", exc_info=True,
+        )
         return {}
 
 
