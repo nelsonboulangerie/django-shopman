@@ -1041,6 +1041,48 @@ def _copy_cart_to_web(ctx: ToolContext) -> str:
     return web_key
 
 
+def notify_when_available(ctx: ToolContext, sku: str) -> dict:
+    """"Me avise quando tiver": a mesma assinatura do sino do site.
+
+    Assina os dois avisos que o site oferece, reposição e próxima fornada, para o
+    telefone da conversa; a notificação sai pela cadeia de sempre (WhatsApp
+    primeiro). Sem telefone não há a quem avisar.
+    """
+    from shopman.storefront.services import stock_alerts
+
+    sku = str(sku or "").strip()
+    item = _catalog_item(ctx, sku) if sku else None
+    if item is None:
+        return _error("unknown_sku", f"Não encontrei o produto {sku} no cardápio.")
+    conversation = ctx.conversation
+    if not conversation.phone:
+        return _error("no_phone", "Este contato não tem telefone; o aviso pode ser assinado pelo site.")
+    customer = None
+    if conversation.customer_ref:
+        from shopman.guestman.services import customer as customer_service
+
+        customer = customer_service.get(conversation.customer_ref)
+    created = []
+    for alert_type in ("stock_back", "production_ready"):
+        subscription = stock_alerts.subscribe(
+            item.sku,
+            channel_ref=ctx.channel_ref,
+            customer=customer,
+            phone=conversation.phone,
+            alert_type=alert_type,
+        )
+        if subscription is not None:
+            created.append(alert_type)
+    if not created:
+        return _error("subscribe_failed", "Não consegui registrar o aviso agora.")
+    return {
+        "ok": True,
+        "sku": item.sku,
+        "name": item.name,
+        "message": f"Aviso registrado: {item.name} avisa por WhatsApp quando voltar ou quando sair a fornada.",
+    }
+
+
 def handoff_to_human(ctx: ToolContext, reason: str = "") -> dict:
     """Passa a conversa para a equipe. A casa cuida do alerta e do campo no ManyChat."""
     ctx.handoff = True
@@ -1190,6 +1232,15 @@ TOOL_SPECS: list[dict] = [
         ),
     },
     {
+        "name": "notify_when_available",
+        "description": (
+            "Registra o aviso \"me avise quando tiver\" para um produto indisponível, o mesmo sino do "
+            "site: o cliente recebe uma mensagem quando o produto voltar ou quando sair a fornada. "
+            "Ofereça quando um item pedido estiver indisponível."
+        ),
+        "input_schema": _schema({"sku": {"type": "string", "description": "SKU do produto."}}, ["sku"]),
+    },
+    {
         "name": "handoff_to_human",
         "description": (
             "Passa a conversa para a equipe da casa. Use quando o cliente pedir uma pessoa, reclamar, "
@@ -1210,6 +1261,7 @@ _HANDLERS = {
     "order_status": order_status,
     "last_order": last_order,
     "send_web_link": send_web_link,
+    "notify_when_available": notify_when_available,
     "handoff_to_human": handoff_to_human,
 }
 
