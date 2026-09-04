@@ -51,6 +51,21 @@ def _subscriber_id_from_payload(data: dict) -> str:
     return str(value).strip() if value else ""
 
 
+#: Palavra-chave do piloto fechado no ManyChat: um gatilho de Keyword ("#c" no início)
+#: chama a casa sem tocar no Default Reply dos clientes. A palavra é do gatilho, não
+#: da conversa: sai do texto antes de chegar ao modelo.
+_PILOT_PREFIXES = ("#concierge", "#c")
+
+
+def strip_pilot_prefix(text: str) -> str:
+    stripped = (text or "").strip()
+    lowered = stripped.lower()
+    for prefix in _PILOT_PREFIXES:
+        if lowered == prefix or lowered.startswith(prefix + " "):
+            return stripped[len(prefix):].strip()
+    return stripped
+
+
 def _looks_unrendered(text: str) -> bool:
     """Variável do ManyChat digitada à mão chega literal: ``{{last_input_text}}``."""
     return "{{" in text
@@ -65,13 +80,13 @@ def _text_from_payload(data: dict, subscriber_id: str) -> str:
     """
     text = str(data.get("text") or data.get("message") or data.get("last_input_text") or "").strip()
     if text and not _looks_unrendered(text):
-        return text
+        return strip_pilot_prefix(text)
     if text:
         logger.warning("concierge.webhook: variável não renderizada no corpo: %r", text[:60])
     from shopman.guestman.adapters.auth import CustomerResolver
 
     try:
-        return str(CustomerResolver().manychat_last_input_text(subscriber_id) or "").strip()
+        return strip_pilot_prefix(str(CustomerResolver().manychat_last_input_text(subscriber_id) or ""))
     except Exception:
         logger.warning("concierge.webhook: getInfo falhou subscriber=%s", subscriber_id, exc_info=True)
         return ""
