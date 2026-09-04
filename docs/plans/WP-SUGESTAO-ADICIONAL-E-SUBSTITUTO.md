@@ -101,10 +101,51 @@ sem ficha por SKU.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | facetas natureza/sabor no registro de vocação (migração + carga derivada das coleções + revisão no Admin), porque as regras de adicional dependem delas; `ProductAffinity` + comando noturno; `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
+| F1 | atributos `natureza`, `sabor` e `temperatura` no registro (WP-ATRIBUTOS), com carga derivada das coleções e revisão no Admin; regras `suggestion.complement` e `suggestion.substitute` em `RuleConfig` com os defaults do dono; `ProductAffinity` + comando noturno; `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
 | F2 | **Refino do Core aprovado pelo dono (04/09):** `find_substitutes` do Offerman deixa de exigir palavra-chave (coleção sozinha já é sinal), a coleção vira preferência em vez de filtro duro (dentro primeiro, fora como reserva), o peso por unidade entra na pontuação (mais próximo ganha) e uma função irmã devolve pontuação e motivos; assinatura atual preservada, um teste por defeito na suíte do Offerman, nota no guia. Por cima, `shop/services/substitutes.find` (que já faz disponibilidade e preço de canal) ganha sabor igual (atributo do tenant). Estoque e concierge consomem | item esgotado devolve até três à altura; produto sem palavra-chave passa a ter substituto |
 | F3 | assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
 | F4 (opcional) | `pairs_with` / `substitute_for` como ajuste fino, e contexto de salão para o PDV | só se F1–F3 pedirem |
+
+## As regras são configuráveis, não fixas em atributo (decidido em 04/09/2026)
+
+O motor não conhece natureza, sabor ou temperatura. Ele lê duas regras da
+família `RuleConfig` (as regras configuráveis via Admin que o motor de regras da
+casa já avalia por contexto), com esquema pequeno e validado:
+
+```
+suggestion.complement:
+  pairings: [{when: {attr: natureza, value: comida}, suggest: {attr: natureza, in: [acompanhamento, bebida]}, weight: 3},
+             {when: {attr: sabor, value: doce}, suggest: {tag: café}, weight: 2},
+             {when: {attr: temperatura, value: quente}, suggest: {attr: temperatura, value: gelado}, weight: 2}]
+  affinity_weight: 3        # co-ocorrência (lift) do histórico
+  price: below_cart_average
+  context: {delivery: {exclude: {attr: temperatura, value: gelado}}}   # exemplo
+  per_surface: {web: 1, concierge: 1}
+
+suggestion.substitute:
+  must_match: [sabor]
+  prefer: [collection]
+  approximate: [peso_unidade_g]
+  price_band: 0.30
+  cross_collection_when_empty: true
+```
+
+- **Qualquer atributo do registro** pode aparecer numa regra; a validação recusa
+  atributo ou opção que não existe. Atributo novo no Admin amplia o vocabulário
+  das regras sem deploy.
+- **Regra em branco não quebra**: o adicional roda só com co-ocorrência e portões;
+  o substituto só com o Core. Cada atributo cadastrado acrescenta sinal.
+- **Defaults seedados** com as regras ditadas pelo dono, inclusive `temperatura`
+  (atributo quente / gelado / ambiente, e o par quente → gelado), já na F1.
+- **`reasons` citam a regra** que produziu a sugestão; o ajuste no Admin é mensurável.
+- **Limite, para não virar ManyChat:** o esquema é só isto (pareamentos, exigir,
+  preferir, aproximar, pesos, contexto, por superfície). Regra que precise de mais
+  virou lógica, e lógica vai para código com teste.
+- **Nomes:** `ref` de atributo e valores de opção são dados do tenant, em
+  português, como as coleções `paes` e `folhados`; a convenção de identificador em
+  inglês vale para model, campo e tipo de regra (`suggestion.complement`).
+
+Custo sobre a versão fixa: meio dia a um dia (esquema, validação, formulário).
 
 ## Refino do Core: o que entra e o que não entra (aprovado em 04/09/2026)
 
