@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
 import { useStationLock } from "../../../operator-kit/app/composables/useStationLock";
-import { useOrdersBoard } from "../../app/composables/useOrdersBoard";
+import { GESTOR_ALERT, useOrdersBoard } from "../../app/composables/useOrdersBoard";
 import type { TwoZoneQueueProjection } from "../../app/types/orders";
 
 const env = installNuxtGlobals();
@@ -186,5 +186,44 @@ describe("useOrdersBoard — estação travada não é falha de leitura", () => 
     env.fetchError.value = { status: 500, data: { detail: "boom" } };
     useOrdersBoard();
     expect(useStationLock().denied.value).toBe(false);
+  });
+});
+
+describe("GESTOR_ALERT — o som escolhido pelo dono", () => {
+  // O Bing-bong foi escolhido ouvindo os candidatos por cima de um ruído de
+  // salão. Estes testes guardam as PROPRIEDADES que fazem dele o que é — não
+  // os números por gosto, mas o que quebraria o som em silêncio se alguém
+  // mexesse sem ouvir.
+
+  it("as notas se SOBREPÕEM — é acorde, não melodia", () => {
+    const [primeira, segunda] = GESTOR_ALERT.notes;
+    // A segunda entra ANTES da primeira acabar: é isso que faz as duas soarem
+    // juntas. Sem a sobreposição, o aviso vira duas notas seguidas e perde a
+    // identidade de "atenção, vem informação".
+    expect(segunda.t).toBeGreaterThan(primeira.t);
+    expect(segunda.t).toBeLessThan(primeira.t + primeira.d);
+  });
+
+  it("desce — o «bing» é mais agudo que o «bong»", () => {
+    const [primeira, segunda] = GESTOR_ALERT.notes;
+    expect(segunda.f).toBeLessThan(primeira.f);
+  });
+
+  it("o ataque é de feltro, não de martelo", () => {
+    // 4 ms é estalo de xilofone; o dono ouviu e pediu "mais macio".
+    expect(GESTOR_ALERT.attack).toBeGreaterThanOrEqual(0.015);
+  });
+
+  it("a banda é de alto-falante de saguão, e nessa ordem", () => {
+    const [corteGrave, corteAgudo] = GESTOR_ALERT.filters;
+    expect(corteGrave.type).toBe("highpass");
+    expect(corteAgudo.type).toBe("lowpass");
+    expect(corteGrave.freq).toBeLessThan(corteAgudo.freq);
+  });
+
+  it("tem parcial inarmônica — é gongo, não instrumento afinado", () => {
+    // Razão quebrada (2,76) é o que faz soar como sino em vez de nota pura.
+    const inarmonicas = GESTOR_ALERT.partials.filter((p) => !Number.isInteger(p.r));
+    expect(inarmonicas.length).toBeGreaterThan(0);
   });
 });
