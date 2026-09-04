@@ -1,5 +1,11 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
+from .attributes import (
+    AttributeDefinition,
+    AttributePurpose,
+    AttributeSource,
+    AttributeType,
+)
 from .campaign import (
     Announcement,
     AnnouncementStatus,
@@ -31,6 +37,10 @@ from .user_notification import NotificationCategory, UserNotification
 
 __all__ = [
     "Shop",
+    "AttributeDefinition",
+    "AttributePurpose",
+    "AttributeSource",
+    "AttributeType",
     "Conversation",
     "ConversationMessage",
     "Channel",

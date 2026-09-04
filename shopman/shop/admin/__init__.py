@@ -1,5 +1,6 @@
 """Shopman admin — Unfold admin de shop, rules, orders, channel, promoção e entrega."""
 
+from shopman.shop.admin.attributes import AttributeDefinitionAdmin  # noqa: F401
 from shopman.shop.admin.campaign import (  # noqa: F401
     AnnouncementAdmin,
     AnnouncementTemplateAdmin,
