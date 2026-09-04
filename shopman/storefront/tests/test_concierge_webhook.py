@@ -199,3 +199,19 @@ def test_rate_limit_da_429(url, intake, monkeypatch):
 def test_get_nao_e_aceito(url):
     res = Client().get(url, HTTP_X_API_KEY=KEY)
     assert res.status_code == 405
+
+
+@pytest.mark.parametrize(
+    ("raw", "clean"),
+    [
+        ("#c tem croissant hoje?", "tem croissant hoje?"),
+        ("#C   quero 2 baguetes", "quero 2 baguetes"),
+        ("#concierge oi", "oi"),
+        ("#c", ""),
+        ("#croissant é bom", "#croissant é bom"),
+        ("oi #c", "oi #c"),
+    ],
+)
+def test_a_palavra_chave_do_piloto_sai_do_texto(raw, clean):
+    """O "#c" é do gatilho do ManyChat, não da conversa: nunca chega ao modelo."""
+    assert webhook.strip_pilot_prefix(raw) == clean
