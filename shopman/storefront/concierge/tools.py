@@ -251,7 +251,7 @@ def _cart_payload(ctx: ToolContext, session) -> dict:
     }
     if cart.minimum_order is not None:
         payload["minimum_order"] = _progress_payload(cart.minimum_order)
-    if cart.upsell is not None:
+    if cart.upsell is not None and not (ctx.conversation.flags or {}).get("suggestion_offered"):
         payload["suggestion"] = _upsell_payload(cart.upsell)
     return payload
 
@@ -758,6 +758,13 @@ def review_order(ctx: ToolContext) -> dict:
         **payload,
         "payment_methods": [{"ref": m, "label": PAYMENT_LABELS.get(m, m)} for m in methods],
     }
+    if payload.get("suggestion"):
+        # Uma sugestão por CONVERSA. Medido em 04/09: Pain Grillé num recap, Água no
+        # seguinte; a regra do prompt ("uma vez, nunca de novo") precisa do código.
+        flags = dict(ctx.conversation.flags or {})
+        flags["suggestion_offered"] = True
+        ctx.conversation.flags = flags
+        ctx.conversation.save(update_fields=["flags", "updated_at"])
     if not missing:
         token = _quote_token(session)
         ctx.conversation.quote = {

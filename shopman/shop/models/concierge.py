@@ -46,6 +46,10 @@ class Conversation(models.Model):
     #: mudou, o token muda, e o pedido volta para a revisão.
     quote = models.JSONField("orçamento vigente", default=dict, blank=True)
 
+    #: O que a casa já fez nesta conversa e não repete: ``{"suggestion_offered": true}``
+    #: (o adicional é UM por conversa, não um por recap).
+    flags = models.JSONField("marcas da conversa", default=dict, blank=True)
+
     #: Resumo das mensagens antigas que saíram da janela enviada ao modelo.
     summary = models.TextField("resumo", blank=True)
     summary_until_id = models.BigIntegerField("resumo cobre até", null=True, blank=True)
