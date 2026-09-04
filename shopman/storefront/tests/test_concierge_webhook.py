@@ -19,6 +19,12 @@ CONFIG_OFF = {"enabled": False, "api_key": KEY}
 
 
 @pytest.fixture(autouse=True)
+def _anthropic_key(settings):
+    """O concierge só atende com a credencial da Anthropic; os testes do webhook a dão."""
+    settings.AI_ASSIST_API_KEY = "sk-teste"
+
+
+@pytest.fixture(autouse=True)
 def _clean_cache():
     cache.clear()
     yield
@@ -76,7 +82,16 @@ def test_sem_chave_configurada_fora_de_debug_falha_fechado(url, intake):
 def test_desligado_responde_200_disabled_sem_quebrar_o_flow(url, intake):
     res = _post(Client(), url, {"subscriber_id": "1", "text": "oi"}, HTTP_X_API_KEY=KEY)
     assert res.status_code == 200
-    assert res.json() == {"status": "disabled"}
+    assert res.json() == {"status": "disabled", "reason": "switch_off"}
+    assert intake == []
+
+
+@override_settings(SHOPMAN_CONCIERGE=CONFIG_ON, AI_ASSIST_API_KEY="", DEBUG=False)
+def test_ligado_sem_chave_da_anthropic_diz_o_motivo(url, intake):
+    """"disabled" sem motivo mandou procurar a chave errada; agora o corpo nomeia."""
+    res = _post(Client(), url, {"subscriber_id": "1", "text": "oi"}, HTTP_X_API_KEY=KEY)
+    assert res.status_code == 200
+    assert res.json() == {"status": "disabled", "reason": "ai_key_missing"}
     assert intake == []
 
 

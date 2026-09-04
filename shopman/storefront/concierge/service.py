@@ -43,9 +43,22 @@ def config() -> dict:
     return getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}
 
 
+def disabled_reason() -> str:
+    """Por que o concierge não atende, ou vazio quando atende.
+
+    Duas chaves, dois motivos com nome: a chave de ligar (``SHOPMAN_CONCIERGE_ENABLED``)
+    e a credencial da Anthropic (``AI_ASSIST_API_KEY``). Um ``disabled`` sem motivo
+    custou uma noite: a chave estava ligada e a credencial, vazia no painel.
+    """
+    if not config().get("enabled"):
+        return "switch_off"
+    if not (getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip():
+        return "ai_key_missing"
+    return ""
+
+
 def is_enabled() -> bool:
-    cfg = config()
-    return bool(cfg.get("enabled")) and bool((getattr(settings, "AI_ASSIST_API_KEY", "") or "").strip())
+    return not disabled_reason()
 
 
 # ── Copy ──────────────────────────────────────────────────────────────
@@ -146,8 +159,9 @@ def receive_inbound(
     text = (text or "").strip()
     if not subscriber_id or not text:
         return IntakeResult(None, None, False, "empty")
-    if not is_enabled():
-        logger.info("concierge.disabled subscriber=%s", subscriber_id)
+    reason = disabled_reason()
+    if reason:
+        logger.warning("concierge.disabled reason=%s subscriber=%s", reason, subscriber_id)
         return IntakeResult(None, None, False, "disabled")
     if not is_allowed(subscriber_id, profile or {}):
         logger.info("concierge.not_allowed subscriber=%s", subscriber_id)
