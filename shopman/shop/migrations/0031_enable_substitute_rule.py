@@ -24,10 +24,15 @@ SEEDED_PARAMS = {
 
 
 def enable(apps, schema_editor):
+    from shopman.shop.rules.engine import forget_rules_cache
+
     RuleConfig = apps.get_model("shop", "RuleConfig")
     RuleConfig.objects.filter(
         ref="suggestion.substitute", enabled=False, params=SEEDED_PARAMS,
     ).update(enabled=True)
+    # `.update()` não dispara post_save, então o cache do motor de regras não se
+    # invalida sozinho — e o banco e o Redis divergem por uma hora, em silêncio.
+    forget_rules_cache()
 
 
 def disable(apps, schema_editor):
