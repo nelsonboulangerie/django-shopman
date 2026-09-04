@@ -1,6 +1,6 @@
 # WP-SUGESTÃO — Adicional que combina e substituto à altura: um motor, dois objetivos
 
-> Estado: **proposto (2026-09-04), aguarda palavra do dono.** Nasce do piloto do
+> Estado: **proposto (2026-09-04), perguntas respondidas pelo dono no mesmo dia (abaixo).** Nasce do piloto do
 > concierge: a regra de adicional em vigor ("o item mais popular que não está na
 > sacola", a mesma do carrinho do site) ofereceu Água a quem levava pão. O dono
 > pediu um mecanismo **simples, robusto e elegante**, o mesmo para o site e para o
@@ -8,7 +8,7 @@
 >
 > | # | Pergunta | Recomendado (a confirmar) |
 > |---|---|---|
-> | 1 | Sinais | histórico de vendas (co-ocorrência) + vocação do SKU (B.I.) + coleção + palavras-chave. **Sem** "combina com" por SKU como pré-requisito; ele existe só como ajuste fino, opcional |
+> | 1 | Sinais | histórico de vendas (co-ocorrência, ano inteiro com peso decrescente) + três facetas de vocação do SKU (natureza, sabor, consumo) + coleção + palavras-chave + gramatura. **Sem** "combina com" por SKU como pré-requisito; ele existe só como ajuste fino, opcional |
 > | 2 | Onde vive a regra | `shop/projections/suggestions.py`, uma função pura sobre uma tabela de afinidade recalculada de madrugada |
 > | 3 | Quem consome | carrinho do site (hoje `build_cart.upsell`), concierge (`review_order.suggestion` e `set_item` sem estoque), PDV depois |
 > | 4 | Palavras-chave | as que já existem em `Product.keywords`; a IA do Gestor **sugere** no painel do produto, o gestor aprova |
@@ -27,6 +27,27 @@
 
 O que falta é **um lugar** que combine esses sinais com pesos, e não uma regra por superfície.
 
+## A vocação do produto: três facetas, nenhuma coleção nova
+
+O "papel de consumo" de hoje (`ConsumptionRole`: consome aqui / leva / híbrido,
+bebida preparada / pronta, peso de salão) responde "senta ou leva" para o B.I. e
+fica como está. O motor precisa de mais duas perguntas, e cada uma é uma
+**faceta do produto**, não uma coleção:
+
+| Faceta | Valores | Para quê |
+|---|---|---|
+| Natureza | comida · bebida · acompanhamento (manteiga, geleia, molho) · outro (varejo, grão) | regras de adicional genéricas: comida → acompanhamento, comida → bebida, bebida → bebida |
+| Sabor | doce · salgado · neutro | fronteira do substituto (doce → doce) e a regra doce → café |
+| Consumo | o papel de hoje, intocado | contexto de salão × balcão (B.I. e filtro do adicional) |
+
+Moram no mesmo registro de vocação do SKU (`ProductConsumptionTag` ganha
+`nature` e `flavor`), editáveis no painel do produto e sugeridas pela IA.
+Coleção continua sendo o mapa do cliente, publicada por mérito de vitrine: não
+se cria coleção para o motor, nem coleção oculta, nem regra de "só a primária".
+Carga inicial derivada das coleções atuais (doces → doce, bebidas → bebida) e
+revisada uma vez; produto novo nasce com sugestão da IA e aprovação do gestor.
+Faceta em branco vira "outro/neutro" e o motor cai para coleção e palavras-chave.
+
 ## Desenho: um motor, dois objetivos
 
 ```
@@ -44,10 +65,12 @@ do próprio item (substituto). Sugestão que não passa nos portões não existe
 
 | Sinal | Adicional | Substituto | Fonte |
 |---|---|---|---|
-| Co-ocorrência (lift do par no histórico, 90 dias) | forte | fraco (quem compra junto não substitui) | tabela de afinidade |
-| Vocação complementar (comida → bebida; bebida → bebida; doce → café) | forte | nulo | `ConsumptionRole` |
+| Co-ocorrência (lift do par no histórico, ano inteiro com peso decrescente) | forte | fraco (quem compra junto não substitui) | tabela de afinidade |
+| Natureza complementar (comida → acompanhamento; comida → bebida; bebida → bebida; doce → café) | forte | nulo | facetas |
+| Sabor (doce → doce, salgado → salgado) | filtro para doce → café | fronteira | facetas |
+| Gramatura (o mais próximo disponível, sem faixa) | nulo | forte | peso por unidade do produto |
 | Contexto de consumo (retirada, entrega, salão) | filtro: no salão vale bebida; na entrega não sugere sorvete | filtro | `context` (fulfillment/canal) |
-| Mesma coleção | fraco | forte | `Collection` |
+| Mesma coleção | fraco | forte; fora da coleção só quando dentro não há disponível, no mesmo sabor | `Collection` |
 | Palavras-chave em comum | nulo | forte | `Product.keywords` |
 | Proximidade de nome (fuzz) | nulo | médio | nome |
 | Faixa de preço | mais barato que a média da sacola | ±30% do item | listing do canal |
@@ -80,15 +103,16 @@ sem ficha por SKU.
 |---|---|---|
 | F1 | `ProductAffinity` + comando noturno + `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
 | F2 | `suggest("substitute")` unificando `find_substitutes` (keywords + coleção + fuzz + preço + disponibilidade); estoque e concierge consomem | item esgotado devolve até três à altura |
-| F3 | assist de palavras-chave no painel do produto; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
+| F3 | facetas natureza/sabor no registro de vocação (migração + carga derivada das coleções + revisão no Admin); assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
 | F4 (opcional) | `pairs_with` / `substitute_for` como ajuste fino, e contexto de salão para o PDV | só se F1–F3 pedirem |
 
-## Perguntas para o dono
+## Respostas do dono (04/09/2026)
 
-1. Janela do histórico: 90 dias, ou o ano inteiro com peso decrescente?
-2. Vocação complementar: as regras comida→bebida, bebida→bebida, doce→café bastam para começar, ou há outras da casa?
-3. Substituto: só na mesma coleção, ou pode cruzar (folhado esgotado → brioche)?
-4. Assist de palavras-chave: sugere em lote para o catálogo inteiro uma vez, ou só produto a produto?
+1. **Histórico:** ano inteiro com peso decrescente (custa nada: cálculo noturno).
+2. **Vocação:** "comida → acompanhamento" genérico, em vez de manteiga/geleia por SKU; e revisar o papel de consumo com as facetas acima, sem estragar o que o B.I. já lê.
+3. **Substituto:** dentro da coleção primeiro, fora como reserva; doce → doce e salgado → salgado são fronteira.
+4. **Palavras-chave:** rodar o assist em lote, com peso de SEO: fontes Google que valem são o Search Console (buscas reais que já trazem ao site; API gratuita, exige autorização da propriedade) e o Trends (volume relativo para desempatar sinônimos). Keyword Planner exige conta do Ads: fora.
+5. **Gramatura:** o mais próximo disponível, sem faixa.
 
 ## Referências
 
