@@ -479,6 +479,22 @@ def test_run_agent_stops_repeating_the_same_call(conversation):
     assert outcome.reply_text == "Hoje não temos folhados."
 
 
+def test_run_agent_keeps_what_the_model_said_before_calling_a_tool(conversation):
+    """"A taxa é R$ 8,00, deixa eu ver os horários" + chamada → o cliente lê a taxa."""
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="inbound", text="qual a taxa?", content=[{"type": "text", "text": "qual a taxa?"}]
+    )
+    client = ScriptedClient(
+        _response(_text("A taxa é *R$ 8,00*. Deixa eu ver os horários."), _tool("view_cart", {}), stop_reason="tool_use"),
+        _response(_text("Temos janelas a partir das 13:30. Qual prefere?"), stop_reason="end_turn"),
+    )
+    with override_settings(SHOPMAN_CONCIERGE=CONCIERGE_SETTINGS):
+        outcome = agent_module.run_agent(
+            conversation=conversation, history=agent_module.history_for(conversation), client=client
+        )
+    assert outcome.reply_text == "A taxa é *R$ 8,00*. Deixa eu ver os horários.\n\nTemos janelas a partir das 13:30. Qual prefere?"
+
+
 def test_run_agent_forces_text_when_iterations_run_out(conversation):
     ConversationMessage.objects.create(
         conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]

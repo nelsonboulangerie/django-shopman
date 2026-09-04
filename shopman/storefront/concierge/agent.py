@@ -174,6 +174,14 @@ def _text_of(response) -> str:
     ).strip()
 
 
+def _join_prefaces(prefaces: list[str], final: str) -> str:
+    """Frases intermediárias + texto final numa mensagem só, sem repetir a última."""
+    parts = [p for p in prefaces if p]
+    if final and (not parts or parts[-1] != final):
+        parts.append(final)
+    return "\n\n".join(parts).strip()
+
+
 def _tool_result_text(result: dict) -> str:
     text = json.dumps(result, ensure_ascii=False, default=str)
     if len(text) > MAX_TOOL_RESULT_CHARS:
@@ -237,6 +245,10 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
     outcome = AgentOutcome(reply_text="")
     usage: dict = {}
     seen_calls: dict[str, int] = {}
+    # Frases ditas ANTES de chamar uma ferramenta ("a taxa é R$ 8,00, deixa eu ver
+    # os horários"). Sem isto elas morriam na transcrição: o cliente só via o
+    # texto final, e a taxa que ele perguntou nunca chegava (medido em 04/09).
+    prefaces: list[str] = []
 
     for iteration in range(max_iterations + 1):
         request: dict = {
@@ -272,12 +284,15 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             text = clean_text(_text_of(response))
             if stop == "max_tokens":
                 logger.warning("concierge.agent max_tokens conversation=%s", conversation.pk)
-            outcome.reply_text = text
+            outcome.reply_text = _join_prefaces(prefaces, text)
             outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
             break
 
         messages.append({"role": "assistant", "content": _content_for_replay(response)})
         outcome.messages.append({"role": "assistant", "content": _persistable_content(response)})
+        preface = clean_text(_text_of(response))
+        if preface:
+            prefaces.append(preface)
 
         results = []
         for use in tool_uses:
@@ -307,9 +322,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
         outcome.messages.append({"role": "user", "content": results})
 
         if ctx.handoff:
-            # A equipe assume: fecha o turno com o texto que o modelo já tinha (se
-            # houver) e deixa a casa mandar a confirmação de handoff.
-            outcome.reply_text = clean_text(_text_of(response))
+            # A equipe assume: fecha o turno com o que o modelo já tinha dito e
+            # deixa a casa mandar a confirmação de handoff.
+            outcome.reply_text = _join_prefaces(prefaces, "")
             break
 
     outcome.usage = usage
