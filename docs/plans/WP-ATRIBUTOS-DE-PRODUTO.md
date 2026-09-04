@@ -36,7 +36,8 @@ produto, preço, vitrine e `metadata`.
 
 ```
 AttributeDefinition (shop)
-  ref            slug único ("sabor", "natureza", "alergenos", "porcoes", "peso_unidade_g", "papel_consumo")
+  ref            slug único ("sabor", "natureza", "temperatura", "alergenos", "porcoes", "peso_unidade_g")
+                 é DADO do tenant, em português, como as coleções `paes`/`folhados`
   label, hint    rótulos para o gestor
   type           choice | multi_choice | number | text | boolean
   options        [{"value": "doce", "label": "Doce", "meta": {...}}]   (choice/multi)
@@ -67,9 +68,9 @@ Product.metadata["attributes"] = {
 diz se um valor sugerido pela IA foi aprovado. É o que `dietary_auto_filled` e
 `ProductConsumptionTag.reviewed` faziam cada um de um jeito; agora é uma coisa só.
 
-Acesso pelo código: `product.attr("sabor")` devolve o valor tipado (ou o
-default da definição), `product.set_attr("sabor", "doce", source="manual")`
-valida e grava. Consulta: `Product.objects.filter(metadata__attributes__sabor__value="doce")`.
+Acesso pelo código em `shop/services/attributes.py` (o Core não ganha método):
+`attributes.get(product, "sabor")` devolve o valor tipado (ou o default da
+definição), `attributes.set(product, "sabor", "doce", source="manual")` valida e grava. Consulta: `Product.objects.filter(metadata__attributes__sabor__value="doce")`.
 
 ## O que morre, e o que nasce no lugar
 
@@ -80,7 +81,7 @@ valida e grava. Consulta: `Product.objects.filter(metadata__attributes__sabor__v
 | `metadata["serves"]` | atributo `porcoes` (number) | PDP, seed |
 | `Product.unit_weight_g` (coluna) | **fica coluna**; o registro define `peso_unidade_g` com `storage: column:unit_weight_g` (`purposes: rule, label`) | nenhum leitor muda |
 | `ConsumptionRole` + `ProductConsumptionTag` | **F3, só quando um leitor pedir:** opções de `papel_consumo` com `meta`; etiqueta sem produto no catálogo vira `HistoricalConsumptionTag` no B.I. | inferência do B.I., hub de configurações |
-| (não existe) | atributos `natureza` e `sabor` (choice, `purposes: rule`) | motor de sugestão (WP-SUGESTÃO) |
+| (não existe) | atributos `natureza`, `sabor` e `temperatura` (choice, `purposes: rule`) | motor de sugestão (WP-SUGESTÃO), que os lê por REGRA configurável, nunca por nome fixo no código |
 
 `fiscal` e `social` **não** entram: são esquemas de outros donos (fiscalman e o PIM
 social), já canônicos. `purchase`, `lead_time_hours`, `made_to_order`, `ready_from`
@@ -109,7 +110,7 @@ já é com unidade × pack.
 
 ## Onde o gestor mexe
 
-- Admin do Offerman: CRUD de `AttributeDefinition` (Unfold canônico).
+- Admin do `shop`: CRUD de `AttributeDefinition` (Unfold canônico).
 - Painel do produto no Gestor: os atributos aparecem como campos tipados (escolha,
   múltipla, número), com o assist de IA propondo valor e marcando `source: ai`;
   o gestor aprova. É o mesmo assist que hoje escreve descrição.
@@ -119,7 +120,7 @@ já é com unidade × pack.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | `shop.AttributeDefinition` + `attr/set_attr` + migração dos três legados de metadata + leitores atualizados + seed + Admin; `natureza` e `sabor` com carga derivada das coleções; painel do produto com assist | `make test` verde; PDP, rótulo e catálogo idênticos antes e depois. É a F1 do [WP-SUGESTÃO](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) |
+| F1 | `shop.AttributeDefinition` + `shop/services/attributes.py` + migração dos três legados de metadata + leitores atualizados + seed + Admin; `natureza`, `sabor` e `temperatura` com carga derivada das coleções; painel do produto com assist | `make test` verde; PDP, rótulo e catálogo idênticos antes e depois. É a F1 do [WP-SUGESTÃO](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) |
 | F2 | feed do Google Merchant / Meta lendo os atributos com `purposes: feed`; filtros da loja por atributo | quando o feed voltar à fila |
 | F3 (adiada) | `papel_consumo` como atributo; `HistoricalConsumptionTag`; inferência do B.I. lendo o padrão novo; tabelas antigas apagadas | só com um leitor que ganhe com isso; relatórios do B.I. com os mesmos números antes e depois |
 
