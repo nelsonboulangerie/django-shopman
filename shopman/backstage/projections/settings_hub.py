@@ -88,6 +88,7 @@ SETTINGS_MAP: tuple[SettingsGroup, ...] = (
             _model("Cupons", "shop_coupon", "Códigos que o cliente digita para ganhar desconto.", "confirmation_number"),
             _model("Faixas de preço", "guestman_pricetier", "Tabelas de preço por tipo de cliente.", "groups"),
             _model("Fidelidade", "shop_shoployalty", "Como o cliente acumula e troca pontos.", "loyalty"),
+            _model("Atributos de produto", "shop_attributedefinition", "O vocabulário que o catálogo conhece: natureza, sabor, temperatura. É dele que as regras de sugestão falam.", "sell"),
             _model("Papéis de consumo", "backstage_consumptionrole", "O que faz uma cesta indicar consumo no salão: bebida, lanche, prato quente.", "restaurant"),
             _model("Etiquetas de consumo", "backstage_productconsumptiontag", "Que papel cada produto cumpre na cesta. O nome engana: pão de hambúrguer é pão.", "label"),
         ),
