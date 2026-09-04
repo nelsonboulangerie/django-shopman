@@ -55,6 +55,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`CATALOG-SYNC-EXTERNO-PLAN.md`](CATALOG-SYNC-EXTERNO-PLAN.md) | Adapters Google/Meta/WhatsApp Catalog; bloqueado em credenciais externas. |
 | [`WHATSAPP-CONCIERGE-PLAN.md`](WHATSAPP-CONCIERGE-PLAN.md) | Concierge de WhatsApp: pedido por conversa com modelo de linguagem, ferramentas determinísticas, resposta assíncrona via ManyChat ([ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md)); código da F1 escrito, aguarda palavra do dono. |
 | [`WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md`](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) | Um motor de sugestão (adicional que combina, substituto à altura) para site e concierge; proposto, aguarda o dono. |
+| [`WP-ATRIBUTOS-DE-PRODUTO.md`](WP-ATRIBUTOS-DE-PRODUTO.md) | Atributos de produto com definição (registro no `shop`, valores no metadata, zero legado, Core intocado); proposto. |
 | [`MANYCHAT-CONVERSACIONAL-PLAN.md`](MANYCHAT-CONVERSACIONAL-PLAN.md) | **Superado** pelo WHATSAPP-CONCIERGE-PLAN (mesmas invariantes, mecanismo diferente); fica como registro. |
 | [`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md`](WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md) | Spike do canal WhatsApp transacional (notificação + OTP) Meta-direto. |
 | [`PRODUCTION-FORECAST-BOARD-PLAN.md`](PRODUCTION-FORECAST-BOARD-PLAN.md) | Painel estilo aeroporto para vendas/encomendas (o que dá para prometer por data). |
