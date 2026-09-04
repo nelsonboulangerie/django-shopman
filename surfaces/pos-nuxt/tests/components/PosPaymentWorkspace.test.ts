@@ -50,6 +50,9 @@ function props(overrides: Record<string, unknown> = {}) {
     fulfillmentType: "pickup",
     paymentCollection: "terminal",
     paymentTenders: [],
+    splitCount: 0,
+    splitPaidCount: 0,
+    splitNote: "",
     selectedTenderIndex: -1,
     selectedTenderMethod: "",
     paymentTotalQ: 1000,
@@ -131,7 +134,7 @@ describe("PosPaymentWorkspace — seções semânticas da coluna de trabalho", (
     // a LINHA em cima (métodos + teclado), o que age sobre o VALOR embaixo.
     // A Nota fiscal saiu daqui — ela é o que sai do PEDIDO, e foi para a coluna
     // do pedido.
-    expect(inInstrument).toEqual(["Forma de pagamento", "Ações da venda"]);
+    expect(inInstrument).toEqual(["Ajustes da conta", "Forma de pagamento"]);
 
     // A coluna da direita ficou com UM trabalho: o resumo do pedido. Cliente e
     // recebimento saíram para a barra do topo, que segue visível no checkout —
@@ -404,18 +407,34 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     expect(wrapper.find(".order-2").text()).not.toContain("Sem cliente");
   });
 
-  it("desconto e divisão são AÇÕES DA VENDA, não formas de pagamento", async () => {
+  it("desconto e divisão são AJUSTES DA CONTA, e vêm ANTES da forma de pagamento", async () => {
     // O desconto ficava sob o cabeçalho "Forma de pagamento", ensinando a
-    // categoria errada — e era o primeiro alvo da coluna, acima de Dinheiro.
-    // Ele age sobre o VALOR; "Exato" e "Limpar" agem sobre a LINHA selecionada.
-    // Os dois sujeitos agora têm cada um a sua seção, na mesma coluna.
+    // categoria errada. Depois os dois foram para o rodapé da coluna, abaixo do
+    // teclado — lugar aonde o operador só chega DEPOIS de lançar a primeira
+    // forma, e aí já é tarde: o desconto muda o valor de cada parte, e ligar a
+    // divisão não reparte o que já está na tela.
     const wrapper = await mountSuspended(PosPaymentWorkspace, {
       props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
     });
     expect(wrapper.find('section[aria-label="Forma de pagamento"]').text()).not.toContain("Desconto");
-    const acoes = wrapper.find('section[aria-label="Ações da venda"]');
-    expect(acoes.text()).toContain("Desconto na venda");
-    expect(acoes.text()).toContain("Dividir conta");
+    const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
+    expect(ajustes.text()).toContain("Desconto");
+    expect(ajustes.text()).toContain("Dividir conta");
+    // A ORDEM é o conteúdo do teste: ajuste antes de instrumento.
+    const html = wrapper.html();
+    expect(html.indexOf('aria-label="Ajustes da conta"')).toBeLessThan(
+      html.indexOf('aria-label="Forma de pagamento"'),
+    );
+  });
+
+  it("os dois ajustes são DUAS COLUNAS — é o que os separa da pilha de tenders", async () => {
+    // As formas de pagamento são uma pilha vertical de linha inteira. Se os
+    // ajustes tivessem o mesmo arranjo, virariam mais dois tenders na lista.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
+    });
+    const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
+    expect(ajustes.find(".grid-cols-2").exists()).toBe(true);
   });
 
   it("o Validar fecha a COLUNA DO PEDIDO — não há barra atravessando a tela", async () => {
@@ -441,10 +460,78 @@ describe("PosPaymentWorkspace — a coluna de contexto", () => {
     expect(wrapper.findAll("button").some((b) => b.text().trim().startsWith("Voltar Esc"))).toBe(false);
   });
 
-  it("sem tipo de desconto no contrato, a seção de ações não existe", async () => {
+  it("sem tipo de desconto no contrato, o DIVIDIR CONTA continua de pé", async () => {
+    // As duas ações moravam sob um `v-if="discountTypes.length"`: uma loja sem
+    // tipo de desconto cadastrado perdia TAMBÉM o dividir conta, que não
+    // depende de contrato nenhum — é aritmética da tela.
     const wrapper = await mountSuspended(PosPaymentWorkspace, { props: props({ discountTypes: [] }) });
-    expect(wrapper.find('section[aria-label="Ações da venda"]').exists()).toBe(false);
-    expect(wrapper.text()).not.toContain("Desconto na venda");
+    const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
+    expect(ajustes.exists()).toBe(true);
+    expect(ajustes.text()).toContain("Dividir conta");
+    expect(ajustes.text()).not.toContain("Desconto");
+  });
+
+  it("o botão diz SOZINHO se o ajuste está ligado, e de quanto", async () => {
+    // Botão que não muda de cara quando está ligado obriga o operador a abrir o
+    // modal só para conferir — com o cliente na frente. O badge é o estado.
+    const desligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "Percentual" }] }),
+    });
+    const semAjuste = desligado.find('section[aria-label="Ajustes da conta"]');
+    expect(semAjuste.find(".border-primary").exists()).toBe(false);
+    expect(semAjuste.text()).toContain("F9");
+
+    const ligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        discountTypes: [{ ref: "percent", label: "Percentual" }],
+        discountType: "percent",
+        discountValue: "10",
+      }),
+    });
+    const comAjuste = ligado.find('section[aria-label="Ajustes da conta"]');
+    expect(comAjuste.text()).toContain("10%");
+    // O atalho cede o canto ao valor: o estado vale mais que a tecla.
+    expect(comAjuste.text()).not.toContain("F9");
+  });
+
+  it("ARMADO e EM USO são estados diferentes na divisão: \"3\" vira \"1/3\"", async () => {
+    // Desarmar uma divisão armada é gratuito; desarmar uma em uso mexe em
+    // linhas de pagamento que já estão na tela. O operador tem que ver a
+    // diferença sem abrir nada.
+    const armado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ splitCount: 3, splitPaidCount: 0 }),
+    });
+    const botaoArmado = armado
+      .find('section[aria-label="Ajustes da conta"]')
+      .findAll("button")
+      .find((b) => b.text().includes("Dividir conta"))!;
+    expect(botaoArmado.text()).toContain("3");
+    expect(botaoArmado.attributes("aria-pressed")).toBe("true");
+
+    const emUso = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ splitCount: 3, splitPaidCount: 1 }),
+    });
+    const botaoEmUso = emUso
+      .find('section[aria-label="Ajustes da conta"]')
+      .findAll("button")
+      .find((b) => b.text().includes("Dividir conta"))!;
+    expect(botaoEmUso.text()).toContain("1/3");
+  });
+
+  it("com link de pagamento lançado, dividir fica indisponível — e diz por quê", async () => {
+    // O link cobra a venda inteira (`link_requires_full_payment` no commit).
+    // Esta é a gêmea na tela, não a trava.
+    const wrapper = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentTenders: [{ method: "link", amountQ: 1000, label: "Link", amountDisplay: "R$ 10,00" }],
+      }),
+    });
+    const botao = wrapper
+      .find('section[aria-label="Ajustes da conta"]')
+      .findAll("button")
+      .find((b) => b.text().includes("Dividir conta"))!;
+    expect(botao.attributes("disabled")).toBeDefined();
+    expect(botao.attributes("title")).toContain("venda inteira");
   });
 });
 
@@ -948,9 +1035,9 @@ describe("PosPaymentWorkspace — a tela não promete o que não confere", () =>
         review: review({ subtotal_q: 2000 }),
       }),
     });
-    const acoes = wrapper.find('section[aria-label="Ações da venda"]');
-    expect(acoes.text()).toContain(formatBRL(2000));
-    expect(acoes.text()).not.toContain("R$ 50 ");
+    const ajustes = wrapper.find('section[aria-label="Ajustes da conta"]');
+    expect(ajustes.text()).toContain(formatBRL(2000));
+    expect(ajustes.text()).not.toContain("R$ 50 ");
   });
 
   it("remover um pagamento não é filho do botão que o seleciona", async () => {

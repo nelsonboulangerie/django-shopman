@@ -109,6 +109,7 @@ const {
   scheduleMaxDate,
   refreshSchedule,
   splitCount,
+  splitPaidCount,
   splitNote,
   setSplitCount,
   selectedTenderMethod,
@@ -873,6 +874,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :schedule-failed="scheduleFailed"
         :schedule-max-date="scheduleMaxDate"
         :split-count="splitCount"
+        :split-paid-count="splitPaidCount"
         :split-note="splitNote"
         :managers="pos?.managers || []"
         :operator-name="activeOperator?.name || ''"
