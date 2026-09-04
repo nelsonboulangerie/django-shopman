@@ -120,9 +120,35 @@ já é com unidade × pack.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | `shop.AttributeDefinition` + `shop/services/attributes.py` + migração dos três legados de metadata + leitores atualizados + seed + Admin; `natureza`, `sabor` e `temperatura` com carga derivada das coleções; painel do produto com assist | `make test` verde; PDP, rótulo e catálogo idênticos antes e depois. É a F1 do [WP-SUGESTÃO](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) |
+| F1 | **ENTREGUE (04/09, PRs #510 #511 #512).** `shop.AttributeDefinition` + `shop/services/attributes.py` + Admin + as sete definições por migração; `natureza`, `sabor` e `temperatura` com carga derivada das coleções (`propose_product_attributes`). **A migração dos três legados NÃO aconteceu** — ver abaixo | `make test` e `make admin` verdes; PDP, rótulo, catálogo e ficha idênticos, com teste de paridade (`test_attributes_parity.py`) |
 | F2 | feed do Google Merchant / Meta lendo os atributos com `purposes: feed`; filtros da loja por atributo | quando o feed voltar à fila |
 | F3 (adiada) | `papel_consumo` como atributo; `HistoricalConsumptionTag`; inferência do B.I. lendo o padrão novo; tabelas antigas apagadas | só com um leitor que ganhe com isso; relatórios do B.I. com os mesmos números antes e depois |
+
+## O que a F1 decidiu diferente do plano (04/09/2026)
+
+A decisão 3 ("os nomes antigos somem, todos os leitores atualizados") colidia com
+o gate de aceite ("nenhum arquivo de `packages/*` modificado nesta fase"), porque
+**quem escreve `allergens`, `dietary_info` e `serves` é o Core**: o
+`ProductAdminForm` do Offerman é o editor vivo do rótulo. Mover as chaves sem
+tocá-lo deixaria o formulário lendo vazio.
+
+Resposta do dono, no mesmo dia: **ponteiro agora, rename depois — "e já precisa
+fazer o WP dedicado o quanto antes"**. O campo `storage` da definição, que o plano
+já previa para `column:unit_weight_g`, ganhou o terceiro modo `metadata:<chave>`:
+
+| `storage` | atributos | valor mora em |
+|---|---|---|
+| `attributes` | natureza, sabor, temperatura | `metadata["attributes"][ref]["value"]` |
+| `column:<campo>` | peso_unidade_g | a coluna (fato físico) |
+| `metadata:<chave>` | alergenos, dieta, porcoes | onde já morava |
+
+Consequência honesta: `alergenos` e `dieta` nasceram como `multi_text` (lista de
+termos livres) e não como escolha múltipla. O registro não controla a escrita
+delas, e declarar opções fechadas seria prometer uma restrição que ele não tem
+como aplicar. A lista fechada entra com o rename.
+
+O rename é o [WP-ATRIBUTOS-RENAME](WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md), com
+escopo arquivo a arquivo.
 
 ## Análise adversarial (04/09/2026)
 
