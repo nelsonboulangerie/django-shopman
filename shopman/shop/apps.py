@@ -219,6 +219,21 @@ class ShopmanConfig(AppConfig):
             sender=RuleConfig,
             dispatch_uid="shopman.shop.rules.invalidate_cache",
         )
+
+        # O registro de atributos é lido a cada sugestão e a cada leitura de
+        # produto; cadastrar um atributo no Admin precisa valer na hora, e não
+        # daqui a uma hora.
+        from django.db.models.signals import post_delete
+
+        from shopman.shop.models import AttributeDefinition
+        from shopman.shop.services.attributes import invalidate_cache
+
+        for signal in (post_save, post_delete):
+            signal.connect(
+                invalidate_cache,
+                sender=AttributeDefinition,
+                dispatch_uid=f"shopman.shop.attributes.invalidate_cache.{signal is post_save}",
+            )
         logger.info("ShopmanConfig: rules engine wired.")
 
     def _connect_lifecycle_signal(self):
