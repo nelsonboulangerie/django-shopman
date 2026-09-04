@@ -877,10 +877,14 @@ class TestCatalogBackendAdapter:
 
 
 class TestSuggestions:
-    """find_substitutes tests."""
+    """Similaridade de catálogo: palavra-chave, coleção, gramatura e preço.
+
+    Disponibilidade, preço de canal e sabor NÃO se testam aqui — são política do
+    tenant e vivem em ``shopman.shop.services.substitutes``.
+    """
 
     def test_find_substitutes_with_keywords(self, db):
-        """find_substitutes returns products with common keywords."""
+        """Palavra-chave em comum é o sinal mais forte, e manda na ordem."""
         from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
         from shopman.offerman.models import Collection, CollectionItem
 
@@ -897,13 +901,128 @@ class TestSuggestions:
         p3.keywords.add("doce")
         CollectionItem.objects.create(collection=coll, product=p3, is_primary=True)
 
-        substitutes = find_substitutes("PAO-INT")
-        skus = [a.sku for a in substitutes]
-        assert "PAO-7G" in skus  # Shares 'integral' keyword
-        assert "BOLO" not in skus  # No common keyword
+        skus = [a.sku for a in find_substitutes("PAO-INT")]
 
-    def test_find_substitutes_no_keywords(self, db):
-        """find_substitutes returns empty when product has no keywords."""
+        # O bolo divide a coleção e por isso É candidato — coleção sozinha vale
+        # sinal desde o refino de 04/09. Mas quem divide palavra-chave vem antes.
+        assert skus[0] == "PAO-7G"
+        assert skus.index("PAO-7G") < skus.index("BOLO")
+
+    def test_a_product_without_keywords_still_has_substitutes(self, db):
+        """DEFEITO 1: ``if not product_keywords: return []``.
+
+        Palavra-chave é dado que alguém precisa cadastrar, e exigi-la fazia todo
+        produto sem tag não ter substituto nenhum. A coleção sozinha basta.
+        """
+        from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
+        from shopman.offerman.models import Collection, CollectionItem
+
+        coll = Collection.objects.create(ref="paes", name="Paes")
+        sem_tag = Product.objects.create(sku="SEM-TAG", name="Pao sem tag", base_price_q=400)
+        CollectionItem.objects.create(collection=coll, product=sem_tag, is_primary=True)
+        vizinho = Product.objects.create(sku="VIZINHO", name="Pao vizinho", base_price_q=450)
+        CollectionItem.objects.create(collection=coll, product=vizinho, is_primary=True)
+
+        assert [p.sku for p in find_substitutes("SEM-TAG")] == ["VIZINHO"]
+
+    def test_a_substitute_outside_the_collection_is_a_reserve_not_an_impossibility(self, db):
+        """DEFEITO 2: ``same_collection=True`` era filtro duro.
+
+        Quando dentro da coleção não há nada, o de fora tem de aparecer — antes
+        era impossível, e o cliente via "sem substituto" com um pão equivalente
+        na prateleira ao lado.
+        """
+        from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
+        from shopman.offerman.models import Collection, CollectionItem
+
+        rusticos = Collection.objects.create(ref="rusticos", name="Rusticos")
+        macios = Collection.objects.create(ref="macios", name="Macios")
+
+        sozinho = Product.objects.create(sku="SOZINHO", name="Pao sozinho", base_price_q=400)
+        sozinho.keywords.add("centeio")
+        CollectionItem.objects.create(collection=rusticos, product=sozinho, is_primary=True)
+
+        de_fora = Product.objects.create(sku="DE-FORA", name="Pao de fora", base_price_q=420)
+        de_fora.keywords.add("centeio")
+        CollectionItem.objects.create(collection=macios, product=de_fora, is_primary=True)
+
+        assert [p.sku for p in find_substitutes("SOZINHO")] == ["DE-FORA"]
+
+    def test_the_closest_weight_wins(self, db):
+        """DEFEITO 3: ``unit_weight_g`` era ignorado.
+
+        Trocar um pão de 150 g por um de 800 g é tecnicamente um substituto e
+        praticamente um problema.
+        """
+        from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
+        from shopman.offerman.models import Collection, CollectionItem
+
+        coll = Collection.objects.create(ref="paes", name="Paes")
+        ref = Product.objects.create(
+            sku="REF", name="Pao ref", base_price_q=400, unit_weight_g=150,
+        )
+        CollectionItem.objects.create(collection=coll, product=ref, is_primary=True)
+
+        # Os dois dividem coleção e faixa de preço: só o peso os separa.
+        perto = Product.objects.create(
+            sku="PERTO", name="Pao perto", base_price_q=400, unit_weight_g=160,
+        )
+        CollectionItem.objects.create(collection=coll, product=perto, is_primary=True)
+        longe = Product.objects.create(
+            sku="LONGE", name="Pao longe", base_price_q=400, unit_weight_g=900,
+        )
+        CollectionItem.objects.create(collection=coll, product=longe, is_primary=True)
+
+        skus = [p.sku for p in find_substitutes("REF")]
+        assert skus[0] == "PERTO"
+        assert skus.index("PERTO") < skus.index("LONGE")
+
+    def test_score_substitutes_says_why(self, db):
+        """DEFEITO 4: só produtos, sem explicação."""
+        from shopman.offerman.contrib.substitutes.substitutes import score_substitutes
+        from shopman.offerman.models import Collection, CollectionItem
+
+        coll = Collection.objects.create(ref="paes", name="Paes")
+        ref = Product.objects.create(
+            sku="REF", name="Pao ref", base_price_q=400, unit_weight_g=150,
+        )
+        ref.keywords.add("centeio")
+        CollectionItem.objects.create(collection=coll, product=ref, is_primary=True)
+
+        par = Product.objects.create(
+            sku="PAR", name="Pao par", base_price_q=410, unit_weight_g=150,
+        )
+        par.keywords.add("centeio")
+        CollectionItem.objects.create(collection=coll, product=par, is_primary=True)
+
+        top = score_substitutes("REF")[0]
+
+        assert top.product.sku == "PAR"
+        assert top.score > 0
+        assert "keyword:centeio" in top.reasons
+        assert "same_collection" in top.reasons
+        assert "price_band" in top.reasons
+        assert any(r.startswith("weight:") for r in top.reasons)
+
+    def test_find_substitutes_keeps_its_signature(self, db):
+        """A assinatura antiga continua valendo: quem só quer produtos não muda."""
+        from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
+        from shopman.offerman.models import Collection, CollectionItem
+
+        coll = Collection.objects.create(ref="paes", name="Paes")
+        for sku in ("A", "B", "C"):
+            p = Product.objects.create(sku=sku, name=f"Pao {sku}", base_price_q=400)
+            CollectionItem.objects.create(collection=coll, product=p, is_primary=True)
+
+        found = find_substitutes("A", limit=1, same_collection=True)
+        assert len(found) == 1
+        assert all(isinstance(p, Product) for p in found)
+
+    def test_find_substitutes_without_keywords_or_collection(self, db):
+        """Sem tag e sem coleção não há de onde tirar similaridade.
+
+        Continua vazio — e isso não é o defeito 1: ali o produto TINHA coleção.
+        """
         from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
 
         Product.objects.create(sku="NAKED", name="No Keywords", base_price_q=100)

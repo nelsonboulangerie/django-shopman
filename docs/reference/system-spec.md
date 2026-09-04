@@ -103,7 +103,10 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 **Signals**: `product_created`, `price_changed(old_price_q, new_price_q)`.
 
 **Contrib**
-- `contrib/substitutes/substitutes.py::find_substitutes(sku, limit=5, same_collection=True)` — score: keywords 3pts + coleção 2pts + price proximity 1pt. **Sem SequenceMatcher de nome** (evita falsos positivos em catálogos prefixados).
+- `contrib/substitutes/substitutes.py::find_substitutes(sku, limit=5, same_collection=True)` — score: keywords 3pts + coleção 2pts + gramatura até 2pts (distância relativa) + price proximity 1pt. **Sem SequenceMatcher de nome** (evita falsos positivos em catálogos prefixados).
+  - `score_substitutes(...)` é a irmã explicativa: devolve `ScoredSubstitute(product, score, reasons)`. `find_substitutes` mantém assinatura e tipo de retorno.
+  - ⚠️ **Refino de 04/09/2026:** palavra-chave deixou de ser pré-requisito (a coleção sozinha gera candidatos — antes, produto sem tag não tinha substituto **nenhum**), e `same_collection` virou **preferência** em vez de filtro duro (o de fora entra como reserva quando dentro não há nada). A gramatura entrou na pontuação: trocar um pão de 150 g por um de 800 g é tecnicamente um substituto e praticamente um problema.
+  - Sabor, disponibilidade e preço de canal **não** moram aqui — são política do tenant, em `shopman.shop.services.substitutes.find`.
 
 **Invariantes**
 - Visibilidade = `Product.is_published ∧ ListingItem.is_published` (AND, não OR).
