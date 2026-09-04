@@ -101,7 +101,7 @@ sem ficha por SKU.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | atributos `natureza`, `sabor` e `temperatura` no registro (WP-ATRIBUTOS), com carga derivada das coleções e revisão no Admin; regras `suggestion.complement` e `suggestion.substitute` em `RuleConfig` com os defaults do dono; `ProductAffinity` + comando noturno; `suggestions.suggest("complement")` com portões e `reasons`; `build_cart.upsell` passa a usar; concierge religa `CONCIERGE_SUGGEST_ADD_ONS` | teste com a sacola do piloto: pão → café/manteiga, nunca água por popularidade |
+| F1 | **ENTREGUE (04/09, PRs #510 #511 #512).** Registro de atributos com carga derivada; `suggestion.complement`/`substitute` em `RuleConfig` com esquema validado (recusa atributo ou opção inexistente, no save); `ProductAffinity` + `compute_product_affinity` no worker; `suggestions.suggest("complement")` com portões e `reasons`; `build_upsell_suggestion` morto; `CONCIERGE_SUGGEST_ADD_ONS` religado | ✅ `test_the_pilot_cart_gets_coffee_and_never_water` — a sacola do piloto recebe café/acompanhamento com a Água passando nos portões e mesmo assim perdendo |
 | F2 | **Refino do Core aprovado pelo dono (04/09):** `find_substitutes` do Offerman deixa de exigir palavra-chave (coleção sozinha já é sinal), a coleção vira preferência em vez de filtro duro (dentro primeiro, fora como reserva), o peso por unidade entra na pontuação (mais próximo ganha) e uma função irmã devolve pontuação e motivos; assinatura atual preservada, um teste por defeito na suíte do Offerman, nota no guia. Por cima, `shop/services/substitutes.find` (que já faz disponibilidade e preço de canal) ganha sabor igual (atributo do tenant). Estoque e concierge consomem | item esgotado devolve até três à altura; produto sem palavra-chave passa a ter substituto |
 | F3 | assist de palavras-chave em lote com Search Console/Trends como fonte; Admin lista sugestões com `reasons`; B.I. mede aceitação por superfície | métrica: aceitação ≥ 10% no chat |
 | F4 (opcional) | `pairs_with` / `substitute_for` como ajuste fino, e contexto de salão para o PDV | só se F1–F3 pedirem |
@@ -172,6 +172,30 @@ explica por que infla "Pão X/Pão Y").
 3. **Substituto:** dentro da coleção primeiro, fora como reserva; doce → doce e salgado → salgado são fronteira.
 4. **Palavras-chave:** rodar o assist em lote, com peso de SEO: fontes Google que valem são o Search Console (buscas reais que já trazem ao site; API gratuita, exige autorização da propriedade) e o Trends (volume relativo para desempatar sinônimos). Keyword Planner exige conta do Ads: fora.
 5. **Gramatura:** o mais próximo disponível, sem faixa.
+
+## O que a F1 fixou, e que o plano não dizia (04/09/2026)
+
+**Portão é portão; sinal é sinal.** O plano lista os portões nominalmente —
+visível no canal, vendável, disponível agora, fora da sacola — e **preço não está
+entre eles**, está na tabela de sinais. A implementação seguiu isso ao pé da
+letra: `price: below_cart_average` é preferência (entra na pontuação), porque um
+filtro duro de preço calaria a sugestão numa sacola barata, e "sugestão que não
+sai" é pior que "sugestão um pouco cara". Já `context` (não sugerir gelado numa
+entrega) é portão de verdade: ali a sugestão seria uma promessa que a casa não
+cumpre.
+
+**Sem motivo, sem sugestão.** Candidato que não casa com nenhum pareamento e não
+tem afinidade nenhuma não é oferecido. Sem essa regra o motor devolveria o
+primeiro SKU em ordem alfabética — o tipo de "sugestão" que não significa nada.
+
+**A cadência mora no comando, não no worker.** O `maintenance_worker` roda o
+ciclo a cada 5 minutos e não tem mecanismo de cadência; um ano de cestas não
+cabe nisso. Em vez de ensinar cadência ao worker, o `compute_product_affinity`
+recusa recalcular com a tabela mais nova que 20h, usando o `computed_at` que ela
+já tem como relógio. Quem sabe quanto custa o cálculo é o comando.
+
+**`reasons` não vai para o cliente.** Fica na projection do `shop`, para o Admin
+explicar e o B.I. medir. Na tela de quem compra, é só um convite.
 
 ## Referências
 
