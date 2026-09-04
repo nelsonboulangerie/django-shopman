@@ -63,11 +63,27 @@ def _affinity(a, b, lift, *, count=10):
 
 
 def _rule(params, *, ref="suggestion.complement"):
-    return RuleConfig.objects.create(
-        ref=ref, label="Adicional",
-        rule_path="shopman.shop.rules.suggestion.ComplementRule",
-        params=params, enabled=True,
+    """Reescreve a regra que a migração já cadastrou.
+
+    ``update_or_create`` e não ``create``: os defaults do dono nascem com o
+    deploy (migração 0030), então todo teste começa com a regra real no banco —
+    que é o estado de produção, e o certo para testar contra.
+    """
+    rule, _ = RuleConfig.objects.update_or_create(
+        ref=ref,
+        defaults={
+            "label": "Adicional",
+            "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
+            "params": params,
+            "enabled": True,
+        },
     )
+    return rule
+
+
+def _no_rule():
+    """Desliga a regra seedada — o cenário "regra em branco" do contrato."""
+    RuleConfig.objects.filter(ref="suggestion.complement").update(enabled=False)
 
 
 # --- portões ----------------------------------------------------------------
@@ -109,6 +125,7 @@ def test_an_empty_cart_has_nothing_to_pair_with(listing):
 
 def test_with_no_rule_the_engine_still_runs_on_co_occurrence(listing):
     """Regra em branco não quebra nada — é o contrato do WP."""
+    _no_rule()
     _product("PAO", "Pão", listing=listing)
     _product("CAFE", "Café", listing=listing)
     _affinity("PAO", "CAFE", 4.0)
@@ -284,17 +301,25 @@ def test_a_key_outside_the_schema_is_refused():
 def test_the_admin_refuses_to_save_a_broken_rule():
     """A recusa tem de acontecer no save, não no dia em que a regra não casar."""
     with pytest.raises(ValidationError) as exc:
-        _rule({"pairings": [
-            {"when": {"attr": "sabor", "value": "azedo"},
-             "suggest": {"attr": "natureza", "value": "bebida"}},
-        ]})
+        RuleConfig.objects.create(
+            ref="suggestion.complement.teste", label="Adicional",
+            rule_path="shopman.shop.rules.suggestion.ComplementRule",
+            params={"pairings": [
+                {"when": {"attr": "sabor", "value": "azedo"},
+                 "suggest": {"attr": "natureza", "value": "bebida"}},
+            ]},
+        )
     assert "params" in exc.value.message_dict
 
 
 def test_a_valid_rule_saves():
-    rule = _rule({"pairings": [
-        {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "café"}, "weight": 2},
-    ]})
+    rule = RuleConfig.objects.create(
+        ref="suggestion.complement.teste", label="Adicional",
+        rule_path="shopman.shop.rules.suggestion.ComplementRule",
+        params={"pairings": [
+            {"when": {"attr": "sabor", "value": "doce"}, "suggest": {"tag": "café"}, "weight": 2},
+        ]},
+    )
     assert rule.pk is not None
 
 
@@ -387,6 +412,7 @@ def test_the_pilot_cart_gets_coffee_and_never_water(listing):
 
 def test_the_pilot_cart_still_works_with_no_rule_at_all(listing):
     """O mesmo resultado sem regra cadastrada: a co-ocorrência sozinha basta."""
+    _no_rule()
     _product("BAG", "Baguette de Tradition", price_q=1400, listing=listing)
     _product("SHOKU", "Shokupan", price_q=2600, listing=listing)
     _product("CAFE", "Café coado", price_q=700, listing=listing)
@@ -397,3 +423,73 @@ def test_the_pilot_cart_still_works_with_no_rule_at_all(listing):
 
     found = suggest(COMPLEMENT, cart_skus={"BAG", "SHOKU"}, channel_ref=CHANNEL)
     assert [s.sku for s in found] == ["CAFE"]
+
+
+# --- os defaults que a migração cadastra ------------------------------------
+
+
+def test_the_owner_defaults_are_seeded_and_valid():
+    """As duas regras nascem com o deploy, e a validação as aceita.
+
+    Regra seedada que não passa na própria validação seria pior que regra
+    nenhuma: ela carrega, não casa nunca, e ninguém descobre.
+    """
+    from shopman.shop.rules.suggestion import ComplementRule, SubstituteRule
+
+    complement = RuleConfig.objects.get(ref="suggestion.complement")
+    substitute = RuleConfig.objects.get(ref="suggestion.substitute")
+
+    assert complement.enabled is True
+    # O motor de substituto é da F2: cadastrada e desligada.
+    assert substitute.enabled is False
+
+    ComplementRule.validate_params(complement.params)
+    SubstituteRule.validate_params(substitute.params)
+
+
+def test_the_seeded_pairings_are_the_ones_the_owner_dictated():
+    params = RuleConfig.objects.get(ref="suggestion.complement").params
+    pairs = {
+        (p["when"]["attr"], p["when"]["value"])
+        for p in params["pairings"]
+    }
+    assert pairs == {("natureza", "comida"), ("sabor", "doce"), ("temperatura", "quente")}
+    assert params["affinity_weight"] == 3
+    assert params["price"] == "below_cart_average"
+
+
+def test_the_migration_and_the_seed_agree_on_the_defaults():
+    """Os defaults existem em DOIS lugares, e não podem divergir.
+
+    A migração 0030 guarda uma cópia congelada — é o que toda migração deve
+    fazer, porque ela representa um momento do banco e não pode mudar de
+    sentido quando o código muda. O `seed --flush` usa as constantes vivas,
+    porque `_flush` apaga toda `RuleConfig` e precisa reconstruí-las.
+
+    Se alguém mudar as constantes sem escrever uma migração nova, é aqui que
+    fica vermelho — e a mensagem diz o que fazer.
+    """
+    from shopman.shop.rules.suggestion import (
+        DEFAULT_COMPLEMENT_PARAMS,
+        DEFAULT_SUBSTITUTE_PARAMS,
+    )
+
+    complement = RuleConfig.objects.get(ref="suggestion.complement")
+    substitute = RuleConfig.objects.get(ref="suggestion.substitute")
+
+    assert complement.params == DEFAULT_COMPLEMENT_PARAMS, (
+        "os defaults vivos mudaram e a migração ficou para trás — "
+        "escreva uma migração de dados nova (o banco no ar não re-roda a 0030)"
+    )
+    assert substitute.params == DEFAULT_SUBSTITUTE_PARAMS
+
+
+def test_the_seeded_rule_offers_a_drink_to_someone_carrying_bread(listing):
+    """Ponta a ponta com a regra REAL: sem afinidade nenhuma, só o pareamento."""
+    _product("PAO", "Pão", listing=listing, natureza="comida", sabor="neutro")
+    _product("CAFE", "Café", listing=listing, natureza="bebida", temperatura="quente")
+
+    found = suggest(COMPLEMENT, cart_skus={"PAO"}, channel_ref=CHANNEL)
+
+    assert [s.sku for s in found] == ["CAFE"]
+    assert found[0].reasons == ("pairing:natureza=comida→natureza=bebida",)

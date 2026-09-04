@@ -67,6 +67,48 @@ PRICE_POLICIES = ("below_cart_average",)
 NON_ATTRIBUTE_SIGNALS = ("collection", "keywords", "name")
 
 
+#: Os defaults que o dono ditou em 04/09. Vivem aqui, e não só na migração,
+#: porque o `seed --flush` apaga TODA `RuleConfig` e precisa saber reconstruí-las
+#: — a migração cobre quem já está no ar, o seed cobre quem reconstrói do zero.
+#: A migração 0030 guarda uma cópia congelada, como toda migração deve; o teste
+#: `test_the_seeded_pairings_are_the_ones_the_owner_dictated` compara as duas.
+DEFAULT_COMPLEMENT_PARAMS = {
+    "pairings": [
+        # "comida → acompanhamento" genérico, em vez de manteiga/geleia por SKU.
+        {
+            "when": {"attr": "natureza", "value": "comida"},
+            "suggest": {"attr": "natureza", "in": ["acompanhamento", "bebida"]},
+            "weight": 3,
+        },
+        # Doce pede café. A palavra-chave é mais precisa que "bebida quente":
+        # chá quente não é o que se oferece com uma madeleine.
+        {
+            "when": {"attr": "sabor", "value": "doce"},
+            "suggest": {"tag": "café"},
+            "weight": 2,
+        },
+        {
+            "when": {"attr": "temperatura", "value": "quente"},
+            "suggest": {"attr": "temperatura", "value": "gelado"},
+            "weight": 2,
+        },
+    ],
+    "affinity_weight": 3,
+    "price": "below_cart_average",
+    "per_surface": {"web": 1, "concierge": 1},
+}
+
+#: O motor de substituto é da F2. A regra nasce cadastrada e DESLIGADA: o gestor
+#: já vê a política, a validação já recusa erro de digitação, e nada a lê ainda.
+DEFAULT_SUBSTITUTE_PARAMS = {
+    "must_match": ["sabor"],            # doce → doce, salgado → salgado é fronteira
+    "prefer": ["collection"],           # dentro da coleção primeiro
+    "approximate": ["peso_unidade_g"],  # o mais próximo ganha, sem faixa
+    "price_band": 0.30,
+    "cross_collection_when_empty": True,
+}
+
+
 class SuggestionRuleError(ValueError):
     """Configuração que o esquema recusa. A mensagem vai para o Admin."""
 

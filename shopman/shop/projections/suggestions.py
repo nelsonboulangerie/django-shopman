@@ -307,7 +307,13 @@ def _score(
 
 
 def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
-    """O código do motivo, se este pareamento casa; ``None`` se não casa."""
+    """O código do motivo, se este pareamento casa; ``None`` se não casa.
+
+    O motivo nomeia o valor que **de fato casou**, não o primeiro que a regra
+    declarou. Com ``in: [acompanhamento, bebida]``, oferecer um café e explicar
+    "→ acompanhamento" seria uma explicação errada — e explicação errada é pior
+    que explicação nenhuma, porque o gestor ajusta a regra errada.
+    """
     when = pairing.get("when") or {}
     suggest_side = pairing.get("suggest") or {}
 
@@ -317,7 +323,12 @@ def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
         return None
 
     by_sku = values.get(when_ref) or {}
-    if not any(_matches(by_sku.get(cart_sku), when_values) for cart_sku in cart_skus):
+    matched_when = None
+    for cart_sku in cart_skus:
+        matched_when = _matched(by_sku.get(cart_sku), when_values)
+        if matched_when is not None:
+            break
+    if matched_when is None:
         return None
 
     if "tag" in suggest_side:
@@ -325,18 +336,17 @@ def _pairing_reason(pairing, sku, cart_skus, values, product) -> str | None:
         keywords = {k.lower() for k in product.keywords.names()}
         if tag not in keywords:
             return None
-        return f"pairing:{when_ref}={_first(when_values)}→tag:{tag}"
+        return f"pairing:{when_ref}={matched_when}→tag:{tag}"
 
     suggest_ref = suggest_side.get("attr")
     if not suggest_ref:
         return None
-    suggest_values = _side_values(suggest_side)
-    if not _matches((values.get(suggest_ref) or {}).get(sku), suggest_values):
-        return None
-    return (
-        f"pairing:{when_ref}={_first(when_values)}"
-        f"→{suggest_ref}={_first(suggest_values)}"
+    matched_suggest = _matched(
+        (values.get(suggest_ref) or {}).get(sku), _side_values(suggest_side),
     )
+    if matched_suggest is None:
+        return None
+    return f"pairing:{when_ref}={matched_when}→{suggest_ref}={matched_suggest}"
 
 
 def _side_values(side: dict) -> tuple[str, ...]:
@@ -347,16 +357,19 @@ def _side_values(side: dict) -> tuple[str, ...]:
     return ()
 
 
-def _first(values: tuple[str, ...]) -> str:
-    return values[0] if values else "?"
+def _matched(value, wanted: tuple[str, ...]) -> str | None:
+    """O valor de ``wanted`` que ``value`` satisfaz, ou ``None``."""
+    if value is None or not wanted:
+        return None
+    candidates = [str(v) for v in value] if isinstance(value, list) else [str(value)]
+    for candidate in candidates:
+        if candidate in wanted:
+            return candidate
+    return None
 
 
 def _matches(value, wanted: tuple[str, ...]) -> bool:
-    if value is None or not wanted:
-        return False
-    if isinstance(value, list):
-        return any(str(v) in wanted for v in value)
-    return str(value) in wanted
+    return _matched(value, wanted) is not None
 
 
 def _context_exclusions(rule: dict, context: dict) -> list[dict]:

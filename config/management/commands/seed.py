@@ -97,6 +97,10 @@ from shopman.shop.models import (
     RuleConfig,
     Shop,
 )
+from shopman.shop.rules.suggestion import (
+    DEFAULT_COMPLEMENT_PARAMS,
+    DEFAULT_SUBSTITUTE_PARAMS,
+)
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
@@ -509,6 +513,14 @@ class Command(BaseCommand):
         # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
         # tem a última palavra sobre a própria config — o seed só preenche lacuna.
         self._restore_terminal_config()
+
+        # DEPOIS do catálogo e das coleções, que é de onde a proposta sai. Sem
+        # isto o registro de atributos nasce vazio num banco seedado, e o motor
+        # de sugestão fica só com a co-ocorrência — que numa base sem histórico
+        # de cestas é nada. Tudo entra como PROPOSTA (source=derived,
+        # reviewed=False): o gestor revisa no Admin, e o que ele escreveu à mão
+        # nunca é sobrescrito.
+        call_command("propose_product_attributes", verbosity=0)
 
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
 
@@ -7368,6 +7380,28 @@ class Command(BaseCommand):
             # Mínimo de entrega, mínimo geral e frete grátis são políticas da loja
             # em Shop.defaults["rules"] (ver _seed_shop), fonte única consumida
             # pelo aviso ao vivo e pelos validators de commit.
+            #
+            # Sugestão: os defaults do dono também entram aqui, e não só na
+            # migração 0030, porque `_flush` apaga TODA RuleConfig — sem estas
+            # duas linhas, um `seed --flush` deixaria a casa sem regra de
+            # adicional e sem ninguém perceber (o motor cairia só em
+            # co-ocorrência, que num banco recém-flushado é nada).
+            {
+                "ref": "suggestion.complement",
+                "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
+                "label": "Sugestão de adicional",
+                "params": DEFAULT_COMPLEMENT_PARAMS,
+                "priority": 100,
+            },
+            {
+                "ref": "suggestion.substitute",
+                "rule_path": "shopman.shop.rules.suggestion.SubstituteRule",
+                "label": "Sugestão de substituto",
+                "params": DEFAULT_SUBSTITUTE_PARAMS,
+                "priority": 101,
+                # O motor de substituto é da F2.
+                "enabled": False,
+            },
         ]
 
         count = 0
@@ -7380,7 +7414,9 @@ class Command(BaseCommand):
                     "label": rc["label"],
                     "params": rc["params"],
                     "priority": rc["priority"],
-                    "enabled": True,
+                    # Regra pode nascer desligada (a de substituto nasce): o
+                    # default continua ligado para todas as outras.
+                    "enabled": rc.get("enabled", True),
                 },
             )
             rules_by_ref[rc["ref"]] = obj

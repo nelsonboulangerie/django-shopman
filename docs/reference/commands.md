@@ -9,6 +9,8 @@
 | Comando | App | Categoria | Descrição |
 |---------|-----|-----------|-----------|
 | [`release_expired_holds`](#release_expired_holds) | stockman | Manutenção | Libera holds expirados |
+| [`compute_product_affinity`](#compute_product_affinity) | shop | Manutenção | Recalcula o que a casa vende junto (cestas do ano, lift) — segura a própria cadência |
+| [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
@@ -981,3 +983,60 @@ Cria ou atualiza um superuser nominal de forma idempotente, sem depender do
 # Worker de directives (systemd/supervisor, não cron)
 # python manage.py process_directives --watch
 ```
+
+### compute_product_affinity
+
+Recalcula `shop.ProductAffinity` — o que a casa vende junto — a partir das
+cestas do último ano: pedidos do Orderman e o histórico externo do B.I.
+(`shop/adapters/baskets.py`). É o sinal que substituiu "o item mais popular que
+não está na sacola" no adicional do carrinho e do concierge.
+
+```bash
+python manage.py compute_product_affinity                      # respeita a cadência
+python manage.py compute_product_affinity --force              # recalcula agora
+python manage.py compute_product_affinity --dry-run            # mostra o top 10
+python manage.py compute_product_affinity --window-days 180 --min-support 3
+```
+
+| Flag | Default | O que faz |
+|---|---|---|
+| `--window-days` | 365 | janela de cestas lidas |
+| `--half-life-days` | 120 | aos N dias uma cesta vale metade |
+| `--min-support` | 5 | mínimo de cestas em comum para o par virar linha |
+| `--min-interval-hours` | 20 | não recalcula se a tabela for mais nova que isto (`0` desliga) |
+| `--force` | — | recalcula mesmo com a tabela fresca |
+
+⚠️ **A cadência mora aqui, não no worker.** O `maintenance_worker` roda o ciclo
+a cada 5 minutos e não tem noção de "uma vez por noite"; um ano de cestas não
+cabe nisso. Quem sabe quanto custa o cálculo é o comando, e o relógio é o
+`computed_at` que a própria tabela já tem — sem bookkeeping nova. Por isso ele
+pode ficar no ciclo sem custo: 99% das vezes sai na primeira consulta.
+
+Roda no fim do ciclo do `maintenance_worker`, antes do `purge_sign_in_audit`.
+
+### propose_product_attributes
+
+Propõe `natureza`, `sabor` e `temperatura` por SKU a partir da **coleção
+primária** do produto, para o gestor revisar. É a carga inicial do registro de
+atributos (`shop.AttributeDefinition`).
+
+```bash
+python manage.py propose_product_attributes --dry-run
+python manage.py propose_product_attributes
+python manage.py propose_product_attributes --overwrite-derived
+```
+
+⚠️ **Proposta não é curadoria.** Tudo sai com `source="derived"` e
+`reviewed=False`; o gestor revisa no Admin. O que ele escreveu à mão
+(`source="manual"`) **nunca** é sobrescrito — nem com `--overwrite-derived`,
+que só reescreve propostas anteriores.
+
+Mercearia é desempatada por palavra-chave: geleia, mostarda, patê e queijo são
+`acompanhamento` (comem-se com o pão); café em grão e chá em lata são `outro`
+(saem pela porta). Coleção que não responde a pergunta deixa o atributo em
+branco — ausência de dado é ausência de dado, e "combos" não tem natureza
+própria: ele herda a dos componentes.
+
+O `seed` chama este comando no fim, depois do catálogo e das coleções. **Num
+deployment já no ar, ele precisa ser rodado à mão** — sem ele o registro fica
+vazio e os pareamentos de `suggestion.complement` não casam com nada.
