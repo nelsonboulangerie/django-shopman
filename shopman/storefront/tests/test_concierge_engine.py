@@ -20,6 +20,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
+from django.conf import settings
 from django.test import override_settings
 from shopman.offerman.models import Collection, CollectionItem, Listing, ListingItem, Product
 from shopman.orderman.models import Directive, Order, Session
@@ -290,6 +291,9 @@ def test_the_add_on_suggestion_is_offered_once_per_conversation(ctx, conversatio
     monkeypatch.setattr("shopman.shop.projections.cart.build_cart", with_upsell)
     tools.set_item(ctx, SKU, 1)
     tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
+    # Desligada por padrão: a regra da casa ainda é cega ao contexto.
+    assert "suggestion" not in tools.review_order(ctx)
+    monkeypatch.setitem(settings.SHOPMAN_CONCIERGE, "suggest_add_ons", True)
     first = tools.review_order(ctx)
     assert first["suggestion"]["name"] == "Café"
     conversation.refresh_from_db()
