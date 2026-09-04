@@ -122,8 +122,14 @@ class ConciergeInboundView(View):
         ):
             return JsonResponse({"detail": "Muitas requisições. Tente de novo em instantes."}, status=429)
 
-        if not _config().get("enabled"):
-            return JsonResponse({"status": "disabled"}, status=200)
+        reason = service.disabled_reason()
+        if reason:
+            # O motivo sai no corpo: "disabled" sem explicação já mandou procurar a
+            # chave errada. `switch_off` = SHOPMAN_CONCIERGE_ENABLED; `ai_key_missing` =
+            # AI_ASSIST_API_KEY vazia no painel.
+            if reason != "switch_off":
+                logger.error("concierge.webhook: concierge ligado mas inoperante (%s)", reason)
+            return JsonResponse({"status": "disabled", "reason": reason}, status=200)
 
         try:
             data = json.loads(request.body or b"{}")

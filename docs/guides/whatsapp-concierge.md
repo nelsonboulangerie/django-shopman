@@ -119,7 +119,10 @@ mão não renderiza**: toda variável entra pelo seletor do ManyChat.
      a resposta do turno anterior quando a casa demorava.
    - Teste com o botão **Test request** do ManyChat: espere `202`. `401` é chave;
      `400` é corpo sem `subscriber_id`; `200` com `status: "empty"` é texto vazio
-     (a variável não veio e o `getInfo` também não trouxe nada).
+     (a variável não veio e o `getInfo` também não trouxe nada); `200` com
+     `status: "disabled"` traz o motivo em `reason`: `switch_off` é
+     `SHOPMAN_CONCIERGE_ENABLED` desligada, `ai_key_missing` é `AI_ASSIST_API_KEY`
+     vazia no painel (a chave da Anthropic, em console.anthropic.com).
 
 5. **Depois do External Request:** nada. Sem mensagem de "aguarde", sem
    typing. O worker responde em segundos.
