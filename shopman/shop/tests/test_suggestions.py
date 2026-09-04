@@ -440,8 +440,11 @@ def test_the_owner_defaults_are_seeded_and_valid():
     substitute = RuleConfig.objects.get(ref="suggestion.substitute")
 
     assert complement.enabled is True
-    # O motor de substituto é da F2: cadastrada e desligada.
-    assert substitute.enabled is False
+    # Nasceu desligada na 0030 (o motor de substituto era da F2) e foi LIGADA
+    # pela 0031, quando `shop/services/substitutes.find` passou a ler o
+    # `must_match`. Regra ligada que ninguém lê é ruído; fronteira declarada que
+    # o sistema ignora é pior.
+    assert substitute.enabled is True
 
     ComplementRule.validate_params(complement.params)
     SubstituteRule.validate_params(substitute.params)
