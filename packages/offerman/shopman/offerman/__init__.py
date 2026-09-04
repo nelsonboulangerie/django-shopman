@@ -18,10 +18,10 @@ def __getattr__(name):
         from shopman.offerman.exceptions import CatalogError
 
         return CatalogError
-    elif name == "find_substitutes":
-        from shopman.offerman.contrib.substitutes.substitutes import find_substitutes
+    elif name in ("find_substitutes", "score_substitutes", "ScoredSubstitute"):
+        from shopman.offerman.contrib.substitutes import substitutes as _subs
 
-        return find_substitutes
+        return getattr(_subs, name)
     elif name in ("ProductSocialAttributes", "get_social_attributes", "set_social_attributes"):
         from shopman.offerman.contrib.social import schema
 
@@ -33,6 +33,9 @@ __all__ = [
     "CatalogService",
     "CatalogError",
     "find_substitutes",
+    # A irmã explicativa: mesma similaridade, com pontuação e motivos.
+    "score_substitutes",
+    "ScoredSubstitute",
     # Atributos sociais do PIM (metadata['social']) — o shape é do offerman,
     # mas o backstage edita e projeta, então entram na API pública do pacote.
     "ProductSocialAttributes",
