@@ -351,6 +351,19 @@ def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, 
     assert captured["metadata"]["next"] == "/finalizar"
 
 
+def test_notify_when_available_subscribes_the_same_alerts_as_the_site(ctx, conversation):
+    from shopman.storefront.models import StockAlertSubscription
+
+    result = tools.notify_when_available(ctx, SKU)
+    assert result["ok"], result
+    subs = StockAlertSubscription.objects.filter(sku=SKU, customer_ref=conversation.customer_ref)
+    assert sorted(subs.values_list("alert_type", flat=True)) == ["production_ready", "stock_back"]
+    # Idempotente: pedir de novo não duplica.
+    tools.notify_when_available(ctx, SKU)
+    assert subs.count() == 2
+    assert tools.notify_when_available(ctx, "NAO-EXISTE")["error"] == "unknown_sku"
+
+
 def test_execute_never_raises(ctx):
     assert tools.execute("nao_existe", {}, ctx)["error"] == "unknown_tool"
     assert tools.execute("set_item", {"sku": SKU}, ctx)["error"] == "bad_arguments"
@@ -381,7 +394,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     tool_result = outcome.messages[1]["content"][0]
     assert tool_result["type"] == "tool_result" and tool_result["tool_use_id"] == "toolu_1"
     assert json.loads(tool_result["content"])["items"][0]["sku"] == SKU
-    assert outcome.tool_events == [{"name": "browse_menu", "input": {"query": "pão", "collection": ""}, "ok": True}]
+    assert outcome.tool_events == [{"name": "browse_menu", "input": {"query": "pão"}, "ok": True}]
     assert outcome.usage["input_tokens"] == 200 and outcome.usage["cache_read_input_tokens"] == 100
 
     first = client.requests[0]
@@ -390,6 +403,7 @@ def test_run_agent_executes_tools_and_keeps_the_transcript_in_api_format(convers
     assert "Nelson Boulangerie" in first["system"][0]["text"]
     assert first["output_config"] == {"effort": "low"}
     assert first["thinking"] == {"type": "adaptive"}
+    assert first["cache_control"] == {"type": "ephemeral"}
     assert [t["name"] for t in first["tools"]] == list(tools.TOOL_NAMES)
     # Sem `strict` e só o obrigatório em `required`: parâmetro que o modelo quer
     # omitir não pode virar string preenchida com sintaxe interna.
@@ -420,14 +434,32 @@ def test_history_replays_tool_calls_and_text_without_leaked_syntax(conversation)
         content=[{"type": "tool_result", "tool_use_id": "t1", "content": "{}"}],
     )
     history = agent_module.history_for(conversation)
-    assert history[1]["content"][0]["input"] == {"query": "", "collection": ""}
+    # Chave vazada some, e chave vazia também: nenhuma das duas vira exemplo.
+    assert history[1]["content"][0]["input"] == {}
+
+
+def test_history_summarizes_old_tool_results(conversation):
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="inbound", text="oi", content=[{"type": "text", "text": "oi"}]
+    )
+    ConversationMessage.objects.create(
+        conversation=conversation, role="assistant", kind="tool_call",
+        content=[{"type": "tool_use", "id": "t1", "name": "browse_menu", "input": {"query": "pao"}}],
+    )
+    ConversationMessage.objects.create(
+        conversation=conversation, role="user", kind="tool_result",
+        content=[{"type": "tool_result", "tool_use_id": "t1", "content": "x" * 5000}],
+    )
+    history = agent_module.history_for(conversation)
+    content = history[2]["content"][0]["content"]
+    assert len(content) < 500 and content.endswith("(resultado antigo, resumido)")
 
 
 def test_clean_text_and_arguments_drop_leaked_tool_syntax():
     dirty = f"{LEAK_NAME}{{}}\n\n?\n\nDeixa eu confirmar, Pablo.\n{LEAK_TAG}\nPeço desculpa pela demora."
     assert agent_module.clean_text(dirty) == "Deixa eu confirmar, Pablo.\nPeço desculpa pela demora."
-    args = agent_module.clean_arguments({"query": "croissant", "collection": LEAK_TAG + "\n"})
-    assert args == {"query": "croissant", "collection": ""}
+    args = agent_module.clean_arguments({"query": "croissant", "collection": LEAK_TAG + "\n", "qty": 2})
+    assert args == {"query": "croissant", "qty": 2}
 
 
 def test_run_agent_stops_repeating_the_same_call(conversation):

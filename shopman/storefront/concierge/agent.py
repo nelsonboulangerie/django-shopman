@@ -33,6 +33,10 @@ from .tools import ToolContext
 logger = logging.getLogger(__name__)
 
 MAX_TOOL_RESULT_CHARS = 6000
+#: Resultado de ferramenta de turno ANTIGO volta ao modelo resumido: o cardápio de
+#: três turnos atrás não muda a resposta de agora, e replicá-lo inteiro a cada ida
+#: era o grosso da conta (196 mil tokens de entrada numa conversa de 12 turnos).
+MAX_HISTORY_TOOL_RESULT_CHARS = 400
 
 #: Sintaxe interna de chamada de ferramenta que o modelo pode vazar como texto ou
 #: dentro de argumentos (tags de parâmetro, `name="tool">`). Medido em 04/09/2026:
@@ -52,14 +56,14 @@ def clean_text(value: str) -> str:
 
 
 def clean_arguments(arguments: dict) -> dict:
-    """Argumentos com sintaxe vazada viram vazio: melhor a ferramenta responder
-    "sem filtro" do que buscar a categoria "<tag>"."""
+    """Argumento com sintaxe vazada SOME (a função tem default): melhor a
+    ferramenta responder "sem filtro" do que buscar a categoria "<tag>", e melhor
+    o histórico não mostrar a chave do que mostrá-la vazia como exemplo."""
     cleaned = {}
     for key, value in (arguments or {}).items():
-        if isinstance(value, str):
-            cleaned[key] = "" if _LEAK_RE.search(value) else value
-        else:
-            cleaned[key] = value
+        if isinstance(value, str) and (_LEAK_RE.search(value) or not value.strip()):
+            continue
+        cleaned[key] = value
     return cleaned
 
 
@@ -126,6 +130,11 @@ def _clean_history_content(content: list) -> list:
         kind = block.get("type")
         if kind == "tool_use" and isinstance(block.get("input"), dict):
             cleaned.append({**block, "input": clean_arguments(block["input"])})
+        elif kind == "tool_result":
+            content = block.get("content")
+            if isinstance(content, str) and len(content) > MAX_HISTORY_TOOL_RESULT_CHARS:
+                content = content[:MAX_HISTORY_TOOL_RESULT_CHARS] + " … (resultado antigo, resumido)"
+            cleaned.append({**block, "content": content})
         elif kind == "text":
             text = clean_text(block.get("text", ""))
             cleaned.append({**block, "text": text or "…"})
@@ -236,6 +245,9 @@ def run_agent(*, conversation: Conversation, history: list[dict], client=None) -
             "system": system,
             "tools": tools_module.TOOL_SPECS,
             "messages": messages,
+            # Segundo ponto de cache, no fim do histórico: o prefixo (sistema + turnos
+            # anteriores) é lido do cache a um décimo do preço a cada ida.
+            "cache_control": {"type": "ephemeral"},
         }
         if effort:
             request["output_config"] = {"effort": effort}
