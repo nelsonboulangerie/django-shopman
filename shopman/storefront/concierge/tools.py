@@ -251,7 +251,8 @@ def _cart_payload(ctx: ToolContext, session) -> dict:
     }
     if cart.minimum_order is not None:
         payload["minimum_order"] = _progress_payload(cart.minimum_order)
-    if cart.upsell is not None and not (ctx.conversation.flags or {}).get("suggestion_offered"):
+    suggestions_on = bool((getattr(settings, "SHOPMAN_CONCIERGE", {}) or {}).get("suggest_add_ons"))
+    if suggestions_on and cart.upsell is not None and not (ctx.conversation.flags or {}).get("suggestion_offered"):
         payload["suggestion"] = _upsell_payload(cart.upsell)
     return payload
 
