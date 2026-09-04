@@ -1,6 +1,12 @@
 # WP-ATRIBUTOS — Atributos de produto com definição: um registro, valores no produto, zero legado
 
-> Estado: **proposto (2026-09-04), a pedido do dono.** Insight dele: "um sistema de
+> Estado: **proposto (2026-09-04), a pedido do dono, revisto no mesmo dia por análise adversarial.**
+> Veredito: **o Core não muda.** O registro de atributos é configuração do tenant e
+> mora em `shop/models`, como `RuleConfig` e `OmotenashiCopy`; os valores ficam no
+> `Product.metadata` que já existe. O peso por unidade continua coluna. A migração do
+> papel de consumo do B.I. fica adiada até um leitor precisar dela.
+>
+> Insight do dono: "um sistema de
 > atributos ultra flexível, chave/valor, que sirva até para grades, cores e
 > tamanhos". A resposta dos PIMs (Akeneo, Shopify metafields, Saleor, Odoo) é a
 > mesma: **chave/valor sim, mas com definição**; sem registro de atributo,
@@ -8,13 +14,13 @@
 >
 > | # | Pergunta | Decidido / recomendado |
 > |---|---|---|
-> | 1 | Tabela nova? | **Sim, uma, no Core:** `offerman.AttributeDefinition`. O catálogo é do Offerman; a definição de atributo é estrutural e consultável, o caso em que a regra da casa pede tabela, não JSON |
-> | 2 | Onde ficam os valores? | `Product.metadata["attributes"]`, validados contra a definição por um service; nenhuma coluna nova em `Product` |
-> | 3 | Legado? | **Nenhum.** `allergens`, `dietary_info`, `serves` (chaves soltas de metadata) e `unit_weight_g` (coluna) viram atributos definidos, com migração de dados e todos os leitores atualizados; o nome antigo some |
-> | 4 | B.I.? | **Atualizado no mesmo WP.** O papel de consumo vira atributo `papel_consumo` do produto; a tabela do B.I. sobra só para linhas do histórico sem produto no catálogo |
+> | 1 | Tabela nova? | **Sim, uma, no orquestrador:** `shop.AttributeDefinition`. É configuração do tenant (como `RuleConfig`); o Core (Offerman) não muda |
+> | 2 | Onde ficam os valores? | `Product.metadata["attributes"]`, validados contra a definição por um service em `shop`; nenhuma coluna nova em `Product` |
+> | 3 | Legado? | **Nenhum nome antigo.** `allergens`, `dietary_info`, `serves` viram atributos definidos (migração de dados + leitores). `unit_weight_g` **continua coluna** (fato físico de primeira classe, com integridade no banco); o registro o define e aponta para a coluna |
+> | 4 | B.I.? | **Adiado (F3).** O papel de consumo vira atributo só quando um leitor precisar; hoje o motor de sugestão precisa de natureza e sabor, não do papel. Quando vier, a tabela do B.I. sobra só para linhas do histórico sem produto |
 > | 5 | Tags (`keywords`, taggit)? | ficam: linguagem livre para busca, SEO e afinidade. Atributo é fato; tag é palavra |
 
-## Por que tabela, e por que só uma
+## Por que tabela, por que só uma, e por que em `shop`
 
 A regra da casa é usar JSON para dado contextual e discutir tabela quando o dado é
 estrutural e consultável em escala. A **definição** de um atributo é exatamente
@@ -22,8 +28,14 @@ isso: seu tipo, seus valores permitidos e para que serve são consultados por
 todas as superfícies, pelo Admin e pelo motor de sugestão. O **valor** por
 produto é contextual e mora no JSON que o produto já tem.
 
+E ela é **configuração do tenant**, não regra de catálogo: a Nelson decide que
+"sabor" existe e vale "doce/salgado/neutro"; outro tenant decidiria outra
+coisa. Configuração mora em `shop/models`, ao lado de `RuleConfig`,
+`NotificationTemplate` e `OmotenashiCopy`. O Offerman continua sabendo só de
+produto, preço, vitrine e `metadata`.
+
 ```
-AttributeDefinition (offerman)
+AttributeDefinition (shop)
   ref            slug único ("sabor", "natureza", "alergenos", "porcoes", "peso_unidade_g", "papel_consumo")
   label, hint    rótulos para o gestor
   type           choice | multi_choice | number | text | boolean
@@ -34,9 +46,10 @@ AttributeDefinition (offerman)
   ordering, is_active
 ```
 
-`options[].meta` é o que faz o papel de consumo caber sem tabela própria: cada
-opção carrega `reading`, `beverage`, `eat_in_weight`, que hoje são colunas de
-`ConsumptionRole`.
+`storage` diz onde o valor mora: `metadata` (o padrão) ou `column:<nome>` para os
+poucos fatos físicos que merecem coluna (peso por unidade). `options[].meta` é o
+que permitirá, na F3, o papel de consumo caber sem tabela própria (cada opção
+carrega `reading`, `beverage`, `eat_in_weight`).
 
 ## Valores e proveniência
 
@@ -46,9 +59,8 @@ Product.metadata["attributes"] = {
   "sabor":          {"value": "doce",          "source": "ai", "reviewed": false},
   "alergenos":      {"value": ["leite","ovos"],"source": "manual"},
   "porcoes":        {"value": 2,               "source": "manual"},
-  "peso_unidade_g": {"value": 70,              "source": "manual"},
-  "papel_consumo":  {"value": "hibrido",       "source": "manual"},
 }
+# peso_unidade_g: definido no registro com storage "column:unit_weight_g"; papel_consumo: F3.
 ```
 
 `source` é a proveniência (`manual`, `ai`, `derived`, `recipe`), e `reviewed`
@@ -66,24 +78,21 @@ valida e grava. Consulta: `Product.objects.filter(metadata__attributes__sabor__v
 | `metadata["allergens"]` (lista) | atributo `alergenos` (multi_choice, opções = a lista canônica dos alergênicos, `purposes: label, facet`) | PDP, ficha/rótulo, catálogo, seed |
 | `metadata["dietary_info"]` + `dietary_auto_filled` | atributo `dieta` (multi_choice: vegano, sem glúten, …; proveniência substitui o sentinela) | PDP, filtros da loja, preferências alimentares, `nutrition_from_recipe`, seed |
 | `metadata["serves"]` | atributo `porcoes` (number) | PDP, seed |
-| `Product.unit_weight_g` (coluna) | atributo `peso_unidade_g` (number, unidade g, `purposes: rule, label`) | `apply_product_measurements`, `nutrition_from_recipe`, rótulo manual, catálogo/PDP, admin do Offerman |
-| `ConsumptionRole` (5 papéis) | opções de `papel_consumo`, com `meta` (reading, beverage, eat_in_weight) | inferência do B.I., hub de configurações |
-| `ProductConsumptionTag` (por SKU texto, inclusive histórico) | para SKU do catálogo: `papel_consumo` no produto. Para linha do histórico **sem produto** (combos do Yooga): `HistoricalConsumptionTag`, no B.I., onde a história mora | `backstage/services/consumption.py`, seed do histórico |
+| `Product.unit_weight_g` (coluna) | **fica coluna**; o registro define `peso_unidade_g` com `storage: column:unit_weight_g` (`purposes: rule, label`) | nenhum leitor muda |
+| `ConsumptionRole` + `ProductConsumptionTag` | **F3, só quando um leitor pedir:** opções de `papel_consumo` com `meta`; etiqueta sem produto no catálogo vira `HistoricalConsumptionTag` no B.I. | inferência do B.I., hub de configurações |
 | (não existe) | atributos `natureza` e `sabor` (choice, `purposes: rule`) | motor de sugestão (WP-SUGESTÃO) |
 
 `fiscal` e `social` **não** entram: são esquemas de outros donos (fiscalman e o PIM
 social), já canônicos. `purchase`, `lead_time_hours`, `made_to_order`, `ready_from`
 ficam onde estão por enquanto; podem virar atributo depois, um a um, sem pressa.
 
-Migrações: uma no Offerman (tabela + dados: cria as definições do sistema, move os
-quatro valores para `attributes`, remove `unit_weight_g`), uma no Backstage
-(papéis → opções; etiquetas com produto → atributo; etiquetas sem produto →
-`HistoricalConsumptionTag`; apaga as duas tabelas antigas). Pré-go-live: sem alias,
-sem nome antigo.
+Migrações: uma em `shop` (tabela + dados: cria as definições do sistema e move
+`allergens`, `dietary_info`, `serves` para `attributes` em cada produto). Nenhuma no
+Offerman. A do Backstage fica para a F3. Pré-go-live: sem alias, sem nome antigo.
 
-## B.I.: o padrão novo, sem perder a inferência
+## B.I.: o padrão novo, sem perder a inferência (F3, adiada)
 
-A inferência de salão × balcão passa a ler `papel_consumo` do produto (via
+Quando um leitor pedir, a inferência de salão × balcão passa a ler `papel_consumo` do produto (via
 `ProductAlias` para SKUs do histórico que resolvem a produto) e, na falta,
 `HistoricalConsumptionTag` para linhas que só existem no histórico. Mesmos
 pesos, mesmo `eat_in_weight`, agora na `meta` da opção. A tela de curadoria do
@@ -110,9 +119,24 @@ já é com unidade × pack.
 
 | Fase | Entrega | Gate |
 |---|---|---|
-| F1 | `AttributeDefinition` + `attr/set_attr` + migração dos quatro legados + leitores atualizados + seed + Admin | `make test` verde; PDP, rótulo e catálogo idênticos antes e depois |
-| F2 | `papel_consumo` como atributo; `HistoricalConsumptionTag`; inferência do B.I. lendo o padrão novo; tabelas antigas apagadas | relatórios do B.I. com os mesmos números antes e depois |
-| F3 | `natureza` e `sabor` com carga derivada das coleções; painel do produto com assist | é a F1 do [WP-SUGESTÃO](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) |
+| F1 | `shop.AttributeDefinition` + `attr/set_attr` + migração dos três legados de metadata + leitores atualizados + seed + Admin; `natureza` e `sabor` com carga derivada das coleções; painel do produto com assist | `make test` verde; PDP, rótulo e catálogo idênticos antes e depois. É a F1 do [WP-SUGESTÃO](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) |
+| F2 | feed do Google Merchant / Meta lendo os atributos com `purposes: feed`; filtros da loja por atributo | quando o feed voltar à fila |
+| F3 (adiada) | `papel_consumo` como atributo; `HistoricalConsumptionTag`; inferência do B.I. lendo o padrão novo; tabelas antigas apagadas | só com um leitor que ganhe com isso; relatórios do B.I. com os mesmos números antes e depois |
+
+## Análise adversarial (04/09/2026)
+
+Perguntas do dono: "podemos/devemos fazer essa alteração no Core? merece o esforço?"
+
+- **Core:** não precisa. Definição é configuração (`shop`); valor é `metadata`
+  (já existe). O desenho anterior punha a tabela no Offerman por afinidade de
+  domínio, não por necessidade; a regra da casa vence.
+- **Peso em JSON:** troca integridade por uniformidade e mexe em oito arquivos
+  para ganhar nada. Fica coluna, definido no registro.
+- **B.I. agora:** risco nos números da inferência sem leitor que ganhe. Adiado.
+- **Vale o esforço:** sim, no recorte da F1 (1 a 2 dias): consolida quatro
+  chaves soltas, destrava o motor de sugestão e o feed, e não toca no Core.
+- **Quando:** depois do piloto do concierge, antes de religar a sugestão de
+  adicional, atrás dos bloqueadores de go-live.
 
 ## Referências
 
