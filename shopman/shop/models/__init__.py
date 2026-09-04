@@ -1,5 +1,6 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
+from .affinity import ProductAffinity
 from .attributes import (
     AttributeDefinition,
     AttributePurpose,
@@ -41,6 +42,7 @@ __all__ = [
     "AttributePurpose",
     "AttributeSource",
     "AttributeType",
+    "ProductAffinity",
     "Conversation",
     "ConversationMessage",
     "Channel",

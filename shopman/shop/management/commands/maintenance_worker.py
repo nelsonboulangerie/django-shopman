@@ -16,6 +16,8 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
+                              próprio comando recusa recálculo fora da hora)
   purge_sign_in_audit       — trilha de acessos de operador fora da retenção
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
@@ -97,6 +99,10 @@ MAINTENANCE_COMMANDS = (
     # A trilha de acessos envelhece por PRAZO e não por clique — se o Admin
     # pudesse apagar uma linha escolhida a dedo, quem usasse um crachá
     # esquecido teria, na aba ao lado, o botão de sumir com a própria.
+    # Caro e diário, e por isso perto do fim: um ano de cestas é trabalho de
+    # minutos. Quem segura a cadência é o próprio comando (`--min-interval-hours`),
+    # que sabe quanto custa — o worker não tem noção de "uma vez por noite".
+    "compute_product_affinity",
     "purge_sign_in_audit",
 )
 
