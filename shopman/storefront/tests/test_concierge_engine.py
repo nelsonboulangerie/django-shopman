@@ -291,15 +291,38 @@ def test_the_add_on_suggestion_is_offered_once_per_conversation(ctx, conversatio
     monkeypatch.setattr("shopman.shop.projections.cart.build_cart", with_upsell)
     tools.set_item(ctx, SKU, 1)
     tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
-    # Desligada por padrão: a regra da casa ainda é cega ao contexto.
-    assert "suggestion" not in tools.review_order(ctx)
-    monkeypatch.setitem(settings.SHOPMAN_CONCIERGE, "suggest_add_ons", True)
+
+    # LIGADA por padrão desde a F1 do WP-SUGESTÃO: quem escolhe agora é o motor
+    # de sugestão (co-ocorrência + pareamentos configuráveis), e não mais "o
+    # item mais popular que não está na sacola" — a regra cega ao contexto que
+    # ofereceu Água a quem levava pão.
     first = tools.review_order(ctx)
     assert first["suggestion"]["name"] == "Café"
+
+    # E uma por conversa: o segundo recap não repete a oferta.
     conversation.refresh_from_db()
     assert conversation.flags == {"suggestion_offered": True}
     second = tools.review_order(ctx)
     assert "suggestion" not in second
+
+
+def test_the_add_on_suggestion_can_still_be_turned_off_by_env(ctx, conversation, monkeypatch):
+    from types import SimpleNamespace as NS
+
+    from shopman.shop.projections import cart as cart_projection
+
+    original = cart_projection.build_cart
+
+    def with_upsell(session_key, channel_ref="web"):
+        cart = original(session_key, channel_ref)
+        return type(cart)(**{**cart.__dict__, "upsell": NS(sku="CAFE", name="Café", price_display="R$ 8,00")})
+
+    monkeypatch.setattr("shopman.shop.projections.cart.build_cart", with_upsell)
+    monkeypatch.setitem(settings.SHOPMAN_CONCIERGE, "suggest_add_ons", False)
+    tools.set_item(ctx, SKU, 1)
+    tools.set_fulfillment(ctx, "pickup", _tomorrow(), "slot-12", "")
+
+    assert "suggestion" not in tools.review_order(ctx)
 
 
 def test_place_order_refuses_a_stale_quote(ctx):

@@ -88,6 +88,19 @@ class RuleConfig(models.Model):
                 ),
             })
 
+        # Uma regra que sabe conferir a própria configuração tem o direito de
+        # conferi-la ANTES de o save passar. Sem isto, um `sabour` digitado no
+        # Admin viraria uma regra que nunca casa e nunca reclama — a falha
+        # silenciosa que a casa combinou não ter (ver `load_rule`).
+        validate = getattr(cls, "validate_params", None)
+        if callable(validate):
+            try:
+                validate(self.params or {})
+            except ValidationError:
+                raise
+            except ValueError as exc:
+                raise ValidationError({"params": str(exc)}) from exc
+
     def save(self, *args, **kwargs):
         self.full_clean()
         is_new = self.pk is None

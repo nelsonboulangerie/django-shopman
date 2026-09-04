@@ -130,7 +130,11 @@ class FreeDeliveryProgressProjection:
 
 @dataclass(frozen=True)
 class UpsellSuggestionProjection:
-    """A single popular item not yet in the cart, offered as upsell."""
+    """Um item oferecido junto do que está na sacola.
+
+    Sem ``reasons`` de propósito: o porquê da sugestão é do Admin e do B.I.,
+    não da tela do cliente. Para quem compra, é só um convite.
+    """
 
     sku: str
     name: str

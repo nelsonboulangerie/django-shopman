@@ -940,11 +940,13 @@ SHOPMAN_CONCIERGE = {
     # Segundos entre a chegada da mensagem e o processamento: o webhook responde
     # em milissegundos e a diretiva fica para o worker (nunca inline no request).
     "dispatch_delay_seconds": int(os.environ.get("CONCIERGE_DISPATCH_DELAY_SECONDS", "1")),
-    # Sugestão de adicional no recap. A regra da casa hoje é "o item mais popular
-    # que não está na sacola" (a mesma do carrinho do site), cega ao contexto:
-    # ofereceu Água a quem levava pão. Fica desligada no concierge até existir
-    # pareamento por produto/coleção, editável no Admin.
-    "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", False),
+    # Sugestão de adicional no recap. Estava DESLIGADA porque a regra da casa era
+    # "o item mais popular que não está na sacola" — cega ao contexto, ofereceu
+    # Água a quem levava pão. Religada na F1 do WP-SUGESTÃO: quem escolhe agora é
+    # `shop.projections.suggestions`, sobre co-ocorrência do histórico (lift, não
+    # popularidade) e os pareamentos configuráveis de `suggestion.complement`.
+    # Continua UMA por conversa — o `suggestion_offered` em `Conversation.flags`.
+    "suggest_add_ons": _env_bool("CONCIERGE_SUGGEST_ADD_ONS", True),
     # Piloto fechado: só estes assinantes (ids do ManyChat) ou telefones (E.164, com
     # "+") recebem o concierge; todo o resto volta `not_allowed` sem tocar em nada.
     # Vazio = aberto a todos. É a segunda tranca, além da tag no flow do ManyChat:

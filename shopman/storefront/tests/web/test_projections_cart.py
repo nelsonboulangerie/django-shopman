@@ -171,12 +171,16 @@ class TestPopulatedCart:
         O trilho desenha o CTA ativo sem receber campo de disponibilidade, e a
         folha de erro então diz "Ficou indisponível enquanto você escolhia" —
         falso: já estava. A disponibilidade vira filtro de candidato.
+
+        O motor mudou (o adicional é do `projections.suggestions` desde a F1 do
+        WP-SUGESTÃO), o portão não: é ele que este teste guarda.
         """
         from unittest.mock import patch
 
         from shopman.offerman.models import Listing, ListingItem
 
-        from shopman.shop.projections.cart import build_upsell_suggestion
+        from shopman.shop.models import ProductAffinity
+        from shopman.shop.projections.suggestions import COMPLEMENT, suggest
 
         # `cart_session` já criou o listing do canal; pedir a fixture colidiria.
         listing = Listing.objects.get(ref=STOREFRONT_CHANNEL_REF)
@@ -185,37 +189,37 @@ class TestPopulatedCart:
             defaults={"price_q": 800, "is_published": True, "is_sellable": True},
         )
 
+        # O histórico associa o croissant ao que está na sacola: é o que o
+        # coloca na fila de candidatos para o portão então julgar.
+        from django.utils import timezone
+        ProductAffinity.objects.create(
+            sku_a="PAO", sku_b=croissant.sku, together_count=10,
+            score=10.0, lift=3.0, window_days=365, computed_at=timezone.now(),
+        )
+
         esgotado = {
             "availability_policy": "planned_ok",
             "total_promisable": Decimal("0"),
             "is_planned": False,
         }
-        with (
-            patch(
-                "shopman.shop.projections.storefront_context.popular_skus",
-                return_value=[croissant.sku],
-            ),
-            patch(
-                "shopman.shop.projections.cart._availability",
-                return_value=({croissant.sku: esgotado}, {}),
-            ),
+        with patch(
+            "shopman.shop.projections.cart._availability",
+            return_value=({croissant.sku: esgotado}, {}),
         ):
-            assert build_upsell_suggestion(set(), channel_ref=STOREFRONT_CHANNEL_REF) is None
+            assert suggest(
+                COMPLEMENT, cart_skus={"PAO"}, channel_ref=STOREFRONT_CHANNEL_REF,
+            ) == ()
 
         disponivel = {"availability_policy": "demand_ok"}
-        with (
-            patch(
-                "shopman.shop.projections.storefront_context.popular_skus",
-                return_value=[croissant.sku],
-            ),
-            patch(
-                "shopman.shop.projections.cart._availability",
-                return_value=({croissant.sku: disponivel}, {}),
-            ),
+        with patch(
+            "shopman.shop.projections.cart._availability",
+            return_value=({croissant.sku: disponivel}, {}),
         ):
-            suggestion = build_upsell_suggestion(set(), channel_ref=STOREFRONT_CHANNEL_REF)
+            found = suggest(
+                COMPLEMENT, cart_skus={"PAO"}, channel_ref=STOREFRONT_CHANNEL_REF,
+            )
 
-        assert suggestion is not None and suggestion.sku == croissant.sku
+        assert found and found[0].sku == croissant.sku
 
     def test_upsell_includes_unit_price_for_surface_mutation(
         self, cart_session, croissant, monkeypatch,
@@ -228,12 +232,10 @@ class TestPopulatedCart:
                 name=croissant.name,
                 unit_price_q=800,
                 image_url=None,
+                reasons=("affinity:PAO",),
             )
 
-        monkeypatch.setattr(
-            "shopman.shop.projections.cart.build_upsell_suggestion",
-            fake_upsell,
-        )
+        monkeypatch.setattr("shopman.shop.projections.cart._upsell", fake_upsell)
 
         request = _request_with_cart_session(cart_session)
         proj = build_cart(request=request, channel_ref=STOREFRONT_CHANNEL_REF)

@@ -61,17 +61,23 @@ class FreeDeliveryProgressProjection:
 
 @dataclass(frozen=True)
 class UpsellSuggestionProjection:
-    """One popular SKU not yet in the cart, offered as an upsell.
+    """Um SKU oferecido junto do que já está na sacola.
 
-    Carries the resolved listed price (``unit_price_q``) the checkout would
-    charge plus the name/image the surface needs to render — no Django model
-    instance, no formatted price.
+    Escolhido pelo motor de sugestão (``projections.suggestions``) — não mais
+    "o mais popular que falta", que foi a regra que ofereceu Água a quem levava
+    pão. Carrega o preço listado que o checkout cobraria (``unit_price_q``) e o
+    nome/imagem que a superfície renderiza: sem instância de model, sem preço
+    formatado.
     """
 
     sku: str
     name: str
     unit_price_q: int
     image_url: str | None
+    #: Por que ESTE item foi oferecido — os códigos que o motor de sugestão
+    #: produziu ("affinity:BAG", "pairing:natureza=comida→bebida"). Não vai
+    #: para a tela do cliente; existe para o Admin explicar e o B.I. medir.
+    reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -299,7 +305,7 @@ def build_cart(
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
     delivery_minimum = build_delivery_minimum_progress(threshold_base_q, channel_ref)
     free_delivery = build_free_delivery_progress(threshold_base_q, channel_ref)
-    upsell = build_upsell_suggestion({line.sku for line in lines}, channel_ref=channel_ref)
+    upsell = _upsell({line.sku for line in lines}, channel_ref=channel_ref)
 
     can_checkout, block_reason = _checkout_eligibility(
         is_empty=False,
@@ -716,76 +722,42 @@ def build_free_delivery_progress(
     )
 
 
-def build_upsell_suggestion(
+def _upsell(
     cart_skus: set[str],
     *,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
 ) -> UpsellSuggestionProjection | None:
-    """Return one popular SKU not already in ``cart_skus`` (or ``None``).
+    """Uma sugestão de adicional para esta sacola, ou ``None``.
 
-    Resolves the listed price via ``ListingItem`` so the suggestion carries
-    the same price the checkout would charge.
+    Quem escolhe é o motor de sugestão (``projections.suggestions``): a mesma
+    regra que o concierge usa, e não mais uma por superfície. A regra anterior
+    daqui era "o item mais popular que não está na sacola", e foi ela que
+    ofereceu Água a quem levava pão — popularidade não é afinidade.
 
-    ⚠️ Só sugere o que dá para ADICIONAR agora. O trilho desenha um CTA ativo
-    ("Que tal adicionar?") sem receber campo nenhum de disponibilidade, então
-    sugerir esgotado virava convite que termina em 409 — e o cliente lê "Ficou
-    indisponível enquanto você escolhia", que é falso: já estava. Aqui a
-    disponibilidade é filtro de CANDIDATO, não estado a renderizar: um upsell
-    desabilitado não é sugestão, é ruído.
+    Os portões (visível no canal, vendável, disponível agora, fora da sacola)
+    são do motor. Degrada para ``None``: sacola sem sugestão é uma sacola sem
+    trilho, não uma sacola quebrada.
     """
-    from shopman.offerman.models import ListingItem, Product
+    from shopman.shop.projections.suggestions import COMPLEMENT, suggest
 
-    from shopman.shop.projections import catalog_context
-    from shopman.shop.projections.storefront_context import popular_skus
-
-    popular = popular_skus(limit=10)
-    candidates = [sku for sku in popular if sku not in cart_skus]
-    if not candidates:
+    try:
+        found = suggest(
+            COMPLEMENT, cart_skus=cart_skus, channel_ref=channel_ref, surface="web",
+        )
+    except Exception:
+        logger.warning("cart: motor de sugestão falhou; sacola segue sem trilho.", exc_info=True)
         return None
 
-    # Mesmo portão do cardápio: oculto no canal não é sugerido; pausado no canal
-    # também não (aqui a pausa não vira "Indisponível" — vira "não sugira").
-    visible = catalog_context.visible_skus_in_channel(candidates, channel_ref)
-    listing_sellable = catalog_context.listing_sellable_map(candidates, channel_ref)
-    avail_map, _own = _availability(candidates, "", channel_ref)
-
-    for sku in candidates:
-        if visible is not None and sku not in visible:
-            continue
-        if not listing_sellable.get(sku, True):
-            continue
-        product = Product.objects.filter(
-            sku=sku, is_published=True, is_sellable=True,
-        ).first()
-        if product is None:
-            continue
-        resolved = catalog_context.basic_availability(
-            avail_map.get(sku),
-            is_sellable=True,
-            # O limiar só separa AVAILABLE de LOW_STOCK, e os dois são
-            # adicionáveis — a pergunta aqui é só "dá para pôr na sacola?".
-            low_stock_threshold=Decimal("0"),
-        )
-        if not resolved.can_add_to_cart:
-            continue
-        item = (
-            ListingItem.objects.filter(
-                listing__ref=channel_ref,
-                listing__is_active=True,
-                product=product,
-                is_published=True,
-            )
-            .order_by("-min_qty")
-            .first()
-        )
-        price_q = item.price_q if item else product.base_price_q
-        return UpsellSuggestionProjection(
-            sku=product.sku,
-            name=getattr(product, "name", "") or "",
-            unit_price_q=int(price_q or 0),
-            image_url=getattr(product, "image_url", None) or None,
-        )
-    return None
+    if not found:
+        return None
+    top = found[0]
+    return UpsellSuggestionProjection(
+        sku=top.sku,
+        name=top.name,
+        unit_price_q=top.unit_price_q,
+        image_url=top.image_url,
+        reasons=top.reasons,
+    )
 
 
 __all__ = [
@@ -800,6 +772,5 @@ __all__ = [
     "build_delivery_minimum_progress",
     "build_free_delivery_progress",
     "build_minimum_order_progress",
-    "build_upsell_suggestion",
     "shop_rule_q",
 ]
