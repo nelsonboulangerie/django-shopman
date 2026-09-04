@@ -37,11 +37,17 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         return []
 
     try:
-        candidates = catalog.find_substitutes(sku, limit=limit * 2)
+        candidates = catalog.find_substitutes(sku, limit=limit * 3)
         if not candidates:
             return []
     except Exception as e:
         logger.warning("substitutes_candidates_failed sku=%s: %s", sku, e, exc_info=True)
+        return []
+
+    # A fronteira do tenant, sobre a similaridade do Core: o Offerman sabe o que
+    # se PARECE com o quê; a casa decide o que pode ser oferecido no lugar.
+    candidates = _same_boundary(sku, candidates)
+    if not candidates:
         return []
 
     channel_ref = channel or STOREFRONT_CHANNEL_REF
@@ -109,6 +115,56 @@ def find(sku: str, *, qty: Decimal = Decimal("1"), channel: str | None = None, l
         })
 
     return result
+
+
+def _same_boundary(sku: str, candidates: list) -> list:
+    """Corta quem cruza a fronteira que a casa declarou em ``suggestion.substitute``.
+
+    O caso canônico é o **sabor**: doce substitui doce, salgado substitui
+    salgado. Isso é política do tenant e não cabe no Core — o Offerman não sabe
+    o que é doce, e não deveria.
+
+    ⚠️ **Ausência de dado não é divergência.** Só corta quando os DOIS lados têm
+    valor e eles diferem. Excluir quem está sem `sabor` cadastrado recriaria,
+    uma camada acima, exatamente o defeito que o refino do Core acabou de
+    remover: exigir um dado curado para o produto ter substituto.
+
+    Regra desligada ou sem ``must_match`` não corta nada.
+    """
+    from shopman.shop.rules.engine import get_rule_params
+
+    params = get_rule_params("suggestion.substitute") or {}
+    must_match = params.get("must_match") or []
+    if not must_match:
+        return candidates
+
+    from shopman.offerman.models import Product
+
+    from shopman.shop.services import attributes
+
+    reference = Product.objects.filter(sku=sku).first()
+    if reference is None:
+        return candidates
+
+    kept = candidates
+    for ref_attr in must_match:
+        try:
+            wanted = attributes.get(reference, ref_attr)
+        except Exception:
+            # Atributo saiu do registro depois de a regra citá-lo: a regra
+            # perdeu o sentido, e cortar por ela seria pior que não cortar.
+            logger.warning(
+                "substitutes: regra cita atributo '%s' que o registro não conhece.", ref_attr,
+            )
+            continue
+        if wanted is None:
+            continue
+        by_sku = attributes.get_many(kept, ref_attr)
+        kept = [
+            c for c in kept
+            if by_sku.get(c.sku) is None or by_sku[c.sku] == wanted
+        ]
+    return kept
 
 
 def _target_qty(requested: Decimal, available: Decimal) -> int:

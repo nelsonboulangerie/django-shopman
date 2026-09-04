@@ -7399,8 +7399,6 @@ class Command(BaseCommand):
                 "label": "Sugestão de substituto",
                 "params": DEFAULT_SUBSTITUTE_PARAMS,
                 "priority": 101,
-                # O motor de substituto é da F2.
-                "enabled": False,
             },
         ]
 
