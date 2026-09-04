@@ -148,3 +148,41 @@ def test_a_rule_naming_an_attribute_that_vanished_does_not_silence_substitutes(l
     _in("doces", doce, outro)
 
     assert "FIN" in _find("MAD")
+
+
+# --- a armadilha que o alpha pegou -----------------------------------------
+
+
+def test_a_migration_style_update_must_not_leave_the_rule_cache_stale(loja):
+    """Mudar `RuleConfig` por `.update()` não dispara signal — e o cache mente.
+
+    Foi assim que a 0031 ligou `suggestion.substitute` no alpha e a fronteira de
+    sabor ficou **inerte por uma hora**, sem nada no log: o banco tinha a regra
+    ligada e `get_rule_params` respondia o estado anterior.
+
+    Este teste reproduz a armadilha e prova que `forget_rules_cache()` — o que
+    toda migração que mexe em RuleConfig precisa chamar — a fecha.
+    """
+    from shopman.shop.rules.engine import forget_rules_cache, get_rule_params
+
+    doce = _product("MAD", "Madeleine", listing=loja, sabor="doce")
+    salgado = _product("QQ", "Queijo quente", listing=loja, sabor="salgado")
+    _in("doces", doce, salgado)
+
+    # Cache quente com a regra DESLIGADA, como um pod vivo teria.
+    RuleConfig.objects.filter(ref="suggestion.substitute").update(enabled=False)
+    forget_rules_cache()
+    assert get_rule_params("suggestion.substitute") == {}
+    assert "QQ" in _find("MAD")
+
+    # Agora a "migração": muda o banco por update, sem signal e sem invalidar.
+    RuleConfig.objects.filter(ref="suggestion.substitute").update(enabled=True)
+    assert get_rule_params("suggestion.substitute") == {}, (
+        "o cache deveria estar velho aqui — é exatamente a armadilha"
+    )
+    assert "QQ" in _find("MAD"), "fronteira inerte, como no alpha"
+
+    # E o que a migração tem de fazer no fim.
+    forget_rules_cache()
+    assert get_rule_params("suggestion.substitute")["must_match"] == ["sabor"]
+    assert "QQ" not in _find("MAD")
