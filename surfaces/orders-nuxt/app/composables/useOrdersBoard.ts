@@ -10,6 +10,55 @@ import { newOrderPush, preorderGroups, zonesView, type PreorderGroup, type ZoneV
 
 export type { CancellationReason };
 
+// ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
+// ⚠️ Este bloco é DECISÃO DO DONO, tomada ouvindo os candidatos lado a lado
+// por cima de um ruído de salão sintetizado. Não é achismo, e não se mexe
+// nele sem passar pelo mesmo teste — o que soa bem no fone não sobrevive ao
+// balcão. O escolhido foi o "Bing-bong": os dois tons que dizem "atenção,
+// vem informação", em quarta descendente (fá → dó).
+//
+// O que faz este som ser o que é:
+//   · as notas se SOBREPÕEM (1,5 s e 1,9 s, separadas por 0,28 s) — quando a
+//     segunda entra, a primeira ainda soa, e as duas viram acorde. Sem a
+//     sobreposição isto vira melodia e perde a identidade de aviso.
+//   · ataque de 22 ms: baqueta de feltro, não martelo. É o "macio".
+//   · parciais 1 · 2 · 2,76 · 4 — gongo, não barra de xilofone. A parcial
+//     quebrada em 2,76 é o que dá o corpo; é ela que faz soar como sino.
+//   · banda 300–5000 Hz: é a resposta de um alto-falante de saguão, e é ela,
+//     mais que qualquer nota, que o ouvido reconhece como "anúncio".
+//
+// O KDS NÃO usa isto: fica com a tríade padrão do kit, de propósito, para o
+// operador distinguir "pedido novo" de "ticket novo" só pelo ouvido.
+export const GESTOR_ALERT = {
+  volume: 0.6,
+  wave: "sine" as const,
+  shape: "ping" as const,
+  attack: 0.022,
+  partials: [
+    { r: 1, g: 1, d: 1 },
+    { r: 2, g: 0.5, d: 0.72 },
+    { r: 2.76, g: 0.34, d: 0.5 },
+    { r: 4, g: 0.15, d: 0.3 },
+  ],
+  filters: [
+    { type: "highpass" as const, freq: 300 },
+    { type: "lowpass" as const, freq: 5000 },
+  ],
+  space: { time: 0.09, feedback: 0.28, mix: 0.3 },
+  notes: [
+    { f: 698.46, t: 0, d: 1.5 },
+    { f: 523.25, t: 0.28, d: 1.9 },
+  ],
+};
+
+// O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
+// SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
+//
+// Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
+// está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
+// a vida dela, e um toque único já deixou passar pedido de cliente real.
+// O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
+
 export function useOrdersBoard() {
   const config = useRuntimeConfig();
   const path = "/api/v1/backstage/orders/";
@@ -48,20 +97,18 @@ export function useOrdersBoard() {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: EventSource | null = null;
 
-  // ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
-  // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
-  // SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
-  //
-  // Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
-  // está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
-  // a vida dela, e um toque único já deixou passar pedido de cliente real.
-  // O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
+  // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor, mas a
+  // VOZ é do Gestor (ver GESTOR_ALERT acima). Aqui o aviso INSISTE
+  // (`startAlert`), diferente do KDS: no KDS o operador está de frente para a
+  // tela; no Gestor o pedido chega enquanto a loja toca a vida dela, e um
+  // toque único já deixou passar pedido de cliente real. O kit para de repetir
+  // no primeiro toque/tecla — presença cala o aviso.
   const {
     soundOn,
     soundBlocked,
     toggleSound: toggleAlertSound,
     startAlert,
-  } = useAlertSound("gestor_sound");
+  } = useAlertSound("gestor_sound", GESTOR_ALERT);
 
   function toggleSound() {
     toggleAlertSound();
