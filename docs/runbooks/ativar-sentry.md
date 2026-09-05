@@ -17,9 +17,10 @@ E **nada disso roda**, porque `SENTRY_DSN` nunca foi setado. O `init` é
 `opt-in`: sem DSN, o bloco inteiro é pulado.
 
 O efeito combina com o outro buraco: `DJANGO_LOG_LEVEL` tem default `INFO`, e
-existem **333 `except → logger.debug`** em produção que, nesse nível, não
-emitem uma linha em lugar nenhum. Somando os dois, um erro de negócio hoje
-tem exatamente **um** caminho até você: um cliente reclamando. Ver
+existem **340 `logger.debug` dentro de `except`** em produção que, nesse nível,
+não emitem uma linha em lugar nenhum (133 deles são handlers que não fazem
+absolutamente mais nada). Somando os dois, um erro de negócio hoje tem
+exatamente **um** caminho até você: um cliente reclamando. Números e tabela em
 [`docs/reference/silencio-inventario.md`](../reference/silencio-inventario.md).
 
 ## Passo 1 — pegar o DSN

@@ -53,7 +53,26 @@ Isto muda a leitura da tabela inteira e precisa ser dito em separado.
 emite uma linha sequer**, em lugar nenhum — nem no log do DO, nem em arquivo,
 nem em serviço externo. Ele é um `except: pass` disfarçado, e o disfarce é o
 problema: passa despercebido na revisão de código justamente por *parecer*
-tratado. São **333 ocorrências** em produção.
+tratado.
+
+Os números, medidos com o mesmo AST do gate (1.035 arquivos de produção
+Python), porque a ordem de grandeza importa e cada corte responde outra
+pergunta:
+
+| Medida | Quantidade |
+|---|---|
+| Chamadas `logger.debug` em produção | **375** |
+| …dentro de algum `except` | **340** |
+| `except` cujo corpo é **só** `logger.debug` (mudez estrita) | **65** |
+| `except` cujo corpo é **só** `pass` / `...` | **68** |
+| **Sites mudos no total** | **133** |
+| …destes, nos 50 arquivos com contradição interna | **94** |
+
+As duas primeiras linhas são a superfície de risco: 340 lugares onde uma
+exceção é registrada num nível que não sai. As três últimas são a dívida
+acionável — handler que não faz absolutamente mais nada. A auditoria original
+citou "333", que é a segunda linha desta tabela; a diferença é escopo de
+varredura, não discordância.
 
 E o segundo andar do amplificador: `SENTRY_DSN` **não estava setado em nenhum
 dos dois specs** do App Platform, apesar de o `sentry-sdk` estar instalado,
