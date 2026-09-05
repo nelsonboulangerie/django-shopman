@@ -48,3 +48,52 @@ def expand_recipe_items(
         item.quantity = item.quantity * coefficient
         expanded.append(item)
     return expanded
+
+
+def item_quantity_grams(item) -> Decimal | None:
+    """Massa em gramas do item da ficha, ou ``None`` quando falta a ponte.
+
+    Peso converte pela física (``shopman.utils.units``). Volume e contagem
+    **não têm** caminho definicional até grama — a ponte é o perfil do insumo
+    (``density_g_per_ml`` / ``unit_weight_g`` em ``RecipeItem.meta``). Sem o
+    perfil, o item não tem massa conhecida, e cada consumidor decide o que
+    fazer com isso: a nutrição o deixa de fora da soma (rótulo incompleto é
+    melhor que rótulo inventado), o peso da peça recusa derivar (soma
+    incompleta viraria um peso anunciado sem relação com a peça).
+
+    Mora aqui, e não na nutrição, porque virou a régua de três derivações.
+    """
+    from shopman.utils import units
+
+    unit = str(getattr(item, "unit", "") or "").strip()
+    quantity = Decimal(str(item.quantity))
+    meta = item.meta if isinstance(item.meta, dict) else {}
+    item_dimension = units.dimension(unit)
+
+    if item_dimension == units.MASS:
+        return units.convert(quantity, unit, "g")
+
+    if item_dimension == units.VOLUME:
+        density = positive_decimal(meta.get("density_g_per_ml"))
+        if density is None:
+            return None
+        return units.convert(quantity, unit, "ml") * density
+
+    if item_dimension == units.COUNT:
+        unit_weight = positive_decimal(meta.get("unit_weight_g"))
+        if unit_weight is None:
+            return None
+        return units.convert(quantity, unit, "un") * unit_weight
+
+    return None
+
+
+def positive_decimal(value) -> Decimal | None:
+    """``Decimal`` estritamente positivo, ou ``None`` — ponte inválida é ponte ausente."""
+    from decimal import InvalidOperation
+
+    try:
+        decimal = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return decimal if decimal > 0 else None
