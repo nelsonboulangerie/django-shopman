@@ -22,10 +22,11 @@ o valor mora numa coluna ou numa chave legada. Valor sem registro de
 proveniência lê como ``manual``: se está lá e ninguém disse o contrário, foi
 gente que pôs.
 
-⚠️ ``metadata["dietary_auto_filled"]`` continua sendo a palavra final para o
-``dietary_from_recipe``, e este módulo **não** o toca. Unificar os dois é o WP
-de rename das chaves legadas, não esta fase — duas fontes escrevendo a mesma
-verdade é como ela passa a divergir.
+⚠️ A proveniência é a **palavra final** sobre quem pode sobrescrever: o
+``dietary_from_recipe`` só recalcula alérgenos e dieta quando o valor gravado
+veio dele (``source="recipe"``). O sentinela ``dietary_auto_filled``, que dizia
+isso à parte, morreu no WP de rename — duas fontes para a mesma verdade era
+exatamente como ela divergia.
 """
 
 from __future__ import annotations
@@ -162,13 +163,12 @@ def is_reviewed(product, ref: str) -> bool:
     Valor de proveniência ``manual`` é revisado por definição: o gestor é quem
     escreveu.
     """
-    require(ref)
-    record = _provenance_record(product, ref)
-    if not record:
+    # Usa o MESMO default de `source()` de propósito: valor sem proveniência
+    # registrada lê como `manual` nas duas funções. Quando elas divergiam, o
+    # mesmo valor era "escrito pelo gestor" e "não revisado" ao mesmo tempo.
+    if source(product, ref) == AttributeSource.MANUAL:
         return True
-    if record.get("source") == AttributeSource.MANUAL:
-        return True
-    return bool(record.get("reviewed", False))
+    return bool(_provenance_record(product, ref).get("reviewed", False))
 
 
 # --- escrita ---------------------------------------------------------------
@@ -325,3 +325,39 @@ def _coerce(d: AttributeDefinition, raw: Any) -> Any:
     if not value:
         raise AttributeError_(f"'{d.ref}' é texto e não aceita vazio.")
     return value
+
+
+# --- o seam com o Core ------------------------------------------------------
+
+
+class LabelAttributesProvider:
+    """O que o formulário de rótulo do Offerman usa para ler e escrever.
+
+    O Offerman é Core e **não importa o orquestrador** — mas os campos de
+    alérgeno, dieta e porções são vocabulário do tenant, que mora aqui. O
+    pacote pergunta por este provedor
+    (``OFFERMAN["LABEL_ATTRIBUTES_PROVIDER"]``) do mesmo jeito que o Craftsman
+    pergunta as variantes de lifecycle: sem provedor, sem campo, e o Core segue
+    de pé sozinho.
+
+    ``set`` levanta ``ValueError`` quando o valor não passa na definição — é o
+    que faz um alérgeno digitado errado ser recusado no Admin, com mensagem, em
+    vez de virar um rótulo que mente.
+    """
+
+    def get(self, product, ref: str):
+        try:
+            return get(product, ref)
+        except AttributeError_:
+            # Atributo que saiu do registro: o campo aparece vazio em vez de a
+            # tela inteira quebrar por causa de uma configuração.
+            logger.warning("label provider: atributo '%s' não está no registro.", ref)
+            return None
+
+    def set(self, product, ref: str, value) -> None:
+        set(product, ref, value, source=AttributeSource.MANUAL, save=False)
+
+
+def label_attributes_provider() -> LabelAttributesProvider:
+    """Fábrica apontada por ``OFFERMAN["LABEL_ATTRIBUTES_PROVIDER"]``."""
+    return LabelAttributesProvider()

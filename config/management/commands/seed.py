@@ -85,6 +85,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
+from shopman.shop.attribute_defaults import ensure_definitions
 from shopman.shop.management.commands import setup_operators
 from shopman.shop.models import (
     Announcement,
@@ -101,6 +102,7 @@ from shopman.shop.rules.suggestion import (
     DEFAULT_COMPLEMENT_PARAMS,
     DEFAULT_SUBSTITUTE_PARAMS,
 )
+from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
@@ -482,6 +484,13 @@ class Command(BaseCommand):
             self._flush()
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n🥐 Populando Nelson Boulangerie...\n"))
+
+        # PRIMEIRO de tudo: o registro de atributos precisa existir antes do
+        # catálogo, porque `_seed_catalog` já grava rotulagem por ele. A
+        # migração o cria em deployment; aqui é para o banco que foi truncado
+        # (teste com `transaction=True`, que NÃO repõe dado de migração) ou
+        # flushado.
+        ensure_definitions()
 
         self._create_superuser(admin_password)
         self._seed_operators()
@@ -1988,15 +1997,31 @@ class Command(BaseCommand):
                 p.keywords.add(*keywords_map[sku])
             metadata = p.metadata if isinstance(p.metadata, dict) else {}
             existing_fiscal = metadata.get("fiscal") if isinstance(metadata.get("fiscal"), dict) else {}
+            rotulo = dict(PDP_METADATA.get(sku, {}))
+            # `approx_dimensions` segue chave solta do metadata; alérgenos, dieta
+            # e porções são ATRIBUTOS do registro e entram pelo service, que
+            # valida contra as opções cadastradas.
+            atributos = {
+                ref: rotulo.pop(legacy, None)
+                for ref, legacy in (
+                    ("alergenos", "allergens"), ("dieta", "dietary_info"), ("porcoes", "serves")
+                )
+            }
             p.metadata = {
                 **metadata,
-                **PDP_METADATA.get(sku, {}),
+                **rotulo,
                 **({"gallery": gallery_by_sku[sku]} if sku in gallery_by_sku else {}),
                 "fiscal": {
                     **fiscal_metadata_for_sku(sku),
                     **existing_fiscal,
                 },
             }
+            for ref, valor in atributos.items():
+                # `is not None` e não `if valor`: lista VAZIA é declaração —
+                # "conferi e não tem alérgeno" — e é diferente de não declarar.
+                # O guarda de rotulagem abaixo distingue as duas.
+                if valor is not None:
+                    attributes.set(p, ref, valor, source="manual", save=False)
             p.save(update_fields=["metadata"])
             products[sku] = p
 
@@ -2017,9 +2042,6 @@ class Command(BaseCommand):
         combo.keywords.add("combo", "cafe-da-manha", "promocao")
         combo.metadata = {
             **(combo.metadata if isinstance(combo.metadata, dict) else {}),
-            "allergens": ["glúten", "leite", "ovos"],
-            "dietary_info": ["vegetariano"],
-            "serves": "1 pessoa",
             "approx_dimensions": "1 croissant + 1 mini baguete",
             "fiscal": {
                 **fiscal_metadata_for_sku("COMBO-PETIT-DEJ"),
@@ -2030,6 +2052,11 @@ class Command(BaseCommand):
                 ),
             },
         }
+        # O bundle declara a própria rotulagem: ele não a herda dos componentes,
+        # e o cliente que compra de longe precisa dela na tela do combo.
+        attributes.set(combo, "alergenos", ["glúten", "leite", "ovos"], save=False)
+        attributes.set(combo, "dieta", ["vegetariano"], save=False)
+        attributes.set(combo, "porcoes", "1 pessoa", save=False)
         combo.save(update_fields=["metadata"])
         products["COMBO-PETIT-DEJ"] = combo
 
@@ -4866,7 +4893,10 @@ class Command(BaseCommand):
         from shopman.fiscalman.classification import from_metadata
 
         missing = []
-        required_metadata = ("allergens", "dietary_info", "serves")
+        # Rotulagem de compra remota: hoje são ATRIBUTOS do registro, não mais
+        # chaves soltas do metadata. O guarda continua o mesmo — quem vende de
+        # longe declara alergênico, dieta e porção —, só mudou onde ele olha.
+        required_attributes = ("alergenos", "dieta", "porcoes")
         # Todo produto publicado num canal onde o cliente compra de longe precisa
         # dos dados de compra remota (alergênicos, porções, fiscal). O WhatsApp
         # entra na lista porque o concierge vende sem o cliente ver a vitrine.
@@ -4883,9 +4913,11 @@ class Command(BaseCommand):
         for product in products:
             gaps = []
             metadata = product.metadata if isinstance(product.metadata, dict) else {}
-            for key in required_metadata:
-                if key not in metadata:
-                    gaps.append(f"metadata.{key}")
+            for ref in required_attributes:
+                # `is None` = não declarado. Lista vazia passa: é a casa
+                # dizendo que conferiu e não há o que declarar.
+                if attributes.get(product, ref) is None:
+                    gaps.append(f"atributo.{ref}")
             fiscal = metadata.get("fiscal") if isinstance(metadata.get("fiscal"), dict) else {}
             if not fiscal:
                 gaps.append("metadata.fiscal")

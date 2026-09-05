@@ -159,7 +159,7 @@ export interface ProductDetailProjection {
   readonly primary_collection: string;
   readonly primary_collection_name: string;
   // somente-leitura: dado veio da receita; editar à mão congela a derivação.
-  readonly dietary_auto_filled: boolean;
+  readonly dietary_from_recipe: boolean;
   readonly nutrition_auto_filled: boolean;
   readonly fiscal_profiles: FiscalProfileChoice[];
 }
@@ -172,7 +172,7 @@ export type ProductDetailPatch = Partial<
     | "sku"
     | "primary_collection"
     | "primary_collection_name"
-    | "dietary_auto_filled"
+    | "dietary_from_recipe"
     | "nutrition_auto_filled"
     | "fiscal_profiles"
     | "social"

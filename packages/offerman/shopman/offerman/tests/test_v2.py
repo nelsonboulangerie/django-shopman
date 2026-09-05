@@ -305,7 +305,7 @@ class TestProductUpdatedSignal:
         h = lambda sender, sku, **k: received.append(sku)  # noqa: E731
         product_updated.connect(h)
         try:
-            product.metadata = {"social": {"brand": "N"}, "dietary_auto_filled": True}
+            product.metadata = {"social": {"brand": "N"}, "attributes": {"sabor": {"value": "doce"}}}
             product.save()
             assert received == []
         finally:

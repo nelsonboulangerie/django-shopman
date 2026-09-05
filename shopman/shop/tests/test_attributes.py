@@ -35,14 +35,13 @@ def test_migration_seeds_the_seven_definitions():
     }
 
 
-def test_legacy_attributes_point_at_the_keys_that_already_exist():
-    # É a decisão da F1: o registro nasce completo sem mover dado nenhum.
-    assert attributes.require("alergenos").metadata_key == "allergens"
-    assert attributes.require("dieta").metadata_key == "dietary_info"
-    assert attributes.require("porcoes").metadata_key == "serves"
+def test_where_each_value_lives():
+    # Os três legados vieram para casa no WP de rename; o peso segue coluna,
+    # porque é fato físico com integridade no banco.
+    for ref in ("alergenos", "dieta", "porcoes", "sabor"):
+        d = attributes.require(ref)
+        assert d.storage == "attributes", ref
     assert attributes.require("peso_unidade_g").column_field == "unit_weight_g"
-    assert attributes.require("sabor").metadata_key is None
-    assert attributes.require("sabor").column_field is None
 
 
 # --- validação da definição ------------------------------------------------
@@ -143,29 +142,31 @@ def test_column_storage_reads_and_writes_the_column():
 # --- leitura e escrita: ponteiro para chave legada --------------------------
 
 
-def test_legacy_key_is_read_without_any_data_moving():
-    # Produto gravado pelo formulário de rótulo do Offerman, antes do registro.
-    product = _product(metadata={"allergens": ["glúten", "leite"], "serves": 2})
+def test_the_label_reads_from_the_registry():
+    product = _product()
+    attributes.set(product, "alergenos", ["glúten", "leite"], save=False)
+    attributes.set(product, "porcoes", "2 pessoas")
 
     assert attributes.get(product, "alergenos") == ["glúten", "leite"]
-    assert attributes.get(product, "porcoes") == 2
+    assert attributes.get(product, "porcoes") == "2 pessoas"
 
 
-def test_writing_a_legacy_attribute_writes_the_legacy_key():
+def test_the_label_value_lives_in_the_registry_now():
     product = _product()
     attributes.set(product, "alergenos", ["glúten"], source="recipe")
     product.refresh_from_db()
 
-    # É a chave que o Offerman e o `dietary_from_recipe` leem — nada mudou de lugar.
-    assert product.metadata["allergens"] == ["glúten"]
+    assert product.metadata["attributes"]["alergenos"]["value"] == ["glúten"]
+    assert "allergens" not in product.metadata
     assert attributes.source(product, "alergenos") == "recipe"
 
 
-def test_multi_text_accepts_terms_the_registry_does_not_enumerate():
-    # Alérgeno novo não pode depender de deploy: quem escreve é o rótulo.
+def test_the_allergen_list_is_closed_now():
+    """Depois do rename o registro é quem escreve — então a lista pode fechar."""
     product = _product()
-    attributes.set(product, "alergenos", ["sulfitos"])
-    assert attributes.get(product, "alergenos") == ["sulfitos"]
+    attributes.set(product, "alergenos", ["sulfitos"])       # está na canônica
+    with pytest.raises(AttributeError_, match="glutén"):
+        attributes.set(product, "alergenos", ["glutén"])     # acento errado
 
 
 def test_list_attribute_refuses_a_bare_string():
@@ -193,9 +194,9 @@ def test_ai_proposal_is_not_reviewed_until_someone_says_so():
     assert attributes.is_reviewed(product, "sabor") is True
 
 
-def test_a_value_that_predates_the_registry_reads_as_manual():
+def test_a_value_without_provenance_reads_as_manual():
     # Está lá, ninguém disse o contrário: foi gente que pôs.
-    product = _product(metadata={"allergens": ["glúten"]})
+    product = _product(metadata={"attributes": {"alergenos": {"value": ["glúten"]}}})
     assert attributes.source(product, "alergenos") == "manual"
     assert attributes.is_reviewed(product, "alergenos") is True
 
@@ -310,3 +311,48 @@ def test_grocery_split_by_keyword():
 
     assert attributes.get(geleia, "natureza") == "acompanhamento"
     assert attributes.get(grao, "natureza") == "outro"
+
+
+# --- o registro precisa saber renascer -------------------------------------
+
+
+def test_the_migration_and_the_defaults_agree():
+    """As definições existem em DOIS lugares e não podem divergir.
+
+    As migrações (0028 + 0033) representam um momento do banco e não podem
+    mudar de sentido quando o código muda. O `seed` usa as constantes vivas,
+    porque **dado criado por migração não sobrevive a um teste transacional**
+    nem a um flush.
+
+    Mudar as constantes sem escrever migração nova fica vermelho aqui.
+    """
+    from shopman.shop.attribute_defaults import DEFAULT_DEFINITIONS
+
+    for spec in DEFAULT_DEFINITIONS:
+        d = AttributeDefinition.objects.get(ref=spec["ref"])
+        for campo in ("type", "storage", "unit", "purposes", "options"):
+            assert getattr(d, campo) == spec[campo], f"{spec['ref']}.{campo}"
+
+
+def test_the_registry_can_rebuild_itself_after_a_truncate():
+    """Foi assim que a CI ficou vermelha: tabela truncada, registro vazio.
+
+    Um `TransactionTestCase` trunca as tabelas no fim e NÃO repõe o que a
+    migração escreveu. O teste seguinte que rodasse o seed encontrava o registro
+    vazio e morria em `Atributo 'alergenos' não existe no registro`.
+    """
+    from shopman.shop.attribute_defaults import ensure_definitions
+
+    AttributeDefinition.objects.all().delete()
+    attributes.invalidate_cache()
+    assert attributes.registry() == ()
+
+    criadas = ensure_definitions()
+
+    assert criadas == 7
+    assert {d.ref for d in attributes.registry()} == {
+        "alergenos", "dieta", "porcoes", "peso_unidade_g",
+        "natureza", "sabor", "temperatura",
+    }
+    # E é idempotente: rodar de novo não duplica nem reescreve.
+    assert ensure_definitions() == 0

@@ -1,4 +1,4 @@
-"""Derive Product.metadata['allergens'] + ['dietary_info'] from a Recipe.
+"""Deriva os atributos ``alergenos`` e ``dieta`` do produto a partir da Recipe.
 
 Mirror of :mod:`shopman.shop.services.nutrition_from_recipe`, for the
 dietary axis that ADR-008 deliberately postponed (nutrients are an
@@ -7,7 +7,7 @@ arithmetic sum; allergens are a *union* and require per-insumo flags).
 Design
 ------
 - Product is the surface. The storefront reads
-  ``product.metadata['allergens']`` / ``['dietary_info']`` directly
+  os atributos ``alergenos`` / ``dieta`` do registro, pelo service
   (see :mod:`shopman.storefront.presentation.dietary`); it never imports
   Craftsman.
 - When a Recipe is active and its ``output_sku`` matches a Product SKU,
@@ -15,9 +15,10 @@ Design
   (:class:`shopman.craftsman.dietary.IngredientDietary`) and writes the
   result back onto the Product. Called from the same Recipe ``post_save``
   signal as the nutrition derivation (``shop.apps`` wires it).
-- Idempotent and **refuses to overwrite a manual override**. The sentinel
-  is ``metadata['dietary_auto_filled']``: explicit ``False`` blocks; absent
-  or ``True`` is fillable (so the recipe — the source of truth — wins).
+- Idempotente e **recusa sobrescrever o que o gestor escreveu**. Quem diz isso
+  é a PROVENIÊNCIA do valor (``source``), não mais um sentinela à parte:
+  ``manual`` bloqueia, ``recipe`` é recalculável, ausente é preenchível — a
+  ficha, que é a fonte da verdade, ganha.
 - Bundles (``is_bundle=True``) are skipped, like nutrition.
 - **Safety:** allergen labelling is materialized only when *every* leaf
   insumo declares a dietary profile. A single undeclared insumo means we
@@ -32,7 +33,6 @@ diet claim) plus the free-from claims ``sem glúten`` / ``sem lactose``.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from shopman.craftsman.dietary import (
     DIET_ANIMAL,
@@ -61,10 +61,10 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
         logger.debug("dietary_from_recipe: %s is a bundle; skipping.", product.sku)
         return False
 
-    if not _is_auto_filled(product.metadata):
+    if not _is_auto_filled(product):
         logger.info(
-            "dietary_from_recipe: %s has manual override "
-            "(dietary_auto_filled=False); skipping.", product.sku,
+            "dietary_from_recipe: %s tem valor escrito pelo gestor "
+            "(source=manual); não sobrescreve.", product.sku,
         )
         return False
 
@@ -100,16 +100,15 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
     allergens = _union_allergens(profiles)
     dietary_info = _derive_dietary_info(profiles, allergens)
 
-    current = product.metadata or {}
-    new_metadata = dict(current)
-    new_metadata["allergens"] = allergens
-    new_metadata["dietary_info"] = dietary_info
-    new_metadata["dietary_auto_filled"] = True
+    from shopman.shop.services import attributes
 
-    if new_metadata == current:
+    current = dict(product.metadata or {})
+    attributes.set(product, "alergenos", allergens, source="recipe", save=False)
+    attributes.set(product, "dieta", dietary_info, source="recipe", save=False)
+
+    if product.metadata == current:
         return False
 
-    product.metadata = new_metadata
     product.save(update_fields=["metadata"])
     logger.info(
         "dietary_from_recipe: %s updated (allergens=%s, dietary_info=%s).",
@@ -123,12 +122,21 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _is_auto_filled(metadata: dict[str, Any] | None) -> bool:
-    """A missing sentinel counts as auto-fillable; explicit False blocks."""
-    if not metadata:
-        return True
-    if "dietary_auto_filled" in metadata:
-        return bool(metadata.get("dietary_auto_filled"))
+def _is_auto_filled(product) -> bool:
+    """Se a ficha técnica pode sobrescrever o que está gravado.
+
+    Era o sentinela `metadata["dietary_auto_filled"]`; agora é a **proveniência
+    do próprio valor**, que é onde essa informação sempre pertenceu: valor que o
+    gestor escreveu (`source="manual"`) manda; valor que veio da ficha
+    (`source="recipe"`) é recalculável. Sem valor nenhum, não há o que proteger.
+    """
+    from shopman.shop.services import attributes
+
+    for ref in ("alergenos", "dieta"):
+        if attributes.get(product, ref) is None:
+            continue
+        if attributes.source(product, ref) != "recipe":
+            return False
     return True
 
 

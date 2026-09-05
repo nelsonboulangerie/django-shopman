@@ -20,6 +20,7 @@ from shopman.offerman.models import (
 )
 
 from shopman.shop.models import Channel, Shop
+from shopman.shop.services import attributes
 from shopman.shop.tests._display import display_channel
 
 
@@ -869,7 +870,7 @@ def test_product_detail_get_shape(client, operator, catalog):
         "allows_next_day_sale", "made_to_order", "ready_from",
         "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_auto_filled", "nutrition_auto_filled", "fiscal_profiles",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
@@ -1013,7 +1014,7 @@ def test_product_detail_patch_labelling(client, operator, catalog):
     assert product["allows_next_day_sale"] is True
 
     catalog["pao"].refresh_from_db()
-    assert catalog["pao"].metadata["allergens"] == ["glúten"]
+    assert attributes.get(catalog["pao"], "alergenos") == ["glúten"]
 
 
 def test_product_detail_patch_labelling_freezes_recipe_derivation(client, operator, catalog):
@@ -1026,7 +1027,7 @@ def test_product_detail_patch_labelling_freezes_recipe_derivation(client, operat
     assert _patch(client, "PAO", {"allergens": ["leite"]}).status_code == 200
 
     catalog["pao"].refresh_from_db()
-    assert catalog["pao"].metadata["dietary_auto_filled"] is False
+    assert attributes.source(catalog["pao"], "alergenos") == "manual"
 
 
 def test_product_detail_patch_nutrition(client, operator, catalog):
