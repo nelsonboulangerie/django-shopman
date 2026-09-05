@@ -42,6 +42,13 @@ from .pos import (
     build_pos_customer_lookup,
     build_pos_shift_summary,
 )
+from .product_promise import (
+    CatalogPromiseProjection,
+    DerivedFactProjection,
+    ProductPromiseProjection,
+    build_catalog_promise,
+    build_product_promise,
+)
 from .production import (
     BaseRecipeOptionProjection,
     BaseRecipeUsageProjection,
@@ -80,6 +87,9 @@ __all__ = [
     "POSTabProjection",
     "BaseRecipeOptionProjection",
     "BaseRecipeUsageProjection",
+    "CatalogPromiseProjection",
+    "DerivedFactProjection",
+    "ProductPromiseProjection",
     "ProductionBoardProjection",
     "ProductionCountsProjection",
     "ProductionMatrixGroupProjection",
@@ -100,6 +110,8 @@ __all__ = [
     "build_pos",
     "build_pos_customer_lookup",
     "build_pos_shift_summary",
+    "build_catalog_promise",
+    "build_product_promise",
     "build_production_board",
     "resolve_production_access",
 ]

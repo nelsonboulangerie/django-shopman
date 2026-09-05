@@ -350,6 +350,7 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
             ROOT / "shopman/backstage/projections/production.py",
+            ROOT / "shopman/backstage/projections/product_promise.py",
             ROOT / "shopman/backstage/projections/recipe_book.py",
             ROOT / "shopman/backstage/projections/purchase.py",
             ROOT / "shopman/backstage/projections/purchase_count.py",
@@ -368,12 +369,16 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         ),
         exception_reason=(
             "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
-            "production + recipe-book + purchase + campaign projections feed dedicated headless Nuxt operator apps "
+            "production + product-promise + recipe-book + purchase + campaign projections feed dedicated headless Nuxt operator apps "
             "(gestor./kds./pdv./prod./compras./mkt. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
             "X/Z na antesala do PDV, a produção inteira no Produção). "
+            "Promessa do catálogo (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C): a leitura de "
+            "'o que o cliente lê ainda corresponde à ficha?' é conferência de chão, "
+            "consumida em api/v1/backstage/catalog/promise/ pelo Produção, onde o operador "
+            "está com a peça na mão. "
             "Campanha (FOMO-MARKETING-SPECS §6.1): a REVISÃO do anúncio é decisão operacional "
             "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold. "
             "B.I. (ADR-021 §5, decisão do dono 2026-08-14): leitura analítica cross-suite via "
