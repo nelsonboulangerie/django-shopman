@@ -247,7 +247,7 @@ _BACKENDS_INERTES = ("console", "locmem", "dummy")
 _DOMINIOS_DE_REMETENTE_INERTES = (".local", "example.com", "example.org", "example.net")
 
 
-def _remetente_entrega(from_email: str) -> bool:
+def remetente_entrega(from_email: str) -> bool:
     """O endereço de remetente é capaz de sair da casa?
 
     Um backend SMTP vivo com remetente `noreply@shopman.local` é o mesmo
@@ -290,7 +290,7 @@ def is_available(recipient: str | None = None, **config) -> bool:
     remetente = str(
         config.get("from_email") or getattr(settings, "DEFAULT_FROM_EMAIL", "") or ""
     ).strip()
-    if not _remetente_entrega(remetente):
+    if not remetente_entrega(remetente):
         logger.warning(
             "E-mail indisponível: remetente %r não é entregável (domínio reservado ou ausente). "
             "Defina DEFAULT_FROM_EMAIL com um domínio real; a cadeia segue para SMS/WhatsApp.",

@@ -66,6 +66,7 @@ class DiagnosticsProjection:
 def _email_projection() -> EmailChannelProjection:
     backend = str(getattr(settings, "EMAIL_BACKEND", "") or "")
     host = str(getattr(settings, "EMAIL_HOST", "") or "")
+    sender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "")
     entrega = notification_email.is_available()
 
     if entrega:
@@ -74,11 +75,26 @@ def _email_projection() -> EmailChannelProjection:
         motivo = "Sem EMAIL_BACKEND: nenhum e-mail sai."
     elif "smtp" in backend.lower() and not host:
         motivo = "Backend SMTP sem EMAIL_HOST: a primeira conexão falharia."
-    else:
+    elif any(inerte in backend.lower() for inerte in ("console", "locmem", "dummy")):
+        # Antes do remetente, de propósito: com backend inerte o remetente nem
+        # chega a importar, e culpá-lo mandaria o operador consertar a coisa errada.
         motivo = (
             "Backend inerte (console/locmem/dummy): imprime no log e diz que "
             "entregou. A cadeia pula este canal de propósito."
         )
+    elif not notification_email.remetente_entrega(sender):
+        # O SMTP está de pé e mesmo assim não entrega: quem não existe é o
+        # REMETENTE. `.local` (RFC 6762) e `example.*` (RFC 2606) não têm DNS
+        # público, logo não têm SPF nem DMARC. Sem este ramo a tela diria
+        # "backend inerte" para um SMTP configurado — mandando o operador
+        # conferir exatamente o lugar onde não está o problema.
+        motivo = (
+            f"Remetente {sender or '(vazio)'} não sai da casa: domínio reservado ou "
+            "ausente, sem SPF nem DMARC possíveis. Defina DEFAULT_FROM_EMAIL com um "
+            "domínio real; até lá a cadeia segue para SMS e WhatsApp."
+        )
+    else:
+        motivo = "O canal não entrega, e a causa não está em backend, host nem remetente."
 
     return EmailChannelProjection(
         entrega=entrega,
@@ -87,7 +103,7 @@ def _email_projection() -> EmailChannelProjection:
         port=int(getattr(settings, "EMAIL_PORT", 0) or 0),
         use_tls=bool(getattr(settings, "EMAIL_USE_TLS", False)),
         user=str(getattr(settings, "EMAIL_HOST_USER", "") or ""),
-        sender=str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or ""),
+        sender=sender,
         has_password=bool(str(getattr(settings, "EMAIL_HOST_PASSWORD", "") or "").strip()),
         timeout_seconds=int(getattr(settings, "EMAIL_TIMEOUT", 0) or 0),
         motivo=motivo,
