@@ -91,22 +91,85 @@ export interface AlertSoundOptions {
   maxRepeats?: number;
 }
 
-// Tríade maior ascendente (A5 · C#6 · E6). É o que o KDS toca.
+/**
+ * Um TIMBRE completo: tudo que define COMO soa, e nada sobre O QUE toca.
+ *
+ * Existe como tipo próprio porque a separação entre voz e figura é o eixo do
+ * desenho: a voz é da casa (uma só, compartilhada), a figura é da superfície
+ * (uma por mensagem).
+ */
+export interface AlertVoice {
+  wave: OscillatorType;
+  shape: "ping" | "swell";
+  attack: number;
+  partials: readonly AlertPartial[];
+  filters: readonly AlertFilter[];
+  space: AlertSpace;
+}
+
+/**
+ * O TIMBRE DA CASA — a voz que todas as superfícies de operador falam.
+ *
+ * Escolhida pelo dono ouvindo 23 candidatos por cima de um ruído de salão
+ * sintetizado. É gongo macio: parciais 1 · 2 · 2,76 · 4 (a razão QUEBRADA em
+ * 2,76 é o que faz soar como sino, e é a inarmonicidade que atravessa
+ * conversa), ataque de feltro em 22 ms, e a banda 300–5000 Hz de um
+ * alto-falante de saguão — que é, mais que qualquer nota, o que o ouvido
+ * reconhece como "anúncio".
+ *
+ * Mora no kit e não em cada superfície porque isto é IDENTIDADE, não
+ * preferência: as telas do operador têm de soar como a mesma casa. O que muda
+ * entre elas é a FIGURA (quais notas, em que ordem), não a voz — e é a figura
+ * que deixa distinguir "pedido novo" de "ticket novo" sem olhar a tela.
+ *
+ * ⚠️ Não se mexe aqui sem o mesmo teste que a escolheu: ouvir com o salão
+ * cheio. O que soa bem no fone não sobrevive ao balcão.
+ */
+export const HOUSE_VOICE: AlertVoice = {
+  wave: "sine",
+  shape: "ping",
+  attack: 0.022,
+  partials: [
+    { r: 1, g: 1, d: 1 },
+    { r: 2, g: 0.5, d: 0.72 },
+    { r: 2.76, g: 0.34, d: 0.5 },
+    { r: 4, g: 0.15, d: 0.3 },
+  ],
+  filters: [
+    { type: "highpass", freq: 300 },
+    { type: "lowpass", freq: 5000 },
+  ],
+  space: { time: 0.09, feedback: 0.28, mix: 0.3 },
+};
+
+/**
+ * A figura neutra: dó → fá, subindo, curta.
+ *
+ * Não é a de ninguém — cada superfície declara a sua, porque a figura É a
+ * mensagem ("pedido novo" desce, "ticket pronto" comemora). Esta existe para
+ * que uma superfície nova que só passe a chave já saia soando como a casa em
+ * vez de muda, enquanto alguém decide o que ela deve dizer.
+ *
+ * As notas se sobrepõem de propósito (a segunda entra aos 0,24 s enquanto a
+ * primeira ainda soa por 1,0 s): é a sobreposição que faz isto ser acorde em
+ * vez de melodia.
+ */
 const DEFAULT_NOTES: readonly AlertNote[] = [
-  { f: 880, t: 0, d: 0.14 },
-  { f: 1108.73, t: 0.14, d: 0.14 },
-  { f: 1318.51, t: 0.28, d: 0.14 },
+  { f: 523.25, t: 0, d: 1.0 },
+  { f: 698.46, t: 0.24, d: 1.35 },
 ];
 
 export function useAlertSound(storageKey: string, options: AlertSoundOptions = {}) {
   const volume = options.volume ?? 0.6;
   const notes = options.notes ?? DEFAULT_NOTES;
-  const wave = options.wave ?? "triangle";
-  const shape = options.shape ?? "swell";
-  const attack = options.attack ?? (shape === "ping" ? 0.004 : 0.02);
-  const partials = options.partials ?? null;
-  const filters = options.filters ?? null;
-  const space = options.space ?? null;
+  // O padrão é a voz da casa: uma superfície nova que só passe a chave já nasce
+  // soando como as outras. Quem quiser outra coisa sobrescreve campo a campo.
+  const wave = options.wave ?? HOUSE_VOICE.wave;
+  const shape = options.shape ?? HOUSE_VOICE.shape;
+  const attack = options.attack ?? HOUSE_VOICE.attack;
+  const partials = options.partials ?? HOUSE_VOICE.partials;
+  const filters = options.filters ?? HOUSE_VOICE.filters;
+  const space = options.space === undefined ? HOUSE_VOICE.space : options.space;
   const repeatIntervalMs = options.repeatIntervalMs ?? 8_000;
   const maxRepeats = options.maxRepeats ?? 6;
 

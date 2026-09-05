@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { flushPromises } from "@vue/test-utils";
 import { installNuxtGlobals } from "../../../operator-kit/tests/support/composableEnv";
-import { useKdsBoard } from "~/composables/useKdsBoard";
+import { KDS_ALERT, useKdsBoard } from "~/composables/useKdsBoard";
 import type { KDSTicketProjection } from "~/types/kds";
 
 const env = installNuxtGlobals();
@@ -194,5 +194,44 @@ describe("useKdsBoard — sound preference", () => {
     expect(soundOn.value).toBe(true);
     toggleSound();
     expect(soundOn.value).toBe(false);
+  });
+});
+
+describe("KDS_ALERT — a fanfarra escolhida pelo dono", () => {
+  // Guardam PROPRIEDADES, não números por gosto: o que quebraria o som em
+  // silêncio se alguém mexesse sem ouvir.
+
+  it("comemora — as três primeiras notas SOBEM", () => {
+    const corrida = KDS_ALERT.notes.slice(0, 3);
+    expect(corrida[1].f).toBeGreaterThan(corrida[0].f);
+    expect(corrida[2].f).toBeGreaterThan(corrida[1].f);
+  });
+
+  it("as três entram em crescendo — é fanfarra, não escala", () => {
+    const [a, b, c] = KDS_ALERT.notes.slice(0, 3);
+    expect(b.g!).toBeGreaterThan(a.g!);
+    expect(c.g!).toBeGreaterThan(b.g!);
+  });
+
+  it("termina em ACORDE — três notas no mesmo instante", () => {
+    const ultimoInstante = Math.max(...KDS_ALERT.notes.map((n) => n.t));
+    const acorde = KDS_ALERT.notes.filter((n) => n.t === ultimoInstante);
+    expect(acorde.length).toBe(3);
+    // e alturas distintas: três vezes a mesma nota não é acorde
+    expect(new Set(acorde.map((n) => n.f)).size).toBe(3);
+  });
+
+  it("a corrida ainda soa quando o acorde chega — não é melodia", () => {
+    const corrida = KDS_ALERT.notes[2];
+    const acorde = KDS_ALERT.notes[3];
+    expect(acorde.t).toBeLessThan(corrida.t + corrida.d);
+  });
+
+  it("não declara timbre — herda a voz da casa do kit", () => {
+    // Se alguém puser `partials` ou `filters` aqui, o KDS deixa de acompanhar
+    // o Gestor quando a voz da casa mudar. A figura é do KDS; a voz não é.
+    for (const chave of ["partials", "filters", "space", "wave", "shape", "attack"]) {
+      expect(KDS_ALERT).not.toHaveProperty(chave);
+    }
   });
 });
