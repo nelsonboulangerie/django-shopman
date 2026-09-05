@@ -120,6 +120,64 @@ jobs:
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
 
+  # ── Gate da meia-correção (NÃO-BLOQUEANTE por ora) ───────────────────────
+  # Pega a contradição interna: um arquivo que o PR tocou e que, ao mesmo tempo,
+  # sabe RELATAR falha (create_operator_alert / record_*_failure / logger.error /
+  # raise de erro de domínio) e ENGOLE calado noutra linha (`except: pass`,
+  # `except → logger.debug`, `.catch(() => {})`, `catch {}`).
+  #
+  # A suíte inteira já roda em todo PR e não pega isto — não é o tipo de coisa
+  # que um teste ausente revela. É o remédio que não foi distribuído: cada
+  # sessão conserta o site reportado e o irmão idêntico sobrevive calado.
+  #
+  # ⚠️ `continue-on-error: true` DE PROPÓSITO, e é para sair. Medido em
+  # 05/09/2026: 50 arquivos de produção já estão nessa contradição, com 94 sites
+  # mudos. Um gate que nasce reprovando 50 arquivos é desligado no primeiro dia,
+  # e aí não guarda nem os arquivos novos.
+  #
+  # Ele vira REQUIRED quando o placar de docs/reference/silencio-inventario.md
+  # zerar as faixas `dinheiro` e `fiscal` — que são 6 arquivos, não 50. Quem
+  # zerar a última linha dessas duas faixas: apague este `continue-on-error`,
+  # e peça ao dono para marcar o check como obrigatório na branch protection
+  # (é a mão dele no GitHub, não a nossa).
+  #
+  # Enquanto isso ele não bloqueia nada, mas o relatório aparece no log do PR e
+  # ensina o autor onde o irmão ficou para trás — que é metade do trabalho.
+  silent-swallow-gate:
+    name: Gate da meia-correção (não-bloqueante)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        # O gate faz diff contra a base do PR; `fetch-depth: 0` dá o histórico
+        # que o merge-base precisa. Com o checkout raso o diff sai vazio e o
+        # gate passaria verde sem olhar nada — falha silenciosa no gate contra
+        # falha silenciosa, que seria uma piada de mau gosto.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Sem `make install`: o gate é `ast` + `re` da biblioteca padrão, e não
+      # importa nada do Django. Instalar a suíte aqui custaria 3 min para provar
+      # o que 2 segundos provam.
+      - name: Gate da meia-correção
+        # `set -o pipefail` não é zelo: o shell default do runner é `bash -e`,
+        # SEM pipefail, então `gate | tee` devolveria o código do `tee` (sempre
+        # 0) e o gate passaria verde para sempre. Hoje isso seria invisível
+        # porque o job é `continue-on-error`; no dia em que ele virar required,
+        # seria um check obrigatório que não guarda nada — o mesmo defeito que
+        # este gate existe para caçar, dentro do próprio gate.
+        run: |
+          set -o pipefail
+          python scripts/check_silent_swallow.py | tee -a "$GITHUB_STEP_SUMMARY"
+
   # O gate canônico do Admin/Unfold (CLAUDE.md trata como lei) só existia como
   # alvo local — agente que não roda `make admin` mergeava dívida em silêncio.
   # Aqui ele passa a rodar em todo PR e na fila de merge.

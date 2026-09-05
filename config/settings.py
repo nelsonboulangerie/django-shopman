@@ -1615,6 +1615,17 @@ if SENTRY_DSN:
             integrations=[DjangoIntegration()],
             traces_sample_rate=_sentry_traces,
             send_default_pii=False,
+            # O default do sentry-sdk é "medium": ele anexa o CORPO da request
+            # até 10 KB. Num 500 de `/auth/request-code/` isso é o telefone do
+            # cliente; num 500 de `/auth/verify/` é o telefone E o código OTP —
+            # os dois saem daqui em texto puro para um serviço externo e ficam
+            # guardados lá. `send_default_pii=False` NÃO cobre isto: ele governa
+            # usuário/IP/cookie, não o corpo.
+            #
+            # "never" é a única opção compatível com a LGPD para esta base: o
+            # que precisamos do erro é o traceback e a rota, e esses continuam
+            # vindo. Ver docs/plans/ALPHA-READINESS-CODE-AUDIT-2026-08.md (P2).
+            max_request_body_size="never",
             before_send=_strip_query_string,
         )
     except Exception:  # pragma: no cover - inerte sem a dependência

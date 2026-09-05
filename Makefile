@@ -15,7 +15,7 @@ APP_COMPOSE := $(COMPOSE) --profile app
 RELEASE_COMPOSE := $(COMPOSE) --profile release
 NUXT_DIR := surfaces/storefront-nuxt
 
-.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
+.PHONY: surfaces surfaces-types help install test test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-cashman test-framework test-counter-agent test-migrations test-silent-swallow deploy-spec-drift test-runtime-preflight test-runtime load-test storefront-e2e test-coverage lint omotenashi-qa omotenashi-browser-qa omotenashi-browser-ci admin-csp-gate admin admin-update admin-ui admin-ui-ci admin-ui-maturity admin-ui-strict admin-ui-surfaces admin-ui-test admin-ui-update unfold unfold-ci unfold-maturity unfold-strict unfold-surfaces unfold-update lint-unfold lint-unfold-maturity clean migrate run nuxt dev seed coverage fonts up down logs db-shell diagnose-runtime diagnose-worker diagnose-payments diagnose-webhooks diagnose-health release-readiness release-readiness-strict alpha-readiness production-readiness reconcile-financial-day audit-branches smoke-gateways smoke-gateways-sandbox deploy-env-check deploy-check deploy-build deploy-release deploy-up deploy-down deploy-logs deploy-ps collectstatic
 
 help: ## Mostra este help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -77,53 +77,69 @@ test-cores: test-refs test-utils test-offerman test-stockman test-craftsman test
 test: test-refs test-utils test-offerman test-stockman test-craftsman test-orderman test-payman test-guestman test-doorman test-buyman test-fiscalman test-cashman test-framework test-counter-agent ## Roda todos os testes
 	@echo "✓ Todos os testes passaram"
 
+# ── Por que NÃO tem `-x` (fail-fast) em nenhum alvo ───────────────────────
+# O `-x` para na PRIMEIRA falha. Num repositório com uma sessão por vez isso é
+# um atalho; aqui, com dezenas de worktrees em paralelo, ele é a engrenagem
+# central do defeito que este projeto vive tendo: quem vê UMA falha conserta
+# UM site, e o irmão idêntico no mesmo arquivo sobrevive calado.
+#
+# A prova está no histórico: `record_payment_reconciliation_failure` existe em
+# 3 lugares e falta nos `except PaymentError: pass` de authorize e capture;
+# `notification.py` tem o comentário de um conserto e dois irmãos ainda em
+# `logger.debug`. 404 commits `fix(` contra 352 `feat(` em 1.527.
+#
+# Sem `-x`, uma rodada mostra o estrago inteiro — que é a informação de que o
+# autor precisa para consertar a CLASSE em vez do site. Custa alguns minutos de
+# runner e economiza o ciclo inteiro de descobrir a segunda falha depois.
+# (O `fail-fast: false` da matriz do CI já seguia essa lógica; aqui o Makefile
+# passa a concordar com ela.) Ver `make test-silent-swallow`.
 test-refs: ## Testes do shopman.refs
 	@echo "── Refs ──"
-	cd packages/refs && $(PYTHON) -m pytest -x -q
+	cd packages/refs && $(PYTHON) -m pytest -q
 
 test-utils: ## Testes do shopman.utils
 	@echo "── Utils ──"
-	cd packages/utils && $(PYTHON) -m pytest -x -q
+	cd packages/utils && $(PYTHON) -m pytest -q
 
 test-offerman: ## Testes do shopman.offering
 	@echo "── Offerman ──"
-	cd packages/offerman && $(PYTHON) -m pytest -x -q
+	cd packages/offerman && $(PYTHON) -m pytest -q
 
 test-stockman: ## Testes do shopman.stocking
 	@echo "── Stockman ──"
-	cd packages/stockman && $(PYTHON) -m pytest -x -q
+	cd packages/stockman && $(PYTHON) -m pytest -q
 
 test-craftsman: ## Testes do shopman.crafting
 	@echo "── Craftsman ──"
-	cd packages/craftsman && $(PYTHON) -m pytest -x -q
+	cd packages/craftsman && $(PYTHON) -m pytest -q
 
 test-orderman: ## Testes do shopman.orderman
 	@echo "── Orderman ──"
-	cd packages/orderman && $(PYTHON) -m pytest -x -q
+	cd packages/orderman && $(PYTHON) -m pytest -q
 
 test-payman: ## Testes do shopman.payments
 	@echo "── Payman ──"
-	cd packages/payman && $(PYTHON) -m pytest -x -q
+	cd packages/payman && $(PYTHON) -m pytest -q
 
 test-guestman: ## Testes do shopman.customers
 	@echo "── Guestman ──"
-	cd packages/guestman && $(PYTHON) -m pytest -x -q
+	cd packages/guestman && $(PYTHON) -m pytest -q
 
 test-doorman: ## Testes do shopman.auth
 	@echo "── Doorman ──"
-	cd packages/doorman && $(PYTHON) -m pytest -x -q
+	cd packages/doorman && $(PYTHON) -m pytest -q
 
 test-buyman: ## Testes do shopman.buyman (compras)
 	@echo "── Buyman ──"
-	cd packages/buyman && $(PYTHON) -m pytest -x -q
+	cd packages/buyman && $(PYTHON) -m pytest -q
 
 test-fiscalman: ## Testes do shopman.fiscalman (fiscal)
 	@echo "── Fiscalman ──"
-	cd packages/fiscalman && $(PYTHON) -m pytest -x -q
+	cd packages/fiscalman && $(PYTHON) -m pytest -q
 
 test-cashman: ## Testes do shopman.cashman (caixa: terminal, turno, livro)
 	@echo "── Cashman ──"
-	cd packages/cashman && $(PYTHON) -m pytest -x -q
+	cd packages/cashman && $(PYTHON) -m pytest -q
 
 test-framework: test-shop test-storefront test-backstage ## Testes do framework (orquestração)
 	@echo "✓ Framework passou"
@@ -170,15 +186,15 @@ test-framework: test-shop test-storefront test-backstage ## Testes do framework 
 # do zero é literalmente o que eles provam.
 test-shop: ## Orquestrador
 	@echo "── Shop ──"
-	$(PYTHON) -m pytest shopman/shop/tests -x -q
+	$(PYTHON) -m pytest shopman/shop/tests -q
 
 test-storefront: ## Loja (API headless)
 	@echo "── Storefront ──"
-	$(PYTHON) -m pytest shopman/storefront/tests -x -q
+	$(PYTHON) -m pytest shopman/storefront/tests -q
 
 test-backstage: ## Operador (POS, KDS, produção, caixa, B.I.)
 	@echo "── Backstage ──"
-	$(PYTHON) -m pytest shopman/backstage/tests -x -q -n auto
+	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto
 
 # ── Shard do backstage ────────────────────────────────────────────────────
 # O `-n auto` acima resolveu o RISCO — o step estourando o teto do job, que já
@@ -221,11 +237,11 @@ BACKSTAGE_SEED_TESTS := \
 
 test-backstage-seed: ## Backstage — só os testes que semeiam o banco (shard 1/2 do CI)
 	@echo "── Backstage (semeia o banco) ──"
-	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -x -q -n auto
+	$(PYTHON) -m pytest $(BACKSTAGE_SEED_TESTS) -q -n auto
 
 test-backstage-rest: ## Backstage — todo o resto (shard 2/2 do CI)
 	@echo "── Backstage (resto) ──"
-	$(PYTHON) -m pytest shopman/backstage/tests -x -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS))
+	$(PYTHON) -m pytest shopman/backstage/tests -q -n auto $(addprefix --ignore=,$(BACKSTAGE_SEED_TESTS))
 
 # O agente do balcão vive fora de `shopman/` (é programa de OUTRA máquina), então
 # ficava de fora da suíte — justo o processo que roda sozinho no balcão, sem
@@ -233,7 +249,7 @@ test-backstage-rest: ## Backstage — todo o resto (shard 2/2 do CI)
 # que impede o CUPS de imprimir o comando, e a recusa de quem não tem token.
 test-counter-agent: ## Testes do agente do balcão (tools/pos-counter-agent)
 	@echo "── Agente do balcão ──"
-	$(PYTHON) -m pytest tools/pos-counter-agent -x -q
+	$(PYTHON) -m pytest tools/pos-counter-agent -q
 
 test-migrations: ## Gate de migrations: nada sem migration + schema limpo do zero + grafo consistente
 	@echo "── Migrations gate ──"
@@ -242,6 +258,19 @@ test-migrations: ## Gate de migrations: nada sem migration + schema limpo do zer
 test-constraints: ## Gate de pins: o constraints.txt cobre tudo que a imagem instala?
 	@echo "── Constraints gate ──"
 	$(PYTHON) scripts/check_constraints.py
+
+# Gate da meia-correção: arquivo que grita numa linha e se cala na irmã.
+# Escopo = só o que o PR toca (diff contra o main). `all=1` varre o repositório
+# inteiro — é assim que o inventário da dívida é regerado.
+test-silent-swallow: ## Gate da meia-correção: relato alto + engolimento mudo no MESMO arquivo
+	@echo "── Gate da meia-correção ──"
+	$(PYTHON) scripts/check_silent_swallow.py $(if $(all),--all,) $(if $(json),--json,)
+
+# ⚠️ NÃO é alvo de CI: exige credencial da DigitalOcean, que a CI não tem (nem
+# deve ter). É conferência de MÃO, obrigatória antes de qualquer `apps update`.
+deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; roda ANTES de apps update)
+	@echo "── Drift do spec do App Platform ──"
+	$(PYTHON) scripts/check_do_spec_drift.py $(if $(spec),--spec $(spec),)
 
 test-runtime-preflight: ## Falha se PostgreSQL/Redis reais não estiverem configurados
 	@echo "── Runtime preflight: PostgreSQL + Redis ──"
