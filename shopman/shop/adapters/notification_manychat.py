@@ -58,9 +58,9 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     # Entrada na loja pelo WhatsApp: a pessoa mandou a palavra e recebe o acesso.
     # Uso único e vida curta — dizer isso evita o link guardado que não abre depois.
     "access_link": (
-        "Olá{customer_name_greeting}! Aqui está seu acesso à loja:"
-        "\n{access_url}{cart_note}"
-        "\n\nO link é só seu e vale por poucos minutos."
+        "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:"
+        "\n{access_url}"
+        "\n{cart_note}O link vale por 5 min."
     ),
     "waitlist_available": (
         "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "

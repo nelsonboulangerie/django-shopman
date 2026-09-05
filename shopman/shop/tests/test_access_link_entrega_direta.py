@@ -51,7 +51,12 @@ class TestQuemPedeRecebe:
                 None, token=_token(deliver="manychat", cart_session_key="c1"),
                 customer=_cliente(), url="https://x/a?t=1",
             )
-        assert "sacola" in notify.call_args.kwargs["context"]["cart_note"].lower()
+        nota = notify.call_args.kwargs["context"]["cart_note"]
+        assert "sacola" in nota.lower()
+        # Termina em ESPAÇO, não em quebra: ela divide a linha com o aviso de
+        # prazo. Se virar "\n...", sem sacola sobra uma linha em branco no meio
+        # da mensagem — e com sacola o prazo desce sozinho para o rodapé.
+        assert nota.endswith(" ") and not nota.startswith("\n")
 
     def test_sem_sacola_o_sufixo_some_limpo(self):
         with patch("shopman.shop.notifications.notify") as notify:
