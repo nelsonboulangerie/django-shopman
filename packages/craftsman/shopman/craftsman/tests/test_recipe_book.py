@@ -434,6 +434,68 @@ class TestBootstrap:
         cream = _sheet("creme-confeiteiro", "Creme de Confeiteiro", "CREME-CONF", "2", [("LEITE", "1.5"), ("ACUCAR", "0.5")])
         assert recipe_book.bootstrap_entry_from_recipe(cream).kind == "cream"
 
+    def test_a_piece_keeps_the_sheet_it_declares_instead_of_a_made_up_formula(self, seeded_sheets):
+        """A baguete é 280 g de Massa Tradição, e é só isso que a fórmula dela diz.
+
+        Dissolver a massa aqui dentro inventava uma fórmula para a peça: a
+        baguete aparecia com a farinha, a água e o levain da Massa Tradição
+        como se fossem dela, com "farinha pré-fermentada 100%" e avisos de
+        padaria que eram artefato da dissolução, não fato da peça.
+        """
+        _, _, _tradicao = seeded_sheets
+        baguete = _sheet("baguete", "Baguette de Tradition", "BF", "1",
+                         [("MASSA-TRADICAO", "0.280")], unit="un")
+
+        entry = recipe_book.bootstrap_entry_from_recipe(baguete)
+        version = entry.current_version
+        assert version.yield_quantity == Decimal("1")
+        assert version.yield_unit == "un"
+
+        formula = version.formula
+        assert formula["parts"] == []
+        assert [(item["sku"], item["quantity"], item["unit"]) for item in formula["items"]] == [
+            ("MASSA-TRADICAO", "280", "g")
+        ]
+        # Sem farinha própria, a âncora é a massa total — e é a âncora que liga
+        # (ou não) a lente de padaria.
+        assert formula["anchor"] == {"kind": "total"}
+
+    def test_a_piece_shows_no_bakery_metric_and_no_bakery_warning(self, seeded_sheets):
+        _, _, _tradicao = seeded_sheets
+        baguete = _sheet("baguete", "Baguette de Tradition", "BF", "1",
+                         [("MASSA-TRADICAO", "0.280")], unit="un")
+        entry = recipe_book.bootstrap_entry_from_recipe(baguete)
+        formula = entry.current_version.formula
+
+        analysis = recipe_book.analyze(formula, recipe_book.part_formulas_for(formula))
+        assert analysis.hydration_pct is None
+        assert analysis.prefermented_flour_pct is None
+        assert analysis.salt_pct is None
+        assert analysis.warnings == ()
+        assert recipe_book.check_references(analysis, entry.kind) == []
+
+    def test_a_piece_with_more_than_dough_keeps_every_line_it_declares(self, seeded_sheets):
+        """O pain au chocolat é 80 g de folhada + 20 g de bâton, não uma fórmula."""
+        _, _, _tradicao = seeded_sheets
+        folhada = _sheet("massa-croissant", "Massa Croissant", "MASSA-CROISSANT", "9",
+                         [("FARINHA-T45", "4.8"), ("MANTEIGA-FR", "2.4"), ("AGUA-FILTRADA", "1.8")])
+        recipe_book.bootstrap_entry_from_recipe(folhada)
+        peca = _sheet("pain-chocolat", "Pain au Chocolat", "PC", "1",
+                      [("MASSA-CROISSANT", "0.080"), ("BATON-CHOCOLATE", "0.020")], unit="un")
+
+        formula = recipe_book.bootstrap_entry_from_recipe(peca).current_version.formula
+        assert formula["parts"] == []
+        assert {item["sku"]: item["quantity"] for item in formula["items"]} == {
+            "MASSA-CROISSANT": "80", "BATON-CHOCOLATE": "20",
+        }
+
+    def test_a_formula_that_yields_mass_still_dissolves_its_parts(self, seeded_sheets):
+        """A régua é o que a ficha RENDE: fórmula continua com partes de verdade."""
+        _, _, tradicao = seeded_sheets
+        formula = recipe_book.bootstrap_entry_from_recipe(tradicao).current_version.formula
+        assert {part["sku"] for part in formula["parts"]} == {"LEVAIN", "PASTA-AUTOLIZADA"}
+        assert formula["anchor"] == {"kind": "flour"}
+
     def test_the_command_orders_by_dependency_and_honors_dry_run(self, seeded_sheets):
         out = StringIO()
         call_command("bootstrap_recipe_book", "--dry-run", stdout=out)
