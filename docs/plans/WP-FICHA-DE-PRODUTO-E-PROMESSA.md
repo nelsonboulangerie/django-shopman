@@ -109,6 +109,33 @@ conservador e o aprendizado fica anotado como próximo passo.
 E o que sobrar **não é perda, é massa velha de amanhã**, que já é modelada como teto. O
 alvo não é sobra zero: é sobra que caiba no teto do dia seguinte.
 
+### E · Executado (05/09/2026)
+
+- `packages/craftsman/.../services/yield_margin.py` — a aritmética, com as duas verdades
+  em comentário (a peça é incerta, a fornada não é; duas perdas, duas formas).
+- `SCALE_PRECISION_G` (2 g), `MIXER_LOSS_G` (150 g) e `YIELD_MARGIN_SIGMAS` (3) no
+  `craftsman/conf.py`; a perda por ficha em `Recipe.meta["mixer_loss_g"]`. Documentados em
+  `docs/reference/settings.md` e `docs/reference/data-schemas.md`.
+- A margem entra em `CraftQueries.needs(..., yield_margin=True)` — **opt-in**, orçada por
+  preparo na fornada inteira — e a lista de separação
+  (`build_production_mise_en_place`) a liga. Ela **não** toca `Recipe`/`RecipeItem` (a
+  ficha diz a proporção) nem `CraftExecution.finish` (o consumo é fato). Na tela: os
+  gramas a mais com o motivo por linha, e um cabeçalho que explica no modo explodido.
+
+#### ⏭️ Próximo passo: o sistema APRENDE a perda da masseira
+
+Os 150 g do default são chute conservador, e chute cadastrado envelhece calado. O dado
+para substituí-lo **já existe no ledger**: a perna de insumos do `production_changed`
+grava o que foi consumido (`WorkOrderItem` de consumo → `Move` `kind=MAKE`) e a perna de
+saída grava o que rendeu. A diferença entre a massa dos insumos e a massa rendida, por
+ficha e ao longo de várias fornadas, **é** a perda real da masseira.
+
+O que falta decidir quando esse WP abrir (não decidir agora, e não implementar por
+antecipação): sobre quantas fornadas a média se forma, o que fazer com a fornada
+atípica, e se o número aprendido substitui a declaração da ficha ou só a contesta na
+tela. A regra da casa aponta para contestar: número aprendido que sobrescreve declaração
+humana em silêncio é a mesma doença que a margem veio curar.
+
 ## F · Auditar pesos (a função que ele pediu)
 
 > *"poderia acusar se aquele número foi auditado por um operador humano (poderia até

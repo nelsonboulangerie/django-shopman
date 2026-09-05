@@ -1223,6 +1223,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `shelf_life_days` | `int` | admin de receitas (contrib Unfold) | `backstage.services.production` | Validade do lote produzido, em dias. |
 | `output_unit` | `string` | seed (pré-preparo), `publish_version` (inventário) | `Recipe._validate_mass_balance` | Unidade declarada da saída quando o SKU não está no catálogo (ADR-024 §R4: declarar, nunca deduzir). Liga o invariante de massa da ficha. |
 | `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`ficha_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-027). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
+| `mixer_loss_g` | `Decimal` (string) | seed/admin de receitas | `craftsman.services.yield_margin.mixer_loss_g_for` (via `craft.needs(..., yield_margin=True)`) | Filme de massa que fica na bacia da masseira, em gramas — **fixa por fornada**, não por peça. Ausente = `CRAFTSMAN["MIXER_LOSS_G"]` (150 g, **estimativa não auditada**). ⚠️ Chute cadastrado com prazo: o passo seguinte é o sistema aprender a perda real por ficha a partir do ledger (produzido menos consumido). Só entra na lista de separação; **nunca** no consumo do ledger. |
 
 ## RecipeItem.meta
 
