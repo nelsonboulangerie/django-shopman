@@ -102,6 +102,9 @@ from .operations import (
     OrderRequeueFiscalView,
     OrderResendPaymentLinkView,
     OrderSettleDeliveryCashView,
+    OrderTicketBatchEscposView,
+    OrderTicketBatchView,
+    OrderTicketEscposView,
     OrderUnassignView,
     POSAccountBalancesView,
     POSAccountSettleView,
@@ -362,8 +365,22 @@ urlpatterns = [
     path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),
     path("feeds/collections/", FeedCollectionsView.as_view(), name="api-backstage-feeds-collections"),
     path("feeds/rotation/", FeedRotationView.as_view(), name="api-backstage-feeds-rotation"),
+    # Order tickets (filipeta do pedido remoto) — o lote da semana para o painel.
+    # ⚠️ ANTES de `orders/<str:ref>/`: `tickets` casaria com `<str:ref>` e a
+    # conferência do lote viraria "pedido TICKETS não encontrado".
+    path("orders/tickets/", OrderTicketBatchView.as_view(), name="api-backstage-order-tickets"),
+    path(
+        "orders/tickets/escpos/",
+        OrderTicketBatchEscposView.as_view(),
+        name="api-backstage-order-tickets-escpos",
+    ),
     # Orders — operator actions
     path("orders/<str:ref>/", OrderDetailView.as_view(), name="api-backstage-order-detail"),
+    path(
+        "orders/<str:ref>/ticket-escpos/",
+        OrderTicketEscposView.as_view(),
+        name="api-backstage-order-ticket-escpos",
+    ),
     path("orders/<str:ref>/advance/", OrderAdvanceView.as_view(), name="api-backstage-order-advance"),
     path("orders/<str:ref>/confirm/", OrderConfirmView.as_view(), name="api-backstage-order-confirm"),
     path("orders/<str:ref>/reject/", OrderRejectView.as_view(), name="api-backstage-order-reject"),

@@ -1641,6 +1641,148 @@ class POSSaleReceiptEscposView(APIView):
 
 
 @extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Order ticket bytes (ESC/POS, base64) for the counter agent",
+        responses={200: OpenApiResponse(description="Order ticket payload.")},
+    ),
+)
+class OrderTicketEscposView(APIView):
+    """A filipeta de UM pedido remoto, composta no servidor.
+
+    Mesmo desenho do recibo e da DANFE em bobina — o servidor compõe, o
+    navegador relaia ao agente do balcão — e mesma decisão de 2ª via deste lado
+    (``ticket_printed_at`` em ``Order.data``). A permissão, porém, é a do
+    GESTOR: a filipeta é documento do pedido, não do caixa, e quem imprime a
+    semana é quem cuida da fila.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request, ref: str):
+        import base64
+
+        from shopman.orderman.models import Order
+
+        from shopman.backstage.services import order_ticket as tickets
+
+        order = Order.objects.filter(ref=ref).prefetch_related("items").first()
+        if order is None:
+            return Response({"detail": "Pedido não encontrado."}, status=404)
+        reprint = _stamp_first_print(ref, "ticket_printed_at")
+        payload = tickets.ticket_bytes(order, reprint=reprint)
+        return Response({
+            "ok": True,
+            "payload_b64": base64.b64encode(payload).decode("ascii"),
+            "title": f"filipeta:{ref}",
+            "reprint": reprint,
+        })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Orders committed within a period (order-ticket batch preview)",
+        responses={200: OpenApiResponse(description="Orders in the period, panel-ordered.")},
+    ),
+)
+class OrderTicketBatchView(APIView):
+    """O que SAIRIA no lote — a conferência do intervalo antes de a bobina andar.
+
+    Olhar não é imprimir: esta rota não carimba nada. Ela existe porque um
+    intervalo digitado errado só se descobre quando o papel já está no chão, e
+    a tela precisa poder dizer "vão sair 34 filipetas" antes do gesto.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        from shopman.backstage.services import order_ticket as tickets
+
+        date_from, date_to = tickets.parse_period(
+            request.GET.get("date_from"), request.GET.get("date_to")
+        )
+        orders = tickets.orders_for_period(date_from, date_to)
+        return Response({
+            "ok": True,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "count": len(orders),
+            "max_batch": tickets.MAX_BATCH,
+            "orders": tickets.preview_rows(orders),
+        })
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Order-ticket batch bytes (ESC/POS, base64) for a committed period",
+        responses={200: OpenApiResponse(description="Consecutive order tickets on one roll.")},
+    ),
+)
+class OrderTicketBatchEscposView(APIView):
+    """A semana inteira em filipetas consecutivas na bobina — UM trabalho só.
+
+    Os bytes saem concatenados de propósito: cada filipeta termina no corte
+    parcial do ESC/POS, então um POST ao agente rende N papéis destacáveis, na
+    ordem em que vão para o painel. Mandar N requisições faria a ordem depender
+    da rede.
+
+    Carimba cada pedido individualmente: compor é ter soltado o papel no mundo,
+    e a filipeta seguinte daquele pedido sai marcada como 2ª via — a mesma
+    regra do recibo, aplicada pedido a pedido dentro do lote.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "shop.manage_orders"
+
+    def get(self, request):
+        import base64
+
+        from shopman.backstage.services import order_ticket as tickets
+
+        date_from, date_to = tickets.parse_period(
+            request.GET.get("date_from"), request.GET.get("date_to")
+        )
+        orders = tickets.orders_for_period(date_from, date_to)
+        if len(orders) > tickets.MAX_BATCH:
+            return Response(
+                {"detail": str(tickets.BatchTooLarge(len(orders))), "count": len(orders)},
+                status=409,
+            )
+
+        from django.db import transaction
+
+        shop_name = tickets.shop_display_name()
+        payload = bytearray()
+        refs: list[str] = []
+        reprints = 0
+        # ⚠️ Tudo ou nada. Sem a transação, uma exceção no meio do lote deixaria
+        # os pedidos já percorridos carimbados sem que papel nenhum tivesse
+        # saído — e a tentativa seguinte os imprimiria como "2a VIA" de uma
+        # primeira via que nunca existiu.
+        with transaction.atomic():
+            for order in orders:
+                reprint = _stamp_first_print(order.ref, "ticket_printed_at")
+                reprints += 1 if reprint else 0
+                payload += tickets.ticket_bytes(order, shop_name=shop_name, reprint=reprint)
+                refs.append(order.ref)
+
+        return Response({
+            "ok": True,
+            "date_from": date_from.isoformat(),
+            "date_to": date_to.isoformat(),
+            "count": len(refs),
+            "reprint_count": reprints,
+            "refs": refs,
+            "payload_b64": base64.b64encode(bytes(payload)).decode("ascii"),
+            "title": f"filipetas:{date_from.isoformat()}:{date_to.isoformat()}",
+        })
+
+
+@extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
         summary="Update customer counter profile (fiscal prefs, notes, restrictions)",
