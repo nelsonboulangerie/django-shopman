@@ -454,3 +454,56 @@ def test_fora_do_escopo(path):
     E o próprio gate fica de fora: ele fala de `except: pass` o tempo todo.
     """
     assert not check_silent_swallow.in_scope(path)
+
+
+# ---------------------------------------------------------------------------
+# Falhar fechado — o gate não pode passar verde por não ter olhado nada
+# ---------------------------------------------------------------------------
+
+
+class _GitResult:
+    """Dublê do retorno de `subprocess.run` usado por `_git`."""
+
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_base_irresolvivel_reprova_em_vez_de_passar_vazio(monkeypatch, capsys):
+    """Sem base, o gate REPROVA — não sai verde tendo analisado zero arquivo.
+
+    Num checkout raso (o default do `actions/checkout`) a base não resolve, e a
+    versão anterior devolvia lista vazia: "arquivos analisados: 0 — [OK]" em
+    TODO PR. Um gate que passa por não ter olhado é decoração em formato de
+    gate — a mesma falha silenciosa que ele existe para caçar.
+    """
+    monkeypatch.setattr(
+        check_silent_swallow,
+        "resolve_diff_base",
+        lambda *a, **k: (None, "sem base local (origin/main indisponível)"),
+    )
+    assert check_silent_swallow.main([]) == 1
+    saida = capsys.readouterr().out
+    assert "FAIL" in saida
+    assert "fetch-depth: 0" in saida
+
+
+def test_git_diff_quebrado_tambem_reprova(monkeypatch, capsys):
+    monkeypatch.setattr(
+        check_silent_swallow,
+        "resolve_diff_base",
+        lambda *a, **k: ("abc123", "merge-base com origin/main"),
+    )
+    monkeypatch.setattr(
+        check_silent_swallow,
+        "_git",
+        lambda *a, **k: _GitResult(returncode=128, stderr="bad object"),
+    )
+    assert check_silent_swallow.main([]) == 1
+    assert "bad object" in capsys.readouterr().out
+
+
+def test_escopo_explicito_nao_precisa_de_base(capsys):
+    """`--paths` e `--all` não dependem de git — não podem herdar o fail-closed."""
+    assert check_silent_swallow.main(["--paths"]) == 0

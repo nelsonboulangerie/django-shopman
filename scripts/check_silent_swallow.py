@@ -410,13 +410,24 @@ def scan_file(repo_root: Path, path: str) -> FileVerdict | None:
     return None
 
 
+class BaseUnresolved(RuntimeError):
+    """O gate não conseguiu descobrir o que o PR mudou.
+
+    Existe para o gate FALHAR FECHADO. Antes, base irresolvível devolvia lista
+    vazia e o relatório saía "arquivos analisados: 0 — [OK]": verde por não ter
+    olhado nada. Num checkout raso (o default do `actions/checkout`) isso
+    aconteceria em TODO PR, e o gate seria uma decoração em formato de gate —
+    exatamente a falha silenciosa que ele existe para caçar, dentro dele mesmo.
+    """
+
+
 def changed_paths(repo_root: Path) -> tuple[list[str], str]:
     base, description = resolve_diff_base(repo_root)
     if base is None:
-        return [], description
+        raise BaseUnresolved(description)
     diff = _git(["diff", "--name-only", "--diff-filter=ACMR", base, "HEAD"], cwd=repo_root)
     if diff.returncode != 0:
-        return [], f"{description} (git diff falhou: {diff.stderr.strip()})"
+        raise BaseUnresolved(f"{description} — git diff falhou: {diff.stderr.strip()}")
     return [line for line in diff.stdout.splitlines() if line.strip()], description
 
 
@@ -481,7 +492,17 @@ def main(argv: list[str] | None = None) -> int:
     elif args.all:
         paths, scope = all_paths(repo_root), "repositório inteiro"
     else:
-        paths, scope = changed_paths(repo_root)
+        try:
+            paths, scope = changed_paths(repo_root)
+        except BaseUnresolved as exc:
+            print("- [FAIL] silent_swallow: não deu para saber o que este PR mudou.")
+            print(f"    {exc}")
+            print(
+                "    O gate falha FECHADO aqui de propósito: sem a base, ele\n"
+                "    analisaria zero arquivo e sairia verde por não ter olhado nada.\n"
+                "    Na CI, confira `fetch-depth: 0` no passo de checkout."
+            )
+            return 1
         scope = f"diff do PR ({scope})"
 
     verdicts = []
