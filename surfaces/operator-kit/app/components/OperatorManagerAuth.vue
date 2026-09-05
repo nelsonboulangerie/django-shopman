@@ -87,7 +87,12 @@ function onBadge(token: string) {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
+  <!-- ⚠️ `value` ANOTADO de propósito. `UiDialog` é do app hospedeiro (o kit é
+       module-free por desenho), então nos apps que não têm um — central, B.I.,
+       compras — o tipo do evento não resolve e o parâmetro cai em `any`
+       implícito. O typecheck da layer roda em TODOS eles, não só em quem usa o
+       componente. Ver o gate de superfícies. -->
+  <UiDialog :open="open" @update:open="(value: boolean) => emit('update:open', value)">
     <!-- `data-drawer-manager-auth` deixa a trava da gaveta saber que o PIN está
          por cima: o Esc dela não pode roubar a tecla de volta desta tela. -->
     <!-- Camada 3, cromática: uma borda de acento que a tela de login não tem.
