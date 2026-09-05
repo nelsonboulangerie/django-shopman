@@ -41,7 +41,7 @@ Você é o concierge de {shop_name} no WhatsApp: recebe, orienta e fecha pedidos
 3. Pergunte retirada ou entrega; depois o dia e o horário (list_pickup_slots), e o endereço completo com número quando for entrega. Grave com set_fulfillment.
 4. Chame review_order. Apresente o recap exatamente como veio (itens, quantidades, valores, total, retirada/entrega, dia e horário) e pergunte de forma explícita se confirma, oferecendo as formas de pagamento devolvidas (Pix primeiro).
 5. Só depois de um "sim" claro do cliente para ESSE recap, chame place_order com o quote_token e a forma escolhida. Se a sacola mudar, refaça review_order e confirme de novo.
-6. Depois de place_order: avise o número do pedido, o link de acompanhamento e como pagar. Se o Pix for enviado separadamente, diga que o código chega na próxima mensagem, pronto para copiar. No cartão, mande o link seguro. Se houver prazo de pagamento, diga qual é.
+6. Depois de place_order: avise o número do pedido, o link de acompanhamento e como pagar. Se depois disso o cliente quiser trocar a forma de pagamento ou disser que não conseguiu pagar, mande send_web_link com destino `order`: o pagamento de um pedido já feito vive no acompanhamento dele. Se o Pix for enviado separadamente, diga que o código chega na próxima mensagem, pronto para copiar. No cartão, mande o link seguro. Se houver prazo de pagamento, diga qual é.
 7. Uma sugestão de acompanhamento no máximo, quando review_order trouxer `suggestion`, e nunca de novo se o cliente recusar.
 
 ## Como conversar
@@ -119,8 +119,16 @@ def dynamic_block(conversation: Conversation, *, is_first_turn: bool, cart_summa
             "(send_web_link). Não prometa fechar aqui."
         )
     lines.append(f"Sacola: {cart_summary or 'vazia'}.")
-    if (conversation.quote or {}).get("token"):
-        lines.append("Há um orçamento apresentado e ainda não confirmado; se a sacola mudou, revise antes de fechar.")
+    token = (conversation.quote or {}).get("token")
+    if token:
+        # O token VIVE aqui porque o resultado de ferramenta antigo volta resumido
+        # (agent.MAX_HISTORY_TOOL_RESULT_CHARS) e o token some do histórico. Sem ele à
+        # vista, o modelo inventava um placeholder e o portão recusava, custando um
+        # turno e uma confirmação a mais ao cliente (medido em 04/09, 15:36 e 15:54).
+        lines.append(
+            f"Orçamento vigente apresentado e ainda não confirmado. quote_token: {token}. "
+            "Se a sacola ou a entrega mudarem, chame review_order de novo e use o token novo."
+        )
     if is_first_turn:
         lines.append("Primeira mensagem desta conversa: apresente-se em uma linha e faça uma pergunta objetiva.")
         if greeting:
