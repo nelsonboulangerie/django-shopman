@@ -44,11 +44,11 @@ describe("PosReceiptSaveOffer", () => {
   it("abre ao DIGITAR: com valor perguntável, o popover já está aberto", async () => {
     await mountSuspended(PosReceiptSaveOffer, { props: { offer: SALVAR, checked: false } });
 
-    const painel = popover();
-    expect(painel).not.toBeNull();
-    expect(painel!.textContent).toContain("Salvar este e-mail no cadastro de Ana?");
+    const panel = popover();
+    expect(panel).not.toBeNull();
+    expect(panel!.textContent).toContain("Salvar este e-mail no cadastro de Ana?");
     // Nenhum hover envolvido: o painel existe porque o valor ficou perguntável.
-    expect(painel!.textContent).toContain("Hoje o cadastro não tem e-mail");
+    expect(panel!.textContent).toContain("Hoje o cadastro não tem e-mail");
   });
 
   it("não rouba o foco do campo: o input segue com o foco depois de abrir", async () => {
@@ -80,10 +80,10 @@ describe("PosReceiptSaveOffer", () => {
       props: { offer: SALVAR, checked: false },
     });
 
-    const botao = [...document.querySelectorAll("button")].find(
+    const button = [...document.querySelectorAll("button")].find(
       (b) => b.textContent?.includes("Salvar no cadastro"),
     );
-    botao!.click();
+    button!.click();
     await nextTick();
     await nextTick();
 
@@ -97,10 +97,10 @@ describe("PosReceiptSaveOffer", () => {
       props: { offer: ANONIMA, checked: true },
     });
 
-    const botao = [...document.querySelectorAll("button")].find(
+    const button = [...document.querySelectorAll("button")].find(
       (b) => b.textContent?.includes("Não salvar"),
     );
-    botao!.click();
+    button!.click();
     await nextTick();
 
     expect(wrapper.emitted("update:checked")?.[0]).toEqual([false]);
@@ -113,12 +113,12 @@ describe("PosReceiptSaveOffer", () => {
       props: { offer: ANONIMA, checked: true },
     });
 
-    const interruptor = wrapper.find('[role="switch"]');
-    expect(interruptor.exists()).toBe(true);
-    expect(interruptor.attributes("aria-checked")).toBe("true");
+    const toggle = wrapper.find('[role="switch"]');
+    expect(toggle.exists()).toBe(true);
+    expect(toggle.attributes("aria-checked")).toBe("true");
     expect(wrapper.find("label").text()).toContain("Salvar como cliente?");
 
-    await interruptor.trigger("click");
+    await toggle.trigger("click");
     expect(wrapper.emitted("update:checked")?.[0]).toEqual([false]);
   });
 });

@@ -144,17 +144,17 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
     return { ...base, ...EMPTY };
   }
 
-  const quem = firstName(customerName) || "cliente";
+  const ownerName = firstName(customerName) || "cliente";
 
   if (!onFile) {
     return {
       ...base,
       kind: "save",
       defaultChecked: false,
-      title: `Salvar este ${copy.noun} no cadastro de ${quem}?`,
+      title: `Salvar este ${copy.noun} no cadastro de ${ownerName}?`,
       hint: `Hoje o cadastro não tem ${copy.noun}.`,
       confirmLabel: "Salvar no cadastro",
-      summaryLine: `O ${copy.noun} será salvo no cadastro de ${quem}.`,
+      summaryLine: `O ${copy.noun} será salvo no cadastro de ${ownerName}.`,
     };
   }
 
@@ -164,10 +164,10 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
     ...base,
     kind: "update",
     defaultChecked: false,
-    title: `Atualizar o ${copy.noun} do cadastro de ${quem}?`,
+    title: `Atualizar o ${copy.noun} do cadastro de ${ownerName}?`,
     hint: `Hoje: ${onFile}. A nota vai para o informado de qualquer jeito; o cadastro só muda se você mandar.`,
     confirmLabel: "Atualizar o cadastro",
-    summaryLine: `O ${copy.noun} do cadastro de ${quem} será atualizado para este.`,
+    summaryLine: `O ${copy.noun} do cadastro de ${ownerName} será atualizado para este.`,
   };
 }
 

@@ -1327,7 +1327,7 @@ describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () =>
 // depois que um cadastro mudou.
 describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () => {
   const comFiscal = { capabilities: { supports_fiscal_document: true }, receipt_channels: [] };
-  const linhas = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
+  const registryLines = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
     w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
   afterEach(() => { document.body.innerHTML = ""; });
 
@@ -1343,7 +1343,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(linhas(w)).toEqual(["Um cadastro novo será criado com este e-mail."]);
+    expect(registryLines(w)).toEqual(["Um cadastro novo será criado com este e-mail."]);
   });
 
   it("desmarcar cala a linha", async () => {
@@ -1356,7 +1356,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(linhas(w)).toEqual([]);
+    expect(registryLines(w)).toEqual([]);
   });
 
   it("e-mail DIFERENTE do cadastro não promete nada — o cadastro fica intacto", async () => {
@@ -1369,7 +1369,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(linhas(w)).toEqual([]);
+    expect(registryLines(w)).toEqual([]);
   });
 
   it("mandando atualizar, a linha diz o que vai acontecer com o cadastro de quem", async () => {
@@ -1383,7 +1383,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(linhas(w)).toEqual([
+    expect(registryLines(w)).toEqual([
       "O e-mail do cadastro de Ana será atualizado para este.",
     ]);
   });
@@ -1399,7 +1399,7 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(linhas(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
+    expect(registryLines(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
     const fiscal = w.find('section[aria-label="Nota fiscal"]');
     expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
   });
