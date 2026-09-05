@@ -41,6 +41,7 @@ import {
   nonCashExcessQ,
   paymentIcon,
   SPLIT_PRESETS,
+  splitShareQ,
   tenderLineView,
 } from "~/presentation/payment";
 import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
@@ -88,6 +89,8 @@ const props = defineProps<{
   paymentTenders: POSPaymentTenderDraft[];
   /** Em quantas pessoas a conta está dividida (0 = sem divisão). */
   splitCount: number;
+  /** Quantas partes já foram lançadas — é o que separa "armado" de "em uso". */
+  splitPaidCount: number;
   /** "R$ 33,15 · pessoa 1 de 3" — quanto pedir a quem está na frente. */
   splitNote: string;
   selectedTenderIndex: number;
@@ -306,6 +309,7 @@ const scheduleChipLabel = computed(() => scheduleLabel(
   props.scheduleToday,
 ));
 const discountSheetOpen = ref(false);
+const splitSheetOpen = ref(false);
 
 // Foco automático no modal de Recebimento: com entrega selecionada, quem recebe
 // o foco é a busca de endereço (o campo que o operador veio preencher) — tanto
@@ -423,6 +427,27 @@ const discountSummary = computed(() => {
   const cap = props.review?.subtotal_q ?? asked;
   return formatBRL(Math.min(asked, cap));
 });
+
+// ── AJUSTES DA CONTA: "ativado" e "em uso" são estados DIFERENTES ───────────
+//
+// O par desconto/divisão age sobre o VALOR, e o operador precisa ler de relance
+// se está agindo — um botão que não muda de cara quando está ligado obriga a
+// abrir o modal só para conferir, com o cliente na frente.
+//
+// São dois estados, e o botão mostra os dois: ARMADO (a divisão existe, nada
+// lançado ainda) e EM USO (já tem parte paga). A distinção não é preciosismo:
+// desarmar uma divisão armada é gratuito, desarmar uma em uso mexe em linhas de
+// pagamento que já estão na tela.
+const splitActive = computed(() => props.splitCount > 0);
+const splitInProgress = computed(() => splitActive.value && props.splitPaidCount > 0);
+/** "3" enquanto armado; "1/3" a partir da primeira parte lançada. */
+const splitBadge = computed(() => (
+  splitInProgress.value ? `${props.splitPaidCount}/${props.splitCount}` : String(props.splitCount)
+));
+/** Quanto ficaria cada parte se a conta fosse dividida em `n` — preview do modal. */
+function splitShareLabel(n: number): string {
+  return formatBRL(splitShareQ(props.paymentTotalQ, n, props.splitPaidCount, props.paymentRemainingQ));
+}
 
 // O RESUMO DO PEDIDO — o que está sendo cobrado. No checkout o operador via só
 // o total: um número sem os itens que o compõem, justo na hora em que o cliente
@@ -910,6 +935,74 @@ defineExpose({
              pagamento era a ÚLTIMA seção. Com a Nota fiscal depois dela, o que
              ele produzia em 1920×1080 era ~170px de espaço morto no topo — e as
              três colunas deixando de compartilhar linha de base. -->
+        <!-- AJUSTES DA CONTA — desconto e divisão, ACIMA da forma de pagamento
+             porque é essa a ordem da conversa do balcão: primeiro se acerta
+             QUANTO a conta vale, depois em QUANTAS PARTES ela sai, e só então
+             se encosta num tender. Decidir na ordem inversa é refazer trabalho —
+             o desconto muda o valor de cada parte, e ligar a divisão depois de
+             lançar dinheiro não reparte o que já está na tela.
+             Vinham do rodapé desta coluna, abaixo do teclado: lugar aonde o
+             operador só chega DEPOIS de já ter lançado a primeira forma.
+
+             DUAS COLUNAS, e é a forma que os separa. As formas de pagamento são
+             uma pilha vertical de linha inteira; estes são um par lado a lado.
+             Mesma altura e mesma borda para não virarem outra família visual —
+             só o arranjo diz que agem sobre o VALOR, e não que recebem dinheiro.
+
+             O desconto é contratual (a loja pode não oferecer nenhum tipo); a
+             divisão não depende de contrato nenhum, é aritmética da tela. As
+             duas moravam sob um `v-if="discountTypes.length"` — uma loja sem
+             tipo de desconto cadastrado perdia TAMBÉM o dividir conta. -->
+        <section class="grid gap-1.5" aria-label="Ajustes da conta">
+          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ajustes da conta</h3>
+          <div class="grid grid-cols-2 gap-1.5">
+            <button
+              v-if="discountTypes.length"
+              type="button"
+              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
+              :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
+              :aria-pressed="hasDiscount"
+              :aria-label="hasDiscount ? `Desconto de ${discountSummary} na venda. Abrir para alterar` : 'Desconto na venda'"
+              @click="discountSheetOpen = true"
+            >
+              <Icon name="lucide:tag" class="size-4 shrink-0" />
+              <span class="min-w-0 flex-1 truncate text-left">Desconto</span>
+              <!-- O BADGE É O ESTADO. Ligado, o botão diz o quanto — ninguém
+                   precisa abrir o modal para conferir se há desconto e de que
+                   tamanho. Desligado, o mesmo canto carrega o atalho. -->
+              <UiBadge v-if="hasDiscount" class="shrink-0 tabular-nums">−{{ discountSummary }}</UiBadge>
+              <kbd
+                v-else
+                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+                aria-hidden="true"
+              >F9</kbd>
+            </button>
+
+            <button
+              type="button"
+              class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+              :class="[
+                splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
+                discountTypes.length ? '' : 'col-span-2',
+              ]"
+              :disabled="hasLinkTender && !splitActive"
+              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
+              :aria-pressed="splitActive"
+              :aria-label="splitActive
+                ? `Conta dividida em ${splitCount}, ${splitPaidCount} de ${splitCount} lançadas. Abrir para alterar`
+                : 'Dividir conta'"
+              @click="splitSheetOpen = true"
+            >
+              <Icon name="lucide:users" class="size-4 shrink-0" />
+              <span class="min-w-0 flex-1 truncate text-left">Dividir conta</span>
+              <!-- "3" enquanto armado, "1/3" a partir da primeira parte: ARMADO
+                   e EM USO são estados diferentes, e o segundo é o que impede o
+                   operador de desligar a divisão sem perceber que já lançou. -->
+              <UiBadge v-if="splitActive" class="shrink-0 tabular-nums">{{ splitBadge }}</UiBadge>
+            </button>
+          </div>
+        </section>
+
         <section class="grid gap-1.5" aria-label="Forma de pagamento">
           <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Forma de pagamento</h3>
 
@@ -1083,78 +1176,6 @@ defineExpose({
              embaixo do que está sendo cobrado. Aqui ela empurrava o teclado
              para cima e disputava a coluna com ele. -->
 
-        <!-- AÇÕES DA VENDA — o que age sobre o VALOR, embaixo do que age sobre
-             a LINHA. Voltaram do rodapé: lá elas dividiam a barra com o Validar,
-             e ação de venda perto do botão que fecha a venda é o clique errado
-             do balcão cheio. Aqui ficam na mão que já está na coluna, logo
-             abaixo do teclado, e a barra fica só com o comando.
-             A seção é contratual: some inteira quando a loja não oferece
-             desconto nem a conta comporta divisão. -->
-        <section v-if="discountTypes.length" class="grid gap-1.5" aria-label="Ações da venda">
-          <h3 class="px-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Ações da venda</h3>
-
-          <button
-            type="button"
-            class="flex h-11 items-center gap-2 rounded-md border px-3 text-sm font-medium transition hover:bg-accent active:translate-y-px"
-            :class="hasDiscount ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground'"
-            @click="discountSheetOpen = true"
-          >
-            <Icon name="lucide:tag" class="size-4 shrink-0" />
-            <span class="min-w-0 truncate">{{ hasDiscount ? `Desconto na venda ${discountSummary}` : "Desconto na venda" }}</span>
-            <kbd class="ml-auto shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F9</kbd>
-          </button>
-
-          <!-- DIVIDIR A CONTA — "somos três, cada um paga o seu".
-               Ligado, cada toque numa forma de pagamento lança UMA parte, já
-               calculada (os centavos fecham sozinhos, e a última parcela leva o
-               que restou mesmo depois de o operador editar alguma linha). O
-               operador não faz conta de cabeça com os três clientes olhando.
-               Tocar de novo no mesmo número desliga: mudar de ideia é rotina.
-               Quanto pedir a quem está na frente é a INSTRUÇÃO do momento, e
-               por isso vai para o rodapé, em letra que se lê de longe. -->
-          <!-- ⚠️ VESTE A MESMA ROUPA DO DESCONTO, logo acima. Isto era uma CAIXA
-               dentro da seção: moldura própria, rótulo em micro-caixa-alta — que
-               nesta escala é o papel de TÍTULO DE SEÇÃO, o mesmo do "Ações da
-               venda" três linhas acima — e mais uma moldura em cada número.
-               Três níveis de borda para uma ação só, ao lado de uma irmã que é
-               uma linha limpa.
-               Agora é linha: mesma altura, ícone à esquerda, rótulo em corpo de
-               texto, e os números à direita onde a irmã põe o atalho. Os números
-               perderam a borda individual e viraram opções segmentadas — o
-               escolhido é o único cheio. E o estado subiu para a LINHA (borda e
-               fundo primários, o idioma de seleção da casa): dá para ver que a
-               conta está dividida sem procurar qual quadradinho está aceso. -->
-          <div
-            class="flex h-11 items-center gap-2 rounded-md border px-3 transition"
-            :class="splitCount ? 'border-primary bg-primary/5' : 'bg-card'"
-            role="group"
-            aria-label="Dividir conta"
-          >
-            <Icon name="lucide:users" class="size-4 shrink-0 text-muted-foreground" />
-            <span
-              class="min-w-0 truncate text-sm font-medium"
-              :class="splitCount ? 'text-foreground' : 'text-muted-foreground'"
-            >Dividir conta</span>
-            <div class="ml-auto flex shrink-0 items-center gap-0.5">
-              <button
-                v-for="n in SPLIT_PRESETS"
-                :key="n"
-                type="button"
-                class="grid h-8 w-8 place-items-center rounded-md text-sm tabular-nums transition disabled:opacity-40"
-                :class="splitCount === n
-                  ? 'bg-primary font-bold text-primary-foreground'
-                  : 'font-medium text-muted-foreground hover:bg-accent'"
-                :disabled="hasLinkTender"
-                :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
-                :aria-pressed="splitCount === n"
-                :aria-label="`Dividir a conta em ${n} pessoas`"
-                @click="$emit('setSplitCount', n)"
-              >
-                {{ n }}
-              </button>
-            </div>
-          </div>
-        </section>
 
         <!-- O MOTIVO DO BOTÃO TRAVADO SAIU DAQUI. Ele era um parágrafo de 12px
              preso entre a Nota fiscal e o Validar, no fim de uma coluna que
@@ -1698,6 +1719,65 @@ defineExpose({
           OK, cobrei na maquininha
         </UiButton>
         <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
+
+  <!-- MODAL: Dividir conta — o irmão do de Desconto, e de propósito.
+       Era um trilho de cinco botões preso na coluna: ocupava altura fixa em
+       TODA venda para uma pergunta que quase nunca se faz, e não tinha onde
+       dizer quanto cada parte fica. Como modal, o botão guarda o estado no
+       badge e o modal guarda a explicação.
+       Escolher o número JÁ É a decisão inteira — por isso o toque fecha o
+       modal, sem "Concluir". Só o desfazer fica, porque desfazer com partes já
+       lançadas merece uma frase antes. -->
+  <UiDialog v-model:open="splitSheetOpen">
+    <UiDialogContent class="max-h-[85vh] overflow-y-auto sm:max-w-md">
+      <UiDialogHeader>
+        <UiDialogTitle>Dividir conta</UiDialogTitle>
+        <UiDialogDescription>
+          Em quantas pessoas. Cada toque numa forma de pagamento lança uma parte já calculada — os centavos fecham sozinhos.
+        </UiDialogDescription>
+      </UiDialogHeader>
+      <div class="grid gap-4">
+        <p
+          v-if="hasLinkTender"
+          class="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400"
+        >
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-4 shrink-0" />
+          <span>O link de pagamento cobra a venda inteira. Remova a linha do link para dividir.</span>
+        </p>
+        <div class="grid grid-cols-5 gap-1.5" role="group" aria-label="Em quantas pessoas">
+          <!-- Cada preset mostra QUANTO FICA CADA PARTE. Sem isso o operador
+               escolhe o número e só descobre o valor ao lançar a primeira
+               forma — com o cliente já perguntando "quanto deu o meu?". -->
+          <UiButton
+            v-for="n in SPLIT_PRESETS"
+            :key="n"
+            type="button"
+            variant="outline"
+            class="h-14 flex-col gap-0.5 p-0 tabular-nums"
+            :class="splitCount === n ? 'border-primary bg-primary/5' : ''"
+            :disabled="hasLinkTender"
+            :aria-pressed="splitCount === n"
+            :aria-label="`Dividir em ${n} pessoas, ${splitShareLabel(n)} cada`"
+            @click="$emit('setSplitCount', n); splitSheetOpen = false"
+          >
+            <span class="text-lg font-semibold leading-none">{{ n }}</span>
+            <span class="text-xs font-normal leading-none text-muted-foreground">{{ splitShareLabel(n) }}</span>
+          </UiButton>
+        </div>
+      </div>
+      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+        <p v-if="splitNote" class="text-center text-sm text-muted-foreground">{{ splitNote }}</p>
+        <template v-if="splitActive">
+          <UiButton variant="outline" class="w-full" @click="$emit('setSplitCount', 0); splitSheetOpen = false">
+            Não dividir
+          </UiButton>
+          <p v-if="splitInProgress" class="text-center text-xs text-muted-foreground">
+            As partes já lançadas continuam na conta — remova cada linha de pagamento se quiser recomeçar.
+          </p>
+        </template>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>
