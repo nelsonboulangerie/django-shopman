@@ -12,10 +12,10 @@ from shopman.cashman import services as cash
 from shopman.cashman.models import Shift, Terminal
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.offerman.models import Listing, ListingItem, Product
-from shopman.orderman.models import Order
+from shopman.orderman.models import Directive, Order
 
 from shopman.backstage.api.projections import projection_data
-from shopman.backstage.models import POSTab
+from shopman.backstage.models import OperatorAlert, POSTab
 from shopman.backstage.projections.pos import build_pos
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
@@ -365,7 +365,7 @@ class POSHeadlessSurfaceContractTests(TestCase):
         SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
         SHOPMAN_FISCAL_EMISSION_RESOLVER=(
             "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
-            "shopman.shop.fiscal_resolvers.on_printed_receipt"
+            "shopman.shop.fiscal_resolvers.on_requested_receipt"
         ),
     )
     def test_close_reports_fiscal_expected_when_the_counter_asked_for_paper(self) -> None:
@@ -386,14 +386,127 @@ class POSHeadlessSurfaceContractTests(TestCase):
         SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
         SHOPMAN_FISCAL_EMISSION_RESOLVER=(
             "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
-            "shopman.shop.fiscal_resolvers.on_printed_receipt"
+            "shopman.shop.fiscal_resolvers.on_requested_receipt"
         ),
     )
-    def test_close_reports_no_fiscal_when_only_the_email_receipt_was_asked(self) -> None:
-        """Controle: comprovante por e-mail existe sem nota, e não puxa nenhuma."""
+    def test_close_emits_the_nfce_when_the_counter_asked_for_the_email_receipt(self) -> None:
+        """"Enviar por e-mail" É pedir a nota — e tem que NASCER uma directive.
+
+        O dono marcou "Enviar por e-mail", digitou o endereço, e nada aconteceu:
+        o resolver só reconhecia "print", nenhuma NFC-e era emitida, e sem nota
+        o Focus não tem DANFE nem XML para anexar. O envio do e-mail
+        (``NFCeEmitHandler._send_receipt_email``) ficava inalcançável por
+        construção. Dinheiro, sem CPF, balcão: só o pedido do e-mail sustenta a
+        emissão aqui.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["email"])
+
+        self.assertTrue(closed["fiscal_expected"])
+        order = Order.objects.get(ref=closed["order_ref"])
+        self.assertEqual(order.data["receipt"]["channels"], ["email"])
+        self.assertEqual(order.data["receipt"]["email"], "cliente@example.org")
+        self.assertTrue(
+            Directive.objects.filter(
+                topic="fiscal.emit_nfce", payload__order_ref=closed["order_ref"]
+            ).exists(),
+            "pedir a nota por e-mail tem que criar a directive de emissão",
+        )
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id",
+    )
+    def test_close_alerts_the_counter_when_the_promised_receipt_will_not_be_emitted(self) -> None:
+        """Promessa feita no balcão não morre num ``return`` mudo.
+
+        Deployment mal configurado (sem ``on_requested_receipt``): o operador
+        marca o canal, a regra recusa, e antes disso NINGUÉM ficava sabendo —
+        nem log, nem alerta. O cliente ia embora esperando o anexo.
+        """
         closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["email"])
 
         self.assertFalse(closed["fiscal_expected"])
+        self.assertFalse(
+            Directive.objects.filter(topic="fiscal.emit_nfce").exists()
+        )
+        alert = OperatorAlert.objects.filter(type="fiscal_receipt_promised").first()
+        self.assertIsNotNone(alert)
+        self.assertIn(closed["order_ref"], alert.message)
+
+    def test_receipt_email_never_becomes_a_customer_and_never_breaks_the_sale(self) -> None:
+        """Duas vendas anônimas para o MESMO e-mail da nota: 200 nas duas.
+
+        O endereço digitado só para a nota subia para ``fill_email`` e virava
+        ``Customer.email``. Como a RESOLUÇÃO do cadastro nunca olhava esse
+        campo, a segunda venda para o mesmo endereço não achava o cadastro,
+        criava outro, e o UNIQUE global de ``ContactPoint`` (``type``,
+        ``value_normalized``) estourava ``IntegrityError`` — que escapava da view
+        como HTTP 500 sem ``detail``. O operador via "Não foi possível finalizar
+        a venda", revalidava, falhava de novo, e só saía disso desligando
+        "Enviar por e-mail".
+        """
+        antes = Customer.objects.count()
+        refs = []
+        for n in (1, 2):
+            response = self.client.post(
+                "/api/v1/backstage/pos/sale/close/",
+                data=json.dumps({
+                    "intent_version": POS_SALE_INTENT_VERSION,
+                    "items": [{
+                        "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
+                        "qty": 1, "unit_price_q": 1300,
+                    }],
+                    "fulfillment_type": "pickup",
+                    "payment_method": "cash",
+                    "payment_collection": "terminal",
+                    "receipt_channels": ["email"],
+                    "receipt_email": "cliente@example.org",
+                    "client_request_id": f"pos-receipt-email-{n}",
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200, response.content)
+            refs.append(response.json()["order_ref"])
+
+        self.assertEqual(Customer.objects.count(), antes)
+        for ref in refs:
+            order = Order.objects.get(ref=ref)
+            # O endereço é fato DA VENDA, e para de fingir ser identidade.
+            self.assertEqual(order.data["receipt"]["email"], "cliente@example.org")
+            self.assertNotIn("customer_ref", order.data)
+            self.assertEqual((order.data.get("customer") or {}).get("email", ""), "")
+
+    def test_receipt_email_of_an_existing_customer_does_not_500(self) -> None:
+        """E-mail da nota que já pertence a OUTRO cadastro: a venda passa.
+
+        Era o 500 mais cruel: o cliente da vez não é a Dora, mas o endereço que
+        ele pediu é o dela — e a venda travava.
+        """
+        Customer.objects.create(
+            ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
+            phone="+5543999990055", email="dora@example.org",
+        )
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/close/",
+            data=json.dumps({
+                "intent_version": POS_SALE_INTENT_VERSION,
+                "items": [{
+                    "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
+                    "qty": 1, "unit_price_q": 1300,
+                }],
+                "fulfillment_type": "pickup",
+                "payment_method": "cash",
+                "payment_collection": "terminal",
+                "receipt_channels": ["email"],
+                "receipt_email": "dora@example.org",
+                "client_request_id": "pos-receipt-email-alheio",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        order = Order.objects.get(ref=response.json()["order_ref"])
+        self.assertNotIn("customer_ref", order.data)
 
     def _close_sale_for_fiscal(
         self, *, payment_method: str, receipt_channels: list[str] | None = None

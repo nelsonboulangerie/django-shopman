@@ -1189,14 +1189,15 @@ SHOPMAN_FISCAL_ADAPTER = os.environ.get("SHOPMAN_FISCAL_ADAPTER") or None
 # para um callable(order) -> bool. VÁRIOS separados por vírgula = OR. Motor em
 # fiscal.emission_resolver; exemplos + combinadores (any_of/all_of/not_) em
 # shopman.shop.fiscal_resolvers.
-# PADRÃO PRÁTICO (Nelson): on_request_or_tax_id + on_printed_receipt — emite se o cliente
-# informou CPF/CNPJ ("CPF na nota") OU se o balcão pediu a nota IMPRESSA. Os dois são o
-# mesmo gesto: pedir. E papel sem NFC-e autorizada não existe — a DANFE é o espelho da
-# nota —, então o pedido de impressão tem que valer como pedido de nota, sob pena de o
-# operador prometer a bobina e nada sair. Pablo redefine no go-live via env.
+# PADRÃO PRÁTICO (Nelson): on_request_or_tax_id + on_requested_receipt — emite se o cliente
+# informou CPF/CNPJ ("CPF na nota") OU se o balcão pediu o documento (impresso OU por
+# e-mail). Os três são o mesmo gesto: pedir. E nem DANFE nem XML existem sem NFC-e
+# autorizada — o papel e o anexo são espelhos da nota —, então o pedido de impressão e o
+# pedido de e-mail têm que valer como pedido de nota, sob pena de o operador prometer a
+# bobina (ou a caixa de entrada) e nada sair. Pablo redefine no go-live via env.
 SHOPMAN_FISCAL_EMISSION_RESOLVER = (
     os.environ.get("SHOPMAN_FISCAL_EMISSION_RESOLVER")
-    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_printed_receipt"
+    or "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt"
 )
 # Porteiro fiscal do catálogo: com isto LIGADO, publicar um vendável num canal de
 # venda exige classificação fiscal completa (perfil + NCM; CEST na revenda) — em

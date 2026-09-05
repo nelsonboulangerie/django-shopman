@@ -67,14 +67,15 @@ def on_request_or_tax_id(order) -> bool:
     return bool(fiscal.get("issue_document") or str(fiscal.get("tax_id") or "").strip())
 
 
-def on_printed_receipt(order) -> bool:
-    """Emite quando o balcão pediu a nota IMPRESSA.
+def on_requested_receipt(order) -> bool:
+    """Emite quando o balcão pediu o DOCUMENTO — em papel ou por e-mail.
 
-    NÃO EXISTE DANFE SEM NFC-E AUTORIZADA. O papel é o espelho da nota, não um
-    documento próprio: pedir papel É pedir a nota. Sem este resolver, ligar
-    "Impressa?" numa venda que a regra recusa (dinheiro sem CPF) não imprimia
-    nada e não avisava ninguém — o operador prometia a bobina ao cliente e a
-    bobina nunca ia receber nada.
+    NÃO EXISTE DANFE NEM XML SEM NFC-E AUTORIZADA. O papel é o espelho da nota e
+    o anexo do e-mail é o mesmo espelho mais o XML: nenhum dos dois é documento
+    próprio. Pedir o documento por qualquer canal É pedir a nota. Sem este
+    resolver, ligar "Impressa?" ou "Enviar por e-mail" numa venda que a regra
+    recusa (dinheiro sem CPF) não produzia nada e não avisava ninguém — o
+    operador prometia a bobina (ou a caixa de entrada) e nada chegava.
 
     Lê ``receipt.channels`` (o pedido DESTA venda, gravado pelo PDV), irmão do
     ``fiscal`` que ``on_request_or_tax_id`` consulta. Preferência de cadastro não
@@ -84,7 +85,7 @@ def on_printed_receipt(order) -> bool:
     requested = receipt.get("channels") or []
     if not isinstance(requested, (list, tuple, set)):
         return False
-    return any(str(channel or "").strip().lower() == "print" for channel in requested)
+    return any(str(channel or "").strip() for channel in requested)
 
 
 def channels(*refs: str):

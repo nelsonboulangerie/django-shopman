@@ -262,3 +262,87 @@ def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
 
     assert resolvido["ref"] == ja_existe.ref
     assert Customer.objects.count() == 1   # não duplicou
+
+
+def test_o_email_da_nota_nao_vira_identidade_de_ninguem(db):
+    """O invariante que ``pos.py`` DECLARA e o código violava.
+
+    "``customer.email`` é o e-mail DO CLIENTE; o endereço para onde ESTA nota vai
+    mora em ``receipt.email`` e não sobe para cá." O ``fill_email`` lia
+    ``receipt_email`` e desmentia a própria docstring: uma venda anônima com
+    "Enviar por e-mail" criava cadastro no CRM, colava ali o endereço (que pode
+    ser o do contador, o da empresa, o do marido) e o transformava em
+    destinatário das notificações do canal.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+
+    resolvido = _persist_customer_from_payload(
+        {"receipt_channels": ["email"], "receipt_email": "contador@example.org"},
+        operator_username="op",
+    )
+
+    assert resolvido == {}                  # nada a persistir: não há cliente
+    assert Customer.objects.count() == 0    # a venda não cadastra ninguém
+
+
+def test_email_da_nota_de_outro_cadastro_nao_estoura_a_venda(db):
+    """A gêmea do CPF que nunca foi escrita — e é justo a que quebrava.
+
+    Gravava-se ``fill_email`` (com o ``receipt_email`` dentro) mas procurava-se
+    só por ``email``: o cadastro que já tinha aquele endereço nunca era achado,
+    um SEGUNDO nascia com o mesmo e-mail, e o UNIQUE global de ``ContactPoint``
+    (``type``, ``value_normalized``) recusava com ``IntegrityError`` — que não é
+    ``ValueError`` nem ``PosIntentError``, escapava da view e virava HTTP 500 sem
+    ``detail``. O operador lia "Não foi possível finalizar a venda" e revalidar
+    falhava para sempre; a única saída era desligar "Enviar por e-mail".
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    dona = Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
+        phone="+5543999990055", email="dora@example.org",
+    )
+
+    # Duas vendas anônimas seguidas para o MESMO endereço, que já é de alguém.
+    for _ in range(2):
+        assert _persist_customer_from_payload(
+            {"receipt_channels": ["email"], "receipt_email": "dora@example.org"},
+            operator_username="op",
+        ) == {}
+
+    assert Customer.objects.count() == 1
+    assert Customer.objects.get(pk=dona.pk).email == "dora@example.org"
+
+
+def test_quem_quer_gravar_contato_usa_o_campo_do_cliente(db):
+    """Controle positivo: ``customer_email`` continua sendo identidade.
+
+    A correção fecha a porta do e-mail DA NOTA, não a do e-mail DO CLIENTE — o
+    operador que digita o contato no campo do cliente segue cadastrando.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+
+    resolvido = _persist_customer_from_payload(
+        {"customer_name": "Elis", "customer_email": "elis@example.org"},
+        operator_username="op",
+    )
+
+    assert resolvido["email"] == "elis@example.org"
+    assert Customer.objects.get(ref=resolvido["ref"]).email == "elis@example.org"
