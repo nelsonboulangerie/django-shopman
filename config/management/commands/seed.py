@@ -85,6 +85,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
+from shopman.shop.attribute_defaults import ensure_definitions
 from shopman.shop.management.commands import setup_operators
 from shopman.shop.models import (
     Announcement,
@@ -483,6 +484,13 @@ class Command(BaseCommand):
             self._flush()
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n🥐 Populando Nelson Boulangerie...\n"))
+
+        # PRIMEIRO de tudo: o registro de atributos precisa existir antes do
+        # catálogo, porque `_seed_catalog` já grava rotulagem por ele. A
+        # migração o cria em deployment; aqui é para o banco que foi truncado
+        # (teste com `transaction=True`, que NÃO repõe dado de migração) ou
+        # flushado.
+        ensure_definitions()
 
         self._create_superuser(admin_password)
         self._seed_operators()

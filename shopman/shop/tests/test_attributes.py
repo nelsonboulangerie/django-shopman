@@ -311,3 +311,48 @@ def test_grocery_split_by_keyword():
 
     assert attributes.get(geleia, "natureza") == "acompanhamento"
     assert attributes.get(grao, "natureza") == "outro"
+
+
+# --- o registro precisa saber renascer -------------------------------------
+
+
+def test_the_migration_and_the_defaults_agree():
+    """As definições existem em DOIS lugares e não podem divergir.
+
+    As migrações (0028 + 0033) representam um momento do banco e não podem
+    mudar de sentido quando o código muda. O `seed` usa as constantes vivas,
+    porque **dado criado por migração não sobrevive a um teste transacional**
+    nem a um flush.
+
+    Mudar as constantes sem escrever migração nova fica vermelho aqui.
+    """
+    from shopman.shop.attribute_defaults import DEFAULT_DEFINITIONS
+
+    for spec in DEFAULT_DEFINITIONS:
+        d = AttributeDefinition.objects.get(ref=spec["ref"])
+        for campo in ("type", "storage", "unit", "purposes", "options"):
+            assert getattr(d, campo) == spec[campo], f"{spec['ref']}.{campo}"
+
+
+def test_the_registry_can_rebuild_itself_after_a_truncate():
+    """Foi assim que a CI ficou vermelha: tabela truncada, registro vazio.
+
+    Um `TransactionTestCase` trunca as tabelas no fim e NÃO repõe o que a
+    migração escreveu. O teste seguinte que rodasse o seed encontrava o registro
+    vazio e morria em `Atributo 'alergenos' não existe no registro`.
+    """
+    from shopman.shop.attribute_defaults import ensure_definitions
+
+    AttributeDefinition.objects.all().delete()
+    attributes.invalidate_cache()
+    assert attributes.registry() == ()
+
+    criadas = ensure_definitions()
+
+    assert criadas == 7
+    assert {d.ref for d in attributes.registry()} == {
+        "alergenos", "dieta", "porcoes", "peso_unidade_g",
+        "natureza", "sabor", "temperatura",
+    }
+    # E é idempotente: rodar de novo não duplica nem reescreve.
+    assert ensure_definitions() == 0
