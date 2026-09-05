@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  candidateSubtitle,
   conflictDecision,
   contactChangeDecision,
   customerDecisionCopy,
@@ -23,6 +24,7 @@ function candidate(overrides: Partial<ServerConflictCandidate> = {}): ServerConf
     tax_id: "",
     matched_by: ["ref"],
     is_current: true,
+    owner_inactive: false,
     ...overrides,
   };
 }
@@ -46,6 +48,7 @@ describe("conflictDecision — a recusa 422 vira decisão de tela", () => {
       typed: "43999990022",
       current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
       other: { ref: "CUST-B", name: "Bruno Souza", value: "+5543999990022" },
+      candidates: [current, other],
     });
   });
 
@@ -66,13 +69,51 @@ describe("conflictDecision — a recusa 422 vira decisão de tela", () => {
     expect(byEmail?.other?.value).toBe("bruno@example.com");
   });
 
-  // Um painel sem saída é PIOR que o toast que ele substituiria: se o servidor
-  // não disse quem é dono do valor digitado, não há troca de um toque a
-  // oferecer, e a recusa cai na mensagem genérica.
-  it("sem os dois lados, não há decisão a oferecer", () => {
-    expect(conflictDecision({ field: "customer_phone", candidates: [current] })).toBeNull();
-    expect(conflictDecision({ field: "", candidates: [current, other] })).toBeNull();
+  // ⚠️ Uma recusa que exige DECISÃO não pode virar toast que some. O único
+  // caso sem painel é o de candidato nenhum — aí não há nada a mostrar.
+  it("sem candidato nenhum não há o que mostrar", () => {
     expect(conflictDecision({ field: "customer_phone", candidates: [] })).toBeNull();
+    expect(conflictDecision({ field: "customer_phone" })).toBeNull();
+  });
+
+  // ⚠️ Dois ou mais intrusos, por campos diferentes: não há UM campo culpado
+  // para nomear. O servidor já mandava a lista e a tela a jogava fora.
+  it("sem UM campo culpado, a tela mostra a LISTA em vez de sumir", () => {
+    const terceiro = candidate({
+      ref: "CUST-C", name: "Célia Dias", phone: "+5543999990033",
+      tax_id: "52998224725", matched_by: ["document"], is_current: false,
+    });
+    const decision = conflictDecision({ field: "", candidates: [current, other, terceiro] });
+
+    expect(decision?.kind).toBe("candidate_list");
+    expect(decision?.field).toBe("");
+    expect(decision?.candidates).toHaveLength(3);
+  });
+
+  it("um lado só também cai na lista — não há troca de um toque a oferecer", () => {
+    expect(conflictDecision({ field: "customer_phone", candidates: [current] })?.kind)
+      .toBe("candidate_list");
+  });
+
+  // ⚠️ O resolve do servidor só enxerga cliente ATIVO; os UNIQUEs do banco
+  // enxergam TODOS. Com o dono desativado, "atender Bruno" não existe: ele não
+  // aparece nem na busca. A tela precisa dizer isso e dar a saída certa.
+  it("dono DESATIVADO é um caso próprio, não um conflito comum", () => {
+    const morto = candidate({
+      ref: "CUST-OLD", name: "Cadastro Antigo", phone: "+5543999990022",
+      matched_by: ["phone"], is_current: false, owner_inactive: true,
+    });
+    const decision = conflictDecision({ field: "customer_phone", candidates: [current, morto] });
+
+    expect(decision?.kind).toBe("inactive_owner");
+    expect(decision?.other?.ref).toBe("CUST-OLD");
+  });
+
+  it("o subtítulo do candidato mostra por onde reconhecê-lo", () => {
+    expect(candidateSubtitle(other)).toBe("+5543999990022");
+    expect(candidateSubtitle(candidate({
+      phone: "+5543999990033", email: "c@example.com", tax_id: "52998224725",
+    }))).toBe("+5543999990033 · c@example.com · 52998224725");
   });
 });
 
@@ -147,6 +188,49 @@ describe("customerDecisionCopy — voz de balcão, e as saídas dizem o que fica
     // Nem "OK", nem "Cancelar": cada botão diz com quem a venda continua.
     expect(copy.confirmLabel).toBe("Atender Bruno");
     expect(copy.cancelLabel).toBe("Manter Ana");
+  });
+
+  // A TERCEIRA saída, que faltava por completo: são a MESMA pessoa. Sem ela o
+  // operador só podia escolher UM dos dois cadastros duplicados do cliente.
+  it("o conflito oferece unificar os cadastros", () => {
+    const copy = customerDecisionCopy(conflict);
+    expect(copy.merge?.label).toBe("É a mesma pessoa — unificar cadastros");
+    expect(copy.release).toBeNull();
+  });
+
+  // ⚠️ Com o dono DESATIVADO não existe "atender": ele não aparece na busca. E
+  // o Core recusa unificar com um lado inativo. A única saída é liberar.
+  it("dono desativado tem copy própria e oferece LIBERAR, não unificar", () => {
+    const copy = customerDecisionCopy({
+      kind: "inactive_owner",
+      field: "phone",
+      typed: "(43) 99999-0022",
+      current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
+      other: { ref: "CUST-OLD", name: "Cadastro Antigo", value: "+5543999990022" },
+    });
+    expect(copy.title).toBe("Este WhatsApp está preso num cadastro desativado");
+    expect(copy.body).toContain("Cadastro Antigo");
+    expect(copy.confirmLabel).toBe("Liberar o WhatsApp");
+    expect(copy.release?.label).toBe("Liberar o WhatsApp");
+    // Unificar não é oferecido porque o Core recusaria — botão morto é pior
+    // que botão ausente.
+    expect(copy.merge).toBeNull();
+  });
+
+  // ⚠️ Sem UM campo culpado a escolha é por LINHA: o par confirmar/cancelar não
+  // teria o que dizer, e o painel some com o `confirmLabel` vazio.
+  it("a lista de candidatos não tem botão de confirmar — a escolha é por linha", () => {
+    const copy = customerDecisionCopy({
+      kind: "candidate_list",
+      field: "",
+      typed: "",
+      current: { ref: "CUST-A", name: "Ana Prado", value: "" },
+      other: null,
+    });
+    expect(copy.title).toBe("Os dados apontam para cadastros diferentes");
+    expect(copy.confirmLabel).toBe("");
+    expect(copy.cancelLabel).toBe("Manter Ana");
+    expect(copy.merge).toBeNull();
   });
 
   it("a correção diz DE onde PARA onde antes de acontecer", () => {

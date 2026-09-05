@@ -3632,20 +3632,140 @@ def _pos_customer_conflict(candidates: dict, evidence: dict) -> PosCustomerConfl
         source = next(iter(intruding))
         field, message = _CONFLICT_FIELDS.get(source, ("", message))
 
+    rows = [
+        _conflict_row(customer, sorted(evidence.get(pk, ())))
+        for pk, customer in candidates.items()
+    ]
+    return PosCustomerConflict(message, field=field, candidates=rows)
+
+
+def _conflict_row(customer, sources: list[str]) -> dict:
+    """Um lado da recusa, do jeito que a tela lê."""
+    return {
+        "ref": customer.ref,
+        "name": customer.name,
+        "phone": customer.phone,
+        "email": customer.email,
+        "tax_id": customer.document,
+        "matched_by": sources,
+        # "É o que está na comanda" × "é o dono do que você digitou": a tela
+        # nomeia os dois lados, e é isso que faz a escolha ser do operador.
+        "is_current": "ref" in sources,
+        # ⚠️ Dono DESATIVADO. O resolve só enxerga cliente ativo, os UNIQUEs do
+        # banco enxergam todos: quando o dono do contato está desativado o
+        # conflito nasce lá embaixo, no INSERT, e o operador nem conseguia
+        # descobrir de quem era o número. A tela tem copy e saída próprias.
+        "owner_inactive": not customer.is_active,
+    }
+
+
+# O tipo do ContactPoint traduzido para a fonte do conflito. Hoje os dois
+# vocabulários coincidem ("phone"/"email"), e o mapa existe para que passem a
+# divergir sem que a recusa emudeça.
+_CONTACT_CONFLICT_SOURCE: dict[str, str] = {
+    "phone": "phone",
+    "whatsapp": "phone",
+    "email": "email",
+}
+
+
+# A mesma frase, quando o dono é um cadastro DESATIVADO: "já é de outro
+# cadastro" manda o operador procurar alguém que ele não vai achar na busca.
+_CONFLICT_FIELDS_INACTIVE: dict[str, str] = {
+    "phone": "Este WhatsApp está preso num cadastro desativado.",
+    "document": "Este CPF/CNPJ está preso num cadastro desativado.",
+    "cpf": "Este CPF/CNPJ está preso num cadastro desativado.",
+    "email": "Este e-mail está preso num cadastro desativado.",
+}
+
+
+def _customer_by_ref_any_state(customer_ref: str):
+    """O cadastro do ``ref``, ativo ou não — quem está na comanda é ele mesmo."""
+    if not customer_ref:
+        return None
+    from shopman.guestman.models import Customer
+
+    return Customer.objects.filter(ref=customer_ref).first()
+
+
+def _contact_owner(contact_type: str, value: str):
+    """De QUEM é o contato — olhando o banco como o banco olha.
+
+    ⚠️ ``_resolve_pos_customer`` só enxerga cliente ATIVO (os services do
+    Guestman filtram ``is_active=True``); ``customers_unique_contact_value`` e
+    ``unique_customer_phone`` são GLOBAIS. Com o dono desativado o resolve não
+    gera candidato, não há conflito rico, e a recusa só aparece no INSERT — como
+    frase seca, sobre um cadastro invisível na busca. Aqui não há filtro.
+    """
+    if not value:
+        return None
+    from shopman.guestman.models import ContactPoint, Customer
+
+    contact = (
+        ContactPoint.objects.select_related("customer")
+        .filter(type=contact_type, value_normalized=value)
+        .first()
+    )
+    if contact is not None:
+        return contact.customer
+    # Sem ContactPoint, o cache do próprio cadastro ainda segura o UNIQUE.
+    if contact_type == ContactPoint.Type.PHONE:
+        return Customer.objects.filter(phone=value).first()
+    if contact_type == ContactPoint.Type.EMAIL:
+        return Customer.objects.filter(email__iexact=value).first()
+    return None
+
+
+def _identifier_owner(identifier_type: str, identifier_value: str):
+    """De quem é o identificador fiscal — sem filtro de ativo (ver ``_contact_owner``)."""
+    value = (identifier_value or "").strip()
+    if not value:
+        return None
+    from shopman.guestman.models import Customer
+
+    try:
+        from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
+    except ImportError:
+        pass
+    else:
+        ident = (
+            CustomerIdentifier.objects.select_related("customer")
+            .filter(identifier_type=identifier_type, identifier_value=value)
+            .first()
+        )
+        if ident is not None:
+            return ident.customer
+    return Customer.objects.filter(document=value).first()
+
+
+def _pos_owner_conflict(current, owner, source: str) -> PosCustomerConflict:
+    """A recusa RICA para o conflito que só o BANCO viu.
+
+    Os UNIQUEs globais recusam depois do resolve, e o que sobrava era uma frase
+    seca — "Contato já pertence a outro cliente." — sem dizer de quem é nem o
+    que fazer. Beco sem saída com o cliente esperando no balcão. Aqui se monta a
+    mesma estrutura que o resolve devolve, com o dono REAL nomeado, para que a
+    tela ofereça as mesmas saídas de um toque.
+    """
+    field, message = _CONFLICT_FIELDS.get(
+        source,
+        ("", "Os dados do cliente apontam para cadastros diferentes."),
+    )
+    if owner is not None and not owner.is_active:
+        message = _CONFLICT_FIELDS_INACTIVE.get(source, message)
+
     rows = []
-    for pk, customer in candidates.items():
-        sources = sorted(evidence.get(pk, ()))
-        rows.append({
-            "ref": customer.ref,
-            "name": customer.name,
-            "phone": customer.phone,
-            "email": customer.email,
-            "tax_id": customer.document,
-            "matched_by": sources,
-            # "É o que está na comanda" × "é o dono do que você digitou": a tela
-            # nomeia os dois lados, e é isso que faz a escolha ser do operador.
-            "is_current": "ref" in sources,
-        })
+    if current is not None:
+        rows.append(_conflict_row(current, ["ref"]))
+    if owner is not None and (current is None or owner.pk != current.pk):
+        rows.append(_conflict_row(owner, [source]))
+    logger.info(
+        "pos_customer_owner_conflict source=%s current=%s owner=%s owner_active=%s",
+        source,
+        getattr(current, "ref", ""),
+        getattr(owner, "ref", ""),
+        getattr(owner, "is_active", None),
+    )
     return PosCustomerConflict(message, field=field, candidates=rows)
 
 
@@ -3718,8 +3838,13 @@ def _merge_pos_customer_fields(
         except IntegrityError as exc:
             # `unique_customer_phone` — o número corrigido já é o cache de outro
             # cadastro (inativo, ou sem ContactPoint, e por isso invisível para
-            # o resolve). Vira a MESMA recusa dos contatos.
-            raise ValueError("Contato já pertence a outro cliente.") from exc
+            # o resolve). Vira a MESMA recusa RICA dos contatos: com o dono
+            # nomeado, a tela oferece atender, unificar ou liberar o número.
+            from shopman.guestman.models import ContactPoint
+
+            raise _pos_owner_conflict(
+                customer, _contact_owner(ContactPoint.Type.PHONE, phone), "phone",
+            ) from exc
 
 
 def _release_primary_contact(ContactPoint, customer, contact_type: str, value: str) -> None:
@@ -3756,9 +3881,14 @@ def _ensure_contact_point(
             },
         )
     except IntegrityError as exc:
-        raise ValueError("Contato já pertence a outro cliente.") from exc
+        # `customers_unique_contact_value` é GLOBAL; o resolve só olha ativo.
+        raise _pos_owner_conflict(
+            customer, _contact_owner(contact_type, value), _CONTACT_CONFLICT_SOURCE.get(contact_type, ""),
+        ) from exc
     if contact.customer_id != customer.pk:
-        raise ValueError("Contato já pertence a outro cliente.")
+        raise _pos_owner_conflict(
+            customer, contact.customer, _CONTACT_CONFLICT_SOURCE.get(contact_type, ""),
+        )
     if created and contact.is_primary:
         contact._sync_to_customer()
     elif promote and not contact.is_primary:
@@ -3777,7 +3907,199 @@ def _ensure_customer_identifier(customer_ref: str, identifier_type: str, identif
             source_system="pdv",
         )
     except ValueError as exc:
-        raise ValueError("Identificador fiscal já pertence a outro cliente.") from exc
+        # O identificador já é de outro cadastro. Nomeia o dono REAL: o
+        # `find_by_identifier` do Core exige cliente ativo e devolveria vazio
+        # justamente no caso em que o operador mais precisa saber de quem é.
+        raise _pos_owner_conflict(
+            _customer_by_ref_any_state(customer_ref),
+            _identifier_owner(identifier_type, identifier_value),
+            identifier_type,
+        ) from exc
+
+
+class PosCustomerMergeError(ValueError):
+    """A unificação pedida pelo balcão não pode acontecer — e a frase diz por quê."""
+
+
+def merge_pos_customers(*, source_ref: str, target_ref: str, operator_username: str) -> dict:
+    """Unifica DOIS cadastros que são a MESMA pessoa, a pedido do balcão.
+
+    É a terceira saída do conflito de contato: nem "atender o outro", nem
+    "manter quem está na comanda" — os dois são a mesma pessoa e viram um. O
+    ``MergeService`` do Guestman faz o trabalho inteiro (contatos, identidades,
+    identificadores, endereços, preferências, consentimentos, timeline, pedidos
+    e fidelidade), grava um ``MergeAudit`` com snapshot e abre janela de
+    ``undo``. Aqui só se traduz o pedido do balcão e a recusa.
+
+    ``source`` é quem DESAPARECE (fica desativado, com nota apontando o alvo) e
+    ``target`` é quem SOBREVIVE — a comanda segue no alvo. O operador confirmou
+    na tela que é a mesma pessoa: essa é a evidência que o gate G6 exige, e ela
+    viaja assinada com quem disse.
+    """
+    from shopman.guestman.contrib.merge import MergeService
+    from shopman.guestman.exceptions import CustomerError
+    from shopman.guestman.gates import GateError
+    from shopman.guestman.models import Customer
+
+    source_ref = (source_ref or "").strip()
+    target_ref = (target_ref or "").strip()
+    if not source_ref or not target_ref:
+        raise PosCustomerMergeError("Escolha os dois cadastros que serão unificados.")
+    if source_ref == target_ref:
+        raise PosCustomerMergeError("Os dois cadastros são o mesmo.")
+
+    # ⚠️ SEM filtro de ativo na busca: o caso que mais pede unificação é
+    # justamente o do dono DESATIVADO segurando o contato. Quem recusa merge de
+    # inativo é o `MergeService`, com a frase dele — não uma busca vazia aqui,
+    # que viraria "cadastro não encontrado" sobre um cadastro que existe.
+    source = Customer.objects.filter(ref=source_ref).first()
+    target = Customer.objects.filter(ref=target_ref).first()
+    if source is None or target is None:
+        raise PosCustomerMergeError("Cadastro não encontrado.")
+
+    try:
+        result = MergeService.merge(
+            source,
+            target,
+            evidence={
+                # A chave que o gate G6 conhece. As outras duas são o contexto
+                # da auditoria: quem disse, e de onde.
+                "staff_override": True,
+                "operator_confirmed": True,
+                "source_surface": "pdv",
+            },
+            actor=operator_username or "pdv",
+        )
+    except GateError as exc:
+        # A frase do Core é de engenharia e em inglês; o balcão lê português.
+        logger.warning("pos_customer_merge_denied gate=%s", exc, exc_info=True)
+        raise PosCustomerMergeError("Não foi possível unificar os cadastros.") from exc
+    except CustomerError as exc:
+        logger.warning("pos_customer_merge_denied customer_error=%s", exc, exc_info=True)
+        if not source.is_active:
+            raise PosCustomerMergeError(
+                "O cadastro que sairia já está desativado. Unifique na outra direção.",
+            ) from exc
+        if not target.is_active:
+            raise PosCustomerMergeError(
+                "O cadastro que ficaria está desativado. Reative-o antes de unificar.",
+            ) from exc
+        raise PosCustomerMergeError("Não foi possível unificar os cadastros.") from exc
+
+    logger.info(
+        "pos_customer_merged source=%s target=%s operator=%s audit=%s",
+        result.source_ref,
+        result.target_ref,
+        operator_username,
+        result.audit_id,
+    )
+    target.refresh_from_db()
+    return {
+        "source_ref": result.source_ref,
+        "target_ref": result.target_ref,
+        # O comprovante da unificação, para desfazer dentro da janela.
+        "audit_id": result.audit_id,
+        "undo_deadline": _merge_undo_deadline(result.audit_id),
+        "customer": {
+            "ref": target.ref,
+            "name": target.name,
+            "phone": target.phone,
+            "email": target.email,
+            "tax_id": target.document,
+        },
+        # O que MUDOU de dono — é o resumo que a tela mostra ao operador.
+        "migrated": {
+            "contact_points": result.migrated_contact_points,
+            "identifiers": result.migrated_identifiers,
+            "addresses": result.migrated_addresses,
+            "orders": result.migrated_orders,
+            "loyalty": result.loyalty_merged,
+        },
+    }
+
+
+class PosContactReleaseError(ValueError):
+    """O contato não pode ser liberado — e a frase diz por quê."""
+
+
+# O campo da tela → (tipo de ContactPoint, campo cache no Customer).
+_RELEASABLE_CONTACT: dict[str, tuple[str, str]] = {
+    "customer_phone": ("phone", "phone"),
+    "customer_email": ("email", "email"),
+}
+
+
+def release_pos_customer_contact(*, field: str, value: str, operator_username: str) -> dict:
+    """LIBERA um contato preso num cadastro DESATIVADO.
+
+    A saída do beco que o merge não resolve: o ``MergeService`` recusa unificar
+    quando qualquer um dos lados está inativo, e é justamente o cadastro
+    desativado que segura o número no UNIQUE global. Sem isto, o operador vê
+    "este WhatsApp já é de outro cadastro", não acha esse cadastro na busca (ela
+    só enxerga ativo) e a venda para.
+
+    ⚠️ Só sobre cadastro DESATIVADO. Se o dono está ativo, o caminho é atender
+    esse cliente ou unificar — liberar ali seria roubar o contato de alguém em
+    silêncio, exatamente o que este PR existe para impedir.
+    """
+    from shopman.guestman.models import ContactPoint, Customer
+
+    is_tax_id = field == "customer_tax_id"
+    contact_type, cache_field = _RELEASABLE_CONTACT.get(field, ("", ""))
+    if not contact_type and not is_tax_id:
+        raise PosContactReleaseError("Este campo não pode ser liberado pelo balcão.")
+
+    if is_tax_id:
+        value = _digits(value.strip())
+    elif contact_type == "phone":
+        value = _normalize_phone(value.strip())
+    else:
+        value = value.strip().lower()
+    if not value:
+        raise PosContactReleaseError("Informe o contato a liberar.")
+
+    owner = _identifier_owner("cpf", value) if is_tax_id else _contact_owner(contact_type, value)
+    if owner is None:
+        raise PosContactReleaseError("Este contato não está preso em nenhum cadastro.")
+    if owner.is_active:
+        raise PosContactReleaseError(
+            f"Este contato é de {owner.name}, um cadastro ativo. "
+            "Atenda esse cliente ou unifique os cadastros.",
+        )
+
+    with transaction.atomic():
+        if is_tax_id:
+            from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
+
+            CustomerIdentifier.objects.filter(
+                identifier_type="cpf", identifier_value=value,
+            ).delete()
+            Customer.objects.filter(pk=owner.pk, document=value).update(document="")
+        else:
+            ContactPoint.objects.filter(type=contact_type, value_normalized=value).delete()
+            # `.update()` e não `.save()`: o save do Customer re-materializa o
+            # ContactPoint a partir do cache, e o contato voltaria na hora.
+            Customer.objects.filter(pk=owner.pk, **{cache_field: value}).update(**{cache_field: ""})
+
+    logger.info(
+        "pos_contact_released field=%s owner=%s operator=%s",
+        field,
+        owner.ref,
+        operator_username,
+    )
+    return {"field": field, "released_from": {"ref": owner.ref, "name": owner.name}}
+
+
+def _merge_undo_deadline(audit_id: str) -> str:
+    """Até quando a unificação pode ser desfeita (ISO), ou vazio se não der."""
+    try:
+        from shopman.guestman.contrib.merge.models import MergeAudit
+
+        audit = MergeAudit.objects.filter(pk=audit_id).first()
+        return audit.undo_deadline.isoformat() if audit and audit.undo_deadline else ""
+    except Exception:
+        logger.debug("pos_customer_merge_undo_deadline_failed audit=%s", audit_id, exc_info=True)
+        return ""
 
 
 def _find_customer_identifier(identifier_type: str, identifier_value: str):

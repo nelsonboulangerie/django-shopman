@@ -316,6 +316,26 @@ export interface POSCustomerLookupResponse {
   created?: boolean;
 }
 
+/** A unificação de dois cadastros pedida pelo balcão — `target` sobrevive. */
+export interface POSCustomerMergeResponse {
+  ok: boolean;
+  customer: POSCustomerLookupProjection | null;
+  merge: {
+    source_ref: string;
+    target_ref: string;
+    /** O comprovante para desfazer dentro da janela. */
+    audit_id: string;
+    undo_deadline: string;
+    migrated: {
+      contact_points: number;
+      identifiers: number;
+      addresses: number;
+      orders: number;
+      loyalty: boolean;
+    };
+  };
+}
+
 export interface POSCustomerSearchResult {
   ref: string;
   name: string;

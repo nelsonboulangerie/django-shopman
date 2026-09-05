@@ -5,7 +5,7 @@
 // sheet, and "liberar comanda" (with confirmation). It renders
 // what the read-side hands it and emits intent; the shell resolves the commands.
 import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/types/pos";
-import type { CustomerDecision } from "~/presentation/customerDecision";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -23,6 +23,7 @@ const props = defineProps<{
   customerResolvedNew?: boolean;
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
+  customerMergeBusy?: boolean;
   /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
    *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
   readOnly?: boolean;
@@ -56,6 +57,8 @@ const emit = defineEmits<{
   resolveCustomer: [];
   decisionConfirm: [];
   decisionCancel: [];
+  decisionMerge: [];
+  decisionPick: [ServerConflictCandidate];
   search: [string];
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
@@ -255,6 +258,7 @@ function runClear() {
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
       :customer-decision="readOnly ? null : customerDecision"
+      :customer-merge-busy="customerMergeBusy"
       @update:customer-name="$emit('update:customerName', $event)"
       @update:customer-phone="$emit('update:customerPhone', $event)"
       @update:customer-tax-id="$emit('update:customerTaxId', $event)"
@@ -265,6 +269,8 @@ function runClear() {
       @resolve-customer="$emit('resolveCustomer')"
       @decision-confirm="$emit('decisionConfirm')"
       @decision-cancel="$emit('decisionCancel')"
+      @decision-merge="$emit('decisionMerge')"
+      @decision-pick="$emit('decisionPick', $event)"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
     />
