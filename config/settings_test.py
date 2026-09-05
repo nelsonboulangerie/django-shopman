@@ -84,7 +84,10 @@ SHOPMAN_NOTIFICATION_ADAPTERS = {
     "console": "shopman.shop.adapters.notification_console",  # DEBUG=true no CI
 }
 SHOPMAN_FISCAL_ADAPTER = None
-SHOPMAN_FISCAL_EMISSION_RESOLVER = "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
+SHOPMAN_FISCAL_EMISSION_RESOLVER = (
+    "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+    "shopman.shop.fiscal_resolvers.on_printed_receipt"
+)
 SHOPMAN_COURIER_ADAPTER = None
 SHOPMAN_CUSTOMER_STRATEGY_MODULES = []
 STOCKMAN["SKU_VALIDATOR"] = "shopman.shop.adapters.sku_validator.ComposedSkuValidator"  # noqa: F405

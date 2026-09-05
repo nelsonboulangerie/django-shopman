@@ -456,9 +456,10 @@ const paymentWorkspaceRef = ref<{
   openFulfillment: () => void;
   openSchedule: () => void;
   openDiscount: () => void;
+  openSplit: () => void;
   pressMethodKey: (letter: string) => boolean;
   pressReceiptKey: (letter: string) => boolean;
-  toggleCpfOnInvoice: () => void;
+  toggleCpfOnInvoice: () => boolean;
 } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
@@ -569,9 +570,15 @@ function onGlobalKeydown(event: KeyboardEvent) {
       event.preventDefault();
       return;
     }
-    // I (impressa) e M (e-mail) — os canais do comprovante. Vêm DEPOIS das
-    // formas de pagamento de propósito: lançar dinheiro é o gesto de toda venda,
-    // e nenhuma forma usa I nem M.
+    // F (CPF na nota), I (impressa) e M (e-mail) — as três perguntas da seção
+    // Nota fiscal, pela letra. Vêm DEPOIS das formas de pagamento de propósito:
+    // lançar dinheiro é o gesto de toda venda. E nenhuma forma pode tomar estas
+    // três letras: `methodShortcuts` as reserva, para que cadastrar um "Fiado"
+    // não roube o F em silêncio.
+    if (letra === "F" && paymentWorkspaceRef.value?.toggleCpfOnInvoice()) {
+      event.preventDefault();
+      return;
+    }
     if (paymentWorkspaceRef.value?.pressReceiptKey(letra)) {
       event.preventDefault();
       return;
@@ -654,11 +661,13 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     // ── F9·F10 — AS DUAS AÇÕES DA TELA EM QUE SE ESTÁ ───────────────────
     //
-    // Na comanda: mandar para a cozinha e transferir linhas. No pagamento:
-    // desconto e CPF na nota. As duas telas nunca coexistem, e o par sempre
-    // significa a mesma coisa — "as duas ações daqui". Foi a saída possível:
-    // de F2 a F8 está tudo tomado, F5 é reload, F11 é tela-cheia (que o
-    // quiosque usa) e F12 abre o DevTools antes de a página ver a tecla.
+    // Na comanda: mandar para a cozinha e transferir linhas. No pagamento: os
+    // dois Ajustes da conta — desconto e dividir a conta —, que são o par de
+    // botões vizinhos na tela, agindo sobre o VALOR. As duas telas nunca
+    // coexistem, e o par sempre significa a mesma coisa: "as duas ações daqui".
+    // Foi a saída possível: de F2 a F8 está tudo tomado, F5 é reload, F11 é
+    // tela-cheia (que o quiosque usa) e F12 abre o DevTools antes de a página
+    // ver a tecla. O que a seção Nota fiscal pergunta anda pelas letras F·I·M.
     case "F9":
       event.preventDefault();
       if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
@@ -666,7 +675,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
       return;
     case "F10":
       event.preventDefault();
-      if (checkoutMode.value) paymentWorkspaceRef.value?.toggleCpfOnInvoice();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
       else if (inSaleView.value && cart.items.length) openMoveDialog();
       return;
     case "Enter":

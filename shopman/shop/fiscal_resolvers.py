@@ -67,6 +67,26 @@ def on_request_or_tax_id(order) -> bool:
     return bool(fiscal.get("issue_document") or str(fiscal.get("tax_id") or "").strip())
 
 
+def on_printed_receipt(order) -> bool:
+    """Emite quando o balcão pediu a nota IMPRESSA.
+
+    NÃO EXISTE DANFE SEM NFC-E AUTORIZADA. O papel é o espelho da nota, não um
+    documento próprio: pedir papel É pedir a nota. Sem este resolver, ligar
+    "Impressa?" numa venda que a regra recusa (dinheiro sem CPF) não imprimia
+    nada e não avisava ninguém — o operador prometia a bobina ao cliente e a
+    bobina nunca ia receber nada.
+
+    Lê ``receipt.channels`` (o pedido DESTA venda, gravado pelo PDV), irmão do
+    ``fiscal`` que ``on_request_or_tax_id`` consulta. Preferência de cadastro não
+    entra aqui, pela mesma razão: o que vale é o que se pediu no balcão.
+    """
+    receipt = (order.data or {}).get("receipt") or {}
+    requested = receipt.get("channels") or []
+    if not isinstance(requested, (list, tuple, set)):
+        return False
+    return any(str(channel or "").strip().lower() == "print" for channel in requested)
+
+
 def channels(*refs: str):
     """Fábrica: emite sempre nos canais dados (ex.: só no PDV presencial).
 
