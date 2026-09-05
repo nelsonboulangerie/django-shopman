@@ -100,4 +100,26 @@ describe('StockNotifyButton', () => {
     expect(fetchMock).toHaveBeenCalledOnce()
     expect(fetchMock.mock.calls[0]?.[1]?.body).toEqual({ phone: '+5543998404900' })
   })
+
+  // O reparo do normalizador (DDD da loja + nono dígito) tem que ficar VISÍVEL
+  // antes do envio: quem digitou às cegas assinou com o telefone de outra pessoa.
+  it('anonymous sheet shows back the phone the shop will actually message', async () => {
+    await setAuthenticated(false)
+    await setDefaultDdd('43')
+    const wrapper = await mountSuspended(StockNotifyButton, {
+      props: { sku: 'PAO', name: 'Pão', subscribed: false }
+    })
+
+    await wrapper.get('button').trigger('click')
+    await nextTick()
+    const input = document.body.querySelector<HTMLInputElement>('input[aria-label="Telefone para aviso"]')
+    expect(input).not.toBeNull()
+    await new DOMWrapper(input!).setValue('9840-4900')
+    await nextTick()
+
+    const sheetText = document.body.querySelector<HTMLElement>('[data-stock-notify-sheet]')?.textContent ?? ''
+    // Espaço na borda de nó de texto some no compilador do Vue; a frase inteira
+    // é o que prova que o número não colou na palavra anterior.
+    expect(sheetText).toContain('Mandaremos a mensagem para +55 (43) 99840-4900.')
+  })
 })

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { maskPhoneInput, normalizeAuthPhone } from '~/utils/authPhone'
+import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
 
 // "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
 // caminho acolhedor em vez de um "+" morto: logado assina com 1 clique (usa o
@@ -40,6 +41,11 @@ const phone = computed({
   set: (value: string) => { phoneInput.value = maskPhoneInput(value, 'BR') }
 })
 
+// O número que a casa vai usar, de volta na tela antes do envio. A normalização
+// completa o DDD e repara celular antigo de 10 dígitos — quem digitou não vê
+// isso acontecer, e um palpite errado manda a mensagem para outra pessoa.
+const notifyTarget = computed(() => notifyPhoneTarget(phoneInput.value, defaultDdd.value))
+
 async function subscribe (phoneValue: string) {
   if (submitting.value) return
   submitting.value = true
@@ -53,7 +59,7 @@ async function subscribe (phoneValue: string) {
     })
     isSubscribed.value = true
     sheetOpen.value = false
-    if (import.meta.client) useSonner.success('Pronto. Avisaremos você quando estiver disponível.')
+    if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
   } catch (e) {
     const { data } = httpError(e)
     const detail = errorDetail(e, 'Não foi possível registrar o aviso. Tente de novo.')
@@ -175,6 +181,9 @@ function onAnonymousSubmit () {
           class="bg-background"
         />
         <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
+        <p v-else-if="notifyTarget" class="shop-meta text-muted-foreground">
+          Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
+        </p>
         <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
           Avise-me
         </UiButton>
