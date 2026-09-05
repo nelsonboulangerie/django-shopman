@@ -23,6 +23,7 @@ from shopman.shop.handlers.production_alerts import (
     check_forgotten_planned_orders,
     check_late_started_orders,
     create_stock_short_alert,
+    create_stock_shortfall_alert,
     maybe_create_low_yield_alert,
 )
 from shopman.shop.models import Shop
@@ -113,6 +114,69 @@ class TestNotificationGating:
         assert check_late_started_orders() == 1
         assert check_late_started_orders() == 0  # dedup no alerta
         assert _notification_directives().count() == 1
+
+
+class TestStockShortfallAlert:
+    """A sub-baixa REAL de insumo (já commitada na ponte) vira OperatorAlert.
+
+    Distinta de ``production_stock_short`` (falta prevista antes do finish): esta
+    é ``production_stock_shortfall``, a falta que a ponte craftsman→stockman
+    baixou a menos — não pode ficar só no log (dinheiro/estoque: falhar gritando).
+    """
+
+    def _shortfalls(self):
+        from decimal import Decimal
+
+        return [
+            {
+                "sku": "FARINHA",
+                "needed": Decimal("1.0"),
+                "issued": Decimal("0.4"),
+                "short": Decimal("0.6"),
+            }
+        ]
+
+    def test_creates_error_alert_naming_ingredient_and_shortfall(self, recipe):
+        create_stock_shortfall_alert(
+            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
+        )
+        alert = OperatorAlert.objects.get(type="production_stock_shortfall")
+        assert alert.severity == "error"
+        assert alert.order_ref == "WO-9"
+        assert "FARINHA" in alert.message
+        assert "0.6" in alert.message
+        assert not _notification_directives().exists()  # opt-in, desligado por padrão
+
+    def test_empty_shortfalls_is_a_noop(self, recipe):
+        create_stock_shortfall_alert(
+            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=[]
+        )
+        assert not OperatorAlert.objects.filter(type="production_stock_shortfall").exists()
+
+    def test_dedup_prevents_second_alert_for_same_wo(self, recipe):
+        create_stock_shortfall_alert(
+            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
+        )
+        create_stock_shortfall_alert(
+            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
+        )
+        assert OperatorAlert.objects.filter(type="production_stock_shortfall").count() == 1
+
+    def test_enabled_error_severity_notifies_with_jsonable_context(self, recipe):
+        _shop({"enabled": True})  # severities default = ["error"]
+        create_stock_shortfall_alert(
+            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
+        )
+        directive = _notification_directives().get()
+        assert directive.payload["event"] == "production_stock_shortfall"
+        # Decimais viram string — o payload da Directive é JSON.
+        short = directive.payload["context"]["shortfalls"][0]
+        assert short == {
+            "sku": "FARINHA",
+            "needed": "1.0",
+            "issued": "0.4",
+            "short": "0.6",
+        }
 
 
 class TestSystemNotificationDelivery:

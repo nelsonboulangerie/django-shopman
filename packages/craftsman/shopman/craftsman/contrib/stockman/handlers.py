@@ -23,7 +23,7 @@ import logging
 from contextlib import contextmanager
 
 from django.dispatch import receiver
-from shopman.craftsman.signals import production_changed
+from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
 logger = logging.getLogger(__name__)
 
@@ -471,9 +471,16 @@ def _consume_materials(work_order):
     ingredient from available stock — the ingredients-out leg of the production
     (MAKE) event. Greedy across the ingredient's quants, present stock first.
 
-    A shortfall is logged and left non-fatal (consistent with the other
-    handlers; pre-go-live ingredients are not yet first-class — FEFO and strict
-    near-expiry gating land with Buyman/Material, see BUYMAN-PROCUREMENT-PLAN).
+    A shortfall stays non-fatal (consistent with the other handlers; pre-go-live
+    ingredients are not yet first-class — FEFO and strict near-expiry gating land
+    with Buyman/Material, see BUYMAN-PROCUREMENT-PLAN). But it is not swallowed:
+    what could not be consumed is RETURNED so :func:`_handle_finished` can announce
+    it (``production_stock_shortfall``) and the shop turns it into an OperatorAlert.
+    Falhar fechado NÃO cabe aqui (a fornada já foi produzida); então falhar
+    GRITANDO — dinheiro/estoque não pode divergir só no log.
+
+    Returns a list of shortfall dicts (``{sku, needed, issued, short}``), empty
+    when everything the recipe demanded was fully deducted.
     """
     from django.db.models import F
     from shopman.craftsman.models import WorkOrderItem
@@ -481,6 +488,7 @@ def _consume_materials(work_order):
     from shopman.stockman.services.movements import StockMovements
     from shopman.stockman.services.queries import StockQueries
 
+    shortfalls = []
     for item in work_order.items.filter(kind=WorkOrderItem.Kind.CONSUMPTION):
         remaining = item.quantity
         if remaining <= 0:
@@ -514,6 +522,16 @@ def _consume_materials(work_order):
                 "Insufficient stock to consume ingredient %s for %s: short by %s",
                 item.item_ref, work_order.ref, remaining,
             )
+            shortfalls.append(
+                {
+                    "sku": item.item_ref,
+                    "needed": item.quantity,
+                    "issued": item.quantity - remaining,
+                    "short": remaining,
+                }
+            )
+
+    return shortfalls
 
 
 def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
@@ -586,10 +604,22 @@ def _handle_finished(work_order, product_ref, date):
     # Ingredients-out leg — independent of planned-output target_date.
     # Carimbo ANTES de escrever, sob o lock: quem chega no meio espera, lê o
     # carimbo e desiste. Mesma transação, então uma falha desfaz as duas coisas.
+    shortfalls = []
     with _leg_lock(work_order):
         if not _leg_done(work_order, STOCK_CONSUMED_KEY):
             _stamp_leg(work_order, STOCK_CONSUMED_KEY)
-            _consume_materials(work_order)
+            shortfalls = _consume_materials(work_order)
+
+    # Anúncio FORA do lock (perna já commitada): a sub-baixa vira OperatorAlert no
+    # shop, que não pode ser importado daqui (core, ADR-001). Só quando o consume
+    # de fato rodou (guarda do carimbo) e faltou algo — re-run do sweeper não
+    # reanuncia, e o dedup de 12h no shop cobre a corrida.
+    if shortfalls:
+        production_stock_shortfall.send(
+            sender=type(work_order),
+            work_order=work_order,
+            shortfalls=shortfalls,
+        )
 
     with _leg_lock(work_order):
         _realize_output_leg(work_order, product_ref, date)
