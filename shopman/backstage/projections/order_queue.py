@@ -541,7 +541,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         can_advance=bool(next_status),
         **_cancel_capability(order, user),
         next_action_label=_next_label(order),
-        advance_block_label=_advance_block_label(bloqueio),
+        advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status=fiscal_status,
@@ -1104,7 +1104,7 @@ def _build_card(
         payment_status_label=payment_status_label(payment_status),
         payment_pending=_is_payment_pending(order, method, payment_status),
         payment_tone=_payment_tone(order, method, payment_status, payment_data),
-        advance_block_label=_advance_block_label(bloqueio),
+        advance_block_label=advance_block_label(bloqueio),
         advance_block_reason=operator_orders.advance_block_message(bloqueio),
         can_settle_delivery_cash=_can_settle_delivery_cash(order, payment_data),
         fiscal_status_label=fiscal_status_label,
@@ -1343,7 +1343,7 @@ _ADVANCE_BLOCK_LABELS: dict[operator_orders.AdvanceBlock, str] = {
 }
 
 
-def _advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:
+def advance_block_label(bloqueio: operator_orders.AdvanceBlock) -> str:
     """Rótulo curto para o botão desabilitado (o motivo inteiro vai no title).
 
     Só ganha rótulo o bloqueio TEMPORÁRIO — aquele que a espera resolve. Pedido

@@ -14,6 +14,9 @@ const props = withDefaults(
 defineEmits<{ action: [action: "dispatch" | "complete"] }>();
 
 const ref_ = computed(() => splitRef(props.card.order_ref));
+// Bloqueio do servidor (payment_gate), já resolvido na projection: quando há
+// rótulo, a ação de saída NÃO é oferecida.
+const blocked = computed(() => Boolean(props.card.advance_block_label));
 // Conferência de itens na expedição: colapsado por padrão (board scannable),
 // expande pra conferir o que entregar/despachar.
 const showItems = ref(false);
@@ -138,8 +141,30 @@ const d = computed(
       </ul>
     </div>
 
+    <!-- bloqueio: a gêmea na tela do gate do servidor (payment_gate). O motivo
+         aparece ANTES do toque — recusa seca com o cliente esperando é o pior dos
+         dois mundos —, no MESMO rótulo e na MESMA frase que o Gestor mostra.
+         Neutro de propósito: âmbar/vermelho aqui são o semáforo de SLA, e um
+         segundo significado na mesma cor apaga os dois. Dinheiro na entrega NÃO
+         cai aqui: é venda legítima que se paga na porta. -->
+    <div v-if="blocked" class="mt-auto" data-testid="expedition-blocked">
+      <button
+        type="button"
+        disabled
+        class="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border font-semibold text-muted-foreground opacity-60"
+        :class="d.fin"
+      >
+        <Icon name="lucide:clock" class="size-4 shrink-0" />
+        {{ card.advance_block_label }}
+      </button>
+      <p class="mt-1.5 text-xs leading-snug text-muted-foreground">
+        {{ card.advance_block_reason }}
+      </p>
+    </div>
+
     <!-- ação principal: neutro invertido -->
     <button
+      v-else
       type="button"
       class="mt-auto flex w-full items-center justify-center gap-2 rounded-md bg-foreground font-semibold text-background transition hover:bg-foreground/90 active:scale-[0.99]"
       :class="d.fin"

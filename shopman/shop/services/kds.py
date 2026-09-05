@@ -23,6 +23,7 @@ from collections import defaultdict
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.shop.services import payment_gate
 from shopman.shop.services.order_helpers import get_fulfillment_type
 
 logger = logging.getLogger(__name__)
@@ -591,8 +592,36 @@ def _locked_ticket(ticket):
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
 
 
+def expedition_block_reason(order, *, action: str) -> str:
+    """Por que a expedição NÃO pode aplicar esta ação agora, na voz do operador.
+
+    "" quando pode. A pergunta sobre dinheiro é feita ao ``payment_gate`` — a
+    MESMA régua do Gestor (``operator_orders.advance_block``) — e a frase vem do
+    mesmo dicionário, para que o operador leia a mesma coisa nos dois painéis.
+    """
+    from shopman.shop.services import operator_orders
+
+    target = EXPEDITION_TRANSITIONS.get(action)
+    if not target:
+        return ""
+    if payment_gate.payment_blocks_transition(
+        order, current_status=order.status, target_status=target
+    ):
+        return operator_orders.advance_block_message(
+            operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
+        )
+    return ""
+
+
 def expedition_action(order, *, action: str, actor: str) -> str:
-    """Apply an expedition action and return the new order status."""
+    """Apply an expedition action and return the new order status.
+
+    A expedição é o painel por onde a mercadoria fisicamente sai, então ela
+    consulta o gate de pagamento como o Gestor consulta — antes ela chamava
+    ``transition_status`` direto e uma venda de link/pix não capturada saía pela
+    porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
+    pagamento acontece na porta, por desenho (ver ``payment_gate``).
+    """
     is_delivery = get_fulfillment_type(order) == "delivery"
     if action == "dispatch" and not is_delivery:
         raise ValueError("Pedido de retirada não pode ser despachado")
@@ -602,6 +631,9 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     next_status = EXPEDITION_TRANSITIONS.get(action)
     if not next_status or not order.can_transition_to(next_status):
         raise ValueError("Ação inválida")
+    blocked = expedition_block_reason(order, action=action)
+    if blocked:
+        raise ValueError(blocked)
     order.transition_status(next_status, actor=actor)
     logger.info("kds_expedition %s order=%s", action, order.ref)
     return next_status
@@ -629,13 +661,10 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
 
 
 def _payment_allows_physical_work(order) -> bool:
-    payment = (order.data or {}).get("payment") or {}
-    method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
-        return True
-    from shopman.shop.services import payment as payment_service
-
-    return payment_service.has_sufficient_captured_payment(order) is True
+    """Delegado ao ``payment_gate``: o KDS não tem régua de dinheiro própria."""
+    return not payment_gate.payment_blocks_transition(
+        order, current_status=Order.Status.ACCEPTED, target_status=Order.Status.PREPARING
+    )
 
 
 def _ensure_order_preparing_for_work(order, *, actor: str) -> bool:

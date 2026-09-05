@@ -48,6 +48,7 @@ from shopman.shop.services import (
     loyalty,
     notification,
     payment,
+    payment_gate,
     stock,
 )
 from shopman.shop.services.business_calendar import next_operational_deadline
@@ -107,7 +108,9 @@ _OFFLINE_PAYMENT_METHODS = {
 }
 # `link` é o pedido remoto anotado no PDV: passa por gateway e o dinheiro chega
 # quando o cliente paga — antecipado e digital como o Pix e o cartão da loja.
-_UPFRONT_DIGITAL_PAYMENT_METHODS = {"pix", "card", "link"}
+# A lista mora no `payment_gate`, a régua única que o Gestor e a expedição do KDS
+# também consultam: dois conjuntos de métodos digitais seriam duas regras.
+_UPFRONT_DIGITAL_PAYMENT_METHODS = payment_gate.UPFRONT_DIGITAL_PAYMENT_METHODS
 _ACCEPTED_PAYMENT_STATUSES = {"captured", "paid"}
 
 

@@ -36,6 +36,21 @@ class PaymentTimeoutHandler:
         except (KeyError, Order.DoesNotExist):
             return
 
+        # ⚠️ A janela para em ACCEPTED DE PROPÓSITO, e isso foi decidido junto com
+        # o gate de expedição (``shop/services/payment_gate.py``), não esquecido:
+        #
+        # - com o gate fechado, um pedido de link/pix sem captura não CHEGA mais a
+        #   PREPARING/READY por ação de operador — as duas portas (Gestor e
+        #   expedição do KDS) consultam a mesma régua antes de avançar;
+        # - alargar a janela cancelaria automaticamente um pedido que a cozinha já
+        #   fez. Cancelar em READY não traz a farinha de volta: troca um problema
+        #   de dinheiro por um de desperdício, sem recuperar o dinheiro;
+        # - o formato certo para o pedido preso além de ACCEPTED não é "cancele
+        #   sozinho" e sim "chame o operador" (alerta + decisão humana: cobrar,
+        #   cancelar ou absorver) — WP próprio, porque toca pedido vivo;
+        # - e há directives de ``payment.timeout`` JÁ agendadas em produção com a
+        #   semântica atual: mudar o handler muda o que elas fazem com pedidos que
+        #   estão no ar agora.
         if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
             return
 
