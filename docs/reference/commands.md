@@ -40,6 +40,7 @@
 | [`export_backup_to_drive`](#export_backup_to_drive) | shop | Dados | Banco → Drive: sobe o cofre como Sheets nativo, atualizando no lugar |
 | [`import_backup_from_drive`](#import_backup_from_drive) | shop | Dados | Drive → banco: baixa a planilha curada e emenda no `import_backup` (dry-run por padrão) |
 | [`convert_material_base_unit`](#convert_material_base_unit) | shop | Dados | Troca a unidade-base de um insumo e reexpressa tudo que o conta (ensaio por padrão) |
+| [`rewrite_recipe_per_unit`](#rewrite_recipe_per_unit) | shop | Dados | Reexpressa por unidade a ficha que rende unidade, preservando a razão (ensaio por padrão) |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
 | [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
@@ -233,13 +234,49 @@ reimportada escreve a unidade antiga por cima, e como ela reverte cadastro e fic
 os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
 [WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md).
 
+### rewrite_recipe_per_unit
+
+Reexpressa por unidade, num banco já povoado, a ficha de produto que **rende unidade**:
+`batch_size` vira `1` e cada quantidade é dividida pelo rendimento antigo. A baguete deixa
+de dizer "7 kg de Massa Tradição rendem 25 un" e passa a dizer "0,280 kg rendem 1 un"
+(WP-FICHA-DE-PRODUTO-E-PROMESSA §A). O `seed` já nasce assim; este comando é o mesmo gesto
+onde o dado já está gravado.
+
+**É reexpressão, não mudança**: o consumo é `quantidade ÷ batch_size × quantidade do item`,
+e dividir os dois lados pelo mesmo número não mexe na razão. Nenhum movimento de estoque
+nasce daqui. **Ensaio por padrão**; sem `--apply` ele só relata.
+
+```bash
+python manage.py rewrite_recipe_per_unit                    # ensaio, todas
+python manage.py rewrite_recipe_per_unit --apply            # executa
+python manage.py rewrite_recipe_per_unit baguete --apply    # só uma ficha
+```
+
+A régua é o que a ficha **rende**, declarado (catálogo ou `meta["output_unit"]`): rende
+unidade, é produto e vira por unidade; rende massa, é fórmula e não se toca — 1 kg de Massa
+Tradição não é "uma" de nada. Ficha já com `batch_size = 1` é pulada, então rodar duas vezes
+é inofensivo. Linha que arredondaria a zero em três casas **recusa a rodada inteira**,
+nomeando a ficha.
+
+Não toca fornada concluída (história) nem fornada aberta: o `meta["_recipe_snapshot"]`
+congela rendimento e itens JUNTOS, então a razão dela já é coerente. A exceção é o snapshot
+com itens e **sem** rendimento, que cairia na ficha viva: nesse o comando grava o rendimento
+de agora, preservando a pesagem. Fecha relatando as `RecipeVersion` publicadas que ainda
+falam o rendimento de lote — republicar uma delas reescreveria a ficha de volta.
+
 ### bootstrap_recipe_book
 
 Percorre as `Recipe` (fichas de execução) e cria, para cada uma que ainda não tem, uma
 `RecipeEntry` com a versão 1 **publicada** e `source.kind="ficha"` — o inventário das
-fichas que já existem (ADR-027). A fórmula nasce na forma **base**: partes com ficha
-própria (levain, pasta autolisada, yudane) são dissolvidas e sua farinha entra na soma.
-Ordem por dependência (partes antes das massas que as usam). **Não escreve na `Recipe`**.
+fichas que já existem (ADR-027). Ordem por dependência (partes antes das massas que as
+usam). **Não escreve na `Recipe`**.
+
+A fórmula de quem **rende massa** nasce na forma base: partes com ficha própria (levain,
+pasta autolisada, yudane) são dissolvidas e sua farinha entra na soma. Quem **rende
+unidade** não dissolve nada: a ficha da peça já diz o que entra numa peça, e dissolver ali
+inventaria uma fórmula que ela nunca declarou — a baguete é "280 g de Massa Tradição", não
+farinha, água e levain. Sem farinha própria, a âncora é a massa total e a lente de padaria
+não aparece.
 
 ```bash
 python manage.py bootstrap_recipe_book             # cria o que falta
