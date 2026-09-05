@@ -18,8 +18,12 @@ const props = defineProps<{
 const unmatched = computed(() => (props.lens ? unmatchedItems(props.lens.items) : []));
 const showMetrics = computed(() => !!props.lens?.is_bakery && (props.lens?.metrics.length ?? 0) > 0);
 const showParts = computed(() => (props.lens?.parts.length ?? 0) > 0);
-const showFinalMix = computed(() => !props.compact && (props.lens?.final_mix.length ?? 0) > 0);
-const showBom = computed(() => !props.compact && (props.lens?.bom.length ?? 0) > 0);
+const showFinalMix = computed(
+  () => !props.compact && !!props.lens?.final_mix_differs && (props.lens?.final_mix.length ?? 0) > 0,
+);
+const showBom = computed(
+  () => !props.compact && !!props.lens?.bom_differs && (props.lens?.bom.length ?? 0) > 0,
+);
 
 function rangeLabel(metric: { low_display: string; high_display: string; max_display: string }): string {
   if (!metric.low_display && !metric.high_display) return "";
@@ -187,7 +191,7 @@ function rangeLabel(metric: { low_display: string; high_display: string; max_dis
       <!-- BOM: o que a ficha de execução recebe -->
       <div v-if="showBom" class="overflow-hidden rounded-lg border">
         <p class="border-b bg-muted/40 px-3 py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Ficha de execução (BOM)
+          Ficha técnica (BOM)
         </p>
         <table class="w-full text-sm">
           <tbody class="divide-y">

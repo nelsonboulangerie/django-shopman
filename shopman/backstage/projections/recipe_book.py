@@ -241,7 +241,14 @@ class FormulaLensProjection:
     total_mass_display: str
     items: tuple[FormulaItemProjection, ...]
     final_mix: tuple[FormulaItemProjection, ...]
+    #: A mistura final diz algo que a receita base já não disse? Sem partes ela é a
+    #: própria base, e mostrar a mesma tabela duas vezes só ensina o padeiro a
+    #: parar de ler. A tela pergunta isto antes de desenhar o painel.
+    final_mix_differs: bool
     bom: tuple[FormulaItemProjection, ...]
+    #: Idem para a ficha técnica: ela só difere da base quando há parte pronta
+    #: (é aí que a farinha do levain sai da lista e entra como levain).
+    bom_differs: bool
     parts: tuple[FormulaPartProjection, ...]
     metrics: tuple[FormulaMetricProjection, ...]
     warnings: tuple[FormulaWarningProjection, ...]
@@ -565,13 +572,29 @@ def build_formula_lens(formula: dict, kind: str = "") -> FormulaLensProjection:
         total_mass_display=_grams_display(analysis.total_mass_g),
         items=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.items),
         final_mix=tuple(_lens_item(item, anchor_kind, anchor_sku) for item in analysis.final_mix),
+        final_mix_differs=_subtracting_parts(analysis),
         bom=tuple(_bom_item(line, analysis.anchor_total_g) for line in analysis.bom),
+        bom_differs=_subtracting_parts(analysis) or _capped_old_dough(analysis),
         parts=tuple(_lens_part(part) for part in analysis.parts),
         metrics=tuple(
             _metric(code, value, kind, flagged) for code, value in analysis.metrics().items()
         ),
         warnings=tuple(_warning(warning) for warning in (*analysis.warnings, *references)),
     )
+
+
+def _subtracting_parts(analysis: FormulaAnalysis) -> bool:
+    """Alguma parte de fato tira da base? É ela que faz a mistura final ser outra coisa.
+
+    Parte sem fórmula conhecida fica na base e não tira nada; massa velha é teto,
+    não composição. Nos dois casos a mistura final É a receita base.
+    """
+    return any(part.has_formula and part.quantity_g for part in analysis.parts)
+
+
+def _capped_old_dough(analysis: FormulaAnalysis) -> bool:
+    """Há massa velha com teto? Ela não tira da base, mas entra na ficha como linha opcional."""
+    return any(part.kind == "old_dough" and part.cap_pct for part in analysis.parts)
 
 
 def _anchor_label(anchor_kind: str, anchor_sku: str, analysis: FormulaAnalysis) -> str:

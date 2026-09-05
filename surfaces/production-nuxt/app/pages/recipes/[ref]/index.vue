@@ -277,7 +277,7 @@ async function confirmArchive() {
           </div>
 
           <span v-if="entry.ficha_ref" class="text-muted-foreground">
-            Ficha de execução <span class="font-mono text-xs">{{ entry.ficha_ref }}</span>
+            Ficha técnica <span class="font-mono text-xs">{{ entry.ficha_ref }}</span>
           </span>
 
           <div class="ml-auto flex flex-wrap items-center gap-1.5">
