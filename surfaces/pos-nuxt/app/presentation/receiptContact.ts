@@ -94,13 +94,10 @@ function firstName(name: string): string {
   return String(name || "").trim().split(/\s+/)[0] || "";
 }
 
-const FIELD_COPY: Record<ReceiptContactField, {
-  noun: string;
-  nounShort: string;
-  onFileNoun: string;
-}> = {
-  email: { noun: "e-mail", nounShort: "e-mail", onFileNoun: "e-mail" },
-  tax_id: { noun: "CPF", nounShort: "CPF", onFileNoun: "CPF" },
+/** Como o campo se chama na tela. `cpf` fica em português: é nome próprio. */
+const FIELD_COPY: Record<ReceiptContactField, { noun: string }> = {
+  email: { noun: "e-mail" },
+  tax_id: { noun: "CPF" },
 };
 
 const EMPTY: Omit<ReceiptContactOffer, "field" | "typed" | "onFile" | "customerName"> = {
@@ -155,7 +152,7 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
       kind: "save",
       defaultChecked: false,
       title: `Salvar este ${copy.noun} no cadastro de ${quem}?`,
-      hint: `Hoje o cadastro não tem ${copy.onFileNoun}.`,
+      hint: `Hoje o cadastro não tem ${copy.noun}.`,
       confirmLabel: "Salvar no cadastro",
       summaryLine: `O ${copy.noun} será salvo no cadastro de ${quem}.`,
     };
