@@ -2024,39 +2024,61 @@ class Command(BaseCommand):
         combo.save(update_fields=["metadata"])
         products["COMBO-PETIT-DEJ"] = combo
 
-        made_to_order_skus = [
-            # bebidas preparadas na hora
+        # ── DUAS listas, porque são DUAS perguntas ──────────────────────────
+        #
+        # Elas quase coincidem, e a quase-coincidência é a armadilha: enquanto
+        # havia uma lista só, quem lesse o código concluiria que política de
+        # estoque e promessa ao cliente são a mesma coisa. Não são, e o item que
+        # prova isso está logo abaixo.
+
+        # 1) Conferência de ESTOQUE: a venda não é recusada por saldo. Se a
+        #    vitrine acabar, a casa resolve (monta na hora, ou pega outra
+        #    garrafa na geladeira).
+        sells_without_stock_skus = [
             "SS", "CD", "PS", "MC",
             "THC", "THR", "THS", "THB",
             "CE", "FP", "SE",
             "CV", "SO", "AG",
-            # montados na hora
             "CMO", "CMA", "CCOM",
             "QQ", "JB", "PG",
             "PPU", "TI",
         ]
-        # DUAS coisas, e elas são independentes — a lista é a mesma por
-        # coincidência do cardápio, não por dependência:
+
+        # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
+        #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
+        #    mesmo quando o item sai da vitrine — e é este campo, e só ele, que
+        #    acende o selo "Preparado na hora" na sacola.
         #
-        #   • ``availability_policy = demand_ok`` — conferência de ESTOQUE: se a
-        #     vitrine acabar, a casa monta um; a venda não é recusada por saldo.
-        #   • ``metadata["made_to_order"]`` — PROMESSA da casa ao cliente:
-        #     finalizado no momento de servir (gratinado, montado, extraído).
-        #     Vale mesmo quando o item sai da vitrine, porque é sobre o
-        #     acabamento — e é este, e só este, que acende o selo na sacola.
-        #
-        # Enquanto o selo era deduzido da política, mexer numa mexia na outra:
-        # apertar o croque para ``stock_only`` (o natural quando se passa a
-        # controlar o estoque dele) apagava a promessa, calado.
-        for sku in made_to_order_skus:
+        #    ⚠️ ``AG`` (Água) está na lista de cima e NÃO está nesta. Água
+        #    mineral tem estoque físico (48 un. no mapa de vitrine) e é
+        #    ``demand_ok`` só porque sempre há outra garrafa na geladeira —
+        #    ninguém prepara uma água na hora. Enquanto a lista era uma só, ela
+        #    saía da sacola anunciada como preparada na hora: a mesma confusão
+        #    entre política e promessa, agora na camada do dado.
+        made_to_order_skus = [
+            "SS", "CD", "PS", "MC",
+            "THC", "THR", "THS", "THB",
+            "CE", "FP", "SE",
+            "CV", "SO",
+            "CMO", "CMA", "CCOM",
+            "QQ", "JB", "PG",
+            "PPU", "TI",
+        ]
+
+        for sku in sells_without_stock_skus:
             product = products.get(sku)
             if product:
                 product.availability_policy = AvailabilityPolicy.DEMAND_OK
+                product.save(update_fields=["availability_policy"])
+
+        for sku in made_to_order_skus:
+            product = products.get(sku)
+            if product:
                 product.metadata = {
                     **(product.metadata if isinstance(product.metadata, dict) else {}),
                     "made_to_order": True,
                 }
-                product.save(update_fields=["availability_policy", "metadata"])
+                product.save(update_fields=["metadata"])
 
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:
