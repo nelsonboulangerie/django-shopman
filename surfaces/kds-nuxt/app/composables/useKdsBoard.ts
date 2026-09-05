@@ -8,6 +8,41 @@
 import type { KDSBoardProjection, KDSBoardResponse, KDSTicketProjection } from "~/types/kds";
 import { boardView, type KDSBoardView } from "~/presentation/board";
 
+/**
+ * O aviso de ticket novo do KDS — a FANFARRA.
+ *
+ * ⚠️ Escolhido pelo dono ouvindo os candidatos por cima de um ruído de salão
+ * sintetizado, junto com o do Gestor. Não é achismo, e não se mexe sem passar
+ * pelo mesmo teste: o que soa bem no fone não sobrevive ao balcão.
+ *
+ * A VOZ é a da casa (`HOUSE_VOICE`, herdada do kit): gongo macio, ataque de
+ * feltro, banda de saguão. É a mesma do Gestor de propósito — as telas do
+ * operador têm de soar como a mesma casa.
+ *
+ * O que muda é a FIGURA, e a figura é a mensagem. O Gestor DESCE (fá → dó:
+ * "atenção, vem informação"). A cozinha COMEMORA: três notas correndo para
+ * cima e um acorde de dó aberto em três oitavas. Assim dá para saber de que
+ * tela veio o som sem olhar para nenhuma das duas.
+ *
+ * Os pesos por nota (`g`) não são enfeite: as três primeiras entram em
+ * crescendo (0,55 → 0,7 → 0,85) e o acorde chega inteiro. É o crescendo que
+ * faz isto ser fanfarra em vez de escala.
+ *
+ * ⚠️ Dura ~2,3 s, e ticket novo chega em RAJADA numa manhã cheia. Se a cozinha
+ * achar longo, o ajuste é encurtar as durações do acorde final — não trocar a
+ * figura.
+ */
+export const KDS_ALERT = {
+  notes: [
+    { f: 783.99, t: 0, d: 0.4, g: 0.55 },
+    { f: 1046.5, t: 0.11, d: 0.4, g: 0.7 },
+    { f: 1318.51, t: 0.22, d: 0.4, g: 0.85 },
+    { f: 1046.5, t: 0.34, d: 2.0 },
+    { f: 1567.98, t: 0.34, d: 1.9, g: 0.6 },
+    { f: 2093, t: 0.34, d: 1.7, g: 0.35 },
+  ],
+};
+
 export function useKdsBoard(stationRef: string) {
   const config = useRuntimeConfig();
   const path = `/api/v1/backstage/kds/${encodeURIComponent(stationRef)}/`;
@@ -26,7 +61,10 @@ export function useKdsBoard(stationRef: string) {
 
   // Realtime + polling + audio cue (client only). O bloco de áudio (beep 880Hz,
   // mute persistido, desbloqueio de autoplay) é o do kit — chave por estação.
-  const { soundOn, soundBlocked, toggleSound, beep } = useAlertSound(`kds_sound_${stationRef}`);
+  const { soundOn, soundBlocked, toggleSound, beep } = useAlertSound(
+    `kds_sound_${stationRef}`,
+    KDS_ALERT,
+  );
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: EventSource | null = null;
   let lastTotal = -1;
