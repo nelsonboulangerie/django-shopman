@@ -182,6 +182,13 @@ unidade fina:
 | MANTEIGA-FR | `kg` | 2,400 kg | R$ 0,012 | R$ 0,50/kg |
 | … demais 15 em `kg` | `kg` | ≤ 4,800 kg | ≤ R$ 0,024 | R$ 0,50/kg |
 
+> ⚠️ **Calibração posterior (03/09/2026):** a linha da `AGUA-FILTRADA` (e as de `LEITE`,
+> `AZEITE` e `CREME-DE-LEITE`) supunha base `l`. A casa **pesa** esses líquidos, então
+> pela própria R1 a base deles é `kg`, e o cadastro foi corrigido — ver
+> [WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md). A aritmética de
+> precisão desta tabela não muda com isso; o que muda é em qual eixo o litro aparece,
+> que passa a ser o da COMPRA, pela conversão declarada da R2.
+
 **Os 11% da auditoria se confirmam:** canela a R$ 45,00/kg = 4,5 centavos/g → arredonda
 para 4 → **11,1%**. Na faixa de atacado (R$ 30 a R$ 90/kg), o erro **máximo** vai de 17%
 a 5,5%. Para cair a 1% com base em `g`, o quilo teria de custar **R$ 500,00**.

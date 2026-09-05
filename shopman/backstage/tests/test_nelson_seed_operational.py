@@ -110,15 +110,17 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     for item in RecipeItem.objects.filter(input_sku__in=weighed):
         assert item.unit == weighed[item.input_sku], f"{item.input_sku}: {item.unit}"
         item.full_clean()  # a unidade da ficha bate com a do catálogo
-    # Líquido conta em litro, e a ficha fala a mesma língua — a ficha grafa "L",
-    # a base grafa "l", e a densidade no perfil é a ponte até a grama da nutrição
-    # (ADR-024: a ponte volume→massa é declarada, nunca deduzida).
+    # Líquido também conta em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a casa PESA a
+    # água, o leite e o azeite, e é isso que a R1 pergunta. A densidade continua
+    # no perfil, mas agora como ponte do RECEBIMENTO (a nota fala em litro), não
+    # da produção diária. O invariante da troca vive em
+    # test_seed_liquid_base_unit.py.
     for sku in ("AGUA-FILTRADA", "LEITE", "AZEITE"):
         material = Material.objects.get(sku=sku)
-        assert material.unit == "l", sku
+        assert material.unit == "kg", sku
         assert Decimal(str(material.metadata["density_g_per_ml"])) > 0, sku
         for item in RecipeItem.objects.filter(input_sku=sku):
-            assert item.unit == "L", f"{sku}: {item.unit}"
+            assert item.unit == "kg", f"{sku}: {item.unit}"
             item.full_clean()
     # A equivalência aproximada do que se pesa e se conta: é ela que faz a lista
     # de separação dizer "≈ 6 ovos" ao lado de "0,3 kg" (ADR-024 §4).
