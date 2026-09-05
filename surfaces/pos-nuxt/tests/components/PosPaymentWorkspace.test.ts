@@ -1315,7 +1315,7 @@ describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () =>
 
   it("o card do CPF anuncia a tecla F", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, { props: props({ checkoutContract: comFiscal }) });
-    const secao = w.find('section[aria-label="Nota fiscal"]');
-    expect(secao.findAll("kbd").map((k) => k.text())).toEqual(["F", "I", "M"]);
+    const fiscalSection = w.find('section[aria-label="Nota fiscal"]');
+    expect(fiscalSection.findAll("kbd").map((k) => k.text())).toEqual(["F", "I", "M"]);
   });
 });
