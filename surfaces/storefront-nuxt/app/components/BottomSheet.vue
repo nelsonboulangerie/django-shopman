@@ -49,6 +49,28 @@ const fadeFromClass = computed(() => props.surface === 'card' ? 'from-card' : 'f
 // Observer (sem cálculo de scroll; reage a resize/conteúdo dinâmico de graça).
 const scrollEl = ref<HTMLElement>()
 const sentinel = ref<HTMLElement>()
+
+// Teclado virtual: o painel é `fixed`, e o teclado do iOS/Android não encolhe o
+// layout viewport ao qual ele se ancora — sem compensar, o sheet fica POR BAIXO
+// do teclado e o campo vira digitação às cegas. `panelStyle` sobe o painel para
+// o topo do teclado e limita a altura ao que sobrou de visual viewport; sem
+// teclado, ele só soma a barra de gestos (iPhone X) à folga da base.
+const { overlap: keyboardInset, panelStyle } = useVirtualKeyboard(() => props.open)
+
+// O campo focado precisa continuar à vista quando a altura útil encolhe. É o
+// corpo rolável que se ajusta (`block: 'nearest'`), nunca a página inteira.
+function revealFocused () {
+  if (!import.meta.client) return
+  const active = document.activeElement as HTMLElement | null
+  if (!active || !scrollEl.value?.contains(active)) return
+  active.scrollIntoView({ block: 'nearest' })
+}
+function onFocusIn () {
+  if (import.meta.client) requestAnimationFrame(revealFocused)
+}
+watch(keyboardInset, () => {
+  if (import.meta.client) requestAnimationFrame(revealFocused)
+})
 const showBottomFade = ref(false)
 let io: IntersectionObserver | null = null
 function teardownObserver() {
@@ -78,6 +100,8 @@ onBeforeUnmount(teardownObserver)
       variant="floating"
       :class="['mx-auto flex max-h-[85dvh] w-[calc(100%-2rem)] flex-col gap-0 overflow-hidden p-0', maxWidthClass, surfaceClass, contentClass]"
       v-bind="$attrs"
+      :style="panelStyle"
+      @focusin="onFocusIn"
     >
       <!-- X sempre visível e bem posicionado (a primitiva renderia um botão vazio). -->
       <template #close>
