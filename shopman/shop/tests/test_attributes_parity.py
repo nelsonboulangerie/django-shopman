@@ -1,15 +1,14 @@
-"""O registro lê e escreve exatamente o que o rótulo já lia. Nada mudou de lugar.
+"""O rótulo sobreviveu à mudança de casa — que é o gate de aceite do rename.
 
-É o gate de aceite da F1 ("PDP, rótulo, catálogo e ficha nutricional idênticos
-antes e depois"), na forma que a decisão do dono deixou: como nenhum dado se
-moveu, a pergunta não é "o valor sobreviveu à migração?" e sim **"as duas
-leituras concordam?"**.
+Os três valores saíram das chaves soltas do ``metadata`` e vieram para o
+registro. A pergunta que este arquivo responde é a única que importa depois de
+uma migração de dados: **a PDP mostra hoje o mesmo que mostrava ontem?**
 
-E isso é um guarda de verdade, não uma formalidade. Se alguém trocar o
-``storage`` de ``alergenos`` para ``attributes`` sem fazer o
-[WP de rename](../../../docs/plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md) junto,
-o editor de rótulo do Offerman passa a ler vazio — e é **aqui** que isso vira um
-teste vermelho, em vez de um alérgeno que some da página do produto.
+Por isso as fixtures usam o formato REAL do catálogo, não um simplificado. O
+``serves`` da casa é texto de apresentação (``"2 pessoas"``, ``"pote 170 g"``) —
+e foi exatamente isso que a F1 errou ao defini-lo como número: a leitura
+devolvia ``None`` para todo produto, calada, porque a fixture do teste usava um
+inteiro que não existe no catálogo.
 """
 
 from __future__ import annotations
@@ -21,11 +20,12 @@ from shopman.shop.services import attributes
 
 pytestmark = pytest.mark.django_db
 
-#: O que o formulário de rótulo do Offerman grava hoje, tal e qual.
-LABEL_METADATA = {
+#: O que o formulário de rótulo gravava ANTES do rename — o formato real do
+#: catálogo, incluindo o ``serves`` como texto de apresentação.
+LEGACY_METADATA = {
     "allergens": ["glúten", "leite", "ovos"],
     "dietary_info": ["vegetariano"],
-    "serves": 2,
+    "serves": "2 pessoas",
 }
 
 
@@ -38,10 +38,15 @@ def _clear_registry_cache():
 
 @pytest.fixture
 def product():
-    return Product.objects.create(
-        sku="CROISSANT", name="Croissant", base_price_q=1200,
-        unit_weight_g=80, metadata=dict(LABEL_METADATA),
+    """Um produto com a rotulagem já no lugar novo, como a migração a deixa."""
+    p = Product.objects.create(
+        sku="CROISSANT", name="Croissant", base_price_q=1200, unit_weight_g=80,
     )
+    attributes.set(p, "alergenos", ["glúten", "leite", "ovos"], source="recipe", save=False)
+    attributes.set(p, "dieta", ["vegetariano"], source="recipe", save=False)
+    attributes.set(p, "porcoes", "2 pessoas", save=False)
+    p.save(update_fields=["metadata"])
+    return p
 
 
 def _pdp_allergen(product):
@@ -53,10 +58,10 @@ def _pdp_allergen(product):
 # --- as duas leituras concordam --------------------------------------------
 
 
-def test_the_registry_reads_what_the_label_form_wrote(product):
+def test_the_registry_reads_the_label(product):
     assert attributes.get(product, "alergenos") == ["glúten", "leite", "ovos"]
     assert attributes.get(product, "dieta") == ["vegetariano"]
-    assert attributes.get(product, "porcoes") == 2
+    assert attributes.get(product, "porcoes") == "2 pessoas"
     assert attributes.get(product, "peso_unidade_g") == 80
 
 
@@ -65,65 +70,87 @@ def test_the_pdp_reads_the_same_values_as_the_registry(product):
 
     assert list(pdp.allergens) == attributes.get(product, "alergenos")
     assert list(pdp.dietary_info) == attributes.get(product, "dieta")
-    assert pdp.serves == str(attributes.get(product, "porcoes"))
+    assert pdp.serves == attributes.get(product, "porcoes")
 
 
 # --- escrever pelo registro não muda o que a tela mostra --------------------
 
 
-def test_writing_through_the_registry_leaves_the_label_untouched(product):
-    """A prova de que nada mudou de lugar: a PDP não sabe que o registro existe."""
-    before = _pdp_allergen(product)
+def test_the_pdp_shows_the_same_after_the_move(product):
+    """O gate do rename: a PDP mostra hoje o que mostrava com a chave solta.
 
-    attributes.set(product, "alergenos", ["glúten", "leite", "ovos"], source="recipe")
-    product.refresh_from_db()
+    Monta o MESMO produto do jeito antigo e compara as duas projections. Se a
+    migração perder um alérgeno ou trocar o texto da porção, é aqui que aparece.
+    """
+    antigo = Product(metadata=dict(LEGACY_METADATA))
 
-    assert _pdp_allergen(product) == before
+    from shopman.storefront.presentation.product_detail import AllergenInfoProjection
+
+    esperado = AllergenInfoProjection(
+        allergens=tuple(LEGACY_METADATA["allergens"]),
+        dietary_info=tuple(LEGACY_METADATA["dietary_info"]),
+        serves=LEGACY_METADATA["serves"],
+    )
+    assert _pdp_allergen(product) == esperado
+    assert antigo.metadata["serves"] == esperado.serves
 
 
 def test_provenance_does_not_leak_into_the_label(product):
     """A proveniência é registro interno: a PDP nunca a vê."""
+    before = _pdp_allergen(product)
     attributes.set(product, "sabor", "doce", source="ai")
     product.refresh_from_db()
 
-    assert _pdp_allergen(product) == _pdp_allergen(
-        Product(metadata=dict(LABEL_METADATA)),
-    )
-    assert "attributes" in product.metadata  # a proveniência está lá, só não vaza
+    assert _pdp_allergen(product) == before
+    assert "attributes" in product.metadata  # está lá, só não vaza
 
 
-def test_the_label_keys_survive_a_write_to_a_neighbouring_attribute(product):
+def test_the_label_survives_a_write_to_a_neighbouring_attribute(product):
     attributes.set(product, "natureza", "comida", source="derived")
     product.refresh_from_db()
 
-    for key, value in LABEL_METADATA.items():
-        assert product.metadata[key] == value
+    assert attributes.get(product, "alergenos") == ["glúten", "leite", "ovos"]
+    assert attributes.get(product, "porcoes") == "2 pessoas"
 
 
 # --- a ficha nutricional derivada da receita -------------------------------
 
 
-def test_the_recipe_sentinel_is_untouched_by_the_registry(product):
-    """``dietary_auto_filled`` continua sendo a palavra final do
-    ``dietary_from_recipe``: o service de atributos não o escreve, não o lê e
-    não o apaga. Duas fontes para a mesma verdade é como ela diverge."""
-    product.metadata["dietary_auto_filled"] = True
-    product.save(update_fields=["metadata"])
+def test_the_sentinel_is_gone_and_provenance_took_its_place(product):
+    """``dietary_auto_filled`` morreu: quem diz "veio da ficha" é o `source`.
 
-    attributes.set(product, "alergenos", ["glúten"], source="recipe")
+    Duas fontes para a mesma verdade é como ela diverge — era o motivo de a F1
+    não as ter unificado, e é o que este WP finalmente resolve.
+    """
+    assert "dietary_auto_filled" not in product.metadata
+    assert attributes.source(product, "alergenos") == "recipe"
+
+    attributes.set(product, "alergenos", ["glúten"], source="manual")
     product.refresh_from_db()
-
-    assert product.metadata["dietary_auto_filled"] is True
+    assert attributes.source(product, "alergenos") == "manual"
 
 
 # --- o guarda contra o rename acidental ------------------------------------
 
 
-def test_the_legacy_attributes_still_point_at_the_legacy_keys():
-    """Trocar este ``storage`` sem fazer o WP de rename quebra o editor de
-    rótulo do Offerman, que é quem escreve estas chaves. Se este teste ficar
-    vermelho, o WP inteiro tem de vir junto — não é uma linha de configuração."""
-    assert attributes.require("alergenos").storage == "metadata:allergens"
-    assert attributes.require("dieta").storage == "metadata:dietary_info"
-    assert attributes.require("porcoes").storage == "metadata:serves"
+def test_the_three_came_home_and_the_weight_stayed_a_column():
+    assert attributes.require("alergenos").storage == "attributes"
+    assert attributes.require("dieta").storage == "attributes"
+    assert attributes.require("porcoes").storage == "attributes"
+    # Fato físico segue coluna, com integridade no banco. Nunca foi para o JSON.
     assert attributes.require("peso_unidade_g").storage == "column:unit_weight_g"
+
+
+def test_the_option_list_is_closed_now_that_the_registry_owns_the_writing(product):
+    """Alérgeno digitado errado é RECUSADO — o que a F1 não podia prometer.
+
+    Enquanto o formulário do Offerman escrevia direto no metadata, declarar
+    opções fechadas seria o registro prometer uma restrição que não tinha como
+    aplicar. Agora ele é quem escreve.
+    """
+    from shopman.shop.services.attributes import AttributeError_
+
+    with pytest.raises(AttributeError_, match="glutén"):
+        attributes.set(product, "alergenos", ["glutén"])   # acento no lugar errado
+
+    attributes.set(product, "alergenos", ["glúten"])       # o certo passa

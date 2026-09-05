@@ -15,6 +15,7 @@ from shopman.offerman.models import ListingItem, Product
 
 from shopman.shop.models import Promotion
 from shopman.shop.projections.types import Availability
+from shopman.shop.services import attributes
 from shopman.storefront.presentation import build_product_detail
 from shopman.storefront.presentation.product_detail import (
     AllergenInfoProjection,
@@ -322,20 +323,17 @@ class TestCartAnnotation:
 
 
 class TestAllergenAndConservation:
-    def test_allergen_panel_populated_from_metadata(self, listing, product):
-        product.metadata = {
-            "allergens": ["glúten", "leite"],
-            "dietary_info": ["vegetariano"],
-            "serves": "2",
-        }
-        product.save()
+    def test_allergen_panel_populated_from_the_registry(self, listing, product):
+        attributes.set(product, "alergenos", ["glúten", "leite"], save=False)
+        attributes.set(product, "dieta", ["vegetariano"], save=False)
+        attributes.set(product, "porcoes", "2 pessoas")
         _publish_on_listing(listing, product)
         proj = build_product_detail(sku=product.sku, channel_ref="web")
         assert proj is not None
         assert isinstance(proj.allergen, AllergenInfoProjection)
         assert proj.allergen.allergens == ("glúten", "leite")
         assert proj.allergen.dietary_info == ("vegetariano",)
-        assert proj.allergen.serves == "2"
+        assert proj.allergen.serves == "2 pessoas"
         assert proj.allergen.has_any is True
 
     def test_gallery_populated_from_metadata(self, listing, product):
@@ -361,12 +359,11 @@ class TestAllergenAndConservation:
         assert proj is not None
         assert proj.gallery == ()
 
-    def test_purchase_measurements_from_metadata(self, listing, product):
+    def test_purchase_measurements_from_the_registry(self, listing, product):
         product.unit_weight_g = 400
-        product.metadata = {
-            "serves": "2 a 4 pessoas",
-            "approx_dimensions": "aprox. 24 x 12 x 10 cm",
-        }
+        # `approx_dimensions` segue chave do catálogo; a porção é atributo.
+        product.metadata = {"approx_dimensions": "aprox. 24 x 12 x 10 cm"}
+        attributes.set(product, "porcoes", "2 a 4 pessoas", save=False)
         product.save()
         _publish_on_listing(listing, product)
 

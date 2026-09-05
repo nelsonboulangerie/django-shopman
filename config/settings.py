@@ -922,6 +922,11 @@ OFFERMAN = {
     "PRICING_BACKEND": "shopman.shop.adapters.pricing.PromotionPricingBackend",
     # Canonical catalog projection registry (env-gated above).
     "PROJECTION_BACKENDS": _CATALOG_PROJECTION_BACKENDS,
+    # Alérgenos, dieta e porções são vocabulário do TENANT (shop.AttributeDefinition),
+    # não do catálogo. O formulário de rótulo do Offerman renderiza os campos e
+    # pergunta a este provedor como ler e gravar — é o que mantém o Core sem
+    # importar o orquestrador. Sem provedor, os campos somem.
+    "LABEL_ATTRIBUTES_PROVIDER": "shopman.shop.services.attributes.label_attributes_provider",
 }
 
 # ── Assist de IA (catálogo e anúncios) ───────────────────────────────

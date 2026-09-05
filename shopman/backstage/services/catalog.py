@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from shopman.backstage.services.exceptions import CatalogError
+from shopman.shop.services import attributes
 
 
 def _reconcile_if_projected(surface_ref: str) -> None:
@@ -345,8 +346,14 @@ _DETAIL_BOOL_FIELDS = ("is_published", "is_sellable", "is_batch_produced")
 
 # Rotulagem de compra remota: o cliente não pega o produto na mão, então alérgenos,
 # restrições, porção e medidas precisam estar escritos. Vivem em ``metadata``.
-_DETAIL_META_LIST_FIELDS = ("allergens", "dietary_info")
-_DETAIL_META_TEXT_FIELDS = ("serves", "approx_dimensions")
+# ⚠️ ``allergens``, ``dietary_info`` e ``serves`` NÃO moram mais no metadata
+# solto: são atributos do registro (``alergenos``, ``dieta``, ``porcoes``). Os
+# nomes de CAMPO da API seguem em inglês — é a convenção da casa para contrato
+# de projection —, mas a leitura e a escrita passam pelo service.
+_DETAIL_ATTR_LIST_FIELDS = {"allergens": "alergenos", "dietary_info": "dieta"}
+_DETAIL_ATTR_TEXT_FIELDS = {"serves": "porcoes"}
+_DETAIL_META_LIST_FIELDS = ()
+_DETAIL_META_TEXT_FIELDS = ("approx_dimensions",)
 
 
 def _get_product(sku: str):
@@ -416,10 +423,10 @@ def _detail_payload(product) -> dict:
         "is_sellable": product.is_sellable,
         "ingredients_text": product.ingredients_text,
         "image_url": product.image_url,
-        # rotulagem de compra remota (metadata)
-        "allergens": list(metadata.get("allergens") or []),
-        "dietary_info": list(metadata.get("dietary_info") or []),
-        "serves": str(metadata.get("serves") or ""),
+        # rotulagem de compra remota (registro de atributos)
+        "allergens": list(attributes.get(product, "alergenos") or []),
+        "dietary_info": list(attributes.get(product, "dieta") or []),
+        "serves": str(attributes.get(product, "porcoes") or ""),
         "approx_dimensions": str(metadata.get("approx_dimensions") or ""),
         "allows_next_day_sale": bool(metadata.get("allows_next_day_sale", False)),
         # Promessa da casa sobre o produto ("Preparado na hora"), não política de
@@ -433,9 +440,10 @@ def _detail_payload(product) -> dict:
         "fiscal": _fiscal_payload(product),
         "primary_collection": primary.collection.ref if primary else "",
         "primary_collection_name": primary.collection.name if primary else "",
-        # somente-leitura: o painel avisa que o dado veio da receita e que editar
-        # à mão congela a derivação (ver ``dietary_from_recipe``).
-        "dietary_auto_filled": bool(metadata.get("dietary_auto_filled", True)),
+        # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
+        # à mão congela a derivação (ver ``dietary_from_recipe``). Vem da
+        # proveniência do valor, não mais de um sentinela à parte.
+        "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
     }
@@ -527,7 +535,6 @@ def _apply_nutrition(product, raw) -> None:
 def _apply_labelling(product, data: dict) -> None:
     """Alérgenos, restrições, porção e medidas — tudo em ``metadata``."""
     metadata = dict(product.metadata or {})
-    original = dict(product.metadata or {})
 
     for field in _DETAIL_META_LIST_FIELDS:
         if field in data:
@@ -562,17 +569,34 @@ def _apply_labelling(product, data: dict) -> None:
         else:
             metadata.pop("ready_from", None)
 
-    # Mesmo sentinel do form do Admin: só congela a derivação quando a rotulagem
-    # dietética REALMENTE mudou, para um save qualquer não travar a receita.
-    touched_dietary = "allergens" in data or "dietary_info" in data
-    if touched_dietary:
-        changed = (metadata.get("allergens") or []) != (original.get("allergens") or []) or (
-            metadata.get("dietary_info") or []
-        ) != (original.get("dietary_info") or [])
-        if changed and (metadata.get("allergens") or metadata.get("dietary_info")):
-            metadata["dietary_auto_filled"] = False
-
     product.metadata = metadata
+
+    # A rotulagem dietética vai para o registro. Só marca como escrita pelo
+    # gestor quando ela REALMENTE mudou: um save qualquer não pode travar a
+    # derivação pela ficha técnica.
+    for field, ref in _DETAIL_ATTR_LIST_FIELDS.items():
+        if field not in data:
+            continue
+        novo = [str(v).strip() for v in (data.get(field) or []) if str(v).strip()]
+        if novo == (attributes.get(product, ref) or []):
+            continue
+        attributes.set(product, ref, novo or None, source="manual", save=False)
+
+    for field, ref in _DETAIL_ATTR_TEXT_FIELDS.items():
+        if field not in data:
+            continue
+        novo = str(data.get(field) or "").strip()
+        if novo != (attributes.get(product, ref) or ""):
+            attributes.set(product, ref, novo or None, source="manual", save=False)
+
+
+def _from_recipe(product) -> bool:
+    """Se a rotulagem dietética veio da ficha técnica (e é recalculável)."""
+    return any(
+        attributes.get(product, ref) is not None
+        and attributes.source(product, ref) == "recipe"
+        for ref in ("alergenos", "dieta")
+    )
 
 
 def _apply_social(product, raw) -> None:

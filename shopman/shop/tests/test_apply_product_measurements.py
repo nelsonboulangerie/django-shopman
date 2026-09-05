@@ -21,24 +21,27 @@ from shopman.craftsman.models import Recipe, RecipeItem
 from shopman.offerman.models import Product
 
 from shopman.shop.management.commands.apply_product_measurements import MEASUREMENTS
+from shopman.shop.services import attributes
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
 pytestmark = pytest.mark.django_db
 
 
-def _campagne(unit_weight_g: int = 500, **metadata) -> Product:
+def _campagne(unit_weight_g: int = 500, **rotulo) -> Product:
     """CGO como ele estava ANTES da correção: 500 g e a medida do pão grande."""
-    return Product.objects.create(
+    produto = Product.objects.create(
         sku="CGO",
         name="Pain de Campagne",
         base_price_q=2200,
         unit_weight_g=unit_weight_g,
-        metadata={
-            "serves": "3 a 5 pessoas",
-            "approx_dimensions": "aprox. 18 cm de diâmetro",
-            **metadata,
-        },
+        metadata={"approx_dimensions": "aprox. 18 cm de diâmetro"},
     )
+    attributes.set(produto, "porcoes", "3 a 5 pessoas", save=False)
+    for campo, ref in (("allergens", "alergenos"), ("dietary_info", "dieta")):
+        if campo in rotulo:
+            attributes.set(produto, ref, rotulo[campo], save=False)
+    produto.save(update_fields=["metadata"])
+    return produto
 
 
 def _ficha_do_campagne() -> Recipe:
@@ -83,7 +86,7 @@ def test_com_apply_grava_peso_e_medida():
 
     produto.refresh_from_db()
     assert produto.unit_weight_g == 300
-    assert produto.metadata["serves"] == "2 a 3 pessoas"
+    assert attributes.get(produto, "porcoes") == "2 a 3 pessoas"
     assert produto.metadata["approx_dimensions"] == "aprox. 15 cm de diâmetro x 10 cm de altura"
 
 
@@ -94,8 +97,8 @@ def test_nao_encosta_em_preco_nem_em_campo_de_metadata_alheio():
     produto.refresh_from_db()
     assert produto.base_price_q == 2200, "preço é do catálogo, não deste comando"
     assert produto.name == "Pain de Campagne"
-    assert produto.metadata["allergens"] == ["glúten"]
-    assert produto.metadata["dietary_info"] == ["100% vegetal"]
+    assert attributes.get(produto, "alergenos") == ["glúten"]
+    assert attributes.get(produto, "dieta") == ["100% vegetal"]
 
 
 def test_remonta_o_rotulo_porque_a_porcao_e_rotulada_pelo_peso():

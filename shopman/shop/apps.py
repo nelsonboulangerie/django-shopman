@@ -312,7 +312,7 @@ class ShopmanConfig(AppConfig):
         Two derivations share the BOM and the same idempotency contract,
         each refusing to overwrite its own manual override:
         - nutrition + ingredients (``nutrition_facts["auto_filled"]=False``);
-        - allergens + diet (``metadata["dietary_auto_filled"]=False``).
+        - alérgenos + dieta (proveniência ``source="manual"`` bloqueia).
         See ``docs/decisions/adr-008-pdp-nutrition.md``.
         """
         from django.db.models.signals import post_save
