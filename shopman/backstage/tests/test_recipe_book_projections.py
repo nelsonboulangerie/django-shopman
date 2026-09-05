@@ -456,3 +456,28 @@ def test_a_cream_with_a_flour_anchor_is_not_a_bakery_lens():
     assert lens.is_bakery is False
     assert lens.anchor_kind == "flour"
     assert lens.items[0].pct_display == "100%"
+
+
+def test_sem_partes_a_mistura_final_e_a_ficha_sao_a_propria_base():
+    """Três tabelas idênticas ensinam o padeiro a parar de ler: a tela pergunta antes de desenhar."""
+    lens = build_formula_lens(flour_formula(), "bread")
+    assert lens.final_mix_differs is False
+    assert lens.bom_differs is False
+    # O conteúdo continua servido: quem esconde o painel é a tela, com o motivo.
+    assert [item.sku for item in lens.bom] == [item.sku for item in lens.items]
+
+
+def test_com_parte_pronta_as_duas_passam_a_dizer_outra_coisa(published_levain):
+    lens = build_formula_lens(
+        flour_formula(parts=[{"sku": "LEVAIN", "entry_ref": "creme-levain", "kind": "preferment", "flour_pct": 20}]),
+        "bread",
+    )
+    assert lens.final_mix_differs is True
+    assert lens.bom_differs is True
+
+
+def test_massa_velha_muda_a_ficha_mas_nao_a_mistura_final():
+    """Massa velha é teto, não composição: ela não tira da base, mas entra na ficha como linha opcional."""
+    lens = build_formula_lens(flour_formula(parts=[{"kind": "old_dough", "cap_pct": 20}]), "bread")
+    assert lens.final_mix_differs is False
+    assert lens.bom_differs is True

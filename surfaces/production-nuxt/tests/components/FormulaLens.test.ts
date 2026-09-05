@@ -39,7 +39,9 @@ function lens(over: Partial<FormulaLensProjection> = {}): FormulaLensProjection 
       item({ sku: "", name: "castanha", role: "inclusion", role_label: "Inclusão", quantity_display: "50 g", quantity_g: "50", pct_display: "5%", is_anchor: false, matched: false }),
     ],
     final_mix: [],
+    final_mix_differs: false,
     bom: [],
+    bom_differs: false,
     parts: [],
     metrics: [
       { code: "hydration", label: "Hidratação", value_display: "70%", low_display: "68%", high_display: "80%", max_display: "", tone: "ok", note: "" },
@@ -98,13 +100,15 @@ describe("FormulaLens", () => {
     const served = lens({
       parts: [{ sku: "LEVAIN", entry_ref: "levain", name: "Levain", kind: "preferment", kind_label: "Pré-fermento", flour_pct_display: "20%", quantity_display: "400 g", cap_pct_display: "", has_formula: true }],
       final_mix: [item({ quantity_display: "800 g" })],
+      final_mix_differs: true,
       bom: [item({ sku: "LEVAIN", name: "Levain", quantity_display: "400 g" })],
+      bom_differs: true,
     });
     const full = mountLens({ lens: served });
     expect(full.text()).toContain("Partes");
     expect(full.text()).toContain("20% da farinha");
     expect(full.text()).toContain("Mistura final");
-    expect(full.text()).toContain("Ficha de execução (BOM)");
+    expect(full.text()).toContain("Ficha técnica (BOM)");
 
     const compact = mountLens({ lens: served, compact: true });
     expect(compact.text()).toContain("Partes");
@@ -113,6 +117,19 @@ describe("FormulaLens", () => {
 
     const bare = mountLens({ lens: lens() });
     expect(bare.text()).not.toContain("Partes");
+  });
+
+  it("hides the final mix and the sheet when they only repeat the base formula", () => {
+    // Sem partes as três tabelas são a mesma coisa; repeti-las ensina a não ler.
+    const repeated = lens({
+      final_mix: [item({ quantity_display: "1000 g" })],
+      final_mix_differs: false,
+      bom: [item({ quantity_display: "1000 g" })],
+      bom_differs: false,
+    });
+    const w = mountLens({ lens: repeated });
+    expect(w.text()).not.toContain("Mistura final");
+    expect(w.text()).not.toContain("BOM");
   });
 
   it("never renders a blank screen: empty, pending and error states are explicit", () => {

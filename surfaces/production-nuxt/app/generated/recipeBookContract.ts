@@ -97,7 +97,9 @@ export interface FormulaLensProjection {
   total_mass_display: string;
   items: FormulaItemProjection[];
   final_mix: FormulaItemProjection[];
+  final_mix_differs: boolean;
   bom: FormulaItemProjection[];
+  bom_differs: boolean;
   parts: FormulaPartProjection[];
   metrics: FormulaMetricProjection[];
   warnings: FormulaWarningProjection[];
