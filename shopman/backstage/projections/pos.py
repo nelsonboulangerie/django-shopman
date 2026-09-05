@@ -1613,6 +1613,29 @@ def _checkout_contract(
             max_length=180,
         ),
         POSCheckoutFieldProjection(
+            # A ORDEM do operador, e a razão de ela existir: o e-mail e o CPF
+            # do comprovante são fatos DA VENDA (a nota pode ir para o contador,
+            # no CPF da empresa) e nunca viram cadastro sozinhos. Perguntar é o
+            # que torna gravar honesto — e o cadastro do lookup (`email`,
+            # `tax_id`) é a régua que diz à tela se há o que perguntar: falta,
+            # é igual (nada a dizer) ou diverge (aí a oferta é ATUALIZAR).
+            ref="save_receipt_contact",
+            payload_key="save_receipt_contact",
+            section_ref="receipt",
+            label="Salvar o e-mail no cadastro",
+            input_type="toggle",
+            help_text="Só é perguntado quando há e-mail no comprovante. Sem a ordem, o cadastro fica intacto.",
+        ),
+        POSCheckoutFieldProjection(
+            ref="save_receipt_tax_id",
+            payload_key="save_receipt_tax_id",
+            section_ref="receipt",
+            label="Salvar o CPF no cadastro",
+            input_type="toggle",
+            help_text="Só é perguntado quando há CPF na nota. Sem a ordem, o cadastro fica intacto.",
+            capability_ref="fiscal_document",
+        ),
+        POSCheckoutFieldProjection(
             ref="manual_discount",
             payload_key="manual_discount",
             section_ref="approval",
@@ -1661,7 +1684,13 @@ def _checkout_contract(
             ref="receipt",
             label="Fiscal e comprovante",
             description="Dados opcionais para fiscal e comprovante.",
-            field_refs=("fiscal_tax_id", "receipt_channels", "receipt_email"),
+            field_refs=(
+                "fiscal_tax_id",
+                "receipt_channels",
+                "receipt_email",
+                "save_receipt_contact",
+                "save_receipt_tax_id",
+            ),
         ),
         POSCheckoutSectionProjection(
             ref="approval",

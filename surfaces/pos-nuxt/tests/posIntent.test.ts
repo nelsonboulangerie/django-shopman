@@ -60,6 +60,8 @@ describe("POS sale intent", () => {
       changeForQ: 0,
       receiptChannels: ["email"],
       receiptEmail: "ana@example.com",
+      saveReceiptContact: false,
+      saveReceiptTaxId: false,
       manualDiscount: null,
       managerApproval: null,
       clientRequestId: "pos:test-1",
@@ -101,12 +103,43 @@ describe("POS sale intent", () => {
       receipt_channels: ["email"],
       receipt_email: "ana@example.com",
     });
+    // A ORDEM de guardar o contato no cadastro NÃO viaja por omissão: sem ela o
+    // servidor deixa o cadastro intacto, que é o padrão desta casa.
+    expect(payload).not.toHaveProperty("save_receipt_contact");
+    expect(payload).not.toHaveProperty("save_receipt_tax_id");
     // A IDENTIDADE da linha viaja com ela: sem `line_id` no payload o servidor
     // gerava um id novo a cada save e perdia o vínculo com o ticket já disparado.
     expect(payload.items).toEqual([
       { line_id: "L-abc12345", sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
     ]);
     expect(payload.items[0]).not.toHaveProperty("price_q");
+  });
+
+  it("a ORDEM de guardar o contato do comprovante viaja quando o operador marca", () => {
+    const base = {
+      tabRef: "", tabSessionKey: "", customerName: "", customerRef: "", customerPhone: "",
+      customerTaxId: "", invoiceTaxId: "52998224725", customerEmail: "", customerMemoryAction: "",
+      fulfillmentType: "pickup" as const, deliveryAddress: "",
+      deliveryAddressStructured: null as never, deliveryComplement: "", deliveryInstructions: "",
+      deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
+      paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
+      tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
+      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      clientRequestId: "pos:test-2",
+      items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
+    };
+
+    const marcado = buildPosSaleIntent({ ...base, saveReceiptContact: true, saveReceiptTaxId: true });
+    expect(marcado.save_receipt_contact).toBe(true);
+    expect(marcado.save_receipt_tax_id).toBe(true);
+
+    // Marcada sem campo preenchido é ruído: não viaja.
+    const semCampos = buildPosSaleIntent({
+      ...base, receiptEmail: "", invoiceTaxId: "",
+      saveReceiptContact: true, saveReceiptTaxId: true,
+    });
+    expect(semCampos).not.toHaveProperty("save_receipt_contact");
+    expect(semCampos).not.toHaveProperty("save_receipt_tax_id");
   });
 
   it("uses projection actions instead of hardcoding mutation paths in state builders", () => {

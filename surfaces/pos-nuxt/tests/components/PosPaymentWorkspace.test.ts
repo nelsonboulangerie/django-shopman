@@ -79,6 +79,8 @@ function props(overrides: Record<string, unknown> = {}) {
     orderNotes: "",
     receiptChannels: [],
     receiptEmail: "",
+    saveReceiptContact: null,
+    saveReceiptTaxId: null,
     loading: false,
     lookupBusy: false,
     ...overrides,
@@ -1317,5 +1319,88 @@ describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () =>
     const w = await mountSuspended(PosPaymentWorkspace, { props: props({ checkoutContract: comFiscal }) });
     const fiscalSection = w.find('section[aria-label="Nota fiscal"]');
     expect(fiscalSection.findAll("kbd").map((k) => k.text())).toEqual(["F", "I", "M"]);
+  });
+});
+
+// O QUE A VENDA VAI FAZER COM O CADASTRO, dito no RESUMO — e não só junto do
+// campo. Quem fecha pelo teclado nunca vê o popover, e ninguém pode descobrir
+// depois que um cadastro mudou.
+describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () => {
+  const comFiscal = { capabilities: { supports_fiscal_document: true }, receipt_channels: [] };
+  const linhas = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
+    w.findAll('[aria-label="Cadastro do cliente"] li').map((li) => li.text());
+  afterEach(() => { document.body.innerHTML = ""; });
+
+  it("sem cliente identificado, a venda anônima já anuncia o cadastro novo", async () => {
+    // ⚠️ "Já marcado" é decisão do dono, contra a recomendação de nascer
+    // desmarcado. O que segura a transparência é esta linha (e o interruptor
+    // à vista) — não reverter o padrão.
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        receiptChannels: ["email"],
+        receiptEmail: "novo@example.org",
+      }),
+    });
+
+    expect(linhas(w)).toEqual(["Um cadastro novo será criado com este e-mail."]);
+  });
+
+  it("desmarcar cala a linha", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        receiptChannels: ["email"],
+        receiptEmail: "novo@example.org",
+        saveReceiptContact: false,
+      }),
+    });
+
+    expect(linhas(w)).toEqual([]);
+  });
+
+  it("e-mail DIFERENTE do cadastro não promete nada — o cadastro fica intacto", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        customerLookup: { ref: "cust-1", name: "Ana Prado", phone: "", email: "ana@example.org", tax_id: "" },
+        receiptChannels: ["email"],
+        receiptEmail: "contador@example.org",
+      }),
+    });
+
+    expect(linhas(w)).toEqual([]);
+  });
+
+  it("mandando atualizar, a linha diz o que vai acontecer com o cadastro de quem", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        customerLookup: { ref: "cust-1", name: "Ana Prado", phone: "", email: "ana@example.org", tax_id: "" },
+        receiptChannels: ["email"],
+        receiptEmail: "contador@example.org",
+        saveReceiptContact: true,
+      }),
+    });
+
+    expect(linhas(w)).toEqual([
+      "O e-mail do cadastro de Ana será atualizado para este.",
+    ]);
+  });
+
+  it("o CPF da nota tem a linha dele, com o mesmo interruptor à vista", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        customerLookup: { ref: "cust-1", name: "Ana Prado", phone: "", email: "", tax_id: "" },
+        wantsCpfOnInvoice: true,
+        invoiceTaxId: "52998224725",
+        saveReceiptTaxId: true,
+      }),
+    });
+
+    expect(linhas(w)).toEqual(["O CPF será salvo no cadastro de Ana."]);
+    const fiscal = w.find('section[aria-label="Nota fiscal"]');
+    expect(fiscal.text()).toContain("Salvar este CPF no cadastro de Ana?");
   });
 });
