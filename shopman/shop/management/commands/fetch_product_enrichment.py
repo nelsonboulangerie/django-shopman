@@ -13,7 +13,7 @@ Uso:
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
-from shopman.offerman.contrib.social.schema import ProductSocialAttributes
+from shopman.offerman import get_social_attributes
 from shopman.offerman.models import Product
 
 from shopman.shop.services.product_enrichment import build_suggestion
@@ -41,7 +41,7 @@ class Command(BaseCommand):
 
         alvos = []
         for p in qs.order_by("sku"):
-            gtin = ProductSocialAttributes.from_metadata(p.metadata).gtin
+            gtin = get_social_attributes(p).gtin
             if not gtin:
                 continue
             # Aceito não se mexe: reconsultar sobrescreveria a decisão de quem
@@ -101,7 +101,7 @@ class Command(BaseCommand):
         sem = [
             p.sku
             for p in qs.order_by("sku")
-            if not ProductSocialAttributes.from_metadata(p.metadata).gtin
+            if not get_social_attributes(p).gtin
         ]
         if sem:
             self.stdout.write(
