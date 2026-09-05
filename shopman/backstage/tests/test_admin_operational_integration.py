@@ -191,19 +191,25 @@ class AdminNavigationTests(TestCase):
 
         self.assertEqual(config_items[0], "Todos os ajustes")
         self.assertEqual(config_group["items"][0]["link"], hub_url)
-        self.assertEqual(
-            config_items[1:],
-            [
-                "A loja", "Como vendemos", "Como entregamos", "O que dizemos",
-                "Produção e estoque", "Equipamentos", "Quem entra",
-            ],
-        )
+        escopos = [
+            "A loja", "Como vendemos", "Como entregamos", "O que dizemos",
+            "Produção e estoque", "Equipamentos", "Quem entra",
+        ]
+        self.assertEqual(config_items[1 : 1 + len(escopos)], escopos)
+
         # Cada escopo é uma TELA própria, não âncora: âncora fazia os oito subitens
         # compartilharem caminho, o Unfold acendia todos e clicar não parecia navegar.
-        for item in config_group["items"][1:]:
+        for item in config_group["items"][1 : 1 + len(escopos)]:
             self.assertNotIn("#", item["link"], item["link"])
             self.assertTrue(item["link"].startswith(hub_url), item["link"])
-            self.assertNotEqual(item["link"], hub_url)
+
+        # "Diagnóstico" fecha o grupo e é o ÚNICO item fora de /admin/settings/.
+        # Os escopos acima ajustam a loja; este pergunta se as integrações estão
+        # de pé — pergunta, não ajuste, e por isso não mora sob a configuração.
+        self.assertEqual(config_items[-1], "Diagnóstico")
+        self.assertEqual(
+            config_group["items"][-1]["link"], reverse("admin_console_diagnostics")
+        )
 
         # E nenhuma tela de ajuste sobrou solta no menu de operação.
         for gone in (
