@@ -281,6 +281,54 @@ export interface ReceiptWarning {
 }
 
 /**
+ * Em que pé está UM item da entrada — a cor da linha na lista, em uma palavra.
+ *
+ * Antes isto era um ternário no template somado a `preview.nextStep`,
+ * `line.checked` e `conversionDiverges`: três lugares decidindo a mesma coisa,
+ * e nenhum deles com nome. Um item tem UM estado, e a lista, o cabeçalho da
+ * gaveta e a pendência do rodapé têm de dizer o mesmo.
+ *
+ * - `blocked` — falta algo que segura a entrada inteira (insumo, embalagem,
+ *   quantidade, validade). É o que o operador tem de resolver.
+ * - `checked` — o operador conferiu e assinou. Fecha o item.
+ * - `attention` — nada trava, mas há o que olhar: a NF diverge da conversão, a
+ *   conversão é estimada, o valor ainda não foi conferido.
+ * - `ready` — está completo e ninguém marcou como conferido ainda.
+ */
+export type ReceiptLineStatus = "blocked" | "checked" | "attention" | "ready";
+
+/** Como o estado se apresenta: a palavra e o ícone. A cor mora na tela. */
+export interface ReceiptLineStatusBadge {
+  label: string;
+  icon: string;
+}
+
+/**
+ * UMA linha da lista de itens da entrada — a visão geral da nota.
+ *
+ * A tela do recebimento era uma pilha de formulários abertos: para saber o que
+ * faltava numa nota de dez itens o operador rolava dez cards. A lista responde
+ * "como está a entrada?" de uma olhada, e a edição de cada item acontece na
+ * gaveta. Tudo aqui já vem pronto para desenhar — a linha não calcula nada.
+ */
+export interface ReceiptLineRow {
+  id: string;
+  /** O nome do item, o MESMO que a gaveta e a pendência dizem. */
+  label: string;
+  /** O que já está apurado ("4 × saco 25 kg = 100 kg · R$ 730,00"), ou o que a nota diz. */
+  digest: string;
+  status: ReceiptLineStatus;
+  statusLabel: string;
+  statusIcon: string;
+  /** O gesto que falta neste item. Vazio quando não falta nada. */
+  nextStep: string;
+  /** A ocorrência anotada pelo operador (avaria, falta, ressalva). */
+  note: string;
+  /** O dinheiro da linha, já formatado. O da NOTA enquanto ninguém digitou o valor. */
+  total: string;
+}
+
+/**
  * Onde, dentro do card da linha, mora o gesto que falta.
  *
  * A ancora e o endereco do campo na TELA — o painel de pendencias e o botao de

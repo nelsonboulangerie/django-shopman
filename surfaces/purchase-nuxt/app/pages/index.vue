@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type {
+  ConversionKind,
   EnrichedMaterial,
   Material,
   MaterialTone,
@@ -8,7 +9,7 @@ import type {
   ReceiptBlocker,
   ReceiptDocumentAnchor,
   ReceiptFieldAnchor,
-  ReceiptLinePreview,
+  ReceiptLine,
   ReceiptMode,
   ReceiptWarningTone,
   SupplierMaterialCost,
@@ -22,10 +23,11 @@ import {
   formatShortDate,
   formatStockOnHand,
   receiptOutcomeSummary,
-  receiptSettledSummary,
   isApproximateCost,
   purchaseUnitLabel,
 } from "~/presentation/purchase";
+import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
+import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
 
 const {
   view,
@@ -82,6 +84,7 @@ const {
   receiptSupplier,
   invoiceStatus,
   receiptLinePreviews,
+  receiptRows,
   receiptWatchWarnings,
   receiptPendingLines,
   receiptDocumentBlockers,
@@ -394,26 +397,78 @@ async function readInvoiceImage(event: Event) {
   }
 }
 
-// Linha conferida recolhe: numa nota de dez itens, formulario aberto de quem ja
-// decidiu so atrapalha quem procura o que falta. Estado de TELA, e nao do
-// recebimento — por isso vive aqui e nao na projection.
-const expandedLines = ref(new Set<string>());
+// QUAL item está aberto na gaveta. Estado de TELA, e nao do recebimento — por
+// isso vive aqui e nao na projection.
+const openLineId = ref("");
 
-function isCompact(preview: ReceiptLinePreview): boolean {
-  return preview.line.checked && !expandedLines.value.has(preview.line.id);
+const openPreview = computed(
+  () => receiptLinePreviews.value.find((preview) => preview.line.id === openLineId.value) ?? null,
+);
+
+// A gaveta so esta aberta se o item ainda existe: apagar a linha de dentro dela
+// deixaria uma gaveta vazia por cima da lista.
+const lineSheetOpen = computed({
+  get: () => Boolean(openPreview.value),
+  set: (value: boolean) => {
+    if (!value) openLineId.value = "";
+  },
+});
+
+function openReceiptLine(lineId: string) {
+  openLineId.value = lineId;
 }
 
-function expandReceiptLine(lineId: string) {
-  expandedLines.value = new Set(expandedLines.value).add(lineId);
+// Lançar um item à mão é pedir o formulário dele: a gaveta abre no item recém
+// criado, e não numa linha vazia no fim da lista esperando um segundo toque.
+async function addAndOpenReceiptLine() {
+  addReceiptLine();
+  await nextTick();
+  const created = receiptRows.value.at(-1);
+  if (created) openReceiptLine(created.id);
+}
+
+function removeOpenReceiptLine() {
+  const lineId = openLineId.value;
+  openLineId.value = "";
+  removeReceiptLine(lineId);
 }
 
 function setReceiptLineChecked(lineId: string, checked: boolean) {
   updateReceiptLine(lineId, { checked });
-  if (!checked) return;
-  // Conferir recolhe na hora, mesmo que o operador tenha aberto a linha antes.
-  const next = new Set(expandedLines.value);
-  next.delete(lineId);
-  expandedLines.value = next;
+}
+
+// Os gestos da gaveta chegam sem o id: quem está aberto é estado da tela, e não
+// da gaveta. Ela edita UM item — o que o operador tocou.
+function onSheetUpdate(patch: Partial<ReceiptLine>) {
+  if (openLineId.value) updateReceiptLine(openLineId.value, patch);
+}
+
+function onSheetSelectMaterial(sku: string) {
+  if (openLineId.value) setReceiptLineMaterial(openLineId.value, sku);
+}
+
+function onSheetAcceptSuggestion() {
+  if (openLineId.value) acceptReceiptLineSuggestion(openLineId.value);
+}
+
+function onSheetSelectConversion(conversionId: string | null) {
+  if (openLineId.value) updateReceiptLine(openLineId.value, { conversionId });
+}
+
+function onSheetAcceptConversion() {
+  if (openLineId.value) acceptReceiptLineConversion(openLineId.value);
+}
+
+function onSheetAcceptAxes() {
+  if (openLineId.value) acceptReceiptLineInvoiceAxes(openLineId.value);
+}
+
+function onSheetDeclareConversion(input: { label: string; factor: string; kind: ConversionKind }) {
+  if (openLineId.value) declareReceiptLineConversion(openLineId.value, input);
+}
+
+function onSheetCheck(checked: boolean) {
+  if (openLineId.value) setReceiptLineChecked(openLineId.value, checked);
 }
 
 // Um aviso do MESMO tipo repetido em oito linhas vira oito pílulas iguais no
@@ -431,7 +486,6 @@ const uniqueWatchWarnings = computed(() =>
 // sozinho — é um dedo apontando, não um estado do recebimento.
 const flashedField = ref("");
 let flashTimer: ReturnType<typeof setTimeout> | null = null;
-const FLASH_RING = "rounded-md ring-2 ring-warning ring-offset-2 ring-offset-background";
 
 function flashTarget(key: string) {
   flashedField.value = key;
@@ -441,9 +495,13 @@ function flashTarget(key: string) {
   }, 2600);
 }
 
-function fieldRing(lineId: string, field: ReceiptFieldAnchor): string {
-  return flashedField.value === `${lineId}:${field}` ? FLASH_RING : "";
-}
+// O campo apontado dentro da gaveta que esta aberta AGORA. Se a tela apontou um
+// campo de outro item, este nao pisca.
+const sheetFlashField = computed<ReceiptFieldAnchor | null>(() => {
+  const [lineId, field] = flashedField.value.split(":");
+  if (!field || lineId !== openLineId.value) return null;
+  return field as ReceiptFieldAnchor;
+});
 
 function anchorRing(anchor: ReceiptDocumentAnchor): string {
   return flashedField.value === anchor ? FLASH_RING : "";
@@ -454,22 +512,31 @@ function anchorRing(anchor: ReceiptDocumentAnchor): string {
 // a chamada não faz nada e o campo continua fora da tela, que é exatamente a
 // falha que esta frente veio corrigir. O anel âmbar dá a continuidade que a
 // animação daria, e chega sempre.
+const FOCUSABLE = "input:not([type=hidden]), select, textarea, button";
+
 function revealTarget(target: HTMLElement, key: string, block: ScrollLogicalPosition = "center") {
   target.scrollIntoView({ behavior: "auto", block });
-  target.querySelector<HTMLElement>("input:not([type=hidden]), select, textarea, button")?.focus({ preventScroll: true });
+  // O alvo as vezes E o controle — o "Marcar como conferido" da gaveta e um
+  // botao, e nao um card com um campo dentro. Procurar so para dentro deixava
+  // justamente essa pendencia sem foco.
+  const control = target.matches(FOCUSABLE) ? target : target.querySelector<HTMLElement>(FOCUSABLE);
+  control?.focus({ preventScroll: true });
   flashTarget(key);
 }
 
 // Clicar na pendência leva ao item — numa nota de dez linhas, achar "aquele
 // que falta a validade" rolando a lista é o trabalho que a tela devia poupar.
-// Com a âncora do campo, leva ao CAMPO: a linha reabre se estava recolhida, a
-// tela rola até ele e o cursor já pousa dentro.
+// Com a âncora do campo, leva ao CAMPO: a gaveta do item abre, a tela rola até
+// ele e o cursor já pousa dentro.
+//
+// ⚠️ A espera não é decoração. A gaveta monta num portal, no fim do `<body>`,
+// e um `nextTick` sozinho devolve `null`: quem clicasse na pendência não veria
+// nada acontecer. `waitForElement` espera o campo existir, por poucos quadros.
 async function focusReceiptLine(lineId: string, field: ReceiptFieldAnchor | null = null) {
-  expandReceiptLine(lineId);
+  openReceiptLine(lineId);
   await nextTick();
-  const card = document.querySelector<HTMLElement>(`[data-receipt-line="${lineId}"]`);
-  if (!card) return;
-  const target = (field && card.querySelector<HTMLElement>(`[data-receipt-field="${field}"]`)) || card;
+  const target = await waitForElement(receiptFieldSelector(lineId, field));
+  if (!target) return;
   revealTarget(target, field ? `${lineId}:${field}` : lineId);
 }
 
@@ -950,211 +1017,90 @@ onBeforeUnmount(stopInvoiceScanner);
               <h2 class="text-lg font-semibold">Itens da entrada</h2>
               <p class="text-sm text-muted-foreground">{{ receiptCheckedCount }} de {{ receiptLinePreviews.length }} conferidos</p>
             </div>
-            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="addReceiptLine">
+            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="addAndOpenReceiptLine">
               <Icon name="lucide:plus" class="size-4" />
               Item
             </button>
           </div>
 
-          <!-- `min-w-0` no item do grid: sem ele a coluna e dimensionada pelo
-               min-content do card mais largo (nome de item longo, select com
-               opcoes compridas) e passa da largura do telefone. O corte ficava
-               invisivel porque o `overflow-x-hidden` do main o escondia. -->
-          <div class="grid min-w-0 gap-3 p-3">
-            <article
-              v-for="preview in receiptLinePreviews"
-              :key="preview.line.id"
-              :data-receipt-line="preview.line.id"
-              class="min-w-0 scroll-mt-4 rounded-md border p-3 transition-colors"
-              :class="
-                preview.nextStep ? 'border-warning/40 bg-background'
-                : preview.line.checked ? 'border-success/40 bg-success/5'
-                : 'border-border bg-background'
-              "
+          <!-- A LISTA da entrada: uma linha por item, e o que falta dito na
+               própria linha. Eram formulários abertos empilhados — para saber
+               como estava uma nota de dez itens, o operador rolava dez cards.
+               Tocar na linha abre a gaveta daquele item.
+
+               `min-w-0` no item da lista: sem ele a coluna é dimensionada pelo
+               min-content do nome mais comprido e passa da largura do telefone.
+               O corte ficava invisível atrás do `overflow-x-hidden` do main. -->
+          <ul v-if="receiptRows.length" class="grid min-w-0 gap-2 p-3">
+            <li
+              v-for="row in receiptRows"
+              :key="row.id"
+              :data-receipt-line="row.id"
+              class="flex min-w-0 scroll-mt-4 items-stretch gap-1 rounded-md border pr-1 transition-colors"
+              :class="RECEIPT_LINE_STATUS_ROW[row.status]"
             >
-              <!-- Conferido: a linha recolhe para uma frase, e "Editar" a abre
-                   de volta inteira. -->
-              <div v-if="isCompact(preview)" class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="flex items-center gap-1.5 text-sm font-medium">
-                    <Icon name="lucide:circle-check-big" class="size-4 shrink-0 text-success" />
-                    <span class="truncate">{{ preview.line.invoiceDescription || preview.material.name }}</span>
-                  </p>
-                  <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ receiptSettledSummary(preview) }}</p>
-                  <p v-if="preview.line.lineNote" class="mt-0.5 truncate text-xs text-warning">{{ preview.line.lineNote }}</p>
-                </div>
-                <button type="button" class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="expandReceiptLine(preview.line.id)">
-                  <Icon name="lucide:pencil" class="size-3.5" />
-                  Editar
-                </button>
-              </div>
-
-              <template v-else>
-              <!-- 1. O que a NOTA diz. É a âncora: sem isto o operador vê uma
-                   fila de 'Definir insumo' e não sabe qual linha do papel é. -->
-              <header class="flex flex-wrap items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-semibold" :title="preview.line.invoiceDescription">
-                    {{ preview.line.invoiceDescription || "Item lançado à mão" }}
-                  </p>
-                  <p v-if="preview.invoiceSummary" class="mt-0.5 text-xs text-muted-foreground">
-                    {{ preview.invoiceSummary }}
-                  </p>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <span v-if="preview.line.invoiceTotal" class="text-sm font-semibold tabular-nums">{{ preview.line.invoiceTotal }}</span>
-                  <button type="button" class="inline-flex size-8 items-center justify-center rounded-md border border-border hover:bg-accent" :aria-label="`Remover ${preview.line.invoiceDescription || 'item'}`" @click="removeReceiptLine(preview.line.id)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
-                </div>
-              </header>
-
-              <!-- O passo do topo cala quando o proprio campo ja o diz: repetir
-                   "confirme a sugestao" duas vezes na mesma linha e ruido. -->
-              <p v-if="preview.nextStep && !preview.nextStepIsOnField" class="mt-2 flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs font-medium text-warning">
-                <Icon name="lucide:arrow-right" class="size-3.5 shrink-0" />
-                {{ preview.nextStep }}
-              </p>
-
-              <!-- 2. Qual insumo é. Quando há sugestão, o campo INTEIRO entra
-                   num card de atenção: a proposta fica colada ao campo de que
-                   ela fala, em vez de flutuar como uma caixa à parte que o
-                   operador precisa relacionar de cabeça. -->
-              <ReceiptField
-                data-receipt-field="material"
-                class="mt-3 scroll-mt-4 transition-shadow"
-                :class="fieldRing(preview.line.id, 'material')"
-                :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
-                :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
-                :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-3 rounded-md py-2.5 pl-3 text-left"
+                :aria-label="`Abrir ${row.label}`"
+                @click="openReceiptLine(row.id)"
               >
-                <!-- O rótulo é um `<span>`, NÃO um `<label>`: um `<label>` sem
-                     `for` adota o primeiro controle rotulável de dentro (o botão
-                     que abre o MaterialPicker) e reencaminha para ele os cliques
-                     que caem em parte não interativa — inclusive o véu de fechar
-                     do próprio picker. Escolher o insumo fechava e reabria a
-                     lista no mesmo clique. O nome acessível vai por `labelledBy`. -->
-                <div>
-                  <span :id="`receipt-material-${preview.line.id}`" class="block text-xs font-medium text-muted-foreground">Insumo</span>
-                  <MaterialPicker
-                    class="mt-1"
-                    :materials="materials"
-                    :model-value="preview.line.materialSku"
-                    :labelled-by="`receipt-material-${preview.line.id}`"
-                    @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
-                  />
-                </div>
-                <template v-if="preview.suggestion">
-                  <p class="mt-2 text-xs text-muted-foreground">
-                    Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
-                  </p>
-                  <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="acceptReceiptLineSuggestion(preview.line.id)">
-                    <Icon name="lucide:check" class="size-3.5" />
-                    É este
-                  </button>
-                </template>
-              </ReceiptField>
-
-              <!-- 3. Só depois do insumo: quanto isso vale na unidade dele.
-                   Pedir conversão antes de saber o insumo é pedir o impossível
-                   — não há unidade-base para converter PARA. -->
-              <div v-if="preview.line.materialSku" data-receipt-field="conversion" class="mt-3 scroll-mt-4 transition-shadow" :class="fieldRing(preview.line.id, 'conversion')">
-                <ReceiptConversion
-                  :preview="preview"
-                  :conversions="receiptConversionsFor(preview.line.materialSku)"
-                  :pending="actionPending"
-                  @select="updateReceiptLine(preview.line.id, { conversionId: $event })"
-                  @accept="acceptReceiptLineConversion(preview.line.id)"
-                  @accept-axes="acceptReceiptLineInvoiceAxes(preview.line.id)"
-                  @declare="declareReceiptLineConversion(preview.line.id, $event)"
-                />
-              </div>
-
-              <!-- 4. Quanto e quanto custou. O custo por unidade-base mora COM o
-                   valor, porque é dele que ele deriva — estava misturado com o
-                   que entra no estoque, que é outra pergunta. -->
-              <div data-receipt-field="qty" class="mt-3 grid scroll-mt-4 gap-3 transition-shadow sm:grid-cols-2" :class="fieldRing(preview.line.id, 'qty')">
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}
-                  <input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" />
-                </label>
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Valor total (R$)
-                  <input v-model="preview.line.costInput" inputmode="decimal" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" placeholder="0,00" />
-                  <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="mt-1 block text-xs font-normal text-muted-foreground">
-                    {{ formatMoney(preview.baseCostQ) }} por {{ preview.material.unit }}
-                  </span>
-                </label>
-              </div>
-
-              <!-- 5. De onde veio e até quando vale. Os dois saem do mesmo grupo
-                   `rastro` da NF-e e respondem à mesma pergunta. -->
-              <ReceiptField
-                data-receipt-field="expiry"
-                class="mt-3 scroll-mt-4 transition-shadow"
-                :class="fieldRing(preview.line.id, 'expiry')"
-                :attention="preview.needsExpiry"
-                title="Informe a validade"
-                icon="lucide:calendar-clock"
-              >
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <label class="block text-xs font-medium text-muted-foreground">
-                    Validade
-                    <input v-model="preview.line.expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
-                    <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
-                    <span v-else-if="preview.needsExpiry" class="mt-1 block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
-                  </label>
-                  <label class="block text-xs font-medium text-muted-foreground">
-                    Lote do fornecedor
-                    <input v-model="preview.line.invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
-                    <span v-if="preview.line.invoiceLot" class="mt-1 block text-xs font-normal text-muted-foreground">É por ele que um recall chama.</span>
-                  </label>
-                </div>
-              </ReceiptField>
-
-              <!-- 6. O que entra no estoque, e a consequência disso. Uma coisa
-                   por linha: eram três semânticas numa frase só. -->
-              <div class="mt-3 rounded-md border border-border bg-card px-3 py-2">
-                <template v-if="preview.baseQtyKnown && preview.line.materialSku">
-                  <p class="text-lg font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
-                  <p class="mt-0.5 text-xs text-muted-foreground">
-                    Estoque depois: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">A entrada aparece aqui quando o insumo e a embalagem estiverem definidos.</p>
-              </div>
-
-              <!-- Conferir é o gesto que FECHA a linha, e por isso ele tem o
-                   tamanho de um gesto: largura inteira no celular, com o estado
-                   dito por um ícone e pela cor do card, não por uma caixinha. -->
-              <label
-                data-receipt-field="check"
-                class="mt-3 flex h-12 w-full cursor-pointer scroll-mt-4 items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors"
-                :class="[
-                  preview.line.checked ? 'border-success/40 bg-success/10 text-success' : 'border-border bg-card hover:bg-accent',
-                  fieldRing(preview.line.id, 'check'),
-                ]"
-              >
-                <input
-                  :checked="preview.line.checked"
-                  type="checkbox"
-                  class="sr-only"
-                  @change="setReceiptLineChecked(preview.line.id, ($event.target as HTMLInputElement).checked)"
-                />
-                <Icon :name="preview.line.checked ? 'lucide:circle-check-big' : 'lucide:circle'" class="size-5 shrink-0" />
-                {{ preview.line.checked ? "Conferido" : "Marcar como conferido" }}
-              </label>
-              <input v-model="preview.line.lineNote" class="mt-2 h-11 w-full rounded-md border border-border bg-card px-3 text-sm" placeholder="Ocorrência: avaria, falta, ressalva" />
-
-              <div v-if="preview.warnings.length > 1 || preview.warnings.some((warning) => warning.tone === 'watch')" class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="warning in preview.warnings.filter((item) => item.label !== preview.nextStep)" :key="`${preview.line.id}-${warning.key}`" class="rounded-md border px-2 py-0.5 text-xs font-medium" :class="receiptWarningClasses[warning.tone]">
-                  {{ warning.label }}
+                <Icon :name="row.statusIcon" class="size-5 shrink-0" :class="RECEIPT_LINE_STATUS_TEXT[row.status]" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium">{{ row.label }}</span>
+                  <span v-if="row.digest" class="block truncate text-xs text-muted-foreground">{{ row.digest }}</span>
+                  <!-- A pendência mora na LINHA. Era isto que obrigava a abrir
+                       o item para descobrir que faltava a validade dele. -->
+                  <span v-if="row.nextStep" class="block truncate text-xs font-medium text-destructive">{{ row.nextStep }}</span>
+                  <span v-else-if="row.note" class="block truncate text-xs text-warning">{{ row.note }}</span>
                 </span>
-              </div>
-              </template>
-            </article>
-          </div>
+                <span class="flex shrink-0 flex-col items-end gap-1">
+                  <span v-if="row.total" class="text-sm font-semibold tabular-nums">{{ row.total }}</span>
+                  <span
+                    class="inline-flex h-6 items-center rounded-md border px-1.5 text-xs font-medium"
+                    :class="RECEIPT_LINE_STATUS_BADGE[row.status]"
+                  >
+                    {{ row.statusLabel }}
+                  </span>
+                </span>
+                <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                class="inline-flex w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                :aria-label="`Remover ${row.label}`"
+                @click="removeReceiptLine(row.id)"
+              >
+                <Icon name="lucide:trash-2" class="size-4" />
+              </button>
+            </li>
+          </ul>
+          <p v-else class="px-4 py-6 text-center text-sm text-muted-foreground">
+            Nenhum item na entrada ainda. Escaneie a NF, ou toque em "Item" para lançar à mão.
+          </p>
         </section>
+
+        <!-- A gaveta do item: título fixo no topo, formulário rolando por
+             baixo. Confirmar ali fecha a gaveta e a linha da lista muda de cor
+             na frente do operador. -->
+        <ReceiptLineSheet
+          v-model:open="lineSheetOpen"
+          :preview="openPreview"
+          :materials="materials"
+          :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
+          :pending="actionPending"
+          :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
+          :flash-field="sheetFlashField"
+          @update="onSheetUpdate"
+          @select-material="onSheetSelectMaterial"
+          @accept-suggestion="onSheetAcceptSuggestion"
+          @select-conversion="onSheetSelectConversion"
+          @accept-conversion="onSheetAcceptConversion"
+          @accept-axes="onSheetAcceptAxes"
+          @declare-conversion="onSheetDeclareConversion"
+          @check="onSheetCheck"
+          @remove="removeOpenReceiptLine"
+        />
       </div>
 
       <aside class="min-w-0 rounded-md border border-border bg-card p-4">
