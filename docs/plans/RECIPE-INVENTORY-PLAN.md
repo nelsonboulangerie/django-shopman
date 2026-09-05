@@ -9,7 +9,7 @@
 >
 > Referência de domínio: `~/Downloads/HANDOFF-receitas-panificacao.md` (modelo BBGA/Hamelman
 > decidido pelo dono: receita base → partes → mistura final calculada). Este plano é a
-> implementação; a decisão de arquitetura mora na [ADR-026](../decisions/adr-026-recipe-book-authoring-vs-execution.md).
+> implementação; a decisão de arquitetura mora na [ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md).
 
 ## 0. A decisão em uma frase
 
@@ -276,7 +276,7 @@ Produção"). Sem permissão nova, sem migração de permissão. Erros no dialet
 | R1 modelos + serviços + math + bootstrap + testes | `packages/craftsman` | ✅ entregue (migração `0007`, +114 testes) |
 | R2 UI | `surfaces/production-nuxt` | ✅ entregue (`/recipes`, `/recipes/new`, `/recipes/[ref]`, `/recipes/[ref]/edit`, `/recipes/compare`; +66 testes) |
 | R3 captura + casamento + projections + API + export + testes + seed | `shopman/backstage`, `config` | ✅ entregue (`export_recipe_book_schema`, +133 testes) |
-| R4 docs (ADR-026, data-schemas, commands) + integração + QA | raiz | ✅ QA no navegador sobre o seed real: bootstrap de 67 fichas, rascunho → padronizar → associar SKU → publicar → ficha com `version_ref`, comparação |
+| R4 docs (ADR-027, data-schemas, commands) + integração + QA | raiz | ✅ QA no navegador sobre o seed real: bootstrap de 67 fichas, rascunho → padronizar → associar SKU → publicar → ficha com `version_ref`, comparação |
 
 Decisões tomadas na integração (03/09): fermento natural (cultura) não é `yeast` (fica fora da
 faixa de fermento biológico); `prefermented_flour_pct` soma só partes `preferment` (autólise

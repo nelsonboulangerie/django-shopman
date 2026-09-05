@@ -1,4 +1,4 @@
-# ADR-026 — Inventário de receitas: autoria versionada separada da ficha de execução
+# ADR-027 — Inventário de receitas: autoria versionada separada da ficha de execução
 
 **Status:** Aceito (2026-09-03)
 **Data:** 2026-09-03

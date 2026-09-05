@@ -236,7 +236,7 @@ os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
 
 Percorre as `Recipe` (fichas de execução) e cria, para cada uma que ainda não tem, uma
 `RecipeEntry` com a versão 1 **publicada** e `source.kind="ficha"` — o inventário das
-fichas que já existem (ADR-026). A fórmula nasce na forma **base**: partes com ficha
+fichas que já existem (ADR-027). A fórmula nasce na forma **base**: partes com ficha
 própria (levain, pasta autolisada, yudane) são dissolvidas e sua farinha entra na soma.
 Ordem por dependência (partes antes das massas que as usam). **Não escreve na `Recipe`**.
 
