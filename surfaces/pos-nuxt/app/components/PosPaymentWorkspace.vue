@@ -1753,7 +1753,7 @@ defineExpose({
             @click="$emit('setSplitCount', n); splitSheetOpen = false"
           >
             <span class="text-lg font-semibold leading-none">{{ n }}</span>
-            <span class="text-[10px] font-normal leading-none text-muted-foreground">{{ splitShareLabel(n) }}</span>
+            <span class="text-xs font-normal leading-none text-muted-foreground">{{ splitShareLabel(n) }}</span>
           </UiButton>
         </div>
       </div>
