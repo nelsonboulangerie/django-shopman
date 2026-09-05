@@ -19,9 +19,9 @@
 // O campo de texto continua vivo como ÚNICA porta quando a lista chega vazia
 // (leitura negada, nenhum gerente com PIN provisionado): esconder a única porta
 // deixaria o balcão sem saída no meio de uma sangria.
-import type { ManagerAction } from "~/presentation/managerAuth";
-import { managerAuthReason, managerAuthTitle } from "~/presentation/managerAuth";
-import type { POSManagerProjection } from "~/types/pos";
+import type { ManagerAction } from "../presentation/managerAuth";
+import { managerAuthReason, managerAuthTitle } from "../presentation/managerAuth";
+import type { ManagerOption } from "../types/manager";
 
 const props = defineProps<{
   open: boolean;
@@ -43,7 +43,7 @@ const props = defineProps<{
   /** Códigos vindos da review (`approval_reasons`) — dizem POR QUE o gerente foi chamado. */
   reasons?: string[];
   /** Quem pode assinar (`POSProjection.managers`). Vazio cai no campo livre. */
-  managers?: POSManagerProjection[];
+  managers?: ManagerOption[];
   busy?: boolean;
   error?: string;
 }>();
@@ -87,7 +87,12 @@ function onBadge(token: string) {
 </script>
 
 <template>
-  <UiDialog :open="open" @update:open="(value) => emit('update:open', value)">
+  <!-- ⚠️ `value` ANOTADO de propósito. `UiDialog` é do app hospedeiro (o kit é
+       module-free por desenho), então nos apps que não têm um — central, B.I.,
+       compras — o tipo do evento não resolve e o parâmetro cai em `any`
+       implícito. O typecheck da layer roda em TODOS eles, não só em quem usa o
+       componente. Ver o gate de superfícies. -->
+  <UiDialog :open="open" @update:open="(value: boolean) => emit('update:open', value)">
     <!-- `data-drawer-manager-auth` deixa a trava da gaveta saber que o PIN está
          por cima: o Esc dela não pode roubar a tecla de volta desta tela. -->
     <!-- Camada 3, cromática: uma borda de acento que a tela de login não tem.

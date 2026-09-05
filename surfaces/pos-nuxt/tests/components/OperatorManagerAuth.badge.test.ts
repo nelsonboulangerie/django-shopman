@@ -1,7 +1,14 @@
+// ⚠️ O componente mora no `operator-kit`; o TESTE mora aqui, e não é descuido.
+// O layer é deliberadamente MÍNIMO — não registra módulos nem traz `ui/` —, e
+// este diálogo depende das primitivas `UiDialog*`, que cada app hospedeiro tem
+// na própria pasta `ui/` (modelo do shadcn: copia-se para dentro do projeto).
+// No ambiente de teste do kit o `UiDialogContent` não resolve, nada faz Teleport
+// e o `document.body` sai vazio — falha sem erro de runtime, difícil de ler.
+// Testar a partir de um hospedeiro é o que exercita o componente como ele roda.
 import { describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
-import PosManagerAuthDialog from "~/components/PosManagerAuthDialog.vue";
+import OperatorManagerAuth from "../../../operator-kit/app/components/OperatorManagerAuth.vue";
 
 // O CRACHÁ VALE NA HORA DA SANGRIA — e é por isso que esta suíte existe.
 //
@@ -29,14 +36,14 @@ function scan(token: string) {
 }
 
 async function open(props: Record<string, unknown> = {}) {
-  const wrapper = await mountSuspended(PosManagerAuthDialog, {
+  const wrapper = await mountSuspended(OperatorManagerAuth, {
     props: { open: true, managers: MANAGERS, reasonText: "Retirar dinheiro", ...props },
   });
   await wrapper.vm.$nextTick();
   return wrapper;
 }
 
-describe("PosManagerAuthDialog — o crachá autoriza", () => {
+describe("OperatorManagerAuth — o crachá autoriza", () => {
   it("passar o crachá emite a autorização, sem escolher ninguém na lista", async () => {
     const wrapper = await open();
 

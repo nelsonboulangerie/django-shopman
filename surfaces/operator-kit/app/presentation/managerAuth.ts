@@ -14,7 +14,7 @@
 // chamada com frase própria, cada uma mais longa que a outra, e ninguém
 // conseguia comparar o conjunto para ver que estava prolixo.
 
-import { formatBRL } from "~/utils/posIntent";
+import { formatBRL } from "../utils/money";
 
 /** O ato que o gerente assina. É a chave da copy — uma por exceção do PDV. */
 export type ManagerAction =

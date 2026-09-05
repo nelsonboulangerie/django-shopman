@@ -1,8 +1,14 @@
+// ⚠️ O componente mora no `operator-kit`; o TESTE mora aqui, e não é descuido.
+// O layer é deliberadamente MÍNIMO — não registra módulos nem traz `ui/` —, e
+// este diálogo depende das primitivas `UiDialog*`, que cada app hospedeiro tem
+// na própria pasta `ui/` (modelo do shadcn: copia-se para dentro do projeto).
+// No ambiente de teste do kit o `UiDialogContent` não resolve, nada faz Teleport
+// e o `document.body` sai vazio — falha sem erro de runtime, difícil de ler.
+// Testar a partir de um hospedeiro é o que exercita o componente como ele roda.
 import { afterEach, describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
-import PosManagerAuthDialog from "~/components/PosManagerAuthDialog.vue";
-import { formatBRL } from "~/utils/posIntent";
+import OperatorManagerAuth from "../../../operator-kit/app/components/OperatorManagerAuth.vue";
 
 const MANAGERS = [
   { username: "marina", name: "Marina" },
@@ -28,7 +34,7 @@ type Wrapper = Awaited<ReturnType<typeof mountSuspended>>;
 let mounted: Wrapper | null = null;
 
 async function open(overrides: Record<string, unknown> = {}): Promise<Wrapper> {
-  mounted = await mountSuspended(PosManagerAuthDialog, { props: props(overrides) });
+  mounted = await mountSuspended(OperatorManagerAuth, { props: props(overrides) });
   return mounted;
 }
 
@@ -53,7 +59,7 @@ async function confirmPin(wrapper: Wrapper) {
   await wrapper.vm.$nextTick();
 }
 
-describe("PosManagerAuthDialog — quem assina vem da lista", () => {
+describe("OperatorManagerAuth — quem assina vem da lista", () => {
   it("oferece os gerentes e não pede nome digitado", async () => {
     await open();
 
@@ -142,7 +148,7 @@ describe("PosManagerAuthDialog — quem assina vem da lista", () => {
 // expediente, as duas são um teclado de PIN e as duas interrompem quem está
 // atendendo. A diferença tem que estar no TEXTO, porque o teclado é o mesmo.
 
-describe("PosManagerAuthDialog — não se confunde com o destrave de sessão", () => {
+describe("OperatorManagerAuth — não se confunde com o destrave de sessão", () => {
   it("diz que a sessão NÃO troca (o destrave diz o contrário)", async () => {
     await open({ operatorName: "Joyce" });
 

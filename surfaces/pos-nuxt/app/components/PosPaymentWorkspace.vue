@@ -50,7 +50,7 @@ import {
   lineListTotalDisplay,
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
-import { managerAuthReason } from "~/presentation/managerAuth";
+import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
@@ -82,7 +82,7 @@ const props = defineProps<{
   managerApprovalError: string;
   /** Quem pode assinar a exceção. Vazio = o diálogo cai no campo livre. */
   managers: POSManagerProjection[];
-  /** Quem CONTINUA operando depois da assinatura do gerente. Ver PosManagerAuthDialog. */
+  /** Quem CONTINUA operando depois da assinatura do gerente. Ver OperatorManagerAuth. */
   operatorName?: string;
   fulfillmentType: "pickup" | "delivery";
   paymentCollection: "terminal" | "on_delivery";
@@ -1831,7 +1831,7 @@ defineExpose({
     </UiDialog>
 
   <!-- AUTORIZAÇÃO DO GERENTE -->
-  <PosManagerAuthDialog
+  <OperatorManagerAuth
     v-model:open="managerAuthOpen"
     action="sale_approval"
     :threshold-q="managerThresholdQ"
