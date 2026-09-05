@@ -16,7 +16,7 @@ function freeCartProjection() {
 }
 
 describe("usePosSale — mutações de carrinho", () => {
-  it("addProduct deduplica na mesma linha e incrementa a quantidade", () => {
+  it("addProduct agrega na linha ainda NÃO enviada e incrementa a quantidade", () => {
     const h = makeSale({ projection: freeCartProjection() });
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
@@ -24,6 +24,53 @@ describe("usePosSale — mutações de carrinho", () => {
     expect(h.sale.cart.items).toHaveLength(1);
     expect(h.sale.productQty("PAO")).toBe(2);
     expect(h.sale.itemCount.value).toBe(2);
+    // A linha nasce com identidade própria — nada mais é chaveado por sku.
+    expect(h.sale.cart.items[0]!.line_id).toMatch(/^L-.{8}$/);
+    h.handles.dispose();
+  });
+
+  it("depois de ir à cozinha, mais um do mesmo item cria uma SEGUNDA linha", () => {
+    // ⚠️ O defeito que este WP apaga: com uma linha por sku, "mais um chá"
+    // virava qty 2 numa linha já disparada — o servidor deduplica por `line_id`
+    // e a cozinha nunca via o segundo. A linha enviada não agrega mais nada.
+    const h = makeSale({ projection: freeCartProjection() });
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.cart.items[0]!.fired = true;
+
+    h.sale.addProduct(pao);
+
+    expect(h.sale.cart.items).toHaveLength(2);
+    expect(h.sale.cart.items[1]!.qty).toBe(1);
+    expect(h.sale.cart.items[1]!.fired).toBeUndefined();
+    expect(h.sale.cart.items[1]!.line_id).not.toBe(h.sale.cart.items[0]!.line_id);
+    // E o card do grid soma as duas: a pergunta dele é de produto, não de linha.
+    expect(h.sale.productQty("PAO")).toBe(2);
+    h.handles.dispose();
+  });
+
+  it("qty, desconto e observação acertam a linha certa com sku repetido", () => {
+    const h = makeSale({ projection: freeCartProjection() });
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.cart.items[0]!.fired = true;
+    h.sale.addProduct(pao);
+    const [primeira, segunda] = [h.sale.cart.items[0]!, h.sale.cart.items[1]!];
+
+    h.sale.setQty(segunda.line_id, 3);
+    h.sale.setLineDiscount(segunda.line_id, 10, "cortesia");
+    h.sale.setLineNotes(segunda.line_id, "sem lactose");
+
+    expect(segunda.qty).toBe(3);
+    expect(segunda.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
+    expect(segunda.notes).toBe("sem lactose");
+    // A primeira linha não viu nada disso — era exatamente o vazamento do sku.
+    expect(primeira.qty).toBe(1);
+    expect(primeira.discount).toBeUndefined();
+    expect(primeira.notes).toBe("");
+    // O contador do grid soma as duas linhas.
+    expect(h.sale.productQty("PAO")).toBe(4);
+    expect(h.sale.lineQty(segunda.line_id)).toBe(3);
     h.handles.dispose();
   });
 
@@ -31,9 +78,10 @@ describe("usePosSale — mutações de carrinho", () => {
     const h = makeSale({ projection: freeCartProjection() });
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
-    h.sale.setQty("PAO", 5);
+    const lineId = h.sale.cart.items[0]!.line_id;
+    h.sale.setQty(lineId, 5);
     expect(h.sale.productQty("PAO")).toBe(5);
-    h.sale.setQty("PAO", 0);
+    h.sale.setQty(lineId, 0);
     expect(h.sale.cart.items).toHaveLength(0);
     h.handles.dispose();
   });
@@ -42,10 +90,11 @@ describe("usePosSale — mutações de carrinho", () => {
     const h = makeSale({ projection: freeCartProjection() });
     const pao = h.handles.posValue.value!.products[0]!;
     h.sale.addProduct(pao);
-    h.sale.setLineDiscount("PAO", 10, "cortesia");
+    const lineId = h.sale.cart.items[0]!.line_id;
+    h.sale.setLineDiscount(lineId, 10, "cortesia");
     // O formato viaja com o desconto: sem ele, R$ 2,00 subia como 2%.
     expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
-    h.sale.setLineDiscount("PAO", 0, "");
+    h.sale.setLineDiscount(lineId, 0, "");
     expect(h.sale.cart.items[0]!.discount).toBeUndefined();
     h.handles.dispose();
   });
@@ -53,7 +102,7 @@ describe("usePosSale — mutações de carrinho", () => {
   it("setLineDiscount guarda o desconto em REAIS como reais", () => {
     const h = makeSale({ projection: freeCartProjection() });
     h.sale.addProduct(h.handles.posValue.value!.products[0]!);
-    h.sale.setLineDiscount("PAO", 2.5, "qualidade", "fixed");
+    h.sale.setLineDiscount(h.sale.cart.items[0]!.line_id, 2.5, "qualidade", "fixed");
     expect(h.sale.cart.items[0]!.discount).toEqual({ value: 2.5, reason: "qualidade", type: "fixed" });
     h.handles.dispose();
   });
@@ -197,7 +246,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
 
   it("preserveDraft numa comanda já ocupada acusa erro (não sobrescreve)", async () => {
     const actionCall = vi.fn().mockResolvedValue(makeTabPayload({
-      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 1, notes: "" }],
+      items: [{ line_id: "L-cafe-1", sku: "CAFE", name: "Café", price_q: 300, qty: 1, notes: "" }],
     }));
     const h = makeSale({ projection: freeCartProjection(), actionCall });
     const pao = h.handles.posValue.value!.products[0]!;
@@ -218,7 +267,7 @@ describe("usePosSale — openTab / preserveDraft", () => {
       tab_ref: "M9",
       tab_display: "M9",
       customer_name: "Bruno",
-      items: [{ sku: "CAFE", name: "Café", price_q: 300, qty: 2, notes: "" }],
+      items: [{ line_id: "L-cafe-2", sku: "CAFE", name: "Café", price_q: 300, qty: 2, notes: "" }],
     }));
     const h = makeSale({ projection: freeCartProjection(), actionCall });
 
@@ -380,7 +429,7 @@ describe("usePosSale — comandos de sessão (path + body + flags)", () => {
     const noTabCall = vi.fn().mockResolvedValue({});
     const noTab = makeSale({ projection: freeCartProjection(), actionCall: noTabCall });
     const pao = noTab.handles.posValue.value!.products[0]!;
-    noTab.sale.cart.items.push({ ...pao, qty: 1, notes: "" });
+    noTab.sale.cart.items.push({ ...pao, line_id: "L-pao-1", qty: 1, notes: "" });
     await noTab.sale.clearCurrentTab();
     expect(noTabCall).not.toHaveBeenCalled(); // sem sessão → só reset local
     expect(noTab.sale.cart.items).toHaveLength(0);

@@ -27,8 +27,10 @@ import {
   concreteActionHref,
   formatBRL,
   moneyInputToQ,
+  newLineId,
   resolvePayment,
 } from "~/utils/posIntent";
+import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
 import type { ScheduleWindow } from "~/presentation/schedule";
 import {
@@ -256,7 +258,7 @@ export function usePosSale(deps: PosSaleDeps) {
   const showTabs = ref(true);
   const moveDialogOpen = ref(false);
   // O diálogo de mover abre imediatamente; isto marca a fase de preparo
-  // (persist + reload dos line_ids) para o spinner interno do diálogo.
+  // (persist + reload da comanda) para o spinner interno do diálogo.
   const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
@@ -761,8 +763,15 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.discountReason,
   ], () => scheduleAutoReview());
 
+  /** Quanto deste produto está no carrinho, somando todas as linhas dele — a
+   *  mesma conta do selo no card do grid (`cartQtyForSku`). */
   function productQty(sku: string): number {
-    return cart.items.find((item) => item.sku === sku)?.qty || 0;
+    return cartQtyForSku(cart.items, sku);
+  }
+
+  /** A quantidade DESTA linha — o que os steppers do carrinho incrementam. */
+  function lineQty(lineId: string): number {
+    return cart.items.find((item) => item.line_id === lineId)?.qty || 0;
   }
 
   /**
@@ -796,18 +805,29 @@ export function usePosSale(deps: PosSaleDeps) {
     pushProduct(product);
   }
 
+  /**
+   * ⚠️ AGREGA ENQUANTO NÃO FOI PARA A COZINHA, e nunca depois.
+   *
+   * Tocar duas vezes antes de enviar continua fazendo uma linha com qty 2 — é o
+   * gesto do balcão e ele não muda. Mas quando a linha JÁ foi ao fogão, somar
+   * mais um nela era pedir um chá que ninguém ia fazer: o servidor deduplica por
+   * `line_id`, a linha já estava disparada, e o segundo chá ficava preso dentro
+   * de uma linha marcada "enviada". A partir daí o toque cria uma linha NOVA,
+   * com identidade nova — que é o que a cozinha precisa para receber um ticket.
+   */
   function pushProduct(product: POSProductProjection) {
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
     review.value = null;
     checkoutMode.value = false;
-    const existing = cart.items.find((item) => item.sku === product.sku);
-    if (existing) {
-      existing.qty += 1;
+    const openLine = cart.items.find((item) => item.sku === product.sku && !item.fired);
+    if (openLine) {
+      openLine.qty += 1;
       return;
     }
     cart.items.push({
+      line_id: newLineId(),
       sku: product.sku,
       name: product.name,
       price_q: product.price_q,
@@ -816,37 +836,40 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
-  function setQty(sku: string, qty: number) {
+  function setQty(lineId: string, qty: number) {
     if (!canUseCart.value) return;
     review.value = null;
     checkoutMode.value = false;
-    const existing = cart.items.find((item) => item.sku === sku);
+    const existing = cart.items.find((item) => item.line_id === lineId);
     if (!existing) return;
     if (qty <= 0) {
-      cart.items = cart.items.filter((item) => item.sku !== sku);
+      cart.items = cart.items.filter((item) => item.line_id !== lineId);
       return;
     }
     existing.qty = qty;
   }
 
   // Observação da linha (Odoo Note): o autosave persiste e o fire leva ao KDS.
-  function setLineNotes(sku: string, notes: string) {
-    const item = cart.items.find((entry) => entry.sku === sku);
+  // Por LINHA, não por produto — "o segundo sem lactose" é exatamente o pedido
+  // que a chave por SKU não sabia escrever.
+  function setLineNotes(lineId: string, notes: string) {
+    const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
     item.notes = notes;
   }
 
   // "Desfazer" da remoção direta: devolve a linha como estava (qty, desconto,
-  // observação). Idempotente: se a linha voltou por outro caminho, não duplica.
+  // observação, identidade). Idempotente: se a linha voltou por outro caminho,
+  // não duplica.
   function restoreItem(item: POSCartItem) {
     if (!canUseCart.value) return;
-    if (cart.items.some((entry) => entry.sku === item.sku)) return;
+    if (cart.items.some((entry) => entry.line_id === item.line_id)) return;
     review.value = null;
     cart.items.push({ ...item });
   }
 
-  function setLineDiscount(sku: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
-    const item = cart.items.find((entry) => entry.sku === sku);
+  function setLineDiscount(lineId: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
+    const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
     review.value = null;
     if (value > 0) {
@@ -1656,8 +1679,9 @@ export function usePosSale(deps: PosSaleDeps) {
   async function openMoveDialog() {
     if (!hasOpenTab.value || !cart.items.length) return;
     // O diálogo abre JÁ, com spinner interno — os dois round-trips (persist +
-    // reload, que renovam os line_ids que o move exige) rodam por baixo. Antes
-    // eles vinham ANTES do diálogo e o botão parecia morto por um segundo.
+    // reload, para que o servidor conheça as linhas que o move vai endereçar)
+    // rodam por baixo. Antes eles vinham ANTES do diálogo e o botão parecia
+    // morto por um segundo.
     serverError.value = "";
     moveDialogOpen.value = true;
     movePreparing.value = true;
@@ -1710,28 +1734,29 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  // Resolve the live server line_ids for a set of cart skus after persisting:
-  // save_tab regenerates line_ids, so we persist + reload (same pattern as the
-  // move dialog) and read the fresh ids the kitchen endpoints expect.
-  async function freshLineIdsForSkus(skus: string[], firedState: "fired" | "unfired"): Promise<string[]> {
+  // Persiste a comanda e devolve, das linhas escolhidas, as que ESTÃO no estado
+  // pedido depois do round-trip. A identidade é do cliente e o servidor a
+  // preserva, então o persist+reload não existe mais para "renovar ids" — ele
+  // existe para que o servidor conheça a linha antes de despachá-la, e para que
+  // o `fired` que decide o filtro venha da Projection, nunca da tela.
+  async function lineIdsInState(lineIds: string[], firedState: "fired" | "unfired"): Promise<string[]> {
     await persistTab(true);
     await reloadCurrentTab();
     const wantFired = firedState === "fired";
     return cart.items
-      .filter((item) => skus.includes(item.sku) && item.line_id && Boolean(item.fired) === wantFired)
-      .map((item) => item.line_id as string);
+      .filter((item) => lineIds.includes(item.line_id) && Boolean(item.fired) === wantFired)
+      .map((item) => item.line_id);
   }
 
-  async function fireTab(selectedSkus?: string[]) {
+  async function fireTab(selectedLineIds?: string[]) {
     if (!cart.tabSessionKey) return;
     serverError.value = "";
     firing.value = true;
     try {
       const body: Record<string, unknown> = { client_request_id: newClientRequestId() };
-      if (selectedSkus && selectedSkus.length) {
-        // Multi-select (spec §2.2): fire exactly the chosen lines. Resolve their
-        // fresh line_ids (persist regenerates them) before targeting.
-        const lineIds = await freshLineIdsForSkus(selectedSkus, "unfired");
+      if (selectedLineIds && selectedLineIds.length) {
+        // Multi-select (spec §2.2): fire exactly the chosen lines.
+        const lineIds = await lineIdsInState(selectedLineIds, "unfired");
         if (!lineIds.length) return;
         body.line_ids = lineIds;
       } else {
@@ -1776,14 +1801,14 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  // Multi-select unfire (spec §2.2): resolve the chosen lines' fresh, fired
-  // line_ids, then cancel their kitchen handoff in one call.
-  async function unfireSelected(selectedSkus: string[]) {
-    if (!cart.tabSessionKey || !selectedSkus.length) return;
+  // Multi-select unfire (spec §2.2): das linhas escolhidas, cancela o envio das
+  // que a Projection confirma como disparadas.
+  async function unfireSelected(selectedLineIds: string[]) {
+    if (!cart.tabSessionKey || !selectedLineIds.length) return;
     serverError.value = "";
     firing.value = true;
     try {
-      const ids = await freshLineIdsForSkus(selectedSkus, "fired");
+      const ids = await lineIdsInState(selectedLineIds, "fired");
       if (!ids.length) return;
       await unfireLineIds(ids);
     } catch (error) {
@@ -1966,6 +1991,7 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderAdd,
     tenderExact,
     productQty,
+    lineQty,
     addProduct,
     setQty,
     restoreItem,

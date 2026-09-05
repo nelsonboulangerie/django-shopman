@@ -41,9 +41,27 @@ export interface SaleResultAdvanceInputs {
 
 /** Com cliente vinculado o obrigado é nominal (frase completa, com ponto e
  *  maiúscula); sem, a confirmação seca. */
-export function saleResultTitle(customerName: string): string {
+export function saleResultTitle(customerName: string, payment: PaymentProofView | null = null): string {
+  // Cobrança falhada não recebe frase de despedida: a venda existe, o dinheiro
+  // não entrou, e o título é a primeira coisa que o operador lê.
+  if (paymentFailed(payment)) return "Venda registrada, cobrança não criada";
   const nome = firstName(customerName);
   return nome ? `Venda concluída. Obrigado, ${nome}!` : "Venda concluída";
+}
+
+/**
+ * A COBRANÇA FALHOU — o gateway recusou, ou não devolveu nada exibível.
+ *
+ * ⚠️ Isto não é detalhe de status: a venda COMMITOU (pedido criado, linha no
+ * livro-caixa) e o dinheiro NÃO foi cobrado. Foi assim que o Pix do balcão
+ * sumia em silêncio: o gateway devolvia 403, `hasProof` ficava falso, o bloco
+ * da prova não renderizava, e a tela mostrava o check verde de "Venda
+ * concluída" e se fechava sozinha em 5 s. O operador via uma venda paga onde
+ * ninguém tinha cobrado nada.
+ */
+export function paymentFailed(payment: PaymentProofView | null): boolean {
+  const status = payment?.status || "";
+  return status === "error" || status === "unavailable";
 }
 
 /** PIX com prova na tela e confirmação ainda não chegada (polling vivo). */
@@ -64,6 +82,8 @@ export const AUTO_ADVANCE_SECONDS = 5;
  * - Troco a conferir → NUNCA: a tela não some sozinha em cima do dinheiro.
  * - PIX aguardando ou expirado → NUNCA: prova pendente/não resolvida não é
  *   descartada em silêncio (sair exige toque explícito).
+ * - COBRANÇA FALHADA → NUNCA: a venda ficou sem cobrança, e essa é a única
+ *   tela que diz isso. Sair dali é decisão de quem vai cobrar de outro jeito.
  * - LINK DE PAGAMENTO → NUNCA: a URL existe para ser COPIADA e mandada ao
  *   cliente. Uma tela que se fecha sozinha em cima do único lugar onde aquele
  *   link aparece não é auto-avanço, é perda: o pedido fica aguardando um
@@ -77,6 +97,7 @@ export function autoAdvanceSeconds(
 ): number {
   if (inputs.reducedMotion) return 0;
   if (inputs.changeQ > 0) return 0;
+  if (paymentFailed(inputs.payment)) return 0;
   if (inputs.payment?.isPix && inputs.payment.hasProof && inputs.pixStatus !== "paid") return 0;
   if (inputs.payment?.isLink && inputs.payment.hasProof) return 0;
   return AUTO_ADVANCE_SECONDS;
@@ -89,6 +110,9 @@ export function autoAdvanceSeconds(
  */
 export function enterAdvances(inputs: SaleResultAdvanceInputs): boolean {
   if (inputs.changeQ > 0) return false;
+  // O Enter que validou a venda não pode passar por cima do aviso de que a
+  // cobrança não foi criada.
+  if (paymentFailed(inputs.payment)) return false;
   if (pixAwaiting(inputs.payment, inputs.pixStatus)) return false;
   // Mesmo motivo do auto-avanço: o Enter que validou a venda não pode engolir a
   // tela onde o link mora. Sair dali é gesto deliberado no CTA (ou F2).

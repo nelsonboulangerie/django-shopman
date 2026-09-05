@@ -153,7 +153,8 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
     // Total parcial R$ 8,10 na mesma tela. Segundos de defasagem custam menos
     // que um número que o servidor vai desmentir.
     const h = saleWithTotal1000();
-    h.sale.setLineDiscount("PAO", 10, "cortesia");
+    h.sale.setLineDiscount(h.sale.cart.items[0]!.line_id, 10, "cortesia");
+    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
     expect(h.sale.paymentTotalQ.value).toBe(1000);
     h.handles.dispose();
   });

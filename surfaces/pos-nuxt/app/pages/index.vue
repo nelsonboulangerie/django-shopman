@@ -5,7 +5,7 @@ import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
 import { isScheduled, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
-import { enterAdvances } from "~/presentation/saleResult";
+import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -122,7 +122,7 @@ const {
   tenderClear,
   tenderAdd,
   tenderExact,
-  productQty,
+  lineQty,
   addProduct,
   setQty,
   restoreItem,
@@ -187,7 +187,10 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 // Top context bar title (unified layout language, Arc 5): one band names the
 // current work-area screen across Board / Sale / Payment.
 const screenTitle = computed(() => {
-  if (result.value) return "Venda concluída";
+  // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
+  // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
+  // abaixo — e é a barra que fica na periferia da visão do operador.
+  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : "Venda concluída";
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -985,11 +988,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
-            @increment="(sku) => setQty(sku, productQty(sku) + 1)"
-            @decrement="(sku) => setQty(sku, productQty(sku) - 1)"
-            @remove="(sku) => setQty(sku, 0)"
+            @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
+            @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
+            @remove="(lineId) => setQty(lineId, 0)"
             @restore="restoreItem"
-            @set-qty="(sku, qty) => setQty(sku, qty)"
+            @set-qty="(lineId, qty) => setQty(lineId, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
             @prepare="prepareCheckout"

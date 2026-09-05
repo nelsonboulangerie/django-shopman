@@ -6,7 +6,7 @@ cozinha, e quem estava no caixa só descobria clicando em "Atualizar". Ou não
 descobria: entregava um pedido que a cozinha havia cancelado, ou segurava o
 cliente esperando algo que já estava no balcão.
 
-Aqui se prova a fonte (o estado por SKU sai dos tickets da comanda) e o push (o
+Aqui se prova a fonte (o estado por LINHA sai dos tickets da comanda) e o push (o
 mesmo fato do KDS é contado ao balcão num canal com a permissão DELE, carregando
 só a chave da comanda).
 """
@@ -18,7 +18,7 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 
 from shopman.backstage.models import KDSInstance, KDSTicket
-from shopman.backstage.projections.pos import _kitchen_status_by_sku
+from shopman.backstage.projections.pos import _kitchen_status_by_line
 from shopman.shop.eventstream import ShopmanChannelManager
 
 pytestmark = pytest.mark.django_db
@@ -29,46 +29,63 @@ def estacao():
     return KDSInstance.objects.create(ref="bancada", name="Bancada", type="prep")
 
 
-def _ticket(estacao, *, skus, status, session_key="sess-1"):
+def _ticket(estacao, *, lines, status, session_key="sess-1"):
+    """Um ticket de cozinha com as LINHAS informadas — ``[(line_id, sku), ...]``."""
     return KDSTicket.objects.create(
         session_key=session_key,
         kds_instance=estacao,
-        items=[{"sku": sku, "name": sku, "qty": 1} for sku in skus],
+        items=[
+            {"line_id": line_id, "sku": sku, "name": sku, "qty": 1}
+            for line_id, sku in lines
+        ],
         status=status,
     )
 
 
-# ── O estado por SKU ──────────────────────────────────────────────────────
+# ── O estado por LINHA ────────────────────────────────────────────────────
 
 
-def test_o_estado_de_cada_sku_vem_do_ticket_da_comanda(estacao):
-    _ticket(estacao, skus=["PAO"], status="done")
-    _ticket(estacao, skus=["BOLO"], status="in_progress")
+def test_o_estado_de_cada_linha_vem_do_ticket_da_comanda(estacao):
+    _ticket(estacao, lines=[("L-1", "PAO")], status="done")
+    _ticket(estacao, lines=[("L-2", "BOLO")], status="in_progress")
 
-    assert _kitchen_status_by_sku("sess-1") == {"PAO": "done", "BOLO": "in_progress"}
+    assert _kitchen_status_by_line("sess-1") == {"L-1": "done", "L-2": "in_progress"}
 
 
-def test_sku_em_duas_estacoes_so_esta_pronto_quando_as_DUAS_terminam(estacao):
+def test_duas_linhas_do_mesmo_sku_tem_estados_proprios(estacao):
+    """O segundo chá não herda o "Pronto" do primeiro.
+
+    Enquanto o estado era resolvido por SKU, a linha nova — ainda por enviar —
+    nascia marcada com o que a cozinha tinha feito com a linha anterior do mesmo
+    produto. O operador via "Pronto" num item que ninguém tinha começado.
+    """
+    _ticket(estacao, lines=[("L-1", "CHA")], status="done")
+    _ticket(estacao, lines=[("L-2", "CHA")], status="pending")
+
+    assert _kitchen_status_by_line("sess-1") == {"L-1": "done", "L-2": "pending"}
+
+
+def test_linha_em_duas_estacoes_so_esta_pronta_quando_as_DUAS_terminam(estacao):
     """Vence o MENOS avançado: meia cozinha pronta não é a linha pronta."""
     outra = KDSInstance.objects.create(ref="forno", name="Forno", type="prep")
-    _ticket(estacao, skus=["PAO"], status="done")
-    _ticket(outra, skus=["PAO"], status="in_progress")
+    _ticket(estacao, lines=[("L-1", "PAO")], status="done")
+    _ticket(outra, lines=[("L-1", "PAO")], status="in_progress")
 
-    assert _kitchen_status_by_sku("sess-1") == {"PAO": "in_progress"}
+    assert _kitchen_status_by_line("sess-1") == {"L-1": "in_progress"}
 
 
 def test_cancelado_vence_tudo(estacao):
     """É o único estado que pede ação de quem está no caixa."""
     outra = KDSInstance.objects.create(ref="forno", name="Forno", type="prep")
-    _ticket(estacao, skus=["PAO"], status="done")
-    _ticket(outra, skus=["PAO"], status="cancelled")
+    _ticket(estacao, lines=[("L-1", "PAO")], status="done")
+    _ticket(outra, lines=[("L-1", "PAO")], status="cancelled")
 
-    assert _kitchen_status_by_sku("sess-1") == {"PAO": "cancelled"}
+    assert _kitchen_status_by_line("sess-1") == {"L-1": "cancelled"}
 
 
 def test_comanda_sem_ticket_nao_inventa_estado(estacao):
-    assert _kitchen_status_by_sku("sess-vazia") == {}
-    assert _kitchen_status_by_sku("") == {}
+    assert _kitchen_status_by_line("sess-vazia") == {}
+    assert _kitchen_status_by_line("") == {}
 
 
 # ── O push, e a permissão dele ────────────────────────────────────────────
@@ -113,7 +130,7 @@ def test_mudar_o_ticket_anuncia_a_comanda_ao_balcao(estacao, django_capture_on_c
     )
 
     with django_capture_on_commit_callbacks(execute=True):
-        ticket = _ticket(estacao, skus=["PAO"], status="pending")
+        ticket = _ticket(estacao, lines=[("L-1", "PAO")], status="pending")
     enviados.clear()
 
     with django_capture_on_commit_callbacks(execute=True):

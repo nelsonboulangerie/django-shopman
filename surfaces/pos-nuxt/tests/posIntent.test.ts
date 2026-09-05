@@ -9,6 +9,7 @@ import {
   buildPosSaleIntent,
   cartTotalQ,
   concreteActionHref,
+  newLineId,
   resolvePayment,
 } from "../app/utils/posIntent";
 import {
@@ -63,7 +64,7 @@ describe("POS sale intent", () => {
       managerApproval: null,
       clientRequestId: "pos:test-1",
       items: [
-        { sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
+        { line_id: "L-abc12345", sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
       ],
     });
 
@@ -100,8 +101,10 @@ describe("POS sale intent", () => {
       receipt_channels: ["email"],
       receipt_email: "ana@example.com",
     });
+    // A IDENTIDADE da linha viaja com ela: sem `line_id` no payload o servidor
+    // gerava um id novo a cada save e perdia o vínculo com o ticket já disparado.
     expect(payload.items).toEqual([
-      { sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
+      { line_id: "L-abc12345", sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
     ]);
     expect(payload.items[0]).not.toHaveProperty("price_q");
   });
@@ -210,6 +213,21 @@ describe("POS sale intent", () => {
       manual_discount: { type: "percent", value: "10", reason: "fidelidade" },
       manager_approval: { username: "gerente", password: "secret" },
     });
+  });
+});
+
+describe("a identidade da linha nasce no cliente", () => {
+  it("o formato é estável: `L-` + 8 caracteres", () => {
+    // O formato é contrato com o servidor (que preserva o id que recebe) e com
+    // o log — mudá-lo é mudar o payload da comanda.
+    for (let i = 0; i < 50; i += 1) expect(newLineId()).toMatch(/^L-[0-9a-f]{8}$/);
+  });
+
+  it("duas linhas criadas em sequência nunca colidem", () => {
+    // É disto que depende "mais um chá vira uma linha nova": dois ids iguais
+    // fariam o servidor deduplicar as duas de volta numa só.
+    const ids = new Set(Array.from({ length: 200 }, () => newLineId()));
+    expect(ids.size).toBe(200);
   });
 });
 
@@ -325,7 +343,7 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     managerApproval: null,
     clientRequestId: "pos:test-base",
     items: [
-      { sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },
+      { line_id: "L-base0001", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },
     ],
     ...overrides,
   };

@@ -71,13 +71,17 @@ async function copyLink() {
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
-        <!-- No LINK, a mensagem do servidor ("Pagamento criado. Aguarde
-             confirmação do gateway antes de tratar como recebido.") é jargão e
-             repete o que a linha abaixo já diz. A linha diz o que a casa FAZ
-             com a URL (a cadeia WhatsApp → e-mail → SMS enfileirada na venda) e
-             deixa a cópia manual como rede, não como gesto padrão. -->
+        <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
+             (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
+             WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
+             manual como rede, não como gesto padrão.
+             (2) A mensagem do servidor ("Pagamento criado. Aguarde confirmação
+             do gateway...") é jargão e, no PIX com prova viva, repete o que a
+             linha de baixo já diz em cinco palavras, com o giro do polling ao
+             lado. Três frases para um fato é o operador parando de ler as três.
+             Ela volta a aparecer quando NÃO há prova: aí é a única voz. -->
         <p v-if="proof.isLink" class="text-xs opacity-90">Enviando o link ao cliente por WhatsApp, e-mail ou SMS. Se preferir, copie e mande você.</p>
-        <p v-else-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
+        <p v-else-if="proof.message && !(proof.isPix && proof.hasProof)" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…

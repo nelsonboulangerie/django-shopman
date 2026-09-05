@@ -458,17 +458,29 @@ export interface POSResponse {
 }
 
 export interface POSCartItem {
+  /** A IDENTIDADE da linha, e a única chave dela. O cliente gera ao criar
+   *  (`L-` + 8 caracteres) e o servidor preserva.
+   *
+   *  ⚠️ Já foi o SKU que fazia esse papel, e o modelo é que estava errado: com
+   *  uma linha por SKU, "mais um chá" virava `qty: 2` numa linha já disparada, o
+   *  fire deduplicava por `line_id` e o segundo chá nunca era feito. Duas linhas
+   *  do mesmo SKU são legítimas — e é o que permite observação, desconto e
+   *  estado de cozinha por rodada. */
+  line_id: string;
   sku: string;
   name: string;
   price_q: number;
   qty: number;
   notes: string;
-  line_id?: string;
   fired?: boolean;
-  /** Em que pé a COZINHA está com este SKU nesta comanda: "" (nada disparado),
-   *  "pending", "in_progress", "done", "cancelled". Vem do ticket do KDS e chega
-   *  por push (canal SSE `tabs`) — o selo da linha segue o ticket em vez de
-   *  congelar no estado do minuto do disparo. */
+  /** QUANTAS unidades desta linha foram à cozinha. A linha vai INTEIRA (não
+   *  existe meia-linha), então isto serve a uma pergunta só: detectar SOBRA —
+   *  linha enviada com 3 que o operador depois baixou para 1. */
+  fired_qty?: number;
+  /** Em que pé a COZINHA está com esta LINHA nesta comanda: "" (nada
+   *  disparado), "pending", "in_progress", "done", "cancelled". Vem do ticket do
+   *  KDS e chega por push (canal SSE `tabs`) — o selo da linha segue o ticket em
+   *  vez de congelar no estado do minuto do disparo. */
   kitchen_status?: string;
   /** Desconto MANUAL desta linha. `value` é percentual em `percent` e REAIS em
    *  `fixed` — a mesma convenção do desconto do pedido. O R$ é POR UNIDADE:

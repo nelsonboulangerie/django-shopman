@@ -244,13 +244,24 @@ def _audit_qty(item: dict):
 
 
 def _audit_item_index(items: list[dict]) -> dict:
-    # Key by SKU (stable operator-meaningful identity), not line_id — line_ids are
-    # reassigned on reload/persist and would produce false add/remove churn.
+    """Índice por SKU, SOMANDO as quantidades das linhas daquele produto.
+
+    A trilha fala a língua do auditor — produto e quantidade ("saiu 1 pão") —, e
+    não a da tela; por isso a chave é o SKU e não a linha. Mas o mesmo SKU agora
+    pode aparecer em DUAS linhas (o segundo chá, pedido depois de o primeiro ir
+    para a cozinha): guardar só a última fazia duas linhas de 1 parecerem uma, e
+    partir uma linha em duas virava uma mudança invisível na trilha.
+    """
     index: dict = {}
     for item in items or []:
         if _is_delivery_fee_item(item):
             continue
-        index[str(item.get("sku") or "")] = item
+        sku = str(item.get("sku") or "")
+        entry = index.get(sku)
+        if entry is None:
+            index[sku] = {"sku": sku, "name": item.get("name"), "qty": _audit_qty(item)}
+        else:
+            entry["qty"] += _audit_qty(item)
     return index
 
 
@@ -1348,7 +1359,7 @@ def fire_pos_tab(
 ) -> PosFireResult:
     """Send an open comanda's not-yet-fired courses to the kitchen (KDS).
 
-    Progressive (course-by-course): only the unfired delta is dispatched.
+    Progressive (course-by-course): only the still-unfired lines are dispatched.
     ``line_ids`` (optional) limits the fire to specific lines; omitted means
     "fire the whole tab" (every still-unfired line). Idempotent — the kitchen
     ticket ledger keyed by ``session_key`` is authoritative, so re-sending a
@@ -1382,17 +1393,34 @@ def fire_pos_tab(
             focus="cart",
         )
 
-    tickets = kds_service.fire_lines(session_key=session.session_key, lines=lines)
+    # Dispara a LINHA, inteira, e só a que ainda não foi. Quem responde "já foi?"
+    # é o ledger do KDS, que é por `line_id` — a mesma identidade que a comanda
+    # carrega desde o payload. Pedir "mais um chá" depois do primeiro sair não
+    # engorda a linha que já está na cozinha: nasce uma linha nova, com id novo,
+    # e é ela que o fire encontra aqui por fazer.
+    ledger = kds_service.fired_line_ids(session.session_key)
+    to_fire = [line for line in lines if line["line_id"] and line["line_id"] not in ledger]
+
+    tickets = kds_service.fire_lines(session_key=session.session_key, lines=to_fire)
 
     # Mirror the fired-line ledger onto the comanda for the cart UI. The kitchen
     # tickets stay authoritative; this marker is a cheap read for the projection
     # and is written directly (no re-pricing of the open comanda).
     fired = sorted(kds_service.fired_line_ids(session.session_key))
-    session.data = {**(session.data or {}), "fired_lines": fired}
+    # QUANTO da linha foi. Serve a UMA pergunta: a linha enviada ENCOLHEU depois?
+    # (o operador reduziu a quantidade de algo que a cozinha já está fazendo).
+    # Só conta o que o ledger confirmou — uma linha sem estação de destino não
+    # chega à cozinha, e marcá-la aqui acenderia o selo de sobra sem sobra.
+    fired_qty = {str(k): int(v) for k, v in ((session.data or {}).get("fired_qty") or {}).items()}
+    fired_set = set(fired)
+    for line in to_fire:
+        if line["line_id"] in fired_set:
+            fired_qty[line["line_id"]] = int(line["qty"])
+    session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
     session.emit_event("fired", actor=operator_username, payload={
-        "lines": [{"sku": ln["sku"], "name": ln["name"], "qty": ln["qty"]} for ln in lines],
+        "lines": [{"sku": ln["sku"], "name": ln["name"], "qty": ln["qty"]} for ln in to_fire],
         "count": len(tickets),
     })
 
@@ -1447,7 +1475,12 @@ def cancel_fired_pos_tab_lines(
     ]
     result = kds_service.unfire_lines(session_key=session.session_key, line_ids=targets)
     fired = sorted(kds_service.fired_line_ids(session.session_key))
-    session.data = {**(session.data or {}), "fired_lines": fired}
+    fired_qty = {
+        str(k): int(v)
+        for k, v in ((session.data or {}).get("fired_qty") or {}).items()
+        if str(k) not in target_set
+    }
+    session.data = {**(session.data or {}), "fired_lines": fired, "fired_qty": fired_qty}
     session.save(update_fields=["data"])
 
     session.emit_event("unfired", actor=operator_username, payload={
@@ -1636,6 +1669,14 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
             "qty": int(item.get("qty", 1)),
             "unit_price_q": int(item["unit_price_q"]),
         }
+        # A identidade da linha VEM DO CLIENTE e é preservada no remove+readd do
+        # save e do fechamento. O kernel já aceita ``line_id`` explícito no
+        # ``add_line`` justamente para isso; sem repassá-lo aqui, cada save
+        # regerava os ids e o pedido committado re-disparava para a cozinha
+        # (o ledger do KDS é por ``line_id``) — comanda preparada em dobro.
+        line_id = str(item.get("line_id") or "").strip()
+        if line_id:
+            op["line_id"] = line_id
         name = str(item.get("name", "") or "").strip()
         if name:
             op["name"] = name
@@ -2023,18 +2064,12 @@ def _replace_session_ops(
 ) -> list[dict]:
     """Build ops that replace mutable POS payload fields on an existing session.
 
-    Preserva o ``line_id`` por SKU ao reconstruir as linhas: o PDV tem uma linha por
-    SKU, então o remove+readd do fechamento pode manter a identidade durável de cada
-    linha. Sem isso, os line_ids são regerados e o pedido committado dispara DE NOVO
-    pra cozinha (o ledger de fire é por line_id) — comanda preparada em dobro.
+    A identidade das linhas atravessa o remove+readd porque ela vem no PAYLOAD
+    (ver ``build_session_ops``), e não de um palpite feito aqui. Enquanto a linha
+    era identificada pelo SKU, este método adivinhava qual linha nova era qual
+    linha velha casando os SKUs — o que só funcionava com uma linha por SKU e
+    quebrava calado assim que houvesse duas.
     """
-    line_id_by_sku: dict[str, str] = {}
-    for item in (session.items or []):
-        sku = item.get("sku")
-        line_id = item.get("line_id")
-        if sku and line_id and sku not in line_id_by_sku:
-            line_id_by_sku[sku] = line_id
-
     ops = [
         {"op": "remove_line", "line_id": item["line_id"]}
         for item in (session.items or [])
@@ -2056,13 +2091,7 @@ def _replace_session_ops(
         {"op": "set_data", "path": "delivery_fee_override_q", "value": None},
         {"op": "set_data", "path": "order_notes", "value": ""},
     ])
-    add_ops = build_session_ops(payload, operator_username, approved_by=approved_by)
-    for op in add_ops:
-        if op.get("op") == "add_line":
-            preserved = line_id_by_sku.pop(op.get("sku"), None)  # consome (1 linha/SKU)
-            if preserved:
-                op["line_id"] = preserved
-    ops.extend(add_ops)
+    ops.extend(build_session_ops(payload, operator_username, approved_by=approved_by))
     return ops
 
 

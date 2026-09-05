@@ -32,15 +32,18 @@ import type {
 import { formatBRL, moneyInputToQ } from "~/utils/posIntent";
 import {
   cashNotesQ as contractCashNotesQ,
+  cashNoteLabel,
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods as toInjectableMethods,
+  machineTenderLines,
   methodShortcuts,
   nonCashExcessQ,
   paymentIcon,
   SPLIT_PRESETS,
   tenderLineView,
 } from "~/presentation/payment";
+import { firedKitchenQty, kitchenHandoffNote, kitchenSurplusQty } from "~/presentation/kitchen";
 import {
   lineDiscountBadge,
   lineListTotalDisplay,
@@ -422,7 +425,10 @@ const discountSummary = computed(() => {
 // mostra, não recalcula.
 const summaryLines = computed(() =>
   props.items.map((item) => ({
-    sku: item.sku,
+    // A CHAVE é a linha, não o produto: duas linhas do mesmo item na comanda
+    // (uma já na cozinha, outra nova) davam `:key` repetido, e o Vue passava a
+    // reaproveitar o nó errado ao reordenar o resumo.
+    lineId: item.line_id,
     name: item.name,
     qty: item.qty,
     totalDisplay: formatBRL(lineTotalQ(item)),
@@ -441,15 +447,14 @@ const summaryUnits = computed(() => props.items.reduce((sum, item) => sum + item
 
 // Kitchen clarity: tell the operator, unequivocally, what finalizing will do
 // vs what was already fired — so it's never a mystery whether food was sent.
-const firedCount = computed(() => props.items.filter((item) => item.fired).length);
-const kitchenNote = computed(() => {
-  const total = props.items.length;
-  if (!total) return "";
-  const fired = firedCount.value;
-  if (fired === 0) return `Ao finalizar, ${total === 1 ? "o item vai" : "os itens vão"} para a cozinha.`;
-  if (fired < total) return `${fired} ${fired === 1 ? "item já está" : "itens já estão"} na cozinha; o restante vai ao finalizar.`;
-  return total === 1 ? "O item já está na cozinha." : "Todos os itens já estão na cozinha.";
-});
+/** Unidades que a cozinha já tem em mãos — acende o destaque da frase. */
+const firedUnits = computed(() => firedKitchenQty(props.items));
+/** Unidades que o fogão está fazendo e a conta não cobra — ver `kitchenSurplusQty`. */
+const kitchenSurplus = computed(() => props.items.reduce((total, item) => total + kitchenSurplusQty(item), 0));
+// A frase é presentation PURA (`kitchenHandoffNote`): ela conta unidades, como o
+// botão de enviar, e não linhas — "1 item já está na cozinha" com três chás numa
+// linha só era o número errado no lugar onde o operador confere o que já saiu.
+const kitchenNote = computed(() => kitchenHandoffNote(props.items));
 
 // Payment by injection: methods become "add a tender" buttons; the operator
 // covers the total in any combination of forms. No "mixed" selection.
@@ -472,6 +477,18 @@ const deliveryCollections = computed(() => collectionsForFulfillment(props.payme
 // A tela impede antes, e SEM apagar o que o operador já digitou: quem estiver
 // lançado desabilita o outro lado. O servidor recusa de todo jeito
 // (`link_requires_full_payment`); isto aqui é a gêmea, não a trava.
+// A CONFERÊNCIA DA MAQUININHA. Crédito e débito não passam por gateway: o
+// cartão é passado no terminal físico e o valor é DIGITADO à mão. Errar um
+// dígito ali é cobrar do cliente um valor que a venda não conhece — e o sistema
+// só descobre no fechamento do dia, quando a adquirente não bate com o livro.
+// Um passo visual antes de fechar é o que separa "o operador leu o valor" de
+// "o operador lembrou o valor".
+//
+// ⚠️ Sai de cena inteiro quando o TEF da Stone entrar: ali o terminal recebe o
+// valor pela API e não há o que conferir. Ver docs/plans/WP-PAGAMENTO-LINK-E-TEF.md.
+const machineTenders = computed(() => machineTenderLines(tenderLines.value));
+const machineConfirmOpen = ref(false);
+
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
 const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
 /** Este método está indisponível AGORA por causa da exclusividade do link? */
@@ -689,11 +706,24 @@ const notices = computed<CheckoutNotice[]>(() => {
   else if (props.splitNote) {
     notes.push({ key: "split", tone: "block", icon: "lucide:users", message: props.splitNote });
   }
+  // A COZINHA PREPAROU MAIS DO QUE A CONTA COBRA. Fica ao lado do Validar
+  // porque é ali que a diferença vira prejuízo: o operador está prestes a cobrar
+  // por 1 o que o fogão fez 3 vezes. Não trava a venda — reduzir a linha é
+  // gesto legítimo (o cliente desistiu) —, mas ninguém fecha sem ter lido.
+  if (kitchenSurplus.value > 0) {
+    notes.push({
+      key: "kitchen_surplus",
+      tone: "warn",
+      icon: "lucide:triangle-alert",
+      message: `A cozinha preparou ${kitchenSurplus.value} ${kitchenSurplus.value === 1 ? "item" : "itens"} a mais do que esta conta cobra.`,
+      hint: "Cancele o envio da linha, ou avise o preparo — a diferença sai sem pagamento.",
+    });
+  }
   if (props.items.length && kitchenNote.value) {
     notes.push({
       key: "kitchen",
       icon: "lucide:flame",
-      accent: firedCount.value ? "text-primary" : "",
+      accent: firedUnits.value ? "text-primary" : "",
       message: kitchenNote.value,
     });
   }
@@ -736,12 +766,23 @@ function onCta() {
   // caminho paralelo aqui seria um segundo lugar decidindo quando revisar.
   if (props.reviewFailed) { emit("submit"); return; }
   if (needsAuth.value) { managerAuthOpen.value = true; return; }
+  proceed();
+}
+/** O último degrau antes de fechar: a maquininha, quando ela é quem cobra.
+ *  Depois da autorização do gerente, nunca antes — o cartão só é passado quando
+ *  a venda já está liberada. */
+function proceed() {
+  if (machineTenders.value.length) { machineConfirmOpen.value = true; return; }
   emit("submit");
 }
 function onManagerAuthorize(username: string, pin: string) {
   emit("update:managerUsername", username);
   emit("update:managerPin", pin);
   managerAuthOpen.value = false;
+  proceed();
+}
+function onMachineConfirmed() {
+  machineConfirmOpen.value = false;
   emit("submit");
 }
 
@@ -954,7 +995,8 @@ defineExpose({
           <!-- numpad (dígitos: entrada decimal, vírgula nos centavos) + trilho de
                cédulas à direita (só dinheiro: as 6 notas BR que o cliente entrega) -->
           <div class="flex gap-1.5">
-          <div class="grid grid-cols-3 gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'" role="group" aria-label="Teclado de valor">
+          <div class="grid gap-1.5" :class="cashSelected ? 'flex-[3] basis-0' : 'flex-1'">
+          <div class="grid grid-cols-3 gap-1.5" role="group" aria-label="Teclado de valor">
             <button
               v-for="digit in digitKeys"
               :key="digit"
@@ -971,32 +1013,40 @@ defineExpose({
             <button type="button" class="grid place-items-center rounded-md border border-destructive/25 bg-destructive/5 h-11 text-destructive transition hover:bg-destructive/10 active:translate-y-px disabled:opacity-40" :disabled="!numpadActive" aria-label="Apagar um dígito" title="Apaga o último dígito do valor (Backspace)" @click="$emit('tenderBackspace')">
               <Icon name="lucide:delete" class="size-5" />
             </button>
+          </div>
             <!-- Exato: a linha selecionada assume o que as OUTRAS deixam devendo
                  (venda coberta, troco zero) — tecla '='. Limpar (C): zera a linha
-                 inteira para digitar; o Backspace apaga um dígito por vez. -->
+                 inteira para digitar; o Backspace apaga um dígito por vez.
+                 ⚠️ Os dois saíram de DENTRO da grade de 3 colunas. Lá o "Limpar"
+                 vivia numa coluna de dígito — largura de um "7" — com ícone,
+                 rótulo e o texto vazando por cima da borda assim que o trilho de
+                 cédulas aparecia e estreitava o teclado. Em linha própria, cada
+                 um tem metade da largura do teclado e o rótulo cabe em qualquer
+                 zoom; `min-w-0` + `truncate` fecham a porta do estouro. -->
+            <div class="grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              class="col-span-2 flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
               aria-label="Exato: a linha assume o restante"
               title="A forma selecionada assume o que falta para cobrir o total (=)"
               @click="$emit('tenderExact')"
             >
-              <Icon name="lucide:equal" class="size-4 shrink-0 text-muted-foreground" />
-              Exato
-              <kbd class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
+              <span class="truncate">Exato</span>
+              <kbd class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">=</kbd>
             </button>
             <button
               type="button"
-              class="flex h-11 items-center justify-center gap-1.5 rounded-md border bg-card text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
+              class="flex h-11 min-w-0 items-center justify-center gap-1.5 rounded-md border bg-card px-2 text-sm font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
               :disabled="!numpadActive"
               aria-label="Limpar: zera o valor da linha"
               title="Zera o valor da linha inteira (o Backspace apaga um dígito)"
               @click="$emit('tenderClear')"
             >
               <Icon name="lucide:eraser" class="size-4 shrink-0 text-muted-foreground" />
-              Limpar
+              <span class="truncate">Limpar</span>
             </button>
+            </div>
           </div>
           <!-- cédula rail — 4ª coluna (mesma largura das colunas do teclado);
                verde dinheiro + ícone de nota -->
@@ -1017,7 +1067,7 @@ defineExpose({
               @click="$emit('tenderAdd', note)"
             >
               <Icon name="lucide:banknote" class="size-3.5 shrink-0 opacity-70" />
-              {{ formatBRL(note) }}
+              {{ cashNoteLabel(note) }}
             </button>
           </div>
           </div>
@@ -1057,24 +1107,47 @@ defineExpose({
                Tocar de novo no mesmo número desliga: mudar de ideia é rotina.
                Quanto pedir a quem está na frente é a INSTRUÇÃO do momento, e
                por isso vai para o rodapé, em letra que se lê de longe. -->
-          <div class="flex items-center gap-1.5 rounded-md border bg-card p-1.5" role="group" aria-label="Dividir conta">
-            <span class="shrink-0 px-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">Dividir conta</span>
-            <UiButton
-              v-for="n in SPLIT_PRESETS"
-              :key="n"
-              type="button"
-              variant="outline"
-              size="sm"
-              class="h-9 min-w-0 flex-1 p-0 tabular-nums"
-              :class="splitCount === n ? 'border-primary bg-primary/10 font-bold' : ''"
-              :disabled="hasLinkTender"
-              :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
-              :aria-pressed="splitCount === n"
-              :aria-label="`Dividir a conta em ${n} pessoas`"
-              @click="$emit('setSplitCount', n)"
-            >
-              {{ n }}
-            </UiButton>
+          <!-- ⚠️ VESTE A MESMA ROUPA DO DESCONTO, logo acima. Isto era uma CAIXA
+               dentro da seção: moldura própria, rótulo em micro-caixa-alta — que
+               nesta escala é o papel de TÍTULO DE SEÇÃO, o mesmo do "Ações da
+               venda" três linhas acima — e mais uma moldura em cada número.
+               Três níveis de borda para uma ação só, ao lado de uma irmã que é
+               uma linha limpa.
+               Agora é linha: mesma altura, ícone à esquerda, rótulo em corpo de
+               texto, e os números à direita onde a irmã põe o atalho. Os números
+               perderam a borda individual e viraram opções segmentadas — o
+               escolhido é o único cheio. E o estado subiu para a LINHA (borda e
+               fundo primários, o idioma de seleção da casa): dá para ver que a
+               conta está dividida sem procurar qual quadradinho está aceso. -->
+          <div
+            class="flex h-11 items-center gap-2 rounded-md border px-3 transition"
+            :class="splitCount ? 'border-primary bg-primary/5' : 'bg-card'"
+            role="group"
+            aria-label="Dividir conta"
+          >
+            <Icon name="lucide:users" class="size-4 shrink-0 text-muted-foreground" />
+            <span
+              class="min-w-0 truncate text-sm font-medium"
+              :class="splitCount ? 'text-foreground' : 'text-muted-foreground'"
+            >Dividir conta</span>
+            <div class="ml-auto flex shrink-0 items-center gap-0.5">
+              <button
+                v-for="n in SPLIT_PRESETS"
+                :key="n"
+                type="button"
+                class="grid h-8 w-8 place-items-center rounded-md text-sm tabular-nums transition disabled:opacity-40"
+                :class="splitCount === n
+                  ? 'bg-primary font-bold text-primary-foreground'
+                  : 'font-medium text-muted-foreground hover:bg-accent'"
+                :disabled="hasLinkTender"
+                :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
+                :aria-pressed="splitCount === n"
+                :aria-label="`Dividir a conta em ${n} pessoas`"
+                @click="$emit('setSplitCount', n)"
+              >
+                {{ n }}
+              </button>
+            </div>
           </div>
         </section>
 
@@ -1225,10 +1298,16 @@ defineExpose({
                Com troco na mesa esta linha se cala — o troco virou o herói ali
                em cima, e o mesmo número em dois tamanhos na mesma coluna é o
                operador procurando qual dos dois vale. -->
-          <div v-if="payState !== 'change'" class="mt-2 flex items-center justify-between gap-2 px-1">
-            <span class="text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
+          <!-- ⚠️ `flex-wrap`: o número é grande e a coluna do meio encolhe. Em
+               1024px (e em qualquer zoom que aperte a coluna) "RESTANTE" mais um
+               valor em `text-3xl` não cabiam na linha — e como texto não quebra
+               nem encolhe sozinho, o valor VAZAVA por cima do botão Validar, na
+               coluna vizinha. Quebrando, o número desce para a própria linha em
+               vez de invadir o botão que fecha a venda. -->
+          <div v-if="payState !== 'change'" class="mt-2 flex flex-wrap items-baseline justify-between gap-x-2 px-1">
+            <span class="shrink-0 text-sm font-medium uppercase tracking-wide text-muted-foreground">Restante</span>
             <strong
-              class="text-3xl font-bold tabular-nums"
+              class="ml-auto text-3xl font-bold tabular-nums"
               :class="payState === 'ready' ? 'text-muted-foreground' : ''"
             >
               {{ formatBRL(Math.max(0, paymentRemainingQ)) }}
@@ -1273,7 +1352,7 @@ defineExpose({
 
           <div class="flex min-h-0 flex-1 flex-col rounded-md border bg-card">
             <ul v-if="summaryLines.length" class="min-h-0 flex-1 divide-y overflow-y-auto">
-              <li v-for="line in summaryLines" :key="line.sku" class="px-3 py-2">
+              <li v-for="line in summaryLines" :key="line.lineId" class="px-3 py-2">
                 <div class="flex items-baseline gap-2">
                   <span class="w-6 shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ line.qty }}×</span>
                   <span class="min-w-0 flex-1 truncate text-sm">{{ line.name }}</span>
@@ -1575,6 +1654,45 @@ defineExpose({
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
   />
+
+  <!-- MODAL: MAQUININHA — o valor que o operador vai digitar no terminal.
+       Um passo, um número, um botão. Existe porque entre a tela e a maquininha
+       hoje não há fio nenhum: quem transporta o valor é a memória de quem está
+       atendendo, e o erro só aparece no fechamento do dia. Não pergunta se deu
+       certo — se a maquininha recusar, o operador fecha o diálogo e troca a
+       forma; a venda ainda não foi registrada. -->
+  <UiDialog v-model:open="machineConfirmOpen">
+    <UiDialogContent class="sm:max-w-sm">
+      <UiDialogHeader>
+        <UiDialogTitle>Passe na maquininha</UiDialogTitle>
+        <UiDialogDescription>Digite este valor no terminal e conclua a operação com o cliente.</UiDialogDescription>
+      </UiDialogHeader>
+      <div class="grid gap-2">
+        <!-- As DUAS coisas que o operador vai reproduzir na maquininha têm o
+             mesmo peso: a função (crédito ou débito — teclas diferentes, prazos
+             e taxas diferentes) e o valor. A forma vem primeiro, em pastilha
+             cheia: é a primeira escolha no teclado do terminal, e a única que a
+             maquininha não perdoa em silêncio. -->
+        <div
+          v-for="line in machineTenders"
+          :key="line.method"
+          class="grid justify-items-center gap-3 rounded-md border border-primary/30 bg-primary/5 px-4 py-7"
+        >
+          <p class="flex items-center gap-2 rounded-full bg-primary px-4 py-1.5 text-base font-bold uppercase tracking-widest text-primary-foreground">
+            <Icon :name="line.icon" class="size-5 shrink-0" />
+            {{ line.label }}
+          </p>
+          <p class="text-5xl font-bold tabular-nums tracking-tight text-primary">{{ line.amountDisplay }}</p>
+        </div>
+      </div>
+      <UiDialogFooter class="sm:flex-col sm:items-stretch sm:gap-2">
+        <UiButton size="lg" class="h-12 text-base" @click="onMachineConfirmed">
+          OK, cobrei na maquininha
+        </UiButton>
+        <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
 
   <!-- MODAL: Desconto -->
   <UiDialog v-model:open="discountSheetOpen">

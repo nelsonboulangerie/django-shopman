@@ -11,7 +11,8 @@ function affordance(overrides: Partial<ActionAffordance> = {}): ActionAffordance
 }
 
 function item(overrides: Partial<POSCartItem> & { sku: string; name: string }): POSCartItem {
-  return { price_q: 500, qty: 1, notes: "", ...overrides };
+  // A linha nasce com identidade: é ela, não o sku, que os eventos carregam.
+  return { line_id: `L-${overrides.sku}`, price_q: 500, qty: 1, notes: "", ...overrides };
 }
 
 function props(overrides: Record<string, unknown> = {}) {
@@ -53,17 +54,17 @@ describe("PosCartPanel — render", () => {
 });
 
 describe("PosCartPanel — interações emitem os comandos certos", () => {
-  it("'Aumentar' emite increment com o sku da linha", async () => {
+  it("'Aumentar' emite increment com o line_id da linha", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await wrapper.findAll('[aria-label="Aumentar"]')[0]!.trigger("click");
-    expect(wrapper.emitted("increment")?.[0]).toEqual(["PAO"]);
+    expect(wrapper.emitted("increment")?.[0]).toEqual(["L-PAO"]);
   });
 
   it("'Diminuir' numa linha com qty>1 emite decrement (não abre remoção)", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     // CAFE é a 2ª linha, qty 2 → decrementa direto.
     await wrapper.findAll('[aria-label="Diminuir"]')[1]!.trigger("click");
-    expect(wrapper.emitted("decrement")?.[0]).toEqual(["CAFE"]);
+    expect(wrapper.emitted("decrement")?.[0]).toEqual(["L-CAFE"]);
     expect(wrapper.emitted("remove")).toBeUndefined();
   });
 
@@ -80,7 +81,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     expect(confirm).toBeTruthy();
     (confirm as HTMLElement).click();
     await wrapper.vm.$nextTick();
-    expect(wrapper.emitted("remove")?.[0]).toEqual(["PAO"]);
+    expect(wrapper.emitted("remove")?.[0]).toEqual(["L-PAO"]);
   });
 
   it("linha JÁ disparada à cozinha pede confirmação antes de remover", async () => {
@@ -93,7 +94,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     expect(confirm).toBeTruthy();
     (confirm as HTMLElement).click();
     await wrapper.vm.$nextTick();
-    expect(wrapper.emitted("remove")?.[0]).toEqual(["PAO"]);
+    expect(wrapper.emitted("remove")?.[0]).toEqual(["l1"]);
   });
 
   it("'Remover' da barra de lote pede confirmação e remove a seleção inteira", async () => {
@@ -146,7 +147,7 @@ describe("PosCartPanel — numpad global desliga sob overlay/diálogo", () => {
     pressKey("5");
     await wrapper.vm.$nextTick();
     // A linha ativa é a última adicionada (CAFE).
-    expect(wrapper.emitted("setQty")?.[0]).toEqual(["CAFE", 5]);
+    expect(wrapper.emitted("setQty")?.[0]).toEqual(["L-CAFE", 5]);
   });
 
   it("com um diálogo aberto, o teclado NÃO reescreve o carrinho", async () => {
@@ -179,6 +180,45 @@ describe("PosCartPanel — numpad global desliga sob overlay/diálogo", () => {
     } finally {
       lock.remove();
     }
+  });
+});
+
+describe("PosCartPanel — duas linhas do MESMO produto", () => {
+  // ⚠️ A comanda passou a admitir duas linhas do mesmo item (a primeira já foi à
+  // cozinha, a segunda acabou de ser lançada). Enquanto a tela chaveava por sku,
+  // cada gesto acertava as duas: o desconto do segundo chá caía no primeiro, a
+  // observação aparecia nos dois e o `:key` da lista repetia.
+  const doisChas = [
+    item({ sku: "CHA", name: "Chá", line_id: "L-cha-1", fired: true }),
+    item({ sku: "CHA", name: "Chá", line_id: "L-cha-2" }),
+  ];
+
+  it("o stepper age na linha tocada, não na primeira do sku", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
+    await wrapper.findAll('[aria-label="Aumentar"]')[1]!.trigger("click");
+    expect(wrapper.emitted("increment")?.[0]).toEqual(["L-cha-2"]);
+  });
+
+  it("a seleção múltipla distingue as duas linhas", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
+    // Duas linhas com o mesmo nome: o segundo checkbox é o da segunda linha.
+    await wrapper.findAll('[aria-label="Selecionar Chá"]')[1]!.trigger("click");
+    const fire = wrapper.findAll("button").find((b) => b.text().includes("Enviar à cozinha"));
+    await fire!.trigger("click");
+    expect(wrapper.emitted("fireLines")?.[0]).toEqual([["L-cha-2"]]);
+  });
+
+  it("o desconto do teclado vai para a linha ativa, e só para ela", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
+    // Seleciona a PRIMEIRA linha (a que já foi à cozinha) e digita 10% nela.
+    await wrapper.findAll("li")[0]!.trigger("click");
+    const desc = wrapper.findAll("button").find((b) => b.text().trim() === "Desc %");
+    await desc!.trigger("click");
+    const um = wrapper.findAll("button").find((b) => b.text().trim() === "1");
+    await um!.trigger("click");
+    const emitted = wrapper.emitted("setDiscount") as unknown[][] | undefined;
+    expect(emitted?.length).toBe(1);
+    expect(emitted?.[0]?.[0]).toBe("L-cha-1");
   });
 });
 

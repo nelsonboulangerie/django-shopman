@@ -270,6 +270,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             )
         return []
     items = []
+    seen_line_ids: set[str] = set()
     for idx, item in enumerate(raw):
         if not isinstance(item, dict):
             raise PosIntentError("invalid_item", "Item inválido no carrinho.", field=f"items.{idx}", focus="search")
@@ -285,6 +286,27 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             "unit_price_q": unit_price_q,
             "notes": _text(item.get("notes"), limit=280),
         }
+        # A IDENTIDADE da linha, gerada pelo cliente. Este parser copia campo a
+        # campo, então o que ele não nomeia não existe daqui para dentro: sem esta
+        # linha o `line_id` morria na porta e o servidor regerava a identidade a
+        # cada save. Com duas linhas do mesmo SKU (o segundo chá, pedido depois do
+        # primeiro ir para a cozinha) isso significava desconto e observação
+        # trocando de dono, e a comanda re-disparando no fechamento.
+        #
+        # Ausente é legítimo: o kernel gera (``Session._normalize_items``). O que
+        # não é legítimo é REPETIDO — duas linhas com o mesmo id colapsam numa só
+        # no `_persist_items`, e a linha comida some sem erro.
+        line_id = _text(item.get("line_id"), limit=64)
+        if line_id:
+            if line_id in seen_line_ids:
+                raise PosIntentError(
+                    code="duplicate_line_id",
+                    message="Duas linhas do carrinho têm a mesma identidade.",
+                    field=f"items.{idx}.line_id",
+                    focus="cart",
+                )
+            seen_line_ids.add(line_id)
+            entry["line_id"] = line_id
         # Preço de ETIQUETA da linha. A review precisa dele para medir o desconto
         # manual como o kernel mede — contra a tabela, e só valendo se ganhar do
         # automático. É ADVISORY: quando há comanda, o servidor sobrescreve pelo

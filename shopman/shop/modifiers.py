@@ -291,10 +291,29 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
                 share_q=int(prior.get("line_amount_q") or 0),
             )
         else:
+            # ⚠️ POR LINHA, não por produto. O filtro casava `(sku, type)`, e com
+            # duas linhas do mesmo SKU — que o balcão agora produz o tempo todo,
+            # bastando o cliente pedir mais um depois de o primeiro ir à cozinha
+            # — reverter UMA apagava o registro das DUAS. A irmã seguia com a
+            # cortesia no preço e sem registro na transparência: o
+            # `original_price_q` sumia, a projection devolvia o preço JÁ
+            # descontado como preço de lista, e a gravação seguinte aplicava a
+            # cortesia de novo, por cima. Desconto composto a cada reprice.
+            #
+            # O `sku` continua atendendo o registro sem `line_id` (order-level e
+            # o que vier de outra origem).
+            line_id = str(item.get("line_id") or "")
             kept = [
                 d
                 for d in (disc.get("items") or [])
-                if not (d.get("sku") == sku and d.get("type") == t)
+                if not (
+                    d.get("type") == t
+                    and (
+                        d.get("line_id") == line_id
+                        if line_id and d.get("line_id")
+                        else d.get("sku") == sku
+                    )
+                )
             ]
         disc["items"] = kept
         disc["total_discount_q"] = sum(int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept)
@@ -538,7 +557,19 @@ class DiscountModifier:
                 coupon_code, now, channel_ref=channel_ref
             )
 
-        if not promotions and not coupon_promo:
+        # ⚠️ O DESCONTO DO OPERADOR NÃO DEPENDE DE HAVER PROMOÇÃO NO AR. Esta
+        # saída antecipada existe para limpar pricing velho quando não há nada
+        # automático a aplicar — e ela estava passando por cima do desconto
+        # manual de linha, que é avaliado no laço LOGO ABAIXO. Numa padaria sem
+        # campanha ativa (o caso comum), o operador dava 50% de cortesia num
+        # item, a linha guardava o desconto em `meta.manual_discount`, e o
+        # pedido cobrava o preço cheio. Cortesia prometida ao cliente, caixa
+        # cobrando integral, e nenhum erro em lugar nenhum.
+        manual_lines = any(
+            ((item.get("meta") or {}).get("manual_discount") or {}).get("value")
+            for item in (session.items or [])
+        )
+        if not promotions and not coupon_promo and not manual_lines:
             if not session.pricing:
                 session.pricing = {}
             session.pricing.pop("coupon", None)
@@ -549,7 +580,12 @@ class DiscountModifier:
         # Coleções por SKU — necessário para promoções por coleção. Usa o MESMO
         # helper canônico do menu (catalog_context) para os dois motores lerem a
         # mesma fonte (D4: evita o menu ver a coleção e o carrinho não).
-        if items and not ctx.get("sku_collections"):
+        # ⚠️ A ida ao banco é da PROMOÇÃO, não da cortesia. `sku_collections` só
+        # alimenta o `_matches`, que só roda para promoção e cupom — uma comanda
+        # que tem apenas desconto do operador (o caso que passou a chegar até
+        # aqui) pagaria uma consulta que não serve a ninguém, a cada reprice, e
+        # o reprice acontece a cada toque no carrinho.
+        if (promotions or coupon_promo) and items and not ctx.get("sku_collections"):
             line_skus = [i.get("sku") for i in items if i.get("sku") and not _is_non_merchandise_line(i)]
             try:
                 from shopman.shop.projections import catalog_context
@@ -650,6 +686,13 @@ class DiscountModifier:
 
                 qty = int(item.get("qty", 1))
                 discounts_applied.append({
+                    # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
+                    # a única fonte que sobrevive ao save (a linha perde campos
+                    # extras no ``update_items``), e quem o relê é a comanda do
+                    # PDV para restaurar o preço PRÉ-desconto. Identificado só
+                    # pelo SKU, o registro de uma linha respondia pela outra do
+                    # mesmo produto — a cortesia dada num café aparecia nos dois.
+                    "line_id": item.get("line_id", ""),
                     "sku": sku,
                     "type": source_type,
                     "name": source_name,
@@ -695,9 +738,10 @@ class DiscountModifier:
             )
             if applied_q > 0:
                 modified = True
-                # sku="" — an order-level record: it aggregates into the cart's
-                # discount total/line but matches no per-line SKU (no strikethrough).
+                # sku=""/line_id="" — an order-level record: it aggregates into the
+                # cart's discount total/line but matches no line (no strikethrough).
                 discounts_applied.append({
+                    "line_id": "",
                     "sku": "",
                     "type": src_type,
                     "name": src_name,

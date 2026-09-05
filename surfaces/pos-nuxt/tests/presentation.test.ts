@@ -26,12 +26,14 @@ import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs,
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
+  cashNoteLabel,
   cashNotesQ,
   cashTenderSumQ,
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
+  machineTenderLines,
   methodLabel,
   nonCashExcessQ,
   paymentChangeQ,
@@ -80,6 +82,8 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenHandoffNote,
+  kitchenSurplusQty,
   fireBarView,
   firedCount,
   kitchenBadge,
@@ -93,11 +97,11 @@ import { formatBRL } from "../app/utils/posIntent";
 
 function cartItem(overrides: Partial<POSCartItem> & { sku: string }): POSCartItem {
   return {
+    line_id: `L-${overrides.sku}`,
     name: overrides.sku,
     price_q: 0,
     qty: 1,
     notes: "",
-    
     ...overrides,
   };
 }
@@ -821,9 +825,11 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
     expect(freezesPriceOnMove(null)).toBe(true);
   });
 
-  it("addresses a line by server line_id, falling back to sku", () => {
+  it("addresses a line by its line_id — e por nada mais", () => {
+    // O fallback para o sku saiu: numa comanda com dois chás ele endereçaria as
+    // duas linhas de uma vez, e a transferência levaria a errada.
     expect(moveLineId(cartItem({ sku: "CR", line_id: "L1" }))).toBe("L1");
-    expect(moveLineId(cartItem({ sku: "CR" }))).toBe("CR");
+    expect(moveLineId(cartItem({ sku: "CR", line_id: "L2" }))).toBe("L2");
   });
 
   it("needs line selection for split/transfer but not merge", () => {
@@ -891,12 +897,63 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     expect(allLinesFired([])).toBe(false);
   });
 
+  it("mais um do mesmo item vira LINHA NOVA, e é ela que o botão conta", () => {
+    // ⚠️ O defeito que isto tranca, e o modelo que o resolveu: enquanto havia
+    // uma linha por SKU, pedir mais um chá aumentava a quantidade de uma linha
+    // já enviada — o botão dizia "Enviado" e o segundo chá nunca era feito,
+    // porque o fire deduplica por `line_id`. Agora o segundo chá é outra linha,
+    // com identidade própria, e não existe meia-linha para contar.
+    const jaFoi = cartItem({ sku: "CHA", line_id: "L-cha-1", qty: 1, fired: true, fired_qty: 1 });
+    const novo = cartItem({ sku: "CHA", line_id: "L-cha-2", qty: 1 });
+
+    expect(unfiredCount([jaFoi, novo])).toBe(1);
+    expect(allLinesFired([jaFoi, novo])).toBe(false);
+    expect(allLinesFired([jaFoi])).toBe(true);
+    // A linha enviada não anuncia sobra nenhuma: ela foi inteira.
+    expect(kitchenBadge(jaFoi)).toEqual({ label: "Na cozinha", tone: "neutral" });
+
+    const bar = fireBarView({ items: [jaFoi, novo], affordance: affordance(), hasOpenTab: true, busy: false });
+    expect(bar.disabled).toBe(false);
+    expect(bar.unfired).toBe(1);
+  });
+
+  it("a contagem é de UNIDADES, não de linhas", () => {
+    // "Enviar 1" com três croissants pendentes é o número errado: o que a
+    // cozinha vai fazer são três.
+    const items = [cartItem({ sku: "CROISSANT", qty: 3 })];
+    expect(unfiredCount(items)).toBe(3);
+  });
+
+  it("a cozinha fazendo MAIS do que a conta cobra aparece na linha", () => {
+    // ⚠️ A diferença NEGATIVA: a linha foi com 3 e o operador baixou para 1
+    // (cliente desistiu, digitou errado). Nada é disparado — certo, ninguém quer
+    // duplicar — e nada é desfeito: o fogão segue com 3 e a conta cobra 1. Sem
+    // este selo, a tela dizia só "Na cozinha" e dois pães saíam sem pagamento.
+    const sobra = cartItem({ sku: "PAO", qty: 1, fired: true, fired_qty: 3 });
+    expect(kitchenSurplusQty(sobra)).toBe(2);
+    expect(kitchenBadge(sobra)).toEqual({ label: "3 na cozinha · 1 na conta", tone: "warning" });
+
+    // Nada a mais na cozinha, nada a dizer.
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 3, fired: true, fired_qty: 3 }))).toBe(0);
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 4, fired: true, fired_qty: 3 }))).toBe(0);
+  });
+
+  it("linha enviada sem `fired_qty` não inventa sobra", () => {
+    // O `fired_qty` existe para UMA pergunta só — quanto o fogão está fazendo a
+    // mais do que a conta cobra. Sem ele não há divergência a anunciar, e a
+    // linha segue simplesmente enviada.
+    const semQuantia = cartItem({ sku: "CHA", qty: 2, fired: true });
+    expect(kitchenSurplusQty(semQuantia)).toBe(0);
+    expect(kitchenBadge(semQuantia)).toEqual({ label: "Na cozinha", tone: "neutral" });
+    expect(allLinesFired([semQuantia])).toBe(true);
+    expect(unfiredCount([semQuantia])).toBe(0);
+  });
+
   it("derives per-line kitchen state", () => {
     expect(kitchenLineState(cartItem({ sku: "A" }), { canUnfire: true })).toBe("unfired");
     expect(kitchenLineState(cartItem({ sku: "A", fired: true, line_id: "L1" }), { canUnfire: true })).toBe("fired_cancellable");
-    // Fired but no unfire affordance, or no line_id to target → non-interactive.
+    // Fired but no unfire affordance → non-interactive.
     expect(kitchenLineState(cartItem({ sku: "A", fired: true, line_id: "L1" }), { canUnfire: false })).toBe("fired");
-    expect(kitchenLineState(cartItem({ sku: "A", fired: true }), { canUnfire: true })).toBe("fired");
   });
 
   it("linha que a cozinha já encerrou não oferece mais desfazer o envio", () => {
@@ -930,7 +987,9 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     const items = [cartItem({ sku: "A", fired: true }), cartItem({ sku: "B" })];
     const bar = fireBarView({ items, affordance: affordance(), hasOpenTab: true, busy: false });
     expect(bar.visible).toBe(true);
-    expect(bar.label).toBe("Enviar itens (1)");
+    // A contagem saiu do RÓTULO e virou badge na tela — o texto do botão é o
+    // que a Action manda, sem número colado.
+    expect(bar.label).toBe("Enviar itens");
     expect(bar.unfired).toBe(1);
     expect(bar.disabled).toBe(false);
 
@@ -956,29 +1015,45 @@ describe("presentation/selection — multi-select batch shaping", () => {
   const items = [
     cartItem({ sku: "A", line_id: "L1" }),
     cartItem({ sku: "B", line_id: "L2", fired: true }),
-    cartItem({ sku: "C" }), // no line_id yet (unsaved)
+    cartItem({ sku: "C", line_id: "L3" }),
   ];
 
-  it("toggles a sku immutably", () => {
-    const a = toggleSelected(new Set<string>(), "A");
-    expect([...a]).toEqual(["A"]);
-    const b = toggleSelected(a, "B");
-    expect([...b].sort()).toEqual(["A", "B"]);
-    expect([...toggleSelected(b, "A")].sort()).toEqual(["B"]);
+  it("toggles a line immutably", () => {
+    const a = toggleSelected(new Set<string>(), "L1");
+    expect([...a]).toEqual(["L1"]);
+    const b = toggleSelected(a, "L2");
+    expect([...b].sort()).toEqual(["L1", "L2"]);
+    expect([...toggleSelected(b, "L1")].sort()).toEqual(["L2"]);
     // original set is untouched (new Set each time)
-    expect([...a]).toEqual(["A"]);
+    expect([...a]).toEqual(["L1"]);
   });
 
   it("shapes the batch toolbar: counts, firable vs unfirable line_ids", () => {
-    const view = selectionView(items, new Set(["A", "B", "C"]));
+    const view = selectionView(items, new Set(["L1", "L2", "L3"]));
     expect(view.count).toBe(3);
-    expect(view.skus.sort()).toEqual(["A", "B", "C"]);
-    // A is unfired with a line_id → firable; C has no line_id → excluded.
-    expect(view.firableLineIds).toEqual(["L1"]);
+    expect(view.lineIds).toEqual(["L1", "L2", "L3"]);
+    // A não foi à cozinha → pode ir; C também não.
+    expect(view.firableLineIds).toEqual(["L1", "L3"]);
     expect(view.canFire).toBe(true);
-    // B is fired with a line_id → unfirable.
+    // B já foi → pode voltar.
     expect(view.unfirableLineIds).toEqual(["L2"]);
     expect(view.canUnfire).toBe(true);
+  });
+
+  it("duas linhas do MESMO sku são selecionáveis uma sem a outra", () => {
+    // ⚠️ Com a seleção chaveada por sku, marcar o segundo chá marcava os dois: o
+    // lote agia sobre uma linha que o operador não escolheu, e o "1 selec." da
+    // barra mentia. A identidade da linha é o que separa as duas.
+    const dosChas = [
+      cartItem({ sku: "CHA", line_id: "L-cha-1", fired: true }),
+      cartItem({ sku: "CHA", line_id: "L-cha-2" }),
+    ];
+    const view = selectionView(dosChas, new Set(["L-cha-2"]));
+    expect(view.count).toBe(1);
+    expect(view.lineIds).toEqual(["L-cha-2"]);
+    expect(view.firableLineIds).toEqual(["L-cha-2"]);
+    expect(view.canUnfire).toBe(false);
+    expect(selectedItems(dosChas, new Set(["L-cha-1"])).map((i) => i.line_id)).toEqual(["L-cha-1"]);
   });
 
   it("empty selection has no batch affordances", () => {
@@ -988,15 +1063,15 @@ describe("presentation/selection — multi-select batch shaping", () => {
     expect(view.canUnfire).toBe(false);
   });
 
-  it("prunes selected skus no longer in the cart", () => {
-    const pruned = pruneSelection(new Set(["A", "Z"]), items);
-    expect([...pruned]).toEqual(["A"]);
+  it("prunes selected lines no longer in the cart", () => {
+    const pruned = pruneSelection(new Set(["L1", "L-fantasma"]), items);
+    expect([...pruned]).toEqual(["L1"]);
   });
 
-  it("selectedItems returns the cart items whose sku is selected", () => {
-    expect(selectedItems(items, new Set(["A", "C"])).map((i) => i.sku)).toEqual(["A", "C"]);
+  it("selectedItems returns the cart items whose line is selected", () => {
+    expect(selectedItems(items, new Set(["L1", "L3"])).map((i) => i.sku)).toEqual(["A", "C"]);
     expect(selectedItems(items, new Set())).toEqual([]);
-    expect(selectedItems(items, new Set(["Z"]))).toEqual([]);
+    expect(selectedItems(items, new Set(["L-fantasma"]))).toEqual([]);
   });
 });
 
@@ -1304,5 +1379,67 @@ describe("vale até — o prazo do link, dito como o operador diz", () => {
       checkout_url: "https://pay.example.com/abc",
     } as never, agora);
     expect(semPrazo!.expiresDisplay).toBe("");
+  });
+});
+
+describe("a maquininha e as cédulas", () => {
+  const linha = (method: string) => ({
+    method,
+    label: method,
+    icon: "lucide:credit-card",
+    amountQ: 2500,
+    amountDisplay: "R$ 25,00",
+  });
+
+  it("só crédito e débito pedem conferência na maquininha", () => {
+    // Pix, dinheiro e link não passam por terminal físico: pedir confirmação
+    // neles seria um clique a mais em todo atendimento do balcão.
+    const lines = [linha("cash"), linha("credit"), linha("pix"), linha("debit"), linha("link")];
+    expect(machineTenderLines(lines).map((l) => l.method)).toEqual(["credit", "debit"]);
+  });
+
+  it("cédula perde o centavo, preset quebrado o mantém", () => {
+    expect(cashNoteLabel(200)).toBe("R$ 2");
+    expect(cashNoteLabel(10000)).toBe("R$ 100");
+    expect(cashNoteLabel(250)).toBe(formatBRL(250));
+  });
+});
+
+describe("a frase da cozinha no checkout conta unidades", () => {
+  // ⚠️ Ela contava LINHAS: com três chás numa linha só, dizia "1 item já está na
+  // cozinha" — número errado justamente na tela onde o operador confere o que já
+  // saiu. E depois da identidade por linha, "linha" virou artefato interno: o
+  // mesmo produto ocupa duas, e ninguém fala "linha" em voz alta.
+  const linha = (o: Partial<POSCartItem> & { sku: string }) => cartItem(o);
+
+  it("nada enviado: anuncia o que vai sair", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })]))
+      .toBe("Ao finalizar, os 3 itens vão para a cozinha.");
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })]))
+      .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("parte na cozinha: os dois números, ambos em unidades", () => {
+    const note = kitchenHandoffNote([
+      linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),
+      linha({ sku: "PAO", qty: 2 }),
+    ]);
+    expect(note).toBe("3 itens já estão na cozinha; mais 2 vão ao finalizar.");
+  });
+
+  it("tudo enviado: fala do total, não de 'todos'", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("a linha que encolheu não some da conta: a cozinha tem o que tem", () => {
+    // O fogão está fazendo 3; a conta cobra 1. A frase fala do FOGÃO — quem
+    // avisa da diferença é o selo âmbar da linha.
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("carrinho vazio não fala", () => {
+    expect(kitchenHandoffNote([])).toBe("");
   });
 });
