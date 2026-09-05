@@ -7403,7 +7403,7 @@ class Command(BaseCommand):
             # e stock_arrived já estavam na lista.
             # A mensagem de ENTRADA na loja. Morava dentro do ManyChat e por isso
             # não tinha log, teste nem quem revisasse; agora é copy da casa.
-            "access_link": {"subject": "Seu acesso à loja", "body": "Olá{customer_name_greeting}! Aqui está seu acesso à loja:\n{access_url}{cart_note}\n\nO link é só seu e vale por poucos minutos."},
+            "access_link": {"subject": "Seu link para entrar na loja", "body": "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:\n{access_url}\n{cart_note}O link vale por 5 min."},
             "waitlist_available": {"subject": "Sua fornada saiu — confirme o pedido {order_ref}", "body": "Olá{customer_name_greeting}! Sua fornada saiu 🥐\n\nConfirme o pedido *{order_ref}* para garantir o seu: {tracking_url}"},
             "waitlist_released": {"subject": "Pedido {order_ref}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
             "preorder_reminder": {"subject": "Lembrete: pedido {order_ref} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},

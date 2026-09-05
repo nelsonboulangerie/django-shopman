@@ -60,9 +60,12 @@ def on_access_link_created(sender, token=None, customer=None, url="", **kwargs) 
     context = {
         "access_url": url,
         "customer_name": getattr(customer, "name", "") or "",
-        # Sufixo auto-suprimível (padrão da casa): some limpo quando não há sacola.
+        # Sufixo auto-suprimível (padrão da casa). Aqui ele divide a LINHA com o
+        # aviso de prazo, então termina em espaço e não em quebra: sem sacola, a
+        # frase do prazo assume a linha inteira sem deixar buraco. Foi por isso
+        # que os dois não viraram um texto só — o prazo vale sempre, a sacola não.
         "cart_note": (
-            "\nSua sacola veio junto." if metadata.get("cart_session_key") else ""
+            "Seus itens continuam na sacola. " if metadata.get("cart_session_key") else ""
         ),
     }
 
