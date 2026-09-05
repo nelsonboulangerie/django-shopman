@@ -20,16 +20,6 @@ const orderRef = computed(() => String(route.params.ref || ""));
 const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
-// Cancelar pedido PAGO pede segunda assinatura. O diálogo é o MESMO do PDV
-// (`OperatorManagerAuth`, no operator-kit): mesma lista, mesmo teclado, mesmo
-// crachá. Antes disto o gerente lia "Falha na ação" e não tinha onde assinar.
-async function signWithPin(username: string, pin: string) {
-  await authorize({ username, pin });
-}
-async function signWithBadge(badge: string) {
-  await authorize({ badge });
-}
-
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
 // Mantém o painel da corrida (entregador/status) vivo sem F5.
 useOrderEvents(orderRef.value, () => refresh());
@@ -135,6 +125,24 @@ async function submitReason(payload: { reason: string; cancellationCode: string 
   if (dialog.value === "reject") ok = await reject(payload.reason || "Pedido recusado", payload.cancellationCode);
   else if (dialog.value === "cancel") ok = await cancel(payload.reason || "Cancelado pelo operador", payload.cancellationCode);
   if (ok) dialog.value = "";
+}
+
+// Cancelar pedido PAGO pede segunda assinatura. O diálogo é o MESMO do PDV
+// (`OperatorManagerAuth`, no operator-kit): mesma lista, mesmo teclado, mesmo
+// crachá. Antes disto o gerente lia "Falha na ação" e não tinha onde assinar.
+//
+// ⚠️ Fecha o diálogo do MOTIVO também. `submitReason` só fecha `if (ok)`, e o
+// desafio devolve `false` de propósito — o motivo precisa sobreviver por baixo
+// da assinatura. Só que, com o cancelamento já feito, ninguém o fechava: o
+// gerente assinava, o pedido cancelava, e a tela voltava a mostrar "Cancelar
+// pedido" com o Confirmar aceso sobre um pedido JÁ cancelado. Achado na prova
+// de navegador — nenhum teste de componente ou de composable alcança este
+// estado, porque `dialog` é estado da PÁGINA.
+async function signWithPin(username: string, pin: string) {
+  if (await authorize({ username, pin })) dialog.value = "";
+}
+async function signWithBadge(badge: string) {
+  if (await authorize({ badge })) dialog.value = "";
 }
 
 async function submitSettle() {
