@@ -741,7 +741,7 @@ describe("PosPaymentWorkspace — um lugar para o que acontece, outro para o que
         paymentTotalQ: 1000,
       }),
     });
-    expect(avisos(wrapper).text()).toContain("Imprime sozinha quando a nota autorizar.");
+    expect(avisos(wrapper).text()).toContain("Pedir papel já pede a nota — imprime sozinha assim que autorizar.");
     expect(avisos(wrapper).text()).toContain("O entregador sai com o troco separado.");
     // e não voltaram a aparecer dentro da coluna do instrumento
     expect(wrapper.find(".order-2").text()).not.toContain("Imprime sozinha");

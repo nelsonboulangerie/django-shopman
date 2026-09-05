@@ -3322,9 +3322,10 @@ def _existing_sale_by_client_request_id(*, channel_ref: str, payload: dict) -> O
 def _sale_fiscal_hint(order: Order | None) -> str:
     if order is None:
         return ""
-    # A regra fiscal, não o toggle: cartão/pix/fiado emitem sem o operador
-    # marcar nada, e a dica de "fiscal pendente" tem que acompanhar a emissão
-    # real — senão a nota nasce e a tela jura que não há fiscal nenhum.
+    # A regra fiscal, não um toggle só: cartão/pix/fiado emitem sem o operador
+    # marcar nada, e pedir a nota IMPRESSA emite pelo mesmo motivo (não há DANFE
+    # sem NFC-e autorizada). A dica de "fiscal pendente" tem que acompanhar a
+    # emissão real — senão a nota nasce e a tela jura que não há fiscal nenhum.
     try:
         from shopman.shop.services import fiscal as fiscal_service
 

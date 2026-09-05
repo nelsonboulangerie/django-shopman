@@ -361,7 +361,43 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         self.assertFalse(closed["fiscal_expected"])
 
-    def _close_sale_for_fiscal(self, *, payment_method: str) -> dict:
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.on_printed_receipt"
+        ),
+    )
+    def test_close_reports_fiscal_expected_when_the_counter_asked_for_paper(self) -> None:
+        """Pedir papel É pedir a nota — e o eco tem que voltar ao PDV.
+
+        Não existe DANFE sem NFC-e autorizada. Ligar "Impressa?" numa venda em
+        dinheiro sem CPF não emitia nada, e o `autoPrintDanfe` do balcão é
+        guardado por este `fiscal_expected`: sem ele voltando verdadeiro, a
+        correção morre aqui e o operador segue prometendo uma bobina vazia.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["print"])
+
+        self.assertTrue(closed["fiscal_expected"])
+        order = Order.objects.get(ref=closed["order_ref"])
+        self.assertEqual(order.data["receipt"]["channels"], ["print"])
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.on_printed_receipt"
+        ),
+    )
+    def test_close_reports_no_fiscal_when_only_the_email_receipt_was_asked(self) -> None:
+        """Controle: comprovante por e-mail existe sem nota, e não puxa nenhuma."""
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["email"])
+
+        self.assertFalse(closed["fiscal_expected"])
+
+    def _close_sale_for_fiscal(
+        self, *, payment_method: str, receipt_channels: list[str] | None = None
+    ) -> dict:
         # O pool fiscal é um singleton de módulo e cacheia os backends na
         # primeira chamada. Sem o reset, um teste anterior que rodou com
         # SHOPMAN_FISCAL_ADAPTER=None deixa a lista vazia em cache e o
@@ -382,8 +418,13 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "fulfillment_type": "pickup",
             "payment_method": payment_method,
             "payment_collection": "terminal",
-            "client_request_id": f"pos-fiscal-{payment_method}",
+            "client_request_id": f"pos-fiscal-{payment_method}-{'-'.join(receipt_channels or [])}",
         }
+        if receipt_channels:
+            payload["receipt_channels"] = receipt_channels
+            if "email" in receipt_channels:
+                # O canal de e-mail exige para ONDE mandar — o intent recusa sem isso.
+                payload["receipt_email"] = "cliente@example.org"
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
             data=json.dumps(payload),

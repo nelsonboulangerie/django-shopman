@@ -768,14 +768,15 @@ const notices = computed<CheckoutNotice[]>(() => {
     notes.push({ key: "courier", icon: "lucide:banknote", message: "O entregador sai com o troco separado." });
   }
   if (wantsPrintedReceipt.value) {
-    // A frase não pode PROMETER papel: o auto-print é guardado por
-    // `fiscalExpected` (dinheiro sem CPF não gera nota nenhuma), e a tela de
-    // resultado se recusa a prometer. Mas a condição não precisa de um "se" —
-    // ela já está no "quando a nota autorizar": sem nota, nada autoriza, e a
-    // frase segue verdadeira. Duas tentativas anteriores erraram por caminhos
-    // opostos: "Sai na bobina" prometia, "Se sair nota…" hesitava, e "Não
-    // precisa mandar imprimir" lia-se como desfazer um toque errado.
-    notes.push({ key: "print", icon: "lucide:printer", message: "Imprime sozinha quando a nota autorizar." });
+    // AGORA A FRASE PODE DIZER QUE A NOTA SAI. Não existe DANFE sem NFC-e
+    // autorizada — o papel é o espelho da nota —, então pedir papel é pedir a
+    // nota, e a regra fiscal do servidor lê este canal e emite. Antes o toggle
+    // não decidia nada: dinheiro sem CPF ligava "Impressa?", não gerava nota
+    // nenhuma e nada saía na bobina, calado.
+    //
+    // O "assim que autorizar" fica: a emissão é assíncrona e quem autoriza é a
+    // SEFAZ. Prometer o instante seria a segunda mentira.
+    notes.push({ key: "print", icon: "lucide:printer", message: "Pedir papel já pede a nota — imprime sozinha assim que autorizar." });
   }
   // As ressalvas da review entram na MESMA faixa: são o mesmo gesto de leitura,
   // e uma segunda caixa ao lado só ensina o olho a pular as duas.
