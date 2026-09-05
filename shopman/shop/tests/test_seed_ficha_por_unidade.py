@@ -10,6 +10,12 @@ lugar de "7 kg rendem 25 un". É **reexpressão** — a razão não muda, então
 consumo por fornada tem de ser idêntico ao centésimo de grama. A tabela
 `LOTE_ANTIGO` é o registro histórico de como cada ficha estava escrita antes;
 sem ela a comparação seria circular (dividir o número novo pelo número novo).
+
+⚠️ `LOTE_ANTIGO` e `FORMULA_EM_KG` são REGISTRO, não regra. Quando o dono mudar
+uma receita de verdade — a baguete passar a levar 300 g de massa —, o teste vai
+acusar, e o certo é **atualizar a linha daquela ficha** dizendo no commit que a
+receita mudou. O que ele existe para pegar é o contrário: a receita mudando sem
+ninguém ter decidido, por causa de uma conta.
 """
 
 from __future__ import annotations
