@@ -53,6 +53,8 @@ import {
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
+import { conflictDecision, contactChangeDecision } from "~/presentation/customerDecision";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -1227,19 +1229,57 @@ export function usePosSale(deps: PosSaleDeps) {
   // the record NOW — not deferred to order commit — so the customer (ref, memory,
   // address) exists and attaches to the cart/tab immediately. Idempotent: an
   // existing customer is found, a fresh one is created once.
-  async function resolveCustomer() {
+  // A escolha que é DO OPERADOR: conflito de contato (o WhatsApp digitado já é
+  // de outro cadastro) ou correção de contato (o do cliente associado vai
+  // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
+  const customerDecision = ref<CustomerDecision | null>(null);
+
+  async function resolveCustomer(options: { contactCorrection?: boolean } = {}) {
+    const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
     const phone = cart.customerPhone.trim();
     const taxId = cart.customerTaxId.trim();
     const email = cart.customerEmail.trim();
-    if (!name && !phone && !taxId && !email) return;
+    if (!customerRef && !name && !phone && !taxId && !email) return;
+
+    // CORRIGIR o contato do cliente associado é mudar a identidade de contato
+    // de um cadastro — o número por onde ele recebe aviso de pronto. Isso é dito
+    // ANTES de acontecer, com os dois valores nomeados. Sem a palavra do
+    // operador, o servidor segue só preenchendo lacuna.
+    if (!options.contactCorrection) {
+      const change = contactChangeDecision({
+        customerRef,
+        customerName: name || customerLookup.value?.name || "",
+        registeredPhone: customerLookup.value?.phone || "",
+        typedPhone: phone,
+        registeredEmail: customerLookup.value?.email || "",
+        typedEmail: email,
+      });
+      if (change) {
+        customerDecision.value = change;
+        return;
+      }
+    }
+
     lookupBusy.value = true;
     serverError.value = "";
     try {
       const path = actionHref(actions.value, "customer_resolve", "/api/v1/backstage/pos/customer/resolve/");
       const response = await action.call<POSCustomerLookupResponse>(path, {
-        body: { customer_name: name, customer_phone: phone, customer_tax_id: taxId, customer_email: email },
+        body: {
+          // ⚠️ O cliente JÁ ASSOCIADO viaja. Sem ele o servidor achava um único
+          // candidato pelo telefone digitado e TROCAVA o dono do pedido em
+          // silêncio — com o ref, os dois candidatos aparecem e a recusa
+          // devolve a escolha para quem está no balcão.
+          customer_ref: customerRef,
+          customer_name: name,
+          customer_phone: phone,
+          customer_tax_id: taxId,
+          customer_email: email,
+          ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
+        },
       });
+      customerDecision.value = null;
       if (!response.customer) return;
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
@@ -1278,10 +1318,62 @@ export function usePosSale(deps: PosSaleDeps) {
         applySavedAddress(response.customer.default_address);
       }
     } catch (error) {
+      const data = (httpError(error).data || {}) as { error?: { field?: string; candidates?: ServerConflictCandidate[] } };
+      if (httpErrorCode(error) === "customer_conflict") {
+        const decision = conflictDecision({
+          field: data.error?.field,
+          candidates: data.error?.candidates,
+          typed: phone || email || taxId,
+        });
+        if (decision) {
+          customerDecision.value = decision;
+          return;
+        }
+      }
       serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
     } finally {
       lookupBusy.value = false;
     }
+  }
+
+  /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
+   *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
+  async function confirmCustomerDecision() {
+    const decision = customerDecision.value;
+    if (!decision) return;
+    customerDecision.value = null;
+    if (decision.kind === "contact_change") {
+      await resolveCustomer({ contactCorrection: true });
+      return;
+    }
+    const other = decision.other;
+    if (!other) return;
+    cart.customerRef = other.ref;
+    cart.customerName = other.name;
+    // Os campos do cliente ANTERIOR não podem sobrar: o CPF da nota era dele, e
+    // o `lookupCustomer` pelo ref repõe tudo que é do cadastro novo.
+    cart.customerPhone = "";
+    cart.customerEmail = "";
+    cart.customerTaxId = "";
+    cart.invoiceTaxId = "";
+    cart.wantsCpfOnInvoice = false;
+    cart.customerMemoryAction = "";
+    customerLookup.value = null;
+    customerSearchResults.value = [];
+    customerResolvedNew.value = false;
+    await lookupCustomer();
+  }
+
+  /** O operador ficou com o que estava: o valor digitado é DESCARTADO e o campo
+   *  volta ao do cadastro associado. */
+  function cancelCustomerDecision() {
+    const decision = customerDecision.value;
+    customerDecision.value = null;
+    if (!decision) return;
+    const restored = decision.current?.value || "";
+    if (decision.field === "phone") cart.customerPhone = restored;
+    else if (decision.field === "email") cart.customerEmail = restored;
+    else cart.customerTaxId = restored;
   }
 
   // Multi-key customer search (name/phone/CPF/email): the customer modal's search
@@ -1343,6 +1435,7 @@ export function usePosSale(deps: PosSaleDeps) {
     customerLookup.value = null;
     customerSearchResults.value = [];
     customerResolvedNew.value = false;
+    customerDecision.value = null;
   }
 
   function productFromMemoryItem(item: Record<string, unknown>): POSProductProjection | null {
@@ -2004,6 +2097,9 @@ export function usePosSale(deps: PosSaleDeps) {
     applySavedAddress,
     lookupCustomer,
     resolveCustomer,
+    customerDecision,
+    confirmCustomerDecision,
+    cancelCustomerDecision,
     customerSearchResults,
     customerSearchBusy,
     customerResolvedNew,

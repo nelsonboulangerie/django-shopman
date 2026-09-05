@@ -5,6 +5,8 @@ import {
   cpfTail,
   digitsOnly,
   enterAction,
+  enterActionCaveat,
+  enterActionLabel,
   formatCpf,
   isNumericQuery,
   isValidCpf,
@@ -80,7 +82,7 @@ describe("formatCpf / maskQueryIfCpf / cpfHint / cpfTail", () => {
 });
 
 describe("enterAction — a decisão do Enter, em ordem de intenção", () => {
-  const base = { query: "", resultsCount: 0, highlightedIndex: 0, hasCustomer: false };
+  const base = { query: "", resultsCount: 0, highlightedIndex: 0, hasCustomerRef: false };
 
   it("1 resultado → seleciona, seja qual for a query", () => {
     expect(enterAction({ ...base, query: "Mar", resultsCount: 1 })).toEqual({ type: "pick", index: 0 });
@@ -105,9 +107,9 @@ describe("enterAction — a decisão do Enter, em ordem de intenção", () => {
     });
   });
 
-  it("0 resultados + texto → transfere para o nome", () => {
+  it("0 resultados + texto → cadastro SÓ COM O NOME, que é ato nomeado", () => {
     expect(enterAction({ ...base, query: "Maria Silva" })).toEqual({
-      type: "transfer", field: "name", value: "Maria Silva",
+      type: "create_name_only", name: "Maria Silva",
     });
     // 11 dígitos com verificador ERRADO não criam cadastro por CPF nem viram
     // telefone às cegas? Viram telefone: 11 dígitos com DDD é o formato BR.
@@ -116,9 +118,53 @@ describe("enterAction — a decisão do Enter, em ordem de intenção", () => {
     });
   });
 
-  it("query vazia: com cliente associado conclui; sem, não faz nada", () => {
-    expect(enterAction({ ...base, hasCustomer: true })).toEqual({ type: "conclude" });
+  it("query vazia: com CADASTRO associado (ref) conclui; sem nada, não faz nada", () => {
+    expect(enterAction({ ...base, hasCustomerRef: true })).toEqual({ type: "conclude" });
     expect(enterAction(base)).toEqual({ type: "none" });
+  });
+
+  // ⚠️ A REGRESSÃO DOS DOIS ENTERS. Nome no formulário e nenhum cadastro: o
+  // Enter "concluía" e o cliente nascia sem que ninguém tivesse pedido — é
+  // assim que aparece o terceiro "João" da semana. Agora a mesma tecla cai no
+  // ato NOMEADO que o botão visível oferece.
+  it("query vazia + nome no formulário SEM cadastro → não conclui, nomeia o ato", () => {
+    expect(enterAction({ ...base, pendingName: "João" })).toEqual({
+      type: "create_name_only", name: "João",
+    });
+  });
+
+  it("o cadastro associado vence o nome pendente: aí concluir é fechar, não criar", () => {
+    expect(enterAction({ ...base, hasCustomerRef: true, pendingName: "João" })).toEqual({
+      type: "conclude",
+    });
+  });
+
+  it("nome pendente em branco não inventa cadastro", () => {
+    expect(enterAction({ ...base, pendingName: "   " })).toEqual({ type: "none" });
+  });
+});
+
+describe("enterActionLabel / enterActionCaveat — o botão e a tecla dizem a MESMA coisa", () => {
+  it("o rótulo fala do RESULTADO, nunca da tecla", () => {
+    expect(enterActionLabel({ type: "create_name_only", name: "Maria Silva" }))
+      .toBe("Cadastrar «Maria Silva» só com o nome");
+    expect(enterActionLabel({ type: "resolve_cpf", cpf: CPF }))
+      .toBe("Cadastrar cliente novo com este CPF");
+    expect(enterActionLabel({ type: "transfer", field: "phone", value: "43999990000" }))
+      .toBe("Cadastrar cliente novo com o 43999990000");
+  });
+
+  it("sem ato para oferecer, não há botão", () => {
+    expect(enterActionLabel({ type: "pick", index: 0 })).toBe("");
+    expect(enterActionLabel({ type: "conclude" })).toBe("");
+    expect(enterActionLabel({ type: "none" })).toBe("");
+  });
+
+  it("a ressalva do cadastro só com o nome informa, e só ela existe", () => {
+    expect(enterActionCaveat({ type: "create_name_only", name: "Maria" }))
+      .toContain("Sem WhatsApp");
+    expect(enterActionCaveat({ type: "resolve_cpf", cpf: CPF })).toBe("");
+    expect(enterActionCaveat({ type: "none" })).toBe("");
   });
 });
 

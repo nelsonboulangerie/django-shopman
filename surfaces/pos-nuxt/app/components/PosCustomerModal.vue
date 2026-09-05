@@ -17,6 +17,8 @@ import type {
   POSCustomerSearchResult,
 } from "~/types/pos";
 import { cpfTail } from "~/presentation/customerSearch";
+import type { CustomerDecision } from "~/presentation/customerDecision";
+import { customerDecisionCopy } from "~/presentation/customerDecision";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -31,12 +33,17 @@ const props = withDefaults(defineProps<{
   /** O cliente associado foi CRIADO AGORA (resolve just-in-time): a confirmação
    *  visual distingue "cadastro novo" de "cadastro encontrado". */
   resolvedNew?: boolean;
+  /** A ESCOLHA QUE É DO OPERADOR, não do sistema: o WhatsApp digitado já é de
+   *  outro cadastro, ou o contato do cliente associado vai mudar. Enquanto ela
+   *  existe, o modal fica aberto e "Concluir" espera a resposta. */
+  customerDecision?: CustomerDecision | null;
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
   receiptChannels?: string[];
   receiptChannelOptions?: POSCheckoutOptionProjection[];
   receiptEmail?: string;
 }>(), {
+  customerDecision: null,
   resolvedNew: false,
   showFiscal: false,
   receiptChannels: () => [],
@@ -56,6 +63,10 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   clear: [];
   resolveCustomer: [];
+  /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
+  decisionConfirm: [];
+  /** O operador ficou com o que estava — o valor digitado é descartado. */
+  decisionCancel: [];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
 }>();
@@ -122,15 +133,27 @@ const identityChips = computed(() =>
 // Reset the shared search field whenever the modal reopens fresh.
 watch(() => props.open, (open) => { if (!open) emit("search", ""); });
 
+// A RECUSA TRAZ A TELA DE VOLTA. O "Concluir" fecha o modal e só depois a
+// resposta do servidor chega: sem isto, a recusa nasceria atrás de uma tela
+// fechada e o operador veria a venda seguir com o cliente errado.
+const decisionCopy = computed(() =>
+  props.customerDecision ? customerDecisionCopy(props.customerDecision) : null,
+);
+watch(() => props.customerDecision, (decision) => {
+  if (decision && !props.open) emit("update:open", true);
+});
+
 function onSelect(result: POSCustomerSearchResult) {
   emit("selectResult", result);
 }
 function onConclude() {
+  // Uma pergunta aberta na tela não se responde fechando a tela.
+  if (props.customerDecision) return;
   emit("resolveCustomer");
   emit("update:open", false);
 }
 
-// ── O cliente em dois Enters (decisões vindas do PosCustomerSearch) ──────────
+// ── Atos NOMEADOS vindos do PosCustomerSearch ───────────────────────────────
 // CPF válido sem resultado: o documento entra no campo fiscal e o resolve roda
 // JÁ (get-or-create idempotente) — o cliente novo aparece fixado no topo.
 async function onResolveCpf(cpf: string) {
@@ -138,10 +161,17 @@ async function onResolveCpf(cpf: string) {
   await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart já atualizado
   emit("resolveCustomer");
 }
-// Query não-CPF sem resultado: transfere para o campo certo do cadastro novo.
-function onTransfer(payload: { field: "phone" | "name"; value: string }) {
-  if (payload.field === "phone") emit("update:customerPhone", payload.value);
-  else emit("update:customerName", payload.value);
+// Telefone sem resultado: transfere para o campo do cadastro novo.
+function onTransfer(payload: { field: "phone"; value: string }) {
+  emit("update:customerPhone", payload.value);
+}
+// CADASTRAR SÓ COM O NOME — o ato que antes acontecia por inércia de dois
+// Enters e agora tem botão, rótulo e ressalva. Um toque, como era; a diferença
+// é que o operador leu o que ia acontecer.
+async function onCreateNameOnly(name: string) {
+  emit("update:customerName", name);
+  await nextTick(); // o v-model sobe dois níveis; o resolve lê o cart atualizado
+  emit("resolveCustomer");
 }
 
 // Foco garantido na BUSCA ao abrir: sem isto o foco inicial do diálogo caía no
@@ -269,17 +299,54 @@ const newCustomerNote = computed(() => {
             </div>
           </div>
 
+          <!-- 1.5 · A PERGUNTA — e ela vem antes do resto porque é o que trava
+               a venda. Duas situações, uma forma: o sistema NÃO decide sozinho.
+
+               · o WhatsApp digitado já é de outro cadastro (trocar de cliente é
+                 legítimo, mas pela porta da frente — nunca como efeito colateral
+                 de digitar num formulário de edição);
+               · o contato do cliente associado vai mudar (o telefone errado
+                 finalmente tem conserto no balcão, com os dois valores ditos
+                 antes de acontecer).
+
+               Âmbar porque é ATENÇÃO, não destruição — a paleta do operador é
+               neutra e cor aqui só existe por função. -->
+          <div
+            v-if="customerDecision && decisionCopy"
+            class="grid gap-3 rounded-md border border-warning/60 bg-warning/10 p-4"
+            role="alertdialog"
+            aria-live="assertive"
+          >
+            <p class="flex items-center gap-2 text-sm font-semibold text-amber-700 dark:text-amber-400">
+              <Icon name="lucide:triangle-alert" class="size-4 shrink-0" />
+              {{ decisionCopy.title }}
+            </p>
+            <p class="text-sm">{{ decisionCopy.body }}</p>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <UiButton type="button" class="h-11 justify-center gap-2" @click="$emit('decisionConfirm')">
+                <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
+              </UiButton>
+              <UiButton type="button" variant="outline" class="h-11 justify-center gap-2" @click="$emit('decisionCancel')">
+                <Icon :name="decisionCopy.cancelIcon" class="size-4 shrink-0" />
+                <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
+              </UiButton>
+            </div>
+          </div>
+
           <!-- 2 · the picker: prominent search + rich results list.
-               Enter decide (seleciona / cria por CPF / transfere / conclui). -->
+               Enter decide (seleciona / cria por CPF / transfere / cadastra). -->
           <PosCustomerSearch
             ref="searchRef"
             :results="searchResults"
             :busy="searchBusy"
-            :has-customer="hasCustomer"
+            :has-customer-ref="Boolean(customerLookup?.ref)"
+            :pending-name="customerLookup?.ref ? '' : customerName"
             @search="$emit('search', $event)"
             @select="onSelect"
             @resolve-cpf="onResolveCpf"
             @transfer="onTransfer"
+            @create-name-only="onCreateNameOnly"
             @conclude="onConclude"
           />
 
@@ -343,7 +410,9 @@ const newCustomerNote = computed(() => {
       </div>
 
       <UiDialogFooter>
-        <UiButton class="w-full" @click="onConclude">Concluir</UiButton>
+        <UiButton class="h-14 w-full" :disabled="Boolean(customerDecision)" @click="onConclude">
+          Concluir
+        </UiButton>
       </UiDialogFooter>
     </UiDialogContent>
   </UiDialog>

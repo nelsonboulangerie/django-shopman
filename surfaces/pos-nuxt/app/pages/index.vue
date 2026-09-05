@@ -139,6 +139,9 @@ const {
   applySavedAddress,
   lookupCustomer,
   resolveCustomer,
+  customerDecision,
+  confirmCustomerDecision,
+  cancelCustomerDecision,
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
@@ -752,6 +755,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :customer-decision="customerDecision"
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
@@ -766,6 +770,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
           @resolve-customer="resolveCustomer"
+          @decision-confirm="confirmCustomerDecision"
+          @decision-cancel="cancelCustomerDecision"
           @search="searchCustomers"
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
@@ -888,6 +894,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
         :customer-resolved-new="customerResolvedNew"
+        :customer-decision="customerDecision"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
@@ -915,6 +922,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @tender-exact="tenderExact"
         @lookup-customer="lookupCustomer"
         @resolve-customer="resolveCustomer"
+        @decision-confirm="confirmCustomerDecision"
+        @decision-cancel="cancelCustomerDecision"
         @search="searchCustomers"
         @select-result="selectCustomerResult"
         @clear-customer="clearCustomer"

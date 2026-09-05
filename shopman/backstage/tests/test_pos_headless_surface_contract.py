@@ -903,6 +903,129 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertFalse(again.json()["created"])
         self.assertEqual(Customer.objects.count(), before + 1)
 
+    def test_api_customer_resolve_refuses_stealing_the_sale_by_phone(self) -> None:
+        """⚠️ O BUG: o telefone digitado TROCAVA o dono do pedido, em silêncio.
+
+        Comanda com Ana associada, o operador digita no campo WhatsApp o número
+        que é de Bruno e conclui. Sem o `customer_ref` viajar, o servidor achava
+        um único candidato (Bruno), devolvia Bruno, e o front sobrescrevia o
+        carrinho inteiro. Agora são dois candidatos, e a recusa devolve a
+        escolha para quem está no balcão — com os dois lados nomeados, que é o
+        que a gêmea na tela precisa para oferecer a saída de um toque.
+        """
+        ana = Customer.objects.create(
+            ref="CUST-CONFLICT-A", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+        Customer.objects.create(
+            ref="CUST-CONFLICT-B", first_name="Bruno", last_name="Souza",
+            phone="+5543999990022",
+        )
+        before = Customer.objects.count()
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_name": "Ana Prado",
+                "customer_phone": "43999990022",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "customer_conflict")
+        self.assertEqual(body["error"]["field"], "customer_phone")
+        self.assertEqual(body["field"], "customer_phone")
+        self.assertIn("WhatsApp", body["detail"])
+        candidates = {row["ref"]: row for row in body["error"]["candidates"]}
+        self.assertEqual(set(candidates), {"CUST-CONFLICT-A", "CUST-CONFLICT-B"})
+        self.assertTrue(candidates["CUST-CONFLICT-A"]["is_current"])
+        self.assertFalse(candidates["CUST-CONFLICT-B"]["is_current"])
+        self.assertEqual(candidates["CUST-CONFLICT-B"]["name"], "Bruno Souza")
+        # Recusa é recusa: nada foi escrito e nenhum cadastro nasceu.
+        self.assertEqual(Customer.objects.count(), before)
+        self.assertEqual(Customer.objects.get(ref="CUST-CONFLICT-A").phone, "+5543999990011")
+
+    def test_api_customer_resolve_keeps_the_associated_customer_own_phone(self) -> None:
+        # O caminho normal não pode ter virado recusa: o telefone no campo é o
+        # do próprio cliente da comanda.
+        ana = Customer.objects.create(
+            ref="CUST-SAME-PHONE", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_name": "Ana Prado", "customer_phone": "43999990011"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["customer"]["ref"], ana.ref)
+
+    def test_api_customer_resolve_corrects_contact_only_when_told(self) -> None:
+        """Corrigir o telefone pelo PDV: só com a palavra explícita do operador.
+
+        Sem ela o merge segue só-preenche-lacuna (é o que impede uma edição
+        pontual no checkout de reescrever o cadastro de alguém); com ela, o
+        número errado finalmente tem conserto no balcão.
+        """
+        ana = Customer.objects.create(
+            ref="CUST-FIX-PHONE", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        quieto = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_phone": "43988887777"},
+            content_type="application/json",
+        )
+        self.assertEqual(quieto.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543999990011")
+
+        corrigido = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_phone": "43988887777",
+                "customer_contact_correction": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(corrigido.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543988887777")
+        self.assertEqual(corrigido.json()["customer"]["phone"], "+5543988887777")
+
+    def test_api_customer_resolve_refuses_correcting_into_someone_elses_number(self) -> None:
+        # Corrigir não é roubar: o número novo já é de terceiro → mesma recusa.
+        ana = Customer.objects.create(
+            ref="CUST-FIX-CLASH-A", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+        Customer.objects.create(
+            ref="CUST-FIX-CLASH-B", first_name="Bruno", last_name="Souza",
+            phone="+5543999990022",
+        )
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_phone": "43999990022",
+                "customer_contact_correction": True,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "customer_conflict")
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543999990011")
+
     def test_api_customer_lookup_accepts_ref(self) -> None:
         customer = Customer.objects.create(
             ref="CUST-BY-REF",
