@@ -1711,6 +1711,9 @@ defineExpose({
           OK, cobrei na maquininha
         </UiButton>
         <UiButton variant="ghost" size="sm" @click="machineConfirmOpen = false">Voltar</UiButton>
+      </UiDialogFooter>
+    </UiDialogContent>
+  </UiDialog>
 
   <!-- MODAL: Dividir conta — o irmão do de Desconto, e de propósito.
        Era um trilho de cinco botões preso na coluna: ocupava altura fixa em

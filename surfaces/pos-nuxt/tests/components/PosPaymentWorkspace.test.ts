@@ -1139,35 +1139,33 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
     expect(avisos(wrapper).text()).toContain("O link cobra a venda inteira.");
   });
 
-  it("dividir a conta veste a mesma roupa do desconto, e o estado é da LINHA", async () => {
-    // ⚠️ Isto era uma CAIXA dentro da seção — moldura própria, rótulo em
-    // micro-caixa-alta (o papel de TÍTULO nesta escala) e mais uma moldura em
-    // cada número: três níveis de borda ao lado de uma irmã que é uma linha
-    // limpa. Agora é linha, e o "ligado" mora nela: dá para ver que a conta
-    // está dividida sem procurar qual quadradinho está aceso.
+  it("o gatilho de dividir carrega o estado: armado diz \"3\", em uso diz \"1/3\"", async () => {
+    // ⚠️ O controle deixou de ser uma linha com cinco números presa na coluna e
+    // virou MODAL: ele ocupava altura fixa em TODA venda para uma pergunta que
+    // quase nunca se faz. O estado não podia sumir junto — ele agora mora no
+    // BADGE do gatilho. E são dois estados, não um: ARMADO ("3") e EM USO
+    // ("1/3"). O segundo é o que impede o operador de desligar a divisão sem
+    // perceber que já lançou uma parte.
     const desligado = await mountSuspended(PosPaymentWorkspace, {
       props: props({ discountTypes: [{ ref: "percent", label: "%" }] }),
     });
-    const linha = () => desligado.find('[role="group"][aria-label="Dividir conta"]');
-    expect(linha().exists()).toBe(true);
-    expect(linha().classes()).not.toContain("border-primary");
-    expect(linha().findAll("button").map((b) => b.attributes("aria-pressed"))).toEqual(
-      ["false", "false", "false", "false", "false"],
-    );
+    const gatilho = (w: typeof desligado) =>
+      w.findAll("button").find((b) => b.text().includes("Dividir conta"))!;
+    expect(gatilho(desligado).attributes("aria-pressed")).toBe("false");
+    expect(gatilho(desligado).text()).not.toMatch(/\d/);
 
-    const ligado = await mountSuspended(PosPaymentWorkspace, {
+    const armado = await mountSuspended(PosPaymentWorkspace, {
       props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
     });
-    const grupo = ligado.find('[role="group"][aria-label="Dividir conta"]');
-    expect(grupo.classes()).toContain("border-primary");
-    const tres = grupo.findAll("button").find((b) => b.text() === "3")!;
-    expect(tres.attributes("aria-pressed")).toBe("true");
-    expect(tres.classes()).toContain("bg-primary");
+    expect(gatilho(armado).attributes("aria-pressed")).toBe("true");
+    expect(gatilho(armado).classes()).toContain("border-primary");
+    expect(gatilho(armado).text()).toContain("3");
   });
 
   it("com link lançado, dividir a conta fica indisponível", async () => {
     // O link cobra a venda inteira: dividir seria oferecer o que o Validar
-    // recusa depois.
+    // recusa depois. A regra não mudou com o modal — mudou onde ela aparece:
+    // o próprio gatilho fica desabilitado, e o title diz por quê.
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({
         discountTypes: [{ ref: "percent", label: "%" }],
@@ -1175,8 +1173,9 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
         paymentTenders: [comLink],
       }),
     });
-    const grupo = w.find('[role="group"][aria-label="Dividir conta"]');
-    expect(grupo.findAll("button").every((b) => b.attributes("disabled") !== undefined)).toBe(true);
+    const gatilho = w.findAll("button").find((b) => b.text().includes("Dividir conta"))!;
+    expect(gatilho.attributes("disabled")).not.toBeUndefined();
+    expect(gatilho.attributes("title")).toContain("cobra a venda inteira");
   });
 
   it("a sobra na cozinha é dita ao lado do Validar, sem travar a venda", async () => {
