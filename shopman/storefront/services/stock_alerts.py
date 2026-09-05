@@ -17,14 +17,42 @@ from shopman.storefront.constants import STOREFRONT_CHANNEL_REF
 logger = logging.getLogger(__name__)
 
 
-def has_pending(sku: str, *, alert_type: str = "") -> bool:
+def has_pending(sku: str, *, alert_types: tuple[str, ...] = ()) -> bool:
     """Cheap guard for the arrival/bake receivers (indexed exists())."""
     from shopman.storefront.models import StockAlertSubscription
 
     qs = StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
-    if alert_type:
-        qs = qs.filter(alert_type=alert_type)
+    if alert_types:
+        qs = qs.filter(alert_type__in=alert_types)
     return qs.exists()
+
+
+def default_alert_type(sku: str) -> str:
+    """Que aviso o cliente está pedindo quando toca o sino deste produto?
+
+    ⚠️ Quem decide é o SERVIDOR, e a natureza do produto é o critério — a tela
+    diz só "me avise sobre este produto", porque o cliente não sabe (nem
+    deveria saber) que existem dois eixos de aviso.
+
+    - Item de fornada → ``production_ready``: quem quer pão quer saber quando
+      sai do forno.
+    - Item de prateleira → ``stock_back``: quem quer um item de prateleira quer
+      saber quando ele volta.
+
+    Antes desta derivação a loja mandava o POST sem ``alert_type``, todo mundo
+    caía em ``stock_back`` e o eixo ``production_ready`` era código órfão: o
+    receptor de fornada nunca achava ninguém, e o público de "Fornada pronta"
+    do Marketing prometia gente que a loja não sabia criar.
+    """
+    from shopman.shop.projections import catalog_context
+    from shopman.storefront.models import StockAlertSubscription
+
+    try:
+        if catalog_context.comes_out_of_the_oven(sku):
+            return StockAlertSubscription.AlertType.PRODUCTION_READY
+    except Exception:
+        logger.debug("stock_alerts: alert_type derivation failed sku=%s", sku, exc_info=True)
+    return StockAlertSubscription.AlertType.STOCK_BACK
 
 
 def subscribed_skus(*, customer=None, phone: str = "") -> set[str]:
@@ -85,14 +113,21 @@ def subscribe(
 ):
     """Register a pending alert. Returns the subscription or None.
 
-    Dedupes a pending alert per (sku, alert_type, target) — quem quer saber da
-    reposição e da próxima fornada assina os dois, sem um sobrescrever o outro.
+    ``alert_type`` vazio NÃO é ``stock_back``: é "decida você", e a decisão sai
+    de :func:`default_alert_type`, pela natureza do produto. Quem passa o tipo
+    explicitamente manda — é o caso do endpoint quando o corpo escolhe.
+
+    Dedupes a pending alert per (sku, alert_type, target): os dois eixos podem
+    coexistir para o mesmo contato sem um sobrescrever o outro. Ninguém cria os
+    dois de propósito — quem faz isso é um pedido explícito, ou uma linha
+    antiga; ``_notify`` garante que ainda assim sai UMA mensagem por pessoa.
+
     ``customer`` is a Guestman Customer (or None for anonymous); ``phone`` is
     the anonymous contact.
     """
     from shopman.storefront.models import StockAlertSubscription
 
-    alert_type = alert_type or StockAlertSubscription.AlertType.STOCK_BACK
+    alert_type = alert_type or default_alert_type(sku)
     customer_ref = (getattr(customer, "ref", "") or "").strip()
     contact = (phone or getattr(customer, "phone", "") or "").strip()
     if not customer_ref and not contact:
@@ -118,15 +153,36 @@ def subscribe(
     )
 
 
-def notify_back_in_stock(sku: str) -> int:
-    """Notify pending ``stock_back`` subscribers once ``sku`` is available again.
+def notify_back_in_stock(sku: str, *, also_bake_waiters: bool = False) -> int:
+    """Notify pending subscribers once ``sku`` is available again.
 
     Idempotent: marks ``notified_at`` only on a successful send, so a failed
-    delivery is retried on the next stock arrival. Returns count notified.
+    delivery is retried on the next stock arrival. Devolve quantas PESSOAS
+    foram avisadas (não quantas assinaturas: ver ``_notify``).
+
+    ⚠️ ``also_bake_waiters`` é a REDE DE SEGURANÇA de quem espera fornada.
+
+    Um item de fornada pode voltar a ter estoque por um caminho que não é
+    produção — recebimento, devolução, ajuste de inventário. Quem assinou
+    ``production_ready`` ficaria calado para sempre nesses casos, porque o
+    ``production_changed`` nunca vai acontecer para aquela unidade. Então:
+    chegou estoque por fora da produção, a promessa "o produto está aí" está
+    cumprida e a fila da fornada também é servida — com a copy de CHEGADA
+    (``stock_arrived``), porque nada saiu do forno e mentir sobre isso é pior
+    que o silêncio que estamos consertando.
+
+    O receptor liga a rede só quando o ``Move`` NÃO é de produção
+    (``kind != make``). Ligá-la também na fornada faria a mesma pessoa ser
+    servida duas vezes no mesmo instante — e, pior, pelo caminho errado: os
+    dois ``on_commit`` correm em ordem de registro, e o do ``Move`` costuma
+    chegar primeiro, então o "saiu do forno" viraria "chegou ao estoque".
     """
     from shopman.storefront.models import StockAlertSubscription
 
-    return _notify(sku, alert_type=StockAlertSubscription.AlertType.STOCK_BACK)
+    types = [StockAlertSubscription.AlertType.STOCK_BACK]
+    if also_bake_waiters:
+        types.append(StockAlertSubscription.AlertType.PRODUCTION_READY)
+    return _notify(sku, alert_types=types, event="stock_arrived")
 
 
 def notify_bake_ready(sku: str) -> int:
@@ -138,50 +194,67 @@ def notify_bake_ready(sku: str) -> int:
     """
     from shopman.storefront.models import StockAlertSubscription
 
-    return _notify(sku, alert_type=StockAlertSubscription.AlertType.PRODUCTION_READY)
+    return _notify(
+        sku,
+        alert_types=[StockAlertSubscription.AlertType.PRODUCTION_READY],
+        event="production_ready",
+    )
 
 
-#: Cada gatilho tem sua copy: "chegou" e "saiu do forno" prometem coisas diferentes.
-_EVENT_BY_ALERT_TYPE = {
-    "stock_back": "stock_arrived",
-    "production_ready": "production_ready",
-}
+def _notify(sku: str, *, alert_types: list[str], event: str) -> int:
+    """Serve as inscrições pendentes destes tipos com UMA copy: a do que aconteceu.
 
+    ``event`` é do EVENTO, não da inscrição: "chegou ao estoque" e "saiu do
+    forno" prometem coisas diferentes, e quem sabe qual das duas é verdade
+    agora é quem disparou, não quem assinou.
 
-def _notify(sku: str, *, alert_type: str) -> int:
+    Uma pessoa, uma mensagem: assinaturas do mesmo telefone são agrupadas e
+    carimbadas juntas. Contatos legados que assinaram os dois eixos do mesmo
+    produto (era o que o concierge fazia) recebiam duas mensagens iguais.
+    """
     from shopman.storefront.models import StockAlertSubscription
     from shopman.storefront.services import sku_state
 
     pending = list(
         StockAlertSubscription.objects.filter(
-            sku=sku, alert_type=alert_type, notified_at__isnull=True
+            sku=sku, alert_type__in=alert_types, notified_at__isnull=True
         )
     )
     if not pending:
         return 0
 
     product_name = _product_name(sku)
-    event = _EVENT_BY_ALERT_TYPE.get(alert_type, "stock_arrived")
     notified = 0
+    #: Uma entrada por destinatário: a chave é o canal + o telefone, porque é o
+    #: telefone que recebe. Assinatura sem telefone fica de fora do agrupamento
+    #: e falha sozinha em ``_deliver`` (não há a quem avisar).
+    groups: dict[tuple[str, str], list] = {}
     for sub in pending:
+        channel_ref = sub.channel_ref or STOREFRONT_CHANNEL_REF
+        groups.setdefault((channel_ref, (sub.contact_phone or "").strip()), []).append(sub)
+
+    for (channel_ref, _phone), subs in groups.items():
         try:
-            state = sku_state.resolve(sku=sku, channel_ref=sub.channel_ref or STOREFRONT_CHANNEL_REF)
+            state = sku_state.resolve(sku=sku, channel_ref=channel_ref)
         except Exception:
             logger.debug("stock_alerts: availability check failed sku=%s", sku, exc_info=True)
             continue
         if not state.can_add_to_cart:
             continue  # still unavailable for this channel — keep pending
-        if _deliver(
-            sub, product_name=product_name, event=event,
+        if not _deliver(
+            subs[0], product_name=product_name, event=event,
             available_qty=state.available_qty,
         ):
-            sub.notified_at = timezone.now()
+            continue
+        stamped = timezone.now()
+        for sub in subs:
+            sub.notified_at = stamped
             sub.save(update_fields=["notified_at"])
-            notified += 1
+        notified += 1
     if notified:
         logger.info(
-            "stock_alerts: notified %s subscriber(s) for sku=%s type=%s",
-            notified, sku, alert_type,
+            "stock_alerts: notified %s subscriber(s) for sku=%s event=%s",
+            notified, sku, event,
         )
     return notified
 

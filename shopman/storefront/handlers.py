@@ -5,7 +5,8 @@ Alerts do cliente ("Me avise"), dois gatilhos:
 - ``stock_back`` — um ``Move`` do Stockman pousa para um SKU com inscrições
   pendentes;
 - ``production_ready`` — uma fornada (``production_changed``, action=finished)
-  conclui para esse SKU.
+  conclui para esse SKU. E, como rede de segurança, um ``Move`` que NÃO é de
+  produção também serve essa fila: ver ``on_move_for_stock_alerts``.
 
 Nos dois casos o envio é agendado para *depois* do commit da transação, para
 que o estoque novo já esteja visível quando o aviso prometer "pode pedir".
@@ -21,6 +22,20 @@ logger = logging.getLogger(__name__)
 
 
 def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
+    """Chegou estoque: avisar quem espera — e, às vezes, quem espera fornada.
+
+    ⚠️ A rede de segurança de quem assinou ``production_ready``: um item de
+    fornada também volta a ter estoque por caminhos que não são produção
+    (recebimento, devolução, ajuste de inventário). Nesses casos o
+    ``production_changed`` nunca vai vir, e sem esta rede a pessoa ficaria
+    calada para sempre. Estoque chegando cumpre a promessa "o produto está
+    aí", então a fila da fornada é servida junto — com a copy de chegada.
+
+    O ``Move`` de PRODUÇÃO (``kind="make"``) fica de fora da rede de propósito:
+    a fornada tem receptor próprio, com a copy própria. Servir os dois no mesmo
+    instante daria mensagem dobrada e, pior, a errada — os dois ``on_commit``
+    correm em ordem de registro e o do ``Move`` costuma chegar primeiro.
+    """
     quant_id = getattr(instance, "quant_id", None)
     if not quant_id:
         return
@@ -28,15 +43,22 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     if not sku:
         return
 
+    from shopman.stockman.models import Move
+
     from shopman.storefront.services import stock_alerts
 
+    also_bake_waiters = getattr(instance, "kind", "") != Move.Kind.MAKE
+    types = ("stock_back", "production_ready") if also_bake_waiters else ("stock_back",)
+
     # Fast path: skip unless someone is actually waiting on this SKU.
-    if not stock_alerts.has_pending(sku, alert_type="stock_back"):
+    if not stock_alerts.has_pending(sku, alert_types=types):
         return
 
     from django.db import transaction
 
-    transaction.on_commit(lambda: stock_alerts.notify_back_in_stock(sku))
+    transaction.on_commit(
+        lambda: stock_alerts.notify_back_in_stock(sku, also_bake_waiters=also_bake_waiters)
+    )
 
 
 @resilient_receiver
@@ -53,7 +75,7 @@ def on_production_finished_for_stock_alerts(
 
     from shopman.storefront.services import stock_alerts
 
-    if not stock_alerts.has_pending(product_ref, alert_type="production_ready"):
+    if not stock_alerts.has_pending(product_ref, alert_types=("production_ready",)):
         return
 
     from django.db import transaction

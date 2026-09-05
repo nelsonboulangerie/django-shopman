@@ -1077,9 +1077,14 @@ def _copy_cart_to_web(ctx: ToolContext) -> str:
 def notify_when_available(ctx: ToolContext, sku: str) -> dict:
     """"Me avise quando tiver": a mesma assinatura do sino do site.
 
-    Assina os dois avisos que o site oferece, reposição e próxima fornada, para o
-    telefone da conversa; a notificação sai pela cadeia de sempre (WhatsApp
-    primeiro). Sem telefone não há a quem avisar.
+    UMA assinatura, no eixo que o produto pede — o servidor decide, como no
+    sino do site. Antes assinava os dois eixos "por garantia", e o preço disso
+    era mensagem dobrada: a fornada acordava a fila do forno e o ``Move`` que
+    ela mesma gera acordava a da reposição, duas mensagens para o mesmo
+    telefone no mesmo instante.
+
+    A notificação sai pela cadeia de sempre (WhatsApp primeiro). Sem telefone
+    não há a quem avisar.
     """
     from shopman.storefront.services import stock_alerts
 
@@ -1095,24 +1100,24 @@ def notify_when_available(ctx: ToolContext, sku: str) -> dict:
         from shopman.guestman.services import customer as customer_service
 
         customer = customer_service.get(conversation.customer_ref)
-    created = []
-    for alert_type in ("stock_back", "production_ready"):
-        subscription = stock_alerts.subscribe(
-            item.sku,
-            channel_ref=ctx.channel_ref,
-            customer=customer,
-            phone=conversation.phone,
-            alert_type=alert_type,
-        )
-        if subscription is not None:
-            created.append(alert_type)
-    if not created:
+    subscription = stock_alerts.subscribe(
+        item.sku,
+        channel_ref=ctx.channel_ref,
+        customer=customer,
+        phone=conversation.phone,
+    )
+    if subscription is None:
         return _error("subscribe_failed", "Não consegui registrar o aviso agora.")
+    quando = (
+        "quando sair a fornada"
+        if subscription.alert_type == "production_ready"
+        else "quando voltar"
+    )
     return {
         "ok": True,
         "sku": item.sku,
         "name": item.name,
-        "message": f"Aviso registrado: {item.name} avisa por WhatsApp quando voltar ou quando sair a fornada.",
+        "message": f"Aviso registrado: {item.name} avisa por WhatsApp {quando}.",
     }
 
 

@@ -23,8 +23,18 @@ def _state(can_add: bool, available_qty: int | None = None):
     return MagicMock(can_add_to_cart=can_add, available_qty=available_qty)
 
 
-def _publish(sku="SKU-NOTIFY"):
-    return Product.objects.create(sku=sku, name="Pão Teste", base_price_q=500, is_published=True, is_sellable=True)
+def _publish(sku="SKU-NOTIFY", *, is_batch_produced=False):
+    return Product.objects.create(
+        sku=sku, name="Pão Teste", base_price_q=500,
+        is_published=True, is_sellable=True, is_batch_produced=is_batch_produced,
+    )
+
+
+def _move(sku: str, *, kind: str = "buy"):
+    """Um ``Move`` de mentira, com o ``kind`` que o receptor lê para decidir a rede."""
+    fake = MagicMock(quant_id=1, kind=kind)
+    fake.quant.sku = sku
+    return fake
 
 
 # ── subscribe ───────────────────────────────────────────────────────
@@ -211,21 +221,19 @@ def test_move_receiver_schedules_notify_for_pending_sku():
     from shopman.storefront import handlers
 
     stock_alerts.subscribe("SKU-MOVE", phone=PHONE)
-    fake = MagicMock(quant_id=1)
-    fake.quant.sku = "SKU-MOVE"
+    fake = _move("SKU-MOVE", kind="buy")
     with (
         patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
         handlers.on_move_for_stock_alerts(sender=None, instance=fake)
-    nb.assert_called_once_with("SKU-MOVE")
+    nb.assert_called_once_with("SKU-MOVE", also_bake_waiters=True)
 
 
 def test_move_receiver_skips_when_no_pending_subscription():
     from shopman.storefront import handlers
 
-    fake = MagicMock(quant_id=1)
-    fake.quant.sku = "SKU-NO-WAITERS"
+    fake = _move("SKU-NO-WAITERS")
     with (
         patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
@@ -307,3 +315,159 @@ def test_endpoint_rejects_an_unknown_alert_type(client):
     )
     assert resp.status_code == 400
     assert resp.json()["field"] == "alert_type"
+
+
+# ── o eixo do aviso: quem decide é o servidor ────────────────────────
+
+
+def test_bread_subscribes_to_the_oven_not_to_the_shelf():
+    """O caso do Pablo: o sino de um pão entra na fila da FORNADA.
+
+    A loja manda só o telefone. Antes, sem ``alert_type`` no corpo, todo mundo
+    caía em ``stock_back`` e a fila de fornada nascia vazia para sempre.
+    """
+    _publish(sku="BF", is_batch_produced=True)
+    sub = stock_alerts.subscribe("BF", phone=PHONE)
+    assert sub.alert_type == StockAlertSubscription.AlertType.PRODUCTION_READY
+
+
+def test_shelf_item_subscribes_to_the_shelf():
+    _publish(sku="AG")  # água: chega por recebimento, não sai do forno
+    sub = stock_alerts.subscribe("AG", phone=PHONE)
+    assert sub.alert_type == StockAlertSubscription.AlertType.STOCK_BACK
+
+
+def test_an_active_recipe_is_enough_to_make_it_an_oven_item():
+    """A flag do gestor não é preenchida na prática; a receita ativa é a prova.
+
+    No banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
+    em ``False``, pães inclusive. Derivar só pela flag entregaria uma correção
+    que nunca dispara.
+    """
+    from decimal import Decimal
+
+    from shopman.craftsman.models import Recipe
+
+    _publish(sku="CI")
+    Recipe.objects.create(
+        ref="ciabatta", name="Ciabatta", output_sku="CI",
+        batch_size=Decimal("10"), is_active=True,
+    )
+    assert stock_alerts.subscribe("CI", phone=PHONE).alert_type == "production_ready"
+
+
+def test_unknown_sku_falls_back_to_the_shelf():
+    """Na dúvida, prateleira: é o eixo com mais caminhos de chegada."""
+    assert stock_alerts.subscribe("SKU-GHOST", phone=PHONE).alert_type == "stock_back"
+
+
+def test_explicit_alert_type_still_wins():
+    _publish(sku="BF-EXPLICIT", is_batch_produced=True)
+    sub = stock_alerts.subscribe("BF-EXPLICIT", phone=PHONE, alert_type="stock_back")
+    assert sub.alert_type == "stock_back"
+
+
+def test_endpoint_derives_the_oven_axis_without_the_front_asking(client):
+    """A tela continua dizendo só "avise-me sobre este produto"."""
+    p = _publish(sku="BF-API", is_batch_produced=True)
+    resp = client.post(f"/api/v1/availability/{p.sku}/notify/", {"phone": PHONE})
+    assert resp.status_code == 200
+    assert StockAlertSubscription.objects.get(sku=p.sku).alert_type == "production_ready"
+    assert client.session["stock_alert_subscriptions"][0]["alert_type"] == "production_ready"
+
+
+# ── uma fornada, UMA mensagem ────────────────────────────────────────
+
+
+def test_a_bake_does_not_send_twice_to_the_same_person():
+    """A fornada acorda os DOIS receptores; só um pode falar.
+
+    O ``finish`` escreve o ledger (``kind=make``), então nasce um ``Move`` no
+    mesmo instante em que ``production_changed`` dispara. Com o eixo certo, o
+    receptor de estoque não acha ``stock_back`` pendente e se cala.
+    """
+    from shopman.storefront import handlers
+
+    _publish(sku="BF-BAKE", is_batch_produced=True)
+    stock_alerts.subscribe("BF-BAKE", phone=PHONE)
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 6)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_move_for_stock_alerts(sender=None, instance=_move("BF-BAKE", kind="make"))
+        handlers.on_production_finished_for_stock_alerts(
+            sender=None, product_ref="BF-BAKE", date=None, action="finished", work_order=None,
+        )
+
+    assert nf.call_count == 1
+    assert nf.call_args.kwargs["event"] == "production_ready"
+
+
+def test_a_production_move_never_serves_the_oven_queue():
+    """A rede de segurança fica DESLIGADA na produção.
+
+    Ligada ali, o ``Move`` chegaria primeiro (os dois ``on_commit`` correm em
+    ordem de registro) e o "saiu do forno" viraria "chegou ao estoque" — a
+    mensagem certa trocada pela errada, sem ninguém perceber.
+    """
+    from shopman.storefront import handlers
+
+    _publish(sku="BF-MAKE", is_batch_produced=True)
+    stock_alerts.subscribe("BF-MAKE", phone=PHONE)
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_move_for_stock_alerts(sender=None, instance=_move("BF-MAKE", kind="make"))
+
+    nf.assert_not_called()
+    assert StockAlertSubscription.objects.get(sku="BF-MAKE").is_pending
+
+
+def test_one_person_two_subscriptions_gets_one_message():
+    """Contato legado com os dois eixos (o que o concierge fazia) recebe UMA vez."""
+    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="stock_back")
+    stock_alerts.subscribe("SKU-LEGACY-BOTH", phone=PHONE, alert_type="production_ready")
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+    ):
+        notified = stock_alerts.notify_back_in_stock("SKU-LEGACY-BOTH", also_bake_waiters=True)
+
+    assert notified == 1
+    assert nf.call_count == 1
+    assert StockAlertSubscription.objects.filter(
+        sku="SKU-LEGACY-BOTH", notified_at__isnull=True
+    ).count() == 0
+
+
+# ── rede de segurança: estoque que chega por fora da produção ────────
+
+
+def test_a_non_production_arrival_serves_the_oven_queue_with_arrival_copy():
+    """Pão que volta por recebimento/ajuste não pode deixar a fila muda.
+
+    Sem isto, quem assinou ``production_ready`` ficaria calado para sempre
+    quando o estoque voltasse por um caminho que não é fornada. A copy é a da
+    CHEGADA: nada saiu do forno, e mentir sobre isso é pior que o silêncio.
+    """
+    from shopman.storefront import handlers
+
+    _publish(sku="BF-RECEBIDO", is_batch_produced=True)
+    stock_alerts.subscribe("BF-RECEBIDO", phone=PHONE)
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True, 3)),
+        patch("shopman.shop.notifications.notify", return_value=MagicMock(success=True)) as nf,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_move_for_stock_alerts(sender=None, instance=_move("BF-RECEBIDO", kind="adjust"))
+
+    assert nf.call_count == 1
+    assert nf.call_args.kwargs["event"] == "stock_arrived"
+    assert StockAlertSubscription.objects.get(sku="BF-RECEBIDO").notified_at is not None

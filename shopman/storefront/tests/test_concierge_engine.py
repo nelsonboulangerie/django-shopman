@@ -400,16 +400,21 @@ def test_send_web_link_carries_the_cart_to_the_store_channel(ctx, conversation, 
     assert captured["metadata"]["next"] == "/finalizar"
 
 
-def test_notify_when_available_subscribes_the_same_alerts_as_the_site(ctx, conversation):
+def test_notify_when_available_subscribes_the_same_alert_as_the_site(ctx, conversation):
+    """UMA assinatura, no eixo que o produto pede — igual ao sino do site.
+
+    Assinava os dois "por garantia", e o preço era mensagem dobrada quando o
+    produto tinha os dois gatilhos vivos no mesmo instante.
+    """
     from shopman.storefront.models import StockAlertSubscription
 
     result = tools.notify_when_available(ctx, SKU)
     assert result["ok"], result
     subs = StockAlertSubscription.objects.filter(sku=SKU, customer_ref=conversation.customer_ref)
-    assert sorted(subs.values_list("alert_type", flat=True)) == ["production_ready", "stock_back"]
+    assert list(subs.values_list("alert_type", flat=True)) == ["stock_back"]
     # Idempotente: pedir de novo não duplica.
     tools.notify_when_available(ctx, SKU)
-    assert subs.count() == 2
+    assert subs.count() == 1
     assert tools.notify_when_available(ctx, "NAO-EXISTE")["error"] == "unknown_sku"
 
 
