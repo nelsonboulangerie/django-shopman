@@ -12,6 +12,9 @@ import type {
   ReceiptFieldAnchor,
   ReceiptLine,
   ReceiptLinePreview,
+  ReceiptLineRow,
+  ReceiptLineStatus,
+  ReceiptLineStatusBadge,
   ReceiptLineSuggestion,
   ReceiptMode,
   ReceiptOutcome,
@@ -308,6 +311,104 @@ export function receiptNextStepField(warnings: ReceiptWarning[]): ReceiptFieldAn
 }
 
 /**
+ * COMO o item se chama — o mesmo nome na lista, na gaveta e na pendência.
+ *
+ * O operador nunca pode ter dúvida sobre qual item está mexendo, e essa
+ * certeza só existe se os três lugares disserem a mesma palavra. Eram três
+ * fórmulas parecidas em três arquivos, e a do cabeçalho perdia o nome do
+ * insumo quando a entrada era lançada à mão.
+ */
+export function receiptLineLabel(preview: ReceiptLinePreview): string {
+  if (preview.line.invoiceDescription) return preview.line.invoiceDescription;
+  if (preview.line.materialSku) return preview.material.name;
+  return "Item lançado à mão";
+}
+
+/**
+ * Avisos que pedem OLHO, e não gesto.
+ *
+ * `manual-source` fica de fora de propósito: "sem documento fiscal" é a origem
+ * que a CASA escolheu para a entrada inteira, e não uma anomalia deste item.
+ * Pintar de âmbar todas as linhas de um romaneio é ruído — o amarelo que
+ * aparece sempre não avisa nada.
+ */
+const ATTENTION_WARNINGS = new Set<ReceiptWarning["key"]>([
+  "diverging-conversion",
+  "approximate-conversion",
+  "missing-cost",
+]);
+
+/**
+ * O estado do item, em uma palavra — a cor da linha sai daqui e de nenhum
+ * outro lugar.
+ *
+ * A ordem não é arbitrária:
+ *
+ * 1. **bloqueio ganha de tudo**, inclusive de conferido: dá para marcar como
+ *    conferido e depois trocar o insumo, e a linha verde com bloqueio seria uma
+ *    mentira — o `Confirmar entrada` continuaria travado sem a lista dizer por
+ *    quê.
+ * 2. **conferido ganha da atenção**: a divergência foi vista e assinada pelo
+ *    operador; repintar de âmbar o que ele acabou de confirmar desfaz o gesto.
+ */
+export function receiptLineStatus(preview: ReceiptLinePreview): ReceiptLineStatus {
+  if (preview.warnings.some((warning) => warning.tone === "block")) return "blocked";
+  if (preview.line.checked) return "checked";
+  if (preview.warnings.some((warning) => ATTENTION_WARNINGS.has(warning.key))) return "attention";
+  return "ready";
+}
+
+const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, ReceiptLineStatusBadge> = {
+  blocked: { label: "Pendente", icon: "lucide:circle-alert" },
+  attention: { label: "Revisar", icon: "lucide:triangle-alert" },
+  ready: { label: "Confirmável", icon: "lucide:circle-dashed" },
+  checked: { label: "Conferido", icon: "lucide:circle-check-big" },
+};
+
+export function receiptLineStatusBadge(status: ReceiptLineStatus): ReceiptLineStatusBadge {
+  return RECEIPT_LINE_STATUS_BADGE[status];
+}
+
+/**
+ * A segunda linha da lista: o que já está apurado, ou o que a nota diz.
+ *
+ * Sem insumo escolhido não há o que apurar — repetir a quantidade na unidade
+ * errada ("4 kg" para 4 sacos) seria exatamente o engano que a conversão
+ * existe para evitar. Aí a linha mostra o que veio na nota, que é o que o
+ * operador tem na mão.
+ */
+export function receiptLineDigest(preview: ReceiptLinePreview): string {
+  return preview.line.materialSku ? receiptSettledSummary(preview) : preview.invoiceSummary;
+}
+
+/**
+ * A LISTA da entrada — uma linha por item, pronta para desenhar.
+ *
+ * A tela do recebimento era uma pilha de formulários abertos, um por item: para
+ * saber o que faltava numa nota de dez linhas, o operador rolava dez cards. A
+ * lista dá a visão geral que faltava, e cada linha já diz em que pé está.
+ */
+export function receiptLineRows(previews: ReceiptLinePreview[]): ReceiptLineRow[] {
+  return previews.map((preview) => {
+    const status = receiptLineStatus(preview);
+    const badge = receiptLineStatusBadge(status);
+    return {
+      id: preview.line.id,
+      label: receiptLineLabel(preview),
+      digest: receiptLineDigest(preview),
+      status,
+      statusLabel: badge.label,
+      statusIcon: badge.icon,
+      nextStep: preview.nextStep,
+      note: preview.line.lineNote,
+      // Enquanto ninguém digitou o valor, o número que existe é o da NOTA — e
+      // dizer "R$ 0,00" seria afirmar um preço que ninguém apurou.
+      total: preview.totalCostQ > 0 ? formatMoney(preview.totalCostQ) : (preview.line.invoiceTotal ?? ""),
+    };
+  });
+}
+
+/**
  * As pendencias da entrada, uma por item, com nome e endereco.
  *
  * Entram duas coisas que travam o `Confirmar entrada`, e nao so uma: o bloqueio
@@ -317,7 +418,7 @@ export function receiptNextStepField(warnings: ReceiptWarning[]): ReceiptFieldAn
  */
 export function receiptPendingItems(previews: ReceiptLinePreview[]): ReceiptPendingItem[] {
   return previews.flatMap<ReceiptPendingItem>((preview) => {
-    const label = preview.line.invoiceDescription || preview.material.name || "Item sem descrição";
+    const label = receiptLineLabel(preview);
     if (preview.nextStep) {
       return [
         {

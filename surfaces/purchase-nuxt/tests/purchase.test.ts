@@ -20,6 +20,10 @@ import {
   reorderRows,
   receiptFirstBlocker,
   receiptIsBlank,
+  receiptLineDigest,
+  receiptLineLabel,
+  receiptLineRows,
+  receiptLineStatus,
   receiptOutcomeSummary,
   receiptPendingItems,
   receiptSettledSummary,
@@ -750,6 +754,127 @@ describe("avisos do recebimento", () => {
     const preview = receiptLinePreview(lineOf(), "invoice", [ovos], []);
 
     expect(receiptPendingItems([preview!])).toEqual([]);
+  });
+
+  // O estado do item era um ternario no template somado a `nextStep`,
+  // `line.checked` e `conversionDiverges`: tres lugares decidindo a mesma coisa,
+  // e a mesma linha saia ambar num canto e verde no outro.
+  it("um item tem UM estado, e ele nao depende de quem esta perguntando", () => {
+    const semValidade = receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], [])!;
+    const pronto = receiptLinePreview(lineOf({ checked: false }), "invoice", [ovos], [])!;
+    const conferido = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semValor = receiptLinePreview(lineOf({ costInput: "", checked: false }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(semValidade)).toBe("blocked");
+    expect(receiptLineStatus(pronto)).toBe("ready");
+    expect(receiptLineStatus(conferido)).toBe("checked");
+    expect(receiptLineStatus(semValor)).toBe("attention");
+  });
+
+  it("bloqueio ganha do conferido — verde com bloqueio seria mentira", () => {
+    // Da para marcar como conferido e depois trocar o insumo. A linha verde
+    // seguiria segurando o `Confirmar entrada` sem a lista dizer por que.
+    const preview = receiptLinePreview(lineOf({ materialSku: "", checked: true }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(preview)).toBe("blocked");
+  });
+
+  it("conferido ganha da atencao — repintar o que ele acabou de assinar desfaz o gesto", () => {
+    const preview = receiptLinePreview(lineOf({ costInput: "", checked: true }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(preview)).toBe("checked");
+  });
+
+  // O amarelo que aparece SEMPRE nao avisa nada: "sem documento fiscal" e a
+  // origem que a casa escolheu para a entrada inteira, e nao uma anomalia deste
+  // item. Sem esta regra, todo romaneio nasceria com dez linhas ambar.
+  it("lancamento sem NF nao pinta o item de atencao", () => {
+    const preview = receiptLinePreview(lineOf({ checked: false }), "manual", [ovos], [])!;
+
+    expect(preview.warnings.some((warning) => warning.key === "manual-source")).toBe(true);
+    expect(receiptLineStatus(preview)).toBe("ready");
+  });
+
+  it("o item se chama a MESMA coisa na lista, na gaveta e na pendencia", () => {
+    const daNota = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semNota = receiptLinePreview(
+      lineOf({ invoiceDescription: "", checked: false }),
+      "manual",
+      [ovos],
+      [],
+    )!;
+    const semNada = receiptLinePreview(
+      lineOf({ invoiceDescription: "", materialSku: "" }),
+      "manual",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineLabel(daNota)).toBe("OVOS BRANCOS CX 30");
+    expect(receiptLineLabel(semNota)).toBe("Ovos");
+    expect(receiptLineLabel(semNada)).toBe("Item lançado à mão");
+    expect(receiptPendingItems([semNota]).at(0)?.label).toBe("Ovos");
+  });
+
+  // Sem insumo escolhido nao ha o que apurar: repetir a quantidade na unidade
+  // errada ("4 kg" para 4 sacos) e justamente o engano que a conversao existe
+  // para evitar. Ai a linha mostra o que veio na NOTA.
+  it("a segunda linha diz o apurado, ou o que a nota diz", () => {
+    const comInsumo = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semInsumo = receiptLinePreview(
+      lineOf({ materialSku: "", invoiceQty: 4, invoiceUnit: "CX" }),
+      "invoice",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineDigest(comInsumo)).toBe(`2 × kg · ${formatMoney(2400)}`);
+    expect(receiptLineDigest(semInsumo)).toContain("4 CX");
+  });
+
+  it("a lista da entrada chega pronta para desenhar — a linha nao calcula nada", () => {
+    const previews = [
+      receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], [])!,
+      receiptLinePreview(lineOf({ id: "line-2" }), "invoice", [ovos], [])!,
+    ];
+
+    expect(receiptLineRows(previews)).toEqual([
+      {
+        id: "line-1",
+        label: "OVOS BRANCOS CX 30",
+        digest: `2 × kg · ${formatMoney(2400)}`,
+        status: "blocked",
+        statusLabel: "Pendente",
+        statusIcon: "lucide:circle-alert",
+        nextStep: "Informe a validade",
+        note: "",
+        total: formatMoney(2400),
+      },
+      {
+        id: "line-2",
+        label: "OVOS BRANCOS CX 30",
+        digest: `2 × kg · ${formatMoney(2400)}`,
+        status: "checked",
+        statusLabel: "Conferido",
+        statusIcon: "lucide:circle-check-big",
+        nextStep: "",
+        note: "",
+        total: formatMoney(2400),
+      },
+    ]);
+  });
+
+  // Enquanto ninguem digitou o valor, o numero que existe e o da NOTA — dizer
+  // "R$ 0,00" seria afirmar um preco que ninguem apurou.
+  it("sem valor digitado, a linha mostra o dinheiro da nota", () => {
+    const preview = receiptLinePreview(
+      lineOf({ costInput: "", invoiceTotal: "R$ 730,00" }),
+      "invoice",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineRows([preview]).at(0)?.total).toBe("R$ 730,00");
   });
 
   // Confirmar zera o rascunho, e o rascunho zerado disparava os mesmos

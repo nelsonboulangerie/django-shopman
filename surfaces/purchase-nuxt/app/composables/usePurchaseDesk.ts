@@ -32,6 +32,7 @@ import {
   receiptFirstBlocker as receiptFirstReceiptBlocker,
   receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
+  receiptLineRows,
   receiptPendingItems,
   reorderBlockers as buildReorderBlockers,
   reorderRows as buildReorderRows,
@@ -225,6 +226,9 @@ export function usePurchaseDesk() {
       .map((line) => receiptLinePreview(line, receiptMode.value, materials.value, conversions.value))
       .filter((preview): preview is ReceiptLinePreview => Boolean(preview)),
   );
+  // A lista da entrada: uma linha por item, com o estado dela. É por ela que o
+  // operador enxerga a nota inteira sem rolar dez formulários abertos.
+  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value));
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
@@ -1086,6 +1090,7 @@ export function usePurchaseDesk() {
     receiptSupplier,
     invoiceStatus,
     receiptLinePreviews,
+    receiptRows,
     receiptBlockers,
     receiptWatchWarnings,
     receiptPendingLines,
