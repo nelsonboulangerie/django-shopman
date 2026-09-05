@@ -16,6 +16,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
@@ -96,6 +97,12 @@ MAINTENANCE_COMMANDS = (
     "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
+    # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
+    # checagem de ESTADO, não de evento: o que importa não é o instante em que
+    # alguém desmarcou a categoria, é o produto que já está invisível hoje. O
+    # dedupe (janela de um dia, chaveado pela coleção presa) mora no comando —
+    # o worker não sabe cadência.
+    "check_catalog_visibility",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.

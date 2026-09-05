@@ -829,6 +829,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
+        "hidden_by_inactive_collection",
     }
 
     cell = row["cells"][0]
@@ -841,6 +842,25 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "brand", "gtin", "mpn", "condition", "google_product_category",
         "tiktok_category_id", "hashtags", "social_caption", "has_data",
     }
+
+
+def test_linha_marca_produto_fora_do_cardapio_por_colecao_desativada(client, operator, catalog):
+    """O bolo tem UMA coleção; desativá-la o tira do cardápio sem tirar do ar.
+
+    O pão fica de controle duplo: sem coleção nenhuma, ele é o "sem categoria"
+    legítimo — o cardápio já o mostra no balde final, e ele não pode ser marcado.
+    """
+    client.force_login(operator)
+
+    rows = {r["sku"]: r for r in client.get(MATRIX_URL).json()["matrix"]["rows"]}
+    assert rows["BOLO"]["hidden_by_inactive_collection"] is False
+
+    catalog["coll"].is_active = False
+    catalog["coll"].save(update_fields=["is_active"])
+
+    rows = {r["sku"]: r for r in client.get(MATRIX_URL).json()["matrix"]["rows"]}
+    assert rows["BOLO"]["hidden_by_inactive_collection"] is True
+    assert rows["PAO"]["hidden_by_inactive_collection"] is False
 
 
 # ── detalhe do produto (painel de edição do Gestor) ──────────────────────────

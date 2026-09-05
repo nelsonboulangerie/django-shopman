@@ -462,6 +462,7 @@ useHead({ title: "Catálogo · Gestor" });
                       <span
                         v-if="rowStatuses[row.sku]?.label"
                         class="shrink-0 rounded-full px-1.5 py-0.5 text-xs font-medium"
+                        :title="rowStatuses[row.sku]?.hint || undefined"
                         :class="{
                           'bg-destructive/10 text-destructive': rowStatuses[row.sku]?.tone === 'danger',
                           'bg-warning/15 text-amber-600 dark:text-amber-400': rowStatuses[row.sku]?.tone === 'amber',
