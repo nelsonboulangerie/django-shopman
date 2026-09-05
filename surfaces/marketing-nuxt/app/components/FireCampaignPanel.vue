@@ -16,7 +16,7 @@
 // depois do envio — quando já não tem desfazer. Era também a única forma de ver que somar
 // regras ALARGA: "leais + atacado" dava 5 quando o gestor queria os 2 que são as duas
 // coisas, e a tela não contava isso em lugar nenhum.
-import { audienceRulesSummary, choiceLabels } from "~/presentation/campaign";
+import { alertsNote, audienceRulesSummary, choiceLabels } from "~/presentation/campaign";
 import type { AudienceMatch, Campaign, Choice, ChosenAudience } from "~/types/campaign";
 
 const props = defineProps<{
@@ -44,6 +44,17 @@ const vipFirst = ref(false);
 const match = ref<AudienceMatch>("any");
 
 const { count, pending: counting, failed: countFailed, measure, clear } = useAudienceCount();
+
+/** Por que a fila de "me avise" está vazia — a mesma frase do card do anúncio.
+ *  Zero calado é indistinguível de tela quebrada: foi o que aconteceu com a Baguette. */
+const emptyAlerts = computed(() =>
+  count.value
+    ? alertsNote({
+        alerts_count: count.value.alerts_pending < 0 ? undefined : count.value.alerts_pending,
+        alerts_notified_count: Math.max(count.value.alerts_notified, 0),
+      })
+    : "",
+);
 
 /** Rótulos do servidor: o resumo do público da campanha não traduz ref por conta. */
 const audienceLabels = computed(() => ({
@@ -357,6 +368,12 @@ watch(
         class="mt-2 text-xs text-amber-700 dark:text-amber-400"
       >
         Ninguém se encaixa neste público hoje. Nada será enviado.
+      </p>
+
+      <!-- O zero da fila de "me avise" precisa dizer QUAL zero é: ninguém pediu, ou
+           pediram e a fila já foi servida. Ver `alertsNote`. -->
+      <p v-if="emptyAlerts" class="mt-2 text-xs text-muted-foreground">
+        {{ emptyAlerts }}.
       </p>
     </div>
 

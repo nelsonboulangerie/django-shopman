@@ -238,6 +238,12 @@ def resolve(rules: dict | None = None, *, sku: str = "") -> AudienceResult:
 
     if sku and rules.get("alerts"):
         apply(_pending_alerts(sku), reason="alerts", count_key="alerts_count")
+        # Fica ao lado do ``alerts_count`` sempre que a regra roda, porque é o
+        # que faz o ZERO dizer o que é. "Ninguém para avisar" tem duas causas
+        # que a tela mostrava igual: ninguém pediu, ou pediram e a fila já foi
+        # servida (assinatura consumida por uma chegada de estoque, por
+        # exemplo). Sem este número o gestor precisa do banco para entender.
+        counts["alerts_notified_count"] = _notified_alerts_count(sku)
 
     days = int(rules.get("bought_within_days") or 0)
     if sku and days > 0:
@@ -420,6 +426,21 @@ def _pending_alerts(sku: str) -> list[Recipient]:
             )
         )
     return out
+
+
+def _notified_alerts_count(sku: str) -> int:
+    """Quantos assinantes deste SKU já foram avisados — o contexto do zero.
+
+    Falha para 0: número que não veio não se inventa, e 0 aqui só apaga a
+    explicação extra, nunca inventa audiência.
+    """
+    try:
+        from shopman.shop.adapters import audience_sources
+
+        return max(int(audience_sources.notified_alert_count(sku)), 0)
+    except Exception:
+        logger.warning("audience.alerts_notified_failed sku=%s", sku, exc_info=True)
+        return 0
 
 
 def _bought_within_days(sku: str, days: int) -> list[Recipient]:

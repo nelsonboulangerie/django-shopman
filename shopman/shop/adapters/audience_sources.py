@@ -44,6 +44,27 @@ def pending_alert_count(sku: str) -> int:
     )
 
 
+def notified_alert_count(sku: str) -> int:
+    """Quantas pessoas pediram aviso deste SKU e JÁ foram avisadas.
+
+    Existe para o zero da tela do Marketing poder falar. "Ninguém para avisar"
+    tem duas causas que na tela pareciam a mesma: ninguém pediu, ou pediram e a
+    fila já foi servida. Foi exatamente o segundo caso que apareceu como bug —
+    a inscrição existia, o estoque voltou 7 minutos depois, o aviso saiu, e o
+    público virou zero sem nada explicar por quê.
+
+    Dedupe por telefone, igual ao ``pending_alert_count``: é gente, não linha.
+    """
+    from shopman.storefront.models import StockAlertSubscription
+
+    return (
+        StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=False)
+        .values("contact_phone")
+        .distinct()
+        .count()
+    )
+
+
 def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
     """``(telefone, customer_ref)`` de cada assinatura pendente deste SKU.
 

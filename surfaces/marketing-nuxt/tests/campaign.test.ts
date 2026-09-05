@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertsNote,
   audienceRulesSummary,
   audienceSummary,
   displayHashtag,
@@ -23,6 +24,23 @@ function result(platform: string, status: string): PlatformResult {
   return { platform, label: platform, status, detail: "", url: "" };
 }
 
+describe("alertsNote", () => {
+  it("separates an empty queue from a queue already served", () => {
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 0 }))
+      .toBe("Ninguém pediu para ser avisado deste produto ainda");
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 1 }))
+      .toBe("A pessoa que pediu aviso deste produto já foi avisada");
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 4 }))
+      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
+  });
+
+  it("stays quiet when the rule did not run or found somebody", () => {
+    expect(alertsNote(undefined)).toBe("");
+    expect(alertsNote({})).toBe("");
+    expect(alertsNote({ alerts_count: 3, alerts_notified_count: 4 })).toBe("");
+  });
+});
+
 describe("audienceSummary", () => {
   it("lists each source and closes with the deduplicated total", () => {
     expect(audienceSummary({ favorites_count: 12, bought_count: 28, alerts_count: 3, total: 43 }))
@@ -43,6 +61,13 @@ describe("audienceSummary", () => {
   it("says nobody rather than showing a zero", () => {
     expect(audienceSummary({ total: 0 })).toBe("Ninguém para avisar por enquanto");
     expect(audienceSummary(undefined)).toBe("Ninguém para avisar por enquanto");
+  });
+
+  it("explains a zero that came from an already-served alert queue", () => {
+    // O caso do Pablo: quatro pessoas pediram aviso da Baguette, o estoque voltou e
+    // todas foram avisadas. "Ninguém para avisar" era verdade e parecia bug.
+    expect(audienceSummary({ alerts_count: 0, alerts_notified_count: 4, total: 0 }))
+      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
   });
 
   it("agrees in the singular", () => {
