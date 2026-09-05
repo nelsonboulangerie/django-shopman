@@ -5,7 +5,7 @@ from datetime import date
 
 import pytest
 from django.test import Client
-from shopman.guestman.models import Customer
+from shopman.guestman.models import ContactPoint, Customer
 
 pytestmark = pytest.mark.django_db
 
@@ -172,6 +172,70 @@ def test_account_profile_patch_persists_before_returning_success(client: Client)
     assert customer.last_name == "Lima Costa"
     assert customer.email == "bia.new@example.com"
     assert customer.birthday == date(1991, 6, 15)
+
+
+def test_account_profile_patch_so_toca_o_que_veio(client: Client):
+    """PATCH parcial não pode apagar o que não foi mencionado.
+
+    O portão de boas-vindas (`entrar.vue`) manda SÓ `first_name` — ele dispara
+    sempre que o nome guardado tem emoji ou `& + | /`, que é exatamente o
+    formato dos nomes importados do ManyChat. A view lia os quatro campos
+    incondicionalmente, chave ausente virava `""`/`None`, e `""` no e-mail
+    significa APAGAR o ContactPoint primário. Cliente confirmava o próprio nome
+    e perdia e-mail, sobrenome e aniversário, sem aviso.
+    """
+    customer = Customer.objects.create(
+        ref="CUS-PROFILE-PATCH",
+        first_name="Ana&Maria",
+        last_name="Souza",
+        phone="+5543999990009",
+        email="ana@boulangerie.com.br",
+        birthday=date(1990, 3, 2),
+    )
+    assert ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists(), "pré-condição: o e-mail primário existe antes do PATCH"
+    _login_as_customer(client, customer)
+
+    response = client.patch(
+        "/api/v1/account/profile/",
+        data=json.dumps({"first_name": "Ana Maria"}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    customer.refresh_from_db()
+    assert customer.first_name == "Ana Maria"
+    # ...e nada mais mudou.
+    assert customer.last_name == "Souza"
+    assert customer.email == "ana@boulangerie.com.br"
+    assert customer.birthday == date(1990, 3, 2)
+    assert ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists(), "o e-mail primário foi apagado por um PATCH que nem falou dele"
+
+
+def test_account_profile_patch_string_vazia_ainda_limpa(client: Client):
+    """Ausente é "não mexa"; vazio continua sendo "apague". São coisas distintas."""
+    customer = Customer.objects.create(
+        ref="CUS-PROFILE-CLEAR",
+        first_name="Rita",
+        last_name="Alves",
+        phone="+5543999990010",
+        email="rita@boulangerie.com.br",
+    )
+    _login_as_customer(client, customer)
+
+    response = client.patch(
+        "/api/v1/account/profile/",
+        data=json.dumps({"first_name": "Rita", "email": ""}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert not ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists()
 
 
 def test_account_profile_patch_enforces_csrf():

@@ -121,7 +121,14 @@ def update_profile(customer_ref: str, intent):
         if not customer:
             return None
 
-        email = (intent.email or "").strip().lower()
+        # `UNSET` = a requisição não falou deste campo; deixe-o como está.
+        # `""` = a requisição pediu para limpar. Os dois eram a mesma coisa até
+        # 01/09, e por isso o portão de boas-vindas apagava o e-mail de quem só
+        # confirmou o nome.
+        from shopman.shop.sentinels import UNSET
+
+        email_provided = intent.email is not UNSET
+        email = (intent.email or "").strip().lower() if email_provided else ""
         if email:
             conflict = (
                 ContactPoint.objects.filter(
@@ -143,20 +150,22 @@ def update_profile(customer_ref: str, intent):
                 primary_email.value_normalized = email
                 primary_email.value_display = email
                 primary_email.save(update_fields=["value_normalized", "value_display", "updated_at"])
-        else:
+        elif email_provided:
             ContactPoint.objects.filter(
                 customer=customer,
                 type=ContactPoint.Type.EMAIL,
                 is_primary=True,
             ).delete()
 
-        return customer_service.update(
-            customer_ref,
-            first_name=intent.first_name,
-            last_name=intent.last_name,
-            email=email,
-            birthday=intent.birthday,
-        )
+        campos = {"first_name": intent.first_name}
+        if intent.last_name is not UNSET:
+            campos["last_name"] = intent.last_name
+        if email_provided:
+            campos["email"] = email
+        if intent.birthday is not UNSET:
+            campos["birthday"] = intent.birthday
+
+        return customer_service.update(customer_ref, **campos)
 
 
 def preferences(customer_ref: str, category: str | None = None):

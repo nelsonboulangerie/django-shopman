@@ -816,6 +816,17 @@ EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+# ⚠️ O default é DELIBERADAMENTE não-entregável, e não deve ser "consertado"
+# para um domínio real. `.local` é TLD reservado a mDNS (RFC 6762): sem DNS
+# público, sem SPF, sem DMARC. `notification_email.is_available()` reconhece
+# esse domínio e devolve False — então "ninguém declarou o remetente" degrada
+# para "canal indisponível", a cadeia de fallback segue para SMS/WhatsApp, e o
+# cliente recebe o link de pagamento por outro caminho.
+#
+# Trocar isto por um endereço de aparência real reabre o fail-open: o relay
+# aceitaria, `send()` devolveria True, a cadeia pararia no e-mail — e o cliente
+# não receberia nada, com o log dizendo "Email sent".
+# Em produção, declare `DEFAULT_FROM_EMAIL` no spec de deploy.
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@shopman.local")
 
 # Quanto esperar por um servidor de SMTP que não responde. Sem isto o socket
@@ -857,6 +868,18 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
     },
+    # ⚠️ Sem isto, `BaseThrottle.get_ident` lê o PRIMEIRO valor do
+    # X-Forwarded-For — o da ESQUERDA, que é o que o cliente escreve e portanto
+    # forjável: trocar o cabeçalho a cada requisição zera o balde.
+    # Com `NUM_PROXIES`, o DRF conta da DIREITA (`addrs[-NUM_PROXIES]`), que é a
+    # ponta que a infraestrutura escreve — a mesma aritmética do
+    # `doorman.get_client_ip(trusted_proxy_depth=...)`. As duas TÊM de casar,
+    # senão o mesmo cliente é dois baldes diferentes; por isso leem a mesma env.
+    #
+    # A contagem é: [cliente, BFF Nitro] → o edge da plataforma acrescenta o IP
+    # de saída do Nitro, e o BFF repassa o XFF que recebeu. Valor forjado entra
+    # à ESQUERDA e não desloca a contagem pela direita.
+    "NUM_PROXIES": _env_int("DOORMAN_TRUSTED_PROXY_DEPTH", 1),
 }
 
 SPECTACULAR_SETTINGS = {

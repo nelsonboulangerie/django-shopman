@@ -819,7 +819,10 @@ class OperatorPinResetView(APIView):
         try:
             temp_pin = operator_service.reset_operator_pin(target, temp_pin=body.get("temp_pin"))
         except operator_service.PinChangeError as exc:
-            status = 404 if exc.code == "no_target" else 400
+            # `superuser_target` é recusa de AUTORIZAÇÃO, não pedido malformado: quem
+            # tem `manage_operators` não tem, por isso, poder sobre a conta que
+            # administra o sistema. 403 é o código honesto.
+            status = {"no_target": 404, "superuser_target": 403}.get(exc.code, 400)
             return Response({"detail": str(exc), "error": {"code": exc.code}}, status=status)
         except PinCredentialError as exc:
             return Response({"detail": str(exc), "error": {"code": "pin_policy"}}, status=400)
@@ -2283,6 +2286,11 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 # insumos: um cliente que mande a string desliga o guardrail achando
                 # que o ligou. Ver `shopman/backstage/parsing.py`.
                 force=as_bool(request.data, "force", default=False),
+                # Trava de replay do GESTO. Esta é a única operação composta da
+                # produção (cria a WO e a fecha na mesma requisição), então a
+                # chave do core — que inclui o pk da WO — nasce diferente a cada
+                # tentativa e nunca alcança a trava. Ver `apply_quick_finish`.
+                client_request_id=str(request.data.get("client_request_id") or "").strip(),
             )
         except ProductionError as exc:
             shortage = _production_error_response(exc)

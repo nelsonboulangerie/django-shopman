@@ -213,6 +213,11 @@ class TestSystemNotificationDelivery:
         # imprime em stdout e devolvia sucesso, curto-circuitando SMS e WhatsApp.
         settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
         settings.EMAIL_HOST = "smtp.exemplo.test"
+        # ...e um REMETENTE entregável. `is_available` também recusa domínio
+        # reservado (`.local`, `example.*`), que é o default de `settings.py`:
+        # SMTP de pé com remetente que não existe no DNS é o mesmo fail-open,
+        # por outra porta. Aqui o alvo é o roteamento, então o remetente é real.
+        settings.DEFAULT_FROM_EMAIL = "nelson@boulangerie.com.br"
         from shopman.shop.handlers.notification import NotificationSendHandler
 
         calls = []

@@ -27,6 +27,8 @@ from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
+from shopman.shop.environment import environment_name, is_production
+
 DEV_PIN = "1234"
 ADMIN_PASSWORD = "admin"
 
@@ -54,7 +56,17 @@ def dev_badge(username: str) -> str:
     # O comprimento vem do doorman, não de um número escrito aqui: crachá de dev
     # com tamanho diferente do sorteado seria descartado pela tela sem avisar.
     tamanho = PinCredential.BADGE_BYTES * 2
-    return hashlib.sha256(f"shopman-dev-badge:{username}".encode()).hexdigest()[:tamanho]
+    # Derivado com a SECRET_KEY, não só do username. Sem ela a semente
+    # ("shopman-dev-badge:<usuario>") é um literal deste arquivo público e o
+    # username não é segredo — ele aparece na tela, no livro-caixa e no
+    # comprovante impresso. Qualquer pessoa calcularia o crachá de `joyce`
+    # offline e o apresentaria na tela de destrave como ela, e a trilha de
+    # auditoria nomearia a Joyce. Continua estável entre execuções (a chave não
+    # muda), então o crachá impresso ontem segue valendo.
+    from django.conf import settings
+
+    seed = f"shopman-dev-badge:{username}:{settings.SECRET_KEY}"
+    return hashlib.sha256(seed.encode()).hexdigest()[:tamanho]
 
 #: username, nome, sobrenome, grupos, é superusuário?, identidades que ele ABSORVE
 #:
@@ -97,6 +109,26 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
+        # A pergunta do ambiente NÃO é do chamador. `--yes` pedia que quem chama
+        # CERTIFICASSE "isto não é produção" — e o `seed` respondia essa pergunta
+        # com um `--yes` fixo no código (`config/management/commands/seed.py`), o
+        # que fazia da trava uma formalidade. Quem sabe em que ambiente o processo
+        # roda é o processo: `is_production()` é a mesma pergunta que já guarda
+        # `seed --flush`, `import_backup --apply`, `qa_scenarios` e
+        # `refresh_seed_dates` (ver shopman/shop/environment.py).
+        #
+        # O que estava em jogo: o PIN é a identidade do operador no livro-caixa —
+        # é ele que assina sangria, devolução e fechamento. PIN 1234 para todo
+        # mundo é um balcão sem identidade, e a trilha de auditoria passa a nomear
+        # qualquer um.
+        if is_production():
+            raise CommandError(
+                f"Recusado: este comando cria contas com PIN {DEV_PIN} e senha "
+                f"'{ADMIN_PASSWORD}', e esta instância está declarada como produção "
+                f"(SHOPMAN_ENVIRONMENT={environment_name()!r}). "
+                "Em produção, crie os operadores pelo Admin e defina o PIN de cada um "
+                "individualmente."
+            )
         if not options["yes"]:
             raise CommandError(
                 f"Este comando cria contas com PIN {DEV_PIN} e senha '{ADMIN_PASSWORD}'. "

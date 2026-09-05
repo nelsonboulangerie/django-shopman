@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date as date_type
 
+from shopman.shop.sentinels import UNSET, UnsetType
+
 
 @dataclass
 class SetQtyIntent:
@@ -79,10 +81,20 @@ class IntentResult:
 
 @dataclass(frozen=True)
 class ProfileUpdateIntent:
+    """Edição de perfil com semântica de PATCH.
+
+    ⚠️ `UNSET` não é enfeite: `PATCH /account/profile/` era um PUT disfarçado.
+    O portão de boas-vindas (`entrar.vue`) manda SÓ `first_name`, e a view lia
+    os quatro campos incondicionalmente — chave ausente virava `""`/`None`, e
+    `""` no e-mail significa APAGAR o ContactPoint primário. Um cliente com
+    e-mail e aniversário cadastrados que confirmasse o nome perdia os três, sem
+    aviso. `UNSET` é "não veio no corpo"; `""` segue sendo "apague".
+    """
+
     first_name: str
-    last_name: str
-    email: str
-    birthday: date_type | None
+    last_name: str | UnsetType = UNSET
+    email: str | UnsetType = UNSET
+    birthday: date_type | None | UnsetType = UNSET
 
 
 @dataclass(frozen=True)

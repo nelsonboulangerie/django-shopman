@@ -348,6 +348,11 @@ envs:
   scope: RUN_TIME
   value: 'false'
   type: GENERAL
+# ⚠️ O `2` foi medido QUANDO o BFF ainda não repassava o X-Forwarded-For. Desde
+# 01/09 ele repassa (server/utils/djangoProxy.ts), e a cadeia ficou um salto mais
+# longa — o IP real do cliente está mais à esquerda do que quando este número foi
+# aferido. RE-MEDIR com SHOPMAN_LOG_CLIENT_IP=true e a linha `client_ip.diagnostic`.
+# O `NUM_PROXIES` do DRF lê esta mesma env, então corrigir aqui corrige os dois.
 - key: DOORMAN_TRUSTED_PROXY_DEPTH
   scope: RUN_TIME
   value: '2'
@@ -418,7 +423,17 @@ services:
     success_threshold: 1
     timeout_seconds: 5
   name: web
-  run_command: daphne -b 0.0.0.0 -p 8000 config.asgi:application
+  # ⚠️ `--access-log=/dev/null` NÃO é economia de log: é vazamento de segredo.
+  # O access log do daphne grava o request-target CRU, com query string
+  # (daphne/http_protocol.py: "path": uri), e o token dos webhooks viaja na query
+  # — `?token=<EFI_WEBHOOK_TOKEN>` — porque é assim que a EFI cadastra a URL.
+  # Esse token é a autenticação ÚNICA do webhook de Pix (a allowlist de IP nasce
+  # vazia e o mTLS é advisory), então cada chamada legítima da EFI escrevia o
+  # segredo em texto puro no stream de log da plataforma. Quem lê o log forja
+  # "Pix recebido" e o pedido se paga sozinho.
+  # O `before_send` do Sentry redige isso PARA O SENTRY; não faz nada pelo stdout.
+  # Verbosity fica em 1: o log da APLICAÇÃO segue em INFO, só o access log morre.
+  run_command: daphne -b 0.0.0.0 -p 8000 --access-log=/dev/null config.asgi:application
   image:
     registry_type: DOCR
     repository: shopman

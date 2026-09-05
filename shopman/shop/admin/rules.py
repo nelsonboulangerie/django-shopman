@@ -193,6 +193,22 @@ class RuleConfigAdmin(ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return request.user.has_perm("shop.manage_rules")
 
+    def has_manage_rules_permission(self, request):
+        """Portão das AÇÕES em lote, e o Django exige que ele se chame assim.
+
+        ⚠️ `@admin.action` sem `permissions=` **não é filtrada**
+        (`django/contrib/admin/options.py`): ela aparece no seletor e roda para
+        quem só tem `view`. Os três `has_*_permission` acima gateiam o
+        formulário, e as ações passavam por fora deles — a Gerente tem
+        `view_ruleconfig` por `_ver("shop")` e NÃO tem `manage_rules`, então ela
+        ligava e desligava regra de preço pelo seletor, furando o portão do
+        WP-GAP-06 (que existe porque regra de preço EXECUTA expressão).
+
+        `permissions=["manage_rules"]` faz o Django procurar exatamente este
+        método — o nome não é escolha de estilo, é o contrato dele.
+        """
+        return request.user.has_perm("shop.manage_rules")
+
     @display(description="tipo", label={"Preço": "info", "Validação": "warning"})
     def rule_type_display(self, obj):
         if ".pricing." in obj.rule_path:
@@ -226,12 +242,12 @@ class RuleConfigAdmin(ModelAdmin):
             return "NÃO CARREGA"
         return "Sim"
 
-    @admin.action(description="Ativar regras selecionadas")
+    @admin.action(description="Ativar regras selecionadas", permissions=["manage_rules"])
     def enable_rules(self, request, queryset):
         updated = queryset.update(enabled=True)
         self.message_user(request, f"{updated} regra(s) ativada(s).")
 
-    @admin.action(description="Desativar regras selecionadas")
+    @admin.action(description="Desativar regras selecionadas", permissions=["manage_rules"])
     def disable_rules(self, request, queryset):
         updated = queryset.update(enabled=False)
         self.message_user(request, f"{updated} regra(s) desativada(s).")

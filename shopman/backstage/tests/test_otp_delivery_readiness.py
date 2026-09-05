@@ -29,6 +29,14 @@ def _email(settings, *, ok: bool):
     if ok:
         settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
         settings.EMAIL_HOST = "smtp.exemplo.test"
+        # ⚠️ O REMETENTE faz parte de "configurado", e é a perna que faltava aqui.
+        # `is_available` recusa domínio reservado (`.local`, `example.*`) porque
+        # SMTP de pé com remetente que não existe no DNS é entrega falsa: o relay
+        # aceita, `send()` devolve True, e esse True encerra a cadeia de fallback
+        # antes do SMS. O default de `settings.py` é justamente `.local`, então
+        # montar só backend+host descrevia um e-mail que NÃO entrega e o chamava
+        # de pronto — a própria armadilha, escrita como cenário feliz.
+        settings.DEFAULT_FROM_EMAIL = "nelson@boulangerie.com.br"
     else:
         settings.EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
         settings.EMAIL_HOST = ""

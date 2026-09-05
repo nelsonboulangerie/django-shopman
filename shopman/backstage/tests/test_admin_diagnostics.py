@@ -18,6 +18,11 @@ from shopman.backstage.projections.diagnostics import build_diagnostics
 pytestmark = pytest.mark.django_db
 
 SMTP = "django.core.mail.backends.smtp.EmailBackend"
+#: Remetente entregável. O default do projeto é `noreply@shopman.local`, e a
+#: guarda de remetente o recusa de propósito: `.local` é TLD reservado a mDNS
+#: (RFC 6762), sem SPF nem DMARC possíveis. Cenário que quer SMTP de pé precisa
+#: declarar um remetente que exista — senão testa a armadilha, não o caminho.
+REMETENTE_REAL = "nelson@nelsonboulangerie.com.br"
 LOCMEM = "django.core.mail.backends.locmem.EmailBackend"
 CONSOLE = "django.core.mail.backends.console.EmailBackend"
 
@@ -60,9 +65,35 @@ def test_smtp_sem_host_nao_entrega():
     assert "EMAIL_HOST" in email.motivo
 
 
-@override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.gmail.com")
-def test_smtp_com_host_entrega():
+@override_settings(
+    EMAIL_BACKEND=SMTP,
+    EMAIL_HOST="smtp.gmail.com",
+    DEFAULT_FROM_EMAIL="nelson@nelsonboulangerie.com.br",
+)
+def test_smtp_com_host_e_remetente_real_entrega():
     assert build_diagnostics().email.entrega is True
+
+
+@override_settings(
+    EMAIL_BACKEND=SMTP,
+    EMAIL_HOST="smtp.gmail.com",
+    DEFAULT_FROM_EMAIL="noreply@shopman.local",
+)
+def test_smtp_de_pe_com_remetente_reservado_nao_entrega_e_a_tela_diz_por_que():
+    """O SMTP de pé com remetente `.local` é fail-open por outra porta.
+
+    O relay ACEITA, `send_mail` não levanta, `send()` devolve True — e esse True
+    encerra a cadeia antes do SMS e do WhatsApp. `.local` é TLD reservado a mDNS
+    (RFC 6762): sem DNS público, logo sem SPF nem DMARC.
+
+    A tela tem de dizer que o problema é o REMETENTE. Antes deste caso o motivo
+    caía no `else` e acusava "backend inerte" para um SMTP configurado — mandando
+    o operador conferir exatamente onde o problema não está.
+    """
+    email = build_diagnostics().email
+    assert email.entrega is False
+    assert "remetente" in email.motivo.lower()
+    assert "inerte" not in email.motivo.lower()
 
 
 @override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.gmail.com", EMAIL_HOST_PASSWORD="segredo")
@@ -105,7 +136,11 @@ def smtp_de_mentira(monkeypatch):
         "shopman.backstage.admin_console.diagnostics.get_connection",
         lambda **kwargs: mail.get_connection(backend=LOCMEM),
     )
-    with override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.gmail.com"):
+    with override_settings(
+        EMAIL_BACKEND=SMTP,
+        EMAIL_HOST="smtp.gmail.com",
+        DEFAULT_FROM_EMAIL=REMETENTE_REAL,
+    ):
         mail.outbox.clear()
         yield
 
@@ -148,7 +183,9 @@ def test_usuario_sem_email_recebe_explicacao(client, url, django_user_model):
     assert any("e-mail cadastrado" in str(m) for m in resposta.context["messages"])
 
 
-@override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.invalido.local")
+@override_settings(
+    EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.invalido.local", DEFAULT_FROM_EMAIL=REMETENTE_REAL
+)
 def test_falha_de_envio_mostra_o_erro_inteiro(client, gestor, url, monkeypatch):
     """Porta fechada, senha errada e SPF ausente são sintomas diferentes.
 
@@ -183,7 +220,11 @@ def test_o_envio_usa_timeout_curto(client, gestor, url, monkeypatch):
     monkeypatch.setattr(
         "shopman.backstage.admin_console.diagnostics.get_connection", fake_get_connection
     )
-    with override_settings(EMAIL_BACKEND=SMTP, EMAIL_HOST="smtp.gmail.com"):
+    with override_settings(
+        EMAIL_BACKEND=SMTP,
+        EMAIL_HOST="smtp.gmail.com",
+        DEFAULT_FROM_EMAIL=REMETENTE_REAL,
+    ):
         client.force_login(gestor)
         client.post(url, follow=True)
 

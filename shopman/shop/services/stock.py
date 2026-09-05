@@ -402,8 +402,24 @@ def _sku_known_to_catalog(sku: str) -> bool:
     try:
         return get_sku_validator().get_sku_info(sku) is not None
     except Exception:
-        logger.debug("stock._sku_known_to_catalog degraded sku=%s", sku, exc_info=True)
-        return True
+        # ⚠️ Isto devolvia `True`, e `True` aqui significa "o catálogo conhece
+        # este SKU" — o call site em `stock.py` faz
+        # `if not allow_untracked and not _sku_known_to_catalog(...): raise`,
+        # então o ramo de erro PULAVA a recusa. O portão `allow_untracked=False`
+        # parava de existir exatamente quando o validador falhava, que é quando
+        # ele mais importa. A docstring acima já prometia o contrário desde o
+        # primeiro dia; quem estava errado era o código.
+        #
+        # `False` = "não consigo confirmar que o catálogo conhece", e o call site
+        # então EXIGE a reserva (ou alerta o operador, no caminho brando). É a
+        # regra da casa: em caminho de dado/dinheiro, a omissão é restritiva.
+        logger.warning(
+            "stock._sku_known_to_catalog: validador de SKU indisponível para %s — "
+            "tratando como DESCONHECIDO (fail-closed).",
+            sku,
+            exc_info=True,
+        )
+        return False
 
 
 def _insufficient_stock_error(item: dict, comp_sku: str, qty, error_code):

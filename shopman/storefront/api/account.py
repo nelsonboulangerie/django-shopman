@@ -346,7 +346,7 @@ class ProfileView(APIView):
     def patch(self, request):
         from datetime import date as date_type
 
-        from shopman.storefront.intents.types import ProfileUpdateIntent
+        from shopman.storefront.intents.types import UNSET, ProfileUpdateIntent
 
         customer = get_authenticated_customer(request)
         if not customer:
@@ -355,22 +355,30 @@ class ProfileView(APIView):
         payload = request.data if hasattr(request, "data") else {}
         # Nomes vao para o ticket do KDS/pedido: sanitiza controle/bidi e limita
         # o comprimento antes de persistir (clean_name), nao so ``.strip()``.
+        # PATCH de verdade: chave AUSENTE não é chave vazia. O portão de
+        # boas-vindas manda só `first_name`; ler os quatro incondicionalmente
+        # fazia dele um PUT, e `""` no e-mail significa APAGAR o ContactPoint
+        # primário — o cliente perdia e-mail, sobrenome e aniversário só por
+        # confirmar o próprio nome. Quem quer limpar um campo manda ele vazio.
         first_name = clean_name(payload.get("first_name"))
-        last_name = clean_name(payload.get("last_name"))
-        email = clean_text(payload.get("email"))
-        birthday_raw = clean_text(payload.get("birthday"))
         if not first_name:
             return Response(
                 {"detail": "Nome é obrigatório.", "field": "first_name"},
                 status=400,
             )
 
-        birthday = None
-        if birthday_raw:
-            try:
-                birthday = date_type.fromisoformat(birthday_raw)
-            except ValueError:
-                birthday = None
+        last_name = clean_name(payload["last_name"]) if "last_name" in payload else UNSET
+        email = clean_text(payload["email"]) if "email" in payload else UNSET
+
+        birthday = UNSET
+        if "birthday" in payload:
+            birthday_raw = clean_text(payload["birthday"])
+            birthday = None
+            if birthday_raw:
+                try:
+                    birthday = date_type.fromisoformat(birthday_raw)
+                except ValueError:
+                    birthday = None
 
         intent = ProfileUpdateIntent(
             first_name=first_name,

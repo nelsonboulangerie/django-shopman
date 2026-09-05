@@ -24,8 +24,14 @@ help: ## Mostra este help
 # ── Setup ─────────────────────────────────────────────────────────────
 
 install: ## Instala deps + apps da suite em modo editável
+	# ⚠️ `-c constraints.txt` não é zelo: sem ele a suíte valida um conjunto e a
+	# imagem sobe outro. Medido em 01/09: 40 dos 100 pinos divergiam, incluindo
+	# um bump de MINOR do DRF (3.17→3.18) e três releases de Django. O próprio
+	# `scripts/check_constraints.py` já dizia a regra — "o valor do pin é ser a
+	# versão que a suíte viu" — e o `test-constraints` só confere COBERTURA, não
+	# igualdade. Verde aqui passa a significar verde no que sobe.
 	$(PYTHON) -m pip install --upgrade pip
-	$(PYTHON) -m pip install "Django>=6.0,<6.1" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
+	$(PYTHON) -m pip install -c constraints.txt "Django>=6.0,<6.1" "djangorestframework>=3.17,<4.0" "django-filter>=25.2,<26.0" \
 		"drf-spectacular>=0.29,<1.0" \
 		"django-csp>=4.0,<5.0" \
 		"django-ratelimit>=4.1,<5.0" \

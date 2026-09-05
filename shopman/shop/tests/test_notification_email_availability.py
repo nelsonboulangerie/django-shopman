@@ -46,11 +46,55 @@ class TestCanalInerteDizQueEstaInerte:
 
         assert notification_email.is_available() is False
 
-    def test_smtp_COM_host_esta_disponivel(self, settings):
+    def test_smtp_COM_host_E_remetente_real_esta_disponivel(self, settings):
+        settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+        settings.EMAIL_HOST = "smtp.sendgrid.net"
+        settings.DEFAULT_FROM_EMAIL = "nelson@boulangerie.com.br"
+
+        assert notification_email.is_available() is True
+
+
+class TestRemetenteQueNaoSaiDaCasa:
+    """O mesmo fail-open do item 4, por outra porta: o REMETENTE.
+
+    Um SMTP de verdade com `From: noreply@shopman.local` é aceito pelo relay,
+    `send_mail` não levanta, `send()` devolve True — e esse True encerra a
+    cadeia antes do SMS. Só que `.local` é TLD reservado a mDNS (RFC 6762): não
+    tem DNS público, logo não tem SPF nem DMARC, e o receptor rejeita ou marca
+    spam. O cliente não recebe o link de pagamento e o log diz "Email sent".
+
+    Este era o default de `config/settings.py` e não estava declarado em NENHUM
+    dos dois specs de deploy.
+    """
+
+    def _smtp_de_pe(self, settings):
         settings.EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
         settings.EMAIL_HOST = "smtp.sendgrid.net"
 
-        assert notification_email.is_available() is True
+    def test_dominio_local_nao_esta_disponivel(self, settings):
+        self._smtp_de_pe(settings)
+        settings.DEFAULT_FROM_EMAIL = "noreply@shopman.local"
+
+        assert notification_email.is_available() is False
+
+    def test_dominio_example_nao_esta_disponivel(self, settings):
+        self._smtp_de_pe(settings)
+        settings.DEFAULT_FROM_EMAIL = "noreply@example.com"
+
+        assert notification_email.is_available() is False
+
+    def test_remetente_vazio_nao_esta_disponivel(self, settings):
+        self._smtp_de_pe(settings)
+        settings.DEFAULT_FROM_EMAIL = ""
+
+        assert notification_email.is_available() is False
+
+    def test_remetente_do_config_tem_precedencia(self, settings):
+        """`config["from_email"]` é o que `send()` realmente usa — é ele que vale."""
+        self._smtp_de_pe(settings)
+        settings.DEFAULT_FROM_EMAIL = "noreply@shopman.local"
+
+        assert notification_email.is_available(from_email="nelson@boulangerie.com.br") is True
 
 
 def test_o_console_deixa_de_curto_circuitar_a_cadeia(settings):
