@@ -424,7 +424,16 @@ def _on_accepted(order, config: ChannelConfig) -> None:
 
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order)
-    notification.send(order, "order_accepted")
+
+    # Quem já levou a mercadoria não recebe aviso de pedido. A copy de
+    # ``order_accepted`` é da esteira remota ("Seu pedido {ref} foi
+    # confirmado…") e no balcão é falsa por construção: o cliente pagou, pegou o
+    # pão e saiu — avisá-lo de que "a loja confirmou seu pedido" o faz procurar
+    # uma compra online que ele nunca fez.
+    counter_handoff = _counter_handoff(order)
+    if not counter_handoff:
+        notification.send(order, "order_accepted")
+
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
         return
@@ -434,7 +443,7 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     # O gate é config-driven: só fecha se o CANAL declarou a transição
     # ACCEPTED→COMPLETED no seu ``lifecycle.transitions`` (assado no snapshot).
     # Canais sem essa config nunca entram aqui.
-    if _counter_handoff(order) and order.can_transition_to(Order.Status.COMPLETED):
+    if counter_handoff and order.can_transition_to(Order.Status.COMPLETED):
         order.transition_status(Order.Status.COMPLETED, actor="system:counter_handoff")
 
 

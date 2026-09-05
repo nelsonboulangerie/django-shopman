@@ -3405,7 +3405,18 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # entrar uma vez e voltar pré-preenchido na próxima venda, sem que uma
     # edição pontual no checkout reescreva o cadastro de ninguém.
     fill_tax_id = tax_id or _digits(str(payload.get("fiscal_tax_id") or "").strip())
-    fill_email = email or str(payload.get("receipt_email") or "").strip().lower()
+    # ⚠️ ``receipt_email`` NÃO entra aqui. O endereço para onde ESTA nota vai é
+    # fato DA VENDA (``receipt.email``), não identidade do cliente: o cliente
+    # pode pedir a nota no e-mail do contador, do marido, da empresa. Deixá-lo
+    # virar ``customer.email`` criava cadastro no CRM a cada venda anônima,
+    # colava o e-mail de terceiro na identidade e fazia o destinatário das
+    # notificações do canal ser quem nunca comprou. E ainda estourava a venda:
+    # grava-se ``fill_email``, mas procura-se por ``email`` — o cadastro que já
+    # tinha aquele endereço nunca era achado, um segundo nascia, e o UNIQUE de
+    # ContactPoint (type, value_normalized) recusava com IntegrityError, que
+    # escapava da view como HTTP 500 e travava a venda para sempre.
+    # Quem quer gravar contato usa ``customer_email``.
+    fill_email = email
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     raw_ref = str(payload.get("customer_ref") or "").strip()

@@ -69,6 +69,7 @@ def emit(order) -> None:
         return
 
     if not emission_resolver(order):
+        _alert_receipt_promised_without_emission(order, data)
         return
 
     payment = dict(data.get("payment", {}) or {})
@@ -134,6 +135,52 @@ def _payment_below_total(payment: dict, order) -> bool:
     falha ruidosa não precisa de guarda nossa.
     """
     return 0 < _declared_payment_q(payment) < int(order.total_q or 0)
+
+
+def _requested_receipt_channels(data: dict) -> list[str]:
+    """Os canais de documento que o balcão pediu NESTA venda."""
+    receipt = data.get("receipt") or {}
+    channels = receipt.get("channels") or []
+    if not isinstance(channels, (list, tuple, set)):
+        return []
+    return [c for c in (str(ch or "").strip() for ch in channels) if c]
+
+
+def _alert_receipt_promised_without_emission(order, data: dict) -> None:
+    """Prometeu-se o documento no balcão e a regra recusou a nota → grite.
+
+    ``receipt.channels`` só é escrito quando o operador marcou "Impressa?" ou
+    "Enviar por e-mail" — ou seja, alguém prometeu papel/anexo ao cliente. Nem
+    DANFE nem XML existem sem NFC-e autorizada, então a recusa aqui significa que
+    a promessa não vai ser cumprida. Morrer num ``return`` mudo é exatamente como
+    o bug chegou até o balcão: o operador só descobre pela reclamação do cliente.
+
+    Sem canal pedido não há promessa — a não-emissão é a regra funcionando, e
+    alertar seria ruído em toda venda que não emite.
+    """
+    channels = _requested_receipt_channels(data)
+    if not channels:
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    labels = {"print": "impressa", "email": "por e-mail"}
+    pedido = ", ".join(labels.get(c.lower(), c) for c in channels)
+    logger.error(
+        "fiscal.emit: documento pedido (%s) em %s e a regra recusou — nada será emitido",
+        pedido, order.ref,
+    )
+    create_operator_alert(
+        type="fiscal_receipt_promised",
+        severity="critical",
+        message=(
+            f"O pedido {order.ref} pediu a nota {pedido} e a regra de emissão "
+            "RECUSOU: nenhuma NFC-e foi emitida, então não haverá DANFE nem XML "
+            "para entregar. Emita a nota manualmente ou avise o cliente."
+        ),
+        order_ref=order.ref,
+        dedupe_key=f"fiscal_receipt_promised:{order.ref}",
+    )
 
 
 def _alert_payment_mismatch(order, payment: dict) -> None:

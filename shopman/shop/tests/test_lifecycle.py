@@ -508,7 +508,11 @@ class TestOnConfirmed:
     def test_external_cash_fulfills_stock(
         self, mock_kds_dispatch, mock_stock, mock_payment, mock_notification, mock_cc,
     ):
-        """Cash payment (external timing) fulfills stock on confirmed."""
+        """Cash payment (external timing) fulfills stock on confirmed.
+
+        Pedido REMOTO (sem ``origin_channel="pos"``): a esteira existe para ele,
+        então o aviso de confirmação é verdadeiro e sai.
+        """
         mock_cc.for_channel.return_value = _config(
             payment_timing="external", payment_method="cash",
         )
@@ -526,7 +530,10 @@ class TestOnConfirmed:
     def test_external_marketplace_no_fulfill(
         self, mock_kds_dispatch, mock_stock, mock_payment, mock_notification, mock_cc,
     ):
-        """Marketplace payment (external timing, external method) does NOT fulfill on confirmed."""
+        """Marketplace payment (external timing, external method) does NOT fulfill on confirmed.
+
+        Também REMOTO — marketplace tem trajeto pela frente, e o aviso vale.
+        """
         mock_cc.for_channel.return_value = _config(
             payment_timing="external", payment_method="external",
         )
@@ -535,6 +542,60 @@ class TestOnConfirmed:
         mock_payment.initiate.assert_not_called()
         mock_stock.fulfill.assert_not_called()
         mock_notification.send.assert_called_once_with(order, "order_accepted")
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.payment")
+    @patch("shopman.shop.lifecycle.stock")
+    @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=False)
+    def test_counter_sale_is_never_told_its_order_was_accepted(
+        self, mock_dispatch_work, mock_stock, mock_payment, mock_notification, mock_cc,
+    ):
+        """Balcão: o cliente saiu com o pão na mão — nada de "pedido confirmado".
+
+        O dono vendeu no PDV e o cliente recebeu "Seu pedido foi confirmado",
+        como se tivesse comprado na loja online. A copy de ``order_accepted`` é
+        da esteira remota e aqui é falsa por construção: não há pedido a
+        acompanhar, não há nada a esperar. O ``send`` rodava INCONDICIONALMENTE,
+        antes do gate de balcão que fecha o pedido em COMPLETED no mesmo fôlego.
+        """
+        mock_cc.for_channel.return_value = _config(
+            payment_timing="external", payment_method="cash",
+        )
+        order = _make_order(data={"origin_channel": "pos", "fulfillment_type": "pickup"})
+        dispatch(order, "on_accepted")
+
+        mock_notification.send.assert_not_called()
+        # E a venda segue fechando no ato — o gate de balcão continua de pé.
+        order.transition_status.assert_called_once_with(
+            Order.Status.COMPLETED, actor="system:counter_handoff",
+        )
+
+    @patch("shopman.shop.lifecycle.ChannelConfig")
+    @patch("shopman.shop.lifecycle.notification")
+    @patch("shopman.shop.lifecycle.payment")
+    @patch("shopman.shop.lifecycle.stock")
+    @patch("shopman.shop.lifecycle._dispatch_physical_work", return_value=False)
+    def test_counter_delivery_still_walks_the_remote_conveyor(
+        self, mock_dispatch_work, mock_stock, mock_payment, mock_notification, mock_cc,
+    ):
+        """Controle: origem "pos" não basta para calar o aviso.
+
+        Venda anotada no balcão para ENTREGA tem trajeto pela frente — a
+        mercadoria não está na mão de ninguém, a esteira existe para ela, e é
+        exatamente aí que a copy de confirmação é verdadeira.
+        """
+        mock_cc.for_channel.return_value = _config(
+            payment_timing="external", payment_method="cash",
+        )
+        order = _make_order(data={
+            "origin_channel": "pos",
+            "fulfillment_type": "delivery",
+        })
+        dispatch(order, "on_accepted")
+
+        mock_notification.send.assert_called_once_with(order, "order_accepted")
+        order.transition_status.assert_not_called()
 
 
 # ── on_paid ──

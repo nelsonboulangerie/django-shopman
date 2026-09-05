@@ -51,11 +51,18 @@ Para fiscal homologacao:
 
 ```env
 SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
-SHOPMAN_FISCAL_EMISSION_RESOLVER=shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment
+SHOPMAN_FISCAL_EMISSION_RESOLVER=shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.eletronic_payment
 FOCUS_NFE_ENVIRONMENT=homologacao
 FOCUS_NFE_TOKEN=<token homologacao>
 FOCUS_NFE_CNPJ_EMITENTE=<cnpj ou Shop.document preenchido>
 ```
+
+⚠️ `on_requested_receipt` **precisa** estar nessa lista. Ele é quem faz o pedido
+do documento no balcão — "Impressa?" ou "Enviar por e-mail" — valer como pedido
+de nota. Sem ele, o alpha aceitava os dois toggles e não emitia NFC-e nenhuma
+numa venda em dinheiro sem CPF: nem DANFE (não existe papel sem nota
+autorizada), nem e-mail (o Focus só envia DANFE+XML de nota que existe). O
+operador prometia ao cliente e nada chegava, em silêncio.
 
 Para iFood real de staging:
 
