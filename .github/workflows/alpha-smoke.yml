@@ -8,8 +8,21 @@ name: Alpha Smoke
 # renderiza? Ver docs/plans e a auditoria de prontidão de 26/08/2026.
 
 "on":
+  # ⚠️ DEPOIS DE CADA DEPLOY é o gatilho que importa. Push no `main` publica
+  # (ver Deploy Images), e é exatamente aí que a quebra entra — perguntar ao
+  # vivo logo depois fecha a janela entre publicar e descobrir.
+  workflow_run:
+    workflows: ["Deploy Images"]
+    types: [completed]
+    branches: [main]
   schedule:
-    # A cada 15 minutos. Quebrou → o workflow fica vermelho e o GitHub avisa.
+    # ⚠️ O `cron` PEDE 15 minutos e o GitHub NÃO CUMPRE. Medido em 05/09/2026,
+    # nas 12 execuções anteriores: os intervalos reais foram de 1h40 a 4h06,
+    # média ~2h50. O GitHub estrangula workflow agendado em repositório movimentado
+    # e não avisa — o comentário antigo dizia "a cada 15 minutos" e quem lia
+    # acreditava. Fica como REDE (pega o alpha quebrando sem deploy nenhum:
+    # dado que envelhece, insumo que zera, certificado que vence), não como a
+    # guarda principal.
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
@@ -48,10 +61,27 @@ env:
 
 jobs:
   smoke:
+    # Deploy reprovado não publica imagem: rodar o smoke aí acusaria o alpha por
+    # algo que nunca chegou nele. Nos outros gatilhos (`schedule`,
+    # `workflow_dispatch`) não há `workflow_run`, e a condição passa.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     name: Alpha responde como loja
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      # ⚠️ "Deploy Images terminou" NÃO é "está no ar". O workflow empurra as
+      # imagens; a DigitalOcean só então puxa e troca os contêineres. Medido em
+      # 05/09/2026: imagens às 14:01Z, deployment ACTIVE às 14:06Z — cinco
+      # minutos. Perguntar ao vivo antes disso mede a versão ANTERIOR, e o
+      # resultado é pior que inútil: um verde que atesta o que não subiu.
+      #
+      # Nos outros gatilhos não há o que esperar, e o passo é pulado.
+      - name: Esperar a DigitalOcean trocar os contêineres
+        if: github.event_name == 'workflow_run'
+        run: sleep 420
+
       - name: API pronta (/ready/)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
