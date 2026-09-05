@@ -21,6 +21,7 @@
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
 | [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
@@ -386,6 +387,45 @@ python manage.py auth_cleanup --days 30
 ```
 
 **Recomendação:** Executar via cron diariamente.
+
+---
+
+### recalculate_customer_insights
+
+O `CustomerInsight` é recalculado no `customer.ensure` de **cada pedido**, então quem
+compra está sempre em dia. Quem **parou** de comprar não dispara nada — e ficava
+congelado no dia da última visita. Esta varredura existe só para isso.
+
+O que envelhece sozinho é apenas a parte derivada de recência
+(`days_since_last_order`, `churn_risk`, `rfm_segment`). Contagem, ticket médio e
+favorito só mudam com pedido novo, e esse caminho já está coberto.
+
+**Cadência: 1x/dia, de madrugada.** A escada de recência do RFM é 7/30/90/180 dias
+(`guestman/contrib/insights/conf.py`); nada se move em menos de um dia-calendário.
+
+```bash
+python manage.py recalculate_customer_insights            # varredura do ciclo
+python manage.py recalculate_customer_insights --force    # ignora a janela
+python manage.py recalculate_customer_insights --dry-run  # só conta os vencidos
+python manage.py recalculate_customer_insights --all      # base inteira (backfill manual)
+```
+
+`--all` **recusa** `--dry-run`: `recalculate_all` não tem ensaio, e deixar o par passar
+recalcularia a base inteira em silêncio para quem só queria contar.
+
+Roda no `maintenance_worker`, depois do `check_directive_health`. Está no ciclo de 5
+min mas **não trabalha a cada 5 min**: carrega a própria janela (03h–05h local) e o
+próprio teto de lote (200 por execução). Três decisões valem registro:
+
+- **Cliente sem nenhum pedido fica de fora.** Sem pedido, `r=1, f=1, m=1` cai em
+  `lost` — carimbar "Perdido" em quem nunca comprou é mentira, não classificação.
+  Para dar insight a cliente importado, use `--all` (ou a ação do CustomerAdmin).
+- **Teto de lote porque o worker é serial.** Varrer a base inteira num ciclo atrasaria
+  `reconcile_payments` e tudo atrás dela. A janela de 2h drena o resto, do insight mais
+  velho para o mais novo.
+- **A marca d'água é o próprio dado.** `calculated_at` é `auto_now`, então "quem está
+  vencido" é uma query — não há estado novo para guardar nem para desincronizar, e noite
+  perdida por worker fora do ar se resolve na noite seguinte.
 
 ---
 

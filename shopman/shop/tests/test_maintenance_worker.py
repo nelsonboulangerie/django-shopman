@@ -355,6 +355,12 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("sweep_dead_production_stock"),
         call("sweep_waitlist_windows"),
         call("check_directive_health"),
+        # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
+        # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
+        # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio
+        # teto de lote — sem esse portão interno, entrar aqui significaria
+        # varrer a base inteira 288 vezes por dia.
+        call("recalculate_customer_insights"),
         # Caro e diário: quem segura a cadência é o próprio comando, que recusa
         # recalcular a afinidade com a tabela mais nova que 20h.
         call("compute_product_affinity"),
