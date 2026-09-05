@@ -27,7 +27,21 @@ name: Alpha Smoke
   workflow_dispatch:
 
 concurrency:
-  group: alpha-smoke
+  # ⚠️ O grupo é POR GATILHO, e por commit no caso do deploy. Um grupo único com
+  # `cancel-in-progress` era inofensivo enquanto o workflow só corria em segundos
+  # pelo `cron`; passou a ser furo no dia em que ele ganhou 7 minutos de espera
+  # pela DigitalOcean. Nessa janela, QUALQUER outro disparo — o cron da rede ou
+  # o deploy seguinte — mata o run em andamento.
+  #
+  # E o pior não é a morte, é o silêncio: run **cancelado não fica vermelho**.
+  # A guarda simplesmente não roda, e ninguém fica sabendo. Aconteceu na estreia
+  # do gatilho (run de 20:52Z sobre `089d164a`, cancelado sem deixar rastro
+  # vermelho) — que é o mesmo defeito que este workflow existe para impedir:
+  # ausência de sinal lida como sinal bom.
+  #
+  # Com a chave por `head_sha`, cada deploy tem o seu smoke até o fim; só um
+  # re-deploy do MESMO commit cancela o anterior, que é o que se quer.
+  group: alpha-smoke-${{ github.event.workflow_run.head_sha || github.event_name }}
   cancel-in-progress: true
 
 # ⚠️ A URL da loja é UMA variável, e é de propósito.
