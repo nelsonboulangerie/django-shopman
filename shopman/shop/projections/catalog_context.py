@@ -69,6 +69,38 @@ def get_sellable_published_product(sku: str):
     return products_queryset().filter(sku=sku, is_published=True, is_sellable=True).first()
 
 
+def comes_out_of_the_oven(sku: str) -> bool:
+    """Este SKU nasce de uma fornada, ou chega pronto na prateleira?
+
+    Duas evidências, nesta ordem, porque nenhuma sozinha basta:
+
+    1. ``Product.is_batch_produced`` — a declaração do gestor. É a resposta
+       autoritativa quando alguém a deu.
+    2. Uma ``Recipe`` ativa com ``output_sku`` igual a este SKU — a evidência
+       operacional. Existe porque a declaração NÃO é preenchida na prática: no
+       banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
+       em ``False``, inclusive os pães. Confiar só na flag entregaria uma
+       derivação que nunca dispara, e o defeito voltaria calado.
+
+    A receita ativa é também exatamente o conjunto de SKUs que algum dia vai
+    disparar ``production_changed`` — que é o evento por trás do aviso "saiu do
+    forno". Perguntar por outra coisa prometeria um aviso que nunca chega.
+
+    Falha para ``False``: na dúvida o produto é de prateleira, e o eixo de
+    prateleira (chegada de estoque) tem mais caminhos de chegada.
+    """
+    product = products_queryset().filter(sku=sku).only("sku", "is_batch_produced").first()
+    if product is not None and product.is_batch_produced:
+        return True
+    try:
+        from shopman.craftsman.models import Recipe
+
+        return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    except Exception:
+        logger.debug("catalog_context.comes_out_of_the_oven degraded sku=%s", sku, exc_info=True)
+        return False
+
+
 def products_by_sku(skus: list[str], *, only_published: bool = True) -> dict[str, Any]:
     # Prefetch the relations the catalog card reads (tags via ``product_tags``,
     # components via ``is_bundle``) so ad-hoc SKU lists (PDP substitutes,

@@ -287,6 +287,21 @@ class AudienceCountProjection:
     #: Ninguém escolhido ainda — separa "não pedi nada" de "pedi e não achei ninguém",
     #: que na tela precisam dizer coisas diferentes.
     empty_selection: bool
+    #: A fila de "me avise" deste produto, em dois números: quantos ainda esperam e
+    #: quantos já foram avisados. ``-1`` = a regra ``alerts`` nem rodou (sem SKU, ou
+    #: desligada), que é diferente de "rodou e achou zero".
+    #:
+    #: ⚠️ São os dois números que fazem o ZERO falar. O gestor viu "ninguém para ser
+    #: avisado" da Baguette e achou que o sistema tinha perdido a inscrição do pai
+    #: dele. Não tinha: a inscrição existia, o estoque voltou 7 minutos depois, o
+    #: aviso saiu e a linha foi consumida. A conta estava certa e a tela, muda — e
+    #: tela muda com número surpreendente é indistinguível de tela quebrada.
+    #:
+    #: A FRASE é da superfície (``presentation/campaign.ts``), não daqui: o card do
+    #: anúncio conta a mesma história a partir de ``Announcement.audience``, e uma
+    #: casa com duas redações da mesma verdade tem duas para envelhecer.
+    alerts_pending: int
+    alerts_notified: int
 
 
 def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountProjection:
@@ -317,6 +332,10 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
         parts=parts,
         vip_count=len(result.vip),
         empty_selection=not parts,
+        alerts_pending=int(counts["alerts_count"]) if "alerts_count" in counts else -1,
+        alerts_notified=(
+            int(counts.get("alerts_notified_count") or 0) if "alerts_count" in counts else -1
+        ),
     )
 
 

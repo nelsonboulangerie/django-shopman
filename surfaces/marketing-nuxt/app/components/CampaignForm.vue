@@ -368,9 +368,18 @@ function submit() {
           <input v-model="favorites" type="checkbox" class="size-4 rounded border-border">
           Quem favoritou o produto
         </label>
-        <label class="flex items-center gap-2 text-sm">
-          <input v-model="alerts" type="checkbox" class="size-4 rounded border-border">
-          Quem pediu "me avise quando sair do forno"
+        <!-- ⚠️ O rótulo dizia "me avise quando sair do forno" e a regra pega TODA a
+             fila de avisos do produto — inclusive quem espera reposição de um item de
+             prateleira. Quem escolhe o eixo é o servidor, pela natureza do produto, e
+             o gestor não tem como (nem por que) separar os dois aqui. -->
+        <label class="flex items-start gap-2 text-sm">
+          <input v-model="alerts" type="checkbox" class="mt-0.5 size-4 rounded border-border">
+          <span>
+            Quem pediu "me avise" deste produto
+            <span class="block text-xs text-muted-foreground">
+              A fila do sino da loja: fornada para pão, reposição para o resto.
+            </span>
+          </span>
         </label>
         <div class="flex flex-wrap items-center gap-2 text-sm">
           <label class="flex items-center gap-2">

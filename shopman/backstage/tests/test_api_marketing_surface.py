@@ -1021,6 +1021,56 @@ class TestAudienceCount:
         assert chosen["empty_selection"] is False
         assert chosen["total"] == 0
 
+    def test_an_exhausted_alert_queue_says_so_instead_of_going_mute(self, client, gestor):
+        """O caso do Pablo: "ninguém para avisar" com quatro inscrições no banco.
+
+        A inscrição do pai dele existia; o estoque voltou 7 minutos depois, o aviso
+        saiu e a linha foi consumida. A conta zerou com razão — e a tela não tinha como
+        dizer isso, porque o número de quem JÁ foi avisado nunca saía do servidor.
+        """
+        from django.utils import timezone
+
+        from shopman.storefront.models import StockAlertSubscription
+
+        client.force_login(gestor)
+        StockAlertSubscription.objects.create(
+            sku="BF", contact_phone="+5543999993010", notified_at=timezone.now(),
+        )
+        StockAlertSubscription.objects.create(
+            sku="BF", contact_phone="+5543999993011", notified_at=timezone.now(),
+        )
+
+        data = client.post(
+            COUNT_URL, {"audience_rules": {"alerts": True}, "sku": "BF"},
+            content_type="application/json",
+        ).json()
+
+        assert data["total"] == 0
+        assert data["alerts_pending"] == 0
+        assert data["alerts_notified"] == 2
+
+    def test_a_queue_nobody_ever_joined_is_a_different_zero(self, client, gestor):
+        client.force_login(gestor)
+
+        data = client.post(
+            COUNT_URL, {"audience_rules": {"alerts": True}, "sku": "SEM-FILA"},
+            content_type="application/json",
+        ).json()
+
+        assert data["alerts_pending"] == 0
+        assert data["alerts_notified"] == 0
+
+    def test_the_alert_queue_is_silent_when_the_rule_did_not_run(self, client, gestor):
+        """Sem SKU a regra ``alerts`` não resolve nada — e ``-1`` diz isso."""
+        client.force_login(gestor)
+
+        data = client.post(
+            COUNT_URL, {"audience_rules": {"alerts": True}}, content_type="application/json",
+        ).json()
+
+        assert data["alerts_pending"] == -1
+        assert data["alerts_notified"] == -1
+
     def test_it_never_returns_a_recipient(self, client, gestor):
         """Só números. A lista de destinatários não sai da resolução — nem para contar."""
         self._audience()

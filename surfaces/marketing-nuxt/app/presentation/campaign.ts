@@ -27,9 +27,35 @@ export function audienceSummary(audience: Record<string, number> | undefined): s
   );
   const total = counts.total ?? 0;
 
-  if (total === 0) return "Ninguém para avisar por enquanto";
+  if (total === 0) return alertsNote(counts) || "Ninguém para avisar por enquanto";
   if (parts.length === 0) return `${total} ${total === 1 ? "cliente" : "clientes"}`;
   return `${parts.join(", ")} = ${total} ${total === 1 ? "cliente" : "clientes"}`;
+}
+
+/**
+ * Por que a fila de "me avise" deste produto está vazia — em uma frase.
+ *
+ * ⚠️ O gestor abriu o Marketing, leu "ninguém para avisar" na Baguette e achou que o
+ * sistema tinha perdido a inscrição que o pai dele acabara de fazer. Não tinha: a
+ * inscrição existia, o estoque voltou 7 minutos depois, o aviso saiu e a linha foi
+ * consumida. A conta estava certa e a tela, muda — e tela muda com número surpreendente
+ * é indistinguível de tela quebrada.
+ *
+ * Fala só do pedaço "alertas", nunca do total: com outras regras ligadas o total tem
+ * outros donos, e uma frase sobre a fila de avisos continua verdadeira ao lado deles.
+ *
+ * Vazio quando a regra `alerts` nem rodou (sem produto no evento, ou desligada) ou
+ * quando ela achou alguém — só o zero precisa de voz.
+ */
+export function alertsNote(
+  counts: { alerts_count?: number; alerts_notified_count?: number } | undefined,
+): string {
+  const pending = counts?.alerts_count;
+  if (pending === undefined || pending > 0) return "";
+  const already = counts?.alerts_notified_count ?? 0;
+  if (already === 1) return "A pessoa que pediu aviso deste produto já foi avisada";
+  if (already > 1) return `As ${already} pessoas que pediram aviso deste produto já foram avisadas`;
+  return "Ninguém pediu para ser avisado deste produto ainda";
 }
 
 /** Quantos VIPs recebem antes, e com quanto de vantagem. */

@@ -185,6 +185,10 @@ export interface AudienceCount {
   vip_count: number;
   /** Nada escolhido ainda — diferente de "escolhi e não achei ninguém". */
   empty_selection: boolean;
+  /** A fila de "me avise" do produto: quantos esperam e quantos já foram avisados.
+   *  `-1` = a regra `alerts` nem rodou, que é diferente de "rodou e achou zero". */
+  alerts_pending: number;
+  alerts_notified: number;
 }
 
 /** Templates aprovados da plataforma + o escolhido agora. */
