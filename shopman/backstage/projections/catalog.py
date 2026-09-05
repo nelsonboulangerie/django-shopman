@@ -100,6 +100,13 @@ class CatalogRowProjection:
     # feed (Google/Meta/TikTok exigem brand + categoria). Ver ``_social_view``.
     social: dict
     pim_complete: bool  # tem o essencial p/ publicar em feed (brand + categoria Google)
+    # O produto passa por todos os portões do cardápio (publicado, na vitrine, com
+    # preço) e mesmo assim não aparece em grupo nenhum: o único vínculo de coleção
+    # dele é com uma coleção DESATIVADA, e o balde "sem categoria" só recolhe quem
+    # não tem vínculo algum. Não é pausa nem ocultação — é efeito colateral, e por
+    # isso não cabe nos estados existentes da linha. Ver
+    # ``shop.services.catalog_visibility``.
+    hidden_by_inactive_collection: bool = False
 
 
 @dataclass(frozen=True)
@@ -384,6 +391,12 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
 
     sync_map = sync_status_map(skus)
 
+    # Uma consulta para a matriz inteira: quem passa pelo filtro do cardápio mas
+    # não é alcançado por nenhuma coleção ativa (regra em catalog_visibility).
+    from shopman.shop.services import catalog_visibility
+
+    hidden_skus = catalog_visibility.hidden_by_inactive_collection_skus()
+
     rows: list[CatalogRowProjection] = []
     for product in products:
         primary_ref = ""
@@ -483,6 +496,7 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
                 cells=tuple(cells),
                 social=social_view,
                 pim_complete=pim_complete,
+                hidden_by_inactive_collection=product.sku in hidden_skus,
             )
         )
 

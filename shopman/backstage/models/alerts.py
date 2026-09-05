@@ -26,6 +26,12 @@ class OperatorAlert(models.Model):
         ("marketplace_rejected_oos", "Marketplace rejeitado: sem estoque"),
         ("coupon_over_redeemed", "Cupom resgatado acima do limite"),
         ("pos_rejected_unavailable", "POS rejeitado: produto indisponível"),
+        # O cardápio agrupa por coleção ATIVA e recolhe no fim quem não tem
+        # coleção nenhuma. Quem tem só coleção DESATIVADA não cabe em nenhum dos
+        # dois: some da loja inteira, publicado e com estoque, sem ninguém ter
+        # escondido nada. É o único estado "fora do ar" que não veio de um
+        # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
+        ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
         ("production_late", "Produção atrasada"),
         ("production_low_yield", "Produção com yield baixo"),

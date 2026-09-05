@@ -25,6 +25,7 @@
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
 | [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
+| [`check_catalog_visibility`](#check_catalog_visibility) | shop | Manutenção | Alerta produto que sumiu do cardápio porque a coleção dele foi desativada |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -499,6 +500,36 @@ python manage.py fiscal_audit_catalog --strict
 **Veja também:** [procedimento do flip](settings.md#ligar-o-porteiro-fiscal-do-catálogo) ·
 [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) ·
 [auditoria do catálogo (19/08)](../reports/auditoria-catalogo-fiscal-2026-08-19.md).
+
+---
+
+### check_catalog_visibility
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_catalog_visibility.py`
+
+**Propósito:** Avisar o operador sobre o produto que sumiu do cardápio sem ninguém ter
+escondido nada. O agrupamento do cardápio põe o produto no grupo de cada coleção **ativa**
+e recolhe no fim quem não tem coleção **nenhuma**; quem tem só coleção **desativada** não
+cabe em nenhum dos dois e some da loja inteira — publicado, na vitrine, com preço e com
+estoque. A política do cardápio não muda: o comando só torna o estado visível.
+
+A regra de detecção mora em `shopman/shop/services/catalog_visibility.py` e é a mesma que
+marca a linha do produto no Gestor (`hidden_by_inactive_collection` na matriz do catálogo).
+
+**Uso:**
+```bash
+python manage.py check_catalog_visibility
+python manage.py check_catalog_visibility --hours 12   # janela do dedupe
+python manage.py check_catalog_visibility --dry-run    # só reporta
+```
+
+**Alerta:** `catalog_hidden_by_inactive_collection` (severidade `warning`), com os SKUs
+nomeados (os 8 primeiros e "e mais N") e as coleções a reativar. É alerta de **estado**, não
+de evento: o dedupe é a lista de coleções presas, numa janela de 24h que conta também os
+alertas já reconhecidos — um aviso enquanto o estado durar, não um por varredura. Coleção
+diferente desativada é fato novo e alerta novo. Roda no `maintenance_worker`, depois do
+`check_directive_health`.
 
 ---
 

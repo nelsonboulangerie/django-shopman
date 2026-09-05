@@ -73,6 +73,10 @@ export interface CatalogRowProjection {
   cells: SurfaceCellProjection[];
   social: ProductSocial; // atributos PIM sociais (Arc A)
   pim_complete: boolean; // tem o essencial p/ feed (brand + categoria Google)
+  // Passa por todos os portões do cardápio e mesmo assim não aparece: o único
+  // vínculo de coleção é com uma coleção desativada, e o balde "sem categoria"
+  // só recolhe quem não tem vínculo nenhum. Efeito colateral, não escolha.
+  hidden_by_inactive_collection: boolean;
 }
 
 export interface CollectionProjection {

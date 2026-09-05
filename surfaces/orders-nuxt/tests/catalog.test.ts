@@ -81,6 +81,7 @@ const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection => 
   cells: [],
   social: social(),
   pim_complete: false,
+  hidden_by_inactive_collection: false,
   ...over,
 });
 
@@ -183,12 +184,12 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
 
   it("Oculto quando o produto está oculto no catálogo (nível-produto)", () => {
     const r = row({ is_published: false, cells: cells([{ available: false }]) });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Oculto", tone: "muted" });
+    expect(rowStatus(r)).toEqual({ off: true, label: "Oculto", tone: "muted", hint: "" });
   });
 
   it("Pausado quando o produto está pausado (globalzinho)", () => {
     const r = row({ is_sellable: false, cells: cells([{ available: false }]) });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Pausado", tone: "amber" });
+    expect(rowStatus(r)).toEqual({ off: true, label: "Pausado", tone: "amber", hint: "" });
   });
 
   it("Indisponível quando cada canal foi pausado individualmente (sem pausa global)", () => {
@@ -201,7 +202,7 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
       ]),
     });
     expect(availableAnywhere(r)).toBe(false);
-    expect(rowStatus(r)).toEqual({ off: true, label: "Indisponível", tone: "amber" });
+    expect(rowStatus(r)).toEqual({ off: true, label: "Indisponível", tone: "amber", hint: "" });
   });
 
   it("não marca 'Indisponível' um produto sem nenhuma listing", () => {
@@ -216,12 +217,41 @@ describe("rowStatus (esmaecer quando 'fora')", () => {
       sold_out: true,
       cells: cells([{ in_listing: true, available: true }]), // switch ligado, mas sem estoque
     });
-    expect(rowStatus(r)).toEqual({ off: true, label: "Esgotado", tone: "danger" });
+    expect(rowStatus(r)).toEqual({ off: true, label: "Esgotado", tone: "danger", hint: "" });
   });
 
   it("Pausado tem precedência sobre Esgotado", () => {
     const r = row({ is_sellable: false, sold_out: true, cells: cells([{ available: false }]) });
     expect(rowStatus(r).label).toBe("Pausado");
+  });
+
+  it("'Fora do cardápio' quando a categoria do produto está desativada", () => {
+    // Tudo ligado — publicado, vendável, com estoque, disponível no canal — e ainda
+    // assim invisível na loja. Sem este selo a linha parecia perfeitamente ativa.
+    const r = row({
+      hidden_by_inactive_collection: true,
+      cells: cells([{ in_listing: true, available: true }]),
+    });
+    const status = rowStatus(r);
+    expect(status.off).toBe(true);
+    expect(status.label).toBe("Fora do cardápio");
+    expect(status.hint).toContain("categoria");
+    // "Oculto" já quer dizer "não publicado" — o efeito colateral não pode roubar o rótulo.
+    expect(status.label).not.toBe("Oculto");
+  });
+
+  it("'Fora do cardápio' vem antes de Esgotado (a fornada repõe; a categoria não)", () => {
+    const r = row({
+      hidden_by_inactive_collection: true,
+      sold_out: true,
+      cells: cells([{ in_listing: true, available: true }]),
+    });
+    expect(rowStatus(r).label).toBe("Fora do cardápio");
+  });
+
+  it("produto de categoria ATIVA não ganha o selo", () => {
+    const r = row({ cells: cells([{ in_listing: true, available: true }]) });
+    expect(rowStatus(r).label).toBe("");
   });
 });
 

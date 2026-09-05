@@ -76,20 +76,37 @@ export interface RowStatus {
   off: boolean; // esmaecer a linha + foto P&B + nome tachado
   label: string; // selo (vazio = ativo)
   tone: "" | "muted" | "amber" | "danger";
+  hint: string; // frase inteira do selo (title) — vazia quando o rótulo se explica
 }
 
 // Escala de estados "fora", do mais deliberado ao mais urgente:
 // Oculto (cinza) · Pausado (âmbar) · Esgotado (vermelho/danger).
 export function rowStatus(row: CatalogRowProjection): RowStatus {
-  if (!row.is_published) return { off: true, label: "Oculto", tone: "muted" };
-  if (!row.is_sellable) return { off: true, label: "Pausado", tone: "amber" };
+  if (!row.is_published) return { off: true, label: "Oculto", tone: "muted", hint: "" };
+  if (!row.is_sellable) return { off: true, label: "Pausado", tone: "amber", hint: "" };
+  // Depois das duas chaves DELIBERADAS e antes de Esgotado, de propósito: aqui
+  // ninguém escondeu nada — o produto caiu fora do cardápio como efeito colateral
+  // de desativar a categoria. Esgotado se resolve sozinho na próxima fornada;
+  // este não se resolve nunca, porque não há quem perceba. Rótulo curto (a linha
+  // é estreita) + a frase inteira no `hint`; "Oculto" NÃO serve, já quer dizer
+  // "não publicado".
+  if (row.hidden_by_inactive_collection) {
+    return {
+      off: true,
+      label: "Fora do cardápio",
+      tone: "danger",
+      hint: "Fora do cardápio: a categoria dele está desativada. Reative a categoria ou mova o produto para outra.",
+    };
+  }
   // Esgotado = fato de ESTOQUE, ortogonal à pausa. Danger pra saltar à vista (cliente
   // não consegue comprar agora) e diferenciar do Pausado — mesmo repondo na fornada.
   // Vem antes de "Indisponível" porque o gate de pausa das células não enxerga estoque.
-  if (row.sold_out) return { off: true, label: "Esgotado", tone: "danger" };
+  if (row.sold_out) return { off: true, label: "Esgotado", tone: "danger", hint: "" };
   const listed = row.cells.some((c) => c.in_listing);
-  if (listed && !availableAnywhere(row)) return { off: true, label: "Indisponível", tone: "amber" };
-  return { off: false, label: "", tone: "" };
+  if (listed && !availableAnywhere(row)) {
+    return { off: true, label: "Indisponível", tone: "amber", hint: "" };
+  }
+  return { off: false, label: "", tone: "", hint: "" };
 }
 
 // ── preço por célula: só mostra quando DIFERE do base ──────────────────────────
