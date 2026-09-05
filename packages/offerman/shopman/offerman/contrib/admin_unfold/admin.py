@@ -9,6 +9,7 @@ from decimal import Decimal
 from django import forms
 from django.contrib import admin, messages
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext_lazy as _
 from import_export.admin import ExportMixin, ImportExportModelAdmin
@@ -554,6 +555,7 @@ class ProductAdmin(_ProductImportExportBase):
         "resume_products",
         "update_price_percent",
         "add_to_collection",
+        "accept_enrichment",
     ]
 
     def _bulk_set(self, request, queryset, field, value, label):
@@ -583,6 +585,56 @@ class ProductAdmin(_ProductImportExportBase):
     @admin.action(description=_("Ativar venda dos selecionados"))
     def resume_products(self, request, queryset):
         self._bulk_set(request, queryset, "is_sellable", True, "com venda ativada")
+
+    @admin.action(
+        description=_("Aceitar sugestão de catálogo (GTIN)"),
+        # ⚠️ `permissions=` é obrigatório. Sem ele, a ação em lote roda para quem
+        # só tem `view` — e esta ESCREVE alérgeno no rótulo.
+        permissions=["change"],
+    )
+    def accept_enrichment(self, request, queryset):
+        """Aplica o rascunho de `metadata['enrichment']` ao produto.
+
+        É o ÚNICO caminho pelo qual a sugestão vira rótulo. O comando que busca
+        grava `pending` e nunca escreve no produto — a decisão é de quem tem o
+        pote na mão, porque o rótulo físico é a autoridade e a fonte é
+        colaborativa (ver `shop/services/product_enrichment.py`).
+        """
+        aplicados = pulados = 0
+        for product in queryset:
+            meta = dict(product.metadata or {})
+            bloco = meta.get("enrichment") or {}
+            sugerido = bloco.get("suggested") or {}
+            if bloco.get("status") != "pending" or not sugerido:
+                pulados += 1
+                continue
+
+            if sugerido.get("allergens"):
+                meta["allergens"] = list(sugerido["allergens"])
+                # Aceite humano é o oposto de auto-preenchido: trava a derivação
+                # por receita, que para revenda não existe mesmo.
+                meta["dietary_auto_filled"] = False
+            if sugerido.get("image_url") and not product.image_url:
+                product.image_url = sugerido["image_url"]
+
+            bloco = dict(bloco)
+            bloco["status"] = "accepted"
+            bloco["accepted_by"] = request.user.get_username()
+            bloco["accepted_at"] = timezone.now().isoformat()
+            meta["enrichment"] = bloco
+
+            product.metadata = meta
+            product.save()
+            aplicados += 1
+
+        if aplicados:
+            self.message_user(request, f"{aplicados} produto(s) atualizado(s) pela sugestão.")
+        if pulados:
+            messages.warning(
+                request,
+                f"{pulados} sem sugestão pendente — rode "
+                "`manage.py fetch_product_enrichment` antes.",
+            )
 
     @admin.action(description=_("Atualizar preço +X%%"))
     def update_price_percent(self, request, queryset):
