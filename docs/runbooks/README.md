@@ -29,3 +29,6 @@ operador nao executa Docker diretamente: use os wrappers `make`.
 ## Procedimentos
 
 - [Go-live — checklist de cutover (staging → produção)](go-live-cutover.md)
+- [Ligar o Sentry (error tracking)](ativar-sentry.md)
+- [Conferir o spec antes de `doctl apps update`](conferir-spec-digitalocean.md)
+- [Branch protection do `main` — decisões pendentes](branch-protection-pendencias.md)

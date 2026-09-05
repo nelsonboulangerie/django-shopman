@@ -391,6 +391,128 @@ envs:
   scope: RUN_TIME
   value: 'https://alpha.nelsonboulangerie.com.br'
   type: GENERAL
+
+# ── O spec versionado ESTAVA menor que o app vivo ─────────────────────
+#
+# Medido em 05/09/2026: o spec tinha 73 envs, o app vivo tinha 95. As que
+# faltavam aqui não estavam desligadas — estavam configuradas SÓ no painel.
+# Um `doctl apps update --spec .do/app.alpha-subdomains.yaml` apagaria as 22
+# de uma vez, em silêncio, e o que sumiria era: TODO o e-mail (SMTP inteiro),
+# a emissão fiscal (NFC-e) e o NF-e de Compras com o certificado e-CNPJ.
+#
+# O bloco abaixo fecha essa diferença. Segredo continua morando no painel:
+# `type: SECRET` sem `value` é o contrato do App Platform para "o valor
+# cifrado que já está lá permanece" — o mesmo padrão do DJANGO_SECRET_KEY e
+# das chaves da Efí acima. Nunca colar valor real de segredo aqui.
+#
+# Antes de qualquer `apps update`, rode `make deploy-spec-drift` — ele compara
+# o vivo com este arquivo e lista o que sumiria. Ver
+# docs/runbooks/conferir-spec-digitalocean.md.
+
+# Error tracking. Sem DSN o sentry-sdk fica INERTE: o código de init em
+# config/settings.py já está pronto, mas nunca liga, e um 500 no checkout só
+# existe para quem estiver lendo o log do DO naquele instante. O valor é colado
+# pelo dono no painel — ver docs/runbooks/ativar-sentry.md.
+- key: SENTRY_DSN
+  scope: RUN_TIME
+  type: SECRET
+
+# ── E-mail (SMTP) ─────────────────────────────────────────────────────
+# Sem estas, o EMAIL_BACKEND cai no default `console` do settings.py: o
+# Django "envia" o e-mail imprimindo no stdout e devolvendo sucesso. Nada
+# falha, e ninguém recebe nada.
+- key: EMAIL_BACKEND
+  scope: RUN_TIME
+  value: 'django.core.mail.backends.smtp.EmailBackend'
+  type: GENERAL
+- key: EMAIL_HOST
+  scope: RUN_TIME
+  value: 'smtp.gmail.com'
+  type: GENERAL
+- key: EMAIL_PORT
+  scope: RUN_AND_BUILD_TIME
+  value: '587'
+  type: GENERAL
+- key: EMAIL_USE_TLS
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: EMAIL_HOST_USER
+  scope: RUN_TIME
+  value: 'nelson@boulangerie.com.br'
+  type: GENERAL
+- key: EMAIL_HOST_PASSWORD
+  scope: RUN_TIME
+  type: SECRET
+- key: DEFAULT_FROM_EMAIL
+  scope: RUN_TIME
+  value: 'Nelson Boulangerie <nelson@boulangerie.com.br>'
+  type: GENERAL
+
+# ── Fiscal: NFC-e da venda (Focus NFe) ────────────────────────────────
+- key: SHOPMAN_FISCAL_ADAPTER
+  scope: RUN_TIME
+  value: 'shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend'
+  type: GENERAL
+- key: FOCUS_NFE_TOKEN
+  scope: RUN_TIME
+  type: SECRET
+# ⚠️ DECISÃO PENDENTE DO DONO — esta linha não existia em lugar nenhum, nem no
+# spec nem no app vivo, e o default do settings.py é `homologacao`. Ou seja: as
+# notas emitidas no alpha até hoje NÃO EXISTEM no SEFAZ. São válidas como
+# exercício e inválidas como documento fiscal.
+#
+# A linha entra aqui com o valor que já vale hoje — escrever `homologacao` não
+# muda nada, só para de esconder. Trocar para `producao` é decisão do dono, e
+# tem consequência: nota emitida em produção é documento fiscal de verdade,
+# cancelável só dentro do prazo legal. Ver docs/runbooks/ativar-sentry.md §
+# "A bomba do FOCUS_NFE_ENVIRONMENT" e docs/runbooks/ativar-focus-nfe.md.
+- key: FOCUS_NFE_ENVIRONMENT
+  scope: RUN_TIME
+  value: 'homologacao'
+  type: GENERAL
+
+# ── Fiscal: NF-e de entrada (Compras) ─────────────────────────────────
+# ⚠️ O certificado e-CNPJ A1 vence em 10/09/2026.
+- key: PURCHASE_NFE_ENVIRONMENT
+  scope: RUN_TIME
+  value: 'producao'
+  type: GENERAL
+- key: PURCHASE_NFE_UF
+  scope: RUN_TIME
+  value: '41'
+  type: GENERAL
+- key: PURCHASE_NFE_RECIPIENT_DOCUMENT
+  scope: RUN_TIME
+  value: '02119381000158'
+  type: GENERAL
+- key: PURCHASE_NFE_AUTO_MANIFEST_CIENCIA
+  scope: RUN_TIME
+  value: 'true'
+  type: GENERAL
+- key: PURCHASE_NFE_CERTIFICATE_PFX_BASE64
+  scope: RUN_TIME
+  type: SECRET
+- key: PURCHASE_NFE_CERTIFICATE_PASSWORD
+  scope: RUN_TIME
+  type: SECRET
+
+# ── Resto do que só existia no painel ─────────────────────────────────
+- key: GOOGLE_MAPS_API_KEY
+  scope: RUN_TIME
+  type: SECRET
+- key: SHOPMAN_BACKUP_SHEET_HOST
+  scope: RUN_TIME
+  value: 'backup.boulangerie.com.br'
+  type: GENERAL
+- key: SHOPMAN_BACKUP_SHEET_URL
+  scope: RUN_TIME
+  value: 'https://docs.google.com/spreadsheets/d/1rttEI2BwXHdqpVvicXAJZpqqlrfqHj7mMJMp9Drg2ks/edit?authuser=pablondrina%40gmail.com'
+  type: GENERAL
+- key: SHOPMAN_PRODUCT_IMAGE_BASE
+  scope: RUN_TIME
+  value: 'https://menu.nelsonboulangerie.com.br/img/products'
+  type: GENERAL
 services:
 - alerts:
   - operator: GREATER_THAN
