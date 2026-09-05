@@ -1113,6 +1113,28 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 | `ready_from` | `str` `"HH:MM"` | seed/admin (Offerman: campo "Pronto a partir de"; catálogo do operador) | `shop/services/product_readiness.py` → prontidão do SKU → janelas oferecidas na loja e no PDV | A que horas este produto fica pronto num dia normal. É a porta para a casa DIZER o que ela já sabe ("a baguete de tradição só sai depois do meio-dia") e é o que impede prometer esse pão para as 9h. ⚠️ **Piso, não teto.** A outra fonte é a mediana do término das WorkOrders recentes; quando as duas existem vence a **mais tarde** — um pão declarado para as 10h que há um mês sai às 11h30 não pode ser prometido para as 10h só porque o cadastro diz isso. Ausente = deduzir do histórico; e histórico ausente É o caso perigoso, porque antes desta chave ele liberava qualquer horário. Hora ilegível é recusada na porta (Admin e Gestor), nunca guardada — cadastro torto viraria "ninguém respondeu". |
 | `gallery` | `list[str]` URLs | seed/admin (Offerman) | `storefront/presentation/product_detail._gallery` → `gallery` da PDP (carrossel com swipe, setas e pontos) | Fotos **adicionais** do produto, URLs absolutas na casa das imagens (`public/img/products/` do storefront). A foto **principal** continua sendo `Product.image_url` — ela abre o carrossel; promover uma foto da galeria = copiar a URL dela para `image_url`; não existe flag de principal aqui, de propósito (uma pergunta, um dono). Lista ausente/malformada = PDP de foto única, sem carrossel. |
 | `enrichment` | `dict` | `manage.py fetch_product_enrichment` (rascunho) · ação **Aceitar sugestão de catálogo** no Admin (aceite) | só a ação de aceite; **a loja NUNCA lê este bloco** | Sugestão de catálogo para item de REVENDA, buscada pelo GTIN (`metadata['social']['gtin']`). Duas fontes, uma por campo: **Cosmos** dá foto oficial, nome, marca e NCM; **Open Food Facts** dá alérgeno estruturado — medido em 05/09/2026, 73% dos produtos brasileiros o têm preenchido. Forma: `{status, fetched_at, sources[], suggested{}, notes[]}`, mais `accepted_by`/`accepted_at` depois do aceite. ⚠️ **Nasce `pending` e nunca vira rótulo sozinho.** O OFF é colaborativo e o campo vazio quase nunca significa "não contém": na mesma amostra, **93% dos que não tinham alérgeno marcado TINHAM a lista de ingredientes** — o silêncio é falta de curadoria, e auto-preencher importaria o defeito que a casa combate. A própria Cosmos pede revisão antes do uso. A autoridade é o rótulo físico; isto é rascunho. ⚠️ `suggested.allergens_unmapped` guarda o que o OFF trouxe e a lista da casa não tem (aipo, molusco e tremoço são obrigatórios na UE e não na RDC 26/2015) — **nunca descartado em silêncio**, aparece para quem aceita. |
+| `derived_from` | `dict` | `shop.services.derived_provenance` (via as três derivações e `record_manual_audit`) | `backstage.projections.product_promise`, `shop.services.unit_weight_from_recipe` (sentinela de escrita) | **De qual versão da ficha veio cada coisa que o catálogo mostra** (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C). Um carimbo por fato — `nutrition`, `dietary`, `unit_weight` — no formato `{source, recipe_ref, version_ref, by, at}`. Ver a tabela abaixo. |
+
+### `Product.metadata["derived_from"][<fato>]`
+
+Os fatos são `nutrition` (tabela nutricional + lista de ingredientes),
+`dietary` (alérgenos + dieta) e `unit_weight` (peso da peça).
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `source` | `string` | `recipe` = o sistema derivou da ficha \| `manual` = alguém conferiu à mão e assinou. Fato com valor publicado e **sem carimbo nenhum** é reportado como origem não registrada (`needs_audit`), nunca como derivado. |
+| `recipe_ref` | `string` | `Recipe.ref` de onde veio. Vazio em produto sem ficha ativa. |
+| `version_ref` | `string` | `Recipe.meta["version_ref"]` no momento do carimbo. **Vencido é comparação exata** contra o `version_ref` atual da ficha: sem limiar, sem tolerância, sem data. `""` = ficha nunca publicada pelo inventário; ali a defasagem é indetectável e a leitura marca `is_versioned=False` em vez de mostrar "em dia". |
+| `by` | `string` | Quem assinou a conferência manual. Vazio em `source="recipe"` (não há autor humano). Conferência manual **sempre** tem autor — `record_manual_audit` recusa assinatura vazia, porque conferência anônima é indistinguível de nenhuma conferência. |
+| `at` | `string` (ISO) | Quando o carimbo foi escrito: a derivação, em `recipe`; a conferência, em `manual`. |
+| `value` | escalar | Só em `unit_weight`: o número que a derivação deixou no campo. Campo diferente disto = alguém editou depois, e a edição vence — sem esta chave, corrigir o peso no Admin seria revertido calado no próximo save da ficha. Fatos compostos (`nutrition`, `dietary`) não a usam: eles têm o próprio sentinela dentro do valor (`auto_filled` / `dietary_auto_filled`). |
+
+⚠️ **O carimbo de `unit_weight` é o sentinela de escrita do peso.** `unit_weight_g`
+só é (re)gravado quando o campo está vazio ou o carimbo diz `source="recipe"`.
+Peso com valor e sem carimbo é peso que alguém digitou — hoje é todo o catálogo —
+e ele nunca é sobrescrito: a divergência aparece na leitura da promessa
+(`expected_value` / `diverges`), que é o oposto de mudar calado o número que o
+cliente lê.
 
 ---
 
@@ -1224,6 +1246,11 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `output_unit` | `string` | seed (pré-preparo), `publish_version` (inventário) | `Recipe._validate_mass_balance` | Unidade declarada da saída quando o SKU não está no catálogo (ADR-024 §R4: declarar, nunca deduzir). Liga o invariante de massa da ficha. |
 | `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`ficha_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-027). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
 | `mixer_loss_g` | `Decimal` (string) | seed/admin de receitas | `craftsman.services.yield_margin.mixer_loss_g_for` (via `craft.needs(..., yield_margin=True)`) | Filme de massa que fica na bacia da masseira, em gramas — **fixa por fornada**, não por peça. Ausente = `CRAFTSMAN["MIXER_LOSS_G"]` (150 g, **estimativa não auditada**). ⚠️ Chute cadastrado com prazo: o passo seguinte é o sistema aprender a perda real por ficha a partir do ledger (produzido menos consumido). Só entra na lista de separação; **nunca** no consumo do ledger. |
+| `bake_loss_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | `shop.services.unit_weight_from_recipe` | Perda de forno desta ficha, em % da massa crua. Ausente = padrão da casa (`ProductionConfig.weight.default_bake_loss_pct`, hoje 12), que sai rotulado `house_default` — **estimativa nunca auditada**: o número de 12% nunca passou pela balança com a peça pronta, e não pode virar verdade silenciosa na tela. Fora de `[0, 100)` é ignorado e cai no padrão. |
+| `bake_loss_source` | `string` | ficha (Admin/inventário) | idem | Espécie do número acima: `estimated` (default quando `bake_loss_pct` existe) \| `weighed`. **Só `weighed` com `bake_loss_weighed_by` E `bake_loss_weighed_at` conta como conferido** — declaração sem assinatura falha fechado e continua sendo estimativa. |
+| `bake_loss_weighed_by` | `string` | ficha (Admin/inventário) | idem | Quem pesou a peça pronta. Sem ele, `weighed` não vale como conferido. |
+| `bake_loss_weighed_at` | `string` (data ISO) | ficha (Admin/inventário) | idem | Quando pesou. Idem. |
+| `weight_slack_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | idem | Folga de segurança sobre o assado esperado, em %. Ausente = `ProductionConfig.weight.default_slack_pct` (hoje 5). É o que faz o anunciado ser **piso**: `anunciado = ⌊assado esperado × (1 − folga)⌋`, sempre para baixo. Fora de `[0, 100)` cai no padrão. |
 
 ## RecipeItem.meta
 
