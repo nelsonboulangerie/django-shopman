@@ -521,6 +521,11 @@ const machineConfirmOpen = ref(false);
 
 const hasLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method === "link"));
 const hasNonLinkTender = computed(() => props.paymentTenders.some((tender) => tender.method !== "link"));
+/** Dá para dividir a conta AGORA? O link cobra a venda inteira, então ele fecha
+ *  a porta — a não ser que a divisão já esteja armada, e aí o modal é por onde
+ *  se desfaz. UMA verdade só: o botão e a tecla F10 leem daqui, senão o teclado
+ *  abriria um modal que o dedo não consegue abrir. */
+const splitAvailable = computed(() => !(hasLinkTender.value && !splitActive.value));
 /** Este método está indisponível AGORA por causa da exclusividade do link? */
 function blockedByLink(ref: string): boolean {
   return ref === "link" ? hasNonLinkTender.value : hasLinkTender.value;
@@ -831,26 +836,41 @@ defineExpose({
   openFulfillment: () => { fulfillmentSheetOpen.value = true; },
   openSchedule: () => { scheduleSheetOpen.value = true; },
   openDiscount: () => { discountSheetOpen.value = true; },
-  /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
-   *  achou dono — o shell só consome a tecla quando ela virou ação. */
-  /** F10 liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão.
+  /** O irmão do desconto: os dois Ajustes da conta abrem pela mesma dupla de
+   *  teclas. Recusa quando o botão recusa — uma tecla que abre o que o dedo não
+   *  abre é a tela dizendo duas coisas ao mesmo tempo. */
+  openSplit: () => {
+    if (!splitAvailable.value) return;
+    splitSheetOpen.value = true;
+  },
+  /** F liga/desliga "CPF na nota?" — a pergunta fiscal mais feita no balcão.
    *  E LEVA O FOCO ao campo que acabou de aparecer. Sem isso o foco ficava no
    *  `body`, e o shell captura todo dígito fora de input quando há linha de
-   *  pagamento selecionada: o operador apertava F9, digitava o CPF de reflexo, e
-   *  os onze dígitos entravam no numpad — R$ 66,30 virava R$ 5.299.822,47 com um
-   *  "TROCO" a condizer. Um Enter depois, por hábito, e a venda fechava. */
+   *  pagamento selecionada: o operador apertava a tecla, digitava o CPF de
+   *  reflexo, e os onze dígitos entravam no numpad — R$ 66,30 virava
+   *  R$ 5.299.822,47 com um "TROCO" a condizer. Um Enter depois, por hábito, e a
+   *  venda fechava.
+   *
+   *  Devolve se a tecla teve dono: sem NFC-e no contrato a seção não existe, e
+   *  não há o que ligar. */
   toggleCpfOnInvoice: () => {
+    if (!supportsFiscalDocument.value) return false;
     const next = !props.wantsCpfOnInvoice;
     emit("update:wantsCpfOnInvoice", next);
     if (next) focusByAriaLabel("CPF que sai na nota");
+    return true;
   },
+  /** Uma letra digitada no checkout lança a forma correspondente. Devolve se
+   *  achou dono — o shell só consome a tecla quando ela virou ação. */
   pressMethodKey: (letter: string) => {
     const ref = Object.keys(methodKeys.value).find((key) => methodKeys.value[key] === letter);
     if (!ref) return false;
     emit("addTender", ref);
     return true;
   },
-  /** I e M — os dois canais do comprovante, pela letra.
+  /** I e M — os dois canais do comprovante, pela letra. Com o F do CPF, são as
+   *  três teclas da seção Nota fiscal, e `methodShortcuts` reserva as três para
+   *  que nenhuma forma de pagamento nova as tome pela inicial do rótulo.
    *
    *  Não são teclas de função porque não sobrou nenhuma: F1 é ajuda, F5 é
    *  reload, F11 é tela-cheia (que o quiosque usa) e F12 abre o DevTools ANTES
@@ -870,7 +890,7 @@ defineExpose({
       const next = !wantsEmailReceipt.value;
       setReceiptChannel("email", next);
       // Ligar o canal e não ter onde escrever é um bloqueio a caminho: leva o
-      // foco ao campo, como o F10 faz com o CPF.
+      // foco ao campo, como o F faz com o CPF.
       if (next) focusByAriaLabel("E-mail que recebe a nota");
       return true;
     }
@@ -985,7 +1005,7 @@ defineExpose({
                 splitActive ? 'border-primary bg-primary/5 text-foreground' : 'bg-card text-muted-foreground',
                 discountTypes.length ? '' : 'col-span-2',
               ]"
-              :disabled="hasLinkTender && !splitActive"
+              :disabled="!splitAvailable"
               :title="hasLinkTender ? 'O link de pagamento cobra a venda inteira' : undefined"
               :aria-pressed="splitActive"
               :aria-label="splitActive
@@ -999,6 +1019,13 @@ defineExpose({
                    e EM USO são estados diferentes, e o segundo é o que impede o
                    operador de desligar a divisão sem perceber que já lançou. -->
               <UiBadge v-if="splitActive" class="shrink-0 tabular-nums">{{ splitBadge }}</UiBadge>
+              <!-- Mesmo canto do vizinho: ligado, o badge diz o estado;
+                   desligado, ele carrega o atalho. -->
+              <kbd
+                v-else
+                class="shrink-0 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+                aria-hidden="true"
+              >F10</kbd>
             </button>
           </div>
         </section>
@@ -1487,7 +1514,7 @@ defineExpose({
                   <Icon name="lucide:receipt-text" class="size-4 shrink-0 text-muted-foreground" />
                   CPF na nota?
                 </span>
-                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F10</kbd>
+                <kbd class="ml-auto shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F</kbd>
                 <UiSwitch
                   :model-value="wantsCpfOnInvoice"
                   aria-label="CPF na nota"

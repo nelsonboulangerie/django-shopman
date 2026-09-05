@@ -419,6 +419,21 @@ const METHOD_KEYS: Record<string, string> = {
   card: "C",
 };
 
+/**
+ * LETRAS COM DONO FORA DAS FORMAS DE PAGAMENTO — e por isso proibidas aqui.
+ *
+ * F (CPF na nota), I (nota impressa) e M (nota por e-mail) são as três perguntas
+ * da seção Nota fiscal, e o operador as digita no mesmo checkout. A inicial do
+ * rótulo é o caminho de quem não está no `METHOD_KEYS`, então bastaria a casa
+ * cadastrar uma forma "Fiado" para o F trocar de dono em silêncio: o operador
+ * apertaria a tecla do CPF e lançaria uma forma de pagamento, com o cliente na
+ * frente.
+ *
+ * Reservar deixa a forma SEM atalho — o mesmo destino de qualquer colisão, e o
+ * botão continua na tela.
+ */
+const RESERVED_KEYS = new Set(["F", "I", "M"]);
+
 export function methodShortcuts(
   methods: POSPaymentMethodProjection[],
 ): Record<string, string> {
@@ -431,7 +446,7 @@ export function methodShortcuts(
       .trim()
       .charAt(0)
       .toUpperCase();
-    if (!/^[A-Z]$/.test(letter) || taken.has(letter)) continue;
+    if (!/^[A-Z]$/.test(letter) || RESERVED_KEYS.has(letter) || taken.has(letter)) continue;
     taken.add(letter);
     out[method.ref] = letter;
   }

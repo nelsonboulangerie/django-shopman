@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { mountSuspended } from "@nuxt/test-utils/runtime";
 
 import PosPaymentWorkspace from "~/components/PosPaymentWorkspace.vue";
@@ -1152,7 +1152,9 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
     const gatilho = (w: typeof desligado) =>
       w.findAll("button").find((b) => b.text().includes("Dividir conta"))!;
     expect(gatilho(desligado).attributes("aria-pressed")).toBe("false");
-    expect(gatilho(desligado).text()).not.toMatch(/\d/);
+    // Desligado o canto carrega o ATALHO, nunca uma contagem: "Dividir conta"
+    // com um número ao lado seria a tela dizendo que já há divisão armada.
+    expect(gatilho(desligado).text()).toBe("Dividir contaF10");
 
     const armado = await mountSuspended(PosPaymentWorkspace, {
       props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
@@ -1217,5 +1219,103 @@ describe("PosPaymentWorkspace — o link cobra a venda inteira", () => {
       props: props({ paymentMethods: metodos, paymentTenders: [comLink], paymentCovered: true, paymentRemainingQ: 0, customerEmail: "jorge@casa.com" }),
     });
     expect(cta(comEmail)!.attributes("disabled")).toBeUndefined();
+  });
+});
+
+describe("PosPaymentWorkspace — as teclas do checkout têm dono único", () => {
+  const comLink = { method: "link", amount_q: 1000, collection: "terminal" as const };
+  const comFiscal = { capabilities: { supports_fiscal_document: true }, receipt_channels: [] };
+  // O diálogo é teleportado para o `body`, então quem responde "está aberto?" é
+  // o documento. O `afterEach` limpa o resto de um teste para o seguinte não ler
+  // o modal do anterior como se fosse o seu.
+  const modalDeDividir = () => document.body.textContent?.includes("Em quantas pessoas") ?? false;
+  afterEach(() => { document.body.innerHTML = ""; });
+  // As teclas do checkout entram pelo `defineExpose` — o mesmo objeto que o
+  // shell (`pages/index.vue`) segura no `paymentWorkspaceRef`. O `mountSuspended`
+  // não o promove ao `vm`; ele fica na instância, em `$.exposed`.
+  const exposto = (w: Awaited<ReturnType<typeof mountSuspended>>) =>
+    (w.vm as unknown as { $: { exposed: Record<string, unknown> } }).$.exposed as unknown as {
+      openSplit: () => void;
+      toggleCpfOnInvoice: () => boolean;
+    };
+
+  it("F10 abre o modal de dividir a conta", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    expect(modalDeDividir()).toBe(false);
+    exposto(w).openSplit();
+    await w.vm.$nextTick();
+    expect(modalDeDividir()).toBe(true);
+  });
+
+  it("com link lançado, a TECLA recusa como o botão recusa", async () => {
+    // A tecla e o botão dizem a mesma coisa ou a tela mente: abrir pelo teclado
+    // o modal que o dedo não abre é oferecer uma divisão que o Validar recusa
+    // depois. Uma verdade só (`splitAvailable`), lida nos dois lugares.
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentMethods: [{ ref: "cash", label: "Dinheiro" }, { ref: "link", label: "Link de pagamento" }],
+        paymentTenders: [comLink],
+      }),
+    });
+    exposto(w).openSplit();
+    await w.vm.$nextTick();
+    expect(modalDeDividir()).toBe(false);
+  });
+
+  it("com a divisão JÁ armada, o link não fecha a porta — é por ali que se desfaz", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        paymentMethods: [{ ref: "cash", label: "Dinheiro" }, { ref: "link", label: "Link de pagamento" }],
+        paymentTenders: [comLink],
+        splitCount: 3,
+      }),
+    });
+    exposto(w).openSplit();
+    await w.vm.$nextTick();
+    expect(modalDeDividir()).toBe(true);
+  });
+
+  it("F liga o CPF na nota e leva o foco ao campo", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ checkoutContract: comFiscal }),
+    });
+    const teveDono = exposto(w).toggleCpfOnInvoice();
+    expect(teveDono).toBe(true);
+    expect(w.emitted("update:wantsCpfOnInvoice")?.[0]).toEqual([true]);
+
+    // Ligado, a tecla desliga — e sem foco nenhum a perseguir.
+    const ligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ checkoutContract: comFiscal, wantsCpfOnInvoice: true, invoiceTaxId: "52998224725" }),
+    });
+    exposto(ligado).toggleCpfOnInvoice();
+    expect(ligado.emitted("update:wantsCpfOnInvoice")?.[0]).toEqual([false]);
+  });
+
+  it("sem NFC-e no contrato, o F não tem dono e a tecla segue o caminho dela", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props() });
+    const teveDono = exposto(w).toggleCpfOnInvoice();
+    expect(teveDono).toBe(false);
+    expect(w.emitted("update:wantsCpfOnInvoice")).toBeUndefined();
+  });
+
+  it("o botão de dividir carrega o atalho no mesmo canto do badge", async () => {
+    const desligado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "%" }] }),
+    });
+    const gatilho = (w: typeof desligado) =>
+      w.findAll("button").find((b) => b.text().includes("Dividir conta"))!;
+    expect(gatilho(desligado).text()).toContain("F10");
+
+    // Armado, o badge toma o lugar do atalho: ele é o estado.
+    const armado = await mountSuspended(PosPaymentWorkspace, {
+      props: props({ discountTypes: [{ ref: "percent", label: "%" }], splitCount: 3 }),
+    });
+    expect(gatilho(armado).text()).not.toContain("F10");
+  });
+
+  it("o card do CPF anuncia a tecla F", async () => {
+    const w = await mountSuspended(PosPaymentWorkspace, { props: props({ checkoutContract: comFiscal }) });
+    const secao = w.find('section[aria-label="Nota fiscal"]');
+    expect(secao.findAll("kbd").map((k) => k.text())).toEqual(["F", "I", "M"]);
   });
 });

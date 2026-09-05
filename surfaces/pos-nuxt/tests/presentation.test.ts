@@ -1151,6 +1151,19 @@ describe("atalhos das formas de pagamento", () => {
     expect(methodShortcuts([m("account", "Em conta")])).toEqual({ account: "E" });
   });
 
+  it("F, I e M são RESERVADAS — nenhuma forma nova as toma pela inicial", () => {
+    // As três teclas da seção Nota fiscal: F (CPF na nota), I (impressa) e M
+    // (por e-mail). Bastaria a casa cadastrar "Fiado" para o F trocar de dono em
+    // silêncio, e o operador lançaria uma forma de pagamento onde esperava ligar
+    // o CPF, com o cliente na frente. A forma fica sem atalho — o botão continua
+    // na tela, que é o mesmo destino de qualquer colisão.
+    expect(methodShortcuts([m("fiado", "Fiado")])).toEqual({});
+    expect(methodShortcuts([m("interno", "Interno")])).toEqual({});
+    expect(methodShortcuts([m("maquina", "Máquina")])).toEqual({});
+    // E não estraga a fila: quem vem depois continua ganhando a letra dele.
+    expect(methodShortcuts([m("fiado", "Fiado"), m("account", "Em conta")])).toEqual({ account: "E" });
+  });
+
   it("colisão ainda deixa o segundo SEM atalho, nunca com o do vizinho", () => {
     // Melhor sem tecla do que com uma que lança a forma errada com o cliente na
     // frente. `card` e `credit` compartilham o C de propósito — eles nunca
