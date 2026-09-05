@@ -6,6 +6,7 @@
 // the API envelopes.
 
 import type {
+  CustomerProfileProjection as CustomerProfileContract,
   OperatorOrderProjection as OperatorOrderContract,
   OrderCardProjection as OrderCardContract,
   TwoZoneQueueProjection as TwoZoneQueueContract,
@@ -56,8 +57,16 @@ export type CourierBlock = {
   can_cancel: boolean;
 };
 
+/** Quem é o cliente deste pedido (WP-360). O servidor já resolve rótulo e tom;
+ *  a tela só decide onde cada linha mora. `segment_tone` vazio significa
+ *  "segmento que não muda o atendimento" — sem selo, não um selo neutro. */
+export interface CustomerProfileProjection extends CustomerProfileContract {
+  segment_tone: "success" | "warning" | "";
+}
+
 export interface OperatorOrderProjection extends OperatorOrderContract {
   courier: CourierBlock | null;
+  customer_profile: CustomerProfileProjection | null;
 }
 
 export interface TwoZoneQueueProjection extends TwoZoneQueueContract {

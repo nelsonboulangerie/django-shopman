@@ -46,6 +46,23 @@ export interface EquipmentOutProjection {
   out_at: string;
 }
 
+/** Quem é este cliente, para o operador decidir como tratá-lo. */
+export interface CustomerProfileProjection {
+  is_first_order: boolean;
+  total_orders: number;
+  orders_label: string;
+  last_order_display: string;
+  average_ticket_display: string;
+  favorite_product: string;
+  segment: string;
+  segment_label: string;
+  segment_tone: string;
+  notes: string;
+  dietary_restrictions: string;
+  birthday_display: string;
+  is_birthday_today: boolean;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -158,6 +175,7 @@ export interface OperatorOrderProjection {
   gift_hide_values: boolean;
   cancellation_presets: string[];
   kitchen_note_tags: string[];
+  customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
   change_for_q: number;
   change_out_suggested_q: number;

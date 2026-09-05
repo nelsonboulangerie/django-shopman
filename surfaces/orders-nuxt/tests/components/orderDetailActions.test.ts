@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { computed, ref, watch } from "vue";
 import { mount } from "@vue/test-utils";
 
-import type { OperatorOrderProjection } from "../../app/types/orders";
+import type { CustomerProfileProjection, OperatorOrderProjection } from "../../app/types/orders";
 
 // O detalhe do pedido oferecia ação INVÁLIDA em posição primária: a guarda do
 // "Avançar" era `order.can_settle_delivery_cash !== undefined`, que é sempre
@@ -99,8 +99,31 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     equipment_back_pending: false,
     can_resend_payment_link: false,
     payment_link_notice: "",
+    customer_profile: null,
     ...over,
   } as OperatorOrderProjection;
+}
+
+/** Perfil do cliente com tudo vazio — cada teste liga só o que quer provar.
+ *  O padrão é o vazio de propósito: sem insight (estado NORMAL, não há cron de
+ *  recalculate_all) o servidor manda string vazia, nunca zero. */
+function profile(over: Partial<CustomerProfileProjection> = {}): CustomerProfileProjection {
+  return {
+    is_first_order: false,
+    total_orders: 0,
+    orders_label: "",
+    last_order_display: "",
+    average_ticket_display: "",
+    favorite_product: "",
+    segment: "",
+    segment_label: "",
+    segment_tone: "",
+    notes: "",
+    dietary_restrictions: "",
+    birthday_display: "",
+    is_birthday_today: false,
+    ...over,
+  };
 }
 
 const stubs = {
@@ -269,6 +292,105 @@ describe("detalhe do pedido — link de pagamento", () => {
 
     expect(w.find("[data-payment-link-notice]").text()).toContain("Link enviado às 9h05");
     expect(w.find('[data-action="resend-payment-link"]').exists()).toBe(false);
+  });
+});
+
+// O operador abria o detalhe de uma cliente real e não tinha UMA linha sobre
+// quem ela era. O dado já estava calculado (CustomerInsight, cadastro,
+// histórico) e não chegava aqui. O bloco é de SUPERFÍCIE: o servidor manda os
+// fatos em português e só os que sabe; a tela decide onde cada linha mora e
+// some com o que faltou — vazio some, não vira " · " solto nem "R$ 0,00".
+describe("detalhe do pedido — quem é este cliente", () => {
+  it("sem cliente identificado (venda anônima): o bloco não existe", () => {
+    const w = abrir(order({ customer_profile: null }));
+    expect(w.find("[data-customer-profile]").exists()).toBe(false);
+  });
+
+  it("cliente novo: diz 'Primeira compra', sem inventar ticket nem favorito", () => {
+    const w = abrir(order({
+      customer_profile: profile({ is_first_order: true, orders_label: "Primeira compra" }),
+    }));
+
+    const bloco = w.find("[data-customer-profile]");
+    expect(bloco.exists()).toBe(true);
+    expect(w.find("[data-customer-history]").text()).toBe("Primeira compra");
+    expect(w.find("[data-customer-habits]").exists()).toBe(false);
+    expect(w.find("[data-customer-segment]").exists()).toBe(false);
+  });
+
+  it("cliente de casa: recorrência, recência, ticket e favorito numa leitura só", () => {
+    const w = abrir(order({
+      customer_profile: profile({
+        total_orders: 12,
+        orders_label: "12 pedidos",
+        last_order_display: "há 12 dias",
+        average_ticket_display: "R$ 42,00",
+        favorite_product: "Pão francês",
+      }),
+    }));
+
+    expect(w.find("[data-customer-history]").text()).toBe("12 pedidos · última compra há 12 dias");
+    expect(w.find("[data-customer-habits]").text()).toBe("ticket médio R$ 42,00 · costuma levar Pão francês");
+  });
+
+  it("fato que falta some da linha, sem deixar separador órfão", () => {
+    // O caso do cliente importado: há pedido anterior (a recência é verdade),
+    // mas não há insight — sem contagem, sem ticket, sem favorito.
+    const w = abrir(order({
+      customer_profile: profile({ orders_label: "", last_order_display: "há 3 meses" }),
+    }));
+
+    const linha = w.find("[data-customer-history]").text();
+    expect(linha).toBe("última compra há 3 meses");
+    expect(linha).not.toContain("·");
+    expect(w.find("[data-customer-habits]").exists()).toBe(false);
+  });
+
+  it("segmento que merece atenção ganha selo; 'regular' não ganha nenhum", () => {
+    const fiel = abrir(order({
+      customer_profile: profile({ segment: "loyal_customer", segment_label: "Cliente fiel", segment_tone: "success" }),
+    }));
+    expect(fiel.find("[data-customer-segment]").text()).toBe("Cliente fiel");
+
+    // Regular/recente chegam com tom vazio do servidor — badge que aparece em
+    // todo pedido vira moldura, e o operador para de lê-la.
+    const regular = abrir(order({
+      customer_profile: profile({ segment: "", segment_label: "", segment_tone: "" }),
+    }));
+    expect(regular.find("[data-customer-segment]").exists()).toBe(false);
+  });
+
+  it("restrição alimentar e nota do cadastro aparecem; aniversário só no dia muda o tom", () => {
+    const w = abrir(order({
+      customer_profile: profile({
+        orders_label: "4 pedidos",
+        dietary_restrictions: "sem lactose",
+        notes: "Prefere retirar no fim da tarde",
+        birthday_display: "12/03",
+        is_birthday_today: true,
+      }),
+    }));
+
+    expect(w.find("[data-customer-restrictions]").text()).toContain("sem lactose");
+    expect(w.find("[data-customer-notes]").text()).toContain("Prefere retirar no fim da tarde");
+    expect(w.find("[data-customer-birthday]").text()).toContain("Faz aniversário hoje");
+  });
+
+  it("aniversário fora do dia é só cadastro, com a data", () => {
+    const w = abrir(order({
+      customer_profile: profile({ birthday_display: "12/03", is_birthday_today: false }),
+    }));
+
+    expect(w.find("[data-customer-birthday]").text()).toContain("Aniversário em 12/03");
+  });
+
+  it("cadastro sem nada além da recorrência: só a linha que tem fato", () => {
+    const w = abrir(order({ customer_profile: profile({ orders_label: "3 pedidos" }) }));
+
+    expect(w.find("[data-customer-profile]").exists()).toBe(true);
+    expect(w.find("[data-customer-restrictions]").exists()).toBe(false);
+    expect(w.find("[data-customer-notes]").exists()).toBe(false);
+    expect(w.find("[data-customer-birthday]").exists()).toBe(false);
   });
 });
 

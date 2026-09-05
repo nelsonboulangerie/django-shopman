@@ -14,6 +14,7 @@ import {
   flattenZones,
   lucideIcon,
   fulfillmentCounts,
+  joinFacts,
   matchesChannel,
   matchesFulfillment,
   matchesQuery,
@@ -503,5 +504,29 @@ describe("appendTag — tags de nota da cozinha (anexa)", () => {
 
   it("tag vazia é no-op (retorna a nota aparada)", () => {
     expect(appendTag("Sem cebola", "  ")).toBe("Sem cebola");
+  });
+});
+
+// O bloco "quem é este cliente" é feito de dados que faltam com frequência:
+// cliente sem insight não tem ticket nem favorito, cliente novo não tem
+// recência. O vazio precisa DESAPARECER, não virar pontuação.
+describe("joinFacts", () => {
+  it("junta os fatos que existem com ' · '", () => {
+    expect(joinFacts("12 pedidos", "última compra há 12 dias")).toBe(
+      "12 pedidos · última compra há 12 dias",
+    );
+  });
+
+  it("um fato só: nenhum separador órfão", () => {
+    expect(joinFacts("", "última compra há 3 meses")).toBe("última compra há 3 meses");
+    expect(joinFacts("Primeira compra", "")).toBe("Primeira compra");
+  });
+
+  it("nada a dizer devolve string vazia (a linha some da tela)", () => {
+    expect(joinFacts("", "", undefined, null)).toBe("");
+  });
+
+  it("branco só não conta como fato", () => {
+    expect(joinFacts("   ", "R$ 42,00")).toBe("R$ 42,00");
   });
 });
