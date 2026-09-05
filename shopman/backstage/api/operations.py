@@ -3309,7 +3309,7 @@ class POSCustomerResolveView(APIView):
                 phone=str(body.get("customer_phone") or "").strip(),
                 tax_id=str(body.get("customer_tax_id") or "").strip(),
                 email=str(body.get("customer_email") or "").strip(),
-                contact_correction=bool(body.get("customer_contact_correction")),
+                contact_correction=as_bool(body, "customer_contact_correction", default=False),
                 operator_username=_username(request),
             )
         except PosCustomerConflict as exc:
