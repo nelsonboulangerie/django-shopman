@@ -113,7 +113,7 @@ shopman/                Namespace package (PEP 420) — sem __init__.py
     ├── urls.py         montado em /api/v1/backstage/ + SSE /events/ (os apps são surfaces/*-nuxt)
     └── tests/          POS, KDS, produção, fechamento, contratos de superfície, e2e
 
-surfaces/               7 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
+surfaces/               9 apps Nuxt 4 (SSR) + 1 layer compartilhada — as superfícies vivas em produção
 ├── storefront-nuxt/   loja do cliente (apex, mobile-first, :3000)          → api.
 ├── hub-nuxt/          Central de Apps do operador (:3001)                  → api./backstage
 ├── pos-nuxt/          PDV (desktop-first, :3002)                           → api./backstage
@@ -121,6 +121,8 @@ surfaces/               7 apps Nuxt 4 (SSR) + 1 layer compartilhada — as super
 ├── orders-nuxt/       gestor de pedidos (:3004)                            → api./backstage
 ├── production-nuxt/   produção/fornadas (kiosk Solari, :3005)              → api./backstage
 ├── marketing-nuxt/    marketing do gestor — campanhas e anúncios (:3006)  → api./backstage
+├── purchase-nuxt/     Compras do gestor — fornecedores, pedidos, recebimento     → api./backstage
+├── bi-nuxt/           B.I. do gestor — vendas, caixa, clientes, projeção (:3007)  → api./backstage
 └── operator-kit/      Nuxt layer compartilhada dos apps de operador (extends): httpError,
                        retryWithBackoff, useConnectivity, OperatorLock/PIN, telemetria de erro,
                        BFF canônico (server/utils: djangoProxy, eventStream, apiVersion),
@@ -137,7 +139,7 @@ pyproject.toml          Build + test config (repo root)
 ```
 
 > **Cutover headless:** os apps Django `storefront`/`backstage` NÃO renderizam mais
-> HTML — servem API JSON + projections. As superfícies são os 7 apps Nuxt em
+> HTML — servem API JSON + projections. As superfícies são os 9 apps Nuxt em
 > `surfaces/`, que falam com o Django via BFF (cookie de sessão cross-subdomínio
 > `.boulangerie`). A seção "Frontend: HTMX ↔ Alpine" abaixo vale só para as telas
 > Admin/Unfold que ainda são Django-rendered.
