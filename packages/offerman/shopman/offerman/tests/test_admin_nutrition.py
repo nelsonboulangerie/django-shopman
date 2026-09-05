@@ -50,7 +50,37 @@ def test_form_renders_nutrition_fields():
         assert name in form.fields
 
 
-def test_form_populates_initial_from_instance():
+@pytest.fixture
+def sem_provedor(settings):
+    """Força o contrato do Core: rodar SEM provedor de rotulagem.
+
+    Sem isto o teste muda de resultado conforme o settings que o pytest escolhe
+    (o do pacote não tem o `shop`; o do projeto tem), e um teste que depende de
+    como foi invocado não afirma nada.
+    """
+    settings.OFFERMAN = {**getattr(settings, "OFFERMAN", {}), "LABEL_ATTRIBUTES_PROVIDER": None}
+    return settings
+
+
+def test_the_core_has_no_opinion_about_label_vocabulary(sem_provedor):
+    """O Offerman roda SOZINHO, e é isso que esta suíte prova.
+
+    Alérgeno, dieta e porção são vocabulário do TENANT: quem os define é o
+    registro do orquestrador, alcançado por
+    ``OFFERMAN["LABEL_ATTRIBUTES_PROVIDER"]``. Nesta suíte não há orquestrador —
+    de propósito — e então não há provedor.
+
+    O contrato do Core aqui é **não quebrar**: os campos existem no formulário,
+    o save funciona, e nada de vocabulário de tenant vaza para o ``metadata``.
+    O caminho COM provedor é responsabilidade de quem o configura, e tem teste
+    do outro lado (``shopman/shop/tests/test_label_provider.py``).
+    """
+    from shopman.offerman.contrib.admin_unfold.nutrition_form import _label_attributes
+
+    assert _label_attributes() is None
+
+
+def test_form_populates_initial_from_instance(sem_provedor):
     product = Product.objects.create(
         sku="INIT",
         name="Init",
@@ -61,20 +91,15 @@ def test_form_populates_initial_from_instance():
             "proteins_g": 6.0,
             "auto_filled": False,
         },
-        metadata={
-            "allergens": ["glúten", "gergelim"],
-            "dietary_info": ["100% vegetal", "sem lactose"],
-            "serves": "2 a 4 pessoas",
-            "approx_dimensions": "aprox. 24 x 12 x 10 cm",
-        },
+        metadata={"approx_dimensions": "aprox. 24 x 12 x 10 cm"},
     )
     form = ProductAdminForm(instance=product)
     assert form.fields["serving_size_g"].initial == 50
     assert form.fields["energy_kcal"].initial == 180.0
     assert form.fields["proteins_g"].initial == 6.0
-    assert form.fields["allergens_text"].initial == "glúten, gergelim"
-    assert form.fields["dietary_info_text"].initial == "100% vegetal, sem lactose"
-    assert form.fields["serves_text"].initial == "2 a 4 pessoas"
+    # Sem provedor de rotulagem, os três campos do tenant ficam em branco — e
+    # `approx_dimensions`, que é do próprio catálogo, continua vindo.
+    assert not form.fields["allergens_text"].initial
     assert form.fields["approx_dimensions_text"].initial == "aprox. 24 x 12 x 10 cm"
 
 
@@ -100,7 +125,7 @@ def test_form_serializes_to_json_on_save():
     assert saved.nutrition_facts["auto_filled"] is False
 
 
-def test_form_serializes_remote_purchase_metadata_on_save():
+def test_form_serializes_remote_purchase_metadata_on_save(sem_provedor):
     product = Product.objects.create(
         sku="META",
         name="Meta",
@@ -120,74 +145,19 @@ def test_form_serializes_remote_purchase_metadata_on_save():
     assert form.is_valid(), form.errors
     saved = form.save()
     saved.refresh_from_db()
+    # Sem provedor, nada de vocabulário de tenant entra no metadata — nem as
+    # chaves antigas, que morreram, nem o registro, que é do orquestrador.
+    for morta in ("allergens", "dietary_info", "serves", "dietary_auto_filled", "attributes"):
+        assert morta not in saved.metadata
     assert saved.metadata == {
         "external_id": "keep",
-        "allergens": ["glúten", "gergelim"],
-        "dietary_info": ["100% vegetal", "sem lactose"],
-        "serves": "2 a 4 pessoas",
         "approx_dimensions": "aprox. 24 x 12 x 10 cm",
-        # Operator typed dietary data → mark as manual override so the
-        # Recipe→Product derivation (WP-7) won't overwrite it.
-        "dietary_auto_filled": False,
         "allows_next_day_sale": False,
         # Promessa da casa ("Preparado na hora"): switch próprio, gravado sempre
         # — inclusive como False. O selo da sacola lê SÓ este campo; deduzi-lo de
         # `availability_policy` acoplava promessa a política de estoque.
         "made_to_order": False,
     }
-
-
-def test_form_marks_dietary_manual_only_when_changed():
-    """Re-saving a recipe-derived product unchanged must NOT freeze derivation."""
-    product = Product.objects.create(
-        sku="DERIVED",
-        name="Derived",
-        base_price_q=100,
-        metadata={
-            "allergens": ["glúten"],
-            "dietary_info": ["100% vegetal", "sem lactose"],
-            "dietary_auto_filled": True,
-        },
-    )
-    # Operator opens and saves the form with the SAME dietary values.
-    data = _base_data(
-        sku="DERIVED",
-        name="Derived",
-        allergens_text="glúten",
-        dietary_info_text="100% vegetal, sem lactose",
-    )
-    form = ProductAdminForm(data=data, instance=product)
-    assert form.is_valid(), form.errors
-    saved = form.save()
-    saved.refresh_from_db()
-    # Unchanged → sentinel preserved as auto-filled (derivation still wins).
-    assert saved.metadata["dietary_auto_filled"] is True
-
-
-def test_form_marks_dietary_manual_when_operator_edits():
-    """Changing the dietary text flips the sentinel to manual override."""
-    product = Product.objects.create(
-        sku="EDIT",
-        name="Edit",
-        base_price_q=100,
-        metadata={
-            "allergens": ["glúten"],
-            "dietary_info": ["100% vegetal"],
-            "dietary_auto_filled": True,
-        },
-    )
-    data = _base_data(
-        sku="EDIT",
-        name="Edit",
-        allergens_text="glúten, leite",
-        dietary_info_text="vegetariano",
-    )
-    form = ProductAdminForm(data=data, instance=product)
-    assert form.is_valid(), form.errors
-    saved = form.save()
-    saved.refresh_from_db()
-    assert saved.metadata["dietary_auto_filled"] is False
-    assert saved.metadata["allergens"] == ["glúten", "leite"]
 
 
 def test_form_rejects_invalid_invariant():

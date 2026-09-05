@@ -17,6 +17,7 @@ from shopman.offerman.models import CollectionItem, ListingItem, Product
 
 from shopman.shop.models import Promotion
 from shopman.shop.projections.types import Availability
+from shopman.shop.services import attributes
 from shopman.storefront.presentation import build_catalog
 from shopman.storefront.presentation.catalog import (
     CatalogItemProjection,
@@ -156,10 +157,8 @@ class TestCatalogItemProjection:
         from shopman.storefront.services.catalog import search_index
 
         product.ingredients_text = "Farinha de trigo, água, fermento natural, sal."
-        product.metadata = {
-            "allergens": ["glúten"],
-            "dietary_info": ["100% vegetal", "sem lactose"],
-        }
+        attributes.set(product, "alergenos", ["glúten"], save=False)
+        attributes.set(product, "dieta", ["100% vegetal", "sem lactose"], save=False)
         product.save(update_fields=["ingredients_text", "metadata"])
         _publish_on_listing(listing, product)
 

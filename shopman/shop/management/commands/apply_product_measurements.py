@@ -16,7 +16,7 @@ Este comando toca **três campos** e nada mais:
 
 - ``Product.unit_weight_g``
 - ``Product.metadata["approx_dimensions"]``
-- ``Product.metadata["serves"]``
+- o atributo ``porcoes`` do registro (era ``Product.metadata["serves"]``)
 
 Preço, nome, descrição, estoque, pedido e configuração ficam intocados. Sem
 ``--apply`` ele não grava nada: imprime a tabela do que mudaria e sai.
@@ -43,6 +43,7 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand
 from shopman.offerman.models import Product
 
+from shopman.shop.services import attributes
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
 # Medidas conferidas com o dono em 21/08/2026 e corrigidas no PR #280: a ficha
@@ -70,7 +71,10 @@ MEASUREMENTS: dict[str, dict[str, object]] = {
     "FOC": {"unit_weight_g": 475},
 }
 
-_METADATA_FIELDS = ("serves", "approx_dimensions")
+# `approx_dimensions` segue chave solta do metadata (é do catálogo);
+# `serves` virou o atributo `porcoes` do registro do tenant.
+_METADATA_FIELDS = ("approx_dimensions",)
+_ATTRIBUTE_FIELDS = {"serves": "porcoes"}
 
 
 def _corrigir_porcoes_do_rotulo_manual(product) -> bool:
@@ -178,6 +182,14 @@ class Command(BaseCommand):
                         campos.append("metadata")
             if "metadata" in campos:
                 product.metadata = metadata
+
+            for campo, ref in _ATTRIBUTE_FIELDS.items():
+                novo = desejado.get(campo)
+                if novo is None or attributes.get(product, ref) == novo:
+                    continue
+                attributes.set(product, ref, novo, source="manual", save=False)
+                if "metadata" not in campos:
+                    campos.append("metadata")
 
             product.save(update_fields=campos)
 

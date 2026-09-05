@@ -121,7 +121,7 @@ class CatalogItemProjection:
     # client-side quando requested > available, sem esperar o POST falhar.
     available_qty: int | None = None
 
-    # Allergens from product.metadata["allergens"] — search/index data only.
+    # Alérgenos vêm do atributo `alergenos` do registro — dado de busca/índice.
     allergens: tuple[str, ...] = field(default_factory=tuple)
 
     # Apresentação da coleção PRIMÁRIA (Collection.metadata): cor hex da paleta
@@ -438,6 +438,10 @@ def _build_items(
     # Batch: primary collection per SKU (category_color/category_icon).
     primary_by_sku = catalog_context.primary_collection_by_sku(skus)
 
+    # Batch: rotulagem do registro de atributos, pela projection (presentation
+    # não alcança `shop.services`). Uma leitura de definição para N produtos.
+    label_by_sku = catalog_context.label_attributes_by_sku(products)
+
     # Batch: listing prices.
     price_map = catalog_context.listing_price_map(skus, channel_ref)
 
@@ -528,11 +532,9 @@ def _build_items(
         primary_meta = primary.metadata if primary and isinstance(primary.metadata, dict) else {}
 
         meta = p.metadata if isinstance(p.metadata, dict) else {}
-        dietary = meta.get("dietary_info") or []
-        if not isinstance(dietary, list):
-            dietary = []
-        allergens_raw = meta.get("allergens") or []
-        allergens = tuple(str(a) for a in allergens_raw if a) if isinstance(allergens_raw, list) else ()
+        rotulo = label_by_sku.get(p.sku) or {}
+        dietary = list(rotulo.get("dietary_info") or ())
+        allergens = tuple(rotulo.get("allergens") or ())
         tags = _product_tags(p)
 
         result.append(

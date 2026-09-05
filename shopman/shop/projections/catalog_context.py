@@ -824,3 +824,34 @@ def listing_validity_q(prefix: str = "listing_items__listing__") -> models.Q:
     ) & (
         models.Q(**{f"{prefix}valid_until__isnull": True}) | models.Q(**{f"{prefix}valid_until__gte": today})
     )
+
+
+def label_attributes_by_sku(products) -> dict[str, dict]:
+    """Rotulagem de compra remota por SKU: alérgenos, dieta e porção.
+
+    Existe aqui, e não no service, porque **presentation lê projection, nunca
+    service** (é o contrato que `test_import_boundaries` guarda). O registro de
+    atributos é escrita e política; o que a vitrine precisa é o lado de leitura.
+
+    As chaves do retorno seguem em inglês — convenção da casa para contrato de
+    projection. O ``ref`` do atributo é dado do tenant, em português.
+    """
+    from shopman.shop.services import attributes
+
+    allergens = attributes.get_many(products, "alergenos")
+    dietary = attributes.get_many(products, "dieta")
+    serves = attributes.get_many(products, "porcoes")
+
+    return {
+        p.sku: {
+            "allergens": tuple(str(a) for a in (allergens.get(p.sku) or []) if a),
+            "dietary_info": tuple(str(d) for d in (dietary.get(p.sku) or []) if d),
+            "serves": str(serves.get(p.sku) or "") or None,
+        }
+        for p in products
+    }
+
+
+def label_attributes(product) -> dict:
+    """A rotulagem de UM produto — a forma singular de :func:`label_attributes_by_sku`."""
+    return label_attributes_by_sku([product])[product.sku]

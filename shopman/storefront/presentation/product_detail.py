@@ -329,11 +329,13 @@ def build_product_detail(
     qty_in_cart = int(_cart_qty_by_sku(request).get(product.sku, 0))
     is_favorite = product.sku in _favorite_skus(request)
     is_notify_subscribed = is_notifiable and product.sku in notify_subscribed_skus(request)
-    _meta = product.metadata if isinstance(product.metadata, dict) else {}
+    # O aviso de preferência alimentar lê os mesmos valores do rótulo — e o
+    # `allergen` acima já os resolveu pelo registro. Reaproveitar evita duas
+    # leituras que poderiam divergir na mesma tela.
     dietary_warns = _dietary_warnings(
         _active_food_prefs(request),
-        dietary_info=_meta.get("dietary_info") or (),
-        allergens=_meta.get("allergens") or (),
+        dietary_info=allergen.dietary_info if allergen else (),
+        allergens=allergen.allergens if allergen else (),
     )
 
     cross_sell = build_catalog_items_for_skus(
@@ -449,14 +451,12 @@ def _format_component_qty(qty) -> str:
 
 
 def _allergen(product: Any) -> AllergenInfoProjection | None:
-    meta = product.metadata if isinstance(product.metadata, dict) else {}
-    allergens_raw = meta.get("allergens") or []
-    dietary_raw = meta.get("dietary_info") or []
-    serves_raw = meta.get("serves")
-
-    allergens = tuple(str(a) for a in allergens_raw if a) if isinstance(allergens_raw, list) else ()
-    dietary = tuple(str(d) for d in dietary_raw if d) if isinstance(dietary_raw, list) else ()
-    serves = str(serves_raw) if serves_raw else None
+    # Vem do registro de atributos, pela PROJECTION — presentation não alcança
+    # `shop.services` (ver test_import_boundaries).
+    rotulo = catalog_context.label_attributes(product)
+    allergens = rotulo["allergens"]
+    dietary = rotulo["dietary_info"]
+    serves = rotulo["serves"]
 
     if not (allergens or dietary or serves):
         return None

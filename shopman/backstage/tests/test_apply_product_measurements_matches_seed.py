@@ -15,6 +15,7 @@ from django.core.management import call_command
 from shopman.offerman.models import Product
 
 from shopman.shop.management.commands.apply_product_measurements import MEASUREMENTS
+from shopman.shop.services import attributes
 
 pytestmark = pytest.mark.django_db
 
@@ -33,7 +34,9 @@ def test_a_tabela_do_comando_bate_com_o_catalogo_semeado(monkeypatch):
         metadata = produto.metadata if isinstance(produto.metadata, dict) else {}
         atual = {
             "unit_weight_g": produto.unit_weight_g,
-            "serves": metadata.get("serves"),
+            # A porção é atributo do registro desde o WP de rename; a dimensão
+            # segue chave solta do catálogo.
+            "serves": attributes.get(produto, "porcoes"),
             "approx_dimensions": metadata.get("approx_dimensions"),
         }
         for campo, esperado in desejado.items():

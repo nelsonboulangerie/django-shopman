@@ -390,7 +390,9 @@ class TestCatalogProjection:
             metadata={
                 "social": {"brand": "Nelson", "gtin": "4006381333931"},
                 "gallery": ["https://img.test/a.jpg", "https://img.test/b.jpg"],
-                "dietary_auto_filled": True,  # internal key — must NOT leak
+                # Chave interna do registro de atributos: NÃO pode vazar para
+                # o catálogo de terceiro. A projeção usa allowlist.
+                "attributes": {"sabor": {"value": "doce"}},
             },
         )
         ListingItem.objects.create(listing=listing, product=product, price_q=500)
@@ -399,7 +401,7 @@ class TestCatalogProjection:
 
         assert item.metadata["social"] == {"brand": "Nelson", "gtin": "4006381333931"}
         assert item.metadata["gallery"] == ["https://img.test/a.jpg", "https://img.test/b.jpg"]
-        assert "dietary_auto_filled" not in item.metadata
+        assert "attributes" not in item.metadata
 
     def test_get_projection_items_defaults_social_and_gallery(self, db):
         listing = Listing.objects.create(ref="ifood", name="iFood", priority=10)
