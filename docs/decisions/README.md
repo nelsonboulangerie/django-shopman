@@ -53,7 +53,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [011](adr-011-formula-and-cashshift.md) | Fórmula sem FormulaPlan e caixa como CashShift |
 | [017](adr-017-quality-as-production-outcome.md) | Qualidade é resultado da produção, não domínio novo |
 | [024](adr-024-material-unit-base-and-purchase.md) | Conversão de unidade é cidadã de primeira classe: base única, conversões declaradas |
-| [026](adr-026-recipe-book-authoring-vs-execution.md) | Inventário de receitas: autoria versionada separada da ficha de execução |
+| [027](adr-027-recipe-book-authoring-vs-execution.md) | Inventário de receitas: autoria versionada separada da ficha de execução |
 
 ## Comercial e comunicação
 

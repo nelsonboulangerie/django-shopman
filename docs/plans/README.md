@@ -32,7 +32,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
 | [`VALIDITY-SHELFLIFE-REVIEW.md`](completed/VALIDITY-SHELFLIFE-REVIEW.md) | Arquivado (retrato de 2026-06): P0 ligado (WP-B5); o caminho de validade virou o modelo de lote (ADR-017, C1–C6). |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
-| [`RECIPE-INVENTORY-PLAN.md`](RECIPE-INVENTORY-PLAN.md) | Inventário de receitas com versão, padrão da casa (1000 g de farinha) e lente de padaria (ADR-026). R1–R3 em construção; pendências: saldo de massa velha, cofre, Admin. |
+| [`RECIPE-INVENTORY-PLAN.md`](RECIPE-INVENTORY-PLAN.md) | Inventário de receitas com versão, padrão da casa (1000 g de farinha) e lente de padaria ([ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Entregue e no ar (PR #488); pendências: saldo de massa velha, cofre, Admin. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
 | [`OMOTENASHI-FIRST-FULLNESS-PLAN.md`](OMOTENASHI-FIRST-FULLNESS-PLAN.md) | Algumas rodadas entregues; maioria dos WP-OF-* não executados. |
 | [`EXCELLENCE-AUDIT-2026-07.md`](EXCELLENCE-AUDIT-2026-07.md) | Auditoria-mãe (16 lentes); Onda 0 executada; Ondas 1–3 abertas. |
