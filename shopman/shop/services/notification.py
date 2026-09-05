@@ -569,6 +569,25 @@ def _build_context(order, payload: dict, template: str) -> dict:
         order.ref
     )
 
+    # Gêmeas PÚBLICAS dos três links de cliente. O ManyChat recusa, por construção,
+    # gravar magic link como campo personalizado do assinante (`_safe_field_value`): o
+    # token viveria em texto claro no perfil dele, dentro de uma ferramenta SaaS de
+    # marketing. Sem uma gêmea informada aqui, a recusa vira botão EM BRANCO no template
+    # aprovado — o canal que interpola o texto na hora (SMS, e-mail) segue recebendo o
+    # link pessoal, que é o bom.
+    #
+    # O destino público de cada um é diferente, e é por isso que quem sabe é o emissor:
+    # acompanhar e pagar são a MESMA tela (PAYMENT-TRACKING-MERGE, o Pix/cartão vivem
+    # inline no acompanhamento); repetir o pedido é o histórico da conta. Quem chega
+    # sem sessão não bate num 404: a loja mostra "entre com seu telefone" e volta para
+    # o mesmo pedido (`presentation/orderAccess.ts`).
+    public_tracking = storefront_links.order_tracking_url(order.ref)
+    context["tracking_url_public"] = public_tracking
+    context["payment_url_public"] = public_tracking
+    context["reorder_url_public"] = storefront_links.storefront_url(
+        storefront_links.path_order_history()
+    )
+
     # Corrida externa (Machine): link de rastreio do entregador, quando existe.
     # Sufixo auto-suprimível (padrão pix_suffix) — some limpo em pedidos sem
     # corrida ou antes do aceite. Distinto do tracking_url (página do pedido).

@@ -336,3 +336,61 @@ def test_a_caller_that_forgets_the_common_link_still_does_not_leak(calls, with_f
 
     assert "action_url" not in _field_payloads(calls)
     assert "segredo-de-login" not in str(calls)
+
+
+@pytest.fixture
+def with_order_flow(db):
+    """Flow no evento de PEDIDO — o `with_flow` acima só cobre a chegada de estoque."""
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="order_accepted", subject="x", body="y",
+        whatsapp_flow_ns="content20260101120000_2",
+    )
+
+
+def test_the_order_links_do_not_leak_either(calls, with_order_flow):
+    """⚠️ A recusa nasceu vendo só o `action_url`, e TODO aviso de pedido carrega três.
+
+    `tracking_url`, `payment_url` e `reorder_url` saíam com o token inteiro — inerte
+    apenas porque nenhum flow estava mapeado, e mapear o primeiro é justamente o que
+    liga o canal. A regra é do VALOR, não do nome da chave.
+    """
+    mc.send(
+        "+5543984049009",
+        "order_accepted",
+        {
+            "order_ref": "NB-1042",
+            "tracking_url": "https://menu.example.com/a?t=segredo-de-login",
+            "tracking_url_public": "https://menu.example.com/pedido/NB-1042",
+            "payment_url": "https://menu.example.com/a?t=outro-segredo",
+            "payment_url_public": "https://menu.example.com/pedido/NB-1042",
+            "reorder_url": "https://menu.example.com/a?t=terceiro-segredo",
+            "reorder_url_public": "https://menu.example.com/conta/pedidos",
+        },
+    )
+
+    fields = _field_payloads(calls)
+    assert fields["tracking_url"] == "https://menu.example.com/pedido/NB-1042"
+    assert fields["payment_url"] == "https://menu.example.com/pedido/NB-1042"
+    assert fields["reorder_url"] == "https://menu.example.com/conta/pedidos"
+    assert "segredo" not in str(calls)
+
+
+def test_the_public_twin_never_travels_on_its_own(calls, with_order_flow):
+    """A gêmea é insumo do filtro, não variável de template.
+
+    Se ela viajasse, o gestor veria dois campos com o mesmo link no perfil do cliente e
+    um dia mapearia o errado no ManyChat.
+    """
+    mc.send(
+        "+5543984049009",
+        "order_accepted",
+        {
+            "order_ref": "NB-1042",
+            "tracking_url": "https://menu.example.com/a?t=segredo-de-login",
+            "tracking_url_public": "https://menu.example.com/pedido/NB-1042",
+        },
+    )
+
+    assert "tracking_url_public" not in _field_payloads(calls)
