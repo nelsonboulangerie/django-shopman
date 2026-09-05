@@ -25,11 +25,16 @@ UNFINISHED_ALERTED_KEY = "unfinished_alerted_at"
 
 def connect() -> None:
     """Connect production alert receivers to Craftsman lifecycle signals."""
-    from shopman.craftsman.signals import production_changed
+    from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
     production_changed.connect(
         on_production_changed,
         dispatch_uid="shopman.shop.handlers.production_alerts.on_production_changed",
+        weak=False,
+    )
+    production_stock_shortfall.connect(
+        on_production_stock_shortfall,
+        dispatch_uid="shopman.shop.handlers.production_alerts.on_production_stock_shortfall",
         weak=False,
     )
 
@@ -45,6 +50,19 @@ def on_production_changed(sender, product_ref, date, action, work_order, **kwarg
     ensure_late_check_scheduled()
     if action == "finished":
         maybe_create_low_yield_alert(work_order)
+
+
+def on_production_stock_shortfall(sender, work_order, shortfalls, **kwargs):
+    """A ponte craftsman→stockman baixou menos insumo que a ficha pede.
+
+    A ponte é core e não importa o shop; ela anuncia por ``production_stock_shortfall``
+    e a tradução para OperatorAlert vive aqui, do lado do shop.
+    """
+    create_stock_shortfall_alert(
+        work_order_ref=work_order.ref,
+        output_sku=work_order.output_sku,
+        shortfalls=shortfalls,
+    )
 
 
 def ensure_late_check_scheduled() -> bool:
@@ -368,6 +386,57 @@ def create_stock_short_alert(*, work_order_ref: str, output_sku: str, error: str
             "work_order_ref": work_order_ref,
             "output_sku": output_sku,
             "error": error,
+        },
+    )
+
+
+def create_stock_shortfall_alert(*, work_order_ref: str, output_sku: str, shortfalls: list[dict]) -> None:
+    """Alerta quando o FECHAMENTO baixou MENOS insumo que a ficha pede.
+
+    Distinto de :func:`create_stock_short_alert` (``production_stock_short``), que
+    é a falta PREVISTA antes do finish, pela borda do operador com
+    ``check_finish_materials`` + ``force``. Este é a falta REAL, já commitada
+    dentro da ponte craftsman→stockman: acontece quando não houve pré-checagem
+    (sem ``INVENTORY_BACKEND``) ou quando a concorrência divergiu do previsto. A
+    fornada NÃO falha (o insumo pré-go-live é best-effort), mas a sub-baixa
+    precisa GRITAR: o estoque de insumo no livro ficou ACIMA do real e alguém
+    precisa recontar. Tipo próprio para não colidir com o dedup do outro alerta.
+
+    ``shortfalls``: lista de ``{sku, needed, issued, short}`` — os insumos que a
+    baixa não cobriu por inteiro.
+    """
+    if not shortfalls:
+        return
+    if _recent_exists("production_stock_shortfall", work_order_ref):
+        return
+    detail = "; ".join(f"{s['sku']} (faltou {s['short']})" for s in shortfalls)
+    message = (
+        f"Produção {work_order_ref} ({output_sku}) baixou menos insumo do que a "
+        f"ficha pede: {detail}. O estoque de insumo no sistema está acima do real "
+        f"— confira e recontagem se preciso."
+    )
+    alert_adapter.create(
+        "production_stock_shortfall",
+        "error",
+        message,
+        order_ref=work_order_ref,
+    )
+    _notify_operator(
+        "production_stock_shortfall",
+        severity="error",
+        context={
+            "message": message,
+            "work_order_ref": work_order_ref,
+            "output_sku": output_sku,
+            "shortfalls": [
+                {
+                    "sku": s["sku"],
+                    "needed": str(s["needed"]),
+                    "issued": str(s["issued"]),
+                    "short": str(s["short"]),
+                }
+                for s in shortfalls
+            ],
         },
     )
 

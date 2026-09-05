@@ -30,6 +30,11 @@ class OperatorAlert(models.Model):
         ("production_late", "Produção atrasada"),
         ("production_low_yield", "Produção com yield baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
+        # Falta PREVISTA (production_stock_short) vs. falta REAL: esta é a
+        # sub-baixa já commitada — o fechamento consumiu menos insumo que a ficha
+        # pede (sem pré-checagem, ou divergência de concorrência). A fornada não
+        # falha, mas o livro de insumo ficou acima do real e precisa gritar.
+        ("production_stock_shortfall", "Produção baixou menos insumo que a ficha"),
         ("directive_failed_spike", "Tarefas de fundo falhando"),
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
