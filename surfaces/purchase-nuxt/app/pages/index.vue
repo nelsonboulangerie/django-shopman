@@ -208,6 +208,12 @@ type SupplierPortfolioRow = {
   approximate: boolean;
 };
 
+// Contato inativo continua no cadastro (historico), mas nao na tela de quem
+// vai ligar hoje.
+const activeSupplierContacts = computed(
+  () => selectedSupplier.value?.contacts.filter((person) => person.isActive) ?? [],
+);
+
 const selectedSupplierPortfolio = computed(() => {
   if (!selectedSupplier.value) return [];
   return costs.value
@@ -926,7 +932,7 @@ onBeforeUnmount(stopInvoiceScanner);
                 Fornecedor
                 <select :value="receiptSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" @change="onReceiptSupplierChange">
                   <option value="">Definir fornecedor</option>
-                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.name }}</option>
+                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
                 </select>
               </label>
               <div class="rounded-md border border-border bg-background p-3 text-sm">
@@ -1365,7 +1371,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <button v-for="summary in supplierSummaries" :key="summary.supplier.ref" type="button" class="rounded-md border p-3 text-left transition" :class="summary.supplier.ref === selectedSupplierRef ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-accent'" @click="selectSupplier(summary.supplier.ref)">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h2 class="font-semibold">{{ summary.supplier.name }}</h2>
+                <h2 class="font-semibold">{{ summary.supplier.displayName }}</h2>
                 <p class="text-xs text-muted-foreground">{{ summary.supplier.ref }}</p>
               </div>
               <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="summary.supplier.isActive ? 'border-success/25 bg-success/10 text-success' : 'border-border text-muted-foreground'">{{ summary.supplier.isActive ? "Ativo" : "Inativo" }}</span>
@@ -1379,14 +1385,56 @@ onBeforeUnmount(stopInvoiceScanner);
         </div>
 
         <aside v-if="selectedSupplier" class="rounded-md border border-border bg-card p-4">
-          <h2 class="text-lg font-semibold">{{ selectedSupplier.name }}</h2>
-          <p class="text-sm text-muted-foreground">{{ selectedSupplier.document }}</p>
+          <h2 class="text-lg font-semibold">{{ selectedSupplier.displayName }}</h2>
+          <!-- A razao social so aparece quando difere do nome do dia a dia:
+               repeti-la nas duas linhas nao informa nada. -->
+          <p v-if="selectedSupplier.tradeName && selectedSupplier.name !== selectedSupplier.displayName" class="text-sm text-muted-foreground">
+            {{ selectedSupplier.name }}
+          </p>
+          <p v-if="selectedSupplier.document" class="text-sm text-muted-foreground">{{ selectedSupplier.document }}</p>
           <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div><dt class="text-xs text-muted-foreground">Prazo</dt><dd class="font-semibold">{{ selectedSupplier.leadTimeDays }} dia(s)</dd></div>
             <div><dt class="text-xs text-muted-foreground">Entrega</dt><dd class="font-semibold">{{ selectedSupplier.reliabilityPercent }}%</dd></div>
             <div><dt class="text-xs text-muted-foreground">Última</dt><dd class="font-semibold">{{ formatShortDate(selectedSupplier.lastDeliveryAt) }}</dd></div>
             <div><dt class="text-xs text-muted-foreground">Pagamento</dt><dd class="font-semibold">{{ selectedSupplier.paymentTerm }}</dd></div>
           </dl>
+          <div class="mt-4 border-t border-border pt-4">
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="font-semibold">Contatos</h3>
+              <!-- O cadastro de pessoa e config, e config se edita no Admin.
+                   A tela mostra para conferir antes de enviar, nao para editar. -->
+              <span class="text-xs text-muted-foreground">Cadastro no Admin</span>
+            </div>
+
+            <!-- A pergunta que o operador faz antes de apertar "enviar" e "vai
+                 para quem?". Responder depois do envio nao serve. -->
+            <p class="mt-2 text-xs" :class="selectedSupplier.orderContactName ? 'text-muted-foreground' : 'text-warning'">
+              <template v-if="selectedSupplier.orderContactName">
+                O pedido de compra vai para <span class="font-medium">{{ selectedSupplier.orderContactName }}</span>.
+              </template>
+              <template v-else-if="selectedSupplier.contact">
+                Sem contato comercial — o pedido cai na central ({{ selectedSupplier.contact }}).
+              </template>
+              <template v-else>
+                Sem contato e sem central: o pedido de compra nao tem para onde ir.
+              </template>
+            </p>
+
+            <div v-if="activeSupplierContacts.length" class="mt-3 space-y-2">
+              <div v-for="person in activeSupplierContacts" :key="person.id" class="rounded-md border border-border bg-background p-2">
+                <div class="flex items-start justify-between gap-2">
+                  <p class="font-medium">{{ person.name }}</p>
+                  <span class="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                    {{ person.roleLabel }}<template v-if="person.isPrimary"> · principal</template>
+                  </span>
+                </div>
+                <p v-if="person.email" class="text-xs text-muted-foreground">{{ person.email }}</p>
+                <p v-if="person.phone" class="text-xs text-muted-foreground">{{ person.phone }}</p>
+                <p v-if="person.notes" class="mt-1 text-xs text-muted-foreground">{{ person.notes }}</p>
+              </div>
+            </div>
+          </div>
+
           <div class="mt-4 border-t border-border pt-4">
             <h3 class="font-semibold">Carteira</h3>
             <div class="mt-2 space-y-2">
@@ -1430,7 +1478,7 @@ onBeforeUnmount(stopInvoiceScanner);
                     :key="supplier.ref"
                     :value="supplier.ref"
                   >
-                    {{ supplier.name }}
+                    {{ supplier.displayName }}
                   </option>
                 </select>
               </label>
@@ -1542,7 +1590,7 @@ onBeforeUnmount(stopInvoiceScanner);
             </label>
             <label class="block text-sm font-medium">Fornecedor
               <select v-model="noteSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
-                <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.name }}</option>
+                <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
               </select>
             </label>
             <label class="block text-sm font-medium">Unidade de compra
@@ -1580,7 +1628,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <tbody class="divide-y divide-border">
                 <tr v-for="cost in costs" :key="cost.id" class="hover:bg-accent/70">
                   <td class="px-3 py-2 font-medium">{{ materials.find((material) => material.sku === cost.materialSku)?.name }}</td>
-                  <td class="px-3 py-2">{{ suppliers.find((supplier) => supplier.ref === cost.supplierRef)?.name }}</td>
+                  <td class="px-3 py-2">{{ suppliers.find((supplier) => supplier.ref === cost.supplierRef)?.displayName }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ formatMoney(cost.costQ) }} / {{ purchaseUnitLabel(cost, materials.find((material) => material.sku === cost.materialSku), conversions) }}</td>
                   <td class="px-3 py-2 font-semibold tabular-nums"><span v-if="isApproximateCost(cost, conversions)">≈ </span>{{ formatMoney(costPerBaseUnitQ(cost, conversions)) }}</td>
                   <td class="px-3 py-2">

@@ -138,20 +138,25 @@ BODY_TEMPLATES: dict[str, str] = {
     ),
     "announcement_published": "{body}\n\n{cta} {action_url}\n",
     "purchase_request": (
-        "Olá, {supplier_name}.\n\n"
-        "Segue pedido de compra da {shop_name}.\n\n"
+        "Olá, {supplier_greeting}!\n\n"
+        "Aqui é da {shop_name}. Precisamos repor um item e gostaríamos de "
+        "fechar com vocês:\n\n"
         "{lines_text}\n\n"
-        "Total estimado: {estimated_total}\n"
+        "Pelo nosso cadastro isso fica em torno de {estimated_total} — o valor "
+        "que vale é o de vocês.\n"
         "Entrega desejada: {requested_delivery_label}\n"
-        "{operator_note}"
-        "Por favor confirme disponibilidade, prazo e valor final.\n"
+        "{operator_note}\n"
+        "Pode confirmar disponibilidade, prazo e valor final?\n\n"
+        "Obrigado!\n"
+        "{shop_name} — pedido {purchase_ref}\n"
     ),
     "purchase_receipt_rejected": (
         "Recebimento recusado/devolvido.\n\n"
         "Fornecedor: {supplier_name}\n"
         "Documento: {document_ref}\n"
         "Motivo: {reason}\n\n"
-        "{lines_text}\n"
+        "{lines_text}"
+        "{supplier_contact_note}\n"
     ),
 }
 

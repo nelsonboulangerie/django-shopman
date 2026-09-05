@@ -47,11 +47,32 @@ class MaterialProjection:
 
 
 @dataclass(frozen=True)
+class SupplierContactProjection:
+    """Uma pessoa do fornecedor, do jeito que a tela precisa lê-la."""
+
+    id: str
+    name: str
+    role: str
+    roleLabel: str
+    email: str
+    phone: str
+    isPrimary: bool
+    isActive: bool
+    notes: str
+
+
+@dataclass(frozen=True)
 class SupplierProjection:
     ref: str
     name: str
+    tradeName: str
+    displayName: str
     document: str
     contact: str
+    #: As pessoas cadastradas. Vazio significa que tudo cai na central da empresa.
+    contacts: tuple[SupplierContactProjection, ...]
+    #: Para quem o pedido de compra sai hoje — o que a tela mostra sem simular envio.
+    orderContactName: str
     leadTimeDays: int
     reliabilityPercent: int
     isActive: bool
@@ -173,7 +194,9 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
     material_rows = list(Material.objects.all().order_by("-is_active", "sku"))
-    supplier_rows = list(Supplier.objects.all().order_by("-is_active", "name", "ref"))
+    supplier_rows = list(
+        Supplier.objects.prefetch_related("contacts").order_by("-is_active", "name", "ref")
+    )
     skus = [material.sku for material in material_rows]
     supplier_refs = [supplier.ref for supplier in supplier_rows]
 
@@ -395,14 +418,41 @@ def _suggested_qty(
     return need.to_integral_value(rounding=ROUND_CEILING)
 
 
+def _supplier_contact_projection(row) -> SupplierContactProjection:
+    return SupplierContactProjection(
+        id=str(row.pk),
+        name=row.name,
+        role=row.role,
+        roleLabel=str(row.get_role_display()),
+        email=row.email,
+        phone=row.phone,
+        isPrimary=bool(row.is_primary),
+        isActive=bool(row.is_active),
+        notes=row.notes,
+    )
+
+
 def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
     meta = _purchase_meta(supplier)
+    contact_rows = list(supplier.contacts.all())
+    contacts = tuple(_supplier_contact_projection(row) for row in contact_rows)
+    # A central continua sendo o que a tela mostra como "contato" quando não há
+    # ninguém: é o que o sistema realmente usaria.
     contact = _meta_str(meta, "contact") or supplier.email or supplier.phone
+    # Quem receberia o pedido HOJE, pela mesma ordem do envio (comercial, depois
+    # geral). Sem isso, a tela só descobre para quem o pedido foi depois de
+    # mandá-lo — e o operador não tem como conferir antes.
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    order_contact = SupplierContact.pick(contact_rows, SupplierContact.Role.SALES)
     return SupplierProjection(
         ref=supplier.ref,
         name=supplier.name,
+        tradeName=supplier.trade_name,
+        displayName=supplier.display_name,
         document=supplier.document,
         contact=contact,
+        contacts=contacts,
+        orderContactName=order_contact.name if order_contact else "",
         leadTimeDays=_meta_int(meta, "lead_time_days", "leadTimeDays", default=0),
         reliabilityPercent=_meta_int(meta, "reliability_percent", "reliabilityPercent", default=100),
         isActive=bool(supplier.is_active),

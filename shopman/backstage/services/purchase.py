@@ -345,7 +345,8 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     context = {
         "receipt_ref": receipt_ref,
         "supplier_ref": supplier.ref,
-        "supplier_name": supplier.name or supplier.ref,
+        "supplier_name": supplier.display_name,
+        "supplier_contact": _supplier_contact_line(supplier),
         "document_ref": source_ref,
         "receipt_mode": mode,
         "reason": reason,
@@ -793,6 +794,7 @@ def set_purchase_request_status(material_sku: str, status: str, *, user=None) ->
             purchase["request_supplier_ref"] = dispatch["supplier_ref"]
             purchase["request_channel"] = dispatch["channel"]
             purchase["request_recipient"] = dispatch["recipient"]
+            purchase["request_contact_name"] = dispatch["contact_name"]
             purchase["request_dedupe_key"] = dispatch["dedupe_key"]
         metadata["purchase"] = purchase
         material.metadata = metadata
@@ -822,14 +824,17 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
             field="supplierRef",
         )
 
-    channel, recipient, backends = _supplier_dispatch_route(supplier)
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    route = _supplier_dispatch_route(supplier, role=SupplierContact.Role.SALES)
     snapshot = _purchase_request_snapshot(material, cost)
     purchase_ref = _purchase_ref(material.sku, supplier.ref, snapshot["purchase_qty_display"])
     context = {
         **snapshot,
         "purchase_ref": purchase_ref,
         "supplier_ref": supplier.ref,
-        "supplier_name": supplier.name or supplier.ref,
+        "supplier_name": supplier.display_name,
+        "supplier_legal_name": supplier.name or supplier.ref,
+        "contact_name": route.contact_name,
         "shop_name": _shop_name(),
         "requested_delivery_label": _requested_delivery_label(supplier),
         "operator_username": getattr(user, "get_username", lambda: "")() if user else "",
@@ -837,8 +842,8 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
     }
     payload = {
         "event": "purchase_request",
-        "recipient": recipient,
-        "backends": backends,
+        "recipient": route.recipient,
+        "backends": route.backends,
         "context": context,
     }
     dedupe_key = _purchase_request_dedupe_key(
@@ -854,13 +859,52 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
     return {
         "purchase_ref": purchase_ref,
         "supplier_ref": supplier.ref,
-        "channel": channel,
-        "recipient": recipient,
+        "channel": route.channel,
+        "recipient": route.recipient,
+        "contact_name": route.contact_name,
         "dedupe_key": dedupe_key,
     }
 
 
-def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
+@dataclass(frozen=True)
+class SupplierRoute:
+    """Por onde a mensagem sai, para quem, e com que nome ela cumprimenta."""
+
+    channel: str
+    recipient: str
+    backends: list[str]
+    contact_name: str = ""
+
+
+def _supplier_contact_reach(supplier, role: str) -> tuple[str, str, str]:
+    """O e-mail e o telefone da **pessoa** que responde por este assunto.
+
+    Devolve ``(email, phone, nome)``. O nome é o de quem venceu a rota — e cada
+    meio é procurado separadamente, porque quem responde o comercial pode ter
+    deixado só o e-mail enquanto outra pessoa do mesmo papel deixou só o
+    telefone. Resolver os dois de uma vez escolheria uma pessoa e perderia o
+    meio da outra.
+    """
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    rows = list(SupplierContact.objects.filter(supplier=supplier))
+    by_email = SupplierContact.pick(rows, role, requires="email")
+    by_phone = SupplierContact.pick(rows, role, requires="phone")
+    winner = by_email or by_phone
+    return (
+        by_email.email if by_email else "",
+        by_phone.phone if by_phone else "",
+        winner.first_name if winner else "",
+    )
+
+
+def _supplier_dispatch_route(supplier, *, role: str = "sales") -> SupplierRoute:
+    """Escolhe o canal e o destinatário do pedido de compra.
+
+    Três degraus, do mais específico ao mais genérico: a **pessoa** que responde
+    pelo papel, o contato de compras gravado no ``metadata``, e a **central** da
+    empresa. A central existe para o pedido sair mesmo sem ninguém cadastrado —
+    não para ser o destino normal.
+    """
     meta = _purchase_meta(supplier)
     preferred = _meta_text(
         meta,
@@ -872,17 +916,34 @@ def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
         "preferredChannel",
     ).lower()
     contact = _meta_text(meta, "order_contact", "orderContact", "contact")
-    email = _meta_text(meta, "order_email", "orderEmail", "email") or supplier.email or _email_from_contact(contact)
-    phone = _meta_text(meta, "order_phone", "orderPhone", "whatsapp", "phone") or supplier.phone or _phone_from_contact(contact)
+    contact_email, contact_phone, contact_name = _supplier_contact_reach(supplier, role)
+    email = (
+        contact_email
+        or _meta_text(meta, "order_email", "orderEmail", "email")
+        or supplier.email
+        or _email_from_contact(contact)
+    )
+    phone = (
+        contact_phone
+        or _meta_text(meta, "order_phone", "orderPhone", "whatsapp", "phone")
+        or supplier.phone
+        or _phone_from_contact(contact)
+    )
+
+    def route(channel: str, recipient: str, backends: list[str], *, personal: bool) -> SupplierRoute:
+        # O nome só acompanha a rota que realmente foi para a pessoa: cumprimentar
+        # "Olá, Marcelo" numa mensagem que caiu na central da empresa é pior do
+        # que não cumprimentar ninguém.
+        return SupplierRoute(channel, recipient, backends, contact_name if personal else "")
 
     if preferred == "email" and email:
-        return "email", email, ["email", "console"]
+        return route("email", email, ["email", "console"], personal=email == contact_email)
     if preferred in {"sms", "phone"} and phone:
-        return "sms", phone, ["sms", "console"]
+        return route("sms", phone, ["sms", "console"], personal=phone == contact_phone)
     if preferred in {"whatsapp", "manychat"} and phone:
-        return "whatsapp", phone, ["manychat", "console"]
+        return route("whatsapp", phone, ["manychat", "console"], personal=phone == contact_phone)
     if preferred == "console":
-        return "console", supplier.ref, ["console"]
+        return SupplierRoute("console", supplier.ref, ["console"], contact_name)
     if preferred:
         raise PurchaseError(
             f"Canal preferencial do fornecedor sem contato utilizável: {preferred}.",
@@ -890,14 +951,30 @@ def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
             field="supplierRef",
         )
     if email:
-        return "email", email, ["email", "console"]
+        return route("email", email, ["email", "console"], personal=email == contact_email)
     if phone:
-        return "sms", phone, ["sms", "console"]
+        return route("sms", phone, ["sms", "console"], personal=phone == contact_phone)
     raise PurchaseError(
-        "Fornecedor sem e-mail ou telefone para envio do pedido.",
+        "Fornecedor sem contato, e-mail ou telefone para envio do pedido.",
         code="supplier_contact_missing",
         field="supplierRef",
     )
+
+
+def _supplier_contact_line(supplier) -> str:
+    """Quem o operador chama sobre um recebimento recusado.
+
+    A devolução é um aviso **interno** — não sai para o fornecedor. Quem lê
+    precisa saber a quem ligar, e devolução é assunto de qualidade antes de ser
+    de vendas. Sem ninguém cadastrado a linha some, em vez de mentir uma central
+    como se fosse pessoa.
+    """
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    contact = SupplierContact.resolve(supplier, SupplierContact.Role.QUALITY)
+    if not contact:
+        return ""
+    reach = " / ".join(part for part in (contact.email, contact.phone) if part)
+    return f"{contact.name} ({contact.get_role_display()}) — {reach}"
 
 
 def _purchase_request_snapshot(material, cost) -> dict[str, str]:
@@ -977,8 +1054,14 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def _format_money_q(value: int) -> str:
-    reais = Decimal(value) / Decimal("100")
-    return f"R$ {reais:.2f}".replace(".", ",")
+    """O total como se escreve num pedido: com ponto de milhar.
+
+    ``R$ 1185,00`` num e-mail que sai para fora da casa lê como número de
+    sistema; o separador é o que faz o valor ser lido de relance.
+    """
+    from shopman.utils.monetary import format_money
+
+    return f"R$ {format_money(value)}"
 
 
 def _meta_text(meta: dict[str, Any], *keys: str) -> str:

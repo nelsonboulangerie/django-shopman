@@ -42,11 +42,31 @@ export interface Material {
   stockIsApproximate?: boolean;
 }
 
+export interface SupplierContact {
+  id: string;
+  name: string;
+  role: "sales" | "finance" | "quality" | "general";
+  roleLabel: string;
+  email: string;
+  phone: string;
+  isPrimary: boolean;
+  isActive: boolean;
+  notes: string;
+}
+
 export interface Supplier {
   ref: string;
+  // A razao social — nome de contrato e de nota fiscal.
   name: string;
+  tradeName: string;
+  // Como a casa chama este fornecedor: fantasia, senao a razao social.
+  displayName: string;
   document: string;
+  // A central da empresa. So vale quando nao ha ninguem cadastrado.
   contact: string;
+  contacts: SupplierContact[];
+  // Quem receberia o pedido de compra HOJE. Vazio = cai na central.
+  orderContactName: string;
   leadTimeDays: number;
   reliabilityPercent: number;
   isActive: boolean;

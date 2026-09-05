@@ -14,12 +14,27 @@ from shopman.buyman.models import (
     Material,
     MaterialConversion,
     Supplier,
+    SupplierContact,
     SupplierMaterialCost,
 )
 from shopman.utils.contrib.admin_unfold.badges import unfold_badge
 from shopman.utils.contrib.admin_unfold.base import BaseModelAdmin, BaseTabularInline
 from shopman.utils.monetary import format_money
 from unfold.decorators import display
+
+
+class ContactOnSupplierInline(BaseTabularInline):
+    """As pessoas deste fornecedor — quem atende, e sobre o quê.
+
+    Contato **não** tem admin próprio, de propósito: ninguém navega uma lista
+    global de pessoas de fornecedor, e o gate de navegação recusa tela
+    registrada sem caminho no menu. A busca por nome de pessoa mora no
+    ``search_fields`` do fornecedor, que é onde a pergunta nasce.
+    """
+
+    model = SupplierContact
+    extra = 0
+    fields = ("name", "role", "email", "phone", "is_primary", "is_active")
 
 
 class CostOnSupplierInline(BaseTabularInline):
@@ -66,11 +81,45 @@ class MaterialAdmin(BaseModelAdmin):
 
 @admin.register(Supplier)
 class SupplierAdmin(BaseModelAdmin):
-    list_display = ("ref", "name", "document", "is_active")
+    list_display = ("ref", "trade_name_display", "document", "contacts_display", "is_active")
     list_filter = ("is_active",)
-    search_fields = ("ref", "name", "document")
+    search_fields = ("ref", "name", "trade_name", "document", "contacts__name")
     ordering = ("name",)
-    inlines = (CostOnSupplierInline,)
+    inlines = (ContactOnSupplierInline, CostOnSupplierInline)
+    fieldsets = (
+        (None, {"fields": ("ref", "name", "trade_name", "document", "is_active")}),
+        (
+            _("Central da empresa"),
+            {
+                "fields": ("email", "phone"),
+                "description": _(
+                    "Só é usada quando nenhum contato cadastrado atende o assunto. "
+                    "As pessoas ficam na lista de contatos abaixo."
+                ),
+            },
+        ),
+        (_("Avançado"), {"fields": ("metadata",), "classes": ("collapse",)}),
+    )
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).prefetch_related("contacts")
+
+    @display(description=_("Fornecedor"))
+    def trade_name_display(self, obj: Supplier):
+        """O nome do dia a dia em cima, a razão social junto — nessa ordem."""
+        if obj.trade_name and obj.trade_name != obj.name:
+            return f"{obj.trade_name} — {obj.name}"
+        return obj.name
+
+    @display(description=_("Contatos"))
+    def contacts_display(self, obj: Supplier):
+        """Fornecedor sem pessoa é rota que cai na central: dizer isso na lista."""
+        active = [c for c in obj.contacts.all() if c.is_active]
+        if not active:
+            return unfold_badge(_("Só a central"), "orange")
+        roles = sorted({str(c.get_role_display()) for c in active})
+        return ", ".join(roles)
+
 
 
 @admin.register(SupplierMaterialCost)
