@@ -143,6 +143,9 @@ const {
   customerDecision,
   confirmCustomerDecision,
   cancelCustomerDecision,
+  pickConflictCandidate,
+  mergeConflictCustomers,
+  customerMergeBusy,
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
@@ -766,6 +769,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
           :customer-decision="customerDecision"
+          :customer-merge-busy="customerMergeBusy"
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
@@ -782,6 +786,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @resolve-customer="resolveCustomer"
           @decision-confirm="confirmCustomerDecision"
           @decision-cancel="cancelCustomerDecision"
+          @decision-merge="mergeConflictCustomers"
+          @decision-pick="pickConflictCandidate"
           @search="searchCustomers"
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
@@ -906,6 +912,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :search-busy="customerSearchBusy"
         :customer-resolved-new="customerResolvedNew"
         :customer-decision="customerDecision"
+        :customer-merge-busy="customerMergeBusy"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
@@ -935,6 +942,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @resolve-customer="resolveCustomer"
         @decision-confirm="confirmCustomerDecision"
         @decision-cancel="cancelCustomerDecision"
+        @decision-merge="mergeConflictCustomers"
+        @decision-pick="pickConflictCandidate"
         @search="searchCustomers"
         @select-result="selectCustomerResult"
         @clear-customer="clearCustomer"

@@ -8,6 +8,7 @@ import type {
   POSCloseSaleResponse,
   POSCustomerLookupProjection,
   POSCustomerLookupResponse,
+  POSCustomerMergeResponse,
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
   POSProductProjection,
@@ -1336,20 +1337,10 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
-   *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
-  async function confirmCustomerDecision() {
-    const decision = customerDecision.value;
-    if (!decision) return;
-    customerDecision.value = null;
-    if (decision.kind === "contact_change") {
-      await resolveCustomer({ contactCorrection: true });
-      return;
-    }
-    const other = decision.other;
-    if (!other) return;
-    cart.customerRef = other.ref;
-    cart.customerName = other.name;
+  /** Passar a atender OUTRO cadastro — sempre pelo caminho explícito. */
+  async function attendCustomer(ref: string, name: string) {
+    cart.customerRef = ref;
+    cart.customerName = name;
     // Os campos do cliente ANTERIOR não podem sobrar: o CPF da nota era dele, e
     // o `lookupCustomer` pelo ref repõe tudo que é do cadastro novo.
     cart.customerPhone = "";
@@ -1364,6 +1355,100 @@ export function usePosSale(deps: PosSaleDeps) {
     await lookupCustomer();
   }
 
+  /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
+   *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
+  async function confirmCustomerDecision() {
+    const decision = customerDecision.value;
+    if (!decision) return;
+    if (decision.kind === "contact_change") {
+      customerDecision.value = null;
+      await resolveCustomer({ contactCorrection: true });
+      return;
+    }
+    // Dono DESATIVADO: atender não dá (o cadastro não existe mais para o
+    // balcão) e unificar o Core recusa. A saída é liberar o contato.
+    if (decision.kind === "inactive_owner") {
+      await releaseConflictContact();
+      return;
+    }
+    const other = decision.other;
+    if (!other) return;
+    customerDecision.value = null;
+    await attendCustomer(other.ref, other.name);
+  }
+
+  /** Da LISTA de candidatos: "Atender este". */
+  async function pickConflictCandidate(candidate: ServerConflictCandidate) {
+    customerDecision.value = null;
+    await attendCustomer(candidate.ref, candidate.name);
+  }
+
+  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo. */
+  const customerMergeBusy = ref(false);
+  async function mergeConflictCustomers() {
+    const decision = customerDecision.value;
+    const other = decision?.other;
+    const current = decision?.current;
+    if (!other || !current) return;
+    customerMergeBusy.value = true;
+    try {
+      const path = actionHref(actions.value, "customer_merge", "/api/v1/backstage/pos/customer/merge/");
+      // Quem SOBREVIVE é o cadastro da comanda: é nele que a venda em curso
+      // está pendurada, e é dele que o operador acabou de falar com o cliente.
+      const response = await action.call<POSCustomerMergeResponse>(path, {
+        body: { source_ref: other.ref, target_ref: current.ref },
+      });
+      customerDecision.value = null;
+      const migrated = response.merge?.migrated;
+      toast.success(`Cadastros unificados em ${response.customer?.name || current.name}.`, {
+        description: migrated
+          ? `${migrated.contact_points} contato(s) e ${migrated.orders} pedido(s) passaram para este cadastro.`
+          : undefined,
+        duration: 8000,
+      });
+      // A comanda segue no ALVO — e o lookup repõe memória e endereço já
+      // unificados, sem o operador ter de buscar de novo.
+      await lookupCustomer();
+    } catch (error) {
+      serverError.value = httpErrorMessage(error, "Não foi possível unificar os cadastros.");
+    } finally {
+      customerMergeBusy.value = false;
+    }
+  }
+
+  /** O campo da tela traduzido de volta para o dialeto do servidor. */
+  const SERVER_FIELD: Record<string, string> = {
+    phone: "customer_phone",
+    email: "customer_email",
+    tax_id: "customer_tax_id",
+  };
+
+  /** Soltar o contato preso num cadastro DESATIVADO — e seguir a venda. */
+  const customerReleaseBusy = ref(false);
+  async function releaseConflictContact() {
+    const decision = customerDecision.value;
+    if (!decision) return;
+    const field = SERVER_FIELD[decision.field];
+    const value = decision.typed || decision.other?.value || "";
+    if (!field || !value) return;
+    customerReleaseBusy.value = true;
+    try {
+      const path = actionHref(
+        actions.value,
+        "customer_contact_release",
+        "/api/v1/backstage/pos/customer/contact/release/",
+      );
+      await action.call(path, { body: { field, value } });
+      customerDecision.value = null;
+      // Liberado o contato, o mesmo gesto que falhou agora passa.
+      await resolveCustomer({ contactCorrection: true });
+    } catch (error) {
+      serverError.value = httpErrorMessage(error, "Não foi possível liberar o contato.");
+    } finally {
+      customerReleaseBusy.value = false;
+    }
+  }
+
   /** O operador ficou com o que estava: o valor digitado é DESCARTADO e o campo
    *  volta ao do cadastro associado. */
   function cancelCustomerDecision() {
@@ -1373,7 +1458,7 @@ export function usePosSale(deps: PosSaleDeps) {
     const restored = decision.current?.value || "";
     if (decision.field === "phone") cart.customerPhone = restored;
     else if (decision.field === "email") cart.customerEmail = restored;
-    else cart.customerTaxId = restored;
+    else if (decision.field === "tax_id") cart.customerTaxId = restored;
   }
 
   // Multi-key customer search (name/phone/CPF/email): the customer modal's search
@@ -1720,7 +1805,29 @@ export function usePosSale(deps: PosSaleDeps) {
         await refresh();
       }
     } catch (error) {
-      const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string; focus?: string } } | null)?.error;
+      const failure = (httpError(error).data as {
+        error?: {
+          code?: string; message?: string; recovery?: string; focus?: string;
+          field?: string; candidates?: ServerConflictCandidate[];
+        };
+      } | null)?.error;
+      // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
+      // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
+      // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
+      // com a venda travada e o cliente na frente. Agora o painel abre com os
+      // dois lados nomeados e as saídas de um toque.
+      if (failure?.code === "customer_conflict") {
+        const decision = conflictDecision({
+          field: failure.field,
+          candidates: failure.candidates,
+          typed: cart.customerPhone || cart.customerEmail || cart.customerTaxId,
+        });
+        if (decision) {
+          customerDecision.value = decision;
+          customerFocusNonce.value += 1;
+          return;
+        }
+      }
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
         // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
         // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
@@ -2100,6 +2207,13 @@ export function usePosSale(deps: PosSaleDeps) {
     customerDecision,
     confirmCustomerDecision,
     cancelCustomerDecision,
+    // As saídas que faltavam: a lista de candidatos, unificar os dois
+    // cadastros, e liberar o contato preso num cadastro desativado.
+    pickConflictCandidate,
+    mergeConflictCustomers,
+    customerMergeBusy,
+    releaseConflictContact,
+    customerReleaseBusy,
     customerSearchResults,
     customerSearchBusy,
     customerResolvedNew,

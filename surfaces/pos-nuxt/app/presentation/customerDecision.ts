@@ -25,29 +25,58 @@ export interface CustomerDecisionParty {
   value: string;
 }
 
-export type CustomerDecisionKind = "contact_conflict" | "contact_change";
+//   3. `inactive_owner` — o valor digitado está preso num cadastro DESATIVADO.
+//      O resolve do servidor só enxerga cliente ativo, mas os UNIQUEs do banco
+//      enxergam todos: o operador via "já é de outro cadastro", não achava esse
+//      cadastro na busca e a venda parava. Aqui ele tem nome e uma saída.
+//
+//   4. `candidate_list` — dois ou mais intrusos, por campos diferentes. Não há
+//      UM campo culpado para nomear, e antes disso a recusa caía num toast que
+//      sumia. O payload rico já vinha do servidor: a tela mostra a lista.
+//
+// E a terceira saída, que vale para o conflito de contato: os dois cadastros
+// são a MESMA pessoa. Nem atender o outro, nem manter quem está — unificar.
+
+export type CustomerDecisionKind =
+  | "contact_conflict"
+  | "contact_change"
+  | "inactive_owner"
+  | "candidate_list";
 export type CustomerDecisionField = "phone" | "email" | "tax_id";
 
 export interface CustomerDecision {
   kind: CustomerDecisionKind;
-  field: CustomerDecisionField;
+  /** Vazio quando não há UM campo culpado (`candidate_list`). */
+  field: CustomerDecisionField | "";
   /** O que o operador digitou — o valor que está pedindo passagem. */
   typed: string;
   /** Quem está na comanda agora. */
   current: CustomerDecisionParty | null;
-  /** Quem já é dono do valor digitado (só em `contact_conflict`). */
+  /** Quem já é dono do valor digitado (só quando há UM dono). */
   other: CustomerDecisionParty | null;
+  /** Todos os lados, como o servidor mandou — a lista de `candidate_list`. */
+  candidates?: ServerConflictCandidate[];
+}
+
+/** Um botão a mais no painel, quando o caso pede. */
+export interface CustomerDecisionAction {
+  label: string;
+  icon: string;
 }
 
 export interface CustomerDecisionCopy {
   title: string;
   body: string;
-  /** Assumir a mudança. */
+  /** Assumir a mudança. Vazio em `candidate_list`: lá a escolha é por linha. */
   confirmLabel: string;
   confirmIcon: string;
   /** Voltar ao que estava — nunca "Cancelar" genérico: diz o que fica. */
   cancelLabel: string;
   cancelIcon: string;
+  /** A TERCEIRA saída: os dois cadastros são a MESMA pessoa. */
+  merge: CustomerDecisionAction | null;
+  /** A saída que o merge não dá: o dono é um cadastro desativado. */
+  release: CustomerDecisionAction | null;
 }
 
 /** Como o campo se chama no balcão. `tax_id` é fiscal e nunca vira correção. */
@@ -64,9 +93,15 @@ const FIELD_FROM_SERVER: Record<string, CustomerDecisionField> = {
   customer_tax_id: "tax_id",
 };
 
-export function decisionFieldLabel(field: CustomerDecisionField): string {
-  return FIELD_LABEL[field] || "contato";
+export function decisionFieldLabel(field: CustomerDecisionField | ""): string {
+  return FIELD_LABEL[field as CustomerDecisionField] || "contato";
 }
+
+/** "É a mesma pessoa" — a saída que resolve o cadastro duplicado de vez. */
+const MERGE_ACTION: CustomerDecisionAction = {
+  label: "É a mesma pessoa — unificar cadastros",
+  icon: "lucide:combine",
+};
 
 /** Primeiro nome — no balcão ninguém fala o nome inteiro. */
 function firstName(name: string): string {
@@ -82,9 +117,11 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   const current = decision.current;
   const other = decision.other;
 
+  const currentName = current?.name?.trim() || "o cliente da comanda";
+  const keepLabel = `Manter ${firstName(currentName) || currentName}`;
+
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
-    const currentName = current?.name?.trim() || "o cliente da comanda";
     return {
       title: `Este ${label} já é de outro cadastro`,
       body: decision.typed
@@ -92,8 +129,45 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
         : `O ${label} digitado é de ${ownerName}. Na comanda está ${currentName}.`,
       confirmLabel: `Atender ${firstName(ownerName) || ownerName}`,
       confirmIcon: "lucide:user-round-check",
-      cancelLabel: `Manter ${firstName(currentName) || currentName}`,
+      cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
+      // A terceira saída só existe quando os dois lados são cadastros VIVOS:
+      // o `MergeService` recusa unificar com qualquer um deles desativado.
+      merge: MERGE_ACTION,
+      release: null,
+    };
+  }
+
+  if (decision.kind === "inactive_owner") {
+    // ⚠️ Aqui NÃO se oferece "atender o outro": o cadastro está desativado, e
+    // nem aparece na busca. Nem "unificar": o Core recusa merge com um lado
+    // inativo. A saída é soltar o contato do cadastro morto.
+    const ownerName = other?.name?.trim() || "um cadastro desativado";
+    return {
+      title: `Este ${label} está preso num cadastro desativado`,
+      body: `${decision.typed || `O ${label} digitado`} está em ${ownerName}, que não está mais ativo. `
+        + `Liberar solta o ${label} desse cadastro e a venda segue com ${currentName}.`,
+      confirmLabel: `Liberar o ${label}`,
+      confirmIcon: "lucide:unlock",
+      cancelLabel: keepLabel,
+      cancelIcon: "lucide:undo-2",
+      merge: null,
+      release: { label: `Liberar o ${label}`, icon: "lucide:unlock" },
+    };
+  }
+
+  if (decision.kind === "candidate_list") {
+    return {
+      title: "Os dados apontam para cadastros diferentes",
+      body: "Telefone, CPF/CNPJ e e-mail digitados são de pessoas diferentes. "
+        + "Escolha quem você está atendendo, ou volte e revise os campos.",
+      // Sem par confirmar/cancelar: a escolha é por LINHA, na lista.
+      confirmLabel: "",
+      confirmIcon: "",
+      cancelLabel: keepLabel,
+      cancelIcon: "lucide:undo-2",
+      merge: null,
+      release: null,
     };
   }
 
@@ -108,6 +182,8 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
     confirmIcon: "lucide:pencil-line",
     cancelLabel: from ? `Manter ${from}` : "Descartar a mudança",
     cancelIcon: "lucide:undo-2",
+    merge: null,
+    release: null,
   };
 }
 
@@ -120,41 +196,68 @@ export interface ServerConflictCandidate {
   tax_id: string;
   matched_by: string[];
   is_current: boolean;
+  /** O dono é um cadastro DESATIVADO — invisível na busca do operador. */
+  owner_inactive?: boolean;
 }
 
-function partyValue(candidate: ServerConflictCandidate, field: CustomerDecisionField): string {
+function partyValue(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): string {
   if (field === "email") return candidate.email || "";
   if (field === "tax_id") return candidate.tax_id || "";
   return candidate.phone || "";
 }
 
-function party(candidate: ServerConflictCandidate, field: CustomerDecisionField): CustomerDecisionParty {
+function party(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): CustomerDecisionParty {
   return { ref: candidate.ref, name: candidate.name, value: partyValue(candidate, field) };
 }
 
+/** Como o candidato se apresenta na LISTA: o que dele bateu com o digitado. */
+export function candidateSubtitle(candidate: ServerConflictCandidate): string {
+  const parts = [candidate.phone, candidate.email, candidate.tax_id].filter(Boolean);
+  return parts.join(" · ");
+}
+
 /**
- * Traduz a recusa 422 `customer_conflict` na decisão da tela. Devolve `null`
- * quando o servidor não mandou os dois lados: sem saber QUEM é dono do valor
- * digitado, não há saída de um toque para oferecer — e um painel sem saída é
- * pior que o toast que ele substituiria.
+ * Traduz a recusa 422 `customer_conflict` na decisão da tela.
+ *
+ * Devolve `null` só quando não há candidato nenhum — aí não existe nada a
+ * mostrar. Nos demais casos SEMPRE há painel, porque o toast que sumia era a
+ * queixa: recusa que exige decisão não pode desaparecer sozinha.
  */
 export function conflictDecision(input: {
   field?: string | null;
   candidates?: ServerConflictCandidate[] | null;
   typed?: string;
 }): CustomerDecision | null {
-  const field = FIELD_FROM_SERVER[String(input.field || "")];
-  if (!field) return null;
   const candidates = input.candidates || [];
-  const current = candidates.find((row) => row.is_current);
-  const other = candidates.find((row) => !row.is_current);
-  if (!current || !other) return null;
+  if (!candidates.length) return null;
+  const field = FIELD_FROM_SERVER[String(input.field || "")] || "";
+  const current = candidates.find((row) => row.is_current) || null;
+  const intruders = candidates.filter((row) => !row.is_current);
+  const other = intruders[0] || null;
+
+  // Sem UM campo culpado (dois ou mais intrusos, por campos diferentes) a tela
+  // renderiza a LISTA: o servidor já mandou os lados, e antes disso tudo isso
+  // virava um toast genérico que sumia.
+  if (!field || !current || !other) {
+    return {
+      kind: "candidate_list",
+      field,
+      typed: (input.typed || "").trim(),
+      current: current ? party(current, field) : null,
+      other: other ? party(other, field) : null,
+      candidates,
+    };
+  }
+
   return {
-    kind: "contact_conflict",
+    // Dono DESATIVADO tem copy e saída próprias: atender não dá (não aparece na
+    // busca) e unificar o Core recusa.
+    kind: other.owner_inactive ? "inactive_owner" : "contact_conflict",
     field,
     typed: (input.typed || partyValue(other, field) || "").trim(),
     current: party(current, field),
     other: party(other, field),
+    candidates,
   };
 }
 

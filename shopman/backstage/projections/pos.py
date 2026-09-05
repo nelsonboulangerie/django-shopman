@@ -1290,6 +1290,31 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="required",
         ),
         Action(
+            # A TERCEIRA saída do conflito de contato: os dois cadastros são a
+            # MESMA pessoa. `source_ref` desaparece, `target_ref` sobrevive e
+            # segue na comanda.
+            ref="customer_merge",
+            kind="mutation",
+            label="Unificar cadastros",
+            priority="secondary",
+            method="POST",
+            href="/api/v1/backstage/pos/customer/merge/",
+            payload_schema={"required": ["source_ref", "target_ref"]},
+            idempotency="required",
+        ),
+        Action(
+            # A saída quando o dono do contato é um cadastro DESATIVADO — que o
+            # merge recusa e a busca não enxerga.
+            ref="customer_contact_release",
+            kind="mutation",
+            label="Liberar contato",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/customer/contact/release/",
+            payload_schema={"required": ["field", "value"]},
+            idempotency="required",
+        ),
+        Action(
             ref="reverse_geocode",
             kind="mutation",
             label="Resolver coordenadas",

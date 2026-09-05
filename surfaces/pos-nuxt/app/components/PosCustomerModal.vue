@@ -17,8 +17,8 @@ import type {
   POSCustomerSearchResult,
 } from "~/types/pos";
 import { cpfTail } from "~/presentation/customerSearch";
-import type { CustomerDecision } from "~/presentation/customerDecision";
-import { customerDecisionCopy } from "~/presentation/customerDecision";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
+import { candidateSubtitle, customerDecisionCopy } from "~/presentation/customerDecision";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -37,6 +37,8 @@ const props = withDefaults(defineProps<{
    *  outro cadastro, ou o contato do cliente associado vai mudar. Enquanto ela
    *  existe, o modal fica aberto e "Concluir" espera a resposta. */
   customerDecision?: CustomerDecision | null;
+  /** A unificação está em voo — o botão não pode disparar duas vezes. */
+  customerMergeBusy?: boolean;
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
   receiptChannels?: string[];
@@ -44,6 +46,7 @@ const props = withDefaults(defineProps<{
   receiptEmail?: string;
 }>(), {
   customerDecision: null,
+  customerMergeBusy: false,
   resolvedNew: false,
   showFiscal: false,
   receiptChannels: () => [],
@@ -63,10 +66,15 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   clear: [];
   resolveCustomer: [];
-  /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
+  /** O operador assumiu a mudança (trocar de cliente / trocar o contato /
+   *  liberar o contato preso num cadastro desativado). */
   decisionConfirm: [];
   /** O operador ficou com o que estava — o valor digitado é descartado. */
   decisionCancel: [];
+  /** É a MESMA pessoa: unificar os dois cadastros. */
+  decisionMerge: [];
+  /** Da LISTA de candidatos: atender ESTE. */
+  decisionPick: [ServerConflictCandidate];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
 }>();
@@ -322,8 +330,48 @@ const newCustomerNote = computed(() => {
               {{ decisionCopy.title }}
             </p>
             <p class="text-sm">{{ decisionCopy.body }}</p>
-            <div class="grid gap-2 sm:grid-cols-2">
-              <UiButton type="button" class="h-11 justify-center gap-2" @click="$emit('decisionConfirm')">
+
+            <!-- Sem UM campo culpado (dois ou mais intrusos, por campos
+                 diferentes): a escolha é por LINHA. Antes disto o payload rico
+                 já chegava do servidor e virava um toast que sumia. -->
+            <ul
+              v-if="customerDecision.kind === 'candidate_list'"
+              class="grid gap-2"
+            >
+              <li
+                v-for="row in (customerDecision.candidates || [])"
+                :key="row.ref"
+                class="flex items-center gap-3 rounded-md border bg-background p-2"
+              >
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium">
+                    {{ row.name }}
+                    <span v-if="row.is_current" class="text-xs font-normal text-muted-foreground">· na comanda</span>
+                    <span v-else-if="row.owner_inactive" class="text-xs font-normal text-muted-foreground">· desativado</span>
+                  </p>
+                  <p class="truncate text-xs text-muted-foreground">{{ candidateSubtitle(row) }}</p>
+                </div>
+                <UiButton
+                  type="button"
+                  size="sm"
+                  :variant="row.is_current ? 'outline' : 'default'"
+                  :disabled="row.owner_inactive"
+                  class="h-9 shrink-0 gap-2"
+                  @click="$emit('decisionPick', row)"
+                >
+                  <Icon name="lucide:user-round-check" class="size-4 shrink-0" />
+                  Atender este
+                </UiButton>
+              </li>
+            </ul>
+
+            <div class="grid gap-2" :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''">
+              <UiButton
+                v-if="decisionCopy.confirmLabel"
+                type="button"
+                class="h-11 justify-center gap-2"
+                @click="$emit('decisionConfirm')"
+              >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
               </UiButton>
@@ -332,6 +380,24 @@ const newCustomerNote = computed(() => {
                 <span class="min-w-0 truncate">{{ decisionCopy.cancelLabel }}</span>
               </UiButton>
             </div>
+
+            <!-- A TERCEIRA saída, e ela é de linha inteira porque não é o
+                 caminho comum: os dois cadastros são a MESMA pessoa. -->
+            <UiButton
+              v-if="decisionCopy.merge"
+              type="button"
+              variant="ghost"
+              :disabled="customerMergeBusy"
+              class="h-11 w-full justify-center gap-2"
+              @click="$emit('decisionMerge')"
+            >
+              <Icon
+                :name="customerMergeBusy ? 'lucide:loader-circle' : decisionCopy.merge.icon"
+                class="size-4 shrink-0"
+                :class="customerMergeBusy ? 'animate-spin' : ''"
+              />
+              <span class="min-w-0 truncate">{{ decisionCopy.merge.label }}</span>
+            </UiButton>
           </div>
 
           <!-- 2 · the picker: prominent search + rich results list.

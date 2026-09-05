@@ -51,7 +51,7 @@ import {
   lineTotalQ,
 } from "~/presentation/lineDiscounts";
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
-import type { CustomerDecision } from "~/presentation/customerDecision";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
@@ -71,6 +71,7 @@ const props = defineProps<{
   customerResolvedNew?: boolean;
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
+  customerMergeBusy?: boolean;
   review: POSSaleReviewProjection | null;
   discountTypes: POSCheckoutOptionProjection[];
   discountReasons: POSCheckoutOptionProjection[];
@@ -195,6 +196,8 @@ const emit = defineEmits<{
   resolveCustomer: [];
   decisionConfirm: [];
   decisionCancel: [];
+  decisionMerge: [];
+  decisionPick: [ServerConflictCandidate];
   clearCustomer: [];
   search: [string];
   selectResult: [POSCustomerSearchResult];
@@ -1693,6 +1696,7 @@ defineExpose({
     :lookup-busy="lookupBusy"
     :resolved-new="customerResolvedNew"
     :customer-decision="customerDecision"
+    :customer-merge-busy="customerMergeBusy"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
@@ -1708,6 +1712,8 @@ defineExpose({
     @resolve-customer="$emit('resolveCustomer')"
     @decision-confirm="$emit('decisionConfirm')"
     @decision-cancel="$emit('decisionCancel')"
+    @decision-merge="$emit('decisionMerge')"
+    @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
   />

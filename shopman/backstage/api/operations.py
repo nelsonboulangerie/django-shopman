@@ -42,6 +42,7 @@ from datetime import date
 
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
+from django.db import IntegrityError
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
@@ -3431,6 +3432,54 @@ class POSCustomerSearchView(APIView):
         return Response({"results": [projection_data(result) for result in results]})
 
 
+def _pos_customer_conflict_response(exc: PosCustomerConflict) -> Response:
+    """A recusa RICA, do mesmo jeito em toda porta do PDV.
+
+    ⚠️ ``PosCustomerConflict`` herda de ``ValueError``, e um ``except
+    ValueError`` genérico ACHATA a recusa: sai a frase e ficam para trás o
+    `field` e os `candidates` — que é exatamente o que a tela precisa para
+    oferecer a saída de um toque. Era o que acontecia no fechamento e na revisão
+    da venda: a saída existia no resolve e nunca chegava a quem estava fechando.
+    Por isso este handler vem SEMPRE antes do `except ValueError`.
+    """
+    return Response(
+        {
+            "detail": str(exc),
+            "field": exc.field or None,
+            "error": {
+                "code": "customer_conflict",
+                "field": exc.field,
+                # Quem está na comanda, quem é dono do valor digitado, por qual
+                # campo discordam — e se o dono é um cadastro DESATIVADO.
+                "candidates": exc.candidates,
+            },
+        },
+        status=422,
+    )
+
+
+def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response:
+    """O balcão NUNCA pode ver um 500 mudo.
+
+    ``IntegrityError`` não é ``ValueError`` nem ``PosIntentError``: escapava da
+    view, virava HTTP 500 sem `detail`, e o operador lia a frase genérica do
+    front com a venda travada e o cliente na frente. Aqui vira uma recusa
+    nomeada, com o que fazer a seguir.
+    """
+    logger.exception("pos_%s_integrity_error", action)
+    return Response(
+        {
+            "detail": (
+                "Os dados do cliente conflitam com um cadastro que já existe. "
+                "Revise WhatsApp, CPF/CNPJ e e-mail, ou busque o cliente pelo cadastro."
+            ),
+            "field": "customer_phone",
+            "error": {"code": "customer_conflict", "field": "customer_phone", "candidates": []},
+        },
+        status=422,
+    )
+
+
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
@@ -3463,20 +3512,7 @@ class POSCustomerResolveView(APIView):
                 operator_username=_username(request),
             )
         except PosCustomerConflict as exc:
-            # A gêmea na tela lê `candidates`: quem está na comanda, quem é dono
-            # do valor digitado, e por qual campo discordam.
-            return Response(
-                {
-                    "detail": str(exc),
-                    "field": exc.field or None,
-                    "error": {
-                        "code": "customer_conflict",
-                        "field": exc.field,
-                        "candidates": exc.candidates,
-                    },
-                },
-                status=422,
-            )
+            return _pos_customer_conflict_response(exc)
         except ValueError as exc:
             return Response(
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
@@ -3493,6 +3529,97 @@ class POSCustomerResolveView(APIView):
             "customer": projection_data(lookup) if lookup else None,
             "created": bool(customer.get("created")),
         })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Merge two customer records into one from the counter",
+        responses={200: OpenApiResponse(description="Merge summary and the surviving customer.")},
+    ),
+)
+class POSCustomerMergeView(APIView):
+    """A TERCEIRA saída do conflito: os dois cadastros são a MESMA pessoa.
+
+    "Atender o outro" e "manter quem está na comanda" resolvem quando são duas
+    pessoas. Quando é uma só — o cliente cadastrado duas vezes, por telefone e
+    por CPF — nenhuma das duas serve, e o operador ficava sem caminho.
+
+    ⚠️ PERMISSÃO: hoje basta ``cashman.operate_pos``, a mesma de fechar a venda.
+    O merge é destrutivo mas AUDITADO (``MergeAudit`` com snapshot) e
+    REVERSÍVEL por 24h (``MergeService.undo``), e exigir PIN gerencial
+    devolveria o beco sem saída quando não há gerente no balcão. Se o dono
+    preferir o PIN, é o mesmo `validate_manager_override` do cancelamento de
+    venda — uma linha.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        try:
+            merged = pos_tabs_service.merge_pos_customers(
+                # `source` desaparece (fica desativado), `target` sobrevive e
+                # segue na comanda.
+                source_ref=str(body.get("source_ref") or "").strip(),
+                target_ref=str(body.get("target_ref") or "").strip(),
+                operator_username=_username(request),
+            )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc) or "Não foi possível unificar os cadastros."},
+                status=422,
+            )
+        # A comanda segue no cadastro ALVO: a tela recebe a projeção dele, não
+        # só o ref, para repor memória e endereço sem um segundo round-trip.
+        lookup = build_pos_customer_lookup_by_ref(merged["target_ref"])
+        return Response({
+            "ok": True,
+            "customer": projection_data(lookup) if lookup else merged["customer"],
+            "merge": {
+                "source_ref": merged["source_ref"],
+                "target_ref": merged["target_ref"],
+                "audit_id": merged["audit_id"],
+                "undo_deadline": merged["undo_deadline"],
+                "migrated": merged["migrated"],
+            },
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Release a contact held by a deactivated customer record",
+        responses={200: OpenApiResponse(description="Contact released.")},
+    ),
+)
+class POSCustomerContactReleaseView(APIView):
+    """A saída do conflito com dono DESATIVADO — a que o merge não dá.
+
+    ``MergeService`` recusa unificar quando qualquer um dos lados está inativo,
+    e é justamente o cadastro desativado que segura o número no UNIQUE global.
+    Sem isto o operador lia "já é de outro cadastro", não achava esse cadastro
+    na busca (ela só enxerga ativo) e a venda parava.
+    """
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "cashman.operate_pos"
+
+    def post(self, request):
+        body = request.data or {}
+        try:
+            released = pos_tabs_service.release_pos_customer_contact(
+                field=str(body.get("field") or "").strip(),
+                value=str(body.get("value") or "").strip(),
+                operator_username=_username(request),
+            )
+        except ValueError as exc:
+            return Response(
+                {"detail": str(exc) or "Não foi possível liberar o contato."},
+                status=422,
+            )
+        return Response({"ok": True, **released})
 
 
 @extend_schema_view(
@@ -3518,6 +3645,13 @@ class POSReviewSaleView(APIView):
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except PosCustomerConflict as exc:
+            # ⚠️ ANTES do `except ValueError`: ele é a superclasse, e capturá-lo
+            # primeiro jogava fora `field` e `candidates` — a saída de um toque
+            # existia e chegava achatada em quem estava revisando a venda.
+            return _pos_customer_conflict_response(exc)
+        except IntegrityError as exc:
+            return _pos_customer_integrity_response(exc, action="review_sale")
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=422)
         return Response({"ok": True, "review": _pos_sale_review_payload(review)})
@@ -3547,6 +3681,13 @@ class POSCloseSaleView(APIView):
             )
         except PosIntentError as exc:
             return Response({"detail": exc.message, "error": exc.as_dict()}, status=exc.status)
+        except PosCustomerConflict as exc:
+            # ⚠️ ANTES do `except ValueError` — ver `_pos_customer_conflict_response`.
+            # O conflito de cliente sempre foi detectado no COMMIT; o que nunca
+            # chegava ao balcão era a saída, achatada aqui em frase seca.
+            return _pos_customer_conflict_response(exc)
+        except IntegrityError as exc:
+            return _pos_customer_integrity_response(exc, action="close_sale")
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)

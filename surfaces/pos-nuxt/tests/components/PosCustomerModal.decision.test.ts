@@ -10,7 +10,7 @@ import { mountSuspended } from "@nuxt/test-utils/runtime";
 import { afterEach, describe, expect, it } from "vitest";
 
 import PosCustomerModal from "~/components/PosCustomerModal.vue";
-import type { CustomerDecision } from "~/presentation/customerDecision";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 
 const CONFLICT: CustomerDecision = {
   kind: "contact_conflict",
@@ -18,6 +18,41 @@ const CONFLICT: CustomerDecision = {
   typed: "(43) 99999-0022",
   current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
   other: { ref: "CUST-B", name: "Bruno Souza", value: "+5543999990022" },
+};
+
+function candidate(overrides: Partial<ServerConflictCandidate> = {}): ServerConflictCandidate {
+  return {
+    ref: "CUST-A",
+    name: "Ana Prado",
+    phone: "+5543999990011",
+    email: "",
+    tax_id: "",
+    matched_by: ["ref"],
+    is_current: true,
+    owner_inactive: false,
+    ...overrides,
+  };
+}
+
+const INACTIVE_OWNER: CustomerDecision = {
+  kind: "inactive_owner",
+  field: "phone",
+  typed: "(43) 99999-0022",
+  current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
+  other: { ref: "CUST-OLD", name: "Cadastro Antigo", value: "+5543999990022" },
+};
+
+const CANDIDATE_LIST: CustomerDecision = {
+  kind: "candidate_list",
+  field: "",
+  typed: "",
+  current: { ref: "CUST-A", name: "Ana Prado", value: "" },
+  other: null,
+  candidates: [
+    candidate(),
+    candidate({ ref: "CUST-B", name: "Bruno Souza", phone: "+5543999990022", matched_by: ["phone"], is_current: false }),
+    candidate({ ref: "CUST-C", name: "Célia Dias", tax_id: "52998224725", matched_by: ["document"], is_current: false }),
+  ],
 };
 
 const CHANGE: CustomerDecision = {
@@ -123,6 +158,57 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
 
     await wrapper.setProps({ customerDecision: CONFLICT });
     expect(wrapper.emitted("update:open")?.at(-1)).toEqual([true]);
+  });
+
+  // ── As três saídas que faltavam ─────────────────────────────────────────
+
+  // ⚠️ Sem isto, o cliente cadastrado DUAS vezes só tinha "escolha um dos dois":
+  // "atender Bruno" e "manter Ana" resolvem quando são duas pessoas.
+  it("o conflito oferece UNIFICAR quando os dois são a mesma pessoa", async () => {
+    const wrapper = await mount({ customerDecision: CONFLICT });
+    const unificar = buttonByText("É a mesma pessoa — unificar cadastros");
+    expect(unificar).toBeTruthy();
+
+    unificar!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionMerge")).toHaveLength(1);
+  });
+
+  it("a unificação em voo não dispara duas vezes", async () => {
+    await mount({ customerDecision: CONFLICT, customerMergeBusy: true });
+    expect(buttonByText("É a mesma pessoa — unificar cadastros")!.disabled).toBe(true);
+  });
+
+  // ⚠️ O dono está DESATIVADO: não aparece na busca do operador, e o Core
+  // recusa unificar com um lado inativo. Antes disto era o beco mais fechado
+  // de todos — a frase seca sobre um cadastro invisível.
+  it("dono desativado tem frase própria e oferece LIBERAR, não unificar", async () => {
+    await mount({ customerDecision: INACTIVE_OWNER });
+    const text = screenText();
+
+    expect(text).toContain("Este WhatsApp está preso num cadastro desativado");
+    expect(text).toContain("Cadastro Antigo");
+    expect(buttonByText("Liberar o WhatsApp")).toBeTruthy();
+    expect(buttonByText("É a mesma pessoa — unificar cadastros")).toBeFalsy();
+  });
+
+  // ⚠️ Dois ou mais intrusos por campos diferentes: o payload rico já vinha do
+  // servidor e a tela o descartava, caindo num toast que sumia.
+  it("sem UM campo culpado, a tela LISTA os candidatos com 'Atender este'", async () => {
+    const wrapper = await mount({ customerDecision: CANDIDATE_LIST });
+    const text = screenText();
+
+    expect(text).toContain("Os dados apontam para cadastros diferentes");
+    expect(text).toContain("Bruno Souza");
+    expect(text).toContain("Célia Dias");
+
+    const atender = Array.from(document.querySelectorAll("button"))
+      .filter((b) => (b.textContent || "").includes("Atender este"));
+    expect(atender).toHaveLength(3);
+
+    atender[1]!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionPick")?.[0]?.[0]).toMatchObject({ ref: "CUST-B" });
   });
 
   it("sem pergunta pendente, Concluir resolve e fecha como sempre", async () => {
