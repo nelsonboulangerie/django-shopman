@@ -47,6 +47,7 @@ WEB_DESTINATIONS = {
     "menu": "/menu",
     "checkout": "/finalizar",
     "account": "/conta",
+    "order": "",  # resolvido em runtime: o acompanhamento do pedido mais recente
 }
 PAYMENT_LABELS = {
     "pix": "Pix",
@@ -952,8 +953,32 @@ def last_order(ctx: ToolContext) -> dict:
 
 
 def send_web_link(ctx: ToolContext, destination: str = "menu") -> dict:
-    """Um link de acesso ao site, já logado, levando a sacola junto quando há."""
+    """Um link de acesso ao site, já logado, levando a sacola junto quando há.
+
+    ``order`` (e ``checkout`` sem sacola aberta) apontam para o ACOMPANHAMENTO do
+    pedido mais recente, que é onde se paga um pedido já feito. Mandar o checkout
+    ali dava um link para uma sacola que o commit consumiu, e o cliente via uma
+    tela vazia: foi o "link quebrado" do piloto (04/09, 15:55).
+    """
     destination = str(destination or "menu").strip().lower()
+    if destination not in WEB_DESTINATIONS:
+        destination = "menu"
+    if destination == "checkout" and _open_session(ctx) is None:
+        destination = "order"
+    if destination == "order":
+        recent = order_status(ctx, "").get("orders") or []
+        if not recent:
+            destination = "menu"
+        else:
+            order = recent[0]
+            return {
+                "ok": True,
+                "url": order["tracking_url"],
+                "order_ref": order["order_ref"],
+                "logged_in": False,
+                "cart_carried": False,
+                "note": "Acompanhamento do pedido; é por aqui que ele paga.",
+            }
     path = WEB_DESTINATIONS.get(destination, WEB_DESTINATIONS["menu"])
     public_url = f"{_storefront_base_url()}{path}"
 
@@ -1232,10 +1257,12 @@ TOOL_SPECS: list[dict] = [
         "name": "send_web_link",
         "description": (
             "Gera um link do site já logado (leva a sacola junto quando há). Use quando algo é melhor "
-            "no site: cardápio completo com fotos, entrega fora do fluxo, conta, ou cliente sem telefone."
+            "no site: cardápio completo com fotos, entrega fora do fluxo, conta, ou cliente sem telefone. "
+            "Para PAGAR um pedido que já foi feito, use `order`: o pagamento de um pedido vive no "
+            "acompanhamento dele, não no checkout."
         ),
         "input_schema": _schema(
-            {"destination": {"type": "string", "enum": ["menu", "checkout", "account"]}},
+            {"destination": {"type": "string", "enum": ["menu", "checkout", "account", "order"]}},
             [],
         ),
     },

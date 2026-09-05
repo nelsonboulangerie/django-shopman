@@ -413,6 +413,32 @@ def test_notify_when_available_subscribes_the_same_alerts_as_the_site(ctx, conve
     assert tools.notify_when_available(ctx, "NAO-EXISTE")["error"] == "unknown_sku"
 
 
+def test_the_pending_quote_token_is_visible_in_the_system_prompt(ctx, conversation):
+    """O resultado antigo volta resumido; sem o token à vista o modelo o inventava."""
+    from shopman.storefront.concierge import prompt as prompt_module
+
+    review = _pickup_ready(ctx)
+    conversation.refresh_from_db()
+    system = prompt_module.build_system(conversation, is_first_turn=False, cart_summary="")
+    dynamic = system[1]["text"]
+    assert f"quote_token: {review['quote_token']}" in dynamic
+
+
+def test_send_web_link_for_a_placed_order_points_at_the_tracking_page(
+    ctx, conversation, django_capture_on_commit_callbacks
+):
+    """Pagar pedido feito é no acompanhamento; o checkout ficaria vazio (o "link quebrado")."""
+    review = _pickup_ready(ctx)
+    with django_capture_on_commit_callbacks(execute=True):
+        placed = tools.place_order(ctx, review["quote_token"], "pix", "")
+
+    by_order = tools.send_web_link(ctx, "order")
+    assert by_order["order_ref"] == placed["order_ref"]
+    assert by_order["url"].endswith(f"/pedido/{placed['order_ref']}/")
+    # Sem sacola aberta, pedir "checkout" também cai no acompanhamento.
+    assert tools.send_web_link(ctx, "checkout")["url"] == by_order["url"]
+
+
 def test_execute_never_raises(ctx):
     assert tools.execute("nao_existe", {}, ctx)["error"] == "unknown_tool"
     assert tools.execute("set_item", {"sku": SKU}, ctx)["error"] == "bad_arguments"
