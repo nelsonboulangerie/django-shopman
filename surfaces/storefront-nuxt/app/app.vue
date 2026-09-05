@@ -75,7 +75,7 @@ const brandDescription = computed(
 // verdade. Logo em cartão de link vira quadradinho sem graça; pão, não.
 const brandOgImage = computed(() => absoluteImage(
   requestUrl.origin,
-  shellHome.value?.featured_items?.[0]?.image_url || session.shop.value?.logo_url
+  shellHome.value?.home?.featured_items?.[0]?.image_url || session.shop.value?.logo_url
 ))
 
 useSeoMeta({
