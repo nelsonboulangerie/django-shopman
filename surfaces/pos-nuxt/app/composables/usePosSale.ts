@@ -184,7 +184,9 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
-      } catch { /* falha transiente de rede — segue tentando */ }
+      // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
+      // e o toast do watcher. A tentativa isolada, não.
+      } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
     }, 2500);
   }
 

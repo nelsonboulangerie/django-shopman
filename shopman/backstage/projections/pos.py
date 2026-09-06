@@ -783,6 +783,10 @@ def _birthday_projection(customer) -> dict:
             )
             promo_label = promo.name if promo else ""
         except Exception:
+            # silêncio-deliberado: sem rótulo, o aviso de aniversário não
+            # PROMETE desconto nenhum — falha fechado, que é o certo aqui.
+            # Alarmar porque a busca da promoção falhou seria ruído sobre um
+            # chip de consciência, não sobre a venda.
             logger.debug("pos_lookup_birthday_promo_failed", exc_info=True)
     return {
         "birthday_display": birthday.strftime("%d/%m"),

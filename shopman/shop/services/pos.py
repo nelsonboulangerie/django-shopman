@@ -2488,7 +2488,12 @@ def discount_approval_threshold_q() -> int:
         if raw is not None:
             return max(0, int(raw))
     except Exception:
-        logger.debug("pos_discount_threshold_lookup_failed", exc_info=True)
+        # ⚠️ NÃO é silêncio deliberado: este número é POLÍTICA — é ele que diz
+        # a partir de que desconto a venda exige aprovação gerencial. Cair para
+        # o valor do settings porque alguém digitou errado no Admin muda quem
+        # precisa autorizar, e em `logger.debug` isso passava sem ninguém ver.
+        # O fallback continua (a venda não pode parar), mas ele grita.
+        logger.warning("pos_discount_threshold_lookup_failed", exc_info=True)
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
@@ -3792,6 +3797,10 @@ def _identifier_owner(identifier_type: str, identifier_value: str):
     try:
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
     except ImportError:
+        # silêncio-deliberado: o contrib de identificadores é OPCIONAL; sem ele
+        # a posse do documento é respondida pelo `Customer.document` logo
+        # abaixo. App não instalado não é falha — gritar seria alarme por
+        # configuração legítima.
         pass
     else:
         ident = (
