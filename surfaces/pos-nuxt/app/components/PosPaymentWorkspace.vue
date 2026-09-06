@@ -53,6 +53,11 @@ import {
 import { managerAuthReason } from "../../../operator-kit/app/presentation/managerAuth";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
+import {
+  receiptContactChecked,
+  receiptSaveOffers,
+  receiptSaveSummary,
+} from "~/presentation/receiptContact";
 import { scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
 
 const props = defineProps<{
@@ -144,6 +149,10 @@ const props = defineProps<{
   orderNotes: string;
   receiptChannels: string[];
   receiptEmail: string;
+  /** A ORDEM de guardar o contato do comprovante no cadastro. `null` = o
+   *  operador ainda não tocou, e vale o padrão da oferta. */
+  saveReceiptContact: boolean | null;
+  saveReceiptTaxId: boolean | null;
   loading: boolean;
   lookupBusy: boolean;
   /** A última revisão FALHOU (rede). Sem isto, a tela ficava com o botão
@@ -190,6 +199,8 @@ const emit = defineEmits<{
   "update:orderNotes": [string];
   "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
+  "update:saveReceiptContact": [boolean | null];
+  "update:saveReceiptTaxId": [boolean | null];
   back: [];
   submit: [];
   lookupCustomer: [];
@@ -393,6 +404,48 @@ const taxIdIsFromCadastro = computed(
 );
 const emailIsFromCadastro = computed(
   () => !!props.customerEmail.trim() && props.receiptEmail.trim().toLowerCase() === props.customerEmail.trim().toLowerCase(),
+);
+
+// A OFERTA de guardar o contato do comprovante no cadastro. O cadastro do
+// lookup é a régua: falta o campo (oferece salvar), é igual (nada a dizer),
+// diverge (oferece ATUALIZAR, desmarcado) — e sem cliente identificado a oferta
+// é "Salvar como cliente?", já marcada.
+const offerCustomer = computed(() =>
+  props.customerLookup
+    ? {
+        name: props.customerLookup.name,
+        email: props.customerLookup.email,
+        tax_id: props.customerLookup.tax_id,
+      }
+    : null,
+);
+// A MESMA regra que o builder do intent lê: se a tela perguntar sobre um
+// endereço e o payload levar outro, a confirmação vira mentira.
+const receiptOffers = computed(() =>
+  receiptSaveOffers({
+    receiptEmail: props.receiptEmail,
+    customerEmail: props.customerEmail,
+    invoiceTaxId: props.invoiceTaxId,
+    wantsCpfOnInvoice: props.wantsCpfOnInvoice,
+    customerTaxId: props.customerTaxId,
+    customer: offerCustomer.value,
+  }),
+);
+const receiptEmailOffer = computed(() => receiptOffers.value.email);
+const receiptTaxIdOffer = computed(() => receiptOffers.value.taxId);
+const saveReceiptEmailChecked = computed(() =>
+  receiptContactChecked(receiptEmailOffer.value, props.saveReceiptContact),
+);
+const saveReceiptTaxIdChecked = computed(() =>
+  receiptContactChecked(receiptTaxIdOffer.value, props.saveReceiptTaxId),
+);
+// A segunda metade da promessa: quem chega ao fechamento pelo teclado nunca viu
+// o popover, e ninguém deve descobrir depois que um cadastro mudou.
+const receiptSaveLines = computed(() =>
+  receiptSaveSummary([
+    { offer: receiptEmailOffer.value, checked: saveReceiptEmailChecked.value },
+    { offer: receiptTaxIdOffer.value, checked: saveReceiptTaxIdChecked.value },
+  ]),
 );
 
 // Os canais do comprovante são uma LISTA no contrato; na tela são dois switches.
@@ -1494,6 +1547,20 @@ defineExpose({
                 </div>
               </template>
             </dl>
+            <!-- O QUE A VENDA VAI FAZER COM O CADASTRO, dito no resumo e não só
+                 junto do campo: quem fecha pelo teclado nunca viu o popover, e
+                 ninguém deve descobrir depois que um cadastro mudou. Desfazer é
+                 o mesmo interruptor, na seção Nota fiscal logo abaixo. -->
+            <ul v-if="receiptSaveLines.length" class="grid gap-1 border-t px-3 py-2" aria-label="Cadastro do cliente">
+              <li
+                v-for="line in receiptSaveLines"
+                :key="line"
+                class="flex items-start gap-1.5 text-xs text-muted-foreground"
+              >
+                <Icon name="lucide:user-round-check" class="mt-0.5 size-3.5 shrink-0" />
+                <span>{{ line }}</span>
+              </li>
+            </ul>
           </div>
         </section>
 
@@ -1526,15 +1593,23 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsCpfOnInvoice">
-                <UiInput
-                  :model-value="invoiceTaxIdMasked"
-                  inputmode="numeric"
-                  class="h-11 tabular-nums"
-                  placeholder="000.000.000-00"
-                  aria-label="CPF que sai na nota"
-                  :maxlength="18"
-                  @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
-                />
+                <PosReceiptSaveOffer
+                  :offer="receiptTaxIdOffer"
+                  :checked="saveReceiptTaxIdChecked"
+                  side="left"
+                  :quiet="customerSheetOpen"
+                  @update:checked="$emit('update:saveReceiptTaxId', $event)"
+                >
+                  <UiInput
+                    :model-value="invoiceTaxIdMasked"
+                    inputmode="numeric"
+                    class="h-11 tabular-nums"
+                    placeholder="000.000.000-00"
+                    aria-label="CPF que sai na nota"
+                    :maxlength="18"
+                    @update:model-value="$emit('update:invoiceTaxId', String($event || '').replace(/\D/g, '').slice(0, 14))"
+                  />
+                </PosReceiptSaveOffer>
                 <!-- Eco do documento: o operador lê de volta o que vai sair e diz
                      ao cliente. Sem isto, "pôs o meu?" não tem resposta na tela. -->
                 <p class="flex items-center gap-1.5 text-xs" :class="taxIdEcho.ok ? 'text-muted-foreground' : 'text-amber-700 dark:text-amber-400'">
@@ -1581,14 +1656,22 @@ defineExpose({
                 />
               </label>
               <template v-if="wantsEmailReceipt">
-                <UiInput
-                  :model-value="receiptEmail"
-                  type="email"
-                  class="h-11"
-                  :placeholder="customerEmail || 'cliente@email.com'"
-                  aria-label="E-mail que recebe a nota"
-                  @update:model-value="$emit('update:receiptEmail', String($event || ''))"
-                />
+                <PosReceiptSaveOffer
+                  :offer="receiptEmailOffer"
+                  :checked="saveReceiptEmailChecked"
+                  side="left"
+                  :quiet="customerSheetOpen"
+                  @update:checked="$emit('update:saveReceiptContact', $event)"
+                >
+                  <UiInput
+                    :model-value="receiptEmail"
+                    type="email"
+                    class="h-11"
+                    :placeholder="customerEmail || 'cliente@email.com'"
+                    aria-label="E-mail que recebe a nota"
+                    @update:model-value="$emit('update:receiptEmail', String($event || ''))"
+                  />
+                </PosReceiptSaveOffer>
                 <p v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                   Sem preencher, vai para <span class="font-medium text-foreground">{{ customerEmail }}</span>.
                 </p>
@@ -1700,12 +1783,15 @@ defineExpose({
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
+    :receipt-email-offer="receiptEmailOffer"
+    :save-receipt-contact="saveReceiptEmailChecked"
     @update:customer-name="$emit('update:customerName', $event)"
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
     @update:receipt-channels="$emit('update:receiptChannels', $event)"
     @update:receipt-email="$emit('update:receiptEmail', $event)"
+    @update:save-receipt-contact="$emit('update:saveReceiptContact', $event)"
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"

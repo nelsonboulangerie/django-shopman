@@ -56,6 +56,7 @@ import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentatio
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { conflictDecision, contactChangeDecision } from "~/presentation/customerDecision";
+import { receiptContactChecked, receiptSaveOffers } from "~/presentation/receiptContact";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -183,7 +184,9 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
-      } catch { /* falha transiente de rede — segue tentando */ }
+      // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
+      // e o toast do watcher. A tentativa isolada, não.
+      } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
     }, 2500);
   }
 
@@ -265,8 +268,27 @@ export function usePosSale(deps: PosSaleDeps) {
   const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
+  /** O cadastro como régua da oferta: falta o campo, é igual, ou diverge. */
+  const offerCustomer = () =>
+    customerLookup.value
+      ? {
+          name: customerLookup.value.name,
+          email: customerLookup.value.email,
+          tax_id: customerLookup.value.tax_id,
+        }
+      : null;
   const tabDialogOpen = ref(false);
   const tabDialogReason = ref<"start" | "save" | "cart">("start");
+  /** As ofertas do comprovante — a MESMA função que a tela lê para perguntar. */
+  const receiptOffers = () =>
+    receiptSaveOffers({
+      receiptEmail: cart.receiptEmail,
+      customerEmail: cart.customerEmail,
+      invoiceTaxId: cart.invoiceTaxId,
+      wantsCpfOnInvoice: cart.wantsCpfOnInvoice,
+      customerTaxId: cart.customerTaxId,
+      customer: offerCustomer(),
+    });
 
   const cart = reactive({
     tabRef: "",
@@ -304,6 +326,13 @@ export function usePosSale(deps: PosSaleDeps) {
     changeForInput: "",
     receiptChannels: [] as string[],
     receiptEmail: "",
+    // A ORDEM de guardar o contato do comprovante no cadastro. `null` = o
+    // operador ainda NÃO tocou, e vale o padrão da oferta (marcado só quando
+    // não há cliente identificado — decisão do dono). Sem esta distinção, o
+    // padrão seria reimposto a cada tecla e desfaria o desmarque de quem já
+    // tinha respondido.
+    saveReceiptContact: null as boolean | null,
+    saveReceiptTaxId: null as boolean | null,
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
     discountReason: "",
@@ -922,6 +951,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.changeForInput = "";
     cart.receiptChannels = [];
     cart.receiptEmail = "";
+    cart.saveReceiptContact = null;
+    cart.saveReceiptTaxId = null;
     cart.discountType = "percent";
     cart.discountValue = "";
     cart.discountReason = "";
@@ -986,6 +1017,10 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
+      // A ordem não volta da comanda reaberta: é decisão de QUEM está fechando
+      // agora, sobre o cadastro como ele está agora. A oferta se recalcula.
+      cart.saveReceiptContact = null;
+      cart.saveReceiptTaxId = null;
       cart.discountType = "percent";
       cart.discountValue = "";
       cart.discountReason = "";
@@ -1138,6 +1173,10 @@ export function usePosSale(deps: PosSaleDeps) {
         : 0,
       receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,
+      // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
+      // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
+      saveReceiptContact: receiptContactChecked(receiptOffers().email, cart.saveReceiptContact),
+      saveReceiptTaxId: receiptContactChecked(receiptOffers().taxId, cart.saveReceiptTaxId),
       manualDiscount,
       managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),

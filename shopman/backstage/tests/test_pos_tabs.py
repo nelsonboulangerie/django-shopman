@@ -323,6 +323,7 @@ class POSTabSessionTests(TestCase):
         payload.update({
             "cash_shift_id": self.shift.pk,
             "fiscal_tax_id": "52998224725",
+            "save_receipt_tax_id": True,
             "tendered_q": 5000,
             "receipt_channels": ["email"],
             "receipt_email": "ana@example.com",
@@ -339,10 +340,10 @@ class POSTabSessionTests(TestCase):
         self.assertEqual(order.data["payment"]["method"], "cash")
         self.assertEqual(order.data["payment"]["tendered_q"], 5000)
         # DUAS perguntas, dois campos — mas não dois mundos. Pedir CPF na nota
-        # escreve o bloco fiscal SEMPRE; e como este cliente não tinha documento
-        # no cadastro, a lacuna aprende (é o que faz o campo vir pré-preenchido na
-        # próxima venda). Sobrescrever é que não acontece: cadastro com CPF fica
-        # como está, por mais que o checkout peça outro.
+        # escreve o bloco fiscal SEMPRE; o cadastro só aprende o documento com a
+        # ordem do operador (`save_receipt_tax_id`, a oferta que a tela faz), e
+        # é ela que faz o campo vir pré-preenchido na próxima venda. Sem a ordem
+        # o cadastro fica INTACTO, tenha documento ou não.
         self.assertEqual(order.data["fiscal"], {"tax_id": "52998224725"})
         self.assertEqual(order.data["customer"]["tax_id"], "52998224725")
         self.assertEqual(order.data["receipt"], {"channels": ["email"], "email": "ana@example.com"})

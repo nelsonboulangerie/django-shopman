@@ -620,6 +620,12 @@ export interface POSIntentCartState {
   changeForQ: number;
   receiptChannels: string[];
   receiptEmail: string;
+  /** A ORDEM do operador de guardar o contato do comprovante no cadastro. O
+   *  e-mail e o CPF pedidos na nota são fatos DA VENDA (podem ser os do
+   *  contador, os da empresa) e nunca viram identidade sozinhos — a tela
+   *  pergunta, e a resposta viaja aqui. */
+  saveReceiptContact: boolean;
+  saveReceiptTaxId: boolean;
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;

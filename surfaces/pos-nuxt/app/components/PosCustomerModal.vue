@@ -19,6 +19,7 @@ import type {
 import { cpfTail } from "~/presentation/customerSearch";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { candidateSubtitle, customerDecisionCopy } from "~/presentation/customerDecision";
+import type { ReceiptContactOffer } from "~/presentation/receiptContact";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -44,6 +45,16 @@ const props = withDefaults(defineProps<{
   receiptChannels?: string[];
   receiptChannelOptions?: POSCheckoutOptionProjection[];
   receiptEmail?: string;
+  /** A OFERTA sobre o e-mail do comprovante, decidida pela mesma função pura
+   *  que a coluna do fechamento lê (`receiptSaveOffers`).
+   *
+   *  ⚠️ Ela precisa existir AQUI porque este campo é o GÊMEO do da coluna: quem
+   *  digitava o e-mail por dentro do modal via o balão abrir lá atrás, do outro
+   *  lado do overlay, e fechava o modal com a oferta JÁ MARCADA sem nunca ter
+   *  sido perguntado. Padrão marcado + pergunta invisível = gravar calado com
+   *  outro nome — exatamente o que este caminho existe para acabar. */
+  receiptEmailOffer?: ReceiptContactOffer | null;
+  saveReceiptContact?: boolean;
 }>(), {
   customerDecision: null,
   customerMergeBusy: false,
@@ -52,6 +63,8 @@ const props = withDefaults(defineProps<{
   receiptChannels: () => [],
   receiptChannelOptions: () => [],
   receiptEmail: "",
+  receiptEmailOffer: null,
+  saveReceiptContact: false,
 });
 
 const emit = defineEmits<{
@@ -62,6 +75,7 @@ const emit = defineEmits<{
   "update:customerEmail": [string];
   "update:receiptChannels": [string[]];
   "update:receiptEmail": [string];
+  "update:saveReceiptContact": [boolean];
   search: [string];
   selectResult: [POSCustomerSearchResult];
   clear: [];
@@ -464,13 +478,29 @@ const newCustomerNote = computed(() => {
                 {{ channel.label }}
               </UiButton>
             </div>
-            <label v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
+            <!-- ⚠️ Sem `<label>` em volta: a oferta traz o interruptor dela num
+                 `<label>` próprio, e rótulo dentro de rótulo faz o clique no
+                 texto do campo alternar o interruptor. O vínculo do nome com o
+                 campo passa a ser o `aria-label`. -->
+            <div v-if="receiptChannels.includes('email')" class="grid gap-1.5 text-sm">
               <span class="font-medium text-muted-foreground">E-mail do comprovante</span>
-              <UiInput :model-value="receiptEmail" type="email" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
+              <!-- A MESMA pergunta da coluna, no campo GÊMEO. `top` porque logo
+                   abaixo está o "Concluir": o balão não pode tapar o botão que
+                   encerra o modal. -->
+              <PosReceiptSaveOffer
+                v-if="receiptEmailOffer"
+                :offer="receiptEmailOffer"
+                :checked="saveReceiptContact"
+                side="top"
+                @update:checked="$emit('update:saveReceiptContact', $event)"
+              >
+                <UiInput :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
+              </PosReceiptSaveOffer>
+              <UiInput v-else :model-value="receiptEmail" type="email" aria-label="E-mail do comprovante" :placeholder="customerEmail || 'cliente@email.com'" @update:model-value="$emit('update:receiptEmail', String($event || ''))" />
               <span v-if="!receiptEmail.trim() && customerEmail.trim()" class="text-xs text-muted-foreground">
                 Sem preencher, enviamos para o e-mail do cliente: <span class="font-medium text-foreground">{{ customerEmail }}</span>
               </span>
-            </label>
+            </div>
           </div>
         </div>
       </div>

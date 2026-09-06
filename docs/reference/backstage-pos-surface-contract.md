@@ -153,6 +153,15 @@ Optional canonical keys:
   `order_notes`.
 - payment: `payment_collection`, `payment_tenders`, `tendered_q`.
 - fiscal/receipt: `issue_fiscal_document`, `receipt_channels` (multi: `print`/`email`; vazio = sem comprovante), `receipt_email`.
+- cadastro a partir do comprovante: `save_receipt_contact`, `save_receipt_tax_id`
+  (booleanos). São a ORDEM EXPLÍCITA do operador para que o e-mail do
+  comprovante / o CPF da nota virem contato do cliente. **Ausentes = não gravar**:
+  `receipt_email` e `fiscal_tax_id` são fatos DA VENDA (a nota pode ir para o
+  contador, no CPF da empresa) e nunca viram identidade sozinhos. Descartados
+  quando o campo correspondente está vazio. Quando o cadastro já tem OUTRO valor,
+  a ordem é de ATUALIZAR — e a tela precisa nomeá-la assim antes de enviar.
+  Quando o valor já é de outro cadastro, a resposta é o conflito rico
+  (`customer_conflict`, 422, com `field` e `candidates`), nunca 500.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
   carries type/value/reason; backend normalizes `discount_q`.
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
@@ -239,6 +248,8 @@ Backend must validate:
 - cash tendered amount cannot be lower than sale total when provided at
   `close_sale`; `review_sale` returns a warning;
 - receipt email required when `email` está em `receipt_channels`;
+- `save_receipt_contact` / `save_receipt_tax_id` só valem com o campo
+  correspondente preenchido (caso contrário são descartados);
 - manager approval above discount threshold;
 - fiscal constraints currently unsupported by the POS fiscal pipeline;
 - staging provider readiness: Focus NFe must be homologação, Efí must be

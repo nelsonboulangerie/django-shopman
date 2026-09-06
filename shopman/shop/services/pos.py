@@ -1705,8 +1705,9 @@ def build_session_ops(payload: dict, operator_username: str, *, approved_by: str
     # marido, o da empresa) sem que isso vire identidade de ninguém.
     requested_tax_id = str(payload.get("fiscal_tax_id", "") or "").strip()
     # `customer.email` é o e-mail DO CLIENTE; o endereço para onde ESTA nota vai
-    # mora em `receipt.email` e não sobe para cá (o cliente pode pedir que vá para
-    # outro endereço, e isso não o redefine).
+    # mora em `receipt.email` e não sobe para cá sozinho (o cliente pode pedir
+    # que vá para outro endereço, e isso não o redefine). Sobe quando o operador
+    # MANDA — `save_receipt_contact` —, e aí já é o e-mail do cadastro.
     customer_email = str(payload.get("customer_email", "") or "").strip()
     persisted_customer = _persist_customer_from_payload(payload, operator_username=operator_username)
     if persisted_customer:
@@ -2486,8 +2487,16 @@ def discount_approval_threshold_q() -> int:
         raw = pos_cfg.get("discount_approval_threshold_q")
         if raw is not None:
             return max(0, int(raw))
+    # ⚠️ NÃO é silêncio deliberado: este número é POLÍTICA — é ele que diz a
+    # partir de que desconto a venda exige aprovação gerencial. Cair para o
+    # valor do settings porque alguém digitou errado no Admin muda QUEM precisa
+    # autorizar, e em `logger.debug` isso passava sem ninguém ver. O fallback
+    # continua (a venda não pode parar), mas ele grita.
+    #
+    # A explicação fica ACIMA do `except` de propósito: o log tem de encostar
+    # nele (ver `test_exception_hygiene`, que exige `logger.` em quatro linhas).
     except Exception:
-        logger.debug("pos_discount_threshold_lookup_failed", exc_info=True)
+        logger.warning("pos_discount_threshold_lookup_failed", exc_info=True)
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
 
@@ -3400,23 +3409,33 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # IDENTIDADE — com o que se ACHA o cliente.
     tax_id = _digits(str(payload.get("customer_tax_id") or "").strip())
     email = str(payload.get("customer_email") or "").strip().lower()
-    # LACUNA — campo vazio no cadastro aprende; campo preenchido nunca muda
-    # (``_merge_pos_customer_fields`` só completa). É o que faz o CPF do cliente
-    # entrar uma vez e voltar pré-preenchido na próxima venda, sem que uma
-    # edição pontual no checkout reescreva o cadastro de ninguém.
-    fill_tax_id = tax_id or _digits(str(payload.get("fiscal_tax_id") or "").strip())
-    # ⚠️ ``receipt_email`` NÃO entra aqui. O endereço para onde ESTA nota vai é
-    # fato DA VENDA (``receipt.email``), não identidade do cliente: o cliente
-    # pode pedir a nota no e-mail do contador, do marido, da empresa. Deixá-lo
-    # virar ``customer.email`` criava cadastro no CRM a cada venda anônima,
-    # colava o e-mail de terceiro na identidade e fazia o destinatário das
-    # notificações do canal ser quem nunca comprou. E ainda estourava a venda:
-    # grava-se ``fill_email``, mas procura-se por ``email`` — o cadastro que já
-    # tinha aquele endereço nunca era achado, um segundo nascia, e o UNIQUE de
-    # ContactPoint (type, value_normalized) recusava com IntegrityError, que
-    # escapava da view como HTTP 500 e travava a venda para sempre.
-    # Quem quer gravar contato usa ``customer_email``.
-    fill_email = email
+    # LACUNA — campo vazio no cadastro aprende; campo preenchido só muda com a
+    # ordem NOMEADA daquele campo (``_merge_pos_customer_fields``). É o que faz
+    # o CPF do cliente entrar uma vez e voltar pré-preenchido na próxima venda,
+    # sem que uma edição pontual no checkout reescreva o cadastro de ninguém.
+    #
+    # O CONTATO DO COMPROVANTE só vira cadastro quando o operador MANDA.
+    #
+    # O e-mail e o CPF pedidos na nota são fatos DA VENDA (``receipt.email``,
+    # ``fiscal.tax_id``), não identidade do cliente: pode-se pedir a nota no
+    # e-mail do contador, no CPF da empresa, no documento do marido. Deixá-los
+    # virar cadastro SOZINHOS criava cliente no CRM a cada venda anônima, colava
+    # contato de terceiro na identidade e fazia o destinatário das notificações
+    # do canal ser quem nunca comprou — e ainda estourava a venda, porque o
+    # UNIQUE global de ``ContactPoint`` recusava o endereço já cadastrado com
+    # um IntegrityError que escapava da view como HTTP 500.
+    #
+    # Mas nunca gravar é o outro extremo: quem dita o endereço no balcão quase
+    # sempre quer que ele fique. A saída não é adivinhar em nenhuma das duas
+    # direções — é a tela PERGUNTAR, e a resposta chegar aqui como ordem
+    # explícita. Sem a ordem, o cadastro fica INTACTO e a nota vai para o
+    # informado.
+    save_receipt_contact = bool(payload.get("save_receipt_contact"))
+    save_receipt_tax_id = bool(payload.get("save_receipt_tax_id"))
+    receipt_email = str(payload.get("receipt_email") or "").strip().lower()
+    receipt_tax_id = _digits(str(payload.get("fiscal_tax_id") or "").strip())
+    fill_tax_id = tax_id or (receipt_tax_id if save_receipt_tax_id else "")
+    fill_email = email or (receipt_email if save_receipt_contact else "")
     structured_address = payload.get("delivery_address_structured") if isinstance(payload.get("delivery_address_structured"), dict) else {}
     address = str(payload.get("delivery_address") or structured_address.get("formatted_address") or "").strip()
     raw_ref = str(payload.get("customer_ref") or "").strip()
@@ -3425,6 +3444,18 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # cliente identificado por REF. Sem ref não há "de quem" para corrigir, e um
     # telefone digitado num formulário nunca vira mudança de identidade sozinho.
     wants_contact_correction = bool(payload.get("customer_contact_correction")) and bool(raw_ref)
+    # ATUALIZAR o cadastro é ação PRÓPRIA, com nome próprio na tela. Quando o
+    # contato do comprovante DIVERGE do que o cadastro já tem, o padrão é não
+    # tocar em nada: a nota vai para o informado e o cadastro segue como estava.
+    # A ordem de gravar POR CIMA de um valor diferente só chega até aqui depois
+    # que o operador leu, na tela, qual valor sai e qual entra.
+    corrects_email = wants_contact_correction or (save_receipt_contact and bool(receipt_email) and not email)
+    corrects_phone = wants_contact_correction
+    # ⚠️ O documento não entra na correção de CONTATO — nem com a palavra do
+    # operador: o CPF pedido nesta venda pode ser o do marido, o da empresa, o
+    # de quem for. O único caminho que reescreve ``customer.document`` é a ordem
+    # NOMEADA de salvar o CPF da nota no cadastro.
+    corrects_tax_id = save_receipt_tax_id and bool(receipt_tax_id) and not tax_id
 
     if not any((raw_ref, name, phone, fill_tax_id, fill_email, address)):
         return {}
@@ -3451,6 +3482,10 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # auto-cadastro por CPF que a busca de cliente já faz.
     identified = bool(raw_ref or phone or tax_id or email)
     resolve_tax_id = tax_id if identified else fill_tax_id
+    # Mesma regra para o e-mail: ele só identifica quando o operador mandou
+    # salvá-lo E não há mais nada. É o que faz "Salvar como cliente?" numa venda
+    # anônima ACHAR quem já existe em vez de criar um duplicado por venda.
+    resolve_email = email if identified else fill_email
 
     with transaction.atomic():
         customer = _resolve_pos_customer(
@@ -3458,13 +3493,23 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
             ref=raw_ref,
             phone=phone,
             tax_id=resolve_tax_id,
-            email=email,
+            email=resolve_email,
         )
         created = customer is None
         # A correção vale para o cadastro que o REF apontou — e para mais
         # ninguém. Se o resolve caiu em outro cliente (ou criou um), corrigir
         # contato reescreveria o contato de quem não estava em jogo.
-        correct_contact = wants_contact_correction and customer is not None and customer.ref == raw_ref
+        on_associated = customer is not None and customer.ref == raw_ref
+        correct_phone = corrects_phone and on_associated
+        correct_email = corrects_email and on_associated
+        correct_tax_id = corrects_tax_id and on_associated
+        # ⚠️ ANTES de qualquer escrita. ``Customer.save()`` espelha e-mail num
+        # ContactPoint e o UNIQUE (type, value_normalized) é GLOBAL: gravar um
+        # endereço que já é de outro cadastro estourava IntegrityError lá
+        # dentro — que a view não sabia ler e virava HTTP 500 com a venda
+        # travada e o cliente na frente. Aqui o dono é olhado ANTES, e a recusa
+        # sai RICA (quem é o dono, por qual campo, e as saídas de um toque).
+        _guard_receipt_contact_owner(customer, email=fill_email, tax_id=fill_tax_id)
         if customer is None:
             first_name, last_name = _split_name(name)
             fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
@@ -3486,13 +3531,14 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 },
             )
         else:
-            if correct_contact:
+            if correct_phone:
                 # ⚠️ ORDEM IMPORTA. `Customer.save()` espelha o `phone` num
                 # ContactPoint `is_primary=True`, e o cadastro já tem um — dois
                 # principais do mesmo tipo violam `unique_primary_per_type`. Por
                 # isso o principal antigo é demovido ANTES; ele segue existindo,
                 # como histórico, e o novo nasce sozinho no posto.
                 _release_primary_contact(ContactPoint, customer, ContactPoint.Type.PHONE, phone)
+            if correct_email:
                 _release_primary_contact(ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email)
             _merge_pos_customer_fields(
                 customer,
@@ -3501,16 +3547,18 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
                 tax_id=fill_tax_id,
                 email=fill_email,
                 operator_username=operator_username,
-                correct_contact=correct_contact,
+                correct_phone=correct_phone,
+                correct_email=correct_email,
+                correct_tax_id=correct_tax_id,
             )
 
         if phone:
             _ensure_contact_point(
-                ContactPoint, customer, ContactPoint.Type.PHONE, phone, promote=correct_contact,
+                ContactPoint, customer, ContactPoint.Type.PHONE, phone, promote=correct_phone,
             )
         if fill_email:
             _ensure_contact_point(
-                ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email, promote=correct_contact,
+                ContactPoint, customer, ContactPoint.Type.EMAIL, fill_email, promote=correct_email,
             )
         if fill_tax_id:
             _ensure_customer_identifier(customer.ref, "cpf", fill_tax_id)
@@ -3557,6 +3605,32 @@ def _remember_fiscal_prefs(customer, payload: dict) -> None:
         metadata["fiscal_prefs"] = prefs
         customer.metadata = metadata
         customer.save(update_fields=["metadata", "updated_at"])
+
+
+def _guard_receipt_contact_owner(customer, *, email: str, tax_id: str) -> None:
+    """O dono do contato é olhado ANTES da escrita — nunca depois, no INSERT.
+
+    Quando o operador MANDA gravar o e-mail (ou o CPF) do comprovante no
+    cadastro, o valor pode já ser de outra pessoa. Sem esta checagem a recusa
+    nascia lá embaixo: ``Customer.save()`` espelha o e-mail num ``ContactPoint``
+    cujo UNIQUE ``(type, value_normalized)`` é GLOBAL, o ``IntegrityError``
+    subia por dentro do merge — onde era lido como conflito de TELEFONE — ou
+    escapava da view como HTTP 500, com a venda travada e o cliente na frente.
+
+    Aqui vira a MESMA recusa rica das outras portas do PDV: 422 com o campo, os
+    dois cadastros nomeados e as saídas de um toque (atender o outro, manter
+    quem está na comanda, unificar, liberar o contato do cadastro desativado).
+    """
+    from shopman.guestman.models import ContactPoint
+
+    if email:
+        owner = _contact_owner(ContactPoint.Type.EMAIL, email)
+        if owner is not None and (customer is None or owner.pk != customer.pk):
+            raise _pos_owner_conflict(customer, owner, "email")
+    if tax_id:
+        owner = _identifier_owner("cpf", tax_id)
+        if owner is not None and (customer is None or owner.pk != customer.pk):
+            raise _pos_owner_conflict(customer, owner, "cpf")
 
 
 def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):
@@ -3726,6 +3800,10 @@ def _identifier_owner(identifier_type: str, identifier_value: str):
     try:
         from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
     except ImportError:
+        # silêncio-deliberado: o contrib de identificadores é OPCIONAL; sem ele
+        # a posse do documento é respondida pelo `Customer.document` logo
+        # abaixo. App não instalado não é falha — gritar seria alarme por
+        # configuração legítima.
         pass
     else:
         ident = (
@@ -3777,15 +3855,21 @@ def _merge_pos_customer_fields(
     tax_id: str,
     email: str,
     operator_username: str,
-    correct_contact: bool = False,
+    correct_phone: bool = False,
+    correct_email: bool = False,
+    correct_tax_id: bool = False,
 ) -> None:
-    """Preenche LACUNA por padrão; CORRIGE só com ``correct_contact``.
+    """Preenche LACUNA por padrão; CORRIGE só com a ordem do campo.
 
-    A regra normal é só-preenche-lacuna: o CPF pedido nesta venda não reescreve
-    o cadastro de ninguém. Mas isso deixava o telefone errado sem conserto pelo
+    A regra normal é só-preenche-lacuna: nada digitado nesta venda reescreve o
+    cadastro de ninguém. Mas isso deixava o telefone errado sem conserto pelo
     balcão — o operador via o número trocado na tela e a única saída era o
-    Admin. ``correct_contact`` é a palavra explícita do operador (confirmada na
-    tela, com os dois valores nomeados) para o cliente identificado por ref.
+    Admin. Os três ``correct_*`` são a palavra explícita do operador (confirmada
+    na tela, com os dois valores nomeados) para o cliente identificado por ref.
+
+    ⚠️ São TRÊS e não um: mandar salvar o e-mail do comprovante não é
+    autorização para trocar o telefone, e a ordem sobre o CPF da nota não vem
+    de carona na correção de contato.
     """
     first_name, last_name = _split_name(name)
     updates: list[str] = []
@@ -3800,16 +3884,18 @@ def _merge_pos_customer_fields(
         customer.last_name = last_name
         updates.append("last_name")
 
-    if phone and (not customer.phone or (correct_contact and phone != customer.phone)):
+    if phone and (not customer.phone or (correct_phone and phone != customer.phone)):
         customer.phone = phone
         updates.append("phone")
-    if email and (not customer.email or (correct_contact and email != customer.email)):
+    if email and (not customer.email or (correct_email and email != customer.email)):
         customer.email = email
         updates.append("email")
-    # ⚠️ O documento NUNCA entra na correção, nem com a palavra do operador: o
-    # CPF pedido nesta venda pode ser o do marido, o da empresa, o de quem for —
-    # é pedido de NOTA, não identidade. Corrigir documento é gesto de cadastro.
-    if tax_id and not customer.document:
+    # ⚠️ O documento não entra na correção de CONTATO: o CPF pedido nesta venda
+    # pode ser o do marido, o da empresa, o de quem for — é pedido de NOTA, não
+    # identidade, e trocá-lo de carona numa correção de telefone seria o mesmo
+    # gravar-calado que este caminho existe para acabar. Só a ordem NOMEADA de
+    # salvar o CPF da nota no cadastro (``correct_tax_id``) reescreve.
+    if tax_id and (not customer.document or (correct_tax_id and tax_id != customer.document)):
         customer.document = tax_id
         updates.append("document")
 

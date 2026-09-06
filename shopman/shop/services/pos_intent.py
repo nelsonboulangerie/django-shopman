@@ -40,6 +40,13 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "change_for_q",
     "receipt_channels",
     "receipt_email",
+    # A ORDEM do operador para que o contato do comprovante vire cadastro. O
+    # e-mail e o CPF pedidos na nota são fatos DA VENDA (o cliente pode pedir no
+    # endereço do contador, no CPF da empresa) e por isso nunca viram identidade
+    # sozinhos. Recusar sempre também era errado: quem dita o endereço no balcão
+    # quase sempre quer que ele fique. A tela pergunta, e a resposta viaja aqui.
+    "save_receipt_contact",
+    "save_receipt_tax_id",
     "client_request_id",
     "tab_ref",
     "tab_session_key",
@@ -245,6 +252,11 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             focus="receipt_email",
             recovery="Preencha o e-mail ou altere o comprovante para não emitir.",
         )
+
+    # Sem valor não há o que salvar: a ordem sem o campo preenchido é ruído, e
+    # deixá-la passar faria o balcão mandar "grave" sobre string vazia.
+    payload["save_receipt_contact"] = _flag(payload.get("save_receipt_contact")) and bool(payload["receipt_email"])
+    payload["save_receipt_tax_id"] = _flag(payload.get("save_receipt_tax_id")) and bool(payload["fiscal_tax_id"])
 
     payload["client_request_id"] = _client_request_id(payload.get("client_request_id"))
     payload["tab_ref"] = _text(payload.get("tab_ref"), limit=64)
@@ -495,6 +507,13 @@ def _emailish(value, *, field: str) -> str:
     if "@" not in text or text.startswith("@") or text.endswith("@"):
         raise PosIntentError("invalid_email", "E-mail inválido.", field=field, focus="receipt_email")
     return text
+
+
+def _flag(value) -> bool:
+    """Um booleano do balcão — o JSON do navegador manda ``true``, ``"true"`` ou ``1``."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "on", "yes"}
+    return bool(value)
 
 
 def _text(value, *, limit: int) -> str:

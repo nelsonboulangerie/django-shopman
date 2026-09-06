@@ -339,3 +339,86 @@ class POSConflitoComSaidaTests(TestCase):
         self.assertEqual(response.status_code, 422)
         self.assertIn("Bruno", response.json()["detail"])
         self.assertEqual(Customer.objects.get(ref="CUST-REL-LIVE").phone, "+5543999990033")
+
+    # ── 7 · A ORDEM de salvar o contato do comprovante usa a MESMA saída ─────
+
+    def test_ordem_de_salvar_email_do_comprovante_de_outro_cadastro_vira_422_rico(self) -> None:
+        """Gravar passou a ser oferecido; a recusa não pode ser um 500 mudo.
+
+        Quando o operador MANDA guardar no cadastro um e-mail que já é de outra
+        pessoa, o UNIQUE global de `ContactPoint` recusa. Sem a checagem prévia
+        isso subia como `IntegrityError` de dentro do `Customer.save()` — lido
+        ali como conflito de TELEFONE, ou escapando da view como HTTP 500 com a
+        venda travada. Aqui é a mesma recusa rica das outras portas.
+        """
+        ana = self._customer("CUST-RCPT-A", "Ana", "Prado", phone="+5543999990011")
+        self._customer(
+            "CUST-RCPT-B", "Bruno", "Souza", phone="+5543999990022", email="bruno@example.org",
+        )
+        pedidos_antes = Order.objects.count()
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            receipt_channels=["email"],
+            receipt_email="bruno@example.org",
+            save_receipt_contact=True,
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "customer_conflict")
+        self.assertEqual(body["error"]["field"], "customer_email")
+        candidatos = {row["ref"]: row for row in body["error"]["candidates"]}
+        self.assertEqual(set(candidatos), {"CUST-RCPT-A", "CUST-RCPT-B"})
+        self.assertTrue(candidatos["CUST-RCPT-A"]["is_current"])
+        # Recusa é recusa: a venda NÃO fechou.
+        self.assertEqual(Order.objects.count(), pedidos_antes)
+
+    def test_ordem_de_salvar_cpf_da_nota_de_outro_cadastro_vira_422_rico(self) -> None:
+        """O CPF tem a matriz inteira — inclusive esta linha."""
+        ana = self._customer("CUST-RCPT-C", "Ana", "Prado", phone="+5543999990011")
+        self._customer(
+            "CUST-RCPT-D", "Bruno", "Souza", phone="+5543999990022", document="52998224725",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="52998224725",
+            save_receipt_tax_id=True,
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["error"]["field"], "customer_tax_id")
+        self.assertEqual(
+            {row["ref"] for row in body["error"]["candidates"]},
+            {"CUST-RCPT-C", "CUST-RCPT-D"},
+        )
+
+    def test_sem_a_ordem_a_nota_vai_para_o_email_de_outro_e_a_venda_FECHA(self) -> None:
+        """"A pessoa pode querer enviar para outro e-mail, por algum motivo."
+
+        Sem ordem de gravar não há posse em disputa: a nota vai para o endereço
+        informado, e os dois cadastros ficam como estavam.
+        """
+        ana = self._customer("CUST-RCPT-E", "Ana", "Prado", phone="+5543999990011")
+        bruno = self._customer(
+            "CUST-RCPT-F", "Bruno", "Souza", phone="+5543999990022", email="bruno@example.org",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            receipt_channels=["email"],
+            receipt_email="bruno@example.org",
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        bruno.refresh_from_db()
+        self.assertEqual(ana.email, "")
+        self.assertEqual(bruno.email, "bruno@example.org")
+        pedido = Order.objects.get(ref=response.json()["order_ref"])
+        self.assertEqual(pedido.data["receipt"]["email"], "bruno@example.org")

@@ -176,11 +176,12 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     assert customer.metadata["fiscal_prefs"]["cpf_na_nota"] is True
 
 
-def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota(db):
-    """Campo vazio aprende; campo preenchido não muda.
+def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota_QUANDO_MANDAM(db):
+    """Campo vazio aprende — com a ordem do operador, nunca sozinho.
 
-    É o que faz o pré-preenchimento existir: o cliente dá o CPF uma vez e na
-    próxima venda ele já vem no campo da nota. Não confundir com sobrescrever —
+    É o que faz o pré-preenchimento existir: o cliente dá o CPF uma vez, o
+    operador marca "salvar no cadastro", e na próxima venda ele já vem no campo
+    da nota. Não confundir com sobrescrever — sem ordem sobre valor divergente
     ``_merge_pos_customer_fields`` só completa lacuna.
     """
     from shopman.guestman.models import Customer
@@ -196,7 +197,11 @@ def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota(db):
     )
 
     _persist_customer_from_payload(
-        {"customer_phone": "43999990011", "fiscal_tax_id": "52998224725"},
+        {
+            "customer_phone": "43999990011",
+            "fiscal_tax_id": "52998224725",
+            "save_receipt_tax_id": True,
+        },
         operator_username="op",
     )
 
@@ -236,10 +241,11 @@ def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     assert resolvido["ref"] != esposa.ref
 
 
-def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
+def test_sem_ninguem_identificado_o_cpf_da_nota_resolve_QUANDO_MANDAM(db):
     """A outra metade da regra, e a razão de ela ser condicional.
 
-    Cliente anônimo que só pede "põe no CPF tal": esse documento é a ÚNICA
+    Cliente anônimo que só pede "põe no CPF tal", com o operador aceitando o
+    "Salvar como cliente?" que a tela ofereceu: esse documento é a ÚNICA
     identidade que existe. Ignorá-lo criaria um cadastro duplicado a cada venda
     de quem só quer nota — que é a maioria delas.
     """
@@ -256,7 +262,8 @@ def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
     )
 
     resolvido = _persist_customer_from_payload(
-        {"fiscal_tax_id": "52998224725"},   # só o CPF da nota, mais nada
+        # Só o CPF da nota, mais nada — e a ordem explícita de guardá-lo.
+        {"fiscal_tax_id": "52998224725", "save_receipt_tax_id": True},
         operator_username="op",
     )
 
