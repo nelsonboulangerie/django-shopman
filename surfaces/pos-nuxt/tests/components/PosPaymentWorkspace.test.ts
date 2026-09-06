@@ -1388,6 +1388,23 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
     ]);
   });
 
+  it("o balão da coluna abre para a ESQUERDA — embaixo ficam o Validar e as perguntas", async () => {
+    // A coluna encosta na borda direita da tela e o miolo ao lado está vazio.
+    // Abrindo para baixo, o balão do e-mail (último campo) cobria o Validar, e
+    // o do CPF (primeiro da seção) cobria "Impressa?", "Por e-mail?" e o eco.
+    await mountSuspended(PosPaymentWorkspace, {
+      props: props({
+        checkoutContract: comFiscal,
+        receiptChannels: ["email"],
+        receiptEmail: "novo@example.org",
+      }),
+    });
+
+    const panel = document.querySelector('[role="dialog"][aria-label]');
+    expect(panel).not.toBeNull();
+    expect(panel!.getAttribute("data-side")).toBe("left");
+  });
+
   it("o CPF da nota tem a linha dele, com o mesmo interruptor à vista", async () => {
     const w = await mountSuspended(PosPaymentWorkspace, {
       props: props({

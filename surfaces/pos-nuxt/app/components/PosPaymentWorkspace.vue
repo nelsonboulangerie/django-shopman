@@ -1596,6 +1596,8 @@ defineExpose({
                 <PosReceiptSaveOffer
                   :offer="receiptTaxIdOffer"
                   :checked="saveReceiptTaxIdChecked"
+                  side="left"
+                  :quiet="customerSheetOpen"
                   @update:checked="$emit('update:saveReceiptTaxId', $event)"
                 >
                   <UiInput
@@ -1657,6 +1659,8 @@ defineExpose({
                 <PosReceiptSaveOffer
                   :offer="receiptEmailOffer"
                   :checked="saveReceiptEmailChecked"
+                  side="left"
+                  :quiet="customerSheetOpen"
                   @update:checked="$emit('update:saveReceiptContact', $event)"
                 >
                   <UiInput
@@ -1779,12 +1783,15 @@ defineExpose({
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
+    :receipt-email-offer="receiptEmailOffer"
+    :save-receipt-contact="saveReceiptEmailChecked"
     @update:customer-name="$emit('update:customerName', $event)"
     @update:customer-phone="$emit('update:customerPhone', $event)"
     @update:customer-tax-id="$emit('update:customerTaxId', $event)"
     @update:customer-email="$emit('update:customerEmail', $event)"
     @update:receipt-channels="$emit('update:receiptChannels', $event)"
     @update:receipt-email="$emit('update:receiptEmail', $event)"
+    @update:save-receipt-contact="$emit('update:saveReceiptContact', $event)"
     @search="$emit('search', $event)"
     @select-result="onSelectResult"
     @clear="$emit('clearCustomer')"

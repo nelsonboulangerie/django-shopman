@@ -106,6 +106,27 @@ describe("PosReceiptSaveOffer", () => {
     expect(wrapper.emitted("update:checked")?.[0]).toEqual([false]);
   });
 
+  it("o LADO do balão é escolhido por quem sabe o que ele tapa", async () => {
+    // Na coluna do fechamento `bottom` cobria o Validar e as perguntas
+    // seguintes; a coluna encosta na borda e o miolo ao lado está vazio.
+    await mountSuspended(PosReceiptSaveOffer, {
+      props: { offer: SALVAR, checked: false, side: "left" },
+    });
+
+    expect(popover()!.getAttribute("data-side")).toBe("left");
+  });
+
+  it("QUIET cala o balão e mantém a linha — o modal por cima o tornaria fantasma", async () => {
+    // Com o modal do cliente aberto, o balão da coluna abriria atrás do
+    // overlay: pergunta sem ninguém para respondê-la, que é pior que nenhuma.
+    const wrapper = await mountSuspended(PosReceiptSaveOffer, {
+      props: { offer: ANONIMA, checked: true, quiet: true },
+    });
+
+    expect(popover()).toBeNull();
+    expect(wrapper.find('[role="switch"]').exists()).toBe(true);
+  });
+
   it("a linha de desmarcar fica À VISTA — nunca atrás de um avançado", async () => {
     // É o que segura a promessa do "já marcado" da venda anônima: o padrão é
     // do dono, a visibilidade é a contrapartida.

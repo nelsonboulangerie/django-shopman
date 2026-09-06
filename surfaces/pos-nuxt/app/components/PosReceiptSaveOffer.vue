@@ -21,12 +21,23 @@
    */
   import type { ReceiptContactOffer } from "~/presentation/receiptContact";
 
-  const props = defineProps<{
+  const props = withDefaults(defineProps<{
     offer: ReceiptContactOffer;
     checked: boolean;
-    /** Desliga só o popover; a linha persistente continua. */
+    /** Desliga só o popover; a linha persistente continua. Quem chama sabe
+     *  quando a pergunta seria um FANTASMA — o modal do cliente por cima, por
+     *  exemplo: o balão abriria atrás do overlay, sem ninguém para respondê-lo. */
     quiet?: boolean;
-  }>();
+    /** De que LADO o balão abre. Não é gosto: é o que ele tapa.
+     *
+     *  Na coluna do fechamento, `bottom` cobria o `Validar` (campo do e-mail, o
+     *  último) e as duas perguntas seguintes (campo do CPF, o primeiro da
+     *  seção). A coluna encosta na borda direita da tela e o miolo ao lado está
+     *  vazio — daí `left`. Dentro do modal, que é centrado, `top` é o que sobra
+     *  livre acima do "Concluir". Sempre pela primitiva (`side`), nunca por
+     *  `position` na mão: é o `side` que mantém o portal e o desvio de colisão. */
+    side?: "top" | "right" | "bottom" | "left";
+  }>(), { quiet: false, side: "bottom" });
 
   const emit = defineEmits<{ "update:checked": [boolean] }>();
 
@@ -75,8 +86,8 @@
 
       <UiPopoverContent
         v-if="offer.kind !== 'none'"
-        align="start"
-        side="bottom"
+        align="center"
+        :side="side"
         :trap-focus="false"
         class="w-80 p-3"
         role="dialog"
