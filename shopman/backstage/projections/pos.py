@@ -782,11 +782,12 @@ def _birthday_projection(customer) -> dict:
                 .first()
             )
             promo_label = promo.name if promo else ""
-        except Exception:
-            # silêncio-deliberado: sem rótulo, o aviso de aniversário não
-            # PROMETE desconto nenhum — falha fechado, que é o certo aqui.
-            # Alarmar porque a busca da promoção falhou seria ruído sobre um
-            # chip de consciência, não sobre a venda.
+        # ⚠️ O marcador fica NA LINHA do `except`, e o log logo abaixo dele: o
+        # gate da meia-correção procura o marcador na linha/no corpo, e o
+        # `test_exception_hygiene` do backstage exige o `logger.` dentro de
+        # quatro linhas. Comentário longo no meio do corpo empurra o log para
+        # fora da janela e reprova.
+        except Exception:  # silêncio-deliberado: sem rótulo, o aviso não promete desconto nenhum
             logger.debug("pos_lookup_birthday_promo_failed", exc_info=True)
     return {
         "birthday_display": birthday.strftime("%d/%m"),

@@ -2487,12 +2487,15 @@ def discount_approval_threshold_q() -> int:
         raw = pos_cfg.get("discount_approval_threshold_q")
         if raw is not None:
             return max(0, int(raw))
+    # ⚠️ NÃO é silêncio deliberado: este número é POLÍTICA — é ele que diz a
+    # partir de que desconto a venda exige aprovação gerencial. Cair para o
+    # valor do settings porque alguém digitou errado no Admin muda QUEM precisa
+    # autorizar, e em `logger.debug` isso passava sem ninguém ver. O fallback
+    # continua (a venda não pode parar), mas ele grita.
+    #
+    # A explicação fica ACIMA do `except` de propósito: o log tem de encostar
+    # nele (ver `test_exception_hygiene`, que exige `logger.` em quatro linhas).
     except Exception:
-        # ⚠️ NÃO é silêncio deliberado: este número é POLÍTICA — é ele que diz
-        # a partir de que desconto a venda exige aprovação gerencial. Cair para
-        # o valor do settings porque alguém digitou errado no Admin muda quem
-        # precisa autorizar, e em `logger.debug` isso passava sem ninguém ver.
-        # O fallback continua (a venda não pode parar), mas ele grita.
         logger.warning("pos_discount_threshold_lookup_failed", exc_info=True)
     return max(0, int(getattr(settings, "SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", 0) or 0))
 
