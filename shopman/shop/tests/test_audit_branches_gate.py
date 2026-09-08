@@ -29,9 +29,12 @@ FAKE_GH = """#!/usr/bin/env bash
 for arg in "$@"; do
   if [ "$seen_head" = "1" ]; then branch="$arg"; seen_head=0; fi
   [ "$arg" = "--head" ] && seen_head=1
+  [ "$arg" = "open" ] && aberto=1
 done
-if [ -z "${branch:-}" ]; then
-  echo '[]'                      # o cache erra por construção
+if [ "${aberto:-0}" = "1" ]; then
+  echo 'em-revisao'              # head de PR ABERTO
+elif [ -z "${branch:-}" ]; then
+  echo '[]'                      # o cache de mergeados erra por construção
 elif [ "$branch" = "entregue" ]; then
   echo 'MERGED'
 elif [ "$branch" = "recusado" ]; then
@@ -66,6 +69,7 @@ def repo(tmp_path: Path) -> Path:
         ("entregue", "a"),
         ("recusado", "b"),
         ("esquecido", "c"),
+        ("em-revisao", "d"),
     ):
         git(r, "checkout", "-q", "-b", name, base)
         (r / f"{name}.txt").write_text(payload + "\n")
@@ -118,6 +122,17 @@ def test_pr_fechado_e_decisao_registrada_nao_pendencia(repo, tmp_path):
     saida = run_audit(repo, tmp_path)
     assert "PR FECHADO" in linha(saida, "recusado")
     assert "UNMERGED" not in linha(saida, "recusado")
+
+
+def test_head_de_pr_aberto_nao_e_branch_esquecida(repo, tmp_path):
+    """Os sete Dependabot enchiam a coluna ⚠️ sem exigir ação nenhuma.
+
+    Uma coluna que grita por trabalho em revisão é uma coluna que se aprende a
+    ignorar — que é como o falso positivo da janela de 300 PRs fazia mal.
+    """
+    saida = run_audit(repo, tmp_path)
+    assert "PR ABERTO" in linha(saida, "em-revisao")
+    assert "UNMERGED" not in linha(saida, "em-revisao")
 
 
 def test_branch_sem_pr_nenhum_continua_gritando(repo, tmp_path):

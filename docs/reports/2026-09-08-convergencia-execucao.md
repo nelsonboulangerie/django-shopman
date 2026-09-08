@@ -1,20 +1,26 @@
 # Convergência local · remoto · CI · deploy — relatório de execução
 
-**Quando:** 2026-09-08, 17:48Z → 18:5xZ (America/Sao_Paulo) · **Host:** `macpab.local`
+**Quando:** 2026-09-08, a partir de 17:48Z · **Host:** `macpab.local`
 **Escopo:** eliminar ou documentar pendência operacional. **Não** é revisão de
 prontidão para go-live — os bloqueadores de go-live seguem intocados e fora
 deste documento, de propósito.
 
 | | |
 |---|---|
-| `origin/main` inicial | `47d0b854b1086c1d5a172333f22e5ae9fab4c531` |
-| `origin/main` final | `3fb0e575caa5e1d298ebd6bf7307d8af3434515e` |
-| `main` local | `3fb0e575c…` — **igual ao remoto** |
-| worktrees | 47 → **18** |
-| branches locais | 451 → **32** |
-| branches remotas | 381 → **23** |
+| `origin/main` no início | `47d0b854b1086c1d5a172333f22e5ae9fab4c531` |
+| **último SHA operacional verificado** | `3fb0e575caa5e1d298ebd6bf7307d8af3434515e` — deploy, imagens, spec drift e smoke conferidos aqui |
+| SHA que incorporou a documentação | `af4334835ecec4393e29e719ac525bf0ea38bc37` (PR #572) |
+| worktrees | 47 → **14** |
+| branches locais | 451 → **30** |
+| branches remotas | 381 → **21** |
 | stashes | 0 (antes e depois) |
 | backup | `/Users/pablovalentini/Documents/Backups/django-shopman-convergence-20260908-145122` |
+| backup incremental | `/Users/pablovalentini/Documents/Backups/django-shopman-convergence-incremental-20260908-164027` |
+
+⚠️ **Os dois SHAs são coisas diferentes, de propósito.** O relatório não pode
+afirmar o SHA do commit que o contém — seria autorreferência impossível. Ele
+registra o último SHA em que a verificação operacional foi FEITA; o SHA final de
+`origin/main` depois do merge deste documento vai num comentário do próprio PR.
 
 Entrada: o [handoff de convergência](2026-09-08-convergencia-local-remoto-deploy-handoff.md)
 do agente externo, mais um laudo de coordenação próprio do mesmo dia. As duas
@@ -68,6 +74,55 @@ Depois de extrair a lógica para script, o run
 passou de ponta a ponta.
 
 ---
+
+## 1-bis. A segunda correção — o #571 não bastava
+
+Uma releitura adversarial do próprio conserto achou **duas portas de falso verde**
+que sobreviveram ao #571. As duas foram provadas rodando a função antiga, não
+deduzidas.
+
+**a) O deployment do merge ANTERIOR entrava pela folga de 120 segundos.** A
+escolha era `created_at >= fim_do_deploy − CLOCK_SKEW`.
+
+```
+referência = 2026-09-08T19:01:30Z menos 120s
+escolheu   = ANTERIOR  phase=ACTIVE
+→ o run de B aprovaria o deployment de A: SIM — FALSO VERDE
+```
+
+Como A começou antes, ele fica `ACTIVE` primeiro; o smoke de B aprovava a versão
+de A.
+
+**b) "Não vi deployment" virava sucesso por presunção.** Esgotado o teto, o
+script dizia *"provavelmente o push não tocou componente publicável"* e retornava
+zero. Se a DigitalOcean falhasse em criar o deployment de uma publicação **real**,
+o silêncio virava verde. O run sobre `af433483` mostrou o custo do lado inocente:
+**43 leituras de `phase=NONE` e 15 minutos** para concluir algo que o Deploy
+Images já sabia.
+
+**O conserto (#573): correlação por digest.** Relógio só sabe dizer "depois de".
+O que amarra um deployment a um build é `cause_details.docr_push.image_digest` —
+o spec do App Platform aponta para a tag **móvel** (`web`, `pos`) e não carrega o
+SHA.
+
+O Deploy Images passa a **declarar** o que publicou: cada componente registra
+`{tag, immutable_tag, digest}`, e um job `manifest` que roda **sempre** — inclusive
+quando não há o que construir — compõe o artefato `published-components`.
+
+| manifesto | comportamento |
+|---|---|
+| lista vazia | pula a espera **na hora**. Quem construiu é quem diz que não construiu |
+| com componente | espera deployment cujo digest esteja nela. Teto esgotado **REPROVA** |
+| ilegível | erro. Upload perdido e "nada publicado" não podem terminar iguais |
+| `ERROR`/`CANCELED` **nosso** | reprova; de outro run, não |
+
+Os seis cenários do contrato têm teste, mais o comportamental que impede a volta
+do relógio: o deployment anterior aparece como **o mais novo** e ainda assim
+perde.
+
+De carona, `scripts/audit-branches.sh` ganhou o estado `◷ PR ABERTO`. Head de PR
+em revisão — os sete do Dependabot — enchia a coluna ⚠️, que é a única que exige
+ação humana. Com a classificação certa ela caiu de **10 para 2 linhas**.
 
 ## 2. Reconciliação — CONFIRMADO · ALTERADO · REFUTADO
 
@@ -158,31 +213,76 @@ reprova junto, o que faz o PR parecer catastrófico quando o defeito é uma linh
 | #427 `nuxt-framework` | `npm ci` recusa o lockfile (bindings de plataforma) | falha só em `marketing-nuxt` |
 | #428 `build-tooling` (20) | idem, 10 checks | regenerar com Node 22 / `npx npm@10` |
 
-### Decisão: os sete ficam abertos, e é decisão fundamentada
+### Decisão: FREEZE DE CONVERGÊNCIA — exceções formalmente aceitas
 
-Nenhum é flake e nenhum é bloqueio fantasma. Fechá-los descartaria bumps
-legítimos; mergeá-los exige **alargar faixa declarada em `packages/*`** — o
-Core — e o handoff é explícito em não ampliar escopo para revisão funcional sem
-autorização. O #234 ainda troca a biblioteca que desenha **o QR que o cliente
-escaneia para pagar**.
+Os sete continuam abertos, **rotulados e rastreados**, não esquecidos:
 
-O conserto, quando for a hora, é um WP próprio e tem receita conhecida: alargar a
-faixa em cada `packages/*/pyproject.toml` afetado, regenerar com
-`scripts/check_constraints.py --write`, re-snapshotar o inventário do Unfold e
-rodar a suíte inteira. #232 e #235 têm de subir **juntos**.
+- rótulo `bloqueado: contrato de dependência` nos sete;
+- comentário em cada um com a faixa exata que barra e o que exige;
+- **issue de rastreamento #574**, com as três frentes: Python/Django/Unfold ·
+  WebAuthn+cbor2 e qrcode/django-filter · Nuxt e build tooling;
+- registrado que **#232 e #235 têm de ser avaliados juntos** — o #232 sozinho
+  nunca passa.
+
+**Segurança conferida antes de congelar:** zero alertas Dependabot abertos.
+
+```bash
+gh api repos/nelsonboulangerie/django-shopman/dependabot/alerts --paginate \
+  --jq '[.[]|select(.state=="open")]|length'     # → 0   (291 no histórico, todos `fixed`)
+```
+
+Nenhum dos sete fecha alerta de segurança, então o congelamento não deixa
+vulnerabilidade em aberto e nenhum vira WP urgente.
+
+⛔ **Não alargar faixa do Core sem análise de compatibilidade e suíte completa.**
+Foi para não fazer isso às pressas que eles foram congelados.
 
 ## 4. Branches e worktrees
 
-**Worktrees: 47 → 18.** Todas as removidas passaram, no instante da remoção, por
-três provas: `git status` limpo (ou zero blob único), nenhum processo em
-`lsof +D`, e HEAD contido em `origin/main`.
+**Worktrees: 47 → 14.** Todas as removidas passaram, no instante da remoção, por
+três provas: `git status -uall` sem blob único, nenhum processo em `lsof +D`, e
+conteúdo comparado com `origin/main` **e seu histórico**.
 
-- 20 removidas limpas · 9 removidas sujas com **zero blob único** provado
-- **2 recusadas pelo próprio git**: `agent-ab3dc373225cb0b4c` e
-  `agent-ad44b5a41338740f7`, locked pelo **PID 7002, que está vivo**. Não foram
-  tocadas. É condição de parada, e o git a aplicou sozinho.
+- 20 removidas limpas · 9 sujas com zero blob único · 4 sujas com rascunho
+  provadamente supersedido (`main` é superconjunto em todos os arquivos)
 
-**Branches locais: 451 → 32. Branches remotas: 381 → 23.** Zero erros nos dois
+### Os sete worktrees dirty, um a um
+
+| worktree | entradas | processo | veredito |
+|---|---:|---|---|
+| checkout raiz | 158 (`-uall`) | **9 processos vivos**, inclusive um `codex` (PID 7573) | **MANTER** — D7 bloqueado; ver Pendências |
+| `codex/repo-convergence-handoff` | 1 | não | **INCORPORADO** — o handoff virou o #572; blob idêntico ao histórico do `main`. Removida |
+| `app-bug-fixes-790f0b` | 8 | não | **SUPERSEDIDO** — `main` tem 261 linhas a mais no `seed.py`, 28 no `attribute_defaults.py`; a edição da migration **aplicada** `0033` é a abordagem recusada pelo ADR-015, e o conteúdo entrou pela `0035` nova. Removida |
+| `dreamy-lalande-e6053c` | 2 | não | **ARQUIVAR** — dois `prova-*.mjs` ad-hoc (47 linhas, porta `3014` no código, sem contrato). Archive validado nos dois backups. Removida |
+| `eloquent-grothendieck-1945b1` | 2 | não | **SUPERSEDIDO** — `main` tem 48 linhas a mais em `modifiers.py` e 253 no teste; o local não tem o `line_id` nem o `manual_lines`. Removida |
+| `receitas-paes-producao-26a519` | 1 | **SIM** | **MANTER ATIVO** — brief idêntico ao `main`, mas há sessão viva |
+| `django-shopman-buyman-nuxt` | ? | não | ⛔ **ILEGÍVEL** — ver abaixo |
+
+### ⛔ Buyman: o worktree que eu não consigo ler
+
+`/Users/pablovalentini/Documents/Codex/2026-08-25/revisar/work/django-shopman-buyman-nuxt`
+
+```
+$ ls .../django-shopman-buyman-nuxt
+ls: Operation not permitted
+$ git --git-dir=.../.git rev-parse HEAD
+fatal: error opening '.../.git': Operation not permitted
+```
+
+O diretório é negado a esta sessão pelo macOS. **O que consegui provar, pelos
+metadados que moram no `.git` do repositório principal:**
+
+- HEAD = `refs/heads/codex/buyman-nuxt-interface` → `763e62e20`
+- `763e62e20` é **ancestral de `origin/main`** — o lado commitado está inteiro lá
+- **`surfaces/buyman-nuxt` nunca existiu em commit nenhum** deste repositório
+- `surfaces/purchase-nuxt` está no `main` com 41 arquivos, 17 componentes e 4
+  testes, e no ar como o componente `purchase`
+
+**O que eu NÃO consigo provar:** o conteúdo não commitado. Não sei o que há nele,
+não consigo compará-lo, e não consigo preservá-lo. Removê-lo seria descartar o
+que não fui capaz de ver — a condição de parada exata. **Fica, e escala.**
+
+**Branches locais: 451 → 30. Branches remotas: 381 → 21.** Zero erros nos dois
 lados. O critério foi o mais forte disponível, aplicado **branch a branch e
 re-verificado no instante da remoção**:
 
@@ -217,10 +317,24 @@ duas últimas foram provadas blob a blob.
 | restauração de amostra | clone do bundle → **460 refs**, `origin/main` = `47d0b854b` |
 | `fsck-unreachable.txt` | 6 347 linhas, tirado **antes** de qualquer limpeza |
 | patches por worktree suja | `status`, `diff HEAD`, `diff --cached`, untracked em tar |
-| `SHA256SUMS` | 114 arquivos |
+| `SHA256SUMS` | **129 arquivos, 129 OK** na conferência final |
+
+⚠️ **114 e 129 não se contradizem.** 114 era a contagem no instante do backup
+(17:51Z). Depois dele entraram os 15 manifestos de `limpeza/` — o registro do que
+foi removido, que é justamente o que torna a limpeza auditável. `129 − 15 = 114`.
+O `SHA256SUMS` foi regerado ao final e confere inteiro.
 
 Prova de recuperabilidade **depois** da limpeza: três branches apagadas ao acaso
 foram encontradas no bundle, com assunto legível.
+
+### Backup incremental
+
+`/Users/pablovalentini/Documents/Backups/django-shopman-convergence-incremental-20260908-164027`
+
+Criado porque o backup original é de 17:51Z e o plano de Produção mudou às
+19:01Z. Contém: o snapshot do plano com `sha256`, e `status`/`diff HEAD`/
+`diff --cached`/untracked de cada worktree dirty **remedidos no momento da
+remoção**, além dos manifestos do que foi apagado.
 
 ⚠️ Nenhum `git gc`, `git prune` ou `git worktree prune` foi executado.
 
@@ -230,12 +344,35 @@ foram encontradas no bundle, com assunto legível.
 
 | arquivo | decisão |
 |---|---|
-| handoff de convergência do agente externo | **PROMOVIDO** — este PR. Vivia untracked numa worktree do Codex |
-| 4 relatórios de 2026-08-28 no checkout raiz | **ARQUIVADOS** no backup. São prompts de execução já cumpridos, não entrega |
-| `prova-clique.mjs`, `prova-feeds.mjs` | **ARQUIVADOS**. 47 linhas somadas, porta `3014` no código, sem contrato; `scripts/run_omotenashi_browser_qa.mjs` já faz isso com dono |
+| handoff de convergência do agente externo | **PROMOVIDO** — PR #572. Vivia untracked numa worktree do Codex |
+| **plano novo de Produção** (74.434 bytes) | **PRESERVADO fora do repo** — ver abaixo |
+| 4 relatórios de 2026-08-28 no checkout raiz | **ARQUIVADOS** no backup. Prompts de execução já cumpridos, não entrega |
+| `prova-clique.mjs`, `prova-feeds.mjs` | **ARQUIVADOS** e validados nos dois backups. 47 linhas somadas, porta `3014` no código, sem contrato |
 | `.alpha-tmp/` (19 MB) | **ARQUIVADO** no backup; não commitado — screenshots de QA podem conter dado de sessão |
+| `docs/plans/backstage-app-audits-2026-08-29/` | 20 arquivos em disco, **0 divergentes** do `main` (que tem 40; os 20 restantes são commits que o raiz não alcançou). Reconciliam sozinhos quando o checkout atualizar |
 
----
+### O plano de Produção, que o backup original não cobria
+
+`docs/plans/PRODUCTION-IRREPRESSIBLE-EXCELLENCE-PLAN-2026-09-08.md`
+
+```
+tamanho : 74.434 bytes
+sha256  : f435f49347391b7d1bdb0e9de29a3278d14d17897bb93022b2880679014ac68d
+mtime   : 2026-09-08T19:01:04Z   ← DEPOIS do backup (17:51:22Z)
+```
+
+**Existe só no checkout raiz**, não está no `main` e não está em branch nenhuma.
+Como foi modificado depois do manifesto do backup, ele **não estava
+comprovadamente preservado** — e é a única cópia.
+
+Snapshot com hash em `/Users/pablovalentini/Documents/Backups/django-shopman-convergence-incremental-20260908-164027/plano/`.
+
+⚠️ **Não foi commitado, e não foi levado para branch.** É um plano de
+implementação de outra frente, sua sessão dona segue viva no checkout raiz, e
+misturá-lo ao PR de convergência seria decidir por ela. Seu backlog funcional
+**não foi executado** — está fora do escopo desta tarefa, por instrução.
+
+**Estado: preservado fora do repositório, mantido por sessão ativa.**
 
 ## 7. Verificação final
 
@@ -279,15 +416,26 @@ demora mais, ele mediria a versão anterior e ficaria verde. E com
 
 ## 8. Pendências restantes
 
-| # | Pendência | Causa | Dono | Próxima ação |
-|---|---|---|---|---|
-| 1 | **7 PRs do Dependabot abertos** | faixa declarada em `packages/*` barra o bump; `ResolutionImpossible` no `make install` | Pablo | WP próprio: alargar faixa, `check_constraints.py --write`, re-snapshot do Unfold, suíte inteira. #232+#235 juntos |
-| 2 | **Checkout raiz 644 commits atrás** | o hook bloqueia `checkout` ali de propósito; nenhum agente pode atualizá-lo | Pablo | `git pull` no raiz quando não houver sessão trabalhando nele |
-| 3 | **2 worktrees locked** (`agent-ab3dc373225cb0b4c`, `agent-ad44b5a41338740f7`) | **PID 7002 vivo** — o próprio git recusou a remoção | sessão dona | encerrar a sessão; então `git worktree remove` |
-| 4 | **3 worktrees sujas com bytes únicos** (`app-bug-fixes-790f0b`, `eloquent-grothendieck-1945b1`, `dreamy-lalande-e6053c`) | rascunhos anteriores ao `main` + 2 scripts de prova ad-hoc | Pablo | patches no backup; `git worktree remove --force <caminho>` quando quiser |
-| 5 | **`receitas-paes-producao-26a519` suja com processo vivo** | sessão ativa | sessão dona | nada agora |
-| 6 | **12 branches locais com delta real** | 4 têm PR fechado por decisão sua; as outras foram provadas sem código ausente do `main` | Pablo | nenhuma ação necessária; ficam por escolha |
-| 7 | **4 relatórios de 28/08 e `.alpha-tmp/` no checkout raiz** | untracked; não pude escrever no raiz | Pablo | arquivados no backup; apagar do raiz quando quiser |
+**Convergência técnica concluída; permanecem apenas as exceções Dependabot
+formalmente aceitas e/ou sessões ativas identificadas abaixo.**
 
-⚠️ Nenhuma destas é defeito aberto de CI, deploy ou integridade de repositório.
-São decisões que dependem de quem tem a palavra ou a sessão.
+Nenhuma delas é defeito aberto de CI, deploy ou integridade de repositório. Todas
+dependem de **sessão viva, permissão do sistema, ou decisão sobre o Core**.
+
+| # | Pendência | Causa medida | Dono | Próxima ação |
+|---|---|---|---|---|
+| 1 | **7 PRs do Dependabot** | bump cruza faixa declarada → `ResolutionImpossible` no `make install`. Zero alertas de segurança abertos | Pablo | issue **#574**, três frentes. #232+#235 juntos |
+| 2 | **Checkout raiz 650 commits atrás e dirty** | **9 processos vivos com cwd nele**, inclusive um `codex` (PID 7573). O hook `guard-paralelo` bloqueia `checkout` ali de propósito, e contorná-lo é proibido | Pablo | encerrar/coordenar as sessões; então `git checkout main && git pull --ff-only`, `make install`, e a bateria de gates |
+| 3 | **2 worktrees locked** (`agent-ab3dc373225cb0b4c`, `agent-ad44b5a41338740f7`) | **PID 7002 vivo** desde 06:02Z. `git worktree remove` recusou sozinho | sessão dona | encerrar a sessão; repetir status/backup; então remover |
+| 4 | **`receitas-paes-producao-26a519` dirty** | processo vivo; o único arquivo é idêntico ao `main` | sessão dona | nada agora |
+| 5 | ⛔ **`django-shopman-buyman-nuxt` ilegível** | macOS nega `ls` e `open` em `~/Documents/Codex/…` a esta sessão | Pablo | ler/preservar o conteúdo não commitado, ou autorizar o descarte. O lado **commitado** já está no `main` (`763e62e20` é ancestral) |
+| 6 | **Plano de Produção não commitado** | única cópia, no checkout raiz, alterado 19:01Z (depois do backup) | sessão dona | snapshot com `sha256` no backup incremental. Levar a branch própria é decisão de quem o escreve |
+| 7 | **10 branches locais com delta real** | conteúdo que não bate com o `main`; são a única cópia fora do bundle | Pablo | preservadas de propósito. Classificadas na seção 4 |
+
+### O que ficou fora de escopo, por instrução
+
+- **Nenhuma revisão de prontidão para go-live.** Os bloqueadores seguem os do
+  índice do memory (Tier 1 ligado, Pix em mock, NFC-e em homologação, e-mail no
+  console, cartão que recusa no alpha). Nenhuma linha deste documento os toca.
+- **O backlog funcional do plano de Produção não foi executado.**
+- **Nenhuma faixa do Core foi alargada.**

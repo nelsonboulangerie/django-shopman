@@ -29,8 +29,9 @@
 # janela: só ela pode dizer "não há PR nenhum".
 #
 # Saída: tabela status | branch | última data | resumo de arquivos.
-# Só as linhas ⚠️ exigem ação humana. `✗ PR FECHADO` é decisão registrada do
-# dono (supersedido, recusado) — não é esquecimento, e por isso não é ⚠️.
+# Só as linhas ⚠️ exigem ação humana. `◷ PR ABERTO` está em revisão e
+# `✗ PR FECHADO` é decisão registrada do dono (supersedido, recusado) — nenhum
+# dos dois é esquecimento, e por isso nenhum é ⚠️.
 #
 # Uso:  make audit-branches   (ou)   scripts/audit-branches.sh
 # Env:  BASE=origin/main  REMOTE=origin  MERGED_PR_LIMIT=300 (só o cache)
@@ -60,8 +61,11 @@ fi
 BASE_TREE="$(git rev-parse "${BASE}^{tree}")"
 
 # Conjunto de head-branches de PRs já mergeados (uma por linha).
+OPEN_PRS=""
 MERGED_PRS=""
 if command -v gh >/dev/null 2>&1; then
+  OPEN_PRS="$(gh pr list --state open --limit 200 \
+      --json headRefName --jq '.[].headRefName' 2>/dev/null || true)"
   echo "${dim}Consultando PRs mergeados (gh)...${reset}" >&2
   MERGED_PRS="$(gh pr list --state merged --limit "${MERGED_PR_LIMIT}" \
       --json headRefName --jq '.[].headRefName' 2>/dev/null || true)"
@@ -76,6 +80,15 @@ fi
 # chamada por branch, e só é feita para os poucos branches com delta real.
 pr_state_for() {
   local branch="$1"
+  # ⚠️ PR ABERTO vem primeiro, e vem de uma consulta própria. Um head de PR
+  # aberto — os sete do Dependabot, por exemplo — não é branch esquecida: é
+  # trabalho EM REVISÃO. Listá-lo em ⚠️ UNMERGED enche a única coluna que exige
+  # ação humana de linhas que não exigem nada, e uma coluna assim se aprende a
+  # ignorar. Foi o mesmo erro da janela fixa de PRs mergeados, por outra porta.
+  if [ -n "${OPEN_PRS}" ] && printf '%s\n' "${OPEN_PRS}" | grep -qxF "${branch}"; then
+    printf 'OPEN'
+    return 0
+  fi
   if [ -n "${MERGED_PRS}" ] && printf '%s\n' "${MERGED_PRS}" | grep -qxF "${branch}"; then
     printf 'MERGED'
     return 0
@@ -87,6 +100,7 @@ pr_state_for() {
 
 # Coleta as linhas em buffers para poder ordenar (⚠️ primeiro) e contar.
 unmerged_rows=""
+open_rows=""
 merged_rows=""
 closed_rows=""
 redundant_rows=""
@@ -118,6 +132,9 @@ while IFS= read -r ref; do
   else
     # Uma pergunta por branch, e só para os poucos com delta real.
     case "$(pr_state_for "${branch}")" in
+      OPEN)
+        open_rows+="${bold}◷ PR ABERTO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
+        ;;
       MERGED)
         merged_rows+="${green}✓ PR MERGEADO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
         ;;
@@ -145,6 +162,7 @@ echo
   printf ' +++\t+++\t+++\t+++\n'
   # ⚠️ primeiro, depois entregues
   printf '%b' "${unmerged_rows}"
+  printf '%b' "${open_rows}"
   printf '%b' "${merged_rows}"
   printf '%b' "${closed_rows}"
   printf '%b' "${redundant_rows}"
