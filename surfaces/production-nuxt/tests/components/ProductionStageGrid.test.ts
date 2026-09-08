@@ -25,9 +25,10 @@ function wo(over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjectio
     recipe_name: "Pão",
     base_usages: [],
     output_sku: "PAO-001",
+    rev: 2,
     status: "started",
     status_label: "Em processo",
-    status_color: "",
+    tone: "info",
     planned_qty: "30",
     started_qty: "30",
     finished_qty: "0",
@@ -210,6 +211,6 @@ describe("ProductionStageGrid — lote em processo (gestão)", () => {
     await byText(w, "button", "Estornar…")!.trigger("click");
     await w.find('textarea[aria-label="Motivo do estorno"]').setValue("queimou");
     await byText(w, "button", "Confirmar estorno")!.trigger("click");
-    expect(voidSpy).toHaveBeenCalledWith(7, "queimou");
+    expect(voidSpy).toHaveBeenCalledWith(7, 2, "queimou");
   });
 });

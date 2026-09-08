@@ -53,12 +53,19 @@ export type {
   WorkOrderReportRow,
 } from "~/generated/productionContract";
 
-export type ProductionTimerClass = "timer-ok" | "timer-warning" | "timer-late";
+export type ProductionTimerStatusCode = "on_time" | "warning" | "late";
 
 // ── Live floor (KDS) ───────────────────────────────────────────────────────
 
 export interface ProductionKDSCardProjection extends ProductionKDSCardContract {
-  timer_class: ProductionTimerClass;
+  timer_status_code: ProductionTimerStatusCode;
+}
+
+export interface ProductionMutationCurrent {
+  pk: number;
+  ref: string;
+  status: string;
+  rev: number;
 }
 
 export interface ProductionKDSProjection extends ProductionKDSContract {

@@ -45,6 +45,84 @@ class CraftExecution:
     """Finish and void operations."""
 
     @classmethod
+    def advance_step(
+        cls,
+        order,
+        *,
+        step_index,
+        step_name="",
+        expected_rev=None,
+        actor=None,
+        idempotency_key=None,
+    ):
+        """Persist a manual recipe-step advance with revision and audit event.
+
+        The caller resolves the next valid index from the frozen/current recipe
+        presentation.  Craftsman owns the material mutation: row lock, optimistic
+        revision and the append-only witness all commit together.
+        """
+        from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+
+        try:
+            normalized_index = int(step_index)
+        except (TypeError, ValueError) as exc:
+            raise CraftError("INVALID_PAYLOAD", field="step_index") from exc
+        if normalized_index <= 0:
+            raise CraftError("INVALID_PAYLOAD", field="step_index")
+
+        with transaction.atomic():
+            WorkOrder.objects.select_for_update().get(pk=order.pk)
+            order.refresh_from_db()
+
+            if idempotency_key:
+                existing = (
+                    WorkOrderEvent.objects.filter(idempotency_key=idempotency_key)
+                    .select_related("work_order")
+                    .first()
+                )
+                if existing:
+                    if (
+                        existing.work_order_id != order.pk
+                        or existing.kind != WorkOrderEvent.Kind.STEP_ADVANCED
+                    ):
+                        raise CraftError(
+                            "IDEMPOTENCY_CONFLICT",
+                            idempotency_key=idempotency_key,
+                            work_order=order.ref,
+                            existing_work_order=existing.work_order.ref,
+                        )
+                    return existing.work_order
+
+            if order.status != WorkOrder.Status.STARTED:
+                raise CraftError(
+                    "INVALID_STATUS",
+                    current=order.status,
+                    expected=WorkOrder.Status.STARTED,
+                )
+
+            _check_rev(order, expected_rev)
+            meta = dict(order.meta or {})
+            meta["steps_progress"] = normalized_index
+            meta["steps_progress_actor"] = actor or ""
+            meta["steps_progress_updated_at"] = timezone.now().isoformat()
+            order.meta = meta
+            order.save(update_fields=["meta", "updated_at"])
+
+            WorkOrderEvent.objects.create(
+                work_order=order,
+                seq=_next_seq(order),
+                kind=WorkOrderEvent.Kind.STEP_ADVANCED,
+                payload={
+                    "step_index": normalized_index,
+                    "step_name": str(step_name or ""),
+                },
+                actor=actor or "",
+                idempotency_key=idempotency_key,
+            )
+
+        return order
+
+    @classmethod
     def finish(
         cls,
         order,
@@ -336,7 +414,14 @@ class CraftExecution:
         return order
 
     @classmethod
-    def void(cls, order, reason, expected_rev=None, actor=None):
+    def void(
+        cls,
+        order,
+        reason,
+        expected_rev=None,
+        actor=None,
+        idempotency_key=None,
+    ):
         """Void (cancel) a non-finished WorkOrder."""
         from shopman.craftsman.models import WorkOrder, WorkOrderEvent
         from shopman.craftsman.signals import production_changed
@@ -345,6 +430,26 @@ class CraftExecution:
             # Acquire row lock, then refresh caller's object in-place
             WorkOrder.objects.select_for_update().get(pk=order.pk)
             order.refresh_from_db()
+
+            if idempotency_key:
+                existing = (
+                    WorkOrderEvent.objects.filter(idempotency_key=idempotency_key)
+                    .select_related("work_order")
+                    .first()
+                )
+                if existing:
+                    if (
+                        existing.work_order_id != order.pk
+                        or existing.kind != WorkOrderEvent.Kind.VOIDED
+                        or existing.payload.get("reason") != reason
+                    ):
+                        raise CraftError(
+                            "IDEMPOTENCY_CONFLICT",
+                            idempotency_key=idempotency_key,
+                            work_order=order.ref,
+                            existing_work_order=existing.work_order.ref,
+                        )
+                    return existing.work_order
 
             # Status check (inside transaction, fresh from DB)
             if order.status == WorkOrder.Status.FINISHED:
@@ -365,6 +470,7 @@ class CraftExecution:
                 kind=WorkOrderEvent.Kind.VOIDED,
                 payload={"reason": reason},
                 actor=actor or "",
+                idempotency_key=idempotency_key,
             )
 
         # Voiding planned/started production cancels its planned/started quants

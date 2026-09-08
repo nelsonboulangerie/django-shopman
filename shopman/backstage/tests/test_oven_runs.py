@@ -1,7 +1,7 @@
 """OvenRun — o fato temporal do forno (ADR-021 §4, BI-PLAN §4).
 
-O timer do kiosk declara; o servidor carimba. Cobre o gate coarse
-``backstage.operate_production``, o carimbo server-side no arm/conclude, o
+O timer do kiosk declara; o servidor carimba. Cobre a capacidade efetiva de
+registrar fato de forno, o carimbo server-side no arm/conclude, o
 supersede de run aberto (re-armar = nova enfornada), o conclude sem run
 (sem medição, sem erro — o cliente é best-effort) e o sweep de runs vencidos.
 """
@@ -18,7 +18,7 @@ from django.core.management import call_command
 from django.urls import reverse
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
+from shopman.craftsman.models import Recipe, WorkOrderEvent
 from shopman.stockman.models import Position
 
 from shopman.backstage.models import DayClosing, OvenRun
@@ -40,7 +40,13 @@ def _operate_production_perm() -> Permission:
 @pytest.fixture
 def production_operator(db):
     user = User.objects.create_user("oven-api", password="pw", is_staff=True)
-    user.user_permissions.add(_operate_production_perm())
+    user.user_permissions.add(
+        _operate_production_perm(),
+        Permission.objects.get(
+            content_type__app_label="shop",
+            codename="edit_production_started",
+        ),
+    )
     return user
 
 
@@ -75,6 +81,15 @@ def _conclude_url(wo) -> str:
     return reverse("api-backstage-wo-oven-conclude", kwargs={"wo_id": wo.pk})
 
 
+def _mutation(wo, key: str, **values) -> dict:
+    wo.refresh_from_db()
+    return {
+        "expected_rev": wo.rev,
+        "idempotency_key": key,
+        **values,
+    }
+
+
 # ── Gate ─────────────────────────────────────────────────────────────────────
 
 
@@ -93,7 +108,10 @@ def test_arm_requires_operate_production(client, work_order):
 def test_arm_creates_open_run_with_server_stamp(client, work_order, production_operator):
     client.force_login(production_operator)
     before = timezone.now()
-    response = client.post(_arm_url(work_order), {"planned_seconds": 900})
+    response = client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-server-stamp", planned_seconds=900),
+    )
     assert response.status_code == 200
     run = OvenRun.objects.get(pk=response.json()["run_id"])
     assert run.status == "open"
@@ -108,8 +126,14 @@ def test_arm_creates_open_run_with_server_stamp(client, work_order, production_o
 @pytest.mark.django_db
 def test_arm_supersedes_open_run(client, work_order, production_operator):
     client.force_login(production_operator)
-    first = client.post(_arm_url(work_order), {"planned_seconds": 600}).json()["run_id"]
-    second = client.post(_arm_url(work_order), {"planned_seconds": 1200}).json()["run_id"]
+    first = client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-first", planned_seconds=600),
+    ).json()["run_id"]
+    second = client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-second", planned_seconds=1200),
+    ).json()["run_id"]
     assert first != second
     assert OvenRun.objects.get(pk=first).status == "abandoned"
     new_run = OvenRun.objects.get(pk=second)
@@ -119,10 +143,67 @@ def test_arm_supersedes_open_run(client, work_order, production_operator):
 
 
 @pytest.mark.django_db
+def test_arm_retry_with_same_attempt_does_not_create_or_abandon_another_run(
+    client,
+    work_order,
+    production_operator,
+):
+    client.force_login(production_operator)
+    payload = _mutation(work_order, "arm-retry", planned_seconds=600)
+
+    first = client.post(_arm_url(work_order), payload)
+    second = client.post(_arm_url(work_order), payload)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["run_id"] == second.json()["run_id"]
+    assert OvenRun.objects.filter(work_order_ref=work_order.ref).count() == 1
+    work_order.refresh_from_db()
+    assert work_order.rev == 1
+    assert WorkOrderEvent.objects.filter(
+        work_order=work_order,
+        kind=WorkOrderEvent.Kind.OVEN_ARMED,
+    ).count() == 1
+
+
+@pytest.mark.django_db
+def test_second_arm_with_another_attempt_and_stale_revision_conflicts(
+    client,
+    work_order,
+    production_operator,
+):
+    client.force_login(production_operator)
+    original_rev = work_order.rev
+    first = client.post(
+        _arm_url(work_order),
+        {
+            "planned_seconds": 600,
+            "expected_rev": original_rev,
+            "idempotency_key": "arm-tablet-one",
+        },
+    )
+    second = client.post(
+        _arm_url(work_order),
+        {
+            "planned_seconds": 900,
+            "expected_rev": original_rev,
+            "idempotency_key": "arm-tablet-two",
+        },
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "conflict"
+    assert OvenRun.objects.filter(work_order_ref=work_order.ref).count() == 1
+
+
+@pytest.mark.django_db
 def test_arm_rejects_invalid_duration(client, work_order, production_operator):
     client.force_login(production_operator)
-    for bad in (0, -5, "abc", "", 86_401):
-        assert client.post(_arm_url(work_order), {"planned_seconds": bad}).status_code == 400
+    for index, bad in enumerate((0, -5, "abc", "", 86_401)):
+        assert client.post(
+            _arm_url(work_order),
+            _mutation(work_order, f"arm-invalid-{index}", planned_seconds=bad),
+        ).status_code == 400
     assert not OvenRun.objects.exists()
 
 
@@ -130,7 +211,10 @@ def test_arm_rejects_invalid_duration(client, work_order, production_operator):
 def test_arm_rejects_closed_work_order(client, work_order, production_operator):
     apply_void(work_order.pk, actor="test")
     client.force_login(production_operator)
-    response = client.post(_arm_url(work_order), {"planned_seconds": 600})
+    response = client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-closed", planned_seconds=600),
+    )
     assert response.status_code == 400
     assert not OvenRun.objects.exists()
 
@@ -141,8 +225,14 @@ def test_arm_rejects_closed_work_order(client, work_order, production_operator):
 @pytest.mark.django_db
 def test_conclude_measures_open_run(client, work_order, production_operator):
     client.force_login(production_operator)
-    client.post(_arm_url(work_order), {"planned_seconds": 600})
-    response = client.post(_conclude_url(work_order))
+    client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-for-conclude", planned_seconds=600),
+    )
+    response = client.post(
+        _conclude_url(work_order),
+        _mutation(work_order, "conclude-open"),
+    )
     assert response.status_code == 200
     assert response.json()["measured"] is True
     run = OvenRun.objects.get(work_order_ref=work_order.ref)
@@ -152,9 +242,42 @@ def test_conclude_measures_open_run(client, work_order, production_operator):
 
 
 @pytest.mark.django_db
+def test_conclude_retry_with_same_attempt_is_exactly_once(
+    client,
+    work_order,
+    production_operator,
+):
+    client.force_login(production_operator)
+    client.post(
+        _arm_url(work_order),
+        _mutation(work_order, "arm-before-retry", planned_seconds=600),
+    )
+    payload = _mutation(work_order, "conclude-retry")
+
+    first = client.post(_conclude_url(work_order), payload)
+    second = client.post(_conclude_url(work_order), payload)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["measured"] is second.json()["measured"] is True
+    assert OvenRun.objects.filter(
+        work_order_ref=work_order.ref,
+        status="concluded",
+    ).count() == 1
+    work_order.refresh_from_db()
+    assert work_order.rev == 2
+    assert WorkOrderEvent.objects.filter(
+        work_order=work_order,
+        kind=WorkOrderEvent.Kind.OVEN_CONCLUDED,
+    ).count() == 1
+
+
+@pytest.mark.django_db
 def test_conclude_without_open_run_measures_nothing(client, work_order, production_operator):
     client.force_login(production_operator)
-    response = client.post(_conclude_url(work_order))
+    response = client.post(
+        _conclude_url(work_order),
+        _mutation(work_order, "conclude-none"),
+    )
     assert response.status_code == 200
     assert response.json()["measured"] is False
     assert not OvenRun.objects.exists()

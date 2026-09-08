@@ -65,11 +65,24 @@ describe("useProductionBoard — plan/start writes", () => {
   it("plan POSTs to the plan endpoint and reconciles via refresh on success", async () => {
     env.fetchData.value = boardPayload();
     const { plan } = useProductionBoard();
-    const res = await plan("PAO-001", { recipe_id: 5, quantity: "12", target_date: "2026-07-06" });
+    const res = await plan("PAO-001", {
+      recipe_id: 5,
+      quantity: "12",
+      target_date: "2026-07-06",
+      expected_rev: null,
+    });
     expect(res.ok).toBe(true);
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/plan/",
-      expect.objectContaining({ method: "POST", body: expect.objectContaining({ recipe_id: 5, quantity: "12" }) }),
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          recipe_id: 5,
+          quantity: "12",
+          expected_rev: null,
+          idempotency_key: expect.any(String),
+        }),
+      }),
     );
     expect(env.refresh).toHaveBeenCalledOnce();
   });
@@ -77,11 +90,14 @@ describe("useProductionBoard — plan/start writes", () => {
   it("start POSTs to the per-WO start endpoint", async () => {
     env.fetchData.value = boardPayload();
     const { start } = useProductionBoard();
-    const res = await start("PAO-001", 42, "30");
+    const res = await start("PAO-001", 42, 3, "30");
     expect(res.ok).toBe(true);
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/42/start/",
-      expect.objectContaining({ method: "POST", body: { quantity: "30" } }),
+      expect.objectContaining({
+        method: "POST",
+        body: { quantity: "30", expected_rev: 3, idempotency_key: expect.any(String) },
+      }),
     );
   });
 
@@ -91,9 +107,19 @@ describe("useProductionBoard — plan/start writes", () => {
     env.fetchMock.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
     const { plan, isBusy } = useProductionBoard();
 
-    const first = plan("PAO-001", { recipe_id: 5, quantity: "12", target_date: "2026-07-06" });
+    const first = plan("PAO-001", {
+      recipe_id: 5,
+      quantity: "12",
+      target_date: "2026-07-06",
+      expected_rev: null,
+    });
     expect(isBusy("PAO-001")).toBe(true);
-    const second = await plan("PAO-001", { recipe_id: 5, quantity: "9", target_date: "2026-07-06" });
+    const second = await plan("PAO-001", {
+      recipe_id: 5,
+      quantity: "9",
+      target_date: "2026-07-06",
+      expected_rev: null,
+    });
     expect(second.ok).toBe(false); // rejected while first still in flight
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
 
@@ -106,7 +132,12 @@ describe("useProductionBoard — plan/start writes", () => {
     env.fetchData.value = boardPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { error: { code: "material_shortage", missing: [] } } });
     const { plan } = useProductionBoard();
-    const res = await plan("PAO-001", { recipe_id: 5, quantity: "12", target_date: "2026-07-06" });
+    const res = await plan("PAO-001", {
+      recipe_id: 5,
+      quantity: "12",
+      target_date: "2026-07-06",
+      expected_rev: null,
+    });
     expect(res.ok).toBe(false);
     expect(res.shortage?.code).toBe("material_shortage");
     expect(env.sonner.error).not.toHaveBeenCalled();
@@ -116,7 +147,7 @@ describe("useProductionBoard — plan/start writes", () => {
     env.fetchData.value = boardPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "Banco fora do ar" } });
     const { start } = useProductionBoard();
-    const res = await start("PAO-001", 42, "30");
+    const res = await start("PAO-001", 42, 3, "30");
     expect(res.ok).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("Banco fora do ar");
   });

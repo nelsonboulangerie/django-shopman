@@ -71,6 +71,11 @@ class ProductionConflict(ProductionError):
     estado), não 400 — mesmo padrão de ``OrderConflict``.
     """
 
+    def __init__(self, message: str, *, code: str = "state_conflict", data=None):
+        super().__init__(message)
+        self.code = code
+        self.data = dict(data or {})
+
 
 class CatalogError(BackstageServiceError):
     """Raised when a catalog mutation cannot be applied."""

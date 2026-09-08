@@ -21,7 +21,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.test import override_settings
 from django.urls import reverse
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
+from shopman.craftsman.models import Recipe, WorkOrderEvent
 from shopman.stockman.models import Position
 
 from shopman.backstage.models import DayClosing
@@ -158,7 +158,11 @@ def test_surface_entry_permission_is_read_only_without_effective_edit_capability
     board = client.get(reverse("api-backstage-production"))
     mutation = client.post(
         reverse("api-backstage-wo-start", args=[work_order.pk]),
-        {"quantity": "10"},
+        {
+            "quantity": "10",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "coarse-start",
+        },
         content_type="application/json",
     )
 
@@ -212,7 +216,7 @@ def test_action_endpoint_checks_matching_capability_and_observes_revocation(
 
     allowed = client.post(
         reverse("api-backstage-wo-start", args=[first.pk]),
-        {"quantity": "10"},
+        {"quantity": "10", "expected_rev": first.rev, "idempotency_key": "start-first"},
         content_type="application/json",
     )
     forbidden_finish = client.post(
@@ -259,6 +263,8 @@ def test_forged_force_payload_requires_separate_override_capability(client, reci
             "target_date": date.today().isoformat(),
             "force": True,
             "reason": "payload forjado",
+            "expected_rev": None,
+            "idempotency_key": "forged-force",
         },
         content_type="application/json",
     )
@@ -277,12 +283,68 @@ def test_override_capability_still_requires_a_reason(client, recipe, production_
             "quantity": "8",
             "target_date": date.today().isoformat(),
             "force": True,
+            "expected_rev": None,
+            "idempotency_key": "force-without-reason",
         },
         content_type="application/json",
     )
 
     assert response.status_code == 400
     assert "Justificativa" in response.json()["detail"]
+
+
+@pytest.mark.django_db
+def test_string_false_does_not_enable_shortage_override(client, recipe):
+    operator = User.objects.create_user("false-force", password="pw", is_staff=True)
+    operator.user_permissions.add(_permission("shop", "manage_production"))
+    client.force_login(operator)
+
+    response = client.post(
+        reverse("api-backstage-wo-plan"),
+        {
+            "recipe_id": recipe.pk,
+            "quantity": "8",
+            "target_date": date.today().isoformat(),
+            "force": "false",
+            "expected_rev": None,
+            "idempotency_key": "false-is-false",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_mutation_validation_error_is_structured_and_rejects_unknown_fields(
+    client,
+    recipe,
+    production_operator,
+):
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    response = client.post(
+        reverse("api-backstage-wo-start", args=[work_order.pk]),
+        {
+            "quantity": "10",
+            "expected_rev": work_order.rev,
+            "idempotency_key": "strict-input",
+            "surprise": True,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    error = response.json()["error"]
+    assert error["code"] == "validation_error"
+    assert error["issues"] == [
+        {
+            "field": "surprise",
+            "code": "invalid",
+            "message": "Campo desconhecido.",
+        }
+    ]
 
 
 # ── Read ─────────────────────────────────────────────────────────────────────
@@ -341,6 +403,8 @@ def test_plan_creates_work_order(client, recipe, production_operator):
             "quantity": "20",
             "target_date": date.today().isoformat(),
             "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "plan-create",
         },
         content_type="application/json",
     )
@@ -357,7 +421,7 @@ def test_start_planned_work_order(client, recipe, production_operator):
     client.force_login(production_operator)
     response = client.post(
         reverse("api-backstage-wo-start", args=[wo.pk]),
-        data={"quantity": "10"},
+        data={"quantity": "10", "expected_rev": wo.rev, "idempotency_key": "start-wo"},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -367,13 +431,121 @@ def test_start_planned_work_order(client, recipe, production_operator):
 
 
 @pytest.mark.django_db
+def test_start_rejects_stale_revision_with_authoritative_current_state(
+    client,
+    recipe,
+    production_operator,
+):
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(production_operator)
+
+    response = client.post(
+        reverse("api-backstage-wo-start", args=[wo.pk]),
+        data={
+            "quantity": "10",
+            "expected_rev": 99,
+            "idempotency_key": "stale-start",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "conflict"
+    assert error["sent_rev"] == 99
+    assert error["current_rev"] == 0
+    assert error["current"] == {
+        "pk": wo.pk,
+        "ref": wo.ref,
+        "status": "planned",
+        "rev": 0,
+    }
+    assert error["recovery"]["action"] == "refresh"
+
+
+@pytest.mark.django_db
+def test_start_retry_with_same_attempt_is_exactly_once(
+    client,
+    recipe,
+    production_operator,
+):
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    payload = {
+        "quantity": "10",
+        "expected_rev": wo.rev,
+        "idempotency_key": "start-retry",
+    }
+    client.force_login(production_operator)
+
+    first = client.post(
+        reverse("api-backstage-wo-start", args=[wo.pk]),
+        data=payload,
+        content_type="application/json",
+    )
+    second = client.post(
+        reverse("api-backstage-wo-start", args=[wo.pk]),
+        data=payload,
+        content_type="application/json",
+    )
+
+    assert first.status_code == second.status_code == 200
+    wo.refresh_from_db()
+    assert wo.rev == 1
+    assert (
+        WorkOrderEvent.objects.filter(
+            work_order=wo,
+            kind=WorkOrderEvent.Kind.STARTED,
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
 def test_advance_step_increments_pointer(client, recipe, production_operator):
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
     client.force_login(production_operator)
-    response = client.post(reverse("api-backstage-wo-advance", args=[wo.pk]))
+    response = client.post(
+        reverse("api-backstage-wo-advance", args=[wo.pk]),
+        data={"expected_rev": wo.rev, "idempotency_key": "advance-wo"},
+        content_type="application/json",
+    )
     assert response.status_code == 200
     assert response.json()["step_index"] == 1
+
+
+@pytest.mark.django_db
+def test_advance_step_retry_is_append_only_and_exactly_once(
+    client,
+    recipe,
+    production_operator,
+):
+    wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
+    payload = {"expected_rev": wo.rev, "idempotency_key": "advance-retry"}
+    client.force_login(production_operator)
+
+    first = client.post(
+        reverse("api-backstage-wo-advance", args=[wo.pk]),
+        data=payload,
+        content_type="application/json",
+    )
+    second = client.post(
+        reverse("api-backstage-wo-advance", args=[wo.pk]),
+        data=payload,
+        content_type="application/json",
+    )
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["step_index"] == second.json()["step_index"] == 1
+    wo.refresh_from_db()
+    assert wo.rev == 2
+    events = WorkOrderEvent.objects.filter(
+        work_order=wo,
+        kind=WorkOrderEvent.Kind.STEP_ADVANCED,
+    )
+    assert events.count() == 1
+    assert events.get().payload["step_index"] == 1
 
 
 @pytest.mark.django_db
@@ -383,7 +555,7 @@ def test_finish_started_work_order(client, recipe, production_operator):
     client.force_login(production_operator)
     response = client.post(
         reverse("api-backstage-wo-finish", args=[wo.pk]),
-        data={"quantity": "9"},
+        data={"quantity": "9", "expected_rev": wo.rev, "idempotency_key": "finish-wo"},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -396,7 +568,12 @@ def test_quick_finish_plans_and_finishes(client, recipe, production_operator, po
     client.force_login(production_operator)
     response = client.post(
         reverse("api-backstage-wo-quick-finish"),
-        data={"recipe_id": recipe.pk, "quantity": "5", "position_id": position.pk},
+        data={
+            "recipe_id": recipe.pk,
+            "quantity": "5",
+            "position_id": position.pk,
+            "idempotency_key": "quick-finish-wo",
+        },
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -427,7 +604,7 @@ def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(client, recipe, prod
         "recipe_id": recipe.pk,
         "quantity": "5",
         "position_id": position.pk,
-        "client_request_id": "quiosque-gesto-abc123",
+        "idempotency_key": "quiosque-gesto-abc123",
     }
 
     primeira = client.post(reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json")
@@ -463,12 +640,12 @@ def test_quick_finish_com_chave_nova_assa_de_novo(client, recipe, production_ope
 
     primeira = client.post(
         reverse("api-backstage-wo-quick-finish"),
-        data={**base, "client_request_id": "gesto-1"},
+        data={**base, "idempotency_key": "gesto-1"},
         content_type="application/json",
     )
     segunda = client.post(
         reverse("api-backstage-wo-quick-finish"),
-        data={**base, "client_request_id": "gesto-2"},
+        data={**base, "idempotency_key": "gesto-2"},
         content_type="application/json",
     )
 
@@ -478,12 +655,28 @@ def test_quick_finish_com_chave_nova_assa_de_novo(client, recipe, production_ope
 
 
 @pytest.mark.django_db
+def test_quick_finish_invalid_recipe_is_a_client_error(client, production_operator):
+    client.force_login(production_operator)
+    response = client.post(
+        reverse("api-backstage-wo-quick-finish"),
+        data={
+            "recipe_id": 999_999,
+            "quantity": "5",
+            "idempotency_key": "quick-invalid-recipe",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.django_db
 def test_void_work_order(client, recipe, production_operator):
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     client.force_login(production_operator)
     response = client.post(
         reverse("api-backstage-wo-void", args=[wo.pk]),
-        data={"reason": "teste"},
+        data={"reason": "teste", "expected_rev": wo.rev, "idempotency_key": "void-wo"},
         content_type="application/json",
     )
     assert response.status_code == 200
@@ -511,7 +704,11 @@ def test_finish_material_shortage_returns_structured_envelope(client, recipe, pr
     client.force_login(production_operator)
     response = client.post(
         reverse("api-backstage-wo-finish", args=[wo.pk]),
-        data={"quantity": "10"},
+        data={
+            "quantity": "10",
+            "expected_rev": wo.rev,
+            "idempotency_key": "finish-shortage",
+        },
         content_type="application/json",
     )
     assert response.status_code == 409
@@ -543,6 +740,8 @@ def test_plan_order_shortage_returns_structured_envelope(client, recipe, product
             "quantity": "8",
             "target_date": date.today().isoformat(),
             "position_ref": "forno",
+            "expected_rev": None,
+            "idempotency_key": "plan-shortage",
         },
         content_type="application/json",
     )

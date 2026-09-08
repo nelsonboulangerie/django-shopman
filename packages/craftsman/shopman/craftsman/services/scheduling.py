@@ -80,10 +80,39 @@ class CraftPlanning:
         if quantity <= 0:
             raise CraftError("INVALID_QUANTITY", quantity=float(quantity))
 
-        from shopman.craftsman.models import WorkOrder
+        from shopman.craftsman.models import WorkOrder, WorkOrderEvent
         from shopman.craftsman.signals import production_changed
 
         with transaction.atomic():
+            idempotency_key = kwargs.get("idempotency_key")
+            if idempotency_key:
+                existing = (
+                    WorkOrderEvent.objects.filter(idempotency_key=idempotency_key)
+                    .select_related("work_order", "work_order__recipe")
+                    .first()
+                )
+                if existing:
+                    expected_payload = {
+                        "quantity": str(quantity),
+                        "recipe": recipe.ref,
+                        "target_date": str(date) if date else None,
+                        "position_ref": str(kwargs.get("position_ref") or ""),
+                        "operator_ref": str(kwargs.get("operator_ref") or ""),
+                    }
+                    if (
+                        existing.kind != WorkOrderEvent.Kind.PLANNED
+                        or any(
+                            existing.payload.get(field) != value
+                            for field, value in expected_payload.items()
+                        )
+                    ):
+                        raise CraftError(
+                            "IDEMPOTENCY_CONFLICT",
+                            idempotency_key=idempotency_key,
+                            work_order=existing.work_order.ref,
+                            existing_work_order=existing.work_order.ref,
+                        )
+                    return existing.work_order
             wo = cls._create_work_order(recipe, quantity, date, **kwargs)
 
         production_changed.send(
@@ -150,6 +179,7 @@ class CraftPlanning:
                 "operator_ref": wo.operator_ref,
             },
             actor=kwargs.get("actor", ""),
+            idempotency_key=kwargs.get("idempotency_key"),
         )
 
         return wo
@@ -187,7 +217,16 @@ class CraftPlanning:
         return orders
 
     @classmethod
-    def adjust(cls, order, quantity, reason=None, expected_rev=None, actor=None, force=False):
+    def adjust(
+        cls,
+        order,
+        quantity,
+        reason=None,
+        expected_rev=None,
+        actor=None,
+        force=False,
+        idempotency_key=None,
+    ):
         """
         Adjust target quantity of a planned WorkOrder.
 
@@ -208,13 +247,40 @@ class CraftPlanning:
 
         # V3: quantity=0 → void
         if quantity == Decimal("0"):
-            return cls.void(order, reason=reason or "Remanejo: zerado", expected_rev=expected_rev, actor=actor)
+            return cls.void(
+                order,
+                reason=reason or "Remanejo: zerado",
+                expected_rev=expected_rev,
+                actor=actor,
+                idempotency_key=idempotency_key,
+            )
 
         with transaction.atomic():
             # Acquire row lock, then refresh caller's object in-place
             WorkOrder.objects.select_for_update().get(pk=order.pk)
             order.refresh_from_db()
             old_quantity = order.quantity
+
+            if idempotency_key:
+                existing = (
+                    WorkOrderEvent.objects.filter(idempotency_key=idempotency_key)
+                    .select_related("work_order")
+                    .first()
+                )
+                if existing:
+                    if (
+                        existing.work_order_id != order.pk
+                        or existing.kind != WorkOrderEvent.Kind.ADJUSTED
+                        or existing.payload.get("to") != str(quantity)
+                        or existing.payload.get("reason") != (reason or "")
+                    ):
+                        raise CraftError(
+                            "IDEMPOTENCY_CONFLICT",
+                            idempotency_key=idempotency_key,
+                            work_order=order.ref,
+                            existing_work_order=existing.work_order.ref,
+                        )
+                    return existing.work_order
 
             # Status check (inside transaction, fresh from DB)
             if order.status != WorkOrder.Status.PLANNED:
@@ -248,6 +314,7 @@ class CraftPlanning:
                     "reason": reason or "",
                 },
                 actor=actor or "",
+                idempotency_key=idempotency_key,
             )
 
         production_changed.send(
@@ -273,6 +340,7 @@ class CraftPlanning:
         operator_ref=None,
         position_ref=None,
         note=None,
+        idempotency_key=None,
     ):
         """
         Mark a WorkOrder as started with the quantity that entered production.
@@ -287,6 +355,26 @@ class CraftPlanning:
         with transaction.atomic():
             WorkOrder.objects.select_for_update().get(pk=order.pk)
             order.refresh_from_db()
+
+            if idempotency_key:
+                existing = (
+                    WorkOrderEvent.objects.filter(idempotency_key=idempotency_key)
+                    .select_related("work_order")
+                    .first()
+                )
+                if existing:
+                    if (
+                        existing.work_order_id != order.pk
+                        or existing.kind != WorkOrderEvent.Kind.STARTED
+                        or existing.payload.get("quantity") != str(quantity)
+                    ):
+                        raise CraftError(
+                            "IDEMPOTENCY_CONFLICT",
+                            idempotency_key=idempotency_key,
+                            work_order=order.ref,
+                            existing_work_order=existing.work_order.ref,
+                        )
+                    return existing.work_order
 
             if order.status != WorkOrder.Status.PLANNED:
                 raise CraftError("INVALID_STATUS", current=order.status, expected=WorkOrder.Status.PLANNED)
@@ -316,6 +404,7 @@ class CraftPlanning:
                     "note": note or "",
                 },
                 actor=actor or "",
+                idempotency_key=idempotency_key,
             )
 
         production_changed.send(

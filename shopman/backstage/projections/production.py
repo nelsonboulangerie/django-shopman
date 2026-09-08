@@ -28,7 +28,7 @@ from shopman.backstage.presentation.status import order_status_label
 logger = logging.getLogger(__name__)
 
 
-# ── Status labels & colors ─────────────────────────────────────────────
+# ── Status labels & semantic tones ─────────────────────────────────────
 # ``WO_STATUS_*`` are WorkOrder states — surface-local presentation, owned by
 # the production board. (Order status labels come from the copy registry via
 # ``order_status_label``.)
@@ -40,11 +40,11 @@ WO_STATUS_LABELS: dict[str, str] = {
     "void": "Estornado",
 }
 
-WO_STATUS_COLORS: dict[str, str] = {
-    "planned": "bg-info/10 text-info border border-info/20",
-    "started": "bg-warning/10 text-warning border border-warning/20",
-    "finished": "bg-success/10 text-success border border-success/20",
-    "void": "bg-danger/10 text-danger border border-danger/20",
+WO_STATUS_TONES: dict[str, str] = {
+    "planned": "info",
+    "started": "warning",
+    "finished": "success",
+    "void": "danger",
 }
 
 
@@ -79,7 +79,7 @@ class WorkOrderCardProjection:
     output_sku: str
     status: str
     status_label: str
-    status_color: str
+    tone: str
     planned_qty: str  # pre-formatted, e.g. "100"
     started_qty: str  # "" if not started
     finished_qty: str  # "" if not finished
@@ -470,6 +470,7 @@ class ProductionKDSCardProjection:
 
     pk: int
     ref: str
+    rev: int
     output_sku: str
     recipe_name: str
     started_qty: str
@@ -479,7 +480,8 @@ class ProductionKDSCardProjection:
     elapsed_seconds: int
     elapsed_minutes: int
     target_seconds: int
-    timer_class: str
+    timer_status_code: str
+    timer_tone: str
     current_step: str
     current_step_index: int | None
     total_steps: int
@@ -535,6 +537,7 @@ class QCOrderCardProjection:
 
     pk: int
     ref: str
+    rev: int
     recipe_name: str
     output_sku: str
     position_ref: str
@@ -1340,7 +1343,7 @@ def build_production_kds(
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         cards=cards,
         total_count=len(cards),
-        late_count=sum(1 for card in cards if card.timer_class == "timer-late"),
+        late_count=sum(1 for card in cards if card.timer_status_code == "late"),
         access=access,
     )
 
@@ -1411,6 +1414,7 @@ def build_qc_kiosk(
         card = QCOrderCardProjection(
             pk=wo.pk,
             ref=wo.ref,
+            rev=wo.rev,
             recipe_name=wo.recipe.name or wo.recipe.ref,
             output_sku=wo.output_sku,
             position_ref=wo.position_ref,
@@ -1692,7 +1696,7 @@ def _build_wo_card(
         output_sku=wo.output_sku,
         status=wo.status,
         status_label=WO_STATUS_LABELS.get(wo.status, wo.status),
-        status_color=WO_STATUS_COLORS.get(wo.status, "bg-muted text-muted-foreground"),
+        tone=WO_STATUS_TONES.get(wo.status, "neutral"),
         planned_qty=_qty(wo.quantity),
         started_qty=_qty(started_qty) if started_qty is not None else "",
         finished_qty=_qty(finished_qty) if finished_qty is not None else "",
@@ -1721,11 +1725,14 @@ def _build_production_kds_card(
     target_minutes = _target_minutes(wo)
     target_seconds = target_minutes * 60
     if elapsed < target_seconds:
-        timer_class = "timer-ok"
+        timer_status_code = "on_time"
+        timer_tone = "success"
     elif elapsed < target_seconds * 2:
-        timer_class = "timer-warning"
+        timer_status_code = "warning"
+        timer_tone = "warning"
     else:
-        timer_class = "timer-late"
+        timer_status_code = "late"
+        timer_tone = "danger"
 
     step_state = _production_step_state(wo, elapsed)
     current_step = step_state["current_step_name"] or "Produção"
@@ -1733,6 +1740,7 @@ def _build_production_kds_card(
     return ProductionKDSCardProjection(
         pk=wo.pk,
         ref=wo.ref,
+        rev=wo.rev,
         output_sku=wo.output_sku,
         recipe_name=wo.recipe.name or wo.recipe.ref,
         started_qty=_qty(_wo_started_qty(wo) or wo.quantity),
@@ -1742,7 +1750,8 @@ def _build_production_kds_card(
         elapsed_seconds=elapsed,
         elapsed_minutes=elapsed // 60,
         target_seconds=target_seconds,
-        timer_class=timer_class,
+        timer_status_code=timer_status_code,
+        timer_tone=timer_tone,
         current_step=str(current_step),
         current_step_index=step_state["current_step_index"],
         total_steps=step_state["total_steps"],

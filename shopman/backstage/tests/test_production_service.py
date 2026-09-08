@@ -99,6 +99,47 @@ def test_apply_quick_finish_creates_finished_work_order(recipe):
     assert work_order.status == WorkOrder.Status.FINISHED
 
 
+@pytest.mark.django_db
+def test_quick_finish_shortage_then_force_reuses_the_same_work_order(recipe, monkeypatch):
+    missing = [
+        MissingMaterial(
+            sku="FARINHA",
+            needed=Decimal("5"),
+            available=Decimal("2"),
+        )
+    ]
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: missing)
+    attempt = "quick-shortage-force"
+
+    with pytest.raises(ProductionStockShortError) as exc:
+        production.apply_quick_finish(
+            recipe_id=recipe.pk,
+            quantity="3",
+            position_id="",
+            actor="production:op",
+            idempotency_key=attempt,
+        )
+
+    stranded = WorkOrder.objects.get(ref=exc.value.work_order_ref)
+    assert stranded.status == WorkOrder.Status.PLANNED
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
+
+    _, finished_ref, qty = production.apply_quick_finish(
+        recipe_id=recipe.pk,
+        quantity="3",
+        position_id="",
+        actor="production:op",
+        force=True,
+        idempotency_key=attempt,
+    )
+
+    assert finished_ref == stranded.ref
+    assert qty == Decimal("3")
+    assert WorkOrder.objects.filter(recipe=recipe).count() == 1
+    stranded.refresh_from_db()
+    assert stranded.status == WorkOrder.Status.FINISHED
+
+
 def test_apply_finish_creates_stock_short_alert_before_reraising(monkeypatch):
     calls = []
     work_order = SimpleNamespace(pk=123, ref="WO-STOCK", output_sku="SKU-STOCK")

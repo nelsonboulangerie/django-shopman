@@ -7,6 +7,7 @@
 import type { ProductionQCResponse, ProductionShortageError } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import { parseShortage } from "~/presentation/production";
+import { newProductionMutationKey } from "~/utils/api";
 
 export interface QcActResult {
   ok: boolean;
@@ -33,13 +34,20 @@ export function useQcKiosk() {
   useAdaptivePoll(refresh, () => 30_000);
 
   const submitting = ref(false);
+  const attempts = new Map<string, string>();
 
-  async function post(url: string, body: Record<string, unknown>): Promise<QcActResult> {
+  async function post(attemptRef: string, url: string, body: Record<string, unknown>): Promise<QcActResult> {
     if (submitting.value) return { ok: false };
     submitting.value = true;
+    const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
+    attempts.set(attemptRef, attempt);
     try {
-      await $fetch(url, { method: "POST", body });
+      await $fetch(url, {
+        method: "POST",
+        body: { ...body, idempotency_key: attempt },
+      });
       await refresh();
+      attempts.delete(attemptRef);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
@@ -54,8 +62,14 @@ export function useQcKiosk() {
     }
   }
 
-  const finish = (pk: number, quantity: string, partition: QcPartitionGroup[], force = false) =>
-    post(`/api/v1/backstage/production/${pk}/finish/`, { quantity, partition, force });
+  const finish = (pk: number, rev: number, quantity: string, partition: QcPartitionGroup[], force = false) =>
+    post(`finish:${pk}`, `/api/v1/backstage/production/${pk}/finish/`, {
+      quantity,
+      partition,
+      force,
+      expected_rev: rev,
+      ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
+    });
 
   // Fornada avulsa: plan + finish num passo, mesma partição. Sem
   // position_id — o backend resolve a posição padrão.
@@ -65,11 +79,12 @@ export function useQcKiosk() {
     partition: QcPartitionGroup[],
     force = false,
   ) =>
-    post("/api/v1/backstage/production/quick-finish/", {
+    post(`quick-finish:${recipeId}`, "/api/v1/backstage/production/quick-finish/", {
       recipe_id: recipeId,
       quantity,
       partition,
       force,
+      ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
     });
 
   return { kiosk, selectedDate, pending, error, refresh, submitting, finish, quickFinish };

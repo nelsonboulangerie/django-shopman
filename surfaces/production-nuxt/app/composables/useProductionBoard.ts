@@ -3,8 +3,13 @@
 //   - poll every 60s (planning changes slowly, manager-paced).
 // Writes (plan / start) go through the django proxy (CSRF handled there) and
 // reconcile via refresh. Order-coverage shortage surfaces as a structured error.
-import type { ProductionBoardProjection, ProductionBoardResponse, ProductionShortageError } from "~/types/production";
+import type {
+  ProductionBoardProjection,
+  ProductionBoardResponse,
+  ProductionShortageError,
+} from "~/types/production";
 import { parseShortage } from "~/presentation/production";
+import { newProductionMutationKey } from "~/utils/api";
 
 export interface BoardActResult {
   ok: boolean;
@@ -14,23 +19,34 @@ export interface BoardActResult {
 /** ISO date default for planning: today's board in the morning, tomorrow's
  *  after noon — o padeiro planeja o dia seguinte na calmaria da tarde. */
 export function defaultPlanningDate(now = new Date()): string {
-  const target = new Date(now.getFullYear(), now.getMonth(), now.getDate() + (now.getHours() >= 12 ? 1 : 0));
+  const target = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() + (now.getHours() >= 12 ? 1 : 0),
+  );
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
 }
 
-export function useProductionBoard(initialDate: string = defaultPlanningDate()) {
+export function useProductionBoard(
+  initialDate: string = defaultPlanningDate(),
+) {
   const path = "/api/v1/backstage/production/";
   const selectedDate = ref(initialDate);
 
-  const { data, pending, error, refresh } = useFetch<ProductionBoardResponse>(path, {
-    key: "production-board",
-    server: true,
-    query: computed(() => ({ date: selectedDate.value })),
-    onResponseError: operatorSessionOnError,
-  });
+  const { data, pending, error, refresh } = useFetch<ProductionBoardResponse>(
+    path,
+    {
+      key: "production-board",
+      server: true,
+      query: computed(() => ({ date: selectedDate.value })),
+      onResponseError: operatorSessionOnError,
+    },
+  );
 
-  const board = computed<ProductionBoardProjection | null>(() => data.value?.board ?? null);
+  const board = computed<ProductionBoardProjection | null>(
+    () => data.value?.board ?? null,
+  );
   const rows = computed(() => board.value?.matrix_rows ?? []);
   const counts = computed(() => board.value?.counts ?? null);
   const dateDisplay = computed(() => board.value?.selected_date_display ?? "");
@@ -39,14 +55,25 @@ export function useProductionBoard(initialDate: string = defaultPlanningDate()) 
 
   // a planning POST keys on the output_sku row (one in-flight per row).
   const busy = ref<Set<string>>(new Set());
+  const attempts = new Map<string, string>();
   const isBusy = (key: string) => busy.value.has(key);
 
-  async function post(key: string, url: string, body: Record<string, unknown>): Promise<BoardActResult> {
+  async function post(
+    key: string,
+    url: string,
+    body: Record<string, unknown>,
+  ): Promise<BoardActResult> {
     if (busy.value.has(key)) return { ok: false };
     busy.value = new Set(busy.value).add(key);
+    const attempt = attempts.get(key) ?? newProductionMutationKey();
+    attempts.set(key, attempt);
     try {
-      await $fetch(url, { method: "POST", body });
+      await $fetch(url, {
+        method: "POST",
+        body: { ...body, idempotency_key: attempt },
+      });
       await refresh();
+      attempts.delete(key);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
@@ -65,31 +92,47 @@ export function useProductionBoard(initialDate: string = defaultPlanningDate()) 
   // um quadro de sessenta segundos de idade: sem o número, o último POST vence, sem 409
   // e sem aviso. Com ele, a segunda recebe "a fornada mudou em outra tela".
   //
-  // Ausente quando o card não é conhecido (planejar uma linha que ainda não tem
+  // Nulo quando o card não é conhecido (planejar uma linha que ainda não tem
   // fornada): não há revisão anterior para comparar, e mandar zero afirmaria uma coisa
-  // falsa. O servidor lê ausência como "não confira".
+  // falsa. O contrato exige que essa ausência seja explícita.
   function plan(
     key: string,
-    payload: { recipe_id: number; quantity: string; target_date: string; position_ref?: string; source?: string; force?: boolean },
-    expectedRev?: number,
+    payload: {
+      recipe_id: number;
+      quantity: string;
+      target_date: string;
+      expected_rev: number | null;
+      position_ref?: string;
+      source?: "manual" | "suggested";
+      force?: boolean;
+    },
   ): Promise<BoardActResult> {
-    return post(key, "/api/v1/backstage/production/plan/", {
-      ...payload,
-      ...(expectedRev === undefined ? {} : { expected_rev: expectedRev }),
-    });
+    return post(key, "/api/v1/backstage/production/plan/", payload);
   }
 
   function start(
     key: string,
     woPk: number,
+    rev: number,
     quantity: string,
-    expectedRev?: number,
   ): Promise<BoardActResult> {
     return post(key, `/api/v1/backstage/production/${woPk}/start/`, {
       quantity,
-      ...(expectedRev === undefined ? {} : { expected_rev: expectedRev }),
+      expected_rev: rev,
     });
   }
 
-  return { board, rows, counts, dateDisplay, selectedDate, pending, error, refresh, isBusy, plan, start };
+  return {
+    board,
+    rows,
+    counts,
+    dateDisplay,
+    selectedDate,
+    pending,
+    error,
+    refresh,
+    isBusy,
+    plan,
+    start,
+  };
 }

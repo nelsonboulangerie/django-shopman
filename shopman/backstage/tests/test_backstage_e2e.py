@@ -219,7 +219,11 @@ def test_e2e_advance_step_via_view_updates_meta(client, setup):
 
     # The production floor moved to the prod. Nuxt app over the headless API;
     # advancing a step is now POST /api/v1/backstage/production/<pk>/advance-step/.
-    response = client.post(f"/api/v1/backstage/production/{wo.pk}/advance-step/")
+    response = client.post(
+        f"/api/v1/backstage/production/{wo.pk}/advance-step/",
+        {"expected_rev": wo.rev, "idempotency_key": "e2e-advance"},
+        content_type="application/json",
+    )
     assert response.status_code == 200
 
     wo.refresh_from_db()

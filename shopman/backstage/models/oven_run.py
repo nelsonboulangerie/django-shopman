@@ -30,6 +30,20 @@ class OvenRun(models.Model):
         help_text="Snapshot de WorkOrder.position_ref no momento do arm.",
     )
     operator_ref = models.CharField("operador", max_length=64, blank=True)
+    arm_idempotency_key = models.CharField(
+        "chave idempotente do arm",
+        max_length=160,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+    conclude_idempotency_key = models.CharField(
+        "chave idempotente da conclusão",
+        max_length=160,
+        unique=True,
+        null=True,
+        blank=True,
+    )
     planned_seconds = models.PositiveIntegerField(
         "duração armada (s)",
         help_text="Duração do timer no arm. Referência, não medição.",

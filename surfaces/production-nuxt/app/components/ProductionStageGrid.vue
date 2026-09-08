@@ -31,6 +31,7 @@ import type {
   ProductionMatrixRowProjection,
   ProductionShortageError,
   ProductionSuggestionProjection,
+  WorkOrderCardProjection,
 } from "~/types/production";
 
 const props = defineProps<{
@@ -189,6 +190,7 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
+const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
@@ -198,10 +200,18 @@ const commitmentsList = computed(() =>
   commitmentsRow.value ? rowCommitments(commitmentsRow.value) : [],
 );
 
+const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
+  () =>
+    startedRow.value?.started_orders.find(
+      (candidate) => candidate.pk === selectedStartedPk.value,
+    ) ?? null,
+);
+
 const startedCard = computed<ProductionKDSCardProjection | null>(() => {
-  const wo = startedRow.value?.started_orders[0];
-  if (!wo) return null;
-  return kds.cards.value.find((c) => c.pk === wo.pk) ?? null;
+  if (!selectedStartedOrder.value) return null;
+  return (
+    kds.cards.value.find((c) => c.pk === selectedStartedOrder.value?.pk) ?? null
+  );
 });
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
@@ -246,15 +256,13 @@ async function confirmPlan() {
     recipe_id: row.recipe_pk,
     quantity: planQty.value.trim(),
     target_date: board.value.selected_date,
+    expected_rev: plannedWorkOrder(row)?.rev ?? null,
     position_ref: board.value.selected_position_ref || undefined,
     source:
       row.suggestion && planQty.value.trim() === row.suggestion.quantity
         ? "suggested"
         : undefined,
-  },
-  // A revisão da fornada que esta linha JÁ tem, quando tem. Planejar uma linha vazia
-  // não afirma revisão nenhuma — não há o que comparar, e mandar zero mentiria.
-  plannedWorkOrder(row)?.rev);
+  });
   if (res.ok) {
     const label =
       planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
@@ -275,7 +283,7 @@ async function confirmStart() {
   const row = startRow.value;
   const wo = row && startableWorkOrder(row);
   if (!row || !wo || !startQty.value.trim()) return;
-  const res = await start(row.output_sku, wo.pk, startQty.value.trim(), wo.rev);
+  const res = await start(row.output_sku, wo.pk, wo.rev, startQty.value.trim());
   if (res.ok) {
     startRow.value = null;
     kds.refresh();
@@ -296,10 +304,11 @@ function startNextBatch() {
 
 async function confirmVoid() {
   const row = startedRow.value;
-  const wo = row?.started_orders[0];
+  const wo = selectedStartedOrder.value;
   if (!row || !wo) return;
   const res = await kds.voidOrder(
     wo.pk,
+    wo.rev,
     voidReason.value.trim() || "Estornado pelo operador",
   );
   if (res.ok) {
@@ -314,7 +323,7 @@ async function confirmVoid() {
 async function advanceStep() {
   const card = startedCard.value;
   if (!card) return;
-  await kds.advanceStep(card.pk);
+  await kds.advanceStep(card.pk, card.rev);
   refresh();
 }
 
@@ -322,6 +331,8 @@ function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
   if (row.started_orders.length) {
     startedRow.value = row;
+    selectedStartedPk.value =
+      row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
     voidConfirming.value = false;
     kds.refresh();
     return;
@@ -827,6 +838,7 @@ const headerCount = computed(() => {
         (v) => {
           if (!v) {
             startedRow = null;
+            selectedStartedPk = null;
             voidConfirming = false;
           }
         }
@@ -839,11 +851,35 @@ const headerCount = computed(() => {
             processo</UiDialogTitle
           >
           <UiDialogDescription>
-            #{{ startedRow?.started_orders[0]?.ref }} ·
-            {{ startedRow?.output_sku }} · {{ startedRow?.started_qty }} un. em
-            processo
+            <template v-if="selectedStartedOrder">
+              #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
+              {{ selectedStartedOrder.started_qty }} un. em processo
+            </template>
+            <template v-else>Selecione a fornada que deseja gerir.</template>
           </UiDialogDescription>
         </UiDialogHeader>
+
+        <div
+          v-if="
+            startedRow &&
+            startedRow.started_orders.length > 1 &&
+            !selectedStartedOrder
+          "
+          class="grid gap-2"
+        >
+          <button
+            v-for="workOrder in startedRow.started_orders"
+            :key="workOrder.pk"
+            type="button"
+            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            @click="selectedStartedPk = workOrder.pk"
+          >
+            <span class="font-medium">#{{ workOrder.ref }}</span>
+            <span class="tabular-nums text-muted-foreground"
+              >{{ workOrder.started_qty }} un.</span
+            >
+          </button>
+        </div>
 
         <div v-if="startedCard" class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2 text-sm">
@@ -865,7 +901,7 @@ const headerCount = computed(() => {
             </span>
             <span
               class="shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
-              :class="timerChip(timerTone(startedCard.timer_class))"
+              :class="timerChip(timerTone(startedCard.timer_status_code))"
             >
               {{ elapsedLabel(startedCard.elapsed_seconds) }}
             </span>
@@ -913,7 +949,7 @@ const headerCount = computed(() => {
 
         <UiDialogFooter class="gap-2">
           <button
-            v-if="!voidConfirming"
+            v-if="selectedStartedOrder && !voidConfirming"
             type="button"
             class="mr-auto rounded-md border px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 dark:text-orange-300"
             @click="voidConfirming = true"
@@ -921,7 +957,7 @@ const headerCount = computed(() => {
             Estornar…
           </button>
           <button
-            v-else
+            v-else-if="selectedStartedOrder"
             type="button"
             class="mr-auto rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90"
             @click="confirmVoid()"
@@ -933,6 +969,7 @@ const headerCount = computed(() => {
             class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
             @click="
               startedRow = null;
+              selectedStartedPk = null;
               voidConfirming = false;
             "
           >

@@ -99,7 +99,13 @@ async function onConfirm(payload: { quantity: string; partition: QcPartitionGrou
   lastPayload.value = payload;
   const closingOrder = selectedOrder.value;
   const result = closingOrder
-    ? await finish(closingOrder.pk, payload.quantity, payload.partition, force)
+    ? await finish(
+        closingOrder.pk,
+        ovenFacts.currentRev(closingOrder.pk, closingOrder.rev),
+        payload.quantity,
+        payload.partition,
+        force,
+      )
     : selectedRecipe.value
       ? await quickFinish(selectedRecipe.value.pk, payload.quantity, payload.partition, force)
       : { ok: false };
@@ -216,7 +222,7 @@ function startOven() {
   const minutes = parseInt(ovenMinutes.value, 10);
   if (!order || !(minutes >= 1)) return;
   oven.arm(ovenKey(order), minutes);
-  void ovenFacts.armed(order.pk, minutes);
+  void ovenFacts.armed(order.pk, order.rev, minutes);
   ovenOrder.value = null;
 }
 function pauseOven() {
@@ -231,7 +237,7 @@ function concludeOven() {
   ovenOrder.value = null;
   if (!order) return;
   oven.clear(ovenKey(order));
-  void ovenFacts.concluded(order.pk);
+  void ovenFacts.concluded(order.pk, order.rev);
   openOrder(order);
 }
 </script>

@@ -33,9 +33,10 @@ const wo = (over: Partial<WorkOrderCardProjection> = {}): WorkOrderCardProjectio
   recipe_name: "Pão",
   base_usages: [],
   output_sku: "PAO",
+  rev: 0,
   status: "planned",
   status_label: "Planejado",
-  status_color: "",
+  tone: "neutral",
   planned_qty: "50",
   started_qty: "0",
   finished_qty: "0",
@@ -70,10 +71,10 @@ const row = (over: Partial<ProductionMatrixRowProjection> = {}): ProductionMatri
 });
 
 describe("timerTone / chips", () => {
-  it("maps timer_class to urgency", () => {
-    expect(timerTone("timer-ok")).toBe("ok");
-    expect(timerTone("timer-warning")).toBe("warning");
-    expect(timerTone("timer-late")).toBe("late");
+  it("maps semantic timer status to urgency", () => {
+    expect(timerTone("on_time")).toBe("ok");
+    expect(timerTone("warning")).toBe("warning");
+    expect(timerTone("late")).toBe("late");
   });
   it("timerChip carries saturated meaning only when late/warning", () => {
     expect(timerChip("late")).toContain("red");
@@ -151,9 +152,10 @@ describe("grid helpers", () => {
     expect(rowCommittedUnits(r)).toBe(6.5);
     expect(rowCommittedUnits(row())).toBe(0);
   });
-  it("startableWorkOrder returns the first planned WO or null", () => {
+  it("startableWorkOrder only resolves an unambiguous planned WO", () => {
     expect(startableWorkOrder(row())).toBeNull();
     expect(startableWorkOrder(row({ planned_orders: [wo()] }))?.pk).toBe(10);
+    expect(startableWorkOrder(row({ planned_orders: [wo(), wo({ pk: 11, ref: "WO-011" })] }))).toBeNull();
   });
 
   it("plannedWorkOrder is the same batch, read as 'the one an adjust would hit'", () => {

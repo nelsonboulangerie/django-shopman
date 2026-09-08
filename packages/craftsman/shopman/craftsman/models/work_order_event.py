@@ -4,7 +4,7 @@ WorkOrderEvent — Semantic audit trail + idempotency.
 Replaces django-simple-history with lightweight, queryable events.
 Each mutation creates one event with incremental seq.
 
-Event kinds: planned, adjusted, started, finished, voided.
+Event kinds include lifecycle transitions plus manual step/oven facts.
 
 Canonical payload schemas per kind:
 
@@ -65,6 +65,9 @@ class WorkOrderEvent(models.Model):
         PLANNED = "planned", _("Planejado")
         ADJUSTED = "adjusted", _("Ajustado")
         STARTED = "started", _("Iniciado")
+        STEP_ADVANCED = "step_advanced", _("Passo avançado")
+        OVEN_ARMED = "oven_armed", _("Enfornado")
+        OVEN_CONCLUDED = "oven_concluded", _("Retirado do forno")
         FINISHED = "finished", _("Concluído")
         VOIDED = "voided", _("Cancelado")
 

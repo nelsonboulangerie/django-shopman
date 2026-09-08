@@ -31,7 +31,7 @@ export interface WorkOrderCardProjection {
   output_sku: string;
   status: string;
   status_label: string;
-  status_color: string;
+  tone: string;
   planned_qty: string;
   started_qty: string;
   finished_qty: string;
@@ -130,7 +130,7 @@ export interface ProductionMatrixGroupProjection {
   rows: ProductionMatrixGroupRowProjection[];
 }
 
-/** Column-level access for the production board surface. */
+/** Effective production capabilities for one operator and station context. */
 export interface ProductionSurfaceAccess {
   can_manage_all: boolean;
   can_view_suggested: boolean;
@@ -143,6 +143,17 @@ export interface ProductionSurfaceAccess {
   can_edit_finished: boolean;
   can_view_unsold: boolean;
   can_edit_unsold: boolean;
+  can_view_plan: boolean;
+  can_edit_plan: boolean;
+  can_start: boolean;
+  can_advance_step: boolean;
+  can_close_qc: boolean;
+  can_quick_finish: boolean;
+  can_override_shortage: boolean;
+  can_void: boolean;
+  can_record_oven_fact: boolean;
+  can_view_reports: boolean;
+  can_reveal_blind_map: boolean;
 }
 
 /** Top-level read model for the production board. */
@@ -171,6 +182,7 @@ export interface ProductionBoardProjection {
 export interface ProductionKDSCardProjection {
   pk: number;
   ref: string;
+  rev: number;
   output_sku: string;
   recipe_name: string;
   started_qty: string;
@@ -180,7 +192,8 @@ export interface ProductionKDSCardProjection {
   elapsed_seconds: number;
   elapsed_minutes: number;
   target_seconds: number;
-  timer_class: string;
+  timer_status_code: string;
+  timer_tone: string;
   current_step: string;
   current_step_index: number | null;
   total_steps: number;
@@ -199,6 +212,7 @@ export interface ProductionKDSProjection {
   cards: ProductionKDSCardProjection[];
   total_count: number;
   late_count: number;
+  access: ProductionSurfaceAccess;
 }
 
 /** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
@@ -214,12 +228,13 @@ export interface ForecastRowProjection {
   history_days: number;
 }
 
-/** ProductionForecastProjection(selected_date: 'str', selected_date_display: 'str', generated_at_display: 'str', rows: 'tuple[ForecastRowProjection, ...]') */
+/** ProductionForecastProjection(selected_date: 'str', selected_date_display: 'str', generated_at_display: 'str', rows: 'tuple[ForecastRowProjection, ...]', access: 'ProductionSurfaceAccess') */
 export interface ProductionForecastProjection {
   selected_date: string;
   selected_date_display: string;
   generated_at_display: string;
   rows: ForecastRowProjection[];
+  access: ProductionSurfaceAccess;
 }
 
 /** Quanto deste insumo cada receita do dia consome. */
@@ -255,6 +270,7 @@ export interface ProductionMiseEnPlaceProjection {
   has_stock_readings: boolean;
   yield_margin_applied: boolean;
   yield_margin_note: string;
+  access: ProductionSurfaceAccess;
 }
 
 /** One ingredient line for a thermal weighing ticket. */
@@ -287,6 +303,7 @@ export interface ProductionWeighingProjection {
   selected_position_ref: string;
   selected_base_recipe: string;
   tickets: ProductionWeighingTicketProjection[];
+  access: ProductionSurfaceAccess;
 }
 
 /** One blind code ↔ prep row of the manager's correlation map. */
@@ -301,6 +318,7 @@ export interface ProductionBlindMapProjection {
   selected_date: string;
   selected_date_display: string;
   rows: ProductionBlindMapRowProjection[];
+  access: ProductionSurfaceAccess;
 }
 
 /** A started work order that exceeded its configured target window. */
@@ -329,6 +347,7 @@ export interface ProductionDashboardProjection {
   average_yield_rate: string;
   capacity_percent: number | null;
   late_orders: ProductionLateWorkOrderProjection[];
+  access: ProductionSurfaceAccess;
 }
 
 /** Um grau da escala de QC (ADR-017 §6). */
@@ -352,6 +371,7 @@ export interface QCDefectProjection {
 export interface QCOrderCardProjection {
   pk: number;
   ref: string;
+  rev: number;
   recipe_name: string;
   output_sku: string;
   position_ref: string;
@@ -380,6 +400,7 @@ export interface QCKioskProjection {
   recipes: RecipeOptionProjection[];
   previous_open_count: number;
   previous_open_date: string;
+  access: ProductionSurfaceAccess;
 }
 
 /** Normalized filters for production reports. */
@@ -452,4 +473,5 @@ export interface ProductionReportsProjection {
   quality_rows: QualityReportRow[];
   available_recipes: RecipeOptionProjection[];
   available_positions: PositionOptionProjection[];
+  access: ProductionSurfaceAccess;
 }

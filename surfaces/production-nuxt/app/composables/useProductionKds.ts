@@ -6,6 +6,7 @@
 // the shortage modal (a finish can be retried with force=1).
 import type { ProductionKDSCardProjection, ProductionKDSResponse, ProductionShortageError } from "~/types/production";
 import { parseShortage } from "~/presentation/production";
+import { newProductionMutationKey } from "~/utils/api";
 
 export interface ActResult {
   ok: boolean;
@@ -30,14 +31,22 @@ export function useProductionKds() {
 
   // per-WO in-flight guard (disables that card's buttons); POST then reconcile.
   const busy = ref<Set<number>>(new Set());
+  const attempts = new Map<string, string>();
   const isBusy = (pk: number) => busy.value.has(pk);
 
-  async function post(pk: number, url: string, body?: Record<string, unknown>): Promise<ActResult> {
+  async function post(pk: number, action: string, url: string, body?: Record<string, unknown>): Promise<ActResult> {
     if (busy.value.has(pk)) return { ok: false };
     busy.value = new Set(busy.value).add(pk);
+    const attemptRef = `${action}:${pk}`;
+    const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
+    attempts.set(attemptRef, attempt);
     try {
-      await $fetch(url, { method: "POST", body: body ?? {} });
+      await $fetch(url, {
+        method: "POST",
+        body: { ...(body ?? {}), idempotency_key: attempt },
+      });
       await refresh();
+      attempts.delete(attemptRef);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
@@ -51,11 +60,17 @@ export function useProductionKds() {
     }
   }
 
-  const advanceStep = (pk: number) => post(pk, `/api/v1/backstage/production/${pk}/advance-step/`);
+  const advanceStep = (pk: number, rev: number) =>
+    post(pk, "advance-step", `/api/v1/backstage/production/${pk}/advance-step/`, {
+      expected_rev: rev,
+    });
   // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
-  const voidOrder = (pk: number, reason: string) =>
-    post(pk, `/api/v1/backstage/production/${pk}/void/`, { reason });
+  const voidOrder = (pk: number, rev: number, reason: string) =>
+    post(pk, "void", `/api/v1/backstage/production/${pk}/void/`, {
+      reason,
+      expected_rev: rev,
+    });
 
   return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, voidOrder };
 }

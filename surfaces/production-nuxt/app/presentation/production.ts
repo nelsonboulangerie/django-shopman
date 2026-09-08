@@ -1,6 +1,6 @@
 // Presentation — production grid shaping. Pure transforms over the production
 // projections (served by shopman/backstage/projections/production.py). The
-// projections are already screen-ready (status_label, timer_class, step state,
+// projections are already screen-ready (status_label, timer status, step state,
 // can_* flags pre-resolved); this layer only derives the view shape and the
 // functional-color tone. No lifecycle arithmetic (the backend owns the
 // WorkOrder lifecycle).
@@ -8,7 +8,7 @@ import type {
   OrderCommitmentProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
-  ProductionTimerClass,
+  ProductionTimerStatusCode,
   WorkOrderCardProjection,
 } from "~/types/production";
 
@@ -16,9 +16,9 @@ import type {
 
 export type TimerTone = "ok" | "warning" | "late";
 
-export function timerTone(timerClass: ProductionTimerClass): TimerTone {
-  if (timerClass === "timer-late") return "late";
-  if (timerClass === "timer-warning") return "warning";
+export function timerTone(status: ProductionTimerStatusCode): TimerTone {
+  if (status === "late") return "late";
+  if (status === "warning") return "warning";
   return "ok";
 }
 
@@ -215,7 +215,7 @@ export function startableWorkOrder(
 export function plannedWorkOrder(
   row: ProductionMatrixRowProjection,
 ): WorkOrderCardProjection | null {
-  return row.planned_orders[0] ?? null;
+  return row.planned_orders.length === 1 ? row.planned_orders[0]! : null;
 }
 
 /** Order commitments across a row's open WOs, deduped by order ref.

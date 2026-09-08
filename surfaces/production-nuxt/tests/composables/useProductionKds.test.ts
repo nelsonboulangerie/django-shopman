@@ -54,16 +54,21 @@ describe("useProductionKds — per-WO writes", () => {
     env.fetchData.value = kdsPayload();
     const { advanceStep, voidOrder } = useProductionKds();
 
-    await advanceStep(7);
+    await advanceStep(7, 4);
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/7/advance-step/",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        body: { expected_rev: 4, idempotency_key: expect.any(String) },
+      }),
     );
 
-    await voidOrder(7, "queimou");
+    await voidOrder(7, 5, "queimou");
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/7/void/",
-      expect.objectContaining({ body: { reason: "queimou" } }),
+      expect.objectContaining({
+        body: { reason: "queimou", expected_rev: 5, idempotency_key: expect.any(String) },
+      }),
     );
   });
 
@@ -73,9 +78,9 @@ describe("useProductionKds — per-WO writes", () => {
     env.fetchMock.mockImplementationOnce(() => new Promise<void>((r) => (release = r)));
     const { voidOrder, isBusy } = useProductionKds();
 
-    const first = voidOrder(7, "queimou");
+    const first = voidOrder(7, 5, "queimou");
     expect(isBusy(7)).toBe(true);
-    const second = await voidOrder(7, "queimou");
+    const second = await voidOrder(7, 5, "queimou");
     expect(second.ok).toBe(false);
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
 
@@ -88,7 +93,7 @@ describe("useProductionKds — per-WO writes", () => {
     env.fetchData.value = kdsPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { error: { code: "order_shortage" } } });
     const { voidOrder } = useProductionKds();
-    const res = await voidOrder(7, "estorno");
+    const res = await voidOrder(7, 5, "estorno");
     expect(res.shortage?.code).toBe("order_shortage");
     expect(env.sonner.error).not.toHaveBeenCalled();
   });
@@ -97,7 +102,7 @@ describe("useProductionKds — per-WO writes", () => {
     env.fetchData.value = kdsPayload();
     env.fetchMock.mockRejectedValueOnce({ data: { detail: "erro" } });
     const { advanceStep } = useProductionKds();
-    expect((await advanceStep(7)).ok).toBe(false);
+    expect((await advanceStep(7, 4)).ok).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("erro");
   });
 });

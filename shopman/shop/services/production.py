@@ -88,11 +88,7 @@ def closed_days_within(*, days: int, until: date | None = None) -> frozenset[dat
     from shopman.shop.services.business_calendar import is_open_on
 
     until = until or timezone.localdate()
-    return frozenset(
-        day
-        for offset in range(1, days + 1)
-        if not is_open_on(day := until - timedelta(days=offset))
-    )
+    return frozenset(day for offset in range(1, days + 1) if not is_open_on(day := until - timedelta(days=offset)))
 
 
 def reserve_materials(work_order) -> None:
@@ -143,7 +139,9 @@ def _open_waitlist_window(work_order) -> None:
     except Exception:
         logger.warning(
             "production._open_waitlist_window failed wo=%s sku=%s",
-            work_order.ref, sku, exc_info=True,
+            work_order.ref,
+            sku,
+            exc_info=True,
         )
 
 
@@ -167,8 +165,9 @@ def void_work_order(
     work_order_id,
     *,
     actor: str,
-    reason: str = "Estornado via produção rápida",
     expected_rev: int | None = None,
+    idempotency_key: str | None = None,
+    reason: str = "Estornado via produção rápida",
 ) -> str:
     """Void a work order and return its reference.
 
@@ -182,7 +181,11 @@ def void_work_order(
 
     work_order = WorkOrder.objects.get(pk=work_order_id)
     CraftExecution.void(
-        order=work_order, reason=reason, actor=actor, expected_rev=expected_rev
+        order=work_order,
+        reason=reason,
+        actor=actor,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
     )
     return work_order.ref
 
@@ -192,6 +195,8 @@ def quick_plan(
     recipe_id,
     quantity,
     position_id,
+    actor: str = "",
+    idempotency_key: str | None = None,
 ):
     """Plan a same-day ad-hoc work order (fornada avulsa).
 
@@ -211,6 +216,8 @@ def quick_plan(
         date=timezone.localdate(),
         position_ref=position_ref,
         source_ref="quick_production",
+        actor=actor,
+        idempotency_key=idempotency_key,
     )
 
 
@@ -225,92 +232,161 @@ def set_planned_quantity(
     actor: str,
     source_ref: str = "production_matrix",
     expected_rev: int | None = None,
+    idempotency_key: str | None = None,
 ) -> tuple[str, str, Decimal, str]:
-    """Create, adjust, or consolidate the planned WorkOrder behind a matrix cell.
+    """Create, adjust, or consolidate one serialized production matrix cell.
 
-    ``expected_rev``: ver ``void_work_order``. Só alcança o AJUSTE de uma fornada que
-    já existe — criar não tem revisão anterior para comparar, e consolidar duplicatas é
-    faxina do próprio serviço, não gesto de tela.
+    ``expected_rev`` reaches an existing cell. Creating has no previous revision;
+    duplicate consolidation is serialized housekeeping inside the same transaction.
     """
-    from shopman.craftsman.models import WorkOrder
+    from django.db import transaction
+    from shopman.craftsman.exceptions import CraftError, StaleRevision
+    from shopman.craftsman.models import Recipe, WorkOrder, WorkOrderEvent
     from shopman.craftsman.services.execution import CraftExecution
     from shopman.craftsman.services.scheduling import CraftPlanning
 
-    recipe = _get_active_recipe(recipe_id)
     qty = _non_negative_decimal(quantity, error="Quantidade planejada inválida.")
     target_date = _target_date_or_today(target_date_value)
     position = str(position_ref or "").strip() or _default_position_ref()
     operator = str(operator_ref or "").strip()
-    extra_meta = _formula_meta(
-        recipe=recipe,
-        target_date=target_date,
-        quantity=qty,
-        source_ref=source_ref,
-    )
+    attempt_key = str(idempotency_key or "").strip() or None
 
-    planned_orders = list(
-        WorkOrder.objects.filter(
+    with transaction.atomic():
+        try:
+            # Locking the recipe serializes every cell for that recipe.  It is
+            # intentionally a little broader than recipe/date/position and is
+            # portable across PostgreSQL and the SQLite test suite.
+            recipe = Recipe.objects.select_for_update().get(pk=recipe_id, is_active=True)
+        except (Recipe.DoesNotExist, ValueError, TypeError) as exc:
+            raise ValueError("Receita inválida.") from exc
+
+        extra_meta = _formula_meta(
             recipe=recipe,
             target_date=target_date,
-            position_ref=position,
-            status=WorkOrder.Status.PLANNED,
-        ).order_by("created_at")
-    )
+            quantity=qty,
+            source_ref=source_ref,
+        )
+        planned_orders = list(
+            WorkOrder.objects.select_for_update()
+            .filter(
+                recipe=recipe,
+                target_date=target_date,
+                position_ref=position,
+                status=WorkOrder.Status.PLANNED,
+            )
+            .order_by("created_at", "pk")
+        )
 
-    if qty == 0:
-        for work_order in planned_orders:
+        if attempt_key:
+            replay = (
+                WorkOrderEvent.objects.filter(idempotency_key=attempt_key)
+                .select_related("work_order", "work_order__recipe")
+                .first()
+            )
+            if replay:
+                replay_order = replay.work_order
+                replay_quantity = (
+                    replay.payload.get("quantity")
+                    if replay.kind == WorkOrderEvent.Kind.PLANNED
+                    else replay.payload.get("to")
+                )
+                is_same_attempt = (
+                    replay_order.recipe_id == recipe.pk
+                    and replay_order.target_date == target_date
+                    and replay_order.position_ref == position
+                    and ((replay.kind == WorkOrderEvent.Kind.VOIDED and qty == 0) or str(replay_quantity) == str(qty))
+                )
+                if not is_same_attempt:
+                    raise CraftError(
+                        "IDEMPOTENCY_CONFLICT",
+                        idempotency_key=attempt_key,
+                        work_order=replay_order.ref,
+                        existing_work_order=replay_order.ref,
+                    )
+                if replay.kind == WorkOrderEvent.Kind.VOIDED:
+                    return recipe.output_sku, "", qty, "cleared"
+                result = "created" if replay.kind == WorkOrderEvent.Kind.PLANNED else "adjusted"
+                return recipe.output_sku, replay_order.ref, qty, result
+
+        if not planned_orders:
+            if expected_rev is not None:
+                raise CraftError(
+                    "STALE_REVISION",
+                    expected_rev=expected_rev,
+                    current_rev=None,
+                    work_order="",
+                )
+            if qty == 0:
+                return recipe.output_sku, "", qty, "cleared"
+            work_order = CraftPlanning.plan(
+                recipe,
+                qty,
+                date=target_date,
+                position_ref=position,
+                operator_ref=operator,
+                source_ref=source_ref,
+                actor=actor,
+                meta=extra_meta,
+                idempotency_key=attempt_key,
+            )
+            return recipe.output_sku, work_order.ref, qty, "created"
+
+        work_order = planned_orders[0]
+        duplicate_orders = planned_orders[1:]
+        effective_rev = expected_rev
+        if effective_rev is None and not attempt_key:
+            # Transitional compatibility for trusted in-process callers.  The
+            # HTTP contract always has an attempt key and therefore never gets
+            # last-write-wins semantics.
+            effective_rev = work_order.rev
+        if effective_rev is None or work_order.rev != effective_rev:
+            raise StaleRevision(work_order, expected_rev)
+
+        if qty == 0:
             CraftExecution.void(
                 order=work_order,
                 reason="Planejamento zerado na matriz",
                 actor=actor,
+                expected_rev=effective_rev,
+                idempotency_key=attempt_key,
             )
-        return recipe.output_sku, "", qty, "cleared"
+            for duplicate in duplicate_orders:
+                CraftExecution.void(
+                    order=duplicate,
+                    reason=f"Planejamento consolidado em {work_order.ref}",
+                    actor=actor,
+                    expected_rev=duplicate.rev,
+                )
+            return recipe.output_sku, "", qty, "cleared"
 
-    if not planned_orders:
-        work_order = CraftPlanning.plan(
-            recipe,
-            qty,
-            date=target_date,
-            position_ref=position,
-            operator_ref=operator,
-            source_ref=source_ref,
-            actor=actor,
-            meta=extra_meta,
-        )
-        return recipe.output_sku, work_order.ref, qty, "created"
+        adjusted = work_order.quantity != qty or bool(extra_meta)
+        if adjusted:
+            CraftPlanning.adjust(
+                work_order,
+                quantity=qty,
+                reason=reason or "Planejamento informado na matriz",
+                actor=actor,
+                expected_rev=effective_rev,
+                idempotency_key=attempt_key,
+            )
 
-    work_order = planned_orders[0]
-    duplicate_orders = planned_orders[1:]
-    if duplicate_orders:
-        _merge_committed_order_links(work_order, duplicate_orders)
+        if duplicate_orders:
+            _merge_committed_order_links(work_order, duplicate_orders)
         if extra_meta:
             work_order.meta = {**(work_order.meta or {}), **extra_meta}
-        work_order.save(update_fields=["meta", "updated_at"])
-    elif extra_meta:
-        work_order.meta = {**(work_order.meta or {}), **extra_meta}
-        work_order.save(update_fields=["meta", "updated_at"])
+            work_order.save(update_fields=["meta", "updated_at"])
 
-    adjusted = False
-    if work_order.quantity != qty:
-        CraftPlanning.adjust(
-            work_order,
-            quantity=qty,
-            reason=reason or "Planejamento informado na matriz",
-            actor=actor,
-            expected_rev=expected_rev,
-        )
-        adjusted = True
+        for duplicate in duplicate_orders:
+            CraftExecution.void(
+                order=duplicate,
+                reason=f"Planejamento consolidado em {work_order.ref}",
+                actor=actor,
+                expected_rev=duplicate.rev,
+            )
 
-    for duplicate in duplicate_orders:
-        CraftExecution.void(
-            order=duplicate,
-            reason=f"Planejamento consolidado em {work_order.ref}",
-            actor=actor,
-        )
-
-    if duplicate_orders:
-        return recipe.output_sku, work_order.ref, qty, "consolidated"
-    return recipe.output_sku, work_order.ref, qty, "adjusted" if adjusted else "unchanged"
+        if duplicate_orders:
+            return recipe.output_sku, work_order.ref, qty, "consolidated"
+        return recipe.output_sku, work_order.ref, qty, "adjusted" if adjusted else "unchanged"
 
 
 def start_work_order(
@@ -322,6 +398,7 @@ def start_work_order(
     note: str = "",
     actor: str,
     expected_rev: int | None = None,
+    idempotency_key: str | None = None,
 ) -> tuple[str, Decimal]:
     """Mark a planned WorkOrder as started.
 
@@ -342,6 +419,7 @@ def start_work_order(
         note=str(note or "").strip(),
         actor=actor,
         expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
     )
     return work_order.ref, qty
 
@@ -481,10 +559,12 @@ def _merge_committed_order_links(primary, duplicates: list) -> None:
     primary.meta = {
         **(primary.meta or {}),
         "consolidated_work_order_refs": list(
-            dict.fromkeys([
-                *list((primary.meta or {}).get("consolidated_work_order_refs") or []),
-                *[duplicate.ref for duplicate in duplicates],
-            ])
+            dict.fromkeys(
+                [
+                    *list((primary.meta or {}).get("consolidated_work_order_refs") or []),
+                    *[duplicate.ref for duplicate in duplicates],
+                ]
+            )
         ),
     }
     if refs:
@@ -550,6 +630,8 @@ def _default_position_ref() -> str:
 
 
 def _target_date_or_today(value) -> date:
+    if isinstance(value, date):
+        return value
     try:
         return date.fromisoformat(value) if value else timezone.localdate()
     except (ValueError, TypeError):
