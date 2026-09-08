@@ -232,4 +232,4 @@ def test_alpha_smoke_nao_tem_espera_cega():
         linha for linha in text.splitlines() if not linha.lstrip().startswith("#")
     ]
     assert not [linha for linha in codigo if "sleep 420" in linha]
-    assert "api.digitalocean.com/v2/apps" in text
+    assert "scripts/wait_for_do_deployment.py" in text

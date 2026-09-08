@@ -137,6 +137,13 @@ jobs:
     # `scripts/check_workflow_budgets.py` recusa o dia em que isto encolher.
     timeout-minutes: 25
     steps:
+      # ⚠️ O smoke vivia sem checkout — eram quatro `curl` e nada mais. Passou a
+      # precisar dele quando a espera virou script: Python dentro de shell dentro
+      # de YAML custou um `syntax error near unexpected token '('` que só apareceu
+      # no runner. Três níveis de citação é um a mais do que cabe numa cabeça.
+      - name: Checkout
+        uses: actions/checkout@v7
+
       - name: A loja tem endereço
         run: |
           if [ -z "${STOREFRONT_URL}" ]; then
@@ -176,105 +183,7 @@ jobs:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_APP_NAME: shopman-alpha
           DEPLOY_FINISHED_AT: ${{ github.event.workflow_run.updated_at }}
-        run: |
-          set -euo pipefail
-
-          if [ -z "${DO_TOKEN}" ]; then
-            echo "::error::DIGITALOCEAN_ACCESS_TOKEN ausente — sem ele não dá" \
-                 "para saber se o deploy chegou ao alpha, e um smoke que não" \
-                 "sabe o que está medindo é pior que smoke nenhum."
-            exit 1
-          fi
-
-          api() { curl -sS --max-time 30 -H "Authorization: Bearer ${DO_TOKEN}" "$@"; }
-
-          app_id=$(api "https://api.digitalocean.com/v2/apps?per_page=200" \
-            | python3 -c "
-          import json,sys,os
-          apps = json.load(sys.stdin).get('apps') or []
-          want = os.environ['DO_APP_NAME']
-          print(next((a['id'] for a in apps if a.get('spec',{}).get('name')==want), ''))
-          ")
-          if [ -z "${app_id}" ]; then
-            echo "::error::App '${DO_APP_NAME}' não encontrado na conta."
-            exit 1
-          fi
-          echo "app: ${DO_APP_NAME} (${app_id})"
-
-          # Instante de referência: quando o Deploy Images terminou. No
-          # `probe_deploy_wait` não há deploy, e o 0 faz o passo aceitar o
-          # deployment ACTIVE que já existe — o que se prova ali é o caminho
-          # (credencial, API, parsing), não a espera.
-          if [ -n "${DEPLOY_FINISHED_AT}" ]; then
-            since=$(date -u -d "${DEPLOY_FINISHED_AT}" +%s)
-            echo "Deploy Images terminou em ${DEPLOY_FINISHED_AT} (${since})"
-          else
-            since=0
-            echo "sem workflow_run: aceitando o deployment ACTIVE corrente"
-          fi
-          # A DO cria o deployment ao ver a tag nova; o relógio dela e o do
-          # Actions não são o mesmo. 120s de folga para trás.
-          [ "${since}" -gt 0 ] && since=$((since - 120)) || true
-
-          deadline=$(( $(date +%s) + DEPLOY_WAIT_MAX_SECONDS ))
-          while :; do
-            verdict=$(api \
-              "https://api.digitalocean.com/v2/apps/${app_id}/deployments?per_page=20" \
-              | SINCE="${since}" python3 -c "
-          import json, os, sys
-          from datetime import datetime, timezone
-
-          since = int(os.environ['SINCE'])
-          deps = json.load(sys.stdin).get('deployments') or []
-          def ts(d):
-              raw = (d.get('created_at') or '').replace('Z', '+00:00')
-              try:
-                  return int(datetime.fromisoformat(raw).replace(tzinfo=timezone.utc).timestamp())
-              except ValueError:
-                  return 0
-          fresh = [d for d in deps if ts(d) >= since]
-          fresh.sort(key=ts, reverse=True)
-          if not fresh:
-              print('NONE none')
-              raise SystemExit
-          top = fresh[0]
-          print(f"{top.get('phase','?')} {top.get('id','?')}")
-          ")
-            phase=${verdict%% *}
-            dep=${verdict##* }
-            echo "$(date -u +%H:%M:%SZ)  deployment=${dep} phase=${phase}"
-
-            case "${phase}" in
-              ACTIVE)
-                echo "deployment ${dep} ACTIVE — o alpha está com o que subiu."
-                break
-                ;;
-              ERROR|CANCELED)
-                echo "::error::deployment ${dep} terminou ${phase} — o que o" \
-                     "Deploy Images publicou NÃO chegou ao alpha. As asserções" \
-                     "abaixo mediriam a versão anterior e ficariam verdes."
-                exit 1
-                ;;
-            esac
-
-            if [ "$(date +%s)" -ge "${deadline}" ]; then
-              if [ "${phase}" = "NONE" ]; then
-                # Deploy Images roda a cada push no main, mas só rebuilda o que
-                # o push tocou: um merge que só mexeu em `docs/` não publica
-                # imagem nenhuma e a DO não cria deployment. Não é falha — e as
-                # asserções contra o que está no ar seguem valendo.
-                echo "::notice::Nenhum deployment novo em" \
-                     "${DEPLOY_WAIT_MAX_SECONDS}s. Provavelmente o push não" \
-                     "tocou componente publicável. Seguindo com as asserções" \
-                     "contra o que está no ar."
-                break
-              fi
-              echo "::error::deployment ${dep} ainda em ${phase} depois de" \
-                   "${DEPLOY_WAIT_MAX_SECONDS}s."
-              exit 1
-            fi
-            sleep 20
-          done
+        run: python3 scripts/wait_for_do_deployment.py
 
       - name: API pronta (/ready/)
         run: |
