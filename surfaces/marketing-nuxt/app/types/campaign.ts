@@ -11,6 +11,8 @@ export interface PlatformResult {
 
 export interface Announcement {
   pk: number;
+  /** Compare-and-set token required by mutating commands. */
+  version: number;
   status: string;
   status_label: string;
   body: string;

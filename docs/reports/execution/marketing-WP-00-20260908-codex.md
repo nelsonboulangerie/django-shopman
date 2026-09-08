@@ -283,3 +283,39 @@ Provas locais:
 - operator-kit: 172 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - somente fake adapter foi chamado; nenhuma credencial, rede, sandbox remoto, telefone ou produção foi usada.
+
+## MKT-009 — receipt, versão monotônica, CAS e replay idempotente
+
+Implementado de forma aditiva, preparando a transação composta do MKT-010:
+
+- `Announcement.version` nasce em 1, é exposta na Projection/tipo TS e avança sob row lock;
+- `MarketingCommandReceipt` registra ref, kind, state, resource, actor da sessão, hashes HMAC de key/payload, versões base/resultante, outcome seguro, request ID e retenção de 5 anos conforme G-H01;
+- a chave raw não é persistida e receipt recusa campos de PII ou conteúdo bruto, inclusive aninhados;
+- o executor trava primeiro o ator e depois o announcement, reconhece replay antes de comparar versão e mantém uma única linha por ator+key;
+- mesma key+mesmo payload devolve o mesmo receipt/outcome sem executar novamente;
+- mesma key+payload diferente retorna semântica 409 apontando para o receipt original;
+- key nova com `base_version` stale registra um receipt `conflict`, informa `current_version` e não executa a operação;
+- sucesso, mutação de domínio e avanço da versão acontecem na mesma `transaction.atomic`;
+- rejeição de domínio usa savepoint: qualquer escrita parcial do callback é desfeita, mas o receipt `rejected` permanece reapresentável;
+- falha inesperada desfaz tanto mutação quanto receipt, sem deixar um comando falsamente aceito;
+- edição de rascunho ganhou CAS opcional compatível; conflito preserva o texto vigente e responde 409, enquanto boolean/versão inválida responde 422;
+- o caminho legado de approve/reject ainda não foi conectado artificialmente a metade da transação: MKT-010 fará a composição única com artifact, snapshot, audit e outbox, conforme a dependência do plano.
+
+Budget de omotenashi comprovado na fronteira:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Duplo toque/retry com a mesma intenção | retorno silencioso dependente do estado | 1 receipt estável, 0 segunda mutação |
+| Descobrir se a tentativa original venceu | inferir pelo card/fila | receipt + state + resulting version |
+| Sobrescrever edição mais nova | possível | 0 quando `base_version` é enviado |
+| Diagnosticar conflito | mensagem genérica | `current_version` e campo reparável no próprio response |
+| Conferir conteúdo/PII em log de comando | revisão manual | proibido estruturalmente no outcome |
+
+Provas locais:
+
+- 13 testes novos cobrem sucesso, replay, key conflitante, CAS stale reapresentável, rollback de rejeição, crash inesperado, PII/content scan, recurso ausente, ator inativo, timestamps e edição stale;
+- contratos + commands: 22 testes passaram;
+- regressão campanha/handlers/scheduler/API/capabilities: 197 testes passaram após os dois novos testes de API;
+- Marketing Nuxt: typecheck e 93 testes passaram;
+- Ruff, `git diff --check` e `makemigrations --check --dry-run`: passaram;
+- migration aditiva `shop.0026_marketing_command_receipt`; nenhum provider, rede, produção ou banco externo foi tocado.

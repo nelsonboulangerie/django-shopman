@@ -61,6 +61,7 @@ class PlatformResultProjection:
 @dataclass(frozen=True)
 class AnnouncementProjection:
     pk: int
+    version: int
     status: str
     status_label: str
     body: str
@@ -414,6 +415,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
 
     return AnnouncementProjection(
         pk=announcement.pk,
+        version=announcement.version,
         status=announcement.status,
         status_label=announcement.get_status_display(),
         body=str(content.get("body") or ""),

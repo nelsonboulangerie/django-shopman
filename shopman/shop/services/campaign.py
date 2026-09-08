@@ -55,6 +55,14 @@ class CampaignError(Exception):
     """Erro de negócio da campanha (announcement inexistente, estado inválido)."""
 
 
+class CampaignVersionConflict(CampaignError):
+    """O rascunho mudou depois da versão que a superfície carregou."""
+
+    def __init__(self, current_version: int):
+        super().__init__("O anúncio mudou enquanto você revisava.")
+        self.current_version = current_version
+
+
 class MarketingTestConflict(CampaignError):
     """A mesma idempotency key foi reutilizada para outro payload."""
 
@@ -1088,35 +1096,45 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
 
 
 def update_content(
-    announcement_id: int, *, body=None, hashtags=None, platforms=None, image_url=None
+    announcement_id: int,
+    *,
+    body=None,
+    hashtags=None,
+    platforms=None,
+    image_url=None,
+    base_version: int | None = None,
 ) -> Announcement:
     """Editar o announcement antes de aprovar. Só o que o gestor de fato mexeu.
 
     Texto gerado por regra é rascunho, não sentença: o gestor ajusta o tom e as
     plataformas no próprio card. Depois de sair, não se reescreve o passado.
     """
-    try:
-        announcement = Announcement.objects.get(pk=announcement_id)
-    except Announcement.DoesNotExist as exc:
-        raise CampaignError("Anúncio não encontrado.") from exc
+    with transaction.atomic():
+        try:
+            announcement = Announcement.objects.select_for_update().get(pk=announcement_id)
+        except Announcement.DoesNotExist as exc:
+            raise CampaignError("Anúncio não encontrado.") from exc
 
-    if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
-        raise CampaignError("Este announcement não está mais em revisão.")
+        if base_version is not None and announcement.version != base_version:
+            raise CampaignVersionConflict(announcement.version)
+        if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
+            raise CampaignError("Este announcement não está mais em revisão.")
 
-    content = dict(announcement.content or {})
-    if body is not None:
-        content["body"] = str(body)
-    if hashtags is not None:
-        content["hashtags"] = [str(tag).strip() for tag in hashtags if str(tag).strip()]
-    if image_url is not None:
-        content["image_url"] = str(image_url)
+        content = dict(announcement.content or {})
+        if body is not None:
+            content["body"] = str(body)
+        if hashtags is not None:
+            content["hashtags"] = [str(tag).strip() for tag in hashtags if str(tag).strip()]
+        if image_url is not None:
+            content["image_url"] = str(image_url)
 
-    announcement.content = content
-    announcement.platform_content = _platform_content(announcement.template, content) if announcement.template_id else {}
-    if platforms is not None:
-        announcement.platforms = [str(platform) for platform in platforms]
-    announcement.save(update_fields=["content", "platform_content", "platforms"])
-    return announcement
+        announcement.content = content
+        announcement.platform_content = _platform_content(announcement.template, content) if announcement.template_id else {}
+        if platforms is not None:
+            announcement.platforms = [str(platform) for platform in platforms]
+        announcement.version += 1
+        announcement.save(update_fields=["content", "platform_content", "platforms", "version"])
+        return announcement
 
 
 def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:

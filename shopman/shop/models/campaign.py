@@ -283,6 +283,11 @@ class Campaign(models.Model):
 class Announcement(models.Model):
     """Um announcement gerado: pendente, aprovado, publicado ou caduco."""
 
+    # Compare-and-set token for every operator command.  It starts at one so a
+    # missing/zero value can never be mistaken for a valid version at the API
+    # boundary.  Mutations advance it while holding a row lock.
+    version = models.PositiveIntegerField(default=1, editable=False)
+
     rule = models.ForeignKey(
         Campaign, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="announcements", verbose_name="regra",
@@ -510,3 +515,72 @@ class MarketingTestReceipt(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["actor", "created_at"])]
+
+
+class MarketingCommandReceipt(models.Model):
+    """Durable, PII-free outcome for one mutating Marketing command.
+
+    The raw idempotency key is deliberately not retained.  Its keyed digest is
+    enough to recognize a replay without turning an operator-supplied bearer
+    value into audit data.  ``outcome`` may contain only stable refs, versions
+    and machine codes; content and audience membership belong to their sealed
+    artifacts instead.
+    """
+
+    class Kind(models.TextChoices):
+        APPROVE = "approve", "aprovar"
+        REJECT = "reject", "recusar"
+        RESCHEDULE = "reschedule", "reagendar"
+        PUBLISH_NOW = "publish_now", "publicar agora"
+        CANCEL = "cancel", "cancelar"
+        FIRE = "fire", "disparar campanha"
+
+    class State(models.TextChoices):
+        ACCEPTED = "accepted", "aceito"
+        COMPLETED = "completed", "concluído"
+        REJECTED = "rejected", "recusado"
+        CONFLICT = "conflict", "conflito"
+        UNKNOWN = "unknown", "resultado desconhecido"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    kind = models.CharField(max_length=24, choices=Kind.choices)
+    state = models.CharField(
+        max_length=16,
+        choices=State.choices,
+        default=State.ACCEPTED,
+    )
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="command_receipts",
+        null=True,
+        blank=True,
+    )
+    resource_ref = models.CharField(max_length=120)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_command_receipts",
+    )
+    idempotency_key_hash = models.CharField(max_length=64)
+    payload_hash = models.CharField(max_length=64)
+    base_version = models.PositiveIntegerField()
+    resulting_version = models.PositiveIntegerField(null=True, blank=True)
+    outcome = models.JSONField(default=dict, blank=True)
+    request_id = models.CharField(max_length=100, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["actor", "idempotency_key_hash"],
+                name="shop_marketing_command_actor_idem_uq",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["announcement", "created_at"]),
+            models.Index(fields=["state", "created_at"]),
+        ]

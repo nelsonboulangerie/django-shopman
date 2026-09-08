@@ -220,6 +220,47 @@ class TestPostDecision:
         # O "#" é do texto, não do dado: guardar a tag limpa evita "##paes".
         assert announcement.content["hashtags"] == ["paes", "artesanal"]
 
+    def test_edit_returns_next_version_and_stale_edit_preserves_current_draft(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/"
+
+        first = client.patch(
+            url,
+            data={"body": "Primeira revisão", "base_version": 1},
+            content_type="application/json",
+        )
+        stale = client.patch(
+            url,
+            data={"body": "Revisão que chegou tarde", "base_version": 1},
+            content_type="application/json",
+        )
+
+        assert first.status_code == 200
+        assert first.json()["announcement"]["version"] == 2
+        assert stale.status_code == 409
+        assert stale.json()["code"] == "version_conflict"
+        assert stale.json()["current_version"] == 2
+        announcement.refresh_from_db()
+        assert announcement.content["body"] == "Primeira revisão"
+
+    def test_boolean_is_not_accepted_as_a_resource_version(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
+            data={"body": "Texto", "base_version": True},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["field"] == "base_version"
+        announcement.refresh_from_db()
+        assert announcement.version == 1
+
     def test_published_post_cannot_be_rewritten(self, client, gestor, rule, template):
         announcement = _post(rule, template, status=AnnouncementStatus.PUBLISHED)
         client.force_login(gestor)

@@ -142,11 +142,38 @@ class AnnouncementDetailView(_CampaignBase):
         if not edits:
             return Response({"detail": "Nada para salvar."}, status=400)
 
+        base_version = None
+        if "base_version" in request.data:
+            raw_base_version = request.data.get("base_version")
+            base_version = None if isinstance(raw_base_version, bool) else _as_int(raw_base_version)
+            if base_version is None or base_version <= 0:
+                return Response(
+                    {
+                        "detail": "A versão deve ser um inteiro positivo.",
+                        "field": "base_version",
+                    },
+                    status=422,
+                )
+
         # Pelo serviço, não direto no model: ele reprojeta ``platform_content``
         # a partir do corpo editado. Salvar só ``content`` deixaria a variação
         # por plataforma com o texto velho — o gestor editaria no vazio.
         try:
-            announcement = campaign_service.update_content(pk, **edits)
+            announcement = campaign_service.update_content(
+                pk,
+                base_version=base_version,
+                **edits,
+            )
+        except campaign_service.CampaignVersionConflict as exc:
+            return Response(
+                {
+                    "code": "version_conflict",
+                    "detail": str(exc),
+                    "current_version": exc.current_version,
+                    "field_errors": {"base_version": ["Use a versão atual."]},
+                },
+                status=409,
+            )
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})

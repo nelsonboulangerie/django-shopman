@@ -7,6 +7,7 @@ from .campaign import (
     AudienceSnapshot,
     AudienceSnapshotMember,
     Campaign,
+    MarketingCommandReceipt,
     MarketingTestReceipt,
     Trigger,
 )
@@ -60,6 +61,7 @@ __all__ = [
     "AnnouncementStatus",
     "AudienceSnapshot",
     "AudienceSnapshotMember",
+    "MarketingCommandReceipt",
     "MarketingTestReceipt",
     "Trigger",
     "UserNotification",
