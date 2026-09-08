@@ -1609,97 +1609,97 @@ class Command(BaseCommand):
         PDP_METADATA = {
             "BF": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "BE": {
                 "allergens": ["glúten", "gergelim"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "MIB": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 26 x 5 x 4 cm",
             },
             "FE": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "TB": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "CGO": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 a 3 pessoas",
                 "approx_dimensions": "aprox. 15 cm de diâmetro x 10 cm de altura",
             },
             "CPX": {
                 "allergens": ["glúten", "castanhas"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 15 x 15 x 10 cm",
             },
             "CI": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 a 2 pessoas",
                 "approx_dimensions": "aprox. 20 x 10 x 4 cm",
             },
             "PH": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "BBB": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "PHO": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 16 x 5 x 4 cm",
             },
             "CT": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "PC": {
                 "allergens": ["glúten", "leite", "ovos", "soja"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 11 x 7 x 4 cm",
             },
             "CO": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 13 x 6 x 6 cm",
             },
             "ME": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "MD": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 8 x 5 x 3 cm",
             },
@@ -1717,13 +1717,13 @@ class Command(BaseCommand):
             },
             "SS": {
                 "allergens": [],
-                "dietary_info": ["100% vegetal", "sem glúten", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 xícara de 40 ml",
                 "approx_dimensions": "xícara 40 ml",
             },
             "PS": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 xícara de 180 ml",
                 "approx_dimensions": "xícara 180 ml",
             },
@@ -1735,7 +1735,7 @@ class Command(BaseCommand):
             },
             "MC": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "xícara 180 ml",
             },
@@ -1777,13 +1777,13 @@ class Command(BaseCommand):
             },
             "CE": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
             "FP": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
@@ -1807,43 +1807,43 @@ class Command(BaseCommand):
             },
             "FOA": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 24 x 18 x 4 cm",
             },
             "FA": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "6 fatias grossas",
                 "approx_dimensions": "aprox. 18 x 10 x 10 cm",
             },
             "KP": {
                 "allergens": ["glúten"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "2 a 3 pessoas",
                 "approx_dimensions": "aprox. 18 x 10 x 8 cm",
             },
             "CN": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "BH": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "PR": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "ANC": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 x 8 cm",
             },
@@ -1855,7 +1855,7 @@ class Command(BaseCommand):
             },
             "QQ": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 14 x 12 cm",
             },
@@ -1879,7 +1879,7 @@ class Command(BaseCommand):
             },
             "PG": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias grossas",
             },
@@ -1891,25 +1891,25 @@ class Command(BaseCommand):
             },
             "PPU": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias",
             },
             "MS": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "PU": {
                 "allergens": ["leite", "ovos"],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "taça individual",
             },
             "TJ": {
                 "allergens": [],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "taça individual",
             },
@@ -1951,13 +1951,13 @@ class Command(BaseCommand):
             },
             "QC": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "aprox. 250 g",
                 "approx_dimensions": "caixa redonda",
             },
             "QP": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "aprox. 300 g",
                 "approx_dimensions": "peça embalada",
             },
@@ -1975,7 +1975,7 @@ class Command(BaseCommand):
             },
             "LN": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "lata sortida",
                 "approx_dimensions": "lata de presente",
             },
@@ -2172,7 +2172,12 @@ class Command(BaseCommand):
         # O bundle declara a própria rotulagem: ele não a herda dos componentes,
         # e o cliente que compra de longe precisa dela na tela do combo.
         attributes.set(combo, "alergenos", ["glúten", "leite", "ovos"], save=False)
-        attributes.set(combo, "dieta", ["vegetariano"], save=False)
+        # ⚠️ `dieta` VAZIA, não ausente. O combo leva croissant e café com leite,
+        # então não é `100% vegetal` — e `vegetariano` saiu do vocabulário (a casa
+        # parou de afirmar ausência que não consegue honrar). Lista vazia é a casa
+        # dizendo "conferi e não há o que declarar"; ausente seria "ninguém olhou",
+        # e é essa diferença que a guarda de catálogo completo cobra.
+        attributes.set(combo, "dieta", [], save=False)
         attributes.set(combo, "porcoes", "1 pessoa", save=False)
         combo.save(update_fields=["metadata"])
         products["COMBO-PETIT-DEJ"] = combo
@@ -7552,7 +7557,7 @@ class Command(BaseCommand):
             # e stock_arrived já estavam na lista.
             # A mensagem de ENTRADA na loja. Morava dentro do ManyChat e por isso
             # não tinha log, teste nem quem revisasse; agora é copy da casa.
-            "access_link": {"subject": "Seu link para entrar na loja", "body": "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:\n{access_url}\n{cart_note}O link vale por 5 min."},
+            "access_link": {"subject": "Seu acesso à loja", "body": "Olá{customer_name_greeting}! Aqui está seu acesso à loja:\n{access_url}{cart_note}\n\nO link é só seu e vale por poucos minutos."},
             "waitlist_available": {"subject": "Sua fornada saiu — confirme o pedido {order_ref}", "body": "Olá{customer_name_greeting}! Sua fornada saiu 🥐\n\nConfirme o pedido *{order_ref}* para garantir o seu: {tracking_url}"},
             "waitlist_released": {"subject": "Pedido {order_ref}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
             "preorder_reminder": {"subject": "Lembrete: pedido {order_ref} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},

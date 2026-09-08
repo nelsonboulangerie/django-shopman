@@ -193,6 +193,23 @@ def set(  # noqa: A001 — o verbo é o certo; o módulo é o namespace
             f"Proveniência '{source}' não existe. Use: {', '.join(sorted(set_of_sources()))}."
         )
 
+    # ⚠️ A cadeia de insumos NUNCA pode ser barrada por vocabulário.
+    #
+    # Um insumo que declara "pimenta preta" — alérgeno que a ANVISA não lista e
+    # que esta casa já viu causar reação — precisa chegar ao rótulo do produto.
+    # Com a lista fechada, a derivação da ficha explodia e o produto ficava SEM
+    # alérgeno nenhum: o oposto exato do que a lista existia para proteger.
+    #
+    # Então: valor vindo da FICHA amplia o vocabulário (e fica marcado para
+    # revisão); valor digitado à MÃO continua sendo recusado, porque ali o erro
+    # provável é de digitação, não um alérgeno novo do mundo.
+    if (
+        value is not None
+        and d.extends_from_source
+        and str(source) == AttributeSource.RECIPE
+    ):
+        _absorb_new_options(d, value)
+
     typed = _coerce(d, value) if value is not None else None
 
     column = d.column_field
@@ -253,6 +270,34 @@ def set_of_sources() -> frozenset[str]:
 
 
 # --- internals -------------------------------------------------------------
+
+
+def _absorb_new_options(d: AttributeDefinition, value) -> None:
+    """Acrescenta à definição as opções que a ficha trouxe e o registro não tinha."""
+    if not d.is_choice:
+        return
+    candidatos = value if isinstance(value, (list, tuple)) else [value]
+    # `frozenset`, não `set`: neste módulo `set` é a função de escrita.
+    conhecidas = frozenset(d.option_values())
+    novas = [
+        str(v).strip() for v in candidatos
+        if str(v).strip() and str(v).strip() not in conhecidas
+    ]
+    if not novas:
+        return
+
+    d.options = list(d.options or []) + [
+        # `meta.from_recipe` é o que a tela usa para dizer "veio da ficha,
+        # confira" — opção nova não pode entrar parecendo curadoria.
+        {"value": v, "label": v[:1].upper() + v[1:], "meta": {"from_recipe": True}}
+        for v in novas
+    ]
+    d.save(update_fields=["options"])
+    invalidate_cache()
+    logger.warning(
+        "attributes: '%s' ganhou opção(ões) %s vinda(s) da ficha técnica — revise no Admin.",
+        d.ref, ", ".join(novas),
+    )
 
 
 def _provenance_record(product, ref: str) -> dict:
