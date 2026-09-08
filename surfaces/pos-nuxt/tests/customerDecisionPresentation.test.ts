@@ -11,8 +11,10 @@ import {
   conflictTypedSource,
   contactChangeDecision,
   customerDecisionCopy,
+  customerMergeDescription,
   decisionFieldFromServer,
   decisionFieldLabel,
+  mergeUndoDeadlineLabel,
   phoneKey,
   type CustomerDecision,
   type ServerConflictCandidate,
@@ -385,6 +387,66 @@ describe("customerDecisionCopy — voz de balcão, e as saídas dizem o que fica
     expect(decisionFieldLabel("phone")).toBe("WhatsApp");
     expect(decisionFieldLabel("email")).toBe("e-mail");
     expect(decisionFieldLabel("tax_id")).toBe("CPF/CNPJ");
+  });
+});
+
+// UNIFICAR É DESTRUTIVO E TEM VOLTA — mas a volta tem prazo, e quem unifica no
+// balcão é justamente quem não pode desfazer. O servidor sempre mandou
+// `undo_deadline`; o PDV jogava fora. Aqui se prova que a frase diz as três
+// coisas que o operador precisa: que dá para desfazer, até quando, e com quem.
+describe("customerMergeDescription", () => {
+  // Datas montadas por componentes locais: a frase é lida no fuso do balcão, e
+  // um ISO fixo faria o teste passar em São Paulo e falhar na CI.
+  const agora = new Date(2026, 8, 8, 14, 30);
+  const iso = (date: Date) => date.toISOString();
+
+  it("diz o que mudou de dono, até quando desfazer e com quem", () => {
+    const frase = customerMergeDescription({
+      migrated: { contact_points: 2, orders: 3 },
+      undoDeadline: iso(new Date(2026, 8, 9, 14, 30)),
+      now: agora,
+    });
+    expect(frase).toBe(
+      "2 contatos e 3 pedidos passaram para este cadastro. "
+      + "Dá para desfazer até amanhã às 14:30 — com o gerente, em Clientes → Unificações de cadastro.",
+    );
+  });
+
+  it("conta no singular quando é um só — «1 contatos» faz desconfiar do resto da tela", () => {
+    const frase = customerMergeDescription({
+      migrated: { contact_points: 1, orders: 1 },
+      undoDeadline: iso(new Date(2026, 8, 8, 23, 5)),
+      now: agora,
+    });
+    expect(frase).toContain("1 contato e 1 pedido passaram para este cadastro.");
+    expect(frase).toContain("hoje às 23:05");
+  });
+
+  it("sem prazo utilizável NÃO promete desfazer", () => {
+    // `_merge_undo_deadline` devolve string vazia quando não alcança a
+    // auditoria. "Dá para desfazer" sem dizer até quando é meia promessa.
+    expect(customerMergeDescription({ migrated: { contact_points: 1, orders: 0 }, undoDeadline: "" }))
+      .toBe("1 contato e 0 pedidos passaram para este cadastro.");
+    expect(customerMergeDescription({ migrated: null, undoDeadline: "sexta que vem" })).toBe("");
+  });
+
+  it("sem o resumo do que migrou, o prazo sozinho ainda vale a frase", () => {
+    const frase = customerMergeDescription({
+      migrated: null,
+      undoDeadline: iso(new Date(2026, 8, 9, 9, 5)),
+      now: agora,
+    });
+    expect(frase).toBe("Dá para desfazer até amanhã às 09:05 — com o gerente, em Clientes → Unificações de cadastro.");
+  });
+
+  it("o prazo se lê de relance: hoje, amanhã, ou a data", () => {
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 8, 23, 59)), agora)).toBe("hoje às 23:59");
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 9, 0, 1)), agora)).toBe("amanhã às 00:01");
+    // A janela é de 24h, então isto não acontece hoje — mas a frase não pode
+    // virar "amanhã" se um dia a política mudar.
+    expect(mergeUndoDeadlineLabel(iso(new Date(2026, 8, 11, 8, 0)), agora)).toBe("11/09 às 08:00");
+    expect(mergeUndoDeadlineLabel("", agora)).toBe("");
+    expect(mergeUndoDeadlineLabel(null, agora)).toBe("");
   });
 });
 

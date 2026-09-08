@@ -516,3 +516,79 @@ export function contactChangeDecision(input: {
     || decide("email", input.registeredEmail, input.typedEmail, (v) => v.toLowerCase())
   );
 }
+
+// ---------------------------------------------------------------------------
+// Depois de unificar: a única tela que diz que dá para VOLTAR atrás.
+//
+// O balcão unifica dois cadastros no meio de uma venda — é destrutivo, e o
+// servidor já devolve o comprovante (`audit_id`) e o prazo (`undo_deadline`,
+// 24h). O PDV recebia os dois e jogava fora: o operador terminava a venda sem
+// saber que existe desfazer, e a janela fechava sozinha.
+//
+// ⚠️ Sem LINK para o Admin, e isso é decisão, não esquecimento. Desfazer exige
+// `shop.manage_customers`, que o Caixa — justamente quem unifica no balcão —
+// não tem: o link levaria ao 403 para a maioria de quem lê a frase. E mesmo
+// para o gerente, o PDV é desktop-first e a venda está em curso; tirar alguém
+// da comanda aberta para outra aba é pior do que dizer onde a tela fica. A
+// frase nomeia o caminho ("Clientes → Unificações de cadastro") e o dono do
+// gesto; quem tem a permissão sabe chegar lá quando a venda acabar.
+
+/** O que a unificação moveu, como o servidor conta. */
+export interface CustomerMergeMigrated {
+  contact_points: number;
+  orders: number;
+}
+
+function countLabel(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+/**
+ * O prazo do desfazer no formato que se lê de relance, no meio de uma venda:
+ * "hoje às 14:32", "amanhã às 09:05" — e a data por extenso se algum dia a
+ * janela passar de 24h. Devolve vazio quando não há prazo utilizável.
+ */
+export function mergeUndoDeadlineLabel(raw: string | null | undefined, now: Date = new Date()): string {
+  const deadline = new Date(String(raw || ""));
+  if (Number.isNaN(deadline.getTime())) return "";
+
+  const hour = deadline.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  const days = Math.round(
+    (new Date(deadline.getFullYear(), deadline.getMonth(), deadline.getDate()).getTime()
+      - new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime())
+    / 86_400_000,
+  );
+  if (days === 0) return `hoje às ${hour}`;
+  if (days === 1) return `amanhã às ${hour}`;
+  return `${deadline.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} às ${hour}`;
+}
+
+/**
+ * A frase abaixo do "Cadastros unificados": o que mudou de dono e até quando
+ * dá para voltar atrás.
+ *
+ * Sem prazo utilizável, o desfazer NÃO é prometido. "Dá para desfazer" sem
+ * dizer até quando é meia promessa — e o prazo é a metade que importa, porque
+ * ele fecha sozinho.
+ */
+export function customerMergeDescription(input: {
+  migrated?: CustomerMergeMigrated | null;
+  undoDeadline?: string | null;
+  now?: Date;
+}): string {
+  const parts: string[] = [];
+
+  const migrated = input.migrated;
+  if (migrated) {
+    const contatos = countLabel(migrated.contact_points, "contato", "contatos");
+    const pedidos = countLabel(migrated.orders, "pedido", "pedidos");
+    parts.push(`${contatos} e ${pedidos} passaram para este cadastro.`);
+  }
+
+  const prazo = mergeUndoDeadlineLabel(input.undoDeadline, input.now);
+  if (prazo) {
+    parts.push(`Dá para desfazer até ${prazo} — com o gerente, em Clientes → Unificações de cadastro.`);
+  }
+
+  return parts.join(" ");
+}

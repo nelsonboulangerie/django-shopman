@@ -63,6 +63,7 @@ import {
   conflictDecision,
   conflictTypedSource,
   contactChangeDecision,
+  customerMergeDescription,
   decisionFieldFromServer,
   decisionFieldLabel,
 } from "~/presentation/customerDecision";
@@ -1501,12 +1502,18 @@ export function usePosSale(deps: PosSaleDeps) {
         body: { source_ref: other.ref, target_ref: current.ref },
       });
       customerDecision.value = null;
-      const migrated = response.merge?.migrated;
+      // O prazo do desfazer é a metade da notícia que faltava: unificar é
+      // destrutivo, e quem fez precisa saber que dá para voltar atrás e até
+      // quando — a janela fecha sozinha em 24h.
+      const description = customerMergeDescription({
+        migrated: response.merge?.migrated,
+        undoDeadline: response.merge?.undo_deadline,
+      });
       toast.success(`Cadastros unificados em ${response.customer?.name || current.name}.`, {
-        description: migrated
-          ? `${migrated.contact_points} contato(s) e ${migrated.orders} pedido(s) passaram para este cadastro.`
-          : undefined,
-        duration: 8000,
+        description: description || undefined,
+        // Mais tempo do que o toast comum: são duas frases, e a segunda tem
+        // prazo. Ler pela metade aqui é perder o desfazer.
+        duration: 12000,
       });
       // A comanda segue no ALVO — e o lookup repõe memória e endereço já
       // unificados, sem o operador ter de buscar de novo.
