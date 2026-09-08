@@ -8,6 +8,11 @@ import type {
   ProductionBoardResponse,
   ProductionShortageError,
 } from "~/types/production";
+import {
+  planProduction,
+  startProductionWorkOrder,
+  type ProductionPlanMutationRequest,
+} from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
 
@@ -60,18 +65,14 @@ export function useProductionBoard(
 
   async function post(
     key: string,
-    url: string,
-    body: Record<string, unknown>,
+    action: (idempotencyKey: string) => Promise<unknown>,
   ): Promise<BoardActResult> {
     if (busy.value.has(key)) return { ok: false };
     busy.value = new Set(busy.value).add(key);
     const attempt = attempts.get(key) ?? newProductionMutationKey();
     attempts.set(key, attempt);
     try {
-      await $fetch(url, {
-        method: "POST",
-        body: { ...body, idempotency_key: attempt },
-      });
+      await action(attempt);
       await refresh();
       attempts.delete(key);
       return { ok: true };
@@ -97,17 +98,11 @@ export function useProductionBoard(
   // falsa. O contrato exige que essa ausência seja explícita.
   function plan(
     key: string,
-    payload: {
-      recipe_id: number;
-      quantity: string;
-      target_date: string;
-      expected_rev: number | null;
-      position_ref?: string;
-      source?: "manual" | "suggested";
-      force?: boolean;
-    },
+    payload: Omit<ProductionPlanMutationRequest, "idempotency_key">,
   ): Promise<BoardActResult> {
-    return post(key, "/api/v1/backstage/production/plan/", payload);
+    return post(key, (idempotencyKey) =>
+      planProduction({ ...payload, idempotency_key: idempotencyKey }),
+    );
   }
 
   function start(
@@ -116,10 +111,13 @@ export function useProductionBoard(
     rev: number,
     quantity: string,
   ): Promise<BoardActResult> {
-    return post(key, `/api/v1/backstage/production/${woPk}/start/`, {
-      quantity,
-      expected_rev: rev,
-    });
+    return post(key, (idempotencyKey) =>
+      startProductionWorkOrder(woPk, {
+        quantity,
+        expected_rev: rev,
+        idempotency_key: idempotencyKey,
+      }),
+    );
   }
 
   return {

@@ -1,5 +1,5 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/production.py
+// Source of truth: shopman/backstage/projections/production.py + api/_production_mutations.py
 // Regenerate with: python manage.py export_production_schema
 
 /** A compact order commitment for a production work order. */
@@ -474,4 +474,259 @@ export interface ProductionReportsProjection {
   available_recipes: RecipeOptionProjection[];
   available_positions: PositionOptionProjection[];
   access: ProductionSurfaceAccess;
+}
+
+/** Minimal authoritative WorkOrder state returned after every mutation. */
+export interface ProductionMutationCurrent {
+  pk: number;
+  ref: string;
+  status: string;
+  rev: number;
+}
+
+/** ProductionPlanMutationSuccess(ok: 'bool', result: 'str', output_sku: 'str', wo_ref: 'str', quantity: 'str', current: 'ProductionMutationCurrent | None') */
+export interface ProductionPlanMutationSuccess {
+  ok: boolean;
+  result: string;
+  output_sku: string;
+  wo_ref: string;
+  quantity: string;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionWorkOrderMutationSuccess(ok: 'bool', wo_ref: 'str', quantity: 'str', current: 'ProductionMutationCurrent | None') */
+export interface ProductionWorkOrderMutationSuccess {
+  ok: boolean;
+  wo_ref: string;
+  quantity: string;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionAdvanceStepMutationSuccess(ok: 'bool', wo_id: 'int', step_index: 'int', current: 'ProductionMutationCurrent | None') */
+export interface ProductionAdvanceStepMutationSuccess {
+  ok: boolean;
+  wo_id: number;
+  step_index: number;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionVoidMutationSuccess(ok: 'bool', wo_ref: 'str', current: 'ProductionMutationCurrent | None') */
+export interface ProductionVoidMutationSuccess {
+  ok: boolean;
+  wo_ref: string;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionOvenArmMutationSuccess(ok: 'bool', run_id: 'int', current: 'ProductionMutationCurrent | None') */
+export interface ProductionOvenArmMutationSuccess {
+  ok: boolean;
+  run_id: number;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionOvenConcludeMutationSuccess(ok: 'bool', measured: 'bool', current: 'ProductionMutationCurrent | None') */
+export interface ProductionOvenConcludeMutationSuccess {
+  ok: boolean;
+  measured: boolean;
+  current: ProductionMutationCurrent | null;
+}
+
+/** ProductionValidationIssue(field: 'str', code: 'str', message: 'str') */
+export interface ProductionValidationIssue {
+  field: string;
+  code: string;
+  message: string;
+}
+
+/** ProductionValidationErrorBody(code: "Literal['validation_error']", issues: 'tuple[ProductionValidationIssue, ...]') */
+export interface ProductionValidationErrorBody {
+  code: "validation_error";
+  issues: ProductionValidationIssue[];
+}
+
+/** ProductionValidationErrorEnvelope(detail: 'str', error: 'ProductionValidationErrorBody') */
+export interface ProductionValidationErrorEnvelope {
+  detail: string;
+  error: ProductionValidationErrorBody;
+}
+
+/** ProductionConflictRecovery(action: "Literal['refresh']", label: 'str') */
+export interface ProductionConflictRecovery {
+  action: "refresh";
+  label: string;
+}
+
+/** ProductionConflictErrorBody(code: "Literal['conflict', 'state_conflict']", sent_rev: 'int | None', current_rev: 'int | None', current: 'ProductionMutationCurrent | None', recovery: 'ProductionConflictRecovery') */
+export interface ProductionConflictErrorBody {
+  code: "conflict" | "state_conflict";
+  sent_rev: number | null;
+  current_rev: number | null;
+  current: ProductionMutationCurrent | null;
+  recovery: ProductionConflictRecovery;
+}
+
+/** ProductionConflictErrorEnvelope(detail: 'str', error: 'ProductionConflictErrorBody') */
+export interface ProductionConflictErrorEnvelope {
+  detail: string;
+  error: ProductionConflictErrorBody;
+}
+
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force']", label: 'str', enabled: 'bool') */
+export interface ProductionShortagePossibility {
+  kind: "retry" | "force";
+  label: string;
+  enabled: boolean;
+}
+
+/** ProductionMaterialShortageItem(sku: 'str', needed: 'str', available: 'str', shortage: 'str') */
+export interface ProductionMaterialShortageItem {
+  sku: string;
+  needed: string;
+  available: string;
+  shortage: string;
+}
+
+/** ProductionMaterialShortageErrorBody(code: "Literal['material_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', missing: 'tuple[ProductionMaterialShortageItem, ...]') */
+export interface ProductionMaterialShortageErrorBody {
+  code: "material_shortage";
+  work_order_ref: string;
+  idempotency_key: string;
+  possibilities: ProductionShortagePossibility[];
+  missing: ProductionMaterialShortageItem[];
+}
+
+/** ProductionMaterialShortageErrorEnvelope(detail: 'str', error: 'ProductionMaterialShortageErrorBody') */
+export interface ProductionMaterialShortageErrorEnvelope {
+  detail: string;
+  error: ProductionMaterialShortageErrorBody;
+}
+
+/** ProductionOrderShortageErrorBody(code: "Literal['order_shortage']", work_order_ref: 'str', idempotency_key: 'str', possibilities: 'tuple[ProductionShortagePossibility, ...]', required: 'str', requested: 'str', order_refs: 'tuple[str, ...]') */
+export interface ProductionOrderShortageErrorBody {
+  code: "order_shortage";
+  work_order_ref: string;
+  idempotency_key: string;
+  possibilities: ProductionShortagePossibility[];
+  required: string;
+  requested: string;
+  order_refs: string[];
+}
+
+/** ProductionOrderShortageErrorEnvelope(detail: 'str', error: 'ProductionOrderShortageErrorBody') */
+export interface ProductionOrderShortageErrorEnvelope {
+  detail: string;
+  error: ProductionOrderShortageErrorBody;
+}
+
+export interface ProductionPartitionGroupRequest {
+  quantity: string;
+  quality_grade_ref?: string;
+  quality_defect_ref?: string;
+  loss?: boolean;
+}
+
+export interface ProductionPlanMutationRequest {
+  idempotency_key: string;
+  recipe_id: number;
+  quantity: string;
+  target_date: string;
+  position_ref?: string;
+  operator_ref?: string;
+  reason?: string;
+  source?: "manual" | "suggested";
+  force?: boolean;
+  expected_rev: number | null;
+}
+
+export interface ProductionStartMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+  quantity: string;
+  position_id?: string;
+  operator_ref?: string;
+  note?: string;
+}
+
+export interface ProductionFinishMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+  quantity: string;
+  force?: boolean;
+  reason?: string;
+  quality?: string;
+  partition?: ProductionPartitionGroupRequest[];
+}
+
+export interface ProductionAdvanceStepMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+}
+
+export interface ProductionQuickFinishMutationRequest {
+  idempotency_key: string;
+  recipe_id: number;
+  quantity: string;
+  position_id?: string;
+  force?: boolean;
+  reason?: string;
+  partition?: ProductionPartitionGroupRequest[];
+}
+
+export interface ProductionVoidMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+  reason: string;
+}
+
+export interface ProductionOvenArmMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+  planned_seconds: number;
+  operator_ref?: string;
+}
+
+export interface ProductionOvenConcludeMutationRequest {
+  idempotency_key: string;
+  expected_rev: number;
+}
+
+/** Generated production writer. Errors use the envelopes above. */
+async function postProductionMutation<T>(href: string, body: unknown): Promise<T> {
+  const post = $fetch as unknown as (
+    request: string,
+    options: { method: "POST"; body: unknown },
+  ) => Promise<T>;
+  return post(href, { method: "POST", body });
+}
+
+export function planProduction(body: ProductionPlanMutationRequest): Promise<ProductionPlanMutationSuccess> {
+  return postProductionMutation<ProductionPlanMutationSuccess>("/api/v1/backstage/production/plan/", body);
+}
+
+export function startProductionWorkOrder(workOrderId: number, body: ProductionStartMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
+  return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/start/`, body);
+}
+
+export function finishProductionWorkOrder(workOrderId: number, body: ProductionFinishMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
+  return postProductionMutation<ProductionWorkOrderMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/finish/`, body);
+}
+
+export function advanceProductionWorkOrderStep(workOrderId: number, body: ProductionAdvanceStepMutationRequest): Promise<ProductionAdvanceStepMutationSuccess> {
+  return postProductionMutation<ProductionAdvanceStepMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/advance-step/`, body);
+}
+
+export function quickFinishProduction(body: ProductionQuickFinishMutationRequest): Promise<ProductionWorkOrderMutationSuccess> {
+  return postProductionMutation<ProductionWorkOrderMutationSuccess>("/api/v1/backstage/production/quick-finish/", body);
+}
+
+export function voidProductionWorkOrder(workOrderId: number, body: ProductionVoidMutationRequest): Promise<ProductionVoidMutationSuccess> {
+  return postProductionMutation<ProductionVoidMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/void/`, body);
+}
+
+export function armProductionOven(workOrderId: number, body: ProductionOvenArmMutationRequest): Promise<ProductionOvenArmMutationSuccess> {
+  return postProductionMutation<ProductionOvenArmMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/oven/arm/`, body);
+}
+
+export function concludeProductionOven(workOrderId: number, body: ProductionOvenConcludeMutationRequest): Promise<ProductionOvenConcludeMutationSuccess> {
+  return postProductionMutation<ProductionOvenConcludeMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/oven/conclude/`, body);
 }

@@ -14,6 +14,9 @@ import type {
   ProductionKDSCardProjection as ProductionKDSCardContract,
   ProductionKDSProjection as ProductionKDSContract,
   ProductionMiseEnPlaceProjection,
+  ProductionMaterialShortageErrorBody,
+  ProductionMaterialShortageItem,
+  ProductionOrderShortageErrorBody,
   ProductionReportsProjection,
   ProductionWeighingIngredientProjection,
   ProductionWeighingProjection,
@@ -35,6 +38,7 @@ export type {
   ProductionCountsProjection,
   ProductionDashboardProjection,
   ProductionLateWorkOrderProjection,
+  ProductionMutationCurrent,
   ProductionMatrixGroupProjection,
   ProductionMatrixGroupRowProjection,
   ProductionMatrixRowProjection,
@@ -59,13 +63,6 @@ export type ProductionTimerStatusCode = "on_time" | "warning" | "late";
 
 export interface ProductionKDSCardProjection extends ProductionKDSCardContract {
   timer_status_code: ProductionTimerStatusCode;
-}
-
-export interface ProductionMutationCurrent {
-  pk: number;
-  ref: string;
-  status: string;
-  rev: number;
 }
 
 export interface ProductionKDSProjection extends ProductionKDSContract {
@@ -102,26 +99,9 @@ export interface ProductionForecastResponse {
 // ── Structured shortage envelope (material/order) ──────────────────────────
 // Mirrors backstage/api/operations.py `_shortage_response` (HTTP 409).
 
-export interface MaterialShortageItem {
-  sku: string;
-  needed: string;
-  available: string;
-  shortage: string;
-}
-
-export interface MaterialShortageError {
-  code: "material_shortage";
-  work_order_ref: string;
-  missing: MaterialShortageItem[];
-}
-
-export interface OrderShortageError {
-  code: "order_shortage";
-  work_order_ref: string;
-  required: string;
-  requested: string;
-  order_refs: string[];
-}
+export type MaterialShortageItem = ProductionMaterialShortageItem;
+export type MaterialShortageError = ProductionMaterialShortageErrorBody;
+export type OrderShortageError = ProductionOrderShortageErrorBody;
 
 export type ProductionShortageError = MaterialShortageError | OrderShortageError;
 

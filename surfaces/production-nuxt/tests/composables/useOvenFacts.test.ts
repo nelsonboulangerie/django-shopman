@@ -39,10 +39,13 @@ describe("useOvenFacts", () => {
     );
   });
 
-  it("falha terminal não estoura nem toasta: vira relato de erro", async () => {
+  it("falha terminal bloqueia o fato local e mantém erro reconciliável", async () => {
     // 400 não é transiente → sem retry, sem sleep: o teste fica rápido.
     env.fetchMock.mockRejectedValueOnce({ statusCode: 400, data: { detail: "nope" } });
-    await expect(useOvenFacts().armed(42, 6, 15)).resolves.toBeUndefined();
+    const facts = useOvenFacts();
+    await expect(facts.armed(42, 6, 15)).resolves.toBe(false);
+    expect(facts.errorFor(42)).toBe("nope");
+    expect(facts.isPending(42)).toBe(false);
     expect(env.clientErrorReport).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ kind: "oven-fact" }),

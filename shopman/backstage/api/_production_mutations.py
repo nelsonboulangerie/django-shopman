@@ -8,10 +8,156 @@ actions.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal
 
 from rest_framework import serializers
 from rest_framework.exceptions import APIException
+
+
+@dataclass(frozen=True)
+class ProductionMutationCurrent:
+    """Minimal authoritative WorkOrder state returned after every mutation."""
+
+    pk: int
+    ref: str
+    status: str
+    rev: int
+
+
+@dataclass(frozen=True)
+class ProductionPlanMutationSuccess:
+    ok: bool
+    result: str
+    output_sku: str
+    wo_ref: str
+    quantity: str
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionWorkOrderMutationSuccess:
+    ok: bool
+    wo_ref: str
+    quantity: str
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionAdvanceStepMutationSuccess:
+    ok: bool
+    wo_id: int
+    step_index: int
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionVoidMutationSuccess:
+    ok: bool
+    wo_ref: str
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionOvenArmMutationSuccess:
+    ok: bool
+    run_id: int
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionOvenConcludeMutationSuccess:
+    ok: bool
+    measured: bool
+    current: ProductionMutationCurrent | None
+
+
+@dataclass(frozen=True)
+class ProductionValidationIssue:
+    field: str
+    code: str
+    message: str
+
+
+@dataclass(frozen=True)
+class ProductionValidationErrorBody:
+    code: Literal["validation_error"]
+    issues: tuple[ProductionValidationIssue, ...]
+
+
+@dataclass(frozen=True)
+class ProductionValidationErrorEnvelope:
+    detail: str
+    error: ProductionValidationErrorBody
+
+
+@dataclass(frozen=True)
+class ProductionConflictRecovery:
+    action: Literal["refresh"]
+    label: str
+
+
+@dataclass(frozen=True)
+class ProductionConflictErrorBody:
+    code: Literal["conflict", "state_conflict"]
+    sent_rev: int | None
+    current_rev: int | None
+    current: ProductionMutationCurrent | None
+    recovery: ProductionConflictRecovery
+
+
+@dataclass(frozen=True)
+class ProductionConflictErrorEnvelope:
+    detail: str
+    error: ProductionConflictErrorBody
+
+
+@dataclass(frozen=True)
+class ProductionShortagePossibility:
+    kind: Literal["retry", "force"]
+    label: str
+    enabled: bool
+
+
+@dataclass(frozen=True)
+class ProductionMaterialShortageItem:
+    sku: str
+    needed: str
+    available: str
+    shortage: str
+
+
+@dataclass(frozen=True)
+class ProductionMaterialShortageErrorBody:
+    code: Literal["material_shortage"]
+    work_order_ref: str
+    idempotency_key: str
+    possibilities: tuple[ProductionShortagePossibility, ...]
+    missing: tuple[ProductionMaterialShortageItem, ...]
+
+
+@dataclass(frozen=True)
+class ProductionMaterialShortageErrorEnvelope:
+    detail: str
+    error: ProductionMaterialShortageErrorBody
+
+
+@dataclass(frozen=True)
+class ProductionOrderShortageErrorBody:
+    code: Literal["order_shortage"]
+    work_order_ref: str
+    idempotency_key: str
+    possibilities: tuple[ProductionShortagePossibility, ...]
+    required: str
+    requested: str
+    order_refs: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProductionOrderShortageErrorEnvelope:
+    detail: str
+    error: ProductionOrderShortageErrorBody
 
 
 def _validation_issues(detail, *, path: str = "") -> list[dict[str, str]]:
@@ -160,6 +306,111 @@ class ProductionOvenArmMutationSerializer(ExistingWorkOrderMutationSerializer):
 
 class ProductionOvenConcludeMutationSerializer(ExistingWorkOrderMutationSerializer):
     pass
+
+
+@dataclass(frozen=True)
+class ProductionActionSpec:
+    """One generated client operation backed by the serializer used by DRF."""
+
+    function_name: str
+    href: str
+    request_name: str
+    serializer: type[StrictMutationSerializer]
+    response: type
+    work_order_path: bool = False
+
+
+PRODUCTION_ACTION_SPECS = (
+    ProductionActionSpec(
+        "planProduction",
+        "/api/v1/backstage/production/plan/",
+        "ProductionPlanMutationRequest",
+        ProductionPlanMutationSerializer,
+        ProductionPlanMutationSuccess,
+    ),
+    ProductionActionSpec(
+        "startProductionWorkOrder",
+        "/api/v1/backstage/production/{workOrderId}/start/",
+        "ProductionStartMutationRequest",
+        ProductionStartMutationSerializer,
+        ProductionWorkOrderMutationSuccess,
+        True,
+    ),
+    ProductionActionSpec(
+        "finishProductionWorkOrder",
+        "/api/v1/backstage/production/{workOrderId}/finish/",
+        "ProductionFinishMutationRequest",
+        ProductionFinishMutationSerializer,
+        ProductionWorkOrderMutationSuccess,
+        True,
+    ),
+    ProductionActionSpec(
+        "advanceProductionWorkOrderStep",
+        "/api/v1/backstage/production/{workOrderId}/advance-step/",
+        "ProductionAdvanceStepMutationRequest",
+        ProductionAdvanceStepMutationSerializer,
+        ProductionAdvanceStepMutationSuccess,
+        True,
+    ),
+    ProductionActionSpec(
+        "quickFinishProduction",
+        "/api/v1/backstage/production/quick-finish/",
+        "ProductionQuickFinishMutationRequest",
+        ProductionQuickFinishMutationSerializer,
+        ProductionWorkOrderMutationSuccess,
+    ),
+    ProductionActionSpec(
+        "voidProductionWorkOrder",
+        "/api/v1/backstage/production/{workOrderId}/void/",
+        "ProductionVoidMutationRequest",
+        ProductionVoidMutationSerializer,
+        ProductionVoidMutationSuccess,
+        True,
+    ),
+    ProductionActionSpec(
+        "armProductionOven",
+        "/api/v1/backstage/production/{workOrderId}/oven/arm/",
+        "ProductionOvenArmMutationRequest",
+        ProductionOvenArmMutationSerializer,
+        ProductionOvenArmMutationSuccess,
+        True,
+    ),
+    ProductionActionSpec(
+        "concludeProductionOven",
+        "/api/v1/backstage/production/{workOrderId}/oven/conclude/",
+        "ProductionOvenConcludeMutationRequest",
+        ProductionOvenConcludeMutationSerializer,
+        ProductionOvenConcludeMutationSuccess,
+        True,
+    ),
+)
+
+PRODUCTION_REQUEST_SERIALIZERS = (
+    ("ProductionPartitionGroupRequest", ProductionPartitionGroupSerializer),
+    *((spec.request_name, spec.serializer) for spec in PRODUCTION_ACTION_SPECS),
+)
+
+PRODUCTION_MUTATION_DATACLASSES = (
+    ProductionMutationCurrent,
+    ProductionPlanMutationSuccess,
+    ProductionWorkOrderMutationSuccess,
+    ProductionAdvanceStepMutationSuccess,
+    ProductionVoidMutationSuccess,
+    ProductionOvenArmMutationSuccess,
+    ProductionOvenConcludeMutationSuccess,
+    ProductionValidationIssue,
+    ProductionValidationErrorBody,
+    ProductionValidationErrorEnvelope,
+    ProductionConflictRecovery,
+    ProductionConflictErrorBody,
+    ProductionConflictErrorEnvelope,
+    ProductionShortagePossibility,
+    ProductionMaterialShortageItem,
+    ProductionMaterialShortageErrorBody,
+    ProductionMaterialShortageErrorEnvelope,
+    ProductionOrderShortageErrorBody,
+    ProductionOrderShortageErrorEnvelope,
+)
 
 
 def validated_body(request, serializer_class: type[StrictMutationSerializer]) -> dict:

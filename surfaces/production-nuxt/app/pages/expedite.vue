@@ -192,6 +192,12 @@ function ovenMode(order: QCOrderCardProjection): OvenMode {
 const dialogMode = computed<OvenMode>(() =>
   ovenOrder.value ? ovenMode(ovenOrder.value) : "idle",
 );
+const ovenFactPending = computed(() =>
+  ovenOrder.value ? ovenFacts.isPending(ovenOrder.value.pk) : false,
+);
+const ovenFactError = computed(() =>
+  ovenOrder.value ? ovenFacts.errorFor(ovenOrder.value.pk) : "",
+);
 
 function openOven(order: QCOrderCardProjection) {
   ovenOrder.value = order;
@@ -217,12 +223,13 @@ function ovenAdd(minutes: number) {
   // Correndo, pausado ou alarmando: soma ao vivo (alarmando = rearma).
   oven.extend(ovenKey(order), minutes);
 }
-function startOven() {
+async function startOven() {
   const order = ovenOrder.value;
   const minutes = parseInt(ovenMinutes.value, 10);
   if (!order || !(minutes >= 1)) return;
+  const recorded = await ovenFacts.armed(order.pk, order.rev, minutes);
+  if (!recorded) return;
   oven.arm(ovenKey(order), minutes);
-  void ovenFacts.armed(order.pk, order.rev, minutes);
   ovenOrder.value = null;
 }
 function pauseOven() {
@@ -232,12 +239,13 @@ function resumeOven() {
   if (ovenOrder.value) oven.resume(ovenKey(ovenOrder.value));
 }
 /** Concluir = a fornada saiu do forno: para o timer e emenda no fechamento. */
-function concludeOven() {
+async function concludeOven() {
   const order = ovenOrder.value;
-  ovenOrder.value = null;
   if (!order) return;
+  const recorded = await ovenFacts.concluded(order.pk, order.rev);
+  if (!recorded) return;
   oven.clear(ovenKey(order));
-  void ovenFacts.concluded(order.pk, order.rev);
+  ovenOrder.value = null;
   openOrder(order);
 }
 </script>
@@ -485,6 +493,14 @@ function concludeOven() {
           <UiDialogDescription>Toca neste aparelho.</UiDialogDescription>
         </UiDialogHeader>
 
+        <p
+          v-if="ovenFactError"
+          role="alert"
+          class="rounded-md border border-destructive/40 bg-destructive/10 p-2.5 text-sm text-destructive"
+        >
+          {{ ovenFactError }} O timer local não foi alterado.
+        </p>
+
         <!-- O mostrador. Correndo/pausado, o CARD INTEIRO é o botão de
              pausar/continuar: símbolo à esquerda da contagem, sem borda
              própria. Pausado, o mostrador pulsa e o símbolo vira play. -->
@@ -570,11 +586,11 @@ function concludeOven() {
           </button>
           <button
             type="button"
-            :disabled="!(parseInt(ovenMinutes, 10) >= 1)"
+            :disabled="ovenFactPending || !(parseInt(ovenMinutes, 10) >= 1)"
             class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:opacity-50"
             @click="startOven()"
           >
-            Iniciar
+            {{ ovenFactPending ? "Confirmando…" : "Iniciar" }}
           </button>
         </div>
 
@@ -591,10 +607,11 @@ function concludeOven() {
           </button>
           <button
             type="button"
+            :disabled="ovenFactPending"
             class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
             @click="concludeOven()"
           >
-            Concluir
+            {{ ovenFactPending ? "Confirmando…" : "Concluir" }}
           </button>
         </div>
 

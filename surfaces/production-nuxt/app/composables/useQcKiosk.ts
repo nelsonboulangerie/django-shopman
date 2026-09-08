@@ -6,6 +6,10 @@
 //     do plano. Shortage estruturado sobe para o modal, como no KDS.
 import type { ProductionQCResponse, ProductionShortageError } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
+import {
+  finishProductionWorkOrder,
+  quickFinishProduction,
+} from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
 
@@ -36,16 +40,16 @@ export function useQcKiosk() {
   const submitting = ref(false);
   const attempts = new Map<string, string>();
 
-  async function post(attemptRef: string, url: string, body: Record<string, unknown>): Promise<QcActResult> {
+  async function post(
+    attemptRef: string,
+    request: (idempotencyKey: string) => Promise<unknown>,
+  ): Promise<QcActResult> {
     if (submitting.value) return { ok: false };
     submitting.value = true;
     const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, attempt);
     try {
-      await $fetch(url, {
-        method: "POST",
-        body: { ...body, idempotency_key: attempt },
-      });
+      await request(attempt);
       await refresh();
       attempts.delete(attemptRef);
       return { ok: true };
@@ -63,13 +67,16 @@ export function useQcKiosk() {
   }
 
   const finish = (pk: number, rev: number, quantity: string, partition: QcPartitionGroup[], force = false) =>
-    post(`finish:${pk}`, `/api/v1/backstage/production/${pk}/finish/`, {
-      quantity,
-      partition,
-      force,
-      expected_rev: rev,
-      ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
-    });
+    post(`finish:${pk}`, (idempotencyKey) =>
+      finishProductionWorkOrder(pk, {
+        quantity,
+        partition,
+        force,
+        expected_rev: rev,
+        idempotency_key: idempotencyKey,
+        ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
+      }),
+    );
 
   // Fornada avulsa: plan + finish num passo, mesma partição. Sem
   // position_id — o backend resolve a posição padrão.
@@ -79,13 +86,16 @@ export function useQcKiosk() {
     partition: QcPartitionGroup[],
     force = false,
   ) =>
-    post(`quick-finish:${recipeId}`, "/api/v1/backstage/production/quick-finish/", {
-      recipe_id: recipeId,
-      quantity,
-      partition,
-      force,
-      ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
-    });
+    post(`quick-finish:${recipeId}`, (idempotencyKey) =>
+      quickFinishProduction({
+        recipe_id: recipeId,
+        quantity,
+        partition,
+        force,
+        idempotency_key: idempotencyKey,
+        ...(force ? { reason: "Conclusão autorizada apesar da falta de insumos" } : {}),
+      }),
+    );
 
   return { kiosk, selectedDate, pending, error, refresh, submitting, finish, quickFinish };
 }

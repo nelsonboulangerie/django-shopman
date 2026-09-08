@@ -5,6 +5,10 @@
 // Material/order shortage is surfaced as a structured error so the page can open
 // the shortage modal (a finish can be retried with force=1).
 import type { ProductionKDSCardProjection, ProductionKDSResponse, ProductionShortageError } from "~/types/production";
+import {
+  advanceProductionWorkOrderStep,
+  voidProductionWorkOrder,
+} from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
 
@@ -34,17 +38,18 @@ export function useProductionKds() {
   const attempts = new Map<string, string>();
   const isBusy = (pk: number) => busy.value.has(pk);
 
-  async function post(pk: number, action: string, url: string, body?: Record<string, unknown>): Promise<ActResult> {
+  async function post(
+    pk: number,
+    action: string,
+    request: (idempotencyKey: string) => Promise<unknown>,
+  ): Promise<ActResult> {
     if (busy.value.has(pk)) return { ok: false };
     busy.value = new Set(busy.value).add(pk);
     const attemptRef = `${action}:${pk}`;
     const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, attempt);
     try {
-      await $fetch(url, {
-        method: "POST",
-        body: { ...(body ?? {}), idempotency_key: attempt },
-      });
+      await request(attempt);
       await refresh();
       attempts.delete(attemptRef);
       return { ok: true };
@@ -61,16 +66,22 @@ export function useProductionKds() {
   }
 
   const advanceStep = (pk: number, rev: number) =>
-    post(pk, "advance-step", `/api/v1/backstage/production/${pk}/advance-step/`, {
-      expected_rev: rev,
-    });
+    post(pk, "advance-step", (idempotencyKey) =>
+      advanceProductionWorkOrderStep(pk, {
+        expected_rev: rev,
+        idempotency_key: idempotencyKey,
+      }),
+    );
   // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
-    post(pk, "void", `/api/v1/backstage/production/${pk}/void/`, {
-      reason,
-      expected_rev: rev,
-    });
+    post(pk, "void", (idempotencyKey) =>
+      voidProductionWorkOrder(pk, {
+        reason,
+        expected_rev: rev,
+        idempotency_key: idempotencyKey,
+      }),
+    );
 
   return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, voidOrder };
 }

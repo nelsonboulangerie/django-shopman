@@ -38,3 +38,42 @@ def test_render_reflects_contract_source() -> None:
     assert "export interface ProductionBoardProjection {" in rendered
     for field in fields(ProductionBoardProjection):
         assert f"  {field.name}:" in rendered
+
+
+def test_render_includes_closed_mutation_requests_and_generated_client() -> None:
+    rendered = render_production_contract_ts()
+
+    assert "export interface ProductionFinishMutationRequest {" in rendered
+    assert "  idempotency_key: string;" in rendered
+    assert "  expected_rev: number;" in rendered
+    assert "export interface ProductionConflictErrorEnvelope {" in rendered
+    assert "export function finishProductionWorkOrder(" in rendered
+    assert 'method: "POST"' in rendered
+
+
+def test_mutation_endpoints_live_only_in_generated_client() -> None:
+    root = output_path().parents[4]
+    handwritten = (
+        root / "surfaces" / "production-nuxt" / "app" / "composables"
+    )
+    mutation_fragments = (
+        "/production/plan/",
+        "/start/",
+        "/finish/",
+        "/advance-step/",
+        "/quick-finish/",
+        "/void/",
+        "/oven/arm/",
+        "/oven/conclude/",
+    )
+
+    offenders = [
+        path
+        for path in handwritten.glob("*.ts")
+        if any(
+            fragment in path.read_text(encoding="utf-8")
+            for fragment in mutation_fragments
+        )
+    ]
+
+    assert offenders == []

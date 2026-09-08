@@ -21,7 +21,17 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.api._production_mutations import (
+    PRODUCTION_ACTION_SPECS,
+    PRODUCTION_MUTATION_DATACLASSES,
+    PRODUCTION_REQUEST_SERIALIZERS,
+)
+from shopman.backstage.contracts import (
+    render_action_client,
+    render_contract_module,
+    render_serializer_interfaces,
+    run_contract_export,
+)
 from shopman.backstage.projections.production import (
     BaseRecipeOptionProjection,
     BaseRecipeUsageProjection,
@@ -104,6 +114,7 @@ CONTRACT_DATACLASSES = (
     RecipeWasteRow,
     QualityReportRow,
     ProductionReportsProjection,
+    *PRODUCTION_MUTATION_DATACLASSES,
 )
 
 
@@ -114,9 +125,13 @@ def output_path() -> Path:
 def render_production_contract_ts() -> str:
     """Render the generated TypeScript contract mirror (deterministic)."""
     return render_contract_module(
-        source="shopman/backstage/projections/production.py",
+        source="shopman/backstage/projections/production.py + api/_production_mutations.py",
         command="export_production_schema",
         dataclasses=CONTRACT_DATACLASSES,
+        extra_blocks=(
+            render_serializer_interfaces(PRODUCTION_REQUEST_SERIALIZERS),
+            render_action_client(PRODUCTION_ACTION_SPECS),
+        ),
     )
 
 
