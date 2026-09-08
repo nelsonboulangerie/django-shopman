@@ -23,8 +23,7 @@ from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem
 from shopman.stockman.models import Position
 
-from shopman.backstage.models import DayClosing, OperatorAlert
-
+from shopman.backstage.models import OperatorAlert
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parents[3]
@@ -152,3 +151,42 @@ def test_projection_baseline_is_measurable(
     assert set(measurements) == set(endpoints)
     with capsys.disabled():
         print("PRODUCTION_BASELINE_METRICS=" + json.dumps(measurements, sort_keys=True))
+
+
+@pytest.mark.django_db
+def test_board_query_budget_is_constant_for_100_work_orders(
+    client,
+    excellence_operator,
+    excellence_dataset,
+):
+    client.force_login(excellence_operator)
+
+    with CaptureQueriesContext(connection) as captured:
+        response = client.get(reverse("api-backstage-production"))
+
+    assert response.status_code == 200
+    assert len(captured) <= 40
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("url_name", "query_budget"),
+    (
+        ("api-backstage-production-kds", 20),
+        ("api-backstage-production-qc", 25),
+    ),
+)
+def test_operational_kiosks_have_constant_query_budgets_for_100_work_orders(
+    client,
+    excellence_operator,
+    excellence_dataset,
+    url_name,
+    query_budget,
+):
+    client.force_login(excellence_operator)
+
+    with CaptureQueriesContext(connection) as captured:
+        response = client.get(reverse(url_name))
+
+    assert response.status_code == 200
+    assert len(captured) <= query_budget

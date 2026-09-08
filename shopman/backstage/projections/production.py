@@ -651,11 +651,12 @@ def build_production_board(
     selected_date = selected_date or timezone.localdate()
     access = access or _full_access()
 
-    # Fetch work orders for the selected date
+    # Fetch the entire visible slice once; every card is then assembled from
+    # prefetched facts and batch-loaded related objects.
     wos_qs = (
         WorkOrder.objects.filter(target_date=selected_date)
         .select_related("recipe")
-        .prefetch_related("recipe__items")
+        .prefetch_related("recipe__items", "events")
         .order_by("-created_at")
     )
 
@@ -664,66 +665,34 @@ def build_production_board(
     if operator_ref:
         wos_qs = wos_qs.filter(operator_ref=operator_ref)
 
-    wo_cards = tuple(card for card in (_build_wo_card(wo) for wo in wos_qs) if _can_view_card(card, access))
+    wos = list(wos_qs)
 
-    # Craft summary via service
-    summary = craft.summary(
-        date=selected_date,
-        position_ref=position_ref or None,
-        operator_ref=operator_ref or None,
-    )
-
-    # Queue items (planned + started)
-    queue_items = craft.queue(
-        date=selected_date,
-        position_ref=position_ref or None,
-        operator_ref=operator_ref or None,
-    )
-
-    planned_queue = tuple(
-        _build_wo_card(
-            WorkOrder.objects.select_related("recipe").prefetch_related("recipe__items").get(ref=item.ref),
-        )
-        for item in queue_items
-        if item.status == WorkOrder.Status.PLANNED and access.can_view_planned
-    )
-    started_queue = tuple(
-        _build_wo_card(
-            WorkOrder.objects.select_related("recipe").prefetch_related("recipe__items").get(ref=item.ref),
-        )
-        for item in queue_items
-        if item.status == WorkOrder.Status.STARTED and access.can_view_started
-    )
-    finished_queue = tuple(wo for wo in wo_cards if wo.status == WorkOrder.Status.FINISHED and access.can_view_finished)
-
-    counts = ProductionCountsProjection(
-        total=summary.total_orders,
-        planned=summary.planned_orders,
-        started=summary.started_orders,
-        finished=summary.finished_orders,
-        void=summary.void_orders,
-        planned_qty=_qty(summary.planned_qty),
-        started_qty=_qty(summary.started_qty),
-        finished_qty=_qty(summary.finished_qty),
-        loss_qty=_qty(summary.loss_qty),
-    )
-
+    all_recipes = tuple(Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("name", "ref"))
     recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+        RecipeOptionProjection(
+            pk=recipe.pk,
+            ref=recipe.ref,
+            name=recipe.name or recipe.output_sku or recipe.ref,
+        )
+        for recipe in all_recipes
     )
     consumed_recipe_skus = set(
         RecipeItem.objects.filter(recipe__is_active=True).exclude(input_sku="").values_list("input_sku", flat=True)
     )
-    matrix_recipes = tuple(
-        Recipe.objects.filter(is_active=True)
-        .exclude(output_sku__in=consumed_recipe_skus)
-        .prefetch_related("items")
-        .order_by("ref")
-    )
+    matrix_recipes = tuple(recipe for recipe in all_recipes if recipe.output_sku not in consumed_recipe_skus)
 
-    positions_qs = Position.objects.all().order_by("name")
-    default_pos = Position.objects.filter(is_default=True).first()
+    raw_suggestions = _production_suggestions(selected_date)
+    _prime_base_recipe_usages([*(wo.recipe for wo in wos), *matrix_recipes, *(row.recipe for row in raw_suggestions)])
+    _prime_order_commitments(wos)
+
+    wo_cards = tuple(card for card in (_build_wo_card(wo) for wo in wos) if _can_view_card(card, access))
+    planned_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.PLANNED)
+    started_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.STARTED)
+    finished_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.FINISHED)
+    counts = _production_counts(wo_cards)
+
+    positions_qs = list(Position.objects.all().order_by("name"))
+    default_pos = next((position for position in positions_qs if position.is_default), None)
     positions = tuple(
         PositionOptionProjection(
             pk=p.pk,
@@ -733,7 +702,7 @@ def build_production_board(
         )
         for p in positions_qs
     )
-    suggestions = tuple(_build_suggestion(s) for s in _production_suggestions(selected_date))
+    suggestions = tuple(_build_suggestion(suggestion) for suggestion in raw_suggestions)
     visible_suggestions = suggestions if access.can_view_suggested else ()
     all_matrix_rows = _build_matrix_rows(matrix_recipes, wo_cards, visible_suggestions)
     base_recipes = _build_group_options(all_matrix_rows)
@@ -1305,6 +1274,7 @@ def build_production_kds(
             status=WorkOrder.Status.STARTED,
         )
         .select_related("recipe")
+        .prefetch_related("events")
         .order_by("started_at", "created_at")
     )
     if position_ref:
@@ -1354,8 +1324,10 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         WorkOrder.objects.filter(target_date=selected_date)
         .exclude(status=WorkOrder.Status.VOID)
         .select_related("recipe")
+        .prefetch_related("events")
         .order_by("started_at", "created_at")
     )
+    _prime_order_commitments(work_orders)
 
     partitions = _qc_closed_partitions(
         [wo.pk for wo in work_orders if wo.status == WorkOrder.Status.FINISHED],
@@ -1513,6 +1485,106 @@ def build_production_reports(filters: dict | ProductionReportFilters | None = No
 # ── Internals ──────────────────────────────────────────────────────────
 
 
+def _production_counts(
+    work_orders: tuple[WorkOrderCardProjection, ...],
+) -> ProductionCountsProjection:
+    """Compute aggregates from the already-authorized cards only."""
+
+    by_status = {
+        status: tuple(card for card in work_orders if card.status == status) for status in WorkOrder.Status.values
+    }
+    return ProductionCountsProjection(
+        total=len(work_orders),
+        planned=len(by_status[WorkOrder.Status.PLANNED]),
+        started=len(by_status[WorkOrder.Status.STARTED]),
+        finished=len(by_status[WorkOrder.Status.FINISHED]),
+        void=len(by_status[WorkOrder.Status.VOID]),
+        planned_qty=_sum_qty(list(work_orders), "planned_qty"),
+        started_qty=_sum_qty(list(work_orders), "started_qty"),
+        finished_qty=_sum_qty(list(work_orders), "finished_qty"),
+        loss_qty=_sum_qty(list(work_orders), "loss"),
+    )
+
+
+def _prime_order_commitments(work_orders: list[WorkOrder]) -> None:
+    """Attach all order commitments with one orders query for the board."""
+
+    refs = {ref for work_order in work_orders for ref in _linked_order_refs(work_order)}
+    if refs:
+        try:
+            from shopman.orderman.models import Order
+
+            orders = Order.objects.filter(ref__in=refs).prefetch_related("items")
+            by_ref = {order.ref: order for order in orders}
+        except Exception:
+            logger.debug("production.order_refs_batch_failed", exc_info=True)
+            by_ref = {}
+    else:
+        by_ref = {}
+
+    for work_order in work_orders:
+        commitments = []
+        for ref in _linked_order_refs(work_order):
+            order = by_ref.get(ref)
+            if order is None:
+                continue
+            commitments.append(
+                OrderCommitmentProjection(
+                    ref=order.ref,
+                    status=order.status,
+                    status_label=order_status_label(order.status),
+                    qty_required=_qty(_qty_required_for_order(order, work_order.output_sku)),
+                )
+            )
+        work_order._production_order_commitments = tuple(commitments)
+
+
+def _prime_base_recipe_usages(recipes: list[Recipe]) -> None:
+    """Attach base-recipe usage projections without a query per card/row."""
+
+    if not recipes:
+        return
+    recipe_ids = {recipe.pk for recipe in recipes}
+    items_by_recipe: dict[int, list[_RecipeItemData]] = {}
+    for item in RecipeItem.objects.filter(
+        recipe_id__in=recipe_ids,
+        is_optional=False,
+    ).order_by("sort_order"):
+        items_by_recipe.setdefault(item.recipe_id, []).append(
+            _RecipeItemData(
+                input_sku=item.input_sku,
+                quantity=Decimal(str(item.quantity)),
+                unit=item.unit,
+                sort_order=item.sort_order,
+            )
+        )
+    input_skus = {item.input_sku for items in items_by_recipe.values() for item in items}
+    base_by_output = {
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(
+            is_active=True,
+            output_sku__in=input_skus,
+        )
+    }
+
+    for recipe in recipes:
+        usages = tuple(
+            BaseRecipeUsageProjection(
+                ref=base_by_output[item.input_sku].ref,
+                output_sku=base_by_output[item.input_sku].output_sku,
+                name=(base_by_output[item.input_sku].name or base_by_output[item.input_sku].output_sku),
+                quantity_display=_measure(item.quantity, item.unit),
+                per_unit_display=_measure(
+                    item.quantity / Decimal(str(recipe.batch_size)),
+                    item.unit,
+                ),
+            )
+            for item in items_by_recipe.get(recipe.pk, ())
+            if item.input_sku in base_by_output and recipe.batch_size
+        )
+        recipe._production_base_recipe_usages = usages
+
+
 def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
     started_qty = _wo_started_qty(wo)
     finished_qty = wo.finished
@@ -1584,7 +1656,7 @@ def _build_production_kds_card(
         ref=wo.ref,
         output_sku=wo.output_sku,
         recipe_name=wo.recipe.name or wo.recipe.ref,
-        started_qty=_qty(wo.started_qty or wo.quantity),
+        started_qty=_qty(_wo_started_qty(wo) or wo.quantity),
         operator_ref=wo.operator_ref or "",
         position_ref=wo.position_ref or "",
         started_at_display=_format_datetime(started_at),
@@ -1621,6 +1693,8 @@ def build_work_order_card(ref: str) -> WorkOrderCardProjection:
 
 
 def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentProjection, ...]:
+    if hasattr(wo, "_production_order_commitments"):
+        return wo._production_order_commitments
     refs = _linked_order_refs(wo)
     if not refs:
         return ()
@@ -2249,6 +2323,8 @@ def _sum_qty(work_orders: list[WorkOrderCardProjection], field_name: str) -> str
 
 
 def _base_recipe_usages(recipe: Recipe) -> tuple[BaseRecipeUsageProjection, ...]:
+    if hasattr(recipe, "_production_base_recipe_usages"):
+        return recipe._production_base_recipe_usages
     prefetched = getattr(recipe, "_prefetched_objects_cache", {}).get("items")
     if prefetched is not None:
         items = tuple(item for item in prefetched if not item.is_optional)
@@ -2408,6 +2484,9 @@ def _work_order_needs(
     active_recipes = {
         recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items")
     }
+    output_units = _recipe_output_units(
+        {work_order.recipe_id: work_order.recipe for work_order in work_orders}.values()
+    )
     immediate: dict[tuple[str, str], Decimal] = {}
     pieces: dict[tuple[str, str], Decimal] = {}
 
@@ -2417,7 +2496,7 @@ def _work_order_needs(
             continue
         effective_quantity = _work_order_effective_quantity(work_order)
         coefficient = effective_quantity / batch_size
-        counted_output = units.dimension(work_order.recipe._declared_output_unit()) == units.COUNT
+        counted_output = units.dimension(output_units.get(work_order.recipe_id, "")) == units.COUNT
         for item in _work_order_recipe_items(work_order):
             key = (item.input_sku, item.unit)
             immediate[key] = immediate.get(key, Decimal("0")) + item.quantity * coefficient
@@ -2488,6 +2567,30 @@ def _work_order_needs(
         add(item_ref, quantity, unit, margin=None if expand else margins.get((item_ref, unit)))
 
     return list(aggregated.values()), bool(margins)
+
+
+def _recipe_output_units(recipes) -> dict[int, str]:
+    """Resolve output units with bounded catalog queries.
+
+    Model validation resolves one SKU at a time.  A read projection instead
+    keeps the same Product → Material → recipe metadata precedence while
+    loading each catalog only once.
+    """
+    from shopman.buyman.models import Material
+    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+    from shopman.offerman.models import Product
+
+    recipes = tuple(recipes)
+    output_skus = {recipe.output_sku for recipe in recipes if recipe.output_sku}
+    catalog_units = dict(Product.objects.filter(sku__in=output_skus).values_list("sku", "unit"))
+    missing = output_skus.difference(catalog_units)
+    catalog_units.update(Material.objects.filter(sku__in=missing).values_list("sku", "unit"))
+    return {
+        recipe.pk: normalize_recipe_item_unit(
+            catalog_units.get(recipe.output_sku) or (recipe.meta or {}).get("output_unit")
+        )
+        for recipe in recipes
+    }
 
 
 def _ingredient_name(
