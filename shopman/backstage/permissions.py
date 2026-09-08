@@ -123,6 +123,7 @@ def can_view_operator_alerts(user) -> bool:
         or can_manage_orders(user)
         or can_access_production(user)
         or can_operate_pos(user)
+        or can_audit_cash(user)
         or can_operate_kds(user)
         or can_operate_production(user)
         or can_operate_purchase(user)

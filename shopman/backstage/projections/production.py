@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
@@ -248,6 +249,7 @@ class ProductionWeighingProjection:
     selected_position_ref: str
     selected_base_recipe: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -266,6 +268,7 @@ class ProductionBlindMapProjection:
     selected_date: str
     selected_date_display: str
     rows: tuple[ProductionBlindMapRowProjection, ...]
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -320,6 +323,7 @@ class ProductionMiseEnPlaceProjection:
     # expandido, em que a linha do preparo foi explodida em matéria-prima e o
     # motivo por linha não tem mais onde morar.
     yield_margin_note: str
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -341,7 +345,13 @@ class _NeedData:
 
 @dataclass(frozen=True)
 class ProductionSurfaceAccess:
-    """Column-level access for the production board surface."""
+    """Effective production capabilities for one operator and station context.
+
+    The legacy column flags remain serialized while the Nuxt client migrates to
+    the action-oriented contract.  New code must authorize mutations with the
+    explicit ``can_*`` capabilities below, never by treating a visible column
+    as permission to mutate it.
+    """
 
     can_manage_all: bool
     can_view_suggested: bool
@@ -354,6 +364,17 @@ class ProductionSurfaceAccess:
     can_edit_finished: bool
     can_view_unsold: bool
     can_edit_unsold: bool
+    can_view_plan: bool
+    can_edit_plan: bool
+    can_start: bool
+    can_advance_step: bool
+    can_close_qc: bool
+    can_quick_finish: bool
+    can_override_shortage: bool
+    can_void: bool
+    can_record_oven_fact: bool
+    can_view_reports: bool
+    can_reveal_blind_map: bool
 
     @property
     def can_access_board(self) -> bool:
@@ -376,6 +397,14 @@ class ProductionSurfaceAccess:
     @property
     def can_see_current_kernel_columns(self) -> bool:
         return self.can_view_planned or self.can_view_started or self.can_view_finished
+
+    @property
+    def can_view_qc(self) -> bool:
+        return self.can_view_planned or self.can_view_started or self.can_view_finished
+
+    @property
+    def can_view_prep(self) -> bool:
+        return self.can_view_planned or self.can_view_started
 
 
 @dataclass(frozen=True)
@@ -432,6 +461,7 @@ class ProductionDashboardProjection:
     average_yield_rate: str
     capacity_percent: int | None
     late_orders: tuple[ProductionLateWorkOrderProjection, ...]
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -471,6 +501,7 @@ class ProductionKDSProjection:
     cards: tuple[ProductionKDSCardProjection, ...]
     total_count: int
     late_count: int
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -546,6 +577,7 @@ class QCKioskProjection:
     # data"). A data é a mais recente com pendência, para o toque ir direto.
     previous_open_count: int
     previous_open_date: str
+    access: ProductionSurfaceAccess
 
 
 @dataclass(frozen=True)
@@ -634,6 +666,7 @@ class ProductionReportsProjection:
     quality_rows: tuple[QualityReportRow, ...]
     available_recipes: tuple[RecipeOptionProjection, ...]
     available_positions: tuple[PositionOptionProjection, ...]
+    access: ProductionSurfaceAccess
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -685,7 +718,7 @@ def build_production_board(
     _prime_base_recipe_usages([*(wo.recipe for wo in wos), *matrix_recipes, *(row.recipe for row in raw_suggestions)])
     _prime_order_commitments(wos)
 
-    wo_cards = tuple(card for card in (_build_wo_card(wo) for wo in wos) if _can_view_card(card, access))
+    wo_cards = tuple(card for card in (_build_wo_card(wo, access=access) for wo in wos) if _can_view_card(card, access))
     planned_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.PLANNED)
     started_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.STARTED)
     finished_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.FINISHED)
@@ -740,18 +773,21 @@ def build_production_weighing(
     selected_date: date | None = None,
     position_ref: str = "",
     base_recipe: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionWeighingProjection:
     """Build thermal weighing tickets from saved planned/started work orders."""
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
-    work_orders = (
+    work_orders_qs = (
         WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
         .select_related("recipe")
         .prefetch_related("recipe__items", "events")
         .order_by("recipe__ref", "output_sku")
     )
     if position_ref:
-        work_orders = work_orders.filter(position_ref=position_ref)
+        work_orders_qs = work_orders_qs.filter(position_ref=position_ref)
+    work_orders = [work_order for work_order in work_orders_qs if _can_view_work_order(work_order, access)]
 
     active_recipes = {
         recipe.output_sku: recipe
@@ -842,6 +878,7 @@ def build_production_weighing(
             )
             for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
         ),
+        access=access,
     )
 
 
@@ -850,6 +887,7 @@ def build_production_blind_map(
     selected_date: date | None = None,
     position_ref: str = "",
     base_recipe: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionBlindMapProjection:
     """Mapa código-cego ↔ preparo do dia — visão de GESTOR.
 
@@ -858,10 +896,14 @@ def build_production_blind_map(
     projection, servida exclusivamente à página de relatórios (nunca às telas
     de chão, que são cegas por design).
     """
+    access = access or _full_access()
     weighing = build_production_weighing(
         selected_date=selected_date,
         position_ref=position_ref,
         base_recipe=base_recipe,
+        # Revealing the map is itself the row-level grant.  A reports-only
+        # persona need not also inherit the kitchen's planned/started columns.
+        access=_full_access() if access.can_reveal_blind_map else access,
     )
     return ProductionBlindMapProjection(
         selected_date=weighing.selected_date,
@@ -874,6 +916,7 @@ def build_production_blind_map(
             )
             for ticket in weighing.tickets
         ),
+        access=access,
     )
 
 
@@ -881,6 +924,7 @@ def build_production_mise_en_place(
     *,
     selected_date: date | None = None,
     expand: bool = False,
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionMiseEnPlaceProjection:
     """Lista de separação do dia — ``craft.needs()`` com quebra e saldo.
 
@@ -904,13 +948,18 @@ def build_production_mise_en_place(
     sobra zero — é sobra que caiba no teto do dia seguinte.
     """
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
-    work_orders = list(
-        WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
-        .select_related("recipe")
-        .prefetch_related("recipe__items", "events")
-        .order_by("recipe__ref", "ref")
-    )
+    work_orders = [
+        work_order
+        for work_order in (
+            WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
+            .select_related("recipe")
+            .prefetch_related("recipe__items", "events")
+            .order_by("recipe__ref", "ref")
+        )
+        if _can_view_work_order(work_order, access)
+    ]
     needs, margin_applied = _work_order_needs(
         work_orders,
         expand=expand,
@@ -976,6 +1025,7 @@ def build_production_mise_en_place(
         has_stock_readings=bool(availability),
         yield_margin_applied=margin_applied,
         yield_margin_note=_YIELD_MARGIN_NOTE,
+        access=access,
     )
 
 
@@ -1212,9 +1262,11 @@ def build_production_dashboard(
     *,
     selected_date: date | None = None,
     position_ref: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionDashboardProjection:
     """Build the dashboard projection for the selected production day."""
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
     summary = craft.summary(date=selected_date, position_ref=position_ref or None)
 
     wos = list(WorkOrder.objects.filter(target_date=selected_date).select_related("recipe").order_by("created_at"))
@@ -1255,6 +1307,7 @@ def build_production_dashboard(
         average_yield_rate=average_yield_rate,
         capacity_percent=capacity_percent,
         late_orders=late,
+        access=access,
     )
 
 
@@ -1288,10 +1341,15 @@ def build_production_kds(
         cards=cards,
         total_count=len(cards),
         late_count=sum(1 for card in cards if card.timer_class == "timer-late"),
+        access=access,
     )
 
 
-def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
+def build_qc_kiosk(
+    *,
+    selected_date: date | None = None,
+    access: ProductionSurfaceAccess | None = None,
+) -> QCKioskProjection:
     """O quiosque do fournil (ADR-017 §9): fornadas do dia + catálogos de QC.
 
     Painel de ORDENS, não de SKU: a ordem já traz forno, previsto e horário, e
@@ -1302,6 +1360,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     from shopman.shop.models import QualityDefect, QualityGrade
 
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
 
     grades = tuple(
         QCGradeProjection(
@@ -1320,13 +1379,17 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     markdown_by_ref = {g.ref: g.markdown_percent for g in grades}
     default_markdown = next((g.markdown_percent for g in grades if g.is_default), 0)
 
-    work_orders = list(
-        WorkOrder.objects.filter(target_date=selected_date)
-        .exclude(status=WorkOrder.Status.VOID)
-        .select_related("recipe")
-        .prefetch_related("events")
-        .order_by("started_at", "created_at")
-    )
+    work_orders = [
+        work_order
+        for work_order in (
+            WorkOrder.objects.filter(target_date=selected_date)
+            .exclude(status=WorkOrder.Status.VOID)
+            .select_related("recipe")
+            .prefetch_related("events")
+            .order_by("started_at", "created_at")
+        )
+        if _can_view_work_order(work_order, access)
+    ]
     _prime_order_commitments(work_orders)
 
     partitions = _qc_closed_partitions(
@@ -1356,7 +1419,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             started_qty=_qty(started_qty) if started_qty is not None else "",
             started_at_display=(timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""),
             elapsed_minutes=elapsed,
-            can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+            can_close=(access.can_close_qc and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
             closed=closed,
             committed_qty="" if closed else _qty(_committed_units(wo)),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
@@ -1374,7 +1437,11 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     previous_open = (
         WorkOrder.objects.filter(
             target_date__lt=selected_date,
-            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+            status__in=tuple(
+                status
+                for status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
+                if _can_view_status(status, access)
+            ),
         )
         .values_list("target_date", flat=True)
         .order_by("-target_date")
@@ -1391,10 +1458,11 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         defects=defects,
         recipes=tuple(
             RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-            for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
+            for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
         ),
         previous_open_count=len(previous_dates),
         previous_open_date=previous_dates[0].isoformat() if previous_dates else "",
+        access=access,
     )
 
 
@@ -1455,8 +1523,13 @@ def _qc_closed_partitions(
     return result
 
 
-def build_production_reports(filters: dict | ProductionReportFilters | None = None) -> ProductionReportsProjection:
+def build_production_reports(
+    filters: dict | ProductionReportFilters | None = None,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> ProductionReportsProjection:
     """Build production report rows for the requested filter set."""
+    access = access or _full_access()
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
     work_orders = list(qs)
@@ -1479,6 +1552,7 @@ def build_production_reports(filters: dict | ProductionReportFilters | None = No
         quality_rows=_quality_report_rows(work_orders),
         available_recipes=recipes,
         available_positions=positions,
+        access=access,
     )
 
 
@@ -1585,7 +1659,12 @@ def _prime_base_recipe_usages(recipes: list[Recipe]) -> None:
         recipe._production_base_recipe_usages = usages
 
 
-def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
+def _build_wo_card(
+    wo: WorkOrder,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> WorkOrderCardProjection:
+    access = access or _full_access()
     started_qty = _wo_started_qty(wo)
     finished_qty = wo.finished
     loss = ""
@@ -1627,7 +1706,7 @@ def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
         progress_pct=_work_order_progress_pct(wo),
         committed_qty=_qty(committed_qty),
         order_commitments=order_commitments,
-        can_void=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        can_void=(access.can_void and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
     )
 
 
@@ -1671,7 +1750,7 @@ def _build_production_kds_card(
         step_progress_pct=step_state["step_progress_pct"],
         next_step_name=step_state["next_step_name"],
         time_remaining_min=step_state["time_remaining_min"],
-        can_finish=access.can_edit_finished,
+        can_finish=access.can_close_qc,
         order_refs=_linked_order_refs(wo),
     )
 
@@ -2645,19 +2724,48 @@ def _measure(value: Decimal, unit: str) -> str:
     return f"{text} {unit}".strip()
 
 
-def resolve_production_access(user) -> ProductionSurfaceAccess:
-    """Resolve canonical column access for the production surface."""
-    if getattr(user, "is_superuser", False) or user.has_perm("shop.manage_production"):
+def resolve_production_access(
+    user,
+    *,
+    trusted_station_ref: str = "",
+    selected_date: date | None = None,
+) -> ProductionSurfaceAccess:
+    """Resolve capabilities from the current user, station and date context.
+
+    ``selected_date`` is deliberately part of the boundary now, even though no
+    calendar-specific grant exists yet.  That prevents a future historical or
+    locked-day rule from being bolted onto individual endpoints.  Station
+    requirements are deployment policy until D2 is decided: capability names
+    listed in ``PRODUCTION_TRUSTED_STATION_CAPABILITIES`` fail closed when the
+    request does not carry a validated station reference.
+    """
+    del selected_date
+    is_superuser = bool(getattr(user, "is_superuser", False))
+    if is_superuser:
         return _full_access()
 
+    can_manage_all = user.has_perm("shop.manage_production")
+    has_surface_entry = user.has_perm("backstage.operate_production")
+
     def view(column: str) -> bool:
-        return user.has_perm(f"shop.view_production_{column}") or edit(column)
+        return can_manage_all or has_surface_entry or user.has_perm(f"shop.view_production_{column}") or edit(column)
 
     def edit(column: str) -> bool:
-        return user.has_perm(f"shop.edit_production_{column}")
+        return can_manage_all or user.has_perm(f"shop.edit_production_{column}")
+
+    station_capabilities = frozenset(getattr(settings, "PRODUCTION_TRUSTED_STATION_CAPABILITIES", ()))
+
+    def capability(name: str, granted: bool) -> bool:
+        if name in station_capabilities and not trusted_station_ref:
+            return False
+        return granted
+
+    can_edit_plan = edit("suggested") or edit("planned")
+    can_start = edit("started")
+    can_close_qc = edit("finished")
 
     return ProductionSurfaceAccess(
-        can_manage_all=False,
+        can_manage_all=can_manage_all,
         can_view_suggested=view("suggested"),
         can_edit_suggested=edit("suggested"),
         can_view_planned=view("planned"),
@@ -2668,6 +2776,32 @@ def resolve_production_access(user) -> ProductionSurfaceAccess:
         can_edit_finished=edit("finished"),
         can_view_unsold=view("unsold"),
         can_edit_unsold=edit("unsold"),
+        can_view_plan=view("suggested") or view("planned"),
+        can_edit_plan=capability("can_edit_plan", can_edit_plan),
+        can_start=capability("can_start", can_start),
+        can_advance_step=capability("can_advance_step", can_start),
+        can_close_qc=capability("can_close_qc", can_close_qc),
+        can_quick_finish=capability(
+            "can_quick_finish",
+            user.has_perm("backstage.quick_finish_production"),
+        ),
+        can_override_shortage=capability(
+            "can_override_shortage",
+            user.has_perm("backstage.override_production_shortage"),
+        ),
+        can_void=capability(
+            "can_void",
+            user.has_perm("backstage.void_production"),
+        ),
+        can_record_oven_fact=capability("can_record_oven_fact", can_start),
+        can_view_reports=capability(
+            "can_view_reports",
+            user.has_perm("backstage.view_production_reports"),
+        ),
+        can_reveal_blind_map=capability(
+            "can_reveal_blind_map",
+            user.has_perm("backstage.reveal_production_blind_map"),
+        ),
     )
 
 
@@ -2684,15 +2818,37 @@ def _full_access() -> ProductionSurfaceAccess:
         can_edit_finished=True,
         can_view_unsold=True,
         can_edit_unsold=True,
+        can_view_plan=True,
+        can_edit_plan=True,
+        can_start=True,
+        can_advance_step=True,
+        can_close_qc=True,
+        can_quick_finish=True,
+        can_override_shortage=True,
+        can_void=True,
+        can_record_oven_fact=True,
+        can_view_reports=True,
+        can_reveal_blind_map=True,
     )
 
 
 def _can_view_card(card: WorkOrderCardProjection, access: ProductionSurfaceAccess) -> bool:
-    if card.status == WorkOrder.Status.PLANNED:
+    return _can_view_status(card.status, access)
+
+
+def _can_view_work_order(
+    work_order: WorkOrder,
+    access: ProductionSurfaceAccess,
+) -> bool:
+    return _can_view_status(work_order.status, access)
+
+
+def _can_view_status(status: str, access: ProductionSurfaceAccess) -> bool:
+    if status == WorkOrder.Status.PLANNED:
         return access.can_view_planned
-    if card.status == WorkOrder.Status.STARTED:
+    if status == WorkOrder.Status.STARTED:
         return access.can_view_started
-    if card.status == WorkOrder.Status.FINISHED:
+    if status == WorkOrder.Status.FINISHED:
         return access.can_view_finished
     return access.can_manage_all
 
@@ -2783,6 +2939,7 @@ class ProductionForecastProjection:
     selected_date_display: str
     generated_at_display: str
     rows: tuple[ForecastRowProjection, ...]
+    access: ProductionSurfaceAccess
 
 
 def _median_int(values: list[int]) -> int | None:
@@ -2829,7 +2986,11 @@ def _forecast_eta_display(eta) -> str:
     return timezone.localtime(eta).strftime("%H:%M") if eta else "—"
 
 
-def build_production_forecast(selected_date: date | None = None) -> ProductionForecastProjection:
+def build_production_forecast(
+    selected_date: date | None = None,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> ProductionForecastProjection:
     """O painel: fornadas da data, com previsão histórica e status vivo."""
     from datetime import datetime
     from datetime import time as dt_time
@@ -2838,6 +2999,7 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
 
     panel = ProductionConfig.load().panel
     target = selected_date or timezone.localdate()
+    access = access or _full_access()
     now = timezone.localtime()
     tz_info = timezone.get_current_timezone()
 
@@ -2845,8 +3007,10 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         WorkOrder.objects.filter(target_date=target)
         .exclude(status=WorkOrder.Status.VOID)
         .select_related("recipe")
+        .prefetch_related("events")
         .order_by("output_sku", "created_at")
     )
+    orders = [order for order in orders if _can_view_work_order(order, access)]
     history = _forecast_history(sorted({wo.recipe_id for wo in orders}), target)
 
     rows: list[tuple[tuple, ForecastRowProjection]] = []
@@ -2913,4 +3077,5 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         selected_date_display=target.strftime("%d/%m/%Y"),
         generated_at_display=now.strftime("%H:%M"),
         rows=tuple(row for _, row in rows),
+        access=access,
     )

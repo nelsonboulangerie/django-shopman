@@ -161,6 +161,37 @@ class HasBackstagePermission(BasePermission):
         return True
 
 
+class HasProductionCapability(BasePermission):
+    """Authorize one explicit production capability against the active actor.
+
+    The resolved object is attached to the request so the view serializes and
+    enforces the same decision.  Permission caches remain request-scoped: a
+    revoked Django grant is observed on the next refresh or action.
+    """
+
+    message = "Operador sem capacidade para esta ação de produção."
+
+    def has_permission(self, request, view) -> bool:
+        operador = _operador(request)
+        if operador is None:
+            if is_trusted_station(request):
+                _recusa_travada()
+            return False
+
+        from shopman.backstage.projections.production import resolve_production_access
+        from shopman.backstage.station_trust import station_ref
+
+        access = resolve_production_access(
+            operador,
+            trusted_station_ref=station_ref(request),
+        )
+        request.production_access = access
+        capability = str(
+            getattr(view, "required_production_capability", "can_access_board")
+        )
+        return bool(getattr(access, capability, False))
+
+
 class IsTrustedStation(BasePermission):
     """A requisição vem de um dispositivo que a loja reconhece — e só isso.
 

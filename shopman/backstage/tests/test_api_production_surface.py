@@ -2,9 +2,9 @@
 
 Covers the REST surface that the dedicated production-nuxt app
 (``prod.``) consumes: the floor + planning board reads, every write action
-(plan/start/finish/advance-step/quick-finish/void), the coarse
-``backstage.operate_production`` gate, and the structured shortage envelopes
-that drive the material/order shortage modals.
+(plan/start/finish/advance-step/quick-finish/void), effective capabilities,
+and the structured shortage envelopes that drive the material/order shortage
+modals.
 
 Reuses the orchestrator services (``shopman.backstage.services.production`` →
 Craftsman); no domain rule is duplicated here.
@@ -18,12 +18,14 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
+from django.test import override_settings
 from django.urls import reverse
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
 from shopman.stockman.models import Position
 
 from shopman.backstage.models import DayClosing
+from shopman.backstage.projections.production import resolve_production_access
 from shopman.backstage.services.production import (
     MissingMaterial,
     ProductionOrderShortError,
@@ -38,6 +40,13 @@ def _operate_production_perm() -> Permission:
     )
 
 
+def _permission(app_label: str, codename: str) -> Permission:
+    return Permission.objects.get(
+        content_type__app_label=app_label,
+        codename=codename,
+    )
+
+
 @pytest.fixture
 def production_operator(db):
     """Um operador de produção como a casa o define: superfície MAIS colunas.
@@ -48,15 +57,14 @@ def production_operator(db):
     from shopman.backstage.tests.production_grants import grant_production_operator
 
     user = User.objects.create_user("prod-api", password="pw", is_staff=True)
-    return grant_production_operator(user)
-
-
-@pytest.fixture
-def production_operator_sem_colunas(db):
-    """O grant customizado: alcança a superfície, não pode escrever coluna nenhuma."""
-    user = User.objects.create_user("prod-sem-coluna", password="pw", is_staff=True)
-    user.user_permissions.add(_operate_production_perm())
-    return user
+    user = grant_production_operator(user)
+    user.user_permissions.add(
+        _permission("shop", "manage_production"),
+        _permission("backstage", "quick_finish_production"),
+        _permission("backstage", "override_production_shortage"),
+        _permission("backstage", "void_production"),
+    )
+    return User.objects.get(pk=user.pk)
 
 
 @pytest.fixture
@@ -135,6 +143,146 @@ def test_operator_and_superuser_pass_gate(client, recipe, production_operator, s
     assert client.get(reverse("api-backstage-production")).status_code == 200
     client.force_login(superuser)
     assert client.get(reverse("api-backstage-production")).status_code == 200
+
+
+@pytest.mark.django_db
+def test_surface_entry_permission_is_read_only_without_effective_edit_capability(
+    client,
+    recipe,
+):
+    operator = User.objects.create_user("coarse-only", password="pw", is_staff=True)
+    operator.user_permissions.add(_operate_production_perm())
+    work_order = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    client.force_login(operator)
+
+    board = client.get(reverse("api-backstage-production"))
+    mutation = client.post(
+        reverse("api-backstage-wo-start", args=[work_order.pk]),
+        {"quantity": "10"},
+        content_type="application/json",
+    )
+
+    assert board.status_code == 200
+    assert board.json()["board"]["access"]["can_start"] is False
+    assert mutation.status_code == 403
+
+
+@pytest.mark.django_db
+def test_board_filters_rows_and_counts_by_effective_view_capability(client, recipe):
+    planned = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    started = craft.plan(recipe, 11, date=date.today(), position_ref="other")
+    craft.start(started, quantity=11, position_ref="other", expected_rev=0)
+    finished = craft.plan(recipe, 12, date=date.today(), position_ref="third")
+    craft.finish(finished, finished=12, expected_rev=0)
+    viewer = User.objects.create_user("planned-viewer", password="pw", is_staff=True)
+    viewer.user_permissions.add(_permission("shop", "view_production_planned"))
+    client.force_login(viewer)
+
+    response = client.get(reverse("api-backstage-production"))
+
+    assert response.status_code == 200
+    board = response.json()["board"]
+    assert [row["ref"] for row in board["work_orders"]] == [planned.ref]
+    assert board["counts"] == {
+        "total": 1,
+        "planned": 1,
+        "started": 0,
+        "finished": 0,
+        "void": 0,
+        "planned_qty": "10",
+        "started_qty": "0",
+        "finished_qty": "0",
+        "loss_qty": "0",
+    }
+    assert board["access"]["can_view_plan"] is True
+    assert board["access"]["can_edit_plan"] is False
+
+
+@pytest.mark.django_db
+def test_action_endpoint_checks_matching_capability_and_observes_revocation(
+    client,
+    recipe,
+):
+    operator = User.objects.create_user("starter", password="pw", is_staff=True)
+    grant = _permission("shop", "edit_production_started")
+    operator.user_permissions.add(grant)
+    first = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
+    second = craft.plan(recipe, 11, date=date.today(), position_ref="other")
+    client.force_login(operator)
+
+    allowed = client.post(
+        reverse("api-backstage-wo-start", args=[first.pk]),
+        {"quantity": "10"},
+        content_type="application/json",
+    )
+    forbidden_finish = client.post(
+        reverse("api-backstage-wo-finish", args=[first.pk]),
+        {"quantity": "10"},
+        content_type="application/json",
+    )
+    operator.user_permissions.remove(grant)
+    revoked = client.post(
+        reverse("api-backstage-wo-start", args=[second.pk]),
+        {"quantity": "11"},
+        content_type="application/json",
+    )
+
+    assert allowed.status_code == 200
+    assert forbidden_finish.status_code == 403
+    assert revoked.status_code == 403
+
+
+@pytest.mark.django_db
+@override_settings(PRODUCTION_TRUSTED_STATION_CAPABILITIES=("can_start",))
+def test_station_policy_can_fail_closed_without_changing_the_role_matrix(recipe):
+    operator = User.objects.create_user("station-bound", password="pw", is_staff=True)
+    operator.user_permissions.add(_permission("shop", "edit_production_started"))
+
+    off_station = resolve_production_access(operator)
+    on_station = resolve_production_access(operator, trusted_station_ref="forno")
+
+    assert off_station.can_start is False
+    assert on_station.can_start is True
+
+
+@pytest.mark.django_db
+def test_forged_force_payload_requires_separate_override_capability(client, recipe):
+    operator = User.objects.create_user("ordinary-manager", password="pw", is_staff=True)
+    operator.user_permissions.add(_permission("shop", "manage_production"))
+    client.force_login(operator)
+
+    response = client.post(
+        reverse("api-backstage-wo-plan"),
+        {
+            "recipe_id": recipe.pk,
+            "quantity": "8",
+            "target_date": date.today().isoformat(),
+            "force": True,
+            "reason": "payload forjado",
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_override_capability_still_requires_a_reason(client, recipe, production_operator):
+    client.force_login(production_operator)
+
+    response = client.post(
+        reverse("api-backstage-wo-plan"),
+        {
+            "recipe_id": recipe.pk,
+            "quantity": "8",
+            "target_date": date.today().isoformat(),
+            "force": True,
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    assert "Justificativa" in response.json()["detail"]
 
 
 # ── Read ─────────────────────────────────────────────────────────────────────
@@ -256,9 +404,7 @@ def test_quick_finish_plans_and_finishes(client, recipe, production_operator, po
 
 
 @pytest.mark.django_db
-def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(
-    client, recipe, production_operator, position
-):
+def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(client, recipe, production_operator, position):
     """O duplo toque no quiosque não pode virar duas fornadas.
 
     ⚠️ Esta é a única operação COMPOSTA da produção: cria a WO e a fecha na
@@ -284,14 +430,10 @@ def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(
         "client_request_id": "quiosque-gesto-abc123",
     }
 
-    primeira = client.post(
-        reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json"
-    )
+    primeira = client.post(reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json")
     assert primeira.status_code == 200
 
-    segunda = client.post(
-        reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json"
-    )
+    segunda = client.post(reverse("api-backstage-wo-quick-finish"), data=corpo, content_type="application/json")
     assert segunda.status_code == 200
 
     # O replay devolve a MESMA fornada, não uma nova.
@@ -302,9 +444,7 @@ def test_quick_finish_com_a_mesma_chave_nao_assa_duas_vezes(
 
 
 @pytest.mark.django_db
-def test_quick_finish_com_chave_nova_assa_de_novo(
-    client, recipe, production_operator, position
-):
+def test_quick_finish_com_chave_nova_assa_de_novo(client, recipe, production_operator, position):
     """Duas fornadas avulsas iguais no mesmo dia são DUAS assadeiras de verdade.
 
     É por isso que a chave é do GESTO e não derivada do conteúdo: consolidar por
@@ -411,29 +551,3 @@ def test_plan_order_shortage_returns_structured_envelope(client, recipe, product
     assert error["code"] == "order_shortage"
     assert error["required"] == "12"
     assert error["order_refs"] == ["ORD-1", "ORD-2"]
-
-
-def test_a_escrita_de_producao_confere_a_coluna_tambem(client, production_operator_sem_colunas):
-    """⚠️ A escrita conferia SÓ o gate de superfície.
-
-    O operador tocava "Planejar" e a cadeia inteira — `apply_planned` →
-    `set_planned_quantity` → `CraftPlanning` → sinal `production_changed` → o handler
-    do stockman criando o Quant planejado — passava sem ninguém perguntar por
-    `shop.edit_production_planned`. Idem para start e finish, e finish é a escrita
-    `kind=MAKE` no ledger de estoque.
-
-    O resolvedor de coluna já existia e já era testado; ele só governava a LEITURA.
-    Não é exposição ativa hoje (os dois grupos seedados têm as colunas), é buraco de
-    arquitetura de gate — o dia em que alguém fizer um grant customizado, ele morde.
-    """
-    client.force_login(production_operator_sem_colunas)
-
-    resposta = client.post(
-        "/api/v1/backstage/production/plan/",
-        {"recipe_id": 1, "target_date": "2026-08-29", "quantity": 10},
-        content_type="application/json",
-    )
-
-    assert resposta.status_code == 403
-    # A recusa NOMEIA o que falta: "proibido" sozinho manda o gestor adivinhar.
-    assert "edit_production_planned" in resposta.json()["detail"]

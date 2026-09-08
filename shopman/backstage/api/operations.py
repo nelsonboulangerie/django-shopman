@@ -45,7 +45,7 @@ from django.db import IntegrityError
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
-from rest_framework import exceptions
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
@@ -89,6 +89,7 @@ from shopman.backstage.projections.production import (
     build_production_reports,
     build_production_weighing,
     build_qc_kiosk,
+    resolve_production_access,
 )
 from shopman.backstage.services import (
     closing as closing_service,
@@ -123,7 +124,12 @@ from shopman.shop.services.pos import (
 )
 from shopman.shop.services.pos_intent import PosIntentError
 
-from .permissions import HasBackstagePermission, IsBackstageOperator, IsTrustedStation
+from .permissions import (
+    HasBackstagePermission,
+    HasProductionCapability,
+    IsBackstageOperator,
+    IsTrustedStation,
+)
 from .projections import projection_data
 
 logger = logging.getLogger(__name__)
@@ -150,6 +156,40 @@ def _production_actor(request) -> str:
     """Audit attribution for production actions, matching the retired HTMX floor
     (``production:<username>``) so the event trail stays consistent post-cutover."""
     return f"production:{_actor(request)}"
+
+
+def _resolved_production_access(request, *, selected_date=None):
+    """Resolve once from the request actor and validated station context."""
+    access = resolve_production_access(
+        request.user,
+        trusted_station_ref=station_trust.station_ref(request),
+        selected_date=selected_date,
+    )
+    request.production_access = access
+    return access
+
+
+def _require_production_capability(request, capability: str) -> None:
+    access = getattr(request, "production_access", None) or _resolved_production_access(request)
+    if not getattr(access, capability, False):
+        raise PermissionDenied("Operador sem capacidade para esta ação de produção.")
+
+
+def _shortage_override_reason(request, *, action: str) -> str:
+    """Require and observe the reason for a separately-authorized override."""
+    _require_production_capability(request, "can_override_shortage")
+    reason = str(request.data.get("reason") or "").strip()
+    if not reason:
+        raise ValueError("Justificativa é obrigatória para forçar uma falta.")
+    logger.warning(
+        "production_shortage_override",
+        extra={
+            "production_action": action,
+            "production_actor": _production_actor(request),
+            "production_reason": reason,
+        },
+    )
+    return reason
 
 
 def _production_error_response(exc: ProductionError) -> Response | None:
@@ -320,6 +360,7 @@ class POSView(APIView):
 
     def get(self, request):
         from shopman.backstage.services.operator import operator_card, pin_must_change
+
         # A ESTAÇÃO diz qual gaveta é esta — o cookie de confiança carrega o ref. É o
         # que permite a loja de duas gavetas ler o quadro certo em cada balcão, em vez
         # de os dois disputarem o primeiro em ordem alfabética.
@@ -556,10 +597,7 @@ class OperatorUnlockView(APIView):
             metodo = SignInMethod.PIN
             operator_id = str(body.get("operator_id") or "").strip()
             pin = str(body.get("pin") or "")
-            operator = (
-                get_user_model().objects.filter(pk=operator_id, is_active=True).first()
-                if operator_id else None
-            )
+            operator = get_user_model().objects.filter(pk=operator_id, is_active=True).first() if operator_id else None
             tentado = operator.get_username() if operator is not None else ""
             # Guardado ANTES da verificação: se o PIN falhar, `operator` vira
             # None e some a única referência à conta-alvo — que é justamente
@@ -688,8 +726,10 @@ class OperatorBadgeLostView(APIView):
         try:
             resultado = sign_in_audit.revoke_access(
                 # Provar o PIN É ser o dono — a mesma autorização da troca de PIN.
-                user=alvo, requested_by=alvo,
-                reason=sign_in_audit.REASON_LOST, request=request,
+                user=alvo,
+                requested_by=alvo,
+                reason=sign_in_audit.REASON_LOST,
+                request=request,
             )
         except sign_in_audit.RevokeError as exc:
             return Response({"detail": str(exc), "error": {"code": exc.code}}, status=400)
@@ -844,14 +884,16 @@ class OperatorPinResetView(APIView):
     ),
 )
 class ProductionBoardView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_access_board"
 
     def get(self, request):
         query = validated_query(request, ProductionBoardQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         board = build_production_board(
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
+            access=access,
         )
         return Response({"board": projection_data(board)})
 
@@ -864,12 +906,16 @@ class ProductionBoardView(APIView):
     ),
 )
 class ProductionForecastView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_access_board"
 
     def get(self, request):
         query = validated_query(request, ProductionDateQuerySerializer)
-        forecast = build_production_forecast(selected_date=query.get("date"))
+        access = _resolved_production_access(request, selected_date=query.get("date"))
+        forecast = build_production_forecast(
+            selected_date=query.get("date"),
+            access=access,
+        )
         return Response({"forecast": projection_data(forecast)})
 
 
@@ -881,14 +927,16 @@ class ProductionForecastView(APIView):
     ),
 )
 class ProductionKDSView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_started"
 
     def get(self, request):
         query = validated_query(request, ProductionKDSQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         kds = build_production_kds(
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
+            access=access,
         )
         return Response({"kds": projection_data(kds)})
 
@@ -901,12 +949,13 @@ class ProductionKDSView(APIView):
     ),
 )
 class ProductionQCView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_qc"
 
     def get(self, request):
         query = validated_query(request, ProductionDateQuerySerializer)
-        kiosk = build_qc_kiosk(selected_date=query.get("date"))
+        access = _resolved_production_access(request, selected_date=query.get("date"))
+        kiosk = build_qc_kiosk(selected_date=query.get("date"), access=access)
         return Response({"qc": projection_data(kiosk)})
 
 
@@ -918,14 +967,16 @@ class ProductionQCView(APIView):
     ),
 )
 class ProductionMiseEnPlaceView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_prep"
 
     def get(self, request):
         query = validated_query(request, ProductionMiseEnPlaceQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         mise_en_place = build_production_mise_en_place(
             selected_date=query.get("date"),
             expand=query["expand"],
+            access=access,
         )
         return Response({"mise_en_place": projection_data(mise_en_place)})
 
@@ -938,15 +989,17 @@ class ProductionMiseEnPlaceView(APIView):
     ),
 )
 class ProductionWeighingView(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_prep"
 
     def get(self, request):
         query = validated_query(request, ProductionWeighingQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         weighing = build_production_weighing(
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
             base_recipe=query.get("base_recipe", ""),
+            access=access,
         )
         return Response({"weighing": projection_data(weighing)})
 
@@ -982,12 +1035,16 @@ class ProductionReportsCSVRenderer(BaseRenderer):
 class ProductionReportsView(APIView):
     """Relatórios de produção — persona GESTOR (perm fina, não o gate de chão)."""
 
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.view_production_reports"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_reports"
     renderer_classes = [JSONRenderer, ProductionReportsCSVRenderer]
 
     def get(self, request):
         filters = report_filters(request)
+        access = _resolved_production_access(
+            request,
+            selected_date=filters["date_to"],
+        )
         if request.accepted_renderer.format == "csv":
             csv_bytes = production_service.export_reports_csv(filters["report_kind"], filters)
             filename = f"producao_{filters['report_kind']}_{filters['date_from']}_{filters['date_to']}.csv"
@@ -996,7 +1053,7 @@ class ProductionReportsView(APIView):
                 content_type="text/csv; charset=utf-8",
                 headers={"Content-Disposition": f'attachment; filename="{filename}"'},
             )
-        reports = build_production_reports(filters)
+        reports = build_production_reports(filters, access=access)
         return Response({"reports": projection_data(reports)})
 
 
@@ -1010,14 +1067,16 @@ class ProductionReportsView(APIView):
 class ProductionManagementView(APIView):
     """KPIs de gestão do dia — persona GESTOR (perm fina, não o gate de chão)."""
 
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.view_production_reports"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_view_reports"
 
     def get(self, request):
         query = validated_query(request, ProductionManagementQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         dashboard = build_production_dashboard(
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
+            access=access,
         )
         return Response({"management": projection_data(dashboard)})
 
@@ -1032,15 +1091,17 @@ class ProductionManagementView(APIView):
 class ProductionBlindMapView(APIView):
     """Mapa código-cego ↔ preparo — persona GESTOR; as telas de chão são cegas."""
 
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.view_production_reports"
+    permission_classes = [HasProductionCapability]
+    required_production_capability = "can_reveal_blind_map"
 
     def get(self, request):
         query = validated_query(request, ProductionBlindMapQuerySerializer)
+        access = _resolved_production_access(request, selected_date=query.get("date"))
         blind_map = build_production_blind_map(
             selected_date=query.get("date"),
             position_ref=query.get("position", ""),
             base_recipe=query.get("base_recipe", ""),
+            access=access,
         )
         return Response({"blind_map": projection_data(blind_map)})
 
@@ -1466,7 +1527,12 @@ def _resend_payment_link_response(order) -> Response:
             status=exc.status,
         )
     return Response(
-        {"ok": True, "ref": order.ref, "detail": "Link reenviado ao cliente.", "payment_link_notice": payment_link_notice(order)}
+        {
+            "ok": True,
+            "ref": order.ref,
+            "detail": "Link reenviado ao cliente.",
+            "payment_link_notice": payment_link_notice(order),
+        }
     )
 
 
@@ -1511,17 +1577,13 @@ class POSScheduleView(APIView):
     def get(self, request):
         from shopman.backstage.projections.pos import build_pos_schedule
 
-        skus = [
-            sku
-            for raw in str(request.GET.get("skus") or "").split(",")
-            if (sku := raw.strip())
-        ]
-        return Response({
-            "ok": True,
-            **build_pos_schedule(
-                delivery_date=str(request.GET.get("date") or "").strip(), skus=skus
-            ),
-        })
+        skus = [sku for raw in str(request.GET.get("skus") or "").split(",") if (sku := raw.strip())]
+        return Response(
+            {
+                "ok": True,
+                **build_pos_schedule(delivery_date=str(request.GET.get("date") or "").strip(), skus=skus),
+            }
+        )
 
 
 @extend_schema_view(
@@ -1685,12 +1747,14 @@ class OrderTicketEscposView(APIView):
             return Response({"detail": "Pedido não encontrado."}, status=404)
         reprint = _stamp_first_print(ref, "ticket_printed_at")
         payload = tickets.ticket_bytes(order, reprint=reprint)
-        return Response({
-            "ok": True,
-            "payload_b64": base64.b64encode(payload).decode("ascii"),
-            "title": f"filipeta:{ref}",
-            "reprint": reprint,
-        })
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"filipeta:{ref}",
+                "reprint": reprint,
+            }
+        )
 
 
 @extend_schema_view(
@@ -1714,18 +1778,18 @@ class OrderTicketBatchView(APIView):
     def get(self, request):
         from shopman.backstage.services import order_ticket as tickets
 
-        date_from, date_to = tickets.parse_period(
-            request.GET.get("date_from"), request.GET.get("date_to")
-        )
+        date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
         orders = tickets.orders_for_period(date_from, date_to)
-        return Response({
-            "ok": True,
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "count": len(orders),
-            "max_batch": tickets.MAX_BATCH,
-            "orders": tickets.preview_rows(orders),
-        })
+        return Response(
+            {
+                "ok": True,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "count": len(orders),
+                "max_batch": tickets.MAX_BATCH,
+                "orders": tickets.preview_rows(orders),
+            }
+        )
 
 
 @extend_schema_view(
@@ -1756,9 +1820,7 @@ class OrderTicketBatchEscposView(APIView):
 
         from shopman.backstage.services import order_ticket as tickets
 
-        date_from, date_to = tickets.parse_period(
-            request.GET.get("date_from"), request.GET.get("date_to")
-        )
+        date_from, date_to = tickets.parse_period(request.GET.get("date_from"), request.GET.get("date_to"))
         orders = tickets.orders_for_period(date_from, date_to)
         if len(orders) > tickets.MAX_BATCH:
             return Response(
@@ -1783,16 +1845,18 @@ class OrderTicketBatchEscposView(APIView):
                 payload += tickets.ticket_bytes(order, shop_name=shop_name, reprint=reprint)
                 refs.append(order.ref)
 
-        return Response({
-            "ok": True,
-            "date_from": date_from.isoformat(),
-            "date_to": date_to.isoformat(),
-            "count": len(refs),
-            "reprint_count": reprints,
-            "refs": refs,
-            "payload_b64": base64.b64encode(bytes(payload)).decode("ascii"),
-            "title": f"filipetas:{date_from.isoformat()}:{date_to.isoformat()}",
-        })
+        return Response(
+            {
+                "ok": True,
+                "date_from": date_from.isoformat(),
+                "date_to": date_to.isoformat(),
+                "count": len(refs),
+                "reprint_count": reprints,
+                "refs": refs,
+                "payload_b64": base64.b64encode(bytes(payload)).decode("ascii"),
+                "title": f"filipetas:{date_from.isoformat()}:{date_to.isoformat()}",
+            }
+        )
 
 
 @extend_schema_view(
@@ -2079,45 +2143,9 @@ def _expected_rev(request) -> int | None:
 
 
 class _ProductionActionBase(APIView):
-    """Gate compartilhado das ações de produção — superfície E coluna.
+    """Shared effective-capability gate for production mutations."""
 
-    ⚠️ A ESCRITA da produção não consultava a permissão por coluna. O operador tocava
-    "Planejar" e a cadeia inteira — `apply_planned` → `set_planned_quantity` →
-    `CraftPlanning` → sinal `production_changed` → o handler do stockman criando o
-    Quant planejado — conferia **só** `backstage.operate_production`. Nenhum ponto
-    perguntava por `shop.edit_production_planned`. Idem para start e finish, e finish
-    é a escrita `kind=MAKE` no ledger de estoque.
-
-    O resolvedor de coluna já existia e já era testado (`resolve_production_access`);
-    ele só governava a LEITURA. É buraco de arquitetura de gate, não de exposição
-    ativa hoje — os dois grupos que recebem `operate_production` também recebem as
-    colunas. Mas é o mesmo padrão do tile da Central: o dia em que alguém fizer um
-    grant customizado, ele morde.
-
-    Cada view declara em `production_column` a coluna que ESCREVE; a recusa nomeia a
-    permissão que falta, em vez de dizer só "proibido". **Sem permissão nova.**
-    """
-
-    permission_classes = [HasBackstagePermission]
-    required_permission = "backstage.operate_production"
-
-    #: A coluna do quadro que esta view escreve ("planned", "started", "finished").
-    #: Vazio = a ação não escreve coluna, e o gate de superfície basta.
-    production_column: str = ""
-
-    def initial(self, request, *args, **kwargs):
-        super().initial(request, *args, **kwargs)
-        coluna = self.production_column
-        if not coluna:
-            return
-        from shopman.backstage.projections.production import resolve_production_access
-
-        acesso = resolve_production_access(request.user)
-        if not getattr(acesso, f"can_edit_{coluna}", False):
-            raise exceptions.PermissionDenied(
-                f"Falta a permissão de editar a coluna {coluna} da produção "
-                f"(shop.edit_production_{coluna})."
-            )
+    permission_classes = [HasProductionCapability]
 
 
 @extend_schema_view(
@@ -2128,7 +2156,7 @@ class _ProductionActionBase(APIView):
     ),
 )
 class WorkOrderPlanView(_ProductionActionBase):
-    production_column = "planned"
+    required_production_capability = "can_edit_plan"
 
     def post(self, request):
         recipe_id = request.data.get("recipe_id") or request.data.get("recipe")
@@ -2140,7 +2168,10 @@ class WorkOrderPlanView(_ProductionActionBase):
                 status=400,
             )
         source = (request.data.get("source") or "").strip()
+        force = as_bool(request.data, "force", default=False)
         try:
+            if force:
+                _shortage_override_reason(request, action="plan")
             output_sku, wo_ref, qty, result = production_service.apply_planned(
                 recipe_id=recipe_id,
                 quantity=str(quantity).strip(),
@@ -2149,10 +2180,7 @@ class WorkOrderPlanView(_ProductionActionBase):
                 operator_ref=str(request.data.get("operator_ref") or "").strip(),
                 reason=str(request.data.get("reason") or "").strip(),
                 actor=_production_actor(request),
-                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
-                # insumos: um cliente que mande a string desliga o guardrail achando
-                # que o ligou. Ver `shopman/backstage/parsing.py`.
-                force=as_bool(request.data, "force", default=False),
+                force=force,
                 source_ref="formula:suggestion" if source == "suggested" else "production_matrix",
                 expected_rev=_expected_rev(request),
             )
@@ -2182,7 +2210,7 @@ class WorkOrderPlanView(_ProductionActionBase):
     ),
 )
 class WorkOrderStartView(_ProductionActionBase):
-    production_column = "started"
+    required_production_capability = "can_start"
 
     def post(self, request, wo_id: int):
         try:
@@ -2213,19 +2241,19 @@ class WorkOrderStartView(_ProductionActionBase):
     ),
 )
 class WorkOrderFinishView(_ProductionActionBase):
-    production_column = "finished"
+    required_production_capability = "can_close_qc"
 
     def post(self, request, wo_id: int):
+        force = as_bool(request.data, "force", default=False)
         try:
+            if force:
+                _shortage_override_reason(request, action="finish")
             partition = request.data.get("partition")
             wo_ref, quantity = production_service.apply_finish(
                 work_order_id=wo_id,
                 quantity=str(request.data.get("quantity") or "").strip(),
                 actor=_production_actor(request),
-                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
-                # insumos: um cliente que mande a string desliga o guardrail achando
-                # que o ligou. Ver `shopman/backstage/parsing.py`.
-                force=as_bool(request.data, "force", default=False),
+                force=force,
                 # Classificação da fornada (refs de QualityGrade). Opcional: o
                 # operador fecha sem pensar e cai no grau padrão do catálogo.
                 quality=str(request.data.get("quality") or "").strip(),
@@ -2253,7 +2281,8 @@ class WorkOrderFinishView(_ProductionActionBase):
     ),
 )
 class WorkOrderAdvanceStepView(_ProductionActionBase):
-    production_column = "started"
+    required_production_capability = "can_advance_step"
+
     def post(self, request, wo_id: int):
         try:
             new_index = production_service.apply_advance_step(
@@ -2273,7 +2302,7 @@ class WorkOrderAdvanceStepView(_ProductionActionBase):
     ),
 )
 class WorkOrderQuickFinishView(_ProductionActionBase):
-    production_column = "finished"
+    required_production_capability = "can_quick_finish"
 
     def post(self, request):
         recipe_id = request.data.get("recipe_id")
@@ -2287,6 +2316,9 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 status=400,
             )
         try:
+            force = as_bool(request.data, "force", default=False)
+            if force:
+                _shortage_override_reason(request, action="quick_finish")
             partition = request.data.get("partition")
             _, wo_ref, qty = production_service.apply_quick_finish(
                 recipe_id=recipe_id,
@@ -2296,10 +2328,7 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 # Fornada avulsa fechada pelo quiosque de QC: mesma
                 # partição do finish normal (ADR-017 §4).
                 partition=partition if isinstance(partition, list) else None,
-                # `bool("false")` e True, e este e o `force` que CONTORNA a checagem de
-                # insumos: um cliente que mande a string desliga o guardrail achando
-                # que o ligou. Ver `shopman/backstage/parsing.py`.
-                force=as_bool(request.data, "force", default=False),
+                force=force,
                 # Trava de replay do GESTO. Esta é a única operação composta da
                 # produção (cria a WO e a fecha na mesma requisição), então a
                 # chave do core — que inclui o pk da WO — nasce diferente a cada
@@ -2322,10 +2351,12 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     ),
 )
 class WorkOrderVoidView(_ProductionActionBase):
-    production_column = "finished"
+    required_production_capability = "can_void"
 
     def post(self, request, wo_id: int):
-        reason = (request.data.get("reason") or "Estornado pelo operador").strip()
+        reason = (request.data.get("reason") or "").strip()
+        if not reason:
+            return Response({"detail": "Justificativa é obrigatória para estornar."}, status=400)
         try:
             ref = production_service.apply_void(
                 wo_id,
@@ -2349,6 +2380,8 @@ class WorkOrderVoidView(_ProductionActionBase):
     ),
 )
 class WorkOrderOvenArmView(_ProductionActionBase):
+    required_production_capability = "can_record_oven_fact"
+
     def post(self, request, wo_id: int):
         try:
             run = production_service.apply_oven_arm(
@@ -2370,6 +2403,8 @@ class WorkOrderOvenArmView(_ProductionActionBase):
     ),
 )
 class WorkOrderOvenConcludeView(_ProductionActionBase):
+    required_production_capability = "can_record_oven_fact"
+
     def post(self, request, wo_id: int):
         try:
             run = production_service.apply_oven_conclude(
@@ -2515,9 +2550,7 @@ class POSCashOpenView(APIView):
                 return _falha_do_caixa(exc, "Falha ao abrir caixa.")
             return Response({"ok": True, "shift_id": session.pk, "terminal_ref": session.terminal.ref})
 
-        return _cash_idempotent(
-            request, acao="open_cash_shift", executar=lambda: _executar()
-        )
+        return _cash_idempotent(request, acao="open_cash_shift", executar=lambda: _executar())
 
 
 @extend_schema_view(
@@ -2558,9 +2591,7 @@ class POSCashCloseView(APIView):
                 return _falha_do_caixa(exc, "Falha ao fechar caixa.")
             return Response({"ok": True, "result": _cash_shift_result(result) if result else None})
 
-        return _cash_idempotent(
-            request, acao="close_cash_shift", executar=lambda: _executar()
-        )
+        return _cash_idempotent(request, acao="close_cash_shift", executar=lambda: _executar())
 
 
 @extend_schema_view(
@@ -2600,9 +2631,7 @@ class POSMovementView(APIView):
                 return _falha_do_caixa(exc, "Falha ao registrar movimento.")
             return Response({"ok": True, "entry_id": getattr(entry, "pk", None)})
 
-        return _cash_idempotent(
-            request, acao="cash_movement", executar=lambda: _executar()
-        )
+        return _cash_idempotent(request, acao="cash_movement", executar=lambda: _executar())
 
 
 @extend_schema_view(
@@ -2925,9 +2954,7 @@ class POSChangeRequestView(APIView):
                 return _falha_do_caixa(exc, "Falha ao pedir troco.")
             return Response({"ok": True, "request_ref": str(entry.pk)})
 
-        return _cash_idempotent(
-            request, acao="request_change", executar=lambda: _executar()
-        )
+        return _cash_idempotent(request, acao="request_change", executar=lambda: _executar())
 
 
 @extend_schema_view(
@@ -2951,7 +2978,9 @@ class POSChangeRequestServeView(APIView):
 
     def post(self, request, request_ref: str):
         # A trava de replay do dinheiro — ver `_cash_idempotent`.
-        def _executar(request_ref, ):
+        def _executar(
+            request_ref,
+        ):
             try:
                 pos_service.serve_change_request(
                     operator=request.user,
@@ -2968,9 +2997,7 @@ class POSChangeRequestServeView(APIView):
                 return _falha_do_caixa(exc, "Falha ao atender o pedido.")
             return Response({"ok": True})
 
-        return _cash_idempotent(
-            request, acao="serve_change_request", executar=lambda: _executar(request_ref)
-        )
+        return _cash_idempotent(request, acao="serve_change_request", executar=lambda: _executar(request_ref))
 
 
 @extend_schema_view(
@@ -2992,7 +3019,9 @@ class POSChangeRequestCancelView(APIView):
 
     def post(self, request, request_ref: str):
         # A trava de replay do dinheiro — ver `_cash_idempotent`.
-        def _executar(request_ref, ):
+        def _executar(
+            request_ref,
+        ):
             try:
                 pos_service.cancel_change_request(
                     operator=request.user,
@@ -3006,9 +3035,7 @@ class POSChangeRequestCancelView(APIView):
                 return _falha_do_caixa(exc, "Falha ao cancelar o pedido.")
             return Response({"ok": True})
 
-        return _cash_idempotent(
-            request, acao="cancel_change_request", executar=lambda: _executar(request_ref)
-        )
+        return _cash_idempotent(request, acao="cancel_change_request", executar=lambda: _executar(request_ref))
 
 
 @extend_schema_view(
@@ -3031,7 +3058,9 @@ class POSCashRefundView(APIView):
 
     def post(self, request, order_ref: str):
         # A trava de replay do dinheiro — ver `_cash_idempotent`.
-        def _executar(order_ref, ):
+        def _executar(
+            order_ref,
+        ):
             try:
                 refunded_q = pos_service.refund_cash(
                     operator=request.user,
@@ -3046,9 +3075,7 @@ class POSCashRefundView(APIView):
                 return _falha_do_caixa(exc, "Falha ao devolver o dinheiro.")
             return Response({"ok": True, "refunded_q": refunded_q})
 
-        return _cash_idempotent(
-            request, acao="refund_cash", executar=lambda: _executar(order_ref)
-        )
+        return _cash_idempotent(request, acao="refund_cash", executar=lambda: _executar(order_ref))
 
 
 @extend_schema_view(
@@ -3085,7 +3112,9 @@ class POSAccountSettleView(APIView):
 
     def post(self, request, customer_ref: str):
         # A trava de replay do dinheiro — ver `_cash_idempotent`.
-        def _executar(customer_ref, ):
+        def _executar(
+            customer_ref,
+        ):
             body = request.data or {}
             try:
                 settlement = pos_service.settle_account(
@@ -3108,9 +3137,7 @@ class POSAccountSettleView(APIView):
                 }
             )
 
-        return _cash_idempotent(
-            request, acao="settle_account", executar=lambda: _executar(customer_ref)
-        )
+        return _cash_idempotent(request, acao="settle_account", executar=lambda: _executar(customer_ref))
 
 
 @extend_schema_view(
@@ -3620,17 +3647,19 @@ class POSCustomerMergeView(APIView):
         # A comanda segue no cadastro ALVO: a tela recebe a projeção dele, não
         # só o ref, para repor memória e endereço sem um segundo round-trip.
         lookup = build_pos_customer_lookup_by_ref(merged["target_ref"])
-        return Response({
-            "ok": True,
-            "customer": projection_data(lookup) if lookup else merged["customer"],
-            "merge": {
-                "source_ref": merged["source_ref"],
-                "target_ref": merged["target_ref"],
-                "audit_id": merged["audit_id"],
-                "undo_deadline": merged["undo_deadline"],
-                "migrated": merged["migrated"],
-            },
-        })
+        return Response(
+            {
+                "ok": True,
+                "customer": projection_data(lookup) if lookup else merged["customer"],
+                "merge": {
+                    "source_ref": merged["source_ref"],
+                    "target_ref": merged["target_ref"],
+                    "audit_id": merged["audit_id"],
+                    "undo_deadline": merged["undo_deadline"],
+                    "migrated": merged["migrated"],
+                },
+            }
+        )
 
 
 @extend_schema_view(

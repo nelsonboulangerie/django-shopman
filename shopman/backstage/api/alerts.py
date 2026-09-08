@@ -29,9 +29,29 @@ def _alert_dict(alert) -> dict:
         "type_label": alert.get_type_display(),
         "severity": alert.severity,
         "severity_label": alert.get_severity_display(),
+        "audience": alert.audience,
         "message": alert.message,
         "order_ref": alert.order_ref,
         "created_at_display": timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
+        "actions": [
+            {
+                "ref": "acknowledge",
+                "kind": "mutation",
+                "label": "Reconhecer",
+                "priority": "secondary",
+                "enabled": True,
+                "reason": "",
+                "method": "POST",
+                "href": f"/api/v1/backstage/alerts/{alert.pk}/ack/",
+                "payload_schema": {},
+                "expected_rev": None,
+                "idempotency": "idempotent",
+                "confirmation": {},
+                "approval_requirement": None,
+                "source_alert_ref": str(alert.pk),
+                "lifecycle_effect": "acknowledges",
+            }
+        ],
     }
 
 
@@ -51,8 +71,8 @@ class AlertListView(APIView):
             limit = max(1, min(int(raw_limit), 100)) if raw_limit else _DEFAULT_LIMIT
         except (TypeError, ValueError):
             limit = _DEFAULT_LIMIT
-        alerts = alert_service.list_active_alerts(limit=limit)
-        counts = alert_service.active_counts()
+        alerts = alert_service.list_active_alerts(user=request.user, limit=limit)
+        counts = alert_service.active_counts(user=request.user)
         return Response({
             "alerts": [_alert_dict(a) for a in alerts],
             "counts": {"active": counts.active, "critical": counts.critical},
@@ -70,7 +90,7 @@ class AlertAckView(APIView):
     permission_classes = [CanViewOperatorAlerts]
 
     def post(self, request, pk: int):
-        ok = alert_service.ack_alert(pk)
+        ok = alert_service.ack_alert(pk, user=request.user)
         if not ok:
             return Response({"detail": "Alerta não encontrado."}, status=404)
         return Response({"ok": True, "pk": pk})

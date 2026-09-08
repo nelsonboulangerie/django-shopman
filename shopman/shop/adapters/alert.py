@@ -7,13 +7,21 @@ from __future__ import annotations
 from typing import Any
 
 
-def create(type: str, severity: str, message: str, *, order_ref: str = "") -> Any:
+def create(
+    type: str,
+    severity: str,
+    message: str,
+    *,
+    order_ref: str = "",
+    audience: str = "",
+) -> Any:
     """Create an OperatorAlert. Returns the created instance."""
     from shopman.backstage.models import OperatorAlert
 
     return OperatorAlert.objects.create(
         type=type,
         severity=severity,
+        audience=audience or OperatorAlert.audience_for_type(type),
         message=message,
         order_ref=order_ref,
     )

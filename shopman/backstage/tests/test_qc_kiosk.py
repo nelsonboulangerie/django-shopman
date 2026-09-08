@@ -2,7 +2,7 @@
 
 Cobre a projection ``build_qc_kiosk`` (painel de fornadas do dia + catálogos
 de grau/defeito) e o endpoint ``GET /api/v1/backstage/production/qc/``, atrás
-do gate grosso do chão (``backstage.operate_production``).
+das capabilities efetivas da produção.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission, User
 from django.urls import reverse
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe
@@ -26,7 +26,18 @@ def floor_operator(db):
     from shopman.backstage.tests.production_grants import grant_production_operator
 
     user = User.objects.create_user("qc-floor", password="pw", is_staff=True)
-    return grant_production_operator(user)
+    user = grant_production_operator(user)
+    user.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label="backstage",
+            codename="quick_finish_production",
+        ),
+        Permission.objects.get(
+            content_type__app_label="backstage",
+            codename="void_production",
+        ),
+    )
+    return User.objects.get(pk=user.pk)
 
 
 @pytest.fixture
@@ -49,9 +60,7 @@ def test_kiosk_carries_catalogs_with_semantics(recipe):
 
     # Escala do seed, do melhor para o pior — rank é a única hierarquia.
     assert [g.ref for g in kiosk.grades] == ["excellent", "standard", "fair", "minimal"]
-    assert [g.rank for g in kiosk.grades] == sorted(
-        (g.rank for g in kiosk.grades), reverse=True
-    )
+    assert [g.rank for g in kiosk.grades] == sorted((g.rank for g in kiosk.grades), reverse=True)
     default = next(g for g in kiosk.grades if g.is_default)
     assert default.ref == "standard"
     assert default.markdown_percent == 0
@@ -85,7 +94,9 @@ def test_kiosk_orders_open_first_closed_carry_partition(recipe, monkeypatch):
     closed = craft.plan(recipe, 40, date=today, position_ref="forno", operator_ref="bia")
     craft.start(closed, quantity=40, position_ref="forno", operator_ref="bia", expected_rev=0)
     production.apply_finish(
-        work_order_id=closed.pk, quantity="40", actor="production:bia",
+        work_order_id=closed.pk,
+        quantity="40",
+        actor="production:bia",
         partition=[
             {"quantity": "32", "quality_grade_ref": "standard"},
             {"quantity": "5", "quality_grade_ref": "minimal", "quality_defect_ref": "overbaked"},
@@ -151,7 +162,9 @@ def test_closed_card_partition_uses_the_frozen_lot_percent(recipe, monkeypatch):
     wo = craft.plan(recipe, 10, date=today, position_ref="forno")
     craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
     production.apply_finish(
-        work_order_id=wo.pk, quantity="10", actor="production:op",
+        work_order_id=wo.pk,
+        quantity="10",
+        actor="production:op",
         partition=[
             {"quantity": "7", "quality_grade_ref": "standard"},
             {"quantity": "3", "quality_grade_ref": "fair", "quality_defect_ref": "misshapen"},
@@ -206,9 +219,7 @@ def test_repeating_the_same_finish_is_idempotent(client, floor_operator, recipe,
 
 
 @pytest.mark.django_db
-def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(
-    client, floor_operator, recipe, monkeypatch
-):
+def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(client, floor_operator, recipe, monkeypatch):
     """Dois quiosques discordando do rendimento: o segundo leva 409 {detail}
     em pt-BR, nunca 500 cru (o CraftError do kernel não era capturado).
 
@@ -249,7 +260,8 @@ def test_finish_after_void_and_void_after_finish_conflict(client, floor_operator
     voided = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     craft.void(voided, reason="teste")
     response = client.post(
-        reverse("api-backstage-wo-finish", args=[voided.pk]), body,
+        reverse("api-backstage-wo-finish", args=[voided.pk]),
+        body,
         content_type="application/json",
     )
     assert response.status_code == 409
@@ -257,11 +269,13 @@ def test_finish_after_void_and_void_after_finish_conflict(client, floor_operator
 
     finished = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     client.post(
-        reverse("api-backstage-wo-finish", args=[finished.pk]), body,
+        reverse("api-backstage-wo-finish", args=[finished.pk]),
+        body,
         content_type="application/json",
     )
     response = client.post(
-        reverse("api-backstage-wo-void", args=[finished.pk]), {},
+        reverse("api-backstage-wo-void", args=[finished.pk]),
+        {"reason": "corrida entre tablets"},
         content_type="application/json",
     )
     assert response.status_code == 409

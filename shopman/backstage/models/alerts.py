@@ -165,9 +165,46 @@ class OperatorAlert(models.Model):
         ("error", "Erro"),
         ("critical", "Crítico"),
     ]
+    AUDIENCE_CHOICES = [
+        ("production", "Produção"),
+        ("orders", "Pedidos"),
+        ("finance", "Financeiro"),
+        ("operations", "Operação geral"),
+    ]
+    PRODUCTION_TYPES = {
+        "production_late",
+        "production_low_yield",
+        "production_stock_short",
+        "stock_discrepancy",
+        "stock_low",
+    }
+    FINANCE_TYPES = {
+        "payment_failed",
+        "payment_insufficient",
+        "payment_reconciliation_failed",
+        "payment_disputed",
+        "payment_after_cancel",
+        "cash_shift_open_at_closing",
+        "cash_sale_after_shift_close",
+        "bi_cash_variance",
+    }
+    ORDER_TYPES = {
+        "marketplace_rejected_unavailable",
+        "marketplace_rejected_oos",
+        "pos_rejected_unavailable",
+        "stale_new_order",
+        "lifecycle_phase_stuck",
+    }
 
     type = models.CharField("tipo", max_length=50, choices=TYPE_CHOICES)
     severity = models.CharField("severidade", max_length=10, choices=SEVERITY_CHOICES, default="warning")
+    audience = models.CharField(
+        "público operacional",
+        max_length=20,
+        choices=AUDIENCE_CHOICES,
+        default="operations",
+        db_index=True,
+    )
     message = models.TextField("mensagem")
     order_ref = models.CharField("ref do pedido", max_length=50, blank=True)
     acknowledged = models.BooleanField("reconhecido", default=False)
@@ -180,3 +217,21 @@ class OperatorAlert(models.Model):
 
     def __str__(self):
         return f"[{self.get_severity_display()}] {self.message[:80]}"
+
+    def save(self, *args, **kwargs):
+        # Direct ORM writers predate the service/adapter boundary.  Keep them
+        # safe: a typed production/finance/order alert cannot silently inherit
+        # the generic audience merely because the caller omitted the field.
+        if self._state.adding and self.audience == "operations":
+            self.audience = self.audience_for_type(self.type)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def audience_for_type(cls, alert_type: str) -> str:
+        if alert_type in cls.PRODUCTION_TYPES:
+            return "production"
+        if alert_type in cls.FINANCE_TYPES:
+            return "finance"
+        if alert_type in cls.ORDER_TYPES:
+            return "orders"
+        return "operations"
