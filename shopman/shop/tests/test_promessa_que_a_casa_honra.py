@@ -1,27 +1,27 @@
-"""A casa só afirma o que consegue honrar.
+"""A casa afirma o que a FÓRMULA prova, e nunca o que o ambiente não garante.
 
-Medido no cardápio VIVO em 06/09/2026: **11 produtos** carregavam afirmação de
-ausência derivada da ficha — um Espresso "sem glúten", nove pães "sem lactose".
-Verdade sobre a receita, mentira sobre o produto: farinha no ar, forno e bancada
-compartilhados.
+⚠️ Este arquivo já esteve errado, e o erro custou informação verdadeira no ar.
+Em 06/09 ele guardava "a casa não afirma ausência" como regra única, tratando
+`sem glúten` e `sem lactose` como a mesma coisa. **Não são**, e a distinção é o
+que estes testes existem para fixar:
 
-Afirmação de ausência é a única da família em que um celíaco pode agir, e é
-justamente a que uma padaria não consegue cumprir.
+- **composição** — a ficha responde, e a casa pode afirmar. Uma baguete de
+  farinha, água, sal e levain não contém lactose; dizer isso é verdade, é útil
+  ao cliente, e a RDC 135/2017 dá o limiar objetivo (< 100 mg/100 g).
+- **contaminação cruzada** — a ficha NÃO responde. `sem glúten` numa padaria sem
+  linha segregada é afirmação sobre o ambiente, e é a única da família em que um
+  celíaco pode se machucar.
 
-O que estes testes guardam:
+O que a casa faz no lugar: declara o oposto em voz alta, e em primeiro lugar —
+*"todos os nossos produtos contêm ou podem conter glúten"*.
 
-- a derivação **não volta a inventar** "sem glúten", "sem lactose" nem
-  "vegetariano" — nem quando a ficha não tem o insumo;
-- ``100% vegetal`` **fica**: é afirmação sobre o que o produto É, não sobre o
-  que falta nele, e essa a ficha honra;
-- o vocabulário de alérgeno cobre os cereais **nomeados** e a pimenta-do-reino,
-  porque lista que não cabe a realidade vira alérgeno descartado em silêncio;
-- alérgeno vindo da FICHA amplia o vocabulário em vez de derrubar a derivação —
-  o defeito que deixava o produto SEM alérgeno nenhum.
+E não há conflito entre `sem lactose` e o aviso de traços de leite: intolerância
+à lactose é DOSE-dependente e traço não a alcança; alergia à proteína do leite é
+outra coisa, e dela cuida o aviso. Separar as duas é prática da indústria.
 
-⚠️ A limpeza do que já estava gravado é feita pela migração `0035`, e **dado de
-migração não sobrevive a teste transacional** — por isso o que se testa aqui é a
-REGRA que impede o valor de voltar, não a linha do banco.
+Os números que vêm da lei moram em `shop/legal_parameters.py`, com data de
+conferência e catraca — legislação muda, e parâmetro que ninguém revisita faz o
+sistema ensinar o gestor a errar.
 """
 
 from __future__ import annotations
@@ -31,14 +31,18 @@ import pytest
 from shopman.shop.attribute_defaults import ALERGENOS_CANONICOS, DIETA_CANONICA
 
 
-def test_a_casa_nao_afirma_mais_ausencia():
-    """"sem glúten" e "sem lactose" saíram do vocabulário — os dois lados."""
-    assert DIETA_CANONICA == ["100% vegetal"], (
-        "Afirmação de ausência não pode voltar ao vocabulário: uma padaria "
-        "não honra 'sem glúten' com farinha no ar."
+def test_sem_gluten_nunca_entra_no_vocabulario():
+    """A única que a casa não pode honrar — e a única em que alguém se machuca."""
+    assert "sem glúten" not in DIETA_CANONICA, (
+        "A Nelson não tem linha segregada e não pretende ter. 'sem glúten' seria "
+        "afirmação sobre o AMBIENTE, não sobre a fórmula."
     )
-    for proibida in ("sem glúten", "sem lactose", "vegetariano"):
-        assert proibida not in DIETA_CANONICA
+
+
+def test_o_que_a_ficha_prova_a_casa_afirma():
+    """`sem lactose` e `vegetariano` são fato de composição, e voltaram."""
+    for permitida in ("100% vegetal", "vegetariano", "sem lactose"):
+        assert permitida in DIETA_CANONICA
 
 
 def test_a_afirmacao_positiva_fica():
@@ -65,19 +69,30 @@ def test_a_pimenta_entra_mesmo_sem_norma():
     assert "pimenta-do-reino" in ALERGENOS_CANONICOS
 
 
-def test_a_derivacao_nao_reintroduz_ausencia():
-    """A regra, não o dado: mesmo sem leite na ficha, nada de "sem lactose"."""
+def test_a_derivacao_afirma_lactose_e_nunca_gluten():
+    """A baguete: farinha, água, sal e levain. Contém glúten, não contém lactose."""
     from shopman.craftsman.dietary import DIET_VEGAN, IngredientDietary
 
     from shopman.shop.services.dietary_from_recipe import _derive_dietary_info
 
-    só_vegetal = [IngredientDietary(diet=DIET_VEGAN, allergens=["glúten"])]
-    info = _derive_dietary_info(só_vegetal, ["glúten"])
+    baguete = [IngredientDietary(diet=DIET_VEGAN, allergens=["glúten"])]
+    info = _derive_dietary_info(baguete, ["glúten"])
+
+    assert "sem lactose" in info, "a fórmula prova a ausência de leite; a casa afirma"
+    assert "100% vegetal" in info
+    assert "sem glúten" not in info, "esta a casa NUNCA afirma — não há segregação"
+
+
+def test_com_leite_na_ficha_nao_ha_afirmacao_de_lactose():
+    from shopman.craftsman.dietary import DIET_VEGETARIAN, IngredientDietary
+
+    from shopman.shop.services.dietary_from_recipe import _derive_dietary_info
+
+    brioche = [IngredientDietary(diet=DIET_VEGETARIAN, allergens=["glúten", "leite"])]
+    info = _derive_dietary_info(brioche, ["glúten", "leite"])
 
     assert "sem lactose" not in info
-    assert "sem glúten" not in info
-    assert "vegetariano" not in info
-    assert info == ["100% vegetal"]
+    assert "vegetariano" in info, "sem abate, e é o único termo que sabe dizer isso"
 
 
 @pytest.mark.django_db

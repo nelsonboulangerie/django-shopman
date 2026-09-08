@@ -38,19 +38,30 @@ ALERGENOS_CANONICOS = [
 ]
 
 DIETA_CANONICA = [
-    # UM termo só, por decisão do dono (05/09).
+    # ⚠️ A distinção que importa aqui é COMPOSIÇÃO × CONTAMINAÇÃO CRUZADA, e
+    # confundir as duas custou uma correção no ar (08/09/2026).
     #
-    # "sem glúten" saiu porque a casa NÃO pode honrar a afirmação: farinha no ar
-    # e forno compartilhado. Promessa que não se cumpre não entra no rótulo.
+    # `sem lactose` e `vegetariano` afirmam o que a RECEITA tem ou não tem, e a
+    # ficha sabe responder. Uma baguete de farinha, água, sal e levain não contém
+    # lactose — dizer isso é verdade, é útil, e a RDC 135/2017 dá o limiar
+    # objetivo (< 100 mg/100 g). Removê-los tirava informação correta do cliente.
     #
-    # "sem lactose" e "vegetariano" saíram por redundância: leite e ovos já são
-    # declarados no campo de ALÉRGENOS, e a loja lê de lá. O único fato que os
-    # alérgenos não sabem dizer é "não tem NADA de origem animal" — mel, banha e
-    # gelatina não são alergênicos —, e é exatamente isso que este termo diz.
+    # `sem glúten` é outra natureza: numa casa sem linha segregada a afirmação é
+    # sobre o AMBIENTE, não sobre a fórmula — e é a única em que um celíaco pode
+    # se machucar. Fica fora da derivação, e a casa declara o oposto em voz alta
+    # (ver `food_safety_notice`).
     #
-    # É composição, não identidade: a casa não usa "vegano", que carrega esferas
-    # que não são nutricionais.
+    # E as duas convivem sem contradição: intolerância à lactose é DOSE-dependente
+    # e traço não a alcança; alergia à proteína do leite é outra coisa, e dela
+    # cuida o aviso de cozinha compartilhada. Separar as duas é prática da
+    # indústria, não invenção nossa.
+    #
+    # Parâmetros de norma citados aqui vivem em `shop/legal_parameters.py`, com
+    # data de conferência e catraca — legislação muda, e parâmetro que ninguém
+    # revisita faz o sistema ensinar o gestor a errar.
     "100% vegetal",
+    "vegetariano",
+    "sem lactose",
 ]
 
 

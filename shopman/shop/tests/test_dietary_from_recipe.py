@@ -91,10 +91,10 @@ class TestAggregateDietaryFromRecipe:
         assert attributes.get(product, "alergenos") == ["glúten"]
         # gluten present → no "sem glúten"; vegan + no lactose → vegetal + sem lactose
         # Só "100% vegetal": lactose e glúten são lidos dos ALÉRGENOS.
-        assert attributes.get(product, "dieta") == ["100% vegetal"]
+        assert attributes.get(product, "dieta") == ["100% vegetal", "sem lactose"]
         assert attributes.source(product, "alergenos") == "recipe"
 
-    def test_gluten_free_vegan_gets_sem_gluten(self):
+    def test_vegan_sem_alergeno_afirma_o_que_a_ficha_prova(self):
         product = _make_product(sku="POLVILHO")
         recipe = _recipe(sku="POLVILHO")
         _item(recipe, "INS-POLVILHO", allergens=[], diet="vegan")
@@ -103,7 +103,7 @@ class TestAggregateDietaryFromRecipe:
         product.refresh_from_db()
 
         # A casa NÃO afirma "sem glúten" — farinha no ar, forno compartilhado.
-        assert attributes.get(product, "dieta") == ["100% vegetal"]
+        assert attributes.get(product, "dieta") == ["100% vegetal", "sem lactose"]
 
     def test_vegetarian_insumo_blocks_vegan_and_lactose_claim(self):
         product = _make_product(sku="BRIOCHE")
@@ -117,7 +117,7 @@ class TestAggregateDietaryFromRecipe:
 
         assert attributes.get(product, "alergenos") == ["glúten", "leite", "ovos"]
         # "vegetariano" saiu: leite e ovos já dizem isso, nos alérgenos.
-        assert attributes.get(product, "dieta") == []
+        assert attributes.get(product, "dieta") == ["vegetariano"]
 
     def test_animal_insumo_blocks_positive_diet_claim(self):
         product = _make_product(sku="FOCACCIA-BACON")
@@ -130,7 +130,7 @@ class TestAggregateDietaryFromRecipe:
 
         # no positive diet claim; gluten present → no sem glúten; no lactose → sem lactose
         # Insumo animal derruba a única afirmação que sobrou.
-        assert attributes.get(product, "dieta") == []
+        assert attributes.get(product, "dieta") == ["sem lactose"]
 
     def test_allergen_union_dedups(self):
         product = _make_product(sku="MISTO")
@@ -204,7 +204,7 @@ class TestAggregateDietaryFromRecipe:
 
         assert attributes.get(product, "alergenos") == ["glúten", "leite"]
         # Leite na cadeia derruba "100% vegetal", e é só isso que dieta diz.
-        assert attributes.get(product, "dieta") == []
+        assert attributes.get(product, "dieta") == ["vegetariano"]
 
     def test_signal_materializes_on_recipe_save(self):
         product = _make_product(sku="BAGUETE")

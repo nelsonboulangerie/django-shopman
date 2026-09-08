@@ -853,9 +853,22 @@ class Command(BaseCommand):
                     "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
                     "com o texto pedido, sem aspas, sem rótulo e sem comentário."
                 ),
+                # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
+                # ressalva. A casa é uma padaria: trabalha com farinha de trigo
+                # todos os dias, não tem linha segregada e não pretende ter
+                # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
+                # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
+                # linha, não deduzir do silêncio.
+                #
+                # O resto é contaminação cruzada de cozinha compartilhada, no
+                # formato que a RDC 727/2022 pede ("pode conter"). Ver
+                # `shop/legal_parameters.py`.
                 "food_safety_notice": (
-                    "Produzido em cozinha compartilhada. Pode conter traços de leite, ovos, "
-                    "castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
+                    "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
+                    "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
+                    "como assegurar a ausência dele em nenhum item. "
+                    "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
+                    "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
                 ),
                 "heading_font": "Instrument Sans",
                 "body_font": "Instrument Sans",
