@@ -134,6 +134,11 @@ class Command(BaseCommand):
                 shop_shop("manage_catalog"),
                 *_ver("guestman"), *_escrever("guestman", "customer"),
                 *_ver("customer_loyalty"),
+                # A trilha das unificações de cadastro, com o desfazer de 24h. A
+                # tela se ABRE com esta leitura; DESFAZER é `manage_customers`,
+                # que ela já tem e o Caixa não — quem unifica no balcão para sair
+                # do beco da venda não desfaz sozinho.
+                *_ver("customer_merge"),
                 *_ver("storefront"),
                 *_ver("craftsman"),
                 *_ver("buyman"),

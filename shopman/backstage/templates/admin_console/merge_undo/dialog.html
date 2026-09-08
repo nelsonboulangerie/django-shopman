@@ -1,0 +1,37 @@
+{% load unfold %}
+
+{% comment %}
+  O que o gestor precisa saber ANTES de confirmar, não depois: quanto tempo
+  ainda resta na janela, o que volta, e — a parte que morde — o que NÃO volta.
+  Renderizado pelo `form_before_template` do `UndoMergeConfirmForm`.
+{% endcomment %}
+
+<div class="flex flex-col gap-3">
+  {% if recusa %}
+    {% component "unfold/components/text.html" %}{{ recusa }}{% endcomponent %}
+  {% else %}
+    {% component "unfold/components/text.html" %}
+      {{ source_ref }} volta a ser um cadastro ativo, separado de {{ target_ref }}.
+    {% endcomponent %}
+
+    {% component "unfold/components/text.html" with class="text-base-500" %}
+      Prazo: faltam {{ restante }}, até {{ deadline }}. Depois disso a separação vira trabalho manual.
+    {% endcomponent %}
+
+    {% if restaurado %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        Volta para {{ source_ref }}: {{ restaurado }}.
+      {% endcomponent %}
+    {% endif %}
+
+    {% if loyalty_merged %}
+      {% component "unfold/components/text.html" %}
+        A fidelidade NÃO volta{% if pontos_somados %}: os {{ pontos_somados }} pontos somados ficam em {{ target_ref }}{% else %}: pontos, selos e faixa ficam em {{ target_ref }}{% endif %}. O acerto é manual.
+      {% endcomponent %}
+    {% else %}
+      {% component "unfold/components/text.html" with class="text-base-500" %}
+        A fidelidade NÃO volta pelo desfazer. Esta unificação não somou conta de fidelidade, então não há acerto pendente.
+      {% endcomponent %}
+    {% endif %}
+  {% endif %}
+</div>

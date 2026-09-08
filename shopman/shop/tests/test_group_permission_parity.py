@@ -39,6 +39,7 @@ GATE_FILES = [
     "shopman/backstage/admin/pos.py",
     "shopman/backstage/admin/kds.py",
     "shopman/backstage/admin/closing.py",
+    "shopman/backstage/admin/merges.py",
     "shopman/backstage/admin/terminal.py",
     "shopman/backstage/admin_console/cash_receipt.py",
     "shopman/backstage/admin/navigation.py",
@@ -80,6 +81,10 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     # PRONTO/FECHADO. Deliberadamente FORA do Caixa: ele cancela a esteira normal
     # com `manage_orders`; o degrau de depois é do gerente.
     ("shop.cancel_advanced_order", {"Gerente"}),
+    # admin/merges.py::MergeAuditAdmin.undo_merge_row — desfazer a unificação de
+    # dois cadastros. Fora do Caixa de propósito: ele UNIFICA no balcão (é a
+    # saída do conflito de contato no meio da venda), e desfazer é revisão.
+    ("shop.manage_customers", {"Gerente"}),
     # permissions.can_access_production / can_view_production_reports (full
     # access shortcut). Only Cozinha holds it: Gerente reaches the board through
     # its full set of fine-grained column perms (can_access_board), so it does
