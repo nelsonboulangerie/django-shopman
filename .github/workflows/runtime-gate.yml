@@ -53,6 +53,14 @@ jobs:
       - name: Migrations are committed
         run: .venv/bin/python manage.py makemigrations --check --dry-run
 
+      # ⚠️ Barato e específico: recusa workflow cujo teto de job não cabe a
+      # própria espera. O `alpha-smoke.yml` viveu três dias com `timeout: 5` e
+      # `sleep 420` — dezesseis runs cancelados, asserção nenhuma, e nada
+      # vermelho, porque run cancelado não fica vermelho. Defeito aritmético,
+      # visível sem rodar nada; a CI lembra no lugar de alguém.
+      - name: Teto do job cabe a espera do job
+        run: .venv/bin/python scripts/check_workflow_budgets.py
+
       # A política ADR-015 arma pela EXISTÊNCIA da tag go-live-v1 — mas o
       # checkout do CI é raso e sem tags, então sem este fetch os checks
       # ficariam num "pré-go-live" eterno mesmo depois do go-live. Antes da

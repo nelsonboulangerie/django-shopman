@@ -266,6 +266,10 @@ test-silent-swallow: ## Gate da meia-correção: relato alto + engolimento mudo 
 	@echo "── Gate da meia-correção ──"
 	$(PYTHON) scripts/check_silent_swallow.py $(if $(all),--all,) $(if $(json),--json,)
 
+test-workflow-budgets: ## Gate: teto do job cabe a espera declarada do job (alpha-smoke)
+	$(PYTHON) scripts/check_workflow_budgets.py
+	$(PYTHON) -m pytest shopman/shop/tests/test_workflow_budget_gate.py -q
+
 # ⚠️ NÃO é alvo de CI: exige credencial da DigitalOcean, que a CI não tem (nem
 # deve ter). É conferência de MÃO, obrigatória antes de qualquer `apps update`.
 deploy-spec-drift: ## Confere o spec versionado contra o app VIVO (leitura; roda ANTES de apps update)
