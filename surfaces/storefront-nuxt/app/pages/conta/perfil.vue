@@ -189,8 +189,15 @@ useSeoMeta({ title: 'Perfil' })
             </div>
           </dl>
 
+          <!-- Duas coisas diferentes, e a frase precisa separá-las: ENTRAR com
+               outro número abre outra conta; MUDAR o número leva esta conta
+               junto. Enquanto só existia a primeira, a copy honesta parava no
+               aviso. Agora ela aponta a saída. -->
           <div class="mt-1 flex flex-col gap-3 border-t pt-4 sm:flex-row sm:items-center sm:justify-between">
-            <p class="shop-meta">Entrar com outro número abre outra conta. O histórico fica neste número.</p>
+            <p class="shop-meta">
+              Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
+              Entrar com outro número abre outra conta.
+            </p>
             <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>
           </div>
         </div>
@@ -263,7 +270,10 @@ useSeoMeta({ title: 'Perfil' })
               <div class="min-w-0 flex-1">
                 <p class="shop-meta">{{ profileCopy.phone_field }}</p>
                 <p class="shop-body font-semibold tabular-nums">{{ phoneDisplayLabel }}</p>
-                <p class="shop-meta">Entrar com outro número abre outra conta. O histórico fica neste número.</p>
+                <p class="shop-meta">
+                  Mudou de número? <NuxtLink to="/conta/seguranca" class="underline underline-offset-2">Leve a conta junto</NuxtLink>.
+                  Entrar com outro número abre outra conta.
+                </p>
               </div>
             </div>
             <UiButton to="/entrar?next=/conta/perfil" variant="ghost" size="sm" class="w-full shrink-0 sm:w-auto">Entrar com outra conta</UiButton>

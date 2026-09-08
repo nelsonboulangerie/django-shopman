@@ -142,6 +142,198 @@ class ContactAlreadyTaken(ValueError):
         self.field = field
 
 
+# A frase que o cliente lê quando o número digitado já é de outro cadastro.
+# Mesma regra do e-mail: diz o que houve, não de quem é.
+PHONE_TAKEN_DETAIL = "Este número já está em uso em outra conta."
+
+# Os dois tipos de contato que respondem por "o telefone do cliente".
+#
+# Não é redundância: o login grava o número verificado como `WHATSAPP`
+# (`doorman.verification._link_verified_identifier`) e o cache do `Customer`
+# espelha o mesmo número como `PHONE` (`Customer._sync_contact_points`). Os dois
+# apontam para `Customer.phone` no caminho de volta (`_sync_to_customer`), e
+# `get_by_phone` procura nos DOIS. Trocar só um deixa o outro respondendo pelo
+# número velho — que é exatamente o buraco que esta troca existe para fechar.
+PHONE_CONTACT_TYPES = ("phone", "whatsapp")
+
+
+class PhoneChangeRefused(ValueError):
+    """A troca de número foi recusada por um motivo que a tela precisa nomear.
+
+    ``field`` diz onde o erro mora (``phone`` ou ``code``) e ``error_code`` é o
+    que a superfície usa para escolher a saída sem casar a frase.
+    """
+
+    def __init__(self, message: str, *, field: str = "phone", error_code: str = ""):
+        super().__init__(message)
+        self.field = field
+        self.error_code = error_code
+
+
+def _phone_belongs_to_someone_else(customer, phone: str) -> bool:
+    from shopman.guestman.models import ContactPoint
+
+    return (
+        ContactPoint.objects.filter(
+            type__in=PHONE_CONTACT_TYPES,
+            value_normalized=phone,
+        )
+        .exclude(customer=customer)
+        .exists()
+    )
+
+
+def _set_primary_phone(customer, phone: str) -> None:
+    """Promove o número a contato principal do cliente — pelo Core, não à mão.
+
+    ⚠️ O caminho intuitivo (``customer.phone = novo; customer.save()``) NÃO
+    funciona, e falha de um jeito que parece defeito do Core sem ser. O
+    ``save()`` chama ``_sync_contact_points()``, que faz ``get_or_create`` do
+    ContactPoint novo já com ``is_primary=True`` e só DEPOIS demove o antigo —
+    então o banco vê dois primários do mesmo tipo por um instante e recusa:
+
+        IntegrityError: UNIQUE constraint failed:
+        customers_contact_point.customer_id, customers_contact_point.type
+
+    A leitura de que isso pede conserto no guestman é a leitura errada.
+    ``Customer.phone`` é CACHE — está escrito no docstring do módulo — e o
+    ``_sync_contact_points`` é atalho para o PRIMEIRO contato, não API de troca.
+    Quem troca contato é ``ContactPoint.set_as_primary()``, que já faz na ordem
+    certa: demove os outros primários do tipo, promove a si, e sincroniza o
+    cache do ``Customer`` por ``.update()`` (sem reentrar no ``save()``).
+
+    **O número antigo SAI, não vira secundário.** Aqui a decisão diverge da do
+    e-mail, e por um motivo mais forte que "a tela tem um campo só": nesta loja
+    o telefone é a IDENTIDADE — é por ele que se entra, por OTP. E
+    ``get_by_phone`` acha o cliente por QUALQUER ContactPoint de telefone, sem
+    olhar ``is_primary``. Um número velho deixado para trás como secundário
+    continuaria abrindo esta conta por OTP — e quem muda de número costuma
+    mudar porque perdeu aquele, que a operadora recicla para um estranho em
+    poucos meses. Guardar o histórico não vale entregar a chave junto.
+    """
+    from shopman.guestman.models import ContactPoint
+
+    if _phone_belongs_to_someone_else(customer, phone):
+        raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+
+    numeros_antigos = set(
+        ContactPoint.objects.filter(
+            customer=customer,
+            type__in=PHONE_CONTACT_TYPES,
+        )
+        .exclude(value_normalized=phone)
+        .values_list("value_normalized", flat=True)
+    )
+
+    for tipo in PHONE_CONTACT_TYPES:
+        contato, _created = ContactPoint.objects.get_or_create(
+            customer=customer,
+            type=tipo,
+            value_normalized=phone,
+            defaults={"value_display": phone},
+        )
+        if not contato.is_primary:
+            contato.set_as_primary()
+        if not contato.is_verified:
+            contato.mark_verified(ContactPoint.VerificationMethod.OTP_WHATSAPP)
+
+    ContactPoint.objects.filter(
+        customer=customer,
+        type__in=PHONE_CONTACT_TYPES,
+        value_normalized__in=numeros_antigos,
+    ).delete()
+
+    customer.refresh_from_db(fields=["phone"])
+
+
+def request_phone_change(customer, raw_phone: str, *, ip_address: str | None = None):
+    """Manda o código para o número NOVO. Nada muda no cadastro ainda.
+
+    O código vai para o número novo porque é ele que precisa ser provado. A
+    sessão já prova a conta atual; o que falta provar é que quem pede a troca
+    atende no número que quer adotar. Sem isso, trocar o telefone seria
+    sequestro de conta com uma requisição: aponte a conta de outra pessoa para
+    um número seu e o próximo OTP chega na sua mão.
+    """
+    from shopman.utils.phone import normalize_phone
+
+    from shopman.shop.services import auth as auth_service
+
+    phone = normalize_phone(raw_phone or "")
+    if not phone:
+        raise PhoneChangeRefused(
+            "Confira o número: faltou algum dígito.",
+            field="phone",
+            error_code="invalid_phone",
+        )
+
+    if phone == (customer.phone or ""):
+        raise PhoneChangeRefused(
+            "Esse já é o seu número.",
+            field="phone",
+            error_code="phone_unchanged",
+        )
+
+    if _phone_belongs_to_someone_else(customer, phone):
+        raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone")
+
+    resultado = auth_service.request_contact_verification_code(
+        phone=phone,
+        delivery_method="whatsapp",
+        ip_address=ip_address,
+    )
+    return phone, resultado
+
+
+def confirm_phone_change(customer, raw_phone: str, code_input: str) -> str:
+    """Confere o código e, só então, troca o número. Devolve o número novo."""
+    from django.db import IntegrityError, transaction
+    from shopman.utils.phone import normalize_phone
+
+    from shopman.shop.services import auth as auth_service
+
+    phone = normalize_phone(raw_phone or "")
+    if not phone:
+        raise PhoneChangeRefused(
+            "Confira o número: faltou algum dígito.",
+            field="phone",
+            error_code="invalid_phone",
+        )
+
+    codigo = "".join(ch for ch in (code_input or "") if ch.isdigit())
+    if len(codigo) != 6:
+        raise PhoneChangeRefused(
+            "Informe os 6 números do código.",
+            field="code",
+            error_code="code_incomplete",
+        )
+
+    # A conferência fica FORA da transação da troca de propósito: ela grava a
+    # tentativa gasta, e uma recusa mais adiante não pode devolver tentativa
+    # para quem está chutando código.
+    resultado = auth_service.verify_contact_code(
+        phone=phone,
+        code_input=codigo,
+        customer_uuid=customer.uuid,
+    )
+    if not resultado.success:
+        raise PhoneChangeRefused(
+            auth_service.contact_verify_error_message(resultado),
+            field="code",
+            error_code=resultado.error_code or "code_invalid",
+        )
+
+    with transaction.atomic():
+        try:
+            _set_primary_phone(customer, phone)
+        except IntegrityError as exc:
+            # O dono do número pode aparecer entre a checagem e a escrita. A
+            # recusa tem de chegar com nome, não como falha genérica.
+            raise ContactAlreadyTaken(PHONE_TAKEN_DETAIL, field="phone") from exc
+
+    return phone
+
+
 def _set_primary_email(customer, email: str) -> None:
     """Promove o e-mail a contato principal do cliente — pelo Core, não à mão.
 

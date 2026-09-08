@@ -10,6 +10,8 @@ from datetime import datetime
 
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
@@ -40,6 +42,12 @@ from shopman.storefront.presentation.account import (
 from shopman.storefront.services import orders as order_service
 
 from .actions import action_payload
+
+# O portão do OTP de depuração mora no módulo de auth e é reusado — nunca
+# reescrito. Ele falha fechado em três camadas (DEBUG, flag, segredo conferido
+# por `compare_digest`), e uma segunda cópia da regra é uma segunda chance de
+# alguma delas ficar para trás.
+from .auth import _debug_otp_response, _normalize_payload_phone
 from .projections import projection_data
 from .serializers import (
     AddressSerializer,
@@ -332,18 +340,28 @@ def _contact_taken_response(exc) -> Response:
     os dois caminhos que servem sem revelar nada: entrar na conta que já usa esse
     e-mail (se for dele, ele passa pelo OTP e prova), ou falar com a padaria (se
     não for, quem resolve é gente).
+
+    Vale igual para o TELEFONE, e ali a privacidade aperta ainda mais: o número
+    é a identidade de quem entra, então dizer de quem ele é entregaria a chave
+    junto com o nome. Muda a copy, não a regra.
     """
-    detail = str(exc) or account_service.EMAIL_TAKEN_DETAIL
     field = getattr(exc, "field", "email") or "email"
+    is_phone = field == "phone"
+    padrao = account_service.PHONE_TAKEN_DETAIL if is_phone else account_service.EMAIL_TAKEN_DETAIL
+    detail = str(exc) or padrao
 
     actions = [
         action_payload(
-            ref="sign_in_with_email",
+            ref="sign_in_with_phone" if is_phone else "sign_in_with_email",
             kind="link",
-            label="Entrar com esse e-mail",
-            href="/entrar?next=/conta/perfil",
+            label="Entrar com esse número" if is_phone else "Entrar com esse e-mail",
+            href="/entrar?next=/conta/seguranca" if is_phone else "/entrar?next=/conta/perfil",
             priority="primary",
-            reason="Se a conta é sua, entre nela pelo telefone cadastrado.",
+            reason=(
+                "Se a conta é sua, entre nela por esse número."
+                if is_phone
+                else "Se a conta é sua, entre nela pelo telefone cadastrado."
+            ),
             idempotency="none",
         )
     ]
@@ -365,7 +383,7 @@ def _contact_taken_response(exc) -> Response:
             "field": field,
             "errors": {field: [detail]},
             "error_code": "contact_already_taken",
-            "title": "Confira o e-mail",
+            "title": "Confira o número" if is_phone else "Confira o e-mail",
             "actions": actions,
         },
         status=status.HTTP_409_CONFLICT,
@@ -1021,6 +1039,140 @@ class AccountStepUpView(APIView):
             # só o atalho durável não pôde ser gravado.
             logger.warning("account.step_up_trust_failed", exc_info=True)
         return response
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="5/m", method="POST", block=False),
+    name="dispatch",
+)
+class PhoneChangeRequestView(APIView):
+    """POST /api/v1/account/phone/request/ — manda o código para o número NOVO.
+
+    Nada muda no cadastro aqui. O código vai para o número que o cliente quer
+    adotar, porque é a posse DELE que falta provar — a sessão já responde pela
+    conta atual.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["account"],
+        summary="Request OTP to change the account phone number",
+        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+    )
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde alguns minutos."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        payload = request.data if hasattr(request, "data") else {}
+        try:
+            phone, resultado = account_service.request_phone_change(
+                customer,
+                # Mesma leitura de telefone do login: região, DDD padrão da loja
+                # e máscara já resolvidos num lugar só.
+                _normalize_payload_phone(payload) or str(payload.get("phone") or ""),
+                ip_address=auth_service.client_ip(request),
+            )
+        except account_service.ContactAlreadyTaken as exc:
+            return _contact_taken_response(exc)
+        except account_service.PhoneChangeRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "errors": {exc.field: [str(exc)]},
+                    "error_code": exc.error_code,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not resultado.success:
+            return Response(
+                {
+                    "detail": auth_service.request_code_error_message(resultado),
+                    "field": "phone",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "ok": True,
+                "phone": phone,
+                "code_expires_at": getattr(resultado, "expires_at", None) or "",
+                # O código só sai daqui pelo mesmo portão do login — que falha
+                # fechado fora de DEBUG e exige o segredo no cabeçalho. Repetir
+                # a regra à mão aqui seria abrir uma segunda porta para o mesmo
+                # cofre, e é assim que uma delas fica destrancada.
+                **_debug_otp_response(resultado, request),
+            }
+        )
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False),
+    name="dispatch",
+)
+class PhoneChangeConfirmView(APIView):
+    """POST /api/v1/account/phone/confirm/ — confere o código e troca o número."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["account"],
+        summary="Confirm the OTP and change the account phone number",
+        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+    )
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde alguns minutos."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        payload = request.data if hasattr(request, "data") else {}
+        try:
+            phone = account_service.confirm_phone_change(
+                customer,
+                _normalize_payload_phone(payload) or str(payload.get("phone") or ""),
+                str(payload.get("code") or ""),
+            )
+        except account_service.ContactAlreadyTaken as exc:
+            return _contact_taken_response(exc)
+        except account_service.PhoneChangeRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "errors": {exc.field: [str(exc)]},
+                    "error_code": exc.error_code,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            logger.exception(
+                "storefront_account_phone_change_failed",
+                extra={"customer_ref": customer.ref},
+            )
+            return Response(
+                {"detail": "Não foi possível mudar seu número agora. Tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({"ok": True, "phone": phone})
 
 
 class AccountDeleteView(APIView):
