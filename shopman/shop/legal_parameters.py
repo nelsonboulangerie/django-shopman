@@ -51,6 +51,12 @@ class ParametroLegal:
     valor: str
     conferido_em: date
     conferido_por: str
+    #: Onde LER a norma. É o que transforma "confira" em "clique e leia" para
+    #: quem tem a responsabilidade e não mexe em código.
+    fonte: str = ""
+    #: Identificador persistente do LexML, quando a norma tem um. Serve para
+    #: rastrear substituição no futuro — ver a nota sobre automação no topo.
+    urn: str = ""
     nota: str = ""
 
     def vencido_em(self, hoje: date) -> bool:
@@ -64,6 +70,8 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="19 alimentos/grupos de declaração obrigatória + látex natural",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
+        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2015/rdc0026_26_06_2015.pdf",
+        urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2022-07-01;727",
         nota=(
             "⚠️ A RDC 26/2015 foi REVOGADA e consolidada na 727/2022 sem mudança "
             "de mérito. O código citava a revogada até 08/09/2026. A lista da casa "
@@ -78,6 +86,8 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="< 100 mg/100 g para 'zero lactose' / 'sem lactose' / 'não contém lactose'",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
+        fonte="https://www.legisweb.com.br/legislacao/?id=337142",
+        urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2017-02-08;135",
         nota=(
             "Entre 100 mg e 1 g/100 g: 'baixo teor de lactose'. Acima de 100 mg: "
             "'contém lactose'. Produto sem ingrediente lácteo está em zero — a "
@@ -90,6 +100,8 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="'contém glúten' / 'não contém glúten' obrigatório para alimento industrializado",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
+        fonte="https://www.planalto.gov.br/ccivil_03/leis/2003/l10.674.htm",
+        urn="urn:lex:br:federal:lei:2003-05-16;10.674",
         nota=(
             "A obrigação é dirigida a INDÚSTRIA alimentícia; a AGU firmou que não "
             "se estende a estabelecimento não industrial que vende direto ao "
@@ -104,6 +116,8 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="'Alérgicos: Pode conter …' quando não se pode garantir ausência",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
+        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2015/rdc0026_26_06_2015.pdf",
+        urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2022-07-01;727",
         nota=(
             "⚠️ PENDENTE: a norma exige que esta declaração se baseie num "
             "**Programa de Controle de Alergênicos**. Não sei se a casa tem o "

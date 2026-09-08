@@ -146,6 +146,8 @@ const {
   pickConflictCandidate,
   mergeConflictCustomers,
   customerMergeBusy,
+  releaseConflictContact,
+  customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
@@ -770,6 +772,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :customer-resolved-new="customerResolvedNew"
           :customer-decision="customerDecision"
           :customer-merge-busy="customerMergeBusy"
+          :customer-release-busy="customerReleaseBusy"
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
@@ -787,6 +790,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @decision-confirm="confirmCustomerDecision"
           @decision-cancel="cancelCustomerDecision"
           @decision-merge="mergeConflictCustomers"
+          @decision-release="releaseConflictContact"
           @decision-pick="pickConflictCandidate"
           @search="searchCustomers"
           @select-result="selectCustomerResult"
@@ -890,6 +894,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:receipt-email="cart.receiptEmail"
         v-model:save-receipt-contact="cart.saveReceiptContact"
         v-model:save-receipt-tax-id="cart.saveReceiptTaxId"
+        v-model:confirm-receipt-tax-id="cart.confirmReceiptTaxId"
         :schedule-today="scheduleToday"
         :schedule-available-dates="scheduleAvailableDates"
         :schedule-bottleneck-name="scheduleBottleneckName"
@@ -915,6 +920,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :customer-resolved-new="customerResolvedNew"
         :customer-decision="customerDecision"
         :customer-merge-busy="customerMergeBusy"
+        :customer-release-busy="customerReleaseBusy"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
@@ -945,6 +951,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @decision-confirm="confirmCustomerDecision"
         @decision-cancel="cancelCustomerDecision"
         @decision-merge="mergeConflictCustomers"
+        @decision-release="releaseConflictContact"
         @decision-pick="pickConflictCandidate"
         @search="searchCustomers"
         @select-result="selectCustomerResult"

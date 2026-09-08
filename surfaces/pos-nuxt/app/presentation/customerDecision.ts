@@ -28,7 +28,11 @@ export interface CustomerDecisionParty {
 //   3. `inactive_owner` — o valor digitado está preso num cadastro DESATIVADO.
 //      O resolve do servidor só enxerga cliente ativo, mas os UNIQUEs do banco
 //      enxergam todos: o operador via "já é de outro cadastro", não achava esse
-//      cadastro na busca e a venda parava. Aqui ele tem nome e uma saída.
+//      cadastro na busca e a venda parava. Aqui ele tem nome e uma saída — e
+//      vale INCLUSIVE sem ninguém na comanda, que é o caso mais comum dele (a
+//      venda anônima com o e-mail da nota). Ali a recusa chega com um lado só,
+//      caía no formato de lista, e na lista "Atender este" nasce desabilitado
+//      para dono desativado: nome à vista e nenhum botão que resolvesse.
 //
 //   4. `candidate_list` — dois ou mais intrusos, por campos diferentes. Não há
 //      UM campo culpado para nomear, e antes disso a recusa caía num toast que
@@ -56,13 +60,52 @@ export interface CustomerDecision {
   other: CustomerDecisionParty | null;
   /** Todos os lados, como o servidor mandou — a lista de `candidate_list`. */
   candidates?: ServerConflictCandidate[];
+  /**
+   * O valor em briga veio do COMPROVANTE (e-mail da nota / CPF na nota), não do
+   * painel do cliente.
+   *
+   * Muda a saída, não a briga. No painel o valor é identidade e descartá-lo
+   * significa voltar ao do cadastro; no comprovante ele é o destino da nota que
+   * o cliente pediu — e a saída certa é parar de tentar SALVAR sem tirar o valor
+   * do campo.
+   */
+  fromReceipt?: boolean;
 }
 
 /** Um botão a mais no painel, quando o caso pede. */
 export interface CustomerDecisionAction {
   label: string;
   icon: string;
+  /**
+   * A SEGUNDA palavra, quando o botão é destrutivo. Vazia quando não é.
+   *
+   * Liberar apaga o contato do cadastro desativado e não tem desfazer: a
+   * fricção mora aqui, no ato, e não num passo posterior. O que a frase pode
+   * prometer — que dá para reconstruir — é o rastro que o servidor grava antes
+   * de apagar (`ContactRelease`).
+   */
+  prompt?: string;
 }
+
+/**
+ * ONDE, na tela, mora o valor que brigou.
+ *
+ * O servidor acusa o campo no dialeto dele (`customer_email`), e a tela tem
+ * DOIS e-mails e DOIS documentos: o do painel do cliente, que é identidade, e o
+ * do comprovante, que é destino da nota. A recusa não distingue — quem sabe de
+ * qual dos dois veio é a tela, pela mesma precedência do servidor (o campo do
+ * painel primeiro; o do comprovante quando o painel está vazio).
+ *
+ * Sem isto o painel mostrava o telefone numa briga de e-mail, e "Manter Ana"
+ * limpava o campo errado: o operador tentava de novo e batia na mesma parede.
+ */
+export type ConflictTypedField =
+  | "customer_phone"
+  | "customer_email"
+  | "customer_tax_id"
+  | "receipt_email"
+  | "invoice_tax_id"
+  | "";
 
 export interface CustomerDecisionCopy {
   title: string;
@@ -75,9 +118,31 @@ export interface CustomerDecisionCopy {
   cancelIcon: string;
   /** A TERCEIRA saída: os dois cadastros são a MESMA pessoa. */
   merge: CustomerDecisionAction | null;
-  /** A saída que o merge não dá: o dono é um cadastro desativado. */
+  /**
+   * A saída que o merge não dá: o dono é um cadastro DESATIVADO.
+   *
+   * É o botão que a tela renderiza para liberar — no painel do `inactive_owner`
+   * e, na lista, em cada linha de dono desativado. Não se repete no
+   * `confirmLabel`: dois botões com o mesmo rótulo fazem o próximo a mexer achar
+   * que existem duas ações.
+   */
   release: CustomerDecisionAction | null;
+  /**
+   * Confirmar exige uma SEGUNDA palavra — só onde o gesto troca identidade.
+   *
+   * ⚠️ O atrito é assimétrico de propósito, e o lado sem atrito é o que segura o
+   * lado com atrito de pé. "Não, é só a nota" é o caso mais frequente do balcão
+   * (a nota no CPF do marido) e sai num toque, sem reconfirmação: se a fricção
+   * caísse no caminho comum, o operador aprenderia a clicar no reflexo e a
+   * proteção viraria decoração.
+   */
+  requiresConfirmation: boolean;
+  /** A pergunta da reconfirmação. Vazia quando não há atrito. */
+  confirmPrompt: string;
 }
+
+/** Nenhum atrito no confirmar — o padrão de quase toda decisão. */
+const SEM_ATRITO = { requiresConfirmation: false, confirmPrompt: "" };
 
 /** Como o campo se chama no balcão. `tax_id` é fiscal e nunca vira correção. */
 const FIELD_LABEL: Record<CustomerDecisionField, string> = {
@@ -97,11 +162,71 @@ export function decisionFieldLabel(field: CustomerDecisionField | ""): string {
   return FIELD_LABEL[field as CustomerDecisionField] || "contato";
 }
 
+/** O campo do dialeto de erro traduzido para o da tela. */
+export function decisionFieldFromServer(field?: string | null): CustomerDecisionField | "" {
+  return FIELD_FROM_SERVER[String(field || "")] || "";
+}
+
+/**
+ * QUAL campo da tela brigou, e com que valor.
+ *
+ * A precedência é a MESMA do servidor (`fill_email = customer_email or
+ * receipt_email`): o campo do painel do cliente ganha, e o do comprovante só
+ * entra quando o painel está vazio. Se as duas réguas divergirem, o painel
+ * nomeia um valor e a ação limpa outro — que é exatamente o beco que isto fecha.
+ */
+export function conflictTypedSource(input: {
+  field: CustomerDecisionField | "";
+  customerPhone?: string;
+  customerEmail?: string;
+  customerTaxId?: string;
+  receiptEmail?: string;
+  invoiceTaxId?: string;
+}): { typedField: ConflictTypedField; typed: string } {
+  const trimmed = (value?: string) => (value || "").trim();
+  const pick = (
+    panelField: ConflictTypedField,
+    panel: string,
+    receiptField: ConflictTypedField,
+    receipt: string,
+  ): { typedField: ConflictTypedField; typed: string } => {
+    if (panel) return { typedField: panelField, typed: panel };
+    if (receipt) return { typedField: receiptField, typed: receipt };
+    return { typedField: panelField, typed: "" };
+  };
+
+  const phone = trimmed(input.customerPhone);
+  const email = trimmed(input.customerEmail);
+  const taxId = trimmed(input.customerTaxId);
+
+  if (input.field === "phone") return { typedField: "customer_phone", typed: phone };
+  if (input.field === "email") return pick("customer_email", email, "receipt_email", trimmed(input.receiptEmail));
+  if (input.field === "tax_id") return pick("customer_tax_id", taxId, "invoice_tax_id", trimmed(input.invoiceTaxId));
+  // Sem campo culpado não há o que nomear: sobra a ordem em que o balcão digita.
+  return { typedField: "", typed: phone || email || taxId };
+}
+
 /** "É a mesma pessoa" — a saída que resolve o cadastro duplicado de vez. */
 const MERGE_ACTION: CustomerDecisionAction = {
   label: "É a mesma pessoa — unificar cadastros",
   icon: "lucide:combine",
 };
+
+/** "Liberar" — a saída do contato preso num cadastro desativado.
+ *
+ *  Opt-in e com segunda palavra: o gesto APAGA o contato do cadastro
+ *  desativado, e apagar não tem desfazer. O que a promessa de reconstrução
+ *  sustenta é o rastro gravado no servidor antes do apagamento — o valor, o
+ *  tipo, de qual ficha saiu, quem liberou e quando. */
+function releaseAction(label: string, ownerName: string): CustomerDecisionAction {
+  const de = ownerName ? ` de ${ownerName}` : " desativado";
+  return {
+    label: `Liberar o ${label}`,
+    icon: "lucide:unlock",
+    prompt: `Liberar apaga este ${label} do cadastro${de}. `
+      + "Fica registrado quem liberou e o que foi solto, então dá para refazer o cadastro depois. Confirmar?",
+  };
+}
 
 /** Primeiro nome — no balcão ninguém fala o nome inteiro. */
 function firstName(name: string): string {
@@ -118,16 +243,52 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   const other = decision.other;
 
   const currentName = current?.name?.trim() || "o cliente da comanda";
-  const keepLabel = `Manter ${firstName(currentName) || currentName}`;
+  // Sem ninguém na comanda não há quem "manter": a venda anônima produzia
+  // "Manter o" — o primeiro nome de "o cliente da comanda". O que o operador
+  // faz ali é descartar o que digitou.
+  const keepLabel = current
+    ? `Manter ${firstName(currentName) || currentName}`
+    : `Descartar este ${label}`;
 
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
+    const ownerFirst = firstName(ownerName) || ownerName;
+
+    // ⚠️ CPF que já é de OUTRO cadastro não é probabilidade, é CERTEZA: o
+    // servidor sabe de quem é o documento, e o dono está nomeado ali. Então a
+    // pergunta certa não é "atender o outro?" (uma escolha de mecanismo) — é a
+    // única pergunta que o balcão realmente precisa responder: DE QUEM É ESTA
+    // VENDA. Trocar o dono é o gesto grande e leva reconfirmação; a resposta
+    // frequente — "é só a nota" — é um toque e não muda cadastro nenhum.
+    //
+    // PDV é superfície de OPERADOR, e por isso o dono pode ser nomeado aqui. Na
+    // loja não poderia (#553): lá dizer "este CPF é do João" contaria a um
+    // estranho de quem é um documento.
+    if (decision.field === "tax_id") {
+      return {
+        title: `Este CPF é de outro cadastro`,
+        body: `${decision.typed || "O CPF informado"} é de ${ownerName}. `
+          + (current
+            ? `Na comanda está ${currentName}.`
+            : "Ninguém está identificado na comanda."),
+        confirmLabel: `Sim, a venda é de ${ownerFirst}`,
+        confirmIcon: "lucide:user-round-check",
+        // A saída do caso comum: a nota sai no CPF pedido e o cadastro não muda.
+        cancelLabel: decision.fromReceipt ? "Não, é só a nota" : keepLabel,
+        cancelIcon: "lucide:undo-2",
+        merge: MERGE_ACTION,
+        release: null,
+        requiresConfirmation: true,
+        confirmPrompt: `Passar esta venda para o cadastro de ${ownerFirst}?`,
+      };
+    }
+
     return {
       title: `Este ${label} já é de outro cadastro`,
       body: decision.typed
         ? `${decision.typed} é de ${ownerName}. Na comanda está ${currentName}.`
         : `O ${label} digitado é de ${ownerName}. Na comanda está ${currentName}.`,
-      confirmLabel: `Atender ${firstName(ownerName) || ownerName}`,
+      confirmLabel: `Atender ${ownerFirst}`,
       confirmIcon: "lucide:user-round-check",
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
@@ -135,28 +296,39 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       // o `MergeService` recusa unificar com qualquer um deles desativado.
       merge: MERGE_ACTION,
       release: null,
+      ...SEM_ATRITO,
     };
   }
 
   if (decision.kind === "inactive_owner") {
     // ⚠️ Aqui NÃO se oferece "atender o outro": o cadastro está desativado, e
     // nem aparece na busca. Nem "unificar": o Core recusa merge com um lado
-    // inativo. A saída é soltar o contato do cadastro morto.
+    // inativo. A saída é soltar o contato do cadastro morto — e ela é o botão
+    // `release`, uma vez só. Antes ela vinha DUAS: no `confirmLabel` e no
+    // `release`, e só o primeiro era renderizado.
     const ownerName = other?.name?.trim() || "um cadastro desativado";
     return {
       title: `Este ${label} está preso num cadastro desativado`,
       body: `${decision.typed || `O ${label} digitado`} está em ${ownerName}, que não está mais ativo. `
-        + `Liberar solta o ${label} desse cadastro e a venda segue com ${currentName}.`,
-      confirmLabel: `Liberar o ${label}`,
-      confirmIcon: "lucide:unlock",
+        + (current
+          ? `Liberar solta o ${label} desse cadastro e a venda segue com ${currentName}.`
+          : `Liberar solta o ${label} desse cadastro e a venda segue.`),
+      confirmLabel: "",
+      confirmIcon: "",
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: { label: `Liberar o ${label}`, icon: "lucide:unlock" },
+      release: releaseAction(label, ownerName),
+      ...SEM_ATRITO,
     };
   }
 
   if (decision.kind === "candidate_list") {
+    // Dono desativado na LISTA: "Atender este" não existe para ele (não aparece
+    // nem na busca), e sem a liberação a linha ficava com um botão desabilitado
+    // e nada mais — o operador via o nome de quem segura o contato e não tinha
+    // um único botão que resolvesse.
+    const hasInactive = (decision.candidates || []).some((row) => !row.is_current && row.owner_inactive);
     return {
       title: "Os dados apontam para cadastros diferentes",
       body: "Telefone, CPF/CNPJ e e-mail digitados são de pessoas diferentes. "
@@ -167,7 +339,8 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: null,
+      release: decision.field && hasInactive ? releaseAction(label, "") : null,
+      ...SEM_ATRITO,
     };
   }
 
@@ -184,6 +357,7 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
     cancelIcon: "lucide:undo-2",
     merge: null,
     release: null,
+    ...SEM_ATRITO,
   };
 }
 
@@ -200,14 +374,18 @@ export interface ServerConflictCandidate {
   owner_inactive?: boolean;
 }
 
-function partyValue(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): string {
+/** O valor do campo em disputa NESTE candidato — o que a liberação solta. */
+export function candidateValue(
+  candidate: ServerConflictCandidate,
+  field: CustomerDecisionField | "",
+): string {
   if (field === "email") return candidate.email || "";
   if (field === "tax_id") return candidate.tax_id || "";
   return candidate.phone || "";
 }
 
 function party(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): CustomerDecisionParty {
-  return { ref: candidate.ref, name: candidate.name, value: partyValue(candidate, field) };
+  return { ref: candidate.ref, name: candidate.name, value: candidateValue(candidate, field) };
 }
 
 /** Como o candidato se apresenta na LISTA: o que dele bateu com o digitado. */
@@ -227,13 +405,36 @@ export function conflictDecision(input: {
   field?: string | null;
   candidates?: ServerConflictCandidate[] | null;
   typed?: string;
+  /** De ONDE veio o valor recusado — `conflictTypedSource` já sabe dizer.
+   *
+   *  Só o comprovante muda a saída: ali o valor é destino da nota, e a resposta
+   *  frequente ("é só a nota") tem de sair num toque, sem tirar nada do campo. */
+  typedField?: ConflictTypedField;
 }): CustomerDecision | null {
   const candidates = input.candidates || [];
   if (!candidates.length) return null;
-  const field = FIELD_FROM_SERVER[String(input.field || "")] || "";
+  const field = decisionFieldFromServer(input.field);
+  const fromReceipt = input.typedField === "receipt_email" || input.typedField === "invoice_tax_id";
   const current = candidates.find((row) => row.is_current) || null;
   const intruders = candidates.filter((row) => !row.is_current);
   const other = intruders[0] || null;
+
+  // Dono DESATIVADO tem copy e saída próprias: atender não dá (não aparece na
+  // busca) e unificar o Core recusa. Vale INCLUSIVE sem ninguém na comanda — a
+  // venda anônima é o caso mais comum dele, e ali a recusa vinha com um lado só
+  // e caía na lista, onde "Atender este" nasce desabilitado. O operador via o
+  // nome de quem segura o contato e nenhum botão que resolvesse.
+  if (field && other?.owner_inactive) {
+    return {
+      kind: "inactive_owner",
+      field,
+      typed: (input.typed || candidateValue(other, field) || "").trim(),
+      current: current ? party(current, field) : null,
+      other: party(other, field),
+      candidates,
+      fromReceipt,
+    };
+  }
 
   // Sem UM campo culpado (dois ou mais intrusos, por campos diferentes) a tela
   // renderiza a LISTA: o servidor já mandou os lados, e antes disso tudo isso
@@ -246,18 +447,18 @@ export function conflictDecision(input: {
       current: current ? party(current, field) : null,
       other: other ? party(other, field) : null,
       candidates,
+      fromReceipt,
     };
   }
 
   return {
-    // Dono DESATIVADO tem copy e saída próprias: atender não dá (não aparece na
-    // busca) e unificar o Core recusa.
-    kind: other.owner_inactive ? "inactive_owner" : "contact_conflict",
+    kind: "contact_conflict",
     field,
-    typed: (input.typed || partyValue(other, field) || "").trim(),
+    typed: (input.typed || candidateValue(other, field) || "").trim(),
     current: party(current, field),
     other: party(other, field),
     candidates,
+    fromReceipt,
   };
 }
 

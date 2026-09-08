@@ -626,6 +626,11 @@ export interface POSIntentCartState {
    *  pergunta, e a resposta viaja aqui. */
   saveReceiptContact: boolean;
   saveReceiptTaxId: boolean;
+  /** A SEGUNDA PALAVRA sobre o CPF — a reconfirmação que a tela cobra quando a
+   *  ordem SOBRESCREVE o documento que o cadastro já tem. Viaja separada da
+   *  ordem porque o servidor a exige por conta própria: trava que mora só na
+   *  tela não é trava. */
+  saveReceiptTaxIdConfirmed: boolean;
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;

@@ -107,7 +107,11 @@ from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
 from shopman.shop.services import pos as pos_tabs_service
-from shopman.shop.services.pos import PosCustomerConflict, PosRecentSaleNotFound
+from shopman.shop.services.pos import (
+    PosCustomerConflict,
+    PosRecentSaleNotFound,
+    PosTaxIdOverwriteError,
+)
 from shopman.shop.services.pos_intent import PosIntentError
 
 from .permissions import HasBackstagePermission, IsBackstageOperator, IsTrustedStation
@@ -3458,6 +3462,26 @@ def _pos_customer_conflict_response(exc: PosCustomerConflict) -> Response:
     )
 
 
+def _pos_tax_id_overwrite_response(exc: PosTaxIdOverwriteError) -> Response:
+    """Sobrescrever o CPF do cadastro sem a segunda palavra — recusa, no dialeto.
+
+    ⚠️ SEMPRE antes do `except ValueError`. Ele é a superclasse, e o genérico do
+    resolve rotula tudo como `customer_conflict` — a tela abriria o diálogo de
+    conflito de cadastros para uma recusa que não é conflito nenhum: aqui não há
+    dois donos, há um cadastro cujo documento não troca sem confirmação.
+    """
+    detail = str(exc)
+    return Response(
+        {
+            "detail": detail,
+            "field": exc.field,
+            "errors": {exc.field: [detail]},
+            "error": {"code": "tax_id_overwrite_unconfirmed", "field": exc.field},
+        },
+        status=422,
+    )
+
+
 def _pos_customer_integrity_response(exc: Exception, *, action: str) -> Response:
     """O balcão NUNCA pode ver um 500 mudo.
 
@@ -3513,6 +3537,9 @@ class POSCustomerResolveView(APIView):
             )
         except PosCustomerConflict as exc:
             return _pos_customer_conflict_response(exc)
+        except PosTaxIdOverwriteError as exc:
+            # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
+            return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
             return Response(
                 {"detail": str(exc) or "Cadastro conflitante.", "error": {"code": "customer_conflict"}},
@@ -3601,6 +3628,11 @@ class POSCustomerContactReleaseView(APIView):
     e é justamente o cadastro desativado que segura o número no UNIQUE global.
     Sem isto o operador lia "já é de outro cadastro", não achava esse cadastro
     na busca (ela só enxerga ativo) e a venda parava.
+
+    ⚠️ ``confirmed`` é a RECONFIRMAÇÃO, e sem ela o service recusa. Liberar
+    apaga o ``ContactPoint`` e não tem desfazer: a fricção mora no ato
+    destrutivo. O que a recusa promete — que dá para reconstruir — é o
+    ``ContactRelease`` que o service grava antes de apagar.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -3613,6 +3645,10 @@ class POSCustomerContactReleaseView(APIView):
                 field=str(body.get("field") or "").strip(),
                 value=str(body.get("value") or "").strip(),
                 operator_username=_username(request),
+                # `as_bool` e não `bool()`: um "confirmed" que chega torto (uma
+                # string qualquer, um 2) não pode virar "sim" por coerção. Aqui
+                # a coerção autorizaria um apagamento.
+                confirmed=as_bool(body, "confirmed", default=False),
             )
         except ValueError as exc:
             return Response(
@@ -3652,6 +3688,9 @@ class POSReviewSaleView(APIView):
             return _pos_customer_conflict_response(exc)
         except IntegrityError as exc:
             return _pos_customer_integrity_response(exc, action="review_sale")
+        except PosTaxIdOverwriteError as exc:
+            # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
+            return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=422)
         return Response({"ok": True, "review": _pos_sale_review_payload(review)})
@@ -3688,6 +3727,9 @@ class POSCloseSaleView(APIView):
             return _pos_customer_conflict_response(exc)
         except IntegrityError as exc:
             return _pos_customer_integrity_response(exc, action="close_sale")
+        except PosTaxIdOverwriteError as exc:
+            # ⚠️ ANTES do `except ValueError` — ver `_pos_tax_id_overwrite_response`.
+            return _pos_tax_id_overwrite_response(exc)
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)

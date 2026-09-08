@@ -17,6 +17,7 @@ from .campaign import (
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
 from .concierge import Conversation, ConversationMessage
+from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
@@ -45,6 +46,8 @@ __all__ = [
     "ProductAffinity",
     "Conversation",
     "ConversationMessage",
+    "ContactRelease",
+    "ReleasedContactKind",
     "Channel",
     "Promotion",
     "Coupon",

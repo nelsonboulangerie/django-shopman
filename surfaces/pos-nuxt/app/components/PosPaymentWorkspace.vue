@@ -54,6 +54,7 @@ import { managerAuthReason } from "../../../operator-kit/app/presentation/manage
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 import { isValidTaxId } from "~/presentation/taxId";
 import {
+  receiptContactArmed,
   receiptContactChecked,
   receiptSaveOffers,
   receiptSaveSummary,
@@ -77,6 +78,7 @@ const props = defineProps<{
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
+  customerReleaseBusy?: boolean;
   review: POSSaleReviewProjection | null;
   discountTypes: POSCheckoutOptionProjection[];
   discountReasons: POSCheckoutOptionProjection[];
@@ -153,6 +155,8 @@ const props = defineProps<{
    *  operador ainda não tocou, e vale o padrão da oferta. */
   saveReceiptContact: boolean | null;
   saveReceiptTaxId: boolean | null;
+  /** A SEGUNDA palavra sobre o CPF divergente — sem ela o intent não grava. */
+  confirmReceiptTaxId?: boolean;
   loading: boolean;
   lookupBusy: boolean;
   /** A última revisão FALHOU (rede). Sem isto, a tela ficava com o botão
@@ -201,6 +205,7 @@ const emit = defineEmits<{
   "update:receiptEmail": [string];
   "update:saveReceiptContact": [boolean | null];
   "update:saveReceiptTaxId": [boolean | null];
+  "update:confirmReceiptTaxId": [boolean];
   back: [];
   submit: [];
   lookupCustomer: [];
@@ -208,6 +213,8 @@ const emit = defineEmits<{
   decisionConfirm: [];
   decisionCancel: [];
   decisionMerge: [];
+  /** LIBERAR o contato preso num cadastro desativado. */
+  decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
   clearCustomer: [];
   search: [string];
@@ -441,10 +448,18 @@ const saveReceiptTaxIdChecked = computed(() =>
 );
 // A segunda metade da promessa: quem chega ao fechamento pelo teclado nunca viu
 // o popover, e ninguém deve descobrir depois que um cadastro mudou.
+// ⚠️ ARMADO, não marcado. O CPF divergente só entra no resumo depois da
+// segunda palavra: anunciar "a identidade fiscal vai mudar" sobre uma ordem que
+// o intent NÃO vai mandar seria a confirmação virando mentira ao contrário.
 const receiptSaveLines = computed(() =>
   receiptSaveSummary([
     { offer: receiptEmailOffer.value, checked: saveReceiptEmailChecked.value },
-    { offer: receiptTaxIdOffer.value, checked: saveReceiptTaxIdChecked.value },
+    {
+      offer: receiptTaxIdOffer.value,
+      checked: receiptContactArmed(
+        receiptTaxIdOffer.value, props.saveReceiptTaxId, Boolean(props.confirmReceiptTaxId),
+      ),
+    },
   ]),
 );
 
@@ -1596,9 +1611,11 @@ defineExpose({
                 <PosReceiptSaveOffer
                   :offer="receiptTaxIdOffer"
                   :checked="saveReceiptTaxIdChecked"
+                  :confirmed="confirmReceiptTaxId"
                   side="left"
                   :quiet="customerSheetOpen"
                   @update:checked="$emit('update:saveReceiptTaxId', $event)"
+                  @update:confirmed="$emit('update:confirmReceiptTaxId', $event)"
                 >
                   <UiInput
                     :model-value="invoiceTaxIdMasked"
@@ -1780,6 +1797,7 @@ defineExpose({
     :resolved-new="customerResolvedNew"
     :customer-decision="customerDecision"
     :customer-merge-busy="customerMergeBusy"
+    :customer-release-busy="customerReleaseBusy"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
@@ -1799,6 +1817,7 @@ defineExpose({
     @decision-confirm="$emit('decisionConfirm')"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"
+    @decision-release="$emit('decisionRelease', $event)"
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"

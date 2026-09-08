@@ -21,6 +21,7 @@ from shopman.backstage.admin.consumption import (  # noqa: F401
     ConsumptionRoleAdmin,
     ProductConsumptionTagAdmin,
 )
+from shopman.backstage.admin.contact_releases import ContactReleaseAdmin  # noqa: F401
 from shopman.backstage.admin.curation import hide_curated_screens  # noqa: F401
 from shopman.backstage.admin.episodes import (  # noqa: F401
     OperationEpisodeAdmin,

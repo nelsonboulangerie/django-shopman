@@ -132,6 +132,11 @@ def get_sidebar_navigation(request):
             # desfazer da unificação vive nesta tela, e o grupo de Auditoria é
             # trilha que só se confere.
             _model_item("Unificações de cadastro", "merge", "customer_merge.MergeAudit"),
+            # A vizinha da unificação, e pelo mesmo motivo: as duas são o rastro
+            # de um gesto destrutivo que o balcão faz para destravar uma venda.
+            # A tela do PDV promete "fica registrado, dá para refazer depois" —
+            # é AQUI que essa promessa vira alcançável.
+            _model_item("Contatos liberados", "lock_open", "shop.ContactRelease"),
             _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
             # Concierge de WhatsApp: a transcrição de cada conversa e a volta ao bot.
             _model_item("Conversas do WhatsApp", "chat", "shop.Conversation"),

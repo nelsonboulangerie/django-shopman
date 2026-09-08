@@ -3403,6 +3403,20 @@ class PosCustomerConflict(ValueError):
         self.candidates = candidates or []
 
 
+class PosTaxIdOverwriteError(ValueError):
+    """Trocar o CPF que o cadastro JÁ TEM pede a SEGUNDA PALAVRA — e a frase diz qual.
+
+    A gêmea de servidor da fricção que a tela cobra em ``receiptContactArmed``.
+    Trava que mora só na tela não é trava: qualquer outro cliente da API — um
+    tablet com JS velho, um script, a próxima superfície — mandaria
+    ``save_receipt_tax_id`` sozinho e a identidade fiscal do cadastro trocaria
+    calada. Mesma forma da liberação de contato (``PosContactReleaseError``):
+    subclasse de ``ValueError``, frase humana, 422 nas portas do PDV.
+    """
+
+    field = "customer_tax_id"
+
+
 def resolve_or_create_customer(
     *,
     ref: str = "",
@@ -3473,6 +3487,11 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # informado.
     save_receipt_contact = bool(payload.get("save_receipt_contact"))
     save_receipt_tax_id = bool(payload.get("save_receipt_tax_id"))
+    # A SEGUNDA PALAVRA sobre o CPF. Só o caso DIVERGENTE a exige (ver
+    # ``_guard_receipt_tax_id_overwrite``): preencher lacuna segue bastando a
+    # ordem simples, e cobrar atrito no caminho comum do balcão só ensinaria o
+    # operador a confirmar no reflexo.
+    save_receipt_tax_id_confirmed = bool(payload.get("save_receipt_tax_id_confirmed"))
     receipt_email = str(payload.get("receipt_email") or "").strip().lower()
     receipt_tax_id = _digits(str(payload.get("fiscal_tax_id") or "").strip())
     fill_tax_id = tax_id or (receipt_tax_id if save_receipt_tax_id else "")
@@ -3551,6 +3570,16 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         # travada e o cliente na frente. Aqui o dono é olhado ANTES, e a recusa
         # sai RICA (quem é o dono, por qual campo, e as saídas de um toque).
         _guard_receipt_contact_owner(customer, email=fill_email, tax_id=fill_tax_id)
+        # DEPOIS do dono, e não antes: quando o CPF da nota já é de OUTRO
+        # cadastro, a recusa rica (com os dois nomes e as saídas de um toque) é
+        # a que serve ao balcão. Este guarda é para o outro caso — o documento
+        # está livre, mas o cadastro em jogo já tem um DIFERENTE.
+        _guard_receipt_tax_id_overwrite(
+            customer,
+            tax_id=fill_tax_id,
+            overwriting=correct_tax_id,
+            confirmed=save_receipt_tax_id_confirmed,
+        )
         if customer is None:
             first_name, last_name = _split_name(name)
             fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
@@ -3672,6 +3701,38 @@ def _guard_receipt_contact_owner(customer, *, email: str, tax_id: str) -> None:
         owner = _identifier_owner("cpf", tax_id)
         if owner is not None and (customer is None or owner.pk != customer.pk):
             raise _pos_owner_conflict(customer, owner, "cpf")
+
+
+def _guard_receipt_tax_id_overwrite(
+    customer, *, tax_id: str, overwriting: bool, confirmed: bool,
+) -> None:
+    """SOBRESCREVER o documento do cadastro exige a reconfirmação. Preencher, não.
+
+    A assimetria é o ponto. Cadastro sem CPF aprende o da nota com a ordem
+    simples, como sempre — é o caso frequente do balcão, e atrito no caminho
+    comum vira clique de reflexo. O que para aqui é o cadastro que diz 111
+    recebendo 222: ali não se corrige um contato, troca-se o documento pelo qual
+    a Receita conhece aquela pessoa. CPF não muda na vida real, e a hipótese
+    provável não é "o CPF de Ana mudou" — é "esta nota é de outra pessoa".
+
+    A tela já cobra a segunda palavra antes de deixar a ordem viajar. Esta é a
+    gêmea de servidor, na mesma forma que ``release_pos_customer_contact`` já
+    usa: sem ``confirmed``, a ordem não acontece — e o cadastro fica intacto.
+
+    ⚠️ Recusar aqui NÃO tira a nota de ninguém: o ``fiscal_tax_id`` da venda é
+    fato da venda e continua indo para o CPF informado. O que se recusa é
+    gravar por cima do cadastro.
+    """
+    if not overwriting or confirmed:
+        return
+    current = _digits(str(getattr(customer, "document", "") or ""))
+    if not current or current == tax_id:
+        return
+    raise PosTaxIdOverwriteError(
+        f"Trocar o CPF do cadastro de {customer.name} ({current} sai, {tax_id} entra) "
+        "precisa de confirmação. Sem ela o cadastro fica como está — a nota vai "
+        "para o CPF informado de qualquer jeito.",
+    )
 
 
 def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):
@@ -4156,8 +4217,50 @@ _RELEASABLE_CONTACT: dict[str, tuple[str, str]] = {
 }
 
 
-def release_pos_customer_contact(*, field: str, value: str, operator_username: str) -> dict:
-    """LIBERA um contato preso num cadastro DESATIVADO.
+def _merge_audit_at_risk(released_pk: str, bucket: str) -> str:
+    """A unificação cujo DESFAZER esta liberação degrada — ou vazio.
+
+    O ``MergeService.undo`` devolve os registros migrados pelos PKs guardados no
+    snapshot, e um PK apagado não volta: a unificação desfeita nasce incompleta,
+    em silêncio. Aqui se olha, ANTES de apagar, se algum ``MergeAudit`` ainda
+    dentro da janela carrega este PK — e o vínculo fica gravado no rastro para
+    que a tela de desfazer avise quem for desfazer.
+
+    ⚠️ A varredura é em Python e não no banco de propósito: o ``snapshot`` é
+    JSON e a busca por elemento de lista dentro dele não é portável entre
+    backends. O conjunto é minúsculo — só as unificações das últimas 24h, que
+    são as únicas em que o desfazer ainda existe.
+    """
+    if not released_pk:
+        return ""
+    try:
+        from datetime import timedelta
+
+        from shopman.guestman.contrib.merge.models import MergeAudit, MergeStatus
+
+        janela = timezone.now() - timedelta(hours=MergeAudit.UNDO_WINDOW_HOURS)
+        recentes = MergeAudit.objects.filter(status=MergeStatus.COMPLETED, merged_at__gte=janela)
+        for audit in recentes:
+            if released_pk in [str(pk) for pk in (audit.snapshot.get(bucket) or [])]:
+                return str(audit.pk)
+    # Falhar aqui não impede a liberação, mas CUSTA a ligação com a unificação —
+    # e sem ela o desfazer volta a emagrecer calado, que é justamente o buraco
+    # que este rastro nasceu para tapar. Por isso WARNING e não debug: alguém
+    # precisa saber que o elo se perdeu. (A razão mora ACIMA do `except`: o
+    # test_exception_hygiene_layers exige o `logger.` a até ~4 linhas dele.)
+    except Exception:
+        logger.warning(
+            "pos_contact_release_merge_scan_failed pk=%s — rastro fica sem o elo da unificação",
+            released_pk,
+            exc_info=True,
+        )
+    return ""
+
+
+def release_pos_customer_contact(
+    *, field: str, value: str, operator_username: str, confirmed: bool = False,
+) -> dict:
+    """LIBERA um contato preso num cadastro DESATIVADO — deixando RASTRO.
 
     A saída do beco que o merge não resolve: o ``MergeService`` recusa unificar
     quando qualquer um dos lados está inativo, e é justamente o cadastro
@@ -4168,8 +4271,20 @@ def release_pos_customer_contact(*, field: str, value: str, operator_username: s
     ⚠️ Só sobre cadastro DESATIVADO. Se o dono está ativo, o caminho é atender
     esse cliente ou unificar — liberar ali seria roubar o contato de alguém em
     silêncio, exatamente o que este PR existe para impedir.
+
+    ⚠️ ``confirmed`` é a RECONFIRMAÇÃO, e ela é obrigatória. O gesto apaga um
+    ``ContactPoint`` (ou um ``CustomerIdentifier``) e não tem desfazer — a
+    fricção mora aqui, no ato destrutivo, e não no passo seguinte. É a gêmea da
+    recusa que a tela mostra: sem a segunda palavra do operador, nada acontece.
+
+    E antes de apagar se grava o ``ContactRelease``: o valor, o tipo, a ficha de
+    origem, o PK que some, quem liberou e quando. É por isso que a
+    reconfirmação pode prometer que dá para reconstruir — e é por isso que a
+    tela de desfazer unificação consegue avisar quando um contato dela foi solto.
     """
     from shopman.guestman.models import ContactPoint, Customer
+
+    from shopman.shop.models import ContactRelease, ReleasedContactKind
 
     is_tax_id = field == "customer_tax_id"
     contact_type, cache_field = _RELEASABLE_CONTACT.get(field, ("", ""))
@@ -4193,28 +4308,68 @@ def release_pos_customer_contact(*, field: str, value: str, operator_username: s
             f"Este contato é de {owner.name}, um cadastro ativo. "
             "Atenda esse cliente ou unifique os cadastros.",
         )
+    if not confirmed:
+        raise PosContactReleaseError(
+            f"Liberar apaga este contato do cadastro de {owner.name}. Confirme para continuar.",
+        )
 
     with transaction.atomic():
         if is_tax_id:
             from shopman.guestman.contrib.identifiers.models import CustomerIdentifier
 
-            CustomerIdentifier.objects.filter(
-                identifier_type="cpf", identifier_value=value,
-            ).delete()
+            alvo = CustomerIdentifier.objects.filter(identifier_type="cpf", identifier_value=value)
+            # O retrato sai ANTES do delete: depois dele não há de onde tirar.
+            existente = alvo.first()
+            released_pk = str(existente.pk) if existente is not None else ""
+            was_primary = bool(getattr(existente, "is_primary", False))
+            kind = ReleasedContactKind.CPF
+            merge_audit_id = _merge_audit_at_risk(released_pk, "identifiers")
+            alvo.delete()
             Customer.objects.filter(pk=owner.pk, document=value).update(document="")
         else:
-            ContactPoint.objects.filter(type=contact_type, value_normalized=value).delete()
+            alvo = ContactPoint.objects.filter(type=contact_type, value_normalized=value)
+            existente = alvo.first()
+            released_pk = str(existente.pk) if existente is not None else ""
+            was_primary = bool(getattr(existente, "is_primary", False))
+            kind = (
+                ReleasedContactKind.PHONE
+                if contact_type == "phone"
+                else ReleasedContactKind.EMAIL
+            )
+            merge_audit_id = _merge_audit_at_risk(released_pk, "contact_points")
+            alvo.delete()
             # `.update()` e não `.save()`: o save do Customer re-materializa o
             # ContactPoint a partir do cache, e o contato voltaria na hora.
             Customer.objects.filter(pk=owner.pk, **{cache_field: value}).update(**{cache_field: ""})
 
+        rastro = ContactRelease.objects.create(
+            kind=kind,
+            value=value,
+            released_from_ref=owner.ref,
+            released_from_name=owner.name,
+            released_pk=released_pk,
+            was_primary=was_primary,
+            merge_audit_id=merge_audit_id or None,
+            actor=operator_username or "pdv",
+        )
+
     logger.info(
-        "pos_contact_released field=%s owner=%s operator=%s",
+        "pos_contact_released field=%s owner=%s operator=%s rastro=%s merge=%s",
         field,
         owner.ref,
         operator_username,
+        rastro.pk,
+        merge_audit_id or "-",
     )
-    return {"field": field, "released_from": {"ref": owner.ref, "name": owner.name}}
+    return {
+        "field": field,
+        "released_from": {"ref": owner.ref, "name": owner.name},
+        # O comprovante da liberação: é por ele que a trilha se acha depois.
+        "release_id": str(rastro.pk),
+        # A unificação cujo desfazer ficou incompleto, quando há uma. A tela do
+        # balcão não faz nada com isto; quem lê é a auditoria e o gestor.
+        "merge_audit_id": merge_audit_id,
+    }
 
 
 def _merge_undo_deadline(audit_id: str) -> str:
