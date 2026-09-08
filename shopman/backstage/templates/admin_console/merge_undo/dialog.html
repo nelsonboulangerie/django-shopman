@@ -24,6 +24,16 @@
       {% endcomponent %}
     {% endif %}
 
+    {% if liberados %}
+      {# O buraco que o desfazer teria em SILÊNCIO. O `undo` devolve o que
+         migrou pelos PKs do snapshot, e um contato liberado pelo balcão teve o
+         PK apagado: ele não volta. Aqui ele volta pelo menos como frase, com o
+         bastante para refazer à mão. #}
+      {% component "unfold/components/text.html" %}
+        {{ liberados|length }} contato(s) desta unificação foram LIBERADOS no balcão e não voltam pelo desfazer: {{ liberados|join:"; " }}. Recadastre à mão em {{ source_ref }} se ainda for dele.
+      {% endcomponent %}
+    {% endif %}
+
     {% if loyalty_merged %}
       {% component "unfold/components/text.html" %}
         A fidelidade NÃO volta{% if pontos_somados %}: os {{ pontos_somados }} pontos somados ficam em {{ target_ref }}{% else %}: pontos, selos e faixa ficam em {{ target_ref }}{% endif %}. O acerto é manual.

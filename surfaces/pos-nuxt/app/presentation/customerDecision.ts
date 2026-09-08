@@ -60,12 +60,31 @@ export interface CustomerDecision {
   other: CustomerDecisionParty | null;
   /** Todos os lados, como o servidor mandou — a lista de `candidate_list`. */
   candidates?: ServerConflictCandidate[];
+  /**
+   * O valor em briga veio do COMPROVANTE (e-mail da nota / CPF na nota), não do
+   * painel do cliente.
+   *
+   * Muda a saída, não a briga. No painel o valor é identidade e descartá-lo
+   * significa voltar ao do cadastro; no comprovante ele é o destino da nota que
+   * o cliente pediu — e a saída certa é parar de tentar SALVAR sem tirar o valor
+   * do campo.
+   */
+  fromReceipt?: boolean;
 }
 
 /** Um botão a mais no painel, quando o caso pede. */
 export interface CustomerDecisionAction {
   label: string;
   icon: string;
+  /**
+   * A SEGUNDA palavra, quando o botão é destrutivo. Vazia quando não é.
+   *
+   * Liberar apaga o contato do cadastro desativado e não tem desfazer: a
+   * fricção mora aqui, no ato, e não num passo posterior. O que a frase pode
+   * prometer — que dá para reconstruir — é o rastro que o servidor grava antes
+   * de apagar (`ContactRelease`).
+   */
+  prompt?: string;
 }
 
 /**
@@ -108,7 +127,22 @@ export interface CustomerDecisionCopy {
    * que existem duas ações.
    */
   release: CustomerDecisionAction | null;
+  /**
+   * Confirmar exige uma SEGUNDA palavra — só onde o gesto troca identidade.
+   *
+   * ⚠️ O atrito é assimétrico de propósito, e o lado sem atrito é o que segura o
+   * lado com atrito de pé. "Não, é só a nota" é o caso mais frequente do balcão
+   * (a nota no CPF do marido) e sai num toque, sem reconfirmação: se a fricção
+   * caísse no caminho comum, o operador aprenderia a clicar no reflexo e a
+   * proteção viraria decoração.
+   */
+  requiresConfirmation: boolean;
+  /** A pergunta da reconfirmação. Vazia quando não há atrito. */
+  confirmPrompt: string;
 }
+
+/** Nenhum atrito no confirmar — o padrão de quase toda decisão. */
+const SEM_ATRITO = { requiresConfirmation: false, confirmPrompt: "" };
 
 /** Como o campo se chama no balcão. `tax_id` é fiscal e nunca vira correção. */
 const FIELD_LABEL: Record<CustomerDecisionField, string> = {
@@ -178,9 +212,20 @@ const MERGE_ACTION: CustomerDecisionAction = {
   icon: "lucide:combine",
 };
 
-/** "Liberar" — a saída do contato preso num cadastro desativado. */
-function releaseAction(label: string): CustomerDecisionAction {
-  return { label: `Liberar o ${label}`, icon: "lucide:unlock" };
+/** "Liberar" — a saída do contato preso num cadastro desativado.
+ *
+ *  Opt-in e com segunda palavra: o gesto APAGA o contato do cadastro
+ *  desativado, e apagar não tem desfazer. O que a promessa de reconstrução
+ *  sustenta é o rastro gravado no servidor antes do apagamento — o valor, o
+ *  tipo, de qual ficha saiu, quem liberou e quando. */
+function releaseAction(label: string, ownerName: string): CustomerDecisionAction {
+  const de = ownerName ? ` de ${ownerName}` : " desativado";
+  return {
+    label: `Liberar o ${label}`,
+    icon: "lucide:unlock",
+    prompt: `Liberar apaga este ${label} do cadastro${de}. `
+      + "Fica registrado quem liberou e o que foi solto, então dá para refazer o cadastro depois. Confirmar?",
+  };
 }
 
 /** Primeiro nome — no balcão ninguém fala o nome inteiro. */
@@ -207,12 +252,43 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
 
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
+    const ownerFirst = firstName(ownerName) || ownerName;
+
+    // ⚠️ CPF que já é de OUTRO cadastro não é probabilidade, é CERTEZA: o
+    // servidor sabe de quem é o documento, e o dono está nomeado ali. Então a
+    // pergunta certa não é "atender o outro?" (uma escolha de mecanismo) — é a
+    // única pergunta que o balcão realmente precisa responder: DE QUEM É ESTA
+    // VENDA. Trocar o dono é o gesto grande e leva reconfirmação; a resposta
+    // frequente — "é só a nota" — é um toque e não muda cadastro nenhum.
+    //
+    // PDV é superfície de OPERADOR, e por isso o dono pode ser nomeado aqui. Na
+    // loja não poderia (#553): lá dizer "este CPF é do João" contaria a um
+    // estranho de quem é um documento.
+    if (decision.field === "tax_id") {
+      return {
+        title: `Este CPF é de outro cadastro`,
+        body: `${decision.typed || "O CPF informado"} é de ${ownerName}. `
+          + (current
+            ? `Na comanda está ${currentName}.`
+            : "Ninguém está identificado na comanda."),
+        confirmLabel: `Sim, a venda é de ${ownerFirst}`,
+        confirmIcon: "lucide:user-round-check",
+        // A saída do caso comum: a nota sai no CPF pedido e o cadastro não muda.
+        cancelLabel: decision.fromReceipt ? "Não, é só a nota" : keepLabel,
+        cancelIcon: "lucide:undo-2",
+        merge: MERGE_ACTION,
+        release: null,
+        requiresConfirmation: true,
+        confirmPrompt: `Passar esta venda para o cadastro de ${ownerFirst}?`,
+      };
+    }
+
     return {
       title: `Este ${label} já é de outro cadastro`,
       body: decision.typed
         ? `${decision.typed} é de ${ownerName}. Na comanda está ${currentName}.`
         : `O ${label} digitado é de ${ownerName}. Na comanda está ${currentName}.`,
-      confirmLabel: `Atender ${firstName(ownerName) || ownerName}`,
+      confirmLabel: `Atender ${ownerFirst}`,
       confirmIcon: "lucide:user-round-check",
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
@@ -220,6 +296,7 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       // o `MergeService` recusa unificar com qualquer um deles desativado.
       merge: MERGE_ACTION,
       release: null,
+      ...SEM_ATRITO,
     };
   }
 
@@ -241,7 +318,8 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: releaseAction(label),
+      release: releaseAction(label, ownerName),
+      ...SEM_ATRITO,
     };
   }
 
@@ -261,7 +339,8 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: decision.field && hasInactive ? releaseAction(label) : null,
+      release: decision.field && hasInactive ? releaseAction(label, "") : null,
+      ...SEM_ATRITO,
     };
   }
 
@@ -278,6 +357,7 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
     cancelIcon: "lucide:undo-2",
     merge: null,
     release: null,
+    ...SEM_ATRITO,
   };
 }
 
@@ -325,10 +405,16 @@ export function conflictDecision(input: {
   field?: string | null;
   candidates?: ServerConflictCandidate[] | null;
   typed?: string;
+  /** De ONDE veio o valor recusado — `conflictTypedSource` já sabe dizer.
+   *
+   *  Só o comprovante muda a saída: ali o valor é destino da nota, e a resposta
+   *  frequente ("é só a nota") tem de sair num toque, sem tirar nada do campo. */
+  typedField?: ConflictTypedField;
 }): CustomerDecision | null {
   const candidates = input.candidates || [];
   if (!candidates.length) return null;
   const field = decisionFieldFromServer(input.field);
+  const fromReceipt = input.typedField === "receipt_email" || input.typedField === "invoice_tax_id";
   const current = candidates.find((row) => row.is_current) || null;
   const intruders = candidates.filter((row) => !row.is_current);
   const other = intruders[0] || null;
@@ -346,6 +432,7 @@ export function conflictDecision(input: {
       current: current ? party(current, field) : null,
       other: party(other, field),
       candidates,
+      fromReceipt,
     };
   }
 
@@ -360,6 +447,7 @@ export function conflictDecision(input: {
       current: current ? party(current, field) : null,
       other: other ? party(other, field) : null,
       candidates,
+      fromReceipt,
     };
   }
 
@@ -370,6 +458,7 @@ export function conflictDecision(input: {
     current: party(current, field),
     other: party(other, field),
     candidates,
+    fromReceipt,
   };
 }
 

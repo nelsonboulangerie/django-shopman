@@ -894,6 +894,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:receipt-email="cart.receiptEmail"
         v-model:save-receipt-contact="cart.saveReceiptContact"
         v-model:save-receipt-tax-id="cart.saveReceiptTaxId"
+        v-model:confirm-receipt-tax-id="cart.confirmReceiptTaxId"
         :schedule-today="scheduleToday"
         :schedule-available-dates="scheduleAvailableDates"
         :schedule-bottleneck-name="scheduleBottleneckName"

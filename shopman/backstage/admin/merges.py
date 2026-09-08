@@ -153,7 +153,29 @@ class UndoMergeConfirmForm(BaseDialogForm):
             "loyalty_merged": audit.loyalty_merged,
             "pontos_somados": (audit.snapshot.get("loyalty") or {}).get("source_points"),
             "restaurado": ", ".join(restaurado),
+            "liberados": _contatos_liberados(audit),
         }
+
+
+def _contatos_liberados(audit: MergeAudit) -> list[str]:
+    """Os contatos DESTA unificação que o balcão soltou — e que não voltam.
+
+    O ``undo`` devolve o que migrou pelos PKs guardados no snapshot, e um PK
+    apagado não volta. Sem este aviso o desfazer teria um buraco SILENCIOSO: o
+    gestor lê "desfeita", o cadastro volta com um contato a menos, e ninguém
+    sabe qual — porque o registro que dizia já tinha sido apagado.
+
+    A liberação grava um ``ContactRelease`` apontando a unificação afetada; aqui
+    a frase é montada com o que o gestor precisa para reconstruir à mão: o
+    valor, de onde saiu, quem soltou e quando.
+    """
+    from shopman.shop.models import ContactRelease
+
+    return [
+        f"{rastro.get_kind_display()} {rastro.value}, liberado de {rastro.released_from_ref}"
+        f" por {rastro.actor or 'alguém'} em {_quando(rastro.released_at)}"
+        for rastro in ContactRelease.objects.filter(merge_audit_id=audit.pk)
+    ]
 
 
 @admin.register(MergeAudit)

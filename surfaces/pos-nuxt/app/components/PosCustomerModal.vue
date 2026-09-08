@@ -175,6 +175,48 @@ const decisionReleaseValue = computed(
   () => props.customerDecision?.typed || props.customerDecision?.other?.value || "",
 );
 
+/**
+ * A SEGUNDA palavra, e ela é assimétrica de propósito.
+ *
+ * Dois gestos aqui não são reversíveis: passar a venda para outro cadastro
+ * (troca a identidade fiscal, a faixa de preço e as restrições do pedido) e
+ * liberar um contato (apaga o registro do cadastro desativado). Os dois param e
+ * perguntam de novo.
+ *
+ * ⚠️ O que NÃO pergunta de novo é a saída frequente — "Não, é só a nota",
+ * "Manter Ana". Ela é um toque, sempre, e é isso que mantém a reconfirmação com
+ * significado: fricção no caminho comum vira clique de reflexo, e aí a proteção
+ * do caminho raro já não protege nada.
+ *
+ * `null` = ninguém está sendo perguntado. `""` = a liberação do painel (que não
+ * tem valor por linha); qualquer outra string é a linha da lista de candidatos.
+ */
+const confirmingRelease = ref<string | null>(null);
+const confirmingAttend = ref(false);
+
+// A pergunta some quando a recusa muda: uma confirmação pendurada de outra
+// decisão seria a pior espécie de sim — o operador respondendo a pergunta que
+// não está mais na tela.
+watch(() => props.customerDecision, () => {
+  confirmingRelease.value = null;
+  confirmingAttend.value = false;
+});
+
+function askRelease(value: string) {
+  if (!decisionCopy.value?.release?.prompt) {
+    emit("decisionRelease", value);
+    return;
+  }
+  confirmingRelease.value = value;
+}
+function askConfirm() {
+  if (!decisionCopy.value?.requiresConfirmation) {
+    emit("decisionConfirm");
+    return;
+  }
+  confirmingAttend.value = true;
+}
+
 function onSelect(result: POSCustomerSearchResult) {
   emit("selectResult", result);
 }
@@ -355,11 +397,76 @@ const newCustomerNote = computed(() => {
             </p>
             <p class="text-sm">{{ decisionCopy.body }}</p>
 
+            <!-- A SEGUNDA PALAVRA. Aparece no lugar dos botões, não por cima
+                 deles: um overlay sobre um alertdialog empilha duas camadas de
+                 atenção e a de baixo some. Aqui o painel troca de pergunta, e a
+                 saída de um toque ("não") continua a um toque. -->
+            <div
+              v-if="confirmingRelease !== null && decisionCopy.release?.prompt"
+              class="grid gap-2 rounded-md border border-warning bg-background p-3"
+              role="alertdialog"
+              aria-live="assertive"
+            >
+              <p class="text-sm font-medium">{{ decisionCopy.release.prompt }}</p>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <UiButton
+                  type="button"
+                  :disabled="customerReleaseBusy"
+                  class="h-11 justify-center gap-2"
+                  @click="$emit('decisionRelease', confirmingRelease); confirmingRelease = null"
+                >
+                  <Icon
+                    :name="customerReleaseBusy ? 'lucide:loader-circle' : decisionCopy.release.icon"
+                    class="size-4 shrink-0"
+                    :class="customerReleaseBusy ? 'animate-spin' : ''"
+                  />
+                  <span class="min-w-0 truncate">Sim, liberar</span>
+                </UiButton>
+                <UiButton
+                  type="button"
+                  variant="outline"
+                  class="h-11 justify-center gap-2"
+                  @click="confirmingRelease = null"
+                >
+                  <Icon name="lucide:undo-2" class="size-4 shrink-0" />
+                  <span class="min-w-0 truncate">Não liberar</span>
+                </UiButton>
+              </div>
+            </div>
+
+            <div
+              v-else-if="confirmingAttend && decisionCopy.confirmPrompt"
+              class="grid gap-2 rounded-md border border-warning bg-background p-3"
+              role="alertdialog"
+              aria-live="assertive"
+            >
+              <p class="text-sm font-medium">{{ decisionCopy.confirmPrompt }}</p>
+              <div class="grid gap-2 sm:grid-cols-2">
+                <UiButton
+                  type="button"
+                  class="h-11 justify-center gap-2"
+                  @click="confirmingAttend = false; $emit('decisionConfirm')"
+                >
+                  <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
+                  <span class="min-w-0 truncate">Sim, tenho certeza</span>
+                </UiButton>
+                <UiButton
+                  type="button"
+                  variant="outline"
+                  class="h-11 justify-center gap-2"
+                  @click="confirmingAttend = false"
+                >
+                  <Icon name="lucide:undo-2" class="size-4 shrink-0" />
+                  <span class="min-w-0 truncate">Voltar</span>
+                </UiButton>
+              </div>
+            </div>
+
             <!-- Sem UM campo culpado (dois ou mais intrusos, por campos
                  diferentes): a escolha é por LINHA. Antes disto o payload rico
                  já chegava do servidor e virava um toast que sumia. -->
             <ul
-              v-if="customerDecision.kind === 'candidate_list'"
+              v-if="customerDecision.kind === 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               class="grid gap-2"
             >
               <li
@@ -385,7 +492,7 @@ const newCustomerNote = computed(() => {
                   size="sm"
                   :disabled="customerReleaseBusy"
                   class="h-9 shrink-0 gap-2"
-                  @click="$emit('decisionRelease', candidateValue(row, customerDecision.field))"
+                  @click="askRelease(candidateValue(row, customerDecision.field))"
                 >
                   <Icon
                     :name="customerReleaseBusy ? 'lucide:loader-circle' : decisionCopy.release.icon"
@@ -414,11 +521,11 @@ const newCustomerNote = computed(() => {
                  aparece na busca) e unificar o Core recusa. Na lista ela mora
                  na linha; aqui, em cima do par que fica. -->
             <UiButton
-              v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list'"
+              v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list' && confirmingRelease === null && !confirmingAttend"
               type="button"
               :disabled="customerReleaseBusy"
               class="h-11 w-full justify-center gap-2"
-              @click="$emit('decisionRelease', decisionReleaseValue)"
+              @click="askRelease(decisionReleaseValue)"
             >
               <Icon
                 :name="customerReleaseBusy ? 'lucide:loader-circle' : decisionCopy.release.icon"
@@ -428,12 +535,16 @@ const newCustomerNote = computed(() => {
               <span class="min-w-0 truncate">{{ decisionCopy.release.label }}</span>
             </UiButton>
 
-            <div class="grid gap-2" :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''">
+            <div
+              v-if="confirmingRelease === null && !confirmingAttend"
+              class="grid gap-2"
+              :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''"
+            >
               <UiButton
                 v-if="decisionCopy.confirmLabel"
                 type="button"
                 class="h-11 justify-center gap-2"
-                @click="$emit('decisionConfirm')"
+                @click="askConfirm()"
               >
                 <Icon :name="decisionCopy.confirmIcon" class="size-4 shrink-0" />
                 <span class="min-w-0 truncate">{{ decisionCopy.confirmLabel }}</span>
@@ -447,7 +558,7 @@ const newCustomerNote = computed(() => {
             <!-- A TERCEIRA saída, e ela é de linha inteira porque não é o
                  caminho comum: os dois cadastros são a MESMA pessoa. -->
             <UiButton
-              v-if="decisionCopy.merge"
+              v-if="decisionCopy.merge && confirmingRelease === null && !confirmingAttend"
               type="button"
               variant="ghost"
               :disabled="customerMergeBusy"

@@ -196,10 +196,34 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
       .filter((b) => (b.textContent || "").includes("Liberar o WhatsApp"));
     expect(liberar).toHaveLength(1);
 
+    // ⚠️ O PRIMEIRO toque PERGUNTA. Liberar apaga o contato do cadastro
+    // desativado e não tem desfazer: a fricção mora no ato destrutivo, e sem a
+    // segunda palavra nada é emitido.
     liberar[0]!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionRelease")).toBeUndefined();
+    expect(screenText()).toContain("Liberar apaga este WhatsApp");
+    // E a frase promete o que o rastro do servidor sustenta: dá para refazer.
+    expect(screenText()).toContain("dá para refazer o cadastro depois");
+
+    buttonByText("Sim, liberar")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["(43) 99999-0022"]);
     expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+  });
+
+  // A gêmea na tela da recusa do servidor: sem a segunda palavra, nada sai.
+  it("liberar SEM reconfirmar não acontece — 'Não liberar' devolve a escolha", async () => {
+    const wrapper = await mount({ customerDecision: INACTIVE_OWNER });
+
+    buttonByText("Liberar o WhatsApp")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Não liberar")!.click();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.emitted("decisionRelease")).toBeUndefined();
+    // E o painel volta inteiro: o operador não fica sem saída por ter recuado.
+    expect(buttonByText("Liberar o WhatsApp")).toBeTruthy();
   });
 
   it("a liberação em voo não dispara duas vezes", async () => {
@@ -227,6 +251,8 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
     expect(buttonByText("Descartar este e-mail")).toBeTruthy();
 
     buttonByText("Liberar o e-mail")!.click();
+    await wrapper.vm.$nextTick();
+    buttonByText("Sim, liberar")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["bia@example.org"]);
   });
@@ -256,6 +282,10 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
     expect(liberar!.disabled).toBe(false);
 
     liberar!.click();
+    await wrapper.vm.$nextTick();
+    // A reconfirmação vale na LISTA também, e ela carrega o valor DA LINHA.
+    expect(wrapper.emitted("decisionRelease")).toBeUndefined();
+    buttonByText("Sim, liberar")!.click();
     await wrapper.vm.$nextTick();
     expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["bia@example.org"]);
   });

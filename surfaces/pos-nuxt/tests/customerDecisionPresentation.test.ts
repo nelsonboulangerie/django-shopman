@@ -52,6 +52,9 @@ describe("conflictDecision — a recusa 422 vira decisão de tela", () => {
       current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
       other: { ref: "CUST-B", name: "Bruno Souza", value: "+5543999990022" },
       candidates: [current, other],
+      // O valor veio do PAINEL do cliente, não do comprovante — e é isso que
+      // decide se a saída de um toque descarta o valor ou só a ordem de salvar.
+      fromReceipt: false,
     });
   });
 
@@ -382,5 +385,100 @@ describe("customerDecisionCopy — voz de balcão, e as saídas dizem o que fica
     expect(decisionFieldLabel("phone")).toBe("WhatsApp");
     expect(decisionFieldLabel("email")).toBe("e-mail");
     expect(decisionFieldLabel("tax_id")).toBe("CPF/CNPJ");
+  });
+});
+
+// ⚠️ CPF DE OUTRO CADASTRO NÃO É PROBABILIDADE, É CERTEZA.
+//
+// No CPF divergente do cadastro a hipótese ainda é hipótese. Aqui o servidor
+// SABE de quem é o documento e devolve o dono nomeado. Então a pergunta certa
+// deixa de ser "atender o outro?" (uma escolha de mecanismo) e passa a ser a
+// única que o balcão precisa responder: DE QUEM É ESTA VENDA.
+//
+// PDV é superfície de OPERADOR — por isso o dono pode ser nomeado aqui. Na loja
+// não poderia: dizer "este CPF é do João" a um estranho conta de quem é um
+// documento (#553).
+describe("CPF de outro cadastro pergunta de QUEM É A VENDA", () => {
+  const decisaoCpf = (fromReceipt: boolean): CustomerDecision => ({
+    kind: "contact_conflict",
+    field: "tax_id",
+    typed: "52998224725",
+    current: { ref: "CUST-A", name: "Ana Prado", value: "" },
+    other: { ref: "CUST-J", name: "João Silva", value: "52998224725" },
+    fromReceipt,
+  });
+
+  it("a pergunta é de identidade, e trocar o dono exige reconfirmação", () => {
+    const copy = customerDecisionCopy(decisaoCpf(true));
+
+    expect(copy.title).toContain("Este CPF é de outro cadastro");
+    expect(copy.body).toContain("52998224725 é de João Silva");
+    expect(copy.body).toContain("Ana Prado");
+    expect(copy.confirmLabel).toBe("Sim, a venda é de João");
+    // O gesto grande — trocar o dono da venda — para e pergunta de novo.
+    expect(copy.requiresConfirmation).toBe(true);
+    expect(copy.confirmPrompt).toContain("João");
+  });
+
+  it("'Não, é só a nota' é UM TOQUE — sem reconfirmação nenhuma", () => {
+    // ⚠️ Este é o caso mais comum do balcão (a nota no CPF do marido) e por
+    // isso ele é o que NÃO pode ter atrito. Se a fricção caísse aqui, o
+    // operador aprenderia a clicar no reflexo e a proteção do caminho raro
+    // viraria decoração.
+    const copy = customerDecisionCopy(decisaoCpf(true));
+    expect(copy.cancelLabel).toBe("Não, é só a nota");
+    expect(copy.cancelIcon).toBeTruthy();
+  });
+
+  it("do PAINEL do cliente a saída volta a ser 'Manter' — lá o valor é identidade", () => {
+    const copy = customerDecisionCopy(decisaoCpf(false));
+    expect(copy.cancelLabel).toBe("Manter Ana");
+    // A pergunta de identidade e o atrito não mudam: o CPF é de João dos dois
+    // lados. O que muda é o que a recusa descarta.
+    expect(copy.requiresConfirmation).toBe(true);
+  });
+
+  it("telefone e e-mail NÃO ganham a pergunta nem o atrito", () => {
+    const copy = customerDecisionCopy({
+      kind: "contact_conflict",
+      field: "phone",
+      typed: "(43) 99999-0022",
+      current: { ref: "CUST-A", name: "Ana Prado", value: "+5543999990011" },
+      other: { ref: "CUST-B", name: "Bruno Souza", value: "+5543999990022" },
+    });
+    expect(copy.title).toContain("Este WhatsApp já é de outro cadastro");
+    expect(copy.confirmLabel).toBe("Atender Bruno");
+    expect(copy.requiresConfirmation).toBe(false);
+  });
+
+  it("o comprovante é reconhecido pelo campo de ORIGEM, não pelo palpite", () => {
+    const doComprovante = conflictDecision({
+      field: "customer_tax_id",
+      candidates: [
+        candidate({ tax_id: "" }),
+        candidate({
+          ref: "CUST-J", name: "João Silva", phone: "", tax_id: "52998224725",
+          matched_by: ["cpf"], is_current: false,
+        }),
+      ],
+      typedField: "invoice_tax_id",
+    });
+    expect(doComprovante?.fromReceipt).toBe(true);
+  });
+});
+
+describe("liberar contato pede a SEGUNDA palavra, e ela promete o rastro", () => {
+  it("o botão de liberar carrega a pergunta que o painel faz antes de apagar", () => {
+    const copy = customerDecisionCopy({
+      kind: "inactive_owner",
+      field: "email",
+      typed: "bia@example.org",
+      current: null,
+      other: { ref: "CUST-OLD", name: "Cadastro Antigo", value: "bia@example.org" },
+    });
+    expect(copy.release?.prompt).toContain("apaga este e-mail");
+    // A promessa só se sustenta porque o servidor grava o `ContactRelease`
+    // ANTES de apagar — valor, tipo, de qual ficha saiu, quem e quando.
+    expect(copy.release?.prompt).toContain("dá para refazer o cadastro depois");
   });
 });

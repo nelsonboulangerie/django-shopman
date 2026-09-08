@@ -3601,6 +3601,11 @@ class POSCustomerContactReleaseView(APIView):
     e é justamente o cadastro desativado que segura o número no UNIQUE global.
     Sem isto o operador lia "já é de outro cadastro", não achava esse cadastro
     na busca (ela só enxerga ativo) e a venda parava.
+
+    ⚠️ ``confirmed`` é a RECONFIRMAÇÃO, e sem ela o service recusa. Liberar
+    apaga o ``ContactPoint`` e não tem desfazer: a fricção mora no ato
+    destrutivo. O que a recusa promete — que dá para reconstruir — é o
+    ``ContactRelease`` que o service grava antes de apagar.
     """
 
     permission_classes = [HasBackstagePermission]
@@ -3613,6 +3618,10 @@ class POSCustomerContactReleaseView(APIView):
                 field=str(body.get("field") or "").strip(),
                 value=str(body.get("value") or "").strip(),
                 operator_username=_username(request),
+                # `as_bool` e não `bool()`: um "confirmed" que chega torto (uma
+                # string qualquer, um 2) não pode virar "sim" por coerção. Aqui
+                # a coerção autorizaria um apagamento.
+                confirmed=as_bool(body, "confirmed", default=False),
             )
         except ValueError as exc:
             return Response(
