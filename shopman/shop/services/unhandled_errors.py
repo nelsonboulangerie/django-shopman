@@ -289,7 +289,7 @@ def on_request_exception(sender, request=None, **kwargs) -> None:
     except BaseException:  # noqa: BLE001 - avisar nunca pode derrubar a request
         try:
             logger.exception("unhandled_exception_alert.failed")
-        except BaseException:  # noqa: BLE001 - nem o log pode derrubar
+        except BaseException:  # noqa: BLE001  # silêncio-deliberado: nem o log de falha pode derrubar a request
             pass
 
 

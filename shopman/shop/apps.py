@@ -113,9 +113,9 @@ class ShopmanConfig(AppConfig):
             )
             try:
                 register_ref_type(channel)
-            except ValueError:
+            except ValueError:  # silêncio-deliberado: registro é idempotente — o CHANNEL já está no registro
                 pass
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: shopman.refs é opcional; sem ele não há registro a alimentar
             pass
 
     def _register_loyalty_resolvers(self):
