@@ -119,15 +119,19 @@ class TestConsent:
 class TestAlerts:
     def test_subscription_is_its_own_consent(self):
         """Quem pediu para ser avisado daquele SKU já consentiu naquele SKU."""
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone="+5543999990002")
+        from shopman.storefront.services import stock_alerts
+
+        stock_alerts.subscribe(SKU, phone="+5543999990002")
 
         result = audience.resolve({"alerts": True}, sku=SKU)
         assert [r.phone for r in result.general] == ["+5543999990002"]
 
     def test_already_notified_subscription_is_skipped(self):
-        StockAlertSubscription.objects.create(
-            sku=SKU, contact_phone="+5543999990002", notified_at=timezone.now()
-        )
+        from shopman.storefront.services import stock_alerts
+
+        sub = stock_alerts.subscribe(SKU, phone="+5543999990002")
+        sub.notified_at = timezone.now()
+        sub.save(update_fields=["notified_at"])
         assert audience.resolve({"alerts": True}, sku=SKU).total == 0
 
     def test_subscription_without_phone_is_unreachable(self):
@@ -217,25 +221,31 @@ class TestBoughtWithinDays:
 
 class TestDedupe:
     def test_same_phone_across_rules_receives_once(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         result = audience.resolve({"favorites": True, "alerts": True}, sku=SKU)
         assert result.total == 1
 
     def test_reasons_accumulate(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         recipient = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).general[0]
         assert recipient.reasons == frozenset({"favorites", "alerts"})
 
     def test_counts_report_each_rule_before_dedupe(self):
+        from shopman.storefront.services import stock_alerts
+
         customer = _customer("+5543999990001")
         CustomerFavorite.objects.create(customer_ref=customer.ref, sku=SKU)
-        StockAlertSubscription.objects.create(sku=SKU, contact_phone=customer.phone)
+        stock_alerts.subscribe(SKU, customer=customer)
 
         summary = audience.resolve({"favorites": True, "alerts": True}, sku=SKU).summary()
         assert summary["favorites_count"] == 1

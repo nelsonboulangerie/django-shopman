@@ -8,7 +8,10 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from django.db import IntegrityError
 from django.utils import timezone
+from shopman.guestman import ConsentService
+from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
 
 from shopman.storefront.models import StockAlertSubscription
@@ -42,6 +45,38 @@ def test_subscribe_dedupes_pending_for_same_contact():
     b = stock_alerts.subscribe("SKU-1", phone=PHONE)
     assert a.pk == b.pk
     assert StockAlertSubscription.objects.filter(sku="SKU-1").count() == 1
+
+
+def test_subscribe_dedupes_phone_formats_and_keeps_verifiable_evidence():
+    first = stock_alerts.subscribe("SKU-NORM", phone="(43) 99999-0001")
+    second = stock_alerts.subscribe("SKU-NORM", phone="+55 43 99999-0001")
+
+    assert first.pk == second.pk
+    assert first.contact_phone == "+5543999990001"
+    assert first.proof_status == "verified"
+    assert first.disclosure_version == stock_alerts.STOCK_ALERT_DISCLOSURE_VERSION
+    assert len(first.disclosure_hash) == 64
+    assert len(first.evidence_hash) == 64
+    assert first.expires_at > first.subscribed_at
+
+
+def test_database_unique_rejects_two_pending_rows_for_same_target():
+    original = stock_alerts.subscribe("SKU-UNIQUE", phone=PHONE)
+
+    with pytest.raises(IntegrityError):
+        StockAlertSubscription.objects.create(
+            sku=original.sku,
+            alert_type=original.alert_type,
+            channel_ref=original.channel_ref,
+            contact_phone=original.contact_phone,
+            target_key=original.target_key,
+            disclosure_text=original.disclosure_text,
+            disclosure_version=original.disclosure_version,
+            disclosure_hash=original.disclosure_hash,
+            evidence_hash="f" * 64,
+            proof_status="verified",
+            expires_at=original.expires_at,
+        )
 
 
 def test_subscribe_requires_a_contact():
@@ -141,6 +176,44 @@ def test_notify_does_not_mark_on_send_failure():
     assert sub.notified_at is None  # mantém pendente p/ retry na próxima chegada
 
 
+def test_revoke_before_notify_prevents_delivery_and_preserves_evidence():
+    sub = stock_alerts.subscribe("SKU-REVOKE", phone=PHONE)
+    original_evidence = sub.evidence_hash
+    assert stock_alerts.revoke(sub.ref, sku=sub.sku, phone=PHONE) is True
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
+        patch("shopman.shop.notifications.notify") as nf,
+    ):
+        assert stock_alerts.notify_back_in_stock(sub.sku) == 0
+
+    nf.assert_not_called()
+    sub.refresh_from_db()
+    assert sub.evidence_hash == original_evidence
+    assert sub.revoked_at is not None
+    assert len(sub.revocation_evidence_hash) == 64
+
+
+def test_global_optout_is_rechecked_immediately_before_stock_alert_send():
+    customer = Customer.objects.create(
+        ref="CLI-STOCK-OPTOUT",
+        first_name="Ana",
+        phone=PHONE,
+    )
+    sub = stock_alerts.subscribe("SKU-OPTOUT", customer=customer)
+    ConsentService.revoke_consent(customer.ref, "whatsapp")
+
+    with (
+        patch("shopman.storefront.services.sku_state.resolve", return_value=_state(True)),
+        patch("shopman.shop.notifications.notify") as nf,
+    ):
+        assert stock_alerts.notify_back_in_stock(sub.sku) == 0
+
+    nf.assert_not_called()
+    sub.refresh_from_db()
+    assert sub.notified_at is None
+
+
 # ── endpoint ────────────────────────────────────────────────────────
 
 
@@ -160,6 +233,7 @@ def test_endpoint_repairs_legacy_mobile_and_persists_pending_session_marker(clie
     assert sub.contact_phone == "+5543998404900"
     assert client.session.get("stock_alert_subscriptions") == [
         {
+            "ref": str(sub.ref),
             "sku": p.sku,
             "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
             "contact_phone": "+5543998404900",
@@ -174,6 +248,40 @@ def test_endpoint_requires_phone_when_anonymous(client):
     assert resp.status_code == 400
 
 
+def test_endpoint_anonymous_can_cancel_only_its_session_subscription(client):
+    product = _publish(sku="SKU-CANCEL")
+    created = client.post(
+        f"/api/v1/availability/{product.sku}/notify/",
+        {"phone": PHONE},
+    ).json()
+
+    response = client.delete(
+        f"/api/v1/availability/{product.sku}/notify/",
+        data={"subscription_ref": created["subscription_ref"]},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    sub = StockAlertSubscription.objects.get(ref=created["subscription_ref"])
+    assert sub.revoked_at is not None
+    assert client.session["stock_alert_subscriptions"] == []
+
+
+def test_endpoint_does_not_cancel_a_ref_outside_anonymous_session(client):
+    product = _publish(sku="SKU-CANCEL-IDOR")
+    sub = stock_alerts.subscribe(product.sku, phone=PHONE)
+
+    response = client.delete(
+        f"/api/v1/availability/{product.sku}/notify/",
+        data={"subscription_ref": str(sub.ref)},
+        content_type="application/json",
+    )
+
+    assert response.status_code == 404
+    sub.refresh_from_db()
+    assert sub.revoked_at is None
+
+
 def test_endpoint_404_for_unknown_sku(client):
     resp = client.post("/api/v1/availability/NOPE/notify/", {"phone": PHONE})
     assert resp.status_code == 404
@@ -181,6 +289,7 @@ def test_endpoint_404_for_unknown_sku(client):
 
 def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
     from django.contrib.sessions.middleware import SessionMiddleware
+
     from shopman.storefront.presentation.catalog import _notify_subscribed_skus
 
     sub = stock_alerts.subscribe("SKU-PENDING-MARK", phone=PHONE)
@@ -189,6 +298,7 @@ def test_anonymous_session_marker_only_counts_while_subscription_is_pending(rf):
     request.session["stock_alert_skus"] = ["SKU-LEGACY-MARK"]
     request.session["stock_alert_subscriptions"] = [
         {
+            "ref": str(sub.ref),
             "sku": "SKU-PENDING-MARK",
             "alert_type": StockAlertSubscription.AlertType.STOCK_BACK,
             "contact_phone": PHONE,

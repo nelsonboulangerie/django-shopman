@@ -149,3 +149,26 @@ Provas locais:
 - Ruff dos arquivos tocados — passou.
 
 A checagem de migrations em banco vazio emitiu apenas o warning já existente de SQLite e logs defensivos de bootstrap; não houve falha nem acesso externo.
+
+## MKT-004 — assinatura de disponibilidade com prova, cancelamento e recheck
+
+Implementado:
+
+- identidade normalizada e pseudonimizada por HMAC para unicidade de `(SKU, tipo, canal, alvo)` enquanto pendente;
+- constraint parcial no banco e recuperação do vencedor de uma corrida equivalente;
+- disclosure específico de disponibilidade, versão, hashes de texto/evidência e expiração automática em 30 dias;
+- legado migrado como `legacy_unverified`; duplicatas legadas são encerradas de modo rastreável;
+- nova confirmação encerra o registro legado e cria prova nova, sem reescrever história;
+- cancelamento idempotente com ownership por cliente ou marcador da sessão anônima;
+- API devolve ref/expiração e permite cancelar sem enumerar assinatura alheia;
+- consultas e audiência só consideram inscrições verificadas, não revogadas, não notificadas e não expiradas;
+- imediatamente antes do adapter, a linha é travada e revogação, expiração e opt-out global são rechecados;
+- o lock ao redor do adapter legado é uma contenção temporária explicitamente documentada para ser substituída pelo ledger do WP-03.
+
+Provas locais:
+
+- unicidade de banco, dedupe de formatos telefônicos, ownership/IDOR, revoke-before-send, opt-out-before-send, evidence e expiração cobertos;
+- `test_stock_alerts.py`, audience, consent contract e campaign handlers — 93 testes passaram;
+- `makemigrations --check --dry-run storefront` — sem drift;
+- Ruff dos arquivos tocados — passou;
+- zero chamada real a backend/provider nos testes.

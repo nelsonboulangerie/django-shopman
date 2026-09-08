@@ -146,6 +146,7 @@ class StockAlertSubscribeView(APIView):
             marked = session.get("stock_alert_subscriptions")
             marked = list(marked) if isinstance(marked, (list, tuple)) else []
             marker = {
+                "ref": str(sub.ref),
                 "sku": sub.sku,
                 "alert_type": sub.alert_type,
                 "contact_phone": sub.contact_phone,
@@ -153,7 +154,60 @@ class StockAlertSubscribeView(APIView):
             if marker not in marked:
                 marked.append(marker)
                 session["stock_alert_subscriptions"] = marked
-        return Response({"ok": True})
+        return Response(
+            {
+                "ok": True,
+                "subscription_ref": str(sub.ref),
+                "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+            }
+        )
+
+    def delete(self, request, sku):
+        """Cancel a subscription without exposing whether another person's ref exists."""
+
+        from shopman.storefront.identity import get_authenticated_customer
+        from shopman.storefront.services import stock_alerts
+
+        subscription_ref = str(request.data.get("subscription_ref") or "").strip()
+        if not subscription_ref:
+            return Response(
+                {"detail": "Informe qual aviso deseja cancelar.", "field": "subscription_ref"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        customer = get_authenticated_customer(request)
+        phone = ""
+        session = getattr(request, "session", None)
+        markers = session.get("stock_alert_subscriptions", []) if session is not None else []
+        markers = list(markers) if isinstance(markers, (list, tuple)) else []
+        owned_marker = next(
+            (item for item in markers if str(item.get("ref") or "") == subscription_ref),
+            None,
+        )
+        if customer is None:
+            if owned_marker is None:
+                return Response(
+                    {"detail": "Aviso não encontrado."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+            phone = str(owned_marker.get("contact_phone") or "")
+
+        cancelled = stock_alerts.revoke(
+            subscription_ref,
+            sku=sku,
+            customer=customer,
+            phone=phone,
+        )
+        if not cancelled:
+            return Response(
+                {"detail": "Aviso não encontrado ou já concluído."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if session is not None and owned_marker is not None:
+            session["stock_alert_subscriptions"] = [
+                item for item in markers if item is not owned_marker
+            ]
+        return Response({"ok": True, "cancelled": True})
 
 
 def _badge_for(result: dict) -> tuple[str, str]:

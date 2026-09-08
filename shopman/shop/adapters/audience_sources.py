@@ -37,7 +37,7 @@ def pending_alert_count(sku: str) -> int:
     from shopman.storefront.models import StockAlertSubscription
 
     return (
-        StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True)
+        StockAlertSubscription.objects.active().filter(sku=sku)
         .values("contact_phone")
         .distinct()
         .count()
@@ -53,7 +53,7 @@ def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
     from shopman.storefront.models import StockAlertSubscription
 
     return list(
-        StockAlertSubscription.objects.filter(
-            sku=sku, notified_at__isnull=True
-        ).values_list("contact_phone", "customer_ref")
+        StockAlertSubscription.objects.active()
+        .filter(sku=sku)
+        .values_list("contact_phone", "customer_ref")
     )
