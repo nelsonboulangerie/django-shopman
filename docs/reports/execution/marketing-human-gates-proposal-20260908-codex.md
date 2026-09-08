@@ -4,8 +4,11 @@
 
 **Data:** 2026-09-08
 
-**Status:** PROPOSTA — NÃO APROVADA
+**Status:** APROVADO PARA IMPLEMENTAÇÃO LOCAL
+
 **Escopo:** G-H01 a G-H10 do plano `MARKETING-IRREPRESSIBLE-EXCELLENCE-PLAN-2026-09-08.md`
+
+**Confirmação humana:** em 2026-09-08, o proprietário confirmou o pacote por referência inequívoca à declaração da seção 13 com a resposta: “ok, pode prosseguir dessa forma.” A autorização conserva integralmente as exclusões e os gates futuros descritos neste documento.
 
 ## 1. O que a confirmação deste pacote autoriza
 
