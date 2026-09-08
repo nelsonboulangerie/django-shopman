@@ -96,6 +96,126 @@ def request_code(*, phone: str, delivery_method: str, ip_address: str | None):
     )
 
 
+# O OTP que prova POSSE de um contato, e não identidade de quem entra.
+#
+# O `purpose` não é decoração: ele separa dois cofres. Um código pedido para
+# provar um número novo não serve para entrar em conta nenhuma, porque
+# `verify_for_login` só procura código de `login` — e vice-versa. Sem essa
+# separação, pedir "confirme seu número novo" geraria um código que abre a
+# sessão de quem atender o telefone.
+CONTACT_VERIFICATION_PURPOSE = "verify_contact"
+
+
+def request_contact_verification_code(*, phone: str, delivery_method: str, ip_address: str | None):
+    """Envia um OTP para provar posse de um número — sem logar, sem criar cliente.
+
+    O caminho de login (`request_code` acima) resolve o cliente do número e, se
+    não achar, CRIA um. Para "mudar meu número" isso seria um efeito colateral
+    grave: pedir o código para o número novo nasceria um cadastro-fantasma nele,
+    e o número que o cliente quer adotar já apareceria como sendo de outra conta.
+
+    A finalidade `verify_contact` do Core não passa por `resolve_customer`: o
+    `request_code` do doorman só normaliza, checa as portarias de rate limit e
+    manda o código. Nenhum `Customer` é tocado. Foi medido.
+    """
+    from shopman.doorman import get_auth_service
+
+    AuthService = get_auth_service()
+    return AuthService.request_code(
+        target_value=phone,
+        purpose=CONTACT_VERIFICATION_PURPOSE,
+        delivery_method=delivery_method,
+        ip_address=ip_address,
+    )
+
+
+class ContactVerifyResult:
+    """Resultado de conferir um código de posse de contato."""
+
+    def __init__(
+        self,
+        *,
+        success: bool,
+        error_code: str = "",
+        attempts_remaining: int | None = None,
+    ):
+        self.success = success
+        self.error_code = error_code
+        self.attempts_remaining = attempts_remaining
+
+
+def verify_contact_code(*, phone: str, code_input: str, customer_uuid) -> ContactVerifyResult:
+    """Confere um código de `verify_contact` — sem logar e sem resolver cliente.
+
+    ⚠️ Não existe `AuthService.verify_contact()` no doorman, e isso NÃO é uma
+    lacuna a preencher no Core. O único verify de serviço é o
+    `verify_for_login`, que carrega justamente o que aqui faria estrago:
+    `resolve_customer` + auto-create. O que ele tem de reaproveitável — achar o
+    código válido, conferir o HMAC, contar a tentativa, carimbar — já é API
+    pública do MODELO (`VerificationCode.verify()` se descreve como "the
+    canonical entry point for code verification"). Compor sobre ela é usar o
+    Core como ele é, não contorná-lo.
+
+    O `select_for_update` é o mesmo do Core: duas conferências simultâneas do
+    mesmo código não podem cada uma achar que gastou a última tentativa.
+    """
+    from django.db import transaction
+    from django.utils import timezone
+    from shopman.doorman.conf import get_adapter
+    from shopman.doorman.models import VerificationCode
+
+    target = get_adapter().normalize_login_target(phone)
+    if not target:
+        return ContactVerifyResult(success=False, error_code="invalid_target")
+
+    with transaction.atomic():
+        code = (
+            VerificationCode.objects.select_for_update()
+            .filter(
+                target_value=target,
+                purpose=CONTACT_VERIFICATION_PURPOSE,
+                status__in=[
+                    VerificationCode.Status.PENDING,
+                    VerificationCode.Status.SENT,
+                ],
+                expires_at__gt=timezone.now(),
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if code is None:
+            return ContactVerifyResult(success=False, error_code="code_expired")
+
+        if not code.verify(code_input):
+            code.record_attempt()
+            return ContactVerifyResult(
+                success=False,
+                error_code="code_invalid",
+                attempts_remaining=code.attempts_remaining,
+            )
+
+        # Gastar o código aqui, e não depois da troca, é deliberado: um código
+        # conferido não pode sobreviver para uma segunda tentativa, mesmo que a
+        # troca seja recusada logo adiante por conflito.
+        code.mark_verified(customer_uuid)
+
+    return ContactVerifyResult(success=True)
+
+
+def contact_verify_error_message(result: ContactVerifyResult) -> str:
+    mensagens = {
+        "invalid_target": "Confira o número e tente de novo.",
+        "code_expired": "Esse código expirou. Peça um novo.",
+        "code_invalid": "Código incorreto.",
+    }
+    mensagem = mensagens.get(result.error_code, "Não foi possível confirmar o código.")
+    restantes = result.attempts_remaining
+    if restantes is not None and restantes > 0:
+        plural = "tentativa restante" if restantes == 1 else "tentativas restantes"
+        mensagem += f" ({restantes} {plural})"
+    return mensagem
+
+
 def request_code_error_message(auth_result) -> str:
     from shopman.doorman.error_codes import ErrorCode
 

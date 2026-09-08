@@ -917,6 +917,37 @@ describe('surface UX guardrails', () => {
     expect(profile).toContain('Salvar perfil')
   })
 
+  it('lets the customer change the account phone number, and proves the new one first', () => {
+    const security = read('app/pages/conta/seguranca.vue')
+
+    // Os dois passos, nesta ordem: informar o número novo e confirmar o código
+    // que chega NELE. Um botão que trocasse direto seria sequestro de conta —
+    // apontar a conta de alguém para um número seu e esperar o próximo OTP.
+    expect(security).toContain("apiPath('/api/v1/account/phone/request/')")
+    expect(security).toContain("apiPath('/api/v1/account/phone/confirm/')")
+    expect(security).toContain('Mudar número')
+    expect(security).toContain('Enviar código')
+    expect(security).toContain('Confirmar mudança')
+    expect(security).toContain('<UiPinInput')
+
+    // A recusa rica do servidor chega inteira à tela — com as saídas. Cair no
+    // genérico apagaria o motivo, que foi o defeito que o PR #553 consertou no
+    // e-mail e que esta tela não pode repetir no telefone.
+    expect(security).toContain('profileIssueFrom')
+    expect(security).toContain('phoneChangeIssue.actions')
+
+    // ⚠️ A tela nunca diz de quem é o número: quem pede a troca é um
+    // desconhecido em relação ao dono, e aqui o número é a identidade de quem
+    // entra. A frase vem do servidor, e o servidor não manda o dono.
+    expect(security).not.toMatch(/pertence a|é de |candidates/i)
+
+    // O perfil para de dizer que só existe "entrar com outra conta", agora que
+    // existe o caminho que leva a conta junto.
+    const profile = read('app/pages/conta/perfil.vue')
+    expect(profile).toContain('/conta/seguranca')
+    expect(profile).toContain('Leve a conta junto')
+  })
+
   it('lets authenticated customers manage addresses through the canonical AddressPicker', () => {
     const account = read('app/pages/conta/enderecos.vue')
 
