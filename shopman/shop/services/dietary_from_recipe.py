@@ -39,6 +39,7 @@ from __future__ import annotations
 import logging
 
 from shopman.craftsman.dietary import (
+    DIET_ANIMAL,
     DIET_VEGAN,
     IngredientDietary,
 )
@@ -53,6 +54,13 @@ from shopman.shop.services.derived_provenance import (
 )
 
 logger = logging.getLogger(__name__)
+
+#: O que, no vocabulário dos insumos, significa LEITE — e portanto lactose.
+#:
+#: ⚠️ Não há `GLUTEN_TOKENS` gêmeo, e a ausência é deliberada: a casa não afirma
+#: ausência de glúten em produto nenhum (sem linha segregada, e sem intenção de
+#: ter). Ver `shop/legal_parameters.py::declaracao_gluten`.
+LACTOSE_TOKENS = frozenset({"lactose", "leite", "laticínios", "laticinios", "manteiga"})
 
 # Allergen tokens that defeat a free-from claim. Matched case-insensitively
 # against the unioned allergen list. Kept aligned with the storefront
@@ -171,22 +179,38 @@ def _union_allergens(profiles: list[IngredientDietary]) -> list[str]:
 def _derive_dietary_info(
     profiles: list[IngredientDietary], allergens: list[str]
 ) -> list[str]:
-    """Strongest positive diet claim + free-from claims, storefront tokens."""
+    """O que a FÓRMULA permite afirmar — nunca o que o ambiente não garante.
+
+    ⚠️ A linha que separa o que entra do que não entra é
+    **composição × contaminação cruzada**, e confundi-las custou uma correção no
+    ar (08/09/2026):
+
+    - `100% vegetal` e `vegetariano` são fatos sobre a receita. Só eles sabem
+      dizer "não tem NADA de origem animal": mel, banha e gelatina não são
+      alergênicos e não aparecem no campo de alérgenos.
+    - `sem lactose` é fato sobre a receita **com limiar objetivo na norma**
+      (RDC 135/2017: < 100 mg/100 g). Pão de farinha, água, sal e levain está em
+      zero. E não conflita com o aviso de traços: intolerância à lactose é
+      dose-dependente; alergia à proteína do leite é outra coisa, e é dela que o
+      `food_safety_notice` cuida.
+    - `sem glúten` **NÃO é derivado, nunca**. Numa casa sem linha segregada — e a
+      Nelson não tem nem pretende ter — a afirmação seria sobre o ambiente, não
+      sobre a fórmula. É a única da família em que um celíaco pode se machucar,
+      e a casa declara o oposto em voz alta.
+
+    Ver `shop/legal_parameters.py`: os números que vêm da lei têm data de
+    conferência e catraca.
+    """
     diets = {profile.diet for profile in profiles}
+    lowered = {a.lower() for a in allergens}
     info: list[str] = []
 
     if diets <= {DIET_VEGAN}:
         info.append("100% vegetal")
+    elif DIET_ANIMAL not in diets:
+        info.append("vegetariano")
 
-    # ⚠️ NÃO derivamos mais "sem glúten", "sem lactose" nem "vegetariano"
-    # (decisão do dono, 05/09):
-    #
-    # - "sem glúten" é afirmação que uma padaria NÃO pode honrar: farinha no ar,
-    #   forno e bancada compartilhados. Derivá-la da ficha era verdade sobre a
-    #   receita e mentira sobre o produto.
-    # - "sem lactose" e "vegetariano" são redundantes: leite e ovos já vão no
-    #   campo de ALÉRGENOS, e é de lá que a loja monta o aviso.
-    #
-    # Sobra o único fato que os alérgenos não sabem dizer — "não tem NADA de
-    # origem animal" —, porque mel, banha e gelatina não são alergênicos.
+    if not (lowered & LACTOSE_TOKENS):
+        info.append("sem lactose")
+
     return info
