@@ -111,8 +111,89 @@ def set_default_address(customer_ref: str, pk: int) -> None:
     address_service.set_default_address(customer_ref, pk)
 
 
+# A frase que o cliente lê quando o e-mail digitado já é de outro cadastro. Diz
+# o que houve sem dizer DE QUEM é o e-mail, e sem culpar quem digitou: pode muito
+# bem ser o e-mail dele mesmo, num cadastro antigo com outro telefone.
+EMAIL_TAKEN_DETAIL = "Este e-mail já está em uso em outra conta."
+
+
+class ContactAlreadyTaken(ValueError):
+    """O contato digitado é de OUTRO cadastro — e a recusa tem de dizer qual campo.
+
+    Era um ``ValueError`` de frase solta, e a view do storefront o capturava num
+    ``except Exception`` que jogava a mensagem fora: o cliente trocava o e-mail,
+    lia "não foi possível atualizar seu perfil agora", tentava de novo, e nunca
+    descobria que o problema era o e-mail. A informação existia e morria no log.
+
+    ``field`` é o que a tela precisa para apontar o campo certo; a superfície
+    acrescenta as saídas por cima (entrar, falar com a padaria). Subclasse de
+    ``ValueError`` porque é o que os chamadores já esperavam — quem quer o
+    detalhe estruturado captura o tipo.
+
+    ⚠️ Esta recusa NÃO carrega o dono do contato. O PDV carrega, e deve: é
+    superfície de operador, e quem está no balcão precisa saber com quem está
+    falando. A loja é superfície de CLIENTE — dizer "este e-mail é do Fulano"
+    para um desconhecido é vazamento. A loja diz que o contato não está
+    disponível e oferece caminho; nunca a identidade de quem o tem.
+    """
+
+    def __init__(self, message: str = EMAIL_TAKEN_DETAIL, *, field: str = "email"):
+        super().__init__(message)
+        self.field = field
+
+
+def _set_primary_email(customer, email: str) -> None:
+    """Promove o e-mail a contato principal do cliente — pelo Core, não à mão.
+
+    O caminho antigo renomeava o ContactPoint primário no lugar
+    (``value_normalized = novo``). Funciona no caso simples e recusa no caso
+    real: se o cliente já tiver outro ContactPoint de e-mail com esse valor, o
+    UNIQUE global ``(type, value_normalized)`` barra a renomeação — e a barreira
+    saía como erro genérico.
+
+    O Core já resolve isto: ``ContactPoint.set_as_primary()`` demove o primário
+    antigo antes de promover o novo (em transação, respeitando o UNIQUE parcial
+    de um primário por tipo) e sincroniza o cache do Customer.
+    ⚠️ ``Customer.email`` é CACHE; o ContactPoint é a fonte da verdade.
+
+    O primário substituído sai: a tela de perfil tem UM campo de e-mail, e
+    "trocar" ali sempre significou trocar. Deixá-lo para trás prenderia o
+    endereço antigo neste cadastro para sempre, sem tela que o solte.
+    """
+    from shopman.guestman.models import ContactPoint
+
+    owner_exists = (
+        ContactPoint.objects.filter(
+            type=ContactPoint.Type.EMAIL,
+            value_normalized=email,
+        )
+        .exclude(customer=customer)
+        .exists()
+    )
+    if owner_exists:
+        raise ContactAlreadyTaken()
+
+    previous_primary = ContactPoint.objects.filter(
+        customer=customer,
+        type=ContactPoint.Type.EMAIL,
+        is_primary=True,
+    ).first()
+
+    contact, _created = ContactPoint.objects.get_or_create(
+        customer=customer,
+        type=ContactPoint.Type.EMAIL,
+        value_normalized=email,
+        defaults={"value_display": email},
+    )
+    if not contact.is_primary:
+        contact.set_as_primary()
+
+    if previous_primary and previous_primary.pk != contact.pk:
+        previous_primary.delete()
+
+
 def update_profile(customer_ref: str, intent):
-    from django.db import transaction
+    from django.db import IntegrityError, transaction
     from shopman.guestman.models import ContactPoint
     from shopman.guestman.services import customer as customer_service
 
@@ -130,26 +211,7 @@ def update_profile(customer_ref: str, intent):
         email_provided = intent.email is not UNSET
         email = (intent.email or "").strip().lower() if email_provided else ""
         if email:
-            conflict = (
-                ContactPoint.objects.filter(
-                    type=ContactPoint.Type.EMAIL,
-                    value_normalized=email,
-                )
-                .exclude(customer=customer)
-                .exists()
-            )
-            if conflict:
-                raise ValueError("E-mail já está em uso.")
-
-            primary_email = ContactPoint.objects.filter(
-                customer=customer,
-                type=ContactPoint.Type.EMAIL,
-                is_primary=True,
-            ).first()
-            if primary_email:
-                primary_email.value_normalized = email
-                primary_email.value_display = email
-                primary_email.save(update_fields=["value_normalized", "value_display", "updated_at"])
+            _set_primary_email(customer, email)
         elif email_provided:
             ContactPoint.objects.filter(
                 customer=customer,
@@ -165,7 +227,14 @@ def update_profile(customer_ref: str, intent):
         if intent.birthday is not UNSET:
             campos["birthday"] = intent.birthday
 
-        return customer_service.update(customer_ref, **campos)
+        try:
+            return customer_service.update(customer_ref, **campos)
+        except IntegrityError as exc:
+            # ``Customer.save()`` espelha o e-mail num ContactPoint cujo UNIQUE
+            # ``(type, value_normalized)`` é GLOBAL. Se o dono aparecer entre a
+            # checagem e a escrita, a recusa chega por aqui — e tem de chegar
+            # com nome, não como frase genérica.
+            raise ContactAlreadyTaken() from exc
 
 
 def preferences(customer_ref: str, category: str | None = None):

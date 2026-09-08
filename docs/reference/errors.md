@@ -132,7 +132,7 @@ resto sem quebrar:
 
 | Chave | Presença | Uso |
 |-------|----------|-----|
-| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`…). |
+| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`, `contact_already_taken`…). |
 | `title` | Alertas ricos (carrinho) | Título curto do alerta quando a tela não deriva o próprio (o 404 NÃO carrega `title` — a tela gera pelo status). |
 | `actions` / `retry_after_seconds` | Rate-limit e conflitos | Ações de 1 clique e cadência de retry (`Retry-After` também vai no header). |
 | `payment_status` | 409 `order_not_cancellable` | Enum **cru** do pagamento (`pending`/`authorized`/`captured`) que explica *por que* o cancelamento foi recusado. É o único ponto onde `payment_status` aparece — o payload de tracking usa `payment_status_label` (rótulo humano), sem colisão de nome. |
@@ -140,6 +140,34 @@ resto sem quebrar:
 **Regra:** respostas simples — em especial **todo 404** — falam só o canônico
 `{detail, field, errors}`. O superset só aparece onde há semântica de recuperação
 real que o front consome; nunca é decoração de um erro comum.
+
+### Recusa nomeada: contato já usado por outro cadastro (409)
+
+`PATCH /api/v1/account/profile/` recusa a troca de e-mail quando o valor já
+pertence a outro cliente (`shopman/shop/services/account.py::ContactAlreadyTaken`):
+
+```json
+{
+  "detail": "Este e-mail já está em uso em outra conta.",
+  "field": "email",
+  "errors": {"email": ["Este e-mail já está em uso em outra conta."]},
+  "error_code": "contact_already_taken",
+  "title": "Confira o e-mail",
+  "actions": [
+    {"ref": "sign_in_with_email", "kind": "link", "label": "Entrar com esse e-mail", "href": "/entrar?next=/conta/perfil"},
+    {"ref": "contact_whatsapp", "kind": "external", "label": "Falar com a padaria", "href": "https://wa.me/..."}
+  ]
+}
+```
+
+⚠️ **É o gêmeo do `customer_conflict` do PDV, menos a identidade.** O PDV manda
+`error.candidates` com nome, telefone e e-mail dos dois cadastros porque é
+superfície de **operador**, e quem está no balcão precisa saber com quem está
+falando. A loja é superfície de **cliente**: dizer "este e-mail é do Fulano" para
+quem digitou um endereço qualquer vazaria dado pessoal de terceiro. Aqui a recusa
+diz que o e-mail não está disponível, aponta o campo, e oferece os dois caminhos
+que servem sem revelar nada — entrar na conta que já o usa (se for dele, o OTP
+prova) ou falar com a padaria. **Nunca acrescente `candidates` a esta resposta.**
 
 ---
 

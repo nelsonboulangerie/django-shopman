@@ -266,3 +266,40 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
     }
   ]
 }
+
+// ── Recusa do perfil: motivo + saída ───────────────────────────────────────
+//
+// Salvar o perfil podia falhar por um motivo que o cliente resolve — o e-mail já
+// é de outra conta — e a tela dizia "não foi possível salvar seu perfil agora",
+// que manda tentar de novo o que tentar de novo não conserta. O backend passou a
+// nomear a recusa (`error_code`, `field`, `actions`); aqui ela vira o que a tela
+// mostra: a frase, o campo que fica marcado, e os caminhos.
+//
+// ⚠️ As saídas vêm do servidor e são deliberadamente ANÔNIMAS: a loja nunca diz
+// de quem é o e-mail. Entrar (se a conta for sua, o OTP prova) ou falar com a
+// padaria (se não for, quem resolve é gente).
+export interface ProfileIssue {
+  message: string
+  field: string
+  actions: Action[]
+}
+
+export function profileIssueFrom (
+  body: Record<string, unknown> | null | undefined,
+  fallback: string
+): ProfileIssue {
+  const detail = typeof body?.detail === 'string' ? body.detail.trim() : ''
+  const field = typeof body?.field === 'string' ? body.field.trim() : ''
+  const rawActions = Array.isArray(body?.actions) ? (body.actions as Action[]) : []
+  return {
+    message: detail || fallback,
+    field,
+    // Ação sem rótulo ou sem destino não é saída nenhuma — não vai para a tela.
+    actions: rawActions.filter(action => Boolean(action?.label) && Boolean(action?.href))
+  }
+}
+
+// Link interno abre na navegação do app; `external` (WhatsApp) sai do app.
+export function profileActionIsExternal (action: Pick<Action, 'kind' | 'href'>): boolean {
+  return action.kind === 'external' || /^https?:\/\//.test(action.href || '')
+}
