@@ -25,9 +25,9 @@ Design
   cannot guarantee what is absent, so we leave whatever is there untouched
   rather than risk an under-reported allergen or a false "sem X" claim.
 
-Derived ``dietary_info`` uses exactly the tokens the storefront preference
-filter understands: ``100% vegetal`` / ``vegetariano`` (strongest positive
-diet claim) plus the free-from claims ``sem glúten`` / ``sem lactose``.
+O ``dieta`` derivado tem UM termo: ``100% vegetal``. Os avisos de preferência
+da loja (contém glúten, contém lactose) vêm do campo de ALÉRGENOS, não daqui —
+e afirmação de ausência que a casa não pode honrar não é derivada de propósito.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ from __future__ import annotations
 import logging
 
 from shopman.craftsman.dietary import (
-    DIET_ANIMAL,
     DIET_VEGAN,
     IngredientDietary,
 )
@@ -46,8 +45,6 @@ logger = logging.getLogger(__name__)
 # Allergen tokens that defeat a free-from claim. Matched case-insensitively
 # against the unioned allergen list. Kept aligned with the storefront
 # preference triggers in ``storefront.presentation.dietary``.
-GLUTEN_TOKENS = frozenset({"glúten", "gluten", "trigo", "cevada", "centeio", "malte"})
-LACTOSE_TOKENS = frozenset({"lactose", "leite", "laticínios", "laticinios", "manteiga"})
 
 
 def aggregate_dietary_from_recipe(product: Product) -> bool:
@@ -159,13 +156,16 @@ def _derive_dietary_info(
 
     if diets <= {DIET_VEGAN}:
         info.append("100% vegetal")
-    elif DIET_ANIMAL not in diets:
-        info.append("vegetariano")
 
-    lowered = {a.lower() for a in allergens}
-    if not (lowered & GLUTEN_TOKENS):
-        info.append("sem glúten")
-    if not (lowered & LACTOSE_TOKENS):
-        info.append("sem lactose")
-
+    # ⚠️ NÃO derivamos mais "sem glúten", "sem lactose" nem "vegetariano"
+    # (decisão do dono, 05/09):
+    #
+    # - "sem glúten" é afirmação que uma padaria NÃO pode honrar: farinha no ar,
+    #   forno e bancada compartilhados. Derivá-la da ficha era verdade sobre a
+    #   receita e mentira sobre o produto.
+    # - "sem lactose" e "vegetariano" são redundantes: leite e ovos já vão no
+    #   campo de ALÉRGENOS, e é de lá que a loja monta o aviso.
+    #
+    # Sobra o único fato que os alérgenos não sabem dizer — "não tem NADA de
+    # origem animal" —, porque mel, banha e gelatina não são alergênicos.
     return info

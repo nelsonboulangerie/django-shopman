@@ -13,13 +13,45 @@ duas, para mudar uma sem a outra ficar vermelho.
 from __future__ import annotations
 
 ALERGENOS_CANONICOS = [
-    "glúten", "crustáceos", "ovos", "peixes", "amendoim", "soja", "leite",
+    # Os cereais que contêm glúten, NOMEADOS. A RDC 26/2015 os nomeia um a um, e
+    # numa padaria é aqui que a declaração vive: "glúten" sozinho não distingue
+    # um pão de centeio de um pão de trigo, e quem evita trigo não evita os dois.
+    "glúten", "trigo", "centeio", "cevada", "aveia",
+    "crustáceos", "ovos", "peixes", "amendoim", "soja", "leite",
+    # As castanhas que a norma nomeia. `pinoli` estava faltando — não por
+    # decisão, por descuido meu ao transcrever a lista.
     "castanhas", "amêndoa", "avelã", "castanha-de-caju", "castanha-do-brasil",
-    "macadâmia", "nozes", "pecã", "pistache", "gergelim", "mostarda",
-    "sulfitos", "látex natural",
+    "macadâmia", "nozes", "pecã", "pistache", "pinoli",
+    "gergelim", "sulfitos", "látex natural",
+    # Fora da RDC 26/2015 e declarada pela casa na mercearia (é alérgeno de
+    # declaração obrigatória na UE). Lista que não cabe a realidade vira
+    # alérgeno descartado em silêncio.
+    "mostarda",
+    # Fora de QUALQUER lista regulatória, e dentro por decisão do dono
+    # (06/09/2026). A casa usa pimenta-do-reino e já viu reação a ela. O rótulo
+    # existe para proteger quem come, não para cumprir a lista mínima da norma —
+    # e o cliente que reage não pergunta o que a RDC nomeia.
+    #
+    # Escrita como a casa já escreve no aviso de cozinha compartilhada
+    # (`Shop.defaults['food_safety_notice']`), que é o texto que o cliente lê.
+    "pimenta-do-reino",
 ]
 
-DIETA_CANONICA = ["100% vegetal", "vegetariano", "sem glúten", "sem lactose"]
+DIETA_CANONICA = [
+    # UM termo só, por decisão do dono (05/09).
+    #
+    # "sem glúten" saiu porque a casa NÃO pode honrar a afirmação: farinha no ar
+    # e forno compartilhado. Promessa que não se cumpre não entra no rótulo.
+    #
+    # "sem lactose" e "vegetariano" saíram por redundância: leite e ovos já são
+    # declarados no campo de ALÉRGENOS, e a loja lê de lá. O único fato que os
+    # alérgenos não sabem dizer é "não tem NADA de origem animal" — mel, banha e
+    # gelatina não são alergênicos —, e é exatamente isso que este termo diz.
+    #
+    # É composição, não identidade: a casa não usa "vegano", que carrega esferas
+    # que não são nutricionais.
+    "100% vegetal",
+]
 
 
 def _options(values):
@@ -33,10 +65,14 @@ DEFAULT_DEFINITIONS = [
         "type": "multi_choice", "options": _options(ALERGENOS_CANONICOS), "unit": "",
         "purposes": ["label", "facet"], "storage": "attributes",
         "required": False, "ordering": 10,
+        # O vocabulário de alérgeno nasce da CADEIA DE INSUMOS, não da lei: a
+        # lei é o piso. Insumo que declara algo que a lista não tem amplia a
+        # lista, para revisão — nunca é barrado.
+        "extends_from_source": True,
     },
     {
         "ref": "dieta", "label": "Dieta",
-        "hint": "100% vegetal, vegetariano, sem glúten, sem lactose.",
+        "hint": "Marque quando o produto não leva NADA de origem animal — nem leite, ovo, mel ou banha.",
         "type": "multi_choice", "options": _options(DIETA_CANONICA), "unit": "",
         "purposes": ["label", "facet"], "storage": "attributes",
         "required": False, "ordering": 20,

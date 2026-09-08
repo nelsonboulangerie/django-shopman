@@ -325,14 +325,14 @@ class TestCartAnnotation:
 class TestAllergenAndConservation:
     def test_allergen_panel_populated_from_the_registry(self, listing, product):
         attributes.set(product, "alergenos", ["glúten", "leite"], save=False)
-        attributes.set(product, "dieta", ["vegetariano"], save=False)
+        attributes.set(product, "dieta", ["100% vegetal"], save=False)
         attributes.set(product, "porcoes", "2 pessoas")
         _publish_on_listing(listing, product)
         proj = build_product_detail(sku=product.sku, channel_ref="web")
         assert proj is not None
         assert isinstance(proj.allergen, AllergenInfoProjection)
         assert proj.allergen.allergens == ("glúten", "leite")
-        assert proj.allergen.dietary_info == ("vegetariano",)
+        assert proj.allergen.dietary_info == ("100% vegetal",)
         assert proj.allergen.serves == "2 pessoas"
         assert proj.allergen.has_any is True
 

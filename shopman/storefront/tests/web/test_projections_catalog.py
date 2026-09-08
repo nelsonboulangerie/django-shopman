@@ -158,7 +158,7 @@ class TestCatalogItemProjection:
 
         product.ingredients_text = "Farinha de trigo, água, fermento natural, sal."
         attributes.set(product, "alergenos", ["glúten"], save=False)
-        attributes.set(product, "dieta", ["100% vegetal", "sem lactose"], save=False)
+        attributes.set(product, "dieta", ["100% vegetal"], save=False)
         product.save(update_fields=["ingredients_text", "metadata"])
         _publish_on_listing(listing, product)
 
@@ -171,7 +171,7 @@ class TestCatalogItemProjection:
 
         record = next(r for r in search_index(proj) if r["sku"] == product.sku)
         assert "fermento natural" in " ".join(record["terms"])
-        assert "sem lactose" in record["terms"]
+        assert "100% vegetal" in record["terms"]
 
     def test_available_when_stock_seeded(self, listing, collection, collection_item, product):
         _publish_on_listing(listing, product)

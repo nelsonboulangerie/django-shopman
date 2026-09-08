@@ -139,6 +139,14 @@ class AttributeDefinition(models.Model):
         "obrigatório", default=False,
         help_text="O Admin acusa os produtos que estão sem valor.",
     )
+    extends_from_source = models.BooleanField(
+        "a cadeia pode ampliar", default=False,
+        help_text=(
+            "Valor vindo da FICHA TÉCNICA que não está nas opções é ACEITO e "
+            "vira opção nova, para revisão. Só para atributo cujo vocabulário "
+            "nasce da cadeia de insumos, como alérgenos."
+        ),
+    )
     ordering = models.IntegerField("ordem", default=0)
     is_active = models.BooleanField("ativo", default=True)
 

@@ -24,7 +24,7 @@ pytestmark = pytest.mark.django_db
 #: catálogo, incluindo o ``serves`` como texto de apresentação.
 LEGACY_METADATA = {
     "allergens": ["glúten", "leite", "ovos"],
-    "dietary_info": ["vegetariano"],
+    "dietary_info": ["100% vegetal"],
     "serves": "2 pessoas",
 }
 
@@ -43,7 +43,7 @@ def product():
         sku="CROISSANT", name="Croissant", base_price_q=1200, unit_weight_g=80,
     )
     attributes.set(p, "alergenos", ["glúten", "leite", "ovos"], source="recipe", save=False)
-    attributes.set(p, "dieta", ["vegetariano"], source="recipe", save=False)
+    attributes.set(p, "dieta", ["100% vegetal"], source="recipe", save=False)
     attributes.set(p, "porcoes", "2 pessoas", save=False)
     p.save(update_fields=["metadata"])
     return p
@@ -60,7 +60,7 @@ def _pdp_allergen(product):
 
 def test_the_registry_reads_the_label(product):
     assert attributes.get(product, "alergenos") == ["glúten", "leite", "ovos"]
-    assert attributes.get(product, "dieta") == ["vegetariano"]
+    assert attributes.get(product, "dieta") == ["100% vegetal"]
     assert attributes.get(product, "porcoes") == "2 pessoas"
     assert attributes.get(product, "peso_unidade_g") == 80
 

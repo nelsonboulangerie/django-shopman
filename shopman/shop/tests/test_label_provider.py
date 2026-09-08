@@ -91,7 +91,7 @@ def test_the_form_writes_the_label_into_the_registry():
     form = ProductAdminForm(
         data=_form_data(
             allergens_text="glúten, gergelim",
-            dietary_info_text="100% vegetal, sem lactose",
+            dietary_info_text="100% vegetal",
             serves_text="2 a 4 pessoas",
         ),
         instance=product,
@@ -101,7 +101,7 @@ def test_the_form_writes_the_label_into_the_registry():
     saved.refresh_from_db()
 
     assert attributes.get(saved, "alergenos") == ["glúten", "gergelim"]
-    assert attributes.get(saved, "dieta") == ["100% vegetal", "sem lactose"]
+    assert attributes.get(saved, "dieta") == ["100% vegetal"]
     assert attributes.get(saved, "porcoes") == "2 a 4 pessoas"
     for morta in ("allergens", "dietary_info", "serves", "dietary_auto_filled"):
         assert morta not in saved.metadata
