@@ -11,7 +11,8 @@ deste documento, de propósito.
 | `origin/main` final | `3fb0e575caa5e1d298ebd6bf7307d8af3434515e` |
 | `main` local | `3fb0e575c…` — **igual ao remoto** |
 | worktrees | 47 → **18** |
-| branches locais | 451 → **120** |
+| branches locais | 451 → **32** |
+| branches remotas | 381 → **23** |
 | stashes | 0 (antes e depois) |
 | backup | `/Users/pablovalentini/Documents/Backups/django-shopman-convergence-20260908-145122` |
 
@@ -181,16 +182,27 @@ três provas: `git status` limpo (ou zero blob único), nenhum processo em
   `agent-ad44b5a41338740f7`, locked pelo **PID 7002, que está vivo**. Não foram
   tocadas. É condição de parada, e o git a aplicou sozinho.
 
-**Branches locais: 451 → 120**, zero erros. O critério foi o mais forte
-disponível: `git merge-tree --write-tree origin/main <sha>` devolvendo a árvore
-do `main` — merge no-op, conteúdo integralmente lá. 324 saíram por
-ancestralidade (`git branch -d`), 8 por no-op de squash. Protegidas por
-construção: `main`, as em uso por worktree, e **todo head de PR aberto ou
-fechado** — PR fechado é decisão registrada do dono.
+**Branches locais: 451 → 32. Branches remotas: 381 → 23.** Zero erros nos dois
+lados. O critério foi o mais forte disponível, aplicado **branch a branch e
+re-verificado no instante da remoção**:
 
-Ficam 12 branches com delta real e sem PR mergeado. Nenhuma tem código ausente do
-`main`: as duas mais gordas (`safety/preserve-*`, `ficha-de-produto-e-promessa`)
-foram provadas blob a blob.
+- `git merge-tree --write-tree origin/main <sha>` devolvendo a árvore do `main`
+  — merge no-op, conteúdo integralmente lá; ou
+- `git rev-list --count origin/main..<branch>` igual a **zero** — a branch não
+  tem um único commit fora do `main`.
+
+Locais: 324 por ancestralidade (`git branch -d`), 8 por no-op de squash, 89 por
+zero-ahead. Remotas: 357 por zero-ahead. Protegidas por construção: `main`, as em
+uso por worktree, e todo head de **PR aberto**.
+
+⚠️ Head de **PR fechado** eu protegi na primeira passada e depois soltei, de
+propósito: o registro da decisão mora no PR, no GitHub, não na ref. Uma branch
+com zero commit fora do `main` não guarda decisão nenhuma — guarda ruído.
+
+Ficam as 6 remotas com delta real: 5 do Dependabot mais
+`safety/preserve-current-work-20260828-login-handoff` e
+`claude/ficha-de-produto-e-promessa`. Nenhuma tem código ausente do `main` — as
+duas últimas foram provadas blob a blob.
 
 ---
 
