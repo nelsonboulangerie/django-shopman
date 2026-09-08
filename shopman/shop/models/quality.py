@@ -49,6 +49,11 @@ class QualityGrade(models.Model):
         default=False,
         help_text=_("O grau pré-selecionado ao fechar a fornada."),
     )
+    is_active = models.BooleanField(
+        _("ativo"),
+        default=True,
+        help_text=_("Graus inativos permanecem no histórico, mas não podem classificar novas fornadas."),
+    )
 
     class Meta:
         verbose_name = _("grau de qualidade")
@@ -71,6 +76,12 @@ class QualityGrade(models.Model):
 
     def __str__(self) -> str:
         return self.label
+
+    def clean(self) -> None:
+        if self.is_default and not self.is_active:
+            raise ValidationError(
+                {"is_active": _("O grau padrão precisa permanecer ativo.")}
+            )
 
 
 class QualityDefect(models.Model):

@@ -64,6 +64,19 @@ def test_kiosk_carries_catalogs_with_semantics(recipe):
 
 
 @pytest.mark.django_db
+def test_kiosk_excludes_inactive_quality_options(recipe):
+    from shopman.shop.models import QualityDefect, QualityGrade
+
+    QualityGrade.objects.filter(ref="fair").update(is_active=False)
+    QualityDefect.objects.filter(ref="misshapen").update(is_active=False)
+
+    kiosk = build_qc_kiosk(selected_date=date.today())
+
+    assert "fair" not in {grade.ref for grade in kiosk.grades}
+    assert "misshapen" not in {defect.ref for defect in kiosk.defects}
+
+
+@pytest.mark.django_db
 def test_kiosk_orders_open_first_closed_carry_partition(recipe, monkeypatch):
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     today = date.today()

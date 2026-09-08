@@ -283,6 +283,33 @@ class TestWeighingTicketConventions:
         assert ticket.output_quantity_display == "7 kg"
         assert ticket.dough_weight_display == ""  # rendimento já é massa
 
+    def test_started_quantity_and_frozen_recipe_drive_existing_ticket(self):
+        recipe = Recipe.objects.create(
+            ref="frozen-ticket",
+            name="Frozen Ticket",
+            output_sku="FROZEN-TICKET",
+            batch_size=Decimal("10"),
+        )
+        ingredient = RecipeItem.objects.create(
+            recipe=recipe,
+            input_sku="FARINHA",
+            quantity=Decimal("5"),
+            unit="kg",
+        )
+        work_order = craft.plan(recipe, Decimal("10"), date=date.today())
+        craft.start(work_order, quantity=Decimal("5"), expected_rev=0)
+
+        recipe.batch_size = Decimal("20")
+        recipe.save(update_fields=["batch_size"])
+        ingredient.quantity = Decimal("100")
+        ingredient.save(update_fields=["quantity"])
+
+        weighing = build_production_weighing(selected_date=date.today())
+        ticket = next(t for t in weighing.tickets if t.recipe_ref == recipe.ref)
+
+        assert ticket.output_quantity_display == "5 un."
+        assert ticket.ingredients[0].quantity_display == "2,5 kg"
+
     def test_expiry_defaults_to_next_day(self):
         """Sem validade configurada, D+1 (padrão de massas)."""
         ticket = self._plan_direct_recipe()

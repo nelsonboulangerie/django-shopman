@@ -286,21 +286,67 @@ def test_finish_without_quality_defaults_to_catalog_default(recipe):
 
 
 @pytest.mark.django_db
-def test_unknown_quality_falls_back_to_the_default(recipe):
-    """Grau que o catálogo não conhece cai no padrão — a borda valida (ADR-004)."""
+def test_unknown_quality_is_rejected(recipe):
     _, wo_ref, _, _ = production.apply_planned(
         recipe_id=recipe.pk, quantity="2",
         target_date_value=date.today().isoformat(), actor="production:op",
     )
     work_order = WorkOrder.objects.get(ref=wo_ref)
     production.apply_start(work_order_id=work_order.pk, quantity="2", actor="production:op")
-    production.apply_finish(
-        work_order_id=work_order.pk, quantity="2",
-        actor="production:op", quality="sublime",
-    )
+    with pytest.raises(production.ProductionError, match="Grau de qualidade desconhecido"):
+        production.apply_finish(
+            work_order_id=work_order.pk,
+            quantity="2",
+            actor="production:op",
+            quality="sublime",
+        )
 
-    line = WorkOrderItem.objects.get(work_order=work_order, kind=WorkOrderItem.Kind.OUTPUT)
-    assert line.quality_grade_ref == "standard"
+
+@pytest.mark.django_db
+def test_unknown_or_inactive_defect_is_rejected(recipe):
+    from shopman.shop.models import QualityDefect, QualityGrade
+
+    work_order = craft.plan(recipe, 2, date=date.today())
+    craft.start(work_order, quantity=2, expected_rev=0)
+
+    with pytest.raises(production.ProductionError, match="Defeito de qualidade desconhecido"):
+        production.resolve_partition(
+            work_order,
+            quantity="2",
+            partition=[
+                {
+                    "quantity": "2",
+                    "quality_grade_ref": "standard",
+                    "quality_defect_ref": "inventado",
+                }
+            ],
+        )
+
+    defect = QualityDefect.objects.get(ref="misshapen")
+    defect.is_active = False
+    defect.save(update_fields=["is_active"])
+    with pytest.raises(production.ProductionError, match="Defeito de qualidade inativo"):
+        production.resolve_partition(
+            work_order,
+            quantity="2",
+            partition=[
+                {
+                    "quantity": "2",
+                    "quality_grade_ref": "standard",
+                    "quality_defect_ref": defect.ref,
+                }
+            ],
+        )
+
+    grade = QualityGrade.objects.get(ref="fair")
+    grade.is_active = False
+    grade.save(update_fields=["is_active"])
+    with pytest.raises(production.ProductionError, match="Grau de qualidade inativo"):
+        production.resolve_partition(
+            work_order,
+            quantity="2",
+            partition=[{"quantity": "2", "quality_grade_ref": grade.ref}],
+        )
 
 
 @pytest.mark.django_db

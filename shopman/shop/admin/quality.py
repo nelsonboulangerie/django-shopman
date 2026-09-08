@@ -15,9 +15,10 @@ from shopman.shop.models import QualityDefect, QualityGrade
 
 @admin.register(QualityGrade)
 class QualityGradeAdmin(ModelAdmin):
-    list_display = ("label", "ref", "rank", "markdown_display", "is_default")
+    list_display = ("label", "ref", "rank", "markdown_display", "is_default", "is_active")
+    list_editable = ("is_active",)
     ordering = ("-rank",)
-    fields = ("ref", "label", "rank", "markdown_percent", "is_default")
+    fields = ("ref", "label", "rank", "markdown_percent", "is_default", "is_active")
 
     def get_readonly_fields(self, request, obj=None):
         # O código é fixo (o quiosque e o finish falam por ele); o rótulo edita.

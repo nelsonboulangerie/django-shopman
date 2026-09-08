@@ -92,6 +92,12 @@ class TestInvariantes:
             grades[i].rank > grades[i + 1].rank for i in range(len(grades) - 1)
         )
 
+    def test_grau_padrao_nao_pode_ser_desativado(self):
+        grade = QualityGrade.objects.get(is_default=True)
+        grade.is_active = False
+        with pytest.raises(ValidationError):
+            grade.full_clean()
+
 
 class TestRotuloMudaCodigoFica:
     def test_trocar_rotulo_nao_toca_no_codigo(self):

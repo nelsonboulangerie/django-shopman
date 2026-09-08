@@ -19,7 +19,6 @@ from shopman.utils.spreadsheet import escape_cell
 
 from shopman.backstage.services.exceptions import ProductionConflict, ProductionError
 from shopman.shop.services import production as production_core
-from shopman.shop.services import quality as quality_service
 
 logger = logging.getLogger(__name__)
 
@@ -383,22 +382,37 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     - ``quality`` sozinho (a superfície de hoje): partição de um grupo só.
     - nada: um grupo no grau padrão do catálogo.
 
-    Grau desconhecido cai no padrão; defeito desconhecido é descartado com
-    aviso (o catálogo é a fronteira de validação — ADR-004).
+    Referências desconhecidas ou inativas são rejeitadas. Uma resposta de QC
+    nunca pode ser reinterpretada silenciosamente como outra classificação.
     """
     from shopman.shop.models import QualityDefect, QualityGrade
 
-    grades = dict(QualityGrade.objects.values_list("ref", "markdown_percent"))
-    default_ref = quality_service.default_grade_ref()
+    grade_states = dict(QualityGrade.objects.values_list("ref", "is_active"))
+    grades = dict(
+        QualityGrade.objects.filter(is_active=True).values_list(
+            "ref", "markdown_percent"
+        )
+    )
+    defaults = list(
+        QualityGrade.objects.filter(is_active=True, is_default=True).values_list(
+            "ref", flat=True
+        )
+    )
+    if len(defaults) != 1:
+        raise ProductionError(
+            "O catálogo de qualidade precisa ter exatamente um grau padrão ativo."
+        )
+    default_ref = defaults[0]
     vetoes = set(
         QualityDefect.objects.filter(forces_discard=True).values_list("ref", flat=True)
     )
-    known_defects = set(QualityDefect.objects.values_list("ref", flat=True))
+    defect_states = dict(QualityDefect.objects.values_list("ref", "is_active"))
 
     if not partition:
         grade = (quality or "").strip().lower() or default_ref
         if grade not in grades:
-            grade = default_ref
+            state = "inativo" if grade in grade_states else "desconhecido"
+            raise ProductionError(f"Grau de qualidade {state}: {grade}.")
         partition = [{"quantity": quantity, "quality_grade_ref": grade}]
 
     production_date = work_order.target_date or timezone.localdate()
@@ -409,18 +423,12 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     for group in partition:
         grade = str(group.get("quality_grade_ref") or "").strip().lower() or default_ref
         if grade not in grades:
-            logger.warning(
-                "production.partition: grau desconhecido %r vira o padrão (wo=%s)",
-                grade, work_order.ref,
-            )
-            grade = default_ref
+            state = "inativo" if grade in grade_states else "desconhecido"
+            raise ProductionError(f"Grau de qualidade {state}: {grade}.")
         defect = str(group.get("quality_defect_ref") or "").strip().lower()
-        if defect and defect not in known_defects:
-            logger.warning(
-                "production.partition: defeito desconhecido %r descartado (wo=%s)",
-                defect, work_order.ref,
-            )
-            defect = ""
+        if defect and not defect_states.get(defect, False):
+            state = "inativo" if defect in defect_states else "desconhecido"
+            raise ProductionError(f"Defeito de qualidade {state}: {defect}.")
 
         if group.get("loss"):
             # Perda declarada: abaixo do piso não existe grau, existe descarte

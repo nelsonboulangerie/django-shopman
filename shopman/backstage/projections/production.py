@@ -330,6 +330,15 @@ class _RecipeItemData:
     sort_order: int = 0
 
 
+@dataclass
+class _NeedData:
+    item_ref: str
+    quantity: Decimal
+    unit: str
+    has_recipe: bool
+    margin: object | None = None
+
+
 @dataclass(frozen=True)
 class ProductionSurfaceAccess:
     """Column-level access for the production board surface."""
@@ -348,19 +357,21 @@ class ProductionSurfaceAccess:
 
     @property
     def can_access_board(self) -> bool:
-        return any((
-            self.can_manage_all,
-            self.can_view_suggested,
-            self.can_edit_suggested,
-            self.can_view_planned,
-            self.can_edit_planned,
-            self.can_view_started,
-            self.can_edit_started,
-            self.can_view_finished,
-            self.can_edit_finished,
-            self.can_view_unsold,
-            self.can_edit_unsold,
-        ))
+        return any(
+            (
+                self.can_manage_all,
+                self.can_view_suggested,
+                self.can_edit_suggested,
+                self.can_view_planned,
+                self.can_edit_planned,
+                self.can_view_started,
+                self.can_edit_started,
+                self.can_view_finished,
+                self.can_edit_finished,
+                self.can_view_unsold,
+                self.can_edit_unsold,
+            )
+        )
 
     @property
     def can_see_current_kernel_columns(self) -> bool:
@@ -642,8 +653,7 @@ def build_production_board(
 
     # Fetch work orders for the selected date
     wos_qs = (
-        WorkOrder.objects
-        .filter(target_date=selected_date)
+        WorkOrder.objects.filter(target_date=selected_date)
         .select_related("recipe")
         .prefetch_related("recipe__items")
         .order_by("-created_at")
@@ -654,10 +664,7 @@ def build_production_board(
     if operator_ref:
         wos_qs = wos_qs.filter(operator_ref=operator_ref)
 
-    wo_cards = tuple(
-        card for card in (_build_wo_card(wo) for wo in wos_qs)
-        if _can_view_card(card, access)
-    )
+    wo_cards = tuple(card for card in (_build_wo_card(wo) for wo in wos_qs) if _can_view_card(card, access))
 
     # Craft summary via service
     summary = craft.summary(
@@ -687,10 +694,7 @@ def build_production_board(
         for item in queue_items
         if item.status == WorkOrder.Status.STARTED and access.can_view_started
     )
-    finished_queue = tuple(
-        wo for wo in wo_cards
-        if wo.status == WorkOrder.Status.FINISHED and access.can_view_finished
-    )
+    finished_queue = tuple(wo for wo in wo_cards if wo.status == WorkOrder.Status.FINISHED and access.can_view_finished)
 
     counts = ProductionCountsProjection(
         total=summary.total_orders,
@@ -709,9 +713,7 @@ def build_production_board(
         for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
     )
     consumed_recipe_skus = set(
-        RecipeItem.objects.filter(recipe__is_active=True)
-        .exclude(input_sku="")
-        .values_list("input_sku", flat=True)
+        RecipeItem.objects.filter(recipe__is_active=True).exclude(input_sku="").values_list("input_sku", flat=True)
     )
     matrix_recipes = tuple(
         Recipe.objects.filter(is_active=True)
@@ -736,7 +738,8 @@ def build_production_board(
     all_matrix_rows = _build_matrix_rows(matrix_recipes, wo_cards, visible_suggestions)
     base_recipes = _build_group_options(all_matrix_rows)
     matrix_rows = tuple(
-        row for row in all_matrix_rows
+        row
+        for row in all_matrix_rows
         if not base_recipe or any(usage.output_sku == base_recipe for usage in row.base_usages)
     )
     matrix_groups = _build_matrix_groups(matrix_rows, base_recipe=base_recipe)
@@ -775,7 +778,7 @@ def build_production_weighing(
     work_orders = (
         WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
         .select_related("recipe")
-        .prefetch_related("recipe__items")
+        .prefetch_related("recipe__items", "events")
         .order_by("recipe__ref", "output_sku")
     )
     if position_ref:
@@ -785,25 +788,23 @@ def build_production_weighing(
         recipe.output_sku: recipe
         for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("ref")
     }
-    tickets: dict[tuple[int, str], dict] = {}
+    tickets: dict[tuple, dict] = {}
 
     def add_ticket(
         recipe: Recipe,
         quantity: Decimal,
         unit: str,
         source: str,
-        frozen: tuple[tuple[_RecipeItemData, ...], Decimal] | None = None,
+        *,
+        items: tuple[_RecipeItemData, ...] | None = None,
+        batch_size: Decimal | None = None,
     ) -> None:
-        """Acumula um ticket. ``frozen`` é a ficha CONGELADA no planejamento desta WO.
-
-        ⚠️ ``None`` não é descuido: o ticket de sub-preparo descreve uma receita que não
-        foi planejada como work order própria, então ela não TEM ficha congelada. O que
-        o congelamento do pai já protege é a QUANTIDADE que chega aqui — o coeficiente
-        que a escalou saiu do snapshot dele.
-        """
         if base_recipe and recipe.output_sku != base_recipe:
             return
-        key = (recipe.pk, unit)
+        ticket_items = items if items is not None else _recipe_items(recipe)
+        ticket_batch_size = batch_size if batch_size is not None else recipe.batch_size
+        snapshot_key = tuple((item.input_sku, str(item.quantity), item.unit, item.sort_order) for item in ticket_items)
+        key = (recipe.pk, unit, str(ticket_batch_size), snapshot_key)
         entry = tickets.setdefault(
             key,
             {
@@ -811,39 +812,30 @@ def build_production_weighing(
                 "quantity": Decimal("0"),
                 "unit": unit,
                 "sources": [],
-                "frozen": frozen,
+                "items": ticket_items,
+                "batch_size": ticket_batch_size,
             },
         )
-        # Duas WOs da mesma receita planejadas em momentos diferentes podem ter fichas
-        # congeladas distintas, e o ticket é um só. Fica a primeira — ela ao menos é a
-        # verdade de uma das fornadas, enquanto a receita viva pode não ser a de nenhuma
-        # — e a divergência vai para o log, porque é sintoma de ficha editada no meio do
-        # dia, não ruído.
-        if frozen is not None and entry["frozen"] is not None and entry["frozen"] != frozen:
-            logger.warning(
-                "producao.pesagem_ficha_divergente recipe=%s — duas fornadas do dia "
-                "congelaram fichas diferentes; o ticket usa a primeira.",
-                recipe.ref,
-            )
-        elif entry["frozen"] is None:
-            entry["frozen"] = frozen
         entry["quantity"] += quantity
         if source not in entry["sources"]:
             entry["sources"].append(source)
 
     for work_order in work_orders:
         recipe = work_order.recipe
-        items, batch_size = _work_order_recipe(work_order)
+        batch_size = _work_order_recipe_batch_size(work_order)
         if not batch_size:
             continue
-        coefficient = Decimal(str(work_order.quantity)) / batch_size
+        items = _work_order_recipe_items(work_order)
+        effective_quantity = _work_order_effective_quantity(work_order)
+        coefficient = effective_quantity / batch_size
         base_items = [
-            item for item in items
+            item
+            for item in items
             if item.input_sku in active_recipes and active_recipes[item.input_sku].pk != recipe.pk
         ]
         # Copy de objetivo: quantidade primeiro ("25 un. CIABATTA") — é a meta
         # de produção que este preparo alimenta, não um "destino" físico.
-        source = f"{_measure(Decimal(str(work_order.quantity)), 'un.')} {work_order.output_sku}"
+        source = f"{_measure(effective_quantity, 'un.')} {work_order.output_sku}"
 
         if base_items:
             for item in base_items:
@@ -856,14 +848,15 @@ def build_production_weighing(
             continue
 
         add_ticket(
-            recipe, Decimal(str(work_order.quantity)), "un.", source, frozen=(items, batch_size)
+            recipe,
+            effective_quantity,
+            "un.",
+            source,
+            items=items,
+            batch_size=batch_size,
         )
 
-    ingredient_skus = {
-        item.input_sku
-        for entry in tickets.values()
-        for item in _recipe_items(entry["recipe"])
-    }
+    ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
 
     return ProductionWeighingProjection(
@@ -942,28 +935,28 @@ def build_production_mise_en_place(
     sobra zero — é sobra que caiba no teto do dia seguinte.
     """
     selected_date = selected_date or timezone.localdate()
-    needs = craft.needs(selected_date, expand=expand, yield_margin=True)
-
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
     work_orders = list(
         WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
         .select_related("recipe")
-        .prefetch_related("recipe__items")
+        .prefetch_related("recipe__items", "events")
         .order_by("recipe__ref", "ref")
+    )
+    needs, margin_applied = _work_order_needs(
+        work_orders,
+        expand=expand,
+        yield_margin=True,
     )
 
     breakdown_by_sku: dict[str, list[MiseEnPlaceBreakdownProjection]] = {}
     if not expand:
         for work_order in work_orders:
             recipe = work_order.recipe
-            # Mesma origem de erro da pesagem: aqui os itens eram os VIVOS com o
-            # rendimento VIVO — internamente coerente, mas ignorando o snapshot que o
-            # planejamento congelou. As duas telas passam a contar a mesma história.
-            items, batch_size = _work_order_recipe(work_order)
+            batch_size = _work_order_recipe_batch_size(work_order)
             if not batch_size:
                 continue
-            coefficient = Decimal(str(work_order.quantity)) / batch_size
-            for item in items:
+            coefficient = _work_order_effective_quantity(work_order) / batch_size
+            for item in _work_order_recipe_items(work_order):
                 breakdown_by_sku.setdefault(item.input_sku, []).append(
                     MiseEnPlaceBreakdownProjection(
                         recipe_name=recipe.name or recipe.ref,
@@ -974,8 +967,7 @@ def build_production_mise_en_place(
 
     skus = {need.item_ref for need in needs}
     active_recipes = {
-        recipe.output_sku: recipe
-        for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
+        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
     }
     product_names = _product_names(skus)
     availability = _ingredient_availability(skus)
@@ -989,29 +981,22 @@ def build_production_mise_en_place(
         lines.append(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
-                name=_ingredient_name(
-                    need.item_ref, active_recipes=active_recipes, product_names=product_names
-                ),
+                name=_ingredient_name(need.item_ref, active_recipes=active_recipes, product_names=product_names),
                 quantity_display=_measure(need.quantity, need.unit),
                 unit=need.unit,
                 is_subrecipe=need.has_recipe,
                 available_display=_measure(available, need.unit) if available is not None else "",
                 is_short=bool(available is not None and available < need.quantity),
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
-                annotation=_preparation_annotation(
-                    need.quantity, need.unit, conversions.get(need.item_ref)
-                ),
+                annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
-                    f"+ {_measure(need.margin.total, need.unit)} de margem"
-                    if need.margin is not None
-                    else ""
+                    f"+ {_measure(need.margin.total, need.unit)} de margem" if need.margin is not None else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
             )
         )
     lines.sort(key=lambda line: (not line.is_subrecipe, line.name.lower()))
 
-    margin_applied = any(need.margin is not None for need in needs)
     return ProductionMiseEnPlaceProjection(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
@@ -1019,8 +1004,8 @@ def build_production_mise_en_place(
         lines=tuple(lines),
         has_lines=bool(lines),
         work_order_count=len(work_orders),
-        has_stock_readings=any(value and value > 0 for value in availability.values()),
-        yield_margin_applied=margin_applied or (expand and _has_yield_margin(selected_date)),
+        has_stock_readings=bool(availability),
+        yield_margin_applied=margin_applied,
         yield_margin_note=_YIELD_MARGIN_NOTE,
     )
 
@@ -1035,17 +1020,6 @@ _YIELD_MARGIN_NOTE = (
 )
 
 
-def _has_yield_margin(selected_date: date) -> bool:
-    """No modo expandido a linha do preparo some, mas a margem foi aplicada.
-
-    Pergunta ao não-expandido se alguma linha recebeu margem — é a mesma
-    caminhada de BOM, um nível acima, e é o que permite ao cabeçalho dizer a
-    verdade em vez de ficar mudo justamente quando o número não tem explicação
-    por linha.
-    """
-    return any(need.margin is not None for need in craft.needs(selected_date, yield_margin=True))
-
-
 # Alfabeto do código cego: ultra legível e memorizável (pedido do Pablo) —
 # 1 letra + 1 número, sem 0/1/O/I. Espaço = 24×8 = 192 códigos/dia.
 _BLIND_LETTERS = "ABCDEFGHJKLMNPQRSTUVWXYZ"
@@ -1057,10 +1031,14 @@ _BLIND_DIGITS = "23456789"
 # veta "D7" na 2ª (dê soa como zê no grito da cozinha), mas libera "M7".
 _BLIND_LETTER_FAMILIES = {
     **dict.fromkeys("BCDGPTVZ", "ê"),  # bê cê dê gê pê tê vê zê
-    "M": "êm", "N": "êm",              # ême/êne
-    "F": "és", "S": "és",              # éfe/ésse
-    "K": "cá", "Q": "cá",              # cá/quê
-    "L": "él", "R": "él",              # éle/érre
+    "M": "êm",
+    "N": "êm",  # ême/êne
+    "F": "és",
+    "S": "és",  # éfe/ésse
+    "K": "cá",
+    "Q": "cá",  # cá/quê
+    "L": "él",
+    "R": "él",  # éle/érre
     # A, E, H, J, U, W, X, Y — sons únicos, família própria (a própria letra)
 }
 
@@ -1095,19 +1073,11 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
     window = _blind_window(selected_date)
     space = [letter + digit for letter in _BLIND_LETTERS for digit in _BLIND_DIGITS]
     for _attempt in range(len(space)):
-        window_taken = set(
-            BlindPrepCode.objects.filter(date__in=window).values_list("code", flat=True)
-        )
-        day_codes = set(
-            BlindPrepCode.objects.filter(date=selected_date).values_list("code", flat=True)
-        )
+        window_taken = set(BlindPrepCode.objects.filter(date__in=window).values_list("code", flat=True))
+        day_codes = set(BlindPrepCode.objects.filter(date=selected_date).values_list("code", flat=True))
         day_letters = {code[0] for code in day_codes}
         day_digits = {code[1] for code in day_codes}
-        by_letter = [
-            code
-            for code in space
-            if code not in window_taken and code[0] not in day_letters
-        ]
+        by_letter = [code for code in space if code not in window_taken and code[0] not in day_letters]
         # Escada de qualidade (nunca bloqueia — o código é uma CONVENIÊNCIA
         # anticonfusão, não um gargalo da operação):
         #   1º–8º   ótimos: letra única + número único;
@@ -1120,26 +1090,17 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
             free = strict
         elif by_letter:
             digit_families = {
-                digit: {
-                    _BLIND_LETTER_FAMILIES.get(code[0], code[0])
-                    for code in day_codes
-                    if code[1] == digit
-                }
+                digit: {_BLIND_LETTER_FAMILIES.get(code[0], code[0]) for code in day_codes if code[1] == digit}
                 for digit in day_digits
             }
             quality = [
                 code
                 for code in by_letter
-                if _BLIND_LETTER_FAMILIES.get(code[0], code[0])
-                not in digit_families.get(code[1], set())
+                if _BLIND_LETTER_FAMILIES.get(code[0], code[0]) not in digit_families.get(code[1], set())
             ]
             free = quality or by_letter
         else:
-            free = [
-                code
-                for code in space
-                if code not in window_taken and code not in day_codes
-            ]
+            free = [code for code in space if code not in window_taken and code not in day_codes]
         if not free:
             raise RuntimeError(
                 "Sem código cego disponível: espaço esgotado no dia e na janela "
@@ -1148,14 +1109,10 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
         candidate = secrets.choice(free)
         try:
             with transaction.atomic():
-                row = BlindPrepCode.objects.create(
-                    date=selected_date, recipe_ref=recipe_ref, code=candidate
-                )
+                row = BlindPrepCode.objects.create(date=selected_date, recipe_ref=recipe_ref, code=candidate)
         except IntegrityError:
             # Colidiu (código do dia levado numa corrida, ou o ref já alocou).
-            existing = BlindPrepCode.objects.filter(
-                date=selected_date, recipe_ref=recipe_ref
-            ).first()
+            existing = BlindPrepCode.objects.filter(date=selected_date, recipe_ref=recipe_ref).first()
             if existing:
                 return existing.code
             continue  # retry com outro sorteio
@@ -1225,7 +1182,9 @@ def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
 
         rows = (
             MaterialConversion.objects.filter(
-                material__sku__in=skus, is_active=True, supplier__isnull=True,
+                material__sku__in=skus,
+                is_active=True,
+                supplier__isnull=True,
             )
             .select_related("material")
             .order_by("material__sku", "to_base_factor", "label")
@@ -1247,9 +1206,7 @@ def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
         return {}
 
 
-def _preparation_annotation(
-    quantity: Decimal, unit: str, conversion: _CountingConversion | None
-) -> str:
+def _preparation_annotation(quantity: Decimal, unit: str, conversion: _CountingConversion | None) -> str:
     """O mesmo número dito na contagem da bancada — "≈ 6 ovos".
 
     O ``≈`` só entra quando o fator é aproximado; número exato não ganha
@@ -1268,13 +1225,15 @@ def _preparation_annotation(
 
 
 def _ingredient_availability(skus: set[str]) -> dict[str, Decimal]:
-    """Saldo por insumo via Stockman — dict vazio quando o ledger não responde."""
+    """Saldo por insumo via Stockman, preserving a legitimate zero reading."""
     if not skus:
         return {}
     try:
         from shopman.stockman import stock
+        from shopman.stockman.models import Quant
 
-        return {sku: stock.available(sku) for sku in sorted(skus)}
+        observed_skus = set(Quant.objects.filter(sku__in=skus).values_list("sku", flat=True))
+        return {sku: stock.available(sku) for sku in sorted(observed_skus)}
     except Exception:
         logger.debug("production.mise_en_place_availability_failed", exc_info=True)
         return {}
@@ -1289,11 +1248,7 @@ def build_production_dashboard(
     selected_date = selected_date or timezone.localdate()
     summary = craft.summary(date=selected_date, position_ref=position_ref or None)
 
-    wos = list(
-        WorkOrder.objects.filter(target_date=selected_date)
-        .select_related("recipe")
-        .order_by("created_at")
-    )
+    wos = list(WorkOrder.objects.filter(target_date=selected_date).select_related("recipe").order_by("created_at"))
     if position_ref:
         wos = [wo for wo in wos if wo.position_ref == position_ref]
 
@@ -1386,7 +1341,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             markdown_percent=g.markdown_percent,
             is_default=g.is_default,
         )
-        for g in QualityGrade.objects.order_by("-rank")
+        for g in QualityGrade.objects.filter(is_active=True).order_by("-rank")
     )
     defects = tuple(
         QCDefectProjection(ref=d.ref, label=d.label, hint=d.hint, forces_discard=d.forces_discard)
@@ -1427,9 +1382,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             status=str(wo.status),
             planned_qty=_qty(wo.quantity),
             started_qty=_qty(started_qty) if started_qty is not None else "",
-            started_at_display=(
-                timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""
-            ),
+            started_at_display=(timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""),
             elapsed_minutes=elapsed,
             can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
             closed=closed,
@@ -1678,11 +1631,7 @@ def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentPro
         logger.debug("production.order_ref_import_failed wo=%s", wo.ref, exc_info=True)
         return ()
 
-    orders = (
-        Order.objects.filter(ref__in=refs)
-        .prefetch_related("items")
-        .order_by("created_at")
-    )
+    orders = Order.objects.filter(ref__in=refs).prefetch_related("items").order_by("created_at")
     by_ref = {order.ref: order for order in orders}
     result: list[OrderCommitmentProjection] = []
     for ref in refs:
@@ -1782,10 +1731,14 @@ def _recipe_steps(recipe: Recipe) -> list[dict[str, int | str]]:
             target_seconds = int(target or 0)
         except (TypeError, ValueError):
             target_seconds = 0
-        result.append({
-            "name": name or f"Passo {index}",
-            "target_seconds": max(1, target_seconds or int(_target_minutes_for_recipe(recipe) * 60 / max(1, len(raw_steps)))),
-        })
+        result.append(
+            {
+                "name": name or f"Passo {index}",
+                "target_seconds": max(
+                    1, target_seconds or int(_target_minutes_for_recipe(recipe) * 60 / max(1, len(raw_steps)))
+                ),
+            }
+        )
     return result
 
 
@@ -1841,8 +1794,7 @@ def _parse_date(value, default: date) -> date:
 
 def _report_queryset(filters: ProductionReportFilters):
     qs = (
-        WorkOrder.objects
-        .filter(target_date__gte=filters.date_from, target_date__lte=filters.date_to)
+        WorkOrder.objects.filter(target_date__gte=filters.date_from, target_date__lte=filters.date_to)
         .select_related("recipe")
         .prefetch_related("events")
         .order_by("target_date", "recipe__ref", "ref")
@@ -1861,7 +1813,9 @@ def _report_queryset(filters: ProductionReportFilters):
 def _work_order_report_row(wo: WorkOrder) -> WorkOrderReportRow:
     started_qty = _wo_started_qty(wo) or Decimal("0")
     finished_qty = wo.finished or Decimal("0")
-    loss_qty = max((started_qty or wo.quantity) - finished_qty, Decimal("0")) if wo.finished is not None else Decimal("0")
+    loss_qty = (
+        max((started_qty or wo.quantity) - finished_qty, Decimal("0")) if wo.finished is not None else Decimal("0")
+    )
     yield_rate = ""
     if wo.finished is not None and (started_qty or wo.quantity):
         yield_rate = f"{int((finished_qty / (started_qty or wo.quantity)) * 100)}%"
@@ -1924,9 +1878,7 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
     from shopman.shop.models import QualityDefect, QualityGrade
     from shopman.shop.services import quality as quality_service
 
-    finished = {
-        wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED
-    }
+    finished = {wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED}
     if not finished:
         return ()
 
@@ -1950,9 +1902,7 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
                 continue  # perda sem defeito é rendimento, não qualidade
             grade = ""
         key = (wo.recipe.ref, grade, defect_ref)
-        bucket = grouped.setdefault(
-            key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")}
-        )
+        bucket = grouped.setdefault(key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")})
         bucket["qty"] = bucket["qty"] + quantity
         recipe_totals[wo.recipe.ref] = recipe_totals.get(wo.recipe.ref, Decimal("0")) + quantity
 
@@ -2143,9 +2093,7 @@ def _suggestion_explanation_parts(basis: dict) -> tuple[str, ...]:
         avg_display = format(avg.quantize(Decimal("0.1")).normalize(), "f").replace(".", ",")
         weekday_note = ", mesmo dia da semana" if basis.get("same_weekday") else ""
         day_word = "dia" if sample == 1 else "dias"
-        parts.append(
-            f"Média de venda: {avg_display}/dia ({sample} {day_word} de histórico{weekday_note})"
-        )
+        parts.append(f"Média de venda: {avg_display}/dia ({sample} {day_word} de histórico{weekday_note})")
 
     committed = _decimal_value(basis.get("committed", Decimal("0")))
     if committed:
@@ -2232,9 +2180,7 @@ def _build_matrix_rows(
         )
         # Ordena pelo texto que a bancada lê (o nome), com o SKU como desempate:
         # lista ordenada por chave invisível parece embaralhada.
-        for output_sku, row in sorted(
-            rows.items(), key=lambda item: (str(item[1]["recipe_name"]).lower(), item[0])
-        )
+        for output_sku, row in sorted(rows.items(), key=lambda item: (str(item[1]["recipe_name"]).lower(), item[0]))
     )
 
 
@@ -2340,13 +2286,8 @@ def _build_weighing_ticket(
     recipe = entry["recipe"]
     output_quantity = Decimal(str(entry["quantity"]))
     output_unit = str(entry["unit"])
-    # ⚠️ A ficha CONGELADA no planejamento manda aqui — é este número que o padeiro põe
-    # na balança. Ler a receita viva fazia uma edição de rendimento no meio da manhã
-    # reescrever a etiqueta em silêncio: `batch_size` de 10 para 20 corta todos os pesos
-    # pela metade, e a etiqueta cega não dá pista nenhuma.
-    frozen_items, frozen_batch = entry.get("frozen") or (None, None)
-    items = frozen_items if frozen_items is not None else _recipe_items(recipe)
-    coefficient = output_quantity / (frozen_batch or recipe.batch_size)
+    items = entry["items"]
+    coefficient = output_quantity / entry["batch_size"]
     ingredients = tuple(
         ProductionWeighingIngredientProjection(
             sku=item.input_sku,
@@ -2368,9 +2309,7 @@ def _build_weighing_ticket(
         Decimal("0"),
     )
     dough_weight_display = (
-        f"≈ {_measure(dough_weight, 'kg')} de massa"
-        if output_unit not in mass_factors and dough_weight > 0
-        else ""
+        f"≈ {_measure(dough_weight, 'kg')} de massa" if output_unit not in mass_factors and dough_weight > 0 else ""
     )
 
     shelf_life = _decimal_meta(recipe.meta, "shelf_life_days")
@@ -2382,10 +2321,7 @@ def _build_weighing_ticket(
         expiry = selected_date + timedelta(days=1)
     table = {
         "headers": ["Insumo", "Quantidade"],
-        "rows": [
-            {"cols": [ingredient.name, ingredient.quantity_display]}
-            for ingredient in ingredients
-        ],
+        "rows": [{"cols": [ingredient.name, ingredient.quantity_display]} for ingredient in ingredients],
     }
     return ProductionWeighingTicketProjection(
         recipe_ref=recipe.ref,
@@ -2425,24 +2361,12 @@ def _recipe_items(recipe: Recipe) -> tuple[_RecipeItemData, ...]:
     )
 
 
-def _work_order_recipe(work_order: WorkOrder) -> tuple[tuple[_RecipeItemData, ...], Decimal]:
-    """Os itens da ficha **e** o rendimento, sempre da MESMA fonte.
-
-    ⚠️ Voltam juntos porque separá-los foi o defeito. A pesagem lia os itens do snapshot
-    (congelado no planejamento) e dividia pelo ``batch_size`` da receita VIVA. Editar o
-    rendimento entre o planejamento e a pesagem — a mesma manhã basta — dava quantidades
-    congeladas sobre um rendimento novo: um ``batch_size`` de 10 para 20 corta todos os
-    pesos pela metade, e a etiqueta cega não dá pista nenhuma. O padeiro pesa 300 g onde
-    a ficha manda 600 g, e nada avisa.
-
-    Os outros dois consumidores do snapshot já liam ``snapshot["batch_size"]``; era a
-    pesagem que misturava. O plano de domínio manda literalmente preferir o snapshot,
-    "evitando que uma edição posterior da receita altere silenciosamente a pesagem".
-    """
+def _work_order_recipe_items(work_order: WorkOrder) -> tuple[_RecipeItemData, ...]:
+    """Read the BOM frozen when the work order was planned."""
     snapshot = (work_order.meta or {}).get("_recipe_snapshot")
     if not snapshot:
-        return _recipe_items(work_order.recipe), Decimal(str(work_order.recipe.batch_size or 0))
-    itens = tuple(
+        return _recipe_items(work_order.recipe)
+    return tuple(
         _RecipeItemData(
             input_sku=str(item["input_sku"]),
             quantity=Decimal(str(item["quantity"])),
@@ -2451,11 +2375,119 @@ def _work_order_recipe(work_order: WorkOrder) -> tuple[tuple[_RecipeItemData, ..
         )
         for index, item in enumerate(snapshot.get("items") or [])
     )
-    # Snapshot antigo sem `batch_size` cai no rendimento vivo — que é o que ele já fazia,
-    # e é melhor que dividir por zero.
-    bruto = snapshot.get("batch_size")
-    rendimento = Decimal(str(bruto)) if bruto else Decimal(str(work_order.recipe.batch_size or 0))
-    return itens, rendimento
+
+
+def _work_order_recipe_batch_size(work_order: WorkOrder) -> Decimal:
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    value = snapshot.get("batch_size", work_order.recipe.batch_size)
+    return Decimal(str(value or "0"))
+
+
+def _work_order_effective_quantity(work_order: WorkOrder) -> Decimal:
+    if work_order.status == WorkOrder.Status.STARTED:
+        started = _wo_started_qty(work_order)
+        if started is not None:
+            return Decimal(str(started))
+    return Decimal(str(work_order.quantity))
+
+
+def _work_order_needs(
+    work_orders: list[WorkOrder],
+    *,
+    expand: bool,
+    yield_margin: bool = False,
+) -> tuple[list[_NeedData], bool]:
+    """Aggregate frozen/effective WO needs and the optional preparation margin.
+
+    The core ``craft.needs`` query reads the live recipe and planned quantity.
+    Production execution must instead keep using the BOM snapshot and, after a
+    start, the quantity that actually entered the process.  The yield margin is
+    still budgeted once per shared preparation before recursive expansion.
+    """
+
+    active_recipes = {
+        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items")
+    }
+    immediate: dict[tuple[str, str], Decimal] = {}
+    pieces: dict[tuple[str, str], Decimal] = {}
+
+    for work_order in work_orders:
+        batch_size = _work_order_recipe_batch_size(work_order)
+        if batch_size <= 0:
+            continue
+        effective_quantity = _work_order_effective_quantity(work_order)
+        coefficient = effective_quantity / batch_size
+        counted_output = units.dimension(work_order.recipe._declared_output_unit()) == units.COUNT
+        for item in _work_order_recipe_items(work_order):
+            key = (item.input_sku, item.unit)
+            immediate[key] = immediate.get(key, Decimal("0")) + item.quantity * coefficient
+            if (
+                yield_margin
+                and counted_output
+                and units.dimension(item.unit) == units.MASS
+                and item.input_sku in active_recipes
+            ):
+                pieces[key] = pieces.get(key, Decimal("0")) + effective_quantity
+
+    margins: dict[tuple[str, str], object] = {}
+    if yield_margin:
+        from shopman.craftsman.services.yield_margin import (
+            compute_yield_margin,
+            mixer_loss_g_for,
+        )
+
+        for key, total_pieces in pieces.items():
+            item_ref, unit = key
+            margin = compute_yield_margin(
+                pieces=total_pieces,
+                unit=unit,
+                mixer_loss_g=mixer_loss_g_for(active_recipes[item_ref]),
+            )
+            if margin is not None:
+                margins[key] = margin
+                immediate[key] += margin.total
+
+    aggregated: dict[tuple[str, str], _NeedData] = {}
+
+    def add(
+        item_ref: str,
+        quantity: Decimal,
+        unit: str,
+        *,
+        depth: int = 0,
+        margin: object | None = None,
+    ) -> None:
+        nested_recipe = active_recipes.get(item_ref)
+        if expand and nested_recipe is not None and depth < 5 and nested_recipe.batch_size:
+            coefficient = quantity / Decimal(str(nested_recipe.batch_size))
+            for nested_item in _recipe_items(nested_recipe):
+                add(
+                    nested_item.input_sku,
+                    nested_item.quantity * coefficient,
+                    nested_item.unit,
+                    depth=depth + 1,
+                )
+            return
+
+        key = (item_ref, unit)
+        existing = aggregated.get(key)
+        if existing is None:
+            aggregated[key] = _NeedData(
+                item_ref=item_ref,
+                quantity=quantity,
+                unit=unit,
+                has_recipe=nested_recipe is not None,
+                margin=margin,
+            )
+        else:
+            existing.quantity += quantity
+            if margin is not None:
+                existing.margin = margin
+
+    for (item_ref, unit), quantity in immediate.items():
+        add(item_ref, quantity, unit, margin=None if expand else margins.get((item_ref, unit)))
+
+    return list(aggregated.values()), bool(margins)
 
 
 def _ingredient_name(
@@ -2566,7 +2598,16 @@ def _wo_started_qty(wo: WorkOrder) -> Decimal | None:
     """Extract started quantity from work order events."""
     if wo.status in (WorkOrder.Status.PLANNED,):
         return None
-    for event in wo.events.filter(kind="started").order_by("-seq")[:1]:
+    prefetched = getattr(wo, "_prefetched_objects_cache", {}).get("events")
+    if prefetched is None:
+        events = wo.events.filter(kind="started").order_by("-seq")[:1]
+    else:
+        events = sorted(
+            (event for event in prefetched if event.kind == "started"),
+            key=lambda event: event.seq,
+            reverse=True,
+        )[:1]
+    for event in events:
         qty = (event.payload or {}).get("quantity")
         if qty is not None:
             return Decimal(str(qty))
