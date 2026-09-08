@@ -392,9 +392,9 @@ def _favorites(sku: str) -> list[Recipient]:
 def _pending_alerts(sku: str) -> list[Recipient]:
     """F9 — quem pediu explicitamente para ser avisado sobre este SKU.
 
-    A assinatura já é opt-in daquele produto, então dispensa o opt-in geral
-    de marketing (``_filter_opted_in`` respeita isso). Anônimo entra só com
-    telefone, sem ``customer_ref``.
+    A assinatura é opt-in limitado àquele produto, mas nunca revoga um opt-out
+    global já registrado no mesmo canal. Anônimo entra só com telefone, sem
+    ``customer_ref``; não existe identidade global para consultar nesse caso.
     """
     try:
         from shopman.shop.adapters import audience_sources
@@ -654,39 +654,46 @@ def _bought_recently(insight, *, sku: str, cutoff) -> bool:
 
 
 def _filter_opted_in(recipients, *, channel: str = DELIVERY_CONSENT_CHANNEL) -> list[Recipient]:
-    """Manter só quem consentiu — no canal de entrega ou por assinatura de SKU."""
+    """Aplicar precedência: opt-out global > assinatura específica > opt-in geral."""
     recipients = list(recipients)
     refs = {r.customer_ref for r in recipients if r.customer_ref}
-    opted_in = _opted_in_refs(refs, channel=channel)
+    statuses = _consent_statuses(refs, channel=channel)
+    if statuses is None:
+        # Falha de leitura é fail-closed para identidades conhecidas. Assinatura
+        # anônima continua limitada ao SKU e não tem consent global consultável.
+        return [r for r in recipients if "alerts" in r.reasons and not r.customer_ref]
 
     kept = []
     for recipient in recipients:
-        if "alerts" in recipient.reasons:
-            kept.append(recipient)  # a assinatura por SKU é o próprio consentimento
+        status = statuses.get(recipient.customer_ref, "")
+        if status == "opted_out":
             continue
-        if recipient.customer_ref and recipient.customer_ref in opted_in:
+        if "alerts" in recipient.reasons:
+            kept.append(recipient)
+            continue
+        if recipient.customer_ref and status == "opted_in":
             kept.append(recipient)
     return kept
 
 
-def _opted_in_refs(customer_refs: set[str], *, channel: str) -> set[str]:
-    """Refs com consentimento ativo no canal. Ausência e revogação valem opt-out.
+def _consent_statuses(
+    customer_refs: set[str], *, channel: str
+) -> dict[str, str] | None:
+    """Estados explícitos no canal; ``None`` significa fonte indisponível.
 
-    Uma consulta, pela API pública do guestman. Falha de leitura devolve conjunto
-    vazio de propósito: na dúvida ninguém recebe, porque o erro seguro aqui é não
-    enviar.
+    Uma consulta limitada ao cohort, pela API pública do Guestman. Ausência continua
+    distinguível de opt-out para que uma assinatura específica legítima funcione sem
+    fabricar um opt-in geral.
     """
     if not customer_refs:
-        return set()
+        return {}
     try:
         from shopman.guestman import ConsentService
 
-        marketable = set(ConsentService.get_marketable_customers(channel))
+        return ConsentService.get_customer_statuses(channel, customer_refs)
     except Exception:
         logger.warning("audience.consent_lookup_failed channel=%s", channel, exc_info=True)
-        return set()
-
-    return {ref for ref in customer_refs if ref in marketable}
+        return None
 
 
 # ── Helpers ──────────────────────────────────────────────────────────

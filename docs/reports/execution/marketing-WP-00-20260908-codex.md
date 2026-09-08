@@ -104,3 +104,23 @@ Provas locais:
 - nenhum destinatário real, provider, credencial, sandbox ou rede foi usado.
 
 Próxima dependência liberada: MKT-002, reprodução da precedência `opt-out > alert subscription`, seguida de MKT-003 para o histórico append-only de consentimento.
+
+## MKT-002 — opt-out prevalece sobre assinatura de alerta
+
+Reprodução antes da correção: `test_global_optout_suppresses_active_stock_alert_subscription` falhou com audiência total `1`, comprovando no código atual que o motivo `alerts` ultrapassava o opt-out global.
+
+Correção local:
+
+- a filtragem agora consulta, em uma única query limitada ao cohort, o estado explícito de consentimento;
+- `opted_out` suprime qualquer motivo, inclusive assinatura específica;
+- assinatura conhecida sem revogação continua limitada ao SKU; audiência geral ainda exige `opted_in`;
+- falha da fonte é fail-closed para identidades conhecidas;
+- assinatura anônima permanece possível porque não existe identidade global correlacionável.
+
+Provas locais, com `PYTHONPATH` apontado explicitamente para os packages desta worktree:
+
+- teste vermelho original: 1 falha pela assertiva esperada (`1 != 0`);
+- `test_marketing_consent_contract.py`, `test_audience.py` e `test_audience_manual.py` — 75 passaram;
+- testes Guestman filtrados por consentimento — 13 passaram.
+
+O `PYTHONPATH` explícito é obrigatório porque o virtualenv compartilhado contém editables que apontam para o checkout original. A detecção evitou validar por engano código de terceiros; o checkout original não foi modificado.

@@ -160,3 +160,27 @@ class ConsentService:
                 customer__is_active=True,
             ).values_list("customer__ref", flat=True)
         )
+
+    @classmethod
+    def get_customer_statuses(
+        cls,
+        channel: str,
+        customer_refs: set[str] | list[str] | tuple[str, ...],
+    ) -> dict[str, str]:
+        """Return explicit consent states for a bounded customer cohort.
+
+        Missing refs stay missing: callers must distinguish "never answered" from an
+        explicit revocation. This bounded lookup also avoids loading every opted-in
+        customer merely to validate a small campaign cohort.
+        """
+
+        refs = {str(ref).strip() for ref in customer_refs if str(ref).strip()}
+        if not refs:
+            return {}
+        return dict(
+            CommunicationConsent.objects.filter(
+                channel=channel,
+                customer__ref__in=refs,
+                customer__is_active=True,
+            ).values_list("customer__ref", "status")
+        )
