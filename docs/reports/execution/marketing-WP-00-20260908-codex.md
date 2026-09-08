@@ -124,3 +124,28 @@ Provas locais, com `PYTHONPATH` apontado explicitamente para os packages desta w
 - testes Guestman filtrados por consentimento — 13 passaram.
 
 O `PYTHONPATH` explícito é obrigatório porque o virtualenv compartilhado contém editables que apontam para o checkout original. A detecção evitou validar por engano código de terceiros; o checkout original não foi modificado.
+
+## MKT-003 — histórico append-only e projeção atual de consentimento
+
+Implementado de forma aditiva:
+
+- `CommunicationConsentEvent` registra grant, revoke e import legado com finalidade, base, texto/versão/hash, locale, origem, instante, ator, IP e evidence hash;
+- evento recusa update/delete por instância e queryset;
+- `CommunicationConsent` passa a ser projeção reconstruível do último evento;
+- opt-in novo exige disclosure textual e versão, fica `verified` e é marketable;
+- opt-in legado é migrado como `legacy_unverified`, sem texto ou versão fabricados, e não entra em Marketing;
+- opt-out legado continua soberano mesmo sem prova histórica completa;
+- reativação depois de revoke produz um novo evento explícito;
+- leituras de Marketing exigem status `opted_in` e prova `verified`.
+
+Provas locais:
+
+- migration test executou 0001 → 0002 e confirmou import sem prova fabricada — passou;
+- reconstrução do current state após corrupção controlada da projeção — passou;
+- imutabilidade por instância e bulk queryset — passou;
+- suites audience/notification/consent: 90 passaram;
+- suites Guestman CRM/ManyChat/merge: 120 passaram e 1 foi ignorado;
+- `makemigrations --check --dry-run customer_consent` — sem drift;
+- Ruff dos arquivos tocados — passou.
+
+A checagem de migrations em banco vazio emitiu apenas o warning já existente de SQLite e logs defensivos de bootstrap; não houve falha nem acesso externo.

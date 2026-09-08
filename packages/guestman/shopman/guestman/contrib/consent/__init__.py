@@ -24,7 +24,16 @@ def __getattr__(name):
         from shopman.guestman.contrib.consent.service import ConsentService
 
         return ConsentService
-    if name in ("CommunicationConsent", "ConsentChannel", "ConsentStatus", "LegalBasis"):
+    if name in (
+        "CommunicationConsent",
+        "CommunicationConsentEvent",
+        "ConsentChannel",
+        "ConsentEventType",
+        "ConsentProofStatus",
+        "ConsentPurpose",
+        "ConsentStatus",
+        "LegalBasis",
+    ):
         from shopman.guestman.contrib.consent import models
 
         return getattr(models, name)
@@ -34,7 +43,11 @@ def __getattr__(name):
 __all__ = [
     "ConsentService",
     "CommunicationConsent",
+    "CommunicationConsentEvent",
     "ConsentChannel",
+    "ConsentEventType",
+    "ConsentProofStatus",
+    "ConsentPurpose",
     "ConsentStatus",
     "LegalBasis",
 ]
