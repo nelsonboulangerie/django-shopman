@@ -214,6 +214,22 @@ def test_a_lista_mostra_prazo_encerrado_quando_a_janela_fechou(client, _loja, un
     assert "faltam" not in texto
 
 
+def test_a_ficha_da_unificacao_abre_e_repete_o_aviso_da_fidelidade(client, _loja, unificados):
+    """Quem entra pela ficha (e não pela lista) precisa ler a mesma coisa.
+
+    Também guarda os `fieldsets`: um campo com nome errado ali derruba a página
+    inteira, e é o tipo de erro que só aparece quando alguém clica.
+    """
+    client.force_login(_gestor("gerente-ficha"))
+
+    resposta = client.get(f"{CHANGELIST}{unificados.pk}/change/")
+
+    assert resposta.status_code == 200
+    texto = resposta.content.decode()
+    assert "FIDELIDADE" in texto and "não volta" in texto
+    assert "SRC-UNDO" in texto
+
+
 def test_o_dialogo_avisa_que_a_fidelidade_nao_volta_antes_de_confirmar(client, _loja, unificados):
     """A metade que o ``undo`` NÃO faz precisa ser lida antes do clique, não depois."""
     client.force_login(_gestor())
