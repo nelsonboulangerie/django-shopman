@@ -19,6 +19,14 @@ class OperatorAlert(models.Model):
         # webhook é o lado de entrada; este é o de saída — que até aqui morria
         # em `logger.warning` e ninguém ficava sabendo.
         ("integration_failed", "Integração externa falhou"),
+        # Erro de programação (500) que morria no log do App Platform. O
+        # traceback sempre existiu; o que faltava era um caminho até alguém que
+        # não seja o cliente reclamando. Dedupe por (exceção + arquivo:linha).
+        ("unhandled_exception", "Erro não tratado no sistema (500)"),
+        # A tela de prontidão SABE que a NFC-e está em homologação e que o Pix
+        # está no simulador — e esperava alguém abrir /admin/diagnostics/ para
+        # contar. Este tipo é a mesma verdade, empurrada em vez de puxada.
+        ("integration_config_drift", "Integração em configuração degradada"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
         ("stock_low", "Estoque baixo"),
