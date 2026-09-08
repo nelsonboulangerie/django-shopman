@@ -128,6 +128,10 @@ def get_sidebar_navigation(request):
         _group("Clientes", "people", [
             _model_item("Clientes", "person_search", "guestman.Customer"),
             _model_item("Contas de fidelidade", "loyalty", "customer_loyalty.LoyaltyAccount"),
+            # Fica em Clientes, e não em Auditoria, porque aqui se OPERA: o
+            # desfazer da unificação vive nesta tela, e o grupo de Auditoria é
+            # trilha que só se confere.
+            _model_item("Unificações de cadastro", "merge", "customer_merge.MergeAudit"),
             _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
             # Concierge de WhatsApp: a transcrição de cada conversa e a volta ao bot.
             _model_item("Conversas do WhatsApp", "chat", "shop.Conversation"),

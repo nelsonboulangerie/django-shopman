@@ -32,6 +32,7 @@ from shopman.backstage.admin.imports import (  # noqa: F401
     ImportBatchAdmin,
 )
 from shopman.backstage.admin.kds import KDSInstanceAdmin  # noqa: F401
+from shopman.backstage.admin.merges import MergeAuditAdmin  # noqa: F401
 from shopman.backstage.admin.operation import (  # noqa: F401
     OperationChecklistRunAdmin,
     OperationChecklistTemplateAdmin,

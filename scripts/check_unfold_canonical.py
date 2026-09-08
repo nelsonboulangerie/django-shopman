@@ -270,8 +270,12 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
     Surface(
         id="backstage-model-admin",
         kind="canonical-unfold-modeladmin",
+        # O `form_before_template` do diálogo de desfazer unificação: a única
+        # template desta superfície, porque é o único ponto em que um ModelAdmin
+        # daqui precisa dizer algo que não cabe numa coluna.
+        templates=(ROOT / "shopman/backstage/templates/admin_console/merge_undo",),
         controllers=_glob("shopman/backstage/admin/*.py"),
-        url_prefixes=("/admin/backstage/",),
+        url_prefixes=("/admin/backstage/", "/admin/customer_merge/"),
     ),
     Surface(
         id="package-admin-unfold",
