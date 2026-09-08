@@ -134,6 +134,39 @@ no GitHub, não a nossa).
 > — tirar os dois na mesma hora é o que evita a janela em que o job reprova sem
 > ninguém ter combinado isso.
 
+### ⚠️ Antes de tornar o check obrigatório: o gate reprova por PR alheio
+
+Achado ao rodar o gate no PR que zerou as duas faixas, e ele **precisa ser
+consertado antes** da branch protection — senão o primeiro check obrigatório da
+casa vai barrar PRs por arquivo que o autor nunca abriu.
+
+`resolve_diff_base` (em `scripts/check_adr015.py`, compartilhado com o gate do
+ADR-015) usa, no evento `pull_request`, a **ponta da base** como referência:
+
+```python
+return "FETCH_HEAD", f"pull_request base origin/{base_ref} (FETCH_HEAD)"
+```
+
+O raciocínio original está no docstring e é correto **enquanto o merge ref
+estiver em dia**: `HEAD` é o merge sintético do PR sobre a base, então o diff
+contra a base isola o PR. Mas o merge ref é gerado no push e **não é refeito
+quando a `main` anda**. Quando outro PR entra no meio, `FETCH_HEAD` avança e
+`HEAD` não: o diff passa a mostrar as mudanças do PR alheio **ao contrário**, e
+o gate analisa arquivos de outra frente.
+
+Foi exatamente o que aconteceu: o PR #549 entrou entre o push e o job, tocou
+`shopman/shop/apps.py` — que é dívida conhecida desta lista, faixa ✅ — e o gate
+reprovou o PR #554 por causa dela. Um `git merge origin/main` refez o merge ref
+e o gate voltou a ver só os 7 arquivos do autor.
+
+A base certa é a **merge-base**, não a ponta:
+`git merge-base FETCH_HEAD HEAD` devolve o commit da base sobre o qual o merge
+ref foi construído, e isso é imune à `main` andar. O detalhe que impede a
+correção de ser de uma linha é o `fetch --depth=1` logo acima: com a base rasa
+não há histórico comum para o `merge-base` calcular. É WP próprio, e mexe nos
+**dois** gates que compartilham a função — por isso não entrou no PR que
+descobriu.
+
 Os 12 "provavelmente inofensivos" **não pedem conserto, pedem marcador**: são a
 forma mais barata de encolher a lista sem mexer em comportamento, e o marcador
 é o que impede que alguém, daqui a três meses, "conserte" um silêncio que era
