@@ -4183,7 +4183,15 @@ def _merge_audit_at_risk(released_pk: str, bucket: str) -> str:
             if released_pk in [str(pk) for pk in (audit.snapshot.get(bucket) or [])]:
                 return str(audit.pk)
     except Exception:
-        logger.debug("pos_contact_release_merge_scan_failed pk=%s", released_pk, exc_info=True)
+        # Falhar aqui não impede a liberação, mas CUSTA a ligação com a
+        # unificação — e sem ela o desfazer volta a emagrecer calado, que é
+        # justamente o buraco que este rastro nasceu para tapar. Por isso
+        # WARNING e não debug: alguém precisa saber que o elo se perdeu.
+        logger.warning(
+            "pos_contact_release_merge_scan_failed pk=%s — rastro fica sem o elo da unificação",
+            released_pk,
+            exc_info=True,
+        )
     return ""
 
 
