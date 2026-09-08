@@ -8,8 +8,8 @@ deste documento, de propósito.
 | | |
 |---|---|
 | `origin/main` no início | `47d0b854b1086c1d5a172333f22e5ae9fab4c531` |
-| **último SHA operacional verificado** | `3fb0e575caa5e1d298ebd6bf7307d8af3434515e` — deploy, imagens, spec drift e smoke conferidos aqui |
-| SHA que incorporou a documentação | `af4334835ecec4393e29e719ac525bf0ea38bc37` (PR #572) |
+| **último SHA operacional verificado** | `a5a56033935797364e92f636425463036d6d31ac` — deploy, imagens, spec drift e smoke conferidos aqui |
+| SHAs intermediários | `3fb0e575c` (#571) · `af4334835` (#572, documentação) · `a5a560339` (#573) |
 | worktrees | 47 → **13** |
 | branches locais | 451 → **30** |
 | branches remotas | 381 → **21** |
@@ -393,43 +393,49 @@ misturá-lo ao PR de convergência seria decidir por ela. Seu backlog funcional
 
 ## 7. Verificação final
 
-### O Alpha Smoke real, por `workflow_run`
+### O Alpha Smoke real, por `workflow_run` — as duas provas
 
-Run [`34263203082`](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34263203082),
-gatilho `workflow_run`, sobre `3fb0e575caa5` — **`success`, com as quatro
-asserções executadas**:
+**Prova 1 — o #571 destravou o gatilho.** Run
+[`34263203082`](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34263203082)
+sobre `3fb0e575c`: primeiro `workflow_run` a terminar `success` depois de 16
+cancelados seguidos, com as quatro asserções executadas.
+
+**Prova 2 — o #573 correlaciona por digest.** Run
+[`34273202170`](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34273202170)
+sobre `a5a560339`:
 
 ```
-18:28:19Z  deployment=308a459f… phase=PENDING_BUILD
-18:28:41Z  deployment=308a459f… phase=PENDING_BUILD
-18:29:03Z  deployment=308a459f… phase=DEPLOYING
-   …seis leituras…
-18:31:15Z  deployment=308a459f… phase=ACTIVE
-deployment 308a459f… ACTIVE — o alpha está com o que subiu.
-/ready/ => 200
-skus no cardápio: 44; com disponibilidade: 18
-POST /api/v1/checkout/ => 400
-home => 200 (118337 bytes)
+manifesto: "digest": "sha256:622f99027ff2597c0346c0da4cfb608d66205f33e2bac5cd38409aaf0c33dcf9"
+publicados por este run: web
+20:10:19Z  EM_CURSO  deployment=dd0d2f81 phase=PENDING_BUILD
+20:10:41Z  EM_CURSO  deployment=dd0d2f81 phase=DEPLOYING     (×6)
+20:12:54Z  ACTIVE    deployment=dd0d2f81 phase=ACTIVE
+deployment dd0d2f81 ACTIVE com a imagem deste run.
+/ready/ => 200 · 44 SKUs / 18 vendáveis · checkout => 400 · home => 200 (118337 bytes)
 ```
 
-Espera real: **3min13s** — contra os 420s cegos de antes. E note o que a espera
-cega teria feito: o `sleep 420` expiraria às 18:35:05, com o deployment já
-`ACTIVE` — teria funcionado **desta vez, por sorte**. Nos deploys em que a DO
-demora mais, ele mediria a versão anterior e ficaria verde. E com
-`timeout-minutes: 5` ele nunca chegava lá de todo modo.
+⚠️ Repare no que o log **não** diz: em nenhum momento ele escolhe "o deployment
+mais recente". Ele segue `dd0d2f81` porque o digest daquele deployment está no
+manifesto — e o digest do deployment ativo confere byte a byte com o publicado:
+
+```
+manifesto              : sha256:622f9902…
+deployment ativo (DO)  : sha256:622f9902…
+```
 
 ### Estado do SHA final
 
 | verificação | resultado |
 |---|---|
-| checks obrigatórios de `3fb0e575c` | **25/25 verdes**, zero falhas |
-| Deploy Images | [`34262972216`](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34262972216) `success` — rebuildou `web` |
-| deployment ativo | `308a459f-6f72-46f4-b479-0e2bc7837557` · **ACTIVE 47/47** |
-| proveniência das imagens | 10 de 10 coerentes; `web` agora em `3fb0e575caa5` |
+| checks do SHA final | **29 concluídos, 29 `success`**, zero falhas |
+| Deploy Images | [`34273012954`](https://github.com/nelsonboulangerie/django-shopman/actions/runs/34273012954) `success` — rebuildou `web` |
+| deployment ativo | `dd0d2f81-57cf-4b78-9403-8ee5d017cb71` · **ACTIVE 47/47** · digest confere com o manifesto |
+| proveniência das imagens | 10 de 10 coerentes; `web` em `a5a560339357` |
 | `scripts/check_do_spec_drift.py` | exit 0 — só `FOCUS_NFE_ENVIRONMENT` e `SENTRY_DSN`, ambas declaradas |
 | smoke manual | ready 200 · 44 SKUs / 18 vendáveis · checkout 400 · SSR 200, 118337 bytes, contém "Nelson" |
-
----
+| `main` local | **igual a `origin/main`** |
+| editable installs | 14 de 14 resolvem para o checkout raiz — nenhum aponta para worktree removida |
+| tags | locais e remotas idênticas |
 
 ## 8. Pendências restantes
 
