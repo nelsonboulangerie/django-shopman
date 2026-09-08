@@ -1,0 +1,25 @@
+"""Os 25 tipos de alerta que o código já gravava e o crachá não sabia nomear.
+
+Renumerada de 0046 para 0047: o #562 chegou primeiro com
+``0046_alert_legal_parameter_stale`` e dois 0046 no mesmo app deixam o grafo com
+duas folhas — o erro só aparece quando alguém roda ``migrate``, nunca no PR
+isolado. A lista abaixo já é a UNIÃO dos dois: os 25 tipos daqui mais o
+``legal_parameter_stale`` que veio de lá.
+"""
+
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('backstage', '0046_alert_legal_parameter_stale'),
+    ]
+
+    operations = [
+        migrations.AlterField(
+            model_name='operatoralert',
+            name='type',
+            field=models.CharField(choices=[('notification_failed', 'Notificação falhou'), ('payment_failed', 'Pagamento falhou'), ('payment_insufficient', 'Pagamento abaixo do total'), ('payment_reconciliation_failed', 'Reconciliação de pagamento falhou'), ('payment_disputed', 'Cartão contestado (disputa)'), ('payment_refund_failed', 'Estorno falhou no gateway'), ('payment_ledger_drift', 'Estorno saiu do gateway sem registro no livro'), ('webhook_failed', 'Webhook falhou'), ('integration_failed', 'Integração externa falhou'), ('unhandled_exception', 'Erro não tratado no sistema (500)'), ('integration_config_drift', 'Integração em configuração degradada'), ('stock_discrepancy', 'Discrepância de estoque'), ('payment_after_cancel', 'Pagamento após cancelamento'), ('payment_awaiting_confirmation', 'Pagamento chegou antes da confirmação'), ('stock_low', 'Estoque baixo'), ('stock_fulfill_failed', 'Baixa de estoque falhou'), ('stock_hold_gap', 'Pedido commitado sem reserva de estoque'), ('stock_unknown_sku', 'Pedido com SKU fora do catálogo'), ('orphan_holds_released', 'Reservas órfãs devolvidas ao estoque'), ('marketplace_rejected_unavailable', 'Marketplace rejeitado: indisponível'), ('marketplace_rejected_oos', 'Marketplace rejeitado: sem estoque'), ('rejected_unavailable', 'Pedido recusado: item indisponível'), ('rejected_oos', 'Pedido recusado: reserva não confirmada'), ('coupon_over_redeemed', 'Cupom resgatado acima do limite'), ('pos_rejected_unavailable', 'POS rejeitado: produto indisponível'), ('catalog_hidden_by_inactive_collection', 'Produto fora do cardápio: categoria desativada'), ('stale_new_order', 'Pedido parado aguardando confirmação'), ('checkout_customer_unlinked', 'Pedido fechou sem vínculo com cadastro'), ('preorder_activation_blocked_unpaid', 'Encomenda não paga barrada antes da cozinha'), ('account_deletion_incomplete', 'Exclusão de conta incompleta'), ('kds_unrouted_item', 'Item sem estação no KDS'), ('courier_dispatch_failed', 'Corrida não abriu na central'), ('courier_not_attended', 'Nenhum entregador aceitou a corrida'), ('courier_ride_cancelled', 'A central cancelou a corrida'), ('fiscal_receipt_promised', 'Nota prometida ao cliente e não emitida'), ('fiscal_payment_mismatch', 'NFC-e barrada: pagamento abaixo do total'), ('fiscal_email_failed', 'NFC-e autorizada mas o e-mail não saiu'), ('fiscal_cancel_failed', 'Cancelamento da NFC-e falhou'), ('fiscal_partial_return', 'Devolução parcial com NFC-e em pé'), ('loyalty_redeem_uncovered', 'Desconto de pontos sem baixa no saldo'), ('production_late', 'Produção atrasada'), ('production_low_yield', 'Produção com yield baixo'), ('production_stock_short', 'Produção sem insumo suficiente'), ('production_stock_shortfall', 'Produção baixou menos insumo que a ficha'), ('production_forgotten', 'Produção planejada nunca iniciada'), ('production_unfinished', 'Produção iniciada nunca concluída'), ('production_batch_traceability', 'Produção concluída sem gravar os lotes'), ('directive_failed_spike', 'Tarefas de fundo falhando'), ('directive_backlog', 'Fila de tarefas de fundo acumulada'), ('directive_worker_stale', 'Processador de tarefas de fundo parado'), ('lifecycle_phase_stuck', 'Fase do pedido travada'), ('low_rating', 'Avaliação baixa recebida'), ('cash_shift_open_at_closing', 'Caixa aberto no fechamento do dia'), ('cash_sale_after_shift_close', 'Venda entrou depois do fechamento do turno'), ('pos_drawer_sensor_blind', 'Sensor da gaveta parou de responder'), ('pos_drawer_left_open', 'Gaveta ficou aberta sem ninguém vender'), ('waitlist_released', 'Fila: vaga liberada'), ('bi_import_silence', 'B.I.: importação esperada não chegou'), ('bi_below_baseline', 'B.I.: movimento abaixo do esperado'), ('bi_source_conflict', 'B.I.: pedido nativo apagou histórico'), ('bi_cash_variance', 'B.I.: quebra de caixa acumulada passou da régua'), ('bi_curation_pending', 'B.I.: de-para de produto pendente'), ('concierge_handoff', 'WhatsApp: cliente pediu a equipe'), ('concierge_unavailable', 'WhatsApp: concierge fora do ar'), ('legal_parameter_stale', 'Parâmetro de lei sem conferência')], max_length=50, verbose_name='tipo'),
+        ),
+    ]
