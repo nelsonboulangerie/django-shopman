@@ -64,3 +64,17 @@ Nenhum código de produto, teste, migration, schema, lockfile, configuração, C
 - **G-H04 — Segurança + Operações:** role×capability; freshness de step-up/2FA; quotas/limites por blast; typed confirmation; dual control; emergency revoke; memberships dos grupos.
 
 Ao retomar com essas decisões registradas, o próximo passo é MKT-001/WP-00: reproduções adversariais sem rede e contratos executáveis, antes de qualquer implementação runtime.
+
+## Follow-up — pacote recomendado para confirmação
+
+O proprietário pediu que o agente proponha todas as decisões e deixe para ele somente a confirmação/autorização. Foi criado `marketing-human-gates-proposal-20260908-codex.md`, ainda com status **PROPOSTA — NÃO APROVADA**.
+
+A proposta:
+
+- define as escolhas conservadoras de G-H01–04 necessárias para implementação técnica;
+- documenta a ausência de idempotency/receipt/reconcile no contrato público ManyChat e mantém `unknown` sem retry automático;
+- define defaults provisórios para G-H05–08;
+- mantém G-H09/G-H10 contextuais, sem autorização permanente de release ou produção;
+- fornece uma única declaração de confirmação humana.
+
+Fontes oficiais consultadas em leitura: LGPD compilada/ANPD, OpenAPI/Help do ManyChat e OWASP/NIST para autorização transacional e step-up. Nenhuma credencial, sandbox, provider ou ambiente externo foi acionado. A execução dos WPs continua parada até a confirmação da seção 13 da proposta.
