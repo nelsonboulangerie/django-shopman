@@ -327,8 +327,7 @@ urlpatterns = [
         NotificationActionView.as_view(),
         name="api-backstage-notification-action",
     ),
-    # Campanha — marketing operacional (surfaces/marketing-nuxt). Gate próprio
-    # (`shop.manage_campaigns`): o gestor de marketing não é o de pedidos.
+    # Marketing operacional: capabilities por ação; abrir o app não publica.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
     path("marketing/audience/count/", AudienceCountView.as_view(), name="api-backstage-marketing-audience-count"),
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),

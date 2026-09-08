@@ -24,7 +24,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 
 class Command(BaseCommand):
-    help = "Cria/atualiza os grupos do deployment: Caixa, Cozinha, Gerente, Admin de Catálogo, Rules Managers."
+    help = "Cria/atualiza os grupos operacionais e de Marketing do deployment."
 
     def handle(self, *args, **options):
         from django.contrib.auth.models import Group, Permission
@@ -44,6 +44,9 @@ class Command(BaseCommand):
 
         def shop_shop(c):
             return _perm("shop", "shop", c)
+
+        def shop_campaign(c):
+            return _perm("shop", "campaign", c)
 
         def shop_kdst(c):
             return _perm("backstage", "kdsticket", c)
@@ -147,10 +150,12 @@ class Command(BaseCommand):
                 # O terminal do balcão ("Equipamentos") — ela cadastra a estação.
                 *_ver("cashman", "terminal"), *_escrever("cashman", "terminal"),
                 shop_shop("manage_orders"),
-                # Campanha (surfaces/marketing-nuxt): publicar em nome da marca é
-                # decisão de gestão. Sem esta linha a permissão existe mas ninguém
-                # a tem, e o app fica inalcançável.
-                shop_shop("manage_campaigns"),
+                # Marketing seguro durante a transição capability-based. Efeitos
+                # externos ficam nos grupos específicos, deliberadamente vazios.
+                shop_campaign("view_marketing"),
+                shop_campaign("edit_marketing_campaigns"),
+                shop_campaign("edit_marketing_templates"),
+                shop_campaign("preview_marketing_audience"),
                 shop_cash("operate_pos"),
                 shop_cash("adjust_shift"),
                 shop_cash("manage_operators"),
@@ -230,6 +235,45 @@ class Command(BaseCommand):
                 # que a maquininha respondeu se conferem aqui, não na tela de quem
                 # opera o balcão (decisão do dono, 22/08/2026).
                 *_ver("payman"),
+            ],
+            # Personas capability-based de Marketing. Nascem sem membros: este
+            # comando governa grants, não escolhe pessoas nem fura dual control.
+            "Marketing — Observador": [
+                shop_campaign("view_marketing"),
+            ],
+            "Marketing — Editor": [
+                shop_campaign("view_marketing"),
+                shop_campaign("edit_marketing_campaigns"),
+                shop_campaign("edit_marketing_templates"),
+                shop_campaign("preview_marketing_audience"),
+                shop_campaign("send_marketing_test"),
+            ],
+            "Marketing — Aprovador": [
+                shop_campaign("view_marketing"),
+                shop_campaign("preview_marketing_audience"),
+                shop_campaign("approve_marketing_announcements"),
+            ],
+            "Marketing — Publisher": [
+                shop_campaign("view_marketing"),
+                shop_campaign("preview_marketing_audience"),
+                shop_campaign("approve_marketing_announcements"),
+                shop_campaign("publish_marketing_announcements"),
+                shop_campaign("fire_marketing_campaigns"),
+                shop_campaign("retry_failed_marketing"),
+            ],
+            "Marketing — Platform Owner": [
+                shop_campaign("view_marketing"),
+                shop_campaign("send_marketing_test"),
+                shop_campaign("configure_marketing_platforms"),
+                shop_campaign("reconcile_unknown_marketing"),
+            ],
+            "Marketing — Auditor/DPO": [
+                shop_campaign("view_marketing"),
+                shop_campaign("audit_marketing"),
+            ],
+            "Marketing — Segurança/Ops": [
+                shop_campaign("view_marketing"),
+                shop_campaign("freeze_marketing"),
             ],
         }
 

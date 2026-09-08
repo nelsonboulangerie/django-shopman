@@ -2,8 +2,8 @@
 
 O que este arquivo protege, em ordem de importância:
 
-1. **O gate.** ``shop.manage_campaigns`` é o portão. Staff comum não publica —
-   quem cuida da fila de pedidos não decide o que a padaria diz ao mundo.
+1. **Os gates.** Capabilities separam leitura, edição, decisão, publicação,
+   teste e configuração. Staff comum não publica.
 2. **Anúncio que já saiu não se reescreve.** Editar o corpo depois de publicado
    seria mentira retroativa sobre o que o cliente leu.
 3. **As chaves que o Nuxt lê.** Se a projection mudar de forma, o app quebra em
@@ -35,7 +35,17 @@ HISTORY_URL = "/api/v1/backstage/marketing/history/"
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="marketing", password="x", is_staff=True)
-    user.user_permissions.add(Permission.objects.get(codename="manage_campaigns"))
+    user.user_permissions.add(*Permission.objects.filter(codename__in={
+        "view_marketing",
+        "edit_marketing_campaigns",
+        "edit_marketing_templates",
+        "preview_marketing_audience",
+        "approve_marketing_announcements",
+        "publish_marketing_announcements",
+        "fire_marketing_campaigns",
+        "send_marketing_test",
+        "configure_marketing_platforms",
+    }))
     return user
 
 

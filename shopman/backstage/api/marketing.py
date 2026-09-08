@@ -3,8 +3,8 @@ Backstage Campaign API — o painel de revisão do marketing operacional.
 
 Contrato consumido por `surfaces/marketing-nuxt` (:3006). Read = projections de
 `backstage.projections.campaign`; write = aprovar/recusar/editar announcement e CRUD
-de regras e modelos. Gate: ``shop.manage_campaigns`` — o gestor de marketing não
-é o gestor de pedidos (FOMO-MARKETING-SPECS §8).
+de regras e modelos. Cada operação exige sua capability; a permissão ampla
+legada só mantém leitura/edição/preview durante a migração.
 
     GET    campaign/                    → painel (pendentes, recentes, placar)
     GET    campaign/history/            → tudo que já saiu
@@ -39,7 +39,7 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.backstage.api.permissions import HasBackstagePermission
+from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections import marketing as marketing_projection
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
@@ -55,8 +55,11 @@ _VALID_PLATFORMS = {ref for ref, _ in marketing_projection.PLATFORM_CHOICES}
 
 
 class _CampaignBase(APIView):
-    permission_classes = [HasBackstagePermission]
-    required_permission = "shop.manage_campaigns"
+    permission_classes = [HasMarketingCapability]
+    permission_map = {"GET": "shop.view_marketing"}
+
+    def get_required_permissions(self, request):
+        return self.permission_map.get(request.method, ())
 
 
 # ── Leitura ──────────────────────────────────────────────────────────
@@ -112,6 +115,11 @@ class AnnouncementDetailView(_CampaignBase):
     reescrever o que o cliente já leu seria mentira retroativa.
     """
 
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "PATCH": "shop.edit_marketing_campaigns",
+    }
+
     def get(self, request, pk: int):
         announcement = _announcement_or_none(pk)
         if announcement is None:
@@ -151,6 +159,13 @@ class AnnouncementApproveView(_CampaignBase):
     card vão no MESMO request: salvar e aprovar em duas chamadas abriria a
     janela para publicar a versão anterior.
     """
+
+    permission_map = {
+        "POST": (
+            "shop.approve_marketing_announcements",
+            "shop.publish_marketing_announcements",
+        ),
+    }
 
     def post(self, request, pk: int):
         publish_at, error = _publish_at(request.data.get("publish_at"))
@@ -197,6 +212,8 @@ class WhatsAppTestSendView(_CampaignBase):
     devolve os CAMPOS que saíram, para a tela mostrar o que o template recebeu.
     """
 
+    permission_map = {"POST": "shop.send_marketing_test"}
+
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
         try:
@@ -232,6 +249,8 @@ class AnnouncementRewriteView(_CampaignBase):
     conveniência, não caminho crítico — se ele falhar, o anúncio do template continua lá.
     """
 
+    permission_map = {"POST": "shop.edit_marketing_templates"}
+
     def post(self, request, pk: int):
         from shopman.shop.services import copy_assist
 
@@ -257,6 +276,8 @@ class AnnouncementRejectView(_CampaignBase):
     num balcão com quatro pessoas no turno não é auditável.
     """
 
+    permission_map = {"POST": "shop.approve_marketing_announcements"}
+
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
         reason = str(payload.get("reason") or "").strip()
@@ -277,6 +298,11 @@ class AnnouncementRejectView(_CampaignBase):
 
 
 class CampaignListView(_CampaignBase):
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "POST": "shop.edit_marketing_campaigns",
+    }
+
     def get(self, request):
         return Response({"rules": projection_data(marketing_projection.build_rules())})
 
@@ -308,6 +334,8 @@ class PreviewView(_CampaignBase):
     pior que nenhuma, porque é acreditada.
     """
 
+    permission_map = {"POST": "shop.preview_marketing_audience"}
+
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
         return Response(campaign_service.preview(
@@ -329,6 +357,8 @@ class AudienceCountView(_CampaignBase):
     Só números, nunca destinatário: a mesma lei do `Announcement.audience`. E resolve pelo
     caminho do envio, então o que a tela promete é o que sai.
     """
+
+    permission_map = {"POST": "shop.preview_marketing_audience"}
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
@@ -371,6 +401,10 @@ class WhatsAppTemplateView(_CampaignBase):
     """
 
     EVENT = "announcement_published"
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "POST": "shop.configure_marketing_platforms",
+    }
 
     def get(self, request):
         from shopman.shop.models import NotificationTemplate
@@ -435,6 +469,8 @@ class CampaignFireView(_CampaignBase):
     caminho de criação.
     """
 
+    permission_map = {"POST": "shop.fire_marketing_campaigns"}
+
     def post(self, request, pk: int):
         from shopman.shop.services import campaign as campaign_service
 
@@ -479,6 +515,12 @@ class CampaignFireView(_CampaignBase):
 
 
 class CampaignDetailView(_CampaignBase):
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "PATCH": "shop.edit_marketing_campaigns",
+        "DELETE": "shop.edit_marketing_campaigns",
+    }
+
     def get(self, request, pk: int):
         rule = _rule_or_none(pk)
         if rule is None:
@@ -513,6 +555,11 @@ class CampaignDetailView(_CampaignBase):
 
 
 class AnnouncementTemplateListView(_CampaignBase):
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "POST": "shop.edit_marketing_templates",
+    }
+
     def get(self, request):
         return Response({"templates": projection_data(marketing_projection.build_templates())})
 
@@ -528,6 +575,12 @@ class AnnouncementTemplateListView(_CampaignBase):
 
 
 class AnnouncementTemplateDetailView(_CampaignBase):
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "PATCH": "shop.edit_marketing_templates",
+        "DELETE": "shop.edit_marketing_templates",
+    }
+
     def get(self, request, pk: int):
         template = AnnouncementTemplate.objects.filter(pk=pk).first()
         if template is None:

@@ -100,6 +100,12 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
 # hide the very bug this test exists to catch.
 # ---------------------------------------------------------------------------
 UNGRANTED_BY_DESIGN: dict[str, str] = {
+    # Compatibilidade temporária MKT-007: a permissão ampla ainda é consultada
+    # somente para fallback auditado de view/edit/preview. `setup_groups` não a
+    # concede mais; publish/fire/test/config continuam deny-safe.
+    "shop.manage_campaigns": (
+        "Legacy audit fallback only; intentionally absent from deployment groups."
+    ),
     # can_view_production_reports() accepts this OR shop.manage_production. The
     # OR-alternative (shop.manage_production) is what the operator groups hold
     # (Cozinha/Gerente), so the reports gate is reachable without a dedicated

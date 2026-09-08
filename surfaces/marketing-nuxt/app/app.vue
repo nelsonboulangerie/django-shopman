@@ -2,9 +2,9 @@
 // Shell do Marketing. Casca fina: painel, regras e histórico são páginas
 // próprias (pages/), e o shell segura o outlet + a chrome + o gate de operador.
 //
-// Gate: `shop.manage_campaigns` — publicar em nome da marca é decisão de
-// marketing, não de quem opera a fila de pedidos.
-const OPERATOR_PERM = "shop.manage_campaigns";
+// O destrave só pede a capability de entrar. A autorização de cada Action é
+// revalidada no backend; abrir o app nunca concede publicação por herança.
+const OPERATOR_PERM = "shop.view_marketing";
 const { canIdentify, locked, mustChange, operator, lock } = useOperatorLock(OPERATOR_PERM);
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;

@@ -139,9 +139,13 @@ class NotificationActionView(APIView):
                 {"detail": "Esta notificação não aponta para nenhum announcement."}, status=400
             )
 
-        if not request.user.has_perm("shop.manage_campaigns"):
+        required = ["shop.approve_marketing_announcements"]
+        if action == ACTION_APPROVE:
+            required.append("shop.publish_marketing_announcements")
+        if not all(request.user.has_perm(code) for code in required):
             return Response(
-                {"detail": "Você não tem permissão para publicar."}, status=403
+                {"detail": "Você não tem capacidade para esta decisão de Marketing."},
+                status=403,
             )
 
         from shopman.shop.services import campaign

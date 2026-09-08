@@ -68,7 +68,11 @@ def gestor():
     user = get_user_model().objects.create_user(
         username="gestor-e2e", password="x", is_staff=True
     )
-    user.user_permissions.add(Permission.objects.get(codename="manage_campaigns"))
+    user.user_permissions.add(*Permission.objects.filter(codename__in={
+        "view_marketing",
+        "approve_marketing_announcements",
+        "publish_marketing_announcements",
+    }))
     return user
 
 

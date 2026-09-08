@@ -201,7 +201,7 @@ class Campaign(models.Model):
     notify_users = models.JSONField(
         "avisar usuários", default=list, blank=True,
         help_text="IDs de usuário a notificar. Vazio = todos com a permissão "
-                  "de gerenciar campanhas.",
+                  "de aprovar anúncios de Marketing.",
     )
     is_active = models.BooleanField("ativa", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -214,6 +214,20 @@ class Campaign(models.Model):
         indexes = [models.Index(fields=["trigger", "is_active"])]
         permissions = [
             ("manage_campaigns", "Pode revisar e publicar campanhas"),
+            ("view_marketing", "Pode ver Marketing agregado"),
+            ("edit_marketing_campaigns", "Pode criar e editar campanhas de Marketing"),
+            ("edit_marketing_templates", "Pode criar e editar textos de Marketing"),
+            ("preview_marketing_audience", "Pode pré-visualizar audiência de Marketing"),
+            ("approve_marketing_announcements", "Pode aprovar e rejeitar anúncios de Marketing"),
+            ("publish_marketing_announcements", "Pode publicar, agendar e cancelar anúncios de Marketing"),
+            ("fire_marketing_campaigns", "Pode disparar campanhas de Marketing manualmente"),
+            ("retry_failed_marketing", "Pode repetir entregas de Marketing com falha segura"),
+            ("reconcile_unknown_marketing", "Pode reconciliar entregas de Marketing desconhecidas"),
+            ("send_marketing_test", "Pode enviar teste unitário de Marketing em sandbox"),
+            ("configure_marketing_platforms", "Pode configurar plataformas de Marketing"),
+            ("audit_marketing", "Pode consultar auditoria de Marketing"),
+            ("access_marketing_delivery_pii", "Pode acessar PII protegida de entrega de Marketing"),
+            ("freeze_marketing", "Pode congelar efeitos externos de Marketing"),
         ]
 
     def clean(self) -> None:

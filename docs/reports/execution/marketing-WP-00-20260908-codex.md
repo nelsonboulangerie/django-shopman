@@ -219,3 +219,28 @@ Provas locais:
 - Ruff dos arquivos tocados — passou.
 
 WP-01 está tecnicamente concluído para o escopo local; as políticas aprovadas permanecem documentadas e os ensaios humanos/externos continuam fechados pelos gates próprios.
+
+## MKT-007 — capabilities e transição legada deny-safe
+
+Implementado conforme o G-H04 aprovado:
+
+- quatorze permissions separam view, edição de campanha, edição de template, preview, approve, publish, fire, retry seguro, reconcile unknown, teste, configuração, audit, PII e freeze;
+- cada método da API Marketing declara suas capabilities; não há fallback implícito quando o método não foi mapeado;
+- a permissão ampla `shop.manage_campaigns` mantém somente view/edit/preview durante a janela de auditoria e não autoriza approve/publish/fire/test/config;
+- diferenças de autorização legada são registradas por decisão, reason code, ator técnico, método, path e capabilities, sem payload ou PII;
+- aprovação no endpoint legado, que ainda também despacha, exige simultaneamente approve e publish até MKT-009 separar os comandos;
+- a Action de notificação pessoal deixou de contornar o gate e aplica a mesma separação approve/publish;
+- notificações de revisão são endereçadas somente a atores realmente capazes, inclusive quando `notify_users` foi configurado explicitamente;
+- `Gerente` recebe somente view/edit/preview; a permissão ampla saiu da fonte de verdade do deployment;
+- sete grupos capability-based nascem sem membros, preservando escolha nominal e dual control humanos;
+- o destrave do Nuxt pede apenas `view_marketing`; Actions continuam revalidadas pelo backend.
+
+Provas locais:
+
+- default deny para leitura e efeito externo;
+- fallback legado aceitou board/preview e recusou approve, fire, test-send e platform config;
+- Editor não decide, Aprovador não atravessa o endpoint legado acoplado, Publisher não configura plataforma e Platform Owner não herda publish;
+- matriz exata dos sete grupos e ausência de membros verificadas no banco de teste;
+- suites de capabilities, API Marketing, notificações, E2E, campanha, paridade e grupos: 197 testes passaram;
+- Ruff dos arquivos Python tocados e `git diff --check`: passaram;
+- migration aditiva `shop.0024_marketing_capabilities`; nenhum grupo, usuário ou ambiente externo foi alterado fora do banco efêmero de teste.

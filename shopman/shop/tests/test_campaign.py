@@ -424,7 +424,7 @@ class TestNotifyReviewers:
 
         gestor = User.objects.create_user(username="gestor", password="x")
         gestor.user_permissions.add(
-            Permission.objects.get(codename="manage_campaigns")
+            Permission.objects.get(codename="approve_marketing_announcements")
         )
         announcement = campaign.evaluate("production_finished", _context())[0]
 
@@ -438,13 +438,27 @@ class TestNotifyReviewers:
         assert UserNotification.objects.count() == 0
 
     def test_explicit_notify_users_wins(self, product, rule):
+        from django.contrib.auth.models import Permission
+
         chosen = User.objects.create_user(username="escolhido", password="x")
+        chosen.user_permissions.add(
+            Permission.objects.get(codename="approve_marketing_announcements")
+        )
         User.objects.create_superuser(username="root", password="x")
         rule.notify_users = [chosen.pk]
         rule.save()
 
         campaign.evaluate("production_finished", _context())
         assert list(UserNotification.objects.values_list("user", flat=True)) == [chosen.pk]
+
+    def test_explicit_user_without_capability_does_not_receive_dead_action(self, product, rule):
+        chosen = User.objects.create_user(username="sem-capacidade", password="x")
+        rule.notify_users = [chosen.pk]
+        rule.save()
+
+        campaign.evaluate("production_finished", _context())
+
+        assert UserNotification.objects.count() == 0
 
     def test_auto_post_rule_notifies_nobody(self, product, rule):
         User.objects.create_superuser(username="root", password="x")

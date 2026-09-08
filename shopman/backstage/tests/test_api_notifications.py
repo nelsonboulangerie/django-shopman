@@ -28,7 +28,10 @@ LIST_URL = "/api/v1/backstage/notifications/"
 @pytest.fixture
 def gestor():
     user = User.objects.create_user(username="gestor", password="x", is_staff=True)
-    user.user_permissions.add(Permission.objects.get(codename="manage_campaigns"))
+    user.user_permissions.add(*Permission.objects.filter(codename__in={
+        "approve_marketing_announcements",
+        "publish_marketing_announcements",
+    }))
     return user
 
 
@@ -181,7 +184,7 @@ class TestAction:
         assert announcement.rejected_by_id == gestor.pk
 
     def test_operator_without_the_permission_cannot_publish(self, client, colega):
-        """Staff não basta: publicar exige shop.manage_campaigns."""
+        """Staff não basta: publicar exige approve + publish."""
         notification = _notification(colega, announcement=_post())
         client.force_login(colega)
 

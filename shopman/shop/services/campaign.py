@@ -1005,7 +1005,7 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
     """Criar ``UserNotification`` acionável para quem pode aprovar.
 
     Destinatários: ``rule.notify_users`` quando declarado, senão todo mundo
-    com ``shop.manage_campaigns``. Retorna quantas notificações criou.
+    com ``shop.approve_marketing_announcements``. Retorna quantas notificações criou.
     """
     from shopman.shop.models import NotificationCategory, UserNotification
 
@@ -1037,22 +1037,19 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
 
 def _reviewers(rule: Campaign):
     from django.contrib.auth import get_user_model
+    from django.db.models import Q
 
     User = get_user_model()
     explicit = [int(uid) for uid in (rule.notify_users or []) if str(uid).isdigit()]
-    if explicit:
-        return list(User.objects.filter(pk__in=explicit, is_active=True))
-
-    from django.db.models import Q
-
-    return list(
-        User.objects.filter(
-            Q(is_superuser=True)
-            | Q(user_permissions__codename="manage_campaigns")
-            | Q(groups__permissions__codename="manage_campaigns"),
-            is_active=True,
-        ).distinct()
+    capable = (
+        Q(is_superuser=True)
+        | Q(user_permissions__codename="approve_marketing_announcements")
+        | Q(groups__permissions__codename="approve_marketing_announcements")
     )
+    users = User.objects.filter(capable, is_active=True)
+    if explicit:
+        users = users.filter(pk__in=explicit)
+    return list(users.distinct())
 
 
 def push_user_notification(notification) -> None:
