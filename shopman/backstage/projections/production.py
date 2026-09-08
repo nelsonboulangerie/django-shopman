@@ -294,6 +294,13 @@ class MiseEnPlaceLineProjection:
     # fornecedor novo é jumbo) atualiza toda lista de separação sozinho. "" quando
     # o insumo não tem conversão de contagem declarada.
     annotation: str
+    # "+ 32 g de margem" — os gramas a mais que a linha já carrega para cobrir o
+    # arredondamento da balança, a perda da masseira e a variação da fornada.
+    # "" quando esta linha não recebeu margem.
+    margin_display: str
+    # O motivo, por extenso. Margem sem motivo é número que cresceu sozinho, e
+    # quem lê a lista de separação tem de saber de onde vieram os gramas.
+    margin_reason: str
 
 
 @dataclass(frozen=True)
@@ -307,6 +314,12 @@ class ProductionMiseEnPlaceProjection:
     has_lines: bool
     work_order_count: int
     has_stock_readings: bool  # False = coluna de saldo se esconde (degrade)
+    # A lista já vem com a margem de segurança do rendimento das massas somada.
+    yield_margin_applied: bool
+    # Explicação de cabeçalho — é o único lugar onde a margem aparece no modo
+    # expandido, em que a linha do preparo foi explodida em matéria-prima e o
+    # motivo por linha não tem mais onde morar.
+    yield_margin_note: str
 
 
 @dataclass(frozen=True)
@@ -914,9 +927,22 @@ def build_production_mise_en_place(
     matéria-prima (sem quebra por receita — os caminhos se cruzam). O saldo
     de estoque anota quando o ledger de insumos tem leitura; sem leitura, a
     coluna se esconde (degrade gracioso, nunca bloqueia).
+
+    **A margem de rendimento entra aqui, e só aqui.** Esta é a lista do que se
+    vai FAZER hoje, e é dela que a decisão "quanto de massa" faz parte: a
+    balança de bancada tem divisão finita, e com a régua "nunca abaixo do
+    alvo" cada peça leva meia divisão a mais, em média. A ficha não muda (a
+    proporção é a mesma) e o **consumo do ledger não muda** — quem baixa
+    insumo é ``CraftExecution.finish`` a partir do snapshot congelado, que não
+    passa por ``craft.needs()``. Contaminar o ledger com a margem inflaria a
+    sugestão de compra todo dia, em silêncio.
+
+    E a sobra que a margem produz não é perda: é **massa velha de amanhã**, que
+    a casa já modela como teto (``old_dough`` / ``cap_pct``). O alvo não é
+    sobra zero — é sobra que caiba no teto do dia seguinte.
     """
     selected_date = selected_date or timezone.localdate()
-    needs = craft.needs(selected_date, expand=expand)
+    needs = craft.needs(selected_date, expand=expand, yield_margin=True)
 
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
     work_orders = list(
@@ -975,10 +1001,17 @@ def build_production_mise_en_place(
                 annotation=_preparation_annotation(
                     need.quantity, need.unit, conversions.get(need.item_ref)
                 ),
+                margin_display=(
+                    f"+ {_measure(need.margin.total, need.unit)} de margem"
+                    if need.margin is not None
+                    else ""
+                ),
+                margin_reason=need.margin.reason() if need.margin is not None else "",
             )
         )
     lines.sort(key=lambda line: (not line.is_subrecipe, line.name.lower()))
 
+    margin_applied = any(need.margin is not None for need in needs)
     return ProductionMiseEnPlaceProjection(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
@@ -987,7 +1020,30 @@ def build_production_mise_en_place(
         has_lines=bool(lines),
         work_order_count=len(work_orders),
         has_stock_readings=any(value and value > 0 for value in availability.values()),
+        yield_margin_applied=margin_applied or (expand and _has_yield_margin(selected_date)),
+        yield_margin_note=_YIELD_MARGIN_NOTE,
     )
+
+
+#: Explicação de cabeçalho da margem. Curta de propósito: o detalhe por preparo
+#: vive no ``margin_reason`` de cada linha.
+_YIELD_MARGIN_NOTE = (
+    "As massas já vêm com margem de segurança: meia divisão da balança por peça "
+    "(o excesso esperado quando a régua é nunca sair abaixo do alvo), a perda da "
+    "masseira por fornada e uma folga para a variação. O que sobrar vira massa "
+    "velha de amanhã, dentro do teto."
+)
+
+
+def _has_yield_margin(selected_date: date) -> bool:
+    """No modo expandido a linha do preparo some, mas a margem foi aplicada.
+
+    Pergunta ao não-expandido se alguma linha recebeu margem — é a mesma
+    caminhada de BOM, um nível acima, e é o que permite ao cabeçalho dizer a
+    verdade em vez de ficar mudo justamente quando o número não tem explicação
+    por linha.
+    """
+    return any(need.margin is not None for need in craft.needs(selected_date, yield_margin=True))
 
 
 # Alfabeto do código cego: ultra legível e memorizável (pedido do Pablo) —

@@ -167,6 +167,7 @@ from .operations import (
     WorkOrderStartView,
     WorkOrderVoidView,
 )
+from .product_promise import CatalogPromiseView, ProductPromiseView
 from .purchase import (
     PurchaseBoardView,
     PurchaseConfirmReceiptView,
@@ -362,6 +363,10 @@ urlpatterns = [
     path("catalog/resync/", CatalogResyncView.as_view(), name="api-backstage-catalog-resync"),
     path("catalog/social/", CatalogSocialView.as_view(), name="api-backstage-catalog-social"),
     path("catalog/ai-assist/", CatalogAiAssistView.as_view(), name="api-backstage-catalog-ai-assist"),
+    # A promessa do catálogo (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C): leitura de
+    # frescor dos fatos que vêm da ficha. Persona GESTOR, e só leitura.
+    path("catalog/promise/", CatalogPromiseView.as_view(), name="api-backstage-catalog-promise"),
+    path("catalog/promise/<str:sku>/", ProductPromiseView.as_view(), name="api-backstage-catalog-promise-detail"),
     # Feeds (menuboard/Google/Meta)
     path("feeds/", FeedBoardView.as_view(), name="api-backstage-feeds"),
     path("feeds/active/", FeedActiveView.as_view(), name="api-backstage-feeds-active"),

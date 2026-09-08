@@ -66,6 +66,16 @@
 | `SAFETY_STOCK_PERCENT` | Decimal | `0.20` | Percentual de estoque de segurança (20%) |
 | `HISTORICAL_DAYS` | int | `28` | Janela de dados históricos em dias |
 | `SAME_WEEKDAY_ONLY` | bool | `True` | Comparar apenas mesmo dia da semana no histórico |
+| `SCALE_PRECISION_G` | Decimal | `2` | Divisão da balança de bancada, em gramas. É propriedade do **equipamento** (uma balança serve todas as fichas), por isso settings e não `Recipe.meta`. Com a régua "nunca abaixo do alvo", o excesso esperado por peça é **meia** divisão. |
+| `MIXER_LOSS_G` | Decimal | `150` | Perda da masseira por fornada, em gramas — **estimativa não auditada**, usada quando a ficha não declara `Recipe.meta["mixer_loss_g"]`. Fixa por fornada, não por peça. |
+| `YIELD_MARGIN_SIGMAS` | Decimal | `3` | Colchão de variância, em desvios-padrão da soma dos arredondamentos (`d·√(N/12)`). Encolhe em proporção quando a fornada cresce. |
+
+As três últimas orçam a margem de segurança do rendimento das massas
+(`shopman.craftsman.services.yield_margin`). Ela entra **só** no planejamento —
+`craft.needs(..., yield_margin=True)` e a lista de separação do app de Produção.
+O consumo lançado no ledger nasce do snapshot congelado em
+`CraftExecution.finish` e **não** leva margem: contaminá-lo inflaria a sugestão
+de compra todo dia, em silêncio.
 
 **Guia:** [craftsman.md](../guides/craftsman.md)
 

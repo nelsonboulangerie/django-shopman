@@ -11,6 +11,11 @@ Design (see ``docs/decisions/adr-008-pdp-nutrition.md``):
 - The service is idempotent and **refuses to overwrite a manual override**.
   The sentinel is ``nutrition_facts["auto_filled"]``: if absent/False,
   the current value is treated as manual and left alone.
+- Toda derivação carimba de qual versão da ficha ela veio
+  (:mod:`shopman.shop.services.derived_provenance`), para o catálogo nunca
+  mostrar número velho com cara de atual. O carimbo é gravado mesmo quando os
+  números não mudam: publicar uma versão que não altera nutriente ainda move a
+  origem, e um carimbo parado deixaria o fato vencido para sempre.
 - Bundles (``product.is_bundle=True``) are explicitly skipped — see ADR
   for rationale (summing component nutrition is too fragile for food
   labelling).
@@ -36,13 +41,21 @@ from __future__ import annotations
 
 import logging
 from dataclasses import asdict
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from math import ceil
 from typing import Any
 
 from shopman.offerman.models import Product
 from shopman.offerman.nutrition import NUTRIENT_FIELDS, NutritionFacts
-from shopman.utils import units
+
+from shopman.shop.services.derived_provenance import (
+    FACT_NUTRITION,
+    build_recipe_stamp,
+    read_stamp,
+    stamp_moved,
+    with_stamp,
+)
+from shopman.shop.services.recipe_bom import item_quantity_grams
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +109,14 @@ def fill_nutrition_from_recipe(product: Product) -> bool:
             product.nutrition_facts = new_dict
             update_fields.append("nutrition_facts")
 
+    # O carimbo anda mesmo quando o número não anda: é ele, e não o valor, que
+    # responde "isto veio da versão que está no ar?".
+    stamp = build_recipe_stamp(recipe)
+    current = read_stamp(product, FACT_NUTRITION)
+    if stamp_moved(current, stamp):
+        product.metadata = with_stamp(product.metadata, FACT_NUTRITION, stamp)
+        update_fields.append("metadata")
+
     if not update_fields:
         return False
 
@@ -144,7 +165,7 @@ def _build_ingredients_text(items) -> str:
         if not label:
             continue
         key = item.input_sku or label
-        grams = _item_quantity_grams(item)
+        grams = item_quantity_grams(item)
 
         entry = aggregated.get(key)
         if entry is None:
@@ -200,7 +221,7 @@ def _sum_nutrition(items, batch_size: Decimal, product: Product) -> NutritionFac
         profile = meta.get("nutrition") or {}
         if not profile:
             continue
-        item_grams = _item_quantity_grams(item)
+        item_grams = item_quantity_grams(item)
         if item_grams is None:
             logger.warning(
                 "nutrition_from_recipe: skipping %s with unit=%s; grams conversion unavailable.",
@@ -241,46 +262,6 @@ def _sum_nutrition(items, batch_size: Decimal, product: Product) -> NutritionFac
         sodium_mg=_round(totals["sodium_mg"] * serving_scale, 0),
         auto_filled=True,
     )
-
-
-def _item_quantity_grams(item) -> Decimal | None:
-    """Massa em gramas do item da ficha, ou ``None`` quando falta a ponte.
-
-    Peso converte pela física (``shopman.utils.units``). Volume e contagem
-    **não têm** caminho definicional até grama — a ponte é o perfil do insumo
-    (``density_g_per_ml`` / ``unit_weight_g`` em ``RecipeItem.meta``). Sem o
-    perfil, o item fica de fora da soma: melhor rótulo incompleto do que rótulo
-    inventado.
-    """
-    unit = str(getattr(item, "unit", "") or "").strip()
-    quantity = Decimal(str(item.quantity))
-    meta = item.meta if isinstance(item.meta, dict) else {}
-    item_dimension = units.dimension(unit)
-
-    if item_dimension == units.MASS:
-        return units.convert(quantity, unit, "g")
-
-    if item_dimension == units.VOLUME:
-        density = _positive_decimal(meta.get("density_g_per_ml"))
-        if density is None:
-            return None
-        return units.convert(quantity, unit, "ml") * density
-
-    if item_dimension == units.COUNT:
-        unit_weight = _positive_decimal(meta.get("unit_weight_g"))
-        if unit_weight is None:
-            return None
-        return units.convert(quantity, unit, "un") * unit_weight
-
-    return None
-
-
-def _positive_decimal(value) -> Decimal | None:
-    try:
-        decimal = Decimal(str(value))
-    except (InvalidOperation, TypeError, ValueError):
-        return None
-    return decimal if decimal > 0 else None
 
 
 def _round(value: float, digits: int) -> float | None:

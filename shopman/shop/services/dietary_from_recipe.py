@@ -19,6 +19,10 @@ Design
   é a PROVENIÊNCIA do valor (``source``), não mais um sentinela à parte:
   ``manual`` bloqueia, ``recipe`` é recalculável, ausente é preenchível — a
   ficha, que é a fonte da verdade, ganha.
+- Carimba a versão de origem em ``metadata['derived_from']['dietary']``
+  (:mod:`shopman.shop.services.derived_provenance`), pelo mesmo motivo da
+  nutrição: alérgeno que veio de uma versão antiga é promessa velha, e sem o
+  carimbo ninguém consegue perguntar de qual versão ele veio.
 - Bundles (``is_bundle=True``) are skipped, like nutrition.
 - **Safety:** allergen labelling is materialized only when *every* leaf
   insumo declares a dietary profile. A single undeclared insumo means we
@@ -40,6 +44,14 @@ from shopman.craftsman.dietary import (
     IngredientDietary,
 )
 from shopman.offerman.models import Product
+
+from shopman.shop.services.derived_provenance import (
+    FACT_DIETARY,
+    build_recipe_stamp,
+    read_stamp,
+    stamp_moved,
+    with_stamp,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +117,15 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
     current = dict(product.metadata or {})
     attributes.set(product, "alergenos", allergens, source="recipe", save=False)
     attributes.set(product, "dieta", dietary_info, source="recipe", save=False)
+
+    # Carimbo da origem: mesmo quando alérgeno e dieta não mudam, publicar uma
+    # versão nova move a versão de origem, e é isso que a leitura compara.
+    # ⚠️ `attributes.set(save=False)` já mutou `product.metadata`; o carimbo
+    # entra por cima dela, e `with_stamp` devolve cópia (não muta), então a
+    # comparação com `current` continua valendo.
+    stamp = build_recipe_stamp(recipe)
+    if stamp_moved(read_stamp(product, FACT_DIETARY), stamp):
+        product.metadata = with_stamp(product.metadata, FACT_DIETARY, stamp)
 
     if product.metadata == current:
         return False

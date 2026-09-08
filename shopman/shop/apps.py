@@ -307,13 +307,23 @@ class ShopmanConfig(AppConfig):
         logger.info("ShopmanConfig: production lifecycle signal connected.")
 
     def _connect_recipe_derivation_signal(self):
-        """Materialize Product ingredients, nutrition and dietary on Recipe save.
+        """Materialize Product weight, ingredients, nutrition and dietary on Recipe save.
 
-        Two derivations share the BOM and the same idempotency contract,
-        each refusing to overwrite its own manual override:
+        Three derivations share the BOM and the same idempotency contract,
+        cada uma recusando sobrescrever o próprio override manual:
+        - peso da peça (carimbo ``metadata["derived_from"]["unit_weight"]``);
         - nutrition + ingredients (``nutrition_facts["auto_filled"]=False``);
         - alérgenos + dieta (proveniência ``source="manual"`` bloqueia).
         See ``docs/decisions/adr-008-pdp-nutrition.md``.
+
+        **A ordem importa.** O peso vem primeiro porque a porção do rótulo
+        nutricional é calculada a partir de ``unit_weight_g``: derivar a
+        nutrição antes do peso a deixaria descrevendo a peça anterior até o
+        próximo save da ficha.
+
+        Toda derivação carimba de qual versão da ficha ela veio
+        (``shop.services.derived_provenance``), e é esse carimbo que a leitura
+        da promessa compara para dizer o que envelheceu.
         """
         from django.db.models.signals import post_save
         from shopman.craftsman.models import Recipe
@@ -325,6 +335,9 @@ class ShopmanConfig(AppConfig):
         from shopman.shop.services.nutrition_from_recipe import (
             fill_nutrition_from_recipe,
         )
+        from shopman.shop.services.unit_weight_from_recipe import (
+            fill_unit_weight_from_recipe,
+        )
 
         def on_recipe_saved(sender, instance: Recipe, created: bool, **kwargs):
             if not instance.is_active:
@@ -332,6 +345,13 @@ class ShopmanConfig(AppConfig):
             product = Product.objects.filter(sku=instance.output_sku).first()
             if product is None:
                 return
+            try:
+                fill_unit_weight_from_recipe(product)
+            except Exception:
+                logger.exception(
+                    "unit_weight_from_recipe: failed for product=%s recipe=%s",
+                    instance.output_sku, instance.ref,
+                )
             try:
                 fill_nutrition_from_recipe(product)
             except Exception:
