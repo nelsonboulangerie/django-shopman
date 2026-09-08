@@ -7575,6 +7575,13 @@ class Command(BaseCommand):
             "waitlist_released": {"subject": "Pedido {order_ref}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
             "preorder_reminder": {"subject": "Lembrete: pedido {order_ref} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},
             "payment_reminder": {"subject": "Pedido {order_ref} aguarda pagamento", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* aguarda o pagamento.\n\nConclua por aqui: {payment_url}{pix_suffix}"},
+            # Pedido de compra ao fornecedor (WhatsApp/SMS/e-mail via
+            # `purchase._supplier_dispatch_route`). Único evento de audiência
+            # FORNECEDOR, e o único do mapa de templates da Meta que não tinha
+            # linha aqui: `event` é readonly no Admin, então sem esta linha o
+            # template aprovado não teria onde gravar o `whatsapp_flow_ns` —
+            # sobrava o `MANYCHAT_FLOW_MAP` do settings, que custa deploy.
+            "purchase_request": {"subject": "Pedido de compra {purchase_ref}", "body": "Olá, {supplier_greeting}! Aqui é da {shop_name}. Precisamos repor {material_name}: {purchase_qty_display}. Pode confirmar disponibilidade, prazo e valor final? (pedido {purchase_ref})"},
             # Produção → operador (notification.send de sistema, WP-PE2).
             # Opt-in via Shop.defaults["production"]["notifications"].
             "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},

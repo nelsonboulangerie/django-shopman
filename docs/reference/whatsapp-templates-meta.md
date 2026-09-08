@@ -159,7 +159,14 @@ Pedido remoto anotado no PDV (encomenda por telefone/WhatsApp): a venda fechou e
 - Corpo: `Olá, {{1}}! Anotamos o seu pedido {{2}}, no total de {{3}}. Para garantir o pedido, é só pagar pelo botão abaixo até {{4}}. Depois disso a reserva é liberada. Qualquer coisa, é só responder esta mensagem.`
 - Vars: `{{1}}`=`Ana` · `{{2}}`=`NB-260902-A17` · `{{3}}`=`R$ 38,00` · `{{4}}`=`amanhã às 9h`
 - Botão URL (dinâmico): `Pagar pedido` → a URL da cobrança inteira (campo `checkout_url`; é a sessão hospedada do gateway, não uma página da loja)
-- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name_greeting`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+- No ManyChat, cada variável é ligada ao campo personalizado de MESMO nome: `customer_name`, `order_ref`, `total`, `payment_deadline`, `checkout_url` (ver `WP-PAGAMENTO-LINK-E-TEF.md`, Frente 2).
+
+> ⚠️ É `customer_name` (`Ana`), **não** `customer_name_greeting`. As duas chaves existem no
+> contexto e as duas viram campo personalizado, mas `customer_name_greeting` já vem com a
+> vírgula colada (`, Ana`) porque foi feita para o texto livre `Olá{customer_name_greeting}!`.
+> Ligada a um `{{1}}` que já tem `Olá, ` literal na frente, ela renderiza `Olá, , Ana!`.
+> Vale para **todo** template deste doc: o corpo aprovado diz `Olá, {{1}}!`, então `{{1}}`
+> é sempre `customer_name`.
 - ⚠️ `{{4}}` é o `payment_deadline` cru ("hoje às 16h"), e a Meta não aceita variável vazia nem com quebra de linha — o template aprovado PRESSUPÕE prazo. Todo link nasce com `expires_at` (`min(agora + janela do canal, corte do atendimento)`, ver `docs/guides/payments.md`); o único caso sem prazo é um adapter que falhou ao gravá-lo, e aí o texto direto (`sendContent`) sai com a frase auto-suprimida.
 
 ### `pagamento_confirmado` — evento `payment_confirmed`
@@ -333,7 +340,9 @@ nome**, senão a variável sai em branco e nada falha.
 |---|---|---|
 | Nome do cliente | `customer_name` | todos os de cliente |
 | Ref do pedido | `order_ref` | todos os de pedido **e todo botão de URL** |
-| Total | `total` | `pedido_confirmado` |
+| Total | `total` | `pedido_confirmado`, `link_pagamento_enviado` |
+| Prazo do pagamento | `payment_deadline` | `link_pagamento_enviado` |
+| URL da cobrança | `checkout_url` | `link_pagamento_enviado` (botão dinâmico) |
 | Nome do produto | `product_name` | `produto_chegou`, `saiu_do_forno` |
 | Nome da loja | `shop_name` | `pedido_compra` |
 | Ref da compra | `purchase_ref` | `pedido_compra` |
@@ -343,6 +352,16 @@ nome**, senão a variável sai em branco e nada falha.
 
 ⚠️ **Nunca** mapeie um botão de URL para `tracking_url` ou `payment_url`. O botão leva
 `order_ref`; o prefixo já está fixo no template. Ver "ANTES DE SUBMETER".
+
+⚠️ **Crie todos como tipo Texto**, inclusive `total`. O adapter grava por
+`setCustomFieldByName` com o valor já formatado (`R$ 38,00`, `5 sc`) — campo criado como
+Número recusa a gravação, e a recusa só aparece no log.
+
+⚠️ **Valor vazio não é gravado.** `_shareable_context` descarta chave vazia, então o campo
+guarda o que sobrou do envio ANTERIOR àquele assinante em vez de limpar. Na prática só
+morde onde o dado é opcional: `customer_name` (o checkout da loja o exige, mas pedido
+anotado no PDV e ingestão do iFood não) e `payment_deadline`. Onde o dado é obrigatório
+(`order_ref`, `total`) não há caso.
 
 ### Critério de aceite
 
