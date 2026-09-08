@@ -26,6 +26,7 @@
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
 | [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
 | [`check_catalog_visibility`](#check_catalog_visibility) | shop | Manutenção | Alerta produto que sumiu do cardápio porque a coleção dele foi desativada |
+| [`check_integration_drift`](#check_integration_drift) | backstage | Manutenção | Alerta integração em configuração insegura/incompleta — a prontidão deixa de esperar alguém abrir a tela |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -567,6 +568,49 @@ de evento: o dedupe é a lista de coleções presas, numa janela de 24h que cont
 alertas já reconhecidos — um aviso enquanto o estado durar, não um por varredura. Coleção
 diferente desativada é fato novo e alerta novo. Roda no `maintenance_worker`, depois do
 `check_directive_health`.
+
+---
+
+### check_integration_drift
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/check_integration_drift.py`
+
+**Propósito:** Empurrar o que a tela de prontidão já sabia. `build_provider_readiness`
+responde há tempos que o Pix está no simulador, que a NFC-e aponta para homologação e que
+ninguém entrega o código de login — e essa verdade morava só em `/admin/diagnostics/`,
+esperando alguém abrir. O comando é o irmão do `check_directive_health`: mesma forma
+(varredura no ciclo do `maintenance_worker`, resultado vira alerta com debounce), aplicada à
+**configuração** em vez da fila. Nenhuma regra de prontidão muda aqui; só o caminho até o
+operador.
+
+**Uso:**
+```bash
+python manage.py check_integration_drift
+python manage.py check_integration_drift --dry-run   # só reporta
+```
+
+**Alerta:** `integration_config_drift`, um por provedor degradado. A régua tem dois eixos —
+onde estamos e o que o dono já decidiu:
+
+| instância | prontidão | severidade | janela |
+| --- | --- | --- | --- |
+| produção | `error` (insegura) | `critical` | 24h |
+| produção | `warning` (falta config) | `error` | 24h |
+| não-produção | `error` | `error` | 24h |
+| não-produção | `warning` | `warning` | 7 dias |
+
+A própria prontidão já vira a expectativa pelo ambiente (em `staging`, apontar para a NFC-e
+de **produção** é que é inseguro), então a tabela não repete o julgamento dela — só decide o
+tom. Para a instância que se declara `production` e ainda assim mantém, de propósito, a NFC-e
+em homologação, existe `SHOPMAN_INTEGRATION_DRIFT_EXPECTED`: uma lista de `provider` cujo
+estado degradado é decisão registrada. Provedor listado nunca passa de `warning` e usa a
+janela longa — lembrete semanal em vez de crítico diário, e continua existindo, porque a
+decisão de hoje é a surpresa de daqui a três meses.
+
+O dedupe é `(provider, lista de pendências)`, com `active_only=False`: consertar uma
+pendência de três é fato novo e merece aviso novo; o mesmo conjunto de novo na janela, não —
+nem depois de reconhecido.
 
 ---
 

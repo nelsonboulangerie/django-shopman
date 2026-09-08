@@ -23,6 +23,14 @@ absolutamente mais nada). Somando os dois, um erro de negócio hoje tem
 exatamente **um** caminho até você: um cliente reclamando. Números e tabela em
 [`docs/reference/silencio-inventario.md`](../reference/silencio-inventario.md).
 
+> **O que já funciona sem esta conta.** Desde o alerta de erro não tratado, todo
+> 500 vira um `OperatorAlert` de severidade `error` — sem depender de terceiro
+> nenhum, agrupado por (exceção + arquivo:linha), com o traceback resumido e
+> higienizado. Os dois não competem: **o Sentry é para depurar** (traceback
+> inteiro, variáveis, frequência, histórico) e **o alerta é para saber** — ele
+> chega em quem está no balcão, não em quem está no editor. Ligar o Sentry
+> continua valendo por tudo que o alerta deliberadamente não guarda.
+
 ## Passo 1 — pegar o DSN
 
 1. Entre em <https://sentry.io> com a conta da padaria (crie se não houver — o

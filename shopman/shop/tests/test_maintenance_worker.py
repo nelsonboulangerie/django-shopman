@@ -359,6 +359,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # porque a coleção dele foi desativada. A cadência do sino (um alerta por
         # estado, não um por ciclo) é do comando, não do worker.
         call("check_catalog_visibility"),
+        call("check_integration_drift"),
         # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
         # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
         # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio

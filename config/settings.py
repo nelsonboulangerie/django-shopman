@@ -1174,6 +1174,24 @@ SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES = int(
     os.environ.get("SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES", "15")
 )
 
+# Erro não tratado (500) vira OperatorAlert — ver
+# shopman/shop/services/unhandled_errors.py. A janela é a identidade do dedupe
+# no tempo: dentro dela, o mesmo (exceção + arquivo:linha) é o mesmo aviso. Uma
+# hora é o meio-termo entre "o dono soube" e "mil linhas de um bug só".
+SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(
+    os.environ.get("SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES", "60")
+)
+
+# Integrações cujo estado degradado é DECISÃO REGISTRADA deste deployment, e
+# não desvio. Provedor listado aqui (pelo `provider` da prontidão: `focus_nfe`,
+# `efi_pix`, `stripe_card`, `payment_link`, `otp_delivery`) nunca passa de
+# `warning` no check_integration_drift e usa a janela longa — lembrete semanal
+# em vez de crítico diário. Existe para a instância que se declara `production`
+# e mantém, de propósito, a NFC-e em homologação: um alerta que grita todo dia
+# sobre uma escolha do dono ensina a ignorar o vermelho. Silenciar de vez não é
+# opção: a decisão de hoje é a surpresa de daqui a três meses.
+SHOPMAN_INTEGRATION_DRIFT_EXPECTED = _csv_env_list("SHOPMAN_INTEGRATION_DRIFT_EXPECTED")
+
 SHOPMAN_NOTIFICATION_ADAPTERS = {
     "manychat": "shopman.shop.adapters.notification_manychat",
     "email": "shopman.shop.adapters.notification_email",

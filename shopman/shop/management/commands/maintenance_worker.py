@@ -17,6 +17,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
   check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
+  check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
   compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
                               próprio comando recusa recálculo fora da hora)
   recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
@@ -103,6 +104,12 @@ MAINTENANCE_COMMANDS = (
     # dedupe (janela de um dia, chaveado pela coleção presa) mora no comando —
     # o worker não sabe cadência.
     "check_catalog_visibility",
+    # Integração em configuração degradada (Pix no simulador, NFC-e em
+    # homologação, ninguém entregando o código de login). A prontidão já sabia
+    # e esperava alguém abrir /admin/diagnostics/; aqui ela passa a avisar. A
+    # cadência (diária, ou semanal quando o estado é decisão registrada) e a
+    # severidade moram no comando — o worker não sabe régua.
+    "check_integration_drift",
     # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
     # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
     # congelado no dia da última visita, porque não comprar não dispara nada.

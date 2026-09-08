@@ -6,6 +6,7 @@ Wiring:
   2. Rules engine boot + cache invalidation signal
   3. Core signal order_changed → lifecycle.dispatch()
   4. Core signal production_changed → production_lifecycle.dispatch_production()
+  5. Django signal got_request_exception → OperatorAlert (erro 500 vira aviso)
 """
 
 from __future__ import annotations
@@ -77,6 +78,23 @@ class ShopmanConfig(AppConfig):
         # 10. Register curated-data backup resources (shop + Core packages)
         self._register_backup_resources()
 
+        # 11. Connect got_request_exception → OperatorAlert (o 500 deixa de
+        #     morrer no log). Ver shopman/shop/services/unhandled_errors.py.
+        self._connect_unhandled_exception_alert()
+
+    def _connect_unhandled_exception_alert(self):
+        """Exceção não tratada vira alerta operacional.
+
+        Um ponto só, e o mais abrangente: ``got_request_exception`` cobre DRF,
+        Admin, webhooks e views simples, e não tem como alterar a resposta. O
+        porquê da escolha (e por que não o ``EXCEPTION_HANDLER`` do DRF nem um
+        middleware) está no topo de ``shop/services/unhandled_errors.py``.
+        """
+        from shopman.shop.services import unhandled_errors
+
+        unhandled_errors.connect()
+        logger.info("ShopmanConfig: unhandled exception alert connected.")
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 
@@ -95,9 +113,9 @@ class ShopmanConfig(AppConfig):
             )
             try:
                 register_ref_type(channel)
-            except ValueError:
+            except ValueError:  # silêncio-deliberado: registro é idempotente — o CHANNEL já está no registro
                 pass
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: shopman.refs é opcional; sem ele não há registro a alimentar
             pass
 
     def _register_loyalty_resolvers(self):
