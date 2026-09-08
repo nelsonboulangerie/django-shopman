@@ -15,6 +15,8 @@ deliberada (FOMO-MARKETING-SPECS §8).
 
 from __future__ import annotations
 
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -370,3 +372,75 @@ class Announcement(models.Model):
         from django.utils import timezone
 
         return self.expires_at <= (now or timezone.now())
+
+
+class AudienceSnapshot(models.Model):
+    """Sealed, backend-only audience cohort created for an approved version."""
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="audience_snapshots",
+        null=True,
+        blank=True,
+    )
+    version = models.PositiveIntegerField(default=1)
+    summary = models.JSONField(default=dict)
+    rule_summary = models.JSONField(default=dict)
+    rule_hash = models.CharField(max_length=64)
+    cohort_hash = models.CharField(max_length=64)
+    policy_version = models.CharField(max_length=64)
+    calculated_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    sealed_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-sealed_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["announcement", "version"],
+                condition=models.Q(announcement__isnull=False),
+                name="shop_audience_snapshot_announcement_version_uq",
+            ),
+        ]
+
+
+class AudienceSnapshotMember(models.Model):
+    """Protected member identity; never projected or registered in ordinary Admin."""
+
+    snapshot = models.ForeignKey(
+        AudienceSnapshot,
+        on_delete=models.CASCADE,
+        related_name="members",
+    )
+    customer = models.ForeignKey(
+        "guestman.Customer",
+        on_delete=models.SET_NULL,
+        related_name="marketing_audience_memberships",
+        null=True,
+        blank=True,
+    )
+    subscription_ref = models.UUIDField(null=True, blank=True)
+    target_key = models.CharField(max_length=64)
+    reasons = models.JSONField(default=list)
+    is_vip = models.BooleanField(default=False)
+    preferred_hour = models.PositiveSmallIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "target_key"],
+                name="shop_audience_snapshot_member_target_uq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(customer__isnull=False)
+                    | models.Q(subscription_ref__isnull=False)
+                ),
+                name="shop_audience_snapshot_member_has_identity",
+            ),
+        ]
+        indexes = [models.Index(fields=["snapshot", "customer"])]

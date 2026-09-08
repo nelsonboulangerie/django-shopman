@@ -18,7 +18,7 @@ class ProviderScenario(StrEnum):
     EFFECT_HAPPENED_RESPONSE_LOST = "effect_happened_response_lost"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class FakeProviderFailure(Exception):
     scenario: ProviderScenario
     effect_happened: bool

@@ -106,7 +106,7 @@ class SystemClock:
         return timezone.now()
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class MarketingContractError(Exception):
     """Erro estruturado que atravessa service, API e Projection sem adivinhação."""
 

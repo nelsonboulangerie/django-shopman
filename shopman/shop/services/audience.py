@@ -97,6 +97,8 @@ class Recipient:
     #: Hora habitual de compra (0-23), de ``CustomerInsight.preferred_hour``.
     #: ``None`` para quem ainda não tem padrão — esse recebe na hora.
     preferred_hour: int | None = None
+    #: Safe late-binding pointer for an anonymous/known stock-alert subscription.
+    source_subscription_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -480,10 +482,12 @@ def _pending_alerts(sku: str) -> list[Recipient]:
         raise AudienceSourceUnavailable("stock_alerts") from None
 
     profiles = _profiles_for_refs(
-        [str(customer_ref or "").strip() for _, customer_ref in rows]
+        [str(row[1] or "").strip() for row in rows]
     )
     out = []
-    for phone, customer_ref in rows:
+    for row in rows:
+        phone, customer_ref = row[:2]
+        source_subscription_ref = str(row[2]) if len(row) > 2 and row[2] else ""
         phone = (phone or "").strip()
         if not phone:
             continue
@@ -497,6 +501,7 @@ def _pending_alerts(sku: str) -> list[Recipient]:
                 first_name=profile.get("first_name", ""),
                 is_vip=bool(profile.get("is_vip", False)),
                 preferred_hour=profile.get("preferred_hour"),
+                source_subscription_ref=source_subscription_ref,
             )
         )
     return out
@@ -908,6 +913,7 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
                 reasons=frozenset({reason}),
                 is_vip=recipient.is_vip,
                 preferred_hour=recipient.preferred_hour,
+                source_subscription_ref=recipient.source_subscription_ref,
             )
             continue
         duplicates += 1
@@ -925,6 +931,9 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
                 if existing.preferred_hour is not None
                 else recipient.preferred_hour
             ),
+            source_subscription_ref=(
+                existing.source_subscription_ref or recipient.source_subscription_ref
+            ),
         )
     return duplicates, invalid
 
@@ -935,7 +944,13 @@ def _cohort_hash(recipients: list[Recipient]) -> str:
     protected = [
         hmac.new(
             settings.SECRET_KEY.encode(),
-            normalize_phone(recipient.phone).encode(),
+            (
+                f"customer:{recipient.customer_ref}"
+                if recipient.customer_ref
+                else f"subscription:{recipient.source_subscription_ref}"
+                if recipient.source_subscription_ref
+                else f"phone:{normalize_phone(recipient.phone)}"
+            ).encode(),
             hashlib.sha256,
         ).hexdigest()
         for recipient in recipients

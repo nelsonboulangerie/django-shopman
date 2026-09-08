@@ -44,8 +44,8 @@ def pending_alert_count(sku: str) -> int:
     )
 
 
-def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
-    """``(telefone, customer_ref)`` de cada assinatura pendente deste SKU.
+def pending_alert_contacts(sku: str) -> list[tuple[str, str, object]]:
+    """``(telefone, customer_ref, ref)`` de cada assinatura pendente deste SKU.
 
     Inclui os dois gatilhos (``stock_back`` e ``production_ready``): quem pediu
     para ser avisado sobre o produto quer saber, seja qual for o motivo.
@@ -55,5 +55,5 @@ def pending_alert_contacts(sku: str) -> list[tuple[str, str]]:
     return list(
         StockAlertSubscription.objects.active()
         .filter(sku=sku)
-        .values_list("contact_phone", "customer_ref")
+        .values_list("contact_phone", "customer_ref", "ref")
     )

@@ -194,3 +194,28 @@ Provas locais:
 - cohort de 100 clientes foi resolvido em exatamente 3 queries;
 - suites de audiência, campanha, handlers e API Marketing — 238 testes passaram;
 - Ruff dos arquivos tocados — passou.
+
+## MKT-006 — snapshot privado e revalidação somente subtrativa
+
+Implementado:
+
+- `AudienceSnapshot` selado com summary, rule summary sanitizado, HMAC da regra, cohort hash, policy version, freshness e retenção de 90 dias;
+- `AudienceSnapshotMember` persiste apenas FK interna de cliente ou ref segura de assinatura, target key HMAC e atributos operacionais; não existe campo telefone;
+- lista explícita de `customer_refs` vira somente contagem no rule summary, enquanto o HMAC preserva integridade do input completo;
+- resolução degradada ou vencida não pode ser selada;
+- materialização busca o contato somente no último limite, revalida cliente, opt-out e assinatura, e apenas remove membros;
+- opt-in posterior não cresce o snapshot; revoke posterior remove antes do contato;
+- mudança posterior de telefone é late-bound sem mudar membership;
+- assinatura anônima é ligada pela ref segura e deixa de materializar após cancelamento;
+- snapshots/members não foram registrados no Admin nem expostos pela Projection/API.
+
+Provas locais:
+
+- cohort com opt-in tardio permaneceu com o mesmo membro;
+- opt-out e revoke de assinatura subtraíram corretamente;
+- teste estrutural confirmou ausência de telefone no model de membership e ausência de ref/telefone no resumo;
+- suites snapshot/contratos/audience/storefront — 128 testes passaram;
+- `makemigrations --check --dry-run shop` — sem drift;
+- Ruff dos arquivos tocados — passou.
+
+WP-01 está tecnicamente concluído para o escopo local; as políticas aprovadas permanecem documentadas e os ensaios humanos/externos continuam fechados pelos gates próprios.

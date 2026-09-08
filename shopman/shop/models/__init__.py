@@ -4,6 +4,8 @@ from .campaign import (
     Announcement,
     AnnouncementStatus,
     AnnouncementTemplate,
+    AudienceSnapshot,
+    AudienceSnapshotMember,
     Campaign,
     Trigger,
 )
@@ -55,6 +57,8 @@ __all__ = [
     "Announcement",
     "AnnouncementTemplate",
     "AnnouncementStatus",
+    "AudienceSnapshot",
+    "AudienceSnapshotMember",
     "Trigger",
     "UserNotification",
     "NotificationCategory",
