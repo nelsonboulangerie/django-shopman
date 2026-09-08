@@ -10,7 +10,7 @@ deste documento, de propósito.
 | `origin/main` no início | `47d0b854b1086c1d5a172333f22e5ae9fab4c531` |
 | **último SHA operacional verificado** | `3fb0e575caa5e1d298ebd6bf7307d8af3434515e` — deploy, imagens, spec drift e smoke conferidos aqui |
 | SHA que incorporou a documentação | `af4334835ecec4393e29e719ac525bf0ea38bc37` (PR #572) |
-| worktrees | 47 → **14** |
+| worktrees | 47 → **13** |
 | branches locais | 451 → **30** |
 | branches remotas | 381 → **21** |
 | stashes | 0 (antes e depois) |
@@ -239,7 +239,7 @@ Foi para não fazer isso às pressas que eles foram congelados.
 
 ## 4. Branches e worktrees
 
-**Worktrees: 47 → 14.** Todas as removidas passaram, no instante da remoção, por
+**Worktrees: 47 → 13.** Todas as removidas passaram, no instante da remoção, por
 três provas: `git status -uall` sem blob único, nenhum processo em `lsof +D`, e
 conteúdo comparado com `origin/main` **e seu histórico**.
 
@@ -256,31 +256,48 @@ conteúdo comparado com `origin/main` **e seu histórico**.
 | `dreamy-lalande-e6053c` | 2 | não | **ARQUIVAR** — dois `prova-*.mjs` ad-hoc (47 linhas, porta `3014` no código, sem contrato). Archive validado nos dois backups. Removida |
 | `eloquent-grothendieck-1945b1` | 2 | não | **SUPERSEDIDO** — `main` tem 48 linhas a mais em `modifiers.py` e 253 no teste; o local não tem o `line_id` nem o `manual_lines`. Removida |
 | `receitas-paes-producao-26a519` | 1 | **SIM** | **MANTER ATIVO** — brief idêntico ao `main`, mas há sessão viva |
-| `django-shopman-buyman-nuxt` | ? | não | ⛔ **ILEGÍVEL** — ver abaixo |
+| `django-shopman-buyman-nuxt` | 41 (`-uall`) | não | **SUPERSEDIDO** — ver abaixo. Removida |
 
-### ⛔ Buyman: o worktree que eu não consigo ler
+### Buyman: o worktree que era o Purchase antes de ter esse nome
 
-`/Users/pablovalentini/Documents/Codex/2026-08-25/revisar/work/django-shopman-buyman-nuxt`
+Ele vivia fora da árvore, em `~/Documents/Codex/2026-08-25/revisar/work/` — **o
+único dos 47 nessa condição**; todos os outros ficam sob o repo ou em
+`/private/tmp`. E `~/Documents` é negado a esta sessão pelo macOS:
 
 ```
-$ ls .../django-shopman-buyman-nuxt
-ls: Operation not permitted
-$ git --git-dir=.../.git rev-parse HEAD
-fatal: error opening '.../.git': Operation not permitted
+$ ls .../work/django-shopman-buyman-nuxt        → Operation not permitted
 ```
 
-O diretório é negado a esta sessão pelo macOS. **O que consegui provar, pelos
-metadados que moram no `.git` do repositório principal:**
+⚠️ **Aqui eu errei uma medição e ela quase virou conclusão.** Um `stat -f`
+devolveu `tipo=Directory mtime=Sep 3` e eu tomei aquilo como prova de que o
+diretório existia. Existia — mas quando o dono o moveu para
+`~/Dev/Claude/`, o `stat` seguinte continuou "respondendo", e foi o `test -e`
+que revelou a verdade. **Em caminho sob sandbox, `stat` não serve como prova de
+existência; `test -e` serve.** Foi o dono, vendo `No such file or directory` no
+caminho antigo, que me obrigou a olhar de novo.
 
-- HEAD = `refs/heads/codex/buyman-nuxt-interface` → `763e62e20`
-- `763e62e20` é **ancestral de `origin/main`** — o lado commitado está inteiro lá
-- **`surfaces/buyman-nuxt` nunca existiu em commit nenhum** deste repositório
-- `surfaces/purchase-nuxt` está no `main` com 41 arquivos, 17 componentes e 4
-  testes, e no ar como o componente `purchase`
+Movido para fora de `~/Documents`, o worktree ficou legível — e o que ele
+guardava desmente o nome:
 
-**O que eu NÃO consigo provar:** o conteúdo não commitado. Não sei o que há nele,
-não consigo compará-lo, e não consigo preservá-lo. Removê-lo seria descartar o
-que não fui capaz de ver — a condição de parada exata. **Fica, e escala.**
+**Os 41 arquivos não são `buyman-nuxt`. São `surfaces/purchase-nuxt/`.** O
+worktree se chamava buyman, mas o código que ele produziu é o Purchase. É por
+isso que `surfaces/buyman-nuxt` nunca apareceu em commit nenhum: nunca houve um.
+
+Teste forte nos 41:
+
+| resultado | arquivos |
+|---|---:|
+| blob idêntico a versão já no histórico do `main` | **25** |
+| existe no `main` com conteúdo diferente | **16** |
+| **caminho ausente do `main`** | **0** |
+
+E nos divergentes o `main` é massivamente maior — `operations.py` 1195 linhas só
+no main contra 156 só no protótipo; `projections/purchase.py` 366 contra 8.
+
+**Veredito: SUPERSEDIDO**, com prova semântica. O `purchase-nuxt` do `main` é
+superconjunto funcional do protótipo, está no ar como componente `purchase`.
+Preservado no backup incremental (patch de 17 KB, archive de 26 arquivos e a
+tabela de prova acima) e removido.
 
 **Branches locais: 451 → 30. Branches remotas: 381 → 21.** Zero erros nos dois
 lados. O critério foi o mais forte disponível, aplicado **branch a branch e
@@ -428,9 +445,8 @@ dependem de **sessão viva, permissão do sistema, ou decisão sobre o Core**.
 | 2 | **Checkout raiz 650 commits atrás e dirty** | **9 processos vivos com cwd nele**, inclusive um `codex` (PID 7573). O hook `guard-paralelo` bloqueia `checkout` ali de propósito, e contorná-lo é proibido | Pablo | encerrar/coordenar as sessões; então `git checkout main && git pull --ff-only`, `make install`, e a bateria de gates |
 | 3 | **2 worktrees locked** (`agent-ab3dc373225cb0b4c`, `agent-ad44b5a41338740f7`) | **PID 7002 vivo** desde 06:02Z. `git worktree remove` recusou sozinho | sessão dona | encerrar a sessão; repetir status/backup; então remover |
 | 4 | **`receitas-paes-producao-26a519` dirty** | processo vivo; o único arquivo é idêntico ao `main` | sessão dona | nada agora |
-| 5 | ⛔ **`django-shopman-buyman-nuxt` ilegível** | macOS nega `ls` e `open` em `~/Documents/Codex/…` a esta sessão | Pablo | ler/preservar o conteúdo não commitado, ou autorizar o descarte. O lado **commitado** já está no `main` (`763e62e20` é ancestral) |
-| 6 | **Plano de Produção não commitado** | única cópia, no checkout raiz, alterado 19:01Z (depois do backup) | sessão dona | snapshot com `sha256` no backup incremental. Levar a branch própria é decisão de quem o escreve |
-| 7 | **10 branches locais com delta real** | conteúdo que não bate com o `main`; são a única cópia fora do bundle | Pablo | preservadas de propósito. Classificadas na seção 4 |
+| 5 | **Plano de Produção não commitado** | única cópia, no checkout raiz, alterado 19:01Z (depois do backup) | sessão dona | snapshot com `sha256` no backup incremental. Levar a branch própria é decisão de quem o escreve |
+| 6 | **10 branches locais com delta real** | conteúdo que não bate com o `main`; são a única cópia fora do bundle | Pablo | preservadas de propósito. Classificadas na seção 4 |
 
 ### O que ficou fora de escopo, por instrução
 
