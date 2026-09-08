@@ -642,7 +642,23 @@ def _realize_output_leg(work_order, product_ref, date):
     from shopman.stockman.services.planning import StockPlanning
     from shopman.stockman.services.queries import StockQueries
 
-    finished_qty = work_order.finished or work_order.quantity
+    # ``0`` is a meaningful finished quantity (the D3 total-loss outcome), not
+    # a missing value. Falling back with ``or`` would credit the entire planned
+    # quantity as saleable stock after an explicit zero-output close.
+    finished_qty = (
+        work_order.finished
+        if work_order.finished is not None
+        else work_order.quantity
+    )
+    if finished_qty <= 0:
+        _stamp_leg(work_order, STOCK_REALIZED_KEY)
+        _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
+        logger.info(
+            "Production closed with zero saleable output: sku=%s (WO %s)",
+            product_ref,
+            work_order.ref,
+        )
+        return
 
     try:
         # Find saleable destination (vitrine). A intenção sempre foi "a
