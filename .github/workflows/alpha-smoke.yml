@@ -25,6 +25,15 @@ name: Alpha Smoke
     # guarda principal.
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      probe_deploy_wait:
+        description: >-
+          Exercita o passo de espera (credencial, API da DigitalOcean, parsing)
+          fora de um deploy. Sem isto, o único jeito de saber que a espera
+          funciona é merger e torcer — que foi como o defeito de 06-08/09
+          sobreviveu três tentativas de conserto.
+        type: boolean
+        default: false
 
 concurrency:
   # ⚠️ O grupo é POR GATILHO, e por commit no caso do deploy. Um grupo único com
@@ -54,6 +63,19 @@ concurrency:
   # prática desliga o cancelamento para este workflow — que é o certo, porque
   # cada deploy merece a própria verificação e o job custa quatro `curl`.
   #
+  # ⚠️ E MESMO ASSIM continuou cancelando: 16 de 16 execuções por `workflow_run`
+  # até 08/09/2026, contra 14 de 14 verdes pelo `cron`. A concorrência nunca foi
+  # a causa — a chave por `run_id` já a tinha descartado. A causa era aritmética
+  # e estava dentro do próprio job: `timeout-minutes: 5` com `sleep 420` (sete
+  # minutos) no primeiro passo. O job morria aos 5 min, sempre, no passo da
+  # espera, e as quatro asserções saíam `skipped`. O run `34246964010` mostra a
+  # conta inteira: começou 15:47:01Z, morreu 15:52:16Z.
+  #
+  # Duas lições, e as duas viraram guarda: (a) o teto do job agora é conferido
+  # contra o teto da espera por `scripts/check_workflow_budgets.py`; (b) a espera
+  # deixou de ser cega — ela PERGUNTA à DigitalOcean se o deployment terminou,
+  # em vez de apostar num número.
+  #
   # E o custo do cancelamento não é desperdício, é CEGUEIRA: run cancelado não
   # fica vermelho. A guarda deixava de rodar e ninguém ficava sabendo.
   group: alpha-smoke-${{ github.run_id }}
@@ -68,8 +90,15 @@ concurrency:
 # VERDE sem testar nada.
 #
 # Para virar o domínio, defina a variável `STOREFRONT_URL` do repositório
-# (Settings → Secrets and variables → Actions → Variables). Sem ela, vale o
-# default abaixo, que é o alpha de hoje.
+# (Settings → Secrets and variables → Actions → Variables). **Não há default.**
+#
+# ⚠️ Havia um: `https://alpha.nelsonboulangerie.com.br`, e ele apodreceu. O
+# domínio `alpha.` foi cortado em 01/09/2026 e não volta. Enquanto a variável
+# existiu, o fallback ficou invisível — mas ele é o modo de falhar que este
+# arquivo mais teme: apagada a variável, o smoke passaria a perguntar a um host
+# morto e o gate ficaria vermelho por motivo errado, ou (pior) alguém apontaria
+# o fallback para outro lugar e ele ficaria verde sem testar a loja. Sem
+# variável, o job agora **para na primeira linha e diz por quê**.
 #
 # ⚠️ E o PISO do cardápio também é uma variável, pela mesma razão.
 #
@@ -85,8 +114,13 @@ concurrency:
 # errado, banco vazio → 0), não para vigiar a curadoria do dono. Ajuste pela
 # variável `MENU_MIN_SKUS` do repositório, sem editar código.
 env:
-  STOREFRONT_URL: ${{ vars.STOREFRONT_URL || 'https://alpha.nelsonboulangerie.com.br' }}
+  STOREFRONT_URL: ${{ vars.STOREFRONT_URL }}
   MENU_MIN_SKUS: ${{ vars.MENU_MIN_SKUS || '30' }}
+  # ⚠️ Teto da espera pela DigitalOcean, em segundos. Está aqui em cima, e não
+  # enterrado no passo, porque `scripts/check_workflow_budgets.py` lê ESTE valor
+  # e o `timeout-minutes` do job e recusa a combinação em que um cabe dentro do
+  # outro. Foi a combinação que existiu de 06 a 08/09/2026.
+  DEPLOY_WAIT_MAX_SECONDS: "900"
 
 jobs:
   smoke:
@@ -98,18 +132,149 @@ jobs:
       github.event.workflow_run.conclusion == 'success'
     name: Alpha responde como loja
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # ⚠️ Tem que caber `DEPLOY_WAIT_MAX_SECONDS` (900s) MAIS as asserções e o
+    # setup. 25 min dá 10 de folga sobre o teto da espera.
+    # `scripts/check_workflow_budgets.py` recusa o dia em que isto encolher.
+    timeout-minutes: 25
     steps:
+      - name: A loja tem endereço
+        run: |
+          if [ -z "${STOREFRONT_URL}" ]; then
+            echo "::error::A variável STOREFRONT_URL do repositório não está" \
+                 "definida. Este smoke NÃO tem domínio default de propósito —" \
+                 "o antigo (alpha.nelsonboulangerie.com.br) foi cortado em" \
+                 "01/09/2026. Defina em Settings → Secrets and variables →" \
+                 "Actions → Variables."
+            exit 1
+          fi
+          echo "loja: ${STOREFRONT_URL}"
+
       # ⚠️ "Deploy Images terminou" NÃO é "está no ar". O workflow empurra as
       # imagens; a DigitalOcean só então puxa e troca os contêineres. Medido em
       # 05/09/2026: imagens às 14:01Z, deployment ACTIVE às 14:06Z — cinco
       # minutos. Perguntar ao vivo antes disso mede a versão ANTERIOR, e o
       # resultado é pior que inútil: um verde que atesta o que não subiu.
       #
-      # Nos outros gatilhos não há o que esperar, e o passo é pulado.
+      # ⚠️ Aqui havia `sleep 420`, e o número era o defeito — nos dois sentidos.
+      # Curto demais (a DO demorou mais que 7 min) e o smoke atesta a versão
+      # anterior, verde. Longo demais e ele estoura o teto do job, que foi o que
+      # aconteceu de 06 a 08/09: 16 runs mortos aos 5 min, asserção nenhuma.
+      #
+      # Espera cega não tem número certo. Esta PERGUNTA: a DigitalOcean sabe
+      # quando o deployment ficou ACTIVE, e o `workflow_run` nos diz a que
+      # instante o deploy terminou. O passo só solta quando existe um deployment
+      # criado DEPOIS desse instante e ele está ACTIVE — ou grita, se ele deu
+      # ERROR/CANCELED, que é deploy que não chegou no alpha.
+      #
+      # Nos outros gatilhos não há o que esperar, e o passo é pulado (exceto
+      # pelo `probe_deploy_wait` do dispatch, que existe para provar o caminho).
       - name: Esperar a DigitalOcean trocar os contêineres
-        if: github.event_name == 'workflow_run'
-        run: sleep 420
+        if: >-
+          github.event_name == 'workflow_run' ||
+          inputs.probe_deploy_wait
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_APP_NAME: shopman-alpha
+          DEPLOY_FINISHED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DO_TOKEN}" ]; then
+            echo "::error::DIGITALOCEAN_ACCESS_TOKEN ausente — sem ele não dá" \
+                 "para saber se o deploy chegou ao alpha, e um smoke que não" \
+                 "sabe o que está medindo é pior que smoke nenhum."
+            exit 1
+          fi
+
+          api() { curl -sS --max-time 30 -H "Authorization: Bearer ${DO_TOKEN}" "$@"; }
+
+          app_id=$(api "https://api.digitalocean.com/v2/apps?per_page=200" \
+            | python3 -c "
+          import json,sys,os
+          apps = json.load(sys.stdin).get('apps') or []
+          want = os.environ['DO_APP_NAME']
+          print(next((a['id'] for a in apps if a.get('spec',{}).get('name')==want), ''))
+          ")
+          if [ -z "${app_id}" ]; then
+            echo "::error::App '${DO_APP_NAME}' não encontrado na conta."
+            exit 1
+          fi
+          echo "app: ${DO_APP_NAME} (${app_id})"
+
+          # Instante de referência: quando o Deploy Images terminou. No
+          # `probe_deploy_wait` não há deploy, e o 0 faz o passo aceitar o
+          # deployment ACTIVE que já existe — o que se prova ali é o caminho
+          # (credencial, API, parsing), não a espera.
+          if [ -n "${DEPLOY_FINISHED_AT}" ]; then
+            since=$(date -u -d "${DEPLOY_FINISHED_AT}" +%s)
+            echo "Deploy Images terminou em ${DEPLOY_FINISHED_AT} (${since})"
+          else
+            since=0
+            echo "sem workflow_run: aceitando o deployment ACTIVE corrente"
+          fi
+          # A DO cria o deployment ao ver a tag nova; o relógio dela e o do
+          # Actions não são o mesmo. 120s de folga para trás.
+          [ "${since}" -gt 0 ] && since=$((since - 120)) || true
+
+          deadline=$(( $(date +%s) + DEPLOY_WAIT_MAX_SECONDS ))
+          while :; do
+            verdict=$(api \
+              "https://api.digitalocean.com/v2/apps/${app_id}/deployments?per_page=20" \
+              | SINCE="${since}" python3 -c "
+          import json, os, sys
+          from datetime import datetime, timezone
+
+          since = int(os.environ['SINCE'])
+          deps = json.load(sys.stdin).get('deployments') or []
+          def ts(d):
+              raw = (d.get('created_at') or '').replace('Z', '+00:00')
+              try:
+                  return int(datetime.fromisoformat(raw).replace(tzinfo=timezone.utc).timestamp())
+              except ValueError:
+                  return 0
+          fresh = [d for d in deps if ts(d) >= since]
+          fresh.sort(key=ts, reverse=True)
+          if not fresh:
+              print('NONE none')
+              raise SystemExit
+          top = fresh[0]
+          print(f"{top.get('phase','?')} {top.get('id','?')}")
+          ")
+            phase=${verdict%% *}
+            dep=${verdict##* }
+            echo "$(date -u +%H:%M:%SZ)  deployment=${dep} phase=${phase}"
+
+            case "${phase}" in
+              ACTIVE)
+                echo "deployment ${dep} ACTIVE — o alpha está com o que subiu."
+                break
+                ;;
+              ERROR|CANCELED)
+                echo "::error::deployment ${dep} terminou ${phase} — o que o" \
+                     "Deploy Images publicou NÃO chegou ao alpha. As asserções" \
+                     "abaixo mediriam a versão anterior e ficariam verdes."
+                exit 1
+                ;;
+            esac
+
+            if [ "$(date +%s)" -ge "${deadline}" ]; then
+              if [ "${phase}" = "NONE" ]; then
+                # Deploy Images roda a cada push no main, mas só rebuilda o que
+                # o push tocou: um merge que só mexeu em `docs/` não publica
+                # imagem nenhuma e a DO não cria deployment. Não é falha — e as
+                # asserções contra o que está no ar seguem valendo.
+                echo "::notice::Nenhum deployment novo em" \
+                     "${DEPLOY_WAIT_MAX_SECONDS}s. Provavelmente o push não" \
+                     "tocou componente publicável. Seguindo com as asserções" \
+                     "contra o que está no ar."
+                break
+              fi
+              echo "::error::deployment ${dep} ainda em ${phase} depois de" \
+                   "${DEPLOY_WAIT_MAX_SECONDS}s."
+              exit 1
+            fi
+            sleep 20
+          done
 
       - name: API pronta (/ready/)
         run: |
