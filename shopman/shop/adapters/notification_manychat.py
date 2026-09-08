@@ -155,7 +155,10 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
     except URLError as e:
         return {"success": False, "error": f"URL error: {e.reason}"}
     except Exception as e:
-        logger.warning("manychat._send_whatsapp: unexpected error: %s", e, exc_info=True)
+        logger.warning(
+            "manychat._send_whatsapp: unexpected error class=%s; detail redacted",
+            type(e).__name__,
+        )
         return {"success": False, "error": str(e)}
 
 
@@ -219,15 +222,15 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
 
     if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
         logger.info(
-            "ManyChat externo inerte (trava dev/seed): %s -> %s",
-            template, recipient,
+            "ManyChat externo inerte (trava dev/seed): template=%s",
+            template,
         )
         return True
 
     ctx = context or {}
     subscriber_id = _resolve_subscriber(recipient, mc_config)
     if subscriber_id is None:
-        logger.warning("Could not resolve subscriber for: %s", recipient)
+        logger.warning("Could not resolve ManyChat subscriber; target redacted")
         return False
 
     # Flow configurado no Admin (NotificationTemplate.whatsapp_flow_ns) tem precedência;
@@ -261,7 +264,7 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         result = _api_call("/sending/sendContent", payload, mc_config)
 
     if not result["success"]:
-        logger.warning("ManyChat send failed: %s", result.get("error"))
+        logger.warning("ManyChat send failed; provider detail redacted")
     return result["success"]
 
 
@@ -302,9 +305,9 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
             pushed += 1
         else:
             logger.warning(
-                "ManyChat custom field não gravado: %s (%s). O template vai renderizar "
+                "ManyChat custom field não gravado: %s. O template vai renderizar "
                 "sem ele — crie o campo com este nome no ManyChat.",
-                name, result.get("error"),
+                name,
             )
     return pushed
 

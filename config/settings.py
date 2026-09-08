@@ -481,6 +481,18 @@ SHOPMAN_MANYCHAT = {
     "flow_map": MANYCHAT_FLOW_MAP,
 }
 
+# Test-send de Marketing é fechado por padrão. A env contém um objeto por ref
+# segura; o recipient real jamais volta à API/log. Exemplo operacional:
+# {"owner-sandbox":{"label":"Aparelho verificado","recipient":"123456",
+#  "backend":"manychat","sandbox":true,"ownership_verified":true}}
+try:
+    SHOPMAN_MARKETING_TEST_TARGETS = json.loads(
+        os.environ.get("SHOPMAN_MARKETING_TEST_TARGETS_JSON", "{}")
+    )
+except json.JSONDecodeError:
+    # Fail closed: configuração inválida equivale a nenhum alvo autorizado.
+    SHOPMAN_MARKETING_TEST_TARGETS = {}
+
 # ── WhatsApp (Meta Cloud API direto — spike/avaliação) ──────────────
 # Seam para o adapter notification_whatsapp (Meta Cloud API direto, sem ManyChat).
 # Inerte enquanto PHONE_NUMBER_ID/ACCESS_TOKEN vazios. Decisão ManyChat-vs-direto:

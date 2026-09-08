@@ -194,6 +194,26 @@ export interface WhatsAppTemplateResponse {
   /** `false` = não foi possível consultar a plataforma (≠ "não há template"). */
   can_list: boolean;
   configured: boolean;
+  can_send_test: boolean;
+  test_targets: { ref: string; label: string; backend: string }[];
+}
+
+export interface MarketingTestReceipt {
+  ok: boolean;
+  backend: string;
+  target_ref: string;
+  fields: Record<string, string>;
+  receipt_ref: string;
+  state:
+    | "processing"
+    | "accepted_unconfirmed"
+    | "failed_final"
+    | "unknown"
+    | "denied";
+  sandbox: true;
+  max_targets: 1;
+  replayed: boolean;
+  detail: string;
 }
 
 export interface BoardResponse {

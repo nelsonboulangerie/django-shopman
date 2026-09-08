@@ -34,6 +34,8 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
   it("normaliza origin/referer de método inseguro para o origin do Django", () => {
     expect(proxySource).toContain("headers.origin = djangoOrigin");
     expect(proxySource).toContain("headers.referer = `${djangoOrigin}/`");
+    expect(proxySource).toContain('getRequestHeader(event, "idempotency-key")');
+    expect(proxySource).toContain('["retry-after", "etag", "x-request-id", "x-api-version"]');
     expect(proxySource).not.toContain('getRequestHeader(event, "origin")');
     expect(proxySource).not.toContain('getRequestHeader(event, "referer")');
   });

@@ -17,17 +17,26 @@ describe('a configuração de plataforma tem casa', () => {
   it('o seletor de template vive na tela de Plataformas', () => {
     const page = read('../app/pages/platforms.vue')
     expect(page).toContain('onChooseTemplate')
-    expect(page).toContain('Testar no meu WhatsApp')
+    expect(page).toContain('Teste seguro do WhatsApp')
+    expect(page).not.toContain('test-recipient')
+    expect(page).toContain('testTargets')
   })
 
   it('o painel NÃO configura plataforma — só decide', () => {
     const board = read('../app/pages/index.vue')
     expect(board).not.toContain('onChooseTemplate')
-    expect(board).not.toContain('Testar no meu WhatsApp')
+    expect(board).not.toContain('Teste seguro do WhatsApp')
     expect(board).not.toContain('useWhatsAppTemplate')
   })
 
   it('o aviso do painel aponta a casa em vez de configurar', () => {
     expect(read('../app/pages/index.vue')).toContain('/platforms')
+  })
+
+  it('o teste preserva idempotência no BFF e não serializa destinatário livre', () => {
+    const composable = read('../app/composables/useWhatsAppTemplate.ts')
+    expect(composable).toContain('"Idempotency-Key"')
+    expect(composable).toContain('target_ref: targetRef')
+    expect(composable).not.toContain('body: { recipient')
   })
 })

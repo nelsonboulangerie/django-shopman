@@ -18,11 +18,15 @@ const waTemplate = useWhatsAppTemplate();
 // eu faço?".
 const opened = ref<Platform | null>(null);
 const savingTemplate = ref(false);
-const testRecipient = ref("");
+const testTargetRef = ref("");
 const testSku = ref("");
-const testName = ref("");
 
-onMounted(() => { waTemplate.load(); });
+onMounted(async () => {
+  await waTemplate.load();
+  if (waTemplate.testTargets.value.length === 1) {
+    testTargetRef.value = waTemplate.testTargets.value[0]?.ref || "";
+  }
+});
 
 async function onChooseTemplate(flowNs: string) {
   savingTemplate.value = true;
@@ -31,10 +35,9 @@ async function onChooseTemplate(flowNs: string) {
 }
 
 async function onSendTest() {
-  if (!testRecipient.value.trim()) return;
-  await waTemplate.sendTest(testRecipient.value.trim(), {
+  if (!testTargetRef.value) return;
+  await waTemplate.sendTest(testTargetRef.value, {
     sku: testSku.value.trim(),
-    name: testName.value.trim(),
   });
 }
 
@@ -54,9 +57,23 @@ function kindLabel(kind: string): string {
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
 function tone(ready: boolean, limitation: string) {
-  if (!ready) return { chip: "bg-destructive/10 text-destructive", icon: "lucide:circle-slash", label: "Não publica" };
-  if (limitation) return { chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400", icon: "lucide:triangle-alert", label: "Alcance limitado" };
-  return { chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400", icon: "lucide:check", label: "Pronta" };
+  if (!ready)
+    return {
+      chip: "bg-destructive/10 text-destructive",
+      icon: "lucide:circle-slash",
+      label: "Não publica",
+    };
+  if (limitation)
+    return {
+      chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+      icon: "lucide:triangle-alert",
+      label: "Alcance limitado",
+    };
+  return {
+    chip: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+    icon: "lucide:check",
+    label: "Pronta",
+  };
 }
 
 useHead({ title: "Plataformas · Marketing" });
@@ -70,17 +87,27 @@ useHead({ title: "Plataformas · Marketing" });
     </p>
 
     <div v-if="loading && !platforms.length" class="space-y-2" aria-busy="true">
-      <div v-for="n in 4" :key="n" class="h-24 animate-pulse rounded-xl bg-muted"></div>
+      <div
+        v-for="n in 4"
+        :key="n"
+        class="h-24 animate-pulse rounded-xl bg-muted"
+      ></div>
     </div>
 
-    <ul v-else class="divide-y divide-border rounded-xl border border-border bg-card">
+    <ul
+      v-else
+      class="divide-y divide-border rounded-xl border border-border bg-card"
+    >
       <li v-for="platform in platforms" :key="platform.platform">
         <button
           type="button"
           class="flex w-full items-center gap-3 px-4 py-3 text-left transition hover:bg-muted"
           @click="opened = platform"
         >
-          <Icon :name="platformIcon(platform.platform)" class="size-5 shrink-0 text-muted-foreground" />
+          <Icon
+            :name="platformIcon(platform.platform)"
+            class="size-5 shrink-0 text-muted-foreground"
+          />
           <span class="min-w-0 flex-1">
             <span class="flex flex-wrap items-center gap-2">
               <span class="font-semibold">{{ platform.label }}</span>
@@ -88,7 +115,10 @@ useHead({ title: "Plataformas · Marketing" });
                 class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
                 :class="tone(platform.ready, platform.limitation).chip"
               >
-                <Icon :name="tone(platform.ready, platform.limitation).icon" class="size-3" />
+                <Icon
+                  :name="tone(platform.ready, platform.limitation).icon"
+                  class="size-3"
+                />
                 {{ tone(platform.ready, platform.limitation).label }}
               </span>
               <!-- Plataforma que nenhuma campanha ativa usa não é problema: ligar
@@ -104,16 +134,28 @@ useHead({ title: "Plataformas · Marketing" });
               {{ summaryFor(platform) }}
             </span>
           </span>
-          <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
+          <Icon
+            name="lucide:chevron-right"
+            class="size-4 shrink-0 text-muted-foreground"
+          />
         </button>
       </li>
     </ul>
 
-    <UiSheet :open="opened !== null" @update:open="(v) => { if (!v) opened = null }">
+    <UiSheet
+      :open="opened !== null"
+      @update:open="
+        (v) => {
+          if (!v) opened = null;
+        }
+      "
+    >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>{{ opened?.label }}</UiSheetTitle>
-          <UiSheetDescription>{{ opened ? kindLabel(opened.kind) : "" }}</UiSheetDescription>
+          <UiSheetDescription>{{
+            opened ? kindLabel(opened.kind) : ""
+          }}</UiSheetDescription>
         </UiSheetHeader>
 
         <div v-if="opened" class="flex-1 overflow-y-auto p-4">
@@ -121,10 +163,19 @@ useHead({ title: "Plataformas · Marketing" });
             class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
             :class="tone(opened.ready, opened.limitation).chip"
           >
-            <Icon :name="tone(opened.ready, opened.limitation).icon" class="mt-0.5 size-4 shrink-0" />
+            <Icon
+              :name="tone(opened.ready, opened.limitation).icon"
+              class="mt-0.5 size-4 shrink-0"
+            />
             <div class="min-w-0">
-              <p class="font-semibold">{{ tone(opened.ready, opened.limitation).label }}</p>
-              <p class="mt-0.5">{{ opened.reason || opened.limitation || "Nada impede a entrega." }}</p>
+              <p class="font-semibold">
+                {{ tone(opened.ready, opened.limitation).label }}
+              </p>
+              <p class="mt-0.5">
+                {{
+                  opened.reason || opened.limitation || "Nada impede a entrega."
+                }}
+              </p>
             </div>
           </div>
 
@@ -138,12 +189,20 @@ useHead({ title: "Plataformas · Marketing" });
             <section class="mt-5 border-t border-border pt-4">
               <h2 class="text-sm font-semibold">Template aprovado</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Com um template aprovado, o anúncio alcança quem não conversou nas últimas 24
-                horas. Sem ele, só a janela.
+                Com um template aprovado, o anúncio alcança quem não conversou
+                nas últimas 24 horas. Sem ele, só a janela.
               </p>
 
-              <div v-if="waTemplate.loading.value" class="mt-3 space-y-2" aria-busy="true">
-                <div v-for="n in 2" :key="n" class="h-10 animate-pulse rounded-md bg-muted"></div>
+              <div
+                v-if="waTemplate.loading.value"
+                class="mt-3 space-y-2"
+                aria-busy="true"
+              >
+                <div
+                  v-for="n in 2"
+                  :key="n"
+                  class="h-10 animate-pulse rounded-md bg-muted"
+                ></div>
               </div>
 
               <!-- Não conseguir perguntar à plataforma NÃO é "não há template". -->
@@ -151,9 +210,12 @@ useHead({ title: "Plataformas · Marketing" });
                 v-else-if="!waTemplate.canList.value"
                 class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
               >
-                <p class="font-semibold">Não foi possível consultar os templates agora</p>
+                <p class="font-semibold">
+                  Não foi possível consultar os templates agora
+                </p>
                 <p class="mt-1 text-muted-foreground">
-                  A plataforma não respondeu. Tente de novo em instantes; nada foi alterado.
+                  A plataforma não respondeu. Tente de novo em instantes; nada
+                  foi alterado.
                 </p>
               </div>
 
@@ -161,15 +223,23 @@ useHead({ title: "Plataformas · Marketing" });
                 <button
                   type="button"
                   class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="waTemplate.current.value === '' ? 'border-primary' : 'border-border'"
+                  :class="
+                    waTemplate.current.value === ''
+                      ? 'border-primary'
+                      : 'border-border'
+                  "
                   :disabled="savingTemplate"
                   @click="onChooseTemplate('')"
                 >
-                  <Icon name="lucide:circle-slash" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <Icon
+                    name="lucide:circle-slash"
+                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  />
                   <span>
                     <span class="block text-sm font-medium">Sem template</span>
                     <span class="block text-xs text-muted-foreground">
-                      Texto livre — alcança só quem conversou nas últimas 24 horas.
+                      Texto livre — alcança só quem conversou nas últimas 24
+                      horas.
                     </span>
                   </span>
                 </button>
@@ -179,14 +249,25 @@ useHead({ title: "Plataformas · Marketing" });
                   :key="option.ns"
                   type="button"
                   class="flex w-full items-start gap-2 rounded-lg border px-3 py-2.5 text-left transition hover:bg-muted"
-                  :class="waTemplate.current.value === option.ns ? 'border-primary' : 'border-border'"
+                  :class="
+                    waTemplate.current.value === option.ns
+                      ? 'border-primary'
+                      : 'border-border'
+                  "
                   :disabled="savingTemplate"
                   @click="onChooseTemplate(option.ns)"
                 >
-                  <Icon name="lucide:file-check-2" class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <Icon
+                    name="lucide:file-check-2"
+                    class="mt-0.5 size-4 shrink-0 text-muted-foreground"
+                  />
                   <span class="min-w-0">
-                    <span class="block truncate text-sm font-medium">{{ option.name }}</span>
-                    <span class="block truncate font-mono text-xs text-muted-foreground">
+                    <span class="block truncate text-sm font-medium">{{
+                      option.name
+                    }}</span>
+                    <span
+                      class="block truncate font-mono text-xs text-muted-foreground"
+                    >
                       {{ option.ns }}
                     </span>
                   </span>
@@ -199,69 +280,108 @@ useHead({ title: "Plataformas · Marketing" });
                 v-if="waTemplate.current.value"
                 class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
               >
-                Com template escolhido, o texto que sai no WhatsApp é o aprovado na Meta — o
-                Modelo entra só com as variáveis. O texto do Modelo continua valendo para
-                Instagram, Facebook e para a sua revisão.
+                Com template escolhido, o texto que sai no WhatsApp é o aprovado
+                na Meta — o Modelo entra só com as variáveis. O texto do Modelo
+                continua valendo para Instagram, Facebook e para a sua revisão.
               </p>
             </section>
 
-            <!-- Conferir vale mais que supor: aceito pelo provedor não é o mesmo que vibrou
-                 no aparelho. Um número por vez, digitado, sem lista de cliente por perto. -->
+            <!-- A ref verificada evita redigitar/errar número e não leva PII ao browser. -->
             <section class="mt-5 border-t border-border pt-4">
-              <h2 class="text-sm font-semibold">Testar no meu WhatsApp</h2>
+              <h2 class="text-sm font-semibold">Teste seguro do WhatsApp</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Manda uma mensagem só para você, com as variáveis preenchidas de verdade.
+                Envia uma mensagem a um aparelho verificado. Nunca usa público
+                de campanha.
               </p>
 
-              <div class="mt-3 space-y-2">
+              <div
+                v-if="!waTemplate.canSendTest.value"
+                class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+              >
+                <p class="font-semibold">
+                  Teste não disponível para este papel
+                </p>
+                <p class="mt-1 text-muted-foreground">
+                  Um Editor habilitado ou Platform Owner pode fazer o teste
+                  sandbox.
+                </p>
+              </div>
+
+              <div
+                v-else-if="!waTemplate.testTargets.value.length"
+                class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
+              >
+                <p class="font-semibold">
+                  Teste externo bloqueado com segurança
+                </p>
+                <p class="mt-1 text-muted-foreground">
+                  Nenhum aparelho sandbox verificado foi configurado. Peça ao
+                  Platform Owner; não é necessário copiar ou informar um
+                  telefone aqui.
+                </p>
+              </div>
+
+              <div v-else class="mt-3 space-y-2">
                 <div>
-                  <label for="test-recipient" class="mb-1 block text-xs font-medium">
-                    WhatsApp ou subscriber
+                  <label
+                    for="test-target"
+                    class="mb-1 block text-xs font-medium"
+                  >
+                    Aparelho verificado
                   </label>
-                  <input
-                    id="test-recipient"
-                    v-model="testRecipient"
-                    type="text"
-                    placeholder="4605528796186498"
+                  <select
+                    id="test-target"
+                    v-model="testTargetRef"
                     class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
                   >
+                    <option value="" disabled>Escolha o aparelho</option>
+                    <option
+                      v-for="target in waTemplate.testTargets.value"
+                      :key="target.ref"
+                      :value="target.ref"
+                    >
+                      {{ target.label }}
+                    </option>
+                  </select>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <div>
-                    <label for="test-sku" class="mb-1 block text-xs font-medium">SKU (opcional)</label>
-                    <input
-                      id="test-sku"
-                      v-model="testSku"
-                      type="text"
-                      placeholder="BAGUETE"
-                      class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    >
-                  </div>
-                  <div>
-                    <label for="test-name" class="mb-1 block text-xs font-medium">Nome (opcional)</label>
-                    <input
-                      id="test-name"
-                      v-model="testName"
-                      type="text"
-                      placeholder="Pablo"
-                      class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
-                    >
-                  </div>
+                <div>
+                  <label for="test-sku" class="mb-1 block text-xs font-medium"
+                    >SKU (opcional)</label
+                  >
+                  <input
+                    id="test-sku"
+                    v-model="testSku"
+                    type="text"
+                    placeholder="BAGUETE"
+                    class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+                  />
                 </div>
                 <button
                   type="button"
-                  :disabled="!testRecipient.trim() || waTemplate.testing.value"
+                  :disabled="!testTargetRef || waTemplate.testing.value"
                   class="inline-flex h-9 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition disabled:opacity-40"
                   @click="onSendTest"
                 >
                   <Icon
-                    :name="waTemplate.testing.value ? 'lucide:loader-circle' : 'lucide:send'"
+                    :name="
+                      waTemplate.testing.value
+                        ? 'lucide:loader-circle'
+                        : 'lucide:send'
+                    "
                     class="size-4"
                     :class="waTemplate.testing.value ? 'animate-spin' : ''"
                   />
                   {{ waTemplate.testing.value ? "Enviando…" : "Enviar teste" }}
                 </button>
               </div>
+
+              <p
+                v-if="waTemplate.testReceipt.value"
+                class="mt-3 break-all rounded-lg bg-muted/40 p-3 font-mono text-xs"
+              >
+                Receipt {{ waTemplate.testReceipt.value.receipt_ref }} ·
+                {{ waTemplate.testReceipt.value.state }}
+              </p>
 
               <dl
                 v-if="Object.keys(waTemplate.testFields.value).length"
@@ -272,7 +392,9 @@ useHead({ title: "Plataformas · Marketing" });
                   :key="key"
                   class="flex gap-2"
                 >
-                  <dt class="shrink-0 font-mono text-muted-foreground">{{ key }}</dt>
+                  <dt class="shrink-0 font-mono text-muted-foreground">
+                    {{ key }}
+                  </dt>
                   <dd class="min-w-0 flex-1 truncate">
                     {{ value || "— vazio, o template renderiza sem" }}
                   </dd>

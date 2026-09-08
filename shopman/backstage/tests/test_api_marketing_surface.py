@@ -12,6 +12,7 @@ O que este arquivo protege, em ordem de importância:
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -779,88 +780,259 @@ class TestWhatsAppTemplateFromTheSurface:
         assert client.get(WA_TEMPLATE_URL).status_code == 403
 
 
-class TestWhatsAppTestSend:
-    """Testar o template é conferência de dez segundos, e mora na tela.
+class _SandboxAdapter:
+    def __init__(self, *, accepted=True, available=True, error=None):
+        self.accepted = accepted
+        self.available = available
+        self.error = error
+        self.calls = []
 
-    Existia só como comando de terminal, e o dono foi direto ao ponto: por que ele abriria
-    um terminal para isso? Este endpoint é o mesmo serviço, alcançável pelo painel.
-    """
+    def is_available(self, _recipient):
+        return self.available
+
+    def send(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.error:
+            raise self.error
+        return self.accepted
+
+
+@pytest.fixture
+def test_lane(settings, monkeypatch):
+    recipient = "4605528796186498"
+    settings.SHOPMAN_MARKETING_TEST_TARGETS = {
+        "owner-sandbox": {
+            "label": "Aparelho verificado",
+            "recipient": recipient,
+            "backend": "manychat",
+            "sandbox": True,
+            "ownership_verified": True,
+        },
+    }
+    adapter = _SandboxAdapter()
+    monkeypatch.setattr("shopman.shop.notifications._adapters", {"manychat": adapter})
+    return adapter, recipient
+
+
+class TestWhatsAppTestSend:
+    """Teste isolado: ref verificada, receipt, max-1, quota e zero PII."""
 
     URL = "/api/v1/backstage/marketing/whatsapp-template/test/"
+    KEY = "test-send-0123456789"
+
+    def _post(self, client, payload, *, key=None):
+        return client.post(
+            self.URL,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key or self.KEY,
+        )
 
     def test_staff_without_permission_cannot_send(self, client):
         User.objects.create_user(username="caixa2", password="x", is_staff=True)
         client.login(username="caixa2", password="x")
         assert client.post(self.URL).status_code == 403
 
-    def test_a_recipient_is_required(self, client, gestor):
+    def test_a_verified_target_is_required(self, client, gestor):
         client.force_login(gestor)
-        response = client.post(self.URL, data={}, content_type="application/json")
-        assert response.status_code == 400
+        response = self._post(client, {})
+        assert response.status_code == 422
 
-    def test_it_refuses_a_list(self, client, gestor):
-        """⚠️ Um destinatário por chamada: aceitar lista transformaria isto em disparo."""
+    def test_free_recipient_and_audience_payload_are_rejected_before_adapter(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        response = self._post(client, {
+            "target_ref": "owner-sandbox",
+            "recipient": "4605528796186498,4605528796186499",
+            "audience_rules": {"favorites": True},
+        })
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "test_payload_not_isolated"
+        assert adapter.calls == []
+
+    def test_missing_idempotency_key_is_rejected(self, client, gestor, test_lane):
         client.force_login(gestor)
         response = client.post(
             self.URL,
-            data={"recipient": "4605528796186498,4605528796186499"},
+            data={"target_ref": "owner-sandbox"},
             content_type="application/json",
         )
-        assert response.status_code == 400
+        assert response.status_code == 422
 
-    def test_without_transport_it_says_so_instead_of_pretending(self, client, gestor, monkeypatch):
-        client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: None)
-
-        response = client.post(
-            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
-        )
-
-        assert response.status_code == 400
-        assert "transporte" in response.json()["detail"]
-
-    def test_it_sends_the_real_variables_and_reports_them(self, client, gestor, monkeypatch):
-        """A tela mostra o que o template recebeu — campo vazio explica variável vazia."""
+    def test_it_sends_once_and_returns_safe_receipt(self, client, gestor, test_lane):
         from shopman.offerman.models import Product
 
+        from shopman.shop.models import MarketingTestReceipt
+
+        adapter, recipient = test_lane
         Product.objects.create(
             sku="BAGUETE-TEST", name="Baguete", base_price_q=1600,
             is_published=True, is_sellable=True,
         )
         client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
-        monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: type("R", (), {"success": True, "message_id": "m1"})(),
-        )
-
-        response = client.post(
-            self.URL,
-            data={"recipient": "4605528796186498", "sku": "BAGUETE-TEST", "name": "Pablo"},
-            content_type="application/json",
-        )
+        response = self._post(client, {
+            "target_ref": "owner-sandbox", "sku": "BAGUETE-TEST",
+        })
 
         assert response.status_code == 200
         body = response.json()
         assert body["ok"] is True
-        assert body["fields"]["customer_name"] == "Pablo"
+        assert body["state"] == "accepted_unconfirmed"
+        assert body["sandbox"] is True
+        assert body["max_targets"] == 1
+        assert body["target_ref"] == "owner-sandbox"
+        assert body["fields"]["customer_name"] == "Cliente teste"
         assert body["fields"]["product_name"] == "Baguete"
         assert body["fields"]["product_sku"] == "BAGUETE-TEST"
+        assert len(adapter.calls) == 1
+        assert adapter.calls[0]["recipient"] == recipient
+        assert recipient not in json.dumps(body)
+        receipt = MarketingTestReceipt.objects.get(ref=body["receipt_ref"])
+        assert receipt.sandbox is True
+        assert receipt.max_targets == 1
+        assert receipt.retention_until >= timezone.now() + timedelta(days=179)
+        stored_fields = {field.name for field in receipt._meta.fields}
+        assert "recipient" not in stored_fields
+        assert "body" not in stored_fields
+        assert "idempotency_key" not in stored_fields
 
-    def test_a_refused_send_is_reported_as_refused(self, client, gestor, monkeypatch):
+    def test_target_options_expose_safe_refs_never_recipient(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        _adapter, recipient = test_lane
+        monkeypatch.setattr("shopman.shop.services.manychat_flows.list_flows", lambda: [])
         client.force_login(gestor)
-        monkeypatch.setattr("shopman.shop.handlers.campaign._whatsapp_backend", lambda: "manychat")
+
+        response = client.get("/api/v1/backstage/marketing/whatsapp-template/")
+
+        assert response.json()["test_targets"] == [{
+            "ref": "owner-sandbox",
+            "label": "Aparelho verificado",
+            "backend": "manychat",
+        }]
+        assert recipient not in response.content.decode()
+
+    def test_same_key_same_payload_replays_receipt_without_second_effect(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        payload = {"target_ref": "owner-sandbox"}
+
+        first = self._post(client, payload).json()
+        second = self._post(client, payload).json()
+
+        assert first["receipt_ref"] == second["receipt_ref"]
+        assert second["replayed"] is True
+        assert len(adapter.calls) == 1
+
+    def test_same_key_different_payload_is_conflict(self, client, gestor, test_lane):
+        client.force_login(gestor)
+        assert self._post(client, {"target_ref": "owner-sandbox", "body": "A"}).status_code == 200
+
+        response = self._post(client, {"target_ref": "owner-sandbox", "body": "B"})
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "idempotency_conflict"
+
+    def test_provider_exception_is_unknown_and_redacted(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        adapter, recipient = test_lane
+        adapter.error = RuntimeError(f"vendor exploded for {recipient}")
+        emitted = []
         monkeypatch.setattr(
-            "shopman.shop.notifications.notify",
-            lambda **kw: type("R", (), {"success": False, "error": "sem janela"})(),
+            "shopman.shop.services.campaign.logger.warning",
+            lambda message, *args: emitted.append(message % args),
+        )
+        client.force_login(gestor)
+
+        response = self._post(client, {"target_ref": "owner-sandbox"})
+        serialized = json.dumps(response.json()) + " ".join(emitted)
+
+        assert response.status_code == 200
+        assert response.json()["state"] == "unknown"
+        assert response.json()["detail"] == "provider_outcome_unknown"
+        assert recipient not in serialized
+        assert "vendor exploded" not in serialized
+
+    def test_unavailable_sandbox_is_503_with_a_safe_receipt(
+        self, client, gestor, test_lane
+    ):
+        from shopman.shop.models import MarketingTestReceipt
+
+        adapter, _recipient = test_lane
+        adapter.available = False
+        client.force_login(gestor)
+
+        response = self._post(client, {"target_ref": "owner-sandbox"})
+
+        assert response.status_code == 503
+        assert response.json()["code"] == "sandbox_unavailable"
+        receipt = MarketingTestReceipt.objects.get(ref=response.json()["receipt_ref"])
+        assert receipt.state == MarketingTestReceipt.State.FAILED_FINAL
+
+    def test_sixth_test_in_an_hour_is_throttled_with_retry_after(
+        self, client, gestor, test_lane
+    ):
+        adapter, _recipient = test_lane
+        client.force_login(gestor)
+        for index in range(5):
+            response = self._post(
+                client,
+                {"target_ref": "owner-sandbox"},
+                key=f"test-send-throttle-{index:04d}",
+            )
+            assert response.status_code == 200
+
+        response = self._post(
+            client,
+            {"target_ref": "owner-sandbox"},
+            key="test-send-throttle-9999",
         )
 
-        body = client.post(
-            self.URL, data={"recipient": "4605528796186498"}, content_type="application/json"
-        ).json()
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 0
+        assert len(adapter.calls) == 5
 
-        assert body["ok"] is False
-        assert body["detail"]
+    def test_twenty_first_test_in_rolling_day_is_shop_throttled(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        adapter, _recipient = test_lane
+        monkeypatch.setattr(
+            "shopman.shop.services.campaign._TEST_USER_HOURLY_LIMIT", 100
+        )
+        client.force_login(gestor)
+        for index in range(20):
+            assert self._post(
+                client,
+                {"target_ref": "owner-sandbox"},
+                key=f"test-send-daily-{index:04d}",
+            ).status_code == 200
+
+        response = self._post(
+            client,
+            {"target_ref": "owner-sandbox"},
+            key="test-send-daily-9999",
+        )
+
+        assert response.status_code == 429
+        assert int(response.headers["Retry-After"]) > 3600
+        assert len(adapter.calls) == 20
+
+    def test_test_path_never_calls_audience_resolver(
+        self, client, gestor, test_lane, monkeypatch
+    ):
+        monkeypatch.setattr(
+            "shopman.shop.services.audience.resolve",
+            lambda *_args, **_kwargs: pytest.fail("test-send alcançou audience resolver"),
+        )
+        client.force_login(gestor)
+
+        assert self._post(client, {"target_ref": "owner-sandbox"}).status_code == 200
 
 
 # ── Quantas pessoas isto alcança ─────────────────────────────────────

@@ -7,6 +7,7 @@ from .campaign import (
     AudienceSnapshot,
     AudienceSnapshotMember,
     Campaign,
+    MarketingTestReceipt,
     Trigger,
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
@@ -59,6 +60,7 @@ __all__ = [
     "AnnouncementStatus",
     "AudienceSnapshot",
     "AudienceSnapshotMember",
+    "MarketingTestReceipt",
     "Trigger",
     "UserNotification",
     "NotificationCategory",

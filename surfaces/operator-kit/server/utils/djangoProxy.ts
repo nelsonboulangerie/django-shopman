@@ -94,6 +94,11 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const contentType = getRequestHeader(event, "content-type");
   if (contentType) headers["content-type"] = contentType;
 
+  // Comandos mutantes dependem da mesma key no browser, BFF e Django. Não
+  // repassar transformaria um retry de rede em um segundo efeito externo.
+  const idempotencyKey = getRequestHeader(event, "idempotency-key");
+  if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
+
   if (isUnsafeMethod) {
     headers.origin = djangoOrigin;
     headers.referer = `${djangoOrigin}/`;
@@ -138,6 +143,13 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
 
   const responseContentType = response.headers.get("content-type");
   if (responseContentType) appendResponseHeader(event, "content-type", responseContentType);
+
+  // Allowlist operacional: o browser precisa saber quando repetir e qual
+  // receipt/request citar, sem espelhar headers arbitrários do upstream.
+  for (const name of ["retry-after", "etag", "x-request-id", "x-api-version"]) {
+    const value = response.headers.get(name);
+    if (value) appendResponseHeader(event, name, value);
+  }
 
   setResponseStatus(event, response.status);
   return response._data;

@@ -458,3 +458,55 @@ class AudienceSnapshotMember(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["snapshot", "customer"])]
+
+
+class MarketingTestReceipt(models.Model):
+    """Receipt isolado de teste sandbox; nunca entra no ledger/KPI de campanha."""
+
+    class State(models.TextChoices):
+        PROCESSING = "processing", "processando"
+        ACCEPTED_UNCONFIRMED = "accepted_unconfirmed", "aceito, não confirmado"
+        FAILED_FINAL = "failed_final", "recusado"
+        UNKNOWN = "unknown", "resultado desconhecido"
+        DENIED = "denied", "negado"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_test_receipts",
+    )
+    idempotency_key_hash = models.CharField(max_length=64)
+    payload_hash = models.CharField(max_length=64)
+    artifact_hash = models.CharField(max_length=64)
+    target_ref = models.SlugField(max_length=80)
+    backend = models.CharField(max_length=32)
+    state = models.CharField(
+        max_length=24,
+        choices=State.choices,
+        default=State.PROCESSING,
+    )
+    failure_code = models.CharField(max_length=48, blank=True)
+    sandbox = models.BooleanField(default=True)
+    max_targets = models.PositiveSmallIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["actor", "idempotency_key_hash"],
+                name="shop_marketing_test_actor_idempotency_uq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(sandbox=True),
+                name="shop_marketing_test_must_be_sandbox",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(max_targets=1),
+                name="shop_marketing_test_max_one_target",
+            ),
+        ]
+        indexes = [models.Index(fields=["actor", "created_at"])]

@@ -20,11 +20,17 @@ Duas escolhas estruturais:
 
 from __future__ import annotations
 
+import hashlib
+import hmac
+import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from shopman.shop.directives import ANNOUNCEMENT_NOTIFY, ANNOUNCEMENT_PUBLISH, create_deduped
@@ -32,6 +38,7 @@ from shopman.shop.models import (
     Announcement,
     AnnouncementStatus,
     Campaign,
+    MarketingTestReceipt,
     Trigger,
 )
 from shopman.shop.services import audience as audience_service
@@ -46,6 +53,34 @@ POSTING_PLATFORMS = ("instagram", "facebook", "google_business")
 
 class CampaignError(Exception):
     """Erro de negócio da campanha (announcement inexistente, estado inválido)."""
+
+
+class MarketingTestConflict(CampaignError):
+    """A mesma idempotency key foi reutilizada para outro payload."""
+
+
+class MarketingTestUnavailable(CampaignError):
+    """A lane sandbox não está pronta; nenhum fallback externo é permitido."""
+
+    def __init__(self, message: str, *, receipt_ref: str):
+        super().__init__(message)
+        self.receipt_ref = receipt_ref
+
+
+class MarketingTestForbidden(CampaignError):
+    """Capability foi revogada depois da reserva, antes do efeito."""
+
+    def __init__(self, message: str, *, receipt_ref: str):
+        super().__init__(message)
+        self.receipt_ref = receipt_ref
+
+
+class MarketingTestThrottled(CampaignError):
+    """Quota conservadora do G-H04 atingida."""
+
+    def __init__(self, retry_after: int):
+        super().__init__("Limite de testes atingido. Aguarde antes de tentar novamente.")
+        self.retry_after = max(1, int(retry_after))
 
 
 # ── Avaliação ────────────────────────────────────────────────────────
@@ -359,77 +394,272 @@ def _ai_body(template, variables: dict) -> str:
 
 @dataclass(frozen=True)
 class TestSend:
-    """O que saiu num envio de teste, e o que o transporte respondeu."""
+    """Receipt seguro do teste; target real e resposta do vendor não atravessam."""
 
     accepted: bool
     backend: str
-    recipient: str
+    target_ref: str
     fields: dict
-    detail: str = ""
+    receipt_ref: str
+    state: str
+    detail: str
+    replayed: bool = False
+    sandbox: bool = True
+    max_targets: int = 1
+
+
+@dataclass(frozen=True)
+class _MarketingTestTarget:
+    ref: str
+    label: str
+    recipient: str
+    backend: str
+
+
+_TEST_TARGET_REF = re.compile(r"^[a-z0-9][a-z0-9_-]{0,79}$")
+_TEST_IDEMPOTENCY_KEY = re.compile(r"^[A-Za-z0-9._:-]{16,128}$")
+_TEST_USER_HOURLY_LIMIT = 5
+_TEST_SHOP_DAILY_LIMIT = 20
+
+
+def _marketing_test_targets() -> dict[str, _MarketingTestTarget]:
+    raw = getattr(settings, "SHOPMAN_MARKETING_TEST_TARGETS", {}) or {}
+    if not isinstance(raw, dict):
+        return {}
+
+    targets: dict[str, _MarketingTestTarget] = {}
+    for raw_ref, config in raw.items():
+        ref = str(raw_ref).strip()
+        if not _TEST_TARGET_REF.fullmatch(ref) or not isinstance(config, dict):
+            continue
+        recipient = str(config.get("recipient") or "").strip()
+        backend = str(config.get("backend") or "").strip()
+        verified = config.get("ownership_verified") is True or config.get("synthetic") is True
+        if (
+            not recipient
+            or "," in recipient
+            or any(character.isspace() for character in recipient)
+            or backend != "manychat"
+            or config.get("sandbox") is not True
+            or not verified
+        ):
+            continue
+        targets[ref] = _MarketingTestTarget(
+            ref=ref,
+            label=str(config.get("label") or ref).strip()[:80],
+            recipient=recipient,
+            backend=backend,
+        )
+    return targets
+
+
+def marketing_test_target_options() -> list[dict[str, str]]:
+    """Opções seguras para o operador; recipient real nunca é projetado."""
+    return [
+        {"ref": target.ref, "label": target.label, "backend": target.backend}
+        for target in sorted(_marketing_test_targets().values(), key=lambda item: item.label)
+    ]
+
+
+def _test_hash(domain: str, value: str) -> str:
+    return hmac.new(
+        str(settings.SECRET_KEY).encode("utf-8"),
+        f"marketing-test:{domain}:{value}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def _actor_has_test_capability(actor) -> bool:
+    actor_id = getattr(actor, "pk", None)
+    if not actor_id:
+        return False
+    from django.contrib.auth import get_user_model
+
+    return get_user_model().objects.filter(pk=actor_id, is_active=True).filter(
+        Q(is_superuser=True)
+        | Q(user_permissions__codename="send_marketing_test")
+        | Q(groups__permissions__codename="send_marketing_test")
+    ).exists()
+
+
+def _test_throttle_retry_after(actor, now) -> int | None:
+    per_actor = MarketingTestReceipt.objects.filter(
+        actor_id=actor.pk,
+        created_at__gte=now - timedelta(hours=1),
+    ).order_by("created_at")
+    if per_actor.count() >= _TEST_USER_HOURLY_LIMIT:
+        first = per_actor.values_list("created_at", flat=True).first()
+        return max(1, int(((first + timedelta(hours=1)) - now).total_seconds()))
+
+    per_shop = MarketingTestReceipt.objects.filter(
+        created_at__gte=now - timedelta(days=1),
+    ).order_by("created_at")
+    if per_shop.count() >= _TEST_SHOP_DAILY_LIMIT:
+        first = per_shop.values_list("created_at", flat=True).first()
+        return max(1, int(((first + timedelta(days=1)) - now).total_seconds()))
+    return None
+
+
+def _reserve_test_receipt(
+    *, actor, key_hash: str, payload_hash: str, artifact_hash: str, target: _MarketingTestTarget,
+) -> tuple[MarketingTestReceipt, bool]:
+    from django.contrib.contenttypes.models import ContentType
+
+    with transaction.atomic():
+        # Um lock canônico serializa a reserva de todos os test-sends. A taxa é
+        # minúscula (máx. 20/dia), e isso torna as duas quotas verdadeiras mesmo
+        # com atores/workers concorrentes, sem segurar lock durante o provider.
+        content_type = ContentType.objects.get_for_model(MarketingTestReceipt)
+        ContentType.objects.select_for_update().get(pk=content_type.pk)
+
+        receipt = MarketingTestReceipt.objects.filter(
+            actor_id=actor.pk, idempotency_key_hash=key_hash
+        ).first()
+        if receipt is not None:
+            if receipt.payload_hash != payload_hash:
+                raise MarketingTestConflict(
+                    "Esta chave de idempotência já pertence a outro teste. Gere uma nova chave."
+                )
+            return receipt, True
+
+        now = timezone.now()
+        retry_after = _test_throttle_retry_after(actor, now)
+        if retry_after is not None:
+            raise MarketingTestThrottled(retry_after)
+
+        return MarketingTestReceipt.objects.create(
+            actor_id=actor.pk,
+            idempotency_key_hash=key_hash,
+            payload_hash=payload_hash,
+            artifact_hash=artifact_hash,
+            target_ref=target.ref,
+            backend=target.backend,
+            retention_until=now + timedelta(days=180),
+        ), False
+
+
+def _test_send_result(receipt, fields: dict, *, replayed: bool) -> TestSend:
+    return TestSend(
+        accepted=receipt.state == MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED,
+        backend=receipt.backend,
+        target_ref=receipt.target_ref,
+        fields=fields,
+        receipt_ref=str(receipt.ref),
+        state=receipt.state,
+        detail=receipt.failure_code or receipt.state,
+        replayed=replayed,
+    )
 
 
 def send_test(
-    recipient: str, *, sku: str = "", name: str = "", body: str = "", backend: str = "",
+    target_ref: str,
+    *,
+    actor,
+    idempotency_key: str,
+    sku: str = "",
+    body: str = "",
 ) -> TestSend:
-    """Mandar UM anúncio de teste para UM destinatário. Sem audiência, sem consentimento.
+    """Envia por lane sandbox allowlisted, max-1 e idempotente, sem audiência."""
+    from shopman.shop.notifications import get_backend
 
-    Existe porque "o painel diz enviado" e "o celular vibrou" são fatos diferentes, e só o
-    segundo prova que o template aprovado renderiza. Manda as MESMAS chaves do caminho de
-    produção, com valores REAIS do catálogo e da disponibilidade — um teste que mande
-    menos prova só que o transporte responde.
-
-    **Não é porta dos fundos do consentimento:** um destinatário por chamada, escolhido
-    por quem tem a permissão de campanha, e nenhuma resolução de audiência. Serve para o
-    gestor testar o próprio número, e é assim que a tela o oferece.
-    """
-    from shopman.shop.handlers.campaign import _whatsapp_backend
-    from shopman.shop.notifications import notify
-
-    target = (recipient or "").strip()
-    if not target:
-        raise CampaignError("Informe o WhatsApp (ou o subscriber) que vai receber o teste.")
-    if "," in target or " " in target:
-        # Um por chamada, de propósito: aceitar lista transformaria isto em disparo.
-        raise CampaignError("Um destinatário por teste. Isto não faz lote.")
-
-    transport = backend or _whatsapp_backend()
-    if transport is None:
+    ref = str(target_ref or "").strip()
+    target = _marketing_test_targets().get(ref)
+    if target is None:
         raise CampaignError(
-            "Nenhum transporte de WhatsApp configurado neste ambiente. Sem credencial, "
-            "o teste não prova nada."
+            "Escolha um destino sandbox verificado. Nenhum número livre é aceito."
         )
+    key = str(idempotency_key or "").strip()
+    if not _TEST_IDEMPOTENCY_KEY.fullmatch(key):
+        raise CampaignError("Idempotency-Key inválida ou ausente.")
+    if not _actor_has_test_capability(actor):
+        raise CampaignError("A capacidade de teste não está mais disponível. Atualize a tela.")
 
-    fields = test_fields(sku=sku, name=name)
+    fields = test_fields(sku=sku, name="Cliente teste")
     message = (body or "").strip() or (
         "Teste do Shopman: se você recebeu isto, o template está de pé."
     )
+    payload = json.dumps(
+        {"target_ref": target.ref, "sku": str(sku or "").strip(), "body": message},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    artifact = json.dumps(
+        {"body": message, "fields": fields},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    receipt, replayed = _reserve_test_receipt(
+        actor=actor,
+        key_hash=_test_hash("idempotency", key),
+        payload_hash=_test_hash("payload", payload),
+        artifact_hash=_test_hash("artifact", artifact),
+        target=target,
+    )
+    if replayed:
+        return _test_send_result(receipt, fields, replayed=True)
+
+    transport = get_backend(target.backend)
+    probe = getattr(transport, "is_available", None) if transport is not None else None
+    if transport is None or (probe is not None and not probe(target.recipient)):
+        receipt.state = MarketingTestReceipt.State.FAILED_FINAL
+        receipt.failure_code = "sandbox_transport_unavailable"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestUnavailable(
+            "O sandbox de teste não está disponível agora.",
+            receipt_ref=str(receipt.ref),
+        )
+
+    # Recheck fresco imediatamente antes do efeito: cache de request não pode
+    # manter uma capability revogada enquanto a Action estava aberta.
+    if not _actor_has_test_capability(actor):
+        receipt.state = MarketingTestReceipt.State.DENIED
+        receipt.failure_code = "capability_revoked"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestForbidden(
+            "A capacidade de teste foi revogada. Nenhuma mensagem saiu.",
+            receipt_ref=str(receipt.ref),
+        )
+
     try:
-        result = notify(
-            event="announcement_published",
-            recipient=target,
+        accepted = bool(transport.send(
+            recipient=target.recipient,
+            template="announcement_published",
             context={
                 "body": message,
                 "cta": "Garanta o seu:",
                 "action_url": fields.get("link", ""),
                 **fields,
             },
-            backend=transport,
+        ))
+    except Exception as exc:  # outcome pós-boundary é desconhecido; nunca retry automático
+        receipt.state = MarketingTestReceipt.State.UNKNOWN
+        receipt.failure_code = "provider_outcome_unknown"
+        logger.warning(
+            "campaign.test_send receipt=%s state=unknown exception_class=%s",
+            receipt.ref,
+            type(exc).__name__,
         )
-    except Exception as exc:
-        logger.warning("campaign.test_send_failed recipient=%s", target, exc_info=True)
-        return TestSend(
-            accepted=False, backend=transport, recipient=target,
-            fields=fields, detail=str(exc),
+    else:
+        receipt.state = (
+            MarketingTestReceipt.State.ACCEPTED_UNCONFIRMED
+            if accepted
+            else MarketingTestReceipt.State.FAILED_FINAL
         )
+        receipt.failure_code = "" if accepted else "provider_rejected"
 
-    accepted = bool(getattr(result, "success", False))
-    return TestSend(
-        accepted=accepted,
-        backend=transport,
-        recipient=target,
-        fields=fields,
-        detail="" if accepted else str(getattr(result, "error", "") or "o transporte recusou"),
+    receipt.finished_at = timezone.now()
+    receipt.save(update_fields=["state", "failure_code", "finished_at"])
+    logger.info(
+        "campaign.test_send receipt=%s backend=%s state=%s sandbox=true max_targets=1",
+        receipt.ref,
+        receipt.backend,
+        receipt.state,
     )
+    return _test_send_result(receipt, fields, replayed=False)
 
 
 def test_fields(*, sku: str = "", name: str = "") -> dict:

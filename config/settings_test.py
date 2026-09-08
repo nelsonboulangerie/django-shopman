@@ -95,6 +95,7 @@ SHOPMAN_MANYCHAT.update(  # noqa: F405
     whatsapp_id_field_id="",
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
 )
+SHOPMAN_MARKETING_TEST_TARGETS = {}
 SHOPMAN_WHATSAPP.update(  # noqa: F405
     VERIFY_TOKEN="",
     STOREFRONT_URL="",

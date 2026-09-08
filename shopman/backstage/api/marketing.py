@@ -201,40 +201,81 @@ class AnnouncementApproveView(_CampaignBase):
 
 
 class WhatsAppTestSendView(_CampaignBase):
-    """POST campaign/whatsapp-template/test/ → manda UM teste, para UM número.
+    """POST campaign/whatsapp-template/test/ → teste sandbox unitário.
 
     Fica ao lado da escolha do template porque é a mesma pergunta: "isto renderiza como eu
     escrevi?". Mandar o gestor abrir um terminal para descobrir seria transformar uma
     conferência de dez segundos em tarefa de infraestrutura.
 
-    Um destinatário por chamada, sem resolução de audiência e sem consentimento — não é
-    caminho para alcançar cliente, é o gestor testando o próprio WhatsApp. A resposta
-    devolve os CAMPOS que saíram, para a tela mostrar o que o template recebeu.
+    O operador escolhe uma ref allowlisted; telefone/subscriber não entra no payload,
+    resposta ou log. A lane é separada de audiência e deixa receipt idempotente.
     """
 
     permission_map = {"POST": "shop.send_marketing_test"}
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"target_ref", "sku", "body"})
+        if unexpected:
+            return Response(
+                {
+                    "detail": "O teste aceita apenas destino verificado, SKU e texto.",
+                    "code": "test_payload_not_isolated",
+                    "fields": unexpected,
+                },
+                status=422,
+            )
         try:
             outcome = campaign_service.send_test(
-                str(payload.get("recipient") or ""),
+                str(payload.get("target_ref") or ""),
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 sku=str(payload.get("sku") or ""),
-                name=str(payload.get("name") or ""),
                 body=str(payload.get("body") or ""),
             )
+        except campaign_service.MarketingTestConflict as exc:
+            return Response({"detail": str(exc), "code": "idempotency_conflict"}, status=409)
+        except campaign_service.MarketingTestThrottled as exc:
+            return Response(
+                {"detail": str(exc), "code": "test_send_throttled"},
+                status=429,
+                headers={"Retry-After": str(exc.retry_after)},
+            )
+        except campaign_service.MarketingTestUnavailable as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "code": "sandbox_unavailable",
+                    "receipt_ref": exc.receipt_ref,
+                },
+                status=503,
+            )
+        except campaign_service.MarketingTestForbidden as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "code": "capability_revoked",
+                    "receipt_ref": exc.receipt_ref,
+                },
+                status=403,
+            )
         except campaign_service.CampaignError as exc:
-            return Response({"detail": str(exc)}, status=400)
+            return Response({"detail": str(exc), "code": "invalid_test_send"}, status=422)
 
         logger.info(
-            "campaign.test_send user=%s recipient=%s accepted=%s",
-            request.user.pk, outcome.recipient, outcome.accepted,
+            "campaign.test_send_api actor=%s receipt=%s state=%s replayed=%s",
+            request.user.pk, outcome.receipt_ref, outcome.state, outcome.replayed,
         )
         return Response({
             "ok": outcome.accepted,
             "backend": outcome.backend,
+            "target_ref": outcome.target_ref,
             "fields": outcome.fields,
-            # Aceito pelo provedor ≠ entregue no aparelho. A tela diz isso.
+            "receipt_ref": outcome.receipt_ref,
+            "state": outcome.state,
+            "sandbox": outcome.sandbox,
+            "max_targets": outcome.max_targets,
+            "replayed": outcome.replayed,
             "detail": outcome.detail,
         })
 
@@ -413,6 +454,7 @@ class WhatsAppTemplateView(_CampaignBase):
         template = NotificationTemplate.objects.filter(event=self.EVENT).first()
         current = (template.whatsapp_flow_ns or "") if template else ""
         flows = manychat_flows.list_flows()
+        can_send_test = request.user.has_perm("shop.send_marketing_test")
 
         return Response({
             "current": current,
@@ -421,6 +463,12 @@ class WhatsAppTemplateView(_CampaignBase):
             "available": [{"ns": ns, "name": name} for ns, name in flows],
             "can_list": bool(flows),
             "configured": bool(current),
+            "can_send_test": can_send_test,
+            "test_targets": (
+                campaign_service.marketing_test_target_options()
+                if can_send_test
+                else []
+            ),
         })
 
     def post(self, request):

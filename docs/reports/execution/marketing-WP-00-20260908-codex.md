@@ -244,3 +244,42 @@ Provas locais:
 - suites de capabilities, API Marketing, notificações, E2E, campanha, paridade e grupos: 197 testes passaram;
 - Ruff dos arquivos Python tocados e `git diff --check`: passaram;
 - migration aditiva `shop.0024_marketing_capabilities`; nenhum grupo, usuário ou ambiente externo foi alterado fora do banco efêmero de teste.
+
+## MKT-008 — test-send sandbox, unitário, idempotente e sem PII
+
+Implementado:
+
+- API e CLI deixaram de aceitar telefone, subscriber, backend ou audience rules livres;
+- targets vêm exclusivamente de `SHOPMAN_MARKETING_TEST_TARGETS_JSON`, e só entram quando `sandbox=true` e `ownership_verified=true` ou `synthetic=true`;
+- o browser recebe apenas ref, label não sensível e backend; o recipient real permanece server-side no boundary do adapter;
+- payload fora da allowlist é recusado com 422 antes de resolver backend, audiência ou catálogo;
+- cada tentativa exige `Idempotency-Key`, cuja forma raw não é persistida; same key+same payload reproduz o receipt sem novo efeito e payload diferente retorna 409;
+- `MarketingTestReceipt` guarda hashes HMAC de key/payload/artifact, actor, target ref segura, estado, backend e retenção mínima de 180 dias, sem telefone, body ou resposta do vendor;
+- receipt é marcado `sandbox=true`, `max_targets=1` e protegido por constraints de banco;
+- exception após o boundary vira `unknown`, preserva receipt e nunca é repetida automaticamente;
+- sandbox indisponível retorna 503 com receipt seguro; provider detail e exception message não atravessam response/log;
+- quotas G-H04 de 5 testes/h por ator e 20/24h por loja retornam 429 com `Retry-After`; a reserva é serializada por lock curto no banco, sem manter lock durante o provider;
+- capability é consultada novamente no banco imediatamente antes do adapter, sem confiar no cache da request;
+- CLI exige target ref, ator staff capaz, idempotency key e `--send`; sem `--send`, é dry-run e não mostra recipient;
+- Nuxt removeu o campo de telefone/nome, escolhe automaticamente o único aparelho verificado, gera idempotency key e mostra receipt/estado;
+- o BFF compartilhado passou a preservar `Idempotency-Key` e, por allowlist, `Retry-After`, `ETag`, `X-Request-ID` e `X-API-Version`.
+
+Budget de omotenashi comprovado:
+
+| Trabalho do operador | Antes | Depois |
+|---|---:|---:|
+| Redigitar/conferir telefone ou subscriber | 1 entrada livre + conferência externa | 0 |
+| Escolher alvo quando existe apenas um verificado | 1 decisão | 0, pré-selecionado |
+| Navegar/abrir terminal | possível caminho alternativo | 0 |
+| Criar/guardar chave de retry | manual/inexistente | 0, automática |
+| Descobrir o que ocorreu após timeout | incerto | 1 receipt seguro visível |
+| Targets por ação | não garantido no banco | exatamente 1 |
+
+Provas locais:
+
+- API/CLI cobrem payload isolado, target allowlisted, ausência de PII em response/log/model, idempotência, conflito, `unknown`, indisponibilidade, quotas, receipt/retention e ausência de chamada ao audience resolver;
+- suites Marketing/API/adapter/campanha: 207 testes passaram; suíte final específica API+CLI: 19 passaram;
+- Marketing Nuxt: 93 testes, lint e typecheck passaram; build Nuxt 4.5.2 passou;
+- operator-kit: 172 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- somente fake adapter foi chamado; nenhuma credencial, rede, sandbox remoto, telefone ou produção foi usada.

@@ -3,7 +3,10 @@
 // "Admin = só config" limita o Admin; não exila configuração do app de operador. Escolher
 // o template com que o anúncio sai é inseparável de operar o anúncio, então quem decide
 // publicar muda isso sem trocar de aplicativo.
-import type { WhatsAppTemplateResponse } from "~/types/campaign";
+import type {
+  MarketingTestReceipt,
+  WhatsAppTemplateResponse,
+} from "~/types/campaign";
 
 export function useWhatsAppTemplate() {
   const { data, refresh, pending } = useFetch<WhatsAppTemplateResponse>(
@@ -13,6 +16,8 @@ export function useWhatsAppTemplate() {
 
   const current = computed(() => data.value?.current ?? "");
   const available = computed(() => data.value?.available ?? []);
+  const testTargets = computed(() => data.value?.test_targets ?? []);
+  const canSendTest = computed(() => data.value?.can_send_test ?? false);
   /** `false` = não consegui perguntar à plataforma. Diferente de "não há template". */
   const canList = computed(() => data.value?.can_list ?? false);
 
@@ -30,39 +35,55 @@ export function useWhatsAppTemplate() {
       await refresh();
       return true;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Não foi possível escolher o template."));
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível escolher o template."),
+      );
       return false;
     }
   }
 
   /** Campos que o teste enviou, para a tela mostrar o que o template recebeu. */
   const testFields = ref<Record<string, string>>({});
+  const testReceipt = ref<MarketingTestReceipt | null>(null);
   const testing = ref(false);
 
   /**
-   * Manda UM teste para UM número. Não resolve audiência nem consentimento: é o gestor
-   * conferindo o próprio WhatsApp, e é por isso que o destinatário é digitado.
+   * Manda UM teste para uma ref verificada. O recipient real nunca entra no browser.
    */
-  async function sendTest(recipient: string, options: { sku?: string; name?: string } = {}) {
+  async function sendTest(
+    targetRef: string,
+    options: { sku?: string; body?: string } = {},
+  ) {
     testing.value = true;
     try {
-      const response = await $fetch<{
-        ok: boolean; backend: string; fields: Record<string, string>; detail: string;
-      }>("/api/v1/backstage/marketing/whatsapp-template/test/", {
-        method: "POST",
-        body: { recipient, sku: options.sku || "", name: options.name || "" },
-      });
+      const response = await $fetch<MarketingTestReceipt>(
+        "/api/v1/backstage/marketing/whatsapp-template/test/",
+        {
+          method: "POST",
+          headers: { "Idempotency-Key": crypto.randomUUID() },
+          body: {
+            target_ref: targetRef,
+            sku: options.sku || "",
+            body: options.body || "",
+          },
+        },
+      );
       testFields.value = response.fields || {};
+      testReceipt.value = response;
       if (response.ok) {
-        // Aceito pelo provedor ≠ entregue no aparelho. Dizer isso evita o gestor
-        // concluir que está tudo bem quando o celular não vibrou.
-        useSonner.success(`Enviado por ${response.backend}. Confira o aparelho.`);
+        useSonner.success(
+          "Sandbox aceitou. Confira o aparelho; aceite ainda não é entrega.",
+        );
       } else {
-        useSonner.error(response.detail || "O transporte não aceitou o envio.");
+        useSonner.error(
+          "O sandbox não confirmou aceite. O receipt ficou guardado.",
+        );
       }
       return response.ok;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Não foi possível enviar o teste."));
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível enviar o teste."),
+      );
       return false;
     } finally {
       testing.value = false;
@@ -70,7 +91,17 @@ export function useWhatsAppTemplate() {
   }
 
   return {
-    current, available, canList, loading: pending, load: refresh, choose,
-    sendTest, testing, testFields,
+    current,
+    available,
+    testTargets,
+    canSendTest,
+    canList,
+    loading: pending,
+    load: refresh,
+    choose,
+    sendTest,
+    testing,
+    testFields,
+    testReceipt,
   };
 }
