@@ -90,6 +90,10 @@ class OperatorAlert(models.Model):
         # espera a equipe), ou o modelo falhou três vezes seguidas numa conversa.
         ("concierge_handoff", "WhatsApp: cliente pediu a equipe"),
         ("concierge_unavailable", "WhatsApp: concierge fora do ar"),
+        # ⚠️ Vai para o GESTOR, não para o CI. Teste vermelho é visto por quem
+        # programa; a obrigação de cumprir a norma é de quem opera — então o
+        # vencimento de um parâmetro legal precisa aparecer na tela dele.
+        ("legal_parameter_stale", "Parâmetro de lei sem conferência"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),
