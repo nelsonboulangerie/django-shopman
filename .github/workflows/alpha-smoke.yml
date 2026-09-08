@@ -41,7 +41,22 @@ concurrency:
   #
   # Com a chave por `head_sha`, cada deploy tem o seu smoke até o fim; só um
   # re-deploy do MESMO commit cancela o anterior, que é o que se quer.
-  group: alpha-smoke-${{ github.event.workflow_run.head_sha || github.event_name }}
+  # ⚠️ `github.run_id` — chave ÚNICA por execução, de propósito: aqui a
+  # concorrência não deve cancelar NADA.
+  #
+  # Medido em 06-08/09: das NOVE execuções pós-deploy desde que o gatilho
+  # existe, nove foram CANCELADAS e nenhuma completou. A chave por `head_sha`
+  # (tentativa anterior) não resolveu — provavelmente porque
+  # `github.event.workflow_run.head_sha` não resolve no contexto de
+  # `concurrency`, e o grupo degradou para compartilhado sem avisar.
+  #
+  # `run_id` não depende dessa incerteza: existe em todo contexto e é único. Na
+  # prática desliga o cancelamento para este workflow — que é o certo, porque
+  # cada deploy merece a própria verificação e o job custa quatro `curl`.
+  #
+  # E o custo do cancelamento não é desperdício, é CEGUEIRA: run cancelado não
+  # fica vermelho. A guarda deixava de rodar e ninguém ficava sabendo.
+  group: alpha-smoke-${{ github.run_id }}
   cancel-in-progress: true
 
 # ⚠️ A URL da loja é UMA variável, e é de propósito.
