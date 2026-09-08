@@ -412,18 +412,52 @@ def close_sale(
         # junto). Para a venda presencial que o lifecycle já concluiu, isto é
         # dedupe-hit; para as demais, é o gatilho que ``on_completed`` (fim da
         # jornada) demoraria dias a alcançar. Idempotente e deduplicado no banco.
+        # ⚠️ A venda JÁ fechou e o cliente já foi embora — não dá para desfazer
+        # aqui, então isto falha GRITANDO, não fechado. O `logger.warning` que
+        # havia não chegava a ninguém: era venda sem nota, com o balcão achando
+        # que a nota estava a caminho (a tela só diz "Fiscal pendente", que é o
+        # que ela diz também quando está tudo certo). Agora nasce alerta no
+        # Gestor, com o pedido no nome, para alguém reemitir.
         try:
             from shopman.shop.services import fiscal as fiscal_service
 
             fiscal_service.emit(order)
-        except Exception:
+        except Exception as exc:
             logger.warning("pos_close_fiscal_emit_failed order=%s", result.order_ref, exc_info=True)
+            _alert_fiscal_emit_failed(result.order_ref, exc)
     return PosSaleResult(
         order_ref=result.order_ref,
         total_q=int(order.total_q if order is not None else result.total_q),
         fiscal_hint=_sale_fiscal_hint(order),
         payment=payment_result,
     )
+
+
+def _alert_fiscal_emit_failed(order_ref: str, exc: BaseException) -> None:
+    """Venda fechada e NFC-e que nem chegou a ser enfileirada.
+
+    Reusa ``integration_failed`` de propósito: o modelo o define como
+    "integração externa de SAÍDA falhando", e é exatamente isto — a nota não
+    saiu. O canal também notifica quem tem ``shop.manage_orders``, porque nota
+    faltando é assunto do gestor, não do balcão (que já não pode fazer nada
+    sobre a venda encerrada).
+
+    Nunca levanta: o dinheiro já entrou e a venda não pode ser derrubada por
+    causa do aviso dela.
+    """
+    try:
+        from shopman.shop.services import observability
+
+        observability.record_integration_failure(
+            provider="fiscal",
+            operation="emit_nfce",
+            detail=f"pedido {order_ref}: {exc}",
+            severity="error",
+            exc=exc,
+            context={"order_ref": order_ref, "surface": "pos"},
+        )
+    except Exception:
+        logger.exception("pos_close_fiscal_alert_failed order=%s", order_ref)
 
 
 def _locked_session(session: Session) -> Session:
@@ -2521,8 +2555,12 @@ def fiscal_toggle_enabled() -> bool:
         defaults = (getattr(shop, "defaults", None) or {}) if shop else {}
         pos_cfg = defaults.get("pos") if isinstance(defaults, dict) else {}
         return bool((pos_cfg or {}).get("fiscal_toggle", False))
+    # Irmão do teto de desconto logo acima, e pela mesma razão: cair para
+    # `False` porque a leitura falhou faz o toggle "Nota fiscal" SUMIR do balcão
+    # numa loja que oferece NFC-e — o operador não tem como pedir a nota e não
+    # há nada dizendo por quê. O fallback continua; ele passou a gritar.
     except Exception:
-        logger.debug("pos_fiscal_toggle_lookup_failed", exc_info=True)
+        logger.warning("pos_fiscal_toggle_lookup_failed", exc_info=True)
         return False
 
 
@@ -3340,8 +3378,11 @@ def _sale_fiscal_hint(order: Order | None) -> str:
 
         if fiscal_service.emission_expected(order):
             return " · Fiscal pendente"
+    # O fallback abaixo lê o pedido e continua respondendo, mas responde por
+    # OUTRA régua (o toggle, não a regra fiscal): a dica pode dizer que não há
+    # nota quando há. Uma divergência dessas não pode morar em `logger.debug`.
     except Exception:
-        logger.debug("pos_sale_fiscal_hint_failed order=%s", order.ref, exc_info=True)
+        logger.warning("pos_sale_fiscal_hint_failed order=%s", order.ref, exc_info=True)
         if ((order.data or {}).get("fiscal") or {}).get("issue_document"):
             return " · Fiscal pendente"
     return ""

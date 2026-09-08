@@ -285,11 +285,18 @@ def capture(
     # justamente para o caso do webhook perdido, então ela não pode depender dele.
     payment_intent_id = gateway_payment_intent_id(intent_ref) or intent.gateway_id
     if payment_intent_id and payment_intent_id != intent.gateway_id:
+        # Não é silêncio deliberado: sem a promoção, a captura logo abaixo sai
+        # com o id da Checkout Session e o Stripe recusa — o dinheiro fica
+        # autorizado e não capturado. Em `logger.debug` isso nunca saiu do
+        # processo (o nível padrão do deploy é INFO), então a causa da captura
+        # recusada morria aqui. O fallback continua; ele só passou a gritar.
         try:
             intent.gateway_id = payment_intent_id
             intent.save(update_fields=["gateway_id"])
         except Exception:
-            logger.debug("stripe.capture gateway_id promotion degraded", exc_info=True)
+            logger.warning(
+                "stripe.capture_gateway_id_promotion_failed intent=%s", intent_ref, exc_info=True
+            )
 
     try:
         capture_params = {}
@@ -434,6 +441,79 @@ def refund(
         )
 
 
+#: Estado local em que a transição pedida **já aconteceu**: a segunda tentativa
+#: não tem o que fazer, e isso não é divergência. O Stripe entrega webhook
+#: repetido e fora de ordem por contrato, e ``checkout.session.completed`` e
+#: ``payment_intent.succeeded`` descrevem o MESMO dinheiro — alertar aqui seria
+#: alarme falso em toda venda de cartão, e alarme falso é como um alerta
+#: verdadeiro morre.
+_ALREADY_SETTLED_STATUSES = {
+    "authorize": {"authorized", "captured", "refunded"},
+    "capture": {"captured", "refunded"},
+    "fail": {"failed", "cancelled"},
+    "cancel": {"cancelled"},
+}
+
+
+def _local_intent(intent_ref: str):
+    """O intent do Payman, ou ``None`` quando ele não existe."""
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        return PaymentService.get(intent_ref)
+    except PaymentError:
+        return None
+
+
+def _record_ledger_drift(operation: str, intent_ref: str, exc, **context) -> bool:
+    """O Stripe moveu o dinheiro e o Payman não acompanhou.
+
+    Devolve ``True`` quando isto era divergência de verdade (alerta aberto) e
+    ``False`` quando a transição pedida já estava feita.
+
+    Este é o irmão calado de ``handle_webhook_event`` no ``charge.refunded``,
+    que desde sempre chamou ``record_payment_reconciliation_failure``: dinheiro
+    SAINDO alertava, dinheiro ENTRANDO era ``except PaymentError: pass``. O
+    cartão era cobrado, o pedido continuava pendente e ninguém ficava sabendo —
+    a forma exata do incidente E54.
+
+    Não levanta: quem chama é o handler do webhook, e derrubá-lo faria o Stripe
+    reentregar o mesmo evento contra o mesmo defeito. O contrato é o da casa —
+    falhar GRITANDO, com alerta aberto no Gestor até alguém conciliar.
+    """
+    from shopman.shop.services import observability
+
+    intent = _local_intent(intent_ref)
+    local_status = str(getattr(intent, "status", "") or "")
+    if local_status in _ALREADY_SETTLED_STATUSES.get(operation, set()):
+        observability.operational_event(
+            "stripe.ledger_already_settled",
+            operation=operation,
+            intent_ref=intent_ref,
+            local_status=local_status,
+            **context,
+        )
+        return False
+
+    logger.error(
+        "stripe.ledger_drift operation=%s intent=%s local_status=%s code=%s",
+        operation,
+        intent_ref,
+        local_status or "-",
+        getattr(exc, "code", ""),
+        exc_info=True,
+    )
+    observability.record_payment_reconciliation_failure(
+        gateway="stripe",
+        intent_ref=intent_ref,
+        order_ref=str(getattr(intent, "order_ref", "") or ""),
+        code=getattr(exc, "code", "") or exc.__class__.__name__,
+        context={**(getattr(exc, "context", None) or {}), "operation": operation, **context},
+        exc=exc,
+    )
+    return True
+
+
 def cancel(intent_ref: str, **config) -> PaymentResult:
     """Cancel a Stripe PaymentIntent + PaymentService."""
     from shopman.payman import PaymentError, PaymentService
@@ -452,10 +532,13 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
     try:
         stripe.PaymentIntent.cancel(intent.gateway_id)
 
+        # A cobrança JÁ morreu no Stripe. Sem a baixa local, o Payman segue com
+        # um intent de pé para um pedido que ninguém mais pode pagar, e o
+        # `success=True` abaixo jurava que os dois lados estavam alinhados.
         try:
             PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
-        except PaymentError:
-            pass
+        except PaymentError as exc:
+            _record_ledger_drift("cancel", intent_ref, exc)
 
         return PaymentResult(success=True)
     except Exception as e:
@@ -970,14 +1053,19 @@ def handle_webhook_event(event) -> dict:
                     if db_intent.gateway_id != payment_intent_id:
                         db_intent.gateway_id = payment_intent_id
                         db_intent.save(update_fields=["gateway_id"])
+                # `PaymentService.get` só levanta `PaymentError` por intent
+                # inexistente, e o `authorize` logo abaixo pergunta pelo MESMO ref.
+                # silêncio-deliberado: a ausência sai gritando lá, uma vez em vez de duas.
                 except PaymentError:
                     pass
             try:
                 PaymentService.authorize(
                     shopman_ref, gateway_id=payment_intent_id or shopman_ref,
                 )
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                _record_ledger_drift(
+                    "authorize", shopman_ref, exc, event_type=event.type,
+                )
 
     elif event.type == "payment_intent.succeeded":
         stripe_intent = event.data.object
@@ -987,14 +1075,25 @@ def handle_webhook_event(event) -> dict:
         )
         if shopman_ref:
             intent_ref = shopman_ref
+            drifted = False
             try:
                 PaymentService.authorize(shopman_ref, gateway_id=stripe_intent.id)
-            except PaymentError:
-                pass
-            try:
-                PaymentService.capture(shopman_ref, gateway_id=stripe_intent.id)
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                drifted = _record_ledger_drift(
+                    "authorize", shopman_ref, exc, event_type=event.type,
+                )
+            # Autorização que já estava feita (o `checkout.session.completed`
+            # chegou antes) NÃO impede a captura — é o caminho normal. Só a
+            # divergência de verdade interrompe: capturar depois de um authorize
+            # quebrado renderia um segundo alerta para a mesma causa, e dois
+            # alarmes para um defeito ensinam a ignorar os dois.
+            if not drifted:
+                try:
+                    PaymentService.capture(shopman_ref, gateway_id=stripe_intent.id)
+                except PaymentError as exc:
+                    _record_ledger_drift(
+                        "capture", shopman_ref, exc, event_type=event.type,
+                    )
 
     elif event.type == "payment_intent.payment_failed":
         stripe_intent = event.data.object
@@ -1011,8 +1110,11 @@ def handle_webhook_event(event) -> dict:
                     error_code=last_error.code if last_error else "unknown",
                     message=last_error.message if last_error else "",
                 )
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                # O caso grave aqui é o inverso do E54: o Stripe diz que a
+                # cobrança FALHOU e o Payman a tem como capturada. O pedido sai
+                # como pago sem dinheiro nenhum, e é preciso alguém conferir.
+                _record_ledger_drift("fail", shopman_ref, exc, event_type=event.type)
 
     elif event.type in DISPUTE_EVENT_TYPES:
         intent_ref = handle_dispute_event(event) or None
