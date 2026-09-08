@@ -175,15 +175,39 @@ jobs:
       #
       # Nos outros gatilhos não há o que esperar, e o passo é pulado (exceto
       # pelo `probe_deploy_wait` do dispatch, que existe para provar o caminho).
+      # ⚠️ O manifesto é o que separa "nada foi publicado" de "o deployment
+      # sumiu". Sem ele os dois terminam iguais — e foi assim que a versão
+      # anterior deste passo devolvia verde depois de esperar 900s à toa.
+      - name: Baixar o manifesto do Deploy Images
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          gh run download "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name published-components --dir manifesto
+          cat manifesto/published.json
+
       - name: Esperar a DigitalOcean trocar os contêineres
-        if: >-
-          github.event_name == 'workflow_run' ||
-          inputs.probe_deploy_wait
+        if: github.event_name == 'workflow_run'
         env:
           DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           DO_APP_NAME: shopman-alpha
-          DEPLOY_FINISHED_AT: ${{ github.event.workflow_run.updated_at }}
-        run: python3 scripts/wait_for_do_deployment.py
+        run: |
+          python3 scripts/wait_for_do_deployment.py \
+            --manifest manifesto/published.json
+
+      # O probe não afirma nada sobre deploy — exercita credencial, API e
+      # parsing antes do merge, que é o que pegou o `syntax error` da primeira
+      # tentativa. Um probe que fingisse verificar deployment seria o mesmo
+      # falso conforto que este arquivo existe para eliminar.
+      - name: Probe do caminho da espera
+        if: inputs.probe_deploy_wait
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_APP_NAME: shopman-alpha
+        run: python3 scripts/wait_for_do_deployment.py --probe
 
       - name: API pronta (/ready/)
         run: |
