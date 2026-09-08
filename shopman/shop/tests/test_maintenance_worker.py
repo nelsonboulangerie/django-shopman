@@ -307,7 +307,9 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
     # Presença por comando, não contagem total — imune a duplicata de captura / ruído
     # de ordem de coleta (o exato `== len` flakava no CI).
     for command in MAINTENANCE_COMMANDS:
-        assert any(command in message for message in logged), f"faltou log de {command}"
+        # A entrada pode ser `(nome, kwargs)` — o log carrega só o nome.
+        nome = command[0] if isinstance(command, tuple) else command
+        assert any(nome in message for message in logged), f"faltou log de {nome}"
 
 
 # ── (c) Loop: --once, intervalo e floor ──────────────────────────────────────
@@ -370,6 +372,9 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # recalcular a afinidade com a tabela mais nova que 20h.
         call("compute_product_affinity"),
         # Higiene de fim de ciclo: sem relação de ordem com nada acima.
+        # ⚠️ A única com OPÇÃO: no worker a conferência de parâmetro legal
+        # existe para ALERTAR o gestor, não só para imprimir.
+        call("conferir_parametros_legais", vencidos=True, alertar=True),
         call("purge_sign_in_audit"),
     ]
 

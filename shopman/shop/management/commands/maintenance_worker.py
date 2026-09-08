@@ -127,6 +127,14 @@ MAINTENANCE_COMMANDS = (
     # minutos. Quem segura a cadência é o próprio comando (`--min-interval-hours`),
     # que sabe quanto custa — o worker não tem noção de "uma vez por noite".
     "compute_product_affinity",
+    # A lei muda e ninguém avisa. Este é o único item da lista que não olha o
+    # movimento da casa — olha o RELÓGIO contra a data em que alguém conferiu a
+    # norma. Barato (nenhuma consulta externa) e carrega o próprio portão: só
+    # cria alerta quando há vencido, e o alerta é deduplicado pela janela.
+    #
+    # ⚠️ Vai para o GESTOR, não para o CI: quem responde por cumprir a norma é
+    # quem opera, e teste vermelho ele não vê.
+    ("conferir_parametros_legais", {"vencidos": True, "alertar": True}),
     "purge_sign_in_audit",
 )
 
@@ -183,8 +191,12 @@ class Command(BaseCommand):
         # até um restart — a manutenção viraria no-op silencioso.
         close_old_connections()
         worker_heartbeat.beat(MAINTENANCE_WORKER)
-        for command in MAINTENANCE_COMMANDS:
+        for entrada in MAINTENANCE_COMMANDS:
+            # A entrada é o nome, ou `(nome, kwargs)` quando a tarefa precisa de
+            # opção — o `call_command` aceita as duas formas, e assim não é
+            # preciso um comando-embrulho só para passar uma flag.
+            command, kwargs = entrada if isinstance(entrada, tuple) else (entrada, {})
             try:
-                call_command(command)
+                call_command(command, **kwargs)
             except Exception:
                 logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)
