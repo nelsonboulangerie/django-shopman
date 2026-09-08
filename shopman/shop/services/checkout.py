@@ -179,8 +179,59 @@ def map_order_error(exc: Exception) -> CheckoutDomainError | None:
     )
 
 
-def ensure_customer(intent) -> None:
-    """Ensure the checkout customer exists in Guestman."""
+def _fill_missing_first_name(customer_obj, name: str) -> None:
+    if name and not customer_obj.first_name:
+        customer_obj.first_name = name
+        customer_obj.save(update_fields=["first_name"])
+
+
+def _phone_owner_any_state(phone: str):
+    """Quem é dono deste telefone, ATIVO OU NÃO.
+
+    ``customer_service.get_by_phone`` só enxerga cadastro ativo; o UNIQUE global
+    ``(type, value_normalized)`` do ContactPoint enxerga todos. É exatamente essa
+    diferença que produz o ``IntegrityError`` daqui — e sem olhar para os
+    inativos não há como saber por que a criação foi recusada.
+    """
+    from shopman.guestman.models import ContactPoint
+    from shopman.utils.phone import normalize_phone
+
+    normalized = normalize_phone(phone)
+    if not normalized:
+        return None
+
+    contact = (
+        ContactPoint.objects.select_related("customer")
+        .filter(
+            value_normalized=normalized,
+            type__in=[ContactPoint.Type.PHONE, ContactPoint.Type.WHATSAPP],
+        )
+        .order_by("-is_primary", "-is_verified", "-updated_at")
+        .first()
+    )
+    return contact.customer if contact else None
+
+
+def ensure_customer(intent, *, order_ref: str = "") -> None:
+    """Ensure the checkout customer exists in Guestman.
+
+    ⚠️ O ``except IntegrityError: pass`` que morava aqui era uma falha SILENCIOSA
+    no ponto mais caro do fluxo: o pedido fechava sem vínculo com cadastro, e o
+    cliente perdia histórico, fidelidade e rastreio sem que ninguém — nem ele,
+    nem a padaria — soubesse. O pedido já foi commitado quando chegamos aqui, e é
+    por isso que esta função não levanta para a superfície; mas ela não pode
+    calar.
+
+    A colisão tem duas causas, e só uma delas é problema:
+
+    - **O telefone já é de um cadastro ATIVO** (corrida entre dois checkouts do
+      mesmo número, ou o cadastro nasceu entre a busca e a escrita). O dono é o
+      cadastro certo: adotamos, e o vínculo existe. Não há nada a alertar.
+    - **O telefone está preso num cadastro DESATIVADO**, ou não há dono nenhum
+      (a colisão foi de outra coluna). Aí o pedido fica mesmo sem cadastro, e
+      isso vira alerta de operador — dado que não entrou é trabalho a fazer, não
+      linha de log.
+    """
     import uuid as uuid_lib
 
     from django.db import IntegrityError
@@ -188,9 +239,7 @@ def ensure_customer(intent) -> None:
 
     customer_obj = customer_service.get_by_phone(intent.customer_phone)
     if customer_obj:
-        if intent.customer_name and not customer_obj.first_name:
-            customer_obj.first_name = intent.customer_name
-            customer_obj.save(update_fields=["first_name"])
+        _fill_missing_first_name(customer_obj, intent.customer_name)
         return
 
     try:
@@ -199,8 +248,34 @@ def ensure_customer(intent) -> None:
             first_name=intent.customer_name,
             phone=intent.customer_phone,
         )
+        return
     except IntegrityError:
-        pass
+        logger.info("checkout.ensure_customer_conflict order=%s", order_ref, exc_info=True)
+
+    owner = _phone_owner_any_state(intent.customer_phone)
+    if owner is not None and owner.is_active:
+        # Vincular ao dono existente é melhor do que descartar: é o mesmo
+        # telefone, que nesta loja É a identidade do cliente.
+        _fill_missing_first_name(owner, intent.customer_name)
+        return
+
+    from shopman.shop.services.observability import create_operator_alert
+
+    motivo = (
+        "o telefone está preso num cadastro desativado"
+        if owner is not None
+        else "o cadastro não pôde ser criado"
+    )
+    create_operator_alert(
+        type="checkout_customer_unlinked",
+        severity="warning",
+        message=(
+            f"Pedido {order_ref or '(sem ref)'} fechou sem vínculo com cadastro: {motivo}. "
+            "O cliente fica sem histórico, fidelidade e rastreio até alguém ligar os dois."
+        ),
+        order_ref=order_ref,
+        dedupe_key=f"checkout_customer_unlinked:{order_ref}",
+    )
 
 
 def persist_new_address(intent) -> None:
@@ -321,7 +396,7 @@ def _apply_post_commit_side_effects(data: dict, channel_ref: str, *, order_ref: 
         return
 
     try:
-        ensure_customer(intent)
+        ensure_customer(intent, order_ref=order_ref)
     except Exception:
         logger.warning("checkout.ensure_customer_failed order=%s", order_ref, exc_info=True)
     try:

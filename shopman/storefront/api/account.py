@@ -39,6 +39,7 @@ from shopman.storefront.presentation.account import (
 )
 from shopman.storefront.services import orders as order_service
 
+from .actions import action_payload
 from .projections import projection_data
 from .serializers import (
     AddressSerializer,
@@ -301,6 +302,76 @@ def _favorites_copy() -> dict:
     }
 
 
+def _support_whatsapp_url() -> str:
+    """O WhatsApp da padaria — a única saída que não depende de o cliente lembrar de nada."""
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        return shop.whatsapp_url if shop else ""
+    except Exception:
+        logger.debug("storefront_account_support_whatsapp_failed", exc_info=True)
+        return ""
+
+
+def _contact_taken_response(exc) -> Response:
+    """A recusa com SAÍDA — o dialeto canônico mais o superset do storefront.
+
+    ``{detail, field, errors}`` é o que toda superfície entende; ``error_code``,
+    ``title`` e ``actions`` são o superset que a loja já consome em recusas com
+    recuperação (carrinho, rate-limit). Um front que só lê ``detail`` continua
+    funcionando.
+
+    ⚠️ PRIVACIDADE — a diferença que este payload guarda em relação ao gêmeo do
+    PDV. O PDV manda ``candidates`` com nome, telefone e e-mail dos dois
+    cadastros, porque é superfície de OPERADOR: quem está no balcão precisa saber
+    com quem está falando para decidir. Aqui é superfície de CLIENTE e o
+    solicitante é um desconhecido em relação ao dono do e-mail — nomear o dono
+    seria vazar dado pessoal de terceiro para quem digitou um endereço qualquer.
+    Então a loja diz que o e-mail não está disponível, aponta o campo, e oferece
+    os dois caminhos que servem sem revelar nada: entrar na conta que já usa esse
+    e-mail (se for dele, ele passa pelo OTP e prova), ou falar com a padaria (se
+    não for, quem resolve é gente).
+    """
+    detail = str(exc) or account_service.EMAIL_TAKEN_DETAIL
+    field = getattr(exc, "field", "email") or "email"
+
+    actions = [
+        action_payload(
+            ref="sign_in_with_email",
+            kind="link",
+            label="Entrar com esse e-mail",
+            href="/entrar?next=/conta/perfil",
+            priority="primary",
+            reason="Se a conta é sua, entre nela pelo telefone cadastrado.",
+            idempotency="none",
+        )
+    ]
+    whatsapp_url = _support_whatsapp_url()
+    if whatsapp_url:
+        actions.append(action_payload(
+            ref="contact_whatsapp",
+            kind="external",
+            label="Falar com a padaria",
+            href=whatsapp_url,
+            priority="secondary",
+            reason="A gente resolve com você pelo WhatsApp.",
+            idempotency="none",
+        ))
+
+    return Response(
+        {
+            "detail": detail,
+            "field": field,
+            "errors": {field: [detail]},
+            "error_code": "contact_already_taken",
+            "title": "Confira o e-mail",
+            "actions": actions,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["account"],
@@ -310,7 +381,13 @@ def _favorites_copy() -> dict:
     patch=extend_schema(
         tags=["account"],
         summary="Update customer profile",
-        responses={200: CustomerProfileSerializer, 400: DetailSerializer, 401: DetailSerializer},
+        responses={
+            200: CustomerProfileSerializer,
+            400: DetailSerializer,
+            401: DetailSerializer,
+            # Contato já é de outro cadastro: recusa nomeada, com campo e saídas.
+            409: DetailSerializer,
+        },
     ),
 )
 class ProfileView(APIView):
@@ -388,6 +465,12 @@ class ProfileView(APIView):
         )
         try:
             updated = account_service.update_profile(customer.ref, intent)
+        except account_service.ContactAlreadyTaken as exc:
+            # A recusa que TEM motivo não pode cair no `except Exception` abaixo:
+            # ali a frase real é descartada e o cliente lê "tente novamente"
+            # sobre um problema que tentar de novo não resolve. Por isso este
+            # handler vem SEMPRE antes do genérico.
+            return _contact_taken_response(exc)
         except Exception:
             # Nunca devolver ``str(exc)`` ao cliente: vazaria nomes de modelo/campo
             # internos. Mensagem fixa pt-BR; o detalhe técnico fica só no log.

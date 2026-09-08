@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import type { AccountProfile } from '~/types/shopman'
+import type { AccountProfile, Action } from '~/types/shopman'
+import { profileActionIsExternal, profileIssueFrom } from '~/presentation/account'
 import { displayE164Phone } from '~/utils/authPhone'
 
 definePageMeta({ middleware: 'account' })
@@ -13,6 +14,9 @@ const requestHeaders = import.meta.server ? useRequestHeaders(['cookie']) : unde
 // em edição ao tocar "Editar". Menos fricção pra quem só quer conferir; edição é opt-in.
 const isEditing = ref(false)
 const profileIssue = ref('')
+// As saídas que acompanham a recusa. Uma recusa sem saída é um beco: o cliente
+// lê que não deu, e não tem o que fazer a seguir. Quem as decide é o servidor.
+const profileIssueActions = ref<Action[]>([])
 const profileSaved = ref(false)
 const profilePendingSave = ref(false)
 const profileForm = reactive({ first_name: '', last_name: '', email: '', birthday: '' })
@@ -77,9 +81,14 @@ function syncFormFromProfile () {
 }
 watch(() => profile.value, syncFormFromProfile, { immediate: true })
 
+function clearProfileIssue () {
+  profileIssue.value = ''
+  profileIssueActions.value = []
+}
+
 function startEdit () {
   syncFormFromProfile()
-  profileIssue.value = ''
+  clearProfileIssue()
   profileSaved.value = false
   fieldErrors.first_name = undefined
   fieldErrors.email = undefined
@@ -87,13 +96,13 @@ function startEdit () {
 }
 function cancelEdit () {
   syncFormFromProfile()
-  profileIssue.value = ''
+  clearProfileIssue()
   isEditing.value = false
 }
 
 async function saveProfile () {
   if (profilePendingSave.value) return
-  profileIssue.value = ''
+  clearProfileIssue()
   profileSaved.value = false
   if (!validateProfile()) return
   profilePendingSave.value = true
@@ -115,8 +124,15 @@ async function saveProfile () {
     isEditing.value = false  // volta pra leitura já com os dados novos
     if (import.meta.client) useSonner.success('Perfil salvo.')
   } catch (e) {
-    profileIssue.value = errorDetail(e, 'Não foi possível salvar seu perfil agora.')
-    if (import.meta.client) useSonner.error(profileIssue.value)
+    // O servidor NOMEIA a recusa que tem motivo (e-mail já usado em outra conta)
+    // e manda junto as saídas. Antes tudo virava a mesma frase genérica e o
+    // cliente ficava sem saber sequer qual campo revisar.
+    const issue = profileIssueFrom(httpError(e).data, 'Não foi possível salvar seu perfil agora.')
+    profileIssue.value = issue.message
+    profileIssueActions.value = issue.actions
+    if (issue.field === 'email') fieldErrors.email = issue.message
+    if (issue.field === 'first_name') fieldErrors.first_name = issue.message
+    if (import.meta.client) useSonner.error(issue.message)
   } finally {
     profilePendingSave.value = false
   }
@@ -184,7 +200,25 @@ useSeoMeta({ title: 'Perfil' })
       <form v-else class="max-w-2xl space-y-4" @submit.prevent="saveProfile">
         <UiAlert v-if="profileIssue" variant="destructive">
           <UiAlertTitle>Revise seu perfil</UiAlertTitle>
-          <UiAlertDescription>{{ profileIssue }}</UiAlertDescription>
+          <UiAlertDescription>
+            {{ profileIssue }}
+            <!-- A gêmea na tela da recusa: o motivo vem com o caminho. Sem isto
+                 o cliente lê "não deu" e não tem para onde ir. -->
+            <div v-if="profileIssueActions.length" class="mt-2 flex flex-wrap gap-2">
+              <UiButton
+                v-for="action in profileIssueActions"
+                :key="action.ref"
+                size="sm"
+                :variant="action.priority === 'primary' ? 'default' : 'outline'"
+                :to="profileActionIsExternal(action) ? undefined : action.href"
+                :href="profileActionIsExternal(action) ? action.href : undefined"
+                :target="profileActionIsExternal(action) ? '_blank' : undefined"
+                :rel="profileActionIsExternal(action) ? 'noopener noreferrer' : undefined"
+              >
+                {{ action.label }}
+              </UiButton>
+            </div>
+          </UiAlertDescription>
         </UiAlert>
 
         <div class="space-y-4 rounded-lg border bg-card p-4">

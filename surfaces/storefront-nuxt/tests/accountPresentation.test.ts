@@ -15,6 +15,8 @@ import {
   orderStatusAccentClass,
   orderStatusDotClass,
   ordersEmptyCopy,
+  profileActionIsExternal,
+  profileIssueFrom,
   reorderActionFrom,
   splitOrdersByActive
 } from '~/presentation/account'
@@ -254,5 +256,60 @@ describe('orderRowEmphasisClass', () => {
     expect(cls).toContain('saturate-50')
     expect(cls).toContain('hover:opacity-100')
     expect(cls).toContain('focus-within:opacity-100')
+  })
+})
+
+// A GÊMEA NA TELA da recusa do servidor. Trocar o e-mail para um que já é de
+// outra conta é a única falha do perfil que o cliente pode resolver — e era a
+// que a tela contava pior: "não foi possível salvar seu perfil agora" manda
+// tentar de novo o que tentar de novo não conserta.
+describe('profileIssueFrom', () => {
+  const conflito = {
+    detail: 'Este e-mail já está em uso em outra conta.',
+    field: 'email',
+    error_code: 'contact_already_taken',
+    actions: [
+      { ref: 'sign_in_with_email', kind: 'link', label: 'Entrar com esse e-mail', href: '/entrar?next=/conta/perfil', priority: 'primary' },
+      { ref: 'contact_whatsapp', kind: 'external', label: 'Falar com a padaria', href: 'https://wa.me/554333231997', priority: 'secondary' }
+    ]
+  }
+
+  it('mostra o motivo, aponta o campo e leva as duas saídas', () => {
+    const issue = profileIssueFrom(conflito, 'fallback')
+    expect(issue.message).toBe('Este e-mail já está em uso em outra conta.')
+    expect(issue.field).toBe('email')
+    expect(issue.actions.map(a => a.label)).toEqual(['Entrar com esse e-mail', 'Falar com a padaria'])
+  })
+
+  it('não nomeia quem é o dono do e-mail — a loja é superfície de cliente', () => {
+    const issue = profileIssueFrom(conflito, 'fallback')
+    const rendered = JSON.stringify(issue)
+    expect(rendered).not.toContain('candidates')
+    expect(rendered.toLowerCase()).not.toContain('pertence a')
+  })
+
+  it('cai no texto neutro quando o servidor não nomeia a recusa', () => {
+    expect(profileIssueFrom(null, 'Não foi possível salvar seu perfil agora.')).toEqual({
+      message: 'Não foi possível salvar seu perfil agora.',
+      field: '',
+      actions: []
+    })
+    expect(profileIssueFrom({ detail: '   ' }, 'fallback').message).toBe('fallback')
+  })
+
+  it('descarta ação sem rótulo ou sem destino — não é saída', () => {
+    const issue = profileIssueFrom(
+      { detail: 'x', actions: [{ ref: 'a', label: '', href: '/entrar' }, { ref: 'b', label: 'Ir', href: '' }] },
+      'fallback'
+    )
+    expect(issue.actions).toEqual([])
+  })
+})
+
+describe('profileActionIsExternal', () => {
+  it('WhatsApp sai do app; rota interna fica na navegação', () => {
+    expect(profileActionIsExternal({ kind: 'external', href: 'https://wa.me/55' })).toBe(true)
+    expect(profileActionIsExternal({ kind: 'link', href: 'https://exemplo.com' })).toBe(true)
+    expect(profileActionIsExternal({ kind: 'link', href: '/entrar?next=/conta/perfil' })).toBe(false)
   })
 })
