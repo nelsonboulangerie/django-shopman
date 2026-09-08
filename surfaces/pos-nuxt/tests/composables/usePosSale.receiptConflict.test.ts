@@ -56,6 +56,7 @@ function freeCartProjection() {
 interface CloseBody {
   save_receipt_contact?: boolean;
   save_receipt_tax_id?: boolean;
+  save_receipt_tax_id_confirmed?: boolean;
   receipt_email?: string;
   fiscal_tax_id?: string;
 }
@@ -304,6 +305,7 @@ describe("usePosSale — a ordem sobre o CPF divergente só viaja RECONFIRMADA",
     expect(bodies.at(-1)?.fiscal_tax_id).toBe("11144477735");
     // Mas a identidade fiscal de Ana NÃO é trocada: a ordem não viajou.
     expect(bodies.at(-1)?.save_receipt_tax_id).toBeUndefined();
+    expect(bodies.at(-1)?.save_receipt_tax_id_confirmed).toBeUndefined();
   });
 
   it("marcado E reconfirmado: aí sim a ordem viaja", async () => {
@@ -315,6 +317,9 @@ describe("usePosSale — a ordem sobre o CPF divergente só viaja RECONFIRMADA",
     await h.sale.submitSale();
 
     expect(bodies.at(-1)?.save_receipt_tax_id).toBe(true);
+    // E a SEGUNDA PALAVRA viaja com ela: sem esta chave o servidor recusa
+    // sobrescrever o CPF do cadastro — a gêmea da fricção que a tela cobra.
+    expect(bodies.at(-1)?.save_receipt_tax_id_confirmed).toBe(true);
   });
 
   it("e-mail divergente NÃO paga esse pedágio — a assimetria é o objetivo", async () => {

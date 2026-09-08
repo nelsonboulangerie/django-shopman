@@ -1199,6 +1199,11 @@ export function usePosSale(deps: PosSaleDeps) {
       saveReceiptTaxId: receiptContactArmed(
         receiptOffers().taxId, cart.saveReceiptTaxId, cart.confirmReceiptTaxId,
       ),
+      // A segunda palavra viaja JUNTO, e não dissolvida na ordem: o servidor
+      // recusa sobrescrever o CPF do cadastro sem ela, e é ele quem decide se
+      // este caso é sobrescrita ou lacuna. A tela só passa adiante o que já
+      // sabe — que o operador confirmou.
+      saveReceiptTaxIdConfirmed: cart.confirmReceiptTaxId,
       manualDiscount,
       managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),

@@ -21,7 +21,11 @@ from __future__ import annotations
 
 import pytest
 
-from shopman.shop.services.pos import PosCustomerConflict, _persist_customer_from_payload
+from shopman.shop.services.pos import (
+    PosCustomerConflict,
+    PosTaxIdOverwriteError,
+    _persist_customer_from_payload,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -174,13 +178,80 @@ def test_cpf_diferente_deixa_o_cadastro_INTACTO():
     assert cliente.document == CPF_A
 
 
-def test_cpf_diferente_SO_e_atualizado_com_a_ordem_nomeada():
+def test_cpf_diferente_SO_e_atualizado_com_a_ordem_nomeada_E_a_SEGUNDA_PALAVRA():
+    """Sobrescrever documento é troca de identidade fiscal — pede reconfirmação.
+
+    A ordem nomeada continua sendo a porta; ela deixou de ser a porta ÚNICA. A
+    tela já cobra a segunda palavra antes de deixar a ordem viajar, e esta é a
+    gêmea de servidor: sem ``save_receipt_tax_id_confirmed`` a troca não
+    acontece, venha de onde vier a chamada.
+    """
     cliente = _cliente(phone="+5543999990010", document=CPF_A)
 
-    _salvar({"customer_ref": cliente.ref, "fiscal_tax_id": CPF_B, "save_receipt_tax_id": True})
+    _salvar({
+        "customer_ref": cliente.ref,
+        "fiscal_tax_id": CPF_B,
+        "save_receipt_tax_id": True,
+        "save_receipt_tax_id_confirmed": True,
+    })
 
     cliente.refresh_from_db()
     assert cliente.document == CPF_B
+
+
+def test_sobrescrever_cpf_SEM_a_segunda_palavra_e_RECUSADO():
+    cliente = _cliente(phone="+5543999990012", document=CPF_A)
+
+    with pytest.raises(PosTaxIdOverwriteError) as excinfo:
+        _salvar({
+            "customer_ref": cliente.ref,
+            "fiscal_tax_id": CPF_B,
+            "save_receipt_tax_id": True,
+        })
+
+    # A frase nomeia os DOIS documentos: quem lê precisa saber o que sai e o
+    # que entra antes de dizer a segunda palavra.
+    assert CPF_A in str(excinfo.value)
+    assert CPF_B in str(excinfo.value)
+    assert excinfo.value.field == "customer_tax_id"
+    cliente.refresh_from_db()
+    assert cliente.document == CPF_A
+
+
+def test_preencher_LACUNA_de_cpf_nao_pede_segunda_palavra():
+    """O caminho comum do balcão segue de um toque.
+
+    Atrito no caso frequente vira clique de reflexo — e aí a fricção do caso
+    grave não vale nada.
+    """
+    cliente = _cliente(phone="+5543999990013")
+
+    _salvar({
+        "customer_ref": cliente.ref,
+        "fiscal_tax_id": CPF_A,
+        "save_receipt_tax_id": True,
+    })
+
+    cliente.refresh_from_db()
+    assert cliente.document == CPF_A
+
+
+def test_email_divergente_NAO_pede_segunda_palavra():
+    """A assimetria é o objetivo, não um descuido a uniformizar.
+
+    E-mail muda — provedor, emprego. CPF não muda na vida real.
+    """
+    cliente = _cliente(phone="+5543999990014", email="ana@example.org")
+
+    _salvar({
+        "customer_ref": cliente.ref,
+        "receipt_channels": ["email"],
+        "receipt_email": "ana.nova@example.org",
+        "save_receipt_contact": True,
+    })
+
+    cliente.refresh_from_db()
+    assert cliente.email == "ana.nova@example.org"
 
 
 def test_corrigir_contato_NAO_arrasta_o_documento_junto():

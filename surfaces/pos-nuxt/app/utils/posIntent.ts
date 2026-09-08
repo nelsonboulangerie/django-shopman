@@ -207,7 +207,13 @@ export function buildPosSaleIntent(
   // A ORDEM só viaja quando há o que guardar. Mandar "grave" sobre campo vazio
   // é ruído, e o servidor a descartaria de qualquer jeito.
   if (state.saveReceiptContact && state.receiptEmail.trim()) payload.save_receipt_contact = true;
-  if (state.saveReceiptTaxId && state.invoiceTaxId.trim()) payload.save_receipt_tax_id = true;
+  if (state.saveReceiptTaxId && state.invoiceTaxId.trim()) {
+    payload.save_receipt_tax_id = true;
+    // A reconfirmação só faz sentido acompanhando a ordem que ela confirma.
+    // Sem ela o servidor recusa a SOBRESCRITA do documento do cadastro — a
+    // gêmea da fricção que a tela cobra antes de deixar a ordem sair daqui.
+    if (state.saveReceiptTaxIdConfirmed) payload.save_receipt_tax_id_confirmed = true;
+  }
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
   if (state.managerApproval) payload.manager_approval = state.managerApproval;
 

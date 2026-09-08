@@ -580,3 +580,88 @@ class POSConflitoComSaidaTests(TestCase):
         self.assertEqual(bruno.email, "bruno@example.org")
         pedido = Order.objects.get(ref=response.json()["order_ref"])
         self.assertEqual(pedido.data["receipt"]["email"], "bruno@example.org")
+
+    # ── 8 · Sobrescrever o CPF do cadastro tem GÊMEA no servidor ─────────────
+
+    def test_sobrescrever_cpf_sem_a_segunda_palavra_vira_422_com_frase(self) -> None:
+        """A fricção da tela não pode morar só na tela.
+
+        A tela cobra a reconfirmação antes de deixar a ordem viajar. Mas trava
+        que existe só no front não é trava: um tablet com JS velho, um script,
+        a próxima superfície — qualquer um mandaria `save_receipt_tax_id`
+        sozinho e a identidade fiscal do cadastro trocaria calada. Aqui a ordem
+        sem a segunda palavra é RECUSADA, e a frase diz o que sai e o que entra.
+        """
+        ana = self._customer(
+            "CUST-CPF-A", "Ana", "Prado", phone="+5543999990011", document="52998224725",
+        )
+        pedidos_antes = Order.objects.count()
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["field"], "customer_tax_id")
+        self.assertEqual(body["error"]["code"], "tax_id_overwrite_unconfirmed")
+        self.assertIn("52998224725", body["detail"])
+        self.assertIn("11144477735", body["detail"])
+        self.assertIn("customer_tax_id", body["errors"])
+        # O cadastro fica como estava, e a venda não fecha.
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "52998224725")
+        self.assertEqual(Order.objects.count(), pedidos_antes)
+
+    def test_sobrescrever_cpf_COM_a_segunda_palavra_grava_como_hoje(self) -> None:
+        ana = self._customer(
+            "CUST-CPF-B", "Ana", "Prado", phone="+5543999990011", document="52998224725",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+            save_receipt_tax_id_confirmed=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "11144477735")
+
+    def test_preencher_lacuna_de_cpf_segue_de_UM_toque(self) -> None:
+        """Atrito no caminho comum vira clique de reflexo — por isso não há."""
+        ana = self._customer("CUST-CPF-C", "Ana", "Prado", phone="+5543999990011")
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "11144477735")
+
+    def test_email_divergente_NAO_paga_o_pedagio_do_cpf(self) -> None:
+        """A assimetria entre CPF e e-mail é o alvo, não um descuido."""
+        ana = self._customer(
+            "CUST-CPF-D", "Ana", "Prado", phone="+5543999990011", email="ana@example.org",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            receipt_channels=["email"],
+            receipt_email="ana.nova@example.org",
+            save_receipt_contact=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.email, "ana.nova@example.org")

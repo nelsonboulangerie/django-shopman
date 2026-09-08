@@ -47,6 +47,9 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     # quase sempre quer que ele fique. A tela pergunta, e a resposta viaja aqui.
     "save_receipt_contact",
     "save_receipt_tax_id",
+    # A SEGUNDA PALAVRA sobre o CPF — só o caso divergente a exige, e sem ela o
+    # service recusa sobrescrever o documento do cadastro.
+    "save_receipt_tax_id_confirmed",
     "client_request_id",
     "tab_ref",
     "tab_session_key",
@@ -257,6 +260,11 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
     # deixá-la passar faria o balcão mandar "grave" sobre string vazia.
     payload["save_receipt_contact"] = _flag(payload.get("save_receipt_contact")) and bool(payload["receipt_email"])
     payload["save_receipt_tax_id"] = _flag(payload.get("save_receipt_tax_id")) and bool(payload["fiscal_tax_id"])
+    # Confirmação sem a ordem que ela confirma é ruído — e ruído que autorizaria
+    # uma troca de identidade fiscal se algum dia viajasse sozinha.
+    payload["save_receipt_tax_id_confirmed"] = (
+        _flag(payload.get("save_receipt_tax_id_confirmed")) and payload["save_receipt_tax_id"]
+    )
 
     payload["client_request_id"] = _client_request_id(payload.get("client_request_id"))
     payload["tab_ref"] = _text(payload.get("tab_ref"), limit=64)

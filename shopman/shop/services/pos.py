@@ -3403,6 +3403,20 @@ class PosCustomerConflict(ValueError):
         self.candidates = candidates or []
 
 
+class PosTaxIdOverwriteError(ValueError):
+    """Trocar o CPF que o cadastro JÁ TEM pede a SEGUNDA PALAVRA — e a frase diz qual.
+
+    A gêmea de servidor da fricção que a tela cobra em ``receiptContactArmed``.
+    Trava que mora só na tela não é trava: qualquer outro cliente da API — um
+    tablet com JS velho, um script, a próxima superfície — mandaria
+    ``save_receipt_tax_id`` sozinho e a identidade fiscal do cadastro trocaria
+    calada. Mesma forma da liberação de contato (``PosContactReleaseError``):
+    subclasse de ``ValueError``, frase humana, 422 nas portas do PDV.
+    """
+
+    field = "customer_tax_id"
+
+
 def resolve_or_create_customer(
     *,
     ref: str = "",
@@ -3473,6 +3487,11 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
     # informado.
     save_receipt_contact = bool(payload.get("save_receipt_contact"))
     save_receipt_tax_id = bool(payload.get("save_receipt_tax_id"))
+    # A SEGUNDA PALAVRA sobre o CPF. Só o caso DIVERGENTE a exige (ver
+    # ``_guard_receipt_tax_id_overwrite``): preencher lacuna segue bastando a
+    # ordem simples, e cobrar atrito no caminho comum do balcão só ensinaria o
+    # operador a confirmar no reflexo.
+    save_receipt_tax_id_confirmed = bool(payload.get("save_receipt_tax_id_confirmed"))
     receipt_email = str(payload.get("receipt_email") or "").strip().lower()
     receipt_tax_id = _digits(str(payload.get("fiscal_tax_id") or "").strip())
     fill_tax_id = tax_id or (receipt_tax_id if save_receipt_tax_id else "")
@@ -3551,6 +3570,16 @@ def _persist_customer_from_payload(payload: dict, *, operator_username: str) -> 
         # travada e o cliente na frente. Aqui o dono é olhado ANTES, e a recusa
         # sai RICA (quem é o dono, por qual campo, e as saídas de um toque).
         _guard_receipt_contact_owner(customer, email=fill_email, tax_id=fill_tax_id)
+        # DEPOIS do dono, e não antes: quando o CPF da nota já é de OUTRO
+        # cadastro, a recusa rica (com os dois nomes e as saídas de um toque) é
+        # a que serve ao balcão. Este guarda é para o outro caso — o documento
+        # está livre, mas o cadastro em jogo já tem um DIFERENTE.
+        _guard_receipt_tax_id_overwrite(
+            customer,
+            tax_id=fill_tax_id,
+            overwriting=correct_tax_id,
+            confirmed=save_receipt_tax_id_confirmed,
+        )
         if customer is None:
             first_name, last_name = _split_name(name)
             fallback = _fallback_customer_name(phone=phone, tax_id=fill_tax_id, email=fill_email)
@@ -3672,6 +3701,38 @@ def _guard_receipt_contact_owner(customer, *, email: str, tax_id: str) -> None:
         owner = _identifier_owner("cpf", tax_id)
         if owner is not None and (customer is None or owner.pk != customer.pk):
             raise _pos_owner_conflict(customer, owner, "cpf")
+
+
+def _guard_receipt_tax_id_overwrite(
+    customer, *, tax_id: str, overwriting: bool, confirmed: bool,
+) -> None:
+    """SOBRESCREVER o documento do cadastro exige a reconfirmação. Preencher, não.
+
+    A assimetria é o ponto. Cadastro sem CPF aprende o da nota com a ordem
+    simples, como sempre — é o caso frequente do balcão, e atrito no caminho
+    comum vira clique de reflexo. O que para aqui é o cadastro que diz 111
+    recebendo 222: ali não se corrige um contato, troca-se o documento pelo qual
+    a Receita conhece aquela pessoa. CPF não muda na vida real, e a hipótese
+    provável não é "o CPF de Ana mudou" — é "esta nota é de outra pessoa".
+
+    A tela já cobra a segunda palavra antes de deixar a ordem viajar. Esta é a
+    gêmea de servidor, na mesma forma que ``release_pos_customer_contact`` já
+    usa: sem ``confirmed``, a ordem não acontece — e o cadastro fica intacto.
+
+    ⚠️ Recusar aqui NÃO tira a nota de ninguém: o ``fiscal_tax_id`` da venda é
+    fato da venda e continua indo para o CPF informado. O que se recusa é
+    gravar por cima do cadastro.
+    """
+    if not overwriting or confirmed:
+        return
+    current = _digits(str(getattr(customer, "document", "") or ""))
+    if not current or current == tax_id:
+        return
+    raise PosTaxIdOverwriteError(
+        f"Trocar o CPF do cadastro de {customer.name} ({current} sai, {tax_id} entra) "
+        "precisa de confirmação. Sem ela o cadastro fica como está — a nota vai "
+        "para o CPF informado de qualquer jeito.",
+    )
 
 
 def _resolve_pos_customer(Customer, *, ref: str, phone: str, tax_id: str, email: str):

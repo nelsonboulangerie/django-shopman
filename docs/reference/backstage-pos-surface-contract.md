@@ -160,6 +160,14 @@ Optional canonical keys:
   contador, no CPF da empresa) e nunca viram identidade sozinhos. Descartados
   quando o campo correspondente está vazio. Quando o cadastro já tem OUTRO valor,
   a ordem é de ATUALIZAR — e a tela precisa nomeá-la assim antes de enviar.
+- `save_receipt_tax_id_confirmed` (booleano) é a SEGUNDA PALAVRA sobre o CPF, e
+  **só o caso divergente a exige**: cadastro sem documento segue aprendendo o da
+  nota com a ordem simples; cadastro que já tem OUTRO documento não troca sem
+  ela. Sobrescrever é troca de identidade fiscal, e CPF não muda na vida real —
+  a hipótese provável é "esta nota é de outra pessoa". A recusa é 422
+  (`error.code = tax_id_overwrite_unconfirmed`, `field = customer_tax_id`), o
+  cadastro fica intacto e a nota vai para o CPF informado do mesmo jeito. O
+  e-mail NÃO paga esse pedágio: a assimetria é deliberada.
   Quando o valor já é de outro cadastro, a resposta é o conflito rico
   (`customer_conflict`, 422, com `field` e `candidates`), nunca 500.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
@@ -250,6 +258,8 @@ Backend must validate:
 - receipt email required when `email` está em `receipt_channels`;
 - `save_receipt_contact` / `save_receipt_tax_id` só valem com o campo
   correspondente preenchido (caso contrário são descartados);
+- `save_receipt_tax_id_confirmed` só vale acompanhando `save_receipt_tax_id`, e
+  é OBRIGATÓRIO quando a ordem sobrescreve um CPF já gravado no cadastro;
 - manager approval above discount threshold;
 - fiscal constraints currently unsupported by the POS fiscal pipeline;
 - staging provider readiness: Focus NFe must be homologação, Efí must be
