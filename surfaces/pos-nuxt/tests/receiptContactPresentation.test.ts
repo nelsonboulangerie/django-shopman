@@ -76,6 +76,25 @@ describe("receiptContactOffer — a matriz, igual para e-mail e para CPF", () =>
     expect(taxId.defaultChecked).toBe(true);
   });
 
+  // ⚠️ A CAIXA VEM MARCADA — então a consequência dita tem de ser a que
+  // acontece. O servidor resolve o contato como identidade numa venda anônima:
+  // se já houver cadastro com este e-mail, a venda vai PARA ELE, com faixa de
+  // preço e fidelidade junto. Prometer "nasce um cadastro novo" era vender uma
+  // consequência que o sistema não cumpre.
+  it("a oferta NÃO promete cadastro novo — o servidor acha quem já existe", () => {
+    const email = receiptContactOffer({ field: "email", typed: "novo@example.org", customer: null });
+    expect(email.hint).not.toContain("Nasce um cadastro novo");
+    expect(email.summaryLine).not.toContain("cadastro novo será criado");
+    expect(email.hint).toContain("ou vai para o cadastro que já o tem");
+    expect(email.summaryLine).toContain("ou vai para o cadastro que já o tem");
+    // Desmarcar segue sendo um toque, e a frase continua dizendo isso.
+    expect(email.hint).toContain("Desmarque para vender sem cadastrar");
+
+    const taxId = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
+    expect(taxId.hint).toContain("Este CPF fica salvo como cliente");
+    expect(taxId.summaryLine).toContain("ou vai para o cadastro que já o tem");
+  });
+
   it("campo vazio ou incompleto não pergunta nada", () => {
     expect(receiptContactOffer({ field: "email", typed: "", customer: ANA }).kind).toBe("none");
     expect(receiptContactOffer({ field: "email", typed: "ana@", customer: null }).kind).toBe("none");

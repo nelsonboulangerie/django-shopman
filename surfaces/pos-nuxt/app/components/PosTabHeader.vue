@@ -24,6 +24,7 @@ const props = defineProps<{
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
+  customerReleaseBusy?: boolean;
   /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
    *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
   readOnly?: boolean;
@@ -58,6 +59,8 @@ const emit = defineEmits<{
   decisionConfirm: [];
   decisionCancel: [];
   decisionMerge: [];
+  /** LIBERAR o contato preso num cadastro desativado. */
+  decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
   search: [string];
   selectResult: [POSCustomerSearchResult];
@@ -259,6 +262,7 @@ function runClear() {
       :resolved-new="customerResolvedNew"
       :customer-decision="readOnly ? null : customerDecision"
       :customer-merge-busy="customerMergeBusy"
+      :customer-release-busy="customerReleaseBusy"
       @update:customer-name="$emit('update:customerName', $event)"
       @update:customer-phone="$emit('update:customerPhone', $event)"
       @update:customer-tax-id="$emit('update:customerTaxId', $event)"
@@ -270,6 +274,7 @@ function runClear() {
       @decision-confirm="$emit('decisionConfirm')"
       @decision-cancel="$emit('decisionCancel')"
       @decision-merge="$emit('decisionMerge')"
+      @decision-release="$emit('decisionRelease', $event)"
       @decision-pick="$emit('decisionPick', $event)"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"

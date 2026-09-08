@@ -1343,7 +1343,11 @@ describe("PosPaymentWorkspace — a linha do fechamento sobre o cadastro", () =>
       }),
     });
 
-    expect(registryLines(w)).toEqual(["Um cadastro novo será criado com este e-mail."]);
+    // ⚠️ E a linha NÃO promete cadastro novo: numa venda anônima o servidor
+    // acha quem já tem este e-mail e a venda vai para ele.
+    expect(registryLines(w)).toEqual([
+      "Este e-mail será salvo como cliente — ou vai para o cadastro que já o tem.",
+    ]);
   });
 
   it("desmarcar cala a linha", async () => {

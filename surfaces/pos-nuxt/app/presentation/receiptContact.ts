@@ -34,6 +34,14 @@ export type ReceiptContactField = "email" | "tax_id";
  * - `save`   — o cadastro existe e o campo está VAZIO: preencher lacuna
  * - `update` — o cadastro tem OUTRO valor: atualizar é ação nomeada, desmarcada
  * - `create` — ninguém identificado: "Salvar como cliente?", marcada
+ *
+ * ⚠️ `create` não promete cadastro NOVO. Numa venda sem ninguém identificado o
+ * servidor resolve o contato como identidade — e se esse e-mail (ou esse CPF) já
+ * é de alguém, a venda vai para o cadastro dele, com a faixa de preço e a
+ * fidelidade junto. É o comportamento certo, e é o que evita um duplicado por
+ * venda. A frase é que precisa dizer isso: prometer "nasce um cadastro novo"
+ * numa caixa que vem MARCADA seria vender uma consequência que não é a que
+ * acontece.
  */
 export type ReceiptContactOfferKind = "none" | "save" | "update" | "create";
 
@@ -127,15 +135,21 @@ export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactO
 
   // Sem cliente identificado: a única identidade que existe é a que o
   // comprovante carrega. JÁ MARCADO — decisão do dono.
+  //
+  // ⚠️ A frase NÃO promete cadastro novo. O servidor procura antes de criar, e
+  // quem já tem este contato recebe a venda em vez de ganhar um duplicado — com
+  // a faixa de preço e a fidelidade dele junto. Numa caixa que vem marcada, a
+  // consequência dita tem de ser a que acontece.
   if (!customer) {
     return {
       ...base,
       kind: "create",
       defaultChecked: true,
       title: "Salvar como cliente?",
-      hint: `Nasce um cadastro novo com este ${copy.noun}. Desmarque para vender sem cadastrar.`,
+      hint: `Este ${copy.noun} fica salvo como cliente — ou vai para o cadastro que já o tem. `
+        + "Desmarque para vender sem cadastrar.",
       confirmLabel: "Salvar como cliente",
-      summaryLine: `Um cadastro novo será criado com este ${copy.noun}.`,
+      summaryLine: `Este ${copy.noun} será salvo como cliente — ou vai para o cadastro que já o tem.`,
     };
   }
 

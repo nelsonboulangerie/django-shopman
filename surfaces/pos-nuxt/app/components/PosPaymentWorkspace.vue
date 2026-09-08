@@ -77,6 +77,7 @@ const props = defineProps<{
   /** A escolha pendente do operador (conflito/correção de contato). */
   customerDecision?: CustomerDecision | null;
   customerMergeBusy?: boolean;
+  customerReleaseBusy?: boolean;
   review: POSSaleReviewProjection | null;
   discountTypes: POSCheckoutOptionProjection[];
   discountReasons: POSCheckoutOptionProjection[];
@@ -208,6 +209,8 @@ const emit = defineEmits<{
   decisionConfirm: [];
   decisionCancel: [];
   decisionMerge: [];
+  /** LIBERAR o contato preso num cadastro desativado. */
+  decisionRelease: [value: string];
   decisionPick: [ServerConflictCandidate];
   clearCustomer: [];
   search: [string];
@@ -1780,6 +1783,7 @@ defineExpose({
     :resolved-new="customerResolvedNew"
     :customer-decision="customerDecision"
     :customer-merge-busy="customerMergeBusy"
+    :customer-release-busy="customerReleaseBusy"
     :receipt-channels="receiptChannels"
     :receipt-channel-options="receiptChannelOptions"
     :receipt-email="receiptEmail"
@@ -1799,6 +1803,7 @@ defineExpose({
     @decision-confirm="$emit('decisionConfirm')"
     @decision-cancel="$emit('decisionCancel')"
     @decision-merge="$emit('decisionMerge')"
+    @decision-release="$emit('decisionRelease', $event)"
     @decision-pick="$emit('decisionPick', $event)"
     @apply-customer-favorite="$emit('applyCustomerFavorite')"
     @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"

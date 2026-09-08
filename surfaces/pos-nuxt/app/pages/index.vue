@@ -146,6 +146,8 @@ const {
   pickConflictCandidate,
   mergeConflictCustomers,
   customerMergeBusy,
+  releaseConflictContact,
+  customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
@@ -770,6 +772,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :customer-resolved-new="customerResolvedNew"
           :customer-decision="customerDecision"
           :customer-merge-busy="customerMergeBusy"
+          :customer-release-busy="customerReleaseBusy"
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
@@ -787,6 +790,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           @decision-confirm="confirmCustomerDecision"
           @decision-cancel="cancelCustomerDecision"
           @decision-merge="mergeConflictCustomers"
+          @decision-release="releaseConflictContact"
           @decision-pick="pickConflictCandidate"
           @search="searchCustomers"
           @select-result="selectCustomerResult"
@@ -915,6 +919,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :customer-resolved-new="customerResolvedNew"
         :customer-decision="customerDecision"
         :customer-merge-busy="customerMergeBusy"
+        :customer-release-busy="customerReleaseBusy"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
@@ -945,6 +950,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @decision-confirm="confirmCustomerDecision"
         @decision-cancel="cancelCustomerDecision"
         @decision-merge="mergeConflictCustomers"
+        @decision-release="releaseConflictContact"
         @decision-pick="pickConflictCandidate"
         @search="searchCustomers"
         @select-result="selectCustomerResult"

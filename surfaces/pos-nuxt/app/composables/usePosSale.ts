@@ -54,8 +54,18 @@ import {
 import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
-import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { conflictDecision, contactChangeDecision } from "~/presentation/customerDecision";
+import type {
+  CustomerDecision,
+  CustomerDecisionField,
+  ServerConflictCandidate,
+} from "~/presentation/customerDecision";
+import {
+  conflictDecision,
+  conflictTypedSource,
+  contactChangeDecision,
+  decisionFieldFromServer,
+  decisionFieldLabel,
+} from "~/presentation/customerDecision";
 import { receiptContactChecked, receiptSaveOffers } from "~/presentation/receiptContact";
 import { toast } from "vue-sonner";
 
@@ -1274,6 +1284,30 @@ export function usePosSale(deps: PosSaleDeps) {
   // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
   const customerDecision = ref<CustomerDecision | null>(null);
 
+  /**
+   * Qual campo DA TELA brigou, e com que valor.
+   *
+   * O e-mail e o documento existem em DOIS lugares — o painel do cliente
+   * (identidade) e o comprovante (destino da nota) — e a recusa do servidor
+   * acusa só `customer_email`. Sem escolher pelo campo culpado, o painel
+   * anunciava o telefone numa briga de e-mail, e "Manter Ana" limpava o campo do
+   * painel enquanto o valor recusado seguia intacto no comprovante: o operador
+   * tentava de novo e batia na mesma parede, com o cliente na frente.
+   *
+   * A precedência é a do servidor, e o documento só conta quando o switch da
+   * nota está ligado — igual ao que o intent manda.
+   */
+  function conflictSource(field: CustomerDecisionField | "") {
+    return conflictTypedSource({
+      field,
+      customerPhone: cart.customerPhone,
+      customerEmail: cart.customerEmail,
+      customerTaxId: cart.customerTaxId,
+      receiptEmail: cart.receiptEmail,
+      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+    });
+  }
+
   async function resolveCustomer(options: { contactCorrection?: boolean } = {}) {
     const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
@@ -1363,7 +1397,7 @@ export function usePosSale(deps: PosSaleDeps) {
         const decision = conflictDecision({
           field: data.error?.field,
           candidates: data.error?.candidates,
-          typed: phone || email || taxId,
+          typed: conflictSource(decisionFieldFromServer(data.error?.field)).typed,
         });
         if (decision) {
           customerDecision.value = decision;
@@ -1404,12 +1438,9 @@ export function usePosSale(deps: PosSaleDeps) {
       await resolveCustomer({ contactCorrection: true });
       return;
     }
-    // Dono DESATIVADO: atender não dá (o cadastro não existe mais para o
-    // balcão) e unificar o Core recusa. A saída é liberar o contato.
-    if (decision.kind === "inactive_owner") {
-      await releaseConflictContact();
-      return;
-    }
+    // ⚠️ Dono DESATIVADO não passa por aqui: atender não dá (o cadastro não
+    // existe mais para o balcão) e unificar o Core recusa, então o painel não
+    // oferece confirmar — a saída é o botão de LIBERAR, uma vez só.
     const other = decision.other;
     if (!other) return;
     customerDecision.value = null;
@@ -1462,14 +1493,18 @@ export function usePosSale(deps: PosSaleDeps) {
     tax_id: "customer_tax_id",
   };
 
-  /** Soltar o contato preso num cadastro DESATIVADO — e seguir a venda. */
+  /** Soltar o contato preso num cadastro DESATIVADO — e seguir a venda.
+   *
+   *  `value` chega preenchido quando a liberação parte de uma LINHA da lista de
+   *  candidatos; sem ele vale o valor que o painel nomeou. */
   const customerReleaseBusy = ref(false);
-  async function releaseConflictContact() {
+  async function releaseConflictContact(value = "") {
     const decision = customerDecision.value;
     if (!decision) return;
     const field = SERVER_FIELD[decision.field];
-    const value = decision.typed || decision.other?.value || "";
-    if (!field || !value) return;
+    const target = value.trim() || decision.typed || decision.other?.value || "";
+    if (!field || !target) return;
+    const { typedField } = conflictSource(decision.field);
     customerReleaseBusy.value = true;
     try {
       const path = actionHref(
@@ -1477,10 +1512,17 @@ export function usePosSale(deps: PosSaleDeps) {
         "customer_contact_release",
         "/api/v1/backstage/pos/customer/contact/release/",
       );
-      await action.call(path, { body: { field, value } });
+      await action.call(path, { body: { field, value: target } });
       customerDecision.value = null;
-      // Liberado o contato, o mesmo gesto que falhou agora passa.
-      await resolveCustomer({ contactCorrection: true });
+      toast.success(`O ${decisionFieldLabel(decision.field)} foi liberado. A venda segue.`);
+      // Liberado o contato, o mesmo gesto que falhou agora passa. Só o campo do
+      // PAINEL precisa do resolve — e com a correção assumida, senão a pergunta
+      // de troca de contato volta em cima do valor recém-liberado. O do
+      // COMPROVANTE não é identidade: resolver por ele reescreveria o contato de
+      // quem está na comanda, e o que falta ali é só refazer o fechamento.
+      if (typedField === "customer_phone" || typedField === "customer_email" || typedField === "customer_tax_id") {
+        await resolveCustomer({ contactCorrection: true });
+      }
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Não foi possível liberar o contato.");
     } finally {
@@ -1489,15 +1531,27 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   /** O operador ficou com o que estava: o valor digitado é DESCARTADO e o campo
-   *  volta ao do cadastro associado. */
+   *  volta ao do cadastro associado.
+   *
+   *  ⚠️ Do campo CERTO. O valor recusado pode estar no comprovante, e limpar o
+   *  do painel do cliente deixava a parede de pé: o operador apertava "manter",
+   *  refazia a venda e batia na mesma recusa. O comprovante não tem valor de
+   *  cadastro para onde voltar — o que ele carrega é destino da nota, não
+   *  identidade —, então descartar ali é esvaziar, e a nota volta a sair no
+   *  e-mail do cadastro (`receiptEmail || customerEmail`). A ordem de salvar cai
+   *  junto: ela é o que a recusa negou. */
   function cancelCustomerDecision() {
     const decision = customerDecision.value;
     customerDecision.value = null;
     if (!decision) return;
     const restored = decision.current?.value || "";
-    if (decision.field === "phone") cart.customerPhone = restored;
-    else if (decision.field === "email") cart.customerEmail = restored;
-    else if (decision.field === "tax_id") cart.customerTaxId = restored;
+    switch (conflictSource(decision.field).typedField) {
+      case "customer_phone": cart.customerPhone = restored; break;
+      case "customer_email": cart.customerEmail = restored; break;
+      case "customer_tax_id": cart.customerTaxId = restored; break;
+      case "receipt_email": cart.receiptEmail = ""; cart.saveReceiptContact = false; break;
+      case "invoice_tax_id": cart.invoiceTaxId = ""; cart.saveReceiptTaxId = false; break;
+    }
   }
 
   // Multi-key customer search (name/phone/CPF/email): the customer modal's search
@@ -1855,11 +1909,16 @@ export function usePosSale(deps: PosSaleDeps) {
       // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
       // com a venda travada e o cliente na frente. Agora o painel abre com os
       // dois lados nomeados e as saídas de um toque.
+      //
+      // ⚠️ E o valor anunciado é o do campo CULPADO. Aqui a briga pode ser sobre
+      // o e-mail ou o CPF DO COMPROVANTE, e a frase pegava o telefone do
+      // carrinho antes do e-mail: numa recusa de e-mail o painel dizia
+      // "(43) 99999-0000 é de Bia" — um telefone numa briga de e-mail.
       if (failure?.code === "customer_conflict") {
         const decision = conflictDecision({
           field: failure.field,
           candidates: failure.candidates,
-          typed: cart.customerPhone || cart.customerEmail || cart.customerTaxId,
+          typed: conflictSource(decisionFieldFromServer(failure.field)).typed,
         });
         if (decision) {
           customerDecision.value = decision;
