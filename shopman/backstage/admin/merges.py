@@ -244,6 +244,25 @@ class MergeAuditAdmin(ModelAdmin):
     def has_delete_permission(self, request, obj=None) -> bool:
         return False
 
+    def has_undo_permission(self, request, object_id=None) -> bool:
+        """Quem desfaz. É método, e não permissão pontuada, por um motivo duro.
+
+        ⚠️ O `UnfoldModelAdminChecks` CONSULTA O BANCO quando a ação declara
+        permissão com ponto (``Permission.objects.filter(...).exists()``, em
+        `unfold/checks.py`). System check roda em quase todo `manage.py` —
+        inclusive no `migrate`. Num banco novo, ainda sem `auth_permission`, o
+        check estoura e o **`migrate` não roda**: deploy limpo morre na primeira
+        migração. Medido na CI (Omotenashi Gate, run 34211092979).
+
+        Com o nome sem ponto o Unfold chama este método, e o portão é o mesmo
+        `has_perm` — só que na hora de usar, não na hora de checar.
+
+        ⚠️ O nome `undo` também não colide com verbo do Django: `permissions=
+        ["change"]` chamaria o `has_change_permission` daqui, que é `False`
+        incondicionalmente, e mataria a ação até para superusuário.
+        """
+        return request.user.has_perm(UNDO_PERMISSION)
+
     # ── Colunas ──────────────────────────────────────────────────────────────
 
     @display(description="Unificação")
@@ -286,12 +305,12 @@ class MergeAuditAdmin(ModelAdmin):
         url_path="undo",
         icon="undo",
         variant=ActionVariant.DANGER,
-        # Pontuada de propósito: o Unfold confere permissão pontuada direto com
-        # `request.user.has_perm` e não passa pelos métodos `has_*_permission`
-        # deste admin — que são `False` incondicionalmente, e matariam a ação até
-        # para superusuário. Ela também some da linha para quem não tem, então o
-        # botão não é placa de porta trancada.
-        permissions=[UNDO_PERMISSION],
+        # Sem ponto de propósito — ver `has_undo_permission`: permissão pontuada
+        # faz o system check do Unfold consultar `auth_permission`, e num banco
+        # novo isso impede o próprio `migrate`. O portão é o mesmo; a ação some
+        # da linha para quem não tem, então o botão não é placa de porta
+        # trancada, e a URL responde 403.
+        permissions=["undo"],
         dialog={
             "title": "Desfazer esta unificação?",
             # Sem descrição fixa de propósito: ela apareceria acima do corpo em

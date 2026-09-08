@@ -279,6 +279,58 @@ def test_o_gestor_ve_o_botao(client, _loja, unificados):
 # ── A tela é trilha: não se edita, não se apaga ──────────────────────────────
 
 
+def test_o_system_check_desta_tela_nao_encosta_no_banco(django_assert_num_queries):
+    """A prova direta do mecanismo, do lado do comportamento.
+
+    Um `check()` que consulta o banco é um `migrate` que não roda em banco novo.
+    Zero query é o contrato — e a asserção pega qualquer jeito futuro de
+    reintroduzir a consulta, não só a permissão pontuada.
+    """
+    from django.contrib import admin as django_admin
+
+    model_admin = django_admin.site._registry[MergeAudit]
+
+    with django_assert_num_queries(0):
+        erros = model_admin.check()
+
+    assert erros == []
+
+
+def test_nenhuma_acao_do_Admin_declara_permissao_pontuada():
+    """Varredura: permissão com ponto numa `@action` do Unfold trava o `migrate`.
+
+    O `UnfoldModelAdminChecks` consulta o banco (``Permission.objects.filter(
+    ...).exists()``) para cada permissão pontuada declarada numa ação. System
+    check roda em quase todo `manage.py`, **inclusive no `migrate`** — e num
+    banco novo, ainda sem `auth_permission`, ele estoura antes de a primeira
+    migração rodar. Deploy limpo morre na porta.
+
+    Custou uma reprovação de CI (Omotenashi Gate, run 34211092979) descobrir, e
+    o sintoma não aparece em NENHUM teste: a suíte roda com o banco já migrado.
+    Por isso a guarda é varredura sobre o registro inteiro, e não um teste da
+    tela que introduziu o problema — a próxima vez vai ser em outro arquivo.
+
+    A saída certa é `permissions=["<verbo>"]` + `has_<verbo>_permission()` no
+    ModelAdmin, chamando `request.user.has_perm(...)` lá dentro: mesmo portão,
+    conferido na hora de usar em vez da hora de checar.
+    """
+    from django.contrib import admin as django_admin
+
+    pontuadas: list[str] = []
+    for model, model_admin in django_admin.site._registry.items():
+        for atributo in ("actions", "actions_list", "actions_row", "actions_detail", "actions_submit_line"):
+            for nome in model_admin._extract_action_names(getattr(model_admin, atributo, None) or []):
+                metodo = getattr(model_admin, nome, None)
+                for permissao in getattr(metodo, "allowed_permissions", None) or []:
+                    if "." in str(permissao):
+                        pontuadas.append(f"{model._meta.label}.{nome}: {permissao}")
+
+    assert not pontuadas, (
+        "ação do Admin com permissão pontuada — o system check do Unfold vai ao "
+        f"banco e o `migrate` de um banco novo quebra: {pontuadas}"
+    )
+
+
 def test_a_auditoria_nao_se_edita_nem_se_apaga(client, _loja, unificados):
     """Editar a auditoria à mão apagaria o rastro que ela existe para guardar."""
     from django.contrib import admin as django_admin
