@@ -593,8 +593,13 @@ def _cancel_stale_intents(order, *, keep_intent_ref: str) -> None:
         from shopman.shop.services import payment as payment_service
 
         payment_service.cancel_stale_intents(order, keep_intent_ref=keep_intent_ref)
+    # O Pix deste pedido já entrou. Se a faxina não roda, os QR antigos do MESMO
+    # pedido continuam pagáveis e o cliente pode pagar de novo — dinheiro a
+    # devolver, não a receber. O irmão logo abaixo (`_alert`) já gritava.
     except Exception:
-        logger.debug("pix_confirmation_cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
+        logger.warning(
+            "pix_confirmation_cancel_stale_intents_failed order=%s", order.ref, exc_info=True
+        )
 
 
 def _captured_at_for_payment(order):
@@ -726,8 +731,11 @@ def _ack_alerts(order) -> None:
 
         alert_adapter.acknowledge("payment_failed", order_ref=order.ref)
         alert_adapter.acknowledge("payment_insufficient", order_ref=order.ref)
+    # O docstring acima já dizia o dano: alerta que não descreve mais a
+    # realidade faz o operador perseguir dinheiro que já entrou. O irmão que
+    # CRIA o alerta (`_alert`) usa `logger.warning`; o que baixa ficou em debug.
     except Exception:
-        logger.debug("pix_confirmation_alert_ack_failed order=%s", order.ref, exc_info=True)
+        logger.warning("pix_confirmation_alert_ack_failed order=%s", order.ref, exc_info=True)
 
 
 __all__ = ["confirm_pix"]

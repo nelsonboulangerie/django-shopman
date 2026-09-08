@@ -111,18 +111,61 @@ ser desligado no primeiro dia.
 
 | Faixa | Arquivos | Sites | Situação |
 |---|---|---|---|
-| 💸 Dinheiro | 5 | 15 | ⬜ aberto |
-| 🧾 Nota fiscal | 1 | 1 | ⬜ aberto |
+| 💸 Dinheiro | 5 | 15 | ✅ **zerada** (08/09) |
+| 🧾 Nota fiscal | 1 | 1 | ✅ **zerada** (08/09) |
 | 🙋 Promessa ao cliente | 17 | 37 | ⬜ aberto |
 | 🔧 Interno | 15 | 19 | ⬜ aberto |
 | ✅ Provavelmente inofensivo | 12 | 22 | ⬜ falta só o marcador |
-| **Total** | **50** | **94** | |
+| **Total** | **50** | **94** | **42 arquivos / 75 sites restantes** |
 
 **Portão para tornar o check obrigatório: as faixas 💸 e 🧾 zeradas — 6
 arquivos, 16 sites.** Não são 50. Quem fechar a última linha dessas duas:
 apague o `continue-on-error` do job `silent-swallow-gate` e peça ao dono para
 marcar `Gate da meia-correção` como required na branch protection (é a mão dele
 no GitHub, não a nossa).
+
+> **08/09/2026 — o portão está cumprido.** As duas faixas estão zeradas: o gate
+> passa nos 6 arquivos, e a suíte
+> `shopman/shop/tests/test_silencio_de_dinheiro_e_nota.py` trava a volta de cada
+> site (a falha é simulada e o teste exige alerta ou recusa — nunca silêncio).
+> Repositório inteiro: de **50 arquivos / 94 sites** para **42 / 75**. Falta a
+> mão do dono: marcar `Gate da meia-correção` como required. O
+> `continue-on-error` continua no workflow enquanto o check não for obrigatório
+> — tirar os dois na mesma hora é o que evita a janela em que o job reprova sem
+> ninguém ter combinado isso.
+
+### ⚠️ Antes de tornar o check obrigatório: o gate reprova por PR alheio
+
+Achado ao rodar o gate no PR que zerou as duas faixas, e ele **precisa ser
+consertado antes** da branch protection — senão o primeiro check obrigatório da
+casa vai barrar PRs por arquivo que o autor nunca abriu.
+
+`resolve_diff_base` (em `scripts/check_adr015.py`, compartilhado com o gate do
+ADR-015) usa, no evento `pull_request`, a **ponta da base** como referência:
+
+```python
+return "FETCH_HEAD", f"pull_request base origin/{base_ref} (FETCH_HEAD)"
+```
+
+O raciocínio original está no docstring e é correto **enquanto o merge ref
+estiver em dia**: `HEAD` é o merge sintético do PR sobre a base, então o diff
+contra a base isola o PR. Mas o merge ref é gerado no push e **não é refeito
+quando a `main` anda**. Quando outro PR entra no meio, `FETCH_HEAD` avança e
+`HEAD` não: o diff passa a mostrar as mudanças do PR alheio **ao contrário**, e
+o gate analisa arquivos de outra frente.
+
+Foi exatamente o que aconteceu: o PR #549 entrou entre o push e o job, tocou
+`shopman/shop/apps.py` — que é dívida conhecida desta lista, faixa ✅ — e o gate
+reprovou o PR #554 por causa dela. Um `git merge origin/main` refez o merge ref
+e o gate voltou a ver só os 7 arquivos do autor.
+
+A base certa é a **merge-base**, não a ponta:
+`git merge-base FETCH_HEAD HEAD` devolve o commit da base sobre o qual o merge
+ref foi construído, e isso é imune à `main` andar. O detalhe que impede a
+correção de ser de uma linha é o `fetch --depth=1` logo acima: com a base rasa
+não há histórico comum para o `merge-base` calcular. É WP próprio, e mexe nos
+**dois** gates que compartilham a função — por isso não entrou no PR que
+descobriu.
 
 Os 12 "provavelmente inofensivos" **não pedem conserto, pedem marcador**: são a
 forma mais barata de encolher a lista sem mexer em comportamento, e o marcador
@@ -136,21 +179,31 @@ coluna "já grita na linha" é a prova da contradição — é onde o próprio a
 demonstra que sabia relatar.
 
 
-### 💸 Dinheiro — 5 arquivos, 16 sites
+### 💸 Dinheiro — 5 arquivos, 16 sites · ✅ ZERADA
 
 | Arquivo | Linhas mudas | O que se perde | Estado |
 |---|---|---|---|
-| `shopman/shop/adapters/payment_stripe.py`<br><sub>já grita na linha 582 · except_debug/except_pass</sub> | `291`, `457`, `973`, `979`, `992`, `996`, `1014` | webhook confirma no Stripe e o pedido nunca sai de pendente; ninguém soube | ⬜ aberto |
-| `shopman/shop/adapters/payment_efi.py`<br><sub>já grita na linha 132 · except_pass</sub> | `296`, `438` | PIX pago ou cancelado na Efí sem refletir no intent; caixa diverge | ⬜ aberto |
-| `shopman/shop/services/payment.py`<br><sub>já grita na linha 447 · except_debug/except_pass</sub> | `1242`, `1405`, `1518`, `1606` | intent reaproveitável some e o cliente recebe segunda cobrança pelo mesmo pedido | ⬜ aberto |
-| `shopman/shop/services/pix_confirmation.py`<br><sub>já grita na linha 432 · except_debug</sub> | `596`, `729` | PIX entra mas o alerta de falha segue aceso; operador persegue dinheiro já recebido | ⬜ aberto |
-| `shopman/shop/services/pos.py`<br><sub>já grita na linha 918 · except_debug</sub> | `2489` | teto de desconto da loja é ignorado; balcão libera desconto sem gerente | ⬜ aberto |
+| `shopman/shop/adapters/payment_stripe.py`<br><sub>já grita na linha 582 · except_debug/except_pass</sub> | `291`, `457`, `973`, `979`, `992`, `996`, `1014` | webhook confirma no Stripe e o pedido nunca sai de pendente; ninguém soube | ✅ 08/09 — `_record_ledger_drift`: alerta em `authorize`/`capture`/`fail`/`cancel`; um marcador declarado |
+| `shopman/shop/adapters/payment_efi.py`<br><sub>já grita na linha 132 · except_pass</sub> | `296`, `438` | PIX pago ou cancelado na Efí sem refletir no intent; caixa diverge | ✅ 08/09 — capture falha FECHADA + alerta; `cancel` alerta a deriva |
+| `shopman/shop/services/payment.py`<br><sub>já grita na linha 447 · except_debug/except_pass</sub> | `1242`, `1405`, `1518`, `1606` | intent reaproveitável some e o cliente recebe segunda cobrança pelo mesmo pedido | ✅ 08/09 — 3 viraram `logger.warning`, 1 declarado (carimbo de throttle) |
+| `shopman/shop/services/pix_confirmation.py`<br><sub>já grita na linha 432 · except_debug</sub> | `596`, `729` | PIX entra mas o alerta de falha segue aceso; operador persegue dinheiro já recebido | ✅ 08/09 — `logger.warning`, igual ao irmão `_alert` do mesmo arquivo |
+| `shopman/shop/services/pos.py`<br><sub>já grita na linha 918 · except_debug</sub> | `2489` | teto de desconto da loja é ignorado; balcão libera desconto sem gerente | ✅ já fechado antes desta frente (`c79b4100f`) |
 
-### 🧾 Nota fiscal — 1 arquivos, 1 sites
+### 🧾 Nota fiscal — 1 arquivos, 1 sites · ✅ ZERADA
 
 | Arquivo | Linhas mudas | O que se perde | Estado |
 |---|---|---|---|
-| `shopman/shop/adapters/purchase_invoice_nfe.py`<br><sub>já grita na linha 236 · except_pass</sub> | `984` | XML da nota do fornecedor volta ilegível e a entrada fiscal não fecha | ⬜ aberto |
+| `shopman/shop/adapters/purchase_invoice_nfe.py`<br><sub>já grita na linha 236 · except_pass</sub> | `984` | XML da nota do fornecedor volta ilegível e a entrada fiscal não fecha | ✅ 08/09 — magic bytes separam "não veio comprimido" (normal) de gzip corrompido (grita e recusa) |
+
+**Fora do inventário, na mesma varredura** (o gate não os pegava porque o
+`logger.warning`/`logger.debug` vinha acompanhado de outra linha, e o gate mede
+mudez estrita — mas o dano é o da faixa):
+
+| Arquivo:linha | O que se perdia | Estado |
+|---|---|---|
+| `shopman/shop/services/pos.py` — `fiscal_service.emit` no fecho da venda | venda sem nota: `logger.warning` e nada na tela, com o balcão vendo "Fiscal pendente" (que é o que ele vê quando está tudo certo) | ✅ 08/09 — `OperatorAlert` `integration_failed`, com o pedido no nome |
+| `shopman/shop/services/pos.py` — `fiscal_toggle_enabled`, `_sale_fiscal_hint` | toggle "Nota fiscal" some do balcão / dica diz que não há nota quando há | ✅ 08/09 — `logger.warning` |
+| `shopman/shop/services/payment.py` — `cancel_stale_intents` (except externo), `_refundable_intents` | QR antigo do mesmo pedido continua pagável (pagamento em dobro); devolução sai pela metade | ✅ 08/09 — `logger.warning` |
 
 ### 🙋 Promessa ao cliente — 17 arquivos, 42 sites
 
@@ -218,6 +271,25 @@ como **dado medido**, não como trabalho pendente desta frente: estavam em uso
 por outras sessões no momento da medição. Quem for consertá-los, confira antes
 se a linha ainda é a mesma — referência arquivo:linha envelhece em horas neste
 repositório.
+
+## Uma refutação, para quem for fechar as outras faixas
+
+A auditoria descreveu o Efí como "`authorize` local falha, cai em `pass`, e a
+função ainda devolve `success=True` — o sistema afirma sucesso sobre um
+registro que não existe". **A metade final não se sustentava, e a verdade era
+outra e mais chata**: o `reconcile_gateway_status` imediatamente acima já leva o
+intent de `pending` a `captured` e já anuncia `payment_authorized`, então aquele
+`authorize` NUNCA podia dar certo — era chamada morta atrás de handler mudo. O
+registro existia.
+
+O buraco de verdade estava um degrau acima: o `reconcile_gateway_status` era
+chamado solto, e um `PaymentError` dele caía no `except Exception` genérico como
+se fosse falha de rede — Pix recebido, livro sem lastro, `success=False` sem
+alerta nenhum. Foi esse que virou falha fechada + alerta.
+
+A lição para as faixas restantes: **o site apontado pode não ser o site
+doente**. Ler o Core antes de "consertar" o sintoma é o que separa uma correção
+de mais uma meia-correção.
 
 ## Como regenerar
 

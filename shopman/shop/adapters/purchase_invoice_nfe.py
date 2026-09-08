@@ -971,6 +971,13 @@ def _decode_doc_zip(doc_zip: Any) -> str:
         raw = str(doc_zip or "")
     try:
         payload = base64.b64decode(re.sub(r"\s+", "", _decode_text(raw)))
+        # O `docZip` da SEFAZ nem sempre vem comprimido: alguns retornos trazem o
+        # XML direto em base64. Por isso a descompressão é tentativa, não
+        # exigência — e por isso a falha dela precisa distinguir dois casos que
+        # eram o mesmo `pass`. Sem os magic bytes do gzip, o payload JÁ é o XML e
+        # não houve falha nenhuma. COM eles, o conteúdo está corrompido: o XML
+        # sai ilegível, a entrada fiscal não fecha, e isso tem de aparecer.
+        gzipped = payload[:2] == b"\x1f\x8b"
         try:
             # wbits=31 = gzip; decompressobj com max_length aplica o teto SEM
             # materializar o payload inflado inteiro (gzip.decompress não tem
@@ -982,7 +989,9 @@ def _decode_doc_zip(doc_zip: Any) -> str:
                 return ""
             payload = inflated
         except zlib.error:
-            pass
+            if gzipped:
+                logger.warning("purchase_nfe.doczip_inflate_failed", exc_info=True)
+                return ""
         return payload.decode("utf-8", errors="replace")
     except Exception:
         logger.warning("purchase_nfe.doczip_decode_failed", exc_info=True)

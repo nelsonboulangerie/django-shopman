@@ -132,6 +132,7 @@ def record_webhook_failure(
 #: o próprio ``provider`` — um slug cru ainda é melhor que aviso nenhum.
 _INTEGRATION_PROVIDER_LABELS = {
     "google_geocoding": "Google Geocoding",
+    "fiscal": "Nota fiscal (NFC-e)",
 }
 
 

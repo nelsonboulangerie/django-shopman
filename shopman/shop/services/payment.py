@@ -583,8 +583,10 @@ def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
         intents = list(
             PaymentService.get_by_order(order.ref).filter(status__in={"captured", "refunded"}).order_by("id")
         )
+    # O fallback abaixo devolve UM intent legado; um pedido com mais de uma
+    # cobrança capturada perde as demais e a devolução sai pela metade.
     except Exception:
-        logger.debug("payment.refund: intent lookup failed order=%s", order.ref, exc_info=True)
+        logger.warning("payment.refund: intent lookup failed order=%s", order.ref, exc_info=True)
         intents = []
     if not intents:
         legacy_ref = payment_data.get("intent_ref")
@@ -910,8 +912,12 @@ def cancel_stale_intents(order, *, keep_intent_ref: str) -> int:
                     exc_info=True,
                 )
         return count
+    # O laço interno já gritava por intent; o `except` de fora ficou mudo — e é
+    # ele que pega a falha que impede o laço INTEIRO de rodar. Sem esta faxina,
+    # todo QR antigo do pedido continua pagável depois de um já ter sido pago:
+    # o cliente paga duas vezes e a loja descobre pela reclamação.
     except Exception:
-        logger.debug("payment.cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
+        logger.warning("payment.cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
         return 0
 
 
@@ -1239,6 +1245,9 @@ def _stamp_gateway_check(order) -> None:
         data["payment"] = payment
         order.data = data
         order.save(update_fields=["data", "updated_at"])
+    # O carimbo é só o throttle da pergunta ao gateway, e a liquidação não pode
+    # parar por causa dele.
+    # silêncio-deliberado: sem o carimbo, o pior que acontece é perguntar cedo demais.
     except Exception:
         logger.debug("payment.gateway_check_stamp degraded", exc_info=True)
 
@@ -1400,10 +1409,16 @@ def _extract_qr_data(intent: PaymentIntent) -> dict:
         return intent.metadata
 
     if intent.client_secret:
+        # Só o Pix chega aqui (ver `_persist_intent`), e para o Pix este JSON é
+        # o QR. Voltar `{}` calado deixa o cliente na tela de pagamento sem
+        # código para copiar e sem imagem para ler — a cobrança existe no
+        # gateway e não há como pagá-la.
         try:
             return json.loads(intent.client_secret)
         except (json.JSONDecodeError, TypeError):
-            pass
+            logger.warning(
+                "payment.qr_data_unreadable intent=%s", intent.intent_ref, exc_info=True
+            )
 
     return {}
 
@@ -1515,8 +1530,12 @@ def _existing_active_intent(order, *, method: str, amount_q: int) -> PaymentInte
             if intent.expires_at and intent.expires_at <= now:
                 continue
             return _payment_intent_from_payman(intent)
+    # Não é degradação barata: quem chama usa este retorno para decidir entre
+    # REAPROVEITAR a cobrança viva do pedido ou abrir uma nova. Vazio por falha
+    # de leitura vira segunda cobrança do mesmo pedido — e o cliente com dois
+    # QR na mão pode pagar os dois. Em `logger.debug` isso não saía do processo.
     except Exception:
-        logger.debug("payment.existing_intent_lookup_failed order=%s", order.ref, exc_info=True)
+        logger.warning("payment.existing_intent_lookup_failed order=%s", order.ref, exc_info=True)
     return None
 
 
@@ -1603,8 +1622,11 @@ def _ack_payment_failed_alerts(order) -> None:
         from shopman.shop.adapters import alert as alert_adapter
 
         alert_adapter.acknowledge("payment_failed", order_ref=order.ref)
+    # Os dois irmãos acima (`_alert_payment_failed`, `_notify_payment_failed`)
+    # já gritavam; este ficou em `logger.debug`. Alerta que não baixa é o
+    # operador perseguindo um pagamento que já entrou.
     except Exception:
-        logger.debug("payment_failed_alert_ack_failed order=%s", order.ref, exc_info=True)
+        logger.warning("payment_failed_alert_ack_failed order=%s", order.ref, exc_info=True)
 
 
 def _embedded_payment_status(payment_data: dict) -> str | None:
