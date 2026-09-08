@@ -29,13 +29,14 @@ from django.db import IntegrityError
 from django.test import TestCase
 from shopman.cashman import services as cash
 from shopman.cashman.models import Shift, Terminal
+from shopman.guestman.contrib.identifiers import IdentifierService
 from shopman.guestman.contrib.merge.models import MergeAudit
 from shopman.guestman.models import ContactPoint, Customer
 from shopman.offerman.models import Listing, ListingItem, Product
 from shopman.orderman.models import Order
 
 from shopman.backstage.models import POSTab
-from shopman.shop.models import Channel, Shop
+from shopman.shop.models import Channel, ContactRelease, ReleasedContactKind, Shop
 from shopman.shop.services.pos_intent import POS_SALE_INTENT_VERSION
 
 CLOSE_URL = "/api/v1/backstage/pos/sale/close/"
@@ -305,7 +306,7 @@ class POSConflitoComSaidaTests(TestCase):
         )
 
         liberado = self._post(RELEASE_URL, {
-            "field": "customer_phone", "value": "43999990022",
+            "field": "customer_phone", "value": "43999990022", "confirmed": True,
         })
 
         self.assertEqual(liberado.status_code, 200)
@@ -328,12 +329,169 @@ class POSConflitoComSaidaTests(TestCase):
             ana.pk,
         )
 
+    def test_liberar_SEM_reconfirmar_nao_acontece(self) -> None:
+        """A gêmea, no servidor, da segunda pergunta da tela.
+
+        Liberar apaga um ``ContactPoint`` e não tem desfazer. A fricção mora no
+        ato destrutivo, não num passo seguinte — e ela não pode viver só no
+        JavaScript: uma tela é uma cortesia, o service é a trava.
+        """
+        antigo = self._customer(
+            "CUST-REL-NOCONF", "Cadastro", "Antigo",
+            phone="+5543999990044", is_active=False,
+        )
+
+        response = self._post(RELEASE_URL, {
+            "field": "customer_phone", "value": "43999990044",
+        })
+
+        self.assertEqual(response.status_code, 422)
+        self.assertIn("Confirme", response.json()["detail"])
+        # E o contato continua exatamente onde estava.
+        antigo.refresh_from_db()
+        self.assertEqual(antigo.phone, "+5543999990044")
+        self.assertTrue(ContactPoint.objects.filter(value_normalized="+5543999990044").exists())
+        self.assertEqual(ContactRelease.objects.count(), 0)
+
+    def test_liberar_deixa_RASTRO_do_que_era_e_de_qual_ficha_saiu(self) -> None:
+        """Um ``.delete()`` sem rastro é uma perda que ninguém consegue narrar.
+
+        A unificação já resolveu isto do jeito certo (``MergeAudit``: quem,
+        quando, o que saiu de onde, e um retrato para desfazer). A liberação
+        seguia com uma linha de log — que ninguém lê e que não reconstrói
+        cadastro nenhum. É este registro que dá lastro à promessa da tela: "fica
+        registrado, dá para refazer depois".
+        """
+        antigo = self._customer(
+            "CUST-REL-TRAIL", "Cadastro", "Antigo",
+            phone="+5543999990055", is_active=False,
+        )
+        ponto = ContactPoint.objects.get(value_normalized="+5543999990055")
+        pk_apagado = str(ponto.pk)
+        era_principal = ponto.is_primary
+
+        response = self._post(RELEASE_URL, {
+            "field": "customer_phone", "value": "43999990055", "confirmed": True,
+        })
+        self.assertEqual(response.status_code, 200)
+
+        rastro = ContactRelease.objects.get(pk=response.json()["release_id"])
+        # O VALOR e o TIPO — o que foi solto.
+        self.assertEqual(rastro.value, "+5543999990055")
+        self.assertEqual(rastro.kind, ReleasedContactKind.PHONE)
+        # DE QUAL FICHA saiu — pelo ref, que é a chave que não muda.
+        self.assertEqual(rastro.released_from_ref, antigo.ref)
+        self.assertIn("Antigo", rastro.released_from_name)
+        # QUEM liberou e QUANDO.
+        self.assertEqual(rastro.actor, "pos-conflito")
+        self.assertIsNotNone(rastro.released_at)
+        # E o bastante para RECONSTRUIR: o PK que sumiu e o posto que ele ocupava.
+        self.assertEqual(rastro.released_pk, pk_apagado)
+        self.assertEqual(rastro.was_primary, era_principal)
+
+        # E o contato foi de fato solto — rastro não é substituto de efeito.
+        self.assertFalse(ContactPoint.objects.filter(value_normalized="+5543999990055").exists())
+
+    def test_liberar_CPF_tambem_deixa_rastro(self) -> None:
+        """O documento sai por outra porta (``CustomerIdentifier``), não por um atalho."""
+        # Nasce ATIVO para o identificador poder ser criado (o Core só enxerga
+        # cliente ativo ali) e é desativado depois — que é a ordem em que a
+        # realidade acontece: primeiro o cadastro existe, depois ele morre.
+        antigo = self._customer("CUST-REL-CPF", "Cadastro", "Antigo", document="52998224725")
+        IdentifierService.ensure_identifier(
+            customer_ref=antigo.ref,
+            identifier_type="cpf",
+            identifier_value="52998224725",
+            is_primary=True,
+            source_system="teste",
+        )
+        Customer.objects.filter(pk=antigo.pk).update(is_active=False)
+
+        response = self._post(RELEASE_URL, {
+            "field": "customer_tax_id", "value": "529.982.247-25", "confirmed": True,
+        })
+        self.assertEqual(response.status_code, 200)
+
+        rastro = ContactRelease.objects.get(pk=response.json()["release_id"])
+        self.assertEqual(rastro.kind, ReleasedContactKind.CPF)
+        self.assertEqual(rastro.value, "52998224725")
+        self.assertEqual(rastro.released_from_ref, antigo.ref)
+        self.assertTrue(rastro.released_pk)
+        antigo.refresh_from_db()
+        self.assertEqual(antigo.document, "")
+
+    def test_liberar_contato_QUE_VEIO_DE_UMA_UNIFICACAO_marca_o_desfazer(self) -> None:
+        """A interação que ninguém tinha mapeado — e que falha em SILÊNCIO.
+
+        O ``MergeService.undo`` devolve os registros migrados pelos **PKs
+        guardados no snapshot**. Um PK apagado não volta: a unificação desfeita
+        nasce incompleta e ninguém é avisado — o gestor clica "desfazer", lê
+        "desfeita", e o cadastro que voltou tem um contato a menos que ele nunca
+        vai procurar.
+
+        Aqui se prova o caminho inteiro: a unificação move o contato, o cadastro
+        que ficou é desativado depois, o balcão libera o contato — e o rastro
+        aponta a unificação afetada, que é o que permite AVISAR quem desfizer.
+        """
+        absorvido = self._customer("CUST-UNDO-SRC", "Ana", "Antiga")
+        sobrevivente = self._customer("CUST-UNDO-TGT", "Ana", "Prado")
+        ContactPoint.objects.create(
+            customer=absorvido,
+            type=ContactPoint.Type.EMAIL,
+            value_normalized="ana@example.org",
+            value_display="ana@example.org",
+            is_primary=True,
+        )
+
+        unificado = self._post(MERGE_URL, {
+            "source_ref": absorvido.ref, "target_ref": sobrevivente.ref,
+        })
+        self.assertEqual(unificado.status_code, 200)
+        audit_id = unificado.json()["merge"]["audit_id"]
+        # O contato mudou de dono e o PK dele ficou no retrato do desfazer.
+        movido = ContactPoint.objects.get(value_normalized="ana@example.org")
+        self.assertEqual(movido.customer_id, sobrevivente.pk)
+        self.assertIn(str(movido.pk), MergeAudit.objects.get(pk=audit_id).snapshot["contact_points"])
+
+        # Mais tarde o cadastro que ficou também é desativado, e aí o e-mail
+        # está preso num cadastro morto — o beco que a liberação resolve.
+        Customer.objects.filter(pk=sobrevivente.pk).update(is_active=False)
+
+        liberado = self._post(RELEASE_URL, {
+            "field": "customer_email", "value": "ana@example.org", "confirmed": True,
+        })
+        self.assertEqual(liberado.status_code, 200)
+
+        # O rastro AMARRA a liberação à unificação cujo desfazer ela degrada.
+        self.assertEqual(liberado.json()["merge_audit_id"], audit_id)
+        rastro = ContactRelease.objects.get(pk=liberado.json()["release_id"])
+        self.assertEqual(str(rastro.merge_audit_id), audit_id)
+        # E guarda o que é preciso para reconstruir o que o `undo` não devolve.
+        self.assertEqual(rastro.released_pk, str(movido.pk))
+        self.assertEqual(rastro.value, "ana@example.org")
+        self.assertEqual(rastro.released_from_ref, sobrevivente.ref)
+
+    def test_liberar_contato_SEM_unificacao_por_tras_nao_inventa_vinculo(self) -> None:
+        """O vínculo é achado, não presumido: sem unificação, ele fica vazio."""
+        self._customer(
+            "CUST-REL-SOLO", "Cadastro", "Antigo",
+            phone="+5543999990066", is_active=False,
+        )
+
+        liberado = self._post(RELEASE_URL, {
+            "field": "customer_phone", "value": "43999990066", "confirmed": True,
+        })
+
+        self.assertEqual(liberado.status_code, 200)
+        self.assertEqual(liberado.json()["merge_audit_id"], "")
+        self.assertIsNone(ContactRelease.objects.get(value="+5543999990066").merge_audit_id)
+
     def test_liberar_contato_de_cadastro_ATIVO_e_recusado(self) -> None:
         """Liberar contato de cliente ativo seria roubar em silêncio."""
         self._customer("CUST-REL-LIVE", "Bruno", "Souza", phone="+5543999990033")
 
         response = self._post(RELEASE_URL, {
-            "field": "customer_phone", "value": "43999990033",
+            "field": "customer_phone", "value": "43999990033", "confirmed": True,
         })
 
         self.assertEqual(response.status_code, 422)
@@ -422,3 +580,88 @@ class POSConflitoComSaidaTests(TestCase):
         self.assertEqual(bruno.email, "bruno@example.org")
         pedido = Order.objects.get(ref=response.json()["order_ref"])
         self.assertEqual(pedido.data["receipt"]["email"], "bruno@example.org")
+
+    # ── 8 · Sobrescrever o CPF do cadastro tem GÊMEA no servidor ─────────────
+
+    def test_sobrescrever_cpf_sem_a_segunda_palavra_vira_422_com_frase(self) -> None:
+        """A fricção da tela não pode morar só na tela.
+
+        A tela cobra a reconfirmação antes de deixar a ordem viajar. Mas trava
+        que existe só no front não é trava: um tablet com JS velho, um script,
+        a próxima superfície — qualquer um mandaria `save_receipt_tax_id`
+        sozinho e a identidade fiscal do cadastro trocaria calada. Aqui a ordem
+        sem a segunda palavra é RECUSADA, e a frase diz o que sai e o que entra.
+        """
+        ana = self._customer(
+            "CUST-CPF-A", "Ana", "Prado", phone="+5543999990011", document="52998224725",
+        )
+        pedidos_antes = Order.objects.count()
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+        ))
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["field"], "customer_tax_id")
+        self.assertEqual(body["error"]["code"], "tax_id_overwrite_unconfirmed")
+        self.assertIn("52998224725", body["detail"])
+        self.assertIn("11144477735", body["detail"])
+        self.assertIn("customer_tax_id", body["errors"])
+        # O cadastro fica como estava, e a venda não fecha.
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "52998224725")
+        self.assertEqual(Order.objects.count(), pedidos_antes)
+
+    def test_sobrescrever_cpf_COM_a_segunda_palavra_grava_como_hoje(self) -> None:
+        ana = self._customer(
+            "CUST-CPF-B", "Ana", "Prado", phone="+5543999990011", document="52998224725",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+            save_receipt_tax_id_confirmed=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "11144477735")
+
+    def test_preencher_lacuna_de_cpf_segue_de_UM_toque(self) -> None:
+        """Atrito no caminho comum vira clique de reflexo — por isso não há."""
+        ana = self._customer("CUST-CPF-C", "Ana", "Prado", phone="+5543999990011")
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            fiscal_tax_id="11144477735",
+            save_receipt_tax_id=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.document, "11144477735")
+
+    def test_email_divergente_NAO_paga_o_pedagio_do_cpf(self) -> None:
+        """A assimetria entre CPF e e-mail é o alvo, não um descuido."""
+        ana = self._customer(
+            "CUST-CPF-D", "Ana", "Prado", phone="+5543999990011", email="ana@example.org",
+        )
+
+        response = self._post(CLOSE_URL, self._intent(
+            customer_ref=ana.ref,
+            customer_name="Ana Prado",
+            receipt_channels=["email"],
+            receipt_email="ana.nova@example.org",
+            save_receipt_contact=True,
+        ))
+
+        self.assertEqual(response.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.email, "ana.nova@example.org")

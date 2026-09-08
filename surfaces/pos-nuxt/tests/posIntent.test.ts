@@ -62,6 +62,7 @@ describe("POS sale intent", () => {
       receiptEmail: "ana@example.com",
       saveReceiptContact: false,
       saveReceiptTaxId: false,
+      saveReceiptTaxIdConfirmed: false,
       manualDiscount: null,
       managerApproval: null,
       clientRequestId: "pos:test-1",
@@ -125,6 +126,7 @@ describe("POS sale intent", () => {
       paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
       tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
       receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      saveReceiptTaxIdConfirmed: false,
       clientRequestId: "pos:test-2",
       items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
     };
@@ -140,6 +142,43 @@ describe("POS sale intent", () => {
     });
     expect(semCampos).not.toHaveProperty("save_receipt_contact");
     expect(semCampos).not.toHaveProperty("save_receipt_tax_id");
+  });
+
+  it("a SEGUNDA PALAVRA sobre o CPF viaja junto da ordem — e nunca sozinha", () => {
+    const base = {
+      tabRef: "", tabSessionKey: "", customerName: "", customerRef: "", customerPhone: "",
+      customerTaxId: "", invoiceTaxId: "52998224725", customerEmail: "", customerMemoryAction: "",
+      fulfillmentType: "pickup" as const, deliveryAddress: "",
+      deliveryAddressStructured: null as never, deliveryComplement: "", deliveryInstructions: "",
+      deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
+      paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
+      tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
+      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      saveReceiptContact: false, saveReceiptTaxId: false, saveReceiptTaxIdConfirmed: false,
+      clientRequestId: "pos:test-3",
+      items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
+    };
+
+    // O servidor recusa SOBRESCREVER o CPF do cadastro sem esta chave — por
+    // isso ela viaja quando o operador confirmou.
+    const confirmado = buildPosSaleIntent({
+      ...base, saveReceiptTaxId: true, saveReceiptTaxIdConfirmed: true,
+    });
+    expect(confirmado.save_receipt_tax_id).toBe(true);
+    expect(confirmado.save_receipt_tax_id_confirmed).toBe(true);
+
+    // Sem a segunda palavra a ordem ainda viaja (preencher lacuna não pede
+    // atrito) — o que não viaja é a confirmação.
+    const semConfirmar = buildPosSaleIntent({ ...base, saveReceiptTaxId: true });
+    expect(semConfirmar.save_receipt_tax_id).toBe(true);
+    expect(semConfirmar).not.toHaveProperty("save_receipt_tax_id_confirmed");
+
+    // Confirmação SEM a ordem que ela confirma é ruído: não viaja sozinha.
+    const soConfirmacao = buildPosSaleIntent({
+      ...base, saveReceiptTaxIdConfirmed: true,
+    });
+    expect(soConfirmacao).not.toHaveProperty("save_receipt_tax_id");
+    expect(soConfirmacao).not.toHaveProperty("save_receipt_tax_id_confirmed");
   });
 
   it("uses projection actions instead of hardcoding mutation paths in state builders", () => {

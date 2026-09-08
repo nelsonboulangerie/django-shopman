@@ -56,6 +56,7 @@ function freeCartProjection() {
 interface CloseBody {
   save_receipt_contact?: boolean;
   save_receipt_tax_id?: boolean;
+  save_receipt_tax_id_confirmed?: boolean;
   receipt_email?: string;
   fiscal_tax_id?: string;
 }
@@ -139,7 +140,7 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     expect(decision?.typed).not.toContain("99999");
   });
 
-  it("'Manter' limpa o e-mail DO COMPROVANTE — e a venda seguinte passa", async () => {
+  it("'Manter' cancela o SALVAMENTO — o e-mail fica no campo e a nota vai para ele", async () => {
     const { call, bodies } = routerRefusingReceiptSave({
       field: "customer_email",
       candidates: [ANA_NA_COMANDA, BIA],
@@ -159,22 +160,25 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     expect(bodies.at(-1)?.save_receipt_contact).toBe(true);
     expect(h.sale.customerDecision.value).toBeTruthy();
 
-    h.sale.cancelCustomerDecision();
+    await h.sale.cancelCustomerDecision();
 
-    // O valor recusado sai de onde ele estava — e a ordem de salvar cai junto.
-    expect(h.sale.cart.receiptEmail).toBe("");
-    expect(h.sale.cart.saveReceiptContact).toBe(false);
-    // O campo do painel do cliente nunca foi o culpado: ninguém mexe nele.
-    expect(h.sale.cart.customerEmail).toBe("");
     expect(h.sale.customerDecision.value).toBeNull();
 
-    await h.sale.submitSale(); // refaz o fechamento
-    expect(h.sale.customerDecision.value).toBeNull();
+    // ⚠️ O conflito era sobre GRAVAR, nunca sobre ENVIAR. Cai a ordem de salvar
+    // no cadastro; o endereço CONTINUA valendo, porque o cliente pediu a nota
+    // nele e continua querendo. A prova está no fechamento REFEITO: ele leva o
+    // mesmo `receipt_email` e NÃO leva a ordem de salvar. Esvaziar o campo
+    // tirava do cliente a nota que ele veio buscar, para resolver uma briga de
+    // cadastro que ele nem viu acontecer.
+    expect(bodies.at(-1)?.receipt_email).toBe("bia@example.org");
     expect(bodies.at(-1)?.save_receipt_contact).toBeUndefined();
+    // E a venda seguiu SOZINHA: nada mudou do que o cliente vai receber, e
+    // devolver o operador a um segundo "Concluir" seria pôr atrito no caminho
+    // frequente — que é onde o atrito vira clique de reflexo.
     expect(h.sale.result.value?.orderRef).toBe("PED-1");
   });
 
-  it("recusa de CPF mostra o documento da nota, e 'Manter' limpa esse campo", async () => {
+  it("recusa de CPF: 'é só a nota' é UM TOQUE, o CPF fica na nota e nada é gravado", async () => {
     const { call, bodies } = routerRefusingReceiptSave({
       field: "customer_tax_id",
       candidates: [
@@ -198,13 +202,15 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     expect(h.sale.customerDecision.value?.field).toBe("tax_id");
     expect(h.sale.customerDecision.value?.typed).toBe("52998224725");
 
-    h.sale.cancelCustomerDecision();
-    expect(h.sale.cart.invoiceTaxId).toBe("");
-    expect(h.sale.cart.saveReceiptTaxId).toBe(false);
-    expect(h.sale.cart.customerTaxId).toBe("");
+    // "Não, é só a nota" — a saída do caso mais comum do balcão (a nota no CPF
+    // do marido). UM toque, sem reconfirmação, e a nota sai no CPF pedido.
+    await h.sale.cancelCustomerDecision();
 
-    await h.sale.submitSale();
+    // O CPF continua saindo NA NOTA — é o que o cliente pediu — e nada foi
+    // gravado no cadastro de Ana. O painel do cliente nunca foi tocado.
+    expect(bodies.at(-1)?.fiscal_tax_id).toBe("52998224725");
     expect(bodies.at(-1)?.save_receipt_tax_id).toBeUndefined();
+    expect(bodies.at(-1)?.customer_tax_id).toBeUndefined();
     expect(h.sale.result.value?.orderRef).toBe("PED-1");
   });
 
@@ -249,7 +255,87 @@ describe("usePosSale — a recusa do comprovante nomeia e limpa o campo CERTO", 
     // resolve que reescreveria o contato de quem está na comanda.
     expect(withRelease.mock.calls.some((c) => String(c[0]).includes("/customer/resolve/"))).toBe(false);
 
-    await h.sale.submitSale(); // o mesmo gesto que falhou agora passa
+    // ⚠️ E a venda segue SOZINHA. O operador já disse o que queria — liberou e
+    // reconfirmou —, e cobrar um segundo "Concluir" com o cliente na frente é
+    // pedir duas vezes a mesma decisão, que é o beco que esta tela existe para
+    // matar. A reconfirmação viaja junto: o service recusa sem ela.
+    expect(release?.[1]).toMatchObject({ body: { confirmed: true } });
     expect(h.sale.result.value?.orderRef).toBe("PED-1");
+  });
+});
+
+// ⚠️ MARCAR A CAIXA NÃO É MANDAR GRAVAR — e é aqui que a fricção deixa de ser
+// conversa de tela e vira consequência. Se o intent mandasse a ordem só pelo
+// interruptor, a segunda pergunta seria um popup a fechar no reflexo.
+describe("usePosSale — a ordem sobre o CPF divergente só viaja RECONFIRMADA", () => {
+  function cartComCpfDivergente() {
+    const bodies: CloseBody[] = [];
+    const call = vi.fn().mockImplementation(async (path: string, opts?: { body?: CloseBody }) => {
+      const url = String(path);
+      if (url.includes("/sale/review/")) {
+        return { review: { total_q: 1000, total_display: "R$ 10,00", subtotal_q: 1000 } };
+      }
+      if (url.includes("/sale/close/")) {
+        bodies.push(opts?.body || {});
+        return { ok: true, order_ref: "PED-1", payment: null };
+      }
+      return {};
+    });
+    const h = cartReadyForCheckout(call);
+    // Ana tem 529... no cadastro; a nota vai em 111... — outro documento.
+    h.sale.customerLookup.value = {
+      ref: "CUST-A", name: "Ana Prado", phone: "", email: "", tax_id: "52998224725",
+    } as unknown as typeof h.sale.customerLookup.value;
+    h.sale.cart.customerRef = "CUST-A";
+    h.sale.cart.customerName = "Ana Prado";
+    h.sale.cart.wantsCpfOnInvoice = true;
+    h.sale.cart.invoiceTaxId = "11144477735";
+    h.sale.cart.saveReceiptTaxId = true;
+    return { h, bodies };
+  }
+
+  it("marcado SEM reconfirmar: a nota sai no CPF pedido e o cadastro fica intacto", async () => {
+    const { h, bodies } = cartComCpfDivergente();
+    disposers.push(h.handles.dispose);
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    // A nota vai no documento informado — isso nunca esteve em disputa.
+    expect(bodies.at(-1)?.fiscal_tax_id).toBe("11144477735");
+    // Mas a identidade fiscal de Ana NÃO é trocada: a ordem não viajou.
+    expect(bodies.at(-1)?.save_receipt_tax_id).toBeUndefined();
+    expect(bodies.at(-1)?.save_receipt_tax_id_confirmed).toBeUndefined();
+  });
+
+  it("marcado E reconfirmado: aí sim a ordem viaja", async () => {
+    const { h, bodies } = cartComCpfDivergente();
+    disposers.push(h.handles.dispose);
+    h.sale.cart.confirmReceiptTaxId = true;
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    expect(bodies.at(-1)?.save_receipt_tax_id).toBe(true);
+    // E a SEGUNDA PALAVRA viaja com ela: sem esta chave o servidor recusa
+    // sobrescrever o CPF do cadastro — a gêmea da fricção que a tela cobra.
+    expect(bodies.at(-1)?.save_receipt_tax_id_confirmed).toBe(true);
+  });
+
+  it("e-mail divergente NÃO paga esse pedágio — a assimetria é o objetivo", async () => {
+    const { h, bodies } = cartComCpfDivergente();
+    disposers.push(h.handles.dispose);
+    h.sale.customerLookup.value = {
+      ref: "CUST-A", name: "Ana Prado", phone: "", email: "ana@example.org", tax_id: "",
+    } as unknown as typeof h.sale.customerLookup.value;
+    h.sale.cart.wantsCpfOnInvoice = false;
+    h.sale.cart.receiptEmail = "contador@example.org";
+    h.sale.cart.saveReceiptContact = true;
+
+    await h.sale.submitSale();
+    await h.sale.submitSale();
+
+    // E-mail muda — provedor, emprego. Um toque basta, sem segunda palavra.
+    expect(bodies.at(-1)?.save_receipt_contact).toBe(true);
   });
 });

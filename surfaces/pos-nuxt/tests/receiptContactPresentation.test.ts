@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  receiptContactArmed,
   receiptContactChecked,
   receiptContactOffer,
   receiptSaveOffers,
@@ -202,5 +203,80 @@ describe("receiptSaveOffers — o campo do painel do cliente JÁ é identidade",
       customerTaxId: CPF_A,
     });
     expect(taxId.kind).toBe("none");
+  });
+});
+
+// ⚠️ A ASSIMETRIA É O PONTO, e não um descuido a "uniformizar" depois.
+//
+// E-mail MUDA: troca-se de provedor, troca-se de emprego, e o endereço novo
+// substituindo o velho é rotina de cadastro. CPF NÃO MUDA: a pessoa tem um a
+// vida inteira. Se o cadastro diz 111 e a nota traz 222, a hipótese provável
+// não é "o CPF de Ana mudou" — é "esta nota é de outra pessoa".
+//
+// A oferta continua existindo nos dois casos: o dono a quis, e recusou
+// explicitamente a alternativa de só informar sem oferecer — ele quer o
+// conserto possível no balcão. O que muda é o PREÇO do sim.
+describe("CPF divergente pede a SEGUNDA palavra; e-mail divergente não", () => {
+  it("CPF: a oferta existe, avisa o que troca, e exige reconfirmação", () => {
+    const offer = receiptContactOffer({ field: "tax_id", typed: CPF_B, customer: ANA });
+
+    expect(offer.kind).toBe("update");
+    expect(offer.requiresConfirmation).toBe(true);
+    // O aviso nomeia a natureza do dano — identidade fiscal, não "um campo".
+    expect(offer.warning).toContain("identidade fiscal");
+    // E nomeia os dois documentos: o que sai e o que entra.
+    expect(offer.warning).toContain(CPF_A);
+    expect(offer.warning).toContain(CPF_B);
+    expect(offer.confirmPrompt).toContain("Confirmar");
+  });
+
+  it("e-mail: continua simples — sem aviso, sem segunda palavra", () => {
+    const offer = receiptContactOffer({
+      field: "email",
+      typed: "contador@example.org",
+      customer: ANA,
+    });
+    expect(offer.kind).toBe("update");
+    expect(offer.requiresConfirmation).toBe(false);
+    expect(offer.warning).toBe("");
+    expect(offer.confirmPrompt).toBe("");
+  });
+
+  it("as outras três linhas da matriz NÃO ganham atrito — nem para CPF", () => {
+    // Preencher lacuna, e a venda anônima. Pôr fricção aqui seria atrito no
+    // caminho COMUM, e atrito no caminho comum vira clique de reflexo — que é
+    // exatamente o que esvazia a proteção do caminho raro.
+    const lacuna = receiptContactOffer({
+      field: "tax_id", typed: CPF_A, customer: { name: "Ana Prado" },
+    });
+    const anonima = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
+    expect(lacuna.requiresConfirmation).toBe(false);
+    expect(anonima.requiresConfirmation).toBe(false);
+  });
+});
+
+describe("receiptContactArmed — marcar a caixa não é mandar gravar", () => {
+  const cpfDiverge = receiptContactOffer({ field: "tax_id", typed: CPF_B, customer: ANA });
+  const emailDiverge = receiptContactOffer({
+    field: "email", typed: "contador@example.org", customer: ANA,
+  });
+
+  it("CPF divergente MARCADO mas sem reconfirmação não grava nada", () => {
+    // O interruptor mostra a intenção; só o armado vira ordem no intent. Sem
+    // esta separação a fricção seria decorativa.
+    expect(receiptContactChecked(cpfDiverge, true)).toBe(true);
+    expect(receiptContactArmed(cpfDiverge, true, false)).toBe(false);
+  });
+
+  it("CPF divergente marcado E reconfirmado grava", () => {
+    expect(receiptContactArmed(cpfDiverge, true, true)).toBe(true);
+  });
+
+  it("reconfirmar sem marcar não grava — a segunda palavra não substitui a primeira", () => {
+    expect(receiptContactArmed(cpfDiverge, false, true)).toBe(false);
+  });
+
+  it("e-mail divergente marcado grava sem segunda palavra", () => {
+    expect(receiptContactArmed(emailDiverge, true, false)).toBe(true);
   });
 });

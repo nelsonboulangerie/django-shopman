@@ -241,6 +241,44 @@ def test_o_dialogo_avisa_que_a_fidelidade_nao_volta_antes_de_confirmar(client, _
     assert "faltam" in texto and "até" in texto, "o diálogo não mostra o prazo restante"
 
 
+def test_o_dialogo_avisa_o_contato_LIBERADO_que_o_desfazer_nao_devolve(
+    client, _loja, unificados,
+):
+    """O buraco que o desfazer teria em SILÊNCIO.
+
+    O ``undo`` devolve o que migrou pelos PKs guardados no snapshot. Se o balcão
+    liberou um desses contatos, o PK foi apagado e ele não volta: o gestor lia
+    "desfeita", o cadastro voltava com um contato a menos, e ninguém sabia qual
+    — porque o registro que dizia já não existia.
+
+    O rastro da liberação (``ContactRelease``) aponta a unificação afetada, e é
+    isso que permite o aviso chegar ANTES do clique, com o bastante para refazer
+    à mão.
+    """
+    from shopman.shop.models import ContactRelease, ReleasedContactKind
+
+    pk_movido = (unificados.snapshot.get("contact_points") or [None])[0]
+    assert pk_movido, "a unificação desta fixture precisa ter movido um contato"
+    ContactRelease.objects.create(
+        kind=ReleasedContactKind.PHONE,
+        value="+5543911111111",
+        released_from_ref=unificados.target_ref,
+        released_from_name="Maria Silva",
+        released_pk=str(pk_movido),
+        was_primary=True,
+        merge_audit_id=unificados.pk,
+        actor="pdv:fran",
+    )
+    client.force_login(_gestor())
+
+    texto = client.get(_undo_url(unificados)).content.decode()
+
+    assert "LIBERADOS no balcão" in texto
+    assert "+5543911111111" in texto, "o diálogo não diz QUAL contato não volta"
+    assert "pdv:fran" in texto, "o diálogo não diz quem liberou"
+    assert unificados.source_ref in texto
+
+
 # ── 5. Quem não é gestor não vê nem executa ──────────────────────────────────
 
 
