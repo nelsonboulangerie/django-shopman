@@ -39,4 +39,15 @@ describe('a configuração de plataforma tem casa', () => {
     expect(composable).toContain('target_ref: targetRef')
     expect(composable).not.toContain('body: { recipient')
   })
+
+  it('a aprovação envia versão, consequência explícita e reaproveita a mesma key', () => {
+    const composable = read('../app/composables/useCampaignBoard.ts')
+    const detail = read('../app/pages/announcements/[id].vue')
+    for (const source of [composable, detail]) {
+      expect(source).toContain('base_version')
+      expect(source).toContain('publish_mode')
+      expect(source).toContain('"Idempotency-Key"')
+      expect(source).toContain('approvalKeys')
+    }
+  })
 })

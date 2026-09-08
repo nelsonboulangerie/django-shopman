@@ -19,8 +19,19 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.utils import timezone
+from shopman.orderman.models import Directive
 
-from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AnnouncementTemplate,
+    AudienceSnapshot,
+    Campaign,
+    MarketingAuditEvent,
+    MarketingCommandReceipt,
+    MarketingContentArtifact,
+    MarketingOutbox,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -158,6 +169,119 @@ class TestPostDecision:
         announcement.refresh_from_db()
         assert announcement.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
         assert announcement.approved_by_id == gestor.pk
+
+    def test_v2_approval_returns_one_receipt_and_only_durable_outbox(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        payload = {
+            "base_version": 1,
+            "publish_mode": "now",
+            "body": "Croissant revisado",
+            "hashtags": ["feitohoje"],
+            "platforms": ["instagram", "google_business"],
+        }
+
+        first = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000001",
+        )
+        replay = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000001",
+        )
+
+        assert first.status_code == replay.status_code == 200
+        assert first.json()["receipt"] == replay.json()["receipt"]
+        assert first.json()["replayed"] is False
+        assert replay.json()["replayed"] is True
+        assert first.json()["announcement"]["version"] == 2
+        assert MarketingCommandReceipt.objects.count() == 1
+        assert MarketingContentArtifact.objects.count() == 1
+        assert AudienceSnapshot.objects.count() == 1
+        assert MarketingAuditEvent.objects.count() == 1
+        assert MarketingOutbox.objects.count() == 2
+        assert Directive.objects.count() == 0
+
+    def test_v2_approval_never_downgrades_when_idempotency_header_is_missing(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={"base_version": 1, "publish_mode": "now"},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_idempotency_key"
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert Directive.objects.count() == 0
+
+    def test_v2_same_key_with_changed_content_returns_conflict_not_second_approval(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        base = {"base_version": 1, "publish_mode": "now", "body": "Primeiro"}
+
+        assert client.post(
+            url,
+            data=base,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000002",
+        ).status_code == 200
+        conflict = client.post(
+            url,
+            data={**base, "body": "Segundo"},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000002",
+        )
+
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "idempotency_conflict"
+        assert MarketingCommandReceipt.objects.count() == 1
+
+    def test_v2_replays_its_version_conflict_even_if_server_content_changes_again(
+        self, client, gestor, rule, template
+    ):
+        from shopman.shop.services import campaign as campaign_service
+
+        announcement = _post(rule, template)
+        campaign_service.update_content(announcement.pk, body="Versão dois", base_version=1)
+        client.force_login(gestor)
+        url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
+        payload = {"base_version": 1, "publish_mode": "now", "body": "Minha revisão"}
+
+        first = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000003",
+        )
+        campaign_service.update_content(announcement.pk, body="Versão três", base_version=2)
+        replay = client.post(
+            url,
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000003",
+        )
+
+        assert first.status_code == replay.status_code == 409
+        assert first.json()["code"] == replay.json()["code"] == "version_conflict"
+        assert first.json()["receipt_ref"] == replay.json()["receipt_ref"]
+        assert first.json()["current_version"] == replay.json()["current_version"] == 2
+        assert MarketingCommandReceipt.objects.count() == 1
 
     def test_rejecting_keeps_it_off_the_air_and_records_who(self, client, gestor, rule, template):
         announcement = _post(rule, template)

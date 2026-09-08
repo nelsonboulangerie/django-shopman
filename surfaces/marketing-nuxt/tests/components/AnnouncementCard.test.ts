@@ -18,6 +18,7 @@ const PLATFORMS = [
 function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
   return {
     pk: 7,
+    version: 1,
     status: "pending_review",
     status_label: "aguardando aprovação",
     body: "Croissant saiu do forno",

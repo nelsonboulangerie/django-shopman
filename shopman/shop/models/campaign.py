@@ -15,11 +15,23 @@ deliberada (FOMO-MARKETING-SPECS §8).
 
 from __future__ import annotations
 
+import hashlib
+import json
 import uuid
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+
+
+class _AppendOnlyMarketingQuerySet(models.QuerySet):
+    """Prevent generic bulk APIs from rewriting sealed Marketing evidence."""
+
+    def update(self, **kwargs):
+        raise ValidationError("Registros selados de Marketing são imutáveis.")
+
+    def delete(self):
+        raise ValidationError("Registros selados de Marketing não podem ser apagados.")
 
 
 class Trigger(models.TextChoices):
@@ -584,3 +596,168 @@ class MarketingCommandReceipt(models.Model):
             models.Index(fields=["announcement", "created_at"]),
             models.Index(fields=["state", "created_at"]),
         ]
+
+
+class MarketingContentArtifact(models.Model):
+    """Byte-stable, immutable content approved for one Announcement version."""
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="content_artifacts",
+    )
+    version = models.PositiveIntegerField()
+    schema_version = models.PositiveSmallIntegerField(default=1)
+    payload = models.JSONField()
+    artifact_hash = models.CharField(max_length=64, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["announcement", "version"],
+                name="shop_marketing_artifact_announcement_version_uq",
+            ),
+        ]
+
+    def canonical_bytes(self) -> bytes:
+        return json.dumps(
+            self.payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Artefatos de Marketing são imutáveis.")
+        expected = hashlib.sha256(self.canonical_bytes()).hexdigest()
+        if self.artifact_hash != expected:
+            raise ValidationError("Hash do artefato de Marketing não confere.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Artefatos de Marketing não podem ser apagados.")
+
+
+class MarketingAuditEvent(models.Model):
+    """Append-only evidence that ties actor, version, snapshot and artifact."""
+
+    class EventType(models.TextChoices):
+        APPROVED = "approved", "aprovado"
+        REJECTED = "rejected", "recusado"
+        RESCHEDULED = "rescheduled", "reagendado"
+        CANCELLED = "cancelled", "cancelado"
+        EXPIRED = "expired", "expirado"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    command = models.OneToOneField(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="audit_event",
+    )
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="marketing_audit_events",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_audit_events",
+    )
+    snapshot = models.ForeignKey(
+        AudienceSnapshot,
+        on_delete=models.PROTECT,
+        related_name="audit_events",
+        null=True,
+        blank=True,
+    )
+    artifact = models.ForeignKey(
+        MarketingContentArtifact,
+        on_delete=models.PROTECT,
+        related_name="audit_events",
+        null=True,
+        blank=True,
+    )
+    base_version = models.PositiveIntegerField()
+    resulting_version = models.PositiveIntegerField()
+    reason_code = models.CharField(max_length=64, blank=True)
+    facts = models.JSONField(default=dict, blank=True)
+    request_id = models.CharField(max_length=100, blank=True)
+    occurred_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-occurred_at", "-pk"]
+        indexes = [models.Index(fields=["announcement", "occurred_at"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Eventos de auditoria de Marketing são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de auditoria de Marketing não podem ser apagados.")
+
+
+class MarketingOutbox(models.Model):
+    """Durable intent; no provider is called while an operator command commits."""
+
+    class State(models.TextChoices):
+        PENDING = "pending", "pendente"
+        CLAIMED = "claimed", "reservado"
+        DISPATCHED = "dispatched", "despachado"
+        CANCELLED = "cancelled", "cancelado"
+        FAILED = "failed", "falhou"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    command = models.ForeignKey(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="outbox_entries",
+    )
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="marketing_outbox_entries",
+    )
+    snapshot = models.ForeignKey(
+        AudienceSnapshot,
+        on_delete=models.PROTECT,
+        related_name="outbox_entries",
+    )
+    artifact = models.ForeignKey(
+        MarketingContentArtifact,
+        on_delete=models.PROTECT,
+        related_name="outbox_entries",
+    )
+    platform = models.CharField(max_length=32)
+    wave_key = models.CharField(max_length=64, blank=True)
+    state = models.CharField(max_length=16, choices=State.choices, default=State.PENDING)
+    available_at = models.DateTimeField(db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    lease_owner = models.CharField(max_length=100, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["available_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["command", "platform", "wave_key"],
+                name="shop_marketing_outbox_command_lane_uq",
+            ),
+        ]
+        indexes = [models.Index(fields=["state", "available_at"])]

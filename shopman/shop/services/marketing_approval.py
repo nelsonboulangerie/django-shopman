@@ -1,0 +1,466 @@
+"""Atomic approval: immutable content + cohort + audit + receipt + outbox.
+
+The request path never calls a provider and never creates a legacy Directive.
+Its only external-effect-shaped result is a durable ``MarketingOutbox`` row that
+MKT-012 will claim after the transaction is visible.  A failed transaction leaves
+none of these records behind; an idempotent replay returns the original graph.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+from typing import Any
+
+from django.utils import timezone
+
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AudienceSnapshot,
+    MarketingAuditEvent,
+    MarketingCommandReceipt,
+    MarketingContentArtifact,
+    MarketingOutbox,
+)
+from shopman.shop.services import audience as audience_service
+from shopman.shop.services import audience_snapshot
+from shopman.shop.services.marketing_commands import (
+    CommandExecution,
+    RejectCommand,
+    execute_announcement_command,
+)
+from shopman.shop.services.marketing_contracts import MarketingContractError
+
+PUBLISH_NOW = "now"
+PUBLISH_SCHEDULED = "scheduled"
+PUBLISH_MODES = frozenset({PUBLISH_NOW, PUBLISH_SCHEDULED})
+APPROVAL_RECORD_RETENTION = timedelta(days=365 * 5)
+MIN_GENERAL_COHORT = 10
+MAX_ARTIFACT_BYTES = 64 * 1024
+_PLATFORMS = frozenset({"instagram", "facebook", "google_business", "whatsapp"})
+
+
+@dataclass(frozen=True, slots=True)
+class ApprovalResult:
+    announcement: Announcement
+    receipt: MarketingCommandReceipt
+    artifact: MarketingContentArtifact
+    snapshot: AudienceSnapshot
+    outbox: tuple[MarketingOutbox, ...]
+    replayed: bool
+
+
+def approve_command(
+    announcement_id: int,
+    *,
+    actor,
+    idempotency_key: str,
+    base_version: int,
+    publish_mode: str,
+    content: Mapping[str, Any],
+    platform_content: Mapping[str, Any],
+    platforms: Sequence[str],
+    publish_at: datetime | None = None,
+    request_id: str = "",
+    now: datetime | None = None,
+    idempotency_payload: Mapping[str, Any] | None = None,
+) -> ApprovalResult:
+    """Approve the exact full content supplied by the reviewing surface.
+
+    ``publish_mode`` is explicit: ``now`` cannot smuggle a timestamp and
+    ``scheduled`` cannot omit one.  The content included in the idempotency
+    fingerprint is the content persisted in the immutable artifact.
+    """
+
+    now = now or timezone.now()
+    if timezone.is_naive(now):
+        raise MarketingContractError(
+            code="invalid_clock",
+            detail="O relógio da aprovação precisa incluir timezone.",
+        )
+    normalized_mode, normalized_publish_at = _schedule(
+        publish_mode,
+        publish_at=publish_at,
+        now=now,
+    )
+    safe_content = _json_copy(content, field="content")
+    safe_platform_content = _json_copy(platform_content, field="platform_content")
+    safe_platforms = _platforms(platforms)
+    _validate_content(safe_content, safe_platform_content, safe_platforms)
+
+    command_payload = {
+        "content": safe_content,
+        "platform_content": safe_platform_content,
+        "platforms": safe_platforms,
+        "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
+        "publish_mode": normalized_mode,
+    }
+    fingerprint_payload = (
+        _json_copy(idempotency_payload, field="idempotency_payload")
+        if idempotency_payload is not None
+        else command_payload
+    )
+
+    def operation(
+        announcement: Announcement,
+        receipt: MarketingCommandReceipt,
+    ) -> dict[str, Any]:
+        if announcement.status not in {
+            AnnouncementStatus.DRAFT,
+            AnnouncementStatus.PENDING_REVIEW,
+        }:
+            raise RejectCommand(
+                code="announcement_not_reviewable",
+                detail="Este anúncio não está mais aguardando decisão.",
+                outcome={"status": announcement.status},
+            )
+        if announcement.is_expired(now=now):
+            raise RejectCommand(
+                code="announcement_expired",
+                detail="Este anúncio expirou. Atualize os fatos antes de publicar.",
+                outcome={"status": AnnouncementStatus.EXPIRED},
+            )
+
+        rules = _audience_rules(announcement)
+        sku = str((announcement.trigger_context or {}).get("sku") or "")
+        resolution = audience_service.resolve(rules, sku=sku, now=now)
+        if resolution.degraded_sources:
+            raise RejectCommand(
+                code="audience_degraded",
+                detail="Não foi possível conferir toda a audiência.",
+                outcome={"degraded_source_count": len(resolution.degraded_sources)},
+            )
+        if "whatsapp" in safe_platforms and resolution.total < MIN_GENERAL_COHORT:
+            raise RejectCommand(
+                code="audience_below_minimum",
+                detail=(
+                    f"Campanha geral por WhatsApp exige ao menos {MIN_GENERAL_COHORT} "
+                    "pessoas elegíveis. Use o teste sandbox ou ajuste o público."
+                ),
+                outcome={
+                    "eligible_count": resolution.total,
+                    "minimum_count": MIN_GENERAL_COHORT,
+                },
+            )
+
+        approved_version = announcement.version + 1
+        artifact_payload = {
+            "content": safe_content,
+            "content_version": approved_version,
+            "platform_content": safe_platform_content,
+            "platforms": safe_platforms,
+            "schema_version": 1,
+        }
+        artifact_bytes = canonical_artifact_bytes(artifact_payload)
+        if len(artifact_bytes) > MAX_ARTIFACT_BYTES:
+            raise RejectCommand(
+                code="artifact_too_large",
+                detail="O conteúdo aprovado excede o limite seguro.",
+            )
+        artifact = MarketingContentArtifact.objects.create(
+            announcement=announcement,
+            version=approved_version,
+            payload=artifact_payload,
+            artifact_hash=hashlib.sha256(artifact_bytes).hexdigest(),
+            retention_until=now + APPROVAL_RECORD_RETENTION,
+        )
+
+        try:
+            snapshot = audience_snapshot.create_snapshot(
+                resolution,
+                rules=rules,
+                announcement=announcement,
+                version=approved_version,
+                now=now,
+            )
+        except MarketingContractError as exc:
+            raise RejectCommand(
+                code=exc.code,
+                detail=exc.detail,
+                outcome={"current_version": exc.current_version},
+                field_errors=exc.field_errors,
+            ) from exc
+
+        available_at = normalized_publish_at or now
+        outbox = _create_outbox(
+            receipt=receipt,
+            announcement=announcement,
+            snapshot=snapshot,
+            artifact=artifact,
+            platforms=safe_platforms,
+            resolution=resolution,
+            available_at=available_at,
+            now=now,
+        )
+
+        announcement.content = safe_content
+        announcement.platform_content = safe_platform_content
+        announcement.platforms = safe_platforms
+        announcement.audience = resolution.summary()
+        announcement.approved_by_id = receipt.actor_id
+        announcement.approved_at = now
+        announcement.publish_at = normalized_publish_at
+        announcement.status = (
+            AnnouncementStatus.APPROVED
+            if normalized_mode == PUBLISH_SCHEDULED
+            else AnnouncementStatus.PUBLISHING
+        )
+        announcement.save(update_fields=[
+            "content",
+            "platform_content",
+            "platforms",
+            "audience",
+            "approved_by",
+            "approved_at",
+            "publish_at",
+            "status",
+        ])
+
+        MarketingAuditEvent.objects.create(
+            event_type=MarketingAuditEvent.EventType.APPROVED,
+            command=receipt,
+            announcement=announcement,
+            actor_id=receipt.actor_id,
+            snapshot=snapshot,
+            artifact=artifact,
+            base_version=announcement.version,
+            resulting_version=approved_version,
+            facts={
+                "audience_count": resolution.total,
+                "outbox_count": len(outbox),
+                "platform_count": len(safe_platforms),
+                "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
+                "publish_mode": normalized_mode,
+            },
+            request_id=receipt.request_id,
+            occurred_at=now,
+            retention_until=now + APPROVAL_RECORD_RETENTION,
+        )
+        return {
+            "artifact_hash": artifact.artifact_hash,
+            "artifact_ref": str(artifact.ref),
+            "outbox_count": len(outbox),
+            "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
+            "publish_mode": normalized_mode,
+            "snapshot_ref": str(snapshot.ref),
+            "status": announcement.status,
+        }
+
+    execution = execute_announcement_command(
+        kind=MarketingCommandReceipt.Kind.APPROVE,
+        announcement_id=announcement_id,
+        actor=actor,
+        idempotency_key=idempotency_key,
+        base_version=base_version,
+        payload=fingerprint_payload,
+        operation=operation,
+        request_id=request_id,
+    )
+    return _result(execution)
+
+
+def canonical_artifact_bytes(payload: Mapping[str, Any]) -> bytes:
+    """One byte contract shared by persistence tests and the future dispatcher."""
+
+    return json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+
+
+def _result(execution: CommandExecution) -> ApprovalResult:
+    receipt = execution.receipt
+    announcement = execution.announcement
+    if announcement is None or receipt.resulting_version is None:
+        raise RuntimeError("A completed approval receipt has no resulting resource version.")
+    artifact = MarketingContentArtifact.objects.get(
+        announcement=announcement,
+        version=receipt.resulting_version,
+    )
+    snapshot = AudienceSnapshot.objects.get(
+        announcement=announcement,
+        version=receipt.resulting_version,
+    )
+    outbox = tuple(
+        MarketingOutbox.objects.filter(command=receipt).order_by("available_at", "pk")
+    )
+    return ApprovalResult(
+        announcement=announcement,
+        receipt=receipt,
+        artifact=artifact,
+        snapshot=snapshot,
+        outbox=outbox,
+        replayed=execution.replayed,
+    )
+
+
+def _create_outbox(
+    *,
+    receipt: MarketingCommandReceipt,
+    announcement: Announcement,
+    snapshot: AudienceSnapshot,
+    artifact: MarketingContentArtifact,
+    platforms: list[str],
+    resolution,
+    available_at: datetime,
+    now: datetime,
+) -> tuple[MarketingOutbox, ...]:
+    entries: list[MarketingOutbox] = []
+    for platform in platforms:
+        waves = resolution.waves(now=timezone.localtime(now)) if platform == "whatsapp" else ()
+        if not waves:
+            entries.append(MarketingOutbox(
+                command=receipt,
+                announcement=announcement,
+                snapshot=snapshot,
+                artifact=artifact,
+                platform=platform,
+                available_at=available_at,
+            ))
+            continue
+        for wave in waves:
+            entries.append(MarketingOutbox(
+                command=receipt,
+                announcement=announcement,
+                snapshot=snapshot,
+                artifact=artifact,
+                platform=platform,
+                wave_key=wave.key,
+                available_at=available_at + timedelta(minutes=wave.delay_minutes),
+            ))
+    MarketingOutbox.objects.bulk_create(entries)
+    return tuple(entries)
+
+
+def _audience_rules(announcement: Announcement) -> dict[str, Any]:
+    chosen = (announcement.trigger_context or {}).get("audience_rules")
+    if isinstance(chosen, dict) and chosen:
+        return dict(chosen)
+    if announcement.rule_id:
+        return dict(announcement.rule.audience_rules or {})
+    return {}
+
+
+def _schedule(
+    publish_mode: str,
+    *,
+    publish_at: datetime | None,
+    now: datetime,
+) -> tuple[str, datetime | None]:
+    mode = str(publish_mode or "").strip()
+    if mode not in PUBLISH_MODES:
+        raise MarketingContractError(
+            code="invalid_publish_mode",
+            detail="Escolha publicar agora ou agendar.",
+            field_errors={"publish_mode": ("Use 'now' ou 'scheduled'.",)},
+        )
+    if mode == PUBLISH_NOW:
+        if publish_at is not None:
+            raise MarketingContractError(
+                code="publish_now_has_schedule",
+                detail="Publicar agora não aceita uma data de agendamento.",
+                field_errors={"publish_at": ("Remova a data ou escolha agendar.",)},
+            )
+        return mode, None
+    if publish_at is None:
+        raise MarketingContractError(
+            code="scheduled_publish_at_required",
+            detail="Escolha a data e hora do agendamento.",
+            field_errors={"publish_at": ("Este campo é obrigatório para agendar.",)},
+        )
+    if timezone.is_naive(publish_at):
+        raise MarketingContractError(
+            code="scheduled_publish_at_naive",
+            detail="A data agendada precisa incluir timezone.",
+            field_errors={"publish_at": ("Inclua o offset do horário.",)},
+        )
+    if publish_at <= now:
+        raise MarketingContractError(
+            code="scheduled_publish_at_past",
+            detail="A data agendada precisa estar no futuro.",
+            field_errors={"publish_at": ("Escolha um horário futuro.",)},
+        )
+    return mode, publish_at
+
+
+def _json_copy(value: Mapping[str, Any], *, field: str) -> dict[str, Any]:
+    if not isinstance(value, Mapping):
+        raise MarketingContractError(
+            code="invalid_approval_content",
+            detail=f"{field} deve ser um objeto JSON.",
+            field_errors={field: ("Envie o objeto completo.",)},
+        )
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False, sort_keys=True))
+    except (TypeError, ValueError) as exc:
+        raise MarketingContractError(
+            code="invalid_approval_content",
+            detail=f"{field} contém um valor inválido.",
+            field_errors={field: ("Use somente valores JSON.",)},
+        ) from exc
+
+
+def _platforms(platforms: Sequence[str]) -> list[str]:
+    if isinstance(platforms, str) or not isinstance(platforms, Sequence):
+        raise MarketingContractError(
+            code="invalid_platforms",
+            detail="Plataformas devem ser uma lista.",
+            field_errors={"platforms": ("Envie uma lista de plataformas.",)},
+        )
+    normalized = [str(item).strip() for item in platforms if str(item).strip()]
+    if not normalized:
+        raise MarketingContractError(
+            code="platform_required",
+            detail="Escolha ao menos uma plataforma.",
+            field_errors={"platforms": ("Escolha ao menos uma plataforma.",)},
+        )
+    if len(normalized) != len(set(normalized)):
+        raise MarketingContractError(
+            code="duplicate_platform",
+            detail="Uma plataforma foi escolhida mais de uma vez.",
+            field_errors={"platforms": ("Remova a plataforma duplicada.",)},
+        )
+    unknown = sorted(set(normalized) - _PLATFORMS)
+    if unknown:
+        raise MarketingContractError(
+            code="unknown_platform",
+            detail="Há uma plataforma desconhecida.",
+            field_errors={"platforms": (f"Não reconhecida: {', '.join(unknown)}.",)},
+        )
+    return normalized
+
+
+def _validate_content(
+    content: dict[str, Any],
+    platform_content: dict[str, Any],
+    platforms: list[str],
+) -> None:
+    if not str(content.get("body") or "").strip():
+        raise MarketingContractError(
+            code="body_required",
+            detail="O texto do anúncio não pode ficar vazio.",
+            field_errors={"content.body": ("Revise o texto antes de aprovar.",)},
+        )
+    unknown_variants = sorted(set(platform_content) - set(platforms))
+    if unknown_variants:
+        raise MarketingContractError(
+            code="orphan_platform_content",
+            detail="Existe conteúdo para uma plataforma que não foi escolhida.",
+            field_errors={
+                "platform_content": (
+                    f"Remova as variantes de: {', '.join(unknown_variants)}.",
+                ),
+            },
+        )
+    if not all(isinstance(value, Mapping) for value in platform_content.values()):
+        raise MarketingContractError(
+            code="invalid_platform_content",
+            detail="Cada variante de plataforma deve ser um objeto.",
+            field_errors={"platform_content": ("Revise as variantes.",)},
+        )

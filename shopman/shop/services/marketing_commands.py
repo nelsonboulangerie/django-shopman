@@ -111,7 +111,10 @@ class CommandExecution:
     replayed: bool
 
 
-CommandOperation = Callable[[Announcement], Mapping[str, Any] | None]
+CommandOperation = Callable[
+    [Announcement, MarketingCommandReceipt],
+    Mapping[str, Any] | None,
+]
 
 
 def execute_announcement_command(
@@ -239,7 +242,7 @@ def execute_announcement_command(
                     # The inner savepoint rolls its writes back while the outer
                     # transaction can still retain the rejected receipt.
                     with transaction.atomic():
-                        outcome = _safe_outcome(operation(announcement) or {})
+                        outcome = _safe_outcome(operation(announcement, receipt) or {})
                 except RejectCommand as rejected:
                     # The savepoint restored the database; refresh the Python
                     # object too so the receipt/result cannot echo rolled-back

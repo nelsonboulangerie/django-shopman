@@ -319,3 +319,41 @@ Provas locais:
 - Marketing Nuxt: typecheck e 93 testes passaram;
 - Ruff, `git diff --check` e `makemigrations --check --dry-run`: passaram;
 - migration aditiva `shop.0026_marketing_command_receipt`; nenhum provider, rede, produção ou banco externo foi tocado.
+
+## MKT-010 — aprovação atômica com artifact, snapshot, audit e outbox
+
+Implementado:
+
+- `MarketingContentArtifact` sela o payload JSON completo da versão aprovada, valida SHA-256 sobre bytes canônicos e bloqueia save/update/delete posterior;
+- `AudienceSnapshot` é criado para a mesma `resulting_version`, com membership privado e retenção de 90 dias já aprovada no G-H02;
+- `MarketingAuditEvent` append-only liga command, actor da sessão, announcement, versões, artifact, snapshot, instante e fatos operacionais sem conteúdo/PII; command/audit/artifact preservam evidência por 5 anos;
+- `MarketingOutbox` cria uma lane por plataforma/onda com available-at absoluto, FKs para o grafo selado e unique por command+platform+wave;
+- conteúdo, platforms, audiência, decisão, artifact, snapshot, audit, receipt e outbox são gravados dentro da mesma transação do executor MKT-009;
+- nenhuma chamada de provider e nenhuma `Directive` legada ocorre nessa request; consumidor/lease entra somente no MKT-012;
+- falha injetada depois de artifact/snapshot/outbox e antes do audit reverte tudo, inclusive receipt e mutação do announcement;
+- `publish_mode` é enum explícito `now|scheduled`: now com data, scheduled sem data/passado ou timestamp sem timezone são recusados;
+- WhatsApp geral abaixo de 10 elegíveis é bloqueado antes de qualquer linha com formato de efeito; exatamente 10 sela 10 members e uma wave;
+- API migra aditivamente: request que declara version/mode/key entra obrigatoriamente no comando v2 e nunca faz downgrade; cliente legado permanece temporariamente no caminho antigo até o corte previsto;
+- resposta v2 inclui receipt estável, replay flag, versões e outcome seguro; key igual com conteúdo diferente retorna 409;
+- Nuxt envia `base_version`, `publish_mode` e `Idempotency-Key` automaticamente e mantém a mesma key para a mesma versão+consequência, inclusive depois de resposta perdida;
+- copy de sucesso diz “preparado para publicação”, não “publicado”, porque outbox ainda não prova efeito externo.
+
+Budget de omotenashi comprovado:
+
+| Trabalho do operador | Antes | Depois |
+|---|---:|---:|
+| Informar/lembrar version, mode ou idempotency key | inexistente/manual | 0; cliente deriva e conserva |
+| Repetir após resposta perdida | risco de nova decisão | mesmo receipt, 0 nova mutação/outbox |
+| Conferir se conteúdo e audiência pertencem à mesma aprovação | múltiplos estados inferidos | 1 grafo ligado por versão/hash/FKs |
+| Esperar provider durante o clique | duração/resultado externo incerto | 0 chamadas externas na request |
+| Distinguir “aceito para processar” de “publicado” | mensagem otimista | consequência honesta no próprio toast/card |
+| Diagnosticar conflito depois de nova edição | comparar manualmente | receipt + `current_version`, draft vigente preservado |
+
+Provas locais:
+
+- 14 testes MKT-010 cobrem grafo atômico, byte/hash exato, cópia defensiva, replay, rollback total, instante agendado único, modos inválidos, min cohort, imutabilidade/hash forjado e reverse/reapply da migration;
+- commands + approval + API: 106 testes passaram;
+- regressão Marketing/campaign/audience/notifications/E2E: 269 testes passaram sem provider real;
+- Marketing Nuxt: lint, typecheck e 94 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0027_marketing_approval_outbox`; nenhuma rede, credencial, produção ou escrita externa foi usada.

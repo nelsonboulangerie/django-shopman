@@ -20,6 +20,10 @@ export function useCampaignBoard() {
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
   const reachLimits = computed<ReachLimit[]>(() => board.value?.reach_limits ?? []);
   const aiAssistAvailable = computed(() => board.value?.ai_assist_available ?? false);
+  // Keep one key for the same visible version + consequence. If the response is
+  // lost and the operator taps again, the backend returns the original receipt
+  // instead of creating a second command.
+  const approvalKeys = new Map<string, string>();
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {
@@ -33,7 +37,30 @@ export function useCampaignBoard() {
   useUserNotifications(() => refresh());
 
   async function approve(pk: number, edits: AnnouncementEdits = {}): Promise<boolean> {
-    return decide(pk, "approve", edits, edits.publish_at ? "Anúncio agendado." : "Anúncio publicado.");
+    const announcement = pendingPosts.value.find(item => item.pk === pk);
+    if (!announcement) {
+      useSonner.error("Este anúncio mudou ou saiu da fila. Atualizamos o painel.");
+      await refresh();
+      return false;
+    }
+    const command = {
+      ...edits,
+      base_version: announcement.version,
+      publish_mode: edits.publish_at ? "scheduled" : "now",
+    };
+    const fingerprint = `${pk}:${JSON.stringify(command)}`;
+    let idempotencyKey = approvalKeys.get(fingerprint);
+    if (!idempotencyKey) {
+      idempotencyKey = globalThis.crypto.randomUUID();
+      approvalKeys.set(fingerprint, idempotencyKey);
+    }
+    return decide(
+      pk,
+      "approve",
+      command,
+      edits.publish_at ? "Anúncio agendado." : "Anúncio preparado para publicação.",
+      { "Idempotency-Key": idempotencyKey },
+    );
   }
 
   // O motivo é opcional: exigir justificativa só ensina o gestor a digitar "não".
@@ -48,11 +75,13 @@ export function useCampaignBoard() {
     // que é obrigaria um cast que esconde exatamente essa diferença.
     body: AnnouncementEdits | { reason: string },
     okMessage: string,
+    headers: Record<string, string> = {},
   ): Promise<boolean> {
     try {
       await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/${action}/`, {
         method: "POST",
         body,
+        headers,
       });
       useSonner.success(okMessage);
       await refresh();

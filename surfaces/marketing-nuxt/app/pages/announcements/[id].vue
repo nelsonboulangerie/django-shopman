@@ -19,6 +19,7 @@ const announcement = computed(() => data.value?.announcement);
 const busy = ref(false);
 const confirmingReject = ref(false);
 const rejectReason = ref("");
+const approvalKeys = new Map<string, string>();
 
 async function decide(
   action: "approve" | "reject",
@@ -26,14 +27,28 @@ async function decide(
 ) {
   busy.value = true;
   try {
+    const commandBody = action === "approve"
+      ? {
+          ...body,
+          base_version: announcement.value?.version,
+          publish_mode: "publish_at" in body && body.publish_at ? "scheduled" : "now",
+        }
+      : body;
+    const fingerprint = `${pk.value}:${JSON.stringify(commandBody)}`;
+    let idempotencyKey = approvalKeys.get(fingerprint);
+    if (action === "approve" && !idempotencyKey) {
+      idempotencyKey = globalThis.crypto.randomUUID();
+      approvalKeys.set(fingerprint, idempotencyKey);
+    }
     await $fetch(`/api/v1/backstage/marketing/announcements/${pk.value}/${action}/`, {
       method: "POST",
-      body,
+      body: commandBody,
+      headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
     });
     useSonner.success(
       action === "reject" ? "Anúncio recusado."
       : "publish_at" in body && body.publish_at ? "Anúncio agendado."
-      : "Anúncio publicado.",
+      : "Anúncio preparado para publicação.",
     );
     await navigateTo("/");
   } catch (err) {

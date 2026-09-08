@@ -42,7 +42,7 @@ def announcement():
 
 
 def _complete(*, actor, announcement, key, base_version=1, payload=None, calls=None):
-    def operation(locked):
+    def operation(locked, _receipt):
         if calls is not None:
             calls.append(locked.pk)
         locked.status = AnnouncementStatus.APPROVED
@@ -158,7 +158,7 @@ def test_distinct_key_with_stale_base_version_records_and_replays_same_conflict(
 
 
 def test_domain_rejection_rolls_back_callback_but_keeps_rejected_receipt(actor, announcement):
-    def operation(locked):
+    def operation(locked, _receipt):
         locked.status = AnnouncementStatus.APPROVED
         locked.save(update_fields=["status"])
         raise RejectCommand(
@@ -190,7 +190,7 @@ def test_domain_rejection_rolls_back_callback_but_keeps_rejected_receipt(actor, 
 
 
 def test_unexpected_failure_rolls_back_mutation_and_receipt(actor, announcement):
-    def operation(locked):
+    def operation(locked, _receipt):
         locked.status = AnnouncementStatus.APPROVED
         locked.save(update_fields=["status"])
         raise RuntimeError("injected crash")
@@ -229,7 +229,7 @@ def test_receipt_rejects_pii_or_content_outcomes_and_rolls_back(actor, announcem
             idempotency_key=f"idem-command-pii-{next(iter(outcome))}-0001",
             base_version=1,
             payload={"publish_mode": "scheduled"},
-            operation=lambda _locked: outcome,
+            operation=lambda _locked, _receipt: outcome,
         )
 
     announcement.refresh_from_db()
@@ -245,7 +245,7 @@ def test_missing_resource_gets_a_replayable_rejected_receipt(actor):
         "idempotency_key": "idem-command-00000008",
         "base_version": 1,
         "payload": {},
-        "operation": lambda _locked: {},
+        "operation": lambda _locked, _receipt: {},
     }
 
     with pytest.raises(MarketingCommandRejected) as first:

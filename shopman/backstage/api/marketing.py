@@ -195,6 +195,12 @@ class AnnouncementApproveView(_CampaignBase):
     }
 
     def post(self, request, pk: int):
+        # Additive v2 migration: a caller that declares version/publish_mode is a
+        # command caller and can never fall through to the non-idempotent legacy
+        # path. Old clients remain readable until the cutover task removes it.
+        if _is_approval_command(request):
+            return self._post_command(request, pk)
+
         publish_at, error = _publish_at(request.data.get("publish_at"))
         if error:
             return Response(error, status=400)
@@ -224,6 +230,151 @@ class AnnouncementApproveView(_CampaignBase):
             "ok": True,
             "scheduled": bool(announcement.publish_at),
             "announcement": projection_data(marketing_projection.build_announcement(announcement)),
+        })
+
+    def _post_command(self, request, pk: int):
+        from shopman.shop.services import marketing_approval
+        from shopman.shop.services.marketing_commands import (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+        )
+        from shopman.shop.services.marketing_contracts import MarketingContractError
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        allowed = {
+            "base_version",
+            "body",
+            "hashtags",
+            "image_url",
+            "platforms",
+            "publish_at",
+            "publish_mode",
+        }
+        unexpected = sorted(set(payload) - allowed)
+        if unexpected:
+            return Response(
+                {
+                    "code": "unknown_command_fields",
+                    "detail": "A aprovação contém campos desconhecidos.",
+                    "field_errors": {"payload": unexpected},
+                },
+                status=422,
+            )
+
+        raw_version = payload.get("base_version")
+        base_version = None if isinstance(raw_version, bool) else _as_int(raw_version)
+        if base_version is None or base_version <= 0:
+            return Response(
+                {
+                    "code": "invalid_base_version",
+                    "detail": "Informe a versão exibida na revisão.",
+                    "field_errors": {"base_version": ["Use um inteiro positivo."]},
+                },
+                status=422,
+            )
+        publish_mode = str(payload.get("publish_mode") or "").strip()
+        publish_at, error = _publish_at(payload.get("publish_at"))
+        if error:
+            return Response(
+                {
+                    "code": "invalid_publish_at",
+                    "detail": error["detail"],
+                    "field_errors": {"publish_at": [error["detail"]]},
+                },
+                status=422,
+            )
+        edits, error = _announcement_edits(payload)
+        if error:
+            field = str(error.get("field") or "payload")
+            return Response(
+                {
+                    "code": "invalid_approval_content",
+                    "detail": error["detail"],
+                    "field_errors": {field: [error["detail"]]},
+                },
+                status=422,
+            )
+
+        announcement = _announcement_or_none(pk)
+        if announcement is None:
+            # The service still creates a replayable rejected receipt. Empty
+            # placeholder content never reaches an operation because the resource
+            # lookup in the command boundary wins first.
+            content = {"body": "resource-not-found"}
+            platform_content = {}
+            platforms = ["instagram"]
+        else:
+            content = dict(announcement.content or {})
+            if "body" in edits:
+                content["body"] = edits["body"]
+            if "hashtags" in edits:
+                content["hashtags"] = edits["hashtags"]
+            if "image_url" in edits:
+                content["image_url"] = edits["image_url"]
+            platforms = edits.get("platforms", list(announcement.platforms or []))
+            platform_content = (
+                campaign_service._platform_content(announcement.template, content)
+                if announcement.template_id
+                else dict(announcement.platform_content or {})
+            )
+
+        try:
+            result = marketing_approval.approve_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                publish_mode=publish_mode,
+                publish_at=publish_at,
+                content=content,
+                platform_content=platform_content,
+                platforms=platforms,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+                # Fingerprint only the normalized client intention. Server-side
+                # enrichment may change after a conflict, but replaying the same
+                # HTTP command must still retrieve its original receipt.
+                idempotency_payload={
+                    "edits": edits,
+                    "publish_at": publish_at.isoformat() if publish_at else "",
+                    "publish_mode": publish_mode,
+                },
+            )
+        except MarketingCommandConflict as exc:
+            return Response(exc.as_payload(), status=409)
+        except MarketingCommandRejected as exc:
+            status_code = 404 if exc.code == "announcement_not_found" else 422
+            return Response(exc.as_payload(), status=status_code)
+        except MarketingContractError as exc:
+            return Response(exc.as_payload(), status=422)
+
+        receipt = result.receipt
+        logger.info(
+            "campaign.approval_command actor=%s announcement=%s receipt=%s replayed=%s",
+            request.user.pk,
+            pk,
+            receipt.ref,
+            result.replayed,
+        )
+        return Response({
+            "ok": True,
+            "scheduled": receipt.outcome.get("publish_mode") == "scheduled",
+            "replayed": result.replayed,
+            "receipt": {
+                "ref": str(receipt.ref),
+                "kind": receipt.kind,
+                "state": receipt.state,
+                "base_version": receipt.base_version,
+                "resulting_version": receipt.resulting_version,
+                "resource_ref": receipt.resource_ref,
+                "outcome": receipt.outcome,
+                "created_at": receipt.created_at.isoformat(),
+                "completed_at": (
+                    receipt.completed_at.isoformat() if receipt.completed_at else ""
+                ),
+            },
+            "announcement": projection_data(
+                marketing_projection.build_announcement(result.announcement)
+            ),
         })
 
 
@@ -858,6 +1009,17 @@ def _announcement_edits(data) -> tuple[dict, dict | None]:
         edits["platforms"] = platforms
 
     return edits, None
+
+
+def _is_approval_command(request) -> bool:
+    """A v2-shaped attempt must never downgrade to the legacy approval path."""
+
+    data = request.data if isinstance(request.data, dict) else {}
+    return bool(
+        request.headers.get("Idempotency-Key")
+        or "base_version" in data
+        or "publish_mode" in data
+    )
 
 
 def _publish_at(raw) -> tuple[object | None, dict | None]:
