@@ -119,6 +119,40 @@ A ADR original adiou o eixo dietético de propósito (nutrientes são soma aritm
 A expansão recursiva do BOM (cycle-detection, itens opcionais) foi extraída para
 `shopman.shop.services.recipe_bom.expand_recipe_items`, compartilhada pelas duas derivações.
 
+## Adendo (2026-09-05): a derivação carimba a versão, e o peso entra na família (WP-FICHA-DE-PRODUTO-E-PROMESSA, blocos C e D)
+
+A ADR original resolveu **onde** o dado mora e **quem** pode escrevê-lo. Faltava a
+terceira pergunta, que o dono fez em 05/09: *"nutricional e tudo o mais que apareça no
+catálogo mas seja relativo ou derivado da receita do produto deve ter uma relação
+estabelecida, para manter tudo sempre atualizado e sem falsa promessa para o cliente."*
+Até aqui a derivação acontecia e não deixava rastro: publicada uma versão nova da ficha,
+o PDP seguia mostrando o número velho com cara de atual.
+
+- **Carimbo de origem.** Toda derivação grava
+  `Product.metadata["derived_from"][<fato>] = {source, recipe_ref, version_ref, by, at}`
+  (`shop.services.derived_provenance`). O `version_ref` sai de `Recipe.meta["version_ref"]`,
+  que o inventário já escreve ao publicar (ADR-026).
+- **Vencido é comparação exata**, nunca heurística: versão de origem gravada ≠ versão atual
+  da ficha. Sem limiar, sem tolerância, sem data — data sabe que o tempo passou, não que a
+  ficha andou.
+- **Ficha sem versão não ganha número inventado.** Ficha nascida no seed ou no Admin nunca
+  passou por `publish_version`; o carimbo dela é `""`, a mesma string que o snapshot da
+  WorkOrder já usa para dizer isto. Vazio contra vazio não vence, e a leitura marca
+  `is_versioned=False` — dizer "em dia" ali seria prometer um frescor que ninguém pode
+  conferir.
+- **Override manual continua sagrado, e agora envelhece.** `auto_filled=False` e
+  `dietary_auto_filled=False` seguem bloqueando o recálculo. O que mudou é que o valor
+  manual pode ser **assinado** (`record_manual_audit`, com autor e data, como as conversões
+  de insumo da ADR-024) e, quando a ficha anda, ele é **reportado como vencido** para alguém
+  reconferir — sem nunca ser recalculado.
+- **O peso da peça vira o quarto fato derivado** (`shop.services.unit_weight_from_recipe`),
+  e é **piso, não média**: `⌊(cru por unidade × (1 − perda de forno)) × (1 − folga)⌋`,
+  arredondando sempre para baixo. A perda de forno é declarada por ficha; o padrão de 12%
+  da casa sai rotulado `house_default`, estimativa nunca auditada. Peso posto à mão jamais é
+  sobrescrito — o sentinela é o próprio carimbo, e a divergência aparece na leitura.
+- **A leitura** é `backstage.projections.product_promise` (`api/v1/backstage/catalog/promise/`):
+  por fato, o valor publicado, a origem, a versão, a defasagem e quem conferiu.
+
 ## Referências
 
 - [`do../plans/completed/PDP-DATA-FIELDS-PLAN.md`](../plans/completed/PDP-DATA-FIELDS-PLAN.md)

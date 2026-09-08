@@ -135,6 +135,123 @@ PRODUCTION_PLAN = [
 
 PREP_DAYS_OF_COVER = Decimal("3")
 
+# Capacidade diária de cada ficha — PROVISÓRIA, preservada em valor ABSOLUTO.
+#
+# Até aqui o número nascia de `int(batch_size × 3)`, que nunca foi política: era
+# uma multiplicação com cara de política. Com a ficha de produto passando a
+# falar por unidade (`batch_size = 1`), a mesma conta daria 3 — e o painel de
+# produção passaria a achar que a casa faz três baguetes por dia. Os números
+# abaixo são EXATAMENTE os que o seed já gravava, escritos um a um: o que mudou
+# é eles deixarem de ser derivados de um rendimento que não os explica.
+#
+# ⚠️ A política que falta são dois números hoje conflados, e a decisão é do dono
+# (WP-FICHA-DE-PRODUTO-E-PROMESSA §B):
+#   • teto físico — o que o forno permite. Fato de equipamento (a casa tem UM
+#     forno), e não existe cadastro disso hoje;
+#   • capacidade praticada — o que a casa entrega. O B.I. mede, mas só enxerga o
+#     que foi TENTADO: se nunca se fez 200 baguetes, ele não sabe se cabem.
+# Enquanto os dois não existirem, nenhum destes números é limite real da casa.
+#
+# Ficha nova sem linha aqui quebra o seed de propósito: capacidade sem autor é
+# exatamente o que esta tabela veio desfazer.
+PROVISIONAL_CAPACITY_PER_DAY = {
+    # Fórmulas (saída em kg): a capacidade fala em quilos de massa por dia.
+    "creme-levain":                       15,
+    "massa-pasta-autolizada":             25,
+    "massa-yudane":                       5,
+    "massa-tradicao":                     30,
+    "massa-campagne":                     30,
+    "massa-ciabatta":                     30,
+    "massa-forma":                        24,
+    "massa-croissant":                    27,
+    "massa-brioche":                      24,
+    "massa-kuropan":                      24,
+    "massa-folhado":                      28,
+    "massa-madeleine":                    14,
+    "recheio-maca":                       15,
+    "creme-baunilha":                     15,
+    "creme-limao":                        9,
+    "massa-butter":                       25,
+    "massa-pita":                         24,
+    "recheio-frango":                     9,
+    "recheio-cebola-bacon-tomilho":       8,
+    "recheio-cebola-azapas":              8,
+    "molho-bechamel":                     8,
+    "creme-chocolate":                    8,
+    "creme-leite-ovos":                   6,
+    "salada-da-casa":                     5,
+    "vinagrete-frances":                  2,
+
+    # Peças (saída em unidade): a capacidade fala em peças por dia.
+    "baguete":                            75,
+    "campagne":                           30,
+    "ciabatta":                           60,
+    "focaccia-dia":                       24,
+    "shokupan":                           36,
+    "kuro-pan":                           24,
+    "croissant":                          144,
+    "pain-chocolat":                      108,
+    "animalzinho":                        48,
+    "folhado-dia":                        36,
+    "bichon":                             36,
+    "madeleine":                          72,
+    "baguete-lanche":                     36,
+    "batard":                             30,
+    "baguete-gergelim-pequena":           36,
+    "italiano-rustico":                   24,
+    "baguette-campagne":                  36,
+    "campagne-redondo":                   30,
+    "pita":                               72,
+    "focaccia-cebola-bacon-tomilho":      18,
+    "focaccia-cebola-roxa":               18,
+    "mini-focaccia-alecrim":              36,
+    "mini-focaccia-cebola-bacon-tomilho": 36,
+    "mini-focaccia-cebola-roxa":          36,
+    "croissant-mini":                     72,
+    "pain-aux-raisins":                   36,
+    "maca":                               36,
+    "croissant-presunto-queijo":          36,
+    "folhado-frango":                     36,
+    "mini-folhado-frango":                36,
+    "caranguejo":                         48,
+    "kuro-pan-burger":                    36,
+    "brioche-nanterre":                   24,
+    "brioche-chocolat":                   72,
+    "mini-brioche-bun-gergelim":          72,
+    "ursinho":                            36,
+    "porquinho":                          36,
+    "challah":                            24,
+    "hot-dog-vienna":                     36,
+    "mini-hot-dog-vienna":                36,
+    "deli-milho-bacon":                   36,
+    "cornet-chocolate":                   36,
+
+    # Montagem e bebida: ficha inativa (não é fornada), mas o número existia.
+    "queijo-quente":                      3,
+    "croque-monsieur":                    3,
+    "croque-madame":                      3,
+    "croque-complet":                     3,
+    "jambon-beurre":                      3,
+    "pain-grille":                        3,
+    "pain-perdu":                         3,
+    "espresso":                           3,
+    "espresso-macchiato":                 3,
+    "cafe-coado":                         3,
+    "cappuccino":                         3,
+    "mochaccino":                         3,
+    "mocha":                              3,
+    "caffe-latte":                        3,
+    "chocolate-quente":                   3,
+    "cha-camille":                        3,
+    "cha-rouge":                          3,
+    "cha-sophie":                         3,
+    "cha-bleu":                           3,
+    "cha-hibisco":                        3,
+    "soft-chai-citrico":                  3,
+    "vienna-gelado":                      3,
+    "cha-tonica-frutas-vermelhas":        3,
+}
+
 # Cobertura de compra da casa (dono, 26/08): embalagem que entra pela porta e
 # teto de um pedido de farinha; fresco é ritmo de compra, não só validade.
 PACOTE_KG = {
@@ -3134,112 +3251,112 @@ class Command(BaseCommand):
                 "ref": "baguete",
                 "name": "Baguette de Tradition",
                 "output_sku": "BF",
-                "batch_size": Decimal("25"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
-                    ("MASSA-TRADICAO", Decimal("7.000")),
+                    ("MASSA-TRADICAO", Decimal("0.280")),
                 ],
             },
             {
                 "ref": "campagne",
                 "name": "Pain de Campagne",
                 "output_sku": "CGO",
-                "batch_size": Decimal("10"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 340 g de massa por campagne, para 300 g assados.
                     # A rodada anterior manteve 820 g supondo pão de campanha
                     # grande; o pão da casa é bem menor que isso.
-                    ("MASSA-CAMPAGNE", Decimal("3.400")),
+                    ("MASSA-CAMPAGNE", Decimal("0.340")),
                 ],
             },
             {
                 "ref": "ciabatta",
                 "name": "Ciabatta",
                 "output_sku": "CI",
-                "batch_size": Decimal("20"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 205 g de massa por ciabatta, para 180 g assados.
-                    ("MASSA-CIABATTA", Decimal("4.100")),
+                    ("MASSA-CIABATTA", Decimal("0.205")),
                 ],
             },
             {
                 "ref": "focaccia-dia",
                 "name": "Focaccia do dia",
                 "output_sku": "FOA",
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
                     # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
-                    ("MASSA-CIABATTA", Decimal("3.312")),
-                    ("ALECRIM", Decimal("0.032")),
-                    ("SAL-GROSSO", Decimal("0.016")),
+                    ("MASSA-CIABATTA", Decimal("0.414")),
+                    ("ALECRIM", Decimal("0.004")),
+                    ("SAL-GROSSO", Decimal("0.002")),
                 ],
             },
             {
                 "ref": "shokupan",
                 "name": "Shokupan",
                 "output_sku": "FA",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
-                    ("MASSA-FORMA", Decimal("4.800")),
+                    ("MASSA-FORMA", Decimal("0.400")),
                 ],
             },
             {
                 "ref": "kuro-pan",
                 "name": "Kuro Pan",
                 "output_sku": "KP",
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de Massa Kuropan crus (o chocolate mora na massa),
                     # para 250 g assados.
-                    ("MASSA-KUROPAN", Decimal("2.240")),
+                    ("MASSA-KUROPAN", Decimal("0.280")),
                 ],
             },
             {
                 "ref": "croissant",
                 "name": "Croissant Manteiga",
                 "output_sku": "CT",
-                "batch_size": Decimal("48"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
-                    ("MASSA-CROISSANT", Decimal("3.840")),
+                    ("MASSA-CROISSANT", Decimal("0.080")),
                 ],
             },
             {
                 "ref": "pain-chocolat",
                 "name": "Pain au Chocolat",
                 "output_sku": "PC",
-                "batch_size": Decimal("36"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de bâton (os dois bâtons
                     # clássicos) = 100 g crus, para 90 g assados.
-                    ("MASSA-CROISSANT", Decimal("2.880")),
-                    ("BATON-CHOCOLATE", Decimal("0.720")),
+                    ("MASSA-CROISSANT", Decimal("0.080")),
+                    ("BATON-CHOCOLATE", Decimal("0.020")),
                 ],
             },
             {
                 "ref": "animalzinho",
                 "name": "Animalzinho",
                 "output_sku": "ANC",
-                "batch_size": Decimal("16"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
-                    ("MASSA-BRIOCHE", Decimal("0.960")),
-                    ("CREME-BAUNILHA", Decimal("0.640")),
+                    ("MASSA-BRIOCHE", Decimal("0.060")),
+                    ("CREME-BAUNILHA", Decimal("0.040")),
                 ],
             },
             {
                 "ref": "folhado-dia",
                 "name": "Folhado do dia",
                 "output_sku": "CN",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.744")),
-                    ("RECHEIO-MACA", Decimal("0.240")),
+                    ("MASSA-FOLHADO", Decimal("0.062")),
+                    ("RECHEIO-MACA", Decimal("0.020")),
                 ],
             },
             {
@@ -3250,23 +3367,23 @@ class Command(BaseCommand):
                 "ref": "bichon",
                 "name": "Bichon au Citron",
                 "output_sku": "BH",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.960")),
-                    ("CREME-LIMAO", Decimal("0.240")),
+                    ("MASSA-FOLHADO", Decimal("0.080")),
+                    ("CREME-LIMAO", Decimal("0.020")),
                 ],
             },
             {
                 "ref": "madeleine",
                 "name": "Madeleine",
                 "output_sku": "MD",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 28 g de Massa Madeleine por peça, para 25 g assados —
                     # a massa virou pré-preparo nomeado (dono, 26/08).
-                    ("MASSA-MADELEINE", Decimal("0.672")),
+                    ("MASSA-MADELEINE", Decimal("0.028")),
                 ],
             },
             # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
@@ -3409,24 +3526,24 @@ class Command(BaseCommand):
                 "ref": "baguete-lanche",
                 "name": "Baguete Lanche",
                 "output_sku": "BAP",
-                "batch_size": Decimal("12"),
-                "items": [("MASSA-TRADICAO", Decimal("3.120"))],  # 260 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.260"))],  # 260 g/un
             },
             {
                 "ref": "batard",
                 "name": "Bâtard",
                 "output_sku": "BA",
-                "batch_size": Decimal("10"),
-                "items": [("MASSA-TRADICAO", Decimal("3.200"))],  # 320 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.320"))],  # 320 g/un
             },
             {
                 "ref": "baguete-gergelim-pequena",
                 "name": "Baguete Gergelim Pequena",
                 "output_sku": "BEP",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-TRADICAO", Decimal("1.980")),  # 165 g/un
-                    ("GERGELIM", Decimal("0.060")),        # 5 g/un
+                    ("MASSA-TRADICAO", Decimal("0.165")),  # 165 g/un
+                    ("GERGELIM", Decimal("0.005")),        # 5 g/un
                 ],
             },
             {
@@ -3434,107 +3551,107 @@ class Command(BaseCommand):
                 "ref": "italiano-rustico",
                 "name": "Italiano Rústico",
                 "output_sku": "BAX",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-TRADICAO", Decimal("3.840"))],  # 480 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.480"))],  # 480 g/un
             },
             {
                 "ref": "baguette-campagne",
                 "name": "Baguette Campagne",
                 "output_sku": "CF",
-                "batch_size": Decimal("12"),
-                "items": [("MASSA-CAMPAGNE", Decimal("3.600"))],  # 300 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CAMPAGNE", Decimal("0.300"))],  # 300 g/un
             },
             {
                 "ref": "campagne-redondo",
                 "name": "Pain de Campagne Redondo",
                 "output_sku": "CGR",
-                "batch_size": Decimal("10"),
-                "items": [("MASSA-CAMPAGNE", Decimal("3.400"))],  # 340 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CAMPAGNE", Decimal("0.340"))],  # 340 g/un
             },
             {
                 "ref": "pita",
                 "name": "Pita",
                 "output_sku": "PI",
-                "batch_size": Decimal("24"),
-                "items": [("MASSA-PITA", Decimal("0.720"))],  # 30 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-PITA", Decimal("0.030"))],  # 30 g/un
             },
             {
                 "ref": "focaccia-cebola-bacon-tomilho",
                 "name": "Focaccia Cebola, Bacon e Tomilho",
                 "output_sku": "CBT",
-                "batch_size": Decimal("6"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("3.600")),                  # 600 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.480")),   # 80 g/un
+                    ("MASSA-CIABATTA", Decimal("0.600")),                  # 600 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.080")),   # 80 g/un
                 ],
             },
             {
                 "ref": "focaccia-cebola-roxa",
                 "name": "Focaccia Cebola Roxa",
                 "output_sku": "FOC",
-                "batch_size": Decimal("6"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("2.970")),          # 495 g/un
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.270")),   # 45 g/un
+                    ("MASSA-CIABATTA", Decimal("0.495")),          # 495 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.045")),   # 45 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-alecrim",
                 "name": "Mini Focaccia Alecrim",
                 "output_sku": "MIF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.260")),  # 105 g/un
-                    ("ALECRIM", Decimal("0.048")),         # 4 g/un
-                    ("SAL-GROSSO", Decimal("0.012")),      # 1 g/un
+                    ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
+                    ("ALECRIM", Decimal("0.004")),         # 4 g/un
+                    ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-cebola-bacon-tomilho",
                 "name": "Mini Focaccia Cebola, Bacon e Tomilho",
                 "output_sku": "MICBT",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.896")),                 # 158 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.264")),   # 22 g/un
+                    ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.022")),   # 22 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-cebola-roxa",
                 "name": "Mini Focaccia Cebola Roxa",
                 "output_sku": "MIFOC",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.752")),          # 146 g/un
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.168")),   # 14 g/un
+                    ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.014")),   # 14 g/un
                 ],
             },
             {
                 "ref": "croissant-mini",
                 "name": "Croissant Mini",
                 "output_sku": "CM",
-                "batch_size": Decimal("24"),
-                "items": [("MASSA-CROISSANT", Decimal("0.864"))],  # 36 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
             },
             {
                 "ref": "pain-aux-raisins",
                 "name": "Pain aux Raisins",
                 "output_sku": "PR",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.480")),   # 40 g/un
-                    ("CREME-BAUNILHA", Decimal("0.216")),    # 18 g/un
-                    ("PASSAS", Decimal("0.120")),            # 10 g/un
+                    ("MASSA-CROISSANT", Decimal("0.040")),   # 40 g/un
+                    ("CREME-BAUNILHA", Decimal("0.018")),    # 18 g/un
+                    ("PASSAS", Decimal("0.010")),            # 10 g/un
                 ],
             },
             {
                 "ref": "maca",
                 "name": "Maçã",
                 "output_sku": "MA",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.960")),  # 80 g/un
-                    ("RECHEIO-MACA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-FOLHADO", Decimal("0.080")),  # 80 g/un
+                    ("RECHEIO-MACA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
@@ -3542,41 +3659,41 @@ class Command(BaseCommand):
                 "ref": "croissant-presunto-queijo",
                 "name": "Croissant Presunto e Queijo",
                 "output_sku": "CPQ",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.720")),        # 60 g/un
-                    ("PRESUNTO-DEFUMADO", Decimal("0.180")),      # 15 g/un
-                    ("QUEIJO-MINAS-PADRAO", Decimal("0.180")),    # 15 g/un
+                    ("MASSA-CROISSANT", Decimal("0.060")),        # 60 g/un
+                    ("PRESUNTO-DEFUMADO", Decimal("0.015")),      # 15 g/un
+                    ("QUEIJO-MINAS-PADRAO", Decimal("0.015")),    # 15 g/un
                 ],
             },
             {
                 "ref": "folhado-frango",
                 "name": "Folhado de Frango",
                 "output_sku": "FF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("1.140")),   # 95 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.420")),    # 35 g/un
+                    ("MASSA-FOLHADO", Decimal("0.095")),   # 95 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.035")),    # 35 g/un
                 ],
             },
             {
                 "ref": "mini-folhado-frango",
                 "name": "Mini Folhado de Frango",
                 "output_sku": "MFF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.696")),   # 58 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.264")),    # 22 g/un
+                    ("MASSA-FOLHADO", Decimal("0.058")),   # 58 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.022")),    # 22 g/un
                 ],
             },
             {
                 "ref": "caranguejo",
                 "name": "Caranguejo",
                 "output_sku": "JO",
-                "batch_size": Decimal("16"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FORMA", Decimal("0.608")),  # 38 g/un
-                    ("GERGELIM", Decimal("0.032")),     # 2 g/un
+                    ("MASSA-FORMA", Decimal("0.038")),  # 38 g/un
+                    ("GERGELIM", Decimal("0.002")),     # 2 g/un
                 ],
             },
             {
@@ -3586,56 +3703,56 @@ class Command(BaseCommand):
                 "ref": "kuro-pan-burger",
                 "name": "Kuro Pan Burger",
                 "output_sku": "KBB",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-KUROPAN", Decimal("1.080")),  # 90 g/un
+                    ("MASSA-KUROPAN", Decimal("0.090")),  # 90 g/un
                 ],
             },
             {
                 "ref": "brioche-nanterre",
                 "name": "Brioche Nanterre",
                 "output_sku": "BN",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-BRIOCHE", Decimal("1.920"))],  # 240 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BRIOCHE", Decimal("0.240"))],  # 240 g/un
             },
             {
                 "ref": "brioche-chocolat",
                 "name": "Brioche Chocolat",
                 "output_sku": "BCH",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.816")),      # 34 g/un
-                    ("GOTAS-CHOCOLATE", Decimal("0.192")),    # 8 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.034")),      # 34 g/un
+                    ("GOTAS-CHOCOLATE", Decimal("0.008")),    # 8 g/un
                 ],
             },
             {
                 "ref": "mini-brioche-bun-gergelim",
                 "name": "Mini Brioche Burger Bun com gergelim",
                 "output_sku": "MBBBG",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.720")),  # 30 g/un
-                    ("GERGELIM", Decimal("0.048")),       # 2 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.030")),  # 30 g/un
+                    ("GERGELIM", Decimal("0.002")),       # 2 g/un
                 ],
             },
             {
                 "ref": "ursinho",
                 "name": "Ursinho",
                 "output_sku": "ANU",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
                 "ref": "porquinho",
                 "name": "Porquinho",
                 "output_sku": "ANP",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
@@ -3643,18 +3760,18 @@ class Command(BaseCommand):
                 "ref": "challah",
                 "name": "Challah",
                 "output_sku": "CH",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-BUTTER", Decimal("2.400"))],  # 300 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BUTTER", Decimal("0.300"))],  # 300 g/un
             },
             {
                 # 60 g de butter + 50 g de salsicha Vienna (Strass) — dono.
                 "ref": "hot-dog-vienna",
                 "name": "Hot Dog Vienna",
                 "output_sku": "HO",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.720")),       # 60 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.600")),    # 50 g/un
+                    ("MASSA-BUTTER", Decimal("0.060")),       # 60 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.050")),    # 50 g/un
                 ],
             },
             {
@@ -3662,32 +3779,32 @@ class Command(BaseCommand):
                 "ref": "mini-hot-dog-vienna",
                 "name": "Mini Hot Dog Vienna",
                 "output_sku": "MIHO",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.480")),       # 40 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.300")),    # 25 g/un
+                    ("MASSA-BUTTER", Decimal("0.040")),       # 40 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.025")),    # 25 g/un
                 ],
             },
             {
                 "ref": "deli-milho-bacon",
                 "name": "Deli Milho & Bacon",
                 "output_sku": "DL",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.840")),      # 70 g/un
-                    ("MILHO-VERDE", Decimal("0.240")),       # 20 g/un
-                    ("BACON", Decimal("0.120")),             # 10 g/un
-                    ("SALSINHA-DESID", Decimal("0.012")),    # 1 g/un
+                    ("MASSA-BUTTER", Decimal("0.070")),      # 70 g/un
+                    ("MILHO-VERDE", Decimal("0.020")),       # 20 g/un
+                    ("BACON", Decimal("0.010")),             # 10 g/un
+                    ("SALSINHA-DESID", Decimal("0.001")),    # 1 g/un
                 ],
             },
             {
                 "ref": "cornet-chocolate",
                 "name": "Cornet de Chocolate",
                 "output_sku": "COC",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.576")),      # 48 g/un
-                    ("CREME-CHOCOLATE", Decimal("0.144")),   # 12 g/un
+                    ("MASSA-BUTTER", Decimal("0.048")),      # 48 g/un
+                    ("CREME-CHOCOLATE", Decimal("0.012")),   # 12 g/un
                 ],
             },
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
@@ -4282,7 +4399,7 @@ class Command(BaseCommand):
                     # toda ficha ativa, e croque não entra em plano de forno.
                     "is_active": rd.get("is_active", True),
                     "meta": {
-                        "capacity_per_day": int(rd["batch_size"] * Decimal("3")),
+                        "capacity_per_day": PROVISIONAL_CAPACITY_PER_DAY[rd["ref"]],
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
                         "shelf_life_days": shelf_life_days,

@@ -20,6 +20,11 @@ class Need:
     quantity: Decimal
     unit: str
     has_recipe: bool
+    #: Margem de segurança do rendimento, quando pedida e aplicável — já SOMADA
+    #: em ``quantity``. Fica aqui separada porque a tela precisa dizer POR QUE
+    #: aqueles gramas a mais existem; número que cresce sozinho é o que esta
+    #: casa não aceita. ``None`` = a linha não recebeu margem.
+    margin: object | None = None
 
 
 @dataclass
@@ -86,16 +91,46 @@ class CraftQueries:
         return result["total"] or Decimal("0")
 
     @classmethod
-    def needs(cls, date, expand=False):
+    def needs(cls, date, expand=False, *, yield_margin=False):
         """
         BOM explosion for a date. Returns material needs.
 
         Args:
             date: production date
             expand: if True, recursively expand sub-recipes to raw materials
+            yield_margin: se ``True``, soma a margem de segurança do rendimento
+                das massas (ver ``services.yield_margin``). **Opt-in de
+                propósito** — ver a nota abaixo.
 
         Returns:
             list[Need] — aggregated material needs.
+
+        **Onde a margem entra, e por quê aqui.** A margem é decisão de
+        PRODUÇÃO — "quanto de massa fazer hoje" —, não da ficha: a ficha diz a
+        proporção (300 g de farinha para cada quilo de massa) e essa proporção
+        não muda porque a balança tem divisão de 2 g. Por isso ela **não** toca
+        ``Recipe``/``RecipeItem``, e entra aqui, na consulta de planejamento
+        que já faz a caminhada do BOM e já é o que a lista de separação lê.
+
+        E, principalmente, **ela não entra no consumo do ledger**. O consumo é
+        FATO, e nasce em outro lugar: ``CraftExecution.finish`` congela os
+        ``WorkOrderItem`` de consumo a partir do snapshot da ficha, e
+        ``contrib.stockman.handlers._consume_materials`` baixa exatamente essas
+        linhas. Nenhum dos dois passa por ``needs()``. Se a margem escorresse
+        para lá, o sistema debitaria todo dia mais insumo do que o padeiro usou
+        e a sugestão de compra nasceria inflada — erro silencioso, que só
+        apareceria no inventário meses depois.
+
+        A margem é orçada **por preparo, na fornada** (não por peça e não por
+        work order): duas ordens que dividem a mesma Massa Tradição são UMA
+        mistura na masseira, então a perda da masseira entra uma vez e o
+        colchão de variância é o da soma das peças.
+
+        Com ``expand=True`` a margem é aplicada ANTES da explosão, então ela
+        cascateia para a matéria-prima: fazer 3% mais massa de fato pede 3%
+        mais farinha. Nesse modo a linha do preparo deixa de existir (foi
+        explodida), então o motivo não tem onde aparecer por linha — quem
+        mostra a explicação é a projection, no cabeçalho.
         """
         from shopman.craftsman.models import WorkOrder
 
@@ -104,15 +139,33 @@ class CraftQueries:
             target_date=date,
         ).select_related("recipe").prefetch_related("recipe__items")
 
-        aggregated = {}
+        # Necessidade IMEDIATA (um nível de BOM), agregada por (insumo, unidade).
+        # Agregar antes de explodir é o que permite orçar a margem na fornada
+        # inteira do preparo, em vez de uma margem por work order.
+        immediate: dict[tuple[str, str], Decimal] = {}
+        pieces: dict[tuple[str, str], Decimal] = {}
+
         for wo in orders:
-            coefficient = wo.quantity / wo.recipe.batch_size
-            for ri in wo.recipe.items.filter(is_optional=False).order_by("sort_order"):
-                if expand:
-                    for item_ref, qty, unit in _expand_bom(ri.input_sku, ri.quantity * coefficient, ri.unit):
-                        _aggregate(aggregated, item_ref, qty, unit)
-                else:
-                    _aggregate(aggregated, ri.input_sku, ri.quantity * coefficient, ri.unit)
+            recipe = wo.recipe
+            coefficient = wo.quantity / recipe.batch_size
+            counted_output = _is_counted_output(recipe)
+            for ri in recipe.items.filter(is_optional=False).order_by("sort_order"):
+                key = (ri.input_sku, ri.unit)
+                immediate[key] = immediate.get(key, Decimal("0")) + ri.quantity * coefficient
+                if yield_margin and counted_output and _margin_applies(ri):
+                    pieces[key] = pieces.get(key, Decimal("0")) + Decimal(str(wo.quantity))
+
+        margins = _yield_margins(pieces) if yield_margin else {}
+        for key, margin in margins.items():
+            immediate[key] += margin.total
+
+        aggregated = {}
+        for (item_ref, unit), quantity in immediate.items():
+            if expand:
+                for sub_ref, sub_qty, sub_unit in _expand_bom(item_ref, quantity, unit):
+                    _aggregate(aggregated, sub_ref, sub_qty, sub_unit)
+            else:
+                _aggregate(aggregated, item_ref, quantity, unit, margin=margins.get((item_ref, unit)))
 
         return list(aggregated.values())
 
@@ -401,16 +454,81 @@ class CraftQueries:
         return qs
 
 
-def _aggregate(agg, item_ref, quantity, unit):
+def _aggregate(agg, item_ref, quantity, unit, margin=None):
     """Aggregate material need by (item_ref, unit)."""
     from shopman.craftsman.services.recipes import has_active_recipe_for_output_sku
 
     key = (item_ref, unit)
     if key in agg:
         agg[key].quantity += quantity
+        if margin is not None:
+            agg[key].margin = margin
     else:
         has_recipe = has_active_recipe_for_output_sku(item_ref)
-        agg[key] = Need(item_ref=item_ref, quantity=quantity, unit=unit, has_recipe=has_recipe)
+        agg[key] = Need(
+            item_ref=item_ref,
+            quantity=quantity,
+            unit=unit,
+            has_recipe=has_recipe,
+            margin=margin,
+        )
+
+
+def _is_counted_output(recipe) -> bool:
+    """A saída desta ficha é CONTADA (peças), e não pesada?
+
+    A margem de rendimento só faz sentido quando existe "peça": é o
+    arredondamento da balança ao dividir a massa que ela orça. Ficha que rende
+    massa (a fórmula) não porciona nada — quem porciona é a ficha da peça.
+
+    A unidade da saída é a DECLARADA (catálogo, ou ``meta["output_unit"]``),
+    nunca deduzida: ADR-024 §R4 manda recusar em vez de adivinhar, e aqui
+    recusar significa simplesmente não orçar margem nenhuma.
+    """
+    from shopman.utils import units
+
+    return units.dimension(recipe._declared_output_unit()) == units.COUNT
+
+
+def _margin_applies(recipe_item) -> bool:
+    """Esta linha da ficha recebe margem de rendimento?
+
+    Duas condições, e as duas são de propósito estreitas:
+
+    * a linha é medida em MASSA — margem de rendimento é conversa de massa;
+    * o insumo é PRODUZIDO na casa (tem ficha ativa própria) — a margem
+      responde "quanto fazer", e só se decide fazer o que se faz. Farinha,
+      sal e fermento ficam de fora: não se "produz" sal, e inflar a linha de
+      matéria-prima na lista de separação inflaria a sugestão de compra todo
+      dia por um excesso que não é consumo.
+
+    O excesso de matéria-prima que de fato acontece continua sendo capturado
+    onde ele é fato: no ledger, quando a massa que a leva é feita a mais.
+    """
+    from shopman.craftsman.services.recipes import has_active_recipe_for_output_sku
+    from shopman.utils import units
+
+    if units.dimension(recipe_item.unit) != units.MASS:
+        return False
+    return has_active_recipe_for_output_sku(recipe_item.input_sku)
+
+
+def _yield_margins(pieces: dict) -> dict:
+    """Orça uma margem por preparo, a partir do total de peças que ele rende."""
+    from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
+    from shopman.craftsman.services.yield_margin import compute_yield_margin, mixer_loss_g_for
+
+    margins = {}
+    for (item_ref, unit), total_pieces in pieces.items():
+        prep_recipe = get_active_recipe_for_output_sku(item_ref)
+        margin = compute_yield_margin(
+            pieces=total_pieces,
+            unit=unit,
+            mixer_loss_g=mixer_loss_g_for(prep_recipe),
+        )
+        if margin is not None:
+            margins[(item_ref, unit)] = margin
+    return margins
 
 
 def _started_qty(order) -> Decimal | None:

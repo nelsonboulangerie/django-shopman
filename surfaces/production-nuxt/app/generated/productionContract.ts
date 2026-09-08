@@ -240,6 +240,8 @@ export interface MiseEnPlaceLineProjection {
   is_short: boolean;
   breakdown: MiseEnPlaceBreakdownProjection[];
   annotation: string;
+  margin_display: string;
+  margin_reason: string;
 }
 
 /** Aggregated material needs for the day's open work orders. */
@@ -251,6 +253,8 @@ export interface ProductionMiseEnPlaceProjection {
   has_lines: boolean;
   work_order_count: number;
   has_stock_readings: boolean;
+  yield_margin_applied: boolean;
+  yield_margin_note: string;
 }
 
 /** One ingredient line for a thermal weighing ticket. */

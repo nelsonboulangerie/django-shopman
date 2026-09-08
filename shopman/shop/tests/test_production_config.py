@@ -125,6 +125,11 @@ class TestValidation:
             ({"alerts": {"low_yield_threshold": "nope"}}, "low_yield_threshold"),
             ({"alerts": {"default_max_started_minutes": 0}}, "default_max_started_minutes"),
             ({"alerts": {"late_check_cadence_minutes": -5}}, "late_check_cadence_minutes"),
+            ({"weight": {"default_bake_loss_pct": "100"}}, "default_bake_loss_pct"),
+            ({"weight": {"default_bake_loss_pct": "-1"}}, "default_bake_loss_pct"),
+            ({"weight": {"default_bake_loss_pct": "muita"}}, "default_bake_loss_pct"),
+            ({"weight": {"default_slack_pct": "100"}}, "default_slack_pct"),
+            ({"weight": {"default_slack_pct": "-0.5"}}, "default_slack_pct"),
             ({"order_match": "wrong"}, "order_match"),
         ],
     )
@@ -135,3 +140,24 @@ class TestValidation:
 
     def test_cadence_zero_is_valid_meaning_disabled(self):
         ProductionConfig.from_dict({"alerts": {"late_check_cadence_minutes": 0}}).validate()
+
+    def test_zero_loss_and_zero_slack_are_valid(self):
+        """Ficha que não perde nada no forno e não pede folga é declaração legítima."""
+        ProductionConfig.from_dict(
+            {"weight": {"default_bake_loss_pct": "0", "default_slack_pct": "0"}}
+        ).validate()
+
+
+# ── Peso anunciado ──
+
+
+class TestWeightAspect:
+    def test_the_house_numbers_are_the_documented_ones(self):
+        config = ProductionConfig()
+        assert config.weight.default_bake_loss_pct_decimal == Decimal("12")
+        assert config.weight.default_slack_pct_decimal == Decimal("5")
+
+    def test_the_shop_can_override_them(self):
+        config = ProductionConfig.from_dict({"weight": {"default_slack_pct": "8"}})
+        assert config.weight.default_slack_pct_decimal == Decimal("8")
+        assert config.weight.default_bake_loss_pct_decimal == Decimal("12")

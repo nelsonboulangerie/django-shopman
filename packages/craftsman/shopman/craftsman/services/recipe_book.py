@@ -551,8 +551,21 @@ def bootstrap_entry_from_recipe(recipe):
     publicação real. Devolve ``None`` quando não dá para bootstrapar: ficha
     inativa ou sem unidade de saída declarada (catálogo ou
     ``meta["output_unit"]``); deduzir a unidade seria adivinhar.
+
+    **Peça não tem fórmula fabricada.** Quando a ficha rende UNIDADE, ela diz o
+    que entra numa peça, e o que entra na baguete é "280 g de Massa Tradição" —
+    ponto. Dissolver a massa ali dentro inventava uma fórmula que a ficha nunca
+    declarou: a baguete aparecia com a composição da Massa Tradição como se
+    fosse dela, com "farinha pré-fermentada 100%" e avisos de padaria que eram
+    puro artefato da dissolução. Parte é FRAÇÃO da fórmula; a 100% ela não é
+    parte, é o insumo — e uma peça, por natureza, é feita **de** massa, não
+    **com** farinha. A lente de padaria mora na fórmula (que é onde a farinha
+    está); a peça fala em processo. Fórmula que rende massa continua dissolvendo
+    normalmente: ali a parte é fração de verdade (a Massa Tradição leva 84% de
+    pasta autolizada e 15% de levain).
     """
     from shopman.craftsman.models import RecipeEntry, RecipeVersion
+    from shopman.utils import units
 
     existing = RecipeEntry.objects.filter(ref=recipe.ref).first()
     if existing is not None:
@@ -562,6 +575,7 @@ def bootstrap_entry_from_recipe(recipe):
     output_unit = recipe._declared_output_unit()
     if output_unit not in RecipeVersion.YieldUnit.values:
         return None
+    rende_peca = units.dimension(output_unit) == units.COUNT
 
     with transaction.atomic():
         base: dict[tuple[str, str], dict] = {}
@@ -569,7 +583,7 @@ def bootstrap_entry_from_recipe(recipe):
         origin_items: list[dict] = []
         for item in recipe.items.filter(is_optional=False).order_by("sort_order"):
             origin_items.append({"sku": item.input_sku, "quantity": str(item.quantity), "unit": item.unit})
-            sub = _active_mass_recipe_for(item.input_sku, exclude_pk=recipe.pk)
+            sub = None if rende_peca else _active_mass_recipe_for(item.input_sku, exclude_pk=recipe.pk)
             grams = _mass_grams(item.quantity, item.unit)
             if sub is not None and grams is not None:
                 part_entry = bootstrap_entry_from_recipe(sub)
