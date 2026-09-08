@@ -155,6 +155,10 @@ def _create_announcement(
         rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
     )
     resolved = audience_service.resolve(rule.audience_rules, sku=sku)
+    if resolved.degraded_sources:
+        raise CampaignError(
+            "Não foi possível validar toda a audiência. Nenhum anúncio foi criado."
+        )
 
     # Fora da janela preferida, o announcement nasce com hora marcada. Vale para os dois
     # caminhos: no automático o ``dispatch_due`` abre a porta na hora; no que
@@ -965,7 +969,12 @@ def _queue_notify(announcement: Announcement) -> int:
     rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
     sku = (announcement.trigger_context or {}).get("sku", "")
 
-    waves = audience_service.resolve(rules, sku=sku).waves()
+    resolved = audience_service.resolve(rules, sku=sku)
+    if resolved.degraded_sources:
+        raise CampaignError(
+            "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."
+        )
+    waves = resolved.waves()
 
     created = 0
     for wave in waves:

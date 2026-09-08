@@ -172,3 +172,25 @@ Provas locais:
 - `makemigrations --check --dry-run storefront` — sem drift;
 - Ruff dos arquivos tocados — passou;
 - zero chamada real a backend/provider nos testes.
+
+## MKT-005 — audiência explicável, normalizada e fail-closed
+
+Implementado:
+
+- telefone normalizado antes da deduplicação e do cohort hash;
+- `AudienceSummary` aditivo com elegíveis, exclusões por motivo, duplicatas removidas, fontes degradadas, freshness, expiração, policy version e hash do cohort;
+- hash HMAC/SHA-256 sem telefone ou customer ref na Projection/log;
+- falha de fonte deixa `degraded_sources` explícito e bloqueia criação/dispatch, em vez de parecer uma audiência autoritativamente vazia;
+- opt-out, ausência de consentimento e consent indisponível têm contagens distintas;
+- interseção registra exclusões por `rule_mismatch` e contato inválido é contabilizado;
+- Projection informa `can_approve=false` e motivo recuperável quando degradada;
+- leitura de perfis/insights/loyalty foi batched, removendo N+1.
+
+Provas locais:
+
+- outage de favoritos retorna zero degradado, nunca zero silencioso;
+- campanha automática com fonte degradada cria zero anúncio e zero directive;
+- normalização/dedupe, fechamento matemático das exclusões e ausência de PII no resumo passaram;
+- cohort de 100 clientes foi resolvido em exatamente 3 queries;
+- suites de audiência, campanha, handlers e API Marketing — 238 testes passaram;
+- Ruff dos arquivos tocados — passou.

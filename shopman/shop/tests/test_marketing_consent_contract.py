@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -123,3 +125,96 @@ def test_grant_requires_disclosure_text_and_version() -> None:
             disclosure_version="",
         )
     assert CommunicationConsentEvent.objects.filter(customer=customer).count() == 0
+
+
+def test_audience_source_outage_is_degraded_not_an_authoritative_zero() -> None:
+    with patch(
+        "shopman.shop.adapters.audience_sources.favorite_customer_refs",
+        side_effect=RuntimeError("source unavailable"),
+    ):
+        resolved = audience.resolve({"favorites": True}, sku="SKU-OUTAGE")
+
+    assert resolved.total == 0
+    assert resolved.degraded_sources == ("favorites",)
+    assert resolved.summary()["degraded_sources"] == ["favorites"]
+
+
+def test_audience_normalizes_and_deduplicates_before_hashing() -> None:
+    found = [
+        audience.Recipient(phone="(43) 99999-0001", customer_ref="CLI-A"),
+        audience.Recipient(phone="+55 43 99999-0001", customer_ref="CLI-A"),
+    ]
+    instant = datetime(2026, 9, 8, 12, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
+    with (
+        patch.object(audience, "_chosen_customers", return_value=found),
+        patch.object(audience, "_consent_statuses", return_value={"CLI-A": "opted_in"}),
+    ):
+        resolved = audience.resolve(
+            {"customer_refs": ["CLI-A"]},
+            now=instant,
+        )
+
+    summary = resolved.summary()
+    assert [recipient.phone for recipient in resolved.general] == ["+5543999990001"]
+    assert summary["eligible_count"] == 1
+    assert summary["deduplicated_count"] == 1
+    assert summary["policy_version"] == audience.AUDIENCE_POLICY_VERSION
+    assert summary["calculated_at"] == instant.isoformat()
+    assert len(summary["cohort_hash"]) == 64
+    assert "+5543999990001" not in str(summary)
+
+
+def test_audience_exclusion_counts_close_for_consent_precedence() -> None:
+    found = [
+        audience.Recipient(phone="+5543999001011", customer_ref="CLI-1"),
+        audience.Recipient(phone="+5543999001012", customer_ref="CLI-2"),
+        audience.Recipient(phone="+5543999001013", customer_ref="CLI-3"),
+    ]
+    with (
+        patch.object(audience, "_chosen_customers", return_value=found),
+        patch.object(
+            audience,
+            "_consent_statuses",
+            return_value={"CLI-1": "opted_in", "CLI-2": "opted_out"},
+        ),
+    ):
+        summary = audience.resolve({"customer_refs": ["CLI-1", "CLI-2", "CLI-3"]}).summary()
+
+    assert summary["eligible_count"] == 1
+    assert summary["excluded_by_reason"] == {
+        "global_optout": 1,
+        "missing_consent": 1,
+    }
+    assert summary["eligible_count"] + sum(summary["excluded_by_reason"].values()) == 3
+
+
+def test_consent_outage_fails_closed_and_explains_the_exclusion() -> None:
+    found = [audience.Recipient(phone="+5543999001021", customer_ref="CLI-1")]
+    with (
+        patch.object(audience, "_chosen_customers", return_value=found),
+        patch.object(audience, "_consent_statuses", return_value=None),
+    ):
+        resolved = audience.resolve({"customer_refs": ["CLI-1"]})
+
+    assert resolved.total == 0
+    assert resolved.degraded_sources == ("consent",)
+    assert resolved.excluded_by_reason == {"consent_unavailable": 1}
+
+
+def test_large_chosen_cohort_has_constant_query_budget(django_assert_num_queries) -> None:
+    refs = []
+    for index in range(100):
+        ref = f"CLI-MKT-Q-{index:03d}"
+        customer = Customer.objects.create(
+            ref=ref,
+            first_name="Pessoa",
+            phone=f"+5543988{index:06d}",
+        )
+        ConsentService.grant_consent(ref, "whatsapp", source="query-budget")
+        refs.append(customer.ref)
+
+    with django_assert_num_queries(3):
+        resolved = audience.resolve({"customer_refs": refs})
+
+    assert resolved.total == 100
+    assert resolved.degraded_sources == ()

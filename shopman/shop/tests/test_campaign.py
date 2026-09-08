@@ -102,6 +102,20 @@ class TestEvaluate:
         announcement = campaign.evaluate("production_finished", _context(work_order_ref="WO-1"))[0]
         assert announcement.trigger_context["work_order_ref"] == "WO-1"
 
+    def test_degraded_audience_source_never_becomes_an_automatic_zero(self, product, rule):
+        rule.audience_rules = {"favorites": True}
+        rule.requires_approval = False
+        rule.save(update_fields=["audience_rules", "requires_approval"])
+
+        with patch(
+            "shopman.shop.adapters.audience_sources.favorite_customer_refs",
+            side_effect=RuntimeError("source unavailable"),
+        ):
+            assert campaign.evaluate("production_finished", _context()) == []
+
+        assert Announcement.objects.count() == 0
+        assert Directive.objects.filter(topic=ANNOUNCEMENT_PUBLISH).count() == 0
+
 
 # ── trigger_filter ───────────────────────────────────────────────────
 
@@ -445,6 +459,7 @@ class TestNotifyReviewers:
             campaign.audience_service, "resolve"
         ) as resolve:
             resolve.return_value.summary.return_value = {"total": 43}
+            resolve.return_value.degraded_sources = ()
             campaign.evaluate("production_finished", _context())
         assert "43 cliente(s)" in UserNotification.objects.get().message
 

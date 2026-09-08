@@ -287,6 +287,15 @@ class AudienceCountProjection:
     #: Ninguém escolhido ainda — separa "não pedi nada" de "pedi e não achei ninguém",
     #: que na tela precisam dizer coisas diferentes.
     empty_selection: bool
+    excluded_by_reason: dict[str, int]
+    deduplicated_count: int
+    degraded_sources: tuple[str, ...]
+    calculated_at: str
+    expires_at: str
+    policy_version: str
+    cohort_hash: str
+    can_approve: bool
+    blocked_reason: str
 
 
 def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountProjection:
@@ -317,6 +326,19 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
         parts=parts,
         vip_count=len(result.vip),
         empty_selection=not parts,
+        excluded_by_reason=dict(result.excluded_by_reason),
+        deduplicated_count=result.deduplicated_count,
+        degraded_sources=result.degraded_sources,
+        calculated_at=result.calculated_at.isoformat() if result.calculated_at else "",
+        expires_at=result.expires_at.isoformat() if result.expires_at else "",
+        policy_version=result.policy_version,
+        cohort_hash=result.cohort_hash,
+        can_approve=not result.degraded_sources,
+        blocked_reason=(
+            "Não foi possível conferir todas as fontes da audiência. Aguarde a recuperação."
+            if result.degraded_sources
+            else ""
+        ),
     )
 
 

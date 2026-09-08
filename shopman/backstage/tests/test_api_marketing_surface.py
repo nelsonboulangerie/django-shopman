@@ -968,6 +968,25 @@ class TestAudienceCount:
         assert "5543999993001" not in raw
         assert "CLI-BOTH" not in raw
 
+    def test_source_outage_is_explicit_and_blocks_approval(self, client, gestor):
+        from unittest.mock import patch
+
+        client.force_login(gestor)
+        with patch(
+            "shopman.shop.adapters.audience_sources.favorite_customer_refs",
+            side_effect=RuntimeError("unavailable"),
+        ):
+            data = client.post(
+                COUNT_URL,
+                {"sku": "SKU-OUTAGE", "audience_rules": {"favorites": True}},
+                content_type="application/json",
+            ).json()
+
+        assert data["total"] == 0
+        assert data["degraded_sources"] == ["favorites"]
+        assert data["can_approve"] is False
+        assert data["blocked_reason"]
+
     def test_a_broken_payload_counts_nobody_instead_of_exploding(self, client, gestor):
         client.force_login(gestor)
         response = client.post(
