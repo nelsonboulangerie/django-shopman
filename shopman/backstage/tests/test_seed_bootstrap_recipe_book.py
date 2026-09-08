@@ -67,6 +67,42 @@ def test_bootstrap_over_sheets_shaped_like_the_seed():
     assert "version_ref" not in Recipe.objects.get(ref="massa-tradicao").meta
 
 
+def test_a_piece_reaches_the_screen_as_the_sheet_declares_it():
+    """A baguete é 280 g de Massa Tradição — e a tela mostra isso, não uma fórmula.
+
+    Antes do WP-FICHA-DE-PRODUTO-E-PROMESSA §A a peça exibia a composição da
+    massa como se fosse dela, com "farinha pré-fermentada 100%" e avisos de
+    padaria que eram artefato da dissolução, não fato da peça.
+    """
+    _sheet("creme-levain", "Levain", "LEVAIN", "5", [("FERMENTO-NAT", "1.7"), ("FARINHA-T65", "1.7"), ("AGUA-FILTRADA", "1.7")])
+    _sheet("massa-pasta-autolizada", "Pasta Autolizada", "PASTA-AUTOLIZADA", "8.4", [("FARINHA-T65", "5"), ("AGUA-FILTRADA", "3.5")])
+    _sheet("massa-tradicao", "Massa Tradição", "MASSA-TRADICAO", "10",
+           [("PASTA-AUTOLIZADA", "8.4"), ("LEVAIN", "1.5"), ("SAL", "0.1")])
+    _sheet("baguete", "Baguette de Tradition", "BF", "1", [("MASSA-TRADICAO", "0.280")], unit="un")
+
+    call_command("bootstrap_recipe_book", stdout=StringIO())
+
+    detail = build_recipe_entry("baguete")
+    (version,) = detail.versions
+    assert version.yield_quantity == "1"
+    assert version.yield_unit == "un"
+    assert version.lens.is_bakery is False
+    assert version.lens.anchor_kind == "total"
+    assert version.lens.parts == ()
+    assert version.lens.warnings == ()
+    assert [(item.sku, item.quantity_g) for item in version.lens.items] == [("MASSA-TRADICAO", "280")]
+    assert [item.sku for item in version.lens.bom] == ["MASSA-TRADICAO"]
+    assert all(metric.value_display == "" for metric in version.lens.metrics)
+
+    # O cartão do inventário também para de anunciar hidratação de peça.
+    cards = {card.ref: card for card in build_recipe_book().entries}
+    assert cards["baguete"].hydration_display == ""
+    assert cards["baguete"].anchor_kind == "total"
+    # E a fórmula continua com a lente: ali a parte é fração de verdade.
+    assert cards["massa-tradicao"].anchor_kind == "flour"
+    assert cards["massa-tradicao"].hydration_display != ""
+
+
 def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
     monkeypatch.setenv("ADMIN_PASSWORD", "Seed-Recipe-Book-2026!")
     out = StringIO()
@@ -85,3 +121,20 @@ def test_the_seed_bootstraps_every_eligible_sheet(monkeypatch):
     book = build_recipe_book()
     assert book.count == RecipeEntry.objects.count()
     assert all(card.has_ficha for card in book.entries)
+
+    # Sobre o dado REAL: nenhuma peça do seed acusa lente de padaria, e a
+    # fórmula continua acusando (WP-FICHA-DE-PRODUTO-E-PROMESSA §A). O detalhe
+    # de uma peça está no teste rápido acima; aqui vale a varredura.
+    pecas = [
+        recipe.ref for recipe in eligible
+        if recipe._declared_output_unit() == "un"
+    ]
+    assert "baguete" in pecas
+    for ref in pecas:
+        (versao,) = build_recipe_entry(ref).versions
+        assert versao.yield_quantity == "1", f"{ref} não rende uma unidade"
+        assert versao.lens.is_bakery is False, f"{ref} acusa lente de padaria"
+        assert versao.lens.parts == (), f"{ref} ganhou parte fabricada"
+        assert versao.lens.warnings == (), f"{ref}: {versao.lens.warnings}"
+    massa = build_recipe_entry("massa-tradicao")
+    assert massa.versions[0].lens.is_bakery is True
