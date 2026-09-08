@@ -150,6 +150,25 @@ def test_board_returns_payload(client, recipe, production_operator):
 
 
 @pytest.mark.django_db
+def test_board_rejects_invalid_date_instead_of_silently_using_today(client, recipe, production_operator):
+    client.force_login(production_operator)
+    response = client.get(reverse("api-backstage-production"), {"date": "tomorrow-ish"})
+    assert response.status_code == 400
+    assert response.json()["field"] == "date"
+
+
+@pytest.mark.django_db
+def test_mise_en_place_parses_false_as_false(client, recipe, production_operator):
+    client.force_login(production_operator)
+    response = client.get(
+        reverse("api-backstage-production-mise-en-place"),
+        {"expand": "false"},
+    )
+    assert response.status_code == 200
+    assert response.json()["mise_en_place"]["expanded"] is False
+
+
+@pytest.mark.django_db
 def test_kds_returns_started_cards_only(client, recipe, production_operator):
     started = craft.plan(recipe, 12, date=date.today(), position_ref="forno")
     craft.start(started, quantity=12, position_ref="forno", expected_rev=0)
@@ -335,9 +354,7 @@ def test_void_work_order(client, recipe, production_operator):
 
 
 @pytest.mark.django_db
-def test_finish_material_shortage_returns_structured_envelope(
-    client, recipe, production_operator, monkeypatch
-):
+def test_finish_material_shortage_returns_structured_envelope(client, recipe, production_operator, monkeypatch):
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
 
@@ -365,9 +382,7 @@ def test_finish_material_shortage_returns_structured_envelope(
 
 
 @pytest.mark.django_db
-def test_plan_order_shortage_returns_structured_envelope(
-    client, recipe, production_operator, monkeypatch
-):
+def test_plan_order_shortage_returns_structured_envelope(client, recipe, production_operator, monkeypatch):
     def block_plan(**kwargs):
         raise ProductionOrderShortError(
             work_order_ref="WO-API-1",

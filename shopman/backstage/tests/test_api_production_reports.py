@@ -147,6 +147,40 @@ def test_reports_filters_reduce_history(client, manager, report_data):
 
 
 @pytest.mark.django_db
+def test_reports_reject_inverted_or_oversized_ranges(client, manager, report_data):
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+
+    inverted = client.get(
+        url,
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": date(2026, 1, 1).isoformat(),
+        },
+    )
+    assert inverted.status_code == 400
+    assert inverted.json()["field"] == "date_to"
+
+    oversized = client.get(
+        url,
+        {"date_from": "2026-01-01", "date_to": "2026-09-08"},
+    )
+    assert oversized.status_code == 400
+    assert oversized.json()["field"] == "date_to"
+
+
+@pytest.mark.django_db
+def test_reports_reject_unknown_filter(client, manager, report_data):
+    client.force_login(manager)
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {"date_from": report_data["today"].isoformat(), "surprise": "1"},
+    )
+    assert response.status_code == 400
+    assert response.json()["field"] == "surprise"
+
+
+@pytest.mark.django_db
 def test_reports_csv_download(client, manager, report_data):
     client.force_login(manager)
     response = client.get(

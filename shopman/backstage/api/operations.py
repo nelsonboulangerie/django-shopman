@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date
 
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
@@ -54,7 +53,17 @@ from rest_framework.views import APIView
 from shopman.utils.monetary import format_money
 
 from shopman.backstage import station_trust
-from shopman.backstage.api._production_filters import report_filters
+from shopman.backstage.api._production_filters import (
+    ProductionBlindMapQuerySerializer,
+    ProductionBoardQuerySerializer,
+    ProductionDateQuerySerializer,
+    ProductionKDSQuerySerializer,
+    ProductionManagementQuerySerializer,
+    ProductionMiseEnPlaceQuerySerializer,
+    ProductionWeighingQuerySerializer,
+    report_filters,
+    validated_query,
+)
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
 from shopman.backstage.parsing import as_bool
@@ -123,15 +132,6 @@ logger = logging.getLogger(__name__)
 #: configurados — OTP de telefone (cliente) e senha (staff) — e ``login()`` só
 #: adivinha qual gravar quando foi ele mesmo quem autenticou.
 MODEL_BACKEND = "django.contrib.auth.backends.ModelBackend"
-
-
-def _parse_date(raw: str | None) -> date | None:
-    if not raw:
-        return None
-    try:
-        return date.fromisoformat(raw)
-    except ValueError:
-        return None
 
 
 def _actor(request) -> str:
@@ -329,13 +329,15 @@ class POSView(APIView):
         tabs = build_pos_tabs(query=query)
         # Quem opera é quem está logado — não há mais um cartão de "operador
         # ativo" na sessão para consultar ao lado da conta do dispositivo.
-        return Response({
-            "pos": projection_data(pos),
-            "shift": projection_data(shift),
-            "tabs": projection_data(tabs),
-            "operator": operator_card(request.user),
-            "pin_must_change": pin_must_change(request.user),
-        })
+        return Response(
+            {
+                "pos": projection_data(pos),
+                "shift": projection_data(shift),
+                "tabs": projection_data(tabs),
+                "operator": operator_card(request.user),
+                "pin_must_change": pin_must_change(request.user),
+            }
+        )
 
 
 class POSPaymentStatusView(APIView):
@@ -418,15 +420,17 @@ class OperatorSessionView(APIView):
         from shopman.backstage.station_trust import station_ref
 
         operador = request.user if getattr(request.user, "is_authenticated", False) else None
-        return Response({
-            # `station` substituiu `device_user`: o que a tela precisa saber é de
-            # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
-            # há mais conta de máquina.
-            "station": station_ref(request),
-            "operator": operator_card(operador) if operador else None,
-            "locked": operador is None,
-            "pin_must_change": pin_must_change(operador),
-        })
+        return Response(
+            {
+                # `station` substituiu `device_user`: o que a tela precisa saber é de
+                # QUE BALCÃO ela é, não com que conta a máquina entrou — porque não
+                # há mais conta de máquina.
+                "station": station_ref(request),
+                "operator": operator_card(operador) if operador else None,
+                "locked": operador is None,
+                "pin_must_change": pin_must_change(operador),
+            }
+        )
 
 
 def _login_username_key(group, request):
@@ -445,12 +449,8 @@ def _login_username_key(group, request):
     return (str(username or "").strip().lower()) or "anon"
 
 
-@method_decorator(
-    ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"
-)
-@method_decorator(
-    ratelimit(key=_login_username_key, rate="5/m", method="POST", block=False), name="dispatch"
-)
+@method_decorator(ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch")
+@method_decorator(ratelimit(key=_login_username_key, rate="5/m", method="POST", block=False), name="dispatch")
 class OperatorLoginView(APIView):
     """Login de operador NO PRÓPRIO app (sem bounce pro Django admin).
 
@@ -761,13 +761,15 @@ class StationProvisionView(APIView):
     def get(self, request):
         from shopman.cashman.models import Terminal
 
-        return Response({
-            "station": station_trust.station_ref(request),
-            "terminals": [
-                {"ref": t.ref, "label": t.label or t.ref}
-                for t in Terminal.objects.filter(is_active=True).order_by("ref")
-            ],
-        })
+        return Response(
+            {
+                "station": station_trust.station_ref(request),
+                "terminals": [
+                    {"ref": t.ref, "label": t.label or t.ref}
+                    for t in Terminal.objects.filter(is_active=True).order_by("ref")
+                ],
+            }
+        )
 
     def post(self, request):
         from shopman.cashman.models import Terminal
@@ -846,11 +848,10 @@ class ProductionBoardView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
-        position_ref = request.query_params.get("position", "")
+        query = validated_query(request, ProductionBoardQuerySerializer)
         board = build_production_board(
-            selected_date=selected,
-            position_ref=position_ref,
+            selected_date=query.get("date"),
+            position_ref=query.get("position", ""),
         )
         return Response({"board": projection_data(board)})
 
@@ -867,8 +868,8 @@ class ProductionForecastView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
-        forecast = build_production_forecast(selected_date=selected)
+        query = validated_query(request, ProductionDateQuerySerializer)
+        forecast = build_production_forecast(selected_date=query.get("date"))
         return Response({"forecast": projection_data(forecast)})
 
 
@@ -884,11 +885,10 @@ class ProductionKDSView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
-        position_ref = request.query_params.get("position", "")
+        query = validated_query(request, ProductionKDSQuerySerializer)
         kds = build_production_kds(
-            selected_date=selected,
-            position_ref=position_ref,
+            selected_date=query.get("date"),
+            position_ref=query.get("position", ""),
         )
         return Response({"kds": projection_data(kds)})
 
@@ -905,8 +905,8 @@ class ProductionQCView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
-        kiosk = build_qc_kiosk(selected_date=selected)
+        query = validated_query(request, ProductionDateQuerySerializer)
+        kiosk = build_qc_kiosk(selected_date=query.get("date"))
         return Response({"qc": projection_data(kiosk)})
 
 
@@ -922,11 +922,10 @@ class ProductionMiseEnPlaceView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
-        expand = str(request.query_params.get("expand", "")).lower() in ("1", "true", "yes")
+        query = validated_query(request, ProductionMiseEnPlaceQuerySerializer)
         mise_en_place = build_production_mise_en_place(
-            selected_date=selected,
-            expand=expand,
+            selected_date=query.get("date"),
+            expand=query["expand"],
         )
         return Response({"mise_en_place": projection_data(mise_en_place)})
 
@@ -943,11 +942,11 @@ class ProductionWeighingView(APIView):
     required_permission = "backstage.operate_production"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
+        query = validated_query(request, ProductionWeighingQuerySerializer)
         weighing = build_production_weighing(
-            selected_date=selected,
-            position_ref=request.query_params.get("position", ""),
-            base_recipe=request.query_params.get("base_recipe", ""),
+            selected_date=query.get("date"),
+            position_ref=query.get("position", ""),
+            base_recipe=query.get("base_recipe", ""),
         )
         return Response({"weighing": projection_data(weighing)})
 
@@ -975,7 +974,9 @@ class ProductionReportsCSVRenderer(BaseRenderer):
     get=extend_schema(
         tags=["backstage"],
         summary="Production reports (history, operator productivity, recipe waste)",
-        responses={200: OpenApiResponse(description="Report rows for the requested filters (or CSV with ?format=csv).")},
+        responses={
+            200: OpenApiResponse(description="Report rows for the requested filters (or CSV with ?format=csv).")
+        },
     ),
 )
 class ProductionReportsView(APIView):
@@ -1013,10 +1014,10 @@ class ProductionManagementView(APIView):
     required_permission = "backstage.view_production_reports"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
+        query = validated_query(request, ProductionManagementQuerySerializer)
         dashboard = build_production_dashboard(
-            selected_date=selected,
-            position_ref=request.query_params.get("position", ""),
+            selected_date=query.get("date"),
+            position_ref=query.get("position", ""),
         )
         return Response({"management": projection_data(dashboard)})
 
@@ -1035,11 +1036,11 @@ class ProductionBlindMapView(APIView):
     required_permission = "backstage.view_production_reports"
 
     def get(self, request):
-        selected = _parse_date(request.query_params.get("date"))
+        query = validated_query(request, ProductionBlindMapQuerySerializer)
         blind_map = build_production_blind_map(
-            selected_date=selected,
-            position_ref=request.query_params.get("position", ""),
-            base_recipe=request.query_params.get("base_recipe", ""),
+            selected_date=query.get("date"),
+            position_ref=query.get("position", ""),
+            base_recipe=query.get("base_recipe", ""),
         )
         return Response({"blind_map": projection_data(blind_map)})
 
@@ -1574,12 +1575,14 @@ class POSDanfeEscposView(APIView):
             return Response({"detail": "NFC-e ainda não autorizada para este pedido."}, status=409)
         reprint = _stamp_first_print(ref, "danfe_printed_at")
         payload = danfe_nfce(doc, reprint=reprint)
-        return Response({
-            "ok": True,
-            "payload_b64": base64.b64encode(payload).decode("ascii"),
-            "title": f"danfe:{ref}",
-            "reprint": reprint,
-        })
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"danfe:{ref}",
+                "reprint": reprint,
+            }
+        )
 
 
 def _stamp_first_print(order_ref: str, key: str) -> bool:
@@ -1640,12 +1643,14 @@ class POSSaleReceiptEscposView(APIView):
         from shopman.backstage.services.receipt_escpos import sale_receipt
 
         payload = sale_receipt(order, shop_name=shop_name, reprint=reprint)
-        return Response({
-            "ok": True,
-            "payload_b64": base64.b64encode(payload).decode("ascii"),
-            "title": f"recibo:{ref}",
-            "reprint": reprint,
-        })
+        return Response(
+            {
+                "ok": True,
+                "payload_b64": base64.b64encode(payload).decode("ascii"),
+                "title": f"recibo:{ref}",
+                "reprint": reprint,
+            }
+        )
 
 
 @extend_schema_view(
@@ -1846,12 +1851,14 @@ class POSCustomerProfileView(APIView):
         if not updates:
             return Response({"detail": "Nada para atualizar."}, status=400)
         customer.save(update_fields=[*updates, "updated_at"])
-        return Response({
-            "ok": True,
-            "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
-            "notes": customer.notes,
-            "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
-        })
+        return Response(
+            {
+                "ok": True,
+                "fiscal_prefs": dict((customer.metadata or {}).get("fiscal_prefs") or {}),
+                "notes": customer.notes,
+                "dietary_restrictions": str((customer.metadata or {}).get("preferences") or ""),
+            }
+        )
 
 
 @extend_schema_view(
@@ -1880,7 +1887,9 @@ class POSResendFiscalEmailView(APIView):
         email = str((request.data or {}).get("email") or "").strip()
         if not email:
             data = order.data or {}
-            email = str((data.get("receipt") or {}).get("email") or (data.get("customer") or {}).get("email") or "").strip()
+            email = str(
+                (data.get("receipt") or {}).get("email") or (data.get("customer") or {}).get("email") or ""
+            ).strip()
         if not email:
             return Response({"detail": "Informe o e-mail de destino.", "field": "email"}, status=400)
         backend = fiscal_pool.get_backend()
@@ -2018,9 +2027,7 @@ class OrderAssignView(_OrderActionBase):
         if err:
             return err
         operator_id, operator_name = _operator_identity(request)
-        orders_service.assign_order(
-            order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request)
-        )
+        orders_service.assign_order(order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request))
         return Response({"ok": True, "ref": ref, "assigned_operator": operator_name})
 
 
@@ -2156,13 +2163,15 @@ class WorkOrderPlanView(_ProductionActionBase):
             return Response({"detail": str(exc) or "Falha ao planejar produção."}, status=400)
         except ValueError as exc:
             return Response({"detail": str(exc) or "Dados de planejamento inválidos."}, status=400)
-        return Response({
-            "ok": True,
-            "result": result,
-            "output_sku": output_sku,
-            "wo_ref": wo_ref,
-            "quantity": str(qty),
-        })
+        return Response(
+            {
+                "ok": True,
+                "result": result,
+                "output_sku": output_sku,
+                "wo_ref": wo_ref,
+                "quantity": str(qty),
+            }
+        )
 
 
 @extend_schema_view(
@@ -3152,7 +3161,7 @@ def _actor_pos(request) -> str:
     return f"pos:{_actor(request)}"
 
 
-def _username (request) -> str:
+def _username(request) -> str:
     return _actor(request)
 
 
@@ -3244,12 +3253,14 @@ class POSTabSaveView(APIView):
         except Exception as exc:
             logger.debug("pos_tab_save_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao salvar comanda."}, status=400)
-        return Response({
-            "ok": True,
-            "tab_ref": result.tab_ref,
-            "tab_display": result.tab_display,
-            "session_key": result.session_key,
-        })
+        return Response(
+            {
+                "ok": True,
+                "tab_ref": result.tab_ref,
+                "tab_display": result.tab_display,
+                "session_key": result.session_key,
+            }
+        )
 
 
 @extend_schema_view(
@@ -3307,12 +3318,14 @@ class POSTabMoveLinesView(APIView):
         except Exception as exc:
             logger.debug("pos_tab_move_lines_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao mover itens entre comandas."}, status=400)
-        return Response({
-            "ok": True,
-            "source_closed": result.source_closed,
-            "source": None if result.source is None else build_open_tab(result.source),
-            "target": build_open_tab(result.target),
-        })
+        return Response(
+            {
+                "ok": True,
+                "source_closed": result.source_closed,
+                "source": None if result.source is None else build_open_tab(result.source),
+                "target": build_open_tab(result.target),
+            }
+        )
 
 
 class POSTabRenameView(APIView):
@@ -3357,12 +3370,14 @@ class POSTabFireView(APIView):
         except Exception as exc:
             logger.debug("pos_tab_fire_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao enviar à cozinha."}, status=400)
-        return Response({
-            "ok": True,
-            "fired_count": result.fired_count,
-            "fired_lines": list(result.fired_lines),
-            "tab": build_open_tab(result.session),
-        })
+        return Response(
+            {
+                "ok": True,
+                "fired_count": result.fired_count,
+                "fired_lines": list(result.fired_lines),
+                "tab": build_open_tab(result.session),
+            }
+        )
 
 
 class POSTabUnfireView(APIView):
@@ -3384,13 +3399,15 @@ class POSTabUnfireView(APIView):
         except Exception as exc:
             logger.debug("pos_tab_unfire_failed user=%s", _actor(request), exc_info=True)
             return Response({"detail": str(exc) or "Falha ao cancelar envio à cozinha."}, status=400)
-        return Response({
-            "ok": True,
-            "cancelled": result.cancelled,
-            "trimmed": result.trimmed,
-            "fired_lines": list(result.fired_lines),
-            "tab": build_open_tab(result.session),
-        })
+        return Response(
+            {
+                "ok": True,
+                "cancelled": result.cancelled,
+                "trimmed": result.trimmed,
+                "fired_lines": list(result.fired_lines),
+                "tab": build_open_tab(result.session),
+            }
+        )
 
 
 @extend_schema_view(
@@ -3552,10 +3569,12 @@ class POSCustomerResolveView(APIView):
         # telefone (cadastro só com CPF) e o front descartava o cadastro recém-
         # criado. `created` distingue "achei" de "criei agora" na tela.
         lookup = build_pos_customer_lookup_by_ref(customer.get("ref") or "")
-        return Response({
-            "customer": projection_data(lookup) if lookup else None,
-            "created": bool(customer.get("created")),
-        })
+        return Response(
+            {
+                "customer": projection_data(lookup) if lookup else None,
+                "created": bool(customer.get("created")),
+            }
+        )
 
 
 @extend_schema_view(
@@ -3733,13 +3752,15 @@ class POSCloseSaleView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc) or "Falha ao finalizar venda."}, status=422)
         order_ref = getattr(result, "order_ref", None)
-        return Response({
-            "ok": True,
-            "order_ref": order_ref,
-            "tab_ref": getattr(result, "tab_ref", None),
-            "payment": getattr(result, "payment", None) or {},
-            "fiscal_expected": _fiscal_expected(order_ref),
-        })
+        return Response(
+            {
+                "ok": True,
+                "order_ref": order_ref,
+                "tab_ref": getattr(result, "tab_ref", None),
+                "payment": getattr(result, "payment", None) or {},
+                "fiscal_expected": _fiscal_expected(order_ref),
+            }
+        )
 
 
 @extend_schema_view(
