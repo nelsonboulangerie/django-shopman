@@ -11,6 +11,8 @@ O script mora fora da árvore do pacote, então o módulo é carregado por camin
 from __future__ import annotations
 
 import importlib.util
+import json
+import subprocess
 import sys
 import textwrap
 from pathlib import Path
@@ -507,3 +509,156 @@ def test_git_diff_quebrado_tambem_reprova(monkeypatch, capsys):
 def test_escopo_explicito_nao_precisa_de_base(capsys):
     """`--paths` e `--all` não dependem de git — não podem herdar o fail-closed."""
     assert check_silent_swallow.main(["--paths"]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Escopo do PR — o gate não pode herdar o arquivo de PR alheio
+# ---------------------------------------------------------------------------
+#
+# `changed_paths` usa a `resolve_diff_base` do ADR-015. Quando ela devolvia a
+# PONTA da base, um PR que entrasse no main entre o push e o job aparecia no
+# diff — ao contrário — e este gate reprovava por arquivo que o autor nunca
+# abriu. Foi medido no PR #554. Um check obrigatório que faz isso ensina o time
+# a ignorar o vermelho, que é o mesmo defeito que ele existe para caçar.
+
+CONTRADITORIO = '''\
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def grita():
+    try:
+        cobrar()
+    except PaymentError:
+        logger.error("cobrança falhou")
+
+
+def cala():
+    try:
+        cobrar()
+    except PaymentError:
+        pass
+'''
+
+
+def _git_repo(cwd, *args):
+    subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        check=True,
+        env={
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+            "PATH": "/usr/bin:/bin:/usr/local/bin",
+            "HOME": str(cwd),
+        },
+    )
+
+
+def _write(root, relative, content):
+    destination = root / relative
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(content)
+    return relative
+
+
+@pytest.fixture
+def repo_com_base_movida(tmp_path):
+    """PR toca um arquivo; o main ganha OUTRO arquivo contraditório depois."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git_repo(origin, "init", "--quiet", "--bare", "-b", "main")
+
+    work = tmp_path / "work"
+    work.mkdir()
+    _git_repo(work, "init", "--quiet", "-b", "main")
+    _write(work, "shopman/shop/services/base.py", "VALOR = 1\n")
+    _git_repo(work, "add", "shopman/shop/services/base.py")
+    _git_repo(work, "commit", "--quiet", "-m", "base")
+    base_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    _git_repo(work, "checkout", "--quiet", "-b", "feature")
+    _write(work, "shopman/shop/services/do_pr.py", CONTRADITORIO)
+    _git_repo(work, "add", "shopman/shop/services/do_pr.py")
+    _git_repo(work, "commit", "--quiet", "-m", "o arquivo DESTE PR")
+    head_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    _git_repo(work, "checkout", "--quiet", base_sha)
+    _git_repo(work, "merge", "--quiet", "--no-ff", "-m", "Merge pull request", head_sha)
+    merge_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    _git_repo(work, "update-ref", "refs/pull/1/merge", merge_sha)
+
+    _git_repo(work, "checkout", "--quiet", "main")
+    _write(work, "shopman/shop/services/do_alheio.py", CONTRADITORIO)
+    _git_repo(work, "add", "shopman/shop/services/do_alheio.py")
+    _git_repo(work, "commit", "--quiet", "-m", "PR alheio entrou no main")
+    _git_repo(work, "push", "--quiet", str(origin), "main", "refs/pull/1/merge:refs/pull/1/merge")
+
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    _git_repo(runner, "init", "--quiet")
+    _git_repo(runner, "remote", "add", "origin", str(origin))
+    _git_repo(runner, "fetch", "--quiet", "origin", "refs/pull/1/merge")
+    _git_repo(runner, "fetch", "--quiet", "origin", "main")
+    _git_repo(runner, "checkout", "--quiet", merge_sha)
+
+    payload = tmp_path / "event.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "base": {"sha": base_sha, "ref": "main"},
+                    "head": {"sha": head_sha},
+                }
+            }
+        )
+    )
+    return runner, payload
+
+
+def test_o_gate_so_ve_o_arquivo_deste_pr(repo_com_base_movida, monkeypatch):
+    runner, payload = repo_com_base_movida
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_BASE_REF", "main")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+
+    paths, _description = check_silent_swallow.changed_paths(runner)
+
+    assert paths == ["shopman/shop/services/do_pr.py"]
+    assert "shopman/shop/services/do_alheio.py" not in paths
+
+    verdicts = [
+        v
+        for v in (check_silent_swallow.scan_file(runner, p) for p in paths)
+        if v is not None and v.contradictory
+    ]
+    assert [v.path for v in verdicts] == ["shopman/shop/services/do_pr.py"]
+
+
+def test_sem_base_o_gate_nao_devolve_lista_vazia(repo_com_base_movida, monkeypatch, tmp_path):
+    """Base irresolvível vira exceção, não escopo vazio — fail-closed de ponta a ponta."""
+    runner, _payload = repo_com_base_movida
+    _git_repo(runner, "remote", "remove", "origin")
+    cego = tmp_path / "cego.json"
+    cego.write_text(
+        json.dumps(
+            {"pull_request": {"base": {"sha": "0" * 40, "ref": "main"}, "head": {"sha": "1" * 40}}}
+        )
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_BASE_REF", "main")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(cego))
+
+    with pytest.raises(check_silent_swallow.BaseUnresolved):
+        check_silent_swallow.changed_paths(runner)
