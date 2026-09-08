@@ -486,7 +486,7 @@ def test_base_irresolvivel_reprova_em_vez_de_passar_vazio(monkeypatch, capsys):
     assert check_silent_swallow.main([]) == 1
     saida = capsys.readouterr().out
     assert "FAIL" in saida
-    assert "fetch-depth: 0" in saida
+    assert "origin/main" in saida
 
 
 def test_git_diff_quebrado_tambem_reprova(monkeypatch, capsys):

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -273,6 +274,135 @@ def test_append_only_violations_against_an_explicit_base(tagged_repo):
 
     violations = check_adr015.append_only_violations(base, tagged_repo)
     assert violations == [("M", "app/migrations/0001_initial.py")]
+
+
+# ---------------------------------------------------------------------------
+# resolve_diff_base — the base must be the commit HEAD was built on
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def pr_repo(tmp_path):
+    """A repo shaped like a `pull_request` run, with the base moved afterwards.
+
+    ``main`` gets a commit the PR author never touched (``app/alheio.py``) AFTER
+    the synthetic merge ref was built — exactly the 08/09/2026 shape, when PR
+    #549 landed between the push and the job of PR #554. Returns the repo plus
+    the two commits the two possible answers point at.
+    """
+    repo = tmp_path / "pr"
+    (repo / "app").mkdir(parents=True)
+    (repo / "app" / "base.py").write_text("BASE = 1\n")
+    _git(repo, "init", "--quiet", "--initial-branch=main")
+    _git(repo, "add", "app/base.py")
+    _git(repo, "commit", "--quiet", "-m", "base")
+    base_sha = _git(repo, "rev-parse", "HEAD").strip()
+
+    _git(repo, "checkout", "--quiet", "-b", "pr")
+    (repo / "app" / "meu.py").write_text("MEU = 1\n")
+    _git(repo, "add", "app/meu.py")
+    _git(repo, "commit", "--quiet", "-m", "o que o autor fez")
+    head_pr = _git(repo, "rev-parse", "HEAD").strip()
+
+    # The synthetic merge ref: PR merged onto the base as it was at push time.
+    _git(repo, "checkout", "--quiet", "-b", "merge-ref", base_sha)
+    _git(repo, "merge", "--quiet", "--no-ff", "-m", "merge ref", head_pr)
+    merge_ref = _git(repo, "rev-parse", "HEAD").strip()
+
+    # Someone else's PR lands. The merge ref is NOT rebuilt.
+    _git(repo, "checkout", "--quiet", "main")
+    (repo / "app" / "alheio.py").write_text("ALHEIO = 1\n")
+    _git(repo, "add", "app/alheio.py")
+    _git(repo, "commit", "--quiet", "-m", "PR de outra frente")
+    tip_sha = _git(repo, "rev-parse", "HEAD").strip()
+
+    _git(repo, "checkout", "--quiet", merge_ref)
+    return repo, base_sha, tip_sha
+
+
+def _pull_request_event(tmp_path: Path, base_sha: str) -> Path:
+    payload = tmp_path / "pull_request.json"
+    payload.write_text(json.dumps({"pull_request": {"base": {"sha": base_sha}}}))
+    return payload
+
+
+def test_pull_request_base_comes_from_the_payload_not_the_branch_tip(pr_repo, tmp_path, monkeypatch):
+    """The base is the commit HEAD was built on, frozen at event time."""
+    repo, base_sha, tip_sha = pr_repo
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(_pull_request_event(tmp_path, base_sha)))
+
+    base, description = check_adr015.resolve_diff_base(repo)
+    assert base == base_sha
+    assert base != tip_sha
+    assert base_sha[:12] in description
+
+
+def test_moved_base_does_not_drag_someone_elses_pr_into_the_diff(pr_repo, tmp_path, monkeypatch):
+    """The regression itself: the diff must show only what the author changed.
+
+    Measured on 08/09/2026 — with the base branch TIP as the reference, the
+    other PR's file shows up REVERSED (as a deletion), and the half-fix gate
+    failed a PR over a file its author never opened. A required check that goes
+    red because of someone else's PR teaches people to ignore red.
+    """
+    repo, base_sha, tip_sha = pr_repo
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(_pull_request_event(tmp_path, base_sha)))
+
+    base, _ = check_adr015.resolve_diff_base(repo)
+    changed = _git(repo, "diff", "--name-only", base, "HEAD").split()
+    assert changed == ["app/meu.py"]
+
+    # And the proof that the old answer was the bug, not a coincidence.
+    contaminated = _git(repo, "diff", "--name-only", tip_sha, "HEAD").split()
+    assert "app/alheio.py" in contaminated
+
+
+def test_merge_group_base_still_comes_from_its_own_payload(pr_repo, tmp_path, monkeypatch):
+    repo, base_sha, _ = pr_repo
+    payload = tmp_path / "merge_group.json"
+    payload.write_text(json.dumps({"merge_group": {"base_sha": base_sha}}))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "merge_group")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+
+    base, description = check_adr015.resolve_diff_base(repo)
+    assert base == base_sha
+    assert description.startswith("merge_group base_sha")
+
+
+@pytest.mark.parametrize("event", ["pull_request", "merge_group"])
+def test_unreadable_payload_fails_closed(pr_repo, tmp_path, monkeypatch, event):
+    """No base is a FAIL, never an empty diff dressed up as green."""
+    repo, _, _ = pr_repo
+    monkeypatch.setenv("GITHUB_EVENT_NAME", event)
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(tmp_path / "nao-existe.json"))
+
+    base, description = check_adr015.resolve_diff_base(repo)
+    assert base is None
+    assert "GITHUB_EVENT_PATH" in description
+
+
+def test_base_commit_that_cannot_be_fetched_fails_closed(pr_repo, tmp_path, monkeypatch):
+    """A base SHA the repo cannot reach (force-pushed away) is a FAIL, not a guess."""
+    repo, _, _ = pr_repo
+    ausente = "0" * 40
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(_pull_request_event(tmp_path, ausente)))
+
+    base, description = check_adr015.resolve_diff_base(repo)
+    assert base is None
+    assert "indisponível" in description
+
+
+def test_local_run_still_uses_the_merge_base(pr_repo, monkeypatch):
+    repo, base_sha, _ = pr_repo
+    monkeypatch.delenv("GITHUB_EVENT_NAME", raising=False)
+    monkeypatch.delenv("GITHUB_EVENT_PATH", raising=False)
+
+    base, description = check_adr015.resolve_diff_base(repo)
+    assert base == base_sha
+    assert description == "merge-base com main"
 
 
 def test_deprecated_violations_scan_tracked_files(tagged_repo):

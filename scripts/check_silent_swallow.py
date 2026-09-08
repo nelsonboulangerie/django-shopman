@@ -500,7 +500,9 @@ def main(argv: list[str] | None = None) -> int:
             print(
                 "    O gate falha FECHADO aqui de propósito: sem a base, ele\n"
                 "    analisaria zero arquivo e sairia verde por não ter olhado nada.\n"
-                "    Na CI, confira `fetch-depth: 0` no passo de checkout."
+                "    Na CI a base vem do payload do evento (GITHUB_EVENT_PATH) e é\n"
+                "    buscada por SHA; localmente, de `origin/main` — confira que um\n"
+                "    dos dois está ao alcance (`git fetch origin`, `fetch-depth: 0`)."
             )
             return 1
         scope = f"diff do PR ({scope})"

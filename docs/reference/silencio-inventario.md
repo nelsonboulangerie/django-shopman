@@ -128,20 +128,22 @@ no GitHub, não a nossa).
 > passa nos 6 arquivos, e a suíte
 > `shopman/shop/tests/test_silencio_de_dinheiro_e_nota.py` trava a volta de cada
 > site (a falha é simulada e o teste exige alerta ou recusa — nunca silêncio).
-> Repositório inteiro: de **50 arquivos / 94 sites** para **42 / 75**. Falta a
-> mão do dono: marcar `Gate da meia-correção` como required. O
+> Repositório inteiro: de **50 arquivos / 94 sites** para **42 / 75**. A
+> pré-condição técnica também caiu (o falso positivo por PR alheio, logo abaixo).
+> Falta a mão do dono: marcar `Gate da meia-correção` como required. O
 > `continue-on-error` continua no workflow enquanto o check não for obrigatório
 > — tirar os dois na mesma hora é o que evita a janela em que o job reprova sem
 > ninguém ter combinado isso.
 
-### ⚠️ Antes de tornar o check obrigatório: o gate reprova por PR alheio
+### ✅ Pré-condição do check obrigatório: o gate reprovava por PR alheio
 
-Achado ao rodar o gate no PR que zerou as duas faixas, e ele **precisa ser
+Achado ao rodar o gate no PR que zerou as duas faixas, e ele **precisava ser
 consertado antes** da branch protection — senão o primeiro check obrigatório da
-casa vai barrar PRs por arquivo que o autor nunca abriu.
+casa barraria PRs por arquivo que o autor nunca abriu. **Corrigido em 08/09/2026**
+(ver o fecho desta seção).
 
 `resolve_diff_base` (em `scripts/check_adr015.py`, compartilhado com o gate do
-ADR-015) usa, no evento `pull_request`, a **ponta da base** como referência:
+ADR-015) usava, no evento `pull_request`, a **ponta da base** como referência:
 
 ```python
 return "FETCH_HEAD", f"pull_request base origin/{base_ref} (FETCH_HEAD)"
@@ -159,13 +161,26 @@ Foi exatamente o que aconteceu: o PR #549 entrou entre o push e o job, tocou
 reprovou o PR #554 por causa dela. Um `git merge origin/main` refez o merge ref
 e o gate voltou a ver só os 7 arquivos do autor.
 
-A base certa é a **merge-base**, não a ponta:
-`git merge-base FETCH_HEAD HEAD` devolve o commit da base sobre o qual o merge
-ref foi construído, e isso é imune à `main` andar. O detalhe que impede a
-correção de ser de uma linha é o `fetch --depth=1` logo acima: com a base rasa
-não há histórico comum para o `merge-base` calcular. É WP próprio, e mexe nos
-**dois** gates que compartilham a função — por isso não entrou no PR que
-descobriu.
+A base certa é o commit sobre o qual o merge ref foi **construído**, não a ponta
+de agora. `git merge-base FETCH_HEAD HEAD` diria isso, mas não fecha: o
+`fetch --depth=1` logo acima deixa a base rasa, e sem histórico comum o
+`merge-base` não tem o que calcular.
+
+**O conserto (08/09/2026):** o commit-base passa a vir do **payload do evento** —
+`pull_request.base.sha`, que o GitHub congela junto com o merge commit e por
+isso não envelhece quando a `main` anda. É a mesma forma que o ramo
+`merge_group` já usava (`merge_group.base_sha`), então os dois gatilhos passam a
+ter uma ideia só de "a base" em vez de duas. O commit é buscado por SHA
+(`ensure_commit`), o que funciona em checkout raso; num checkout completo ele já
+está lá e o fetch nem acontece — o que também evita que `--depth=1` torne raso um
+clone que era completo. Payload ilegível ou commit-base inalcançável **reprovam**,
+nunca viram diff vazio disfarçado de verde.
+
+A regressão está travada por teste em `shopman/shop/tests/test_adr015_gate.py`:
+um repositório real onde a base anda **depois** do merge ref, provando nas duas
+direções — o diff contra o payload vê só o arquivo do autor, e o diff contra a
+ponta arrasta o arquivo alheio. Os dois gates que compartilham
+`resolve_diff_base` seguem verdes.
 
 Os 12 "provavelmente inofensivos" **não pedem conserto, pedem marcador**: são a
 forma mais barata de encolher a lista sem mexer em comportamento, e o marcador

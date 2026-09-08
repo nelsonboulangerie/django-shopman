@@ -127,34 +127,91 @@ def classify_append_only(name_status_lines: list[str]) -> list[tuple[str, str]]:
     return violations
 
 
+#: Where each CI trigger records, in its event payload, the commit that the tree
+#: at ``HEAD`` was built on. Both are frozen at event time, which is the whole
+#: point: they do not age when the base branch moves afterwards.
+EVENT_BASE_SHA_PATH: dict[str, tuple[str, ...]] = {
+    "merge_group": ("merge_group", "base_sha"),
+    "pull_request": ("pull_request", "base", "sha"),
+}
+
+
+def read_event_base_sha(event: str, event_path: str) -> tuple[str | None, str]:
+    """Pull the base commit out of the GitHub event payload at ``event_path``."""
+    keys = EVENT_BASE_SHA_PATH[event]
+    dotted = ".".join(keys)
+    try:
+        node = json.loads(Path(event_path).read_text())
+        for key in keys:
+            node = node[key]
+    except (OSError, KeyError, ValueError, TypeError):
+        return None, f"{event} sem {dotted} legível no GITHUB_EVENT_PATH"
+    base_sha = str(node or "").strip()
+    if not base_sha:
+        return None, f"{event} com {dotted} vazio no GITHUB_EVENT_PATH"
+    return base_sha, ""
+
+
+def ensure_commit(commitish: str, repo_root: Path | None = None) -> str | None:
+    """Make ``commitish`` readable locally; return a failure reason, or None.
+
+    The CI checkout is shallow, so the base commit usually has to be fetched by
+    SHA. We look before fetching for two reasons: a network round trip we do not
+    need, and — on a ``fetch-depth: 0`` checkout — ``git fetch --depth=1`` would
+    turn a complete repository into a shallow one as a side effect.
+    """
+    exists = ["cat-file", "-e", f"{commitish}^{{commit}}"]
+    if _git(exists, cwd=repo_root).returncode == 0:
+        return None
+    fetched = _git(["fetch", "--depth=1", "origin", commitish], cwd=repo_root)
+    if _git(exists, cwd=repo_root).returncode == 0:
+        return None
+    detail = fetched.stderr.strip() or fetched.stdout.strip() or "sem detalhe do git"
+    return f"commit-base {commitish[:12]} indisponível após fetch ({detail})"
+
+
 def resolve_diff_base(repo_root: Path | None = None) -> tuple[str | None, str]:
-    """Find the merge base for the append-only diff, per trigger.
+    """Find the base commit for the diff of what this PR changed, per trigger.
 
     Returns ``(commit-ish or None, human description)``. Handles the three
     contexts the Runtime Gate runs in:
 
-    - ``merge_group``: the event payload carries ``merge_group.base_sha`` — the
-      exact commit the queue is merging onto.
-    - ``pull_request``: HEAD is the synthetic merge commit of PR into base, so
-      a tree-diff against the fetched base tip isolates the PR's changes.
+    - ``merge_group``: the payload carries ``merge_group.base_sha`` — the exact
+      commit the queue is merging onto.
+    - ``pull_request``: the payload carries ``pull_request.base.sha`` — the
+      commit the synthetic merge ref in ``HEAD`` was built on.
     - local: merge-base against ``origin/main`` (fallback: the tip itself).
+
+    Why the payload and not the base branch tip. ``HEAD`` on a ``pull_request``
+    run is the synthetic merge of the PR into the base, and diffing it against
+    the base isolates the PR — but only while the merge ref is current. The
+    merge ref is computed at push time and is NOT rebuilt when ``main`` moves.
+    Fetching ``origin/<base_ref>`` reads the tip as of NOW, so when someone
+    else's PR lands in between, the tip advances and ``HEAD`` does not: the diff
+    starts reporting the OTHER PR's changes, reversed, and the gate judges files
+    the author never opened.
+
+    That is not hypothetical. On 08/09/2026 PR #549 landed between the push and
+    the job of PR #554, touched ``shopman/shop/apps.py``, and the half-fix gate
+    failed #554 over it; a ``git merge origin/main`` (rebuilding the merge ref)
+    made the false positive disappear. A required check that fails because of
+    someone else's PR teaches people to ignore red — the very defect these gates
+    exist to hunt.
+
+    ``pull_request.base.sha`` is frozen in the payload at event time, alongside
+    the merge commit it was built with, so it stays right no matter what the
+    base branch does afterwards. It is also what ``merge_group`` already does —
+    one shape for both, instead of two ideas about "the base".
     """
     event = os.environ.get("GITHUB_EVENT_NAME", "")
-    if event == "merge_group":
-        event_path = os.environ.get("GITHUB_EVENT_PATH", "")
-        try:
-            payload = json.loads(Path(event_path).read_text())
-            base_sha = payload["merge_group"]["base_sha"]
-        except (OSError, KeyError, ValueError, TypeError):
-            return None, "merge_group sem base_sha legível no GITHUB_EVENT_PATH"
-        _git(["fetch", "--depth=1", "origin", base_sha], cwd=repo_root)
-        return base_sha, f"merge_group base_sha {base_sha[:12]}"
-    if event == "pull_request":
-        base_ref = os.environ.get("GITHUB_BASE_REF", "") or "main"
-        fetched = _git(["fetch", "--depth=1", "origin", base_ref], cwd=repo_root)
-        if fetched.returncode != 0:
-            return None, f"fetch da base '{base_ref}' falhou: {fetched.stderr.strip()}"
-        return "FETCH_HEAD", f"pull_request base origin/{base_ref} (FETCH_HEAD)"
+    if event in EVENT_BASE_SHA_PATH:
+        base_sha, problem = read_event_base_sha(event, os.environ.get("GITHUB_EVENT_PATH", ""))
+        if base_sha is None:
+            return None, problem
+        unavailable = ensure_commit(base_sha, repo_root)
+        if unavailable:
+            return None, f"{event}: {unavailable}"
+        return base_sha, f"{event} base_sha {base_sha[:12]}"
     # Local / other triggers: best effort against origin/main.
     for candidate in ("origin/main", "main"):
         merge_base = _git(["merge-base", candidate, "HEAD"], cwd=repo_root)

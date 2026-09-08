@@ -151,10 +151,11 @@ jobs:
 
     steps:
       - name: Checkout
-        # O gate faz diff contra a base do PR; `fetch-depth: 0` dá o histórico
-        # que o merge-base precisa. Com o checkout raso o diff sai vazio e o
-        # gate passaria verde sem olhar nada — falha silenciosa no gate contra
-        # falha silenciosa, que seria uma piada de mau gosto.
+        # O gate faz diff contra o commit-base do payload do evento, e sabe
+        # buscá-lo por SHA num checkout raso. `fetch-depth: 0` fica assim mesmo
+        # por ser mais barato e mais limpo: com o histórico já aqui, o gate não
+        # precisa do fetch — e `git fetch --depth=1` num clone completo o
+        # tornaria raso de efeito colateral.
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
