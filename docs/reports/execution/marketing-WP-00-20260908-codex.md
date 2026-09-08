@@ -84,3 +84,23 @@ Fontes oficiais consultadas em leitura: LGPD compilada/ANPD, OpenAPI/Help do Man
 Em 2026-09-08, após receber a proposta integral e a declaração de autorização, o proprietário respondeu: “ok, pode prosseguir dessa forma.” A referência é inequívoca ao pacote `marketing-human-gates.v1`; G-H01, G-H02, G-H03 e G-H04 estão fechados para implementação exclusivamente local nos limites aprovados.
 
 Continuam fechados: deploy, escrita em produção, credenciais ou sandbox externos, envios reais, merge, push, PR, piloto e rollout. G-H05, G-H06 e G-H08 continuam sujeitos às evidências previstas; G-H09 e G-H10 exigem autorização específica futura. A execução pode retomar em MKT-001/WP-00.
+
+## MKT-001 — contratos executáveis e fornecedor adversarial
+
+Implementado em 2026-09-08:
+
+- vocabulário fechado de command, delivery e outcome externo;
+- transições que proíbem retry cego de `unknown`;
+- envelope de erro com `code`, `detail`, `retryable`, `field_errors`, `request_id` e `current_version`;
+- `ResolvedDispatchArtifact` imutável, serialização canônica e hash SHA-256 sem destinatário;
+- `Clock` injetável e relógio de teste consciente de timezone;
+- fake provider hermético que distingue falha antes da chamada, rejeição, aceite e efeito ocorrido com resposta perdida;
+- teste explícito que bloqueia qualquer tentativa de rede pelo fake.
+
+Provas locais:
+
+- `ruff check shopman/shop/services/marketing_contracts.py shopman/shop/tests/marketing_fakes.py shopman/shop/tests/test_marketing_contracts.py` — passou;
+- `pytest -q shopman/shop/tests/test_marketing_contracts.py` — 9 testes passaram em 0,07 s;
+- nenhum destinatário real, provider, credencial, sandbox ou rede foi usado.
+
+Próxima dependência liberada: MKT-002, reprodução da precedência `opt-out > alert subscription`, seguida de MKT-003 para o histórico append-only de consentimento.
