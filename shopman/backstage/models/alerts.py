@@ -14,6 +14,13 @@ class OperatorAlert(models.Model):
         ("payment_insufficient", "Pagamento abaixo do total"),
         ("payment_reconciliation_failed", "Reconciliação de pagamento falhou"),
         ("payment_disputed", "Cartão contestado (disputa)"),
+        # Estorno é a única operação que tira dinheiro da casa sem ninguém
+        # olhando, e ela falha de dois jeitos diferentes: o que não saiu (o
+        # cliente segue sem o dinheiro) e o que saiu no gateway e não virou
+        # linha no Payman. O segundo é o pior — o saldo reembolsável local
+        # continua de pé e um próximo estorno devolve duas vezes.
+        ("payment_refund_failed", "Estorno falhou no gateway"),
+        ("payment_ledger_drift", "Estorno saiu do gateway sem registro no livro"),
         ("webhook_failed", "Webhook falhou"),
         # Integração externa de SAÍDA (Google Geocoding, etc.) falhando. O
         # webhook é o lado de entrada; este é o de saída — que até aqui morria
@@ -29,9 +36,28 @@ class OperatorAlert(models.Model):
         ("integration_config_drift", "Integração em configuração degradada"),
         ("stock_discrepancy", "Discrepância de estoque"),
         ("payment_after_cancel", "Pagamento após cancelamento"),
+        # A gêmea do `payment_after_cancel`: o dinheiro chegou com o pedido
+        # ainda em NEW, antes de alguém confirmar. Não é falha — é o aviso de
+        # que existe pedido PAGO esperando decisão do balcão.
+        ("payment_awaiting_confirmation", "Pagamento chegou antes da confirmação"),
         ("stock_low", "Estoque baixo"),
+        # Estoque do sistema acima do físico, pelos três caminhos: a baixa que
+        # não saiu na entrega, o pedido que passou sem reserva, e o item fora
+        # do catálogo em canal que exige reserva. O fechamento não enxerga
+        # nenhum dos três — por isso cada um grita na hora.
+        ("stock_fulfill_failed", "Baixa de estoque falhou"),
+        ("stock_hold_gap", "Pedido commitado sem reserva de estoque"),
+        ("stock_unknown_sku", "Pedido com SKU fora do catálogo"),
+        # O contrário: reserva presa sem dono, que a varredura devolveu. A
+        # vitrine ganhou disponibilidade de volta e a loja precisa saber por quê.
+        ("orphan_holds_released", "Reservas órfãs devolvidas ao estoque"),
         ("marketplace_rejected_unavailable", "Marketplace rejeitado: indisponível"),
         ("marketplace_rejected_oos", "Marketplace rejeitado: sem estoque"),
+        # Os dois acima nasceram com nome de marketplace e nunca chegaram a ser
+        # gravados: a recusa por disponibilidade no commit vale para QUALQUER
+        # canal, e é com estes dois nomes que o lifecycle escreve.
+        ("rejected_unavailable", "Pedido recusado: item indisponível"),
+        ("rejected_oos", "Pedido recusado: reserva não confirmada"),
         ("coupon_over_redeemed", "Cupom resgatado acima do limite"),
         ("pos_rejected_unavailable", "POS rejeitado: produto indisponível"),
         # O cardápio agrupa por coleção ATIVA e recolhe no fim quem não tem
@@ -41,6 +67,38 @@ class OperatorAlert(models.Model):
         # switch — e, por não ter dono, ficava invisível até um cliente reclamar.
         ("catalog_hidden_by_inactive_collection", "Produto fora do cardápio: categoria desativada"),
         ("stale_new_order", "Pedido parado aguardando confirmação"),
+        # Pedido fechado sem dono: nesta loja o telefone É a identidade, e sem
+        # o vínculo o cliente fica sem histórico, fidelidade e rastreio.
+        ("checkout_customer_unlinked", "Pedido fechou sem vínculo com cadastro"),
+        # Encomenda não paga barrada antes da cozinha: a fornada não sai, e
+        # quem cobra é gente.
+        ("preorder_activation_blocked_unpaid", "Encomenda não paga barrada antes da cozinha"),
+        # Exclusão de conta que não terminou. Dado de titular que continua no
+        # banco é obrigação legal em aberto, não um 500 qualquer.
+        ("account_deletion_incomplete", "Exclusão de conta incompleta"),
+        # Item que a cozinha NUNCA vai ver: sem estação casada, o pedido chega a
+        # pronto com o item nunca preparado.
+        ("kds_unrouted_item", "Item sem estação no KDS"),
+        # Entrega por central: a corrida que não abriu, a que ninguém aceitou e
+        # a que a central cancelou. Nos três o pedido fica parado esperando um
+        # entregador que não vem, e re-despachar ou levar por conta da casa é
+        # decisão humana.
+        ("courier_dispatch_failed", "Corrida não abriu na central"),
+        ("courier_not_attended", "Nenhum entregador aceitou a corrida"),
+        ("courier_ride_cancelled", "A central cancelou a corrida"),
+        # Fiscal: nota prometida ao cliente e recusada pela regra; NFC-e barrada
+        # porque o pagamento gravado é menor que o total; nota autorizada cujo
+        # e-mail não saiu; cancelamento que falhou (nota válida em pé para venda
+        # cancelada é passivo); e devolução parcial com a nota inteira de pé.
+        # Nenhum desses se resolve com retry — todos terminam em alguém.
+        ("fiscal_receipt_promised", "Nota prometida ao cliente e não emitida"),
+        ("fiscal_payment_mismatch", "NFC-e barrada: pagamento abaixo do total"),
+        ("fiscal_email_failed", "NFC-e autorizada mas o e-mail não saiu"),
+        ("fiscal_cancel_failed", "Cancelamento da NFC-e falhou"),
+        ("fiscal_partial_return", "Devolução parcial com NFC-e em pé"),
+        # O desconto de pontos já entrou no total e a baixa no saldo não passou:
+        # receita perdida que some sem ninguém ver.
+        ("loyalty_redeem_uncovered", "Desconto de pontos sem baixa no saldo"),
         ("production_late", "Produção atrasada"),
         ("production_low_yield", "Produção com yield baixo"),
         ("production_stock_short", "Produção sem insumo suficiente"),
@@ -49,6 +107,13 @@ class OperatorAlert(models.Model):
         # pede (sem pré-checagem, ou divergência de concorrência). A fornada não
         # falha, mas o livro de insumo ficou acima do real e precisa gritar.
         ("production_stock_shortfall", "Produção baixou menos insumo que a ficha"),
+        # As três faltas de fornada que não são de insumo: a planejada que nunca
+        # começou, a começada que nunca fechou (estoque preso em produção) e a
+        # fechada sem gravar os lotes — sem lote, some o desconto de validade e
+        # a rastreabilidade da partida (ADR-017).
+        ("production_forgotten", "Produção planejada nunca iniciada"),
+        ("production_unfinished", "Produção iniciada nunca concluída"),
+        ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
         ("directive_failed_spike", "Tarefas de fundo falhando"),
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
