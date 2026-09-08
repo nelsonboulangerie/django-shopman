@@ -122,7 +122,28 @@ ser desligado no primeiro dia.
 arquivos, 16 sites.** Não são 50. Quem fechar a última linha dessas duas:
 apague o `continue-on-error` do job `silent-swallow-gate` e peça ao dono para
 marcar `Gate da meia-correção` como required na branch protection (é a mão dele
-no GitHub, não a nossa).
+no GitHub, não a nossa). ⚠️ **Os dois passos são um só movimento.** Tirar o
+`continue-on-error` antes do required deixa o gate reprovando sem bloquear —
+ruído vermelho que ninguém precisa olhar. Marcar required antes de tirá-lo dá
+um check obrigatório que sempre passa. Qualquer uma das metades sozinha ensina
+o time a ignorar o vermelho.
+
+### ✅ A base do diff não mente mais (pré-condição, resolvida)
+
+O `Gate da meia-correção` chegou a reprovar o **PR #554** por um arquivo que
+aquele PR nunca abriu. `resolve_diff_base` (em `scripts/check_adr015.py`,
+compartilhada com o gate do ADR-015) usava a **ponta** da base como referência.
+O merge ref `refs/pull/N/merge` é gerado no push e **não é refeito quando a base
+anda**: o #549 entrou no meio, a ponta avançou, o `HEAD` não, e o diff passou a
+mostrar as mudanças do PR alheio **ao contrário**.
+
+A base agora sai do **pai 1 do merge ref** — o commit exato sobre o qual o merge
+foi montado, imune à base andar depois. Ele é lido do objeto do commit
+(`git cat-file commit HEAD`), e não de `rev-parse HEAD^1`, porque o enxerto do
+`fetch-depth: 1` esconde os pais da revision walk mas não do objeto: por isso o
+conserto **não custou nada de CI** e o job `quality`, que faz checkout raso,
+continua como está. Sem base resolvível os dois gates **reprovam** com a razão
+escrita — nunca verde por ter olhado zero arquivo.
 
 Os 12 "provavelmente inofensivos" **não pedem conserto, pedem marcador**: são a
 forma mais barata de encolher a lista sem mexer em comportamento, e o marcador

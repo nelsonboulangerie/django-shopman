@@ -67,6 +67,12 @@ jobs:
       # no-op verde com uma linha de log. O terceiro check da política
       # (operação destrutiva exige marcador expand-contract) roda dentro do
       # `make test-migrations` logo abaixo.
+      #
+      # O checkout deste job é RASO de propósito e o gate aguenta: a base do
+      # diff sai do pai 1 do merge ref, lido do objeto do commit (o enxerto do
+      # shallow esconde os pais de `rev-parse HEAD^1`, não do objeto), e só o
+      # commit da base é buscado. Sem base resolvível o script REPROVA — nunca
+      # sai verde por ter analisado zero arquivo.
       - name: "ADR-015: migrations append-only + DEPRECATED com prazo"
         run: .venv/bin/python scripts/check_adr015.py
 
@@ -139,7 +145,9 @@ jobs:
   # zerar as faixas `dinheiro` e `fiscal` — que são 6 arquivos, não 50. Quem
   # zerar a última linha dessas duas faixas: apague este `continue-on-error`,
   # e peça ao dono para marcar o check como obrigatório na branch protection
-  # (é a mão dele no GitHub, não a nossa).
+  # (é a mão dele no GitHub, não a nossa). ⚠️ Os dois passos são UM só: tirar o
+  # `continue-on-error` antes do required deixa o gate reprovando sem bloquear
+  # (ruído), e marcar required antes de tirá-lo dá um check que sempre passa.
   #
   # Enquanto isso ele não bloqueia nada, mas o relatório aparece no log do PR e
   # ensina o autor onde o irmão ficou para trás — que é metade do trabalho.
@@ -151,10 +159,11 @@ jobs:
 
     steps:
       - name: Checkout
-        # O gate faz diff contra a base do PR; `fetch-depth: 0` dá o histórico
-        # que o merge-base precisa. Com o checkout raso o diff sai vazio e o
-        # gate passaria verde sem olhar nada — falha silenciosa no gate contra
-        # falha silenciosa, que seria uma piada de mau gosto.
+        # `fetch-depth: 0` não é mais requisito de correção: `resolve_diff_base`
+        # tira a base do PAI 1 do merge ref, lido do objeto do commit, que
+        # sobrevive ao enxerto do shallow. O histórico completo continua aqui
+        # porque torna esse caminho gratuito (nenhum fetch extra) e mantém a
+        # merge-base disponível como último recurso.
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
