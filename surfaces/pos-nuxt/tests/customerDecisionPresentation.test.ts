@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   candidateSubtitle,
+  candidateValue,
   conflictDecision,
+  conflictTypedSource,
   contactChangeDecision,
   customerDecisionCopy,
+  decisionFieldFromServer,
   decisionFieldLabel,
   phoneKey,
   type CustomerDecision,
@@ -117,6 +120,68 @@ describe("conflictDecision — a recusa 422 vira decisão de tela", () => {
   });
 });
 
+// ⚠️ A tela tem DOIS e-mails e DOIS documentos — o do painel do cliente
+// (identidade) e o do comprovante (destino da nota) —, e a recusa do servidor
+// acusa só `customer_email`. Sem escolher pelo campo culpado, o painel
+// anunciava o telefone numa briga de e-mail, e "Manter Ana" limpava o campo do
+// painel enquanto o valor recusado seguia intacto no comprovante.
+describe("conflictTypedSource — qual campo da TELA brigou, e com que valor", () => {
+  const cart = {
+    customerPhone: "(43) 99999-0000",
+    customerEmail: "",
+    customerTaxId: "",
+    receiptEmail: "bia@example.org",
+    invoiceTaxId: "52998224725",
+  };
+
+  it("recusa de e-mail mostra o E-MAIL, nunca o telefone do carrinho", () => {
+    expect(conflictTypedSource({ field: "email", ...cart })).toEqual({
+      typedField: "receipt_email",
+      typed: "bia@example.org",
+    });
+  });
+
+  it("recusa de CPF mostra o DOCUMENTO da nota", () => {
+    expect(conflictTypedSource({ field: "tax_id", ...cart })).toEqual({
+      typedField: "invoice_tax_id",
+      typed: "52998224725",
+    });
+  });
+
+  // A precedência é a do servidor (`fill_email = customer_email or
+  // receipt_email`): réguas diferentes nomeiam um valor e limpam outro.
+  it("o campo do PAINEL ganha do comprovante — como no servidor", () => {
+    expect(conflictTypedSource({ ...cart, field: "email", customerEmail: "ana@example.org" })).toEqual({
+      typedField: "customer_email",
+      typed: "ana@example.org",
+    });
+    expect(conflictTypedSource({ ...cart, field: "tax_id", customerTaxId: "11144477735" })).toEqual({
+      typedField: "customer_tax_id",
+      typed: "11144477735",
+    });
+  });
+
+  it("telefone só existe no painel", () => {
+    expect(conflictTypedSource({ field: "phone", ...cart })).toEqual({
+      typedField: "customer_phone",
+      typed: "(43) 99999-0000",
+    });
+  });
+
+  it("sem campo culpado sobra a ordem em que o balcão digita", () => {
+    expect(conflictTypedSource({ field: "", ...cart }).typed).toBe("(43) 99999-0000");
+    expect(conflictTypedSource({ field: "", ...cart, customerPhone: "" }).typedField).toBe("");
+  });
+
+  it("o dialeto do servidor vira o campo da tela", () => {
+    expect(decisionFieldFromServer("customer_email")).toBe("email");
+    expect(decisionFieldFromServer("customer_tax_id")).toBe("tax_id");
+    expect(decisionFieldFromServer("customer_phone")).toBe("phone");
+    expect(decisionFieldFromServer("")).toBe("");
+    expect(decisionFieldFromServer(null)).toBe("");
+  });
+});
+
 describe("contactChangeDecision — corrigir contato se DIZ antes de acontecer", () => {
   const base = {
     customerRef: "CUST-A",
@@ -210,11 +275,77 @@ describe("customerDecisionCopy — voz de balcão, e as saídas dizem o que fica
     });
     expect(copy.title).toBe("Este WhatsApp está preso num cadastro desativado");
     expect(copy.body).toContain("Cadastro Antigo");
-    expect(copy.confirmLabel).toBe("Liberar o WhatsApp");
     expect(copy.release?.label).toBe("Liberar o WhatsApp");
+    // ⚠️ UMA vez só. O rótulo vinha no `confirmLabel` E no `release`, e só o
+    // primeiro era renderizado: sobrava um caminho morto que fazia o próximo a
+    // mexer achar que existem duas ações.
+    expect(copy.confirmLabel).toBe("");
     // Unificar não é oferecido porque o Core recusaria — botão morto é pior
     // que botão ausente.
     expect(copy.merge).toBeNull();
+  });
+
+  // ⚠️ VENDA ANÔNIMA — o caso mais comum do dono desativado, e o que ficava sem
+  // saída nenhuma: a recusa chega com UM lado só, caía no formato de lista, e
+  // ali "Atender este" nasce desabilitado para dono desativado.
+  it("sem ninguém na comanda, o dono desativado ainda tem a saída de liberar", () => {
+    const decision = conflictDecision({
+      field: "customer_email",
+      candidates: [candidate({
+        ref: "CUST-OLD", name: "Cadastro Antigo", phone: "", email: "bia@example.org",
+        matched_by: ["email"], is_current: false, owner_inactive: true,
+      })],
+      typed: "bia@example.org",
+    });
+    expect(decision?.kind).toBe("inactive_owner");
+    expect(decision?.current).toBeNull();
+
+    const copy = customerDecisionCopy(decision!);
+    expect(copy.release?.label).toBe("Liberar o e-mail");
+    // Sem cliente na comanda não há "de quem" a venda segue — e a frase não
+    // pode terminar prometendo um nome que não existe.
+    expect(copy.body).toContain("a venda segue.");
+    // "Manter o" era o primeiro nome de "o cliente da comanda".
+    expect(copy.cancelLabel).toBe("Descartar este e-mail");
+  });
+
+  // ⚠️ A lista também precisa de saída para o dono desativado: sem ela a linha
+  // fica com um botão desabilitado e nada mais.
+  it("a lista oferece LIBERAR na linha do dono desativado", () => {
+    const copy = customerDecisionCopy({
+      kind: "candidate_list",
+      field: "email",
+      typed: "bia@example.org",
+      current: null,
+      other: null,
+      candidates: [
+        candidate({ ref: "CUST-A", email: "ana@example.org", is_current: true }),
+        candidate({
+          ref: "CUST-OLD", name: "Cadastro Antigo", email: "bia@example.org",
+          matched_by: ["email"], is_current: false, owner_inactive: true,
+        }),
+      ],
+    });
+    expect(copy.release?.label).toBe("Liberar o e-mail");
+  });
+
+  it("lista sem dono desativado não oferece liberar — não há o que soltar", () => {
+    const copy = customerDecisionCopy({
+      kind: "candidate_list",
+      field: "email",
+      typed: "",
+      current: null,
+      other: null,
+      candidates: [candidate({ ref: "CUST-B", is_current: false, matched_by: ["email"] })],
+    });
+    expect(copy.release).toBeNull();
+  });
+
+  it("o valor do candidato é o do campo em disputa", () => {
+    const row = candidate({ email: "ana@example.org", tax_id: "52998224725" });
+    expect(candidateValue(row, "email")).toBe("ana@example.org");
+    expect(candidateValue(row, "tax_id")).toBe("52998224725");
+    expect(candidateValue(row, "phone")).toBe("+5543999990011");
   });
 
   // ⚠️ Sem UM campo culpado a escolha é por LINHA: o par confirmar/cancelar não

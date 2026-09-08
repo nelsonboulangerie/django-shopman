@@ -28,7 +28,11 @@ export interface CustomerDecisionParty {
 //   3. `inactive_owner` — o valor digitado está preso num cadastro DESATIVADO.
 //      O resolve do servidor só enxerga cliente ativo, mas os UNIQUEs do banco
 //      enxergam todos: o operador via "já é de outro cadastro", não achava esse
-//      cadastro na busca e a venda parava. Aqui ele tem nome e uma saída.
+//      cadastro na busca e a venda parava. Aqui ele tem nome e uma saída — e
+//      vale INCLUSIVE sem ninguém na comanda, que é o caso mais comum dele (a
+//      venda anônima com o e-mail da nota). Ali a recusa chega com um lado só,
+//      caía no formato de lista, e na lista "Atender este" nasce desabilitado
+//      para dono desativado: nome à vista e nenhum botão que resolvesse.
 //
 //   4. `candidate_list` — dois ou mais intrusos, por campos diferentes. Não há
 //      UM campo culpado para nomear, e antes disso a recusa caía num toast que
@@ -64,6 +68,26 @@ export interface CustomerDecisionAction {
   icon: string;
 }
 
+/**
+ * ONDE, na tela, mora o valor que brigou.
+ *
+ * O servidor acusa o campo no dialeto dele (`customer_email`), e a tela tem
+ * DOIS e-mails e DOIS documentos: o do painel do cliente, que é identidade, e o
+ * do comprovante, que é destino da nota. A recusa não distingue — quem sabe de
+ * qual dos dois veio é a tela, pela mesma precedência do servidor (o campo do
+ * painel primeiro; o do comprovante quando o painel está vazio).
+ *
+ * Sem isto o painel mostrava o telefone numa briga de e-mail, e "Manter Ana"
+ * limpava o campo errado: o operador tentava de novo e batia na mesma parede.
+ */
+export type ConflictTypedField =
+  | "customer_phone"
+  | "customer_email"
+  | "customer_tax_id"
+  | "receipt_email"
+  | "invoice_tax_id"
+  | "";
+
 export interface CustomerDecisionCopy {
   title: string;
   body: string;
@@ -75,7 +99,14 @@ export interface CustomerDecisionCopy {
   cancelIcon: string;
   /** A TERCEIRA saída: os dois cadastros são a MESMA pessoa. */
   merge: CustomerDecisionAction | null;
-  /** A saída que o merge não dá: o dono é um cadastro desativado. */
+  /**
+   * A saída que o merge não dá: o dono é um cadastro DESATIVADO.
+   *
+   * É o botão que a tela renderiza para liberar — no painel do `inactive_owner`
+   * e, na lista, em cada linha de dono desativado. Não se repete no
+   * `confirmLabel`: dois botões com o mesmo rótulo fazem o próximo a mexer achar
+   * que existem duas ações.
+   */
   release: CustomerDecisionAction | null;
 }
 
@@ -97,11 +128,60 @@ export function decisionFieldLabel(field: CustomerDecisionField | ""): string {
   return FIELD_LABEL[field as CustomerDecisionField] || "contato";
 }
 
+/** O campo do dialeto de erro traduzido para o da tela. */
+export function decisionFieldFromServer(field?: string | null): CustomerDecisionField | "" {
+  return FIELD_FROM_SERVER[String(field || "")] || "";
+}
+
+/**
+ * QUAL campo da tela brigou, e com que valor.
+ *
+ * A precedência é a MESMA do servidor (`fill_email = customer_email or
+ * receipt_email`): o campo do painel do cliente ganha, e o do comprovante só
+ * entra quando o painel está vazio. Se as duas réguas divergirem, o painel
+ * nomeia um valor e a ação limpa outro — que é exatamente o beco que isto fecha.
+ */
+export function conflictTypedSource(input: {
+  field: CustomerDecisionField | "";
+  customerPhone?: string;
+  customerEmail?: string;
+  customerTaxId?: string;
+  receiptEmail?: string;
+  invoiceTaxId?: string;
+}): { typedField: ConflictTypedField; typed: string } {
+  const trimmed = (value?: string) => (value || "").trim();
+  const pick = (
+    panelField: ConflictTypedField,
+    panel: string,
+    receiptField: ConflictTypedField,
+    receipt: string,
+  ): { typedField: ConflictTypedField; typed: string } => {
+    if (panel) return { typedField: panelField, typed: panel };
+    if (receipt) return { typedField: receiptField, typed: receipt };
+    return { typedField: panelField, typed: "" };
+  };
+
+  const phone = trimmed(input.customerPhone);
+  const email = trimmed(input.customerEmail);
+  const taxId = trimmed(input.customerTaxId);
+
+  if (input.field === "phone") return { typedField: "customer_phone", typed: phone };
+  if (input.field === "email") return pick("customer_email", email, "receipt_email", trimmed(input.receiptEmail));
+  if (input.field === "tax_id") return pick("customer_tax_id", taxId, "invoice_tax_id", trimmed(input.invoiceTaxId));
+  // Sem campo culpado não há o que nomear: sobra a ordem em que o balcão digita.
+  return { typedField: "", typed: phone || email || taxId };
+}
+
 /** "É a mesma pessoa" — a saída que resolve o cadastro duplicado de vez. */
 const MERGE_ACTION: CustomerDecisionAction = {
   label: "É a mesma pessoa — unificar cadastros",
   icon: "lucide:combine",
 };
+
+/** "Liberar" — a saída do contato preso num cadastro desativado. */
+function releaseAction(label: string): CustomerDecisionAction {
+  return { label: `Liberar o ${label}`, icon: "lucide:unlock" };
+}
 
 /** Primeiro nome — no balcão ninguém fala o nome inteiro. */
 function firstName(name: string): string {
@@ -118,7 +198,12 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   const other = decision.other;
 
   const currentName = current?.name?.trim() || "o cliente da comanda";
-  const keepLabel = `Manter ${firstName(currentName) || currentName}`;
+  // Sem ninguém na comanda não há quem "manter": a venda anônima produzia
+  // "Manter o" — o primeiro nome de "o cliente da comanda". O que o operador
+  // faz ali é descartar o que digitou.
+  const keepLabel = current
+    ? `Manter ${firstName(currentName) || currentName}`
+    : `Descartar este ${label}`;
 
   if (decision.kind === "contact_conflict") {
     const ownerName = other?.name?.trim() || "outro cliente";
@@ -141,22 +226,31 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
   if (decision.kind === "inactive_owner") {
     // ⚠️ Aqui NÃO se oferece "atender o outro": o cadastro está desativado, e
     // nem aparece na busca. Nem "unificar": o Core recusa merge com um lado
-    // inativo. A saída é soltar o contato do cadastro morto.
+    // inativo. A saída é soltar o contato do cadastro morto — e ela é o botão
+    // `release`, uma vez só. Antes ela vinha DUAS: no `confirmLabel` e no
+    // `release`, e só o primeiro era renderizado.
     const ownerName = other?.name?.trim() || "um cadastro desativado";
     return {
       title: `Este ${label} está preso num cadastro desativado`,
       body: `${decision.typed || `O ${label} digitado`} está em ${ownerName}, que não está mais ativo. `
-        + `Liberar solta o ${label} desse cadastro e a venda segue com ${currentName}.`,
-      confirmLabel: `Liberar o ${label}`,
-      confirmIcon: "lucide:unlock",
+        + (current
+          ? `Liberar solta o ${label} desse cadastro e a venda segue com ${currentName}.`
+          : `Liberar solta o ${label} desse cadastro e a venda segue.`),
+      confirmLabel: "",
+      confirmIcon: "",
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: { label: `Liberar o ${label}`, icon: "lucide:unlock" },
+      release: releaseAction(label),
     };
   }
 
   if (decision.kind === "candidate_list") {
+    // Dono desativado na LISTA: "Atender este" não existe para ele (não aparece
+    // nem na busca), e sem a liberação a linha ficava com um botão desabilitado
+    // e nada mais — o operador via o nome de quem segura o contato e não tinha
+    // um único botão que resolvesse.
+    const hasInactive = (decision.candidates || []).some((row) => !row.is_current && row.owner_inactive);
     return {
       title: "Os dados apontam para cadastros diferentes",
       body: "Telefone, CPF/CNPJ e e-mail digitados são de pessoas diferentes. "
@@ -167,7 +261,7 @@ export function customerDecisionCopy(decision: CustomerDecision): CustomerDecisi
       cancelLabel: keepLabel,
       cancelIcon: "lucide:undo-2",
       merge: null,
-      release: null,
+      release: decision.field && hasInactive ? releaseAction(label) : null,
     };
   }
 
@@ -200,14 +294,18 @@ export interface ServerConflictCandidate {
   owner_inactive?: boolean;
 }
 
-function partyValue(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): string {
+/** O valor do campo em disputa NESTE candidato — o que a liberação solta. */
+export function candidateValue(
+  candidate: ServerConflictCandidate,
+  field: CustomerDecisionField | "",
+): string {
   if (field === "email") return candidate.email || "";
   if (field === "tax_id") return candidate.tax_id || "";
   return candidate.phone || "";
 }
 
 function party(candidate: ServerConflictCandidate, field: CustomerDecisionField | ""): CustomerDecisionParty {
-  return { ref: candidate.ref, name: candidate.name, value: partyValue(candidate, field) };
+  return { ref: candidate.ref, name: candidate.name, value: candidateValue(candidate, field) };
 }
 
 /** Como o candidato se apresenta na LISTA: o que dele bateu com o digitado. */
@@ -230,10 +328,26 @@ export function conflictDecision(input: {
 }): CustomerDecision | null {
   const candidates = input.candidates || [];
   if (!candidates.length) return null;
-  const field = FIELD_FROM_SERVER[String(input.field || "")] || "";
+  const field = decisionFieldFromServer(input.field);
   const current = candidates.find((row) => row.is_current) || null;
   const intruders = candidates.filter((row) => !row.is_current);
   const other = intruders[0] || null;
+
+  // Dono DESATIVADO tem copy e saída próprias: atender não dá (não aparece na
+  // busca) e unificar o Core recusa. Vale INCLUSIVE sem ninguém na comanda — a
+  // venda anônima é o caso mais comum dele, e ali a recusa vinha com um lado só
+  // e caía na lista, onde "Atender este" nasce desabilitado. O operador via o
+  // nome de quem segura o contato e nenhum botão que resolvesse.
+  if (field && other?.owner_inactive) {
+    return {
+      kind: "inactive_owner",
+      field,
+      typed: (input.typed || candidateValue(other, field) || "").trim(),
+      current: current ? party(current, field) : null,
+      other: party(other, field),
+      candidates,
+    };
+  }
 
   // Sem UM campo culpado (dois ou mais intrusos, por campos diferentes) a tela
   // renderiza a LISTA: o servidor já mandou os lados, e antes disso tudo isso
@@ -250,11 +364,9 @@ export function conflictDecision(input: {
   }
 
   return {
-    // Dono DESATIVADO tem copy e saída próprias: atender não dá (não aparece na
-    // busca) e unificar o Core recusa.
-    kind: other.owner_inactive ? "inactive_owner" : "contact_conflict",
+    kind: "contact_conflict",
     field,
-    typed: (input.typed || partyValue(other, field) || "").trim(),
+    typed: (input.typed || candidateValue(other, field) || "").trim(),
     current: party(current, field),
     other: party(other, field),
     candidates,

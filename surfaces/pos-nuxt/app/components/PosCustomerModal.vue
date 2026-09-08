@@ -18,7 +18,7 @@ import type {
 } from "~/types/pos";
 import { cpfTail } from "~/presentation/customerSearch";
 import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
-import { candidateSubtitle, customerDecisionCopy } from "~/presentation/customerDecision";
+import { candidateSubtitle, candidateValue, customerDecisionCopy } from "~/presentation/customerDecision";
 import type { ReceiptContactOffer } from "~/presentation/receiptContact";
 
 const props = withDefaults(defineProps<{
@@ -40,6 +40,8 @@ const props = withDefaults(defineProps<{
   customerDecision?: CustomerDecision | null;
   /** A unificação está em voo — o botão não pode disparar duas vezes. */
   customerMergeBusy?: boolean;
+  /** A liberação do contato está em voo — mesmo motivo. */
+  customerReleaseBusy?: boolean;
   /** Payment context: also show the fiscal/comprovante block. */
   showFiscal?: boolean;
   receiptChannels?: string[];
@@ -58,6 +60,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   customerDecision: null,
   customerMergeBusy: false,
+  customerReleaseBusy: false,
   resolvedNew: false,
   showFiscal: false,
   receiptChannels: () => [],
@@ -80,9 +83,11 @@ const emit = defineEmits<{
   selectResult: [POSCustomerSearchResult];
   clear: [];
   resolveCustomer: [];
-  /** O operador assumiu a mudança (trocar de cliente / trocar o contato /
-   *  liberar o contato preso num cadastro desativado). */
+  /** O operador assumiu a mudança (trocar de cliente / trocar o contato). */
   decisionConfirm: [];
+  /** LIBERAR o contato preso num cadastro desativado — o valor a soltar viaja
+   *  junto porque na LISTA ele é o da linha, não o do painel. */
+  decisionRelease: [value: string];
   /** O operador ficou com o que estava — o valor digitado é descartado. */
   decisionCancel: [];
   /** É a MESMA pessoa: unificar os dois cadastros. */
@@ -164,6 +169,11 @@ const decisionCopy = computed(() =>
 watch(() => props.customerDecision, (decision) => {
   if (decision && !props.open) emit("update:open", true);
 });
+// O contato que o painel libera: o que o operador digitou, ou o valor do dono
+// quando a recusa veio sem o digitado.
+const decisionReleaseValue = computed(
+  () => props.customerDecision?.typed || props.customerDecision?.other?.value || "",
+);
 
 function onSelect(result: POSCustomerSearchResult) {
   emit("selectResult", result);
@@ -365,7 +375,27 @@ const newCustomerNote = computed(() => {
                   </p>
                   <p class="truncate text-xs text-muted-foreground">{{ candidateSubtitle(row) }}</p>
                 </div>
+                <!-- Dono DESATIVADO não se atende: ele não aparece nem na
+                     busca. A linha ficava com um botão desabilitado e nada
+                     mais — o nome de quem segura o contato, e zero saída.
+                     Liberar é a saída que o merge não dá. -->
                 <UiButton
+                  v-if="row.owner_inactive && decisionCopy.release"
+                  type="button"
+                  size="sm"
+                  :disabled="customerReleaseBusy"
+                  class="h-9 shrink-0 gap-2"
+                  @click="$emit('decisionRelease', candidateValue(row, customerDecision.field))"
+                >
+                  <Icon
+                    :name="customerReleaseBusy ? 'lucide:loader-circle' : decisionCopy.release.icon"
+                    class="size-4 shrink-0"
+                    :class="customerReleaseBusy ? 'animate-spin' : ''"
+                  />
+                  {{ decisionCopy.release.label }}
+                </UiButton>
+                <UiButton
+                  v-else
                   type="button"
                   size="sm"
                   :variant="row.is_current ? 'outline' : 'default'"
@@ -378,6 +408,25 @@ const newCustomerNote = computed(() => {
                 </UiButton>
               </li>
             </ul>
+
+            <!-- LIBERAR — a saída do contato preso num cadastro desativado, e a
+                 ação PRINCIPAL desse caso: atender não existe (o dono não
+                 aparece na busca) e unificar o Core recusa. Na lista ela mora
+                 na linha; aqui, em cima do par que fica. -->
+            <UiButton
+              v-if="decisionCopy.release && customerDecision.kind !== 'candidate_list'"
+              type="button"
+              :disabled="customerReleaseBusy"
+              class="h-11 w-full justify-center gap-2"
+              @click="$emit('decisionRelease', decisionReleaseValue)"
+            >
+              <Icon
+                :name="customerReleaseBusy ? 'lucide:loader-circle' : decisionCopy.release.icon"
+                class="size-4 shrink-0"
+                :class="customerReleaseBusy ? 'animate-spin' : ''"
+              />
+              <span class="min-w-0 truncate">{{ decisionCopy.release.label }}</span>
+            </UiButton>
 
             <div class="grid gap-2" :class="decisionCopy.confirmLabel ? 'sm:grid-cols-2' : ''">
               <UiButton

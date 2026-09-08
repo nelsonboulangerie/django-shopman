@@ -183,13 +183,81 @@ describe("PosCustomerModal — a recusa tem motivo E caminho", () => {
   // recusa unificar com um lado inativo. Antes disto era o beco mais fechado
   // de todos — a frase seca sobre um cadastro invisível.
   it("dono desativado tem frase própria e oferece LIBERAR, não unificar", async () => {
-    await mount({ customerDecision: INACTIVE_OWNER });
+    const wrapper = await mount({ customerDecision: INACTIVE_OWNER });
     const text = screenText();
 
     expect(text).toContain("Este WhatsApp está preso num cadastro desativado");
     expect(text).toContain("Cadastro Antigo");
-    expect(buttonByText("Liberar o WhatsApp")).toBeTruthy();
     expect(buttonByText("É a mesma pessoa — unificar cadastros")).toBeFalsy();
+
+    // UM botão de liberar, não dois: o rótulo vinha no `confirmLabel` e no
+    // campo `release`, e sobrava um caminho morto na estrutura da decisão.
+    const liberar = Array.from(document.querySelectorAll("button"))
+      .filter((b) => (b.textContent || "").includes("Liberar o WhatsApp"));
+    expect(liberar).toHaveLength(1);
+
+    liberar[0]!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["(43) 99999-0022"]);
+    expect(wrapper.emitted("decisionConfirm")).toBeUndefined();
+  });
+
+  it("a liberação em voo não dispara duas vezes", async () => {
+    await mount({ customerDecision: INACTIVE_OWNER, customerReleaseBusy: true });
+    expect(buttonByText("Liberar o WhatsApp")!.disabled).toBe(true);
+  });
+
+  // ⚠️ VENDA ANÔNIMA — sem cliente na comanda a recusa chega com UM lado só. A
+  // tela caía no formato de lista, onde "Atender este" nasce DESABILITADO para
+  // dono desativado: o operador via o nome de quem segura o e-mail e não tinha
+  // um único botão que resolvesse.
+  it("venda anônima com dono desativado ainda tem um botão que resolve", async () => {
+    const wrapper = await mount({
+      customerDecision: {
+        kind: "inactive_owner",
+        field: "email",
+        typed: "bia@example.org",
+        current: null,
+        other: { ref: "CUST-OLD", name: "Cadastro Antigo", value: "bia@example.org" },
+      } satisfies CustomerDecision,
+    });
+    expect(screenText()).toContain("Este e-mail está preso num cadastro desativado");
+    // "Manter o" era o primeiro nome de "o cliente da comanda".
+    expect(screenText()).not.toContain("Manter o ");
+    expect(buttonByText("Descartar este e-mail")).toBeTruthy();
+
+    buttonByText("Liberar o e-mail")!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["bia@example.org"]);
+  });
+
+  // A mesma saída dentro da LISTA: a linha do dono desativado trocava um botão
+  // desabilitado por nada.
+  it("na lista, a linha do dono desativado LIBERA em vez de não fazer nada", async () => {
+    const wrapper = await mount({
+      customerDecision: {
+        kind: "candidate_list",
+        field: "email",
+        typed: "bia@example.org",
+        current: null,
+        other: null,
+        candidates: [
+          candidate({ ref: "CUST-A", email: "ana@example.org", is_current: true }),
+          candidate({
+            ref: "CUST-OLD", name: "Cadastro Antigo", email: "bia@example.org",
+            matched_by: ["email"], is_current: false, owner_inactive: true,
+          }),
+        ],
+      } satisfies CustomerDecision,
+    });
+
+    const liberar = buttonByText("Liberar o e-mail");
+    expect(liberar).toBeTruthy();
+    expect(liberar!.disabled).toBe(false);
+
+    liberar!.click();
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("decisionRelease")?.[0]).toEqual(["bia@example.org"]);
   });
 
   // ⚠️ Dois ou mais intrusos por campos diferentes: o payload rico já vinha do
