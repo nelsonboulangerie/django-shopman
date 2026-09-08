@@ -2,7 +2,7 @@
 #
 # ⚠️ Este é o TEMPLATE de PRODUÇÃO (domínio no apex real). Para validar primeiro
 #    em ALPHA use o blueprint de referência `.do/app.alpha-subdomains.yaml`
-#    (loja em `alpha.nelsonboulangerie.com.br`, pagamentos mock).
+#    (loja em `menu.nelsonboulangerie.com.br`; Pix mock, cartão Stripe em teste).
 #
 # Topologia (desacoplado por domínio — a loja fica no apex `/`):
 #   STORE_DOMAIN            → storefront-nuxt (loja Nuxt)        [apex, PRIMARY]
@@ -79,6 +79,11 @@ domains:
     type: ALIAS
     zone: STORE_DOMAIN
   - domain: bi.STORE_DOMAIN
+    type: ALIAS
+    zone: STORE_DOMAIN
+  # Atalho do cofre: 302 para a planilha viva (SHOPMAN_BACKUP_SHEET_HOST +
+  # middleware do `web`). O template declarava a env e não roteava o host.
+  - domain: backup.STORE_DOMAIN
     type: ALIAS
     zone: STORE_DOMAIN
 
@@ -164,6 +169,14 @@ ingress:
           prefix: /
       component:
         name: bi-nuxt
+    # Atalho do cofre — host backup. (302 servido pelo Django).
+    - match:
+        authority:
+          exact: backup.STORE_DOMAIN
+        path:
+          prefix: /
+      component:
+        name: web
     # Loja Nuxt — apex (em /). Última regra = catch-all do domínio primário.
     - match:
         path:
@@ -474,17 +487,22 @@ envs:
   - key: GOOGLE_MAPS_API_KEY
     scope: RUN_TIME
     type: SECRET
+  # Este template usa `STORE_DOMAIN` em todo host que ele mesmo roteia. O valor
+  # do alpha (`backup.boulangerie.com.br`) entrou aqui por cópia e apontaria a
+  # produção para o domínio do outro app.
   - key: SHOPMAN_BACKUP_SHEET_HOST
     scope: RUN_TIME
-    value: 'backup.boulangerie.com.br'
+    value: 'backup.STORE_DOMAIN'
     type: GENERAL
   - key: SHOPMAN_BACKUP_SHEET_URL
     scope: RUN_TIME
     value: 'https://docs.google.com/spreadsheets/d/1rttEI2BwXHdqpVvicXAJZpqqlrfqHj7mMJMp9Drg2ks/edit?authuser=pablondrina%40gmail.com'
     type: GENERAL
+  # As fotos moram na própria loja (`public/img/products/`), então a base é o
+  # domínio desta loja — não o `menu.` do alpha, que veio junto por cópia.
   - key: SHOPMAN_PRODUCT_IMAGE_BASE
     scope: RUN_TIME
-    value: 'https://menu.nelsonboulangerie.com.br/img/products'
+    value: 'https://STORE_DOMAIN/img/products'
     type: GENERAL
 services:
   - name: web

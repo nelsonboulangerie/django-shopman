@@ -3,8 +3,11 @@ region: nyc
 alerts:
 - rule: DEPLOYMENT_FAILED
 - rule: DOMAIN_FAILED
+# ⛔ `alpha.` e `staging.` estão MORTOS desde o corte de 01/09/2026, sem alias e
+#    para sempre. A loja é `menu.nelsonboulangerie.com.br`. Nunca re-adicionar:
+#    já aconteceu uma vez, por um update feito a partir de snapshot velho.
 domains:
-- domain: alpha.nelsonboulangerie.com.br
+- domain: menu.nelsonboulangerie.com.br
   type: PRIMARY
   zone: nelsonboulangerie.com.br
 - domain: gestor.boulangerie.com.br
@@ -37,13 +40,19 @@ domains:
 - domain: bi.boulangerie.com.br
   type: ALIAS
   zone: boulangerie.com.br
+# Atalho do cofre: 302 para a planilha viva, servido pelo `web`
+# (SHOPMAN_BACKUP_SHEET_HOST + middleware). Estava no ar e fora deste arquivo —
+# um `apps update` teria apagado o domínio.
+- domain: backup.boulangerie.com.br
+  type: ALIAS
+  zone: boulangerie.com.br
 ingress:
   rules:
   - component:
       name: storefront-nuxt
     match:
       authority:
-        exact: alpha.nelsonboulangerie.com.br
+        exact: menu.nelsonboulangerie.com.br
       path:
         prefix: /
   - component:
@@ -117,6 +126,14 @@ ingress:
       path:
         prefix: /
   - component:
+      name: web
+    match:
+      authority:
+        exact: backup.boulangerie.com.br
+      path:
+        prefix: /
+  # Última regra = catch-all do domínio primário.
+  - component:
       name: storefront-nuxt
     match:
       path:
@@ -136,7 +153,7 @@ envs:
   type: GENERAL
 - key: CSRF_TRUSTED_ORIGINS
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://compras.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br'
+  value: 'https://menu.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br,https://compras.boulangerie.com.br'
   type: GENERAL
 - key: DJANGO_TRUST_X_FORWARDED_PROTO
   scope: RUN_TIME
@@ -148,15 +165,15 @@ envs:
   type: GENERAL
 - key: SHOPMAN_STOREFRONT_BASE_URL
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br'
+  value: 'https://menu.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_DOMAIN
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br'
+  value: 'https://menu.nelsonboulangerie.com.br'
   type: GENERAL
 - key: AUTH_DEFAULT_DOMAIN
   scope: RUN_TIME
-  value: 'alpha.nelsonboulangerie.com.br'
+  value: 'menu.nelsonboulangerie.com.br'
   type: GENERAL
 - key: SHOPMAN_OPERATOR_API_HOST
   scope: RUN_TIME
@@ -208,7 +225,7 @@ envs:
   type: GENERAL
 - key: WHATSAPP_STOREFRONT_URL
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br'
+  value: 'https://menu.nelsonboulangerie.com.br'
   type: GENERAL
 - key: DOORMAN_MESSAGE_SENDER_CLASS
   scope: RUN_TIME
@@ -236,7 +253,7 @@ envs:
   type: GENERAL
 - key: SHOPMAN_CARD_ADAPTER
   scope: RUN_TIME
-  value: 'shopman.shop.adapters.payment_mock'
+  value: 'shopman.shop.adapters.payment_stripe'
   type: GENERAL
 - key: SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS
   scope: RUN_TIME
@@ -258,9 +275,11 @@ envs:
   scope: RUN_TIME
   value: 'true'
   type: GENERAL
+# Ordem e conteúdo copiados do vivo. O `on_requested_receipt` entrou pelo painel
+# em 08/09 — sem ele, pedir a nota impressa ou por e-mail não emitia nada.
 - key: SHOPMAN_FISCAL_EMISSION_RESOLVER
   scope: RUN_TIME
-  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment'
+  value: 'shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment,shopman.shop.fiscal_resolvers.deferred_settlement,shopman.shop.fiscal_resolvers.on_requested_receipt'
   type: GENERAL
 - key: STRIPE_CAPTURE_METHOD
   scope: RUN_TIME
@@ -322,7 +341,7 @@ envs:
   type: SECRET
 - key: MANYCHAT_WHATSAPP_ID_FIELD_ID
   scope: RUN_TIME
-  value: ''
+  value: '8932087'
   type: GENERAL
 - key: DOORMAN_ACCESS_LINK_API_KEY
   scope: RUN_TIME
@@ -333,9 +352,11 @@ envs:
 - key: IFOOD_CLIENT_SECRET
   scope: RUN_TIME
   type: SECRET
+# O merchant do iFood é UUID — o `2512433` que este arquivo trazia é o número
+# de loja do painel, e apontaria a integração para lugar nenhum.
 - key: IFOOD_MERCHANT_ID
   scope: RUN_TIME
-  value: '2512433'
+  value: 'f36a17d0-e10b-4fdd-a16d-c8ffd866e59b'
   type: GENERAL
 - key: IFOOD_WEBHOOK_TOKEN
   scope: RUN_TIME
@@ -365,31 +386,35 @@ envs:
   scope: RUN_TIME
   value: '17841400193341623'
   type: GENERAL
+# Desligado no ar: o `menu.` recebe pedido de gente de verdade, e o autopilot
+# avançaria o pedido sozinho por baixo do operador.
 - key: SHOPMAN_STAGING_AUTOPILOT
   scope: RUN_TIME
-  value: 'true'
+  value: 'false'
   type: GENERAL
 - key: AI_ASSIST_API_KEY
   scope: RUN_TIME
   type: SECRET
-# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). Nasce desligado; a
-# chave S2S do webhook é a mesma do access link (DOORMAN_ACCESS_LINK_API_KEY)
-# enquanto CONCIERGE_API_KEY não for definida.
+# Concierge de WhatsApp (docs/guides/whatsapp-concierge.md). LIGADO no ar desde
+# que o dono abriu o piloto fechado; a chave S2S do webhook é a mesma do access
+# link (DOORMAN_ACCESS_LINK_API_KEY) enquanto CONCIERGE_API_KEY não for definida.
 - key: SHOPMAN_CONCIERGE_ENABLED
   scope: RUN_TIME
-  value: 'false'
+  value: 'true'
   type: GENERAL
-# Piloto fechado: só estes assinantes/telefones recebem o concierge (vazio = todos).
+# Piloto fechado: só estes assinantes/telefones recebem o concierge.
+# ⚠️ Vazio NÃO é "desligado" — é ABERTO A TODOS. Apagar esta lista solta o
+#    concierge em cima de toda a base do WhatsApp.
 - key: CONCIERGE_ALLOWED_SUBSCRIBERS
   scope: RUN_TIME
-  value: ''
+  value: '4605528796186498,1962036908,+5543984049009,+5543984035793'
   type: GENERAL
 - key: META_PAGE_ACCESS_TOKEN
   scope: RUN_TIME
   type: SECRET
 - key: SHOPMAN_PREPROD_URL
   scope: RUN_TIME
-  value: 'https://alpha.nelsonboulangerie.com.br'
+  value: 'https://menu.nelsonboulangerie.com.br'
   type: GENERAL
 
 # ── O spec versionado ESTAVA menor que o app vivo ─────────────────────

@@ -1,8 +1,11 @@
 # Conferir o spec antes de `doctl apps update`
 
-> **Regra curta:** rode `make deploy-spec-drift` **antes** de qualquer
-> `doctl apps update --spec`. Se a saída listar alguma chave em **SUMIRIAM**,
-> não rode o update — traga a chave para o arquivo primeiro.
+> # ⛔ NUNCA rode `doctl apps update --spec` sem passar o drift-check antes.
+>
+> `make deploy-spec-drift` tem que sair **[OK]**. Se a saída listar qualquer
+> coisa em **SUMIRIAM**, não rode o update: traga a coisa para o arquivo
+> primeiro. Isto vale para env, **domínio** e **regra de ingress** — as três
+> somem do mesmo jeito.
 
 ## A armadilha
 
@@ -36,13 +39,24 @@ make deploy-spec-drift spec=.do/app.subdomains.yaml   # produção
 ```
 
 O script (`scripts/check_do_spec_drift.py`) é **somente leitura**: chama
-`doctl apps spec get`, compara com o arquivo versionado e imprime três coisas:
+`doctl apps spec get`, compara com o arquivo versionado e imprime quatro coisas:
 
 - **⛔ SUMIRIAM** — existem no vivo e não no arquivo. Estas apagam. É a lista
   que importa.
-- **➕ nasceriam** — existem no arquivo e não no vivo. Normalmente é o que você
-  quer (foi o caso do `SENTRY_DSN` e do `FOCUS_NFE_ENVIRONMENT`).
+- **➕ nasceriam** — existem no arquivo e não no vivo.
 - **⚠️ divergem** — existem dos dois lados com valor/escopo/tipo diferente.
+- **✅ esperado** — diferença **declarada** no próprio script, com a razão
+  junto. Não conta como drift. Ver a seção de diferenças legítimas abaixo.
+
+Ele compara **env de app, env de serviço, domínios e regras de ingress**. As
+duas últimas entraram em 08/09/2026, depois que o arquivo versionado passou uma
+semana dizendo "OK" enquanto trazia `alpha.nelsonboulangerie.com.br` — domínio
+morto desde o corte de 01/09 — como PRIMARY, e deixava `backup.boulangerie.com.br`
+de fora. Um update teria ressuscitado o morto e apagado o vivo.
+
+Ingress é comparado como **conjunto**, não como lista ordenada: o painel
+acrescenta regra no fim e o arquivo agrupa por leitura. O que importa é quem
+serve cada host, e se existe a regra catch-all.
 
 Sem `doctl` autenticado, dá para conferir com o spec já baixado:
 
@@ -73,32 +87,96 @@ extras.
 **Não-segredo** — copie chave, `scope`, `type` e `value` exatamente como o
 `spec get` devolveu.
 
-## Divergências conhecidas hoje (05/09/2026)
+## Estado hoje (08/09/2026): drift do alpha **limpo**
 
-O drift do alpha está **limpo na lista que apaga** — nenhuma chave SUMIRIA. Mas
-há **13 divergências de valor** em que o arquivo está atrás do vivo. Um
-`apps update` hoje não apagaria nada, mas **reverteria** estas:
+`make deploy-spec-drift` sai `[OK]`. As 13 divergências de valor medidas em
+05/09 foram alinhadas — **todas na direção arquivo ← vivo**, porque em todas
+elas o vivo é a configuração que o dono escolheu e o arquivo é que estava
+velho. Um `apps update` hoje não reverte nada.
 
-| Chave | Vivo | Versionado | Efeito de reverter |
+| Chave | Vivo (= agora no arquivo) | Estava no arquivo | Por que o vivo é o certo |
 |---|---|---|---|
-| `SHOPMAN_CARD_ADAPTER` | `payment_stripe` | `payment_mock` | ⛔ cartão volta para o mock |
-| `SHOPMAN_CONCIERGE_ENABLED` | `true` | `false` | concierge do WhatsApp desliga |
-| `CONCIERGE_ALLOWED_SUBSCRIBERS` | 4 assinantes | vazio | piloto fechado vira aberto |
-| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | 3 resolvers | 2 | perde `deferred_settlement` |
-| `MANYCHAT_WHATSAPP_ID_FIELD_ID` | `8932087` | vazio | ManyChat perde o campo de ID |
-| `IFOOD_MERCHANT_ID` | UUID | `2512433` | iFood aponta para merchant errado |
-| `AUTH_DEFAULT_DOMAIN`, `SHOPMAN_DOMAIN`, `CSRF_TRUSTED_ORIGINS`, `SHOPMAN_STOREFRONT_BASE_URL`, `SHOPMAN_PREPROD_URL`, `WHATSAPP_STOREFRONT_URL` | `menu.` | `alpha.` | o domínio **mudou** de `alpha.` para `menu.` em 01/09 e o arquivo não acompanhou |
-| `SHOPMAN_STAGING_AUTOPILOT` | `false` | `true` | autopilot religa |
+| `SHOPMAN_CARD_ADAPTER` | `payment_stripe` | `payment_mock` | o cartão está no Stripe (chave de teste); o arquivo devolveria a simulação |
+| `SHOPMAN_CONCIERGE_ENABLED` | `true` | `false` | o dono abriu o piloto fechado do concierge |
+| `CONCIERGE_ALLOWED_SUBSCRIBERS` | 4 assinantes | vazio | vazio **não** é desligado: é aberto a todos |
+| `SHOPMAN_FISCAL_EMISSION_RESOLVER` | 4 resolvers | 2 | o arquivo perdia `deferred_settlement` e `on_requested_receipt` — sem o segundo, pedir a nota impressa ou por e-mail não emitia nada |
+| `MANYCHAT_WHATSAPP_ID_FIELD_ID` | `8932087` | vazio | sem o id o ManyChat não acha o campo |
+| `IFOOD_MERCHANT_ID` | `f36a17d0-…` | `2512433` | o merchant do iFood é UUID; `2512433` é o número de loja do painel |
+| `AUTH_DEFAULT_DOMAIN`, `SHOPMAN_DOMAIN`, `CSRF_TRUSTED_ORIGINS`, `SHOPMAN_STOREFRONT_BASE_URL`, `SHOPMAN_PREPROD_URL`, `WHATSAPP_STOREFRONT_URL` | `menu.` | `alpha.` | o corte de 01/09 matou `alpha.`; ver [[reference_o_corte_de_dominio_menu_e_alpha]] |
+| `SHOPMAN_STAGING_AUTOPILOT` | `false` | `true` | o `menu.` recebe pedido de gente de verdade; o autopilot avançaria por baixo do operador |
 
-**Estas não foram alteradas neste PR de propósito** — são decisões de
-configuração do dono (especialmente o concierge, que está desligado por env
-esperando a palavra dele), não dívida técnica a ser resolvida por um agente.
-Alinhar o arquivo com o vivo é um PR próprio, e a linha do domínio
-`alpha.` → `menu.` provavelmente puxa junto uma revisão de
-[`reference_o_corte_de_dominio_menu_e_alpha`].
+Junto vieram duas coisas que o drift-check **não olhava** e ninguém tinha
+medido: o arquivo trazia `alpha.nelsonboulangerie.com.br` como domínio PRIMARY
+e não trazia `backup.boulangerie.com.br`, que estava no ar servindo o atalho do
+cofre. Corrigidos, e agora o script compara domínio e ingress.
 
-## Por que isto não é gate de CI
+### O snapshot envelhece em minutos — e envelheceu no meio deste trabalho
+
+O `SHOPMAN_FISCAL_EMISSION_RESOLVER` foi medido duas vezes com poucas horas de
+diferença e deu valores diferentes: na primeira leitura faltava
+`on_requested_receipt` (a nota pedida no comprovante não emitia), e na segunda
+ele já estava lá, acrescentado pelo painel. O arquivo ficou com o valor da
+**segunda** leitura.
+
+A lição operacional é a de sempre, e ela vale mais que o caso: **`spec get`
+imediatamente antes do update, nunca um arquivo salvo antes de outra
+operação.** Se você mediu, foi almoçar e voltou, meça de novo.
+
+## Diferenças legítimas — não são drift
+
+Estas existem de propósito e estão **declaradas** em
+`EXPECTED_ONLY_VERSIONED`, no `scripts/check_do_spec_drift.py`, para que o
+relatório feche limpo. Um relatório que nunca fecha deixa de ser lido, e a
+próxima divergência de verdade chega no meio de um ruído que todo mundo já
+aprendeu a ignorar.
+
+| Chave | Situação | Por quê |
+|---|---|---|
+| `FOCUS_NFE_ENVIRONMENT` | no arquivo (`homologacao`), ausente no vivo | o default do `settings.py` é o mesmo `homologacao`, então aplicar não muda comportamento. O dono decidiu **manter em homologação** por ora — a chave fica declarada para que a virada seja uma edição visível, não um efeito colateral. Ver [`ativar-focus-nfe.md`](ativar-focus-nfe.md) |
+| `SENTRY_DSN` | no arquivo (`SECRET` sem valor), ausente no vivo | opt-in: sem DSN o `settings.py` não inicializa o Sentry. Ver [`ativar-sentry.md`](ativar-sentry.md) |
+
+Ao acrescentar uma diferença legítima nova, **declare no script com a razão** —
+não a tolere em silêncio. E lembre que a allowlist só vale para o lado
+"nasceriam": na direção que apaga não há allowlist nenhuma.
+
+## O template de produção (`.do/app.subdomains.yaml`)
+
+Não existe app de produção na DigitalOcean, então **não há drift a medir** ali:
+o arquivo é blueprint, com `STORE_DOMAIN` no lugar do domínio real, e
+`make deploy-spec-drift spec=.do/app.subdomains.yaml` não tem app vivo contra o
+que comparar.
+
+O que se confere nele é outra coisa — se ele descreve menos do que a casa já
+tem. Corrigido em 08/09: dois valores do **alpha** tinham entrado por cópia
+(`SHOPMAN_BACKUP_SHEET_HOST=backup.boulangerie.com.br` e
+`SHOPMAN_PRODUCT_IMAGE_BASE` apontando para o `menu.`), e o atalho do cofre não
+tinha domínio nem rota apesar de a env estar declarada.
+
+Duas diferenças em relação ao alpha **ficam de pé de propósito**:
+
+- **`SHOPMAN_CARD_ADAPTER` continua `payment_mock`** no template. É o
+  comportamento documentado ali (blueprint de verificação), e o deploy-check
+  `SHOPMAN_E003` barra adapter mock em produção — trocar por Stripe sem as
+  credenciais reais só trocaria um erro claro por um obscuro.
+- **`CSRF_TRUSTED_ORIGINS` lista só `api.` e `admin.`**, enquanto o alpha lista
+  os onze hosts. O template tem a razão escrita ao lado: o BFF mascara
+  `origin=api.` para loja e apps de operador, e o admin é acessado direto.
+  Copiar a lista do alpha para cá seria copiar configuração de ambiente sem
+  prova de que ela é necessária.
+
+Estas duas ficam registradas aqui para não virarem "achado" na próxima
+conferência.
+
+## Por que a comparação com o vivo não é gate de CI
 
 Exige credencial da DigitalOcean, que a CI não tem — e não deve ter. É
 conferência **de mão**, e o lugar dela é o minuto antes do `apps update`, não
 o PR.
+
+O que **é** gate de CI é a metade que não precisa saber o que está no ar:
+`shopman/shop/tests/test_do_spec_hosts.py` recusa um spec que reintroduza
+`alpha.`/`staging.`, que declare domínio sem rota, ou que nomeie o host do
+cofre sem o domínio correspondente — e
+`shopman/shop/tests/test_do_spec_drift_check.py` prova que o próprio
+drift-check enxerga domínio e ingress, e que a allowlist de diferença esperada
+nunca cobre a direção que apaga.
