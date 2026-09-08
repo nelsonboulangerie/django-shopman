@@ -103,11 +103,11 @@ Degradação deliberada é legítima. O que não pode é ser **acidental**. O
 marcador é lido por `scripts/check_silent_swallow.py` e vale na linha do
 `except`, no corpo do handler, ou na linha imediatamente acima.
 
-## Placar — o gate vira bloqueante quando `dinheiro` e `fiscal` zerarem
+## Placar — o gate É BLOQUEANTE desde 08/09/2026
 
-O gate está no CI **não-bloqueante** (`continue-on-error: true` em
-`.github/workflows/runtime-gate.yml`). Nascer reprovando 50 arquivos garantiria
-ser desligado no primeiro dia.
+Ele nasceu **não-bloqueante** de propósito: reprovar 50 arquivos no dia 1 seria
+ser desligado no dia 2. O portão de promoção era zerar `dinheiro` e `fiscal` —
+cumprido no PR #554 — mais a base do diff parar de mentir (PR #559).
 
 | Faixa | Arquivos | Sites | Situação |
 |---|---|---|---|
@@ -118,15 +118,23 @@ ser desligado no primeiro dia.
 | ✅ Provavelmente inofensivo | 12 | 22 | ⬜ falta só o marcador |
 | **Total** | **50** | **94** | **42 arquivos / 75 sites restantes** |
 
-**Portão para tornar o check obrigatório: as faixas 💸 e 🧾 zeradas — 6
-arquivos, 16 sites.** Não são 50. Quem fechar a última linha dessas duas:
-apague o `continue-on-error` do job `silent-swallow-gate` e peça ao dono para
-marcar `Gate da meia-correção` como required na branch protection (é a mão dele
-no GitHub, não a nossa). ⚠️ **Os dois passos são um só movimento.** Tirar o
-`continue-on-error` antes do required deixa o gate reprovando sem bloquear —
-ruído vermelho que ninguém precisa olhar. Marcar required antes de tirá-lo dá
-um check obrigatório que sempre passa. Qualquer uma das metades sozinha ensina
-o time a ignorar o vermelho.
+✅ **Portão cumprido em 08/09/2026.** As faixas 💸 e 🧾 zeraram (PR #554: 16
+sites, 16 testes travando a volta), a base do diff parou de mentir (PR #559), o
+`continue-on-error` saiu do job e o check `Gate da meia-correção` é
+**obrigatório** na branch protection.
+
+**O que isso significa na prática:** um PR que toque um arquivo onde alguém já
+soube gritar, e deixe o irmão calado ao lado, **não mergeia**. A saída é fazer o
+irmão gritar, ou declarar o silêncio com `# silêncio-deliberado: <razão>` — as
+duas são legítimas; o que não pode é ser acidental.
+
+⚠️ **O nome do job é o identificador do check obrigatório.** Renomear
+`silent-swallow-gate` no workflow sem atualizar a branch protection deixa um
+check exigido que nunca chega, e o repositório trava para sempre.
+
+⚠️ As faixas restantes (`cliente`, `interno`) seguem abertas e **não** bloqueiam
+nada retroativamente — o gate só olha o diff do PR. Elas são trabalho, não
+dívida travada.
 
 ### ✅ A base do diff não mente mais (pré-condição, resolvida)
 
@@ -149,13 +157,12 @@ escrita — nunca verde por ter olhado zero arquivo.
 > passa nos 6 arquivos, e a suíte
 > `shopman/shop/tests/test_silencio_de_dinheiro_e_nota.py` trava a volta de cada
 > site (a falha é simulada e o teste exige alerta ou recusa — nunca silêncio).
-> Repositório inteiro: de **50 arquivos / 94 sites** para **42 / 75**. Falta a
-> mão do dono: marcar `Gate da meia-correção` como required. O
-> `continue-on-error` continua no workflow enquanto o check não for obrigatório
-> — tirar os dois na mesma hora é o que evita a janela em que o job reprova sem
+> Repositório inteiro: de **50 arquivos / 94 sites** para **42 / 75**.
+> ✅ Promovido em 08/09: o `continue-on-error` saiu e o check virou obrigatório
+> no mesmo movimento — separar os dois abriria a janela em que o job reprova sem
 > ninguém ter combinado isso.
 
-### ⚠️ Antes de tornar o check obrigatório: o gate reprova por PR alheio
+### ✅ (Resolvido, PR #559) O gate reprovava por PR alheio
 
 Achado ao rodar o gate no PR que zerou as duas faixas, e ele **precisa ser
 consertado antes** da branch protection — senão o primeiro check obrigatório da
