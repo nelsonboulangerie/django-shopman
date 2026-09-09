@@ -2,7 +2,7 @@
 
 GET  /api/v1/backstage/notifications/             → não lidas do usuário atual
 POST /api/v1/backstage/notifications/<pk>/read/   → marcar como lida
-POST /api/v1/backstage/notifications/<pk>/action/ → executar a ação acionável
+POST /api/v1/backstage/notifications/<pk>/action/ → tombstone do atalho legado
 
 Diferente de ``alerts.py``, que é da LOJA (qualquer operador vê o mesmo painel),
 isto é da PESSOA: o gestor recebe o pedido de aprovação onde estiver. Por isso
@@ -10,8 +10,6 @@ todo queryset é filtrado por ``request.user`` — nem staff lê a caixa alheia.
 """
 
 from __future__ import annotations
-
-import logging
 
 from django.db.models import Q
 from django.utils import timezone
@@ -38,10 +36,9 @@ from shopman.shop.models import (
 )
 from shopman.shop.models.user_notification import ACTIVE_NOTIFICATION_STATES
 from shopman.shop.services import user_notifications as notification_lifecycle
+from shopman.shop.services.marketing_time import configured_timezone_name
 
 from .permissions import IsBackstageOperator
-
-logger = logging.getLogger(__name__)
 
 _DEFAULT_LIMIT = 20
 _MAX_LIMIT = 100
@@ -250,6 +247,7 @@ class NotificationListV2View(APIView):
         )
         return Response({
             "schema_version": 2,
+            "shop_timezone": configured_timezone_name(),
             "as_of": cursor.as_of.isoformat(),
             "notifications": [
                 _notification_dict(notification, actions=actions[notification.pk])
@@ -325,16 +323,57 @@ class NotificationAcknowledgeView(APIView):
 @extend_schema_view(
     post=extend_schema(
         tags=["backstage"],
-        summary="Execute a notification's action (e.g. approve an announcement)",
-        responses={200: OpenApiResponse(description="Action executed.")},
+        summary="Mark the currently visible notification page as seen",
+        responses={200: OpenApiResponse(description="Unseen notifications marked as seen.")},
+    ),
+)
+class NotificationSeenBatchView(APIView):
+    permission_classes = [IsBackstageOperator]
+
+    def post(self, request):
+        raw_ids = request.data.get("notification_ids")
+        if not isinstance(raw_ids, list) or len(raw_ids) > _MAX_LIMIT:
+            return Response(
+                {
+                    "detail": "Envie uma lista de até 100 alertas visíveis.",
+                    "field": "notification_ids",
+                    "errors": {"notification_ids": ["Lista inválida."]},
+                },
+                status=400,
+            )
+        if any(
+            not isinstance(value, int) or isinstance(value, bool) or value <= 0
+            for value in raw_ids
+        ):
+            return Response(
+                {
+                    "detail": "A lista contém um identificador inválido.",
+                    "field": "notification_ids",
+                    "errors": {"notification_ids": ["Use apenas inteiros positivos."]},
+                },
+                status=400,
+            )
+        changed = notification_lifecycle.mark_seen_many(
+            notification_ids=raw_ids,
+            actor=request.user,
+        )
+        return Response({
+            "ok": True,
+            "changed": changed,
+            "unseen_count": _unseen(request),
+            "unresolved_count": _unresolved(request),
+        })
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Reject legacy inline decisions and point to the canonical object",
+        responses={410: OpenApiResponse(description="Decision moved to the announcement.")},
     ),
 )
 class NotificationActionView(APIView):
-    """Executar a decisão pedida pela notificação, sem sair de onde se está.
-
-    Hoje só campanha (aprovar/descartar um anúncio). A ação marca a notificação
-    como lida no sucesso — a decisão já foi tomada, o card sai da caixa.
-    """
+    """Tombstone do atalho inseguro; decisões migraram para o objeto canônico."""
 
     permission_classes = [IsBackstageOperator]
 
@@ -342,19 +381,25 @@ class NotificationActionView(APIView):
         notification = _own(request).filter(pk=pk).first()
         if notification is None:
             return Response({"detail": "Notificação não encontrada."}, status=404)
-        if not notification.is_actionable:
+        raw_action = request.data.get("action")
+        if not isinstance(raw_action, str) or not raw_action.strip():
             return Response(
-                {"detail": "Esta notificação não pede nenhuma ação."}, status=400
+                {
+                    "detail": "Escolha explicitamente uma ação.",
+                    "field": "action",
+                    "errors": {"action": ["Ação obrigatória."]},
+                    "code": "action_required",
+                },
+                status=400,
             )
-
-        action = str(request.data.get("action") or ACTION_APPROVE).strip()
+        action = raw_action.strip()
         if action not in (ACTION_APPROVE, ACTION_REJECT):
             return Response(
                 {"detail": "Ação desconhecida.", "field": "action"}, status=400
             )
 
-        announcement_id = (notification.action_data or {}).get("announcement_id")
-        if not announcement_id:
+        announcement_id = _announcement_id(notification)
+        if announcement_id is None:
             return Response(
                 {"detail": "Esta notificação não aponta para nenhum announcement."}, status=400
             )
@@ -365,73 +410,19 @@ class NotificationActionView(APIView):
             action_code=action,
         )
 
-        required = ["shop.approve_marketing_announcements"]
-        if action == ACTION_APPROVE:
-            required.append("shop.publish_marketing_announcements")
-        if not all(request.user.has_perm(code) for code in required):
-            notification_lifecycle.record_action(
-                notification_id=notification.pk,
-                actor=request.user,
-                action_code=action,
-                outcome_code="permission_denied",
-                succeeded=False,
-            )
-            return Response(
-                {"detail": "Você não tem capacidade para esta decisão de Marketing."},
-                status=403,
-            )
-
-        from shopman.shop.services import campaign
-
-        try:
-            announcement = (
-                campaign.approve(announcement_id, request.user)
-                if action == ACTION_APPROVE
-                else campaign.reject(announcement_id, request.user)
-            )
-        except campaign.CampaignError as exc:
-            notification_lifecycle.record_action(
-                notification_id=notification.pk,
-                actor=request.user,
-                action_code=action,
-                outcome_code="campaign_error",
-                succeeded=False,
-            )
-            notification_lifecycle.reconcile_user_notifications(user=request.user)
-            if not notification.source_condition:
-                notification_lifecycle.mark_seen(
-                    notification_id=notification.pk,
-                    actor=request.user,
-                )
-            return Response({"detail": str(exc)}, status=400)
-
-        notification_lifecycle.record_action(
-            notification_id=notification.pk,
-            actor=request.user,
-            action_code=action,
-            outcome_code=f"announcement_{announcement.status}",
-            succeeded=True,
+        # Aprovar/recusar precisa de versão, idempotência, consequência e gates
+        # do command moderno. O alerta só conduz ao contexto; nunca os contorna.
+        return Response(
+            {
+                "detail": "A decisão agora é feita no anúncio, com a versão e a consequência visíveis.",
+                "code": "notification_action_moved",
+                "action": {
+                    "kind": "open_announcement",
+                    "href": f"/announcements/{announcement_id}#review",
+                },
+            },
+            status=410,
         )
-        if not notification.source_condition:
-            # Compatibilidade para um produtor v1 que nasceu durante a janela
-            # de dual-write. Dados migrados e o produtor de Marketing novo já
-            # têm source; portanto isto não participa do contrato v2.
-            notification_lifecycle.mark_seen(
-                notification_id=notification.pk,
-                actor=request.user,
-            )
-        logger.info(
-            "notification.action user=%s action=%s announcement=%s", request.user.pk, action, announcement_id
-        )
-        return Response({
-            "ok": True,
-            "action": action,
-            "announcement_id": announcement.pk,
-            "status": announcement.status,
-            "unread_count": _unread(request),
-            "unseen_count": _unseen(request),
-            "unresolved_count": _unresolved(request),
-        })
 
 
 def _unread(request) -> int:

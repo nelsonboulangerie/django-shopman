@@ -1551,3 +1551,73 @@ Provas locais:
   remoção segura ocorre somente após a migração do cliente, no MKT-037 seguinte;
 - nenhuma chamada a provider, destinatário, deploy, produção, browser autenticado ou
   escrita externa foi usada.
+
+## MKT-037 — Client v2 e alerta sem decisão implícita
+
+Implementado depois do lifecycle do MKT-036 e sem reabrir o atalho legado que contornava
+versão, consequência, idempotência e confirmação do command canônico:
+
+- `POST /notifications/<id>/action/` virou tombstone fail-closed: `action` ausente,
+  vazia ou nula responde `400 action_required`; valor desconhecido responde `400`; até
+  `approve|reject` explícito responde `410 notification_action_moved` e só aponta a
+  revisão exata. Nenhum desses caminhos decide ou publica o anúncio;
+- o client Marketing trocou para `/notifications/v2/`, cujo owner continua derivado da
+  sessão. Href, método, kind e `resource_ref` de cada Action são comparados com o source
+  canônico antes de qualquer request ou navegação; URL absoluta, recurso estranho,
+  método trocado e source malformado falham fechados;
+- abrir o sino marca os alertas unseen carregados por uma única mutação owner-scoped,
+  limitada a 100 IDs e sem confiar em `user_id` do browser. A transação faz lock/bulk
+  update/bulk event e emite uma única invalidação SSE; IDs de outro owner permanecem
+  intocados;
+- `seen` altera somente o contador de novos. O badge e a headline continuam mostrando
+  `unresolved` até a condição do Announcement resolver; `acknowledged` assume a
+  responsabilidade sem fabricar resolução;
+- o sino mostra owner, lifecycle, deadline relativo + absoluto, timezone IANA, versão
+  da origem e escalação. Há uma primary Action “Revisar anúncio”; decisão permanece no
+  card, onde os gates modernos mostram versão/consequência. Falha de leitura ou mutação
+  preserva o alerta e oferece retry no mesmo contexto;
+- a Action abre `/announcements/<id>#review`; a página ganhou uma região DOM explícita
+  `#review`, verificada no navegador depois que a primeira tentativa por fallthrough do
+  componente mostrou que URL correta, sozinha, não garantia uma âncora real;
+- o SSE continua carregando somente invalidação mínima. A caixa refaz seu fetch
+  canônico e incrementa uma revisão local compartilhada; o board refaz sua própria
+  projection sem abrir uma segunda conexão. Poll de 60 s, retorno à aba, retorno da rede
+  e reconnect cobrem push perdido;
+- information-only continua fora do sino; cursor, retention, dedupe, sibling
+  reconciliation e ligação alert→receipt→resolution permanecem server-owned pelo
+  contrato do MKT-036. O v1 de leitura fica durante a janela dual; sua mutação antiga
+  permanece bloqueada e rollback algum restaura approve implícito.
+
+Budget de omotenashi comprovado para alerta→revisão:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Action ausente | 1 command de aprovação implícita | 0 commands; erro explícito |
+| Encontrar o anúncio do alerta | ação inline sem contexto ou busca genérica | sino + “Revisar anúncio”; 2 gestos, 0 buscas |
+| Chegar ao problema exato | rota do objeto sem âncora garantida | `#review` existente e visível |
+| Marcar uma página de alertas como vista | até N requests/gestos | 1 request para até 100 itens |
+| Distinguir “vi” de “foi resolvido” | contador sumia cedo | `unseen=0`, `unresolved=1` após abrir |
+| Saber prazo, fuso, owner e escalação | memória ou consulta externa | 0 navegações; tudo no card do alerta |
+| Recuperar push perdido | F5/intervenção | refetch no reconnect/online/visible e ≤60 s por poll |
+| Falha ao assumir/atualizar | risco de sumir ou repetir no escuro | alerta e mensagem de retry permanecem juntos |
+| Usar em tela estreita | risco de painel recortado | 390×844 sem overflow; largura medida dentro do viewport |
+
+Provas locais:
+
+- 41 testes focados da API de notificações passaram, cobrindo missing/unknown action,
+  zero efeito legado, IDOR, batch owner-scoped, lifecycle, dedupe, siblings, cursor,
+  retention, expiry, Action/capability e receipt;
+- regressão ampla Marketing/campaign/notifications/E2E: **623 testes passaram em
+  106,51 s**;
+- Marketing Nuxt: **20 arquivos/172 testes**, incluindo Action adulterada, batch único,
+  SSE→refetch, falha preservada, capability desabilitada, ausência de approve/reject no
+  sino e âncora DOM explícita; ESLint, Nuxt typecheck e build de produção passaram;
+- gate canônico Unfold: verificador estrutural e **229 testes** passaram; Ruff,
+  `export_marketing_client --check`, Django check, migration drift e `git diff --check`
+  também passaram. Permaneceu somente o warning conhecido de SQLite local;
+- fluxo BFF→Django→SQLite foi inspecionado com conta/anúncio/alerta sintéticos em portas
+  isoladas `3006/8011`: desktop e 390×844, badge `unresolved`, seen sem resolução,
+  fuso/escalação, deep-link exato, região `#review` visível, Escape e console sem erros;
+  os três registros e ambos os processos temporários foram removidos/encerrados;
+- nenhuma decisão de anúncio, provider, destinatário, deploy, produção, push remoto ou
+  escrita externa foi executada.

@@ -1,13 +1,41 @@
-// Canal PESSOAL do gestor (`user-<id>` no Django, `/sse/notifications` no BFF).
-//
-// É por aqui que o announcement recém-gerado aparece no painel sem ninguém apertar F5:
-// a fornada termina, o engine cria o announcement, o backend empurra o aviso e a tela
-// refaz o fetch canônico. O push só diz "chegou algo" (ADR-016) — quem manda é
-// o refetch, então uma mensagem perdida custa no máximo um ciclo de poll.
-export function useUserNotifications(onPush: () => void) {
+// Caixa pessoal v2. O SSE só invalida; o fetch owner-scoped segue como verdade.
+import { notificationAction } from "~/presentation/notifications";
+import type {
+  MarketingNotification,
+  MarketingNotificationsResponse,
+} from "~/types/notifications";
+
+export const NOTIFICATION_REVISION_STATE = "marketing-notification-revision";
+const POLL_MS = 60_000;
+
+export function useUserNotifications() {
   const config = useRuntimeConfig();
+  const revision = useState<number>(NOTIFICATION_REVISION_STATE, () => 0);
   const realtime = ref<"connecting" | "live" | "polling">("polling");
+  const mutationError = ref("");
+  const acknowledging = ref<ReadonlySet<number>>(new Set());
+  const markingSeen = ref(false);
+  const { data, refresh, pending, error } =
+    useFetch<MarketingNotificationsResponse>(
+      "/api/v1/backstage/notifications/v2/?limit=100",
+      { key: "marketing-notifications-v2", server: true },
+    );
+
+  const notifications = computed<MarketingNotification[]>(
+    () => data.value?.notifications ?? [],
+  );
+  const unseenCount = computed(() => data.value?.counts.unseen ?? 0);
+  const unresolvedCount = computed(() => data.value?.counts.unresolved ?? 0);
+  const shopTimezone = computed(() => data.value?.shop_timezone ?? "UTC");
+  const hasMore = computed(() => data.value?.page.has_more ?? false);
+
   let source: EventSource | null = null;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+  async function reconcile() {
+    revision.value += 1;
+    await refresh();
+  }
 
   function connect() {
     if (source) return;
@@ -15,13 +43,13 @@ export function useUserNotifications(onPush: () => void) {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      // Qualquer aviso do canal pessoal justifica o refetch: o painel é barato
-      // e distinguir categorias aqui só criaria um segundo lugar para errar.
       ["message", "user-notification"].forEach((name) =>
-        source!.addEventListener(name, () => onPush()),
+        source!.addEventListener(name, () => void reconcile()),
       );
       source.onopen = () => {
+        const reconnected = realtime.value === "polling";
         realtime.value = "live";
+        if (reconnected) void reconcile();
       };
       source.onerror = () => {
         realtime.value = "polling";
@@ -32,25 +60,114 @@ export function useUserNotifications(onPush: () => void) {
     }
   }
 
-  // Voltar para a aba (ou para a rede) é motivo de reconciliar: enquanto
-  // escondida, a tela pode ter perdido pushes.
   const onVisible = () => {
-    if (document.visibilityState === "visible") onPush();
+    if (document.visibilityState === "visible") void reconcile();
   };
 
   onMounted(() => {
     connect();
+    pollTimer = setInterval(() => void reconcile(), POLL_MS);
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("online", onVisible);
   });
   onBeforeUnmount(() => {
-    if (source) {
-      source.close();
-      source = null;
-    }
+    if (source) source.close();
+    source = null;
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = null;
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
   });
 
-  return { realtime };
+  async function markVisible(): Promise<boolean> {
+    if (markingSeen.value) return false;
+    const ids = notifications.value
+      .filter(
+        (notification) =>
+          notification.lifecycle === "unseen" &&
+          notificationAction(notification, "mark_notification_seen")?.enabled,
+      )
+      .map((notification) => notification.pk);
+    if (!ids.length) return true;
+
+    markingSeen.value = true;
+    mutationError.value = "";
+    try {
+      await $fetch("/api/v1/backstage/notifications/v2/seen/", {
+        method: "POST",
+        body: { notification_ids: ids },
+      });
+      await refresh();
+      return true;
+    } catch (caught) {
+      mutationError.value = httpErrorMessage(
+        caught,
+        "Não foi possível registrar quais alertas você viu.",
+      );
+      return false;
+    } finally {
+      markingSeen.value = false;
+    }
+  }
+
+  async function acknowledge(
+    notification: MarketingNotification,
+  ): Promise<boolean> {
+    if (acknowledging.value.has(notification.pk)) return false;
+    const action = notificationAction(notification, "acknowledge_notification");
+    if (!action?.enabled) {
+      mutationError.value = action
+        ? "Este alerta não pode ser assumido agora."
+        : "O alerta mudou. Atualize antes de continuar.";
+      return false;
+    }
+
+    acknowledging.value = new Set([...acknowledging.value, notification.pk]);
+    mutationError.value = "";
+    try {
+      await $fetch(action.href, { method: "POST", body: {} });
+      await refresh();
+      return true;
+    } catch (caught) {
+      mutationError.value = httpErrorMessage(
+        caught,
+        "Não foi possível assumir este alerta. Ele continua pendente.",
+      );
+      return false;
+    } finally {
+      const next = new Set(acknowledging.value);
+      next.delete(notification.pk);
+      acknowledging.value = next;
+    }
+  }
+
+  function openHref(notification: MarketingNotification): string | null {
+    mutationError.value = "";
+    const action = notificationAction(notification, "open_announcement");
+    if (!action?.enabled) {
+      mutationError.value = action
+        ? "Seu acesso não permite abrir este anúncio."
+        : "O alerta mudou. Atualize antes de abrir.";
+      return null;
+    }
+    return action.href;
+  }
+
+  return {
+    notifications,
+    unseenCount,
+    unresolvedCount,
+    shopTimezone,
+    hasMore,
+    realtime,
+    loading: pending,
+    error,
+    mutationError,
+    acknowledging,
+    markingSeen,
+    refresh: reconcile,
+    markVisible,
+    acknowledge,
+    openHref,
+  };
 }

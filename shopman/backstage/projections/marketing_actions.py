@@ -657,7 +657,7 @@ def _notification_actions(
         version=announcement.version,
         kind="open_announcement",
         priority="primary",
-        href=f"/announcements/{announcement.pk}",
+        href=f"/announcements/{announcement.pk}#review",
         method="GET",
         capabilities=("shop.view_marketing",),
         actor=actor,

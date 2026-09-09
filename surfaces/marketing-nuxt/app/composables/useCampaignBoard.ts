@@ -11,6 +11,7 @@ import type {
   PublishMode,
   ReachLimit,
 } from "~/types/campaign";
+import { NOTIFICATION_REVISION_STATE } from "~/composables/useUserNotifications";
 
 const POLL_MS = 60_000;
 
@@ -82,8 +83,13 @@ export function useCampaignBoard() {
     if (pollTimer) clearInterval(pollTimer);
   });
 
-  // Push pessoal: announcement novo pedindo revisão chega aqui antes do poll.
-  useUserNotifications(() => refresh());
+  // A caixa pessoal possui uma única conexão SSE. Ela publica somente uma
+  // revisão local; o board continua buscando sua própria verdade canônica.
+  const notificationRevision = useState<number>(
+    NOTIFICATION_REVISION_STATE,
+    () => 0,
+  );
+  watch(notificationRevision, () => void refresh());
 
   async function approve(
     pk: number,

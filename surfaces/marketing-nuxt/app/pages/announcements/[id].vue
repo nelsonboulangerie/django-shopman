@@ -237,21 +237,27 @@ useHead({ title: "Anúncio · Marketing" });
         </p>
       </div>
 
-      <AnnouncementCard
+      <section
         v-if="announcement.status === 'pending_review'"
-        :announcement="announcement"
-        :platform-options="platforms"
-        :busy="busy"
-        :draft-owner="draftOwner"
-        :shop-timezone="shopTimezone"
-        @approve="
-          (_, edits, publishMode) => decide('approve', edits, publishMode)
-        "
-        @reject="
-          confirmingReject = true;
-          rejectReason = '';
-        "
-      />
+        id="review"
+        class="scroll-mt-4"
+        aria-label="Revisão do anúncio"
+      >
+        <AnnouncementCard
+          :announcement="announcement"
+          :platform-options="platforms"
+          :busy="busy"
+          :draft-owner="draftOwner"
+          :shop-timezone="shopTimezone"
+          @approve="
+            (_, edits, publishMode) => decide('approve', edits, publishMode)
+          "
+          @reject="
+            confirmingReject = true;
+            rejectReason = '';
+          "
+        />
+      </section>
 
       <article v-else class="rounded-xl border border-border bg-card p-4">
         <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>

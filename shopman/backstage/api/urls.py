@@ -85,6 +85,7 @@ from .notifications import (
     NotificationListV2View,
     NotificationListView,
     NotificationReadView,
+    NotificationSeenBatchView,
 )
 from .operations import (
     DayClosingView,
@@ -332,6 +333,11 @@ urlpatterns = [
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
     path("notifications/v2/", NotificationListV2View.as_view(), name="api-backstage-notifications-v2"),
+    path(
+        "notifications/v2/seen/",
+        NotificationSeenBatchView.as_view(),
+        name="api-backstage-notifications-v2-seen",
+    ),
     path(
         "notifications/<int:pk>/read/",
         NotificationReadView.as_view(),

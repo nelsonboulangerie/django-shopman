@@ -206,7 +206,7 @@ class TestRead:
 
 
 class TestAction:
-    def test_approving_publishes_the_post(self, client, gestor):
+    def test_explicit_legacy_approve_is_moved_without_side_effect(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
@@ -214,44 +214,49 @@ class TestAction:
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "approve"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 410
+        assert response.json()["code"] == "notification_action_moved"
+        assert response.json()["action"] == {
+            "kind": "open_announcement",
+            "href": f"/announcements/{announcement.pk}#review",
+        }
         announcement.refresh_from_db()
-        assert announcement.approved_by == gestor
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.approved_by_id is None
 
-    def test_approve_is_the_default_action(self, client, gestor):
+    @pytest.mark.parametrize("payload", [{}, {"action": ""}, {"action": None}])
+    def test_missing_action_is_invalid_and_never_defaults_to_approve(self, client, gestor, payload):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
-        client.post(f"{LIST_URL}{notification.pk}/action/")
+        response = client.post(
+            f"{LIST_URL}{notification.pk}/action/",
+            data=payload,
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "action"
+        assert response.json()["code"] == "action_required"
         announcement.refresh_from_db()
-        assert announcement.approved_at is not None
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.approved_at is None
 
-    def test_acting_marks_the_notification_read(self, client, gestor):
-        notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
-
-        client.post(f"{LIST_URL}{notification.pk}/action/")
-        notification.refresh_from_db()
-        assert notification.is_read
-
-    def test_rejecting_from_the_alert_closes_without_publishing(self, client, gestor):
-        """A recusa pela caixa de avisos também registra o autor — é a mesma decisão."""
+    def test_explicit_legacy_reject_is_also_moved_without_side_effect(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
         client.force_login(gestor)
 
-        client.post(f"{LIST_URL}{notification.pk}/action/", {"action": "reject"})
+        response = client.post(
+            f"{LIST_URL}{notification.pk}/action/",
+            {"action": "reject"},
+        )
+
+        assert response.status_code == 410
         announcement.refresh_from_db()
-        assert announcement.status == AnnouncementStatus.REJECTED
-        assert announcement.rejected_by_id == gestor.pk
-
-    def test_operator_without_the_permission_cannot_publish(self, client, colega):
-        """Staff não basta: publicar exige approve + publish."""
-        notification = _notification(colega, announcement=_post())
-        client.force_login(colega)
-
-        assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 403
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.rejected_by_id is None
 
     def test_unknown_action_is_rejected(self, client, gestor):
         notification = _notification(gestor, announcement=_post())
@@ -275,40 +280,20 @@ class TestAction:
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 404
 
-    def test_expired_post_answers_clearly_and_clears_the_card(self, client, gestor):
-        from django.utils import timezone
-
-        announcement = _post()
-        announcement.expires_at = timezone.now() - timezone.timedelta(minutes=1)
-        announcement.save()
-        notification = _notification(gestor, announcement=announcement)
+    def test_malformed_stored_announcement_ref_is_not_reflected(self, client, gestor):
+        notification = _notification(gestor)
+        notification.is_actionable = True
+        notification.action_data = {"announcement_id": "//evil.example"}
+        notification.save(update_fields=["is_actionable", "action_data"])
         client.force_login(gestor)
 
-        assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400
-        notification.refresh_from_db()
-        assert notification.is_read
-        assert notification.lifecycle == NotificationLifecycle.EXPIRED
-
-    def test_failure_that_leaves_source_active_preserves_the_alert(self, client, gestor, monkeypatch):
-        notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
-
-        def fail(*args, **kwargs):
-            raise campaign.CampaignError("Falha temporária.")
-
-        monkeypatch.setattr(campaign, "approve", fail)
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/",
             {"action": "approve"},
         )
 
         assert response.status_code == 400
-        notification.refresh_from_db()
-        assert notification.lifecycle == NotificationLifecycle.UNSEEN
-        assert notification.is_read is False
-        assert notification.lifecycle_events.filter(
-            event_type=NotificationEventType.ACTION_FAILED,
-        ).exists()
+        assert "evil.example" not in str(response.json())
 
 
 # ── Lifecycle v2 ─────────────────────────────────────────────────────
@@ -337,6 +322,7 @@ class TestLifecycleV2:
         body = client.get(self.V2_URL).json()
 
         assert body["schema_version"] == 2
+        assert body["shop_timezone"] == "America/Sao_Paulo"
         assert body["counts"] == {"unseen": 1, "unresolved": 1}
         item = body["notifications"][0]
         assert item["source"] == {
@@ -351,7 +337,7 @@ class TestLifecycleV2:
             "mark_notification_seen",
             "acknowledge_notification",
         ]
-        assert item["actions"][0]["href"] == f"/announcements/{announcement.pk}"
+        assert item["actions"][0]["href"] == f"/announcements/{announcement.pk}#review"
         assert creation.notification.action_url == f"/announcements/{announcement.pk}#review"
 
     def test_same_condition_and_owner_is_deduped(self, gestor):
@@ -534,6 +520,58 @@ class TestLifecycleV2:
         body = client.get(f"{self.V2_URL}?history=1").json()
 
         assert body["notifications"] == []
+
+    def test_visible_page_is_marked_seen_in_one_owner_scoped_batch(self, client, gestor, colega):
+        first = _notification(gestor, announcement=_post())
+        second = _notification(gestor, announcement=_post())
+        foreign = _notification(colega, announcement=_post())
+        client.force_login(gestor)
+
+        response = client.post(
+            f"{self.V2_URL}seen/",
+            data={"notification_ids": [first.pk, second.pk, foreign.pk]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "ok": True,
+            "changed": 2,
+            "unseen_count": 0,
+            "unresolved_count": 2,
+        }
+        first.refresh_from_db()
+        second.refresh_from_db()
+        foreign.refresh_from_db()
+        assert first.lifecycle == NotificationLifecycle.SEEN
+        assert second.lifecycle == NotificationLifecycle.SEEN
+        assert foreign.lifecycle == NotificationLifecycle.UNSEEN
+        assert UserNotificationEvent.objects.filter(
+            event_type=NotificationEventType.SEEN,
+            outcome_code="visible_in_alert_panel",
+        ).count() == 2
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"notification_ids": "1"},
+            {"notification_ids": [True]},
+            {"notification_ids": [0]},
+            {"notification_ids": list(range(1, 102))},
+        ],
+    )
+    def test_seen_batch_rejects_malformed_or_oversized_input(self, client, gestor, payload):
+        client.force_login(gestor)
+
+        response = client.post(
+            f"{self.V2_URL}seen/",
+            data=payload,
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "notification_ids"
 
     def test_cursor_is_stable_and_tamper_evident(self, client, gestor):
         for index in range(3):

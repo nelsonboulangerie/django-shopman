@@ -196,6 +196,68 @@ def acknowledge(*, notification_id: int, actor) -> UserNotification:
         return notification
 
 
+def mark_seen_many(*, notification_ids, actor) -> int:
+    """Marca como vistos apenas IDs unseen do owner, em custo constante."""
+
+    actor_id = getattr(actor, "pk", None)
+    if not actor_id:
+        raise UserNotification.DoesNotExist
+    ids = tuple(
+        sorted(
+            {
+                int(raw)
+                for raw in notification_ids
+                if isinstance(raw, int) and not isinstance(raw, bool) and raw > 0
+            }
+        )
+    )
+    if not ids:
+        return 0
+    now = timezone.now()
+    with transaction.atomic():
+        notifications = list(
+            UserNotification.objects.select_for_update()
+            .filter(
+                pk__in=ids,
+                user_id=actor_id,
+                lifecycle=NotificationLifecycle.UNSEEN,
+            )
+            .order_by("pk")
+        )
+        events = []
+        for notification in notifications:
+            notification.lifecycle = NotificationLifecycle.SEEN
+            notification.lifecycle_updated_at = now
+            notification.is_read = True
+            notification.read_at = notification.read_at or now
+            notification.version += 1
+            events.append(
+                _event_record(
+                    notification,
+                    NotificationEventType.SEEN,
+                    from_state=NotificationLifecycle.UNSEEN,
+                    to_state=NotificationLifecycle.SEEN,
+                    actor=actor,
+                    outcome_code="visible_in_alert_panel",
+                    occurred_at=now,
+                )
+            )
+        if notifications:
+            UserNotification.objects.bulk_update(
+                notifications,
+                fields=[
+                    "lifecycle",
+                    "lifecycle_updated_at",
+                    "is_read",
+                    "read_at",
+                    "version",
+                ],
+            )
+            UserNotificationEvent.objects.bulk_create(events)
+            _push_batch_after_commit(user_id=actor_id)
+        return len(notifications)
+
+
 def record_action(
     *,
     notification_id: int,
@@ -546,6 +608,28 @@ def _push_after_commit(notification: UserNotification) -> None:
     transaction.on_commit(_send)
 
 
+def _push_batch_after_commit(*, user_id: int) -> None:
+    def _send() -> None:
+        try:
+            from django_eventstream import send_event
+
+            send_event(
+                f"user-{user_id}",
+                "user-notification",
+                {"id": 0, "category": "system"},
+            )
+        except ImportError:
+            return
+        except Exception:
+            logger.warning(
+                "operator_notification.user_push_failed user=%s",
+                user_id,
+                exc_info=True,
+            )
+
+    transaction.on_commit(_send)
+
+
 def _group_key(source_condition: str, source_ref: str, source_version: int) -> str:
     return f"{source_condition}:{source_ref}:v{source_version}"
 
@@ -609,6 +693,7 @@ __all__ = [
     "acknowledge",
     "create_condition_alert",
     "mark_seen",
+    "mark_seen_many",
     "push_user_notification",
     "reconcile_announcement_review",
     "reconcile_condition",
