@@ -817,3 +817,171 @@ class MarketingOutbox(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]
+
+
+class DeliveryTarget(models.Model):
+    """One protected logical effect for a snapshot member or public platform."""
+
+    class State(models.TextChoices):
+        PLANNED = "planned", "planejado"
+        SUPPRESSED = "suppressed", "suprimido"
+        QUEUED = "queued", "enfileirado"
+        SENDING = "sending", "enviando"
+        ACCEPTED = "accepted", "aceito, não confirmado"
+        CONFIRMED = "confirmed", "confirmado"
+        FAILED_RETRYABLE = "failed_retryable", "falha repetível"
+        FAILED_FINAL = "failed_final", "falha final"
+        UNKNOWN = "unknown", "resultado desconhecido"
+        CANCELLED = "cancelled", "cancelado"
+        EXPIRED = "expired", "expirado"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    outbox = models.ForeignKey(
+        MarketingOutbox,
+        on_delete=models.PROTECT,
+        related_name="delivery_targets",
+    )
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="delivery_targets",
+    )
+    snapshot = models.ForeignKey(
+        AudienceSnapshot,
+        on_delete=models.PROTECT,
+        related_name="delivery_targets",
+    )
+    artifact = models.ForeignKey(
+        MarketingContentArtifact,
+        on_delete=models.PROTECT,
+        related_name="delivery_targets",
+    )
+    member = models.ForeignKey(
+        AudienceSnapshotMember,
+        on_delete=models.SET_NULL,
+        related_name="delivery_targets",
+        null=True,
+        blank=True,
+    )
+    platform = models.CharField(max_length=32)
+    wave_key = models.CharField(max_length=64, blank=True)
+    target_fingerprint = models.CharField(max_length=64)
+    fingerprint_key_version = models.PositiveSmallIntegerField()
+    state = models.CharField(
+        max_length=24,
+        choices=State.choices,
+        default=State.PLANNED,
+    )
+    version = models.PositiveIntegerField(default=1)
+    attempt_count = models.PositiveIntegerField(default=0)
+    lease_owner = models.CharField(max_length=100, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    next_attempt_at = models.DateTimeField(db_index=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    provider_receipt_ref = models.CharField(max_length=128, blank=True)
+    provider_ref_retention_until = models.DateTimeField(null=True, blank=True)
+    identity_retention_until = models.DateTimeField()
+    record_retention_until = models.DateTimeField()
+    settled_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["next_attempt_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["snapshot", "platform", "target_fingerprint"],
+                name="shop_delivery_target_snapshot_platform_fp_uq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fingerprint_key_version__gt=0),
+                name="shop_delivery_target_key_version_ck",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gt=0),
+                name="shop_delivery_target_version_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["state", "next_attempt_at"]),
+            models.Index(fields=["outbox", "state"]),
+        ]
+
+
+class DeliveryAttempt(models.Model):
+    """One sanitized provider-call attempt; raw contact/body/error never lives here."""
+
+    class State(models.TextChoices):
+        STARTED = "started", "iniciada"
+        COMPLETED = "completed", "concluída"
+
+    class Outcome(models.TextChoices):
+        NOT_ATTEMPTED = "not_attempted", "não tentado"
+        ACCEPTED_UNCONFIRMED = "accepted_unconfirmed", "aceito, não confirmado"
+        CONFIRMED = "confirmed", "confirmado"
+        FAILED_RETRYABLE = "failed_retryable", "falha repetível"
+        FAILED_FINAL = "failed_final", "falha final"
+        UNKNOWN = "unknown", "resultado desconhecido"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    target = models.ForeignKey(
+        DeliveryTarget,
+        on_delete=models.PROTECT,
+        related_name="attempts",
+    )
+    ordinal = models.PositiveIntegerField()
+    state = models.CharField(
+        max_length=16,
+        choices=State.choices,
+        default=State.STARTED,
+    )
+    outcome_kind = models.CharField(
+        max_length=32,
+        choices=Outcome.choices,
+        blank=True,
+    )
+    idempotency_token_hash = models.CharField(max_length=64)
+    request_hash = models.CharField(max_length=64)
+    provider_receipt_ref = models.CharField(max_length=128, blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+    retry_after_seconds = models.PositiveIntegerField(null=True, blank=True)
+    http_status = models.PositiveSmallIntegerField(null=True, blank=True)
+    started_at = models.DateTimeField()
+    completed_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["target", "ordinal"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["target", "ordinal"],
+                name="shop_delivery_attempt_target_ordinal_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["target", "idempotency_token_hash"],
+                name="shop_delivery_attempt_target_idem_uq",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(ordinal__gt=0),
+                name="shop_delivery_attempt_ordinal_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state="started",
+                        outcome_kind="",
+                        completed_at__isnull=True,
+                    )
+                    | models.Q(
+                        state="completed",
+                        outcome_kind__gt="",
+                        completed_at__isnull=False,
+                    )
+                ),
+                name="shop_delivery_attempt_completion_ck",
+            ),
+        ]
+        indexes = [models.Index(fields=["state", "started_at"])]

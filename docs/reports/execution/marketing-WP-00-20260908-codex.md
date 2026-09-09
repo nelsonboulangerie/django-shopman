@@ -461,3 +461,37 @@ Provas locais:
 - Marketing Nuxt: lint, typecheck e 97 testes passaram;
 - API/approval/outbox/transitions: 122 testes passaram; Ruff e `git diff --check` passaram;
 - nenhuma migration; nenhum provider, rede, produção ou escrita externa foi usado.
+
+## MKT-013 — DeliveryTarget/Attempt, uniques e identificadores protegidos
+
+Implementado:
+
+- `DeliveryTarget` representa um efeito lógico por snapshot/plataforma/recipient protegido; publicação pública recebe um único target sem membro;
+- unique de banco em `(snapshot, platform, target_fingerprint)` fecha materialização duplicada por dois workers;
+- fingerprint é HMAC-SHA-256 com chave e versão próprias, escopado por snapshot + plataforma; não é telefone, hash simples nem identidade estável entre campanhas;
+- `SHOPMAN_MARKETING_TARGET_HMAC_KEY` não possui fallback em produção; ausência/valor fraco falha fechado antes de criar target;
+- `fingerprint_key_version` é persistida para rotação; replay do mesmo outbox conserva targets já existentes em vez de recalcular histórico;
+- target referencia somente `AudienceSnapshotMember` protegido e permite `SET_NULL` na janela de erase; não copia telefone, e-mail, nome, body ou conteúdo;
+- retenções separam vínculo de identidade (90 dias após a base operacional) do registro técnico sem PII (5 anos); provider ref possui prazo próprio para MKT-014;
+- `DeliveryAttempt` possui ordinal e idempotency hash únicos por target, lifecycle started/completed e somente outcome/error/receipt sanitizados;
+- completion inválida é impedida por check constraint; target/version/key version têm checks positivos;
+- materialização exige outbox já despachada, grafo versionado coerente e seleção explícita de membros WhatsApp;
+- membro externo ao snapshot, recipient em duas waves e lote acima de 5.000 falham antes de qualquer target novo;
+- o serviço usa apenas IDs internos/target keys já protegidas e nunca resolve contato nem chama adapter.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Descobrir recipient duplicado | reconciliação manual posterior | banco impede na criação |
+| Relacionar telefone a tentativas para suporte comum | exposição desnecessária | fingerprint + ref opaca |
+| Recuperar worker repetido | risco de recriar efeito | mesmo conjunto de target refs |
+| Conferir wave sobreposta | só após resultado estranho | erro `delivery_wave_collision` imediato |
+| Administrar rotação de segredo | rehash ambíguo | key version preservada por row |
+
+Provas locais:
+
+- 11 testes MKT-013 cobrem replay por dois workers, unique físico, escopo/rotação HMAC, falta de chave, target público, snapshot estranho, colisão de wave, hard cap, attempts, scanner de PII/conteúdo e reverse/reapply da migration;
+- ledger + audience + command/outbox/API/campaign/handlers/capabilities/notifications/maintenance: 414 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0030_marketing_delivery_ledger`; nenhum adapter, provider, rede, produção ou escrita externa foi usado.

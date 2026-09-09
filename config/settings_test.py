@@ -43,6 +43,8 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_TARGET_HMAC_KEY = "test-only-marketing-target-hmac-key"
+SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = 1
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False
