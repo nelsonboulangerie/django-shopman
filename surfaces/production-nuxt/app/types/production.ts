@@ -7,6 +7,9 @@
 
 import type {
   ForecastRowProjection as ForecastRowContract,
+  OperatorAlertProjection as OperatorAlertContract,
+  OperatorAlertsProjection as OperatorAlertsContract,
+  ProductionActionProjection,
   ProductionBlindMapProjection,
   ProductionBoardProjection,
   ProductionDashboardProjection,
@@ -107,20 +110,21 @@ export type ProductionShortageError = MaterialShortageError | OrderShortageError
 
 // ── Operator alerts (shared backstage projection) ──────────────────────────
 
-export interface AlertProjection {
-  pk: number;
-  type: string;
-  type_label: string;
+export type AlertActionProjection = ProductionActionProjection & {
+  kind: "acknowledge_alert";
+  payload_schema: "AlertAckMutationRequest";
+  expected_rev: number;
+  source_alert_ref: string;
+  source_alert_effect: "acknowledges";
+};
+
+export interface AlertProjection extends Omit<OperatorAlertContract, "actions" | "severity"> {
   severity: "warning" | "error" | "critical";
-  severity_label: string;
-  message: string;
-  order_ref: string;
-  created_at_display: string;
+  actions: AlertActionProjection[];
 }
 
-export interface AlertsResponse {
+export interface AlertsResponse extends Omit<OperatorAlertsContract, "alerts"> {
   alerts: AlertProjection[];
-  counts: { active: number; critical: number };
 }
 
 // ── Mise en place (aggregated material needs) ───────────────────────────────

@@ -14,6 +14,17 @@ Nuxt/UI-Thing app, consuming the canonical projection/action contract at
   the app.
 - **Form factor:** tablet/touch-first, light theme (dark available via the toggle
   for the back-of-house floor).
+- **Private edge:** every document/API response is `private, no-store`, cannot be
+  framed and inherits the security-header middleware from `operator-kit`.
+
+Every production-domain write is fail-closed behind
+`useProductionMutationGuard`: it requires an online station and a valid, unexpired
+projection, then sends that projection's `projection_generated_at`,
+`source_revision`, `fresh_until`, and `contract_version` with the idempotent request.
+A local or server `stale_projection` refusal keeps the form open and offers the
+contract's refresh recovery; refreshing never repeats the write automatically. Login
+and alert acknowledgement are separate backstage contracts and do not consume
+production projection metadata.
 
 ## Telas
 
@@ -21,6 +32,13 @@ Nuxt/UI-Thing app, consuming the canonical projection/action contract at
   material-shortage override), void. The old HTMX production KDS, now Nuxt.
 - **Planejamento** (`/plan`) — the production matrix: per-SKU
   planned/started/finished totals + demand suggestion, inline plan + start.
+- **Fornadas** (`/board`) — full-screen operator forecast, still protected by the
+  production permission.
+
+`/menuboard` is deliberately absent. The only canonical menuboard is the Django
+surface `/menuboard/<ref>/`, protected by staff session or a kiosk token and updated
+through its canonical SSE projection. D4 still has to map the physical TVs to refs
+and choose the cutover window; this app does not guess or redirect to a board.
 
 ## Dev
 
@@ -30,7 +48,17 @@ npm run dev          # http://127.0.0.1:3005  (navigate via 127.0.0.1, never loc
 npm run test         # vitest — pure presentation layer
 ```
 
-Set `NUXT_DJANGO_BASE_URL` to the Django/BFF origin (default `http://127.0.0.1:8000`).
+In development/test, `NUXT_DJANGO_BASE_URL` defaults to `http://127.0.0.1:8000`.
+A production build/boot fails unless it receives an explicit environment marker
+(`SHOPMAN_ENVIRONMENT`, for example `staging` or `production`) and a non-local HTTPS
+`NUXT_DJANGO_BASE_URL`; both must also exist at runtime. The upstream is private
+runtime config and is never exposed as `NUXT_PUBLIC_*`.
+
+The generic surface image supplies `https://django-upstream.invalid` only while
+compiling this app. That reserved, non-routable origin keeps the image environment
+agnostic and is not exported into the runtime stage; the Nitro boot guard still
+requires the actual environment and upstream. Local E2E uses a separate double opt-in
+documented in `tests/e2e/README.md`.
 
 ## Layout
 

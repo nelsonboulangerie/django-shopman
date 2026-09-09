@@ -15,10 +15,16 @@ import {
 } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
+import {
+  useProductionMutationGuard,
+  type ProductionMutationBlock,
+  type ProductionMutationMetadata,
+} from "~/composables/useProductionMutationGuard";
 
 export interface BoardActResult {
   ok: boolean;
   shortage?: ProductionShortageError;
+  blocked?: ProductionMutationBlock;
 }
 
 /** ISO date default for planning: today's board in the morning, tomorrow's
@@ -52,6 +58,7 @@ export function useProductionBoard(
   const board = computed<ProductionBoardProjection | null>(
     () => data.value?.board ?? null,
   );
+  const mutationGuard = useProductionMutationGuard(board, refresh);
   const rows = computed(() => board.value?.matrix_rows ?? []);
   const counts = computed(() => board.value?.counts ?? null);
   const dateDisplay = computed(() => board.value?.selected_date_display ?? "");
@@ -65,20 +72,32 @@ export function useProductionBoard(
 
   async function post(
     key: string,
-    action: (idempotencyKey: string) => Promise<unknown>,
+    actionRef: string,
+    action: (
+      idempotencyKey: string,
+      metadata: ProductionMutationMetadata,
+      expectedRev: number | null,
+    ) => Promise<unknown>,
   ): Promise<BoardActResult> {
     if (busy.value.has(key)) return { ok: false };
+    const authorization = mutationGuard.authorizeMutation(actionRef);
+    if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
     busy.value = new Set(busy.value).add(key);
     const attempt = attempts.get(key) ?? newProductionMutationKey();
     attempts.set(key, attempt);
     try {
-      await action(attempt);
+      await action(
+        attempt,
+        authorization.metadata,
+        authorization.action.expected_rev,
+      );
       await refresh();
       attempts.delete(key);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
+      if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
     } finally {
@@ -98,10 +117,29 @@ export function useProductionBoard(
   // falsa. O contrato exige que essa ausência seja explícita.
   function plan(
     key: string,
-    payload: Omit<ProductionPlanMutationRequest, "idempotency_key">,
+    payload: Omit<
+      ProductionPlanMutationRequest,
+      "idempotency_key" | keyof ProductionMutationMetadata
+    >,
   ): Promise<BoardActResult> {
-    return post(key, (idempotencyKey) =>
-      planProduction({ ...payload, idempotency_key: idempotencyKey }),
+    const actionPrefix =
+      payload.source === "suggested" ? "plan_suggested" : "plan";
+    const actionTarget = payload.work_order_id
+      ? String(payload.work_order_id)
+      : `${payload.recipe_id}:${payload.target_date}:${payload.position_ref}`;
+    const normalizedQuantity = String(payload.quantity)
+      .replace(/(\.\d*?)0+$/, "$1")
+      .replace(/\.$/, "");
+    const actionRef = `${actionPrefix}:${actionTarget}${
+      actionPrefix === "plan_suggested" ? `:${normalizedQuantity}` : ""
+    }`;
+    return post(key, actionRef, (idempotencyKey, metadata, expectedRev) =>
+      planProduction({
+        ...payload,
+        expected_rev: expectedRev,
+        ...metadata,
+        idempotency_key: idempotencyKey,
+      }),
     );
   }
 
@@ -111,10 +149,11 @@ export function useProductionBoard(
     rev: number,
     quantity: string,
   ): Promise<BoardActResult> {
-    return post(key, (idempotencyKey) =>
+    return post(key, `start:${woPk}`, (idempotencyKey, metadata, expectedRev) =>
       startProductionWorkOrder(woPk, {
         quantity,
-        expected_rev: rev,
+        expected_rev: expectedRev ?? rev,
+        ...metadata,
         idempotency_key: idempotencyKey,
       }),
     );

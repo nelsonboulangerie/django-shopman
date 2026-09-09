@@ -1,8 +1,8 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // E2E do Produção (backend-independente). O mock backend serve uma sessão autenticada + um
-// board de produção → as telas de operador renderizam; + o painel público (menuboard, sem
-// auth) e os estados vazio/erro. Build com baseURL '/' (produção usa '/'). Login efetivo,
+// board de produção → as telas de operador renderizam, mais os estados vazio/erro e o
+// corte do menuboard paralelo. Build com baseURL '/' (produção usa '/'). Login efetivo,
 // lock (Opção C) e ações reais rodam contra o Django real (reviewer local) — ver
 // tests/e2e/README.
 export default defineConfig({
@@ -34,6 +34,10 @@ export default defineConfig({
       env: {
         NUXT_APP_BASE_URL: "/",
         NUXT_DJANGO_BASE_URL: "http://127.0.0.1:8797",
+        // Exceção deliberada e testável: Nuxt build usa NODE_ENV=production, mas
+        // somente o harness E2E pode falar com upstream HTTP local.
+        SHOPMAN_ENVIRONMENT: "test",
+        SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
         HOST: "127.0.0.1",
         PORT: "3105",
       },

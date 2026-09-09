@@ -9,10 +9,20 @@ import {
   armProductionOven,
   concludeProductionOven,
   type ProductionMutationCurrent,
+  type QCKioskProjection,
 } from "~/generated/productionContract";
+import type { MaybeRefOrGetter } from "vue";
 import { newProductionMutationKey } from "~/utils/api";
+import {
+  useProductionMutationGuard,
+  type ProductionMutationMetadata,
+} from "~/composables/useProductionMutationGuard";
 
-export function useOvenFacts() {
+export function useOvenFacts(
+  projection: MaybeRefOrGetter<QCKioskProjection | null | undefined>,
+  refreshProjection: () => unknown,
+) {
+  const mutationGuard = useProductionMutationGuard(projection, refreshProjection);
   const latestRev = new Map<number, number>();
   const attempts = new Map<string, string>();
   const pending = ref<Set<number>>(new Set());
@@ -22,8 +32,18 @@ export function useOvenFacts() {
     action: "arm" | "conclude",
     workOrderPk: number,
     expectedRev: number,
-    request: (idempotencyKey: string, rev: number) => Promise<{ current: ProductionMutationCurrent | null }>,
+    request: (
+      idempotencyKey: string,
+      rev: number,
+      metadata: ProductionMutationMetadata,
+    ) => Promise<{ current: ProductionMutationCurrent | null }>,
   ): Promise<boolean> {
+    const actionRef = `${action === "arm" ? "oven_arm" : "oven_conclude"}:${workOrderPk}`;
+    const authorization = mutationGuard.authorizeMutation(actionRef);
+    if (!authorization.ok) {
+      errors.value = new Map(errors.value).set(workOrderPk, authorization.blocked.detail);
+      return false;
+    }
     const attemptRef = `${action}:${workOrderPk}`;
     const idempotencyKey = attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, idempotencyKey);
@@ -32,10 +52,18 @@ export function useOvenFacts() {
     errors.value.delete(workOrderPk);
     try {
       const response = await retryWithBackoff(
-        () => request(idempotencyKey, latestRev.get(workOrderPk) ?? expectedRev),
+        () =>
+          request(
+            idempotencyKey,
+            authorization.action.expected_rev ??
+              latestRev.get(workOrderPk) ??
+              expectedRev,
+            authorization.metadata,
+          ),
         { attempts: 4 },
       );
       if (response?.current) latestRev.set(workOrderPk, response.current.rev);
+      await refreshProjection();
       attempts.delete(attemptRef);
       return true;
     } catch (error) {
@@ -44,6 +72,7 @@ export function useOvenFacts() {
         "Não foi possível confirmar o fato do forno. Tente novamente.",
       );
       errors.value = new Map(errors.value).set(workOrderPk, message);
+      if (mutationGuard.handleMutationError(error)) return false;
       void reportClientError(error, { kind: "oven-fact", source: `production.${action}` });
       return false;
     } finally {
@@ -55,19 +84,21 @@ export function useOvenFacts() {
 
   /** Declara "enfornou" — o arm do timer. */
   const armed = (workOrderPk: number, rev: number, minutes: number) =>
-    declare("arm", workOrderPk, rev, (idempotencyKey, expectedRev) =>
+    declare("arm", workOrderPk, rev, (idempotencyKey, expectedRev, metadata) =>
       armProductionOven(workOrderPk, {
         planned_seconds: Math.max(60, Math.round(minutes) * 60),
         expected_rev: expectedRev,
+        ...metadata,
         idempotency_key: idempotencyKey,
       }),
     );
 
   /** Declara "retirou" — o Concluir do timer. Só ele; expiração não mede. */
   const concluded = (workOrderPk: number, rev: number) =>
-    declare("conclude", workOrderPk, rev, (idempotencyKey, expectedRev) =>
+    declare("conclude", workOrderPk, rev, (idempotencyKey, expectedRev, metadata) =>
       concludeProductionOven(workOrderPk, {
         expected_rev: expectedRev,
+        ...metadata,
         idempotency_key: idempotencyKey,
       }),
     );

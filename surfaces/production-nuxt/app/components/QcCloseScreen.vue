@@ -15,13 +15,13 @@ import {
   buildPartition,
   canSubmit,
   discountGrades,
-  finishedTotal,
   fullPriceGrades,
   gradeBandClass,
   initialState,
   lossQty,
   ovenAnchor,
   pendingQuestions,
+  reportedTotal,
   typeBackspace,
   typeDigit,
   defaultGradeRef,
@@ -43,7 +43,14 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   back: [];
-  confirm: [payload: { quantity: string; partition: QcPartitionGroup[] }];
+  confirm: [
+    payload: {
+      quantity: string;
+      partition: QcPartitionGroup[];
+      yield_deviation_confirmed: boolean;
+      yield_deviation_reason: string;
+    },
+  ];
 }>();
 
 // A âncora da aritmética É o previsto DESTA tela: o que entrou no forno é o
@@ -51,7 +58,9 @@ const emit = defineEmits<{
 // cumpriu seu papel lá atrás). Ver `ovenAnchor` (QC-FORNADA §1/§4).
 const anchor = ovenAnchor(props.planned, props.started);
 
-const state = ref<QcEntryState>(initialState(anchor.anchor, defaultGradeRef(props.grades)));
+const state = ref<QcEntryState>(
+  initialState(anchor.anchor, defaultGradeRef(props.grades)),
+);
 
 const topGrades = computed(() => fullPriceGrades(props.grades));
 const lowGrades = computed(() => discountGrades(props.grades));
@@ -78,6 +87,7 @@ function onDigit(digit: string) {
   }
   // Editou quantidade: a confirmação de "saiu mais que o previsto" caduca.
   s.overshootConfirmed = false;
+  s.overshootReason = "";
   fresh.value = false;
   state.value = s;
 }
@@ -91,6 +101,7 @@ function onBackspace() {
     s.discountQty = typeBackspace(s.discountQty);
   }
   s.overshootConfirmed = false;
+  s.overshootReason = "";
   state.value = s;
 }
 
@@ -103,6 +114,7 @@ function onClear() {
     s.discountQty = 0;
   }
   s.overshootConfirmed = false;
+  s.overshootReason = "";
   fresh.value = true;
   state.value = s;
 }
@@ -119,11 +131,14 @@ function pickGrade(grade: QCGradeProjection) {
 }
 
 const loss = computed(() => lossQty(state.value));
-const total = computed(() => finishedTotal(state.value));
+const total = computed(() => reportedTotal(state.value));
 
-const defectLabel = (ref: string) => props.defects.find((d) => d.ref === ref)?.label ?? "";
+const defectLabel = (ref: string) =>
+  props.defects.find((d) => d.ref === ref)?.label ?? "";
 const discountIsVetoed = computed(
-  () => !!props.defects.find((d) => d.ref === state.value.discountDefectRef)?.forces_discard,
+  () =>
+    !!props.defects.find((d) => d.ref === state.value.discountDefectRef)
+      ?.forces_discard,
 );
 
 // ── Confirmar sempre ativo + sheet de motivos ───────────────────────────────
@@ -165,7 +180,13 @@ function answerDefect(defect: QCDefectProjection) {
 
 /** "Sim, saíram N": o operador assume o acima-do-previsto conscientemente. */
 function confirmOvershoot() {
-  state.value = { ...state.value, overshootConfirmed: true };
+  const reason = state.value.overshootReason.trim();
+  if (!reason) return;
+  state.value = {
+    ...state.value,
+    overshootConfirmed: true,
+    overshootReason: reason,
+  };
   _advanceQuestions();
 }
 
@@ -196,6 +217,8 @@ function submit() {
   emit("confirm", {
     quantity: String(total.value),
     partition: buildPartition(state.value),
+    yield_deviation_confirmed: state.value.overshootConfirmed,
+    yield_deviation_reason: state.value.overshootReason.trim(),
   });
 }
 
@@ -203,7 +226,11 @@ function submit() {
 function onKeydown(event: KeyboardEvent) {
   // Digitação num input real (ex.: busca do cabeçalho) não é entrada do numpad.
   const target = event.target as HTMLElement | null;
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement
+  )
+    return;
   if (event.key === "Escape") {
     sheetQuestion.value = null;
     submitAfterAnswer.value = false;
@@ -245,7 +272,9 @@ const fieldCard =
         <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="anchor.anchor !== null">{{ anchor.anchor }} previstos</template>
+        <template v-if="anchor.anchor !== null"
+          >{{ anchor.anchor }} previstos</template
+        >
         <template v-else>Sem previsto</template>
       </div>
     </header>
@@ -254,11 +283,21 @@ const fieldCard =
     <div class="mt-2 grid shrink-0 grid-cols-2 gap-3">
       <button
         type="button"
-        :class="[fieldCard, activeField === 'full' ? 'border-primary ring-2 ring-primary/30' : 'hover:bg-accent']"
+        :class="[
+          fieldCard,
+          activeField === 'full'
+            ? 'border-primary ring-2 ring-primary/30'
+            : 'hover:bg-accent',
+        ]"
         @click="focusField('full')"
       >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qualidade OK</span>
-        <span class="text-4xl font-semibold tabular-nums">{{ state.fullQty }}</span>
+        <span
+          class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >Qualidade OK</span
+        >
+        <span class="text-4xl font-semibold tabular-nums">{{
+          state.fullQty
+        }}</span>
       </button>
       <button
         type="button"
@@ -273,20 +312,35 @@ const fieldCard =
         ]"
         @click="focusField('discount')"
       >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantas divergentes</span>
-        <span class="text-4xl font-semibold tabular-nums">{{ discountEnabled ? state.discountQty : "" }}</span>
+        <span
+          class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+          >Quantas divergentes</span
+        >
+        <span class="text-4xl font-semibold tabular-nums">{{
+          discountEnabled ? state.discountQty : ""
+        }}</span>
       </button>
     </div>
 
     <!-- Legenda do numpad: diz em qual campo se está. Altura fixa. -->
     <p class="flex h-8 shrink-0 items-center text-sm text-muted-foreground">
-      Digitando em: {{ activeField === "full" ? "qualidade OK" : "quantas divergentes" }}
+      Digitando em:
+      {{ activeField === "full" ? "qualidade OK" : "quantas divergentes" }}
     </p>
 
     <!-- Numpad âncora + escala em coluna, vão maior entre os dois blocos. -->
     <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_11rem] gap-8">
-      <OperatorNumpad subject="quantidade" @digit="onDigit" @backspace="onBackspace" @clear="onClear" />
-      <div class="flex flex-col gap-2" role="group" aria-label="Escala de qualidade">
+      <OperatorNumpad
+        subject="quantidade"
+        @digit="onDigit"
+        @backspace="onBackspace"
+        @clear="onClear"
+      />
+      <div
+        class="flex flex-col gap-2"
+        role="group"
+        aria-label="Escala de qualidade"
+      >
         <button
           v-for="grade in [...topGrades, ...lowGrades]"
           :key="grade.ref"
@@ -294,13 +348,20 @@ const fieldCard =
           class="relative flex flex-1 items-center justify-between overflow-hidden rounded-md border py-2 pl-4 pr-3 text-left transition hover:bg-accent"
           :class="{
             'border-primary bg-accent ring-2 ring-primary/30':
-              grade.ref === state.fullGradeRef || grade.ref === state.discountGradeRef,
+              grade.ref === state.fullGradeRef ||
+              grade.ref === state.discountGradeRef,
           }"
           @click="pickGrade(grade)"
         >
-          <span class="absolute inset-y-0 left-0 w-1.5" :class="gradeBandClass(grade, grades)" />
+          <span
+            class="absolute inset-y-0 left-0 w-1.5"
+            :class="gradeBandClass(grade, grades)"
+          />
           <span class="font-medium">{{ grade.label }}</span>
-          <span v-if="grade.markdown_percent" class="text-xs tabular-nums text-muted-foreground">
+          <span
+            v-if="grade.markdown_percent"
+            class="text-xs tabular-nums text-muted-foreground"
+          >
             &minus;{{ grade.markdown_percent }}%
           </span>
         </button>
@@ -320,9 +381,17 @@ const fieldCard =
         class="flex items-center justify-between rounded-md border border-dashed px-3 text-sm transition hover:bg-accent"
         @click="openQuestion('loss_reason', false)"
       >
-        <span class="text-muted-foreground">Perda: <b class="tabular-nums text-foreground">{{ loss }}</b></span>
-        <span :class="state.lossDefectRef ? 'font-medium' : 'text-muted-foreground'">
-          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "Toque para o motivo" }}
+        <span class="text-muted-foreground"
+          >Perda: <b class="tabular-nums text-foreground">{{ loss }}</b></span
+        >
+        <span
+          :class="state.lossDefectRef ? 'font-medium' : 'text-muted-foreground'"
+        >
+          {{
+            state.lossDefectRef
+              ? defectLabel(state.lossDefectRef)
+              : "Toque para o motivo"
+          }}
         </span>
       </button>
       <span v-else aria-hidden="true" />
@@ -332,10 +401,20 @@ const fieldCard =
         class="flex items-center justify-between rounded-md border border-dashed px-3 text-sm transition hover:bg-accent"
         @click="openQuestion('discount_reason', false)"
       >
-        <span class="text-muted-foreground">Sublote: <b class="tabular-nums text-foreground">{{ state.discountQty }}</b></span>
-        <span :class="state.discountDefectRef ? 'font-medium' : 'text-muted-foreground'">
+        <span class="text-muted-foreground"
+          >Sublote:
+          <b class="tabular-nums text-foreground">{{
+            state.discountQty
+          }}</b></span
+        >
+        <span
+          :class="
+            state.discountDefectRef ? 'font-medium' : 'text-muted-foreground'
+          "
+        >
           <template v-if="state.discountDefectRef">
-            {{ defectLabel(state.discountDefectRef) }}<template v-if="discountIsVetoed"> · vira descarte</template>
+            {{ defectLabel(state.discountDefectRef)
+            }}<template v-if="discountIsVetoed"> · vira descarte</template>
           </template>
           <template v-else>Toque para o motivo</template>
         </span>
@@ -354,29 +433,56 @@ const fieldCard =
     </button>
 
     <!-- Motivos em bottom sheet: custam zero espaço até serem necessários. -->
-    <UiSheet :open="sheetQuestion !== null" @update:open="(v: boolean) => { if (!v) { sheetQuestion = null; submitAfterAnswer = false; } }">
+    <UiSheet
+      :open="sheetQuestion !== null"
+      @update:open="
+        (v: boolean) => {
+          if (!v) {
+            sheetQuestion = null;
+            submitAfterAnswer = false;
+          }
+        }
+      "
+    >
       <UiSheetContent side="bottom" :title="sheetTitle">
         <template #content>
           <!-- Plausibilidade: acima do previsto pede confirmação consciente —
                o typo (222 no lugar de 22) morre num toque de Corrigir. -->
           <div
             v-if="sheetQuestion === 'overshoot'"
-            class="grid grid-cols-2 gap-2 px-4 pb-6"
+            class="grid gap-3 px-4 pb-6"
           >
-            <button
-              type="button"
-              class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
-              @click="fixOvershoot()"
-            >
-              Corrigir
-            </button>
-            <button
-              type="button"
-              class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
-              @click="confirmOvershoot()"
-            >
-              Sim, saíram {{ total }}
-            </button>
+            <label class="grid gap-1.5 text-sm">
+              <span class="font-medium"
+                >Por que o rendimento ficou acima do iniciado?</span
+              >
+              <textarea
+                v-model="state.overshootReason"
+                rows="3"
+                maxlength="500"
+                required
+                class="rounded-md border bg-background px-3 py-2"
+                aria-label="Motivo da produção acima da quantidade iniciada"
+                placeholder="Ex.: contagem conferida e unidades menores que o padrão"
+              />
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
+                @click="fixOvershoot()"
+              >
+                Corrigir
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!state.overshootReason.trim()"
+                @click="confirmOvershoot()"
+              >
+                Confirmar {{ total }} unidades
+              </button>
+            </div>
           </div>
           <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <button
@@ -387,7 +493,9 @@ const fieldCard =
               @click="answerDefect(defect)"
             >
               <span class="font-medium">{{ defect.label }}</span>
-              <span class="text-xs text-muted-foreground">{{ defect.hint }}</span>
+              <span class="text-xs text-muted-foreground">{{
+                defect.hint
+              }}</span>
             </button>
           </div>
         </template>

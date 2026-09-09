@@ -11,10 +11,16 @@ import {
 } from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
+import {
+  useProductionMutationGuard,
+  type ProductionMutationBlock,
+  type ProductionMutationMetadata,
+} from "~/composables/useProductionMutationGuard";
 
 export interface ActResult {
   ok: boolean;
   shortage?: ProductionShortageError;
+  blocked?: ProductionMutationBlock;
 }
 
 export function useProductionKds() {
@@ -26,7 +32,9 @@ export function useProductionKds() {
     onResponseError: operatorSessionOnError,
   });
 
-  const cards = computed<ProductionKDSCardProjection[]>(() => data.value?.kds?.cards ?? []);
+  const kds = computed(() => data.value?.kds ?? null);
+  const mutationGuard = useProductionMutationGuard(kds, refresh);
+  const cards = computed<ProductionKDSCardProjection[]>(() => kds.value?.cards ?? []);
   const totalCount = computed(() => data.value?.kds?.total_count ?? 0);
   const lateCount = computed(() => data.value?.kds?.late_count ?? 0);
 
@@ -41,21 +49,28 @@ export function useProductionKds() {
   async function post(
     pk: number,
     action: string,
-    request: (idempotencyKey: string) => Promise<unknown>,
+    request: (
+      idempotencyKey: string,
+      metadata: ProductionMutationMetadata,
+    ) => Promise<unknown>,
   ): Promise<ActResult> {
     if (busy.value.has(pk)) return { ok: false };
+    const actionRef = `${action}:${pk}`;
+    const authorization = mutationGuard.authorizeMutation(actionRef);
+    if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
     busy.value = new Set(busy.value).add(pk);
-    const attemptRef = `${action}:${pk}`;
+    const attemptRef = actionRef;
     const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, attempt);
     try {
-      await request(attempt);
+      await request(attempt, authorization.metadata);
       await refresh();
       attempts.delete(attemptRef);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
+      if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
     } finally {
@@ -66,19 +81,25 @@ export function useProductionKds() {
   }
 
   const advanceStep = (pk: number, rev: number) =>
-    post(pk, "advance-step", (idempotencyKey) =>
+    post(pk, "advance_step", (idempotencyKey, metadata) =>
       advanceProductionWorkOrderStep(pk, {
-        expected_rev: rev,
+        expected_rev:
+          kds.value?.actions.find((action) => action.ref === `advance_step:${pk}`)
+            ?.expected_rev ?? rev,
+        ...metadata,
         idempotency_key: idempotencyKey,
       }),
     );
   // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
   const voidOrder = (pk: number, rev: number, reason: string) =>
-    post(pk, "void", (idempotencyKey) =>
+    post(pk, "void", (idempotencyKey, metadata) =>
       voidProductionWorkOrder(pk, {
         reason,
-        expected_rev: rev,
+        expected_rev:
+          kds.value?.actions.find((action) => action.ref === `void:${pk}`)
+            ?.expected_rev ?? rev,
+        ...metadata,
         idempotency_key: idempotencyKey,
       }),
     );

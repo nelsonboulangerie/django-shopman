@@ -6,7 +6,7 @@
 import { alertTarget } from "~/presentation/production";
 import type { AlertProjection } from "~/types/production";
 
-const { alerts, activeCount, criticalCount, ack } = useAlerts();
+const { alerts, activeCount, criticalCount, ack, isPending } = useAlerts();
 const open = ref(false);
 const router = useRouter();
 
@@ -28,7 +28,7 @@ function follow(alert: AlertProjection) {
   <div class="relative">
     <button
       type="button"
-      class="relative grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+      class="relative grid size-11 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
       :aria-label="`Alertas (${activeCount})`"
       title="Alertas"
       @click="open = !open"
@@ -50,7 +50,7 @@ function follow(alert: AlertProjection) {
     >
       <div class="flex items-center justify-between border-b px-4 py-2.5">
         <h2 class="text-sm font-bold">Alertas</h2>
-        <button type="button" class="grid size-7 place-items-center rounded text-muted-foreground transition hover:text-foreground" aria-label="Fechar" @click="open = false">
+        <button type="button" class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:text-foreground" aria-label="Fechar" @click="open = false">
           <Icon name="lucide:x" class="size-4" />
         </button>
       </div>
@@ -78,10 +78,11 @@ function follow(alert: AlertProjection) {
             </component>
             <button
               type="button"
-              class="grid size-7 shrink-0 place-items-center rounded border bg-background text-muted-foreground transition hover:text-foreground"
+              class="grid size-11 shrink-0 place-items-center rounded-md border bg-background text-muted-foreground transition hover:text-foreground disabled:opacity-50"
               aria-label="Reconhecer alerta"
               title="Reconhecer"
-              @click="ack(a.pk)"
+              :disabled="isPending(a.pk)"
+              @click="ack(a)"
             >
               <Icon name="lucide:check" class="size-3.5" />
             </button>

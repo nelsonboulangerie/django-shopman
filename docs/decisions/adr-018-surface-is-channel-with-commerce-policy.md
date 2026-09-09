@@ -209,6 +209,13 @@ Portanto: **as rotas de menuboard passam a exigir credencial**, e o XML permanec
 > `SHOPMAN_MENUBOARD_PUBLIC` reabre tudo — escotilha explicita, **default fechado**, para o estado
 > seguro ser o default.
 
+> **Corte do renderizador paralelo (2026-09-08).** A rota `/menuboard` que existia em
+> `surfaces/production-nuxt` foi removida. Ela consumia o menu público do storefront, sem `ref`,
+> credencial ou SSE canônico, e portanto era uma segunda implementacao da mesma pergunta. O owner
+> permanece sendo o Django em `/menuboard/<ref>/`, com os gates descritos acima. O gate D4 segue
+> aberto para mapear cada TV a uma ref e escolher a janela de troca; ate essa decisao nao existe
+> redirect/launcher no app Producao e nenhuma ref e inferida.
+
 E um system check amarra as duas pontas: **canal rastreado publicamente so pode tirar preco de canal
 cujo preco e publico.** Sem ele, alguem configura `prices_from="pos"` num canal Google e o preco do
 balcao vai para o mundo.

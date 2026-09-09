@@ -9,8 +9,34 @@ function boardPayload(overrides: Record<string, unknown> = {}) {
     board: {
       selected_date: "2026-07-06",
       selected_date_display: "domingo, 6 de julho",
-      selected_position_ref: "",
+      selected_position_ref: "forno",
+      default_position_pk: 1,
+      positions: [{ pk: 1, ref: "forno", name: "Forno", is_default: true }],
       access: {},
+      generated_at: "2099-01-01T11:59:00Z",
+      source_revision: "board:1",
+      fresh_until: "2099-01-01T12:01:00Z",
+      contract_version: 1,
+      actions: [
+        {
+          ref: "plan:5:2026-07-06:forno",
+          enabled: true,
+          proof: "plan-proof",
+          expected_rev: null,
+        },
+        {
+          ref: "plan_suggested:5:2026-07-06:forno:8",
+          enabled: true,
+          proof: "suggested-proof",
+          expected_rev: null,
+        },
+        {
+          ref: "start:42",
+          enabled: true,
+          proof: "start-proof",
+          expected_rev: 3,
+        },
+      ],
       base_recipes: [],
       matrix_rows: [{ output_sku: "PAO-001", recipe_name: "Pão", planned_qty: "0" }],
       counts: { planned: 3, started: 1, finished: 0 },
@@ -69,6 +95,7 @@ describe("useProductionBoard — plan/start writes", () => {
       recipe_id: 5,
       quantity: "12",
       target_date: "2026-07-06",
+      position_ref: "forno",
       expected_rev: null,
     });
     expect(res.ok).toBe(true);
@@ -80,6 +107,12 @@ describe("useProductionBoard — plan/start writes", () => {
           recipe_id: 5,
           quantity: "12",
           expected_rev: null,
+          projection_generated_at: "2099-01-01T11:59:00Z",
+          source_revision: "board:1",
+          fresh_until: "2099-01-01T12:01:00Z",
+          contract_version: 1,
+          action_ref: "plan:5:2026-07-06:forno",
+          action_proof: "plan-proof",
           idempotency_key: expect.any(String),
         }),
       }),
@@ -96,7 +129,45 @@ describe("useProductionBoard — plan/start writes", () => {
       "/api/v1/backstage/production/42/start/",
       expect.objectContaining({
         method: "POST",
-        body: { quantity: "30", expected_rev: 3, idempotency_key: expect.any(String) },
+        body: expect.objectContaining({
+          quantity: "30",
+          expected_rev: 3,
+          projection_generated_at: "2099-01-01T11:59:00Z",
+          source_revision: "board:1",
+          fresh_until: "2099-01-01T12:01:00Z",
+          contract_version: 1,
+          action_ref: "start:42",
+          action_proof: "start-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+  });
+
+  it("uses the quantity-bound suggested action and preserves an override proof", async () => {
+    env.fetchData.value = boardPayload();
+    const { plan } = useProductionBoard();
+
+    await plan("PAO-001", {
+      recipe_id: 5,
+      quantity: "8.000",
+      target_date: "2026-07-06",
+      position_ref: "forno",
+      expected_rev: null,
+      source: "suggested",
+      force: true,
+      reason: "autorizado",
+      override_proof: "shortage-proof",
+    });
+
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/plan/",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          action_ref: "plan_suggested:5:2026-07-06:forno:8",
+          action_proof: "suggested-proof",
+          override_proof: "shortage-proof",
+        }),
       }),
     );
   });
@@ -111,6 +182,7 @@ describe("useProductionBoard — plan/start writes", () => {
       recipe_id: 5,
       quantity: "12",
       target_date: "2026-07-06",
+      position_ref: "forno",
       expected_rev: null,
     });
     expect(isBusy("PAO-001")).toBe(true);
@@ -118,6 +190,7 @@ describe("useProductionBoard — plan/start writes", () => {
       recipe_id: 5,
       quantity: "9",
       target_date: "2026-07-06",
+      position_ref: "forno",
       expected_rev: null,
     });
     expect(second.ok).toBe(false); // rejected while first still in flight
@@ -136,6 +209,7 @@ describe("useProductionBoard — plan/start writes", () => {
       recipe_id: 5,
       quantity: "12",
       target_date: "2026-07-06",
+      position_ref: "forno",
       expected_rev: null,
     });
     expect(res.ok).toBe(false);
@@ -150,6 +224,58 @@ describe("useProductionBoard — plan/start writes", () => {
     const res = await start("PAO-001", 42, 3, "30");
     expect(res.ok).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("Banco fora do ar");
+  });
+
+  it("blocks an expired projection before POST and preserves the submitted payload", async () => {
+    env.fetchData.value = boardPayload({ fresh_until: "2020-01-01T00:00:00Z" });
+    const payload = {
+      recipe_id: 5,
+      quantity: "12",
+      target_date: "2026-07-06",
+      position_ref: "forno",
+      expected_rev: null,
+    };
+    const result = await useProductionBoard().plan("PAO-001", payload);
+
+    expect(result.blocked?.code).toBe("stale_projection");
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(payload.quantity).toBe("12");
+    expect(env.sonner.error).toHaveBeenCalledWith(
+      expect.stringContaining("desatualizados"),
+      expect.objectContaining({ action: expect.objectContaining({ label: "Atualizar dados" }) }),
+    );
+  });
+
+  it("honors the stale_projection recovery returned by the contract", async () => {
+    env.fetchData.value = boardPayload();
+    env.fetchMock.mockRejectedValueOnce({
+      data: {
+        detail: "A projeção venceu.",
+        error: {
+          code: "stale_projection",
+          age_seconds: 91,
+          sent_rev: 3,
+          current_rev: 4,
+          current: null,
+          recovery: { action: "refresh", label: "Recarregar quadro" },
+        },
+      },
+    });
+
+    const result = await useProductionBoard().start("PAO-001", 42, 3, "30");
+    expect(result.ok).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalledWith(
+      "A projeção venceu.",
+      expect.objectContaining({
+        action: expect.objectContaining({ label: "Recarregar quadro" }),
+      }),
+    );
+
+    const options = env.sonner.error.mock.calls[0]?.[1] as {
+      action: { onClick: () => void };
+    };
+    options.action.onClick();
+    expect(env.refresh).toHaveBeenCalledOnce();
   });
 });
 

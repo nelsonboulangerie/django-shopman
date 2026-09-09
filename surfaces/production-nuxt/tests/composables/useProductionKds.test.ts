@@ -5,7 +5,32 @@ import { useProductionKds } from "~/composables/useProductionKds";
 const env = installNuxtGlobals();
 
 function kdsPayload(cards: unknown[] = [], overrides: Record<string, unknown> = {}) {
-  return { kds: { cards, total_count: cards.length, late_count: 0, ...overrides } };
+  return {
+    kds: {
+      cards,
+      total_count: cards.length,
+      late_count: 0,
+      generated_at: "2099-01-01T11:59:00Z",
+      source_revision: "kds:1",
+      fresh_until: "2099-01-01T12:01:00Z",
+      contract_version: 1,
+      actions: [
+        {
+          ref: "advance_step:7",
+          enabled: true,
+          proof: "advance-proof",
+          expected_rev: 4,
+        },
+        {
+          ref: "void:7",
+          enabled: true,
+          proof: "void-proof",
+          expected_rev: 5,
+        },
+      ],
+      ...overrides,
+    },
+  };
 }
 
 describe("useProductionKds — read derivations", () => {
@@ -59,7 +84,16 @@ describe("useProductionKds — per-WO writes", () => {
       "/api/v1/backstage/production/7/advance-step/",
       expect.objectContaining({
         method: "POST",
-        body: { expected_rev: 4, idempotency_key: expect.any(String) },
+        body: expect.objectContaining({
+          expected_rev: 4,
+          projection_generated_at: "2099-01-01T11:59:00Z",
+          source_revision: "kds:1",
+          fresh_until: "2099-01-01T12:01:00Z",
+          contract_version: 1,
+          action_ref: "advance_step:7",
+          action_proof: "advance-proof",
+          idempotency_key: expect.any(String),
+        }),
       }),
     );
 
@@ -67,7 +101,17 @@ describe("useProductionKds — per-WO writes", () => {
     expect(env.fetchMock).toHaveBeenCalledWith(
       "/api/v1/backstage/production/7/void/",
       expect.objectContaining({
-        body: { reason: "queimou", expected_rev: 5, idempotency_key: expect.any(String) },
+        body: expect.objectContaining({
+          reason: "queimou",
+          expected_rev: 5,
+          projection_generated_at: "2099-01-01T11:59:00Z",
+          source_revision: "kds:1",
+          fresh_until: "2099-01-01T12:01:00Z",
+          contract_version: 1,
+          action_ref: "void:7",
+          action_proof: "void-proof",
+          idempotency_key: expect.any(String),
+        }),
       }),
     );
   });
@@ -104,5 +148,17 @@ describe("useProductionKds — per-WO writes", () => {
     const { advanceStep } = useProductionKds();
     expect((await advanceStep(7, 4)).ok).toBe(false);
     expect(env.sonner.error).toHaveBeenCalledWith("erro");
+  });
+
+  it("blocks advance and void while offline without consuming the form input", async () => {
+    env.fetchData.value = kdsPayload();
+    env.isOnline.value = false;
+    const reason = "queimou";
+    const { advanceStep, voidOrder } = useProductionKds();
+
+    expect((await advanceStep(7, 4)).blocked?.code).toBe("offline");
+    expect((await voidOrder(7, 5, reason)).blocked?.code).toBe("offline");
+    expect(reason).toBe("queimou");
+    expect(env.fetchMock).not.toHaveBeenCalled();
   });
 });

@@ -14,22 +14,53 @@ import {
   lossQty,
   ovenAnchor,
   pendingQuestions,
+  reportedTotal,
   typeBackspace,
   typeDigit,
 } from "../app/presentation/qc";
 import type { QCGradeProjection } from "../app/types/production";
 
 const GRADES: QCGradeProjection[] = [
-  { ref: "excellent", label: "Ótima", rank: 40, markdown_percent: 0, is_default: false },
-  { ref: "standard", label: "Normal", rank: 30, markdown_percent: 0, is_default: true },
-  { ref: "fair", label: "Razoável", rank: 20, markdown_percent: 20, is_default: false },
-  { ref: "minimal", label: "Mínima", rank: 10, markdown_percent: 50, is_default: false },
+  {
+    ref: "excellent",
+    label: "Ótima",
+    rank: 40,
+    markdown_percent: 0,
+    is_default: false,
+  },
+  {
+    ref: "standard",
+    label: "Normal",
+    rank: 30,
+    markdown_percent: 0,
+    is_default: true,
+  },
+  {
+    ref: "fair",
+    label: "Razoável",
+    rank: 20,
+    markdown_percent: 20,
+    is_default: false,
+  },
+  {
+    ref: "minimal",
+    label: "Mínima",
+    rank: 10,
+    markdown_percent: 50,
+    is_default: false,
+  },
 ];
 
 describe("a escala", () => {
   it("separa preço cheio de desconto pelo markdown, não pelo nome", () => {
-    expect(fullPriceGrades(GRADES).map((g) => g.ref)).toEqual(["excellent", "standard"]);
-    expect(discountGrades(GRADES).map((g) => g.ref)).toEqual(["fair", "minimal"]);
+    expect(fullPriceGrades(GRADES).map((g) => g.ref)).toEqual([
+      "excellent",
+      "standard",
+    ]);
+    expect(discountGrades(GRADES).map((g) => g.ref)).toEqual([
+      "fair",
+      "minimal",
+    ]);
   });
 
   it("o padrão vem do catálogo", () => {
@@ -138,7 +169,11 @@ describe("Confirmar sempre ativo: as perguntas que faltam", () => {
     state = { ...state, fullQty: 222, fullTouched: true };
     expect(pendingQuestions(state)).toEqual(["overshoot"]);
 
-    state = { ...state, overshootConfirmed: true };
+    state = {
+      ...state,
+      overshootConfirmed: true,
+      overshootReason: "Contagem conferida",
+    };
     expect(pendingQuestions(state)).toEqual([]);
   });
 
@@ -162,10 +197,15 @@ describe("o payload da partição (contrato do finish)", () => {
     };
     expect(buildPartition(state)).toEqual([
       { quantity: "32", quality_grade_ref: "standard" },
-      { quantity: "5", quality_grade_ref: "minimal", quality_defect_ref: "overbaked" },
+      {
+        quantity: "5",
+        quality_grade_ref: "minimal",
+        quality_defect_ref: "overbaked",
+      },
       { quantity: "3", quality_defect_ref: "underproofed", loss: true },
     ]);
     expect(finishedTotal(state)).toBe(37);
+    expect(reportedTotal(state)).toBe(40);
   });
 
   it("grupo zerado não entra no payload", () => {
