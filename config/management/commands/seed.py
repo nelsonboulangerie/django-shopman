@@ -453,7 +453,10 @@ LEFTOVER_ITEMS = [
 #: SKU canônico de cada estado no perfil `qa` do seed.
 #: Contrato de docs/reference/qa-seed-scenarios.md.
 STOREFRONT_STATES = {
-    "sold_out": "KP",      # esgotado + "me avise" (vendável, sem plano)
+    # Fendu não tem uma WorkOrder ativa hoje. Kuro Pan era usado aqui, mas ao
+    # mesmo tempo nascia STARTED no quadro: fazer o estoque dessa fornada sumir
+    # para simular "esgotado" tornava a própria confirmação inexequível.
+    "sold_out": "FE",      # esgotado + "me avise" (vendável, sem plano hoje)
     "low_stock": "ME",     # últimas unidades (≤ limiar)
     "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
     "paused": "TJ",        # pausado pelo operador (is_sellable=False)
@@ -596,6 +599,131 @@ def _discard_owned_seed_output_batch(*, ref: str, sku: str, work_order_ref: str)
             f"Lote {ref} já existe fora do domínio do seed; fato de QC preservado."
         )
     batch.delete()
+
+
+def _ensure_seed_active_production_supply() -> int:
+    """Make every active seed WorkOrder executable against the stock ledger.
+
+    The production board is not a mock: a seeded ``planned``/``started`` row
+    must be able to cross the same Stockman gates as an operator-created row.
+    Seed WorkOrders are written directly (to preserve their deterministic
+    narrative and timestamps), so their normal lifecycle signals do not run.
+
+    Reconcile the aggregate of every active WorkOrder at each seed-owned
+    coordinate instead of replaying the signals on every seed run. That makes
+    the operation idempotent, removes stale seed supply after status/quantity
+    changes, and preserves real WorkOrders sharing the same coordinate.
+    """
+    from collections import defaultdict
+
+    from shopman.stockman.models import Quant
+
+    active_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
+    seed_orders = list(
+        WorkOrder.objects.filter(
+            source_ref__startswith="seed:production:",
+            status__in=active_statuses,
+            target_date__isnull=False,
+        ).prefetch_related("events")
+    )
+    positions = {position.ref: position for position in Position.objects.all()}
+
+    def base_coordinate(work_order):
+        position = positions.get(work_order.position_ref) if work_order.position_ref else None
+        return work_order.output_sku, work_order.target_date, position
+
+    contract = "active_work_order_supply_v1"
+    tagged_quants = list(
+        Quant.objects.filter(
+            metadata__seed_contract=contract,
+            target_date__isnull=False,
+            batch__in=("", "started"),
+        ).select_related("position")
+    )
+    if not seed_orders and not tagged_quants:
+        return 0
+    managed_coordinates = {base_coordinate(work_order) for work_order in seed_orders}
+    managed_coordinates.update(
+        (quant.sku, quant.target_date, quant.position) for quant in tagged_quants
+    )
+    target_dates = {coordinate[1] for coordinate in managed_coordinates}
+    output_skus = {coordinate[0] for coordinate in managed_coordinates}
+    required = defaultdict(lambda: Decimal("0"))
+
+    # Include every active WorkOrder at a managed coordinate. The exact target
+    # therefore retains the contribution of operator-created WOs while stale
+    # synthetic supply can be removed safely.
+    active_orders = (
+        WorkOrder.objects.filter(
+            status__in=active_statuses,
+            target_date__in=target_dates,
+            output_sku__in=output_skus,
+        )
+        .prefetch_related("events")
+        .order_by("pk")
+    )
+    for work_order in active_orders:
+        sku, target_date, position = base_coordinate(work_order)
+        if (sku, target_date, position) not in managed_coordinates:
+            continue
+        if work_order.status == WorkOrder.Status.PLANNED:
+            required[(sku, target_date, position, "")] += work_order.quantity
+            continue
+
+        started_qty = work_order.started_qty or work_order.quantity
+        required[(sku, target_date, position, "started")] += started_qty
+        unstarted_qty = max(work_order.quantity - started_qty, Decimal("0"))
+        if unstarted_qty:
+            required[(sku, target_date, position, "")] += unstarted_qty
+
+    repaired = 0
+    supply_coordinates = {
+        (sku, target_date, position, batch)
+        for sku, target_date, position in managed_coordinates
+        for batch in ("", "started")
+    }
+    for sku, target_date, position, batch in supply_coordinates:
+        expected = required[(sku, target_date, position, batch)]
+        quant = Quant.objects.filter(
+            sku=sku,
+            target_date=target_date,
+            position=position,
+            batch=batch,
+        ).first()
+        current = quant.quantity if quant is not None else Decimal("0")
+        # Never make a valid reservation impossible merely because a seed
+        # contract was reduced. The surplus remains visible until the hold is
+        # resolved; a later seed pass then closes the coordinate to the WO sum.
+        target = max(expected, quant.held if quant is not None else Decimal("0"))
+        if quant is None and target <= 0:
+            continue
+        reason = (
+            "Reconciliação do seed: produção iniciada"
+            if batch == "started"
+            else "Reconciliação do seed: produção planejada"
+        )
+        if quant is None:
+            quant = stock.receive(
+                quantity=target,
+                sku=sku,
+                position=position,
+                target_date=target_date,
+                batch=batch,
+                reason=reason,
+                kind="make",
+                seed="nelson",
+                seed_contract=contract,
+            )
+            repaired += 1
+        elif current != target:
+            stock.adjust(quant, target, reason=reason)
+            repaired += 1
+
+        metadata = dict(quant.metadata or {})
+        if metadata.get("seed_contract") != contract or metadata.get("seed") != "nelson":
+            metadata.update({"seed": "nelson", "seed_contract": contract})
+            Quant.objects.filter(pk=quant.pk).update(metadata=metadata)
+    return repaired
 
 
 class Command(BaseCommand):
@@ -778,6 +906,11 @@ class Command(BaseCommand):
         self._seed_qa_orders(products, customers, channels)
         self._seed_production_demand_history(products, channels, timezone.now())
         self._seed_qa_production_stuck_batch()
+        # A fornada presa nasce depois de ``_seed_recipes``; reconcilie-a antes
+        # de a matriz QA deliberadamente dirigir SKUs a estados de vitrine.
+        # Rodar isto depois de ``_seed_qa_storefront_availability`` reabriria o
+        # SKU que o cenário acabou de marcar como indisponível.
+        _ensure_seed_active_production_supply()
         self._seed_qa_pos_tabs()
 
         # Caixa/fechamento já são determinísticos e datados por localdate() — reuso.
@@ -5090,19 +5223,11 @@ class Command(BaseCommand):
             )
             wo_count += 1
 
-        # Future horizon: planned production for one week ahead.
-        #
-        # As WOs futuras precisam VIRAR estoque planejado no ledger do Stockman —
-        # senão a loja oferece encomenda para os próximos dias úteis mas o gate de
-        # estoque reprova 100%: não existe Quant com aquele ``target_date`` e o físico
-        # de hoje é inválido para datas futuras (shelflife). O caminho canônico
-        # craftsman→stockman é o signal ``production_changed(action="planned")``, que o
-        # handler de contrib/stockman materializa como Quant planejado datado. O seed
-        # constrói as WOs à mão (narrativa/matriz determinística, idempotente por
-        # ``source_ref``), então emitimos o signal explicitamente. SÓ para o futuro: o
-        # estoque vendável de hoje já vem de ``_seed_stock`` (vitrine) — emitir para
-        # hoje/histórico dobraria o saldo.
-        from shopman.craftsman.signals import production_changed
+        # Future horizon: planned production for one week ahead. Today and the
+        # future are reconciled together below: the old implementation emitted
+        # ``production_changed`` only here, which made future supply cumulative
+        # on every seed run and left today's operator cards without a source
+        # Quant. A board row that cannot be acted on is invalid seed data.
 
         for offset in range(1, 8):
             target = today + timedelta(days=offset)
@@ -5114,20 +5239,13 @@ class Command(BaseCommand):
                     continue
                 recipe = recipes_by_ref[ref]
                 planned = (qty * day_multiplier).quantize(Decimal("1"))
-                work_order = upsert_work_order(
+                upsert_work_order(
                     scope=f"future-{offset}",
                     recipe=recipe,
                     target_date=target,
                     planned_qty=planned,
                     status=WorkOrder.Status.PLANNED,
                     operator_ref="chef:planejamento",
-                )
-                production_changed.send(
-                    sender=WorkOrder,
-                    product_ref=work_order.output_sku,
-                    date=target,
-                    action="planned",
-                    work_order=work_order,
                 )
                 future_count += 1
 
@@ -5207,9 +5325,12 @@ class Command(BaseCommand):
                 )
                 history_count += 1
 
+        repaired_supply = _ensure_seed_active_production_supply()
+
         self.stdout.write(
             f"  ✅ {len(recipes_data)} receitas, {wo_count} ordens de hoje,"
-            f" {future_count} futuras e {history_count} historico movel"
+            f" {future_count} futuras e {history_count} historico movel;"
+            f" {repaired_supply} coordenadas de produção reconciliadas"
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:

@@ -56,11 +56,13 @@ filtragem. `QADH-*` carrega `snapshot.source="production_demand_history"`.
 | `seed:production:today:<date>:<recipe>` | `planned` / `started` / `finished` (matriz mista, 14 receitas) | hoje | WO em **cada** estado disponível hoje |
 | `seed:production:today-prep:<date>:<massa>` | `finished` (madrugada, escalonadas) | hoje | **A massa antes do pão** — fecham antes de a primeira fornada de acabado começar, em qualquer hora em que o seed rode |
 | `seed:production:qa-stuck:<ontem>:baguete` | `started` (nunca finalizada) | ontem | **Fornada de dia anterior presa** — claramente identificável pelo `source_ref` |
-| `seed:production:future-<1..7>:...` | `planned` (+ `Quant.target_date`) | hoje..+6 | Estoque planejado datado (gate de encomenda do storefront) |
+| `seed:production:future-<1..7>:...` | `planned` (+ `Quant.target_date`) | amanhã..+7 | Estoque planejado datado (gate de encomenda do storefront) |
 | `seed:production:history-<1..35>:...` | `finished` | hoje-1..hoje-35 | Histórico de BI / pickup slots / perdas |
 
-O estoque planejado (`Quant` com `target_date` de hoje a +6 dias úteis) é
-produzido deterministicamente via o signal `production_changed(action="planned")`.
+O estoque de produção (`Quant` com `target_date`, incluindo o lote operacional
+`started`) é reconciliado deterministicamente com a soma das WorkOrders ativas.
+Assim, os cartões de hoje podem ser realmente concluídos, e um novo seed não
+duplica nem deixa excedentes quando quantidade ou estado mudam.
 
 ## Cenários — Vitrine (disponibilidade da LOJA / cliente)
 
@@ -69,7 +71,7 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 
 | SKU | Estado na loja | Como | Âncora do QA |
 |-----|----------------|------|--------------|
-| `KURO-PAN` | **esgotado + "me avise"** | sem estoque pronto, sem plano | `availability=unavailable`, `is_notifiable=true`, não adiciona |
+| `FENDU` | **esgotado + "me avise"** | sem estoque pronto, sem plano hoje | `availability=unavailable`, `is_notifiable=true`, não adiciona |
 | `MELON-PAN` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
 | `PURIN` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
 | `TEA-JELLY` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |

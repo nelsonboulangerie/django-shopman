@@ -24,6 +24,7 @@ from shopman.utils import units
 from config.management.commands.seed import (
     Command,
     _discard_owned_seed_output_batch,
+    _ensure_seed_active_production_supply,
     _ensure_seed_standard_batch,
 )
 from shopman.backstage.models import (
@@ -35,7 +36,7 @@ from shopman.backstage.models import (
     POSTab,
 )
 from shopman.backstage.services.omotenashi_qa import build_omotenashi_qa_report
-from shopman.backstage.services.production import check_finish_materials
+from shopman.backstage.services.production import apply_finish, apply_start, check_finish_materials
 
 
 @pytest.mark.django_db
@@ -408,6 +409,139 @@ def test_nelson_seed_keeps_the_day_in_order_when_seeded_at_dawn(monkeypatch):
         f"seed de madrugada inverteu a ordem da casa ({ultima_massa} > {primeiro_pao})"
     )
     assert OperatorAlert.objects.filter(type="production_late", acknowledged=False).exists()
+
+
+@pytest.mark.django_db
+def test_seeded_batches_can_run_the_real_start_and_finish_stock_flow(monkeypatch):
+    """Today's seeded cards must cross the same stock gates as real batches."""
+    monkeypatch.setenv("ADMIN_PASSWORD", "strong-seed-admin-password")
+    call_command("seed", "--flush", stdout=StringIO())
+
+    from shopman.stockman.models import Quant
+
+    today = timezone.localdate()
+    production = Position.objects.get(ref="producao")
+
+    # Seed updates are authoritative over their own planned supply. A reduced
+    # contract corrects the existing Quant by ledger movement; it does not
+    # leave an obsolete surplus or append the full quantity again.
+    future = (
+        WorkOrder.objects.filter(
+            source_ref__startswith="seed:production:future-",
+            recipe__ref="croissant",
+            status=WorkOrder.Status.PLANNED,
+        )
+        .order_by("target_date")
+        .first()
+    )
+    future_quant = Quant.objects.get(
+        sku=future.output_sku,
+        target_date=future.target_date,
+        position=production,
+        batch="",
+    )
+    reduced = future.quantity - Decimal("1")
+    WorkOrder.objects.filter(pk=future.pk).update(quantity=reduced)
+    assert _ensure_seed_active_production_supply() == 1
+    future_quant.refresh_from_db()
+    assert future_quant.quantity == reduced
+    moves_after_reduction = Move.objects.count()
+    assert _ensure_seed_active_production_supply() == 0
+    assert Move.objects.count() == moves_after_reduction
+
+    # Exact regression: this WO was written directly in STARTED state by the
+    # seed. Before reconciliation it had no batch="started" source and finish
+    # failed closed with QUANT_NOT_FOUND.
+    already_started = WorkOrder.objects.get(
+        source_ref=f"seed:production:today:{today.isoformat()}:ciabatta"
+    )
+    assert already_started.status == WorkOrder.Status.STARTED
+    started_quant = Quant.objects.get(
+        sku=already_started.output_sku,
+        target_date=today,
+        position=production,
+        batch="started",
+    )
+    assert started_quant.quantity >= already_started.started_qty
+    started_ref, started_finished = apply_finish(
+        work_order_id=already_started.pk,
+        quantity=already_started.started_qty,
+        actor="test:seed-operator",
+        partition=[
+            {
+                "quantity": str(already_started.started_qty),
+                "quality_grade_ref": "standard",
+            }
+        ],
+        expected_rev=already_started.rev,
+        idempotency_key="seed-ci-finish",
+    )
+    already_started.refresh_from_db()
+    assert started_ref == already_started.ref
+    assert started_finished == already_started.started_qty
+    assert already_started.status == WorkOrder.Status.FINISHED
+
+    # The user-facing CT path begins as PLANNED, then performs both real
+    # transitions. This guards the normal plan → production → stock flow too.
+    work_order = WorkOrder.objects.get(
+        source_ref=f"seed:production:today:{today.isoformat()}:croissant"
+    )
+    assert work_order.status == WorkOrder.Status.PLANNED
+    planned = Quant.objects.get(
+        sku="CT",
+        target_date=today,
+        position=production,
+        batch="",
+    )
+    assert planned.quantity >= work_order.quantity
+
+    apply_start(
+        work_order_id=work_order.pk,
+        quantity=work_order.quantity,
+        actor="test:seed-operator",
+        expected_rev=work_order.rev,
+        idempotency_key="seed-ct-start",
+    )
+    work_order.refresh_from_db()
+    started = Quant.objects.get(
+        sku="CT",
+        target_date=today,
+        position=production,
+        batch="started",
+    )
+    assert started.quantity >= work_order.started_qty
+
+    ref, finished = apply_finish(
+        work_order_id=work_order.pk,
+        quantity=work_order.started_qty,
+        actor="test:seed-operator",
+        partition=[
+            {
+                "quantity": str(work_order.started_qty),
+                "quality_grade_ref": "standard",
+            }
+        ],
+        expected_rev=work_order.rev,
+        idempotency_key="seed-ct-finish",
+    )
+
+    work_order.refresh_from_db()
+    output = work_order.items.get(kind=WorkOrderItem.Kind.OUTPUT)
+    assert ref == work_order.ref
+    assert finished == work_order.started_qty
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert Quant.objects.filter(
+        sku="CT",
+        target_date__isnull=True,
+        batch=output.batch_ref,
+        _quantity=work_order.started_qty,
+    ).exists()
+
+    # Reconciliation is stable after terminal transitions: no supply is
+    # resurrected and no duplicate movement is appended.
+    moves_before = Move.objects.count()
+    assert _ensure_seed_active_production_supply() == 0
+    assert Move.objects.count() == moves_before
 
 
 @pytest.mark.django_db
