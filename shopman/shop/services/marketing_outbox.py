@@ -420,11 +420,18 @@ def _directive_payload(row: MarketingOutbox) -> dict:
         "snapshot_ref": str(row.snapshot.ref),
     }
     if row.platform == "whatsapp":
+        wave_keys = list(
+            MarketingOutbox.objects.filter(
+                command=row.command,
+                platform="whatsapp",
+            )
+            .order_by("available_at", "pk")
+            .values_list("wave_key", flat=True)
+        )
+        wave_keys = [key or "all" for key in wave_keys]
         payload["wave"] = row.wave_key or "all"
-        payload["waves_expected"] = MarketingOutbox.objects.filter(
-            command=row.command,
-            platform="whatsapp",
-        ).count()
+        payload["wave_keys"] = wave_keys
+        payload["waves_expected"] = len(wave_keys)
     return payload
 
 
@@ -440,7 +447,7 @@ def _existing_directive(dedupe_key: str):
 
 def _directive_matches(row: MarketingOutbox, directive) -> bool:
     payload = directive.payload if isinstance(directive.payload, dict) else {}
-    return (
+    matches = (
         directive.topic == _directive_topic(row)
         and payload.get("outbox_ref") == str(row.ref)
         and payload.get("artifact_ref") == str(row.artifact.ref)
@@ -449,6 +456,13 @@ def _directive_matches(row: MarketingOutbox, directive) -> bool:
         and payload.get("content_version") == row.artifact.version
         and payload.get("platform") == row.platform
     )
+    if row.platform == "whatsapp":
+        expected = _directive_payload(row)
+        matches = matches and all(
+            payload.get(key) == expected[key]
+            for key in ("wave", "wave_keys", "waves_expected")
+        )
+    return matches
 
 
 def _quarantine_mismatched_directive(directive, *, now: datetime) -> None:

@@ -101,7 +101,14 @@ def fanout_in_chunks(
             complete=True,
         )
 
-    selected = _member_ids(member_ids)
+    if member_ids is None:
+        from shopman.shop.services.marketing_wave_selector import (
+            select_snapshot_member_ids,
+        )
+
+        selected = select_snapshot_member_ids(outbox)
+    else:
+        selected = _member_ids(member_ids)
     if len(selected) > MAX_TARGETS_PER_COMMAND:
         raise MarketingContractError(
             code="delivery_target_cap_exceeded",

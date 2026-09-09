@@ -37,9 +37,9 @@ def ensure_targets(
 ) -> tuple[DeliveryTarget, ...]:
     """Create one target per approved identity, safely replayable by two workers.
 
-    WhatsApp requires an explicit, already-selected member set.  Public posting
-    platforms create exactly one target with ``member=None``.  Wave selection is
-    intentionally not guessed here; MKT-018 owns that policy.
+    WhatsApp receives an explicit, already-selected member set from the
+    canonical wave selector. Public posting platforms create exactly one target
+    with ``member=None``.
     """
 
     clock = _aware_now(now)

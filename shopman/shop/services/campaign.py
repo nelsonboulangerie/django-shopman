@@ -1235,6 +1235,7 @@ def _queue_notify(announcement: Announcement) -> int:
             "Não foi possível revalidar toda a audiência. O envio permanece bloqueado."
         )
     waves = resolved.waves()
+    wave_keys = [wave.key for wave in waves]
 
     created = 0
     for wave in waves:
@@ -1243,6 +1244,7 @@ def _queue_notify(announcement: Announcement) -> int:
             payload={
                 "announcement_id": announcement.pk,
                 "wave": wave.key,
+                "wave_keys": wave_keys,
                 "sku": sku,
                 "waves_expected": len(waves),
             },

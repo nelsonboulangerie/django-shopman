@@ -292,13 +292,12 @@ class AnnouncementNotifyHandler:
             rules = chosen
         else:
             rules = (announcement.rule.audience_rules or {}) if announcement.rule_id else {}
-        resolved = audience_service.resolve(rules, sku=sku)
-
-        recipients = {
-            "vip": resolved.vip,
-            "general": resolved.general,
-            "all": resolved.all_recipients(),
-        }.get(wave, ())
+        recipients = audience_service.select_wave(
+            rules,
+            wave,
+            sku=sku,
+            available_wave_keys=payload.get("wave_keys"),
+        )
 
         sent, failed = _send_to(recipients, announcement=announcement)
         _record_wave(announcement, wave, sent=sent, failed=failed,

@@ -413,18 +413,44 @@ def _narrow_to_all(by_phone: dict[str, Recipient], applied: list[str]) -> dict[s
     return {phone: r for phone, r in by_phone.items() if required <= r.reasons}
 
 
-def select_wave(rules: dict | None, wave_key: str, *, sku: str = "", now=None) -> tuple[Recipient, ...]:
+def select_wave(
+    rules: dict | None,
+    wave_key: str,
+    *,
+    sku: str = "",
+    now=None,
+    available_wave_keys=None,
+) -> tuple[Recipient, ...]:
     """Os destinatários de uma onda, resolvidos agora.
 
-    Contrato de despacho: a Directive carrega só ``wave_key``, e quem envia
-    volta aqui. Onda que sumiu (ninguém mais se encaixa) devolve tupla vazia,
-    que é resposta normal, não erro.
+    Contrato de despacho: a Directive carrega ``wave_key`` e, nas directives
+    novas, o conjunto inteiro aprovado em ``available_wave_keys``. Isso mantém
+    ``all@H`` estável quando H chega. Onda legada que sumiu devolve tupla vazia.
     """
     result = resolve(rules, sku=sku)
-    for wave in result.waves(now=now):
-        if wave.key == wave_key:
-            return wave.recipients
-    return ()
+    if available_wave_keys is None and "@" not in str(wave_key or ""):
+        return {
+            "vip": result.vip,
+            "general": result.general,
+            "all": result.all_recipients(),
+        }.get(wave_key, ())
+    keys = available_wave_keys or tuple(
+        wave.key for wave in result.waves(now=now)
+    )
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+    from shopman.shop.services.marketing_wave_selector import select_partition
+
+    try:
+        return select_partition(
+            result.all_recipients(),
+            wave_key=wave_key,
+            available_wave_keys=keys,
+        )
+    except MarketingContractError:
+        if available_wave_keys is not None:
+            raise
+        logger.warning("audience.wave_selection_invalid wave=%r", wave_key)
+        return ()
 
 
 def _defer_minutes(preferred_hour, *, now, window_hours: int) -> int:

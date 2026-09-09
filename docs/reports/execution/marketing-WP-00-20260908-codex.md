@@ -653,3 +653,38 @@ Provas locais:
 - regressão Marketing/campaign/audience/notifications/maintenance/E2E: 567 testes passaram;
 - Ruff, `git diff --check`, Django check e migration drift passaram (mantido apenas o warning conhecido de SQLite e bootstrap sem schema no check local);
 - nenhuma chamada real, destinatário, rede, deploy, produção ou escrita externa foi usada.
+
+## MKT-018 — selector canônico e estável para preferred-hour
+
+Implementado:
+
+- o plano de waves aprovado passa a ser a autoridade da partição; o selector não recalcula se a hora ainda está no futuro quando a lane finalmente executa;
+- `all@H`, `vip@H` e `general@H` selecionam por hora preferida e grupo; membro cuja hora não possui lane aprovada cai na base correspondente em vez de desaparecer;
+- o grafo aceita exclusivamente `all` ou o par completo `vip`/`general`, sempre com lane-base para cada subdivisão horária; mistura, chave inválida, lane ausente ou snapshot divergente falha fechado;
+- cada membro do snapshot pertence exatamente a uma lane; os testes fecham união e disjunção e a unique constraint continua cercando qualquer sobreposição;
+- fan-out WhatsApp sem seleção manual usa o selector canônico sobre `AudienceSnapshotMember`, sem resolver telefone e sem adicionar opt-in tardio ao cohort aprovado;
+- a seleção explícita interna continua disponível para testes/recovery, mas a operação comum não exige que worker ou operador transporte IDs/cursor;
+- directives novas — tanto no caminho legado quanto na outbox v2 — carregam `wave_keys` e `waves_expected`; o handler usa esse plano completo para manter a partição estável;
+- o reconciler de outbox também compara `wave`, plano completo e total esperado antes de religar uma directive preexistente, impedindo dedupe com payload de outra partição;
+- directives legadas sem plano preservam o comportamento compatível para lanes-base; chave desconhecida nova não vira envio silencioso de zero pessoas;
+- nenhuma migration foi necessária: a chave já persistida passou a ser interpretada por um contrato único, PII-free e testável.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir se a wave horária enviou zero | inspeção posterior | 0; chave aprovada seleciona deterministicamente |
+| Guardar/repassar IDs de membros por worker | até N IDs/cursor | 0; selector deriva do snapshot + lanes |
+| Descobrir duplicação entre base e `@H` | reconciliação posterior | 0; partições disjuntas + unique física |
+| Recalcular mentalmente VIP × hora | combinação implícita | regra única: grupo, depois hora se lane existe |
+| Lidar com hora sem lane | recipient podia sumir | fallback automático para base |
+| Diagnosticar plano corrompido | zero silencioso | erro técnico antes de qualquer target/send |
+| Conferir opt-ins posteriores | risco de expansão | impossível; selector consulta só o snapshot selado |
+
+Provas locais:
+
+- 7 testes MKT-018 cobrem `all@9`, `vip@9`/`general@9`, fallback à base, fechamento/disjunção, grafo inválido, handler no instante H e propagação do plano em directives;
+- audience + handlers + worker + outbox + approval: 111 testes passaram;
+- regressão Marketing/campaign/audience/notifications/maintenance/E2E: 574 testes passaram;
+- Ruff e `git diff --check` passaram; não há mudança de model/migration;
+- nenhum provider real, destinatário externo, rede, deploy, produção ou escrita externa foi usado.
