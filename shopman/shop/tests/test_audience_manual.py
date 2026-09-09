@@ -131,11 +131,17 @@ def test_customer_without_a_birthday_is_never_a_birthday_audience(db):
 
 
 def _bought(customer, sku: str, *, days_ago: int):
-    last = timezone.localdate() - timedelta(days=days_ago)
+    last = timezone.now() - timedelta(days=days_ago)
     _insight(
         customer,
+        last_order_at=last,
         favorite_products=[
-            {"sku": sku, "name": sku, "qty": "3", "last_order_at": last.isoformat()}
+            {
+                "sku": sku,
+                "name": sku,
+                "qty": "3",
+                "last_order_at": last.date().isoformat(),
+            }
         ],
     )
 
@@ -148,6 +154,49 @@ def test_bought_skus_chosen_by_the_manager(db):
 
     result = audience.resolve({"bought_skus": ["CROISSANT"], "bought_within_days": 30})
     assert [r.phone for r in result.general] == [buyer.phone]
+
+
+def test_bought_skus_share_one_bounded_insight_query(
+    db, django_assert_num_queries
+):
+    """Adding SKUs must not repeat the CustomerInsight scan once per SKU."""
+
+    buyer = _customer("+5543999990099", ref="CLI-QUERY")
+    last = timezone.now() - timedelta(days=2)
+    _insight(
+        buyer,
+        last_order_at=last,
+        favorite_products=[
+            {
+                "sku": "CROISSANT",
+                "name": "Croissant",
+                "qty": "3",
+                "last_order_at": last.date().isoformat(),
+            },
+            {
+                "sku": "BAGUETE",
+                "name": "Baguete",
+                "qty": "2",
+                "last_order_at": last.date().isoformat(),
+            },
+        ],
+    )
+
+    with django_assert_num_queries(2):
+        result = audience.resolve(
+            {
+                "bought_skus": [
+                    "CROISSANT",
+                    "BAGUETE",
+                    "BRIOCHE",
+                    "CIABATTA",
+                    "FOCACCIA",
+                ],
+                "bought_within_days": 30,
+            }
+        )
+
+    assert [recipient.phone for recipient in result.general] == [buyer.phone]
 
 
 def test_bought_respects_the_window(db):

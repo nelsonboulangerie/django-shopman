@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -47,6 +48,10 @@ logger = logging.getLogger(__name__)
 #: Consentir WhatsApp não é consentir SMS: quando outro canal de entrega entrar,
 #: ele passa a exigir o consentimento do próprio canal, não deste.
 DELIVERY_CONSENT_CHANNEL = "whatsapp"
+AUDIENCE_DB_ITERATOR_CHUNK_SIZE = 1_000
+AUDIENCE_LOOKUP_BATCH_SIZE = 20_000
+POSTGRES_JSON_SKU_FILTER_LIMIT = 50
+_E164_PHONE_RE = re.compile(r"^\+[1-9][0-9]{9,14}$")
 
 #: RFM + tier que valem tratamento VIP (mesma régua do ``CustomerInsight.is_vip``).
 VIP_RFM_SEGMENTS = ("champion", "loyal_customer")
@@ -97,7 +102,7 @@ class AudienceSourceUnavailable(RuntimeError):
         super().__init__(source)
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Recipient:
     """Um destinatário resolvido. ``phone`` é a identidade (e a chave de dedupe)."""
 
@@ -572,37 +577,82 @@ def _bought_within_days(sku: str, days: int) -> list[Recipient]:
     Lê ``CustomerInsight.favorite_products`` (já agregado pelo Guestman) em vez
     de varrer o histórico de pedidos: o insight é o índice desse cruzamento.
     """
+    return _bought_skus_within_days({sku}, days)
+
+
+def _bought_skus_within_days(skus, days: int) -> list[Recipient]:
+    """Resolve several SKUs with one indexed, streamed insight query.
+
+    ``last_order_at`` is a safe coarse filter: a customer cannot have bought a
+    particular SKU after their latest order. PostgreSQL can additionally use
+    JSON containment to discard rows whose top-five product summary has none of
+    the requested SKUs. The final date/SKU decision remains in Python so both
+    database paths have exactly the same semantics.
+    """
+
+    wanted = frozenset(str(value).strip() for value in skus if str(value).strip())
+    if not wanted:
+        return []
+    cutoff = timezone.localdate() - timedelta(days=days)
+    cutoff_at = timezone.make_aware(
+        datetime.combine(cutoff, datetime.min.time()),
+        timezone.get_current_timezone(),
+    )
     try:
+        from django.db import connection
+        from django.db.models import Q
         from shopman.guestman.contrib.insights.models import CustomerInsight
 
-        insights = list(
-            CustomerInsight.objects.filter(favorite_products__isnull=False)
+        insights = (
+            CustomerInsight.objects.filter(
+                # The JSON writer preserves the order timestamp's own date,
+                # while this coarse bound is local. One day covers every UTC
+                # offset; the exact JSON date check below remains authoritative.
+                last_order_at__gte=cutoff_at - timedelta(days=1),
+                favorite_products__isnull=False,
+            )
             .select_related("customer")
-        )
-    except Exception:
-        logger.warning("audience.bought_lookup_failed sku=%s", sku, exc_info=True)
-        raise AudienceSourceUnavailable("customer_insights") from None
-
-    cutoff = timezone.localdate() - timedelta(days=days)
-    out = []
-    for insight in insights:
-        if not _bought_recently(insight, sku=sku, cutoff=cutoff):
-            continue
-        customer = insight.customer
-        phone = (getattr(customer, "phone", "") or "").strip()
-        if not phone:
-            continue
-        out.append(
-            Recipient(
-                phone=phone,
-                customer_ref=getattr(customer, "ref", "") or "",
-                customer_uuid=str(getattr(customer, "uuid", "") or ""),
-                first_name=(getattr(customer, "first_name", "") or "").strip(),
-                is_vip=bool(getattr(insight, "is_vip", False)),
-                preferred_hour=getattr(insight, "preferred_hour", None),
+            .only(
+                "favorite_products",
+                "preferred_hour",
+                "rfm_segment",
+                "customer__ref",
+                "customer__uuid",
+                "customer__first_name",
+                "customer__phone",
             )
         )
-    return out
+        if (
+            connection.vendor == "postgresql"
+            and len(wanted) <= POSTGRES_JSON_SKU_FILTER_LIMIT
+        ):
+            sku_filter = Q()
+            for wanted_sku in sorted(wanted):
+                sku_filter |= Q(favorite_products__contains=[{"sku": wanted_sku}])
+            insights = insights.filter(sku_filter)
+
+        out = []
+        for insight in insights.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+            if not _bought_any_recently(insight, skus=wanted, cutoff=cutoff):
+                continue
+            customer = insight.customer
+            phone = (getattr(customer, "phone", "") or "").strip()
+            if not phone:
+                continue
+            out.append(
+                Recipient(
+                    phone=phone,
+                    customer_ref=getattr(customer, "ref", "") or "",
+                    customer_uuid=str(getattr(customer, "uuid", "") or ""),
+                    first_name=(getattr(customer, "first_name", "") or "").strip(),
+                    is_vip=bool(getattr(insight, "is_vip", False)),
+                    preferred_hour=getattr(insight, "preferred_hour", None),
+                )
+            )
+        return out
+    except Exception:
+        logger.warning("audience.bought_lookup_failed", exc_info=True)
+        raise AudienceSourceUnavailable("customer_insights") from None
 
 
 # ── Públicos escolhidos pelo gestor (disparo manual) ─────────────────
@@ -631,15 +681,14 @@ def _by_price_tiers(tier_refs) -> list[Recipient]:
     try:
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(price_tier__ref__in=cleaned, is_active=True)
             .exclude(phone="")
-            .values_list("ref", flat=True)
         )
     except Exception:
         logger.warning("audience.price_tiers_failed", exc_info=True)
         raise AudienceSourceUnavailable("price_tiers") from None
-    return _recipients_for_refs(refs)
+    return _recipients_from_customers(customers, reason="price_tiers")
 
 
 def _by_tags(tag_slugs) -> list[Recipient]:
@@ -660,18 +709,17 @@ def _by_tags(tag_slugs) -> list[Recipient]:
         from django.db.models import Q
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(
                 Q(tags__slug__in=cleaned) | Q(tags__name__in=cleaned), is_active=True
             )
             .exclude(phone="")
-            .values_list("ref", flat=True)
             .distinct()
         )
     except Exception:
         logger.warning("audience.tags_failed", exc_info=True)
         raise AudienceSourceUnavailable("customer_tags") from None
-    return _recipients_for_refs(refs)
+    return _recipients_from_customers(customers, reason="tags")
 
 
 def _by_rfm_segments(segments) -> list[Recipient]:
@@ -680,17 +728,19 @@ def _by_rfm_segments(segments) -> list[Recipient]:
     if not cleaned:
         return []
     try:
-        from shopman.guestman.contrib.insights.models import CustomerInsight
+        from shopman.guestman.models import Customer
 
-        refs = list(
-            CustomerInsight.objects.filter(rfm_segment__in=cleaned)
-            .select_related("customer")
-            .values_list("customer__ref", flat=True)
+        customers = (
+            Customer.objects.filter(
+                insight__rfm_segment__in=cleaned,
+                is_active=True,
+            )
+            .exclude(phone="")
         )
     except Exception:
         logger.warning("audience.rfm_failed", exc_info=True)
         raise AudienceSourceUnavailable("customer_insights") from None
-    return _recipients_for_refs([r for r in refs if r])
+    return _recipients_from_customers(customers, reason="rfm")
 
 
 def _by_churn_risk(minimum) -> list[Recipient]:
@@ -703,17 +753,19 @@ def _by_churn_risk(minimum) -> list[Recipient]:
     if floor <= 0:
         return []
     try:
-        from shopman.guestman.contrib.insights.models import CustomerInsight
+        from shopman.guestman.models import Customer
 
-        refs = list(
-            CustomerInsight.objects.filter(churn_risk__gte=floor)
-            .select_related("customer")
-            .values_list("customer__ref", flat=True)
+        customers = (
+            Customer.objects.filter(
+                insight__churn_risk__gte=floor,
+                is_active=True,
+            )
+            .exclude(phone="")
         )
     except Exception:
         logger.warning("audience.churn_risk_failed", exc_info=True)
         raise AudienceSourceUnavailable("customer_insights") from None
-    return _recipients_for_refs([r for r in refs if r])
+    return _recipients_from_customers(customers, reason="churn_risk")
 
 
 def _birthday_today() -> list[Recipient]:
@@ -726,17 +778,16 @@ def _birthday_today() -> list[Recipient]:
     try:
         from shopman.guestman.models import Customer
 
-        refs = list(
+        customers = (
             Customer.objects.filter(
                 birthday__month=today.month, birthday__day=today.day, is_active=True
             )
             .exclude(phone="")
-            .values_list("ref", flat=True)
         )
     except Exception:
         logger.warning("audience.birthday_failed", exc_info=True)
         raise AudienceSourceUnavailable("customers") from None
-    return _recipients_for_refs(refs)
+    return _recipients_from_customers(customers, reason="birthday")
 
 
 def _bought(*, skus, collections, days: int) -> list[Recipient]:
@@ -760,11 +811,7 @@ def _bought(*, skus, collections, days: int) -> list[Recipient]:
     if not wanted:
         return []
 
-    seen: dict[str, Recipient] = {}
-    for sku in sorted(wanted):
-        for recipient in _bought_within_days(sku, days):
-            seen.setdefault(recipient.phone, recipient)
-    return list(seen.values())
+    return _bought_skus_within_days(wanted, days)
 
 
 def _bought_recently(insight, *, sku: str, cutoff) -> bool:
@@ -787,11 +834,18 @@ def _bought_recently(insight, *, sku: str, cutoff) -> bool:
     tem data como dentro dela desmancha justamente o que o operador pediu. O
     escritor sempre grava a data, então isto só alcança lixo.
     """
+    return _bought_any_recently(insight, skus={sku}, cutoff=cutoff)
+
+
+def _bought_any_recently(insight, *, skus: frozenset[str] | set[str], cutoff) -> bool:
+    """Whether one summarized SKU matches the requested purchase window."""
+
     for entry in insight.favorite_products or []:
-        if not isinstance(entry, dict) or entry.get("sku") != sku:
+        if not isinstance(entry, dict) or entry.get("sku") not in skus:
             continue
         last = _as_date(entry.get("last_order_at"))
-        return last is not None and last >= cutoff
+        if last is not None and last >= cutoff:
+            return True
     return False
 
 
@@ -875,7 +929,7 @@ def _recipients_for_refs(customer_refs: list[str]) -> list[Recipient]:
 
 
 def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
-    """Load customers, insights and loyalty tiers in two bounded queries."""
+    """Load profiles in parameter-safe batches without per-customer queries."""
 
     refs = list(dict.fromkeys(ref for ref in customer_refs if ref))
     if not refs:
@@ -883,39 +937,93 @@ def _profiles_for_refs(customer_refs: list[str]) -> dict[str, dict]:
     try:
         from shopman.guestman.models import Customer
 
-        customers = {
-            customer.ref: customer
-            for customer in (
-            Customer.objects.filter(ref__in=refs, is_active=True)
-            .exclude(phone="")
-            .select_related("insight")
+        profiles = {}
+        for batch in _batches(refs, AUDIENCE_LOOKUP_BATCH_SIZE):
+            rows = (
+                Customer.objects.filter(ref__in=batch, is_active=True)
+                .exclude(phone="")
+                .values_list(
+                    "phone",
+                    "ref",
+                    "uuid",
+                    "first_name",
+                    "insight__rfm_segment",
+                    "insight__preferred_hour",
+                    "loyalty_account__tier",
+                )
             )
-        }
-        from shopman.guestman.contrib.loyalty.models import LoyaltyAccount
-
-        tiers = dict(
-            LoyaltyAccount.objects.filter(customer__ref__in=refs).values_list(
-                "customer__ref", "tier"
-            )
-        )
+            for (
+                phone,
+                ref,
+                customer_uuid,
+                first_name,
+                rfm_segment,
+                preferred_hour,
+                loyalty_tier,
+            ) in rows.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+                profiles[ref] = {
+                    "phone": phone,
+                    "customer_uuid": str(customer_uuid or ""),
+                    "first_name": (first_name or "").strip(),
+                    "is_vip": bool(
+                        rfm_segment in VIP_RFM_SEGMENTS
+                        or loyalty_tier in VIP_LOYALTY_TIERS
+                    ),
+                    "preferred_hour": preferred_hour,
+                }
     except Exception:
         logger.warning("audience.customer_lookup_failed", exc_info=True)
         raise AudienceSourceUnavailable("customers") from None
-
-    profiles = {}
-    for ref, customer in customers.items():
-        insight = getattr(customer, "insight", None)
-        profiles[ref] = {
-            "phone": customer.phone,
-            "customer_uuid": str(getattr(customer, "uuid", "") or ""),
-            "first_name": (getattr(customer, "first_name", "") or "").strip(),
-            "is_vip": bool(
-                (insight and insight.rfm_segment in VIP_RFM_SEGMENTS)
-                or tiers.get(ref) in VIP_LOYALTY_TIERS
-            ),
-            "preferred_hour": getattr(insight, "preferred_hour", None),
-        }
     return profiles
+
+
+def _recipients_from_customers(customers, *, reason: str) -> list[Recipient]:
+    """Project a customer queryset to compact tuples in one streamed query."""
+
+    rows = customers.values_list(
+        "phone",
+        "ref",
+        "uuid",
+        "first_name",
+        "insight__rfm_segment",
+        "insight__preferred_hour",
+        "loyalty_account__tier",
+    )
+    recipients = []
+    for (
+        phone,
+        ref,
+        customer_uuid,
+        first_name,
+        rfm_segment,
+        preferred_hour,
+        loyalty_tier,
+    ) in rows.iterator(chunk_size=AUDIENCE_DB_ITERATOR_CHUNK_SIZE):
+        phone = _canonical_phone(phone)
+        if not phone:
+            continue
+        recipients.append(
+            Recipient(
+                phone=phone,
+                customer_ref=ref or "",
+                customer_uuid=str(customer_uuid or ""),
+                first_name=(first_name or "").strip(),
+                reasons=frozenset({reason}),
+                is_vip=bool(
+                    rfm_segment in VIP_RFM_SEGMENTS
+                    or loyalty_tier in VIP_LOYALTY_TIERS
+                ),
+                preferred_hour=preferred_hour,
+            )
+        )
+    return recipients
+
+
+def _batches(values: list[str], size: int):
+    """Yield bounded SQL parameter groups while preserving caller order."""
+
+    for offset in range(0, len(values), size):
+        yield values[offset : offset + size]
 
 
 def _profile(customer_ref: str, *, customer=None) -> tuple[bool, int | None]:
@@ -958,12 +1066,15 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
     duplicates = 0
     invalid = 0
     for recipient in found:
-        phone = normalize_phone(recipient.phone)
+        phone = _canonical_phone(recipient.phone)
         if not phone:
             invalid += 1
             continue
         existing = by_phone.get(phone)
         if existing is None:
+            if phone == recipient.phone and recipient.reasons == frozenset({reason}):
+                by_phone[phone] = recipient
+                continue
             by_phone[phone] = Recipient(
                 phone=phone,
                 customer_ref=recipient.customer_ref,
@@ -997,23 +1108,31 @@ def _merge(by_phone: dict, found: list, *, reason: str) -> tuple[int, int]:
     return duplicates, invalid
 
 
+def _canonical_phone(value: str) -> str:
+    """Keep stored E.164 identities on the zero-allocation fast path."""
+
+    value = (value or "").strip()
+    if _E164_PHONE_RE.fullmatch(value):
+        return value
+    return normalize_phone(value)
+
+
 def _cohort_hash(recipients: list[Recipient]) -> str:
     """Hash do conjunto elegível sem publicar telefone ou customer ref."""
 
-    protected = [
-        hmac.new(
-            settings.SECRET_KEY.encode(),
-            (
-                f"customer:{recipient.customer_ref}"
-                if recipient.customer_ref
-                else f"subscription:{recipient.source_subscription_ref}"
-                if recipient.source_subscription_ref
-                else f"phone:{normalize_phone(recipient.phone)}"
-            ).encode(),
-            hashlib.sha256,
-        ).hexdigest()
-        for recipient in recipients
-    ]
+    secret = settings.SECRET_KEY.encode()
+    protected = []
+    for recipient in recipients:
+        identity = (
+            f"customer:{recipient.customer_ref}"
+            if recipient.customer_ref
+            else f"subscription:{recipient.source_subscription_ref}"
+            if recipient.source_subscription_ref
+            else f"phone:{_canonical_phone(recipient.phone)}"
+        )
+        protected.append(
+            hmac.new(secret, identity.encode(), hashlib.sha256).hexdigest()
+        )
     material = ":".join(sorted(protected))
     return hashlib.sha256(material.encode()).hexdigest()
 

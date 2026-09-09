@@ -7,7 +7,7 @@ canal de entrega, ninguém entra na audiência. Todo o resto é otimização.
 from __future__ import annotations
 
 import types
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.utils import timezone
@@ -155,11 +155,17 @@ class TestAlerts:
 class TestBoughtWithinDays:
     def _insight(self, customer, *, last_order_days_ago: int, sku: str = SKU):
         """Entrada no formato que ``insights/service.py`` realmente grava."""
-        last = timezone.localdate() - timedelta(days=last_order_days_ago)
+        last = timezone.now() - timedelta(days=last_order_days_ago)
         return CustomerInsight.objects.create(
             customer=customer,
+            last_order_at=last,
             favorite_products=[
-                {"sku": sku, "name": "Croissant", "qty": "4", "last_order_at": last.isoformat()}
+                {
+                    "sku": sku,
+                    "name": "Croissant",
+                    "qty": "4",
+                    "last_order_at": last.date().isoformat(),
+                }
             ],
         )
 
@@ -190,6 +196,30 @@ class TestBoughtWithinDays:
         customer = _customer("+5543999990003")
         self._insight(customer, last_order_days_ago=1, sku="pao-frances")
         assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 0
+
+    def test_coarse_timestamp_filter_never_overrides_the_exact_json_date(self):
+        """A timezone edge remains eligible for the existing date contract."""
+
+        customer = _customer("+5543999990043")
+        cutoff = timezone.localdate() - timedelta(days=90)
+        local_midnight = timezone.make_aware(
+            datetime.combine(cutoff, datetime.min.time()),
+            timezone.get_current_timezone(),
+        )
+        CustomerInsight.objects.create(
+            customer=customer,
+            last_order_at=local_midnight - timedelta(hours=2),
+            favorite_products=[
+                {
+                    "sku": SKU,
+                    "name": "Croissant",
+                    "qty": "1",
+                    "last_order_at": cutoff.isoformat(),
+                }
+            ],
+        )
+
+        assert audience.resolve({"bought_within_days": 90}, sku=SKU).total == 1
 
     def test_writer_shape_is_what_the_reader_reads(self):
         """A chave que o Guestman grava é a chave que a audiência lê.

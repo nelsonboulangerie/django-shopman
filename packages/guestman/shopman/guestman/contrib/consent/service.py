@@ -29,6 +29,7 @@ DEFAULT_MARKETING_DISCLOSURE = (
     "Quero receber novidades e ofertas pelo canal escolhido. Posso cancelar a "
     "qualquer momento em Minha conta e consultar a Política de Privacidade."
 )
+CONSENT_STATUS_BATCH_SIZE = 20_000
 
 
 class ConsentService:
@@ -334,28 +335,29 @@ class ConsentService:
         *,
         purpose: str = ConsentPurpose.MARKETING_GENERAL,
     ) -> dict[str, str]:
-        refs = {str(ref).strip() for ref in customer_refs if str(ref).strip()}
+        refs = tuple({str(ref).strip() for ref in customer_refs if str(ref).strip()})
         if not refs:
             return {}
-        rows = CommunicationConsent.objects.filter(
-            channel=channel,
-            purpose=purpose,
-            customer__ref__in=refs,
-            customer__is_active=True,
-        ).values_list("customer__ref", "status", "proof_status")
         statuses = {}
-        for customer_ref, status, proof_status in rows:
-            if status == ConsentStatus.OPTED_OUT:
-                # Revocation is authoritative even when historical opt-in proof
-                # was incomplete.  Never weaken a do-not-contact tombstone.
-                statuses[customer_ref] = ConsentStatus.OPTED_OUT
-            elif (
-                status == ConsentStatus.OPTED_IN
-                and proof_status == ConsentProofStatus.VERIFIED
-            ):
-                statuses[customer_ref] = ConsentStatus.OPTED_IN
-            else:
-                statuses[customer_ref] = ConsentStatus.PENDING
+        for offset in range(0, len(refs), CONSENT_STATUS_BATCH_SIZE):
+            rows = CommunicationConsent.objects.filter(
+                channel=channel,
+                purpose=purpose,
+                customer__ref__in=refs[offset : offset + CONSENT_STATUS_BATCH_SIZE],
+                customer__is_active=True,
+            ).values_list("customer__ref", "status", "proof_status")
+            for customer_ref, status, proof_status in rows:
+                if status == ConsentStatus.OPTED_OUT:
+                    # Revocation is authoritative even when historical opt-in proof
+                    # was incomplete. Never weaken a do-not-contact tombstone.
+                    statuses[customer_ref] = ConsentStatus.OPTED_OUT
+                elif (
+                    status == ConsentStatus.OPTED_IN
+                    and proof_status == ConsentProofStatus.VERIFIED
+                ):
+                    statuses[customer_ref] = ConsentStatus.OPTED_IN
+                else:
+                    statuses[customer_ref] = ConsentStatus.PENDING
         return statuses
 
 

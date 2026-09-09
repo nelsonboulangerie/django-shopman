@@ -1982,3 +1982,76 @@ A implementação técnica local do MKT-042 está concluída. O dashboard e os a
 não estão ativados fora do processo local: nomes de owner/on-call, destinos de paging,
 baseline autorizado e drills permanecem bloqueadores explícitos do G-H08. MKT-043 pode
 agora usar as medições para provar os budgets de carga sem alterá-los.
+
+## MKT-043 — Audience/query/worker load optimization
+
+Implementado depois da instrumentação do MKT-042, preservando os limites aprovados e sem
+usar provider, ambiente vivo ou escrita externa:
+
+- a leitura “comprou um destes SKUs” fazia uma consulta e uma varredura completa de
+  `CustomerInsight` para **cada** SKU. O contrato novo consolidou todos os SKUs em uma
+  consulta, aplica `last_order_at` como corte indexado, usa containment JSON/Gin no
+  PostgreSQL e mantém a decisão exata de SKU/data numa única passagem streamed;
+- os públicos de faixa, tags, RFM, churn e aniversário deixaram de carregar refs para
+  depois buscar os mesmos clientes e fidelidade de novo. Uma projection SQL compacta
+  entrega somente telefone/ref/UUID/nome/RFM/hora/tier e o resolver itera em blocos de
+  1.000;
+- telefone E.164 já normalizado no boundary do Guestman segue um fast path equivalente
+  ao fallback anterior. `Recipient` ganhou slots e, quando uma fonte já traz o motivo
+  canônico, o merge deixa de alocar outro objeto idêntico;
+- lookup explícito por refs e consentimentos usa batches de 20.000 parâmetros. Coorte
+  pequeno continua em uma query e coorte de 100.000 fica abaixo dos limites de bind do
+  PostgreSQL sem jamais trocar para a consulta global de marketable customers;
+- `CustomerInsight` ganhou índices de `last_order_at`, RFM+customer e churn+customer,
+  mais GIN de `favorite_products` no PostgreSQL. A migration é non-atomic e cria/remove
+  todos os índices com `CONCURRENTLY` no PostgreSQL; SQLite recebe só os B-tree
+  equivalentes para teste local;
+- o gate opt-in `test_marketing_capacity.py` semeia 200.000 candidatos e 100.000
+  elegíveis, além de 20.000 targets em quatro commands legais de 5.000. O caminho de
+  workers para antes de `execute_target`: mede fan-out/claim/lease, mas não chama adapter;
+- `make marketing-capacity` encapsula settings, PYTHONPATH, flag e comando do gate. A
+  saída oferece dois JSONs copiáveis e a documentação informa a ação exata para cada
+  falha, sem exigir que o operador memorize parâmetros ou interprete um traceback cru.
+
+Budget de omotenashi/performance comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| SKUs escolhidos (5) | 6 queries; 1 scan por SKU | 2 queries; 1 scan total |
+| Resolver 100k elegíveis/200k candidatos | p95 6,7539 s; 11 queries; 256,82 MiB | p95 **1,4672 s**; **6 queries**; **82,60 MiB** |
+| Executar o gate | flags/settings/PYTHONPATH manuais | `make marketing-capacity` |
+| Conferir plano de índice | `EXPLAIN` e interpretação manual | teste automático exige os índices nomeados |
+| Fan-out de pico 20k | risco de elevar cap para caber | 4×5k; cap continua 5.000; chunk continua 100 |
+| Primeira investigação de falha | inferir gargalo pelo relógio | JSON separa latency/query/memory/lane/claim |
+| Dois workers no backlog | conferência manual de sobreposição | interseção de target refs exigida igual a zero |
+
+Provas locais:
+
+- a regressão foi observada antes da correção: o novo teste esperava 2 queries e falhou
+  com 6. Depois da consolidação, as suites audience/consent passaram **87 testes**,
+  incluindo a borda de timezone do coarse filter;
+- o primeiro gate volumétrico expôs p95 de 6,7539 s, 11 queries e 256,82 MiB; uma etapa
+  intermediária chegou a 2,8881 s/6 queries/82,59 MiB, ainda vermelha. Nenhum threshold
+  foi alterado. O gate final passou 5/5 amostras em 1,3385–1,4672 s, p95 1,4672 s,
+  6 queries e 82,60 MiB contra budgets de 2 s, 30 queries e 256 MiB;
+- os 20.000 targets foram materializados em quatro lanes: 0,9248–0,9966 s por lane,
+  cinco chamadas/50 chunks de 100 e 7,9011 s no ciclo total de fixture+fan-out+queue;
+- dois workers reivindicaram 100 targets distintos cada, com interseção zero: 6 queries
+  e 0,0663/0,1005 s. O hard cap permaneceu 5.000 e nenhuma chamada de provider ocorreu;
+- query-plan, forward/reverse/reapply da migration e gate pequeno passaram **2 testes**
+  (2 volumétricos skipped por padrão). O alvo canônico `make marketing-capacity` passou
+  **4 testes em 67,97 s**;
+- a regressão integrada de audience/snapshot/consent/capacity/ledger/worker/aggregate/
+  observability/Projection passou **155 testes** (2 gates volumétricos skipped), e o
+  pacote Guestman completo passou **408 testes** (1 skipped);
+- evidência estruturada em
+  `docs/reports/execution/marketing-capacity-mkt043-20260909.json`; instruções em
+  `docs/engineering/marketing-capacity-gate.md`;
+- dados foram sintéticos e viveram somente no banco descartável do pytest. Não houve
+  internet, telefone, provider, deploy, produção, push, merge, PR ou escrita externa.
+
+A implementação técnica local e os critérios de aceite do MKT-043 estão concluídos. O
+teste local não substitui o baseline autorizado de 7–14 dias, capacity da instância real,
+canary, pessoas nominais ou paging: esses itens permanecem bloqueadores explícitos do
+G-H08 antes do piloto. A sequência pode avançar ao MKT-044, que materializa health,
+runbooks e drills sem fechar esse gate humano por procuração.

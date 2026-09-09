@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 from django.core.exceptions import ValidationError
 from shopman.guestman import ConsentService
+from shopman.guestman.contrib.consent import service as consent_service
 from shopman.guestman.contrib.consent.models import (
     CommunicationConsent,
     CommunicationConsentEvent,
@@ -213,8 +214,31 @@ def test_large_chosen_cohort_has_constant_query_budget(django_assert_num_queries
         ConsentService.grant_consent(ref, "whatsapp", source="query-budget")
         refs.append(customer.ref)
 
-    with django_assert_num_queries(3):
+    with django_assert_num_queries(2):
         resolved = audience.resolve({"customer_refs": refs})
 
     assert resolved.total == 100
     assert resolved.degraded_sources == ()
+
+
+def test_large_cohort_batches_profile_and_consent_parameters(
+    django_assert_num_queries, monkeypatch
+) -> None:
+    refs = []
+    for index in range(5):
+        ref = f"CLI-MKT-BATCH-{index}"
+        customer = Customer.objects.create(
+            ref=ref,
+            first_name="Pessoa",
+            phone=f"+55439770000{index}",
+        )
+        ConsentService.grant_consent(ref, "whatsapp", source="batch-budget")
+        refs.append(customer.ref)
+
+    monkeypatch.setattr(audience, "AUDIENCE_LOOKUP_BATCH_SIZE", 2)
+    monkeypatch.setattr(consent_service, "CONSENT_STATUS_BATCH_SIZE", 2)
+
+    with django_assert_num_queries(6):
+        resolved = audience.resolve({"customer_refs": refs})
+
+    assert {recipient.customer_ref for recipient in resolved.general} == set(refs)

@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.utils.translation import gettext_lazy as _
 
@@ -164,6 +165,24 @@ class CustomerInsight(models.Model):
     class Meta:
         verbose_name = _("insight do cliente")
         verbose_name_plural = _("insights dos clientes")
+        indexes = [
+            models.Index(
+                fields=["last_order_at"],
+                name="customer_ins_last_order_idx",
+            ),
+            models.Index(
+                fields=["rfm_segment", "customer"],
+                name="customer_ins_rfm_seg_idx",
+            ),
+            models.Index(
+                fields=["churn_risk", "customer"],
+                name="customer_ins_churn_idx",
+            ),
+            GinIndex(
+                fields=["favorite_products"],
+                name="customer_ins_favorites_gin",
+            ),
+        ]
 
     def __str__(self):
         return f"Insight: {self.customer.ref}"
