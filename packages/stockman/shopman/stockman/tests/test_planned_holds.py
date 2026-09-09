@@ -13,9 +13,17 @@ from datetime import timedelta
 from decimal import Decimal
 
 import pytest
+from shopman.stockman.exceptions import StockError
+from shopman.stockman.models.batch import Batch
 from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.models.hold import Hold
-from shopman.stockman.services.holds import StockHolds
+from shopman.stockman.models.move import Move
+from shopman.stockman.models.quant import Quant
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    StockHolds,
+)
 from shopman.stockman.services.movements import StockMovements
 from shopman.stockman.services.planning import StockPlanning
 
@@ -50,6 +58,10 @@ class TestPlannedHolds:
         assert hold.quant.target_date == tomorrow
         assert hold.expires_at is None  # No timeout
         assert hold.status == HoldStatus.PENDING
+        assert (
+            hold.metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY]
+            == QUALITY_GRADE_POLICY_VERSION
+        )
 
     def test_hold_against_planned_is_reservation(self, product, producao, tomorrow):
         """Hold against planned stock is a reservation (not demand)."""
@@ -96,13 +108,9 @@ class TestRealizeWithHolds:
 
         return hold_id
 
-    def test_realize_sets_ttl_on_materialized_holds(
-        self, product, producao, vitrine, tomorrow
-    ):
+    def test_realize_sets_ttl_on_materialized_holds(self, product, producao, vitrine, tomorrow):
         """realize() sets expires_at on holds that had no timeout."""
-        hold_id = self._setup_planned_with_hold(
-            product, producao, vitrine, tomorrow
-        )
+        hold_id = self._setup_planned_with_hold(product, producao, vitrine, tomorrow)
         pk = int(hold_id.split(":")[1])
 
         # Before realize: hold has no expiry
@@ -123,9 +131,7 @@ class TestRealizeWithHolds:
         assert hold.expires_at is not None
         assert hold.quant.target_date is None  # Now physical
 
-    def test_realize_preserves_existing_ttl(
-        self, product, producao, vitrine, tomorrow
-    ):
+    def test_realize_preserves_existing_ttl(self, product, producao, vitrine, tomorrow):
         """realize() doesn't override existing expires_at on holds."""
         from django.utils import timezone
 
@@ -160,24 +166,22 @@ class TestRealizeWithHolds:
         assert abs(hold.expires_at - original_expiry) < timedelta(seconds=1)
 
     @pytest.mark.django_db(transaction=True)
-    def test_realize_emits_holds_materialized_signal(
-        self, product, producao, vitrine, tomorrow
-    ):
+    def test_realize_emits_holds_materialized_signal(self, product, producao, vitrine, tomorrow):
         """realize() emits holds_materialized signal for transferred holds."""
         from shopman.stockman.signals import holds_materialized
 
-        hold_id = self._setup_planned_with_hold(
-            product, producao, vitrine, tomorrow
-        )
+        hold_id = self._setup_planned_with_hold(product, producao, vitrine, tomorrow)
 
         received = []
 
         def handler(sender, hold_ids, sku, target_date, **kwargs):
-            received.append({
-                "hold_ids": hold_ids,
-                "sku": sku,
-                "target_date": target_date,
-            })
+            received.append(
+                {
+                    "hold_ids": hold_ids,
+                    "sku": sku,
+                    "target_date": target_date,
+                }
+            )
 
         holds_materialized.connect(handler)
         try:
@@ -197,9 +201,7 @@ class TestRealizeWithHolds:
             holds_materialized.disconnect(handler)
 
     @pytest.mark.django_db(transaction=True)
-    def test_realize_no_signal_without_holds(
-        self, product, producao, vitrine, tomorrow
-    ):
+    def test_realize_no_signal_without_holds(self, product, producao, vitrine, tomorrow):
         """realize() doesn't emit signal when there are no holds to transfer."""
         from shopman.stockman.signals import holds_materialized
 
@@ -230,9 +232,7 @@ class TestRealizeWithHolds:
         finally:
             holds_materialized.disconnect(handler)
 
-    def test_realize_hold_metadata_preserved(
-        self, product, producao, vitrine, tomorrow
-    ):
+    def test_realize_hold_metadata_preserved(self, product, producao, vitrine, tomorrow):
         """realize() preserves hold metadata (reference, channel_ref)."""
         StockMovements.receive(
             quantity=Decimal("50"),
@@ -262,3 +262,201 @@ class TestRealizeWithHolds:
         hold = Hold.objects.get(pk=pk)
         assert hold.metadata["reference"] == "session-abc"
         assert hold.metadata["channel_ref"] == "whatsapp"
+
+    def test_realize_never_materializes_remote_hold_into_disallowed_grade(self, product, producao, vitrine, tomorrow):
+        StockMovements.receive(
+            quantity=Decimal("15"),
+            sku=product.sku,
+            position=producao,
+            target_date=tomorrow,
+        )
+        hold_id = StockHolds.hold(
+            quantity=Decimal("5"),
+            product=product,
+            target_date=tomorrow,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+        hold = Hold.objects.get(pk=int(hold_id.split(":")[1]))
+        planned_quant_id = hold.quant_id
+        assert hold.metadata["_allowed_quality_grade_refs"] == [
+            "excellent",
+            "standard",
+        ]
+
+        StockPlanning.realize(
+            product=product,
+            target_date=tomorrow,
+            actual_quantity=Decimal("10"),
+            to_position=vitrine,
+            from_position=producao,
+            to_batch="MIN",
+            to_quality_grade_ref="minimal",
+        )
+
+        hold.refresh_from_db()
+        assert hold.quant_id == planned_quant_id
+
+        StockPlanning.realize(
+            product=product,
+            target_date=tomorrow,
+            actual_quantity=Decimal("5"),
+            to_position=vitrine,
+            from_position=producao,
+            to_batch="STD",
+            to_quality_grade_ref="standard",
+        )
+
+        hold.refresh_from_db()
+        assert hold.quant.batch == "STD"
+        assert Batch.objects.get(ref="STD").quality_grade_ref == "standard"
+
+        StockHolds.confirm(hold_id)
+        move = StockHolds.fulfill(hold_id)
+        assert move.delta == Decimal("-5")
+
+    def test_realize_rejects_a_conflicting_grade_for_an_existing_batch(
+        self,
+        product,
+        producao,
+        vitrine,
+        tomorrow,
+    ):
+        StockMovements.receive(
+            quantity=Decimal("10"),
+            sku=product.sku,
+            position=producao,
+            target_date=tomorrow,
+        )
+        StockPlanning.realize(
+            product=product,
+            target_date=tomorrow,
+            actual_quantity=Decimal("5"),
+            to_position=vitrine,
+            from_position=producao,
+            to_batch="ONE-TRUTH",
+            to_quality_grade_ref="standard",
+        )
+
+        with pytest.raises(StockError) as exc:
+            StockPlanning.realize(
+                product=product,
+                target_date=tomorrow,
+                actual_quantity=Decimal("5"),
+                to_position=vitrine,
+                from_position=producao,
+                to_batch="ONE-TRUTH",
+                to_quality_grade_ref="minimal",
+            )
+
+        assert exc.value.code == "BATCH_QUALITY_CONFLICT"
+        assert Batch.objects.get(ref="ONE-TRUTH").quality_grade_ref == "standard"
+
+    def test_realize_rejects_a_batch_owned_by_another_sku(
+        self,
+        product,
+        producao,
+        vitrine,
+        tomorrow,
+    ):
+        planned = StockMovements.receive(
+            quantity=Decimal("5"),
+            sku=product.sku,
+            position=producao,
+            target_date=tomorrow,
+        )
+        Batch.objects.create(
+            ref="COLLIDE",
+            sku="ANOTHER-SKU",
+            quality_grade_ref="minimal",
+        )
+        moves_before = Move.objects.count()
+
+        with pytest.raises(StockError) as exc:
+            StockPlanning.realize(
+                product=product,
+                target_date=tomorrow,
+                actual_quantity=Decimal("5"),
+                to_position=vitrine,
+                from_position=producao,
+                to_batch="COLLIDE",
+                to_quality_grade_ref="minimal",
+            )
+
+        planned.refresh_from_db()
+        assert exc.value.code == "BATCH_SKU_CONFLICT"
+        assert planned.quantity == Decimal("5")
+        assert Move.objects.count() == moves_before
+        assert not Quant.objects.filter(
+            sku=product.sku,
+            position=vitrine,
+            batch="COLLIDE",
+        ).exists()
+
+    def test_legacy_hold_without_frozen_policy_fails_closed(
+        self,
+        product,
+        producao,
+        vitrine,
+        tomorrow,
+    ):
+        planned = StockMovements.receive(
+            quantity=Decimal("5"),
+            sku=product.sku,
+            position=producao,
+            target_date=tomorrow,
+        )
+        legacy = Hold.objects.create(
+            sku=product.sku,
+            quant=planned,
+            quantity=Decimal("5"),
+            target_date=tomorrow,
+            status=HoldStatus.PENDING,
+            metadata={},
+        )
+
+        StockPlanning.realize(
+            product=product,
+            target_date=tomorrow,
+            actual_quantity=Decimal("5"),
+            to_position=vitrine,
+            from_position=producao,
+            to_batch="LEGACY-MIN",
+            to_quality_grade_ref="minimal",
+        )
+
+        legacy.refresh_from_db()
+        assert legacy.quant_id == planned.pk
+        StockHolds.confirm(legacy.hold_id)
+        with pytest.raises(StockError) as exc:
+            StockHolds.fulfill(legacy.hold_id)
+        assert exc.value.code == "HOLD_POLICY_UNKNOWN"
+
+    def test_fulfill_rechecks_the_frozen_grade_policy(self, product, producao, vitrine, tomorrow):
+        StockMovements.receive(
+            quantity=Decimal("5"),
+            sku=product.sku,
+            position=producao,
+            target_date=tomorrow,
+        )
+        hold_id = StockHolds.hold(
+            quantity=Decimal("5"),
+            product=product,
+            target_date=tomorrow,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+        StockPlanning.realize(
+            product=product,
+            target_date=tomorrow,
+            actual_quantity=Decimal("5"),
+            to_position=vitrine,
+            from_position=producao,
+            to_batch="STD-CORRIGIDO",
+            to_quality_grade_ref="standard",
+        )
+        Batch.objects.filter(ref="STD-CORRIGIDO").update(quality_grade_ref="minimal")
+        StockHolds.confirm(hold_id)
+
+        with pytest.raises(StockError) as exc:
+            StockHolds.fulfill(hold_id)
+
+        assert exc.value.code == "INELIGIBLE_BATCH"

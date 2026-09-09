@@ -518,6 +518,69 @@ class TestFinish:
 
         assert exc.value.code == "INVALID_QUANTITY"
 
+    def test_finish_accepts_zero_saleable_only_with_auditable_waste(
+        self,
+        recipe_with_items,
+    ):
+        wo = craft.plan(recipe_with_items, 4)
+
+        craft.finish(
+            wo,
+            finished=[],
+            wasted=[
+                {
+                    "item_ref": "croissant",
+                    "quantity": 4,
+                    "quality_defect_ref": "overbaked",
+                }
+            ],
+            expected_rev=0,
+            event_context={"production_outcome": {"kind": "total_loss"}},
+        )
+
+        wo.refresh_from_db()
+        assert wo.status == WorkOrder.Status.FINISHED
+        assert wo.finished == Decimal("0")
+        assert not WorkOrderItem.objects.filter(
+            work_order=wo,
+            kind=WorkOrderItem.Kind.OUTPUT,
+        ).exists()
+        waste = WorkOrderItem.objects.get(
+            work_order=wo,
+            kind=WorkOrderItem.Kind.WASTE,
+        )
+        assert waste.quantity == Decimal("4")
+        event = wo.events.get(kind="finished")
+        assert event.payload["finished_qty"] == "0"
+        assert event.payload["loss_qty"] == "4"
+        assert event.payload["context"]["production_outcome"]["kind"] == "total_loss"
+
+    @pytest.mark.parametrize("waste_quantity", [1, 5])
+    def test_finish_rejects_total_loss_that_does_not_conserve_the_batch(
+        self,
+        recipe_with_items,
+        waste_quantity,
+    ):
+        wo = craft.plan(recipe_with_items, 4)
+
+        with pytest.raises(CraftError) as exc:
+            craft.finish(
+                wo,
+                finished=[],
+                wasted=[
+                    {
+                        "item_ref": "croissant",
+                        "quantity": waste_quantity,
+                        "quality_defect_ref": "overbaked",
+                    }
+                ],
+                expected_rev=0,
+            )
+
+        assert exc.value.code == "PARTITION_MISMATCH"
+        wo.refresh_from_db()
+        assert wo.status == WorkOrder.Status.PLANNED
+
     def test_finish_rejects_zero_consumed_quantity(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
 
@@ -557,7 +620,7 @@ class TestFinish:
             finished=[
                 {
                     "item_ref": "croissant",
-                    "quantity": 32,
+                    "quantity": 29,
                     "batch_ref": "CROISSANT-20260813-1",
                     "quality_grade_ref": "standard",
                     "meta": {"oven": "A"},
@@ -596,7 +659,7 @@ class TestFinish:
         assert waste.batch_ref == ""  # perda não vira lote
 
         wo.refresh_from_db()
-        assert wo.finished == Decimal("40")  # 32 + 8; a perda fica fora
+        assert wo.finished == Decimal("37")  # 29 + 8; a perda fica fora
 
     def test_finish_rejects_malformed_finished_item(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)

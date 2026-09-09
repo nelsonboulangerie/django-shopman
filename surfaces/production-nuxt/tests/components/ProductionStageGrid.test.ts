@@ -85,6 +85,7 @@ const voidSpy = vi.fn().mockResolvedValue({ ok: true });
 const startSpy = vi.fn().mockResolvedValue({ ok: true });
 const planSpy = vi.fn().mockResolvedValue({ ok: true });
 const boardRefresh = vi.fn();
+const boardInitialDateSpy = vi.fn();
 
 function installGlobals() {
   vi.stubGlobal("computed", computed);
@@ -93,7 +94,9 @@ function installGlobals() {
   vi.stubGlobal("watch", watch);
   vi.stubGlobal("useSonner", { success: vi.fn(), error: vi.fn() });
   vi.stubGlobal("useRoute", () => ({ query: {} }));
-  vi.stubGlobal("useProductionBoard", () => ({
+  vi.stubGlobal("useProductionBoard", (initialDate: string) => {
+    boardInitialDateSpy(initialDate);
+    return {
     board: ref({
       access: FULL_ACCESS,
       base_recipes: [],
@@ -111,7 +114,8 @@ function installGlobals() {
     isBusy: () => false,
     plan: planSpy,
     start: startSpy,
-  }));
+    };
+  });
   vi.stubGlobal("useProductionKds", () => ({
     cards: ref([]),
     totalCount: ref(0),
@@ -203,10 +207,21 @@ beforeEach(() => {
   startSpy.mockClear().mockResolvedValue({ ok: true });
   planSpy.mockClear().mockResolvedValue({ ok: true });
   boardRefresh.mockClear();
+  boardInitialDateSpy.mockClear();
 });
 afterEach(() => vi.unstubAllGlobals());
 
 describe("ProductionStageGrid — planning authority", () => {
+  it("opens the exact production date carried by an alert deep link", () => {
+    vi.stubGlobal("useRoute", () => ({
+      query: { date: "2026-07-05", q: "WO-001" },
+    }));
+
+    mountGrid("produce");
+
+    expect(boardInitialDateSpy).toHaveBeenCalledWith("2026-07-05");
+  });
+
   it("lets a suggestion-only persona submit only the exact suggestion", async () => {
     stubBoardAccess({
       ...FULL_ACCESS,
@@ -217,11 +232,15 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Planejar")!.trigger("click");
+    await byText(w, "button", "Confirmar")!.trigger("click");
     const input = w.find('input[aria-label="Quantidade planejada"]');
     expect(input.attributes("readonly")).toBeDefined();
     expect((input.element as HTMLInputElement).value).toBe("8");
-    await byText(w, "button", "Salvar planejado")!.trigger("click");
+    await w
+      .findAll("button")
+      .filter((button) => button.text().trim() === "Confirmar")
+      .at(-1)!
+      .trigger("click");
 
     expect(planSpy).toHaveBeenCalledWith(
       "PAO-001",
@@ -243,8 +262,12 @@ describe("ProductionStageGrid — planning authority", () => {
     boardRows.value = [row({ suggestion })];
     const w = mountGrid("plan");
 
-    await byText(w, "button", "Planejar")!.trigger("click");
-    await byText(w, "button", "Salvar planejado")!.trigger("click");
+    await byText(w, "button", "Confirmar")!.trigger("click");
+    await w
+      .findAll("button")
+      .filter((button) => button.text().trim() === "Confirmar")
+      .at(-1)!
+      .trigger("click");
 
     expect(planSpy).toHaveBeenCalledWith(
       "PAO-001",
@@ -259,13 +282,15 @@ describe("ProductionStageGrid — planning authority", () => {
 });
 
 describe("ProductionStageGrid — produce render", () => {
-  it("lists a planned row with a 'Processar' affordance", () => {
+  it("mostra Planejado → Produzido com uma ação Confirmar", () => {
     boardRows.value = [
       row({ planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
     ];
     const w = mountGrid();
     expect(w.text()).toContain("PAO-001");
-    expect(byText(w, "button", "Processar")).toBeTruthy();
+    expect(w.text()).toContain("Planejado");
+    expect(w.text()).toContain("Produzido");
+    expect(byText(w, "button", "Confirmar")).toBeTruthy();
   });
 
   it("nomeia a linha pelo produto e deixa o SKU na segunda linha", () => {
@@ -284,7 +309,11 @@ describe("ProductionStageGrid — produce render", () => {
 
   it("cai no SKU quando a ficha não tem nome — a linha não some", () => {
     boardRows.value = [
-      row({ recipe_name: "", planned_qty: "30", planned_orders: [wo({ status: "planned" })] }),
+      row({
+        recipe_name: "",
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
     ];
     const w = mountGrid();
     const lines = w.findAll("tbody td")[0]!.findAll("p");
@@ -294,7 +323,7 @@ describe("ProductionStageGrid — produce render", () => {
   it("shows the welcoming empty state when nothing is planned", () => {
     boardRows.value = [];
     const w = mountGrid();
-    expect(w.text()).toContain("Nada planejado para processar");
+    expect(w.text()).toContain("Nada planejado para produzir");
   });
 
   it("requires an explicit planned work order when starting one of many", async () => {
@@ -321,12 +350,16 @@ describe("ProductionStageGrid — produce render", () => {
     ];
     const w = mountGrid();
 
-    await byText(w, "button", "Processar")!.trigger("click");
+    await byText(w, "button", "Confirmar")!.trigger("click");
     expect(w.text()).toContain("Selecione a fornada exata");
     expect(startSpy).not.toHaveBeenCalled();
 
     await byText(w, "button", "WO-008")!.trigger("click");
-    await byText(w, "button", "Iniciar")!.trigger("click");
+    await w
+      .findAll("button")
+      .filter((button) => button.text().trim() === "Confirmar")
+      .at(-1)!
+      .trigger("click");
 
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 8, 4, "30");
   });

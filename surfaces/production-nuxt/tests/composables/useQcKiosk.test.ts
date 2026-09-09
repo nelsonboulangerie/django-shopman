@@ -44,6 +44,14 @@ function qcPayload(overrides: Record<string, unknown> = {}) {
 describe("useQcKiosk — guarded writes", () => {
   beforeEach(() => env.reset());
 
+  it("starts on the date carried by an alert deep link", () => {
+    env.fetchData.value = qcPayload();
+
+    const { selectedDate } = useQcKiosk("2026-09-07");
+
+    expect(selectedDate.value).toBe("2026-09-07");
+  });
+
   it("sends projection metadata on finish and quick-finish", async () => {
     env.fetchData.value = qcPayload();
     const { finish, quickFinish } = useQcKiosk();

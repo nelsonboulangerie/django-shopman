@@ -41,7 +41,9 @@ def visible_alert_audiences(user) -> frozenset[str]:
 def _active_for(user=None):
     from shopman.backstage.models import OperatorAlert
 
-    qs = OperatorAlert.objects.filter(acknowledged=False).order_by("-created_at")
+    # Reconhecer registra ciência; somente resolver encerra a causa. Um alerta
+    # ainda aberto não pode sumir do sino — sobretudo os críticos.
+    qs = OperatorAlert.objects.filter(resolved_at__isnull=True).order_by("-created_at")
     if user is not None:
         qs = qs.filter(audience__in=visible_alert_audiences(user))
     return qs
@@ -261,7 +263,6 @@ def resolve_alerts(
     with transaction.atomic():
         alerts = OperatorAlert.objects.select_for_update().filter(
             type=type,
-            acknowledged=False,
             resolved_at__isnull=True,
         )
         alerts = alerts.filter(order_ref=resolved_order_ref)

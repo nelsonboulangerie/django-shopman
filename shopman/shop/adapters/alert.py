@@ -42,9 +42,31 @@ def recent_exists(
     """
     from shopman.backstage.models import OperatorAlert
 
-    qs = OperatorAlert.objects.filter(type=type, created_at__gte=since)
+    qs = OperatorAlert.objects.filter(type=type)
     if active_only:
-        qs = qs.filter(acknowledged=False)
+        # ``Visto`` registra ciência, mas não encerra a causa. O mesmo alerta
+        # continua sendo a unidade de dedupe até uma resolução auditada — sem
+        # expirar artificialmente depois da janela temporal do chamador.
+        qs = qs.filter(resolved_at__isnull=True)
+    else:
+        qs = qs.filter(created_at__gte=since)
+    if order_ref is not None:
+        qs = qs.filter(order_ref=order_ref)
+    if message_contains is not None:
+        qs = qs.filter(message__contains=message_contains)
+    return qs.exists()
+
+
+def exists(
+    type: str,
+    *,
+    message_contains: str | None = None,
+    order_ref: str | None = None,
+) -> bool:
+    """Return whether the immutable alert fact was ever recorded."""
+    from shopman.backstage.models import OperatorAlert
+
+    qs = OperatorAlert.objects.filter(type=type)
     if order_ref is not None:
         qs = qs.filter(order_ref=order_ref)
     if message_contains is not None:

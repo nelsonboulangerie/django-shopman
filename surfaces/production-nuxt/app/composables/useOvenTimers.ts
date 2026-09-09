@@ -1,34 +1,49 @@
-// Timer auxiliar do forno — lembrete armado por fornada (WO) para conferir/
-// retirar. É a ferramenta ATIVA do forneiro; o relógio de idade do lote
+// Timer auxiliar do forno — lembrete armado por fornada (WO). É a ferramenta
+// ATIVA do forneiro; o relógio de idade do lote
 // (started_at vs max_started_minutes) segue como guardrail de esquecimento
 // via alertas (sino). Local ao aparelho: quem armou, ouve.
 //
 // Som: "dim-dom" quente em triangle wave, duas frases curtas, volume moderado
 // — fácil de ouvir, fácil de conviver. Repete a cada 45s enquanto ninguém
-// atende, com teto de 4 repetições (depois o chip pulsando continua avisando).
+// marca ``Visto``. O alerta não conclui o forno, o QC nem a produção.
 // Padrões configuráveis via Admin ficam para o ProductionConfig (follow-up).
 import { countdownLabel } from "~/presentation/production";
 
-interface OvenTimer {
+export interface OvenTimer {
   endsAt: number;
   minutes: number;
-  /** Pausado: restante congelado em ms; ``endsAt`` é recalculado no retomar. */
-  pausedMs?: number;
+  /** ``Visto`` silencia o alerta, mas preserva o timer até a fornada terminar. */
+  seenAt?: number;
 }
 
 const STORAGE_KEY = "producao.oven-timers";
 // Chave anterior à renomeação Fournil→Produção. Lida como fallback: um turno
 // em andamento não pode perder os timers de forno por causa de um deploy.
 const LEGACY_STORAGE_KEY = "fournil.oven-timers";
+const LAST_MINUTES_KEY = "producao.oven-timer-last-minutes";
 const RECHIME_MS = 45_000;
-const MAX_CHIMES = 4;
 
 const timers = ref<Record<string, OvenTimer>>({});
 const nowMs = ref(0);
-const chimes = new Map<string, { count: number; lastAt: number }>();
+const chimes = new Map<string, { lastAt: number }>();
+const lastMinutes = ref<number | null>(null);
 let ticker: ReturnType<typeof setInterval> | null = null;
 let audio: AudioContext | null = null;
 let loaded = false;
+
+export function restoreOvenTimers(
+  parsed: Record<string, OvenTimer>,
+  _now: number,
+): Record<string, OvenTimer> {
+  return Object.fromEntries(
+    Object.entries(parsed).filter(
+      ([, timer]) =>
+        timer &&
+        typeof timer.endsAt === "number" &&
+        typeof timer.minutes === "number",
+    ),
+  );
+}
 
 function load() {
   if (loaded || !import.meta.client) return;
@@ -36,13 +51,13 @@ function load() {
   nowMs.value = Date.now();
   try {
     const raw =
-      window.localStorage.getItem(STORAGE_KEY) ?? window.localStorage.getItem(LEGACY_STORAGE_KEY);
+      window.localStorage.getItem(STORAGE_KEY) ??
+      window.localStorage.getItem(LEGACY_STORAGE_KEY);
     const parsed = raw ? (JSON.parse(raw) as Record<string, OvenTimer>) : {};
-    // Timers estourados há mais de 2h são lixo de um turno anterior.
-    const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-    timers.value = Object.fromEntries(
-      Object.entries(parsed).filter(([, t]) => t && typeof t.endsAt === "number" && t.endsAt > cutoff),
-    );
+    timers.value = restoreOvenTimers(parsed, Date.now());
+    const storedLast = Number(window.localStorage.getItem(LAST_MINUTES_KEY));
+    lastMinutes.value =
+      Number.isInteger(storedLast) && storedLast > 0 ? storedLast : null;
   } catch {
     timers.value = {};
   }
@@ -64,11 +79,11 @@ function ensureTicker() {
     nowMs.value = Date.now();
     for (const key of Object.keys(timers.value)) {
       const t = timers.value[key];
-      if (!t || t.pausedMs != null || t.endsAt > nowMs.value) continue;
-      const state = chimes.get(key) ?? { count: 0, lastAt: 0 };
-      if (state.count < MAX_CHIMES && nowMs.value - state.lastAt >= RECHIME_MS) {
+      if (!t || t.seenAt != null || t.endsAt > nowMs.value) continue;
+      const state = chimes.get(key) ?? { lastAt: 0 };
+      if (nowMs.value - state.lastAt >= RECHIME_MS) {
         chime();
-        chimes.set(key, { count: state.count + 1, lastAt: nowMs.value });
+        chimes.set(key, { lastAt: nowMs.value });
       }
     }
   }, 1000);
@@ -118,7 +133,18 @@ export function useOvenTimers() {
     const clamped = Math.max(1, Math.round(minutes));
     unlockAudio();
     chimes.delete(key);
-    timers.value = { ...timers.value, [key]: { endsAt: Date.now() + clamped * 60_000, minutes: clamped } };
+    timers.value = {
+      ...timers.value,
+      [key]: { endsAt: Date.now() + clamped * 60_000, minutes: clamped },
+    };
+    lastMinutes.value = clamped;
+    if (import.meta.client) {
+      try {
+        window.localStorage.setItem(LAST_MINUTES_KEY, String(clamped));
+      } catch {
+        // sugestão indisponível; o timer segue funcionando
+      }
+    }
     persist();
     ensureTicker();
   }
@@ -130,36 +156,26 @@ export function useOvenTimers() {
     persist();
   }
 
-  /** Congela o restante (a fornada saiu para descansar, o forno abriu). */
-  function pause(key: string) {
+  /** Marca que alguém viu o alerta; não altera qualquer fato produtivo. */
+  function seen(key: string) {
     const t = timers.value[key];
-    if (!t || t.pausedMs != null || t.endsAt <= Date.now()) return;
-    timers.value = {
-      ...timers.value,
-      [key]: { ...t, pausedMs: t.endsAt - Date.now() },
-    };
+    if (!t || t.endsAt > Date.now()) return;
+    timers.value = { ...timers.value, [key]: { ...t, seenAt: Date.now() } };
+    chimes.delete(key);
     persist();
   }
 
-  function resume(key: string) {
-    const t = timers.value[key];
-    if (!t || t.pausedMs == null) return;
-    const { pausedMs, ...rest } = t;
-    timers.value = { ...timers.value, [key]: { ...rest, endsAt: Date.now() + pausedMs } };
-    persist();
-    ensureTicker();
-  }
-
-  /** "+N min": estende o que corre, engorda o pausado, rearma o que alarmou. */
+  /** "+N min": estende o que corre e rearma o que já tocou/foi visto. */
   function extend(key: string, minutes: number) {
     const t = timers.value[key];
     const extra = Math.max(1, Math.round(minutes)) * 60_000;
     if (!t) return;
     chimes.delete(key);
-    const next: OvenTimer =
-      t.pausedMs != null
-        ? { ...t, pausedMs: t.pausedMs + extra }
-        : { ...t, endsAt: Math.max(t.endsAt, Date.now()) + extra };
+    const next: OvenTimer = {
+      ...t,
+      endsAt: Math.max(t.endsAt, Date.now()) + extra,
+      seenAt: undefined,
+    };
     timers.value = { ...timers.value, [key]: next };
     persist();
     ensureTicker();
@@ -169,21 +185,31 @@ export function useOvenTimers() {
     return timers.value[key] ?? null;
   }
 
-  function isPaused(key: string): boolean {
-    return timers.value[key]?.pausedMs != null;
-  }
-
   function isRinging(key: string): boolean {
     const t = timers.value[key];
-    return !!t && t.pausedMs == null && t.endsAt <= nowMs.value;
+    return !!t && t.seenAt == null && t.endsAt <= nowMs.value;
+  }
+
+  function isSeen(key: string): boolean {
+    const t = timers.value[key];
+    return !!t && t.seenAt != null;
   }
 
   function remainingLabel(key: string): string {
     const t = timers.value[key];
     if (!t) return "";
-    if (t.pausedMs != null) return countdownLabel(t.pausedMs / 1000);
     return countdownLabel((t.endsAt - nowMs.value) / 1000);
   }
 
-  return { arm, clear, pause, resume, extend, get, isPaused, isRinging, remainingLabel };
+  return {
+    arm,
+    clear,
+    seen,
+    extend,
+    get,
+    isSeen,
+    isRinging,
+    remainingLabel,
+    lastMinutes,
+  };
 }

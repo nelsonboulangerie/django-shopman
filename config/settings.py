@@ -53,8 +53,7 @@ def _efi_certificate_path() -> str:
         return configured_path
 
     encoded = (
-        os.environ.get("EFI_CERTIFICATE_PEM_BASE64", "").strip()
-        or os.environ.get("EFI_CERTIFICATE_BASE64", "").strip()
+        os.environ.get("EFI_CERTIFICATE_PEM_BASE64", "").strip() or os.environ.get("EFI_CERTIFICATE_BASE64", "").strip()
     )
     if encoded:
         pem = b64decode(encoded).decode("utf-8")
@@ -80,10 +79,14 @@ DEBUG = _env_bool("DJANGO_DEBUG", False)
 # produção, porque `staging` desliga as travas de refresh_seed_dates/
 # qa_scenarios/seed --flush/import_backup. Ausência da env fora de DEBUG falha
 # FECHADO: production, nunca staging.
-SHOPMAN_ENVIRONMENT = os.environ.get(
-    "SHOPMAN_ENVIRONMENT",
-    "development" if DEBUG else "production",
-).strip().lower()
+SHOPMAN_ENVIRONMENT = (
+    os.environ.get(
+        "SHOPMAN_ENVIRONMENT",
+        "development" if DEBUG else "production",
+    )
+    .strip()
+    .lower()
+)
 
 # Nasce DESLIGADO, sem herdar de DEBUG nem de ambiente: expor OTP na resposta
 # é decisão explícita do spec de deploy (o alpha declara `true`; produção,
@@ -104,9 +107,7 @@ SHOPMAN_DEBUG_OTP_TOKEN = os.environ.get("SHOPMAN_DEBUG_OTP_TOKEN", "").strip()
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 CSRF_TRUSTED_ORIGINS = [
-    origin.strip()
-    for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",")
-    if origin.strip()
+    origin.strip() for origin in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if origin.strip()
 ]
 
 # SameSite explícito (não confiar no default do Django): os BFFs Nuxt
@@ -352,9 +353,7 @@ if _DB_URL:
             "PORT": _parsed.port or 5432,
             "CONN_MAX_AGE": _conn_max_age,
             "CONN_HEALTH_CHECKS": _env_bool("DATABASE_CONN_HEALTH_CHECKS", True),
-            "DISABLE_SERVER_SIDE_CURSORS": _env_bool(
-                "DATABASE_DISABLE_SERVER_SIDE_CURSORS", False
-            ),
+            "DISABLE_SERVER_SIDE_CURSORS": _env_bool("DATABASE_DISABLE_SERVER_SIDE_CURSORS", False),
         }
     }
 else:
@@ -510,9 +509,7 @@ SHOPMAN_WHATSAPP = {
 SHOPMAN_WA_VERIFY = {
     "number": os.environ.get("SHOPMAN_WHATSAPP_VERIFY_NUMBER", "").strip(),
     # Mensagem pré-preenchida do botão do site ({code} = o NB-XxXx que o ManyChat casa).
-    "access_message_template": os.environ.get(
-        "SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "#menu {code}"
-    ),
+    "access_message_template": os.environ.get("SHOPMAN_WA_ACCESS_MESSAGE_TEMPLATE", "#menu {code}"),
 }
 
 # ── iFood (Marketplace F16) ────────────────────────────────────────
@@ -536,9 +533,7 @@ SHOPMAN_IFOOD = {
     # Empty → a cancellation callback fails loudly (must be set post-homologação).
     "cancellation_default_code": os.environ.get("IFOOD_CANCELLATION_CODE", ""),
     # iFood requires a non-empty `reason` alongside the code (400 otherwise).
-    "cancellation_default_reason": os.environ.get(
-        "IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"
-    ),
+    "cancellation_default_reason": os.environ.get("IFOOD_CANCELLATION_REASON", "Problemas de sistema na loja"),
     # Webhook push (WP-5, optional): HMAC-SHA256 secret for X-IFood-Signature.
     # Defaults to client_secret (per plan). Set from the portal's webhook section
     # if iFood provisions a distinct signing secret.
@@ -616,18 +611,14 @@ SHOPMAN_COURIER_ADAPTER = os.environ.get("SHOPMAN_COURIER_ADAPTER", "").strip() 
 # explicitly turned on (requires the iFood OAuth config to be present).
 _CATALOG_PROJECTION_BACKENDS: dict[str, str] = {}
 if os.environ.get("IFOOD_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
-    _CATALOG_PROJECTION_BACKENDS["ifood"] = (
-        "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"
-    )
+    _CATALOG_PROJECTION_BACKENDS["ifood"] = "shopman.shop.adapters.catalog_projection_ifood.IFoodCatalogProjection"
 # Meta (IG/FB) — projeção do catálogo social, off by default. Keyed pelo **ref do
 # canal** (`meta-catalog`), igual a todo o resto do registry. Era `"meta"`, o `kind` do
 # antigo `Showcase`: canal chaveava por ref e feed por kind, duas chaves para a mesma
 # pergunta. Com a ADR-018 o feed É um canal, então sobra uma. Requer SHOPMAN_META
 # (token + catalog_id) p/ ir live.
 if os.environ.get("META_CATALOG_PROJECTION", "").strip().lower() in ("1", "true", "yes"):
-    _CATALOG_PROJECTION_BACKENDS["meta-catalog"] = (
-        "shopman.shop.adapters.catalog_projection_meta.MetaCatalogProjection"
-    )
+    _CATALOG_PROJECTION_BACKENDS["meta-catalog"] = "shopman.shop.adapters.catalog_projection_meta.MetaCatalogProjection"
 
 # ── SMS (Comtele — OTP por SMS) ─────────────────────────────────────
 # WhatsApp OTP não é viável (ManyChat não tem categoria Authentication; o número único da marca
@@ -717,6 +708,7 @@ TAGGIT_STRIP_UNICODE_WHEN_SLUGIFYING = True
 def _unfold_site_title(request=None):
     try:
         from shopman.shop.models import Shop
+
         shop = Shop.load()
         return shop.name if shop else "Shopman"
     except Exception:
@@ -793,8 +785,14 @@ UNFOLD = {
         {
             "models": ["backstage.operationchecklisttemplate", "backstage.operationtasktemplate"],
             "items": [
-                {"title": "Modelos de checklist", "link": reverse_lazy("admin:backstage_operationchecklisttemplate_changelist")},
-                {"title": "Modelos de tarefa", "link": reverse_lazy("admin:backstage_operationtasktemplate_changelist")},
+                {
+                    "title": "Modelos de checklist",
+                    "link": reverse_lazy("admin:backstage_operationchecklisttemplate_changelist"),
+                },
+                {
+                    "title": "Modelos de tarefa",
+                    "link": reverse_lazy("admin:backstage_operationtasktemplate_changelist"),
+                },
             ],
         },
     ],
@@ -808,9 +806,7 @@ UNFOLD = {
 
 # ── Email ──────────────────────────────────────────────────────────
 
-EMAIL_BACKEND = os.environ.get(
-    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
-)
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
 EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("true", "1")
@@ -1034,12 +1030,13 @@ STOCKMAN = {
     # When on, a lot whose expiry exceeds the product's shelf_life window is
     # rejected at save; off (default) surfaces it as a non-blocking admin warning.
     "STRICT_SHELF_LIFE_WINDOW": _env_bool("STOCKMAN_STRICT_SHELF_LIFE_WINDOW", False),
+    # O pacote permanece agnóstico; o host projeta a política completa do
+    # canal (posições, validade e allowlist opaca de graus) no read/write path.
+    "CHANNEL_SCOPE_RESOLVER": "shopman.shop.adapters.stock.get_channel_scope",
 }
 
 # Cooldown between repeated stock alerts for the same SKU (minutes).
-STOCKMAN_ALERT_COOLDOWN_MINUTES = int(
-    os.environ.get("STOCKMAN_ALERT_COOLDOWN_MINUTES", "60")
-)
+STOCKMAN_ALERT_COOLDOWN_MINUTES = int(os.environ.get("STOCKMAN_ALERT_COOLDOWN_MINUTES", "60"))
 
 # ── Guestman ─────────────────────────────────────────────────────────
 
@@ -1049,11 +1046,7 @@ _GUESTMAN_ORDER_HISTORY_BACKEND = os.environ.get(
     "GUESTMAN_ORDER_HISTORY_BACKEND",
     "shopman.guestman.adapters.orderman.OrdermanOrderHistoryBackend",
 )
-GUESTMAN = (
-    {"ORDER_HISTORY_BACKEND": _GUESTMAN_ORDER_HISTORY_BACKEND}
-    if _GUESTMAN_ORDER_HISTORY_BACKEND
-    else {}
-)
+GUESTMAN = {"ORDER_HISTORY_BACKEND": _GUESTMAN_ORDER_HISTORY_BACKEND} if _GUESTMAN_ORDER_HISTORY_BACKEND else {}
 
 # RFM thresholds. Empty dict uses built-in defaults from conf.py.
 # Keys: RFM_RECENCY_THRESHOLDS, RFM_FREQUENCY_THRESHOLDS, RFM_MONETARY_THRESHOLDS
@@ -1074,9 +1067,7 @@ ORDERMAN = {}
 # Customer strategy modules to load on startup.
 # Each module must register its strategies on import.
 # Default is empty: the framework base must stay instance-agnostic.
-SHOPMAN_CUSTOMER_STRATEGY_MODULES = _csv_env_list(
-    "SHOPMAN_CUSTOMER_STRATEGY_MODULES"
-)
+SHOPMAN_CUSTOMER_STRATEGY_MODULES = _csv_env_list("SHOPMAN_CUSTOMER_STRATEGY_MODULES")
 
 # ── Shopman Adapters ──────────────────────────────────────────────────
 
@@ -1131,9 +1122,7 @@ SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = _env_bool("SHOPMAN_ALLOW_MOCK_PAYMENT_ADAP
 # conduz uma rodada de testes. Ver `shop/services/payment.py::mock_capture_allowed`.
 SHOPMAN_EXPOSE_MOCK_CAPTURE = _env_bool("SHOPMAN_EXPOSE_MOCK_CAPTURE", False)
 SHOPMAN_MOCK_PIX_AUTO_CONFIRM = _env_bool("SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False)
-SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = int(
-    os.environ.get("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", "10")
-)
+SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = int(os.environ.get("SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS", "10"))
 
 # ── Piloto automático de staging ─────────────────────────────────────
 # Um testador sozinho no staging não tem cozinha nem gestor do outro lado: sem
@@ -1149,9 +1138,7 @@ SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = int(
 SHOPMAN_STAGING_AUTOPILOT = _env_bool("SHOPMAN_STAGING_AUTOPILOT", False)
 # Espera entre um passo e o outro. Curta o bastante para o testador ver o
 # pedido inteiro em poucos minutos, longa o bastante para ele LER cada estado.
-SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS = _env_int(
-    "SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS", 30
-)
+SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS = _env_int("SHOPMAN_STAGING_AUTOPILOT_DELAY_SECONDS", 30)
 # Canais cobertos. Vazio (default) = todos. Preencher para deixar um canal de
 # fora quando alguém estiver testando o backstage de verdade nele (ex.: "web"
 # roda sozinho enquanto o PDV fica na mão do operador).
@@ -1161,29 +1148,17 @@ SHOPMAN_STAGING_AUTOPILOT_CHANNELS = _csv_env_list("SHOPMAN_STAGING_AUTOPILOT_CH
 # check_directive_health, que roda no ciclo do maintenance_worker.
 # Defaults seguem a ADR ("failed > 5 em 1h", "queued com available_at
 # < now - 10min acumulam"); heartbeat 15min tolera restart de deploy sem flap.
-SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD = int(
-    os.environ.get("SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD", "5")
-)
-SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES = int(
-    os.environ.get("SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES", "60")
-)
-SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD = int(
-    os.environ.get("SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD", "5")
-)
-SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES = int(
-    os.environ.get("SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES", "10")
-)
-SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES = int(
-    os.environ.get("SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES", "15")
-)
+SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD = int(os.environ.get("SHOPMAN_DIRECTIVE_FAILED_ALERT_THRESHOLD", "5"))
+SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES = int(os.environ.get("SHOPMAN_DIRECTIVE_FAILED_WINDOW_MINUTES", "60"))
+SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD = int(os.environ.get("SHOPMAN_DIRECTIVE_BACKLOG_ALERT_THRESHOLD", "5"))
+SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES = int(os.environ.get("SHOPMAN_DIRECTIVE_BACKLOG_AGE_MINUTES", "10"))
+SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES = int(os.environ.get("SHOPMAN_WORKER_HEARTBEAT_STALE_MINUTES", "15"))
 
 # Erro não tratado (500) vira OperatorAlert — ver
 # shopman/shop/services/unhandled_errors.py. A janela é a identidade do dedupe
 # no tempo: dentro dela, o mesmo (exceção + arquivo:linha) é o mesmo aviso. Uma
 # hora é o meio-termo entre "o dono soube" e "mil linhas de um bug só".
-SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(
-    os.environ.get("SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES", "60")
-)
+SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES = int(os.environ.get("SHOPMAN_UNHANDLED_EXCEPTION_WINDOW_MINUTES", "60"))
 
 # Integrações cujo estado degradado é DECISÃO REGISTRADA deste deployment, e
 # não desvio. Provedor listado aqui (pelo `provider` da prontidão: `focus_nfe`,
@@ -1227,9 +1202,7 @@ SHOPMAN_FISCAL_EMISSION_RESOLVER = (
 # contador. Liga na virada, junto com o adapter fiscal. Gate em
 # shopman.shop.handlers.fiscal_gate; para ver o estrago antes de ligar,
 # `manage.py fiscal_audit_catalog`.
-SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool(
-    "SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False
-)
+SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = _env_bool("SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH", False)
 
 SHOPMAN_FOCUS_NFE = {
     "environment": os.environ.get("FOCUS_NFE_ENVIRONMENT", "homologacao").strip().lower() or "homologacao",
@@ -1270,9 +1243,7 @@ SHOPMAN_PURCHASE_NFE = {
 # por PIN. Default R$ 5,00 (500q) — política definida pelo Pablo (2026-07-13,
 # Questão 2 do QA exploratório do backstage). Overrides de preço exigem
 # aprovação SEMPRE, independente deste piso.
-SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(
-    os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500")
-)
+SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q = int(os.environ.get("SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q", "500"))
 SHOPMAN_ACCOUNTING_BACKEND = None
 
 # Operator email for backend notifications (order alerts, etc.).
@@ -1282,14 +1253,10 @@ SHOPMAN_OPERATOR_EMAIL = None
 # Retenção da trilha de acessos de operador (SignInEvent), em dias.
 # 180 dias: longo o bastante para investigar "mês passado", curto o bastante para
 # a tabela nunca virar problema. A varredura roda no maintenance_worker.
-SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS = int(
-    os.environ.get("SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS", "180")
-)
+SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS = int(os.environ.get("SHOPMAN_SIGN_IN_AUDIT_RETENTION_DAYS", "180"))
 
 # PIX payment expiry in seconds (default: 1 hour).
-SHOPMAN_PIX_EXPIRY_SECONDS = int(
-    os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600")
-)
+SHOPMAN_PIX_EXPIRY_SECONDS = int(os.environ.get("SHOPMAN_PIX_EXPIRY_SECONDS", "3600"))
 
 SHOPMAN_STRIPE = {
     "publishable_key": STRIPE_PUBLISHABLE_KEY,
@@ -1341,9 +1308,7 @@ SHOPMAN_EFI_WEBHOOK = {
     # Ver o contrato de o que é confiado como IP de origem em
     # shopman/shop/webhooks/efi.py.
     "ip_allowlist": tuple(
-        entry.strip()
-        for entry in os.environ.get("EFI_WEBHOOK_IP_ALLOWLIST", "").split(",")
-        if entry.strip()
+        entry.strip() for entry in os.environ.get("EFI_WEBHOOK_IP_ALLOWLIST", "").split(",") if entry.strip()
     ),
 }
 
@@ -1367,11 +1332,15 @@ SHOPMAN_STOREFRONT_CHANNEL_REF = "web"
 # Na arquitetura desacoplada, em produção isto vira o apex (ex.: https://nelson.com);
 # em staging path-routed, a base da loja (ex.: https://…/thing). Sem trailing slash.
 SHOPMAN_STOREFRONT_BASE_URL = (
-    os.environ.get("SHOPMAN_STOREFRONT_BASE_URL")
-    or os.environ.get("WHATSAPP_STOREFRONT_URL")
-    or os.environ.get("SHOPMAN_DOMAIN")
-    or ""
-).strip().rstrip("/")
+    (
+        os.environ.get("SHOPMAN_STOREFRONT_BASE_URL")
+        or os.environ.get("WHATSAPP_STOREFRONT_URL")
+        or os.environ.get("SHOPMAN_DOMAIN")
+        or ""
+    )
+    .strip()
+    .rstrip("/")
+)
 
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
@@ -1385,49 +1354,35 @@ SHOPMAN_POS_CHANNEL_REF = os.environ.get("SHOPMAN_POS_CHANNEL_REF", "pdv")
 # app Nuxt (surfaces/pos-nuxt). Vazio ⇒ o POS não está conectado neste
 # contexto (ex.: o gate Omotenashi storefront+operador não sobe o POS), e os
 # links/checks de POS são pulados em vez de apontarem para uma rota morta.
-SHOPMAN_POS_BASE_URL = (
-    os.environ.get("SHOPMAN_POS_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_POS_BASE_URL = (os.environ.get("SHOPMAN_POS_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do Gestor de Pedidos (operador) — app Nuxt dedicado
 # (surfaces/orders-nuxt). Vazio ⇒ o item "Pedidos" some do nav do Admin
 # (sem link morto), e o operador acessa direto pelo subdomínio (gestor.).
-SHOPMAN_ORDERS_BASE_URL = (
-    os.environ.get("SHOPMAN_ORDERS_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_ORDERS_BASE_URL = (os.environ.get("SHOPMAN_ORDERS_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do KDS (operador) — app Nuxt dedicado (surfaces/kds-nuxt).
 # Vazio ⇒ o item "KDS" some do nav do Admin (sem link morto).
-SHOPMAN_KDS_BASE_URL = (
-    os.environ.get("SHOPMAN_KDS_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_KDS_BASE_URL = (os.environ.get("SHOPMAN_KDS_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública da Produção (operador) — app Nuxt dedicado
 # (surfaces/production-nuxt). Vazio ⇒ o item "Produção ao vivo" some do nav
 # do Admin (sem link morto), e o operador acessa direto pelo subdomínio (prod.).
-SHOPMAN_PRODUCTION_BASE_URL = (
-    os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_PRODUCTION_BASE_URL = (os.environ.get("SHOPMAN_PRODUCTION_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do Marketing (surfaces/marketing-nuxt) — app Nuxt dedicado,
 # publicado em `mkt.` (staging: mkt.boulangerie.com.br). Vazio ⇒ o tile
 # "Marketing" some da Central, sem link morto.
-SHOPMAN_MARKETING_BASE_URL = (
-    os.environ.get("SHOPMAN_MARKETING_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_MARKETING_BASE_URL = (os.environ.get("SHOPMAN_MARKETING_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do B.I. (surfaces/bi-nuxt) — app Nuxt dedicado, publicado em
 # `bi.` (staging: bi.boulangerie.com.br). Vazio ⇒ o tile "B.I." some da Central,
 # sem link morto.
-SHOPMAN_BI_BASE_URL = (
-    os.environ.get("SHOPMAN_BI_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_BI_BASE_URL = (os.environ.get("SHOPMAN_BI_BASE_URL") or "").strip().rstrip("/")
 
 # Base URL pública do Compras (surfaces/purchase-nuxt) — app Nuxt dedicado,
 # publicado em `compras.`. Vazio ⇒ o tile/link some, sem rota morta.
-SHOPMAN_PURCHASE_BASE_URL = (
-    os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or ""
-).strip().rstrip("/")
+SHOPMAN_PURCHASE_BASE_URL = (os.environ.get("SHOPMAN_PURCHASE_BASE_URL") or "").strip().rstrip("/")
 
 # Zona de operador (OPERATOR-AUTH-PLAN, Opção A) — login único + sessão Django
 # escopada a um domínio-pai SEPARADO da loja pública. Os apps de operador
@@ -1452,8 +1407,8 @@ SHOPMAN_OPERATOR_API_HOST = (os.environ.get("SHOPMAN_OPERATOR_API_HOST") or "").
 #: `https://{host}{caminho}` no QR do comprovante de caixa — onde um valor com
 #: esquema viraria `https://https://…`, um QR que não abre nada.
 SHOPMAN_ADMIN_HOST = (
-    os.environ.get("SHOPMAN_ADMIN_HOST", "")
-).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+    (os.environ.get("SHOPMAN_ADMIN_HOST", "")).strip().removeprefix("https://").removeprefix("http://").rstrip("/")
+)
 
 # URLs das superfícies para a Central de Apps (surfaces/hub-nuxt). REUSA as base URLs
 # públicas que o nav do Admin já usa — UMA fonte por superfície (DRY): quem já configurou
@@ -1489,7 +1444,10 @@ SHOPMAN_MENUBOARD_PUBLIC = os.environ.get("SHOPMAN_MENUBOARD_PUBLIC", "false").s
 # ter um TOTPDevice confirmado (management command `setup_admin_totp`). Em PROD,
 # combinar com IP allowlist no ingress do admin. (OPERATOR-APPS-PLAN Fase 3 · WP-A1.)
 SHOPMAN_ADMIN_REQUIRE_2FA = (os.environ.get("SHOPMAN_ADMIN_REQUIRE_2FA", "") or "").strip().lower() in {
-    "1", "true", "yes", "on",
+    "1",
+    "true",
+    "yes",
+    "on",
 }
 
 # ── Portas do Admin que a biblioteca deixa abertas por default ──────────────
@@ -1531,13 +1489,9 @@ SHOPMAN_STOREFRONT_CHANNEL_REF = os.environ.get("SHOPMAN_STOREFRONT_CHANNEL_REF"
 SHOPMAN_BACKUP_SHEET_HOST = os.environ.get("SHOPMAN_BACKUP_SHEET_HOST", "")
 SHOPMAN_BACKUP_SHEET_URL = os.environ.get("SHOPMAN_BACKUP_SHEET_URL", "")
 
-SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(
-    os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20")
-)
+SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT = int(os.environ.get("SHOPMAN_EMPLOYEE_DISCOUNT_PERCENT", "20"))
 
-SHOPMAN_CART_MUTATION_PERF_LOG_MS = float(
-    os.environ.get("SHOPMAN_CART_MUTATION_PERF_LOG_MS", "0")
-)
+SHOPMAN_CART_MUTATION_PERF_LOG_MS = float(os.environ.get("SHOPMAN_CART_MUTATION_PERF_LOG_MS", "0"))
 
 # ── Rules security — allowed module prefixes for RuleConfig.rule_path ──
 # Any rule_path not starting with one of these prefixes is rejected at clean()
@@ -1597,9 +1551,7 @@ LOGGING = {
 # Cadência do polling do tracking (segundos). Default 30 (referência iFood).
 # Configurável por deployment enquanto o push por SSE não é o principal; o campo
 # no Admin (Shop) é follow-up coordenado com a migração do backstage.
-STOREFRONT_TRACKING_POLL_SECONDS = int(
-    os.environ.get("STOREFRONT_TRACKING_POLL_SECONDS", "30") or "30"
-)
+STOREFRONT_TRACKING_POLL_SECONDS = int(os.environ.get("STOREFRONT_TRACKING_POLL_SECONDS", "30") or "30")
 
 # ── Error tracking (Sentry) ───────────────────────────────────────────
 #
@@ -1729,9 +1681,7 @@ if not DEBUG:
     assert SECRET_KEY != "dev-secret-key-not-for-production", (
         "SECRET_KEY must be set in production (DJANGO_SECRET_KEY env var)"
     )
-    assert ALLOWED_HOSTS != ["*"], (
-        "ALLOWED_HOSTS must be explicit in production (DJANGO_ALLOWED_HOSTS env var)"
-    )
+    assert ALLOWED_HOSTS != ["*"], "ALLOWED_HOSTS must be explicit in production (DJANGO_ALLOWED_HOSTS env var)"
 
     SECURE_BROWSER_XSS_FILTER = True
     SESSION_COOKIE_SECURE = True

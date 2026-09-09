@@ -22,6 +22,24 @@ logger = logging.getLogger(__name__)
 # decisão (concluir tarde ou cancelar) é dele, não do relógio.
 UNFINISHED_ALERTED_KEY = "unfinished_alerted_at"
 
+_RESOLVED_ALERT_TYPES_BY_ACTION = {
+    "started": ("production_forgotten",),
+    "finished": (
+        "production_late",
+        "production_forgotten",
+        "production_unfinished",
+        "production_stock_short",
+        "production_batch_traceability",
+    ),
+    "voided": (
+        "production_late",
+        "production_forgotten",
+        "production_unfinished",
+        "production_stock_short",
+        "production_batch_traceability",
+    ),
+}
+
 
 def connect() -> None:
     """Connect production alert receivers to Craftsman lifecycle signals."""
@@ -48,8 +66,22 @@ def on_production_changed(sender, product_ref, date, action, work_order, **kwarg
     :func:`shopman.shop.handlers._resilient.resilient_receiver`).
     """
     ensure_late_check_scheduled()
+    _resolve_obsolete_alerts(action, work_order)
     if action == "finished":
         maybe_create_low_yield_alert(work_order)
+
+
+def _resolve_obsolete_alerts(action: str, work_order) -> int:
+    """Close transient alerts when the WO lifecycle proves their cause ended."""
+    alert_types = _RESOLVED_ALERT_TYPES_BY_ACTION.get(action, ())
+    return sum(
+        alert_adapter.resolve(
+            alert_type,
+            order_ref=work_order.ref,
+            actor="system:production-lifecycle",
+        )
+        for alert_type in alert_types
+    )
 
 
 def on_production_stock_shortfall(sender, work_order, shortfalls, **kwargs):
@@ -141,7 +173,12 @@ class ProductionLateCheckHandler:
 
 
 def maybe_create_low_yield_alert(work_order) -> bool:
-    """Create a low-yield alert when finished quantity is below threshold."""
+    """Record and notify a low-yield outcome without inventing an open cause.
+
+    O operador já informou a quantidade e o motivo no fechamento. Portanto,
+    yield baixo é um fato histórico/BI, não uma pendência que possa ser
+    "resolvida" depois. Rupturas reais de estoque/pedido têm alertas próprios.
+    """
     if work_order.finished is None:
         return False
 
@@ -157,7 +194,10 @@ def maybe_create_low_yield_alert(work_order) -> bool:
         f"Produção {work_order.ref} ({work_order.output_sku}) fechou com "
         f"yield de {int(yield_rate * 100)}%."
     )
-    if _recent_exists("production_low_yield", work_order.ref):
+    if alert_adapter.exists(
+        "production_low_yield",
+        order_ref=work_order.ref,
+    ):
         return False
     alert_adapter.create(
         "production_low_yield",
@@ -174,6 +214,11 @@ def maybe_create_low_yield_alert(work_order) -> bool:
             "output_sku": work_order.output_sku,
             "yield_percent": int(yield_rate * 100),
         },
+    )
+    alert_adapter.resolve(
+        "production_low_yield",
+        order_ref=work_order.ref,
+        actor="system:production-outcome-recorded",
     )
     return True
 
@@ -336,12 +381,11 @@ def _stamp_meta(work_order, key: str) -> None:
 
 
 def create_batch_traceability_alert(*, work_order_ref: str, output_sku: str, error: str) -> None:
-    """Alerta quando a fornada fechou mas os LOTES não foram gravados.
+    """Alerta quando a tentativa de fechamento não conseguiu gravar os LOTES.
 
-    Era um WARNING de log (best-effort); com a partição (ADR-017) a falha
-    silenciosa ficou mais cara — N lotes carregam desconto e validade, e lote
-    não gravado é preço cheio indevido e rastreabilidade perdida. O finish não
-    desfaz (a fornada FOI produzida); o operador precisa saber e regravar.
+    Com a partição (ADR-017), N lotes carregam desconto e validade. A transação
+    reverte o fechamento inteiro para STARTED e o operador tenta novamente na
+    Expedição; o ``finished`` bem-sucedido seguinte resolve este alerta.
     """
     if _recent_exists("production_batch_traceability", work_order_ref):
         return

@@ -16,6 +16,19 @@ User = get_user_model()
 BASE_URL = "/api/stockman"
 
 
+def _remote_quality_scope(channel_ref: str | None) -> dict:
+    if channel_ref == "remote":
+        return {
+            "safety_margin": 0,
+            "allowed_positions": ["vitrine"],
+            "excluded_positions": [],
+            "expiry_margin_days": 0,
+            "sells_nonconforming": False,
+            "allowed_quality_grade_refs": ["excellent", "standard"],
+        }
+    return {"safety_margin": 0, "allowed_positions": None}
+
+
 class StockmanAPITestBase(TestCase):
     """Base class with common setup for all Stockman API tests.
 
@@ -91,6 +104,38 @@ class AvailabilityTests(StockmanAPITestBase):
         data = resp.json()
         assert Decimal(data["total_available"]) == Decimal("10.000")
         assert len(data["positions"]) == 1
+
+    @override_settings(
+        STOCKMAN={
+            "SKU_VALIDATOR": "shopman.stockman.adapters.noop.NoopSkuValidator",
+            "CHANNEL_SCOPE_RESOLVER": ("shopman.stockman.tests.test_api._remote_quality_scope"),
+        }
+    )
+    def test_channel_position_filter_cannot_reintroduce_disallowed_grade(self):
+        Batch.objects.create(
+            ref="MIN-REMOTE",
+            sku=self.product.sku,
+            quality_grade_ref="minimal",
+        )
+        StockMovements.receive(
+            Decimal("5"),
+            self.product.sku,
+            position=self.vitrine,
+            batch="MIN-REMOTE",
+            reason="Produção rebaixada",
+        )
+
+        resp = self.client.get(
+            f"{BASE_URL}/availability/",
+            {
+                "sku": self.product.sku,
+                "channel_ref": "remote",
+                "position_ref": self.vitrine.ref,
+            },
+        )
+
+        assert resp.status_code == 200
+        assert Decimal(resp.json()["total_available"]) == Decimal("0")
 
     def test_availability_missing_sku(self):
         resp = self.client.get(f"{BASE_URL}/availability/")
@@ -197,9 +242,7 @@ class PromiseTests(StockmanAPITestBase):
         )
         assert resp.status_code == 400
 
-    @override_settings(
-        STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.DemandOkSkuValidator"}
-    )
+    @override_settings(STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.DemandOkSkuValidator"})
     def test_promise_demand_ok_approves_without_supply(self):
         resp = self.client.get(f"{BASE_URL}/promise/", {"sku": "PAO-FORMA", "qty": "7"})
         assert resp.status_code == 200
@@ -208,9 +251,7 @@ class PromiseTests(StockmanAPITestBase):
         assert data["availability_policy"] == "demand_ok"
         assert Decimal(data["available_qty"]) == Decimal("7.000")
 
-    @override_settings(
-        STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.PausedSkuValidator"}
-    )
+    @override_settings(STOCKMAN={"SKU_VALIDATOR": "shopman.stockman.tests.fakes.PausedSkuValidator"})
     def test_promise_paused_offer_rejects(self):
         StockMovements.receive(Decimal("10"), self.product.sku, position=self.vitrine, reason="Produção")
 
@@ -335,12 +376,16 @@ class ReceiveTests(StockmanAPITestBase):
 
     def test_receive_creates_move_and_updates_quant(self):
         """Critério: POST receive/ cria Move e atualiza Quant atomicamente."""
-        resp = self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA",
-            "qty": "20.000",
-            "position_ref": "vitrine",
-            "reference": "PO-2026-001",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "20.000",
+                "position_ref": "vitrine",
+                "reference": "PO-2026-001",
+            },
+            format="json",
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert data["sku"] == "PAO-FORMA"
@@ -355,43 +400,85 @@ class ReceiveTests(StockmanAPITestBase):
         assert move.delta == Decimal("20")
 
     def test_receive_multiple_creates_cumulative_balance(self):
-        self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA", "qty": "10.000", "position_ref": "vitrine", "reference": "PO-001",
-        }, format="json")
-        resp = self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA", "qty": "5.000", "position_ref": "vitrine", "reference": "PO-002",
-        }, format="json")
+        self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "10.000",
+                "position_ref": "vitrine",
+                "reference": "PO-001",
+            },
+            format="json",
+        )
+        resp = self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "5.000",
+                "position_ref": "vitrine",
+                "reference": "PO-002",
+            },
+            format="json",
+        )
         data = resp.json()
         assert Decimal(data["new_balance"]) == Decimal("15.000")
         assert Move.objects.count() == 2
 
     def test_receive_unknown_sku(self):
         # NoopSkuValidator aceita qualquer SKU como válido — receive retorna 201
-        resp = self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "INEXISTENTE", "qty": "10.000", "position_ref": "vitrine", "reference": "PO-001",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "INEXISTENTE",
+                "qty": "10.000",
+                "position_ref": "vitrine",
+                "reference": "PO-001",
+            },
+            format="json",
+        )
         assert resp.status_code == 201
 
     def test_receive_unknown_position(self):
-        resp = self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA", "qty": "10.000", "position_ref": "inexistente", "reference": "PO-001",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "10.000",
+                "position_ref": "inexistente",
+                "reference": "PO-001",
+            },
+            format="json",
+        )
         assert resp.status_code == 404
 
     def test_receive_with_notes(self):
-        resp = self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA", "qty": "10.000", "position_ref": "vitrine",
-            "reference": "PO-001", "notes": "Entrega matinal",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "10.000",
+                "position_ref": "vitrine",
+                "reference": "PO-001",
+                "notes": "Entrega matinal",
+            },
+            format="json",
+        )
         assert resp.status_code == 201
         move = Move.objects.first()
         assert move.reason == "Entrega matinal"
 
     def test_receive_generates_move_in_immutable_ledger(self):
         """Critério: Todas as operações de escrita geram Move no ledger imutável."""
-        self.client.post(f"{BASE_URL}/receive/", {
-            "sku": "PAO-FORMA", "qty": "10.000", "position_ref": "vitrine", "reference": "PO-001",
-        }, format="json")
+        self.client.post(
+            f"{BASE_URL}/receive/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "10.000",
+                "position_ref": "vitrine",
+                "reference": "PO-001",
+            },
+            format="json",
+        )
         move = Move.objects.first()
         assert move.delta > 0
         assert move.user == self.user
@@ -406,9 +493,16 @@ class IssueTests(StockmanAPITestBase):
 
     def test_issue_creates_negative_move(self):
         StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, reason="Produção")
-        resp = self.client.post(f"{BASE_URL}/issue/", {
-            "sku": "PAO-FORMA", "qty": "5.000", "position_ref": "vitrine", "reference": "WO-2026-042",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/issue/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "5.000",
+                "position_ref": "vitrine",
+                "reference": "WO-2026-042",
+            },
+            format="json",
+        )
         assert resp.status_code == 201
         data = resp.json()
         assert Decimal(data["new_balance"]) == Decimal("15.000")
@@ -416,25 +510,46 @@ class IssueTests(StockmanAPITestBase):
     def test_issue_fails_if_insufficient_qty(self):
         """Critério: POST issue/ falha se qty insuficiente (400)."""
         StockMovements.receive(Decimal("5"), self.product.sku, position=self.vitrine, reason="Produção")
-        resp = self.client.post(f"{BASE_URL}/issue/", {
-            "sku": "PAO-FORMA", "qty": "10.000", "position_ref": "vitrine", "reference": "WO-001",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/issue/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "10.000",
+                "position_ref": "vitrine",
+                "reference": "WO-001",
+            },
+            format="json",
+        )
         assert resp.status_code == 400
         data = resp.json()
         assert data["code"] == "INSUFFICIENT_QUANTITY"
 
     def test_issue_no_stock_at_position(self):
-        resp = self.client.post(f"{BASE_URL}/issue/", {
-            "sku": "PAO-FORMA", "qty": "5.000", "position_ref": "vitrine", "reference": "WO-001",
-        }, format="json")
+        resp = self.client.post(
+            f"{BASE_URL}/issue/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "5.000",
+                "position_ref": "vitrine",
+                "reference": "WO-001",
+            },
+            format="json",
+        )
         assert resp.status_code == 400
 
     def test_issue_generates_move_in_immutable_ledger(self):
         """Critério: Todas as operações de escrita geram Move no ledger imutável."""
         StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, reason="Produção")
-        self.client.post(f"{BASE_URL}/issue/", {
-            "sku": "PAO-FORMA", "qty": "5.000", "position_ref": "vitrine", "reference": "WO-001",
-        }, format="json")
+        self.client.post(
+            f"{BASE_URL}/issue/",
+            {
+                "sku": "PAO-FORMA",
+                "qty": "5.000",
+                "position_ref": "vitrine",
+                "reference": "WO-001",
+            },
+            format="json",
+        )
         # 2 moves: 1 receive + 1 issue
         assert Move.objects.count() == 2
         issue_move = Move.objects.order_by("-timestamp").first()
@@ -492,8 +607,12 @@ class MoveHistoryTests(StockmanAPITestBase):
 
     def test_moves_returns_paginated_history(self):
         """Critério: GET /api/stockman/moves/ retorna histórico paginado e filtrável."""
-        StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, user=self.user, reason="Produção manhã")
-        StockMovements.receive(Decimal("10"), self.croissant.sku, position=self.vitrine, user=self.user, reason="Produção manhã")
+        StockMovements.receive(
+            Decimal("20"), self.product.sku, position=self.vitrine, user=self.user, reason="Produção manhã"
+        )
+        StockMovements.receive(
+            Decimal("10"), self.croissant.sku, position=self.vitrine, user=self.user, reason="Produção manhã"
+        )
 
         resp = self.client.get(f"{BASE_URL}/moves/")
         assert resp.status_code == 200
@@ -549,7 +668,9 @@ class MoveHistoryTests(StockmanAPITestBase):
         assert data["results"][0]["move_type"] == "issue"
 
     def test_moves_fields(self):
-        StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, user=self.user, reason="Produção manhã")
+        StockMovements.receive(
+            Decimal("20"), self.product.sku, position=self.vitrine, user=self.user, reason="Produção manhã"
+        )
         resp = self.client.get(f"{BASE_URL}/moves/")
         move = resp.json()["results"][0]
         assert "id" in move
@@ -602,8 +723,20 @@ class HoldHistoryTests(StockmanAPITestBase):
     def test_holds_filter_by_sku(self):
         quant_pao = StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, reason="Produção")
         quant_cr = StockMovements.receive(Decimal("10"), self.croissant.sku, position=self.vitrine, reason="Produção")
-        Hold.objects.create(sku=self.product.sku, quant=quant_pao, quantity=Decimal("5"), target_date=date.today(), status=HoldStatus.PENDING)
-        Hold.objects.create(sku=self.croissant.sku, quant=quant_cr, quantity=Decimal("3"), target_date=date.today(), status=HoldStatus.PENDING)
+        Hold.objects.create(
+            sku=self.product.sku,
+            quant=quant_pao,
+            quantity=Decimal("5"),
+            target_date=date.today(),
+            status=HoldStatus.PENDING,
+        )
+        Hold.objects.create(
+            sku=self.croissant.sku,
+            quant=quant_cr,
+            quantity=Decimal("3"),
+            target_date=date.today(),
+            status=HoldStatus.PENDING,
+        )
 
         resp = self.client.get(f"{BASE_URL}/holds/", {"sku": "PAO-FORMA"})
         data = resp.json()
@@ -611,8 +744,20 @@ class HoldHistoryTests(StockmanAPITestBase):
 
     def test_holds_filter_active_only(self):
         quant = StockMovements.receive(Decimal("20"), self.product.sku, position=self.vitrine, reason="Produção")
-        Hold.objects.create(sku=self.product.sku, quant=quant, quantity=Decimal("5"), target_date=date.today(), status=HoldStatus.PENDING)
-        Hold.objects.create(sku=self.product.sku, quant=quant, quantity=Decimal("3"), target_date=date.today(), status=HoldStatus.RELEASED)
+        Hold.objects.create(
+            sku=self.product.sku,
+            quant=quant,
+            quantity=Decimal("5"),
+            target_date=date.today(),
+            status=HoldStatus.PENDING,
+        )
+        Hold.objects.create(
+            sku=self.product.sku,
+            quant=quant,
+            quantity=Decimal("3"),
+            target_date=date.today(),
+            status=HoldStatus.RELEASED,
+        )
 
         resp = self.client.get(f"{BASE_URL}/holds/", {"is_active": "true"})
         data = resp.json()

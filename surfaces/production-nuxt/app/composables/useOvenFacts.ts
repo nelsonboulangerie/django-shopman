@@ -1,4 +1,4 @@
-// O fato do forno é do SERVIDOR (ADR-021 §4): armar = enfornou, Concluir =
+// O fato do forno é do SERVIDOR (ADR-021 §4): armar = enfornou, retirar =
 // retirou; o Django carimba a hora no recebimento, como started_at/finished_at
 // da WO — sem relógio de cliente. O countdown/alarme continua 100% local
 // (useOvenTimers): aqui se DECLARAM os dois momentos com retry idempotente.
@@ -22,7 +22,10 @@ export function useOvenFacts(
   projection: MaybeRefOrGetter<QCKioskProjection | null | undefined>,
   refreshProjection: () => unknown,
 ) {
-  const mutationGuard = useProductionMutationGuard(projection, refreshProjection);
+  const mutationGuard = useProductionMutationGuard(
+    projection,
+    refreshProjection,
+  );
   const latestRev = new Map<number, number>();
   const attempts = new Map<string, string>();
   const pending = ref<Set<number>>(new Set());
@@ -41,11 +44,15 @@ export function useOvenFacts(
     const actionRef = `${action === "arm" ? "oven_arm" : "oven_conclude"}:${workOrderPk}`;
     const authorization = mutationGuard.authorizeMutation(actionRef);
     if (!authorization.ok) {
-      errors.value = new Map(errors.value).set(workOrderPk, authorization.blocked.detail);
+      errors.value = new Map(errors.value).set(
+        workOrderPk,
+        authorization.blocked.detail,
+      );
       return false;
     }
     const attemptRef = `${action}:${workOrderPk}`;
-    const idempotencyKey = attempts.get(attemptRef) ?? newProductionMutationKey();
+    const idempotencyKey =
+      attempts.get(attemptRef) ?? newProductionMutationKey();
     attempts.set(attemptRef, idempotencyKey);
     pending.value = new Set(pending.value).add(workOrderPk);
     errors.value = new Map(errors.value);
@@ -73,7 +80,10 @@ export function useOvenFacts(
       );
       errors.value = new Map(errors.value).set(workOrderPk, message);
       if (mutationGuard.handleMutationError(error)) return false;
-      void reportClientError(error, { kind: "oven-fact", source: `production.${action}` });
+      void reportClientError(error, {
+        kind: "oven-fact",
+        source: `production.${action}`,
+      });
       return false;
     } finally {
       const next = new Set(pending.value);
@@ -93,14 +103,18 @@ export function useOvenFacts(
       }),
     );
 
-  /** Declara "retirou" — o Concluir do timer. Só ele; expiração não mede. */
+  /** Declara "retirou" ao abrir o QC. ``Visto`` no timer nunca mede. */
   const concluded = (workOrderPk: number, rev: number) =>
-    declare("conclude", workOrderPk, rev, (idempotencyKey, expectedRev, metadata) =>
-      concludeProductionOven(workOrderPk, {
-        expected_rev: expectedRev,
-        ...metadata,
-        idempotency_key: idempotencyKey,
-      }),
+    declare(
+      "conclude",
+      workOrderPk,
+      rev,
+      (idempotencyKey, expectedRev, metadata) =>
+        concludeProductionOven(workOrderPk, {
+          expected_rev: expectedRev,
+          ...metadata,
+          idempotency_key: idempotencyKey,
+        }),
     );
 
   const currentRev = (workOrderPk: number, fallback: number) =>

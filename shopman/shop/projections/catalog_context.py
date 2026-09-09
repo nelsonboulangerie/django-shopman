@@ -514,6 +514,7 @@ def availability_for_sku(
                 excluded_positions=scope.get("excluded_positions"),
                 expiry_margin_days=scope.get("expiry_margin_days", 0),
                 include_nonconforming=scope.get("sells_nonconforming", True),
+                allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             )
 
         # ⚠️ O stockman não sabe o que é bundle — ele conta quant por SKU, e
@@ -565,6 +566,7 @@ def availability_for_skus(skus: list[str], *, channel_ref: str) -> dict[str, dic
             excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
     except Exception as exc:
         logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)

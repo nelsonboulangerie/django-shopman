@@ -1049,7 +1049,7 @@ def test_board_returns_payload(client, recipe, production_operator):
     assert action == {
         "ref": f"start:{work_order.pk}",
         "kind": "start",
-        "label": "Iniciar fornada",
+        "label": "Confirmar produzido",
         "priority": 20,
         "enabled": True,
         "reason": "",

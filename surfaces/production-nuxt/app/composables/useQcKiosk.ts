@@ -27,10 +27,10 @@ export interface QcActResult {
   blocked?: ProductionMutationBlock;
 }
 
-export function useQcKiosk() {
+export function useQcKiosk(initialDate = "") {
   // "" = hoje (default do backend). Outra data serve à fornada esquecida de
   // ontem — o fechamento aceita qualquer dia com ordem aberta.
-  const selectedDate = ref("");
+  const selectedDate = ref(initialDate);
 
   const { data, pending, error, refresh } = useFetch<ProductionQCResponse>(
     "/api/v1/backstage/production/qc/",

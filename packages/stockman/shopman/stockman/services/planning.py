@@ -20,8 +20,13 @@ from shopman.stockman.models.enums import HoldStatus
 from shopman.stockman.models.hold import Hold
 from shopman.stockman.models.move import Move
 from shopman.stockman.models.quant import Quant
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+)
 
-logger = logging.getLogger('shopman.stockman')
+logger = logging.getLogger("shopman.stockman")
 
 # Default TTL for holds after stock materializes (minutes).
 #
@@ -35,9 +40,7 @@ class StockPlanning:
     """Production planning methods."""
 
     @classmethod
-    def plan(cls, quantity, product, target_date,
-             position=None, user=None,
-             reason='Produção planejada', **metadata):
+    def plan(cls, quantity, product, target_date, position=None, user=None, reason="Produção planejada", **metadata):
         """
         Plan future production.
 
@@ -49,6 +52,7 @@ class StockPlanning:
             target_date: Target production date
         """
         from shopman.stockman.services.movements import StockMovements
+
         return StockMovements.receive(
             quantity=quantity,
             sku=product.sku,
@@ -56,12 +60,11 @@ class StockPlanning:
             target_date=target_date,
             user=user,
             reason=reason,
-            **metadata
+            **metadata,
         )
 
     @classmethod
-    def replan(cls, quantity, product, target_date,
-               reason, user=None, position=None, batch=''):
+    def replan(cls, quantity, product, target_date, reason, user=None, position=None, batch=""):
         """
         Adjust existing plan.
 
@@ -73,18 +76,27 @@ class StockPlanning:
         quant = StockQueries.get_quant(product.sku, target_date=target_date, position=position, batch=batch)
 
         if quant is None:
-            raise StockError('QUANT_NOT_FOUND', product=str(product), target_date=target_date)
+            raise StockError("QUANT_NOT_FOUND", product=str(product), target_date=target_date)
 
         StockMovements.adjust(quant, quantity, reason, user)
         quant.refresh_from_db()
         return quant
 
     @classmethod
-    def realize(cls, product, target_date, actual_quantity,
-                to_position, from_position=None, from_batch='',
-                user=None,
-                reason='Produção realizada', kind=Move.Kind.MAKE,
-                to_batch=''):
+    def realize(
+        cls,
+        product,
+        target_date,
+        actual_quantity,
+        to_position,
+        from_position=None,
+        from_batch="",
+        user=None,
+        reason="Produção realizada",
+        kind=Move.Kind.MAKE,
+        to_batch="",
+        to_quality_grade_ref="",
+    ):
         """
         Realize production (planned -> physical).
 
@@ -94,7 +106,7 @@ class StockPlanning:
         4. Holds are transferred automatically
         """
         if actual_quantity <= 0:
-            raise StockError('INVALID_QUANTITY', requested=actual_quantity)
+            raise StockError("INVALID_QUANTITY", requested=actual_quantity)
 
         from shopman.stockman.services.queries import StockQueries
 
@@ -117,7 +129,7 @@ class StockPlanning:
             quant = StockQueries.get_quant(sku, target_date=target_date)
 
         if quant is None:
-            raise StockError('QUANT_NOT_FOUND', product=str(product), target_date=target_date)
+            raise StockError("QUANT_NOT_FOUND", product=str(product), target_date=target_date)
 
         with transaction.atomic():
             locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
@@ -135,28 +147,41 @@ class StockPlanning:
             # inspeção (get_or_create): o desconto gravado no fechamento é
             # imutável aqui.
             batch_ref = to_batch or f"{sku}-{target_date:%Y%m%d}"
-            shelflife = getattr(product, 'shelf_life_days', None)
+            shelflife = getattr(product, "shelf_life_days", None)
             if shelflife is None:
                 from shopman.stockman.shelflife import shelf_life_days_for
+
                 shelflife = shelf_life_days_for(sku)
-            Batch.objects.get_or_create(
+            batch, batch_created = Batch.objects.select_for_update().get_or_create(
                 ref=batch_ref,
                 defaults={
-                    'sku': sku,
-                    'production_date': target_date,
-                    'expiry_date': (
-                        target_date + timedelta(days=shelflife)
-                        if shelflife is not None else None
-                    ),
+                    "sku": sku,
+                    "production_date": target_date,
+                    "expiry_date": (target_date + timedelta(days=shelflife) if shelflife is not None else None),
+                    "quality_grade_ref": to_quality_grade_ref,
                 },
             )
+            if batch.sku != sku:
+                raise StockError(
+                    "BATCH_SKU_CONFLICT",
+                    batch=batch_ref,
+                    current=batch.sku,
+                    requested=sku,
+                )
+            if to_quality_grade_ref and not batch_created:
+                if batch.quality_grade_ref and batch.quality_grade_ref != to_quality_grade_ref:
+                    raise StockError(
+                        "BATCH_QUALITY_CONFLICT",
+                        batch=batch_ref,
+                        current=batch.quality_grade_ref,
+                        requested=to_quality_grade_ref,
+                    )
+                if not batch.quality_grade_ref:
+                    batch.quality_grade_ref = to_quality_grade_ref
+                    batch.save(update_fields=["quality_grade_ref"])
 
             physical_quant, _ = Quant.objects.get_or_create(
-                sku=sku,
-                position=to_position,
-                target_date=None,
-                batch=batch_ref,
-                defaults={'metadata': {}}
+                sku=sku, position=to_position, target_date=None, batch=batch_ref, defaults={"metadata": {}}
             )
 
             # Transfer from planned → physical. The planned Quant may hold
@@ -165,14 +190,10 @@ class StockPlanning:
             # débito é limitado ao saldo planejado e o físico recebe o total
             # real — o excedente é ganho de produção, nunca perda do lote.
             planned_balance = Decimal(str(locked_quant.quantity))
-            planned_debit = min(actual_quantity, max(planned_balance, Decimal('0')))
+            planned_debit = min(actual_quantity, max(planned_balance, Decimal("0")))
             if planned_debit > 0:
                 Move.objects.create(
-                    quant=locked_quant,
-                    delta=-planned_debit,
-                    reason=f"Transferência: {reason}",
-                    kind=kind,
-                    user=user
+                    quant=locked_quant, delta=-planned_debit, reason=f"Transferência: {reason}", kind=kind, user=user
                 )
 
             Move.objects.create(
@@ -180,7 +201,7 @@ class StockPlanning:
                 delta=actual_quantity,
                 reason=f"Recebido de produção: {reason}",
                 kind=kind,
-                user=user
+                user=user,
             )
 
             # Transfer holds up to actual_quantity. The pool covers the holds
@@ -195,11 +216,12 @@ class StockPlanning:
             #
             # Holds that were against planned stock get a TTL now
             # (the clock starts when stock materializes).
-            transferred = Decimal('0')
+            transferred = Decimal("0")
             materialized_hold_ids = []
             now = timezone.now()
             hold_ttl_minutes = getattr(
-                stockman_settings, 'MATERIALIZED_HOLD_TTL_MINUTES',
+                stockman_settings,
+                "MATERIALIZED_HOLD_TTL_MINUTES",
                 DEFAULT_MATERIALIZED_HOLD_TTL_MINUTES,
             )
             materialized_expires_at = now + timedelta(minutes=hold_ttl_minutes)
@@ -211,19 +233,28 @@ class StockPlanning:
                 sku=sku,
                 target_date=target_date,
                 status__in=active_statuses,
-            ).filter(
-                Q(expires_at__isnull=True) | Q(expires_at__gte=now)
-            )
+            ).filter(Q(expires_at__isnull=True) | Q(expires_at__gte=now))
 
             def _priority(hold):
-                value = (hold.metadata or {}).get('priority')
+                value = (hold.metadata or {}).get("priority")
                 try:
                     return (0, int(value)) if value is not None else (1, 0)
                 except (TypeError, ValueError):
                     return (1, 0)
 
+            def _accepts_output_grade(hold):
+                metadata = hold.metadata or {}
+                if metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
+                    # Hold legado sem canal/escopo congelado: não existe base
+                    # segura para presumir que um lote rebaixado era elegível.
+                    return False
+                allowlist = metadata.get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+                if allowlist is None:
+                    return True
+                return bool(to_quality_grade_ref and to_quality_grade_ref in set(allowlist))
+
             pool = sorted(
-                [*anchored, *floating],
+                filter(_accepts_output_grade, [*anchored, *floating]),
                 key=lambda hold: (*_priority(hold), hold.created_at),
             )
 
@@ -235,10 +266,10 @@ class StockPlanning:
                 hold.quant = physical_quant
                 # Start the clock: set expires_at if hold had no timeout
                 # (was a purchase intention against planned stock)
-                update_fields = ['quant']
+                update_fields = ["quant"]
                 if hold.expires_at is None:
                     hold.expires_at = materialized_expires_at
-                    update_fields.append('expires_at')
+                    update_fields.append("expires_at")
                 hold.save(update_fields=update_fields)
                 transferred += hold.quantity
                 materialized_hold_ids.append(hold.hold_id)

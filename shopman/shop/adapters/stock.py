@@ -143,6 +143,7 @@ def create_hold(
             # da leitura — vitrine e hold nunca discordam.
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             allow_demand=allow_demand,
             **hold_kwargs,
         )
@@ -281,10 +282,7 @@ def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
         return {
             "success": False,
             "error_code": "insufficient_quantity",
-            "message": (
-                "O banco recusou a baixa: o saldo do sistema está acima do "
-                f"físico. ({e})"
-            ),
+            "message": (f"O banco recusou a baixa: o saldo do sistema está acima do físico. ({e})"),
         }
 
 
@@ -397,11 +395,7 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
         pk = int(hold_id.split(":")[1])
     except (IndexError, ValueError):
         return False
-    hold = (
-        Hold.objects.select_related("quant__position")
-        .filter(pk=pk, status=HoldStatus.FULFILLED)
-        .first()
-    )
+    hold = Hold.objects.select_related("quant__position").filter(pk=pk, status=HoldStatus.FULFILLED).first()
     if hold is None:
         return False
 
@@ -427,6 +421,7 @@ def get_availability(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     """Return availability info for a SKU.
 
@@ -444,6 +439,7 @@ def get_availability(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
 
 
@@ -451,8 +447,9 @@ def get_channel_scope(channel_ref: str | None) -> dict:
     """Return stock scope for a channel.
 
     Keys: ``safety_margin`` (int), ``allowed_positions`` (list[str] | None),
-    ``excluded_positions`` (list[str] | None), ``expiry_margin_days`` (int)
-    and ``sells_nonconforming`` (bool) — os dois gates de LOTE do C2: a
+    ``excluded_positions`` (list[str] | None), ``expiry_margin_days`` (int),
+    ``sells_nonconforming`` (compatibilidade) e a política resolvida
+    ``allowed_quality_grade_refs`` — os dois gates de LOTE do C2: a
     posição diz onde o estoque conta; o lote diz o que pode ser oferecido
     (near-expiry fora com margem; não conforme só com decisão explícita).
 
@@ -467,15 +464,26 @@ def get_channel_scope(channel_ref: str | None) -> dict:
 
         return availability_scope_for_channel(channel_ref)
 
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig, quality_grade_refs_for_channel
 
     cfg = ChannelConfig.for_channel(channel_ref)
+    allowed_quality_grade_refs = quality_grade_refs_for_channel(
+        channel_ref,
+        sells_nonconforming=cfg.stock.sells_nonconforming,
+    )
+    sells_nonconforming = allowed_quality_grade_refs is None
     return {
         "safety_margin": cfg.stock.safety_margin,
         "allowed_positions": cfg.stock.allowed_positions,
         "excluded_positions": cfg.stock.excluded_positions,
         "expiry_margin_days": cfg.stock.expiry_margin_days,
-        "sells_nonconforming": cfg.stock.sells_nonconforming,
+        "sells_nonconforming": sells_nonconforming,
+        # A configuração continua binária e simples. O orquestrador traduz a
+        # política em refs opacas antes de atravessar a fronteira do Stockman.
+        # Canais que não permitem markdown aceitam exclusivamente qualidade OK.
+        "allowed_quality_grade_refs": (
+            None if allowed_quality_grade_refs is None else list(allowed_quality_grade_refs)
+        ),
     }
 
 
@@ -489,6 +497,7 @@ def get_promise_decision(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ):
     """Return Stockman's explicit operational promise decision for a SKU."""
     from shopman.stockman.services.availability import promise_decision_for_sku
@@ -502,6 +511,7 @@ def get_promise_decision(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
 
 

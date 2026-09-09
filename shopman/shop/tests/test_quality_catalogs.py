@@ -20,8 +20,13 @@ pytestmark = pytest.mark.django_db
 
 class TestSeed:
     def test_a_escala_nasce_com_quatro_graus_ordenados(self):
-        refs = list(QualityGrade.objects.order_by("-rank").values_list("ref", flat=True))
-        assert refs == ["excellent", "standard", "fair", "minimal"]
+        grades = list(QualityGrade.objects.order_by("-rank").values_list("ref", "label"))
+        assert grades == [
+            ("excellent", "Ótimo"),
+            ("standard", "Normal"),
+            ("fair", "Razoável"),
+            ("minimal", "Mínimo"),
+        ]
 
     def test_o_padrao_e_standard(self):
         assert QualityGrade.objects.get(is_default=True).ref == "standard"

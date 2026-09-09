@@ -12,7 +12,7 @@ from django.core.management.base import CommandError
 from django.test import override_settings
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY, craft
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
+from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
 from shopman.craftsman.models.recipe import _item_mass_in_kg
 from shopman.guestman.models import Customer
 from shopman.offerman.models import Product
@@ -21,11 +21,17 @@ from shopman.payman.models import PaymentIntent
 from shopman.stockman.models import Batch, Move, Position
 from shopman.utils import units
 
+from config.management.commands.seed import (
+    Command,
+    _discard_owned_seed_output_batch,
+    _ensure_seed_standard_batch,
+)
 from shopman.backstage.models import (
     KDSInstance,
     OperationChecklistRun,
     OperationChecklistTemplate,
     OperatorAlert,
+    OvenRun,
     POSTab,
 )
 from shopman.backstage.services.omotenashi_qa import build_omotenashi_qa_report
@@ -193,6 +199,82 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     ]
     assert not open_ledger, f"fornadas do seed sem marcador de ledger: {open_ledger[:5]}"
 
+    # O seed é contrato executável do QC: toda saída tem um único grau por
+    # fornada e lote congelado; markdown e perda têm exatamente um motivo;
+    # perda nunca ganha grau/lote; produzido + perda conserva a entrada.
+    seed_finished = list(
+        WorkOrder.objects.filter(
+            source_ref__startswith="seed:production:",
+            status=WorkOrder.Status.FINISHED,
+        )
+    )
+    outcomes = list(
+        WorkOrderItem.objects.filter(
+            work_order__in=seed_finished,
+            kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+        ).order_by("work_order_id", "pk")
+    )
+    batches = {
+        batch.ref: batch
+        for batch in Batch.objects.filter(
+            ref__in=[item.batch_ref for item in outcomes if item.batch_ref]
+        )
+    }
+    by_work_order: dict[int, list[WorkOrderItem]] = {}
+    for item in outcomes:
+        by_work_order.setdefault(item.work_order_id, []).append(item)
+        if item.kind == WorkOrderItem.Kind.OUTPUT:
+            assert item.quality_grade_ref in {"excellent", "standard", "fair", "minimal"}
+            assert item.batch_ref
+            assert item.meta.get("quality_contract_version") == 1
+            assert item.meta.get("batch_traceability")
+            assert batches[item.batch_ref].quality_grade_ref == item.quality_grade_ref
+            if item.quality_grade_ref in {"fair", "minimal"}:
+                assert item.quality_defect_ref
+        else:
+            assert item.quality_defect_ref
+            assert not item.quality_grade_ref
+            assert not item.batch_ref
+
+    mixed = 0
+    for work_order in seed_finished:
+        lines = by_work_order[work_order.pk]
+        output_grades = [
+            item.quality_grade_ref
+            for item in lines
+            if item.kind == WorkOrderItem.Kind.OUTPUT
+        ]
+        assert len(output_grades) == len(set(output_grades))
+        assert sum((item.quantity for item in lines), Decimal("0")) == (
+            work_order.started_qty or work_order.quantity
+        )
+        mixed += len(output_grades) > 1
+    assert mixed > 0, "o seed deixou de exercitar vários graus na mesma fornada"
+
+    total_loss = WorkOrder.objects.get(
+        source_ref__startswith="seed:production:history-",
+        recipe__ref="croissant",
+        finished=0,
+    )
+    assert total_loss.finished == 0
+    assert not total_loss.items.filter(kind=WorkOrderItem.Kind.OUTPUT).exists()
+    loss = total_loss.items.get(kind=WorkOrderItem.Kind.WASTE)
+    assert loss.quantity == (total_loss.started_qty or total_loss.quantity)
+    finished_event = total_loss.events.get(kind="finished")
+    assert finished_event.payload["context"]["production_outcome"]["kind"] == "total_loss"
+
+    # Medições históricas de forno são fatos sintéticos de BI, nunca timers
+    # locais órfãos: todo registro é marcado e aponta para WO deste seed.
+    oven_runs = list(OvenRun.objects.all())
+    assert oven_runs
+    seed_work_order_refs = set(
+        WorkOrder.objects.filter(source_ref__startswith="seed:production:")
+        .values_list("ref", flat=True)
+    )
+    assert all(run.metadata.get("seed") == "nelson" for run in oven_runs)
+    assert all(run.metadata.get("source") == "synthetic_bi_history" for run in oven_runs)
+    assert {run.work_order_ref for run in oven_runs} <= seed_work_order_refs
+
     # E a prova pelo comportamento: o ciclo do ``maintenance_worker`` logo após
     # um reseed não pode mover um grama de insumo antigo.
     flour_before = stock_service.available("FARINHA-T65")
@@ -246,7 +328,12 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
         "forno",
     }
     assert OperatorAlert.objects.filter(type="production_late", acknowledged=False).exists()
-    assert OperatorAlert.objects.filter(type="production_low_yield", acknowledged=False).exists()
+    # Yield baixo já foi explicado no QC: fica como fato auditável/BI, não como
+    # causa ativa eterna. Rupturas de estoque/pedido continuam abertas à parte.
+    assert OperatorAlert.objects.filter(
+        type="production_low_yield",
+        resolved_by="system:production-outcome-recorded",
+    ).exists()
     assert OperatorAlert.objects.filter(type="production_stock_short", acknowledged=False).exists()
     assert set(KDSInstance.objects.values_list("ref", flat=True)) >= {"cafes", "lanches", "encomendas", "expedicao"}
     assert set(OperationChecklistTemplate.objects.values_list("ref", flat=True)) >= {
@@ -365,6 +452,95 @@ def test_nelson_seed_rejects_default_admin_password_when_not_debug(monkeypatch):
     with override_settings(DEBUG=False):
         with pytest.raises(CommandError):
             call_command("seed", stdout=StringIO())
+
+
+@pytest.mark.django_db
+def test_seed_batch_helper_never_rewrites_frozen_quality():
+    batch = Batch.objects.create(
+        ref="CT-20260909-SEED",
+        sku="CT",
+        production_date=date(2026, 9, 9),
+        expiry_date=date(2026, 9, 9),
+        quality_grade_ref="fair",
+        nonconformity_percent=20,
+        nonconformity_reason="Assou demais",
+    )
+
+    with pytest.raises(CommandError, match="não reescreve QC congelado"):
+        _ensure_seed_standard_batch(
+            ref=batch.ref,
+            sku=batch.sku,
+            production_date=batch.production_date,
+            expiry_date=batch.expiry_date,
+        )
+
+    batch.refresh_from_db()
+    assert batch.quality_grade_ref == "fair"
+    assert batch.nonconformity_percent == 20
+    assert batch.nonconformity_reason == "Assou demais"
+
+
+@pytest.mark.django_db
+def test_seed_only_replaces_output_batch_that_carries_its_signature():
+    owned = Batch.objects.create(
+        ref="CT-20260909-OWNED",
+        sku="CT",
+        notes="Seed Nelson producao WO-SEED",
+    )
+    _discard_owned_seed_output_batch(
+        ref=owned.ref,
+        sku="CT",
+        work_order_ref="WO-SEED",
+    )
+    assert not Batch.objects.filter(pk=owned.pk).exists()
+
+    real = Batch.objects.create(
+        ref="CT-20260909-REAL",
+        sku="CT",
+        notes="Produção conferida pela equipe",
+        quality_grade_ref="fair",
+    )
+    with pytest.raises(CommandError, match="fora do domínio do seed"):
+        _discard_owned_seed_output_batch(
+            ref=real.ref,
+            sku="CT",
+            work_order_ref="WO-SEED",
+        )
+    real.refresh_from_db()
+    assert real.quality_grade_ref == "fair"
+
+
+@pytest.mark.django_db
+def test_seed_oven_history_never_touches_real_measurement():
+    from shopman.backstage.models import OvenRun
+
+    recipe = Recipe.objects.create(
+        ref="real-oven-run",
+        name="Fornada real",
+        output_sku="REAL-OVEN-RUN",
+        batch_size=Decimal("1"),
+    )
+    work_order = craft.plan(recipe, 1, date=date.today())
+    WorkOrder.objects.filter(pk=work_order.pk).update(source_ref="real:production:oven")
+    craft.finish(work_order, finished=1, actor="test")
+    work_order.refresh_from_db()
+    real_run = OvenRun.objects.create(
+        work_order_ref=work_order.ref,
+        planned_seconds=1200,
+        armed_at=work_order.finished_at - timedelta(minutes=20),
+        concluded_at=work_order.finished_at,
+        status="concluded",
+        metadata={"source": "operator"},
+    )
+
+    Command()._seed_oven_runs(days=1)
+
+    real_run.refresh_from_db()
+    assert real_run.metadata == {"source": "operator"}
+    assert not OvenRun.objects.filter(
+        work_order_ref=work_order.ref,
+        metadata__seed="nelson",
+    ).exists()
 
 
 @pytest.mark.django_db

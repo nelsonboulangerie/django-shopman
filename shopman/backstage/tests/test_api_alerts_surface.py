@@ -7,10 +7,14 @@ acknowledgement are additionally scoped by alert audience and actor capability.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import pytest
 from django.contrib.auth.models import Permission, User
 from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
+from shopman.craftsman import craft
+from shopman.craftsman.models import Recipe
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import alerts as alert_service
@@ -113,7 +117,7 @@ def test_list_returns_alerts_and_counts(client, operator, alert):
     assert first["actions"][0] == {
         "ref": f"acknowledge:{alert.pk}",
         "kind": "acknowledge_alert",
-        "label": "Reconhecer",
+        "label": "Visto",
         "priority": 20,
         "enabled": True,
         "reason": "",
@@ -142,13 +146,14 @@ def test_list_returns_alerts_and_counts(client, operator, alert):
 
 
 @pytest.mark.django_db
-def test_list_excludes_acknowledged(client, operator, alert):
+def test_list_keeps_acknowledged_alert_until_the_cause_is_resolved(client, operator, alert):
     alert.acknowledged = True
     alert.save(update_fields=["acknowledged"])
     client.force_login(operator)
     body = client.get(reverse("api-backstage-alerts")).json()
-    assert body["counts"]["active"] == 0
-    assert body["alerts"] == []
+    assert body["counts"]["active"] == 1
+    assert [row["pk"] for row in body["alerts"]] == [alert.pk]
+    assert not any(action["kind"] == "acknowledge_alert" for action in body["alerts"][0]["actions"])
 
 
 @pytest.mark.django_db
@@ -172,6 +177,68 @@ def test_ack_marks_alert(client, operator, alert):
     assert alert.acknowledged is True
     assert alert.acknowledged_at is not None
     assert alert.acknowledged_by == operator.username
+    current = client.get(reverse("api-backstage-alerts")).json()
+    assert [row["pk"] for row in current["alerts"]] == [alert.pk]
+
+
+@pytest.mark.django_db
+def test_production_alert_projects_server_owned_recovery_context(client, shop):
+    operator = User.objects.create_user("production-context", password="pw", is_staff=True)
+    operator.user_permissions.add(_permission("backstage", "operate_production"))
+    recipe = Recipe.objects.create(
+        ref="alert-deep-link",
+        name="Pao de alerta",
+        output_sku="ALERT-DEEP-LINK",
+        batch_size=1,
+    )
+    target_date = date.today() - timedelta(days=1)
+    work_order = craft.plan(recipe, 1, date=target_date)
+    alert = OperatorAlert.objects.create(
+        type="production_unfinished",
+        audience="production",
+        severity="error",
+        message="Fornada ainda aberta",
+        order_ref=work_order.ref,
+    )
+    client.force_login(operator)
+
+    projected = client.get(reverse("api-backstage-alerts")).json()
+    row = next(item for item in projected["alerts"] if item["pk"] == alert.pk)
+    context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
+
+    assert context["method"] == "GET"
+    assert context["href"] == (
+        f"/expedite?q={work_order.ref}&date={target_date.isoformat()}"
+    )
+    assert context["source_alert_effect"] == "keeps_open"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "alert_type",
+    ("production_low_yield", "production_batch_traceability"),
+)
+def test_production_close_alerts_route_to_expedition(client, shop, alert_type):
+    operator = User.objects.create_user(
+        f"production-{alert_type}",
+        password="pw",
+        is_staff=True,
+    )
+    operator.user_permissions.add(_permission("backstage", "operate_production"))
+    alert = OperatorAlert.objects.create(
+        type=alert_type,
+        audience="production",
+        severity="error",
+        message="Resolver fechamento",
+        order_ref="WO-42",
+    )
+    client.force_login(operator)
+
+    projected = client.get(reverse("api-backstage-alerts")).json()
+    row = next(item for item in projected["alerts"] if item["pk"] == alert.pk)
+    context = next(action for action in row["actions"] if action["kind"] == "open_alert_context")
+
+    assert context["href"] == "/expedite?q=WO-42"
 
 
 @pytest.mark.django_db

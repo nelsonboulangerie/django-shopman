@@ -36,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 WO_STATUS_LABELS: dict[str, str] = {
     "planned": "Planejado",
-    "started": "Iniciado",
+    "started": "Produzido",
     "finished": "Concluído",
     "void": "Estornado",
 }
@@ -96,12 +96,13 @@ class ProductionActionProjection:
         "oven_arm",
         "oven_conclude",
         "acknowledge_alert",
+        "open_alert_context",
     ]
     label: str
     priority: int
     enabled: bool
     reason: str
-    method: Literal["POST"]
+    method: Literal["GET", "POST"]
     href: str
     payload_schema: str
     expected_rev: int | None
@@ -634,10 +635,10 @@ def _board_actions(
                 _production_action(
                     ref=f"start:{order.pk}",
                     kind="start",
-                    label="Iniciar fornada",
+                    label="Confirmar produzido",
                     priority=20,
                     enabled=access.can_start,
-                    reason="Sem capacidade para iniciar fornadas.",
+                    reason="Sem capacidade para confirmar a quantidade produzida.",
                     href=f"/api/v1/backstage/production/{order.pk}/start/",
                     payload_schema="ProductionStartMutationRequest",
                     expected_rev=order.rev,
@@ -727,11 +728,11 @@ def _qc_actions(
             _production_action(
                 ref=f"finish:{card.pk}",
                 kind="finish",
-                label="Finalizar fornada",
+                label="Confirmar conclusão",
                 priority=10,
                 enabled=card.can_close,
                 reason=(
-                    "Inicie a fornada antes do QC."
+                    "Confirme a quantidade produzida antes do QC."
                     if card.status == WorkOrder.Status.PLANNED and not access.can_start
                     else "Sem capacidade para concluir o QC."
                 ),
@@ -739,7 +740,7 @@ def _qc_actions(
                 payload_schema="ProductionFinishMutationRequest",
                 expected_rev=card.rev,
                 confirmation_title="Confirmar resultado da fornada",
-                confirmation_label="Finalizar",
+                confirmation_label="Confirmar",
             )
         )
         if card.status == WorkOrder.Status.STARTED:
@@ -770,7 +771,7 @@ def _qc_actions(
             _production_action(
                 ref=f"quick_finish:{recipe.pk}",
                 kind="quick_finish",
-                label="Finalizar fornada avulsa",
+                label="Confirmar fornada avulsa",
                 priority=30,
                 enabled=quick_enabled,
                 reason=(
@@ -782,7 +783,7 @@ def _qc_actions(
                 payload_schema="ProductionQuickFinishMutationRequest",
                 expected_rev=None,
                 confirmation_title="Confirmar fornada avulsa",
-                confirmation_label="Finalizar",
+                confirmation_label="Confirmar",
             )
         )
     return tuple(actions)

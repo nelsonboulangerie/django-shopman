@@ -566,7 +566,66 @@ def _consume_materials(work_order, *, fail_closed: bool):
     return shortfalls
 
 
-def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
+def _cancel_unstarted_planned_contribution(work_order, product_ref, date) -> None:
+    """Remove only this terminal WO's quantity that never entered production.
+
+    A partial start splits one WO across two shared coordinates: ``started``
+    contains the quantity that entered production, while the blank-batch Quant
+    keeps the remainder planned. Once the WO finishes, that remainder is no
+    longer producible and must stop contributing to promiseable supply. This is
+    a cancellation of plan, not physical waste.
+    """
+    from decimal import Decimal
+
+    from shopman.stockman.exceptions import StockError
+    from shopman.stockman.models.move import Move
+    from shopman.stockman.models.quant import Quant
+
+    started_qty = Decimal(str(work_order.started_qty or work_order.quantity))
+    unstarted = max(
+        Decimal(str(work_order.quantity)) - started_qty,
+        Decimal("0"),
+    )
+    if unstarted <= 0:
+        return
+
+    quant = _find_planned_quant(work_order, product_ref, date)
+    if quant is None:
+        raise StockError(
+            "QUANT_NOT_FOUND",
+            product=product_ref,
+            work_order=work_order.ref,
+            target_date=date,
+            requested=unstarted,
+        )
+
+    locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
+    available = Decimal(str(locked_quant.quantity))
+    if available < unstarted:
+        raise StockError(
+            "INSUFFICIENT_AVAILABLE",
+            product=product_ref,
+            work_order=work_order.ref,
+            requested=unstarted,
+            available=available,
+        )
+
+    Move.objects.create(
+        quant=locked_quant,
+        delta=-unstarted,
+        reason=f"Plano encerrado após início parcial: {work_order.ref}",
+        kind=Move.Kind.ADJUST,
+    )
+
+
+def _write_off_yield_shortfall(
+    work_order,
+    product_ref,
+    date,
+    finished_qty,
+    *,
+    fail_closed: bool = False,
+):
     """Rendimento MENOR que o iniciado: lançar a perda como WASTE no ledger.
 
     Sem isso o resíduo fica eterno no quant ``batch='started'`` — a
@@ -601,8 +660,41 @@ def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
             .first()
         )
     if quant is None:
+        # Quick-finish cria o STARTED apenas no ledger do Craftsman; não há um
+        # sinal intermediário que mova o quant planejado para ``batch=started``.
+        # Nesse caminho, o resíduo continua no quant planejado sem lote.
+        quant = StockQueries.get_quant(
+            product_ref,
+            target_date=date,
+            position=_resolve_position(work_order.position_ref),
+            batch="",
+        )
+    if quant is None:
+        quant = (
+            Quant.objects.filter(sku=product_ref, target_date=date, batch="", _quantity__gt=0).order_by("pk").first()
+        )
+    if quant is None:
+        if fail_closed:
+            from shopman.stockman.exceptions import StockError
+
+            raise StockError(
+                "QUANT_NOT_FOUND",
+                product=product_ref,
+                work_order=work_order.ref,
+                target_date=date,
+            )
         return
     write_off = min(shortfall, Decimal(str(quant.quantity)))
+    if fail_closed and write_off != shortfall:
+        from shopman.stockman.exceptions import StockError
+
+        raise StockError(
+            "INSUFFICIENT_AVAILABLE",
+            product=product_ref,
+            work_order=work_order.ref,
+            requested=shortfall,
+            available=write_off,
+        )
     if write_off <= 0:
         return
 
@@ -683,9 +775,20 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
     # a missing value. Falling back with ``or`` would credit the entire planned
     # quantity as saleable stock after an explicit zero-output close.
     finished_qty = work_order.finished if work_order.finished is not None else work_order.quantity
+    _cancel_unstarted_planned_contribution(
+        work_order,
+        product_ref,
+        date,
+    )
     if finished_qty <= 0:
+        _write_off_yield_shortfall(
+            work_order,
+            product_ref,
+            date,
+            finished_qty,
+            fail_closed=fail_closed,
+        )
         _stamp_leg(work_order, STOCK_REALIZED_KEY)
-        _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
         logger.info(
             "Production closed with zero saleable output: sku=%s (WO %s)",
             product_ref,
@@ -775,7 +878,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
             ).exclude(batch_ref="")
         )
         if partition_lines and sum(line.quantity for line in partition_lines) == finished_qty:
-            legs = [(line.quantity, line.batch_ref) for line in partition_lines]
+            legs = [(line.quantity, line.batch_ref, line.quality_grade_ref) for line in partition_lines]
         else:
             if partition_lines:
                 logger.warning(
@@ -783,13 +886,13 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                     work_order.ref,
                     finished_qty,
                 )
-            legs = [(finished_qty, "")]
+            legs = [(finished_qty, "", "")]
 
         # Carimbo ANTES do realize, pelo mesmo motivo da perna de insumo: a
         # janela entre escrever e carimbar era o que deixava um segundo
         # fechamento simultâneo creditar a vitrine de novo.
         _stamp_leg(work_order, STOCK_REALIZED_KEY)
-        for leg_qty, leg_batch in legs:
+        for leg_qty, leg_batch, leg_grade_ref in legs:
             StockPlanning.realize(
                 product=type("P", (), {"sku": product_ref})(),
                 target_date=date,
@@ -799,6 +902,7 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
                 from_batch=from_batch,
                 reason=f"Produção concluída: {work_order.ref}",
                 to_batch=leg_batch,
+                to_quality_grade_ref=leg_grade_ref,
             )
         logger.info(
             "Production realized: sku=%s qty=%s %s → %s em %s lote(s) (WO %s)",
@@ -810,7 +914,13 @@ def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = Fa
             work_order.ref,
         )
 
-        _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
+        _write_off_yield_shortfall(
+            work_order,
+            product_ref,
+            date,
+            finished_qty,
+            fail_closed=fail_closed,
+        )
     except Exception:
         # "Insumo consumido e NADA realizado" não cabe numa linha de log. Quando
         # esta perna falha a WorkOrder já está FINISHED (o send é pós-commit), a

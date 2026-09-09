@@ -71,11 +71,11 @@ p95 de produção.
 | P0.1 | infraestrutura concluída | `resolve_production_access`, filtragem, actions e endpoints usam a mesma capability; SSE espelha todos os grants do board | grants/aprovadores finais são D1; postura final é D2 |
 | P0.2 | concluído | contrato v2, action metadata/proof, erros tipados, filtros estritos, cliente gerado e freshness | OpenAPI global antigo não é um gate verde; ver riscos |
 | P0.3 | concluído em SQLite; runtime aberto | locks, revisão, idempotência, saga quick-finish recuperável, forno e step append-only, pedidos fail-closed | corrida real precisa PostgreSQL/Redis |
-| P0.4 | parcial por D3 | started/snapshot, partição, catálogo estrito, conservação, desvio auditado e zero-output fail-safe | perda total continua bloqueada até semântica D3 |
+| P0.4 | concluído; D3 resolvido | started/snapshot, partição, catálogo estrito, conservação, desvio auditado e perda total auditável | decisão D3 registrada em 09/09 |
 | P0.5 | código/build concluídos | headers/cache, upstream fail-fast, `/menuboard` removido, nenhum fetch storefront, Playwright 6/6 | edge/host, TVs e cutover são D4/D8 |
 | P1.1 | concluído localmente | assemblers em lote, `generated_at`, `source_revision`, `fresh_until`, versão e action proof | p95 representativo depende de runtime/piloto |
 | P1.2 | slice seguro concluído | múltiplas WOs expostas; nenhuma escolha `[0]`; edição/ação preserva contexto e conflitos | medição real de esforço é D7 |
-| P1.3 | slice seguro concluído | forno server-stamped, retry, QC por partição, confirmação de desvio e fechamento exato | perda total depende de D3; matriz física depende de D7 |
+| P1.3 | concluído | forno server-stamped, retry, QC por partição, confirmação de desvio, fechamento exato e perda total | matriz física depende de D7 |
 | P1.4 | contrato honesto concluído | preparação usa snapshot/started qty; pesagem é projeção fechada e declara que ainda não executa pesagem | sessão/tolerância/impressão auditada são P2.1/D5 |
 | P1.5 | parcial seguro | filtros estritos, drilldown existente, alertas escopados/acionáveis e ack distinto de resolve | export/paginação completa e SLO humano não foram inventados |
 | P1.6 | concluído localmente | todos os blocos `ProductionConfig`, validação/release checks e passaporte somente leitura em Unfold; `make admin` verde | política final de approvals permanece D1 |
@@ -92,7 +92,7 @@ p95 de produção.
 | PROD-003 | entregue | quick finish tem preflight, uma WO por tentativa, replay e recuperação/compensação explícita |
 | PROD-004 | entregue | step/oven sob transação, lock, rev e eventos append-only |
 | PROD-005 | parcial; D1 | força exige capability, razão e snapshot assinado; aprovador distinto/final depende de D1 |
-| PROD-006 | bloqueado; D3 | zero nunca é creditado, mas o desfecho contábil de perda total não foi inventado |
+| PROD-006 | entregue; D3 resolvido em 09/09 | perda total conclui com `finished_qty=0`, WASTE integral e outcome auditável; não usa estorno |
 | PROD-007 | entregue | planned usa planejado; started usa iniciado; snapshots congelados alimentam leitura/QC |
 | PROD-008 | entregue | grade/defeito ausente, inativo ou desconhecido falha fechado |
 | PROD-009 | código entregue; D4 | rota paralela removida; owner Django por ref preservado; TVs não mapeadas |
@@ -155,7 +155,7 @@ p95 de produção.
 |---|---|---|---|
 | D1 autoridade | capabilities e negação já existem; pode-se usar grants por grupo ou approvals por ação | grupos concedem leitura/operação comum; force, quick finish e void de alto impacto exigem step-up com aprovador distinto | matriz final por persona e lista de ações com aprovador obrigatório |
 | D2 estação | `PRODUCTION_TRUSTED_STATION_CAPABILITIES` falha fechado por capability | exigir estação em mutações de chão/forno/QC; permitir consulta gerencial fora dela | conjunto exato de capabilities e processo de provisionar/revogar estação |
-| D3 perda total | zero-output é seguro, mas `void` é semanticamente falso | criar outcome/evento explícito de perda total, WASTE integral, zero vendável e replanejamento de pedidos | nome do outcome, efeito contábil e transição/lifecycle aprovada |
+| D3 perda total | **Resolvido em 09/09/2026:** outcome `total_loss`, WO `finished`, WASTE integral e zero vendável; pedidos comprometidos bloqueiam até resolução | implementação e testes entregues | nenhuma decisão pendente |
 | D4 TVs | Nuxt paralelo acabou; Django por `ref` é único owner | mapear cada TV a ref/credencial e fazer cutover sem redirect adivinhado | refs, credenciais, owner e janela de troca |
 | D5 pesagem | hoje há alvo/etiqueta, não execução | piloto manual advisory antes de integração de balança ou bloqueio | processo, tolerâncias, lote/FIFO, impressora/balança e momento de bloquear |
 | D6 capacidade | nenhum dado prova se gargalo é forno, masseira, bancada ou pessoa | instrumentar sobreposição primeiro, modelar somente o recurso observado | recurso, capacidade, calendário e regra de conflito |
@@ -243,3 +243,101 @@ Provas finais sobre a linha integrada:
 Os gates humanos D1–D8, runtime PostgreSQL/Redis, hardware, host/edge e piloto continuam
 explicitamente abertos. A integração fecha a dívida Git/migrations; não transforma essas
 decisões externas em aprovação implícita.
+
+## Refino de produto decidido com o dono — 09/09/2026
+
+O diálogo operacional posterior fechou semânticas que o plano original havia deixado como
+gate e elas foram implementadas diretamente sobre a linha integrada:
+
+1. A linguagem da superfície é **Planejado → Produzido → Concluído**; o gesto é **Confirmar**.
+   Os nomes internos `planned/started/finished` foram preservados para evitar migração semântica
+   do ledger.
+2. Os próprios botões Ótimo, Normal, Razoável e Mínimo são os graus de QC. Normal é o padrão e
+   recebe o saldo automático. Cada grau aparece no máximo uma vez; Ótimo/Normal pedem somente
+   quantidade, Razoável/Mínimo pedem quantidade + um motivo principal, e Perda permanece
+   quantidade + motivo. Não existem ações paralelas “Detalhar” ou “Registrar variação”.
+3. Grau governa preço/elegibilidade; motivo explica a causa. `Batch.quality_grade_ref` congela
+   esse fato junto ao lote. Canais remotos aceitam invariavelmente apenas `excellent|standard`,
+   inclusive diante de override equivocado; somente o PDV local pode habilitar markdown.
+4. Perda total agora é uma conclusão auditável: insumos/execução são consumidos, WASTE integral
+   é gravado, `finished_qty=0`, nenhum lote vendável nasce e o evento registra
+   `production_outcome.kind=total_loss`. Não é `void` nem estorno. Pedidos comprometidos continuam
+   bloqueando o fechamento até resolução explícita.
+5. Timer é lembrete local múltiplo por fornada e de duração livre: repete até **Visto**, memoriza
+   a última duração e permite `+1/+5/+10`. **Visto** só silencia; não retira do forno, não abre QC
+   e não conclui produção. O fato “retirou do forno” é gravado ao entrar no QC.
+6. `production_stock_shortfall` pertence à audiência Produção e aponta para a WO na matriz;
+   resolução com cliente continua pertencendo ao Gestor, não ao alerta técnico do chão.
+
+Migrations aplicadas localmente: `backstage.0053`, `stockman.0003`, `shop.0039` e `shop.0040`.
+A superfície
+ficou disponível em `http://127.0.0.1:3005/expedite`, com Django reiniciado em
+`http://127.0.0.1:8000`.
+
+Provas deste refino:
+
+| Gate | Resultado |
+|---|---|
+| Backend de integração (produção/QC/config/alertas/canais) | 243 aprovados |
+| Stockman completo | 273 aprovados, 14 skips |
+| Craftsman — cenários de conclusão | 33 aprovados |
+| Contrato HTTP de Produção | 65 aprovados |
+| Nuxt completo | 31 arquivos / 214 testes aprovados |
+| Typecheck + ESLint | aprovados |
+| Ruff + `git diff --check` | aprovados |
+| `makemigrations --check --dry-run` | sem drift |
+| Migrations locais | rollback/reapply de `shop.0039/0040` e `backstage.0053` aprovados |
+
+A revisão adversarial posterior também fechou três falhas de segurança operacional: o fechamento
+exige conservação exata (`produzido + perda = total que entrou`); perda total elimina a oferta
+planejada sem criar estoque fantasma; e holds remotos congelam a política de graus permitidos e a
+revalidam no fulfillment. `Visto` em alertas apenas registra ciência: o alerta continua ativo até
+resolução, e o destino contextual vem do backend, não de inferência do cliente.
+
+O fechamento de uma WO parcialmente iniciada também cancela somente o saldo daquela WO que não
+entrou em produção, preservando contribuições de outras WOs no Quant compartilhado. O grau é
+persistido no `Batch` com conflito fail-closed. Holds criados pelo contrato novo levam uma versão
+explícita da política; hold ativo legado sem essa versão não materializa nem é entregue. Como o
+canal não era um fato obrigatório no legado, o cutover real deve inventariar e recriar esses holds
+antes de ativar a versão — não existe backfill seguro por suposição.
+
+Com isso, o gate **D3 — perda total** está resolvido por decisão explícita do dono e prova
+automatizada. D1/D2/D4–D8 permanecem sujeitos às decisões e evidências externas já registradas;
+este refino não as presume.
+
+### Fechamento adversarial do refino
+
+A última rodada multiagente removeu quatro becos sem saída operacionais: links de alertas agora
+levam a `q + target_date` e as telas respeitam ambos; yield baixo e falha de rastreabilidade abrem
+na Expedição; um retry bem-sucedido encerra a falha de rastreabilidade; e uma causa ainda aberta
+não volta a gerar alertas só porque passaram 12 horas. **Yield baixo** foi classificado
+explicitamente como fato histórico/BI: quantidade e motivo já foram registrados no QC, portanto o
+registro/notificação é preservado e encerrado pelo ator de sistema, sem inventar uma pendência
+eterna para o operador. A migration `backstage.0054` encerra os registros legados equivalentes.
+
+Provas finais adicionais: 242 testes do recorte integrado; 48 testes focais de alerta/produção;
+274 testes Stockman com 14 skips; 30 testes Craftsman de execução/conclusão; 216 testes Nuxt;
+typecheck, ESLint, Ruff, `git diff --check`, `manage.py check` e
+`makemigrations --check --dry-run` aprovados. A revisão multiagente final não encontrou blocker,
+P0 ou P1 após o reparo.
+
+Por decisão explícita do dono, o seed também passou a ser tratado como contrato executável deste
+domínio. Estoque perecível demonstrativo conhecido como Normal recebe `standard`; o histórico de
+produção passa pelo mesmo resolvedor de partição do QC e cobre Ótimo, Normal, Razoável, Mínimo,
+graus mistos, motivos ortogonais, conservação e perda total. Cada OUTPUT tem lote e snapshot da
+política; cada WASTE tem motivo e nunca grau/lote. Razoável/Mínimo exigem causa por identidade do
+grau, mesmo que o markdown configurado seja zero.
+
+O seed pode atualizar lotes que carregam sua própria assinatura, inclusive os gerados por versões
+anteriores da carga, mas recusa reclassificar qualquer lote real. Medições sintéticas de forno são
+fatos concluídos de BI (não timers locais), levam `metadata.seed=nelson`, nascem somente de WOs do
+seed e nunca substituem uma medição real. `--flush` remove as medições junto com todas as WOs para
+não deixar refs órfãs; o seed sem flush renova somente fatos sintéticos. As oito provas operacionais
+do seed — suíte completa mais proteções focais — passaram, e a carga sem flush atualizou com sucesso
+o banco local usado pela superfície.
+
+A rodada final acrescentou ainda a mesma trava do trio congelado de QC nos Admins Unfold e fallback,
+e alinhou o dashboard legado ao lifecycle canônico: **Visto** mantém a causa ativa até `resolved_at`.
+O gate canônico do Admin aprovou 245 testes; o recorte integrado aprovou 199; o Nuxt aprovou 217,
+além de typecheck, ESLint, Ruff, `git diff --check`, `manage.py check` e ausência de drift de
+migrations. A revisão multiagente derradeira não encontrou blocker, P0 ou P1 remanescente.

@@ -85,7 +85,8 @@ export interface ProductionBoardResponse {
 // ── O PAINEL — previsão da produção (estilo aeroporto) ──────────────────────
 // O status É a escada de confiança: Planejado → Previsto → Confirmado.
 
-export type ForecastStatus = "scheduled" | "in_progress" | "delayed" | "arrived";
+export type ForecastStatus =
+  "scheduled" | "in_progress" | "delayed" | "arrived";
 
 export interface ForecastRowProjection extends ForecastRowContract {
   status: ForecastStatus;
@@ -106,19 +107,35 @@ export type MaterialShortageItem = ProductionMaterialShortageItem;
 export type MaterialShortageError = ProductionMaterialShortageErrorBody;
 export type OrderShortageError = ProductionOrderShortageErrorBody;
 
-export type ProductionShortageError = MaterialShortageError | OrderShortageError;
+export type ProductionShortageError =
+  MaterialShortageError | OrderShortageError;
 
 // ── Operator alerts (shared backstage projection) ──────────────────────────
 
-export type AlertActionProjection = ProductionActionProjection & {
+export type AlertAckActionProjection = ProductionActionProjection & {
   kind: "acknowledge_alert";
+  method: "POST";
   payload_schema: "AlertAckMutationRequest";
   expected_rev: number;
   source_alert_ref: string;
   source_alert_effect: "acknowledges";
 };
 
-export interface AlertProjection extends Omit<OperatorAlertContract, "actions" | "severity"> {
+export type AlertContextActionProjection = ProductionActionProjection & {
+  kind: "open_alert_context";
+  method: "GET";
+  expected_rev: null;
+  source_alert_ref: string;
+  source_alert_effect: "keeps_open";
+};
+
+export type AlertActionProjection =
+  AlertAckActionProjection | AlertContextActionProjection;
+
+export interface AlertProjection extends Omit<
+  OperatorAlertContract,
+  "actions" | "severity"
+> {
   severity: "warning" | "error" | "critical";
   actions: AlertActionProjection[];
 }
@@ -136,7 +153,8 @@ export interface MiseEnPlaceResponse {
 // ── Weighing (per-prep tickets + blind codes) ───────────────────────────────
 // Short aliases kept for the surface's components.
 
-export type WeighingIngredientProjection = ProductionWeighingIngredientProjection;
+export type WeighingIngredientProjection =
+  ProductionWeighingIngredientProjection;
 export type WeighingTicketProjection = ProductionWeighingTicketProjection;
 
 export interface WeighingResponse {

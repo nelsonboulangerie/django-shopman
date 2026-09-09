@@ -162,13 +162,18 @@ if not apps.is_installed('shopman.stockman.contrib.admin_unfold'):
 
     @admin.register(Batch)
     class BatchAdmin(admin.ModelAdmin):
-        """Batch admin — lot traceability."""
+        """Batch admin — lot traceability; frozen QC is never edited directly."""
 
         list_display = ['ref', 'sku', 'production_date', 'expiry_date',
                         'supplier', 'is_expired_display']
         list_filter = ['expiry_date', 'production_date']
         search_fields = ['ref', 'sku', 'supplier']
-        readonly_fields = ['created_at']
+        readonly_fields = [
+            'quality_grade_ref',
+            'nonconformity_percent',
+            'nonconformity_reason',
+            'created_at',
+        ]
 
         @admin.display(description=_('Expirado?'), boolean=True)
         def is_expired_display(self, obj):

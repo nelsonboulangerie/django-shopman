@@ -67,7 +67,16 @@ def _canonical_attempt_rows(values, *, field: str) -> list[dict]:
     return rows
 
 
-def _finish_attempt(*, finished, finished_decimal, consumed, wasted, note, context) -> dict:
+def _finish_attempt(
+    *,
+    finished,
+    finished_decimal,
+    consumed,
+    wasted,
+    declared_total,
+    note,
+    context,
+) -> dict:
     if isinstance(finished, (int, float, Decimal, str)):
         finished_attempt = {
             "mode": "scalar",
@@ -104,6 +113,7 @@ def _finish_attempt(*, finished, finished_decimal, consumed, wasted, note, conte
         "finished": finished_attempt,
         "consumed": consumed_attempt,
         "wasted": wasted_attempt,
+        "declared_total": (_decimal_wire(declared_total) if declared_total is not None else None),
         "note": str(note or ""),
         "context": _canonical_attempt_value(dict(context or {})),
     }
@@ -212,6 +222,7 @@ class CraftExecution:
         *,
         consumed=None,
         wasted=None,
+        declared_total=None,
         expected_rev=None,
         actor=None,
         note=None,
@@ -231,18 +242,25 @@ class CraftExecution:
             finished_decimal = _positive_decimal(finished, field="finished")
             finished_items = None
         else:
-            finished_items = finished
-            if not finished_items:
+            finished_items = list(finished or ())
+            # Zero vendável é um resultado material válido somente quando a
+            # tentativa também carrega a perda real. Sem WASTE seria apenas um
+            # payload vazio/acidental.
+            if not finished_items and not wasted:
                 raise CraftError("INVALID_QUANTITY", field="finished")
             finished_decimal = Decimal("0")
             for p in finished_items:
                 p = _mapping_item(p, field="finished")
                 finished_decimal += _positive_decimal(p.get("quantity"), field="finished.quantity")
+        declared_total_decimal = (
+            _positive_decimal(declared_total, field="declared_total") if declared_total is not None else None
+        )
         attempt = _finish_attempt(
             finished=finished,
             finished_decimal=finished_decimal,
             consumed=consumed,
             wasted=wasted,
+            declared_total=declared_total_decimal,
             note=note,
             context=event_context,
         )
@@ -489,6 +507,20 @@ class CraftExecution:
                     )
 
             waste_total = sum(item.quantity for item in all_items if item.kind == WorkOrderItem.Kind.WASTE)
+            if finished_items is not None:
+                output_waste_total = sum(
+                    item.quantity
+                    for item in all_items
+                    if item.kind == WorkOrderItem.Kind.WASTE and item.item_ref == order.output_sku
+                )
+                expected_total = declared_total_decimal or started_qty
+                accounted_total = finished_decimal + output_waste_total
+                if accounted_total != expected_total:
+                    raise CraftError(
+                        "PARTITION_MISMATCH",
+                        expected=str(expected_total),
+                        accounted=str(accounted_total),
+                    )
             WorkOrderItem.objects.bulk_create(all_items)
 
             order.finished = finished_decimal

@@ -52,12 +52,15 @@ const GRADES: QCGradeProjection[] = [
 ];
 
 describe("a escala", () => {
-  it("separa preço cheio de desconto pelo markdown, não pelo nome", () => {
-    expect(fullPriceGrades(GRADES).map((g) => g.ref)).toEqual([
+  it("separa os graus por identidade, mesmo se o markdown mudar", () => {
+    const gradesWithZeroFairMarkdown = GRADES.map((grade) =>
+      grade.ref === "fair" ? { ...grade, markdown_percent: 0 } : grade,
+    );
+    expect(fullPriceGrades(gradesWithZeroFairMarkdown).map((g) => g.ref)).toEqual([
       "excellent",
       "standard",
     ]);
-    expect(discountGrades(GRADES).map((g) => g.ref)).toEqual([
+    expect(discountGrades(gradesWithZeroFairMarkdown).map((g) => g.ref)).toEqual([
       "fair",
       "minimal",
     ]);
@@ -67,7 +70,7 @@ describe("a escala", () => {
     expect(defaultGradeRef(GRADES)).toBe("standard");
   });
 
-  it("a faixa de cor deriva da semântica (rank/markdown), nunca do rótulo", () => {
+  it("a faixa de cor deriva da identidade/rank, nunca do preço ou rótulo", () => {
     expect(gradeBandClass(GRADES[0]!, GRADES)).toBe("bg-emerald-500");
     expect(gradeBandClass(GRADES[1]!, GRADES)).toBe("bg-zinc-400");
     expect(gradeBandClass(GRADES[2]!, GRADES)).toBe("bg-amber-500");
@@ -158,10 +161,10 @@ describe("Confirmar sempre ativo: as perguntas que faltam", () => {
     expect(pendingQuestions(state)).toEqual([]);
   });
 
-  it("fornada sem grupo vendável não fecha (é void/waste, não conclusão)", () => {
+  it("perda total fecha como conclusão auditável", () => {
     let state = initialState(40, "standard");
     state = { ...state, fullQty: 0, fullTouched: true };
-    expect(canSubmit(state)).toBe(false);
+    expect(canSubmit(state)).toBe(true);
   });
 
   it("acima do previsto pede confirmação ANTES de qualquer motivo", () => {

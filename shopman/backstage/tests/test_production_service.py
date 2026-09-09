@@ -12,7 +12,7 @@ from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, WorkOrder, WorkOrderEvent, WorkOrderItem
 from shopman.orderman.models import IdempotencyKey
-from shopman.stockman.models import Batch, Position
+from shopman.stockman.models import Batch, Move, Position, Quant
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import production
@@ -112,8 +112,12 @@ def test_apply_planned_start_finish_and_void(recipe):
 
     finished_ref, finished_qty = _apply_finish(
         work_order_id=work_order.pk,
-        quantity="8",
+        quantity="9",
         actor="production:op",
+        partition=[
+            {"quantity": "8", "quality_grade_ref": "standard"},
+            {"quantity": "1", "quality_defect_ref": "overbaked", "loss": True},
+        ],
     )
     assert finished_ref == wo_ref
     assert finished_qty == Decimal("8")
@@ -385,6 +389,39 @@ def test_apply_quick_finish_creates_finished_work_order(recipe):
     assert output_sku == recipe.output_sku
     assert qty == Decimal("3")
     assert work_order.status == WorkOrder.Status.FINISHED
+
+
+@pytest.mark.django_db
+def test_quick_finish_total_loss_removes_all_planned_offer(recipe):
+    output_sku, wo_ref, qty = _apply_quick_finish(
+        recipe_id=recipe.pk,
+        quantity="4",
+        position_id="",
+        actor="production:op",
+        partition=[
+            {
+                "quantity": "4",
+                "quality_defect_ref": "overbaked",
+                "loss": True,
+            }
+        ],
+    )
+
+    work_order = WorkOrder.objects.get(ref=wo_ref)
+    assert output_sku == recipe.output_sku
+    assert qty == Decimal("0")
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert work_order.finished == Decimal("0")
+    assert not Quant.objects.filter(
+        sku=recipe.output_sku,
+        _quantity__gt=0,
+    ).exists()
+    assert not Batch.objects.filter(sku=recipe.output_sku).exists()
+    waste_move = Move.objects.get(
+        quant__sku=recipe.output_sku,
+        kind=Move.Kind.WASTE,
+    )
+    assert waste_move.delta == Decimal("-4")
 
 
 @pytest.mark.django_db
@@ -935,8 +972,12 @@ def test_apply_finish_force_creates_stock_short_alert(recipe, monkeypatch):
 
     _apply_finish(
         work_order_id=work_order.pk,
-        quantity="9",
+        quantity="10",
         actor="production:op",
+        partition=[
+            {"quantity": "9", "quality_grade_ref": "standard"},
+            {"quantity": "1", "quality_defect_ref": "overbaked", "loss": True},
+        ],
         force=True,
         override_reason="Falta confirmada pelo responsável",
         approved_shortage=production.production_shortage_snapshot(
@@ -1017,7 +1058,15 @@ def test_apply_finish_records_batch_traceability(monkeypatch):
     craft.start(work_order, quantity=10, expected_rev=work_order.rev)
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
 
-    _apply_finish(work_order_id=work_order.pk, quantity="8", actor="production:op")
+    _apply_finish(
+        work_order_id=work_order.pk,
+        quantity="10",
+        actor="production:op",
+        partition=[
+            {"quantity": "8", "quality_grade_ref": "standard"},
+            {"quantity": "2", "quality_defect_ref": "overbaked", "loss": True},
+        ],
+    )
 
     # O lote sai da LINHA de OUTPUT, não de WorkOrder.meta (ADR-017 §5): a
     # fórmula no meta só admitia um lote por ordem.
@@ -1212,6 +1261,63 @@ def test_unknown_or_inactive_defect_is_rejected(recipe):
 
 
 @pytest.mark.django_db
+def test_partition_has_at_most_one_group_per_quality_grade(recipe):
+    work_order = craft.plan(recipe, 4, date=date.today())
+    craft.start(work_order, quantity=4, expected_rev=work_order.rev)
+
+    with pytest.raises(production.ProductionError, match="só pode aparecer uma vez"):
+        production.resolve_partition(
+            work_order,
+            quantity="4",
+            partition=[
+                {
+                    "quantity": "2",
+                    "quality_grade_ref": "fair",
+                    "quality_defect_ref": "overbaked",
+                },
+                {
+                    "quantity": "2",
+                    "quality_grade_ref": "fair",
+                    "quality_defect_ref": "misshapen",
+                },
+            ],
+        )
+
+
+@pytest.mark.django_db
+def test_lower_quality_grade_requires_one_primary_reason_even_without_markdown(recipe):
+    work_order = craft.plan(recipe, 2, date=date.today())
+    craft.start(work_order, quantity=2, expected_rev=work_order.rev)
+
+    from shopman.shop.models import QualityGrade
+
+    QualityGrade.objects.filter(ref="minimal").update(markdown_percent=0)
+
+    with pytest.raises(production.ProductionError, match="Razoável/Mínimo exige um motivo"):
+        production.resolve_partition(
+            work_order,
+            quantity="2",
+            partition=[{"quantity": "2", "quality_grade_ref": "minimal"}],
+        )
+
+
+@pytest.mark.django_db
+def test_grade_label_is_not_used_as_quality_reason(recipe):
+    work_order = craft.plan(recipe, 2, date=date.today())
+    craft.start(work_order, quantity=2, expected_rev=work_order.rev)
+
+    finished, wasted = production.resolve_partition(
+        work_order,
+        quantity="2",
+        partition=[{"quantity": "2", "quality_grade_ref": "standard"}],
+    )
+
+    assert wasted == []
+    assert finished[0]["meta"]["quality_markdown_percent"] == 0
+    assert finished[0]["meta"]["quality_reason"] == ""
+
+
+@pytest.mark.django_db
 def test_partition_splits_lots_and_veto_goes_to_waste(recipe, monkeypatch):
     """A fornada de 10 que produz 6+3+1: dois lotes e uma perda vetada (ADR-017).
 
@@ -1252,7 +1358,9 @@ def test_partition_splits_lots_and_veto_goes_to_waste(recipe, monkeypatch):
     full_batch = Batch.objects.get(ref=full.batch_ref)
     marked_batch = Batch.objects.get(ref=marked.batch_ref)
     assert full_batch.nonconformity_percent == 0
+    assert full_batch.quality_grade_ref == "standard"
     assert marked_batch.nonconformity_percent == 50
+    assert marked_batch.quality_grade_ref == "minimal"
     assert marked_batch.nonconformity_reason == "Assou demais"
 
     # O veto virou perda com o motivo, nunca lote.
@@ -1282,7 +1390,11 @@ def test_long_output_sku_produces_distinct_batch_refs_within_storage_limit(
         actor="production:op",
         partition=[
             {"quantity": "1", "quality_grade_ref": "standard"},
-            {"quantity": "1", "quality_grade_ref": "minimal"},
+            {
+                "quantity": "1",
+                "quality_grade_ref": "minimal",
+                "quality_defect_ref": "overbaked",
+            },
         ],
     )
 
@@ -1427,8 +1539,8 @@ def test_finish_overshoot_requires_confirmation_and_reason_under_lock(recipe, mo
 
 
 @pytest.mark.django_db
-def test_partition_with_only_loss_is_rejected(recipe, monkeypatch):
-    """Fornada sem grupo vendável não fecha como conclusão — é void/waste."""
+def test_partition_with_only_loss_records_auditable_total_loss(recipe, monkeypatch):
+    """Perda total conclui a produção sem fabricar estoque vendável."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     _, wo_ref, _, _ = _apply_planned(
         recipe_id=recipe.pk,
@@ -1438,10 +1550,56 @@ def test_partition_with_only_loss_is_rejected(recipe, monkeypatch):
     )
     work_order = WorkOrder.objects.get(ref=wo_ref)
     _apply_start(work_order_id=work_order.pk, quantity="4", actor="production:op")
-    with pytest.raises(production.ProductionError):
+    result = _apply_finish(
+        work_order_id=work_order.pk,
+        quantity="4",
+        actor="production:op",
+        partition=[{"quantity": "4", "quality_defect_ref": "overbaked", "loss": True}],
+    )
+
+    assert result == (work_order.ref, Decimal("0"))
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.FINISHED
+    assert work_order.finished == Decimal("0")
+    assert not WorkOrderItem.objects.filter(
+        work_order=work_order,
+        kind=WorkOrderItem.Kind.OUTPUT,
+    ).exists()
+    waste = WorkOrderItem.objects.get(
+        work_order=work_order,
+        kind=WorkOrderItem.Kind.WASTE,
+    )
+    assert waste.quantity == Decimal("4")
+    event = WorkOrderEvent.objects.get(
+        work_order=work_order,
+        kind=WorkOrderEvent.Kind.FINISHED,
+    )
+    assert event.payload["context"]["production_outcome"] == {
+        "kind": "total_loss",
+        "saleable_qty": "0",
+        "loss_qty": "4",
+    }
+
+
+@pytest.mark.django_db
+def test_total_loss_must_account_for_the_whole_started_batch(recipe, monkeypatch):
+    monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
+    work_order = craft.plan(recipe, 4, date=date.today())
+    craft.start(work_order, quantity=4, expected_rev=work_order.rev)
+
+    with pytest.raises(production.ProductionError, match="incluir toda perda"):
         _apply_finish(
             work_order_id=work_order.pk,
-            quantity="4",
+            quantity="3",
             actor="production:op",
-            partition=[{"quantity": "4", "quality_defect_ref": "overbaked", "loss": True}],
+            partition=[
+                {
+                    "quantity": "3",
+                    "quality_defect_ref": "overbaked",
+                    "loss": True,
+                }
+            ],
         )
+
+    work_order.refresh_from_db()
+    assert work_order.status == WorkOrder.Status.STARTED

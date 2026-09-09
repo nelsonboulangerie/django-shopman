@@ -178,26 +178,6 @@ export function matchesRowQuery(
     .includes(q);
 }
 
-// ── Alert deep-links ───────────────────────────────────────────────────────
-
-/** Where an operator alert resolves, if anywhere in this app.
- *  - late → Produção (o lote vivo está lá);
- *  - stock_short → Expedição (a falha aconteceu ao expedir);
- *  - forgotten → Planejamento (a WO nunca saiu do planejado);
- *  - low_yield/others → sem destino (a WO já saiu das grades). */
-export function alertTarget(alert: {
-  type: string;
-  order_ref: string;
-}): { to: string; q: string } | null {
-  if (!alert.order_ref) return null;
-  if (alert.type === "production_late") return { to: "/", q: alert.order_ref };
-  if (alert.type === "production_stock_short")
-    return { to: "/expedite", q: alert.order_ref };
-  if (alert.type === "production_forgotten")
-    return { to: "/plan", q: alert.order_ref };
-  return null;
-}
-
 /** Whether a planning row can be started (has a planned order and no started yet). */
 export function startableWorkOrder(
   row: ProductionMatrixRowProjection,
@@ -206,7 +186,7 @@ export function startableWorkOrder(
 }
 
 /**
- * A fornada planejada que esta linha AJUSTARIA — a mesma que o "Iniciar" pegaria.
+ * A fornada planejada que esta linha AJUSTARIA — a mesma confirmada como produzida.
  *
  * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
  * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem

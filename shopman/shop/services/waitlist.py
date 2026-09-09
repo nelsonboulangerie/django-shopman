@@ -124,6 +124,7 @@ def reserve_target_date(
             excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=int(scope.get("expiry_margin_days") or 0),
             include_nonconforming=bool(scope.get("sells_nonconforming", True)),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
     except Exception:
         logger.debug("waitlist.reserve_target_date degraded; returning None", exc_info=True)

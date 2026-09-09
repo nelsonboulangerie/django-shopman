@@ -5,6 +5,12 @@
 // cheio e cada exceção é retirada dali. Sem I/O, sem refs — tudo testável.
 import type { QCGradeProjection } from "~/types/production";
 
+const LOWER_QUALITY_GRADE_REFS = new Set(["fair", "minimal"]);
+
+export function isLowerQualityGrade(gradeRef: string): boolean {
+  return LOWER_QUALITY_GRADE_REFS.has(gradeRef);
+}
+
 // ── Estado da tela de fechamento ────────────────────────────────────────────
 
 export interface QcEntryState {
@@ -75,13 +81,13 @@ export function initialState(
 export function fullPriceGrades(
   grades: QCGradeProjection[],
 ): QCGradeProjection[] {
-  return grades.filter((g) => g.markdown_percent === 0);
+  return grades.filter((g) => !isLowerQualityGrade(g.ref));
 }
 
 export function discountGrades(
   grades: QCGradeProjection[],
 ): QCGradeProjection[] {
-  return grades.filter((g) => g.markdown_percent > 0);
+  return grades.filter((g) => isLowerQualityGrade(g.ref));
 }
 
 export function defaultGradeRef(grades: QCGradeProjection[]): string {
@@ -101,7 +107,7 @@ export function gradeBandClass(
   grade: QCGradeProjection,
   grades: QCGradeProjection[],
 ): string {
-  if (grade.markdown_percent === 0) {
+  if (!isLowerQualityGrade(grade.ref)) {
     const topRank = Math.max(...grades.map((g) => g.rank));
     return grade.rank === topRank ? "bg-emerald-500" : "bg-zinc-400";
   }
@@ -199,9 +205,9 @@ export function pendingQuestions(state: QcEntryState): QcQuestion[] {
   return out;
 }
 
-/** A fornada precisa de pelo menos um grupo vendável — tudo-perda é void/waste, não fechamento. */
+/** Produção ou perda contabilizada conclui a fornada; perda total não é estorno. */
 export function canSubmit(state: QcEntryState): boolean {
-  return finishedTotal(state) > 0;
+  return reportedTotal(state) > 0;
 }
 
 // ── O payload da partição (contrato do finish — ADR-017 §4) ─────────────────

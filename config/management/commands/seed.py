@@ -513,8 +513,21 @@ def apply_storefront_state(
     if state == "sold_out":
         return  # sem pronto e sem plano: é o esgotado que habilita "me avise"
     if state == "low_stock":
+        from shopman.stockman.shelflife import shelf_life_days_for
+
+        batch_ref = ""
+        shelf_life_days = shelf_life_days_for(sku)
+        if shelf_life_days is not None:
+            received_on = timezone.localdate()
+            batch_ref = _ensure_seed_standard_batch(
+                ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                sku=sku,
+                production_date=received_on,
+                expiry_date=received_on + timedelta(days=shelf_life_days),
+            )
         stock.receive(
             Decimal(STOREFRONT_LOW_STOCK_QTY), sku=sku, position=vitrine,
+            batch=batch_ref,
             reason=f"{reason_prefix} {sku}: últimas unidades",
         )
         return
@@ -526,6 +539,63 @@ def apply_storefront_state(
         )
         return
     raise ValueError(f"Estado de vitrine desconhecido: {state}")
+
+
+def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_date) -> str:
+    """Cria lote Normal do cenário sem reescrever um fato de QC já existente.
+
+    O ``ref`` determinístico identifica lote que pertence ao seed. Campo vazio é
+    legado ainda não classificado e pode ser completado; qualquer outro grau é
+    uma divergência histórica e faz o seed falhar de modo explícito.
+    """
+    from shopman.stockman.models import Batch
+
+    batch, _ = Batch.objects.get_or_create(
+        ref=ref,
+        defaults={
+            "sku": sku,
+            "production_date": production_date,
+            "expiry_date": expiry_date,
+            "quality_grade_ref": "standard",
+        },
+    )
+    if batch.sku != sku:
+        raise CommandError(
+            f"Lote de seed {ref} pertence a {batch.sku}, não a {sku}; fato preservado."
+        )
+    if batch.quality_grade_ref not in ("", "standard"):
+        raise CommandError(
+            f"Lote de seed {ref} já foi classificado como {batch.quality_grade_ref}; "
+            "o seed não reescreve QC congelado."
+        )
+    if not batch.quality_grade_ref:
+        Batch.objects.filter(pk=batch.pk, quality_grade_ref="").update(
+            quality_grade_ref="standard"
+        )
+    return batch.ref
+
+
+def _discard_owned_seed_output_batch(*, ref: str, sku: str, work_order_ref: str) -> None:
+    """Remove versão anterior de um lote de OUTPUT somente quando a origem é o seed.
+
+    O seed histórico já usou duas assinaturas de ``notes``. Ambas carregam a
+    WorkOrder de cenário; qualquer outra origem é tratada como fato real e não
+    pode ser reclassificada por uma carga demonstrativa.
+    """
+    from shopman.stockman.models import Batch
+
+    batch = Batch.objects.filter(ref=ref).first()
+    if batch is None:
+        return
+    seed_signatures = {
+        f"Seed Nelson producao {work_order_ref}",
+        f"Produção {work_order_ref}",
+    }
+    if batch.sku != sku or batch.notes not in seed_signatures:
+        raise CommandError(
+            f"Lote {ref} já existe fora do domínio do seed; fato de QC preservado."
+        )
+    batch.delete()
 
 
 class Command(BaseCommand):
@@ -1121,6 +1191,14 @@ class Command(BaseCommand):
         from shopman.craftsman.models.sequence import RefSequence as CraftRefSequence
 
         CraftRefSequence.objects.all().delete()
+
+        # OvenRun guarda apenas a ref textual da WorkOrder. ``--flush`` apaga
+        # TODAS as WOs logo abaixo; deixar uma medição sobreviver criaria fato
+        # órfão e colisão quando a sequência recomeçasse. No seed SEM flush, em
+        # contraste, apenas medições marcadas como sintéticas são renovadas.
+        from shopman.backstage.models import OvenRun
+
+        OvenRun.objects.all().delete()
 
         # Payments
         hard_delete(PaymentTransaction)
@@ -2995,20 +3073,31 @@ class Command(BaseCommand):
     def _seed_stock(self, products, positions):
         self.stdout.write("  📊 Estoque inicial...")
 
+        from shopman.stockman.shelflife import shelf_life_days_for
+
         vitrine = positions["vitrine"]
 
         for sku, qty in STOCK_VITRINE.items():
             if sku in products:
+                batch_ref = ""
+                shelf_life_days = shelf_life_days_for(sku)
+                if shelf_life_days is not None:
+                    received_on = timezone.localdate()
+                    batch_ref = _ensure_seed_standard_batch(
+                        ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                        sku=sku,
+                        production_date=received_on,
+                        expiry_date=received_on + timedelta(days=shelf_life_days),
+                    )
                 stock.receive(
                     quantity=Decimal(str(qty)),
                     sku=sku,
                     position=vitrine,
+                    batch=batch_ref,
                     reason=f"Estoque inicial seed Nelson: {sku}",
                 )
 
         from datetime import timedelta as _td
-
-        from shopman.stockman.models import Batch as _Batch
 
         yesterday = date.today() - _td(days=1)
         for sku, qty in LEFTOVER_ITEMS:
@@ -3016,13 +3105,11 @@ class Command(BaseCommand):
                 continue
             shelf = products[sku].shelf_life_days or 0
             lot_ref = f"{sku}-{yesterday:%Y%m%d}-SOBRA"
-            _Batch.objects.update_or_create(
+            _ensure_seed_standard_batch(
                 ref=lot_ref,
-                defaults={
-                    "sku": sku,
-                    "production_date": yesterday,
-                    "expiry_date": yesterday + _td(days=shelf),
-                },
+                sku=sku,
+                production_date=yesterday,
+                expiry_date=yesterday + _td(days=shelf),
             )
             stock.receive(
                 quantity=Decimal(str(qty)),
@@ -4580,34 +4667,6 @@ class Command(BaseCommand):
             work_order.events.all().delete()
             work_order.items.all().delete()
 
-        def ensure_batch_traceability(work_order: WorkOrder, finished_qty: Decimal) -> None:
-            if not (work_order.recipe.meta or {}).get("requires_batch_tracking"):
-                return
-            from shopman.stockman.models import Batch
-
-            production_date = work_order.target_date or today
-            shelf_life_days = (work_order.recipe.meta or {}).get("shelf_life_days")
-            expiry_date = None
-            if shelf_life_days not in (None, ""):
-                expiry_date = production_date + timedelta(days=int(shelf_life_days))
-            batch_ref = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}"
-            Batch.objects.update_or_create(
-                ref=batch_ref,
-                defaults={
-                    "sku": work_order.output_sku,
-                    "production_date": production_date,
-                    "expiry_date": expiry_date,
-                    "notes": f"Seed Nelson producao {work_order.ref}",
-                },
-            )
-            work_order.meta = {
-                **(work_order.meta or {}),
-                "batch_ref": batch_ref,
-                "batch_quantity": str(finished_qty),
-                "expiry_date": expiry_date.isoformat() if expiry_date else "",
-            }
-            work_order.save(update_fields=["meta", "updated_at"])
-
         def add_event(work_order: WorkOrder, seq: int, kind: str, payload: dict, actor: str, created_at: datetime) -> None:
             event = WorkOrderEvent.objects.create(
                 work_order=work_order,
@@ -4618,7 +4677,75 @@ class Command(BaseCommand):
             )
             WorkOrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
 
-        def add_finished_items(work_order: WorkOrder, started_qty: Decimal, finished_qty: Decimal, recorded_at: datetime) -> None:
+        def seed_qc_partition(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+        ) -> list[dict]:
+            """Dados demo obedecem ao mesmo contrato KISS do QC real."""
+            partition: list[dict] = []
+            scope = str((work_order.meta or {}).get("scope") or "")
+            grade_ref = "standard"
+            defect_ref = ""
+
+            # Um histórico variado alimenta BI e garante que o seed exercite
+            # os quatro botões reais. A fornada de croissant de hoje demonstra
+            # o caso importante: dois graus na mesma fornada, uma linha por
+            # grau, com motivo apenas no grau Razoável/Mínimo.
+            if scope == "today" and work_order.recipe.ref == "croissant":
+                grade_ref, defect_ref = "fair", "overbaked"
+            elif scope.startswith("history-"):
+                selector = (work_order.target_date.toordinal() + work_order.recipe_id) % 4
+                grade_ref, defect_ref = (
+                    ("excellent", ""),
+                    ("standard", ""),
+                    ("fair", "overbaked"),
+                    ("minimal", "misshapen"),
+                )[selector]
+
+            if finished_qty > 0:
+                if grade_ref in {"fair", "minimal"}:
+                    marked_qty = min(Decimal("1"), finished_qty)
+                    normal_qty = finished_qty - marked_qty
+                    if normal_qty > 0:
+                        partition.append(
+                            {
+                                "quantity": str(normal_qty),
+                                "quality_grade_ref": "standard",
+                            }
+                        )
+                    partition.append(
+                        {
+                            "quantity": str(marked_qty),
+                            "quality_grade_ref": grade_ref,
+                            "quality_defect_ref": defect_ref,
+                        }
+                    )
+                else:
+                    partition.append(
+                        {
+                            "quantity": str(finished_qty),
+                            "quality_grade_ref": grade_ref,
+                        }
+                    )
+
+            loss_qty = max(started_qty - finished_qty, Decimal("0"))
+            if loss_qty > 0:
+                partition.append(
+                    {
+                        "quantity": str(loss_qty),
+                        "quality_defect_ref": "overbaked",
+                        "loss": True,
+                    }
+                )
+            return partition
+
+        def add_finished_items(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+            recorded_at: datetime,
+        ) -> list[dict]:
             coefficient = started_qty / work_order.recipe.batch_size
             for item in work_order.recipe.items.filter(is_optional=False).order_by("sort_order"):
                 required = (item.quantity * coefficient).quantize(Decimal("0.001"))
@@ -4640,27 +4767,95 @@ class Command(BaseCommand):
                     recorded_at=recorded_at,
                     recorded_by="seed",
                 )
-            WorkOrderItem.objects.create(
-                work_order=work_order,
-                kind=WorkOrderItem.Kind.OUTPUT,
-                item_ref=work_order.output_sku,
-                quantity=finished_qty,
-                unit="un",
-                recorded_at=recorded_at,
-                recorded_by="seed",
+
+            # O resolver canônico valida unicidade por grau, motivo obrigatório
+            # em Razoável/Mínimo/perda e conservação exata da entrada.
+            from shopman.backstage.services.production import (
+                _record_batch_traceability,
+                resolve_partition,
             )
-            waste_qty = max(started_qty - finished_qty, Decimal("0"))
-            if waste_qty > 0:
+
+            finished_items, wasted_items = resolve_partition(
+                work_order,
+                quantity=started_qty,
+                partition=seed_qc_partition(work_order, started_qty, finished_qty),
+            )
+            for outcome in finished_items:
                 WorkOrderItem.objects.create(
                     work_order=work_order,
-                    kind=WorkOrderItem.Kind.WASTE,
-                    item_ref=work_order.output_sku,
-                    quantity=waste_qty,
+                    kind=WorkOrderItem.Kind.OUTPUT,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
                     unit="un",
                     recorded_at=recorded_at,
                     recorded_by="seed",
-                    meta={"reason": "perda natural / não vendido"},
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref=outcome.get("quality_grade_ref", ""),
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref=outcome.get("batch_ref", ""),
                 )
+            for outcome in wasted_items:
+                WorkOrderItem.objects.create(
+                    work_order=work_order,
+                    kind=WorkOrderItem.Kind.WASTE,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
+                    unit="un",
+                    recorded_at=recorded_at,
+                    recorded_by="seed",
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref="",
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref="",
+                )
+
+            # O seed pode atualizar seus próprios fatos conforme o contrato
+            # evolui. Lote sem assinatura de seed é produção real: preserva e
+            # interrompe a carga em vez de reclassificar silenciosamente.
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                _discard_owned_seed_output_batch(
+                    ref=line.batch_ref,
+                    sku=line.item_ref,
+                    work_order_ref=work_order.ref,
+                )
+            _record_batch_traceability(work_order_id=work_order.pk, replay=True)
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                from shopman.stockman.models import Batch
+
+                batch = Batch.objects.get(ref=line.batch_ref)
+                expected_meta = line.meta or {}
+                if (
+                    batch.sku != line.item_ref
+                    or batch.quality_grade_ref != line.quality_grade_ref
+                    or batch.nonconformity_percent
+                    != int(expected_meta.get("quality_markdown_percent") or 0)
+                    or batch.nonconformity_reason
+                    != str(expected_meta.get("quality_reason") or "")
+                ):
+                    raise CommandError(
+                        f"Lote {batch.ref} já contém outro fato de QC; "
+                        "o seed preservou o histórico e interrompeu a carga."
+                    )
+            return [
+                {
+                    "item_ref": item.item_ref,
+                    "quantity": str(item.quantity),
+                    "quality_grade_ref": item.quality_grade_ref,
+                    "quality_defect_ref": item.quality_defect_ref,
+                    "batch_ref": item.batch_ref,
+                    **({"meta": item.meta} if item.meta else {}),
+                }
+                for item in WorkOrderItem.objects.filter(
+                    work_order=work_order,
+                    kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+                ).order_by("pk")
+            ]
 
         def upsert_work_order(
             *,
@@ -4740,13 +4935,23 @@ class Command(BaseCommand):
                         "quantity": str(effective_started),
                         "operator_ref": operator_ref,
                         "position_ref": position_ref,
-                        "note": "seed operacional",
+                        "note": (
+                            "Quantidade ajustada na bancada (seed)"
+                            if effective_started != planned_qty
+                            else "seed operacional"
+                        ),
                     },
                     "seed",
                     start_at or at(target_date, (5, 0)),
                 )
             if status == WorkOrder.Status.FINISHED and finished_qty is not None:
                 effective_started = started_qty or planned_qty
+                partition_payload = add_finished_items(
+                    work_order,
+                    effective_started,
+                    finished_qty,
+                    finish_at or at(target_date, (8, 0)),
+                )
                 add_event(
                     work_order,
                     2,
@@ -4761,12 +4966,16 @@ class Command(BaseCommand):
                         "source_ref": source_ref,
                         "position_ref": position_ref,
                         "operator_ref": operator_ref,
+                        "partition": partition_payload,
+                        **(
+                            {"context": {"production_outcome": {"kind": "total_loss"}}}
+                            if finished_qty == 0
+                            else {}
+                        ),
                     },
                     "seed",
                     finish_at or at(target_date, (8, 0)),
                 )
-                add_finished_items(work_order, effective_started, finished_qty, finish_at or at(target_date, (8, 0)))
-                ensure_batch_traceability(work_order, finished_qty)
             return work_order
 
         # Remove old seed rows outside the moving operational window. The active window
@@ -4967,6 +5176,7 @@ class Command(BaseCommand):
 
         # Historical production: 35 relative days behind today for BI,
         # pickup slots and waste patterns.
+        total_loss_seeded = False
         for days_ago in range(1, 36):
             target = today - timedelta(days=days_ago)
             if not self._shop_operates_on(target):
@@ -4980,7 +5190,9 @@ class Command(BaseCommand):
                 planned = (qty * weekday_multiplier).quantize(Decimal("1"))
                 started = planned
                 loss = Decimal(str((index + days_ago) % 4))
-                finished = max(started - loss, Decimal("1"))
+                is_total_loss_example = not total_loss_seeded and ref == "croissant"
+                finished = Decimal("0") if is_total_loss_example else max(started - loss, Decimal("1"))
+                total_loss_seeded = total_loss_seeded or is_total_loss_example
                 upsert_work_order(
                     scope=f"history-{days_ago}",
                     recipe=recipe,
@@ -5311,7 +5523,8 @@ class Command(BaseCommand):
             "allow_untracked": False,
             # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
             # Não conforme não sai no remoto (default explícito aqui por
-            # legibilidade); afrouxar é decisão consciente por canal.
+            # legibilidade). O runtime não permite afrouxar esse limite por
+            # override: somente o PDV local pode vender grau com markdown.
             "sells_nonconforming": False,
         }
         _remote_config = {
@@ -6857,7 +7070,7 @@ class Command(BaseCommand):
                 error="sementes de validação: manteiga francesa abaixo do ponto de reposição",
             )
 
-        active_count = OperatorAlert.objects.filter(acknowledged=False).count()
+        active_count = OperatorAlert.objects.filter(resolved_at__isnull=True).count()
         self.stdout.write(
             f"  ✅ Alertas operacionais ativos: {active_count}"
             f" ({created_late} atraso, {created_yield} rendimento)"
@@ -8954,10 +9167,11 @@ class Command(BaseCommand):
             )
 
     def _seed_oven_runs(self, *, days: int) -> None:
-        """Tempo de forno com cobertura PARCIAL — o KPI de adoção precisa disso.
+        """Fatos sintéticos de forno com cobertura PARCIAL para BI.
 
         Cobertura 100% esconderia o indicador que mostra se a equipe está mesmo
-        usando o timer; aqui ~70% das fornadas têm medição.
+        usando o timer; aqui ~70% das fornadas têm medição. Não são timers locais
+        persistidos: são medições concluídas, marcadas inequivocamente como seed.
         """
         from shopman.craftsman.models import WorkOrder
 
@@ -8965,23 +9179,32 @@ class Command(BaseCommand):
 
         rng = random.Random(20260816)
         finished = WorkOrder.objects.filter(
-            status=WorkOrder.Status.FINISHED, finished_at__isnull=False
+            source_ref__startswith="seed:production:",
+            status=WorkOrder.Status.FINISHED,
+            finished_at__isnull=False,
         ).order_by("-target_date")[: days * 4]
+        OvenRun.objects.filter(metadata__seed="nelson").delete()
         for index, wo in enumerate(finished):
             if index % 10 < 3:  # 30% sem medição: fornada em que ninguém armou
+                continue
+            # Um operador pode ter usado o timer real sobre uma WO de cenário.
+            # Esse fato sem marcador de seed vence e jamais é substituído.
+            if OvenRun.objects.filter(work_order_ref=wo.ref).exists():
                 continue
             planned = rng.choice((18, 22, 25, 30)) * 60
             real = planned + rng.randint(-180, 420)  # às vezes passa do ponto
             armed = wo.finished_at - timedelta(seconds=real)
-            OvenRun.objects.get_or_create(
+            OvenRun.objects.create(
                 work_order_ref=wo.ref,
-                defaults={
-                    "oven_ref": wo.position_ref or "",
-                    "operator_ref": wo.operator_ref or "",
-                    "planned_seconds": planned,
-                    "armed_at": armed,
-                    "concluded_at": wo.finished_at,
-                    "status": "concluded",
+                oven_ref=wo.position_ref or "",
+                operator_ref=wo.operator_ref or "",
+                planned_seconds=planned,
+                armed_at=armed,
+                concluded_at=wo.finished_at,
+                status="concluded",
+                metadata={
+                    "seed": "nelson",
+                    "source": "synthetic_bi_history",
                 },
             )
 

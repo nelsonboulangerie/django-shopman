@@ -1586,6 +1586,8 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
 
     finished_items: list[dict] = []
     wasted_items: list[dict] = []
+    seen_grade_refs: set[str] = set()
+    loss_seen = False
     for group in partition:
         grade = str(group.get("quality_grade_ref") or "").strip().lower() or default_ref
         if grade not in grades:
@@ -1599,8 +1601,11 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
         if group.get("loss"):
             # Perda declarada: abaixo do piso não existe grau, existe descarte
             # (QC-FORNADA §2). Carrega o motivo, nunca grau nem lote.
+            if loss_seen:
+                raise ProductionError("A perda deve ser informada em um único grupo.")
             if not defect:
                 raise ProductionError("Perda declarada exige um motivo de qualidade ativo.")
+            loss_seen = True
             wasted_items.append(
                 {
                     "item_ref": work_order.output_sku,
@@ -1622,7 +1627,20 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
             )
             continue
 
+        # KISS operacional: o estoque é particionado pelo grau, que governa
+        # preço/eligibilidade. Motivos diferentes no mesmo grau não criam
+        # sublotes comercialmente distintos; o operador informa o principal.
+        if grade in seen_grade_refs:
+            raise ProductionError(f"O grau de qualidade {grade} só pode aparecer uma vez na fornada.")
+        seen_grade_refs.add(grade)
+
         grade_fact = grades[grade]
+        # Grau e motivo são eixos ortogonais. Razoável/Mínimo descrevem uma
+        # divergência mesmo se o gestor configurar temporariamente markdown 0;
+        # portanto a causa obrigatória nunca pode depender do preço atual.
+        if grade in {"fair", "minimal"} and not defect:
+            raise ProductionError("Grau Razoável/Mínimo exige um motivo de qualidade ativo.")
+
         finished_items.append(
             {
                 "item_ref": work_order.output_sku,
@@ -1634,7 +1652,9 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
                 "meta": {
                     "quality_contract_version": 1,
                     "quality_markdown_percent": grade_fact["markdown_percent"],
-                    "quality_reason": (defect_catalog.get(defect, {}).get("label") or grade_fact["label"]),
+                    # Motivo e grau são ortogonais: nunca preencher causa com
+                    # o rótulo do grau. A ausência de motivo permanece vazia.
+                    "quality_reason": defect_catalog.get(defect, {}).get("label") or "",
                 },
                 # N grupos = N lotes: o ref base preserva a fórmula histórica; os
                 # grupos seguintes ganham sufixo ordinal.
@@ -1646,11 +1666,8 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
             }
         )
 
-    if not finished_items:
-        raise ProductionError(
-            "Nenhum grupo da fornada é vendável (só perda ou veto) — registre como perda "
-            "(void/waste), não como conclusão."
-        )
+    if not finished_items and not wasted_items:
+        raise ProductionError("A conclusão precisa informar produção ou perda.")
     return finished_items, wasted_items
 
 
@@ -1787,6 +1804,11 @@ def apply_finish(
             if yield_anchor is None:
                 yield_anchor = Decimal(str(work_order.quantity))
             yield_deviation = reported_quantity - yield_anchor
+            if yield_deviation < 0:
+                raise ProductionError(
+                    "A quantidade total deve incluir toda perda da fornada. "
+                    "Classifique o déficit com quantidade e motivo."
+                )
             deviation_context = None
             if yield_deviation > 0:
                 deviation_reason = str(yield_deviation_reason or "").strip()
@@ -1874,6 +1896,21 @@ def apply_finish(
                 transition="finish",
                 reason="work_order_finished",
             )
+            outcome_context = {
+                "committed_order_refs": list((work_order.meta or {}).get("committed_order_refs") or ()),
+                **(
+                    {
+                        "production_outcome": {
+                            "kind": "total_loss",
+                            "saleable_qty": "0",
+                            "loss_qty": _qty(reported_quantity),
+                        }
+                    }
+                    if saleable_quantity == 0
+                    else {}
+                ),
+                **({"yield_deviation": deviation_context} if deviation_context is not None else {}),
+            }
             result = production_core.finish_work_order(
                 work_order_id=work_order_id,
                 quantity=quantity,
@@ -1882,10 +1919,7 @@ def apply_finish(
                 wasted_items=wasted_items,
                 idempotency_key=finish_key,
                 expected_rev=expected_rev,
-                event_context={
-                    "committed_order_refs": list((work_order.meta or {}).get("committed_order_refs") or ()),
-                    **({"yield_deviation": deviation_context} if deviation_context is not None else {}),
-                },
+                event_context=outcome_context,
             )
             if missing:
                 _create_stock_short_alert(
@@ -2668,9 +2702,9 @@ def _record_batch_traceability(*, work_order_id, replay: bool = False) -> None:
     O ``batch_ref`` sai da LINHA (gravado pelo ``resolve_partition``), não de
     fórmula derivada em ``WorkOrder.meta`` — fórmula só admitia um lote por
     ordem, e era por isso que a partição parecia impossível. Grupo com grau de
-    desconto grava ``nonconformity_percent`` (o percentual RESOLVIDO do
+    desconto grava ``quality_grade_ref`` e ``nonconformity_percent`` (o percentual RESOLVIDO do
     catálogo, congelado no lote: mudar a tabela amanhã não reescreve os lotes
-    de ontem) e ``nonconformity_reason`` (o label do defeito, ou do grau).
+    de ontem) e ``nonconformity_reason`` (somente o label do defeito).
 
     Falha aqui vira OperatorAlert, não só log: lote não gravado é preço cheio
     indevido e rastreabilidade perdida.
@@ -2704,6 +2738,7 @@ def _record_batch_traceability(*, work_order_id, replay: bool = False) -> None:
                     "production_date": existing.production_date,
                     "expiry_date": existing.expiry_date,
                     "notes": existing.notes,
+                    "quality_grade_ref": existing.quality_grade_ref,
                     "nonconformity_percent": existing.nonconformity_percent,
                     "nonconformity_reason": existing.nonconformity_reason,
                 }
@@ -2716,6 +2751,7 @@ def _record_batch_traceability(*, work_order_id, replay: bool = False) -> None:
                     "production_date": production_date,
                     "expiry_date": expiry_date,
                     "notes": f"Produção {work_order.ref}",
+                    "quality_grade_ref": line.quality_grade_ref,
                     "nonconformity_percent": markdown,
                     "nonconformity_reason": str(quality_fact.get("quality_reason") or ""),
                 }
@@ -2759,6 +2795,7 @@ def _thaw_batch_traceability(frozen: dict) -> dict:
         defaults[key] = date.fromisoformat(value) if value else None
     defaults["nonconformity_percent"] = int(defaults.get("nonconformity_percent") or 0)
     defaults["nonconformity_reason"] = str(defaults.get("nonconformity_reason") or "")
+    defaults["quality_grade_ref"] = str(defaults.get("quality_grade_ref") or "")
     return defaults
 
 

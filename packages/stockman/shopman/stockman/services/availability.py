@@ -61,15 +61,12 @@ def _planned_supply_for_target(sku: str, target: date) -> Decimal:
     today = timezone.localdate()
     if target <= today:
         return Decimal("0")
-    return (
-        Quant.objects.filter(
-            sku=sku,
-            target_date__gt=today,
-            target_date__lte=target,
-            _quantity__gt=0,
-        ).aggregate(total=Sum("_quantity"))["total"]
-        or Decimal("0")
-    )
+    return Quant.objects.filter(
+        sku=sku,
+        target_date__gt=today,
+        target_date__lte=target,
+        _quantity__gt=0,
+    ).aggregate(total=Sum("_quantity"))["total"] or Decimal("0")
 
 
 _ZERO_BREAKDOWN: dict = {
@@ -182,6 +179,7 @@ def availability_for_sku(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     """
     Build availability dict for a SKU with breakdown.
@@ -208,7 +206,10 @@ def availability_for_sku(
     # If product is paused, return zeros (stock exists but not for sale)
     if not sellable:
         return _zero_availability_dict(
-            sku, availability_policy, safety_margin, is_paused=True,
+            sku,
+            availability_policy,
+            safety_margin,
+            is_paused=True,
         )
 
     target = target_date or timezone.localdate()
@@ -232,6 +233,7 @@ def availability_for_sku(
             excluded_positions=excluded_positions,
             expiry_margin_days=expiry_margin_days,
             include_nonconforming=include_nonconforming,
+            allowed_quality_grade_refs=allowed_quality_grade_refs,
         )
 
     ready = Decimal("0")
@@ -253,9 +255,7 @@ def availability_for_sku(
         elif quant.is_future:
             planned += qty
             held_planned += held
-        elif quant.position and (
-            quant.position.kind == "process" or not quant.position.is_saleable
-        ):
+        elif quant.position and (quant.position.kind == "process" or not quant.position.is_saleable):
             # Operational stock not yet saleable: explicit process positions or
             # non-saleable production areas.
             in_production += qty
@@ -265,13 +265,15 @@ def availability_for_sku(
             held_ready += held
 
         if quant.position:
-            positions_data.append({
-                "position_ref": quant.position.ref,
-                "position_name": quant.position.name,
-                "available": qty - held,
-                "reserved": held,
-                "batch": quant.batch or None,
-            })
+            positions_data.append(
+                {
+                    "position_ref": quant.position.ref,
+                    "position_name": quant.position.name,
+                    "available": qty - held,
+                    "reserved": held,
+                    "batch": quant.batch or None,
+                }
+            )
 
     return _build_availability_dict(
         sku=sku,
@@ -299,6 +301,7 @@ def promise_decision_for_sku(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> PromiseDecision:
     """Return an explicit operational promise decision for a SKU."""
     qty_d = Decimal(str(qty))
@@ -310,6 +313,7 @@ def promise_decision_for_sku(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
     available_qty = info["total_promisable"]
     availability_policy = info.get("availability_policy", "planned_ok")
@@ -353,6 +357,7 @@ def availability_for_skus(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> dict[str, dict]:
     """
     Batch version of availability_for_sku() — same logic, few queries regardless of N.
@@ -386,19 +391,22 @@ def availability_for_skus(
         if validation.valid and validation.is_published and validation.is_sellable
     }
     shelflife_by_sku: dict[str, int | None] = {
-        sku: (info.shelflife_days if info is not None else None)
-        for sku, info in sku_infos.items()
+        sku: (info.shelflife_days if info is not None else None) for sku, info in sku_infos.items()
     }
 
     # ── Query 2: excluded batch refs grouped by SKU ───────────────────────────
     # Expiry honors the channel's near-expiry margin (0 = only already
-    # expired); conformity mirrors quants_eligible_for — having a reason IS
-    # being nonconforming, and whether that sells is the CALLER's policy.
+    # expired); conformity mirrors quants_eligible_for — the frozen markdown,
+    # never an informational reason, drives the compatibility gate.
     expiry_cutoff = target + timedelta(days=max(0, expiry_margin_days))
     expired_refs_by_sku: dict[str, set[str]] = {}
     for row in Batch.objects.filter(sku__in=skus, expiry_date__lt=expiry_cutoff).values("sku", "ref"):
         expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
-    if not include_nonconforming:
+    if allowed_quality_grade_refs is not None:
+        allowed_refs = tuple(allowed_quality_grade_refs)
+        for row in Batch.objects.filter(sku__in=skus).exclude(quality_grade_ref__in=allowed_refs).values("sku", "ref"):
+            expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
+    elif not include_nonconforming:
         for row in Batch.objects.filter(sku__in=skus).nonconforming().values("sku", "ref"):
             expired_refs_by_sku.setdefault(row["sku"], set()).add(row["ref"])
 
@@ -409,15 +417,13 @@ def availability_for_skus(
             target_date__gt=today,
             target_date__lte=target,
             _quantity__gt=0,
-        ).values_list("sku", flat=True).distinct()
-    )
-
-    # ── Query 3b: which SKUs have ANY Quant at all (scope-independent) ────────
-    tracked_skus: set[str] = set(
-        Quant.objects.filter(sku__in=skus)
+        )
         .values_list("sku", flat=True)
         .distinct()
     )
+
+    # ── Query 3b: which SKUs have ANY Quant at all (scope-independent) ────────
+    tracked_skus: set[str] = set(Quant.objects.filter(sku__in=skus).values_list("sku", flat=True).distinct())
 
     # ── Query 4: physical quants (current/past), select_related position ──────
     quant_qs = (
@@ -462,23 +468,20 @@ def availability_for_skus(
         # Product paused: return zeros (stock may exist but not for sale)
         if sku not in orderable_skus:
             availability_policy = (
-                sku_infos.get(sku).availability_policy
-                if sku_infos.get(sku) is not None
-                else "planned_ok"
+                sku_infos.get(sku).availability_policy if sku_infos.get(sku) is not None else "planned_ok"
             )
             result[sku] = _zero_availability_dict(
-                sku, availability_policy, safety_margin, is_paused=True,
+                sku,
+                availability_policy,
+                safety_margin,
+                is_paused=True,
                 is_tracked=(sku in tracked_skus),
             )
             continue
 
         expired_refs = expired_refs_by_sku.get(sku, set())
         is_planned = sku in planned_skus
-        availability_policy = (
-            sku_infos.get(sku).availability_policy
-            if sku_infos.get(sku) is not None
-            else "planned_ok"
-        )
+        availability_policy = sku_infos.get(sku).availability_policy if sku_infos.get(sku) is not None else "planned_ok"
 
         ready = Decimal("0")
         in_production = Decimal("0")
@@ -489,7 +492,8 @@ def availability_for_skus(
         positions_data = []
 
         shelflife_ns = SimpleNamespace(
-            sku=sku, shelf_life_days=shelflife_by_sku.get(sku),
+            sku=sku,
+            shelf_life_days=shelflife_by_sku.get(sku),
         )
 
         for quant in quants_by_sku.get(sku, []):
@@ -508,9 +512,7 @@ def availability_for_skus(
             elif quant.is_future:
                 planned += qty
                 held_planned += held
-            elif quant.position and (
-                quant.position.kind == "process" or not quant.position.is_saleable
-            ):
+            elif quant.position and (quant.position.kind == "process" or not quant.position.is_saleable):
                 in_production += qty
                 held_production += held
             elif quant.position and quant.position.is_saleable:
@@ -518,13 +520,15 @@ def availability_for_skus(
                 held_ready += held
 
             if quant.position:
-                positions_data.append({
-                    "position_ref": quant.position.ref,
-                    "position_name": quant.position.name,
-                    "available": qty - held,
-                    "reserved": held,
-                    "batch": quant.batch or None,
-                })
+                positions_data.append(
+                    {
+                        "position_ref": quant.position.ref,
+                        "position_name": quant.position.name,
+                        "available": qty - held,
+                        "reserved": held,
+                        "batch": quant.batch or None,
+                    }
+                )
 
         result[sku] = _build_availability_dict(
             sku=sku,
@@ -558,7 +562,7 @@ def _resolve_channel_scope(channel_ref: str | None) -> dict:
     return resolver(channel_ref)
 
 
-def availability_scope_for_channel(channel_ref: str | None) -> dict[str, int | list[str] | None]:
+def availability_scope_for_channel(channel_ref: str | None) -> dict[str, int | bool | list[str] | None]:
     """Único ponto para margem + posições ao calcular disponibilidade por canal.
 
     O catálogo (o que o canal "oferece") vem da Listagem vinculada ao canal; estes
@@ -580,4 +584,5 @@ def availability_scope_for_channel(channel_ref: str | None) -> dict[str, int | l
         "excluded_positions": scope.get("excluded_positions") or [],
         "expiry_margin_days": scope.get("expiry_margin_days", 0),
         "sells_nonconforming": scope.get("sells_nonconforming", True),
+        "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
     }

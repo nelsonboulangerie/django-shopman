@@ -15,6 +15,14 @@
 > descarte também estavam em português, contra a convenção; os valores canônicos são
 > `excellent · standard · fair · minimal` e `forces_discard`. E o grau de −20% deixou de se
 > chamar "Aceitável" (ver §2), assim como "sujo" deixou de ser veto (ver §3).
+>
+> **Refino operacional (2026-09-09):** a decisão posterior do dono simplifica os §2, §4 e §5.
+> Os quatro botões são os próprios graus **Ótimo · Normal · Razoável · Mínimo**; Normal recebe
+> automaticamente o saldo. Cada grau pode aparecer no máximo uma vez por fornada. Ótimo/Normal
+> exigem apenas quantidade; Razoável/Mínimo exigem quantidade e um motivo principal; Perda exige
+> quantidade e motivo. Motivos diferentes jamais criam duas partições do mesmo grau. Não existem
+> ações paralelas “Detalhar” ou “Registrar variação”. O contrato canônico está na
+> [ADR-017](../decisions/adr-017-quality-as-production-outcome.md).
 
 ---
 

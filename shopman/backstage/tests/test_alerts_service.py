@@ -6,6 +6,7 @@ import pytest
 from django.contrib.auth.models import Permission, User
 
 from shopman.backstage.models import OperatorAlert
+from shopman.backstage.projections.dashboard import _operator_alerts
 from shopman.backstage.services import alerts
 from shopman.backstage.services.exceptions import AlertConflict, AlertError
 
@@ -31,6 +32,27 @@ def test_create_alert_validates_type_and_message():
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    "alert_type",
+    [
+        "production_stock_shortfall",
+        "production_forgotten",
+        "production_unfinished",
+        "production_batch_traceability",
+    ],
+)
+def test_technical_production_alerts_default_to_production_audience(alert_type):
+    alert = alerts.create_alert(
+        type=alert_type,
+        severity="error",
+        message="Produção exige atenção",
+        order_ref="WO-9",
+    )
+
+    assert alert.audience == "production"
+
+
+@pytest.mark.django_db
 def test_list_and_count_active_alerts():
     OperatorAlert.objects.create(type="stock_low", severity="warning", message="Estoque baixo")
     OperatorAlert.objects.create(type="production_late", severity="critical", message="Produção atrasada")
@@ -44,9 +66,53 @@ def test_list_and_count_active_alerts():
     active = alerts.list_active_alerts(limit=10)
     counts = alerts.active_counts()
 
-    assert len(active) == 2
-    assert counts.active == 2
+    assert len(active) == 3
+    assert counts.active == 3
     assert counts.critical == 1
+
+
+@pytest.mark.django_db
+def test_acknowledged_alert_can_still_be_resolved():
+    alert = OperatorAlert.objects.create(
+        type="production_unfinished",
+        severity="critical",
+        message="Fornada ainda aberta",
+        order_ref="WO-77",
+        acknowledged=True,
+    )
+
+    assert (
+        alerts.resolve_alerts(
+            "production_unfinished",
+            order_ref="WO-77",
+            actor="production:system",
+        )
+        == 1
+    )
+
+    alert.refresh_from_db()
+    assert alert.resolved_at is not None
+    assert alerts.list_active_alerts() == []
+
+
+@pytest.mark.django_db
+def test_dashboard_keeps_seen_alert_until_cause_is_resolved():
+    alert = OperatorAlert.objects.create(
+        type="production_unfinished",
+        severity="critical",
+        message="Fornada ainda aberta",
+        order_ref="WO-SEEN",
+        acknowledged=True,
+    )
+
+    assert [row.pk for row in _operator_alerts()] == [alert.pk]
+
+    alerts.resolve_alerts(
+        "production_unfinished",
+        order_ref="WO-SEEN",
+        actor="production:system",
+    )
+    assert _operator_alerts() == []
 
 
 @pytest.mark.django_db

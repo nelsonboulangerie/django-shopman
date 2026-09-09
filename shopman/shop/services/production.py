@@ -932,11 +932,14 @@ def finish_work_order(
     from shopman.craftsman.services.execution import CraftExecution
 
     work_order = WorkOrder.objects.get(pk=work_order_id)
-    if finished_items:
+    if finished_items is not None:
+        if not finished_items and not wasted_items:
+            raise ValueError("Conclusão sem saída vendável exige a perda real da fornada.")
         CraftExecution.finish(
             order=work_order,
             finished=finished_items,
-            wasted=wasted_items or None,
+            wasted=wasted_items,
+            declared_total=quantity,
             actor=actor,
             idempotency_key=idempotency_key,
             expected_rev=expected_rev,
@@ -944,7 +947,10 @@ def finish_work_order(
             event_context=event_context,
             _idempotent_summary_replay=idempotent_summary_replay,
         )
-        total = sum(Decimal(str(item["quantity"])) for item in finished_items)
+        total = sum(
+            (Decimal(str(item["quantity"])) for item in finished_items),
+            Decimal("0"),
+        )
     else:
         total = _positive_decimal(quantity, error="Quantidade concluída inválida.")
         CraftExecution.finish(

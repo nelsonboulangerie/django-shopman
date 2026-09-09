@@ -175,6 +175,10 @@ class OperatorAlert(models.Model):
         "production_late",
         "production_low_yield",
         "production_stock_short",
+        "production_stock_shortfall",
+        "production_forgotten",
+        "production_unfinished",
+        "production_batch_traceability",
         "stock_discrepancy",
         "stock_low",
     }
