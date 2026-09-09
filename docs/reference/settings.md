@@ -378,6 +378,18 @@ Para `POST /api/auth/access/create/` originado do ManyChat, use
 `DOORMAN_ACCESS_LINK_API_KEY` via header `X-Api-Key` ou `Authorization: Bearer`.
 Esse segredo pertence ao Doorman, nao ao ManyChat API token.
 
+### URLs e mídia de Marketing
+
+| Setting | Tipo | Default | Descrição |
+|---------|------|---------|-----------|
+| `SHOPMAN_MARKETING_MEDIA_HOSTS` | CSV de hosts exatos | vazio | Hosts HTTPS controlados cujas imagens podem aparecer no browser do operador e ser entregues a providers. O host de `SHOPMAN_STOREFRONT_BASE_URL` entra automaticamente. Wildcards, URLs completas, portas e IPs privados são inválidos. |
+
+Links de campanha não têm allowlist separada: são restritos ao mesmo origin de
+`SHOPMAN_STOREFRONT_BASE_URL`, nas rotas canônicas de produto/oferta, sem query ou
+fragment. Mídia aceita somente HTTPS em host confiável (ou caminho relativo local),
+sem credenciais/porta/fragment; query é limitada a parâmetros de transformação de
+imagem. O default vazio bloqueia mídia externa nova em vez de confiar no host digitado.
+
 ---
 
 ## Shop (Loja)

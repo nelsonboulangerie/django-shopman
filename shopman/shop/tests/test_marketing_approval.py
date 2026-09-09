@@ -44,6 +44,12 @@ from shopman.shop.services.marketing_contracts import MarketingContractError
 pytestmark = pytest.mark.django_db
 
 
+@pytest.fixture(autouse=True)
+def trusted_approval_origins(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://example.test"
+    settings.SHOPMAN_MARKETING_MEDIA_HOSTS = ("example.test",)
+
+
 @pytest.fixture
 def actor():
     return get_user_model().objects.create_user(
@@ -85,7 +91,7 @@ def _approve(
             "body": "Croissant saiu do forno.",
             "hashtags": ["feitohoje"],
             "image_url": "https://example.test/croissant.jpg",
-            "link": "https://example.test/p/croissant",
+            "link": "https://example.test/produto/croissant",
         },
         platform_content=platform_content or {},
         platforms=platforms or ["instagram", "google_business"],
@@ -135,7 +141,7 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
         "body": "Pão de queijo às 17h — quentinho.",
         "hashtags": ["pãodequeijo", "feitohoje"],
         "image_url": "https://example.test/pao.jpg",
-        "link": "https://example.test/p/pao-de-queijo",
+        "link": "https://example.test/produto/pao-de-queijo",
     }
     variants = {"instagram": {"body": "Pão de queijo às 17h ✨"}}
 
@@ -181,6 +187,24 @@ def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, anno
         "body": "Original",
         "hashtags": ["original"],
     }
+
+
+def test_untrusted_media_is_rejected_before_artifact_and_outbox(actor, announcement):
+    with pytest.raises(MarketingContractError) as caught:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-approval-private-media",
+            content={
+                "body": "Original",
+                "image_url": "https://169.254.169.254/latest/meta-data",
+                "link": "https://example.test/produto/CRO-001",
+            },
+        )
+
+    assert caught.value.code == "marketing_media_private_host"
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
 
 
 def test_same_key_replays_same_artifact_snapshot_audit_and_outbox(actor, announcement):

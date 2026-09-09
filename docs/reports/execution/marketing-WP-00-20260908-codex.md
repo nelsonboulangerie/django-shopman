@@ -1192,3 +1192,61 @@ Provas locais:
   passaram; permaneceu somente o warning conhecido de SQLite local;
 - nenhuma migration, rede, provider real, sandbox remoto, destinatário, deploy,
   produção ou escrita externa foi usada.
+
+## MKT-031 — threat model e controles de URL/mídia
+
+Implementado sobre o artifact único do MKT-025, sem introduzir fetcher/proxy ou reduzir
+o gate externo G-H03:
+
+- o threat model versionado mapeia separadamente browser do operador, artifact/adapter e
+  fetch do provider; Shopman não faz DNS, `GET`, `HEAD` nem segue redirect;
+- links aceitos são somente rotas canônicas `/produto/<ref>` e `/oferta/<ref>` no origin
+  exato de `SHOPMAN_STOREFRONT_BASE_URL`; scheme diferente de HTTPS, suffix confusion,
+  userinfo, porta, query, fragment, encoding alternativo e rota de redirect falham;
+- mídia absoluta exige HTTPS e host exato em `SHOPMAN_MARKETING_MEDIA_HOSTS` ou no origin
+  da storefront; não há wildcard, URL/porta na configuração nem confiança implícita;
+- IPv4/IPv6 loopback, privado, link-local, reservado, hostname local/internal e endpoint
+  de metadata são recusados mesmo quando alguém tenta colocá-los na allowlist;
+- query de link é proibida; mídia admite somente parâmetros fechados de transformação de
+  imagem. Tracking params e redirect por query são recusados;
+- qualquer proxy futuro já tem contrato para negar redirect cross-origin. Como o sistema
+  atual não busca a imagem, criar um proxy agora ampliaria a superfície SSRF; o provider
+  continua bloqueado até seu comportamento ser ensaiado no G-H03;
+- o mesmo validador atende preview, aprovação, round-trip do artifact e o handler legado
+  imediatamente antes do adapter. Remover um host da allowlist interrompe efeitos novos
+  fail-closed;
+- a Projection v1 sanitiza rows históricas antes de gerar `<img>`/link, impedindo que um
+  valor legado hostil transforme a abertura do cockpit em request do browser;
+- erros carregam reason code allowlisted e o campo exato, inclusive
+  `platform_content.<plataforma>.image_url`; URL rejeitada nunca entra no log;
+- a API responde `422` e mantém anúncio pendente, sem artifact/outbox, quando uma edição
+  de imagem tenta alcançar IP privado;
+- `SHOPMAN_E017` bloqueia configuração insegura no deploy check; settings e `.env.example`
+  explicam o único knob e seu default vazio.
+
+Budget de omotenashi comprovado para URL/mídia:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir scheme/host/path/query manualmente | até 4 verificações por URL | 0; uma policy server-side |
+| Descobrir qual override contém a URL ruim | comparar base e variantes | field error aponta a variante exata |
+| Investigar se abrir o board chamou tracking | DevTools/log externo | impossível para URL não confiável |
+| Corrigir link de campanha | procurar URL válida | usar destino canônico indicado no próprio erro |
+| Decidir como reparar imagem | tentativa e erro | remover ou pedir 1 hostname exato ao owner |
+| Verificar host-suffix/IP/redirect | consulta técnica externa | testes adversariais e deploy check |
+| Conferir drift entre preview e provider | inspeção dupla | mesma validação no artifact e pré-adapter |
+
+Provas locais:
+
+- 32 testes específicos cobrem links canônicos, origin exato, suffix confusion, HTTPS,
+  userinfo, portas, tracking/query/fragment, rota de redirect, IPv4/IPv6 privados,
+  metadata, hostname local, dot-segments, query de mídia, redirect cross-origin, ausência
+  de DNS/fetch, erro da variante, Projection segura, handler pré-provider e config;
+- o teste de API comprova `422`, field error, anúncio preservado e zero artifact/outbox;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 728 testes passaram
+  em 74,80 s; os dois testes finais do contrato de aprovação passaram separadamente;
+- Marketing Nuxt: 9 arquivos/107 testes, ESLint e Nuxt typecheck passaram;
+- Ruff dos arquivos alterados, `git diff --check`, Django check e migration drift
+  passaram; permaneceu somente o warning conhecido de SQLite local;
+- nenhuma migration, resolução DNS, fetch de URL, rede de provider, destinatário,
+  deploy, produção ou escrita externa foi usada.

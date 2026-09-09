@@ -41,6 +41,12 @@ GOLDEN_PATH = (
 )
 
 
+@pytest.fixture(autouse=True)
+def trusted_artifact_origins(settings):
+    settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.example"
+    settings.SHOPMAN_MARKETING_MEDIA_HOSTS = ("cdn.example", "example.test")
+
+
 class CapturingProvider:
     def __init__(self):
         self.artifact = None
@@ -61,7 +67,7 @@ def test_pure_resolver_is_stable_immutable_and_recipient_free():
         "content": {
             "body": "Croissant saiu do forno ✨",
             "hashtags": ["feitohoje", "croissant"],
-            "link": "https://example.test/p/croissant",
+            "link": "https://shop.example/produto/croissant",
         },
         "platform_content": {},
         "content_version": 2,
@@ -96,7 +102,7 @@ def test_multichannel_variants_match_the_golden_and_inherit_only_absent_fields()
         }
 
     variables = {
-        "link": "https://shop.example/p/croissant",
+        "link": "https://shop.example/produto/croissant",
         "product_name": "Croissant Tradicional",
         "tag": "feitohoje",
     }

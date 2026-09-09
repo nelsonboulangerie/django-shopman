@@ -421,15 +421,19 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
     approver = announcement.approved_by
     rejecter = announcement.rejected_by
 
+    from shopman.shop.services import marketing_url_policy
+
     return AnnouncementProjection(
         pk=announcement.pk,
         version=announcement.version,
         status=announcement.status,
         status_label=announcement.get_status_display(),
         body=str(content.get("body") or ""),
-        image_url=str(content.get("image_url") or ""),
+        image_url=marketing_url_policy.safe_browser_media_url(
+            content.get("image_url")
+        ),
         hashtags=tuple(content.get("hashtags") or ()),
-        link=str(content.get("link") or ""),
+        link=marketing_url_policy.safe_browser_customer_link(content.get("link")),
         platforms=tuple(announcement.platforms or ()),
         audience=dict(audience),
         audience_total=int(audience.get("total") or 0),

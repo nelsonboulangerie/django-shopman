@@ -80,7 +80,11 @@ def rule(template):
 
 def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs) -> Announcement:
     defaults = {
-        "content": {"body": "Croissant saiu do forno", "hashtags": ["padaria"], "link": "/p/cro"},
+        "content": {
+            "body": "Croissant saiu do forno",
+            "hashtags": ["padaria"],
+            "link": "/produto/cro",
+        },
         "platforms": ["instagram", "google_business"],
         "audience": {"favorites": 12, "alerts": 3, "total": 15},
         "trigger_context": {"sku": "CRO-001"},
@@ -211,8 +215,37 @@ class TestPostDecision:
 
         assert response.status_code == 200
         announcement.refresh_from_db()
-        assert announcement.status in (AnnouncementStatus.APPROVED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.PUBLISHED)
+        assert announcement.status in (
+            AnnouncementStatus.APPROVED,
+            AnnouncementStatus.PUBLISHING,
+            AnnouncementStatus.PUBLISHED,
+        )
         assert announcement.approved_by_id == gestor.pk
+
+    def test_approval_points_an_unsafe_image_back_to_the_exact_field(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "now",
+                "image_url": "https://169.254.169.254/latest/meta-data",
+            },
+            key="approve-private-media-contract",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "marketing_media_private_host"
+        assert "content.image_url" in response.json()["field_errors"]
+        assert MarketingContentArtifact.objects.count() == 0
+        assert MarketingOutbox.objects.count() == 0
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
     def test_v2_approval_returns_one_receipt_and_only_durable_outbox(
         self, client, gestor, rule, template

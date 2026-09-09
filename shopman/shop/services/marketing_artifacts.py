@@ -86,6 +86,24 @@ def resolve_dispatch_artifact(
     image_url = str(merged.get("image_url") or "").strip()
     _assert_resolved(link, field="content.link")
     _assert_resolved(image_url, field="content.image_url")
+    from shopman.shop.services import marketing_url_policy
+
+    link = marketing_url_policy.validate_customer_link(
+        link,
+        field=(
+            f"platform_content.{normalized_platform}.link"
+            if "link" in variant
+            else "content.link"
+        ),
+    )
+    image_url = marketing_url_policy.validate_media_url(
+        image_url,
+        field=(
+            f"platform_content.{normalized_platform}.image_url"
+            if "image_url" in variant
+            else "content.image_url"
+        ),
+    )
     normalized_facts_hash = str(facts_hash or "").strip().lower()
     if normalized_facts_hash and not _HASH.fullmatch(normalized_facts_hash):
         raise MarketingContractError(

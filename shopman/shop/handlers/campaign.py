@@ -231,6 +231,21 @@ class AnnouncementHandler:
             )
             _settle(announcement)
             return
+        from shopman.shop.services import marketing_url_policy
+        from shopman.shop.services.marketing_contracts import MarketingContractError
+
+        content = announcement.content if isinstance(announcement.content, dict) else {}
+        try:
+            marketing_url_policy.validate_customer_link(content.get("link"))
+            marketing_url_policy.validate_media_url(content.get("image_url"))
+        except MarketingContractError as exc:
+            _record_result(
+                announcement,
+                platform,
+                {"status": "failed", "reason": exc.code},
+            )
+            _settle(announcement)
+            return
         try:
             result = adapter.publish(announcement, platform=platform)
         except Exception as exc:
@@ -467,17 +482,14 @@ def _relative_destination(link: str) -> str:
     Link de outro host (ou vazio) devolve a sacola: é o destino honesto de uma mensagem que
     convida a comprar, e nunca um caminho que não controlamos.
     """
-    from shopman.shop.services import storefront_links
+    from shopman.shop.services import marketing_url_policy, storefront_links
 
     if not link:
         return storefront_links.path_cart()
-
-    base = storefront_links.storefront_base_url()
-    if base and link.startswith(base):
-        return link[len(base):] or "/"
-    if link.startswith("/") and not link.startswith("//"):
-        return link
-    return storefront_links.path_cart()
+    return (
+        marketing_url_policy.canonical_customer_path(link)
+        or storefront_links.path_cart()
+    )
 
 
 def _posting_adapter(platform: str):

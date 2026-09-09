@@ -1238,6 +1238,15 @@ SHOPMAN_STOREFRONT_BASE_URL = (
     or ""
 ).strip().rstrip("/")
 
+# Hosts exatos cujas imagens podem chegar ao browser do operador e aos fetchers
+# de plataformas de Marketing. Vazio é fail-closed; o host da storefront é
+# incluído automaticamente. Sem wildcard, URL, porta ou IP privado.
+SHOPMAN_MARKETING_MEDIA_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get("SHOPMAN_MARKETING_MEDIA_HOSTS", "").split(",")
+    if host.strip()
+)
+
 # Magic links (doorman AccessLink) land on the Nuxt store, so the session cookie
 # is set on the store host — same single source as every other customer link.
 DOORMAN["ACCESS_LINK_ENTRY_URL"] = SHOPMAN_STOREFRONT_BASE_URL

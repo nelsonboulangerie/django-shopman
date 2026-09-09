@@ -19,6 +19,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
   SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
   SHOPMAN_E016  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
+  SHOPMAN_E017  Allowlist de mídia Marketing contém host inseguro
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -935,6 +936,30 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
         )
     )
     return warnings
+
+
+@register(deploy=True)
+def check_marketing_media_hosts(app_configs, **kwargs):
+    """Fail deployment when a URL/port/wildcard/private IP entered the host list."""
+
+    from shopman.shop.services.marketing_url_policy import (
+        invalid_trusted_media_hosts,
+    )
+
+    invalid = invalid_trusted_media_hosts()
+    if not invalid:
+        return []
+    return [
+        Error(
+            "A allowlist de mídia Marketing contém entrada insegura: "
+            + ", ".join(invalid),
+            hint=(
+                "Use somente hostnames exatos controlados, sem esquema, caminho, "
+                "porta, wildcard ou IP privado."
+            ),
+            id="SHOPMAN_E017",
+        )
+    ]
 
 
 @register()
