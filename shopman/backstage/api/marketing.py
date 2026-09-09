@@ -53,6 +53,7 @@ from shopman.backstage.api.throttles import (
     MarketingFireUserThrottle,
 )
 from shopman.backstage.projections import marketing as marketing_projection
+from shopman.backstage.projections import marketing_v2 as marketing_projection_v2
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
 
@@ -236,6 +237,32 @@ class CampaignBoardView(_CampaignBase):
     def get(self, request):
         board = marketing_projection.build_board()
         return Response({"board": projection_data(board)})
+
+
+@extend_schema_view(
+    get=extend_schema(
+        tags=["backstage"],
+        summary="Canonical Marketing v2 board facts",
+        responses={200: OpenApiResponse(description="Marketing v2 projection envelope.")},
+    ),
+)
+class CampaignBoardV2View(_CampaignBase):
+    """Additive read contract; the v1 board remains available during cutover."""
+
+    def get(self, request):
+        return Response(projection_data(marketing_projection_v2.build_board()))
+
+
+class AnnouncementDetailV2View(_CampaignBase):
+    """One canonical v2 announcement projection, without audience membership."""
+
+    def get(self, request, pk: int):
+        announcement = _announcement_or_none(pk)
+        if announcement is None:
+            return Response({"detail": "Anúncio não encontrado."}, status=404)
+        return Response(
+            projection_data(marketing_projection_v2.build_announcement(announcement))
+        )
 
 
 @extend_schema_view(

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -82,8 +83,21 @@ def delivery_summary(announcement_id: int) -> DeliverySummary:
         "platforms",
         "delivery_state",
     ).get(pk=announcement_id)
+    return delivery_summaries_for((announcement,))[announcement.pk]
+
+
+def delivery_summaries_for(
+    announcements: Iterable[Announcement],
+) -> dict[int, DeliverySummary]:
+    """Return closed snapshots in two ledger queries, regardless of list size."""
+
+    announcement_list = tuple(announcements)
+    if not announcement_list:
+        return {}
+    announcement_ids = tuple(item.pk for item in announcement_list)
     lanes = list(
-        MarketingOutbox.objects.filter(announcement_id=announcement_id).values(
+        MarketingOutbox.objects.filter(announcement_id__in=announcement_ids).values(
+            "announcement_id",
             "platform",
             "state",
             "fanout_expected",
@@ -92,10 +106,32 @@ def delivery_summary(announcement_id: int) -> DeliverySummary:
         )
     )
     grouped_counts = list(
-        DeliveryTarget.objects.filter(announcement_id=announcement_id)
-        .values("platform", "state")
+        DeliveryTarget.objects.filter(announcement_id__in=announcement_ids)
+        .values("announcement_id", "platform", "state")
         .annotate(total=Count("pk"))
     )
+    lanes_by_announcement: dict[int, list[dict]] = {}
+    for lane in lanes:
+        lanes_by_announcement.setdefault(lane["announcement_id"], []).append(lane)
+    counts_by_announcement: dict[int, list[dict]] = {}
+    for entry in grouped_counts:
+        counts_by_announcement.setdefault(entry["announcement_id"], []).append(entry)
+    return {
+        announcement.pk: _delivery_summary_from_rows(
+            announcement,
+            lanes=lanes_by_announcement.get(announcement.pk, []),
+            grouped_counts=counts_by_announcement.get(announcement.pk, []),
+        )
+        for announcement in announcement_list
+    }
+
+
+def _delivery_summary_from_rows(
+    announcement: Announcement,
+    *,
+    lanes: list[dict],
+    grouped_counts: list[dict],
+) -> DeliverySummary:
     if not lanes:
         state = (
             AnnouncementDeliveryState.LEGACY_UNTRACKED

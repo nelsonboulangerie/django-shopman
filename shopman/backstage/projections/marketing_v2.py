@@ -1,0 +1,716 @@
+"""Canonical Marketing v2 read model.
+
+The projection carries only domain facts, technical references, enums, counts,
+timestamps and freshness.  It deliberately excludes rendered UI copy, actors,
+audience membership, provider errors and mutable artifact payloads.  Presentation
+and authorization Actions live in their own layers.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import re
+from dataclasses import asdict, dataclass
+from datetime import datetime, time, timedelta
+from typing import Any, Literal
+
+from django.conf import settings
+from django.db.models import Count, Q
+from django.utils import timezone
+
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementStatus,
+    AudienceSnapshot,
+    DeliveryTarget,
+    MarketingContentArtifact,
+    Trigger,
+)
+from shopman.shop.services.marketing_delivery_aggregate import (
+    DeliverySummary,
+    delivery_summaries_for,
+)
+
+CONTRACT = "marketing.v2"
+RECENT_WINDOW = timedelta(hours=24)
+
+FreshnessState = Literal["fresh", "stale", "degraded", "unavailable"]
+ReadinessState = Literal["ready", "degraded", "blocked", "unknown"]
+AnnouncementState = Literal[
+    "draft",
+    "pending_review",
+    "approved",
+    "publishing",
+    "settled",
+    "published",
+    "failed",
+    "rejected",
+    "expired",
+    "cancelled",
+]
+DeliveryState = Literal[
+    "not_started",
+    "fanout_pending",
+    "delivering",
+    "succeeded",
+    "completed_with_failures",
+    "unknown",
+    "cancelled",
+    "expired",
+    "legacy_untracked",
+]
+TriggerCode = Literal[
+    "",
+    "production_finished",
+    "low_stock",
+    "stock_back",
+    "product_created",
+    "manual",
+    "schedule",
+]
+ReasonCode = Literal["", "review_required", "review_window_expired"]
+
+_SAFE_CODE = re.compile(r"^[a-zA-Z0-9_.:/-]{1,160}$")
+_DOMAIN_CODE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
+_HEX_HASH = re.compile(r"^[a-f0-9]{64}$")
+_AUDIENCE_EXCLUSION_REASONS = frozenset({
+    "consent_unavailable",
+    "customer_inactive",
+    "global_optout",
+    "invalid_contact",
+    "late_duplicate",
+    "missing_consent",
+    "rule_mismatch",
+    "subscription_inactive",
+})
+_AUDIENCE_COUNT_FIELDS = (
+    "eligible_count",
+    "deduplicated_count",
+    "vip_count",
+    "general_count",
+    "wave_count",
+)
+_TARGET_STATES = tuple(value for value, _label in DeliveryTarget.State.choices)
+
+
+@dataclass(frozen=True, slots=True)
+class FreshnessProjectionV2:
+    state: FreshnessState
+    as_of: datetime | None
+    degraded_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AudienceSummaryProjectionV2:
+    source_ref: str
+    version: int
+    eligible_count: int
+    excluded_by_reason: dict[str, int]
+    deduplicated_count: int
+    vip_count: int
+    general_count: int
+    wave_count: int
+    policy_version: str
+    cohort_hash: str
+    calculated_at: datetime | None
+    expires_at: datetime | None
+    freshness: FreshnessProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
+class ArtifactSummaryProjectionV2:
+    ref: str
+    version: int
+    schema_version: int
+    artifact_hash: str
+    created_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryCountsProjectionV2:
+    planned: int
+    suppressed: int
+    queued: int
+    sending: int
+    accepted: int
+    confirmed: int
+    failed_retryable: int
+    failed_final: int
+    unknown: int
+    cancelled: int
+    expired: int
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformDeliveryProjectionV2:
+    platform_ref: str
+    state: DeliveryState
+    counts: DeliveryCountsProjectionV2
+    target_count: int
+    fanout_expected: int
+    fanout_materialized: int
+    lane_count: int
+    complete_lane_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryAggregateProjectionV2:
+    state: DeliveryState
+    counts: DeliveryCountsProjectionV2
+    target_count: int
+    fanout_expected: int
+    fanout_materialized: int
+    platforms: tuple[PlatformDeliveryProjectionV2, ...]
+    freshness: FreshnessProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
+class PlatformReadinessProjectionV2:
+    platform_ref: str
+    state: ReadinessState
+    checked_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReadinessProjectionV2:
+    state: ReadinessState
+    platforms: tuple[PlatformReadinessProjectionV2, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AnnouncementFactsProjectionV2:
+    trigger: TriggerCode
+    campaign_ref: str
+    template_ref: str
+    product_ref: str
+
+
+@dataclass(frozen=True, slots=True)
+class AnnouncementProjectionV2:
+    ref: str
+    version: int
+    state: AnnouncementState
+    reason_code: ReasonCode
+    facts: AnnouncementFactsProjectionV2
+    platform_refs: tuple[str, ...]
+    created_at: datetime
+    age_seconds: int
+    expires_at: datetime | None
+    expires_in_seconds: int | None
+    scheduled_for: datetime | None
+    approved_at: datetime | None
+    rejected_at: datetime | None
+    published_at: datetime | None
+    settled_at: datetime | None
+    audience: AudienceSummaryProjectionV2
+    artifact: ArtifactSummaryProjectionV2 | None
+    readiness: ReadinessProjectionV2
+    delivery: DeliveryAggregateProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
+class OperationalCountersProjectionV2:
+    pending_decision_count: int
+    accepted_unconfirmed_targets_today: int
+    confirmed_targets_today: int
+    failed_final_targets_today: int
+    unknown_targets_open: int
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingBoardDataV2:
+    kind: Literal["board"]
+    pending: tuple[AnnouncementProjectionV2, ...]
+    recent: tuple[AnnouncementProjectionV2, ...]
+    counters: OperationalCountersProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingAnnouncementDataV2:
+    kind: Literal["announcement_detail"]
+    announcement: AnnouncementProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingEnvelopeV2:
+    contract: Literal["marketing.v2"]
+    generated_at: datetime
+    shop_timezone: str
+    resource_version: int
+    freshness: FreshnessProjectionV2
+    data: MarketingBoardDataV2 | MarketingAnnouncementDataV2
+    actions: tuple[dict[str, Any], ...]
+
+
+def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:
+    """Build the complete board without presentation strings or silent row caps."""
+
+    clock = _aware_clock(now)
+    recent_since = clock - RECENT_WINDOW
+    candidates = list(
+        Announcement.objects.filter(
+            Q(status=AnnouncementStatus.PENDING_REVIEW)
+            | (Q(created_at__gte=recent_since) & ~Q(status=AnnouncementStatus.DRAFT))
+        ).select_related("rule", "template")
+    )
+    evidence = _evidence_for(candidates)
+    summaries = delivery_summaries_for(candidates)
+
+    pending: list[AnnouncementProjectionV2] = []
+    recent: list[AnnouncementProjectionV2] = []
+    for announcement in candidates:
+        projected = _project_announcement(
+            announcement,
+            snapshot=evidence.snapshots.get(announcement.pk),
+            artifact=evidence.artifacts.get(announcement.pk),
+            delivery=summaries[announcement.pk],
+            now=clock,
+        )
+        if (
+            announcement.status == AnnouncementStatus.PENDING_REVIEW
+            and not announcement.is_expired(now=clock)
+        ):
+            pending.append(projected)
+        elif announcement.created_at >= recent_since:
+            recent.append(projected)
+
+    data = MarketingBoardDataV2(
+        kind="board",
+        pending=tuple(pending),
+        recent=tuple(recent),
+        counters=_operational_counters(pending_count=len(pending), now=clock),
+    )
+    freshness = _combined_freshness((*pending, *recent), now=clock)
+    return MarketingEnvelopeV2(
+        contract=CONTRACT,
+        generated_at=_local(clock),
+        shop_timezone=settings.TIME_ZONE,
+        resource_version=_data_version(data),
+        freshness=freshness,
+        data=data,
+        actions=(),
+    )
+
+
+def build_announcement(
+    announcement: Announcement,
+    *,
+    now: datetime | None = None,
+) -> MarketingEnvelopeV2:
+    """Build one detail envelope using the same facts as the board card."""
+
+    clock = _aware_clock(now)
+    evidence = _evidence_for((announcement,))
+    projected = _project_announcement(
+        announcement,
+        snapshot=evidence.snapshots.get(announcement.pk),
+        artifact=evidence.artifacts.get(announcement.pk),
+        delivery=delivery_summaries_for((announcement,))[announcement.pk],
+        now=clock,
+    )
+    return MarketingEnvelopeV2(
+        contract=CONTRACT,
+        generated_at=_local(clock),
+        shop_timezone=settings.TIME_ZONE,
+        resource_version=announcement.version,
+        freshness=_combined_freshness((projected,), now=clock),
+        data=MarketingAnnouncementDataV2(
+            kind="announcement_detail",
+            announcement=projected,
+        ),
+        actions=(),
+    )
+
+
+def schema() -> dict[str, Any]:
+    """Return the executable JSON Schema that later generates the TS client."""
+
+    from pydantic import TypeAdapter
+
+    generated = TypeAdapter(MarketingEnvelopeV2).json_schema()
+    generated["additionalProperties"] = False
+    for definition in generated.get("$defs", {}).values():
+        if definition.get("type") == "object":
+            definition["additionalProperties"] = False
+    return generated
+
+
+@dataclass(frozen=True, slots=True)
+class _Evidence:
+    snapshots: dict[int, AudienceSnapshot]
+    artifacts: dict[int, MarketingContentArtifact]
+
+
+def _evidence_for(announcements: tuple[Announcement, ...] | list[Announcement]) -> _Evidence:
+    announcement_ids = tuple(item.pk for item in announcements)
+    if not announcement_ids:
+        return _Evidence(snapshots={}, artifacts={})
+
+    snapshots: dict[int, AudienceSnapshot] = {}
+    for snapshot in AudienceSnapshot.objects.filter(
+        announcement_id__in=announcement_ids
+    ).order_by("announcement_id", "-version", "-sealed_at"):
+        snapshots.setdefault(snapshot.announcement_id, snapshot)
+
+    artifacts: dict[int, MarketingContentArtifact] = {}
+    for artifact in MarketingContentArtifact.objects.filter(
+        announcement_id__in=announcement_ids
+    ).order_by("announcement_id", "-version", "-created_at"):
+        artifacts.setdefault(artifact.announcement_id, artifact)
+    return _Evidence(snapshots=snapshots, artifacts=artifacts)
+
+
+def _project_announcement(
+    announcement: Announcement,
+    *,
+    snapshot: AudienceSnapshot | None,
+    artifact: MarketingContentArtifact | None,
+    delivery: DeliverySummary,
+    now: datetime,
+) -> AnnouncementProjectionV2:
+    expired = announcement.is_expired(now=now)
+    effective_state = AnnouncementStatus.EXPIRED if expired else announcement.status
+    expires_in_seconds = (
+        max(0, int((announcement.expires_at - now).total_seconds()))
+        if announcement.expires_at
+        else None
+    )
+    trigger = (
+        announcement.rule.trigger
+        if announcement.rule_id and announcement.rule.trigger in Trigger.values
+        else ""
+    )
+    context = announcement.trigger_context if isinstance(announcement.trigger_context, dict) else {}
+    product_ref = _prefixed_ref("product", context.get("sku"))
+    platform_refs = tuple(
+        value
+        for value in (_domain_code(item) for item in (announcement.platforms or ()))
+        if value
+    )
+    return AnnouncementProjectionV2(
+        ref=f"announcement:{announcement.pk}",
+        version=announcement.version,
+        state=effective_state,
+        reason_code=_reason_code(effective_state),
+        facts=AnnouncementFactsProjectionV2(
+            trigger=trigger,
+            campaign_ref=(f"campaign:{announcement.rule_id}" if announcement.rule_id else ""),
+            template_ref=(
+                f"announcement_template:{announcement.template_id}"
+                if announcement.template_id
+                else ""
+            ),
+            product_ref=product_ref,
+        ),
+        platform_refs=platform_refs,
+        created_at=_local(announcement.created_at),
+        age_seconds=max(0, int((now - announcement.created_at).total_seconds())),
+        expires_at=_optional_local(announcement.expires_at),
+        expires_in_seconds=expires_in_seconds,
+        scheduled_for=_optional_local(announcement.publish_at),
+        approved_at=_optional_local(announcement.approved_at),
+        rejected_at=_optional_local(announcement.rejected_at),
+        published_at=_optional_local(announcement.published_at),
+        settled_at=_optional_local(announcement.delivery_settled_at),
+        audience=_audience_summary(announcement, snapshot=snapshot, now=now),
+        artifact=_artifact_summary(artifact),
+        readiness=_unknown_readiness(platform_refs),
+        delivery=_delivery_aggregate(delivery=delivery, now=now),
+    )
+
+
+def _audience_summary(
+    announcement: Announcement,
+    *,
+    snapshot: AudienceSnapshot | None,
+    now: datetime,
+) -> AudienceSummaryProjectionV2:
+    raw = snapshot.summary if snapshot is not None else announcement.audience
+    values = raw if isinstance(raw, dict) else {}
+    calculated_at = snapshot.calculated_at if snapshot is not None else _parsed_datetime(values.get("calculated_at"))
+    expires_at = snapshot.expires_at if snapshot is not None else _parsed_datetime(values.get("expires_at"))
+    raw_degraded = values.get("degraded_sources")
+    has_degraded_source = bool(raw_degraded) if isinstance(raw_degraded, list | tuple) else False
+
+    if has_degraded_source:
+        freshness_state: FreshnessState = "degraded"
+    elif snapshot is not None:
+        freshness_state = "fresh"
+    elif calculated_at is None:
+        freshness_state = "unavailable"
+    elif expires_at is not None and expires_at <= now:
+        freshness_state = "stale"
+    else:
+        freshness_state = "fresh"
+
+    counts = {
+        key: _safe_count(values.get(key, values.get("total", 0) if key == "eligible_count" else 0))
+        for key in _AUDIENCE_COUNT_FIELDS
+    }
+    excluded = values.get("excluded_by_reason")
+    excluded_by_reason: dict[str, int] = {}
+    unclassified_count = 0
+    for key, value in (excluded.items() if isinstance(excluded, dict) else ()):
+        count = _safe_count(value)
+        if key in _AUDIENCE_EXCLUSION_REASONS:
+            excluded_by_reason[key] = count
+        else:
+            unclassified_count += count
+    if unclassified_count:
+        excluded_by_reason["unclassified"] = unclassified_count
+    policy_version = _domain_code(
+        snapshot.policy_version if snapshot is not None else values.get("policy_version")
+    )
+    cohort_hash = str(snapshot.cohort_hash if snapshot is not None else values.get("cohort_hash") or "").lower()
+    if not _HEX_HASH.fullmatch(cohort_hash):
+        cohort_hash = ""
+    return AudienceSummaryProjectionV2(
+        source_ref=(f"audience_snapshot:{snapshot.ref}" if snapshot is not None else ""),
+        version=snapshot.version if snapshot is not None else announcement.version,
+        eligible_count=counts["eligible_count"],
+        excluded_by_reason=excluded_by_reason,
+        deduplicated_count=counts["deduplicated_count"],
+        vip_count=counts["vip_count"],
+        general_count=counts["general_count"],
+        wave_count=counts["wave_count"],
+        policy_version=policy_version,
+        cohort_hash=cohort_hash,
+        calculated_at=_optional_local(calculated_at),
+        expires_at=_optional_local(expires_at),
+        freshness=FreshnessProjectionV2(
+            state=freshness_state,
+            as_of=_optional_local(calculated_at),
+            degraded_sources=("audience",) if freshness_state != "fresh" else (),
+        ),
+    )
+
+
+def _artifact_summary(
+    artifact: MarketingContentArtifact | None,
+) -> ArtifactSummaryProjectionV2 | None:
+    if artifact is None:
+        return None
+    artifact_hash = str(artifact.artifact_hash).lower()
+    return ArtifactSummaryProjectionV2(
+        ref=f"content_artifact:{artifact.ref}",
+        version=artifact.version,
+        schema_version=artifact.schema_version,
+        artifact_hash=artifact_hash if _HEX_HASH.fullmatch(artifact_hash) else "",
+        created_at=_local(artifact.created_at),
+    )
+
+
+def _delivery_aggregate(
+    *,
+    delivery: DeliverySummary,
+    now: datetime,
+) -> DeliveryAggregateProjectionV2:
+    legacy = delivery.state == "legacy_untracked"
+    freshness = FreshnessProjectionV2(
+        state="unavailable" if legacy else "fresh",
+        as_of=_local(now),
+        degraded_sources=("delivery_ledger",) if legacy else (),
+    )
+    return DeliveryAggregateProjectionV2(
+        state=delivery.state,
+        counts=_delivery_counts(delivery.counts),
+        target_count=delivery.targets_total,
+        fanout_expected=delivery.fanout_expected,
+        fanout_materialized=delivery.fanout_materialized,
+        platforms=tuple(
+            PlatformDeliveryProjectionV2(
+                platform_ref=_domain_code(platform.platform) or "unknown",
+                state=platform.state,
+                counts=_delivery_counts(platform.counts),
+                target_count=platform.targets_total,
+                fanout_expected=platform.fanout_expected,
+                fanout_materialized=platform.fanout_materialized,
+                lane_count=platform.lanes_total,
+                complete_lane_count=platform.lanes_complete,
+            )
+            for platform in delivery.platforms
+        ),
+        freshness=freshness,
+    )
+
+
+def _delivery_counts(counts: dict[str, int]) -> DeliveryCountsProjectionV2:
+    normalized = {state: _safe_count(counts.get(state, 0)) for state in _TARGET_STATES}
+    return DeliveryCountsProjectionV2(**normalized)
+
+
+def _unknown_readiness(platform_refs: tuple[str, ...]) -> ReadinessProjectionV2:
+    return ReadinessProjectionV2(
+        state="unknown",
+        platforms=tuple(
+            PlatformReadinessProjectionV2(
+                platform_ref=platform_ref,
+                state="unknown",
+                checked_at=None,
+            )
+            for platform_ref in platform_refs
+        ),
+    )
+
+
+def _operational_counters(
+    *,
+    pending_count: int,
+    now: datetime,
+) -> OperationalCountersProjectionV2:
+    local_now = timezone.localtime(now)
+    local_zone = timezone.get_current_timezone()
+    day_start = timezone.make_aware(datetime.combine(local_now.date(), time.min), local_zone)
+    next_day = timezone.make_aware(
+        datetime.combine(local_now.date() + timedelta(days=1), time.min),
+        local_zone,
+    )
+    values = DeliveryTarget.objects.aggregate(
+        accepted_today=Count(
+            "pk",
+            filter=Q(
+                state=DeliveryTarget.State.ACCEPTED,
+                settled_at__gte=day_start,
+                settled_at__lt=next_day,
+            ),
+        ),
+        confirmed_today=Count(
+            "pk",
+            filter=Q(
+                state=DeliveryTarget.State.CONFIRMED,
+                settled_at__gte=day_start,
+                settled_at__lt=next_day,
+            ),
+        ),
+        failed_final_today=Count(
+            "pk",
+            filter=Q(
+                state=DeliveryTarget.State.FAILED_FINAL,
+                settled_at__gte=day_start,
+                settled_at__lt=next_day,
+            ),
+        ),
+        unknown_open=Count("pk", filter=Q(state=DeliveryTarget.State.UNKNOWN)),
+    )
+    return OperationalCountersProjectionV2(
+        pending_decision_count=pending_count,
+        accepted_unconfirmed_targets_today=values["accepted_today"],
+        confirmed_targets_today=values["confirmed_today"],
+        failed_final_targets_today=values["failed_final_today"],
+        unknown_targets_open=values["unknown_open"],
+    )
+
+
+def _combined_freshness(
+    announcements: tuple[AnnouncementProjectionV2, ...],
+    *,
+    now: datetime,
+) -> FreshnessProjectionV2:
+    states: list[FreshnessState] = []
+    degraded_sources: set[str] = set()
+    for announcement in announcements:
+        for item in (announcement.audience.freshness, announcement.delivery.freshness):
+            states.append(item.state)
+            degraded_sources.update(item.degraded_sources)
+    priority: tuple[FreshnessState, ...] = (
+        "unavailable",
+        "degraded",
+        "stale",
+        "fresh",
+    )
+    state = next((candidate for candidate in priority if candidate in states), "fresh")
+    return FreshnessProjectionV2(
+        state=state,
+        as_of=_local(now),
+        degraded_sources=tuple(sorted(degraded_sources)),
+    )
+
+
+def _data_version(data: MarketingBoardDataV2) -> int:
+    canonical = json.dumps(
+        _without_volatile_clock_fields(asdict(data)),
+        default=_json_default,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return int(hashlib.sha256(canonical.encode()).hexdigest()[:15], 16) or 1
+
+
+def _without_volatile_clock_fields(value: object) -> object:
+    """Keep resource versions stable while wall-clock counters tick."""
+
+    if isinstance(value, dict):
+        return {
+            key: _without_volatile_clock_fields(item)
+            for key, item in value.items()
+            if key not in {"age_seconds", "expires_in_seconds", "as_of"}
+        }
+    if isinstance(value, list | tuple):
+        return [_without_volatile_clock_fields(item) for item in value]
+    return value
+
+
+def _reason_code(state: str) -> ReasonCode:
+    if state == AnnouncementStatus.PENDING_REVIEW:
+        return "review_required"
+    if state == AnnouncementStatus.EXPIRED:
+        return "review_window_expired"
+    return ""
+
+
+def _safe_count(value: object) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(0, int(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _technical_code(value: object) -> str:
+    candidate = str(value or "").strip()
+    return candidate if _SAFE_CODE.fullmatch(candidate) else ""
+
+
+def _domain_code(value: object) -> str:
+    candidate = str(value or "").strip()
+    return candidate if _DOMAIN_CODE.fullmatch(candidate) else ""
+
+
+def _prefixed_ref(prefix: str, value: object) -> str:
+    code = _technical_code(value)
+    return f"{prefix}:{code}" if code else ""
+
+
+def _parsed_datetime(value: object) -> datetime | None:
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        return None
+    return parsed
+
+
+def _aware_clock(value: datetime | None) -> datetime:
+    clock = value or timezone.now()
+    if timezone.is_naive(clock):
+        raise ValueError("Marketing projection requires an aware clock.")
+    return clock
+
+
+def _json_default(value: object) -> str:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    raise TypeError(f"Unsupported projection value: {type(value).__name__}")
+
+
+def _optional_local(value: datetime | None) -> datetime | None:
+    return _local(value) if value is not None else None
+
+
+def _local(value: datetime) -> datetime:
+    return timezone.localtime(value)

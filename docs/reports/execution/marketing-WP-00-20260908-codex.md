@@ -733,3 +733,44 @@ Provas locais:
 - regressão ampliada Marketing/campaign/notification e gates arquiteturais: 2.709 testes passaram, 16 ignorados, 26 deselecionados e 10 subtests; somente 3 warnings esperados de override de `DATABASES` nos testes de deploy;
 - Ruff de todos os Python tocados, `git diff --check`, Django check e migration drift passaram; o check preserva apenas o warning conhecido de SQLite e os logs de bootstrap sem schema no banco efêmero;
 - migration única, aditiva e reversível `shop.0035_marketing_security_authorization`; nenhum provider, destinatário, credencial, sandbox, rede, deploy, produção ou escrita externa foi usado.
+
+## MKT-021 — Marketing Projection v2 pura e versionada
+
+Implementado de forma aditiva e sem trocar o consumidor atual:
+
+- o envelope canônico `marketing.v2` expõe timezone da loja, instante da leitura, resource version, freshness, dados e o slot de `actions`; a resolução das Actions permanece vazia e explicitamente reservada para MKT-022;
+- board e detalhe usam o mesmo read model imutável de fatos, refs técnicas, enums, contagens, hashes, timestamps e versões;
+- foram removidos do contrato v2 labels, frases de apresentação, nomes de ator, motivo livre de recusa, conteúdo mutável, resultado JSON legado, erro bruto de provider e qualquer membership/target/contact;
+- trigger context é allowlisted: somente a ref técnica do SKU pode sair; JSON arbitrário, nome, telefone e e-mail não atravessam a Projection;
+- metadados antigos de audiência são saneados: policy/ref/hash seguem formatos técnicos, reason desconhecido vira somente a contagem `unclassified` e nunca carrega a chave potencialmente sensível;
+- audience freshness distingue `fresh`, `stale`, `degraded` e `unavailable`; histórico sem ledger fica `delivery_ledger` indisponível, sem inventar receipt ou sucesso;
+- readiness existe como verdade `unknown` até MKT-029 conectar provas atuais do canal; a Projection não infere disponibilidade pela ausência de erro;
+- estado efetivo expirado é derivado pelo relógio sem escrita no caminho de leitura e sem permitir que card vencido continue parecendo revisável;
+- métricas de “publicado/alcançado” saíram do v2; o painel conta somente targets `accepted` não confirmados, `confirmed`, `failed_final` e `unknown` diretamente do ledger, com janela diária no timezone da loja;
+- o aggregate do ledger ganhou leitura bulk: qualquer quantidade de anúncios custa duas queries de ledger, eliminando N+1 por card;
+- o board não tem o corte silencioso de 50 itens; todos os pendentes válidos e todos os resultados da janela de 24 horas são projetados, deixando cursor/history para MKT-024;
+- a versão do board é content-addressed e ignora apenas campos que avançam com o relógio, portanto não muda a cada segundo sem mudança operacional; no detalhe, `resource_version` continua sendo o CAS version do anúncio;
+- `/api/v1/backstage/marketing/v2/` e `/api/v1/backstage/marketing/v2/announcements/<id>/` usam a capability de leitura existente; `/marketing/` v1 permanece intacto durante a janela de compatibilidade;
+- o JSON Schema estrito e versionado foi cristalizado em `contracts/projections/marketing_v2.schema.json`; propriedades extras falham no contrato e timestamps possuem formato `date-time`.
+
+Budget de omotenashi comprovado no read path:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Traduzir status em certeza de entrega | inferência por labels/JSON legado | estados e contagens fechadas do ledger |
+| Distinguir aceito de confirmado | “alcançado” somava audiência estimada | counters separados e nenhum `reached` |
+| Conferir histórico para achar falha parcial | card/resultados divergentes | agregado geral + por plataforma no mesmo fetch |
+| Descobrir se zero é real ou outage | ausência ambígua | freshness + source code allowlisted |
+| Abrir logs/provider para validar legado | necessário para certeza | `legacy_untracked`/`unavailable` explícito |
+| Esperar painel crescer com N anúncios | N+1 de agregado | 6 queries totais para board; 2 são ledger bulk |
+| Perder pendente por corte oculto | limite silencioso de 50 | 75 itens cobertos sem corte; implementação sem limite |
+| Revalidar contrato BE↔FE manualmente | espelho informal | schema golden executável e drift falha teste |
+
+Provas locais:
+
+- 8 testes MKT-021 cobrem schema golden, ausência de copy/PII/membership, saneamento de JSON legado, métricas honestas, orçamento constante, ausência de corte, resource version estável, expiração read-only e endpoints compatíveis;
+- projection + aggregate: 21 testes passaram;
+- regressão Marketing/campaign/audience/API/E2E: 513 testes passaram em 69,42 s;
+- board com 75 pendentes executou exatamente 6 queries, independentemente da cardinalidade;
+- Ruff, `git diff --check`, JSON parse, Django check e migration drift passaram; permaneceram apenas o warning conhecido de SQLite e logs defensivos de bootstrap sem schema no check local;
+- nenhuma migration, provider, destinatário, rede, deploy, produção ou escrita externa foi usada.

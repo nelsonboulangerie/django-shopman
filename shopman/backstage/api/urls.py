@@ -52,6 +52,7 @@ from .marketing import (
     AnnouncementApproveView,
     AnnouncementCancelView,
     AnnouncementDeliveryActionsView,
+    AnnouncementDetailV2View,
     AnnouncementDetailView,
     AnnouncementReconcileDeliveriesView,
     AnnouncementRejectView,
@@ -61,6 +62,7 @@ from .marketing import (
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
     AudienceCountView,
+    CampaignBoardV2View,
     CampaignBoardView,
     CampaignDetailView,
     CampaignFireView,
@@ -338,6 +340,12 @@ urlpatterns = [
     ),
     # Marketing operacional: capabilities por ação; abrir o app não publica.
     path("marketing/", CampaignBoardView.as_view(), name="api-backstage-marketing"),
+    path("marketing/v2/", CampaignBoardV2View.as_view(), name="api-backstage-marketing-v2"),
+    path(
+        "marketing/v2/announcements/<int:pk>/",
+        AnnouncementDetailV2View.as_view(),
+        name="api-backstage-marketing-v2-announcement",
+    ),
     path("marketing/audience/count/", AudienceCountView.as_view(), name="api-backstage-marketing-audience-count"),
     path("marketing/history/", CampaignHistoryView.as_view(), name="api-backstage-marketing-history"),
     path("marketing/options/", CampaignOptionsView.as_view(), name="api-backstage-marketing-options"),
