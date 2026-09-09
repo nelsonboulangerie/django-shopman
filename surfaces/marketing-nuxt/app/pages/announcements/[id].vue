@@ -6,6 +6,10 @@
 // do painel: uma única forma de decidir, um único lugar para acertar.
 import { buildApprovalCommand } from "~/composables/useCampaignBoard";
 import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campaign";
+import {
+  clearBrowserMarketingDraft,
+  useMarketingDraftOwner,
+} from "~/composables/useMarketingDraft";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -21,6 +25,7 @@ const busy = ref(false);
 const confirmingReject = ref(false);
 const rejectReason = ref("");
 const approvalKeys = new Map<string, string>();
+const draftOwner = useMarketingDraftOwner();
 
 async function decide(
   action: "approve" | "reject",
@@ -52,6 +57,10 @@ async function decide(
       : publishMode === "scheduled" ? "Anúncio agendado."
       : "Anúncio preparado para publicação.",
     );
+    clearBrowserMarketingDraft({
+      owner: draftOwner.value,
+      resource: `announcement:${pk.value}`,
+    });
     await navigateTo("/");
   } catch (err) {
     useSonner.error(httpErrorMessage(err, "Não foi possível concluir. Tente de novo."));
@@ -111,6 +120,7 @@ useHead({ title: "Anúncio · Marketing" });
         :announcement="announcement"
         :platform-options="platforms"
         :busy="busy"
+        :draft-owner="draftOwner"
         @approve="(_, edits, publishMode) => decide('approve', edits, publishMode)"
         @reject="confirmingReject = true; rejectReason = ''"
       />

@@ -5,6 +5,10 @@
 // saiu. Números do dia por último: contexto, não protagonista.
 import { audienceSummary, announcementOutcome, shortDateTime } from "~/presentation/campaign";
 import type { AnnouncementEdits, PublishMode } from "~/types/campaign";
+import {
+  clearBrowserMarketingDraft,
+  useMarketingDraftOwner,
+} from "~/composables/useMarketingDraft";
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
@@ -21,11 +25,13 @@ const { platforms } = useCampaigns();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
+const draftOwner = useMarketingDraftOwner();
 
 async function onApprove(pk: number, edits: AnnouncementEdits, publishMode: PublishMode) {
   busyPk.value = pk;
-  await approve(pk, edits, publishMode);
+  const ok = await approve(pk, edits, publishMode);
   busyPk.value = null;
+  if (ok) clearBrowserMarketingDraft({ owner: draftOwner.value, resource: `announcement:${pk}` });
 }
 
 async function confirmReject() {
@@ -35,8 +41,9 @@ async function confirmReject() {
   busyPk.value = pk;
   rejecting.value = null;
   rejectReason.value = "";
-  await reject(pk, reason);
+  const ok = await reject(pk, reason);
   busyPk.value = null;
+  if (ok) clearBrowserMarketingDraft({ owner: draftOwner.value, resource: `announcement:${pk}` });
 }
 
 useHead({ title: "Painel · Marketing" });
@@ -176,6 +183,7 @@ useHead({ title: "Painel · Marketing" });
           :platform-options="platforms"
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
+          :draft-owner="draftOwner"
           @approve="onApprove"
           @reject="(pk) => { rejecting = pk; rejectReason = '' }"
         />

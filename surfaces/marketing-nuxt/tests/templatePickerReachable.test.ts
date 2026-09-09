@@ -54,4 +54,14 @@ describe("a configuração de plataforma tem casa", () => {
     expect(detail).toContain('"Idempotency-Key"');
     expect(detail).toContain("approvalKeys");
   });
+
+  it("edições de campanha e modelo carregam a versão lida e atualizam antes do rebase", () => {
+    const campaigns = read("../app/composables/useCampaigns.ts");
+    const templates = read("../app/composables/useAnnouncementTemplates.ts");
+    for (const source of [campaigns, templates]) {
+      expect(source).toContain("base_updated_at");
+      expect(source).toContain("httpError(err).status === 409");
+      expect(source).toContain("await refresh()");
+    }
+  });
 });

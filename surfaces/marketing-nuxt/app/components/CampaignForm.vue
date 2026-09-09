@@ -5,6 +5,8 @@
 // formulário. O vocabulário (gatilhos, plataformas, modelos) vem do backend,
 // nunca hardcoded — gatilho novo no domínio aparece aqui sem deploy de front.
 import type { AudienceRules, Campaign, Choice, AnnouncementTemplate } from "~/types/campaign";
+import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -20,6 +22,7 @@ const props = defineProps<{
   platformLabels: Record<string, string>;
   whatsappTemplate?: string;
   busy?: boolean;
+  draftOwner?: string;
 }>();
 
 const emit = defineEmits<{
@@ -75,6 +78,19 @@ const MANAGED_AUDIENCE_KEYS = new Set([
   "match", "preferred_hour_window_hours", "price_tiers", "rfm_segments", "tags",
   "vip_first_minutes",
 ]);
+
+const DRAFT_LABELS = {
+  name: "Nome",
+  trigger: "Gatilho",
+  template_id: "Modelo",
+  platforms: "Plataformas",
+  requires_approval: "Revisão antes de publicar",
+  expires_after_minutes: "Prazo de revisão",
+  promotion_ref: "Oferta",
+  is_active: "Regra ativa",
+  schedule: "Agendamento",
+  audience_rules: "Público",
+};
 
 function cloneRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
@@ -275,6 +291,110 @@ function eventScheduleAfterTriggerChange(): Record<string, unknown> {
   return { ...preserved, type: "immediate" };
 }
 
+function campaignPayload(): MarketingDraftPayload {
+  const payload: MarketingDraftPayload = {
+    name: name.value,
+    trigger: trigger.value,
+    template_id: templateId.value,
+    platforms: [...platforms.value],
+    requires_approval: requiresApproval.value,
+    expires_after_minutes: expiresAfterMinutes.value,
+    promotion_ref: promotionRef.value,
+    is_active: isActive.value,
+    ...(schedules.value ? { schedule: buildSchedule() } : {}),
+    audience_rules: buildAudienceRules(),
+  };
+  if (props.rule?.trigger === "schedule" && !schedules.value) {
+    payload.schedule = eventScheduleAfterTriggerChange();
+  }
+  return payload;
+}
+
+function campaignBase(): MarketingDraftPayload {
+  const rule = props.rule;
+  if (!rule) {
+    const defaultTrigger = props.triggers[0]?.value ?? "";
+    return {
+      name: "",
+      trigger: defaultTrigger,
+      template_id: props.templates[0]?.pk ?? null,
+      platforms: [],
+      requires_approval: true,
+      expires_after_minutes: 0,
+      promotion_ref: "",
+      is_active: true,
+      ...(defaultTrigger === "schedule"
+        ? { schedule: { type: "recurring", windows: [["07:00", "08:00"]] } }
+        : {}),
+      audience_rules: {},
+    };
+  }
+  return {
+    name: rule.name,
+    trigger: rule.trigger,
+    template_id: rule.template_id,
+    platforms: [...rule.platforms],
+    requires_approval: rule.requires_approval,
+    expires_after_minutes: rule.expires_after_minutes,
+    promotion_ref: rule.promotion_ref ?? "",
+    is_active: rule.is_active,
+    ...(rule.trigger === "schedule" ? { schedule: cloneRecord(rule.schedule) } : {}),
+    audience_rules: cloneRecord(rule.audience_rules),
+  };
+}
+
+function applyCampaignDraft(payload: MarketingDraftPayload) {
+  name.value = typeof payload.name === "string" ? payload.name : "";
+  trigger.value = typeof payload.trigger === "string" ? payload.trigger : "";
+  templateId.value = typeof payload.template_id === "number" ? payload.template_id : null;
+  platforms.value = Array.isArray(payload.platforms) ? payload.platforms.map(String) : [];
+  requiresApproval.value = payload.requires_approval !== false;
+  expiresAfterMinutes.value = Number(payload.expires_after_minutes || 0);
+  promotionRef.value = typeof payload.promotion_ref === "string" ? payload.promotion_ref : "";
+  isActive.value = payload.is_active !== false;
+
+  const audience = cloneRecord(payload.audience_rules);
+  baseAudienceRules.value = audience;
+  favorites.value = Boolean(audience.favorites);
+  alerts.value = Boolean(audience.alerts);
+  boughtOn.value = Boolean(audience.bought_within_days);
+  boughtDays.value = Number(audience.bought_within_days || 90);
+  vipFirstMinutes.value = Number(audience.vip_first_minutes || 0);
+  preferredHourWindowHours.value = Number(audience.preferred_hour_window_hours || 0);
+  audienceMatch.value = audience.match === "all" ? "all" : "any";
+  selectedPriceTiers.value = stringList(audience.price_tiers);
+  selectedTags.value = stringList(audience.tags);
+  selectedRfmSegments.value = stringList(audience.rfm_segments);
+  churnRiskOn.value = Number(audience.churn_risk_min || 0) > 0;
+  churnRiskMin.value = Number(audience.churn_risk_min || 0.7);
+  birthdayToday.value = Boolean(audience.birthday_today);
+
+  const schedule = payload.schedule
+    ? cloneRecord(payload.schedule)
+    : cloneRecord(props.rule?.schedule);
+  baseSchedule.value = schedule;
+  scheduleKind.value = schedule.type === "once" ? "once" : "recurring";
+  onceAt.value = typeof schedule.at === "string" ? schedule.at.slice(0, 16) : "";
+  const firstWindow = Array.isArray(schedule.windows) ? schedule.windows[0] : null;
+  fireAt.value = Array.isArray(firstWindow) ? String(firstWindow[0]) : "07:00";
+  extraWindows.value = Array.isArray(schedule.windows)
+    ? schedule.windows.slice(1).filter(Array.isArray).map(window => window.map(String))
+    : [];
+  weekdays.value = Array.isArray(schedule.weekdays) ? schedule.weekdays.map(Number) : [];
+  startsOn.value = typeof schedule.starts_on === "string" ? schedule.starts_on : "";
+  endsOn.value = typeof schedule.ends_on === "string" ? schedule.ends_on : "";
+  scheduleTouched.value = false;
+}
+
+const draft = useMarketingDraft({
+  owner: () => props.draftOwner ?? "",
+  resource: () => `campaign:${props.rule?.pk ?? "new"}`,
+  version: () => props.rule?.updated_at ?? "new",
+  base: campaignBase,
+  current: campaignPayload,
+  apply: applyCampaignDraft,
+});
+
 /** O texto do modelo escolhido — é ele que a prévia resolve. */
 const chosenBody = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.body ?? "",
@@ -298,29 +418,24 @@ function togglePlatform(value: string) {
 
 function submit() {
   if (!canSubmit.value) return;
-  const payload: Record<string, unknown> = {
-    name: name.value.trim(),
-    trigger: trigger.value,
-    template_id: templateId.value,
-    platforms: [...platforms.value],
-    requires_approval: requiresApproval.value,
-    expires_after_minutes: expiresAfterMinutes.value,
-    promotion_ref: promotionRef.value,
-    is_active: isActive.value,
-    // Só mandamos `schedule` quando ele é a causa. Nos gatilhos de evento a chave fica
-    // de fora para não apagar um `preferred_hours` configurado no Admin.
-    ...(schedules.value ? { schedule: buildSchedule() } : {}),
-    audience_rules: buildAudienceRules(),
-  };
-  if (props.rule?.trigger === "schedule" && !schedules.value) {
-    payload.schedule = eventScheduleAfterTriggerChange();
-  }
+  draft.flush();
+  const payload = campaignPayload();
+  payload.name = name.value.trim();
   emit("submit", payload);
 }
 </script>
 
 <template>
   <form class="space-y-5" @submit.prevent="submit">
+    <DraftRecoveryNotice
+      :state="draft.state.value"
+      :saved-at="draft.savedAt.value"
+      :conflicts="draft.conflicts.value"
+      :labels="DRAFT_LABELS"
+      @keep-local="draft.keepLocal()"
+      @keep-server="draft.keepServer()"
+      @discard="draft.discard()"
+    />
     <div>
       <label for="rule-name" class="mb-1 block text-sm font-medium">Nome da campanha</label>
       <input

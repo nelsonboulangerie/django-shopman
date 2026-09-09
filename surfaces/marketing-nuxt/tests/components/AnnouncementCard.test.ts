@@ -1,13 +1,19 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { computed, ref, watch } from "vue";
-import { beforeAll, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementCard from "~/components/AnnouncementCard.vue";
+import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { Announcement } from "~/types/campaign";
+import { installMemoryLocalStorage } from "../support/localStorage";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
   Object.assign(globalThis, { computed, ref, watch });
+  installMemoryLocalStorage();
 });
+
+beforeEach(() => window.localStorage.clear());
+afterEach(() => vi.useRealTimers());
 
 const PLATFORMS = [
   { value: "instagram", label: "Instagram" },
@@ -43,10 +49,13 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
   };
 }
 
-function mountCard(announcement: Announcement) {
+function mountCard(announcement: Announcement, draftOwner = "") {
   return mount(AnnouncementCard, {
-    props: { announcement, platformOptions: PLATFORMS },
-    global: { stubs: { Icon: true } },
+    props: { announcement, platformOptions: PLATFORMS, draftOwner },
+    global: {
+      components: { DraftRecoveryNotice },
+      stubs: { Icon: true },
+    },
   });
 }
 
@@ -151,5 +160,97 @@ describe("AnnouncementCard", () => {
 
   it("offers a placeholder when the product has no photo", () => {
     expect(mountCard(makeAnnouncement({ image_url: "" })).find("img").exists()).toBe(false);
+  });
+
+  it("restores a draft after refresh or a failed authenticated command", async () => {
+    const first = mountCard(makeAnnouncement(), "operator:7");
+    await first.find("textarea").setValue("rascunho que não pode sumir");
+    await first.findAll("button")[0]!.trigger("click");
+    first.unmount();
+
+    const restored = mountCard(makeAnnouncement(), "operator:7");
+    await flushPromises();
+
+    expect((restored.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("rascunho que não pode sumir");
+    expect(restored.text()).toContain("Rascunho restaurado");
+  });
+
+  it("confirms the local autosave within the 400 ms feedback budget", async () => {
+    vi.useFakeTimers();
+    const wrapper = mountCard(makeAnnouncement(), "operator:7");
+    await wrapper.find("textarea").setValue("Rascunho salvo sem outro gesto");
+
+    await vi.advanceTimersByTimeAsync(400);
+
+    expect(wrapper.text()).toContain("Rascunho salvo neste dispositivo");
+  });
+
+  it("flushes the last keystroke when the browser page is leaving", async () => {
+    const first = mountCard(makeAnnouncement(), "operator:7");
+    await first.find("textarea").setValue("Último texto antes do refresh");
+    window.dispatchEvent(new Event("pagehide"));
+    first.unmount();
+
+    const restored = mountCard(makeAnnouncement(), "operator:7");
+    await flushPromises();
+
+    expect((restored.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Último texto antes do refresh");
+  });
+
+  it("never restores another operator's draft", async () => {
+    const alice = mountCard(makeAnnouncement(), "operator:7");
+    await alice.find("textarea").setValue("texto da Alice");
+    alice.unmount();
+
+    const bob = mountCard(makeAnnouncement(), "operator:8");
+    await flushPromises();
+
+    expect((bob.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Croissant saiu do forno");
+    expect(bob.text()).not.toContain("Rascunho restaurado");
+  });
+
+  it("rebases independent changes automatically", async () => {
+    const first = mountCard(makeAnnouncement(), "operator:7");
+    await first.find("input[type=text]").setValue("#meu-rascunho");
+    first.unmount();
+
+    const restored = mountCard(
+      makeAnnouncement({ version: 2, body: "Texto atualizado no servidor" }),
+      "operator:7",
+    );
+    await flushPromises();
+
+    expect((restored.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Texto atualizado no servidor");
+    expect((restored.find("input[type=text]").element as HTMLInputElement).value)
+      .toBe("#meu-rascunho");
+    expect(restored.text()).toContain("Rascunho combinado com a versão atual");
+  });
+
+  it("shows a field diff and waits when both sides changed the same content", async () => {
+    const first = mountCard(makeAnnouncement(), "operator:7");
+    await first.find("textarea").setValue("Minha revisão");
+    first.unmount();
+
+    const conflicted = mountCard(
+      makeAnnouncement({ version: 2, body: "Revisão de outra sessão" }),
+      "operator:7",
+    );
+    await flushPromises();
+
+    expect((conflicted.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Revisão de outra sessão");
+    expect(conflicted.text()).toContain("Este conteúdo também mudou em outra sessão");
+    expect(conflicted.text()).toContain("Minha revisão");
+    expect(conflicted.text()).toContain("Revisão de outra sessão");
+
+    await conflicted.findAll("button").find(button => button.text() === "Manter minhas mudanças")!
+      .trigger("click");
+    await flushPromises();
+    expect((conflicted.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Minha revisão");
   });
 });

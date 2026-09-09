@@ -37,13 +37,22 @@ export function useCampaigns() {
   }
 
   async function patch(pk: number, body: Partial<Campaign> & Record<string, unknown>) {
+    const current = rules.value.find(rule => rule.pk === pk);
+    const payload = current?.updated_at
+      ? { ...body, base_updated_at: current.updated_at }
+      : body;
     try {
-      await $fetch(`/api/v1/backstage/marketing/rules/${pk}/`, { method: "PATCH", body });
+      await $fetch(`/api/v1/backstage/marketing/rules/${pk}/`, { method: "PATCH", body: payload });
       useSonner.success("Regra salva.");
       await refresh();
       return true;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Não foi possível salvar a regra."));
+      if (httpError(err).status === 409) {
+        useSonner.warning("A campanha mudou em outra sessão. Compare as versões no formulário.");
+        await refresh();
+      } else {
+        useSonner.error(httpErrorMessage(err, "Não foi possível salvar a regra."));
+      }
       return false;
     }
   }

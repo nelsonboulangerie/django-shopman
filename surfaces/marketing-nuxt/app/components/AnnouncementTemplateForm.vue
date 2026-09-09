@@ -5,6 +5,8 @@
 // backend (`options.variables`), nunca hardcoded — variável nova no domínio aparece aqui
 // sem deploy de front, e a tela nunca oferece uma que o resolvedor não conhece.
 import type { AnnouncementTemplate } from "~/types/campaign";
+import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 
 const props = defineProps<{
   template: AnnouncementTemplate | null; // null = criando
@@ -12,6 +14,7 @@ const props = defineProps<{
   /** Há credencial de IA no ambiente? Sem ela o bloco de IA não aparece. */
   aiAvailable?: boolean;
   busy?: boolean;
+  draftOwner?: string;
 }>();
 
 const emit = defineEmits<{
@@ -32,6 +35,15 @@ const IMAGE_SOURCES = [
   { value: "custom", label: "Imagem fixa" },
   { value: "none", label: "Sem imagem" },
 ];
+
+const DRAFT_LABELS = {
+  name: "Nome",
+  body: "Texto",
+  image_source: "Imagem",
+  use_ai_generation: "Uso de IA",
+  ai_prompt: "Instrução para IA",
+  is_active: "Modelo ativo",
+};
 
 // Estado novo a cada modelo aberto — senão o formulário herdaria o anterior.
 watch(
@@ -57,12 +69,54 @@ const usedVariables = computed(() =>
   props.variables.filter((v) => body.value.includes(`{{${v}}}`)),
 );
 
+function templatePayload(): MarketingDraftPayload {
+  return {
+    name: name.value,
+    body: body.value,
+    image_source: imageSource.value,
+    use_ai_generation: useAi.value,
+    ai_prompt: aiPrompt.value,
+    is_active: isActive.value,
+  };
+}
+
+function templateBase(): MarketingDraftPayload {
+  const template = props.template;
+  return {
+    name: template?.name ?? "",
+    body: template?.body ?? "",
+    image_source: template?.image_source || "product",
+    use_ai_generation: Boolean(template?.use_ai_generation),
+    ai_prompt: template?.ai_prompt ?? "",
+    is_active: template?.is_active ?? true,
+  };
+}
+
+function applyTemplateDraft(payload: MarketingDraftPayload) {
+  name.value = typeof payload.name === "string" ? payload.name : "";
+  body.value = typeof payload.body === "string" ? payload.body : "";
+  imageSource.value = typeof payload.image_source === "string" ? payload.image_source : "product";
+  useAi.value = Boolean(payload.use_ai_generation);
+  aiPrompt.value = typeof payload.ai_prompt === "string" ? payload.ai_prompt : "";
+  isActive.value = payload.is_active !== false;
+}
+
+const draft = useMarketingDraft({
+  owner: () => props.draftOwner ?? "",
+  resource: () => `template:${props.template?.pk ?? "new"}`,
+  version: () => props.template?.updated_at ?? "new",
+  base: templateBase,
+  current: templatePayload,
+  apply: applyTemplateDraft,
+});
+
 function insertVariable(variable: string) {
   body.value = `${body.value}{{${variable}}}`;
 }
 
 function submit() {
   if (!canSubmit.value) return;
+  draft.flush();
   emit("submit", {
     name: name.value.trim(),
     body: body.value.trim(),
@@ -79,6 +133,15 @@ function submit() {
 
 <template>
   <form class="space-y-5" @submit.prevent="submit">
+    <DraftRecoveryNotice
+      :state="draft.state.value"
+      :saved-at="draft.savedAt.value"
+      :conflicts="draft.conflicts.value"
+      :labels="DRAFT_LABELS"
+      @keep-local="draft.keepLocal()"
+      @keep-server="draft.keepServer()"
+      @discard="draft.discard()"
+    />
     <div>
       <label for="tpl-name" class="mb-1 block text-sm font-medium">Nome do modelo</label>
       <input

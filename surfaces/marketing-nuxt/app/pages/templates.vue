@@ -6,6 +6,10 @@
 // zero modelos, era impossível criar campanha pelo app — a operação travava numa porta que
 // não é a dele. A API já existia; faltava isto.
 import type { AnnouncementTemplate } from "~/types/campaign";
+import {
+  clearBrowserMarketingDraft,
+  useMarketingDraftOwner,
+} from "~/composables/useMarketingDraft";
 
 const { templates, loading, create, patch, remove } = useAnnouncementTemplates();
 const { variables } = useCampaigns();
@@ -15,6 +19,7 @@ const editing = ref<AnnouncementTemplate | null>(null);
 const creating = ref(false);
 const busy = ref(false);
 const removing = ref<AnnouncementTemplate | null>(null);
+const draftOwner = useMarketingDraftOwner();
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
 
@@ -34,12 +39,17 @@ function close() {
 }
 
 async function onSubmit(payload: Record<string, unknown>) {
+  const resource = `template:${editing.value?.pk ?? "new"}`;
   busy.value = true;
   const ok = editing.value
     ? await patch(editing.value.pk, payload)
     : await create(payload);
   busy.value = false;
-  if (ok) close();
+  if (ok) {
+    close();
+    await nextTick();
+    clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
+  }
 }
 
 async function confirmRemove() {
@@ -139,6 +149,7 @@ useHead({ title: "Modelos · Marketing" });
             :variables="variables"
             :ai-available="aiAssistAvailable"
             :busy="busy"
+            :draft-owner="draftOwner"
             @submit="onSubmit"
             @cancel="close"
           />

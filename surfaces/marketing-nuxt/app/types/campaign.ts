@@ -120,6 +120,8 @@ export interface Campaign {
   requires_approval: boolean;
   expires_after_minutes: number;
   is_active: boolean;
+  /** Read version used only to isolate/reconcile local drafts. */
+  updated_at: string;
 }
 
 /** Como as regras se combinam: `any` soma (união), `all` cruza (interseção). */
@@ -173,6 +175,8 @@ export interface AnnouncementTemplate {
   ai_prompt: string;
   image_source: string;
   is_active: boolean;
+  /** Read version used only to isolate/reconcile local drafts. */
+  updated_at: string;
 }
 
 export interface Choice {

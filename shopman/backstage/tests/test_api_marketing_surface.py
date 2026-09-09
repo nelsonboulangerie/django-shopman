@@ -754,6 +754,7 @@ class TestRules:
         body = response.json()["rule"]
         assert body["fires_on_its_own"] is True
         assert body["exhausted"] is False
+        assert body["updated_at"]
         assert "17:30" in body["schedule_label"], body["schedule_label"]
 
     def test_patching_into_the_impossible_pairing_is_refused(self, client, gestor, rule):
@@ -873,6 +874,40 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.name == "Fornada de pães"
 
+    def test_edit_uses_updated_at_as_cas_and_returns_the_current_rule_on_conflict(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+        loaded = client.get(f"{RULES_URL}{rule.pk}/").json()["rule"]
+        rule.name = "Alterada em outra sessão"
+        rule.save()
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Minha edição", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "version_conflict"
+        assert response.json()["current"]["name"] == "Alterada em outra sessão"
+        rule.refresh_from_db()
+        assert rule.name == "Alterada em outra sessão"
+
+    def test_edit_with_current_read_version_succeeds(self, client, gestor, rule):
+        client.force_login(gestor)
+        loaded = client.get(f"{RULES_URL}{rule.pk}/").json()["rule"]
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Minha edição", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["rule"]["name"] == "Minha edição"
+        assert response.json()["rule"]["updated_at"] != loaded["updated_at"]
+
 
 # ── Modelos de announcement ──────────────────────────────────────────────────
 
@@ -906,6 +941,26 @@ class TestTemplates:
         assert client.delete(f"{TEMPLATES_URL}{template.pk}/").status_code == 200
         assert not AnnouncementTemplate.objects.filter(pk=template.pk).exists()
 
+    def test_concurrent_template_edit_returns_current_content_without_overwrite(
+        self, client, gestor, template
+    ):
+        client.force_login(gestor)
+        loaded = client.get(f"{TEMPLATES_URL}{template.pk}/").json()["template"]
+        template.body = "Texto de outra sessão"
+        template.save()
+
+        response = client.patch(
+            f"{TEMPLATES_URL}{template.pk}/",
+            data={"body": "Meu texto", "base_updated_at": loaded["updated_at"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json()["code"] == "version_conflict"
+        assert response.json()["current"]["body"] == "Texto de outra sessão"
+        template.refresh_from_db()
+        assert template.body == "Texto de outra sessão"
+
 
 # ── Opções do formulário ─────────────────────────────────────────────
 
@@ -934,6 +989,7 @@ class TestOptions:
         projected = next(item for item in options["templates"] if item["pk"] == template.pk)
 
         assert projected["platform_variants"] == template.platform_variants
+        assert projected["updated_at"]
 
     def test_preview_batch_returns_exact_artifact_for_each_platform(
         self, client, gestor, monkeypatch

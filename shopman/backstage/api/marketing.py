@@ -37,6 +37,7 @@ from __future__ import annotations
 import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import ProtectedError, Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
@@ -1362,24 +1363,35 @@ class CampaignDetailView(_CampaignBase):
         })
 
     def patch(self, request, pk: int):
-        rule = _rule_or_none(pk)
-        if rule is None:
-            return Response({"detail": "Regra não encontrada."}, status=404)
-
-        fields, error = _rule_fields(request.data, partial=True)
-        if error:
-            return Response(error, status=400)
-        if "audience_rules" in fields:
-            fields["audience_rules"] = _merge_public_audience_rules(
-                rule.audience_rules,
-                fields["audience_rules"],
+        with transaction.atomic():
+            rule = (
+                Campaign.objects.select_for_update()
+                .select_related("template")
+                .filter(pk=pk)
+                .first()
             )
-        for name, value in fields.items():
-            setattr(rule, name, value)
-        error = _pairing_error(rule)
-        if error:
-            return Response(error, status=400)
-        rule.save()
+            if rule is None:
+                return Response({"detail": "Regra não encontrada."}, status=404)
+            guarded = _updated_at_guard(request.data, rule.updated_at)
+            if guarded:
+                payload, status_code = guarded
+                payload["current"] = projection_data(marketing_projection.build_rule(rule))
+                return Response(payload, status=status_code)
+
+            fields, error = _rule_fields(request.data, partial=True)
+            if error:
+                return Response(error, status=400)
+            if "audience_rules" in fields:
+                fields["audience_rules"] = _merge_public_audience_rules(
+                    rule.audience_rules,
+                    fields["audience_rules"],
+                )
+            for name, value in fields.items():
+                setattr(rule, name, value)
+            error = _pairing_error(rule)
+            if error:
+                return Response(error, status=400)
+            rule.save()
         return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
     def delete(self, request, pk: int):
@@ -1427,16 +1439,28 @@ class AnnouncementTemplateDetailView(_CampaignBase):
         return Response({"template": projection_data(marketing_projection.build_template(template))})
 
     def patch(self, request, pk: int):
-        template = AnnouncementTemplate.objects.filter(pk=pk).first()
-        if template is None:
-            return Response({"detail": "Modelo não encontrado."}, status=404)
+        with transaction.atomic():
+            template = (
+                AnnouncementTemplate.objects.select_for_update()
+                .filter(pk=pk)
+                .first()
+            )
+            if template is None:
+                return Response({"detail": "Modelo não encontrado."}, status=404)
+            guarded = _updated_at_guard(request.data, template.updated_at)
+            if guarded:
+                payload, status_code = guarded
+                payload["current"] = projection_data(
+                    marketing_projection.build_template(template)
+                )
+                return Response(payload, status=status_code)
 
-        fields, error = _template_fields(request.data, partial=True)
-        if error:
-            return Response(error, status=400)
-        for name, value in fields.items():
-            setattr(template, name, value)
-        template.save()
+            fields, error = _template_fields(request.data, partial=True)
+            if error:
+                return Response(error, status=400)
+            for name, value in fields.items():
+                setattr(template, name, value)
+            template.save()
         return Response(
             {"ok": True, "template": projection_data(marketing_projection.build_template(template))}
         )
@@ -1511,6 +1535,8 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         "trigger",
         "trigger_filter",
     }
+    if partial:
+        allowed.add("base_updated_at")
     unexpected = sorted(set(data) - allowed)
     if unexpected:
         return {}, {
@@ -1610,6 +1636,28 @@ def _merge_public_audience_rules(current, incoming: dict) -> dict:
 def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     fields: dict = {}
 
+    if not isinstance(data, dict):
+        return {}, {"detail": "Payload do modelo inválido.", "field": "payload"}
+    allowed = {
+        "ai_prompt",
+        "body",
+        "image_source",
+        "is_active",
+        "name",
+        "platform_variants",
+        "use_ai_generation",
+        "variables",
+    }
+    if partial:
+        allowed.add("base_updated_at")
+    unexpected = sorted(set(data) - allowed)
+    if unexpected:
+        return {}, {
+            "detail": "O modelo contém campos desconhecidos.",
+            "field": "payload",
+            "fields": unexpected,
+        }
+
     if not partial or "name" in data:
         name = str(data.get("name") or "").strip()
         if not name:
@@ -1644,6 +1692,31 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["is_active"] = bool(data.get("is_active"))
 
     return fields, None
+
+
+def _updated_at_guard(data, current) -> tuple[dict, int] | None:
+    """Optimistic lock for CRUD resources that already own an ``updated_at`` clock."""
+
+    if not isinstance(data, dict) or "base_updated_at" not in data:
+        return None
+    from django.utils.dateparse import parse_datetime
+
+    raw = data.get("base_updated_at")
+    parsed = parse_datetime(str(raw)) if raw else None
+    if parsed is None:
+        return ({
+            "code": "invalid_base_version",
+            "detail": "A versão de leitura é inválida.",
+            "field_errors": {"base_updated_at": ["Recarregue o conteúdo atual."]},
+        }, 422)
+    if parsed != current:
+        return ({
+            "code": "version_conflict",
+            "detail": "O conteúdo mudou enquanto você editava.",
+            "current_version": current.isoformat(),
+            "field_errors": {"base_updated_at": ["Compare com a versão atual."]},
+        }, 409)
+    return None
 
 
 def _announcement_edits(data) -> tuple[dict, dict | None]:

@@ -6,6 +6,10 @@
 // não perde o contexto de quais outras campanhas já existem.
 import { audienceRulesSummary, choiceLabels, platformsSummary } from "~/presentation/campaign";
 import type { Campaign, ChosenAudience } from "~/types/campaign";
+import {
+  clearBrowserMarketingDraft,
+  useMarketingDraftOwner,
+} from "~/composables/useMarketingDraft";
 
 const {
   rules, templates, triggers, platforms, platformLabels, priceTiers, tags, rfmSegments, offers,
@@ -28,6 +32,7 @@ const editing = ref<Campaign | null>(null);
 const creating = ref(false);
 const firing = ref<Campaign | null>(null);
 const busy = ref(false);
+const draftOwner = useMarketingDraftOwner();
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
 
@@ -60,10 +65,15 @@ async function onFire(request: { body: string; audience: ChosenAudience }) {
 }
 
 async function onSubmit(payload: Record<string, unknown>) {
+  const resource = `campaign:${editing.value?.pk ?? "new"}`;
   busy.value = true;
   const ok = editing.value ? await patch(editing.value.pk, payload) : await create(payload);
   busy.value = false;
-  if (ok) close();
+  if (ok) {
+    close();
+    await nextTick();
+    clearBrowserMarketingDraft({ owner: draftOwner.value, resource });
+  }
 }
 
 useHead({ title: "Campanhas · Marketing" });
@@ -238,6 +248,7 @@ useHead({ title: "Campanhas · Marketing" });
             :platform-labels="platformLabels"
             :whatsapp-template="waTemplate.current.value"
             :busy="busy"
+            :draft-owner="draftOwner"
             @submit="onSubmit"
             @cancel="close"
           />

@@ -5,6 +5,8 @@
 // as edições viajam JUNTO com a aprovação (um request), porque salvar e depois
 // publicar abriria a janela de publicar a versão anterior.
 import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campaign";
+import { useMarketingDraft } from "~/composables/useMarketingDraft";
+import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
   audienceSummary,
   displayHashtag,
@@ -22,6 +24,8 @@ const props = defineProps<{
    *  depois ensina o gestor a não confiar no recurso. */
   aiAssistAvailable?: boolean;
   busy?: boolean;
+  /** Stable session-owned scope. Empty disables local persistence. */
+  draftOwner?: string;
 }>();
 
 const emit = defineEmits<{
@@ -68,6 +72,55 @@ watch(
   },
 );
 
+function editorBase(): MarketingDraftPayload {
+  return {
+    body: props.announcement.body,
+    hashtags: props.announcement.hashtags.map(displayHashtag).join(" "),
+    platforms: [...props.announcement.platforms],
+    scheduling: false,
+    publish_at: "",
+  };
+}
+
+function editorCurrent(): MarketingDraftPayload {
+  return {
+    body: body.value,
+    hashtags: hashtagsText.value,
+    platforms: [...platforms.value],
+    scheduling: scheduling.value,
+    publish_at: publishAt.value,
+  };
+}
+
+function applyEditorDraft(payload: MarketingDraftPayload) {
+  body.value = typeof payload.body === "string" ? payload.body : props.announcement.body;
+  hashtagsText.value = typeof payload.hashtags === "string"
+    ? payload.hashtags
+    : props.announcement.hashtags.map(displayHashtag).join(" ");
+  platforms.value = Array.isArray(payload.platforms)
+    ? payload.platforms.map(String)
+    : [...props.announcement.platforms];
+  scheduling.value = Boolean(payload.scheduling);
+  publishAt.value = typeof payload.publish_at === "string" ? payload.publish_at : "";
+}
+
+const draft = useMarketingDraft({
+  owner: () => props.draftOwner ?? "",
+  resource: () => `announcement:${props.announcement.pk}`,
+  version: () => props.announcement.version,
+  base: editorBase,
+  current: editorCurrent,
+  apply: applyEditorDraft,
+});
+
+const DRAFT_LABELS = {
+  body: "Texto",
+  hashtags: "Hashtags",
+  platforms: "Plataformas",
+  scheduling: "Modo de publicação",
+  publish_at: "Data e hora",
+};
+
 const expiry = computed(() => expiryLabel(props.announcement.expires_in_minutes));
 const expiryClass = computed(
   () =>
@@ -102,17 +155,24 @@ function edits(): AnnouncementEdits {
 
 function publishNow() {
   if (!canPublish.value) return;
+  draft.flush();
   emit("approve", props.announcement.pk, edits(), "now");
 }
 
 function schedule() {
   if (!canPublish.value || !publishAt.value) return;
+  draft.flush();
   emit(
     "approve",
     props.announcement.pk,
     { ...edits(), publish_at: publishAt.value },
     "scheduled",
   );
+}
+
+function askToReject() {
+  draft.flush();
+  emit("reject", props.announcement.pk);
 }
 </script>
 
@@ -136,6 +196,17 @@ function schedule() {
         {{ expiry }}
       </span>
     </header>
+
+    <DraftRecoveryNotice
+      :state="draft.state.value"
+      :saved-at="draft.savedAt.value"
+      :conflicts="draft.conflicts.value"
+      :labels="DRAFT_LABELS"
+      class="m-3 mb-0"
+      @keep-local="draft.keepLocal()"
+      @keep-server="draft.keepServer()"
+      @discard="draft.discard()"
+    />
 
     <div class="flex flex-col gap-4 p-4 sm:flex-row">
       <!-- Foto do produto: o announcement é visual antes de ser texto -->
@@ -269,7 +340,7 @@ function schedule() {
         type="button"
         :disabled="busy"
         class="ml-auto inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50"
-        @click="emit('reject', announcement.pk)"
+        @click="askToReject"
       >
         <Icon name="lucide:trash-2" class="size-4" />
         Recusar

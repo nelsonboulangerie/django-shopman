@@ -1301,3 +1301,49 @@ Provas locais:
   `git diff --check` passaram; permaneceu somente o warning conhecido de SQLite local;
 - nenhuma migration, rede de provider, destinatário, deploy, produção ou escrita externa
   foi usada.
+
+## MKT-033 — Rascunho privado, restaurável e reconciliável
+
+Implementado sobre a edição lossless do MKT-032, mantendo conteúdo exclusivamente no
+navegador e sem persistir membership, telefone, token ou outro dado de audiência:
+
+- o autosave usa chave isolada por operador, tipo e recurso, schema versionado, TTL de
+  sete dias e descarte defensivo de conteúdo expirado ou corrompido;
+- anúncio, campanha e template salvam a edição completa após 400 ms, no `pagehide` e
+  antes de qualquer comando; falha de rede ou autenticação não apaga o rascunho;
+- refresh, remount, navegação e retorno de sessão restauram o conteúdo e todas as
+  escolhas editáveis sem redigitação;
+- `updated_at` funciona como CAS nas campanhas e templates: PATCH concorrente retorna
+  `409` com a Projection atual, sem sobrescrever silenciosamente a outra sessão;
+- quando base e servidor mudaram, um merge de três vias preserva automaticamente
+  alterações independentes; sobreposição mostra, por campo, “Versão atual” e “Seu
+  rascunho” e pede uma única escolha local;
+- concluir o comando com sucesso limpa apenas a chave daquele operador/recurso;
+  descartar é explícito e não afeta outros rascunhos.
+
+Budget de omotenashi comprovado na recuperação:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Reescrever conteúdo após refresh/401 | até todo o formulário | 0 campos |
+| Lembrar escolhas de plataforma/audiência/schedule | conferência e redigitação manual | 0 |
+| Detectar edição concorrente | overwrite silencioso | `409` + diff no contexto |
+| Resolver mudanças independentes | comparar duas versões completas | 0; merge automático |
+| Resolver conflito real | copiar/colar em outra tela | 1 escolha inline por conjunto |
+| Confirmar se o texto foi salvo | nenhuma certeza | status após ≤400 ms |
+| Recuperar último keystroke ao sair | podia se perder | flush síncrono no `pagehide` |
+
+Provas locais:
+
+- 43 testes focados cobrem TTL/corrupção, isolamento operador+recurso, limpeza seletiva,
+  refresh/remount, último keystroke, restauração integral de seleções, rebase sem
+  conflito, diff concorrente e as duas resoluções;
+- 90 testes da API Marketing passaram, incluindo CAS stale/current para campanha e
+  template e garantia de zero overwrite no `409`;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 596 testes passaram
+  em 76,50 s;
+- Marketing Nuxt: 11 arquivos/128 testes, ESLint, Nuxt typecheck e build passaram;
+- Ruff, `export_marketing_client --check`, Django check, migration drift e
+  `git diff --check` passaram; permaneceu somente o warning conhecido de SQLite local;
+- nenhuma migration, envio, rede de provider, destinatário, deploy, produção ou escrita
+  externa foi usada.

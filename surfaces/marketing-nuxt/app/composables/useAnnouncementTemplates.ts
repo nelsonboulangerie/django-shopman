@@ -22,8 +22,13 @@ export function useAnnouncementTemplates() {
   }
 
   async function patch(pk: number, payload: Record<string, unknown>): Promise<boolean> {
+    const current = templates.value.find(template => template.pk === pk);
     return write(
-      "PATCH", `/api/v1/backstage/marketing/templates/${pk}/`, payload, "Modelo salvo.",
+      "PATCH",
+      `/api/v1/backstage/marketing/templates/${pk}/`,
+      current?.updated_at ? { ...payload, base_updated_at: current.updated_at } : payload,
+      "Modelo salvo.",
+      "O modelo mudou em outra sessão. Compare as versões no formulário.",
     );
   }
 
@@ -40,6 +45,7 @@ export function useAnnouncementTemplates() {
     url: string,
     body: Record<string, unknown> | undefined,
     okMessage: string,
+    conflictMessage = "",
   ): Promise<boolean> {
     try {
       await $fetch(url, { method, body });
@@ -47,7 +53,12 @@ export function useAnnouncementTemplates() {
       await refresh();
       return true;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Não foi possível salvar o modelo."));
+      if (conflictMessage && httpError(err).status === 409) {
+        useSonner.warning(conflictMessage);
+        await refresh();
+      } else {
+        useSonner.error(httpErrorMessage(err, "Não foi possível salvar o modelo."));
+      }
       return false;
     }
   }

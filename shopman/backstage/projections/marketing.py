@@ -196,6 +196,8 @@ class CampaignProjection:
     requires_approval: bool
     expires_after_minutes: int
     is_active: bool
+    #: Versão de leitura para isolar/reconciliar rascunhos locais. Não autoriza write.
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -212,6 +214,8 @@ class AnnouncementTemplateProjection:
     ai_prompt: str
     image_source: str
     is_active: bool
+    #: Versão de leitura para detectar conteúdo concorrente antes de restaurar draft.
+    updated_at: datetime
 
 
 @dataclass(frozen=True)
@@ -629,6 +633,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         requires_approval=rule.requires_approval,
         expires_after_minutes=rule.expires_after_minutes,
         is_active=rule.is_active,
+        updated_at=rule.updated_at,
     )
 
 
@@ -696,6 +701,7 @@ def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjec
         ai_prompt=template.ai_prompt,
         image_source=template.image_source,
         is_active=template.is_active,
+        updated_at=template.updated_at,
     )
 
 

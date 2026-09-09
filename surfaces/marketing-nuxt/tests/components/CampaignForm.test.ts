@@ -1,13 +1,18 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { computed, ref, watch } from "vue";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it } from "vitest";
 import CampaignForm from "~/components/CampaignForm.vue";
+import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
 import type { Campaign } from "~/types/campaign";
+import { installMemoryLocalStorage } from "../support/localStorage";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
   Object.assign(globalThis, { computed, ref, watch });
+  installMemoryLocalStorage();
 });
+
+beforeEach(() => window.localStorage.clear());
 
 const TRIGGERS = [
   { value: "production_finished", label: "fornada pronta" },
@@ -27,7 +32,7 @@ const PRICE_TIERS = [{ value: "atacado", label: "Atacado" }];
 const TAGS = [{ value: "sem-gluten", label: "Sem glúten" }];
 const RFM_SEGMENTS = [{ value: "loyal_customer", label: "Cliente fiel" }];
 
-function form(rule: Campaign | null = null) {
+function form(rule: Campaign | null = null, draftOwner = "") {
   return mount(CampaignForm, {
     props: {
       rule,
@@ -39,8 +44,12 @@ function form(rule: Campaign | null = null) {
       tags: TAGS,
       rfmSegments: RFM_SEGMENTS,
       platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
+      draftOwner,
     },
-    global: { stubs: { Icon: true } },
+    global: {
+      components: { DraftRecoveryNotice },
+      stubs: { Icon: true },
+    },
   });
 }
 
@@ -292,5 +301,43 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
       rfm_segments: ["loyal_customer"],
       match: "all",
     });
+  });
+
+  it("restaura nome e seleções da mesma regra para o mesmo operador", async () => {
+    const rule = makeRule({
+      trigger: "production_finished",
+      updated_at: "2026-09-09T08:00:00-03:00",
+    });
+    const first = form(rule, "operator:7");
+    await first.find("#rule-name").setValue("Campanha em revisão");
+    await first.findAll("button").find(button => button.text() === "Sem glúten")!
+      .trigger("click");
+    first.unmount();
+
+    const restored = form(rule, "operator:7");
+    await flushPromises();
+
+    expect((restored.find("#rule-name").element as HTMLInputElement).value)
+      .toBe("Campanha em revisão");
+    expect(restored.findAll("button").find(button => button.text() === "Sem glúten")!
+      .attributes("aria-pressed")).toBe("true");
+    expect(restored.text()).toContain("Rascunho restaurado");
+  });
+
+  it("isola o rascunho entre campanhas", async () => {
+    const first = form(
+      makeRule({ pk: 5, trigger: "production_finished", updated_at: "v1" }),
+      "operator:7",
+    );
+    await first.find("#rule-name").setValue("Rascunho da cinco");
+    first.unmount();
+
+    const other = form(
+      makeRule({ pk: 6, name: "Campanha seis", trigger: "production_finished", updated_at: "v1" }),
+      "operator:7",
+    );
+    await flushPromises();
+
+    expect((other.find("#rule-name").element as HTMLInputElement).value).toBe("Campanha seis");
   });
 });
