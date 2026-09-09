@@ -16,10 +16,12 @@ from shopman.shop.services.marketing_contracts import (
     ResolvedDispatchArtifact,
 )
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+RESOLVED_ARTIFACT_SCHEMA_VERSION = 2
 SUPPORTED_PLATFORMS = frozenset({"facebook", "google_business", "instagram", "whatsapp"})
 _HASH = re.compile(r"^[a-f0-9]{64}$")
 _FIELD = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_FLOW_REF = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 _PLACEHOLDER = re.compile(r"\{\{\s*([\w_]+)\s*\}\}")
 _RESERVED_CONTENT_FIELDS = frozenset({"body", "hashtags", "image_url", "link"})
 _FORBIDDEN_PROVIDER_FIELDS = frozenset({
@@ -42,6 +44,9 @@ def resolve_dispatch_artifact(
     content_version: int,
     facts_as_of: str = "",
     facts_hash: str = "",
+    flow_ref: str = "",
+    flow_version: int = 0,
+    flow_catalog_hash: str = "",
 ) -> ResolvedDispatchArtifact:
     """Resolve one immutable provider payload from approved, recipient-free facts."""
 
@@ -101,6 +106,36 @@ def resolve_dispatch_artifact(
                 code="invalid_facts_as_of",
                 detail="O instante dos fatos precisa incluir timezone.",
             )
+    normalized_flow_ref = str(flow_ref or "").strip()
+    normalized_catalog_hash = str(flow_catalog_hash or "").strip().lower()
+    has_flow_binding = bool(
+        normalized_flow_ref or flow_version or normalized_catalog_hash
+    )
+    if has_flow_binding and normalized_platform != "whatsapp":
+        raise MarketingContractError(
+            code="flow_binding_platform_mismatch",
+            detail="Somente o artefato WhatsApp pode carregar um flow verificado.",
+        )
+    if has_flow_binding:
+        if not _FLOW_REF.fullmatch(normalized_flow_ref):
+            raise MarketingContractError(
+                code="invalid_flow_ref",
+                detail="A referência verificada do flow é inválida.",
+            )
+        if (
+            isinstance(flow_version, bool)
+            or not isinstance(flow_version, int)
+            or flow_version < 1
+        ):
+            raise MarketingContractError(
+                code="invalid_flow_version",
+                detail="A versão verificada do flow é inválida.",
+            )
+        if not _HASH.fullmatch(normalized_catalog_hash):
+            raise MarketingContractError(
+                code="invalid_flow_catalog_hash",
+                detail="O hash do catálogo de flows é inválido.",
+            )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
@@ -111,6 +146,9 @@ def resolve_dispatch_artifact(
         content_version=content_version,
         facts_as_of=normalized_facts_as_of,
         facts_hash=normalized_facts_hash,
+        flow_ref=normalized_flow_ref,
+        flow_version=flow_version if has_flow_binding else 0,
+        flow_catalog_hash=normalized_catalog_hash,
     )
 
 
@@ -122,9 +160,17 @@ def resolve_all_dispatch_artifacts(
     content_version: int,
     facts_as_of: str = "",
     facts_hash: str = "",
+    platform_bindings: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> tuple[ResolvedDispatchArtifact, ...]:
     """Resolve each selected platform through the exact same pure function."""
 
+    bindings = dict(platform_bindings or {})
+    unknown_bindings = sorted(set(bindings) - set(platforms))
+    if unknown_bindings:
+        raise MarketingContractError(
+            code="orphan_platform_binding",
+            detail="Existe configuração verificada para uma plataforma não escolhida.",
+        )
     return tuple(
         resolve_dispatch_artifact(
             platform=platform,
@@ -133,6 +179,7 @@ def resolve_all_dispatch_artifacts(
             content_version=content_version,
             facts_as_of=facts_as_of,
             facts_hash=facts_hash,
+            **_flow_binding(bindings.get(platform), platform=platform),
         )
         for platform in platforms
     )
@@ -177,7 +224,7 @@ def resolve_approved_dispatch_artifact(
             detail="A plataforma não pertence ao artefato aprovado.",
         )
 
-    if artifact.schema_version >= SCHEMA_VERSION:
+    if artifact.schema_version >= RESOLVED_ARTIFACT_SCHEMA_VERSION:
         stored = _mapping(payload.get("resolved_artifacts"), field="resolved_artifacts")
         resolved = _resolved_from_payload(stored.get(platform), platform=platform)
         if resolved.content_version != artifact.version:
@@ -231,6 +278,9 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
             content_version=int(payload.get("content_version")),
             facts_as_of=str(payload.get("facts_as_of") or ""),
             facts_hash=str(payload.get("facts_hash") or ""),
+            flow_ref=str(payload.get("flow_ref") or ""),
+            flow_version=int(payload.get("flow_version") or 0),
+            flow_catalog_hash=str(payload.get("flow_catalog_hash") or ""),
         )
     except (TypeError, ValueError) as exc:
         raise MarketingContractError(
@@ -256,7 +306,35 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
         content_version=resolved.content_version,
         facts_as_of=resolved.facts_as_of,
         facts_hash=resolved.facts_hash,
+        flow_ref=resolved.flow_ref,
+        flow_version=resolved.flow_version,
+        flow_catalog_hash=resolved.flow_catalog_hash,
     )
+
+
+def _flow_binding(
+    value: Mapping[str, Any] | None,
+    *,
+    platform: str,
+) -> dict[str, Any]:
+    if value is None:
+        return {}
+    binding = _mapping(value, field=f"platform_bindings.{platform}")
+    allowed = {"flow_ref", "flow_version", "flow_catalog_hash"}
+    unexpected = sorted(set(binding) - allowed)
+    if unexpected:
+        raise MarketingContractError(
+            code="invalid_platform_binding",
+            detail="A configuração verificada contém campos desconhecidos.",
+            field_errors={
+                f"platform_bindings.{platform}": tuple(unexpected),
+            },
+        )
+    return {
+        "flow_ref": binding.get("flow_ref", ""),
+        "flow_version": binding.get("flow_version", 0),
+        "flow_catalog_hash": binding.get("flow_catalog_hash", ""),
+    }
 
 
 def _mapping(value: object, *, field: str) -> dict[str, Any]:

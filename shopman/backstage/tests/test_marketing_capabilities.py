@@ -96,8 +96,7 @@ def test_publisher_passes_approve_and_fire_gates(client):
     assert client.post(FIRE, data={}, content_type="application/json").status_code == 409
 
 
-def test_platform_owner_can_configure_but_publisher_cannot(client, monkeypatch):
-    monkeypatch.setattr("shopman.shop.services.manychat_flows.list_flows", lambda: [])
+def test_platform_owner_reaches_versioned_protocol_but_publisher_cannot(client):
     owner = _operator("platform-owner", "configure_marketing_platforms")
     publisher = _operator("publisher-sem-config", "publish_marketing_announcements")
 
@@ -106,8 +105,8 @@ def test_platform_owner_can_configure_but_publisher_cannot(client, monkeypatch):
 
     client.force_login(owner)
     response = client.post(PLATFORM_CONFIG, data={}, content_type="application/json")
-    assert response.status_code == 409
-    assert response.json()["code"] == "platform_config_cas_not_ready"
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_base_version"
 
 
 def test_setup_groups_matches_approved_role_matrix_and_keeps_dangerous_groups_empty():

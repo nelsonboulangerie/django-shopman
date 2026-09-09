@@ -1063,6 +1063,11 @@
         "additionalProperties": false,
         "properties": {
           "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "facts_as_of": {
             "anyOf": [
               {
                 "format": "date-time",
@@ -1072,10 +1077,30 @@
                 "type": "null"
               }
             ],
-            "title": "Checked At"
+            "title": "Facts As Of"
+          },
+          "fresh_until": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fresh Until"
           },
           "platform_ref": {
             "title": "Platform Ref",
+            "type": "string"
+          },
+          "reason_code": {
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "source_status": {
+            "title": "Source Status",
             "type": "string"
           },
           "state": {
@@ -1087,12 +1112,21 @@
             ],
             "title": "State",
             "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
           "platform_ref",
           "state",
-          "checked_at"
+          "reason_code",
+          "version",
+          "checked_at",
+          "facts_as_of",
+          "fresh_until",
+          "source_status"
         ],
         "title": "PlatformReadinessProjectionV2",
         "type": "object"

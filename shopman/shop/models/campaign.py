@@ -596,6 +596,7 @@ class MarketingCommandReceipt(models.Model):
         EXPIRE = "expire", "expirar"
         RETRY_DELIVERY = "retry_delivery", "repetir falhas de entrega"
         RECONCILE_DELIVERY = "reconcile_delivery", "reconciliar entrega desconhecida"
+        CONFIGURE_PLATFORM = "configure_platform", "configurar plataforma"
 
     class State(models.TextChoices):
         ACCEPTED = "accepted", "aceito"
@@ -772,6 +773,53 @@ class MarketingAuditEvent(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Eventos de auditoria de Marketing não podem ser apagados.")
+
+
+class MarketingPlatformAuditEvent(models.Model):
+    """Append-only evidence for a versioned Marketing platform configuration."""
+
+    class EventType(models.TextChoices):
+        FLOW_CONFIGURED = "flow_configured", "flow configurado"
+        FLOW_CLEARED = "flow_cleared", "flow removido"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    command = models.OneToOneField(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="platform_audit_event",
+    )
+    platform = models.CharField(max_length=32)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_platform_audit_events",
+    )
+    actor_ref = models.CharField(max_length=128, db_index=True)
+    base_version = models.PositiveIntegerField()
+    resulting_version = models.PositiveIntegerField()
+    previous_flow_ref = models.CharField(max_length=120, blank=True)
+    resulting_flow_ref = models.CharField(max_length=120, blank=True)
+    catalog_hash = models.CharField(max_length=64)
+    catalog_as_of = models.DateTimeField()
+    request_id = models.CharField(max_length=100, blank=True)
+    occurred_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-occurred_at", "-pk"]
+        indexes = [models.Index(fields=["platform", "occurred_at"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Eventos de configuração de plataforma são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de configuração de plataforma não podem ser apagados.")
 
 
 class MarketingSafetyState(models.Model):

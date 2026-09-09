@@ -164,6 +164,38 @@ def test_content_cannot_choose_flow_or_credentials(provider_field):
     assert f"platform_content.whatsapp.{provider_field}" in caught.value.field_errors
 
 
+def test_server_owned_flow_binding_changes_the_exact_artifact_hash():
+    common = {
+        "platform": "whatsapp",
+        "content": {"body": "Fornada pronta"},
+        "platform_content": {},
+        "content_version": 3,
+        "flow_version": 7,
+        "flow_catalog_hash": "a" * 64,
+    }
+
+    first = resolve_dispatch_artifact(flow_ref="content_flow_a", **common)
+    second = resolve_dispatch_artifact(flow_ref="content_flow_b", **common)
+
+    assert first.artifact_hash != second.artifact_hash
+    assert first.as_payload()["flow_ref"] == "content_flow_a"
+
+
+def test_non_whatsapp_artifact_cannot_carry_a_flow_binding():
+    with pytest.raises(MarketingContractError) as caught:
+        resolve_dispatch_artifact(
+            platform="instagram",
+            content={"body": "Fornada pronta"},
+            platform_content={},
+            content_version=3,
+            flow_ref="content_flow_a",
+            flow_version=2,
+            flow_catalog_hash="a" * 64,
+        )
+
+    assert caught.value.code == "flow_binding_platform_mismatch"
+
+
 def test_preview_approved_evidence_and_provider_receive_the_exact_same_hash():
     preview = campaign.preview(
         "Croissant saiu do forno ✨",

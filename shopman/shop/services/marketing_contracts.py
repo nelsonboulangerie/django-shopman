@@ -205,9 +205,15 @@ class ResolvedDispatchArtifact:
     content_version: int = 1
     facts_as_of: str = ""
     facts_hash: str = ""
+    # Server-owned binding.  Campaign copy/provider fields are deliberately not
+    # allowed to choose a flow; the verified platform configuration is sealed
+    # here so preview, approval and dispatch cannot observe different versions.
+    flow_ref: str = ""
+    flow_version: int = 0
+    flow_catalog_hash: str = ""
 
     def as_payload(self) -> dict[str, Any]:
-        return {
+        payload = {
             "platform": self.platform,
             "body": self.body,
             "hashtags": list(self.hashtags),
@@ -218,6 +224,15 @@ class ResolvedDispatchArtifact:
             "facts_as_of": self.facts_as_of,
             "facts_hash": self.facts_hash,
         }
+        # Old sealed artifacts did not have a flow binding.  Omitting an absent
+        # binding preserves their canonical bytes and keeps schema-v2 readable.
+        if self.flow_ref or self.flow_version or self.flow_catalog_hash:
+            payload.update({
+                "flow_ref": self.flow_ref,
+                "flow_version": self.flow_version,
+                "flow_catalog_hash": self.flow_catalog_hash,
+            })
+        return payload
 
     def canonical_bytes(self) -> bytes:
         return json.dumps(

@@ -830,6 +830,9 @@ def preview_platforms(
     from shopman.shop.services.marketing_artifacts import (
         resolve_all_dispatch_artifacts,
     )
+    from shopman.shop.services.marketing_platform_configuration import (
+        verified_whatsapp_flow_binding,
+    )
 
     selected_variants = {
         platform: raw_variants[platform]
@@ -848,6 +851,16 @@ def preview_platforms(
         variables=variables,
         platforms=normalized_platforms,
     )
+    flow_binding = (
+        verified_whatsapp_flow_binding()
+        if "whatsapp" in normalized_platforms
+        else None
+    )
+    platform_bindings = (
+        {"whatsapp": flow_binding.artifact_payload()}
+        if flow_binding is not None
+        else {}
+    )
     artifacts = resolve_all_dispatch_artifacts(
         platforms=normalized_platforms,
         content={
@@ -860,6 +873,7 @@ def preview_platforms(
         content_version=content_version,
         facts_as_of=facts.as_of.isoformat(),
         facts_hash=facts.source_hash,
+        platform_bindings=platform_bindings,
     )
     return {
         "sku": sample,
@@ -884,6 +898,11 @@ def preview_platforms(
             artifact.platform: {
                 "artifact": artifact.as_payload(),
                 "artifact_hash": artifact.artifact_hash,
+                **(
+                    {"flow": flow_binding.display_payload()}
+                    if artifact.platform == "whatsapp" and flow_binding is not None
+                    else {}
+                ),
             }
             for artifact in artifacts
         },

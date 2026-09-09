@@ -535,6 +535,12 @@ class NotificationTemplate(models.Model):
         ),
     )
     is_active = models.BooleanField("ativo", default=True)
+    version = models.PositiveIntegerField(
+        "versão operacional",
+        default=1,
+        editable=False,
+        help_text="Versão usada para impedir sobrescrita concorrente da configuração.",
+    )
 
     class Meta:
         ordering = ["event"]

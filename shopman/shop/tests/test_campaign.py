@@ -650,7 +650,31 @@ class TestPreview:
 
         assert "/oferta/semana" in result["body"]
 
-    def test_batch_uses_one_fact_snapshot_and_exact_platform_variants(self, product):
+    def test_batch_uses_one_fact_snapshot_and_exact_platform_variants(
+        self, product, monkeypatch
+    ):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
+
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_preview_flow",
+            version=3,
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_preview_flow", "Campanha geral"),),
+                state="fresh",
+                checked_at=checked_at,
+                facts_as_of=checked_at,
+                fresh_until=checked_at + timedelta(minutes=5),
+                catalog_hash="a" * 64,
+            ),
+        )
         result = campaign.preview_platforms(
             "Base {{product_name}}",
             sku=product.sku,
@@ -673,6 +697,13 @@ class TestPreview:
         assert instagram["hashtags"] == ["insta"]
         assert whatsapp["body"] == "WhatsApp Croissant Tradicional"
         assert whatsapp["provider_fields"] == {"template_name": "fornada"}
+        assert whatsapp["flow_ref"] == "content_preview_flow"
+        assert result["previews"]["whatsapp"]["flow"] == {
+            "configured": True,
+            "name": "Campanha geral",
+            "version": 3,
+            "catalog_as_of": checked_at.isoformat(),
+        }
         assert (
             instagram["facts_hash"]
             == whatsapp["facts_hash"]

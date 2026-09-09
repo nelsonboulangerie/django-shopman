@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.utils import timezone
 
@@ -136,7 +136,14 @@ class PlatformProjection:
     #: `publication` (uma peça na plataforma) ou `direct_message` (uma mensagem por pessoa).
     #: A exigência de cada um é diferente, e é isso que o cartão explica.
     kind: str
+    state: str
+    reason_code: str
+    version: int
     ready: bool
+    checked_at: datetime
+    facts_as_of: datetime | None = None
+    fresh_until: datetime | None = None
+    source_status: str = ""
     reason: str = ""
     action: str = ""
     limitation: str = ""
@@ -559,7 +566,14 @@ def build_platforms() -> tuple[PlatformProjection, ...]:
             platform=state.platform,
             label=labels.get(state.platform, state.platform),
             kind=state.kind,
+            state=state.state,
+            reason_code=state.reason_code,
+            version=state.version,
             ready=state.ready,
+            checked_at=state.checked_at,
+            facts_as_of=state.facts_as_of,
+            fresh_until=state.fresh_until,
+            source_status=state.source_status,
             reason=state.reason,
             action=state.action,
             limitation=state.limitation,

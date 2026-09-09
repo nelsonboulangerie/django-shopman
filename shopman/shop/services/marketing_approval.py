@@ -142,15 +142,6 @@ def approve_command(
         approved_content = dict(safe_content)
         if facts is not None:
             approved_content["facts"] = facts.as_payload()
-        resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
-            platforms=safe_platforms,
-            content=approved_content,
-            platform_content=safe_platform_content,
-            content_version=announcement.version + 1,
-            facts_as_of=facts.as_of.isoformat() if facts is not None else "",
-            facts_hash=facts.source_hash if facts is not None else "",
-        )
-
         rules = _audience_rules(announcement)
         sku = str((announcement.trigger_context or {}).get("sku") or "")
         resolution = audience_service.resolve(rules, sku=sku, now=now)
@@ -172,6 +163,33 @@ def approve_command(
                     "minimum_count": MIN_GENERAL_COHORT,
                 },
             )
+
+        platform_bindings = {}
+        if "whatsapp" in safe_platforms:
+            from shopman.shop.services.marketing_platform_configuration import (
+                verified_whatsapp_flow_binding,
+            )
+
+            try:
+                flow_binding = verified_whatsapp_flow_binding(force=True, now=now)
+            except MarketingContractError as exc:
+                raise RejectCommand(
+                    code=exc.code,
+                    detail=exc.detail,
+                    outcome={"retryable": exc.retryable},
+                    field_errors=exc.field_errors,
+                ) from exc
+            platform_bindings["whatsapp"] = flow_binding.artifact_payload()
+
+        resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
+            platforms=safe_platforms,
+            content=approved_content,
+            platform_content=safe_platform_content,
+            content_version=announcement.version + 1,
+            facts_as_of=facts.as_of.isoformat() if facts is not None else "",
+            facts_hash=facts.source_hash if facts is not None else "",
+            platform_bindings=platform_bindings,
+        )
 
         approved_version = announcement.version + 1
         artifact_payload = {

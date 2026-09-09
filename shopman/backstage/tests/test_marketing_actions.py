@@ -90,7 +90,12 @@ def _ready_projection(announcement: Announcement):
                 PlatformReadinessProjectionV2(
                     platform_ref="instagram",
                     state="ready",
+                    reason_code="",
+                    version=1,
                     checked_at=timezone.now(),
+                    facts_as_of=timezone.now(),
+                    fresh_until=None,
+                    source_status="fresh",
                 ),
             ),
         ),
@@ -158,12 +163,12 @@ def test_pending_decision_uses_readiness_zero_audience_and_fresh_permissions():
         "publish_marketing_announcements",
     )
 
-    unknown = resolve_actions(
+    blocked = resolve_actions(
         build_announcement(announcement).data.announcement,
         actor=publisher,
     )
-    assert _action(unknown, "publish_announcement_now").reason == (
-        "platform_readiness_unknown"
+    assert _action(blocked, "publish_announcement_now").reason == (
+        "platform_readiness_blocked"
     )
 
     ready = resolve_actions(_ready_projection(announcement), actor=publisher)
@@ -270,9 +275,11 @@ def test_campaign_platform_and_operator_alerts_share_the_canonical_shape():
         "command_not_available"
     )
     assert _action(platform_actions, "open_platform").enabled is True
-    assert _action(platform_actions, "configure_platform").reason == (
-        "command_not_available"
-    )
+    configure = _action(platform_actions, "configure_platform")
+    assert configure.enabled is True
+    assert configure.method == "POST"
+    assert configure.idempotency == "required"
+    assert configure.confirmation.step_up == "totp"
     assert _action(platform_actions, "send_platform_test").enabled is True
     assert _action(alert_actions, "acknowledge_alert").enabled is True
 

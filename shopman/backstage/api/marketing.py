@@ -1158,12 +1158,8 @@ class PlatformsView(_CampaignBase):
         contexts = tuple(
             PlatformActionContext(
                 platform_ref=platform.platform,
-                version=0,
-                state=(
-                    "blocked"
-                    if not platform.ready
-                    else "degraded" if platform.limitation else "ready"
-                ),
+                version=platform.version,
+                state=platform.state,
                 in_use=platform.in_use,
             )
             for platform in platforms
@@ -1206,22 +1202,41 @@ class WhatsAppTemplateView(_CampaignBase):
 
     def get(self, request):
         from shopman.shop.models import NotificationTemplate
-        from shopman.shop.services import manychat_flows
+        from shopman.shop.services import delivery_readiness, manychat_flows
 
         template = NotificationTemplate.objects.filter(event=self.EVENT).first()
         current = (template.whatsapp_flow_ns or "") if template else ""
-        flows = manychat_flows.list_flows()
+        catalog = manychat_flows.flow_catalog(
+            force=request.query_params.get("refresh") == "1"
+        )
+        readiness = delivery_readiness.readiness_for(("whatsapp",))[0]
         can_send_test = request.user.has_perm("shop.send_marketing_test")
 
         return Response({
             "current": current,
-            # Lista vazia não é "não existe template": é "não consegui perguntar".
-            # A tela precisa distinguir para não afirmar o que não sabe.
-            "available": [{"ns": ns, "name": name} for ns, name in flows],
-            "can_list": bool(flows),
+            "current_name": next(
+                (name for ns, name in catalog.flows if ns == current),
+                "",
+            ),
+            "current_active": bool(template and template.is_active),
+            "version": template.version if template else 1,
+            "available": [
+                {"ns": ns, "name": name} for ns, name in catalog.flows
+            ],
+            # Successful empty is known and distinct from outage/no credential.
+            "can_list": catalog.state == "fresh",
             "configured": bool(current),
-            "command_available": False,
-            "command_disabled_reason": "platform_config_cas_not_ready",
+            "command_available": catalog.mutation_safe,
+            "command_disabled_reason": (
+                "" if catalog.mutation_safe else "platform_catalog_unavailable"
+            ),
+            "catalog_state": catalog.state,
+            "catalog_checked_at": catalog.checked_at,
+            "catalog_as_of": catalog.facts_as_of,
+            "catalog_fresh_until": catalog.fresh_until,
+            "catalog_hash": catalog.catalog_hash,
+            "readiness_state": readiness.state,
+            "readiness_reason_code": readiness.reason_code,
             "can_send_test": can_send_test,
             "test_targets": (
                 campaign_service.marketing_test_target_options()
@@ -1231,16 +1246,62 @@ class WhatsAppTemplateView(_CampaignBase):
         })
 
     def post(self, request):
-        return Response(
-            {
-                "code": "platform_config_cas_not_ready",
-                "detail": (
-                    "A alteração está contida até o comando versionado de configuração "
-                    "validar readiness, TOTP, CAS e auditoria."
+        from shopman.shop.services.marketing_platform_configuration import (
+            MarketingPlatformUnavailable,
+            configure_whatsapp_flow,
+        )
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(
+            set(payload) - ({"flow_ns", "base_version"} | _AUTHORIZATION_FIELDS)
+        )
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        try:
+            result = configure_whatsapp_flow(
+                actor=request.user,
+                flow_ns=str(payload.get("flow_ns") or ""),
+                base_version=base_version,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorize=_command_authorizer(
+                    request,
+                    capability="shop.configure_marketing_platforms",
+                ),
+            )
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except MarketingPlatformUnavailable as exc:
+            response = Response(exc.as_payload(), status=exc.status_code)
+            response["Retry-After"] = str(exc.retry_after)
+            return response
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
+        receipt = result.receipt
+        return Response({
+            "ok": True,
+            "replayed": result.replayed,
+            "receipt": {
+                "ref": str(receipt.ref),
+                "kind": receipt.kind,
+                "state": receipt.state,
+                "base_version": receipt.base_version,
+                "resulting_version": receipt.resulting_version,
+                "resource_ref": receipt.resource_ref,
+                "outcome": receipt.outcome,
+                "created_at": receipt.created_at.isoformat(),
+                "completed_at": (
+                    receipt.completed_at.isoformat() if receipt.completed_at else ""
                 ),
             },
-            status=409,
-        )
+        })
 
 
 class CampaignFireView(_CampaignBase):
@@ -1683,7 +1744,12 @@ def _command_error_response(
     if isinstance(exc, MarketingCommandRejected):
         status_code = 404 if exc.code == "announcement_not_found" else 422
         return Response(exc.as_payload(), status=status_code)
-    return Response(exc.as_payload(), status=422)
+    status_code = int(getattr(exc, "status_code", 422))
+    response = Response(exc.as_payload(), status=status_code)
+    retry_after = getattr(exc, "retry_after", None)
+    if retry_after is not None:
+        response["Retry-After"] = str(retry_after)
+    return response
 
 
 def _command_response(result) -> dict:

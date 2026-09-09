@@ -814,9 +814,12 @@ class TestOptions:
         assert projected["platform_variants"] == template.platform_variants
 
     def test_preview_batch_returns_exact_artifact_for_each_platform(
-        self, client, gestor
+        self, client, gestor, monkeypatch
     ):
         from shopman.offerman.models import Product
+
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
 
         Product.objects.create(
             sku="CRO-PREVIEW",
@@ -824,6 +827,25 @@ class TestOptions:
             base_price_q=850,
             is_published=True,
             is_sellable=True,
+        )
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_preview_api_flow",
+            version=5,
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_preview_api_flow", "Campanha API"),),
+                state="fresh",
+                checked_at=checked_at,
+                facts_as_of=checked_at,
+                fresh_until=checked_at + timedelta(minutes=5),
+                catalog_hash="b" * 64,
+            ),
         )
         client.force_login(gestor)
 
@@ -847,6 +869,50 @@ class TestOptions:
         assert payload["previews"]["whatsapp"]["artifact"]["body"] == (
             "WhatsApp Croissant da prévia"
         )
+        assert payload["previews"]["whatsapp"]["flow"] == {
+            "configured": True,
+            "name": "Campanha API",
+            "version": 5,
+            "catalog_as_of": checked_at.isoformat(),
+        }
+
+    def test_whatsapp_preview_outage_is_retryable_not_an_empty_flow_list(
+        self, client, gestor, monkeypatch
+    ):
+        from shopman.shop.models import NotificationTemplate
+        from shopman.shop.services.manychat_flows import FlowCatalog
+
+        NotificationTemplate.objects.create(
+            event="announcement_published",
+            subject="x",
+            body="y",
+            whatsapp_flow_ns="content_last_known",
+        )
+        checked_at = timezone.now()
+        monkeypatch.setattr(
+            "shopman.shop.services.manychat_flows.flow_catalog",
+            lambda **kwargs: FlowCatalog(
+                flows=(("content_last_known", "Último nome conhecido"),),
+                state="stale",
+                checked_at=checked_at,
+                facts_as_of=checked_at - timedelta(minutes=10),
+                fresh_until=checked_at - timedelta(minutes=5),
+                catalog_hash="c" * 64,
+                reason_code="manychat_catalog_unreachable",
+            ),
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={"body": "Fornada pronta", "platforms": ["whatsapp"]},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 503
+        assert response["Retry-After"] == "30"
+        assert response.json()["code"] == "whatsapp_flow_verification_unavailable"
+        assert response.json()["retryable"] is True
 
 
 class TestScheduledPublishing:
@@ -1047,15 +1113,50 @@ FAKE_FLOWS = (
 def flows(monkeypatch):
     from shopman.shop.services import manychat_flows
 
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: FAKE_FLOWS)
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=FAKE_FLOWS,
+        state="fresh",
+        checked_at=now,
+        facts_as_of=now,
+        fresh_until=now + timedelta(minutes=5),
+        catalog_hash="a" * 64,
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
 
 
 @pytest.fixture
 def no_flows(monkeypatch):
-    """A plataforma não respondeu — diferente de "não há template"."""
+    """A plataforma não respondeu — diferente de uma lista vazia conhecida."""
     from shopman.shop.services import manychat_flows
 
-    monkeypatch.setattr(manychat_flows, "list_flows", lambda **kw: ())
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=(),
+        state="unavailable",
+        checked_at=now,
+        facts_as_of=None,
+        fresh_until=None,
+        catalog_hash="",
+        reason_code="manychat_catalog_unreachable",
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
+
+
+@pytest.fixture
+def empty_flows(monkeypatch):
+    from shopman.shop.services import manychat_flows
+
+    now = timezone.now()
+    catalog = manychat_flows.FlowCatalog(
+        flows=(),
+        state="fresh",
+        checked_at=now,
+        facts_as_of=now,
+        fresh_until=now + timedelta(minutes=5),
+        catalog_hash="b" * 64,
+    )
+    monkeypatch.setattr(manychat_flows, "flow_catalog", lambda **kw: catalog)
 
 
 class TestWhatsAppTemplateFromTheSurface:
@@ -1067,8 +1168,11 @@ class TestWhatsAppTemplateFromTheSurface:
         assert {t["ns"] for t in body["available"]} == {ns for ns, _ in FAKE_FLOWS}
         assert body["current"] == ""
         assert body["configured"] is False
+        assert body["version"] == 1
+        assert body["catalog_state"] == "fresh"
+        assert body["command_available"] is True
 
-    def test_legacy_config_write_is_contained_until_cas_command(
+    def test_config_write_requires_version_idempotency_and_confirmation(
         self, client, gestor, flows
     ):
         from shopman.shop.models import NotificationTemplate
@@ -1076,51 +1180,123 @@ class TestWhatsAppTemplateFromTheSurface:
         client.force_login(gestor)
         resp = client.post(
             WA_TEMPLATE_URL,
-            data={"flow_ns": FAKE_FLOWS[0][0]},
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-command-0001",
         )
 
-        assert resp.status_code == 409
-        assert resp.json()["code"] == "platform_config_cas_not_ready"
+        assert resp.status_code == 428
+        assert resp.json()["code"] == "confirmation_required"
+        assert resp.json()["confirmation"]["step_up"] == "totp"
         assert not NotificationTemplate.objects.filter(
             event="announcement_published"
         ).exists()
 
-    def test_clearing_cannot_bypass_the_same_config_command(self, client, gestor, flows):
+    def test_confirmed_command_returns_durable_receipt_and_new_version(
+        self, client, gestor, flows, monkeypatch
+    ):
+        from shopman.shop.models import (
+            MarketingPlatformAuditEvent,
+            NotificationTemplate,
+        )
+
+        monkeypatch.setattr(
+            "shopman.backstage.api.marketing._command_authorizer",
+            lambda *args, **kwargs: (lambda context, receipt: None),
+        )
+        client.force_login(gestor)
+        response = client.post(
+            WA_TEMPLATE_URL,
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-confirmed-0001",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["receipt"]["state"] == "completed"
+        assert body["receipt"]["resulting_version"] == 2
+        assert body["receipt"]["resource_ref"] == "platform:whatsapp"
+        assert NotificationTemplate.objects.get(
+            event="announcement_published"
+        ).version == 2
+        assert MarketingPlatformAuditEvent.objects.count() == 1
+
+        replay = client.post(
+            WA_TEMPLATE_URL,
+            data={"flow_ns": FAKE_FLOWS[0][0], "base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-flow-confirmed-0001",
+        )
+        assert replay.status_code == 200
+        assert replay.json()["replayed"] is True
+        assert MarketingPlatformAuditEvent.objects.count() == 1
+
+    def test_clearing_cannot_bypass_the_command_protocol(self, client, gestor, flows):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
         resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""},
                            content_type="application/json")
 
-        assert resp.status_code == 409
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "invalid_base_version"
         assert not NotificationTemplate.objects.filter(
             event="announcement_published"
         ).exists()
 
     def test_a_template_that_no_longer_exists_is_refused(self, client, gestor, flows):
         client.force_login(gestor)
-        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20200101000000_000000"},
-                           content_type="application/json")
+        resp = client.post(
+            WA_TEMPLATE_URL,
+            data={
+                "flow_ns": "content20200101000000_000000",
+                "base_version": 1,
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-missing-flow-0001",
+        )
 
-        assert resp.status_code == 409
-        assert resp.json()["code"] == "platform_config_cas_not_ready"
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "flow_not_active"
 
     def test_platform_outage_cannot_turn_into_an_unverified_write(
         self, client, gestor, no_flows
     ):
         client.force_login(gestor)
-        resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20991231235959_999999"},
-                           content_type="application/json")
+        resp = client.post(
+            WA_TEMPLATE_URL,
+            data={
+                "flow_ns": "content20991231235959_999999",
+                "base_version": 1,
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="configure-during-outage-0001",
+        )
 
-        assert resp.status_code == 409
-        assert resp.json()["code"] == "platform_config_cas_not_ready"
+        assert resp.status_code == 503
+        assert resp.json()["code"] == "platform_catalog_unavailable"
+        assert resp["Retry-After"] == "30"
 
     def test_the_surface_distinguishes_cannot_list_from_empty(self, client, gestor, no_flows):
         client.force_login(gestor)
         body = client.get(WA_TEMPLATE_URL).json()
 
         assert body["can_list"] is False, "a tela precisa saber que não foi possível perguntar"
+        assert body["catalog_state"] == "unavailable"
+        assert body["command_available"] is False
+
+    def test_successful_empty_catalog_is_not_reported_as_outage(
+        self, client, gestor, empty_flows
+    ):
+        client.force_login(gestor)
+
+        body = client.get(WA_TEMPLATE_URL).json()
+
+        assert body["can_list"] is True
+        assert body["available"] == []
+        assert body["catalog_state"] == "fresh"
+        assert body["command_available"] is True
 
     def test_it_requires_the_campaign_permission(self, client, flows):
         outsider = User.objects.create_user(username="curioso2", password="x", is_staff=True)

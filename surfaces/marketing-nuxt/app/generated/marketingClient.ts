@@ -188,7 +188,12 @@ export interface PlatformDeliveryProjectionV2 {
 export interface PlatformReadinessProjectionV2 {
   platform_ref: string;
   state: "ready" | "degraded" | "blocked" | "unknown";
-  checked_at: string | null;
+  reason_code: string;
+  version: number;
+  checked_at: string;
+  facts_as_of: string | null;
+  fresh_until: string | null;
+  source_status: string;
 }
 
 export interface ReadinessProjectionV2 {

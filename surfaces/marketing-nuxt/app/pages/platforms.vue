@@ -9,7 +9,7 @@
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";
 
-const { platforms, loading } = usePlatforms();
+const { platforms, loading, load: loadPlatforms } = usePlatforms();
 const waTemplate = useWhatsAppTemplate();
 
 // ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
@@ -18,6 +18,9 @@ const waTemplate = useWhatsAppTemplate();
 // eu faço?".
 const opened = ref<Platform | null>(null);
 const savingTemplate = ref(false);
+const pendingFlow = ref<string | null>(null);
+const platformCommandKey = ref("");
+const totp = ref("");
 const testTargetRef = ref("");
 const testSku = ref("");
 
@@ -28,10 +31,46 @@ onMounted(async () => {
   }
 });
 
-async function onChooseTemplate(flowNs: string) {
+function onChooseTemplate(flowNs: string) {
+  if (!waTemplate.commandAvailable.value || flowNs === waTemplate.current.value)
+    return;
+  pendingFlow.value = flowNs;
+  platformCommandKey.value = crypto.randomUUID();
+  totp.value = "";
+}
+
+async function onConfirmTemplate() {
+  if (pendingFlow.value === null || totp.value.length !== 6) return;
   savingTemplate.value = true;
-  await waTemplate.choose(flowNs);
+  const changed = await waTemplate.choose(
+    pendingFlow.value,
+    totp.value,
+    platformCommandKey.value,
+  );
+  if (changed) {
+    pendingFlow.value = null;
+    platformCommandKey.value = "";
+    totp.value = "";
+    await loadPlatforms();
+    opened.value =
+      platforms.value.find((item) => item.platform === "whatsapp") ??
+      opened.value;
+  } else if (waTemplate.lastCommandCode.value === "version_conflict") {
+    // Keep the exact selected flow in view, but start a new command against the
+    // freshly loaded version.  Reusing a key whose receipt is a conflict would
+    // replay that conflict forever.
+    platformCommandKey.value = crypto.randomUUID();
+    totp.value = "";
+  }
   savingTemplate.value = false;
+}
+
+async function onVerifyCatalog() {
+  await waTemplate.verify();
+  await loadPlatforms();
+  opened.value =
+    platforms.value.find((item) => item.platform === "whatsapp") ??
+    opened.value;
 }
 
 async function onSendTest() {
@@ -43,7 +82,8 @@ async function onSendTest() {
 
 /** Uma linha por plataforma: o resumo que responde "como está" sem abrir nada. */
 function summaryFor(platform: Platform): string {
-  if (!platform.ready) return platform.reason;
+  if (platform.state === "unknown") return platform.reason;
+  if (platform.state === "blocked") return platform.reason;
   if (platform.limitation) return platform.limitation;
   return kindLabel(platform.kind);
 }
@@ -56,14 +96,20 @@ function kindLabel(kind: string): string {
 }
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
-function tone(ready: boolean, limitation: string) {
-  if (!ready)
+function tone(state: Platform["state"]) {
+  if (state === "blocked")
     return {
       chip: "bg-destructive/10 text-destructive",
       icon: "lucide:circle-slash",
       label: "Não publica",
     };
-  if (limitation)
+  if (state === "unknown")
+    return {
+      chip: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
+      icon: "lucide:circle-help",
+      label: "Não verificada",
+    };
+  if (state === "degraded")
     return {
       chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
       icon: "lucide:triangle-alert",
@@ -75,6 +121,22 @@ function tone(ready: boolean, limitation: string) {
     label: "Pronta",
   };
 }
+
+function checkedAt(value: string): string {
+  if (!value) return "sem verificação registrada";
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+const pendingFlowName = computed(() => {
+  if (pendingFlow.value === "") return "Sem flow (janela de 24 horas)";
+  return (
+    waTemplate.available.value.find((item) => item.ns === pendingFlow.value)
+      ?.name ?? "Flow selecionado"
+  );
+});
 
 useHead({ title: "Plataformas · Marketing" });
 </script>
@@ -113,13 +175,10 @@ useHead({ title: "Plataformas · Marketing" });
               <span class="font-semibold">{{ platform.label }}</span>
               <span
                 class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="tone(platform.ready, platform.limitation).chip"
+                :class="tone(platform.state).chip"
               >
-                <Icon
-                  :name="tone(platform.ready, platform.limitation).icon"
-                  class="size-3"
-                />
-                {{ tone(platform.ready, platform.limitation).label }}
+                <Icon :name="tone(platform.state).icon" class="size-3" />
+                {{ tone(platform.state).label }}
               </span>
               <!-- Plataforma que nenhuma campanha ativa usa não é problema: ligar
                    credencial de algo sem uso é trabalho jogado fora. -->
@@ -161,15 +220,15 @@ useHead({ title: "Plataformas · Marketing" });
         <div v-if="opened" class="flex-1 overflow-y-auto p-4">
           <div
             class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
-            :class="tone(opened.ready, opened.limitation).chip"
+            :class="tone(opened.state).chip"
           >
             <Icon
-              :name="tone(opened.ready, opened.limitation).icon"
+              :name="tone(opened.state).icon"
               class="mt-0.5 size-4 shrink-0"
             />
             <div class="min-w-0">
               <p class="font-semibold">
-                {{ tone(opened.ready, opened.limitation).label }}
+                {{ tone(opened.state).label }}
               </p>
               <p class="mt-0.5">
                 {{
@@ -181,6 +240,9 @@ useHead({ title: "Plataformas · Marketing" });
 
           <p v-if="opened.action" class="mt-3 text-sm">
             <span class="font-medium">O que fazer:</span> {{ opened.action }}
+          </p>
+          <p class="mt-2 text-xs text-muted-foreground">
+            Verificado em {{ checkedAt(opened.checked_at) }}.
           </p>
 
           <!-- Só o WhatsApp se resolve DAQUI. As outras dependem de credencial de
@@ -214,9 +276,24 @@ useHead({ title: "Plataformas · Marketing" });
                   Não foi possível consultar os templates agora
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  A plataforma não respondeu. Tente de novo em instantes; nada
-                  foi alterado.
+                  A última lista conhecida não autoriza mudança. Nada foi
+                  alterado; atualize a verificação antes de escolher.
                 </p>
+                <p
+                  v-if="waTemplate.catalogAsOf.value"
+                  class="mt-1 text-xs text-muted-foreground"
+                >
+                  Última resposta válida:
+                  {{ checkedAt(waTemplate.catalogAsOf.value) }}.
+                </p>
+                <button
+                  type="button"
+                  class="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-semibold"
+                  @click="onVerifyCatalog"
+                >
+                  <Icon name="lucide:refresh-cw" class="size-4" />
+                  Verificar novamente
+                </button>
               </div>
 
               <div v-else class="mt-3 space-y-1.5">
@@ -228,7 +305,11 @@ useHead({ title: "Plataformas · Marketing" });
                       ? 'border-primary'
                       : 'border-border'
                   "
-                  :disabled="savingTemplate"
+                  :disabled="
+                    savingTemplate ||
+                    !waTemplate.commandAvailable.value ||
+                    waTemplate.current.value === ''
+                  "
                   @click="onChooseTemplate('')"
                 >
                   <Icon
@@ -254,7 +335,11 @@ useHead({ title: "Plataformas · Marketing" });
                       ? 'border-primary'
                       : 'border-border'
                   "
-                  :disabled="savingTemplate"
+                  :disabled="
+                    savingTemplate ||
+                    !waTemplate.commandAvailable.value ||
+                    waTemplate.current.value === option.ns
+                  "
                   @click="onChooseTemplate(option.ns)"
                 >
                   <Icon
@@ -265,13 +350,15 @@ useHead({ title: "Plataformas · Marketing" });
                     <span class="block truncate text-sm font-medium">{{
                       option.name
                     }}</span>
-                    <span
-                      class="block truncate font-mono text-xs text-muted-foreground"
-                    >
-                      {{ option.ns }}
-                    </span>
                   </span>
                 </button>
+                <p
+                  v-if="waTemplate.available.value.length === 0"
+                  class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  A consulta respondeu, mas não há flow ativo disponível. “Sem
+                  flow” continua sendo a configuração segura.
+                </p>
               </div>
 
               <!-- ⚠️ O que mais confunde, dito onde a decisão acontece: com template
@@ -405,5 +492,97 @@ useHead({ title: "Plataformas · Marketing" });
         </div>
       </UiSheetContent>
     </UiSheet>
+
+    <UiDialog
+      :open="pendingFlow !== null"
+      @update:open="
+        (value) => {
+          if (!value && !savingTemplate) {
+            pendingFlow = null;
+            platformCommandKey = '';
+            totp = '';
+          }
+        }
+      "
+    >
+      <UiDialogContent class="sm:max-w-md">
+        <UiDialogHeader>
+          <UiDialogTitle>Confirmar configuração do WhatsApp</UiDialogTitle>
+          <UiDialogDescription>
+            Esta escolha muda o alcance dos próximos anúncios e ficará
+            registrada na auditoria.
+          </UiDialogDescription>
+        </UiDialogHeader>
+
+        <dl class="space-y-2 rounded-lg bg-muted/40 p-3 text-sm">
+          <div>
+            <dt class="text-xs text-muted-foreground">Configuração atual</dt>
+            <dd class="font-medium">
+              {{
+                waTemplate.currentName.value ||
+                (waTemplate.current.value
+                  ? "Flow configurado, mas não ativo na lista atual"
+                  : "Sem flow (janela de 24 horas)")
+              }}
+            </dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted-foreground">Depois da confirmação</dt>
+            <dd class="font-medium">{{ pendingFlowName }}</dd>
+          </div>
+          <div>
+            <dt class="text-xs text-muted-foreground">Versão revisada</dt>
+            <dd class="font-medium">{{ waTemplate.version.value }}</dd>
+          </div>
+        </dl>
+
+        <div>
+          <label for="platform-totp" class="mb-1 block text-sm font-medium">
+            Código de 6 dígitos do autenticador
+          </label>
+          <input
+            id="platform-totp"
+            v-model="totp"
+            type="text"
+            inputmode="numeric"
+            autocomplete="one-time-code"
+            maxlength="6"
+            pattern="[0-9]{6}"
+            class="h-11 w-full rounded-md border border-border bg-background px-3 text-base tracking-[0.3em] outline-none focus:ring-2 focus:ring-ring"
+            @input="totp = totp.replace(/\D/g, '').slice(0, 6)"
+          />
+          <p class="mt-1 text-xs text-muted-foreground">
+            O sistema revalida sua permissão, a versão e a lista ativa antes de
+            salvar.
+          </p>
+        </div>
+
+        <UiDialogFooter>
+          <button
+            type="button"
+            class="inline-flex min-h-11 items-center justify-center rounded-md border border-border px-4 text-sm font-semibold"
+            :disabled="savingTemplate"
+            @click="pendingFlow = null"
+          >
+            Voltar sem alterar
+          </button>
+          <button
+            type="button"
+            class="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-40"
+            :disabled="savingTemplate || totp.length !== 6"
+            @click="onConfirmTemplate"
+          >
+            <Icon
+              :name="
+                savingTemplate ? 'lucide:loader-circle' : 'lucide:shield-check'
+              "
+              class="size-4"
+              :class="savingTemplate ? 'animate-spin' : ''"
+            />
+            {{ savingTemplate ? "Confirmando…" : "Confirmar mudança" }}
+          </button>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
   </main>
 </template>

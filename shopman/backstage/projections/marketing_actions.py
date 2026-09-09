@@ -560,19 +560,32 @@ def _platform_actions(
             capabilities=("shop.view_marketing",),
             actor=actor,
         ),
-        _action(
+    ]
+    if platform.platform_ref == "whatsapp":
+        actions.append(_action(
             resource_ref=resource_ref,
             version=platform.version,
             kind="configure_platform",
             priority="secondary",
-            href=page,
-            method="GET",
+            href="/api/v1/backstage/marketing/whatsapp-template/",
+            method="POST",
+            payload_schema="marketing.command.configure-platform.v1",
+            idempotency="required",
+            confirmation=replace(
+                _EMPTY_CONFIRMATION,
+                mode="summary",
+                token_required=True,
+                consequence_code="changes_whatsapp_flow",
+                step_up="totp",
+            ),
             capabilities=("shop.configure_marketing_platforms",),
             actor=actor,
-            unavailable_reason="command_not_available",
-        ),
-    ]
-    if platform.platform_ref == "whatsapp":
+            unavailable_reason=(
+                "platform_readiness_unknown"
+                if platform.state == "unknown"
+                else ""
+            ),
+        ))
         actions.append(_action(
             resource_ref=resource_ref,
             version=platform.version,

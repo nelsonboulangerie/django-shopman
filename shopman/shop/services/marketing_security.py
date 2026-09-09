@@ -54,6 +54,7 @@ ACTION_RESCHEDULE = "reschedule"
 ACTION_RETRY = "retry_delivery"
 ACTION_RECONCILE = "reconcile_delivery"
 ACTION_UNFREEZE = "unfreeze"
+ACTION_CONFIGURE_PLATFORM = "configure_platform"
 
 
 @dataclass(frozen=True, slots=True)
@@ -204,6 +205,8 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
             field_errors={"audience_count": ("Divida ou reduza a audiência.",)},
         )
     if context.action == ACTION_RECONCILE:
+        return AuthorizationRequirement("summary", "totp", False, "")
+    if context.action == ACTION_CONFIGURE_PLATFORM:
         return AuthorizationRequirement("summary", "totp", False, "")
     if context.action == ACTION_UNFREEZE:
         return AuthorizationRequirement("summary", "totp", True, "")

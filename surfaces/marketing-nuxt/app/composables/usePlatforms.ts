@@ -11,7 +11,14 @@ export type Platform = {
   label: string;
   /** `publication` (uma peça) ou `direct_message` (uma mensagem por pessoa). */
   kind: string;
+  state: "ready" | "degraded" | "blocked" | "unknown";
+  reason_code: string;
+  version: number;
   ready: boolean;
+  checked_at: string;
+  facts_as_of: string | null;
+  fresh_until: string | null;
+  source_status: string;
   reason: string;
   action: string;
   limitation: string;
@@ -32,9 +39,10 @@ export function usePlatforms() {
   );
 
   function rank(p: Platform): number {
-    if (!p.ready) return 0;
-    if (p.limitation) return 1;
-    return 2;
+    if (p.state === "blocked") return 0;
+    if (p.state === "unknown") return 1;
+    if (p.state === "degraded") return 2;
+    return 3;
   }
 
   return { platforms: sorted, loading: pending, load: refresh };

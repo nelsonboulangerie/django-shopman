@@ -23,6 +23,16 @@ type ResolvedArtifact = {
   content_version: number;
   facts_as_of: string;
   facts_hash: string;
+  flow_ref?: string;
+  flow_version?: number;
+  flow_catalog_hash?: string;
+};
+
+type FlowPreview = {
+  configured: boolean;
+  name: string;
+  version: number;
+  catalog_as_of: string;
 };
 
 type PreviewBatch = {
@@ -46,7 +56,11 @@ type PreviewBatch = {
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
   };
-  previews: Record<string, { artifact: ResolvedArtifact; artifact_hash: string }>;
+  previews: Record<string, {
+    artifact: ResolvedArtifact;
+    artifact_hash: string;
+    flow?: FlowPreview;
+  }>;
 };
 
 type PreviewProblem = {
@@ -316,6 +330,10 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
         <p v-if="whatsappTemplate" class="mt-1.5 text-xs text-muted-foreground">
           Template aprovado: {{ whatsappTemplate }}. Os campos técnicos exibidos pertencem
           à mesma versão do artefato.
+        </p>
+        <p v-if="selected?.flow" class="mt-1.5 text-xs text-muted-foreground">
+          Flow conferido: {{ selected.flow.name }} · configuração v{{ selected.flow.version }}.
+          Esta é a versão selada para aprovação e envio.
         </p>
       </div>
 

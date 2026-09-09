@@ -221,7 +221,12 @@ class DeliveryAggregateProjectionV2:
 class PlatformReadinessProjectionV2:
     platform_ref: str
     state: ReadinessState
-    checked_at: datetime | None
+    reason_code: str
+    version: int
+    checked_at: datetime
+    facts_as_of: datetime | None
+    fresh_until: datetime | None
+    source_status: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -345,6 +350,7 @@ def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:
     )
     evidence = _evidence_for(candidates)
     summaries = delivery_summaries_for(candidates)
+    readiness_states = _readiness_states_for(candidates, now=clock)
 
     pending: list[AnnouncementProjectionV2] = []
     recent: list[AnnouncementProjectionV2] = []
@@ -354,6 +360,7 @@ def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:
             snapshot=evidence.snapshots.get(announcement.pk),
             artifact=evidence.artifacts.get(announcement.pk),
             delivery=summaries[announcement.pk],
+            readiness_states=readiness_states,
             now=clock,
         )
         if (
@@ -391,11 +398,13 @@ def build_announcement(
 
     clock = _aware_clock(now)
     evidence = _evidence_for((announcement,))
+    readiness_states = _readiness_states_for((announcement,), now=clock)
     projected = _project_announcement(
         announcement,
         snapshot=evidence.snapshots.get(announcement.pk),
         artifact=evidence.artifacts.get(announcement.pk),
         delivery=delivery_summaries_for((announcement,))[announcement.pk],
+        readiness_states=readiness_states,
         now=clock,
     )
     return MarketingEnvelopeV2(
@@ -426,12 +435,14 @@ def build_history_page(
     rows = tuple(announcements)
     evidence = _evidence_for(rows)
     summaries = delivery_summaries_for(rows)
+    readiness_states = _readiness_states_for(rows, now=clock)
     items = tuple(
         _project_announcement(
             announcement,
             snapshot=evidence.snapshots.get(announcement.pk),
             artifact=evidence.artifacts.get(announcement.pk),
             delivery=summaries[announcement.pk],
+            readiness_states=readiness_states,
             now=clock,
         )
         for announcement in rows
@@ -514,6 +525,7 @@ def _project_announcement(
     snapshot: AudienceSnapshot | None,
     artifact: MarketingContentArtifact | None,
     delivery: DeliverySummary,
+    readiness_states: dict[str, PlatformReadinessProjectionV2],
     now: datetime,
 ) -> AnnouncementProjectionV2:
     expired = announcement.is_expired(now=now)
@@ -569,7 +581,7 @@ def _project_announcement(
         settled_at=_optional_local(announcement.delivery_settled_at),
         audience=_audience_summary(announcement, snapshot=snapshot, now=now),
         artifact=_artifact_summary(artifact),
-        readiness=_unknown_readiness(platform_refs),
+        readiness=_readiness(platform_refs, states=readiness_states),
         delivery=_delivery_aggregate(delivery=delivery, now=now),
     )
 
@@ -745,18 +757,58 @@ def _delivery_counts(counts: dict[str, int]) -> DeliveryCountsProjectionV2:
     return DeliveryCountsProjectionV2(**normalized)
 
 
-def _unknown_readiness(platform_refs: tuple[str, ...]) -> ReadinessProjectionV2:
-    return ReadinessProjectionV2(
-        state="unknown",
-        platforms=tuple(
-            PlatformReadinessProjectionV2(
-                platform_ref=platform_ref,
-                state="unknown",
-                checked_at=None,
-            )
-            for platform_ref in platform_refs
-        ),
+def _readiness(
+    platform_refs: tuple[str, ...],
+    *,
+    states: dict[str, PlatformReadinessProjectionV2],
+) -> ReadinessProjectionV2:
+    platforms = tuple(
+        states[platform_ref]
+        for platform_ref in platform_refs
+        if platform_ref in states
     )
+    values = {item.state for item in platforms}
+    if not values:
+        overall: ReadinessState = "unknown"
+    elif "blocked" in values:
+        overall = "blocked"
+    elif "unknown" in values:
+        overall = "unknown"
+    elif "degraded" in values:
+        overall = "degraded"
+    else:
+        overall = "ready"
+    return ReadinessProjectionV2(state=overall, platforms=platforms)
+
+
+def _readiness_states_for(
+    announcements,
+    *,
+    now: datetime,
+) -> dict[str, PlatformReadinessProjectionV2]:
+    from shopman.shop.services import delivery_readiness
+
+    refs = tuple(dict.fromkeys(
+        ref
+        for announcement in announcements
+        for ref in (
+            _domain_code(value) for value in (announcement.platforms or ())
+        )
+        if ref
+    ))
+    return {
+        state.platform: PlatformReadinessProjectionV2(
+            platform_ref=state.platform,
+            state=state.state,
+            reason_code=_domain_code(state.reason_code),
+            version=state.version,
+            checked_at=_local(state.checked_at),
+            facts_as_of=_optional_local(state.facts_as_of),
+            fresh_until=_optional_local(state.fresh_until),
+            source_status=_domain_code(state.source_status),
+        )
+        for state in delivery_readiness.readiness_for(refs, now=now)
+    }
 
 
 def _operational_counters(

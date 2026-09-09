@@ -1,41 +1,19 @@
-"""Cada plataforma está pronta para entregar? E se não, por quê — ANTES de publicar.
+"""Verifiable delivery readiness for every Marketing platform.
 
-Nasceu de uma correção do dono: a primeira versão disto só sabia falar de WhatsApp,
-porque foi escrita durante um teste de WhatsApp. Anúncio não é mensagem de um canal — é
-conteúdo que sai por vários, e **cada um tem exigência própria**.
-
-## Dois tipos de entrega, não um
-
-A TV **não** está aqui, e não é esquecimento: ela mostra a promoção porque a promoção vale
-naquele canal, não porque um anúncio a escolheu como destino (ADR-020 §10).
-
-O erro de projetar em volta de um canal é achar que "enviar" quer dizer a mesma coisa em
-todos. Não quer:
-
-· **publicação** (`instagram`, `facebook`, `google_business`) — UMA peça publicada na
-  plataforma. Não tem destinatário, não tem janela de 24h, não tem consentimento. Precisa
-  de credencial e de um adapter que fale a API deles.
-· **mensagem direta** (`whatsapp`) — UMA mensagem POR PESSOA. Tem consentimento, tem
-  janela de 24h, e exige template aprovado para sair dela.
-
-O formato do relato é **genérico** (pronta? por quê não? o que fazer?) e a **razão** é
-específica de cada plataforma. Era isso que faltava: genérico onde dá, específico onde
-precisa.
-
-## Por que antes e não depois
-
-Hoje o Instagram só revela que não tem adapter DEPOIS de você aprovar: o anúncio vira
-`pending_manual` e alguém descobre no painel que nada foi publicado. Saber disso antes é
-a diferença entre escolher plataforma com informação e escolher no escuro.
+Readiness is a four-state fact, not a truthy shortcut.  ``unknown`` means the
+system could not verify the provider now; it never masquerades as an empty
+catalog or permission to mutate configuration.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal
 
-#: Publicação: uma peça na plataforma, sem destinatário.
+from django.utils import timezone
+
 PUBLICATION = "publication"
-#: Mensagem direta: uma mensagem por pessoa, com consentimento e janela.
 DIRECT_MESSAGE = "direct_message"
 
 PLATFORM_KIND: dict[str, str] = {
@@ -44,27 +22,39 @@ PLATFORM_KIND: dict[str, str] = {
     "google_business": PUBLICATION,
     "whatsapp": DIRECT_MESSAGE,
 }
+ReadinessState = Literal["ready", "degraded", "blocked", "unknown"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class PlatformReadiness:
-    """Uma plataforma e o que falta nela.
-
-    ``ready=False`` é bloqueio: nada sai. ``limitation`` é o meio-termo honesto — sai,
-    mas não para todo mundo —, e ele merece existir porque "funciona" e "funciona para
-    quem você imagina" não são a mesma coisa.
-    """
-
     platform: str
     kind: str
-    ready: bool
+    state: ReadinessState
+    reason_code: str
+    checked_at: datetime
+    facts_as_of: datetime | None = None
+    fresh_until: datetime | None = None
+    source_status: str = ""
+    version: int = 1
     reason: str = ""
     action: str = ""
     limitation: str = ""
 
+    @property
+    def ready(self) -> bool:
+        """Legacy compatibility: degraded can deliver, blocked/unknown cannot."""
 
-def readiness_for(platforms) -> tuple[PlatformReadiness, ...]:
-    """O estado de entrega de cada plataforma pedida, na ordem em que vieram."""
+        return self.state in {"ready", "degraded"}
+
+
+def readiness_for(
+    platforms,
+    *,
+    now: datetime | None = None,
+) -> tuple[PlatformReadiness, ...]:
+    """Return each requested platform in order, with one shared check instant."""
+
+    clock = _aware_now(now)
     out = []
     for platform in platforms or []:
         kind = PLATFORM_KIND.get(platform)
@@ -73,22 +63,22 @@ def readiness_for(platforms) -> tuple[PlatformReadiness, ...]:
                 PlatformReadiness(
                     platform=platform,
                     kind="unknown",
-                    ready=False,
+                    state="unknown",
+                    reason_code="platform_unknown",
+                    checked_at=clock,
+                    source_status="unavailable",
                     reason="Plataforma desconhecida pelo sistema.",
                     action="Revisar as plataformas da campanha",
                 )
             )
         elif kind == PUBLICATION:
-            out.append(_publication_readiness(platform))
-        elif kind == DIRECT_MESSAGE:
-            out.append(_direct_message_readiness(platform))
+            out.append(_publication_readiness(platform, now=clock))
         else:
-            out.append(PlatformReadiness(platform=platform, kind=kind, ready=True))
+            out.append(_direct_message_readiness(platform, now=clock))
     return tuple(out)
 
 
-def _publication_readiness(platform: str) -> PlatformReadiness:
-    """Publicação depende de adapter + credencial da plataforma. Nada de janela."""
+def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness:
     from shopman.shop.handlers.campaign import _posting_adapter
 
     adapter = _posting_adapter(platform)
@@ -96,57 +86,175 @@ def _publication_readiness(platform: str) -> PlatformReadiness:
         return PlatformReadiness(
             platform=platform,
             kind=PUBLICATION,
-            ready=False,
+            state="blocked",
+            reason_code="publication_adapter_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
             reason="Não há integração de publicação configurada para esta plataforma.",
             action="Configurar as credenciais da plataforma",
         )
 
     probe = getattr(adapter, "is_available", None)
-    if probe is not None and not probe():
+    if probe is None:
         return PlatformReadiness(
             platform=platform,
             kind=PUBLICATION,
-            ready=False,
+            state="unknown",
+            reason_code="publication_probe_missing",
+            checked_at=now,
+            source_status="unavailable",
+            reason="A integração não oferece uma verificação segura de disponibilidade.",
+            action="Pedir ao responsável do canal para verificar a integração",
+        )
+    try:
+        available = bool(probe())
+    except Exception:  # provider adapters are an availability boundary
+        return PlatformReadiness(
+            platform=platform,
+            kind=PUBLICATION,
+            state="unknown",
+            reason_code="publication_probe_unavailable",
+            checked_at=now,
+            source_status="unavailable",
+            reason="Não foi possível verificar a integração agora.",
+            action="Tentar a verificação novamente",
+        )
+    if not available:
+        return PlatformReadiness(
+            platform=platform,
+            kind=PUBLICATION,
+            state="blocked",
+            reason_code="publication_credential_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
             reason="A integração existe, mas está sem credencial neste ambiente.",
             action="Conferir as credenciais da plataforma",
         )
 
-    return PlatformReadiness(platform=platform, kind=PUBLICATION, ready=True)
+    return PlatformReadiness(
+        platform=platform,
+        kind=PUBLICATION,
+        state="ready",
+        reason_code="",
+        checked_at=now,
+        facts_as_of=now,
+        source_status="fresh",
+    )
 
 
-def _direct_message_readiness(platform: str) -> PlatformReadiness:
-    """Mensagem direta depende de transporte E, para sair da janela, de template."""
+def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadiness:
     from shopman.shop.handlers.campaign import _whatsapp_backend
+    from shopman.shop.models import NotificationTemplate
+    from shopman.shop.services import manychat_flows
 
-    if _whatsapp_backend() is None:
+    try:
+        backend = _whatsapp_backend()
+    except Exception:  # adapter probes must degrade the page, never break it
         return PlatformReadiness(
             platform=platform,
             kind=DIRECT_MESSAGE,
-            ready=False,
+            state="unknown",
+            reason_code="whatsapp_transport_probe_unavailable",
+            checked_at=now,
+            source_status="unavailable",
+            reason="Não foi possível verificar o transporte do WhatsApp agora.",
+            action="Tentar a verificação novamente",
+        )
+    if backend is None:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_transport_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
             reason="Nenhum transporte configurado — o envio falharia para todos.",
             action="Conferir a credencial do canal neste ambiente",
         )
 
-    if not _has_approved_template():
+    template = NotificationTemplate.objects.filter(
+        event="announcement_published"
+    ).only("whatsapp_flow_ns", "is_active", "version").first()
+    version = template.version if template is not None else 1
+    flow_ns = (template.whatsapp_flow_ns or "") if template is not None else ""
+    if not flow_ns:
         return PlatformReadiness(
             platform=platform,
             kind=DIRECT_MESSAGE,
-            ready=True,
+            state="degraded",
+            reason_code="whatsapp_flow_not_selected",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            version=version,
             limitation=(
                 "Só alcança quem conversou com a loja nas últimas 24 horas. Quem não "
                 "conversou não recebe — é regra da plataforma, não falha do envio."
             ),
-            action="Escolher o template aprovado para o anúncio",
+            action="Escolher um flow aprovado e ativo para o anúncio",
+        )
+    if not template.is_active:
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_template_inactive",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            version=version,
+            reason="O modelo que referencia o flow está inativo.",
+            action="Escolher novamente um flow aprovado para ativar esta configuração",
         )
 
-    return PlatformReadiness(platform=platform, kind=DIRECT_MESSAGE, ready=True)
+    catalog = manychat_flows.flow_catalog(now=now)
+    common = {
+        "platform": platform,
+        "kind": DIRECT_MESSAGE,
+        "checked_at": catalog.checked_at,
+        "facts_as_of": catalog.facts_as_of,
+        "fresh_until": catalog.fresh_until,
+        "source_status": catalog.state,
+        "version": version,
+    }
+    if catalog.mutation_safe and catalog.contains(flow_ns):
+        return PlatformReadiness(
+            **common,
+            state="ready",
+            reason_code="",
+        )
+    if catalog.mutation_safe:
+        return PlatformReadiness(
+            **common,
+            state="blocked",
+            reason_code="whatsapp_flow_not_active",
+            reason="O flow escolhido não aparece entre os flows ativos da plataforma.",
+            action="Escolher um flow ativo da lista atual",
+        )
+    return PlatformReadiness(
+        **common,
+        state="unknown",
+        reason_code=(catalog.reason_code or "whatsapp_flow_verification_unavailable"),
+        reason="Não foi possível confirmar se o flow escolhido continua ativo.",
+        action="Atualizar a verificação da plataforma; nenhuma configuração foi alterada",
+    )
 
 
 def _has_approved_template(event: str = "announcement_published") -> bool:
+    """Compatibility helper with the corrected active-record semantics."""
+
     from shopman.shop.models import NotificationTemplate
 
     return (
-        NotificationTemplate.objects.filter(event=event)
+        NotificationTemplate.objects.filter(event=event, is_active=True)
         .exclude(whatsapp_flow_ns="")
         .exists()
     )
+
+
+def _aware_now(value: datetime | None) -> datetime:
+    clock = value or timezone.now()
+    return timezone.make_aware(clock) if timezone.is_naive(clock) else clock

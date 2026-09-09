@@ -25,6 +25,7 @@ from shopman.shop.models import (
     MarketingCommandReceipt,
     MarketingContentArtifact,
     MarketingOutbox,
+    NotificationTemplate,
 )
 from shopman.shop.services.marketing_approval import (
     PUBLISH_NOW,
@@ -284,7 +285,9 @@ def test_whatsapp_below_minimum_is_rejected_before_any_effect_shaped_row(actor, 
     assert MarketingOutbox.objects.count() == 0
 
 
-def test_whatsapp_at_approved_minimum_seals_exact_members_and_one_wave(actor, announcement):
+def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(
+    actor, announcement, monkeypatch
+):
     refs = []
     for number in range(10):
         customer = Customer.objects.create(
@@ -305,6 +308,27 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_and_one_wave(actor, an
     announcement.rule = rule
     announcement.template = template
     announcement.save(update_fields=["rule", "template"])
+    NotificationTemplate.objects.create(
+        event="announcement_published",
+        subject="x",
+        body="y",
+        whatsapp_flow_ns="content_approval_flow",
+        version=4,
+    )
+    from shopman.shop.services.manychat_flows import FlowCatalog
+
+    checked_at = timezone.now()
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: FlowCatalog(
+            flows=(("content_approval_flow", "Campanha geral"),),
+            state="fresh",
+            checked_at=checked_at,
+            facts_as_of=checked_at,
+            fresh_until=checked_at + timedelta(minutes=5),
+            catalog_hash="a" * 64,
+        ),
+    )
 
     result = _approve(
         actor=actor,
@@ -318,6 +342,10 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_and_one_wave(actor, an
     assert [(entry.platform, entry.wave_key) for entry in result.outbox] == [
         ("whatsapp", "all")
     ]
+    resolved = result.artifact.payload["resolved_artifacts"]["whatsapp"]
+    assert resolved["flow_ref"] == "content_approval_flow"
+    assert resolved["flow_version"] == 4
+    assert resolved["flow_catalog_hash"] == "a" * 64
     assert Directive.objects.count() == 0
 
 

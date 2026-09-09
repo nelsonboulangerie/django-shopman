@@ -215,10 +215,22 @@ export interface AudienceCount {
 /** Templates aprovados da plataforma + o escolhido agora. */
 export interface WhatsAppTemplateResponse {
   current: string;
+  current_name: string;
+  current_active: boolean;
+  version: number;
   available: { ns: string; name: string }[];
   /** `false` = não foi possível consultar a plataforma (≠ "não há template"). */
   can_list: boolean;
   configured: boolean;
+  command_available: boolean;
+  command_disabled_reason: string;
+  catalog_state: "fresh" | "stale" | "unavailable" | "not_configured";
+  catalog_checked_at: string;
+  catalog_as_of: string | null;
+  catalog_fresh_until: string | null;
+  catalog_hash: string;
+  readiness_state: "ready" | "degraded" | "blocked" | "unknown";
+  readiness_reason_code: string;
   can_send_test: boolean;
   test_targets: { ref: string; label: string; backend: string }[];
 }

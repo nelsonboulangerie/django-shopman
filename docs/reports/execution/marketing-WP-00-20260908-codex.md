@@ -1056,3 +1056,77 @@ Provas locais:
 - o build ainda baixou os fonts declarados por `@nuxt/fonts`; a remoção dessa dependência de
   rede está explicitamente reservada ao MKT-040. Nenhum provider, destinatário, deploy ou
   produção foi acessado.
+
+## MKT-029 — readiness verificável e configuração de flow governada
+
+Implementado sobre os contratos de autorização do MKT-020 e o artefato único do MKT-025:
+
+- readiness deixou de ser um booleano inferido e passou a representar
+  `ready/degraded/blocked/unknown`, com reason code allowlisted, versão, instante da
+  checagem, `as_of`, validade e estado da fonte para cada plataforma;
+- adapter ausente, credencial ausente, probe inexistente e probe indisponível são causas
+  diferentes; uma falha do provider é redigida e vira `unknown`, nunca exception da página
+  nem falso “pronto”;
+- o catálogo ManyChat separa resposta fresca — inclusive uma resposta fresca realmente
+  vazia — de outage, ausência de credencial e último snapshot conhecido; a cópia stale
+  continua útil para diagnóstico, mas `mutation_safe=false` impede que ela autorize write;
+- somente rows não marcadas inativas/arquivadas no provider entram na lista selecionável;
+  um flow configurado que saiu da lista ativa bloqueia, enquanto um template inativo não
+  é contado como aprovado;
+- a alteração do flow é um command exclusivo do cockpit Marketing, com ator de sessão,
+  capability específica, TOTP, confirmação emitida pelo servidor, chave de idempotência,
+  CAS de versão, revalidação fresca em cada submit e receipt; o mesmo key reexecutado
+  durante outage retorna o resultado concluído sem consultar novamente o provider;
+- a transação serializa também a criação inicial, atualiza a versão monotônica e grava um
+  `MarketingPlatformAuditEvent` append-only com ator, versões, refs anterior/nova e hash/
+  `as_of` do catálogo; nenhum secret ou erro bruto entra no audit/receipt;
+- a indisponibilidade do catálogo responde `503` + `Retry-After`; ref arbitrária, ref
+  removida, versão stale e no-op têm resultados distintos e nenhum deles muda a
+  configuração;
+- o Admin Unfold mantém `NotificationTemplate` apenas como leitura para flow/ativação e
+  aponta diretamente para Marketing → Plataformas, eliminando o segundo write path sem
+  criar uma UI administrativa paralela;
+- a página `/platforms` mostra causa, limitação, Action exata e horário da última
+  verificação; escolhe por nome sem exibir o namespace opaco, confirma configuração atual,
+  próxima configuração e versão, e pede somente o TOTP de seis dígitos;
+- em conflito, a seleção permanece no modal, a versão é atualizada e só então nasce uma
+  nova chave; falha ambígua conserva a chave original para replay seguro, evitando tanto
+  redigitação quanto duplicação;
+- o flow ativo, sua versão e o hash do catálogo agora são dados server-owned selados no
+  `ResolvedDispatchArtifact` schema v3. Conteúdo/variante continua proibido de escolher
+  flow. Preview, aprovação e o futuro adapter canônico recebem a mesma referência imutável;
+  artefatos v2 continuam legíveis e preservam seus bytes canônicos;
+- Projection v1/v2, Actions, JSON Schema, OpenAPI e cliente TypeScript foram atualizados;
+  o board resolve readiness uma vez por conjunto de plataformas, sem consulta por card.
+
+Budget de omotenashi comprovado na jornada de readiness/configuração:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Distinguir “zero flows” de outage | impossível sem consulta externa | estado e freshness no próprio painel |
+| Encontrar a causa e o próximo passo | até logs/Admin/provider | 0 navegações; causa + Action no sheet |
+| Copiar/digitar namespace técnico | 27+ caracteres suscetíveis a erro | 0 caracteres; uma escolha por nome |
+| Confirmar o que será trocado | comparação entre telas | atual, novo e versão no mesmo modal |
+| Alterar flow | Admin + provider + conferência | 1 escolha + TOTP + 1 confirmação |
+| Reagir a outage | risco de colar ref antiga/arbitrária | 0 writes; 1 Action “Verificar novamente” |
+| Recuperar conflito de versão | fechar, navegar e escolher novamente | 0 reseleções; modal preservado e versão recarregada |
+| Conferir se preview e envio usam o mesmo flow | inspeção manual do banco/provider | flow/version/catalog hash dentro do artifact hash |
+| Descobrir que um flow foi desativado | falha por destinatário | bloqueio antes da aprovação/provider |
+
+Provas locais:
+
+- 234 testes focados de readiness, catálogo, configuração, migration, artefato, aprovação,
+  campaign, API, Actions e capabilities passaram em 32,54 s;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 652 testes passaram
+  em 72,73 s;
+- 107 testes Nuxt, ESLint, Nuxt typecheck e build de produção passaram;
+- gate canônico Unfold: 229 testes e verificador estrutural passaram;
+- `makemigrations --check --dry-run`, migration forward/reverse, Django check,
+  `export_marketing_client --check`, Ruff dos arquivos alterados e `git diff --check`
+  passaram; permaneceu somente o warning conhecido de SQLite local;
+- o fluxo local real BFF→Django→SQLite foi inspecionado em desktop e 390×844: os quatro
+  estados têm hierarquia distinta, WhatsApp degradado mostra causa/ação/horário, outage
+  conserva a última lista apenas como diagnóstico, o retry é alcançável e não há overflow;
+- a inspeção usou conta e dados sintéticos, portas isoladas `3006/8011`, e encerrou ambos
+  os processos; o serviço de outra worktree já presente na porta 8000 não foi tocado;
+- nenhuma rede de provider, destinatário, deploy, produção ou escrita externa foi usada.

@@ -16,7 +16,10 @@ alguém voltar a tratar tudo como mensagem, ele quebra.
 
 from __future__ import annotations
 
+from datetime import timedelta
+
 import pytest
+from django.utils import timezone
 
 from shopman.shop.services import delivery_readiness as dr
 
@@ -40,6 +43,25 @@ def _by_platform(states):
     return {state.platform: state for state in states}
 
 
+def _flow_catalog(*flows, state="fresh"):
+    from shopman.shop.services.manychat_flows import FlowCatalog
+
+    now = timezone.now()
+    return FlowCatalog(
+        flows=tuple(flows),
+        state=state,
+        checked_at=now,
+        facts_as_of=now - timedelta(minutes=10) if state == "stale" else now,
+        fresh_until=(
+            now - timedelta(minutes=5)
+            if state == "stale"
+            else now + timedelta(minutes=5)
+        ),
+        catalog_hash="a" * 64,
+        reason_code="manychat_catalog_unreachable" if state != "fresh" else "",
+    )
+
+
 def test_each_platform_is_classified_by_how_it_delivers(no_transport):
     states = _by_platform(dr.readiness_for(["instagram", "whatsapp"]))
 
@@ -57,6 +79,7 @@ def test_the_store_tv_is_no_longer_a_platform(no_transport):
     (state,) = dr.readiness_for(["tv"])
     assert state.kind == "unknown"
     assert state.ready is False
+    assert state.state == "unknown"
 
 
 def test_publication_without_an_adapter_is_blocked(no_transport):
@@ -96,6 +119,19 @@ def test_direct_message_without_transport_is_blocked(no_transport):
     assert "transporte" in state.reason
 
 
+def test_direct_message_transport_probe_failure_is_unknown(monkeypatch):
+    monkeypatch.setattr(
+        "shopman.shop.handlers.campaign._whatsapp_backend",
+        lambda: (_ for _ in ()).throw(RuntimeError("provider detail must stay private")),
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+
+    assert state.state == "unknown"
+    assert state.reason_code == "whatsapp_transport_probe_unavailable"
+    assert "provider detail" not in state.reason
+
+
 def test_direct_message_without_template_is_ready_but_limited(with_transport):
     """O meio-termo honesto: sai, mas não para todo mundo."""
     (state,) = dr.readiness_for(["whatsapp"])
@@ -103,17 +139,90 @@ def test_direct_message_without_template_is_ready_but_limited(with_transport):
     assert "24 horas" in state.limitation
 
 
-def test_direct_message_with_template_has_no_limitation(with_transport):
+def test_direct_message_with_active_verified_flow_has_no_limitation(
+    with_transport, monkeypatch
+):
     from shopman.shop.models import NotificationTemplate
 
     NotificationTemplate.objects.create(
         event="announcement_published", subject="x", body="y",
         whatsapp_flow_ns="content20260101120000_1",
     )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(
+            ("content20260101120000_1", "Anúncio aprovado")
+        ),
+    )
 
     (state,) = dr.readiness_for(["whatsapp"])
     assert state.ready is True
+    assert state.state == "ready"
     assert state.limitation == ""
+
+
+def test_direct_message_with_missing_active_flow_is_blocked(with_transport, monkeypatch):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="announcement_published",
+        subject="x",
+        body="y",
+        whatsapp_flow_ns="content_removed",
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(("content_other", "Outro flow")),
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+    assert state.state == "blocked"
+    assert state.reason_code == "whatsapp_flow_not_active"
+
+
+def test_direct_message_with_stale_catalog_is_unknown(with_transport, monkeypatch):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="announcement_published",
+        subject="x",
+        body="y",
+        whatsapp_flow_ns="content_known_before_outage",
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(
+            ("content_known_before_outage", "Último nome conhecido"),
+            state="stale",
+        ),
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+    assert state.state == "unknown"
+    assert state.ready is False
+    assert state.source_status == "stale"
+
+
+def test_an_inactive_template_is_blocked_even_if_flow_is_listed(
+    with_transport, monkeypatch
+):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="announcement_published",
+        subject="x",
+        body="y",
+        whatsapp_flow_ns="content_inactive",
+        is_active=False,
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(("content_inactive", "Flow")),
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+    assert state.state == "blocked"
+    assert state.reason_code == "whatsapp_template_inactive"
 
 
 def test_an_unknown_platform_says_so_instead_of_pretending(no_transport):
@@ -167,13 +276,19 @@ def test_the_board_separates_blocking_from_limiting(with_transport):
     assert limits["whatsapp"].blocking is False, "sem template, publica só na janela"
 
 
-def test_a_fully_ready_platform_produces_no_noise(with_transport):
+def test_a_fully_ready_platform_produces_no_noise(with_transport, monkeypatch):
     from shopman.backstage.projections import marketing as mp
     from shopman.shop.models import AnnouncementTemplate, Campaign, NotificationTemplate, Trigger
 
     NotificationTemplate.objects.create(
         event="announcement_published", subject="x", body="y",
         whatsapp_flow_ns="content20260101120000_1",
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(
+            ("content20260101120000_1", "Anúncio aprovado")
+        ),
     )
     template = AnnouncementTemplate.objects.create(name="T", body="oi")
     Campaign.objects.create(
@@ -213,6 +328,12 @@ def test_a_healthy_platform_says_it_is_ready(with_transport, monkeypatch):
     NotificationTemplate.objects.create(
         event="announcement_published", subject="x", body="y",
         whatsapp_flow_ns="content20260101120000_1",
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(
+            ("content20260101120000_1", "Anúncio aprovado")
+        ),
     )
     by_ref = {p.platform: p for p in mp.build_platforms()}
 
