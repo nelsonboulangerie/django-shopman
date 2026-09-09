@@ -869,6 +869,7 @@ REST_FRAMEWORK = {
         "marketing_dangerous_shop": "30/minute",
         "marketing_fire_user": "3/hour",
         "marketing_fire_shop": "10/day",
+        "marketing_ai": os.environ.get("SHOPMAN_MARKETING_AI_THROTTLE_RATE", "10/hour"),
     },
 }
 
@@ -927,6 +928,20 @@ OFFERMAN = {
 AI_ASSIST_PROVIDER = os.environ.get("AI_ASSIST_PROVIDER", "anthropic")
 AI_ASSIST_API_KEY = os.environ.get("AI_ASSIST_API_KEY", "")
 AI_ASSIST_MODEL = os.environ.get("AI_ASSIST_MODEL", "claude-opus-5")
+
+# MKT-038: the generic copy transport is not authorization to use it for Marketing.
+# Both switches are deliberately false by default.  The second one records the human
+# vendor-policy gate (retention, no-training and transfer); a credential alone must
+# never make customer-facing AI appear in the operator surface.
+SHOPMAN_MARKETING_AI_ASSIST_V2 = os.environ.get(
+    "SHOPMAN_MARKETING_AI_ASSIST_V2", "false"
+).lower() in ("true", "1", "yes")
+SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = os.environ.get(
+    "SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED", "false"
+).lower() in ("true", "1", "yes")
+SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS = float(
+    os.environ.get("SHOPMAN_MARKETING_AI_TIMEOUT_SECONDS", "12")
+)
 
 # ── Craftsman (micro-MRP integration) ──────────────────────────────
 

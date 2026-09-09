@@ -61,6 +61,8 @@ export interface Announcement {
   /** Quem recusou, e por quê. Vazios em tudo que não foi recusado. */
   rejected_by: string;
   rejected_reason: string;
+  /** Review-only AI suggestion opted in by the template. */
+  ai_suggestion_enabled?: boolean;
 }
 
 export interface CampaignStats {
@@ -346,4 +348,26 @@ export interface AnnouncementEdits {
   platforms?: string[];
   image_url?: string;
   publish_at?: string;
+  /** Trace only; publishing still requires the independent approval command. */
+  ai_suggestion_ref?: string;
+}
+
+export interface MarketingAIFact {
+  id: string;
+  label: string;
+  value: string;
+}
+
+export interface MarketingAISuggestion {
+  ref: string;
+  body: string;
+  hashtags: string[];
+  used_fact_ids: string[];
+  warnings: string[];
+  policy_version: string;
+  model_ref: string;
+  suggestion_hash: string;
+  facts_hash: string;
+  base_version: number;
+  facts: MarketingAIFact[];
 }

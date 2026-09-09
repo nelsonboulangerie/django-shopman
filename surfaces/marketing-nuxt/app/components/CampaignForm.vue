@@ -439,7 +439,7 @@ const chosenPlatformVariants = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.platform_variants ?? {},
 );
 
-/** O modelo escolhido delega o texto à IA? A prévia não finge saber o resultado. */
+/** O modelo escolhido oferece uma sugestão separada durante a revisão? */
 const chosenUsesAi = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.use_ai_generation ?? false,
 );

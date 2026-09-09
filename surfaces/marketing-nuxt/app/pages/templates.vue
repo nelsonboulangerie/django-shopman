@@ -112,7 +112,7 @@ useHead({ title: "Modelos · Marketing" });
           <p class="mt-0.5 truncate text-sm text-muted-foreground">{{ template.body }}</p>
           <p v-if="template.use_ai_generation" class="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
             <Icon name="lucide:sparkles" class="size-3.5" />
-            A IA escreve
+            Sugestão disponível na revisão
           </p>
         </button>
         <div class="flex shrink-0 items-center gap-2">

@@ -101,6 +101,8 @@ class AnnouncementProjection:
     #: por —" num anúncio publicado seria ruído.
     rejected_by: str
     rejected_reason: str
+    #: Template opted into a review-only suggestion. This never implies publication.
+    ai_suggestion_enabled: bool = False
 
 
 @dataclass(frozen=True)
@@ -349,10 +351,7 @@ def build_audience_count(rules: dict | None, *, sku: str = "") -> AudienceCountP
     return AudienceCountProjection(
         total=result.total,
         match=result.match,
-        match_label=(
-            "Cruzando as regras" if result.match == audience_service.MATCH_ALL
-            else "Somando as regras"
-        ),
+        match_label=("Cruzando as regras" if result.match == audience_service.MATCH_ALL else "Somando as regras"),
         parts=parts,
         vip_count=len(result.vip),
         empty_selection=not parts,
@@ -452,9 +451,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         status=announcement.status,
         status_label=announcement.get_status_display(),
         body=str(content.get("body") or ""),
-        image_url=marketing_url_policy.safe_browser_media_url(
-            content.get("image_url")
-        ),
+        image_url=marketing_url_policy.safe_browser_media_url(content.get("image_url")),
         hashtags=tuple(content.get("hashtags") or ()),
         link=marketing_url_policy.safe_browser_customer_link(content.get("link")),
         platforms=tuple(announcement.platforms or ()),
@@ -474,6 +471,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         approved_by=(approver.get_full_name() or approver.username) if approver else "",
         rejected_by=(rejecter.get_full_name() or rejecter.username) if rejecter else "",
         rejected_reason=announcement.rejected_reason,
+        ai_suggestion_enabled=bool(announcement.template_id and announcement.template.use_ai_generation),
     )
 
 
@@ -499,7 +497,8 @@ def build_board(*, now=None) -> CampaignBoardProjection:
     )
 
     published_today = [
-        announcement for announcement in recent
+        announcement
+        for announcement in recent
         if announcement.published_at and timezone.localtime(announcement.published_at).date() == today
     ]
     reached = sum(int((announcement.audience or {}).get("total") or 0) for announcement in published_today)
@@ -520,9 +519,9 @@ def build_board(*, now=None) -> CampaignBoardProjection:
 
 
 def _ai_assist_available() -> bool:
-    from shopman.shop.services import copy_assist
+    from shopman.shop.services import marketing_ai
 
-    return copy_assist.is_configured()
+    return marketing_ai.is_available()
 
 
 def _reach_limits() -> tuple[ReachLimitProjection, ...]:
@@ -640,11 +639,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         template_id=rule.template_id,
         template_name=rule.template.name if rule.template_id else "",
         platforms=tuple(rule.platforms or ()),
-        audience_rules={
-            key: audience_rules[key]
-            for key in sorted(PUBLIC_RULE_KEYS)
-            if key in audience_rules
-        },
+        audience_rules={key: audience_rules[key] for key in sorted(PUBLIC_RULE_KEYS) if key in audience_rules},
         promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
         **(performance if performance is not None else _performance_by_rule([rule.pk])[rule.pk]),
@@ -688,10 +683,7 @@ def _performance_by_rule(rule_ids: list[int]) -> dict[int, dict]:
         bucket = out.get(announcement.rule_id)
         if bucket is None:
             continue
-        entries = [
-            entry for entry in (announcement.platform_results or {}).values()
-            if isinstance(entry, dict)
-        ]
+        entries = [entry for entry in (announcement.platform_results or {}).values() if isinstance(entry, dict)]
         if any(entry.get("status") == "published" for entry in entries):
             bucket["sent_count"] += 1
             bucket["reached_total"] += int((announcement.audience or {}).get("total") or 0)
@@ -734,12 +726,8 @@ def build_options() -> CampaignOptionsProjection:
     from shopman.shop.services.campaign import available_variables
 
     return CampaignOptionsProjection(
-        triggers=tuple(
-            ChoiceProjection(value=value, label=label) for value, label in Trigger.choices
-        ),
-        platforms=tuple(
-            ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES
-        ),
+        triggers=tuple(ChoiceProjection(value=value, label=label) for value, label in Trigger.choices),
+        platforms=tuple(ChoiceProjection(value=value, label=label) for value, label in PLATFORM_CHOICES),
         templates=build_templates(),
         variables=available_variables(),
         price_tiers=_price_tier_choices(),
@@ -780,8 +768,7 @@ def _price_tier_choices() -> tuple[ChoiceProjection, ...]:
         from shopman.guestman.models import PriceTier
 
         return tuple(
-            ChoiceProjection(value=tier.ref, label=tier.name)
-            for tier in PriceTier.objects.all().order_by("name")
+            ChoiceProjection(value=tier.ref, label=tier.name) for tier in PriceTier.objects.all().order_by("name")
         )
     except Exception:
         logger.warning("marketing.price_tiers_failed", exc_info=True)
@@ -815,9 +802,7 @@ def _rfm_segment_choices() -> tuple[ChoiceProjection, ...]:
     try:
         from shopman.guestman.contrib.insights.models import RFM_SEGMENTS
 
-        return tuple(
-            ChoiceProjection(value=value, label=label) for value, label in RFM_SEGMENTS
-        )
+        return tuple(ChoiceProjection(value=value, label=label) for value, label in RFM_SEGMENTS)
     except Exception:
         logger.warning("marketing.rfm_segments_failed", exc_info=True)
         return ()

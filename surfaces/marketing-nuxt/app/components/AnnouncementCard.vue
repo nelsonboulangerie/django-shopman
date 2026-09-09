@@ -4,7 +4,12 @@
 // O gestor lê, ajusta o texto, confere a audiência e decide. Tudo num gesto:
 // as edições viajam JUNTO com a aprovação (um request), porque salvar e depois
 // publicar abriria a janela de publicar a versão anterior.
-import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campaign";
+import type {
+  Announcement,
+  AnnouncementEdits,
+  MarketingAISuggestion,
+  PublishMode,
+} from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
@@ -51,6 +56,11 @@ const scheduling = ref(false);
 const publishAt = ref("");
 const publishFold = ref<ScheduleFold>("");
 const rewriting = ref(false);
+const assistError = ref("");
+const suggestion = ref<MarketingAISuggestion | null>(null);
+const suggestionUsed = ref(false);
+const acceptedSuggestionRef = ref("");
+const beforeSuggestion = ref<{ body: string; hashtags: string } | null>(null);
 const clockMs = ref(Date.now());
 let clockTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -61,22 +71,65 @@ onBeforeUnmount(() => {
   if (clockTimer) clearInterval(clockTimer);
 });
 
-// Reescrever com IA: pede, mostra no MESMO campo e o gestor aceita editando ou apaga.
-// Não grava nada — quem persiste é a aprovação, como todo o resto do card.
+// Suggestion is shown beside the operator's text. Fetching it never mutates the draft.
 async function rewrite () {
   rewriting.value = true;
+  assistError.value = "";
+  suggestion.value = null;
+  suggestionUsed.value = false;
+  acceptedSuggestionRef.value = "";
   try {
-    const response = await $fetch<{ suggestion: string }>(
+    const response = await $fetch<{ suggestion: MarketingAISuggestion }>(
       `/api/v1/backstage/marketing/announcements/${props.announcement.pk}/rewrite/`,
-      { method: "POST", body: { body: body.value } },
+      { method: "POST", credentials: "same-origin", body: { body: body.value } },
     );
-    if (response.suggestion) body.value = response.suggestion;
+    suggestion.value = response.suggestion;
+    beforeSuggestion.value = { body: body.value, hashtags: hashtagsText.value };
   } catch (err) {
-    useSonner.error(httpErrorMessage(err, "O assistente não respondeu. Seu texto segue aqui."));
+    assistError.value = httpErrorMessage(err, "O assistente não respondeu. Seu texto segue aqui.");
   } finally {
     rewriting.value = false;
   }
 }
+
+function recordSuggestionDisposition(action: "accept_draft" | "discard") {
+  if (!suggestion.value) return;
+  void $fetch(
+    `/api/v1/backstage/marketing/announcements/${props.announcement.pk}/suggestions/${suggestion.value.ref}/disposition/`,
+    { method: "POST", credentials: "same-origin", body: { action } },
+  ).catch(() => undefined);
+}
+
+function useSuggestion() {
+  if (!suggestion.value) return;
+  body.value = suggestion.value.body;
+  hashtagsText.value = suggestion.value.hashtags.map(displayHashtag).join(" ");
+  acceptedSuggestionRef.value = suggestion.value.ref;
+  suggestionUsed.value = true;
+  recordSuggestionDisposition("accept_draft");
+}
+
+function undoSuggestion() {
+  if (!beforeSuggestion.value) return;
+  body.value = beforeSuggestion.value.body;
+  hashtagsText.value = beforeSuggestion.value.hashtags;
+  acceptedSuggestionRef.value = "";
+  suggestionUsed.value = false;
+}
+
+function discardSuggestion() {
+  recordSuggestionDisposition("discard");
+  suggestion.value = null;
+  beforeSuggestion.value = null;
+  acceptedSuggestionRef.value = "";
+  suggestionUsed.value = false;
+}
+
+const warningLabels: Record<string, string> = {
+  generic_copy: "Texto genérico: confira se combina com a ocasião.",
+  limited_facts: "Poucos fatos estavam disponíveis para a sugestão.",
+  operator_should_verify_tone: "Confira o tom antes de usar.",
+};
 
 // Anúncio substituído por um refetch (SSE/poll) enquanto a tela estava aberta:
 // re-sincroniza o rascunho SÓ quando é outro announcement, para não apagar a edição em
@@ -90,6 +143,11 @@ watch(
     scheduling.value = false;
     publishAt.value = "";
     publishFold.value = "";
+    assistError.value = "";
+    suggestion.value = null;
+    suggestionUsed.value = false;
+    acceptedSuggestionRef.value = "";
+    beforeSuggestion.value = null;
   },
 );
 
@@ -208,6 +266,9 @@ function edits(): AnnouncementEdits {
     body: body.value.trim(),
     hashtags: parseHashtags(hashtagsText.value),
     platforms: [...platforms.value],
+    ...(acceptedSuggestionRef.value
+      ? { ai_suggestion_ref: acceptedSuggestionRef.value }
+      : {}),
   };
 }
 
@@ -308,7 +369,7 @@ function askToReject() {
               Texto do anúncio
             </label>
             <button
-              v-if="aiAssistAvailable"
+              v-if="aiAssistAvailable && announcement.ai_suggestion_enabled"
               type="button"
               :disabled="rewriting || busy"
               class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-0.5 text-xs font-medium transition hover:bg-muted disabled:opacity-40"
@@ -319,7 +380,7 @@ function askToReject() {
                 class="size-3.5"
                 :class="rewriting ? 'animate-spin' : ''"
               />
-              {{ rewriting ? "Escrevendo…" : "Reescrever" }}
+              {{ rewriting ? "Preparando…" : "Sugerir texto" }}
             </button>
           </div>
           <textarea
@@ -331,6 +392,87 @@ function askToReject() {
           <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">
             O anúncio precisa de um texto.
           </p>
+          <p
+            v-if="assistError"
+            class="mt-2 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+            role="alert"
+            data-testid="ai-assist-error"
+          >
+            {{ assistError }}
+          </p>
+          <section
+            v-if="suggestion"
+            class="mt-3 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-3"
+            aria-label="Comparação da sugestão de IA"
+            data-testid="ai-suggestion-compare"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p class="text-sm font-semibold">Sugestão pronta para comparar</p>
+                <p class="text-xs text-muted-foreground">Usar muda só este rascunho. Nada é publicado.</p>
+              </div>
+              <span class="rounded-full bg-background px-2 py-1 text-[11px] text-muted-foreground">
+                Política {{ suggestion.policy_version }}
+              </span>
+            </div>
+            <div class="grid gap-2 sm:grid-cols-2">
+              <div class="rounded-md border border-border bg-background p-2">
+                <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Seu texto</p>
+                <p class="whitespace-pre-wrap text-sm">{{ beforeSuggestion?.body }}</p>
+              </div>
+              <div class="rounded-md border border-primary/30 bg-background p-2">
+                <p class="mb-1 text-[11px] font-semibold uppercase tracking-wide text-primary">Sugestão</p>
+                <p class="whitespace-pre-wrap text-sm">{{ suggestion.body }}</p>
+                <p v-if="suggestion.hashtags.length" class="mt-2 text-xs text-muted-foreground">
+                  {{ suggestion.hashtags.map(displayHashtag).join(" ") }}
+                </p>
+              </div>
+            </div>
+            <div v-if="suggestion.facts.length" class="text-xs">
+              <p class="font-semibold">Fatos canônicos usados</p>
+              <ul class="mt-1 flex flex-wrap gap-1.5">
+                <li
+                  v-for="fact in suggestion.facts"
+                  :key="fact.id"
+                  class="rounded-full border border-border bg-background px-2 py-1"
+                >
+                  {{ fact.label }}: {{ fact.value }}
+                </li>
+              </ul>
+            </div>
+            <ul v-if="suggestion.warnings.length" class="space-y-1 text-xs text-amber-700 dark:text-amber-400">
+              <li v-for="warning in suggestion.warnings" :key="warning">
+                {{ warningLabels[warning] ?? "Confira esta sugestão antes de usar." }}
+              </li>
+            </ul>
+            <div class="flex flex-wrap gap-2">
+              <button
+                v-if="!suggestionUsed"
+                type="button"
+                class="rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-primary-foreground"
+                data-testid="use-ai-suggestion"
+                @click="useSuggestion"
+              >
+                Usar no rascunho
+              </button>
+              <button
+                v-else
+                type="button"
+                class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium"
+                data-testid="undo-ai-suggestion"
+                @click="undoSuggestion"
+              >
+                Desfazer uso
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium"
+                @click="discardSuggestion"
+              >
+                Descartar
+              </button>
+            </div>
+          </section>
         </div>
 
         <!-- Hashtags: guardadas limpas, lidas com "#" -->

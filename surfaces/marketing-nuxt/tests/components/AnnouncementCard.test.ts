@@ -8,7 +8,14 @@ import { installMemoryLocalStorage } from "../support/localStorage";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
-  Object.assign(globalThis, { computed, onBeforeUnmount, onMounted, ref, watch });
+  Object.assign(globalThis, {
+    computed,
+    httpErrorMessage: (_error: unknown, fallback: string) => fallback,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch,
+  });
   installMemoryLocalStorage();
 });
 
@@ -17,7 +24,10 @@ beforeEach(() => {
   vi.setSystemTime(new Date("2026-07-18T12:00:00Z"));
   window.localStorage.clear();
 });
-afterEach(() => vi.useRealTimers());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 
 const PLATFORMS = [
   { value: "instagram", label: "Instagram" },
@@ -49,7 +59,10 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     expires_in_minutes: 20,
     published_at: "",
     approved_by: "",
+    rejected_by: "",
+    rejected_reason: "",
     scheduled_for: "",
+    ai_suggestion_enabled: false,
     ...over,
   };
 }
@@ -58,6 +71,7 @@ function mountCard(
   announcement: Announcement,
   draftOwner = "",
   shopTimezone = "America/Sao_Paulo",
+  aiAssistAvailable = false,
 ) {
   return mount(AnnouncementCard, {
     props: {
@@ -65,6 +79,7 @@ function mountCard(
       platformOptions: PLATFORMS,
       draftOwner,
       shopTimezone,
+      aiAssistAvailable,
     },
     global: {
       components: { DraftRecoveryNotice },
@@ -216,6 +231,105 @@ describe("AnnouncementCard", () => {
 
   it("offers a placeholder when the product has no photo", () => {
     expect(mountCard(makeAnnouncement({ image_url: "" })).find("img").exists()).toBe(false);
+  });
+
+  it("keeps the operator draft untouched until a structured suggestion is accepted", async () => {
+    const fetch = vi.fn()
+      .mockResolvedValueOnce({
+        suggestion: {
+          ref: "11111111-1111-4111-8111-111111111111",
+          body: "Croissant acabou de sair do forno.",
+          hashtags: ["Croissant", "Fornada"],
+          used_fact_ids: ["product_name"],
+          warnings: ["operator_should_verify_tone"],
+          policy_version: "marketing-ai-v2.1",
+          model_ref: "test-model",
+          suggestion_hash: "a".repeat(64),
+          facts_hash: "b".repeat(64),
+          base_version: 1,
+          facts: [{ id: "product_name", label: "Produto", value: "Croissant" }],
+        },
+      })
+      .mockResolvedValue({ ok: true });
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountCard(
+      makeAnnouncement({ ai_suggestion_enabled: true }),
+      "",
+      "America/Sao_Paulo",
+      true,
+    );
+    const original = (wrapper.find("textarea").element as HTMLTextAreaElement).value;
+
+    await wrapper.findAll("button").find(button => button.text() === "Sugerir texto")!.trigger("click");
+    await flushPromises();
+
+    expect(fetch).toHaveBeenNthCalledWith(
+      1,
+      "/api/v1/backstage/marketing/announcements/7/rewrite/",
+      { method: "POST", credentials: "same-origin", body: { body: original } },
+    );
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value).toBe(original);
+    expect(wrapper.get("[data-testid=ai-suggestion-compare]").text()).toContain("Seu texto");
+    expect(wrapper.text()).toContain("Produto: Croissant");
+    expect(wrapper.text()).toContain("Nada é publicado");
+    expect(wrapper.emitted("approve")).toBeFalsy();
+
+    await wrapper.get("[data-testid=use-ai-suggestion]").trigger("click");
+    expect(fetch).toHaveBeenNthCalledWith(
+      2,
+      "/api/v1/backstage/marketing/announcements/7/suggestions/11111111-1111-4111-8111-111111111111/disposition/",
+      { method: "POST", credentials: "same-origin", body: { action: "accept_draft" } },
+    );
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Croissant acabou de sair do forno.");
+    expect(wrapper.emitted("approve")).toBeFalsy();
+
+    await wrapper.findAll("button").find(button => button.text().includes("Publicar agora"))!
+      .trigger("click");
+    const [, edits] = wrapper.emitted("approve")![0] as [number, Record<string, unknown>];
+    expect(edits.ai_suggestion_ref).toBe("11111111-1111-4111-8111-111111111111");
+  });
+
+  it("preserves body and hashtags when the assistant fails", async () => {
+    vi.stubGlobal("$fetch", vi.fn().mockRejectedValue(new Error("timeout")));
+    const wrapper = mountCard(
+      makeAnnouncement({ ai_suggestion_enabled: true }),
+      "",
+      "America/Sao_Paulo",
+      true,
+    );
+    await wrapper.find("textarea").setValue("Meu texto insubstituível");
+    await wrapper.find("input[type=text]").setValue("#minhatag");
+
+    await wrapper.findAll("button").find(button => button.text() === "Sugerir texto")!.trigger("click");
+    await flushPromises();
+
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Meu texto insubstituível");
+    expect((wrapper.find("input[type=text]").element as HTMLInputElement).value).toBe("#minhatag");
+    expect(wrapper.get("[data-testid=ai-assist-error]").text()).toContain("segue aqui");
+  });
+
+  it("undoes an accepted suggestion in one gesture", async () => {
+    vi.stubGlobal("$fetch", vi.fn().mockResolvedValue({
+      suggestion: {
+        ref: "22222222-2222-4222-8222-222222222222",
+        body: "Sugestão segura.", hashtags: [], used_fact_ids: [], warnings: [],
+        policy_version: "marketing-ai-v2.1", model_ref: "test", suggestion_hash: "a",
+        facts_hash: "b", base_version: 1, facts: [],
+      },
+    }));
+    const wrapper = mountCard(
+      makeAnnouncement({ ai_suggestion_enabled: true }), "", "America/Sao_Paulo", true,
+    );
+
+    await wrapper.findAll("button").find(button => button.text() === "Sugerir texto")!.trigger("click");
+    await flushPromises();
+    await wrapper.get("[data-testid=use-ai-suggestion]").trigger("click");
+    await wrapper.get("[data-testid=undo-ai-suggestion]").trigger("click");
+
+    expect((wrapper.find("textarea").element as HTMLTextAreaElement).value)
+      .toBe("Croissant saiu do forno");
   });
 
   it("restores a draft after refresh or a failed authenticated command", async () => {

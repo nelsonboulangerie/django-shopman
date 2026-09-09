@@ -74,7 +74,13 @@ def brand_voice() -> str:
     return voice or DEFAULT_VOICE
 
 
-def suggest(prompt: str, *, max_tokens: int = 400, voice: str = "") -> str:
+def suggest(
+    prompt: str,
+    *,
+    max_tokens: int = 400,
+    voice: str = "",
+    timeout: float | None = None,
+) -> str:
     """Uma sugestão de texto. Devolve o texto limpo, ou levanta.
 
     ``voice`` vazio busca a voz da loja — o caminho normal. Passar voz explícita existe
@@ -90,7 +96,10 @@ def suggest(prompt: str, *, max_tokens: int = 400, voice: str = "") -> str:
 
     import anthropic
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client_kwargs = {"api_key": api_key}
+    if timeout is not None:
+        client_kwargs["timeout"] = timeout
+    client = anthropic.Anthropic(**client_kwargs)
     try:
         message = client.messages.create(
             model=getattr(settings, "AI_ASSIST_MODEL", "claude-opus-5"),
@@ -99,19 +108,18 @@ def suggest(prompt: str, *, max_tokens: int = 400, voice: str = "") -> str:
             messages=[{"role": "user", "content": prompt}],
         )
     except anthropic.APIError as exc:
-        raise CopyAssistError(f"O assistente não respondeu: {exc}") from exc
+        # Provider messages may echo request fragments or identifiers.  The caller gets
+        # a stable, useful failure while the exception class remains server-side only.
+        logger.warning("copy_assist.provider_failed exception_class=%s", type(exc).__name__)
+        raise CopyAssistError("O assistente não respondeu. Tente novamente mais tarde.") from exc
 
     # Resposta cortada no teto não é resposta: é meia frase, ou meio JSON, que
     # quem chamou vai ler como se fosse inteira. Os modelos atuais raciocinam
     # antes de escrever e esse raciocínio sai do MESMO ``max_tokens`` — o teto
     # precisa ser folgado, e estourá-lo precisa gritar com o motivo certo.
     if getattr(message, "stop_reason", "") == "max_tokens":
-        raise CopyAssistError(
-            f"O assistente parou no limite de {max_tokens} tokens: resposta cortada."
-        )
-    text = "\n".join(
-        block.text for block in message.content if getattr(block, "type", "") == "text"
-    ).strip()
+        raise CopyAssistError(f"O assistente parou no limite de {max_tokens} tokens: resposta cortada.")
+    text = "\n".join(block.text for block in message.content if getattr(block, "type", "") == "text").strip()
     if not text:
         raise CopyAssistError("O assistente devolveu uma sugestão vazia.")
     return text

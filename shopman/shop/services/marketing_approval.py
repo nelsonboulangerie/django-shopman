@@ -67,6 +67,7 @@ def approve_command(
     publish_at: datetime | None = None,
     publish_timezone: str = "",
     request_id: str = "",
+    ai_suggestion_ref: str = "",
     now: datetime | None = None,
     idempotency_payload: Mapping[str, Any] | None = None,
     authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
@@ -158,15 +159,8 @@ def approve_command(
             if not base_window.allowed:
                 next_allowed = base_window.next_allowed_at
                 raise RejectCommand(
-                    code=(
-                        "scheduled_in_quiet_hours"
-                        if normalized_publish_at is not None
-                        else "quiet_hours_active"
-                    ),
-                    detail=(
-                        "O WhatsApp fica em silêncio das 20:00 às 08:00. "
-                        "Escolha o próximo horário permitido."
-                    ),
+                    code=("scheduled_in_quiet_hours" if normalized_publish_at is not None else "quiet_hours_active"),
+                    detail=("O WhatsApp fica em silêncio das 20:00 às 08:00. Escolha o próximo horário permitido."),
                     outcome={
                         "next_allowed_at": next_allowed.isoformat() if next_allowed else "",
                         "publish_timezone": effective_timezone,
@@ -187,6 +181,24 @@ def approve_command(
         approved_content = dict(safe_content)
         if facts is not None:
             approved_content["facts"] = facts.as_payload()
+        ai_trace = None
+        if ai_suggestion_ref:
+            from shopman.shop.services import marketing_ai
+
+            try:
+                ai_trace = marketing_ai.suggestion_for_approval(
+                    ref=ai_suggestion_ref,
+                    announcement=announcement,
+                    actor=actor,
+                    body=str(approved_content.get("body") or ""),
+                    hashtags=list(approved_content.get("hashtags") or []),
+                )
+            except marketing_ai.MarketingAIError as exc:
+                raise RejectCommand(
+                    code=exc.code,
+                    detail=exc.detail,
+                    outcome={"ai_suggestion_ref": "invalid"},
+                ) from exc
         rules = _audience_rules(announcement)
         sku = str((announcement.trigger_context or {}).get("sku") or "")
         resolution = audience_service.resolve(rules, sku=sku, now=now)
@@ -247,21 +259,15 @@ def approve_command(
             "content_version": approved_version,
             "platform_content": safe_platform_content,
             "platforms": safe_platforms,
-            "resolved_artifacts": marketing_artifacts.resolved_payloads(
-                resolved_artifacts
-            ),
+            "resolved_artifacts": marketing_artifacts.resolved_payloads(resolved_artifacts),
             "schema_version": marketing_artifacts.SCHEMA_VERSION,
             "schedule": {
                 # A "now" decision is an immediate intent, not a client-chosen
                 # timestamp. Keeping it empty makes the sealed hash stable across
                 # the human-confirmation round trip; the actual instant is still
                 # recorded in the receipt and outbox below.
-                "effective_at": (
-                    normalized_publish_at.isoformat() if normalized_publish_at else ""
-                ),
-                "publish_at": (
-                    normalized_publish_at.isoformat() if normalized_publish_at else ""
-                ),
+                "effective_at": (normalized_publish_at.isoformat() if normalized_publish_at else ""),
+                "publish_at": (normalized_publish_at.isoformat() if normalized_publish_at else ""),
                 "publish_mode": normalized_mode,
                 "timezone": effective_timezone,
             },
@@ -336,9 +342,7 @@ def approve_command(
             now=now,
         )
         if announcement.expires_at is not None:
-            expires_late = [
-                row for row in outbox if row.available_at >= announcement.expires_at
-            ]
+            expires_late = [row for row in outbox if row.available_at >= announcement.expires_at]
             if expires_late:
                 raise RejectCommand(
                     code="delivery_wave_after_expiry",
@@ -378,20 +382,20 @@ def approve_command(
         announcement.approved_at = now
         announcement.publish_at = normalized_publish_at
         announcement.status = (
-            AnnouncementStatus.APPROVED
-            if normalized_mode == PUBLISH_SCHEDULED
-            else AnnouncementStatus.PUBLISHING
+            AnnouncementStatus.APPROVED if normalized_mode == PUBLISH_SCHEDULED else AnnouncementStatus.PUBLISHING
         )
-        announcement.save(update_fields=[
-            "content",
-            "platform_content",
-            "platforms",
-            "audience",
-            "approved_by",
-            "approved_at",
-            "publish_at",
-            "status",
-        ])
+        announcement.save(
+            update_fields=[
+                "content",
+                "platform_content",
+                "platforms",
+                "audience",
+                "approved_by",
+                "approved_at",
+                "publish_at",
+                "status",
+            ]
+        )
 
         MarketingAuditEvent.objects.create(
             event_type=MarketingAuditEvent.EventType.APPROVED,
@@ -410,7 +414,8 @@ def approve_command(
                 "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
                 "publish_mode": normalized_mode,
                 "publish_timezone": effective_timezone,
-            } | (
+            }
+            | (
                 {
                     "facts_as_of": facts.as_of.isoformat(),
                     "facts_hash": facts.source_hash,
@@ -422,6 +427,19 @@ def approve_command(
             occurred_at=now,
             retention_until=now + APPROVAL_RECORD_RETENTION,
         )
+        if ai_trace is not None:
+            from shopman.shop.services import marketing_ai
+
+            suggestion, event_type, result_hash, diff_fields = ai_trace
+            marketing_ai.record_approval(
+                suggestion=suggestion,
+                event_type=event_type,
+                result_hash=result_hash,
+                diff_fields=diff_fields,
+                actor=actor,
+                command=receipt,
+                now=now,
+            )
         return {
             "artifact_hash": artifact.artifact_hash,
             "artifact_ref": str(artifact.ref),
@@ -471,9 +489,7 @@ def _result(execution: CommandExecution) -> ApprovalResult:
         announcement=announcement,
         version=receipt.resulting_version,
     )
-    outbox = tuple(
-        MarketingOutbox.objects.filter(command=receipt).order_by("available_at", "pk")
-    )
+    outbox = tuple(MarketingOutbox.objects.filter(command=receipt).order_by("available_at", "pk"))
     return ApprovalResult(
         announcement=announcement,
         receipt=receipt,
@@ -499,25 +515,29 @@ def _create_outbox(
     for platform in platforms:
         waves = resolution.waves(now=timezone.localtime(now)) if platform == "whatsapp" else ()
         if not waves:
-            entries.append(MarketingOutbox(
-                command=receipt,
-                announcement=announcement,
-                snapshot=snapshot,
-                artifact=artifact,
-                platform=platform,
-                available_at=available_at,
-            ))
+            entries.append(
+                MarketingOutbox(
+                    command=receipt,
+                    announcement=announcement,
+                    snapshot=snapshot,
+                    artifact=artifact,
+                    platform=platform,
+                    available_at=available_at,
+                )
+            )
             continue
         for wave in waves:
-            entries.append(MarketingOutbox(
-                command=receipt,
-                announcement=announcement,
-                snapshot=snapshot,
-                artifact=artifact,
-                platform=platform,
-                wave_key=wave.key,
-                available_at=available_at + timedelta(minutes=wave.delay_minutes),
-            ))
+            entries.append(
+                MarketingOutbox(
+                    command=receipt,
+                    announcement=announcement,
+                    snapshot=snapshot,
+                    artifact=artifact,
+                    platform=platform,
+                    wave_key=wave.key,
+                    available_at=available_at + timedelta(minutes=wave.delay_minutes),
+                )
+            )
     MarketingOutbox.objects.bulk_create(entries)
     return tuple(entries)
 
@@ -656,9 +676,7 @@ def _validate_content(
             code="orphan_platform_content",
             detail="Existe conteúdo para uma plataforma que não foi escolhida.",
             field_errors={
-                "platform_content": (
-                    f"Remova as variantes de: {', '.join(unknown_variants)}.",
-                ),
+                "platform_content": (f"Remova as variantes de: {', '.join(unknown_variants)}.",),
             },
         )
     if not all(isinstance(value, Mapping) for value in platform_content.values()):

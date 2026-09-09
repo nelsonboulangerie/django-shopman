@@ -228,4 +228,8 @@ REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
     "marketing_dangerous_shop": "10000/minute",
     "marketing_fire_user": "10000/hour",
     "marketing_fire_shop": "10000/day",
+    "marketing_ai": "10000/hour",
 }
+
+SHOPMAN_MARKETING_AI_ASSIST_V2 = False
+SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED = False

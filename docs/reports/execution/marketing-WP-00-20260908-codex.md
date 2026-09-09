@@ -1621,3 +1621,80 @@ Provas locais:
   os três registros e ambos os processos temporários foram removidos/encerrados;
 - nenhuma decisão de anúncio, provider, destinatário, deploy, produção, push remoto ou
   escrita externa foi executada.
+
+## MKT-038 — IA estruturada, factual, auditável e sempre assistiva
+
+Implementado depois do artefato e dos fatos canônicos dos MKT-025–027, sob a policy
+provisória aprovada no G-H06 e sem habilitar piloto ou provedor externo:
+
+- a IA ficou atrás de dois gates independentes, ambos `false` por default:
+  `SHOPMAN_MARKETING_AI_ASSIST_V2` e
+  `SHOPMAN_MARKETING_AI_PROVIDER_POLICY_APPROVED`. Credencial isolada não expõe o botão
+  nem autoriza request;
+- nascimento de anúncio voltou a ser 100% determinístico. A geração automática foi
+  removida do campaign service e uma regra com `requires_approval=false` nunca chama IA
+  nem despacha output gerado;
+- a sugestão usa contrato estrito `body/hashtags/used_fact_ids/warnings`, tamanho e
+  cardinalidade limitados, timeout fixo e budget de 900 tokens. Campos extras, schema
+  inválido, Unicode oculto, idioma claramente não PT-BR, URL, número, preço/promoção,
+  urgência/escassez, claim dietético/saúde, atributo de produto, evento ou disponibilidade
+  sem suporte e conteúdo ofensivo são rejeitados antes de chegar à revisão;
+- prompt, voz, instrução de template, texto atual e até valores de produto passam como
+  dados não confiáveis sob uma boundary fixa. Injection, telefone, e-mail, CPF, segredo e
+  credencial são barrados antes do provider; somente facts canônicos allowlisted e ainda
+  frescos entram no pedido;
+- o ledger append-only registra actor/request, provider/model/policy, versão, fact/prompt/
+  output/field hashes, IDs de fatos, warnings e buckets de latência/custo. Não persiste
+  prompt, copy, cliente, membership, telefone ou erro bruto do provider;
+- aceitar/descartar é telemetria humana e nunca grava o Announcement. Só “Usar no
+  rascunho” altera o estado local; aprovação continua sendo command separado e registra
+  se o resultado foi aprovado intacto ou editado, com os campos do diff e hashes;
+- timeout/falha preserva corpo e hashtags. Revalidar na aprovação impede reutilizar
+  sugestão depois de mudança de versão ou fact hash; desligar a flag remove o botão sem
+  afetar edição manual, snapshot ou dispatch;
+- o Admin valida a instrução antes de salvar e a copy deixou claro que IA é uma sugestão
+  separada na revisão, nunca geração automática;
+- a inspeção BFF→Django encontrou um defeito que o mock de componente não revelava: os
+  POSTs novos não declaravam `credentials: same-origin` e recebiam 403 apesar das leituras
+  autenticadas. Ambos os POSTs foram corrigidos e ganharam asserção de regressão.
+
+Budget de omotenashi comprovado para a assistência de copy:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Pedir uma alternativa | redigir fora do contexto ou geração implícita | 1 gesto, 0 navegações |
+| Comparar antes/depois | memória ou troca de tela | original, sugestão, facts e warnings lado a lado |
+| Conferir base factual | consulta a catálogo/evento | 0 consultas externas; facts nomeados no card |
+| Aceitar sem publicar | risco de confundir geração com envio | 1 gesto muda só o draft; 0 commands |
+| Desfazer | redigitar o texto anterior | 1 gesto, 0 redigitação |
+| Continuar após timeout/falha | risco de perder edição | 0 caracteres perdidos; edição manual permanece |
+| Saber o que a IA pode decidir | inferência/uncertainty | policy visível; target, oferta, link, schedule e plataforma fora do contrato |
+| Auditar edição humana | comparar copy em logs | hashes + `approved_edited|unedited` + campos do diff |
+
+Provas locais:
+
+- 314 testes focados de IA/copy/approval/campaign passaram; o corpus offline contém 200
+  casos adversariais PT-BR, injection, dados pessoais, URL, Unicode, números, fatos/eventos
+  conflitantes, idioma, urgência e ofensa, com zero escape crítico;
+- regressão ampla de Marketing/campaign/notifications/workers/deploy: **932 testes
+  passaram em 121,55 s**; os únicos 3 warnings são os esperados de override de banco nos
+  testes de deploy;
+- Marketing Nuxt: **20 arquivos/175 testes**, ESLint, typecheck e build de produção
+  passaram;
+- gate Unfold: verificador estrutural e **229 testes** passaram; Ruff, contrato TS,
+  Django check, migration drift e `git diff --check` passaram. Permaneceu somente o
+  warning conhecido de SQLite local;
+- fluxo visual local com conta/produto/template/campanha/anúncio sintéticos comprovou:
+  botão condicional, original intacto após pedir, comparação com dois facts/warning/policy,
+  uso sem publicação e undo em um gesto. O provider foi um stub estritamente local em
+  `127.0.0.1`; tentativas com facts vencidos e ID inexistente falharam fechadas. Os três
+  processos foram encerrados e o banco SQLite exclusivo desse QA foi removido da worktree
+  para a Lixeira, de forma recuperável;
+- foi criada a migration `0038` para o ledger e para a semântica review-only do template;
+  nenhuma rede externa, destinatário, deploy, produção, push remoto ou escrita externa
+  foi usada.
+
+Limite do gate: a implementação técnica local do MKT-038 está concluída. O piloto de IA
+continua bloqueado pelo G-H06 até Segurança/Privacidade comprovar retenção, no-training e
+transferência do provider e Marca/Jurídico/Produto aprovar a revisão humana. Nenhuma flag
+de ambiente real foi ou será habilitada por esta entrega.

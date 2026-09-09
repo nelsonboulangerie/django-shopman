@@ -193,21 +193,20 @@ function submit() {
       </select>
     </div>
 
-    <!-- IA só aparece com credencial: oferecer e falhar depois ensina o gestor a não
-         confiar no recurso. -->
+    <!-- Two server-side gates plus the credential decide availability. -->
     <fieldset v-if="aiAvailable" class="rounded-lg border border-border bg-card p-4">
-      <legend class="px-1 text-sm font-medium">Escrever com IA</legend>
+      <legend class="px-1 text-sm font-medium">Sugestão de texto</legend>
       <label class="flex items-start gap-2 text-sm">
         <input v-model="useAi" type="checkbox" class="mt-0.5 size-4 rounded border-border">
         <span>
-          A IA escreve o texto no lugar do modelo
+          Oferecer “Sugerir texto” durante a revisão
           <span class="block text-xs text-muted-foreground">
-            O texto acima passa a ser referência de formato. Se a IA falhar, ele vale.
+            A sugestão aparece ao lado do texto e só entra no rascunho se alguém escolher usar. Nunca publica sozinha.
           </span>
         </span>
       </label>
       <div v-if="useAi" class="mt-3">
-        <label for="tpl-ai" class="mb-1 block text-xs font-medium">Instrução para a IA</label>
+        <label for="tpl-ai" class="mb-1 block text-xs font-medium">Orientação de estilo</label>
         <textarea
           id="tpl-ai"
           v-model="aiPrompt"
@@ -215,6 +214,9 @@ function submit() {
           placeholder="Fale do cheiro e do miolo. Uma frase."
           class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
         ></textarea>
+        <p class="mt-1 text-xs text-muted-foreground">
+          Não inclua preço, validade, estoque, link ou dados pessoais: esses fatos continuam sob controle do sistema.
+        </p>
       </div>
     </fieldset>
 

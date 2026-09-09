@@ -14,6 +14,7 @@ from django.db.migrations.executor import MigrationExecutor
 from django.utils import timezone
 from shopman.guestman import ConsentService
 from shopman.guestman.models import Customer
+from shopman.offerman.models import Product
 from shopman.orderman.models import Directive
 
 from shopman.shop.models import (
@@ -21,12 +22,17 @@ from shopman.shop.models import (
     AnnouncementStatus,
     AnnouncementTemplate,
     Campaign,
+    MarketingAISuggestion,
+    MarketingAISuggestionEvent,
     MarketingAuditEvent,
     MarketingCommandReceipt,
     MarketingContentArtifact,
     MarketingOutbox,
     NotificationTemplate,
+    Trigger,
 )
+from shopman.shop.services import campaign as campaign_service
+from shopman.shop.services import marketing_ai
 from shopman.shop.services.marketing_approval import (
     PUBLISH_NOW,
     PUBLISH_SCHEDULED,
@@ -81,6 +87,7 @@ def _approve(
     publish_at=None,
     publish_timezone="",
     now=None,
+    ai_suggestion_ref="",
 ):
     return approve_command(
         announcement.pk,
@@ -90,7 +97,8 @@ def _approve(
         publish_mode=publish_mode,
         publish_at=publish_at,
         publish_timezone=publish_timezone,
-        content=content or {
+        content=content
+        or {
             "body": "Croissant saiu do forno.",
             "hashtags": ["feitohoje"],
             "image_url": "https://example.test/croissant.jpg",
@@ -99,8 +107,68 @@ def _approve(
         platform_content=platform_content or {},
         platforms=platforms or ["instagram", "google_business"],
         request_id="req_approval_001",
+        ai_suggestion_ref=ai_suggestion_ref,
         now=now,
     )
+
+
+def test_approval_records_whether_ai_copy_was_edited(actor):
+    product = Product.objects.create(
+        sku="AI-001",
+        name="Croissant",
+        base_price_q=1200,
+        is_published=True,
+        is_sellable=True,
+    )
+    template = AnnouncementTemplate.objects.create(
+        name="Fornada IA",
+        body="{{product_name}} saiu do forno.",
+        use_ai_generation=True,
+    )
+    rule = Campaign.objects.create(
+        name="Fornada IA",
+        trigger=Trigger.PRODUCTION_FINISHED,
+        template=template,
+        platforms=["instagram"],
+        requires_approval=True,
+    )
+    announcement = campaign_service._create_announcement(rule, {"sku": product.sku})
+    _, facts_hash = marketing_ai._current_facts(announcement)
+    suggestion = MarketingAISuggestion.objects.create(
+        announcement=announcement,
+        requested_by=actor,
+        actor_ref=f"user:{actor.pk}",
+        state=MarketingAISuggestion.State.GENERATED,
+        outcome_code="schema_valid",
+        base_version=announcement.version,
+        provider_ref="anthropic",
+        model_ref="test-model",
+        policy_version="marketing-ai-v2.1",
+        facts_hash=facts_hash,
+        prompt_hash="a" * 64,
+        suggestion_hash=marketing_ai.content_hash("Sugestão original", ["feitohoje"]),
+        body_hash=marketing_ai._field_hash("body", "Sugestão original"),
+        hashtags_hash=marketing_ai._field_hash("hashtags", ["feitohoje"]),
+        retention_until=timezone.now() + timedelta(days=365),
+    )
+
+    result = _approve(
+        actor=actor,
+        announcement=announcement,
+        content={
+            **announcement.content,
+            "body": "Sugestão editada",
+            "hashtags": ["feitohoje"],
+        },
+        platforms=["instagram"],
+        ai_suggestion_ref=str(suggestion.ref),
+    )
+
+    event = MarketingAISuggestionEvent.objects.get(command=result.receipt)
+    assert event.suggestion == suggestion
+    assert event.event_type == MarketingAISuggestionEvent.EventType.APPROVED_EDITED
+    assert event.diff_fields == ["body"]
+    assert event.result_hash
 
 
 def test_approval_commits_one_connected_graph_without_provider_or_directive(actor, announcement):
@@ -346,9 +414,7 @@ def test_crash_before_audit_rolls_back_entire_approval_graph(actor, announcement
     assert announcement.audience_snapshots.count() == 0
 
 
-def test_scheduled_approval_uses_one_absolute_instant_for_announcement_audit_and_outbox(
-    actor, announcement
-):
+def test_scheduled_approval_uses_one_absolute_instant_for_announcement_audit_and_outbox(actor, announcement):
     publish_at = timezone.now() + timedelta(hours=3)
 
     result = _approve(
@@ -375,9 +441,7 @@ def test_scheduled_approval_uses_one_absolute_instant_for_announcement_audit_and
         (PUBLISH_SCHEDULED, timezone.now() - timedelta(hours=1), "scheduled_publish_at_past"),
     ],
 )
-def test_publish_mode_has_no_implicit_boolean_or_ambiguous_instant(
-    actor, announcement, mode, publish_at, code
-):
+def test_publish_mode_has_no_implicit_boolean_or_ambiguous_instant(actor, announcement, mode, publish_at, code):
     with pytest.raises(MarketingContractError) as caught:
         _approve(
             actor=actor,
@@ -415,9 +479,7 @@ def test_whatsapp_below_minimum_is_rejected_before_any_effect_shaped_row(actor, 
     assert MarketingOutbox.objects.count() == 0
 
 
-def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(
-    actor, announcement, monkeypatch
-):
+def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(actor, announcement, monkeypatch):
     refs = []
     for number in range(10):
         customer = Customer.objects.create(
@@ -485,9 +547,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(
 
     assert result.snapshot.members.count() == 10
     assert result.snapshot.summary["total"] == 10
-    assert [(entry.platform, entry.wave_key) for entry in result.outbox] == [
-        ("whatsapp", "all")
-    ]
+    assert [(entry.platform, entry.wave_key) for entry in result.outbox] == [("whatsapp", "all")]
     resolved = result.artifact.payload["resolved_artifacts"]["whatsapp"]
     assert resolved["flow_ref"] == "content_approval_flow"
     assert resolved["flow_version"] == 4
@@ -503,9 +563,7 @@ def test_sealed_artifact_and_audit_refuse_instance_and_bulk_rewrites(actor, anno
     with pytest.raises(ValidationError, match="imutáveis"):
         result.artifact.save()
     with pytest.raises(ValidationError, match="imutáveis"):
-        MarketingContentArtifact.objects.filter(pk=result.artifact.pk).update(
-            artifact_hash="0" * 64
-        )
+        MarketingContentArtifact.objects.filter(pk=result.artifact.pk).update(artifact_hash="0" * 64)
     with pytest.raises(ValidationError, match="imutáveis"):
         audit.save()
     with pytest.raises(ValidationError, match="não podem ser apagados"):

@@ -111,21 +111,31 @@ class AnnouncementTemplate(models.Model):
         help_text="Use {{product_name}}, {{price}}, {{hashtags}}, {{link}}, {{store_name}}…",
     )
     platform_variants = models.JSONField(
-        "variações por plataforma", default=dict, blank=True,
+        "variações por plataforma",
+        default=dict,
+        blank=True,
         help_text='Override por plataforma, ex: {"google_business": {"body": "…"}}',
     )
     variables = models.JSONField(
-        "variáveis", default=list, blank=True,
+        "variáveis",
+        default=list,
+        blank=True,
         help_text="Variáveis que este template espera (documentação para o gestor)",
     )
     use_ai_generation = models.BooleanField(
-        "gerar texto com IA", default=False,
-        help_text="Quando ligado, a IA escreve a partir do contexto do evento",
+        "oferecer sugestão de IA",
+        default=False,
+        help_text=(
+            "Quando ligado, oferece uma sugestão separada durante a revisão. "
+            "Nunca altera nem publica o anúncio automaticamente."
+        ),
     )
     ai_prompt = models.TextField("instrução para a IA", blank=True)
     image_source = models.CharField(
-        "origem da imagem", max_length=16,
-        choices=ImageSource.choices, default=ImageSource.PRODUCT,
+        "origem da imagem",
+        max_length=16,
+        choices=ImageSource.choices,
+        default=ImageSource.PRODUCT,
     )
     is_active = models.BooleanField("ativo", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -139,6 +149,17 @@ class AnnouncementTemplate(models.Model):
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         return self.name
 
+    def clean(self) -> None:
+        from shopman.shop.services.marketing_ai import (
+            MarketingAIError,
+            validate_instruction,
+        )
+
+        try:
+            self.ai_prompt = validate_instruction(self.ai_prompt)
+        except MarketingAIError as exc:
+            raise ValidationError({"ai_prompt": exc.detail}) from exc
+
     def body_for(self, platform: str) -> str:
         """Corpo específico da plataforma, com fallback para o corpo padrão."""
         variant = (self.platform_variants or {}).get(platform) or {}
@@ -151,15 +172,20 @@ class Campaign(models.Model):
     name = models.CharField("nome", max_length=100)
     trigger = models.CharField("gatilho", max_length=64, choices=Trigger.choices)
     trigger_filter = models.JSONField(
-        "filtro do gatilho", default=dict, blank=True,
+        "filtro do gatilho",
+        default=dict,
+        blank=True,
         help_text='Condições extras, ex: {"collections": ["paes"], "quality_min": "standard"}',
     )
     template = models.ForeignKey(
-        AnnouncementTemplate, on_delete=models.PROTECT,
-        related_name="rules", verbose_name="modelo",
+        AnnouncementTemplate,
+        on_delete=models.PROTECT,
+        related_name="rules",
+        verbose_name="modelo",
     )
     platforms = models.JSONField(
-        "plataformas", default=list,
+        "plataformas",
+        default=list,
         #: ⚠️ `tv` NÃO entra aqui, e a razão é de modelo: a TV mostra a promoção porque a
         #: promoção **vale naquele canal** (`Promotion.channels` incluindo o menuboard),
         #: não porque um anúncio a escolheu como destino. Enquanto ela era plataforma, o
@@ -176,7 +202,9 @@ class Campaign(models.Model):
     #: `all` cruza (interseção). Sem ele só existia a união, e a união não sabe dizer
     #: "leais QUE são atacado" — pedir as duas coisas devolvia a SOMA das duas.
     audience_rules = models.JSONField(
-        "regras de audiência", default=dict, blank=True,
+        "regras de audiência",
+        default=dict,
+        blank=True,
         help_text=(
             'Por evento (exigem SKU): {"favorites": true, "alerts": true, '
             '"bought_within_days": 90}. '
@@ -192,7 +220,9 @@ class Campaign(models.Model):
     #: `recurring` **criam** a ocasião sozinhos, e só valem com `trigger=schedule`.
     #: Ver `services/campaign_schedule.py`.
     schedule = models.JSONField(
-        "agendamento", default=dict, blank=True,
+        "agendamento",
+        default=dict,
+        blank=True,
         help_text=(
             'Adiar o que o evento criou: {"type": "immediate"} ou '
             '{"type": "preferred_hours", "windows": [["07:00", "11:00"]]}. '
@@ -214,22 +244,27 @@ class Campaign(models.Model):
     #: CLIQUE — quem clica amanhã precisa da promoção de amanhã, não do que ela era
     #: quando a mensagem saiu.
     promotion_ref = models.SlugField(
-        "oferta", max_length=64, blank=True,
+        "oferta",
+        max_length=64,
+        blank=True,
         help_text="`ref` da promoção anunciada. Vazio = anúncio sem desconto atrás.",
     )
     requires_approval = models.BooleanField(
-        "exige aprovação", default=True,
+        "exige aprovação",
+        default=True,
         help_text="Desligado = publica sozinho, sem o gestor revisar",
     )
     expires_after_minutes = models.PositiveIntegerField(
-        "expira em (min)", default=0,
+        "expira em (min)",
+        default=0,
         help_text="Anúncio não aprovado caduca depois disso. 0 = não expira. "
-                  "Frescor é efêmero: fornada merece prazo curto.",
+        "Frescor é efêmero: fornada merece prazo curto.",
     )
     notify_users = models.JSONField(
-        "avisar usuários", default=list, blank=True,
-        help_text="IDs de usuário a notificar. Vazio = todos com a permissão "
-                  "de aprovar anúncios de Marketing.",
+        "avisar usuários",
+        default=list,
+        blank=True,
+        help_text="IDs de usuário a notificar. Vazio = todos com a permissão de aprovar anúncios de Marketing.",
     )
     is_active = models.BooleanField("ativa", default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -271,50 +306,60 @@ class Campaign(models.Model):
 
         match = (self.audience_rules or {}).get("match")
         if match is not None and str(match).strip().lower() not in aud.MATCH_MODES:
-            raise ValidationError({
-                "audience_rules": (
-                    f'A combinação "{match}" não existe. Use "any" para somar as regras '
-                    f'(quem se encaixa em qualquer uma) ou "all" para cruzá-las (quem se '
-                    f"encaixa em todas)."
-                ),
-            })
+            raise ValidationError(
+                {
+                    "audience_rules": (
+                        f'A combinação "{match}" não existe. Use "any" para somar as regras '
+                        f'(quem se encaixa em qualquer uma) ou "all" para cruzá-las (quem se '
+                        f"encaixa em todas)."
+                    ),
+                }
+            )
 
         schedule = self.schedule if isinstance(self.schedule, dict) else {}
         if schedule.get("timezone"):
             try:
                 marketing_time.require_configured_timezone(str(schedule["timezone"]))
             except ValueError:
-                raise ValidationError({
-                    "schedule": (
-                        "O timezone do agendamento não corresponde ao configurado "
-                        "para a loja. Reabra o horário antes de salvar."
-                    ),
-                }) from None
+                raise ValidationError(
+                    {
+                        "schedule": (
+                            "O timezone do agendamento não corresponde ao configurado "
+                            "para a loja. Reabra o horário antes de salvar."
+                        ),
+                    }
+                ) from None
 
         fires = sched.fires_on_its_own(self.schedule)
         if self.trigger == Trigger.SCHEDULE and not fires:
-            raise ValidationError({
-                "schedule": (
-                    "O gatilho é 'agendado', então o agendamento precisa ser do tipo "
-                    "'once' ou 'recurring' — os outros só adiam um anúncio que um "
-                    "evento já criou, e aqui não há evento."
-                ),
-            })
+            raise ValidationError(
+                {
+                    "schedule": (
+                        "O gatilho é 'agendado', então o agendamento precisa ser do tipo "
+                        "'once' ou 'recurring' — os outros só adiam um anúncio que um "
+                        "evento já criou, e aqui não há evento."
+                    ),
+                }
+            )
         if fires and self.trigger != Trigger.SCHEDULE:
-            raise ValidationError({
-                "trigger": (
-                    "Este agendamento dispara sozinho, então o gatilho tem de ser "
-                    "'agendado'. Com um gatilho de evento, o agendamento seria "
-                    "ignorado e o anúncio sairia na hora do evento."
-                ),
-            })
+            raise ValidationError(
+                {
+                    "trigger": (
+                        "Este agendamento dispara sozinho, então o gatilho tem de ser "
+                        "'agendado'. Com um gatilho de evento, o agendamento seria "
+                        "ignorado e o anúncio sairia na hora do evento."
+                    ),
+                }
+            )
         if fires and sched.next_occurrence(self.schedule) is None:
-            raise ValidationError({
-                "schedule": (
-                    "Este agendamento não tem nenhuma próxima ocasião — a data já "
-                    "passou, o período terminou, ou a configuração está incompleta."
-                ),
-            })
+            raise ValidationError(
+                {
+                    "schedule": (
+                        "Este agendamento não tem nenhuma próxima ocasião — a data já "
+                        "passou, o período terminou, ou a configuração está incompleta."
+                    ),
+                }
+            )
 
     def __str__(self) -> str:  # pragma: no cover - admin/debug only
         status = "✓" if self.is_active else "✗"
@@ -330,12 +375,20 @@ class Announcement(models.Model):
     version = models.PositiveIntegerField(default=1, editable=False)
 
     rule = models.ForeignKey(
-        Campaign, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="announcements", verbose_name="regra",
+        Campaign,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="announcements",
+        verbose_name="regra",
     )
     template = models.ForeignKey(
-        AnnouncementTemplate, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="announcements", verbose_name="modelo",
+        AnnouncementTemplate,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="announcements",
+        verbose_name="modelo",
     )
     #: A ocasião que gerou este anúncio, quando ele nasceu do relógio. Existe para o
     #: unique parcial abaixo: sem ela, a vassoura rodando duas vezes (ou dois workers)
@@ -344,21 +397,30 @@ class Announcement(models.Model):
     #: Vazio para anúncio de evento — fornada não tem "ocasião agendada", e é por isso
     #: que o unique é PARCIAL.
     occurrence_key = models.CharField(
-        "ocasião", max_length=120, blank=True, default="", db_index=True,
+        "ocasião",
+        max_length=120,
+        blank=True,
+        default="",
+        db_index=True,
         help_text="Identidade da ocasião agendada (campanha + instante). Vazio = nasceu de evento.",
     )
     status = models.CharField(
-        "situação", max_length=16,
-        choices=AnnouncementStatus.choices, default=AnnouncementStatus.DRAFT,
+        "situação",
+        max_length=16,
+        choices=AnnouncementStatus.choices,
+        default=AnnouncementStatus.DRAFT,
     )
     content = models.JSONField(
-        "conteúdo", default=dict,
+        "conteúdo",
+        default=dict,
         help_text='{"body": "…", "image_url": "…", "hashtags": [...], "link": "…"}',
     )
     platform_content = models.JSONField("conteúdo por plataforma", default=dict, blank=True)
     platforms = models.JSONField("plataformas", default=list, blank=True)
     audience = models.JSONField(
-        "audiência", default=dict, blank=True,
+        "audiência",
+        default=dict,
+        blank=True,
         help_text="Só contagens — a lista de destinatários nunca é persistida aqui",
     )
     platform_results = models.JSONField("resultado por plataforma", default=dict, blank=True)
@@ -371,8 +433,11 @@ class Announcement(models.Model):
     delivery_settled_at = models.DateTimeField(null=True, blank=True)
     trigger_context = models.JSONField("contexto do evento", default=dict, blank=True)
     approved_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name="approved_announcements",
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="approved_announcements",
         verbose_name="aprovado por",
     )
     approved_at = models.DateTimeField("aprovado em", null=True, blank=True)
@@ -380,20 +445,26 @@ class Announcement(models.Model):
     #: "alguém decidiu": num balcão com quatro pessoas no mesmo turno, recusa anônima
     #: não é auditável.
     rejected_by = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
-        null=True, blank=True, related_name="rejected_announcements",
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rejected_announcements",
         verbose_name="recusado por",
     )
     rejected_at = models.DateTimeField("recusado em", null=True, blank=True)
     rejected_reason = models.CharField(
-        "motivo da recusa", max_length=200, blank=True,
+        "motivo da recusa",
+        max_length=200,
+        blank=True,
         help_text="O que estava errado. Vazio é permitido: exigir justificativa "
-                  "empurra o gestor a digitar qualquer coisa para se livrar do campo.",
+        "empurra o gestor a digitar qualquer coisa para se livrar do campo.",
     )
     publish_at = models.DateTimeField(
-        "publicar em", null=True, blank=True,
-        help_text="Aprovado com hora marcada. Preenchido = ainda não saiu; "
-                  "volta a vazio no despacho.",
+        "publicar em",
+        null=True,
+        blank=True,
+        help_text="Aprovado com hora marcada. Preenchido = ainda não saiu; volta a vazio no despacho.",
     )
     published_at = models.DateTimeField("publicado em", null=True, blank=True)
     expires_at = models.DateTimeField("expira em", null=True, blank=True)
@@ -527,10 +598,7 @@ class AudienceSnapshotMember(models.Model):
                 name="shop_audience_snapshot_member_target_uq",
             ),
             models.CheckConstraint(
-                condition=(
-                    models.Q(customer__isnull=False)
-                    | models.Q(subscription_ref__isnull=False)
-                ),
+                condition=(models.Q(customer__isnull=False) | models.Q(subscription_ref__isnull=False)),
                 name="shop_audience_snapshot_member_has_identity",
             ),
         ]
@@ -788,6 +856,116 @@ class MarketingAuditEvent(models.Model):
         raise ValidationError("Eventos de auditoria de Marketing não podem ser apagados.")
 
 
+class MarketingAISuggestion(models.Model):
+    """PII-free, append-only evidence for one Marketing AI attempt.
+
+    The suggested copy and raw prompt deliberately never enter this ledger.  Their
+    content-addressed hashes are enough to prove which suggestion was accepted or
+    edited without retaining another copy of customer-facing text or untrusted input.
+    """
+
+    class State(models.TextChoices):
+        GENERATED = "generated", "gerada"
+        REJECTED = "rejected", "bloqueada pela política"
+        PROVIDER_FAILED = "provider_failed", "provedor indisponível"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    announcement = models.ForeignKey(
+        Announcement,
+        on_delete=models.PROTECT,
+        related_name="ai_suggestions",
+    )
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_ai_suggestions",
+    )
+    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
+    request_id = models.CharField(max_length=100, blank=True)
+    state = models.CharField(max_length=24, choices=State.choices)
+    outcome_code = models.CharField(max_length=64)
+    base_version = models.PositiveIntegerField()
+    provider_ref = models.CharField(max_length=32)
+    model_ref = models.CharField(max_length=100)
+    policy_version = models.CharField(max_length=32)
+    facts_hash = models.CharField(max_length=64)
+    prompt_hash = models.CharField(max_length=64)
+    suggestion_hash = models.CharField(max_length=64, blank=True)
+    body_hash = models.CharField(max_length=64, blank=True)
+    hashtags_hash = models.CharField(max_length=64, blank=True)
+    used_fact_ids = models.JSONField(default=list, blank=True)
+    warnings = models.JSONField(default=list, blank=True)
+    latency_bucket = models.CharField(max_length=24, blank=True)
+    cost_bucket = models.CharField(max_length=24, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        indexes = [
+            models.Index(fields=["announcement", "created_at"]),
+            models.Index(fields=["state", "created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Tentativas de IA de Marketing são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Tentativas de IA de Marketing não podem ser apagadas.")
+
+
+class MarketingAISuggestionEvent(models.Model):
+    """Human disposition of a suggestion, separate from the provider attempt."""
+
+    class EventType(models.TextChoices):
+        DRAFT_ACCEPTED = "draft_accepted", "usada no rascunho"
+        DISCARDED = "discarded", "descartada"
+        APPROVED_UNEDITED = "approved_unedited", "aprovada sem edição"
+        APPROVED_EDITED = "approved_edited", "aprovada após edição"
+
+    suggestion = models.ForeignKey(
+        MarketingAISuggestion,
+        on_delete=models.PROTECT,
+        related_name="human_events",
+    )
+    event_type = models.CharField(max_length=24, choices=EventType.choices)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_ai_suggestion_events",
+    )
+    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
+    command = models.ForeignKey(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="ai_suggestion_events",
+        null=True,
+        blank=True,
+    )
+    result_hash = models.CharField(max_length=64, blank=True)
+    diff_fields = models.JSONField(default=list, blank=True)
+    occurred_at = models.DateTimeField()
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-occurred_at", "-pk"]
+        indexes = [models.Index(fields=["suggestion", "occurred_at"])]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Decisões sobre sugestões de IA são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Decisões sobre sugestões de IA não podem ser apagadas.")
+
+
 class MarketingPlatformAuditEvent(models.Model):
     """Append-only evidence for a versioned Marketing platform configuration."""
 
@@ -994,9 +1172,7 @@ class MarketingConfirmation(models.Model):
                 "second_permission_fingerprint",
             }
             if not update_fields or not update_fields.issubset(mutable_fields):
-                raise ValidationError(
-                    "Confirmações de Marketing só avançam por transições explícitas."
-                )
+                raise ValidationError("Confirmações de Marketing só avançam por transições explícitas.")
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):
@@ -1160,10 +1336,7 @@ class MarketingOutbox(models.Model):
                         lease_owner__gt="",
                         lease_until__isnull=False,
                     )
-                    | (
-                        ~models.Q(state="claimed")
-                        & models.Q(lease_owner="", lease_until__isnull=True)
-                    )
+                    | (~models.Q(state="claimed") & models.Q(lease_owner="", lease_until__isnull=True))
                 ),
                 name="shop_marketing_outbox_lease_state_ck",
             ),
@@ -1174,10 +1347,7 @@ class MarketingOutbox(models.Model):
                         dispatch_ref__gt="",
                         dispatched_at__isnull=False,
                     )
-                    | (
-                        ~models.Q(state="dispatched")
-                        & models.Q(dispatch_ref="", dispatched_at__isnull=True)
-                    )
+                    | (~models.Q(state="dispatched") & models.Q(dispatch_ref="", dispatched_at__isnull=True))
                 ),
                 name="shop_marketing_outbox_dispatch_state_ck",
             ),
@@ -1197,9 +1367,7 @@ class MarketingOutbox(models.Model):
                 name="shop_marketing_outbox_fanout_complete_ck",
             ),
             models.CheckConstraint(
-                condition=models.Q(
-                    state__in=("pending", "claimed", "dispatched", "cancelled", "failed")
-                ),
+                condition=models.Q(state__in=("pending", "claimed", "dispatched", "cancelled", "failed")),
                 name="shop_marketing_outbox_state_ck",
             ),
         ]
@@ -1473,10 +1641,7 @@ class DeliveryReconciliation(models.Model):
                         lease_owner__gt="",
                         lease_until__isnull=False,
                     )
-                    | (
-                        ~models.Q(state="claimed")
-                        & models.Q(lease_owner="", lease_until__isnull=True)
-                    )
+                    | (~models.Q(state="claimed") & models.Q(lease_owner="", lease_until__isnull=True))
                 ),
                 name="shop_delivery_reconcile_lease_state_ck",
             ),

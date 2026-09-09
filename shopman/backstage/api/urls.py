@@ -59,6 +59,7 @@ from .marketing import (
     AnnouncementRescheduleView,
     AnnouncementRetryDeliveriesView,
     AnnouncementRewriteView,
+    AnnouncementSuggestionDispositionView,
     AnnouncementTemplateDetailView,
     AnnouncementTemplateListView,
     AudienceCountView,
@@ -391,6 +392,11 @@ urlpatterns = [
     path("marketing/announcements/<int:pk>/retry-deliveries/", AnnouncementRetryDeliveriesView.as_view(), name="api-backstage-marketing-retry-deliveries"),
     path("marketing/announcements/<int:pk>/reconcile-deliveries/", AnnouncementReconcileDeliveriesView.as_view(), name="api-backstage-marketing-reconcile-deliveries"),
     path("marketing/announcements/<int:pk>/rewrite/", AnnouncementRewriteView.as_view(), name="api-backstage-marketing-rewrite"),
+    path(
+        "marketing/announcements/<int:pk>/suggestions/<uuid:ref>/disposition/",
+        AnnouncementSuggestionDispositionView.as_view(),
+        name="api-backstage-marketing-suggestion-disposition",
+    ),
     # Production — work order actions
     path("production/plan/", WorkOrderPlanView.as_view(), name="api-backstage-wo-plan"),
     path("production/<int:wo_id>/start/", WorkOrderStartView.as_view(), name="api-backstage-wo-start"),

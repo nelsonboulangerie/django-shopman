@@ -50,3 +50,9 @@ class MarketingFireShopThrottle(_MarketingThrottleAuditMixin, SimpleRateThrottle
 
     def get_cache_key(self, request, view):
         return self.cache_format % {"scope": self.scope, "ident": "default"}
+
+
+class MarketingAIThrottle(_MarketingThrottleAuditMixin, UserRateThrottle):
+    """Provider-cost and prompt-abuse budget, scoped to the signed-in operator."""
+
+    scope = "marketing_ai"

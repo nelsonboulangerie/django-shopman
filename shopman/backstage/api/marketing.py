@@ -58,6 +58,7 @@ from shopman.backstage.api.marketing_v2_http import (
 from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.api.throttles import (
+    MarketingAIThrottle,
     MarketingAudienceShopThrottle,
     MarketingAudienceUserThrottle,
     MarketingDangerousShopThrottle,
@@ -145,8 +146,7 @@ class MarketingStepUpView(_CampaignBase):
             verified = bool(
                 credential
                 and any(
-                    device.verify_token(credential)
-                    for device in TOTPDevice.objects.filter(user=actor, confirmed=True)
+                    device.verify_token(credential) for device in TOTPDevice.objects.filter(user=actor, confirmed=True)
                 )
             )
         if not verified:
@@ -336,8 +336,7 @@ class CampaignHistoryV2View(_CampaignV2Base):
         )
         if cursor.created_at is not None and cursor.pk is not None:
             queryset = queryset.filter(
-                Q(created_at__lt=cursor.created_at)
-                | Q(created_at=cursor.created_at, pk__lt=cursor.pk)
+                Q(created_at__lt=cursor.created_at) | Q(created_at=cursor.created_at, pk__lt=cursor.pk)
             )
 
         rows = list(queryset[: limit + 1])
@@ -416,12 +415,12 @@ class AnnouncementDetailView(_CampaignBase):
             return Response({"detail": "Anúncio não encontrado."}, status=404)
         from shopman.shop.services.marketing_time import configured_timezone_name
 
-        return Response({
-            "announcement": projection_data(
-                marketing_projection.build_announcement(announcement)
-            ),
-            "shop_timezone": configured_timezone_name(),
-        })
+        return Response(
+            {
+                "announcement": projection_data(marketing_projection.build_announcement(announcement)),
+                "shop_timezone": configured_timezone_name(),
+            }
+        )
 
     def patch(self, request, pk: int):
         announcement = _announcement_or_none(pk)
@@ -474,7 +473,9 @@ class AnnouncementDetailView(_CampaignBase):
             return _command_error_response(exc)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
-        return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
+        return Response(
+            {"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))}
+        )
 
 
 class AnnouncementApproveView(_CampaignBase):
@@ -519,6 +520,7 @@ class AnnouncementApproveView(_CampaignBase):
             "publish_at",
             "publish_mode",
             "publish_timezone",
+            "ai_suggestion_ref",
         } | _AUTHORIZATION_FIELDS
         unexpected = sorted(set(payload) - allowed)
         if unexpected:
@@ -610,11 +612,13 @@ class AnnouncementApproveView(_CampaignBase):
                 platform_content=platform_content,
                 platforms=platforms,
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                ai_suggestion_ref=str(payload.get("ai_suggestion_ref") or "").strip(),
                 # Fingerprint only the normalized client intention. Server-side
                 # enrichment may change after a conflict, but replaying the same
                 # HTTP command must still retrieve its original receipt.
                 idempotency_payload={
                     "edits": edits,
+                    "ai_suggestion_ref": str(payload.get("ai_suggestion_ref") or "").strip(),
                     "publish_at": publish_at.isoformat() if publish_at else "",
                     "publish_mode": publish_mode,
                     "publish_timezone": publish_timezone,
@@ -622,9 +626,7 @@ class AnnouncementApproveView(_CampaignBase):
                 authorization=_command_authorizer(
                     request,
                     capability="shop.publish_marketing_announcements",
-                    additional_capabilities=(
-                        "shop.approve_marketing_announcements",
-                    ),
+                    additional_capabilities=("shop.approve_marketing_announcements",),
                 ),
             )
         except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
@@ -644,27 +646,25 @@ class AnnouncementApproveView(_CampaignBase):
             receipt.ref,
             result.replayed,
         )
-        return Response({
-            "ok": True,
-            "scheduled": receipt.outcome.get("publish_mode") == "scheduled",
-            "replayed": result.replayed,
-            "receipt": {
-                "ref": str(receipt.ref),
-                "kind": receipt.kind,
-                "state": receipt.state,
-                "base_version": receipt.base_version,
-                "resulting_version": receipt.resulting_version,
-                "resource_ref": receipt.resource_ref,
-                "outcome": receipt.outcome,
-                "created_at": receipt.created_at.isoformat(),
-                "completed_at": (
-                    receipt.completed_at.isoformat() if receipt.completed_at else ""
-                ),
-            },
-            "announcement": projection_data(
-                marketing_projection.build_announcement(result.announcement)
-            ),
-        })
+        return Response(
+            {
+                "ok": True,
+                "scheduled": receipt.outcome.get("publish_mode") == "scheduled",
+                "replayed": result.replayed,
+                "receipt": {
+                    "ref": str(receipt.ref),
+                    "kind": receipt.kind,
+                    "state": receipt.state,
+                    "base_version": receipt.base_version,
+                    "resulting_version": receipt.resulting_version,
+                    "resource_ref": receipt.resource_ref,
+                    "outcome": receipt.outcome,
+                    "created_at": receipt.created_at.isoformat(),
+                    "completed_at": (receipt.completed_at.isoformat() if receipt.completed_at else ""),
+                },
+                "announcement": projection_data(marketing_projection.build_announcement(result.announcement)),
+            }
+        )
 
 
 class WhatsAppTestSendView(_CampaignBase):
@@ -732,50 +732,98 @@ class WhatsAppTestSendView(_CampaignBase):
 
         logger.info(
             "campaign.test_send_api actor=%s receipt=%s state=%s replayed=%s",
-            request.user.pk, outcome.receipt_ref, outcome.state, outcome.replayed,
+            request.user.pk,
+            outcome.receipt_ref,
+            outcome.state,
+            outcome.replayed,
         )
-        return Response({
-            "ok": outcome.accepted,
-            "backend": outcome.backend,
-            "target_ref": outcome.target_ref,
-            "fields": outcome.fields,
-            "receipt_ref": outcome.receipt_ref,
-            "state": outcome.state,
-            "sandbox": outcome.sandbox,
-            "max_targets": outcome.max_targets,
-            "replayed": outcome.replayed,
-            "detail": outcome.detail,
-        })
+        return Response(
+            {
+                "ok": outcome.accepted,
+                "backend": outcome.backend,
+                "target_ref": outcome.target_ref,
+                "fields": outcome.fields,
+                "receipt_ref": outcome.receipt_ref,
+                "state": outcome.state,
+                "sandbox": outcome.sandbox,
+                "max_targets": outcome.max_targets,
+                "replayed": outcome.replayed,
+                "detail": outcome.detail,
+            }
+        )
 
 
 class AnnouncementRewriteView(_CampaignBase):
-    """POST campaign/announcements/<pk>/rewrite/ → sugestão de corpo pela IA.
+    """Return a validated, content-addressed suggestion; never mutate the draft."""
 
-    Não grava: devolve a sugestão para o gestor aceitar ou descartar no card, e quem
-    persiste é o PATCH. Mesmo desenho do assist do catálogo, por campo e nunca em lote.
-
-    503 quando o ambiente não tem credencial: a tela mostra aviso, não erro. Assist é
-    conveniência, não caminho crítico — se ele falhar, o anúncio do template continua lá.
-    """
-
-    permission_map = {"POST": "shop.edit_marketing_templates"}
+    permission_map = {"POST": "shop.approve_marketing_announcements"}
+    throttle_classes = [MarketingAIThrottle]
 
     def post(self, request, pk: int):
-        from shopman.shop.services import copy_assist
+        from shopman.shop.services import marketing_ai
 
         payload = request.data if isinstance(request.data, dict) else {}
-        try:
-            suggestion = campaign_service.rewrite_body(
-                pk, current_body=str(payload.get("body") or "")
+        unexpected = sorted(set(payload) - {"body"})
+        if unexpected:
+            return Response(
+                {
+                    "code": "unknown_suggestion_fields",
+                    "detail": "O pedido de sugestão contém campos desconhecidos.",
+                    "field_errors": {"payload": unexpected},
+                },
+                status=422,
             )
-        except copy_assist.CopyAssistNotConfigured as exc:
-            return Response({"detail": str(exc)}, status=503)
-        except copy_assist.CopyAssistError as exc:
-            return Response({"detail": str(exc)}, status=502)
-        except campaign_service.CampaignError as exc:
-            return Response({"detail": str(exc)}, status=400)
+        try:
+            suggestion = marketing_ai.suggest(
+                pk,
+                actor=request.user,
+                current_body=str(payload.get("body") or ""),
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except marketing_ai.MarketingAIError as exc:
+            return Response(exc.as_payload(), status=exc.status_code)
 
-        return Response({"suggestion": suggestion})
+        return Response({"suggestion": suggestion.as_payload()})
+
+
+class AnnouncementSuggestionDispositionView(_CampaignBase):
+    """Record accept/discard telemetry; neither action persists announcement copy."""
+
+    permission_map = {"POST": "shop.approve_marketing_announcements"}
+
+    def post(self, request, pk: int, ref):
+        from shopman.shop.models import MarketingAISuggestion
+        from shopman.shop.services import marketing_ai
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        if set(payload) != {"action"}:
+            return Response(
+                {"code": "ai_disposition_invalid", "detail": "Escolha usar ou descartar."},
+                status=422,
+            )
+        action = str(payload.get("action") or "")
+        event_type = {
+            "accept_draft": "draft_accepted",
+            "discard": "discarded",
+        }.get(action)
+        if event_type is None:
+            return Response(
+                {"code": "ai_disposition_invalid", "detail": "Escolha usar ou descartar."},
+                status=422,
+            )
+        try:
+            suggestion = MarketingAISuggestion.objects.filter(ref=ref).first()
+            if suggestion is None or suggestion.announcement_id != pk:
+                raise marketing_ai.MarketingAIError(
+                    code="ai_suggestion_not_found",
+                    detail="Esta sugestão não pertence ao anúncio.",
+                    status_code=404,
+                )
+            marketing_ai.record_disposition(ref=str(ref), actor=request.user, event_type=event_type)
+        except marketing_ai.MarketingAIError as exc:
+            return Response(exc.as_payload(), status=exc.status_code)
+
+        return Response({"ok": True, "action": action})
 
 
 class AnnouncementRejectView(_CampaignBase):
@@ -826,9 +874,7 @@ class AnnouncementCancelView(_CampaignBase):
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload) - ({"base_version", "reason"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"base_version", "reason"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -868,10 +914,7 @@ class AnnouncementRescheduleView(_CampaignBase):
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload)
-            - ({"base_version", "publish_at", "publish_timezone"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"base_version", "publish_at", "publish_timezone"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -883,20 +926,12 @@ class AnnouncementRescheduleView(_CampaignBase):
             timezone_name=publish_timezone,
         )
         if parse_error or publish_at is None:
-            detail = (
-                parse_error["detail"]
-                if parse_error
-                else "Escolha a nova data e hora."
-            )
+            detail = parse_error["detail"] if parse_error else "Escolha a nova data e hora."
             return Response(
                 {
-                    "code": str(
-                        (parse_error or {}).get("code") or "invalid_publish_at"
-                    ),
+                    "code": str((parse_error or {}).get("code") or "invalid_publish_at"),
                     "detail": detail,
-                    "field_errors": {
-                        str((parse_error or {}).get("field") or "publish_at"): [detail]
-                    },
+                    "field_errors": {str((parse_error or {}).get("field") or "publish_at"): [detail]},
                 },
                 status=422,
             )
@@ -943,16 +978,19 @@ class AnnouncementDeliveryActionsView(_CampaignBase):
         actions = tuple(
             action
             for action in envelope.actions
-            if action.kind in {
+            if action.kind
+            in {
                 "retry_failed_delivery",
                 "reconcile_unknown_delivery",
             }
         )
-        return Response({
-            "resource_ref": f"announcement:{announcement.pk}",
-            "version": announcement.version,
-            "actions": projection_data(actions),
-        })
+        return Response(
+            {
+                "resource_ref": f"announcement:{announcement.pk}",
+                "version": announcement.version,
+                "actions": projection_data(actions),
+            }
+        )
 
 
 class AnnouncementRetryDeliveriesView(_CampaignBase):
@@ -963,9 +1001,7 @@ class AnnouncementRetryDeliveriesView(_CampaignBase):
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -1007,9 +1043,7 @@ class AnnouncementReconcileDeliveriesView(_CampaignBase):
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -1070,10 +1104,12 @@ class CampaignListView(_CampaignBase):
             )
             for action in resource_actions
         )
-        return Response({
-            "rules": projection_data(rules),
-            "actions": projection_data(actions),
-        })
+        return Response(
+            {
+                "rules": projection_data(rules),
+                "actions": projection_data(actions),
+            }
+        )
 
     def post(self, request):
         fields, error = _rule_fields(request.data, partial=False)
@@ -1158,9 +1194,14 @@ class AudienceCountView(_CampaignBase):
         rules = payload.get("audience_rules")
         if not isinstance(rules, dict):
             rules = {}
-        return Response(projection_data(marketing_projection.build_audience_count(
-            rules, sku=str(payload.get("sku") or ""),
-        )))
+        return Response(
+            projection_data(
+                marketing_projection.build_audience_count(
+                    rules,
+                    sku=str(payload.get("sku") or ""),
+                )
+            )
+        )
 
 
 class PlatformsView(_CampaignBase):
@@ -1193,10 +1234,12 @@ class PlatformsView(_CampaignBase):
             )
             for action in resource_actions
         )
-        return Response({
-            "platforms": projection_data(platforms),
-            "actions": projection_data(actions),
-        })
+        return Response(
+            {
+                "platforms": projection_data(platforms),
+                "actions": projection_data(actions),
+            }
+        )
 
 
 class WhatsAppTemplateView(_CampaignBase):
@@ -1227,44 +1270,36 @@ class WhatsAppTemplateView(_CampaignBase):
 
         template = NotificationTemplate.objects.filter(event=self.EVENT).first()
         current = (template.whatsapp_flow_ns or "") if template else ""
-        catalog = manychat_flows.flow_catalog(
-            force=request.query_params.get("refresh") == "1"
-        )
+        catalog = manychat_flows.flow_catalog(force=request.query_params.get("refresh") == "1")
         readiness = delivery_readiness.readiness_for(("whatsapp",))[0]
         can_send_test = request.user.has_perm("shop.send_marketing_test")
 
-        return Response({
-            "current": current,
-            "current_name": next(
-                (name for ns, name in catalog.flows if ns == current),
-                "",
-            ),
-            "current_active": bool(template and template.is_active),
-            "version": template.version if template else 1,
-            "available": [
-                {"ns": ns, "name": name} for ns, name in catalog.flows
-            ],
-            # Successful empty is known and distinct from outage/no credential.
-            "can_list": catalog.state == "fresh",
-            "configured": bool(current),
-            "command_available": catalog.mutation_safe,
-            "command_disabled_reason": (
-                "" if catalog.mutation_safe else "platform_catalog_unavailable"
-            ),
-            "catalog_state": catalog.state,
-            "catalog_checked_at": catalog.checked_at,
-            "catalog_as_of": catalog.facts_as_of,
-            "catalog_fresh_until": catalog.fresh_until,
-            "catalog_hash": catalog.catalog_hash,
-            "readiness_state": readiness.state,
-            "readiness_reason_code": readiness.reason_code,
-            "can_send_test": can_send_test,
-            "test_targets": (
-                campaign_service.marketing_test_target_options()
-                if can_send_test
-                else []
-            ),
-        })
+        return Response(
+            {
+                "current": current,
+                "current_name": next(
+                    (name for ns, name in catalog.flows if ns == current),
+                    "",
+                ),
+                "current_active": bool(template and template.is_active),
+                "version": template.version if template else 1,
+                "available": [{"ns": ns, "name": name} for ns, name in catalog.flows],
+                # Successful empty is known and distinct from outage/no credential.
+                "can_list": catalog.state == "fresh",
+                "configured": bool(current),
+                "command_available": catalog.mutation_safe,
+                "command_disabled_reason": ("" if catalog.mutation_safe else "platform_catalog_unavailable"),
+                "catalog_state": catalog.state,
+                "catalog_checked_at": catalog.checked_at,
+                "catalog_as_of": catalog.facts_as_of,
+                "catalog_fresh_until": catalog.fresh_until,
+                "catalog_hash": catalog.catalog_hash,
+                "readiness_state": readiness.state,
+                "readiness_reason_code": readiness.reason_code,
+                "can_send_test": can_send_test,
+                "test_targets": (campaign_service.marketing_test_target_options() if can_send_test else []),
+            }
+        )
 
     def post(self, request):
         from shopman.shop.services.marketing_platform_configuration import (
@@ -1273,9 +1308,7 @@ class WhatsAppTemplateView(_CampaignBase):
         )
 
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(
-            set(payload) - ({"flow_ns", "base_version"} | _AUTHORIZATION_FIELDS)
-        )
+        unexpected = sorted(set(payload) - ({"flow_ns", "base_version"} | _AUTHORIZATION_FIELDS))
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -1306,23 +1339,23 @@ class WhatsAppTemplateView(_CampaignBase):
         ) as exc:
             return _command_error_response(exc)
         receipt = result.receipt
-        return Response({
-            "ok": True,
-            "replayed": result.replayed,
-            "receipt": {
-                "ref": str(receipt.ref),
-                "kind": receipt.kind,
-                "state": receipt.state,
-                "base_version": receipt.base_version,
-                "resulting_version": receipt.resulting_version,
-                "resource_ref": receipt.resource_ref,
-                "outcome": receipt.outcome,
-                "created_at": receipt.created_at.isoformat(),
-                "completed_at": (
-                    receipt.completed_at.isoformat() if receipt.completed_at else ""
-                ),
-            },
-        })
+        return Response(
+            {
+                "ok": True,
+                "replayed": result.replayed,
+                "receipt": {
+                    "ref": str(receipt.ref),
+                    "kind": receipt.kind,
+                    "state": receipt.state,
+                    "base_version": receipt.base_version,
+                    "resulting_version": receipt.resulting_version,
+                    "resource_ref": receipt.resource_ref,
+                    "outcome": receipt.outcome,
+                    "created_at": receipt.created_at.isoformat(),
+                    "completed_at": (receipt.completed_at.isoformat() if receipt.completed_at else ""),
+                },
+            }
+        )
 
 
 class CampaignFireView(_CampaignBase):
@@ -1357,8 +1390,7 @@ class CampaignFireView(_CampaignBase):
             {
                 "code": "fire_command_upgrade_required",
                 "detail": (
-                    "O disparo manual direto está contido até usar receipt, versão, "
-                    "snapshot e confirmação vinculada."
+                    "O disparo manual direto está contido até usar receipt, versão, snapshot e confirmação vinculada."
                 ),
             },
             status=409,
@@ -1377,19 +1409,16 @@ class CampaignDetailView(_CampaignBase):
         if rule is None:
             return Response({"detail": "Regra não encontrada."}, status=404)
         actions = resolve_actions(rule, actor=request.user)
-        return Response({
-            "rule": projection_data(marketing_projection.build_rule(rule)),
-            "actions": projection_data(actions),
-        })
+        return Response(
+            {
+                "rule": projection_data(marketing_projection.build_rule(rule)),
+                "actions": projection_data(actions),
+            }
+        )
 
     def patch(self, request, pk: int):
         with transaction.atomic():
-            rule = (
-                Campaign.objects.select_for_update()
-                .select_related("template")
-                .filter(pk=pk)
-                .first()
-            )
+            rule = Campaign.objects.select_for_update().select_related("template").filter(pk=pk).first()
             if rule is None:
                 return Response({"detail": "Regra não encontrada."}, status=404)
             guarded = _updated_at_guard(request.data, rule.updated_at)
@@ -1460,19 +1489,13 @@ class AnnouncementTemplateDetailView(_CampaignBase):
 
     def patch(self, request, pk: int):
         with transaction.atomic():
-            template = (
-                AnnouncementTemplate.objects.select_for_update()
-                .filter(pk=pk)
-                .first()
-            )
+            template = AnnouncementTemplate.objects.select_for_update().filter(pk=pk).first()
             if template is None:
                 return Response({"detail": "Modelo não encontrado."}, status=404)
             guarded = _updated_at_guard(request.data, template.updated_at)
             if guarded:
                 payload, status_code = guarded
-                payload["current"] = projection_data(
-                    marketing_projection.build_template(template)
-                )
+                payload["current"] = projection_data(marketing_projection.build_template(template))
                 return Response(payload, status=status_code)
 
             fields, error = _template_fields(request.data, partial=True)
@@ -1481,9 +1504,7 @@ class AnnouncementTemplateDetailView(_CampaignBase):
             for name, value in fields.items():
                 setattr(template, name, value)
             template.save()
-        return Response(
-            {"ok": True, "template": projection_data(marketing_projection.build_template(template))}
-        )
+        return Response({"ok": True, "template": projection_data(marketing_projection.build_template(template))})
 
     def delete(self, request, pk: int):
         template = AnnouncementTemplate.objects.filter(pk=pk).first()
@@ -1621,9 +1642,7 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["promotion_ref"] = offer_ref
 
     if "notify_users" in data:
-        fields["notify_users"] = [
-            int(uid) for uid in (data.get("notify_users") or []) if str(uid).isdigit()
-        ]
+        fields["notify_users"] = [int(uid) for uid in (data.get("notify_users") or []) if str(uid).isdigit()]
 
     if "requires_approval" in data:
         fields["requires_approval"] = bool(data.get("requires_approval"))
@@ -1647,9 +1666,7 @@ def _merge_public_audience_rules(current, incoming: dict) -> dict:
     from shopman.shop.services.audience import PUBLIC_RULE_KEYS
 
     existing = current if isinstance(current, dict) else {}
-    private_or_legacy = {
-        key: value for key, value in existing.items() if key not in PUBLIC_RULE_KEYS
-    }
+    private_or_legacy = {key: value for key, value in existing.items() if key not in PUBLIC_RULE_KEYS}
     return {**private_or_legacy, **incoming}
 
 
@@ -1705,7 +1722,15 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     if "variables" in data:
         fields["variables"] = _string_list(data.get("variables"))
     if "ai_prompt" in data:
-        fields["ai_prompt"] = str(data.get("ai_prompt") or "").strip()
+        from shopman.shop.services.marketing_ai import (
+            MarketingAIError,
+            validate_instruction,
+        )
+
+        try:
+            fields["ai_prompt"] = validate_instruction(data.get("ai_prompt") or "")
+        except MarketingAIError as exc:
+            return {}, {"detail": exc.detail, "field": "ai_prompt", "code": exc.code}
     if "use_ai_generation" in data:
         fields["use_ai_generation"] = bool(data.get("use_ai_generation"))
     if "is_active" in data:
@@ -1724,18 +1749,24 @@ def _updated_at_guard(data, current) -> tuple[dict, int] | None:
     raw = data.get("base_updated_at")
     parsed = parse_datetime(str(raw)) if raw else None
     if parsed is None:
-        return ({
-            "code": "invalid_base_version",
-            "detail": "A versão de leitura é inválida.",
-            "field_errors": {"base_updated_at": ["Recarregue o conteúdo atual."]},
-        }, 422)
+        return (
+            {
+                "code": "invalid_base_version",
+                "detail": "A versão de leitura é inválida.",
+                "field_errors": {"base_updated_at": ["Recarregue o conteúdo atual."]},
+            },
+            422,
+        )
     if parsed != current:
-        return ({
-            "code": "version_conflict",
-            "detail": "O conteúdo mudou enquanto você editava.",
-            "current_version": current.isoformat(),
-            "field_errors": {"base_updated_at": ["Compare com a versão atual."]},
-        }, 409)
+        return (
+            {
+                "code": "version_conflict",
+                "detail": "O conteúdo mudou enquanto você editava.",
+                "current_version": current.isoformat(),
+                "field_errors": {"base_updated_at": ["Compare com a versão atual."]},
+            },
+            409,
+        )
     return None
 
 
@@ -1767,11 +1798,7 @@ def _is_approval_command(request) -> bool:
     """A v2-shaped attempt must never downgrade to the legacy approval path."""
 
     data = request.data if isinstance(request.data, dict) else {}
-    return bool(
-        request.headers.get("Idempotency-Key")
-        or "base_version" in data
-        or "publish_mode" in data
-    )
+    return bool(request.headers.get("Idempotency-Key") or "base_version" in data or "publish_mode" in data)
 
 
 def _command_version(payload) -> tuple[int, Response | None]:
@@ -1805,8 +1832,7 @@ def _command_protocol_required() -> Response:
         {
             "code": "command_protocol_required",
             "detail": (
-                "Atualize esta ação: versão, Idempotency-Key e confirmação são "
-                "obrigatórias antes de qualquer efeito."
+                "Atualize esta ação: versão, Idempotency-Key e confirmação são obrigatórias antes de qualquer efeito."
             ),
         },
         status=409,
@@ -1910,13 +1936,9 @@ def _command_response(result) -> dict:
             "resource_ref": receipt.resource_ref,
             "outcome": receipt.outcome,
             "created_at": receipt.created_at.isoformat(),
-            "completed_at": (
-                receipt.completed_at.isoformat() if receipt.completed_at else ""
-            ),
+            "completed_at": (receipt.completed_at.isoformat() if receipt.completed_at else ""),
         },
-        "announcement": projection_data(
-            marketing_projection.build_announcement(result.announcement)
-        ),
+        "announcement": projection_data(marketing_projection.build_announcement(result.announcement)),
     }
 
 

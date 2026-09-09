@@ -613,7 +613,7 @@ class TestPreview:
     def test_the_ai_is_never_called(self, product, monkeypatch):
         """⚠️ Gerar texto a cada tecla gastaria chamada para jogar fora.
 
-        `use_ai` só INFORMA a tela; quem pede sugestão é o botão de reescrever.
+        `use_ai` só INFORMA a tela; quem pede sugestão é o botão explícito da revisão.
         """
         from shopman.shop.services import copy_assist
 
