@@ -41,9 +41,9 @@ function onClick() {
     :aria-label="a11yLabel"
     :aria-current="active ? 'page' : undefined"
     :title="showLabels ? undefined : a11yLabel"
-    class="flex h-10 items-center rounded-md transition disabled:opacity-60"
+    class="flex h-11 items-center rounded-md transition disabled:opacity-60"
     :class="[
-      showLabels ? 'w-full gap-3 px-2.5' : 'w-10 justify-center',
+      showLabels ? 'w-full gap-3 px-2.5' : 'w-11 justify-center',
       active
         ? 'bg-rail-foreground/15 text-rail-foreground'
         : 'text-rail-foreground/80 hover:bg-rail-foreground/10 hover:text-rail-foreground',

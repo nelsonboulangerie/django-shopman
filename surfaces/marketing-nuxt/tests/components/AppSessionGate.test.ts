@@ -1,5 +1,5 @@
 import { mount } from "@vue/test-utils";
-import { ref, type Slot } from "vue";
+import { nextTick, ref, watch, type Slot } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import MarketingApp from "../../app/app.vue";
 
@@ -14,6 +14,7 @@ beforeEach(() => {
   canIdentify = false;
   unavailable = false;
   Object.assign(globalThis, {
+    nextTick,
     useHead: vi.fn(),
     useRuntimeConfig: () => ({ public: { operatorHubUrl: "/apps/" } }),
     useOperatorLock: () => ({
@@ -24,6 +25,7 @@ beforeEach(() => {
       lock,
       refresh: refreshSession,
     }),
+    watch,
   });
 });
 

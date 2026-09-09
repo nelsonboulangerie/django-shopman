@@ -27,17 +27,67 @@ const {
 } = useUserNotifications();
 
 const open = ref(false);
+const trigger = ref<HTMLButtonElement | null>(null);
+const panel = ref<HTMLElement | null>(null);
+const panelTitle = ref<HTMLElement | null>(null);
+
+function setBackgroundInert(value: boolean) {
+  const root = document.querySelector<HTMLElement>("[data-marketing-app-root]");
+  if (!root) return;
+  if (value) {
+    root.setAttribute("inert", "");
+    root.setAttribute("aria-hidden", "true");
+  } else {
+    root.removeAttribute("inert");
+    root.removeAttribute("aria-hidden");
+  }
+}
+
+async function openPanel() {
+  open.value = true;
+  void markVisible();
+  await nextTick();
+  panelTitle.value?.focus();
+  setBackgroundInert(true);
+}
+
+function closePanel(restoreFocus = true) {
+  open.value = false;
+  setBackgroundInert(false);
+  if (restoreFocus) nextTick(() => trigger.value?.focus());
+}
 
 function toggle() {
-  open.value = !open.value;
-  if (open.value) void markVisible();
+  if (open.value) closePanel();
+  else void openPanel();
+}
+
+function trapPanelFocus(event: KeyboardEvent) {
+  const focusable = Array.from(
+    panel.value?.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ) ?? [],
+  );
+  if (!focusable.length) return;
+  const first = focusable[0];
+  const last = focusable.at(-1);
+  if (
+    event.shiftKey &&
+    (document.activeElement === first || document.activeElement === panelTitle.value)
+  ) {
+    event.preventDefault();
+    last?.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first?.focus();
+  }
 }
 
 async function review(notification: MarketingNotification) {
   const href = openHref(notification);
   if (!href) return;
+  closePanel(false);
   await navigateTo(href);
-  open.value = false;
 }
 
 function reviewAction(notification: MarketingNotification) {
@@ -67,17 +117,13 @@ function escalation(notification: MarketingNotification): string {
   return `Escala para ${owner} ${when}${timezone}`;
 }
 
-function closeOnEscape(event: KeyboardEvent) {
-  if (event.key === "Escape") open.value = false;
-}
-
-onMounted(() => document.addEventListener("keydown", closeOnEscape));
-onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
+onBeforeUnmount(() => setBackgroundInert(false));
 </script>
 
 <template>
   <div class="relative shrink-0">
     <button
+      ref="trigger"
       type="button"
       class="relative grid size-11 place-items-center rounded-md border border-border text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       :aria-label="`Alertas: ${unresolvedCount} pendentes, ${unseenCount} novos`"
@@ -95,25 +141,39 @@ onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
       >
     </button>
 
-    <div
-      v-if="open"
-      class="fixed inset-0 z-40"
-      aria-hidden="true"
-      @click="open = false"
-    />
+    <Teleport to="body">
+      <div
+        v-if="open"
+        class="fixed inset-0 z-40 bg-background/20"
+        aria-hidden="true"
+        @click="closePanel()"
+      />
 
-    <section
-      v-if="open"
-      id="marketing-notifications-panel"
-      class="fixed inset-x-3 top-16 z-50 flex max-h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-xl border border-border bg-card shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:max-h-[75vh] sm:w-96"
-      aria-label="Alertas pessoais"
-    >
+      <section
+        v-if="open"
+        id="marketing-notifications-panel"
+        ref="panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="marketing-notifications-title"
+        aria-describedby="marketing-notifications-status"
+        class="fixed inset-x-3 top-16 z-50 flex max-h-[calc(100vh-5rem)] flex-col overflow-hidden rounded-md border border-border bg-card shadow-xl sm:right-3 sm:left-auto sm:w-96"
+        @keydown.esc.stop="closePanel()"
+        @keydown.tab="trapPanelFocus"
+      >
       <header
         class="flex items-center justify-between gap-3 border-b border-border px-4 py-3"
       >
         <div class="min-w-0">
-          <h2 class="text-sm font-bold">Alertas pessoais</h2>
-          <p class="text-xs text-muted-foreground">
+          <h2
+            id="marketing-notifications-title"
+            ref="panelTitle"
+            tabindex="-1"
+            class="text-sm font-bold"
+          >
+            Alertas pessoais
+          </h2>
+          <p id="marketing-notifications-status" class="text-xs text-muted-foreground">
             {{ unresolvedCount }} pendente{{
               unresolvedCount === 1 ? "" : "s"
             }}
@@ -123,7 +183,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
         <div class="flex items-center gap-1">
           <button
             type="button"
-            class="grid size-9 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
+            class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:opacity-50"
             :disabled="loading"
             aria-label="Atualizar alertas"
             @click="refresh"
@@ -131,14 +191,14 @@ onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
             <Icon
               name="lucide:refresh-cw"
               class="size-4"
-              :class="loading ? 'animate-spin' : ''"
+              :class="loading ? 'animate-spin motion-reduce:animate-none' : ''"
             />
           </button>
           <button
             type="button"
-            class="grid size-9 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
+            class="grid size-11 place-items-center rounded-md text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Fechar alertas"
-            @click="open = false"
+            @click="closePanel()"
           >
             <Icon name="lucide:x" class="size-4" />
           </button>
@@ -159,7 +219,10 @@ onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
           class="grid place-items-center gap-2 py-10 text-center text-muted-foreground"
           aria-busy="true"
         >
-          <Icon name="lucide:loader-circle" class="size-6 animate-spin" />
+          <Icon
+            name="lucide:loader-circle"
+            class="size-6 animate-spin motion-reduce:animate-none"
+          />
           <p class="text-sm">Buscando seus alertas…</p>
         </div>
 
@@ -289,6 +352,7 @@ onBeforeUnmount(() => document.removeEventListener("keydown", closeOnEscape));
       >
         Registrando os alertas que ficaram visíveis…
       </p>
-    </section>
+      </section>
+    </Teleport>
   </div>
 </template>

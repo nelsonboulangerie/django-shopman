@@ -82,21 +82,21 @@ useHead({ title: "Campanhas · Marketing" });
 
 <template>
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
-    <div class="mb-5 flex items-center gap-3">
-      <h1 class="text-xl font-bold">Campanhas</h1>
+    <div class="mb-5 flex flex-wrap items-center gap-3">
+      <h1 class="w-full text-xl font-bold sm:w-auto">Campanhas</h1>
       <!-- A biblioteca de modelos é vista SECUNDÁRIA daqui, não seção irmã: o gestor pensa
            "o que a padaria diz quando X acontece", e separar o texto da intenção o obrigava
            a montar isso em duas telas. -->
       <NuxtLink
         to="/templates"
-        class="ml-auto inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted"
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-sm text-muted-foreground transition hover:bg-muted sm:ml-auto"
       >
         <Icon name="lucide:file-text" class="size-3.5" />
         Modelos
       </NuxtLink>
       <button
         type="button"
-        class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+        class="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         @click="openNew"
       >
         <Icon name="lucide:plus" class="size-4" />

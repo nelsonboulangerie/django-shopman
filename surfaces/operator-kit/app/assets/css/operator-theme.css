@@ -100,7 +100,7 @@
   --accent: #3a2a20;
   --accent-foreground: #f0e6d2;
 
-  --destructive: #e06a5e;
+  --destructive: #e9786c; /* contraste AA inclusive sobre destructive/10 + card */
   --destructive-foreground: #2b1d16;
   --success: #7eb26e;
   --success-foreground: #221610;

@@ -1838,3 +1838,71 @@ Provas locais:
 A implementação técnica local do MKT-040 está concluída. A aprovação final da matriz
 por Segurança permanece requisito humano de piloto/release; MKT-041 (acessibilidade,
 touch, foco e reflow) pode seguir localmente sem reduzi-la.
+
+## MKT-041 — Acessibilidade, operator-kit, toque, foco e reflow
+
+Implementado depois do shell/Actions dos MKT-022–023 e do gate web dos
+MKT-039–040, sem antecipar a matriz visual versionada do MKT-046:
+
+- o contrato compartilhado do Marketing aplica área mínima de 44×44 px a botões,
+  links, campos e labels de checkbox/radio, com foco visível de 3 px e offset em
+  qualquer controle interativo. Rail, toggle, Central, operador, tema, tabs, busca,
+  refresh e fechamentos também foram corrigidos na origem canônica;
+- o login virou um `main`/dialog nomeado com `h1`, labels visíveis, descrição e erro
+  programaticamente associados, `aria-invalid`/`aria-busy`, foco inicial no usuário e
+  ciclo de Tab/Shift+Tab contido. Após autenticar, o foco chega ao título da rota, sem
+  exigir que o operador redescubra onde está;
+- o painel de alertas agora é um modal real, teleporta para fora do shell inerte,
+  anuncia título/status, começa no título, fecha com Esc/backdrop/controle de 44 px e
+  sempre devolve foco ao sino. Navegação por uma Action não rouba o foco da nova rota;
+- o fechamento default de `UiSheetContent` apontava para um primitive vazio, embora
+  existisse `UiSheetX` acessível. O default passou a usar o componente correto, com
+  nome “Fechar”, alvo 44×44 e focus ring;
+- transições de sheet foram limitadas a 200 ms. Em `prefers-reduced-motion`, animações
+  e transições caem para 0,01 ms e smooth scroll é desligado; forced colors recebe
+  outline explícito;
+- a linha de título/ações de Campanhas passou a quebrar responsivamente. O teste real
+  descobriu `scrollWidth=359` em viewport de 320 px; depois da correção o documento
+  cabe integralmente;
+- o token destrutivo escuro compartilhado foi ajustado de `#e06a5e` para `#e9786c`:
+  o contraste medido sobre `destructive/10` + card subiu de 4,31:1 para 4,90:1, sem
+  depender só de cor para comunicar estado;
+- foi criado um gate Playwright/axe repetível e sem credencial versionada. Ele mede
+  DOM renderizado, não apenas classes: axe WCAG A/AA/2.1/2.2, targets, overflow,
+  teclado, foco/restauração, background inert, 320×568, equivalente de zoom 200%
+  em 640 CSS px, light/dark, reduced motion e forced colors.
+
+Budget de omotenashi/acessibilidade comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Encontrar o primeiro campo ao entrar | foco no `body` | foco no usuário, 0 Tabs |
+| Permanecer no login por teclado | foco podia escapar | ciclo fechado, 0 elementos de fundo alcançáveis |
+| Fechar alertas e continuar | contexto de foco perdido | 1 Esc e foco restaurado ao sino |
+| Alvos frequentes observados abaixo de 44 px | 9 no shell/painel | 0 nos fluxos medidos |
+| Rolagem horizontal em Campanhas/320 px | 39 px excedentes | 0 px excedentes |
+| Nome acessível do fechamento default de sheet | vazio | “Fechar” |
+| Violações axe descobertas no gate | 1 regra crítica + 1 séria (5 nós) | 0 |
+| Conferir contraste em dark externamente | necessário; 4 estados em 4,31:1 | 0; token em 4,90:1 e axe automático |
+| Movimento com preferência reduce | componentes podiam manter animação | duração máxima renderizada ≤0,001 s |
+
+Provas locais:
+
+- operator-kit: **19 arquivos/185 testes**; Marketing Nuxt: **24 arquivos/192
+  testes**; todos passaram;
+- o novo E2E Playwright/axe passou nos dois fluxos completos: login anônimo e cockpit
+  autenticado, incluindo painel, modal de alertas, Campanhas, criação em sheet,
+  Plataformas, dark, zoom/reflow, reduced motion e forced colors;
+- ESLint, Nuxt typecheck, build de produção e `git diff --check` passaram;
+- as falhas de overflow, nome de botão e contraste foram observadas primeiro no build
+  real e desapareceram somente depois das correções; nenhuma regra axe foi silenciada;
+- credenciais e dados usados foram sintéticos e exclusivamente locais. Os processos
+  foram encerrados e o SQLite de QA foi movido de forma recuperável para
+  `/Users/pablovalentini/.Trash/django-shopman-marketing-mkt041-qa-20260909.sqlite3`;
+  nenhum provider, destinatário, deploy, produção, push, merge, PR ou escrita externa
+  foi acionado.
+
+A implementação técnica local do MKT-041 está concluída. A matriz completa de estados,
+conteúdo extremo, screenshots before/after e revisão visual humana continua reservada ao
+MKT-046, conforme a ordem do ledger; os gates finais de Accessibility/Design para piloto
+e release permanecem intactos.

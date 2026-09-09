@@ -1,6 +1,14 @@
 import { mount } from "@vue/test-utils";
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import MarketingNotificationsBell from "~/components/MarketingNotificationsBell.vue";
 import type { MarketingActionProjectionV2 } from "~/types/campaign";
 import type { MarketingNotification } from "~/types/notifications";
@@ -89,6 +97,7 @@ const notifications = ref<MarketingNotification[]>([notification()]);
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
+    nextTick,
     onBeforeUnmount,
     onMounted,
     ref,
@@ -126,11 +135,41 @@ beforeEach(() => {
 
 function bell() {
   return mount(MarketingNotificationsBell, {
-    global: { stubs: { Icon: true } },
+    attachTo: document.body,
+    global: { stubs: { Icon: true, Teleport: true } },
   });
 }
 
+afterEach(() => {
+  document.body.replaceChildren();
+});
+
 describe("MarketingNotificationsBell", () => {
+  it("behaves as a modal, isolates the page and restores trigger focus", async () => {
+    const appRoot = document.createElement("div");
+    appRoot.dataset.marketingAppRoot = "";
+    document.body.append(appRoot);
+    const wrapper = bell();
+    const trigger = wrapper.get<HTMLButtonElement>(
+      'button[aria-controls="marketing-notifications-panel"]',
+    );
+    trigger.element.focus();
+
+    await trigger.trigger("click");
+    await nextTick();
+    const panel = wrapper.get("#marketing-notifications-panel");
+    expect(panel.attributes("role")).toBe("dialog");
+    expect(panel.attributes("aria-modal")).toBe("true");
+    expect(appRoot.hasAttribute("inert")).toBe(true);
+    expect(document.activeElement?.id).toBe("marketing-notifications-title");
+
+    await panel.trigger("keydown", { key: "Escape" });
+    await nextTick();
+    expect(appRoot.hasAttribute("inert")).toBe(false);
+    expect(document.activeElement).toBe(trigger.element);
+    appRoot.remove();
+  });
+
   it("opens in one gesture, marks visible alerts and keeps seen unresolved", async () => {
     const wrapper = bell();
     const trigger = wrapper.get(

@@ -17,6 +17,16 @@ const {
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
 useHead({ title: "Marketing" });
+
+watch(sessionState, async (next, previous) => {
+  if (next !== "authenticated" || previous === "authenticated") return;
+  await nextTick();
+  const heading = document.querySelector<HTMLElement>(
+    "[data-marketing-app-root] main h1",
+  );
+  heading?.setAttribute("tabindex", "-1");
+  heading?.focus();
+});
 </script>
 
 <template>
@@ -24,7 +34,10 @@ useHead({ title: "Marketing" });
        instanciada depois do gate. Isso evita tanto fetch anônimo quanto o falso
        warning do Nuxt causado por remover condicionalmente o próprio outlet. -->
   <NuxtPage v-slot="{ Component }">
-    <div class="flex min-h-screen bg-background text-foreground">
+    <div
+      data-marketing-app-root
+      class="flex min-h-screen bg-background text-foreground"
+    >
       <NuxtRouteAnnouncer />
       <!-- Aviso calmo de conexão (kit) — global, só aparece offline. -->
       <OfflineBanner />
@@ -77,7 +90,10 @@ useHead({ title: "Marketing" });
         aria-busy="true"
       >
         <p class="flex items-center gap-2 text-sm text-muted-foreground">
-          <Icon name="line-md:loading-loop" class="size-5" />
+          <Icon
+            name="line-md:loading-loop"
+            class="size-5 motion-reduce:animate-none"
+          />
           Conferindo seu acesso…
         </p>
       </main>

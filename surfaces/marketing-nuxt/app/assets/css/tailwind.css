@@ -202,8 +202,8 @@
      forte=text-foreground · médio=text-muted-foreground · borda=border-border
      superfície=bg-background/bg-card · superfície-2=bg-muted/bg-secondary
 
-   ALTURAS DE CONTROLE (ladder confortável — 3 degraus, alvo de toque ≥44 no md+)
-     sm  h-9  (36px)  chip / botão inline / pílula de filtro
+   ALTURAS DE CONTROLE (ladder confortável — alvo interativo nunca menor que 44px)
+     sm  h-9  (36px)  aparência compacta dentro de área clicável mínima de 44px
      md  h-11 (44px)  campo, botão padrão, linha de tender, tile de método
      lg  h-14 (56px)  CTA primário, tecla de numpad, tile de produto/ação
      Os componentes ui-thing mapeiam para o ladder (UiButton sm=h-9 / default=h-11
@@ -256,6 +256,25 @@
   [role="button"]:not(:disabled) {
     cursor: pointer;
   }
+  :where(button, a[href], [role="button"]) {
+    min-width: 2.75rem;
+    min-height: 2.75rem;
+    touch-action: manipulation;
+  }
+  :where(
+    input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    select,
+    textarea
+  ) {
+    min-height: 2.75rem;
+  }
+  :where(label:has(input[type="checkbox"]), label:has(input[type="radio"])) {
+    min-height: 2.75rem;
+  }
+  :where(button, a[href], input, select, textarea, [role="button"]):focus-visible {
+    outline: 3px solid var(--ring) !important;
+    outline-offset: 2px !important;
+  }
   html {
     color-scheme: light dark;
   }
@@ -264,6 +283,26 @@
   }
   html.light {
     color-scheme: light;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (forced-colors: active) {
+  :where(button, a[href], input, select, textarea, [role="button"]) {
+    forced-color-adjust: auto;
+  }
+  :where(button, a[href], input, select, textarea, [role="button"]):focus-visible {
+    outline-color: Highlight !important;
   }
 }
 

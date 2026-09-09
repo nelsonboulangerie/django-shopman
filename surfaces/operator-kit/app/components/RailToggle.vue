@@ -23,7 +23,7 @@ const view = computed(() => {
 <template>
   <button
     type="button"
-    class="grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+    class="grid size-11 shrink-0 place-items-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
     :aria-label="view.action"
     :title="view.action"
     @click="cycle"
