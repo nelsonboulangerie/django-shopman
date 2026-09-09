@@ -1,6 +1,19 @@
 import tailwindcss from "@tailwindcss/vite";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
+const immutableAssetHeaders = {
+  "cache-control": "public, max-age=31536000, immutable",
+  "content-security-policy": "default-src 'none'; frame-ancestors 'none'",
+  "cross-origin-opener-policy": "same-origin",
+  "cross-origin-resource-policy": "same-origin",
+  "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
+  "referrer-policy": "no-referrer",
+  "strict-transport-security": "max-age=31536000; includeSubDomains",
+  "x-content-type-options": "nosniff",
+  "x-dns-prefetch-control": "off",
+  "x-frame-options": "DENY",
+};
+
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
@@ -21,6 +34,8 @@ export default defineNuxtConfig({
   // sobra — este redirect faz o link do celular cair no card certo.
   routeRules: {
     "/campaign/announcements/**": { redirect: { to: "/announcements/**", statusCode: 302 } },
+    "/_nuxt/**": { headers: immutableAssetHeaders },
+    "/fonts/**": { headers: immutableAssetHeaders },
   },
 
   modules: [
@@ -28,19 +43,9 @@ export default defineNuxtConfig({
     'motion-v/nuxt',
     '@vueuse/nuxt',
     '@nuxt/icon',
-    '@nuxt/fonts',
     '@nuxt/eslint',
     "vue-sonner/nuxt"
   ],
-
-  // Instrument Sans self-hospedada com os PESOS da escala do operador (body=500,
-  // title=600, display/figure=700 — ver ESCALA DE DESIGN no tailwind.css). Sem esta
-  // declaração o @nuxt/fonts baixa só o 400 e o navegador sintetiza os demais.
-  fonts: {
-    families: [
-      { name: 'Instrument Sans', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal'] }
-    ]
-  },
 
   imports: {
     imports: [{

@@ -75,5 +75,35 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
     expect(res.getHeader("retry-after")).toBe("11");
     expect(res.getHeader("ratelimit-remaining")).toBe("4");
     expect(res.getHeader("x-internal-secret")).toBeUndefined();
+    expect(res.getHeader("cache-control")).toBe("private, no-store");
+    expect(res.getHeader("content-security-policy")).toContain("frame-ancestors 'none'");
+    expect(res.getHeader("x-frame-options")).toBe("DENY");
+    expect(res.getHeader("x-powered-by")).toBeUndefined();
+  });
+
+  it("preserva cookie e redirect seguros sem aceitar variantes injetáveis ou externas", async () => {
+    const raw = vi
+      .fn()
+      .mockResolvedValueOnce(upstream(302, "", {
+        location: "/admin/login/?next=%2Fcampaigns%2F",
+        "set-cookie": "sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
+      }))
+      .mockResolvedValueOnce(upstream(302, "", {
+        location: "//evil.example/steal",
+        "set-cookie": "sessionid=stolen; Path=/; Surprise=enabled",
+      }));
+    vi.stubGlobal("$fetch", Object.assign(vi.fn(), { raw }));
+
+    const safe = makeEvent({});
+    await proxyDjangoPath(safe.event, "/api/v1/backstage/marketing/v2");
+    expect(safe.res.getHeader("location")).toBe("/admin/login/?next=%2Fcampaigns%2F");
+    expect(safe.res.getHeader("set-cookie")).toBe(
+      "sessionid=abc.def=ghi==; Path=/; Secure; HttpOnly; SameSite=Lax",
+    );
+
+    const unsafe = makeEvent({});
+    await proxyDjangoPath(unsafe.event, "/api/v1/backstage/marketing/v2");
+    expect(unsafe.res.getHeader("location")).toBeUndefined();
+    expect(unsafe.res.getHeader("set-cookie")).toBeUndefined();
   });
 });

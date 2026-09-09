@@ -5,6 +5,7 @@ import {
   type H3Event,
 } from "h3";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
+import { applyOperatorSecurityHeaders } from "./securityHeaders";
 
 // Proxy SSE same-origin compartilhado das superfícies de operador (layer). O
 // EventSource do app conecta em uma rota /sse/... do BFF e aqui repassamos o
@@ -25,6 +26,7 @@ export async function proxyEventStream(
   event: H3Event,
   upstreamPath: string,
 ): Promise<ReadableStream<Uint8Array> | string> {
+  applyOperatorSecurityHeaders(event);
   const config = useRuntimeConfig(event);
   const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl);
 

@@ -1773,3 +1773,68 @@ Provas locais:
 A implementação técnica local do MKT-039 está concluída. Os gates de piloto/release
 permanecem inalterados; MKT-040 (headers/BFF/cache/fonts) é a próxima dependência da
 ordem aprovada.
+
+## MKT-040 — Headers, BFF sem cache compartilhado e fontes incorporadas
+
+Implementado depois do contrato BFF/Actions do MKT-024 e do gate de sessão do
+MKT-039, sem tocar proxy/deploy real:
+
+- uma única matriz reutilizável no operator-kit aplica CSP com nonce por request,
+  HSTS, `nosniff`, `DENY`/`frame-ancestors 'none'`, referrer, COOP/CORP,
+  permissions policy e DNS-prefetch off; `x-powered-by` é removido;
+- o render hook do Marketing injeta o mesmo nonce em todos os `script`/`style` do
+  HTML SSR. `script-src` não contém `unsafe-inline`; o único `unsafe-inline` ficou
+  confinado a `style-src-attr`, necessário para estilos de estado do Vue;
+- HTML e respostas privadas usam `private, no-store`; o BFF sobrescreve qualquer
+  cache-control permissivo do upstream. SSE só usa `no-cache, no-transform` quando o
+  stream foi aceito; recusas e falhas permanecem privadas/no-store;
+- JS/CSS com hash e os webfonts com hash recebem `public, max-age=31536000,
+  immutable`, sem transformar endpoints privados em cacheáveis;
+- o proxy continua repassando apenas metadados operacionais allowlisted. Cookies do
+  Django só atravessam após validação de sintaxe, atributos e prefixos seguros;
+  redirects só atravessam como caminho absoluto same-origin, sem `//`, backslash ou
+  bytes de controle. CSRF, origin/referer e atributos válidos continuam preservados;
+- `@nuxt/fonts` e o provider Google foram removidos do manifest/lock. Instrument
+  Sans e Fira Code, nos subsets `latin`/`latin-ext`, estão incorporadas no app com
+  nomes content-addressed e licença OFL versionada;
+- nenhum header foi relaxado por ambiente e nenhuma exceção CSP oculta foi criada.
+
+Matriz viva comprovada no build de produção local:
+
+| Superfície | Status exercitado | Cache | Matriz/CSP |
+|---|---:|---|---|
+| HTML `/` | 200 | `private, no-store` | completa, nonce único |
+| erro HTML inexistente | 404 | `private, no-store` | completa, nonce único |
+| BFF Marketing anônimo | 401 | `private, no-store` | completa |
+| antessala BFF anônima | 403 | `private, no-store` | completa |
+| SSE pessoal anônimo | 404 | `private, no-store` | completa |
+| JS/font local com hash | 200 | `public, max-age=31536000, immutable` | proteção estática estrita |
+
+Budget de omotenashi/segurança comprovado:
+
+| Trabalho/risco | Antes | Depois |
+|---|---:|---:|
+| Headers web ausentes no HTML Nuxt | 7 classes essenciais ausentes | 0; 10 headers defensivos explícitos |
+| Resposta privada que podia herdar cache upstream | 1 decisão implícita por resposta | 0; BFF sempre `private, no-store` |
+| Redirect/cookie upstream aceito sem conferência | 2 superfícies abertas | 0; duas validações fail-closed |
+| Dependência de catálogo/download Google no build | 1 módulo/provider + 2 famílias descobertas | 0 endpoints externos |
+| Recursos DOM observados fora da origem local | não contratado | 0 de 18 |
+| Violações CSP no carregamento do cockpit | não contratado | 0 |
+| Conferência manual de nonce entre header e HTML | necessária | 0; geração/injeção compartilham o mesmo contexto |
+
+Provas locais:
+
+- operator-kit: **19 arquivos/185 testes**; Marketing Nuxt: **24 arquivos/189
+  testes**, incluindo cookies, redirects, cache, headers, nonce e presença física de
+  cada fonte;
+- ESLint, typecheck, build de produção e `git diff --check` passaram;
+- busca no artefato `.output` encontrou zero `fonts.googleapis`, `fonts.gstatic`,
+  `https://fonts`, `@nuxt/fonts` ou `/_fonts/`;
+- navegador real hidratou o login, confirmou `document.fonts` pronto para Instrument
+  Sans, observou somente recursos same-origin e registrou zero violação CSP;
+- nenhum deploy, provider, destinatário, ambiente real, push, merge, PR ou escrita
+  externa foi realizado. O Django/Nuxt usados na prova foram apenas processos locais.
+
+A implementação técnica local do MKT-040 está concluída. A aprovação final da matriz
+por Segurança permanece requisito humano de piloto/release; MKT-041 (acessibilidade,
+touch, foco e reflow) pode seguir localmente sem reduzi-la.
