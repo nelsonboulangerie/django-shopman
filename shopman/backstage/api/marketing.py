@@ -83,6 +83,7 @@ from shopman.shop.services.marketing_commands import (
     MarketingCommandRejected,
 )
 from shopman.shop.services.marketing_contracts import MarketingContractError
+from shopman.shop.services.marketing_observability import observe_projection
 from shopman.shop.services.marketing_security import (
     MarketingAuthorizationError,
     MarketingAuthorizationRequired,
@@ -294,9 +295,12 @@ class CampaignBoardV2View(_CampaignV2Base):
     """Additive read contract; the v1 board remains available during cutover."""
 
     def get(self, request):
-        envelope = with_resolved_actions(
-            marketing_projection_v2.build_board(),
-            actor=request.user,
+        envelope = observe_projection(
+            "board",
+            lambda: with_resolved_actions(
+                marketing_projection_v2.build_board(),
+                actor=request.user,
+            ),
         )
         return marketing_v2_response(request, envelope)
 
@@ -305,16 +309,22 @@ class AnnouncementDetailV2View(_CampaignV2Base):
     """One canonical v2 announcement projection, without audience membership."""
 
     def get(self, request, pk: int):
-        announcement = _announcement_or_none(pk)
-        if announcement is None:
-            raise MarketingV2Problem(
-                status_code=404,
-                code="resource_not_found",
-                detail="presentation.resource_not_found",
+        def build_detail():
+            announcement = _announcement_or_none(pk)
+            if announcement is None:
+                raise MarketingV2Problem(
+                    status_code=404,
+                    code="resource_not_found",
+                    detail="presentation.resource_not_found",
+                )
+            return with_resolved_actions(
+                marketing_projection_v2.build_announcement(announcement),
+                actor=request.user,
             )
-        envelope = with_resolved_actions(
-            marketing_projection_v2.build_announcement(announcement),
-            actor=request.user,
+
+        envelope = observe_projection(
+            "detail",
+            build_detail,
         )
         return marketing_v2_response(request, envelope)
 
@@ -352,30 +362,36 @@ class CampaignHistoryV2View(_CampaignV2Base):
                 Q(created_at__lt=cursor.created_at) | Q(created_at=cursor.created_at, pk__lt=cursor.pk)
             )
 
-        rows = list(queryset[: limit + 1])
-        has_more = len(rows) > limit
-        page_rows = rows[:limit]
-        next_cursor = ""
-        if has_more:
-            last = page_rows[-1]
-            next_cursor = encode_cursor(
-                MarketingCursor(
-                    collection=_HISTORY_V2_COLLECTION,
-                    as_of=cursor.as_of,
-                    created_at=last.created_at,
-                    pk=last.pk,
+        def build_history():
+            rows = list(queryset[: limit + 1])
+            has_more = len(rows) > limit
+            page_rows = rows[:limit]
+            next_cursor = ""
+            if has_more:
+                last = page_rows[-1]
+                next_cursor = encode_cursor(
+                    MarketingCursor(
+                        collection=_HISTORY_V2_COLLECTION,
+                        as_of=cursor.as_of,
+                        created_at=last.created_at,
+                        pk=last.pk,
+                    )
                 )
+            return with_resolved_actions(
+                marketing_projection_v2.build_history_page(
+                    page_rows,
+                    as_of=cursor.as_of,
+                    limit=limit,
+                    has_more=has_more,
+                    next_cursor=next_cursor,
+                ),
+                actor=request.user,
+                now=cursor.as_of,
             )
-        envelope = with_resolved_actions(
-            marketing_projection_v2.build_history_page(
-                page_rows,
-                as_of=cursor.as_of,
-                limit=limit,
-                has_more=has_more,
-                next_cursor=next_cursor,
-            ),
-            actor=request.user,
-            now=cursor.as_of,
+
+        envelope = observe_projection(
+            "history",
+            build_history,
         )
         return marketing_v2_response(request, envelope)
 

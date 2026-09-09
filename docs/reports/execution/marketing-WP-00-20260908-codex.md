@@ -1906,3 +1906,79 @@ A implementação técnica local do MKT-041 está concluída. A matriz completa 
 conteúdo extremo, screenshots before/after e revisão visual humana continua reservada ao
 MKT-046, conforme a ordem do ledger; os gates finais de Accessibility/Design para piloto
 e release permanecem intactos.
+
+## MKT-042 — Telemetria, redação central e alertas do reconciliador
+
+Implementado depois do ledger/outbox dos MKT-012–017 e dos contratos de sessão/web dos
+MKT-039–041, sem configurar collector, dashboard, paging ou ambiente externo:
+
+- foi criado um registro fechado de métricas para todo o vocabulário da seção 17.2. Nome,
+  tipo, labels e valores de cada label são allowlisted; dimensão livre, ref individual,
+  recipient, customer, campaign, content, URL e erro de provider são recusados antes do
+  log;
+- commands agora medem resultado/latência e replay idempotente; audience mede latência,
+  estado da fonte e apenas bucket de cardinalidade; Projection v2 mede o build completo,
+  bytes e queries; readiness mede estado/frescor por plataforma; o ledger mede attempts e
+  efeitos de provider evitados sem target nas labels;
+- a cadeia request→receipt→outbox→target→attempt ganhou eventos de correlação somente com
+  refs técnicas validadas. Essas refs ficam em log access-controlled e nunca migram para
+  métricas;
+- cada ciclo do reconciliador publica idade da outbox, stuck por stage e inventário
+  agregado de targets. Mismatch, directive ausente, grafo aprovado ausente, lease
+  exaurida, outbox atrasada, call abandonada e unknown acima de 15 minutos criam
+  `OperatorAlert` durável e debounced;
+- todo alerta de Marketing informa `type`, `count`, filtro exato de plataforma/stage e o
+  caminho do runbook pertinente. Não há alerta genérico que obrigue o operador a adivinhar
+  o subsistema. Os oito runbooks e seus drills continuam sendo a entrega seguinte
+  MKT-044;
+- a redação virou uma barreira única usada por logs JSON, Sentry e erro de cliente. Ela
+  remove query/fragment, usuário, authorization/cookie, request/content body,
+  idempotency key, prompt, resposta/erro bruto de provider, e-mail e telefone, inclusive
+  em exception e breadcrumbs;
+- o endpoint de Web Vitals é write-only, rate-limited, exige `shop.view_marketing` e
+  aceita somente LCP/INP/CLS, valor finito, rating, rota em bucket e light/dark. O browser
+  nunca envia URL, query, recurso, pessoa ou conteúdo; falha de telemetria é silenciosa
+  para não virar trabalho do operador;
+- o manifesto `marketing-slo-dashboard.v1.json` materializa os budgets aprovados em
+  G-H08, seis views operacionais, oito regras de alerta, owner funcional, filtro e
+  runbook. Ele se declara `local_candidate`, registra `production_write_performed=false`
+  e exige nova confirmação G-H08, pessoas nominais, paging, baseline autorizado de 7–14
+  dias e drills antes de qualquer ativação.
+
+Budget de omotenashi/operabilidade comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Descobrir drift do reconciliador | acompanhar logs e cruzar tabelas | 1 alerta durável com count, stage, plataforma e runbook |
+| Separar atraso normal de stuck | cálculo mental sobre timestamps | 0 cálculos; budgets de 30/60/900 s avaliados pelo worker |
+| Seguir command até attempt | buscar manualmente em até 4 stores | uma cadeia de correlação técnica, sem destinatário |
+| Conferir budget de board | medição externa ad hoc | latency/bytes/queries emitidos no próprio fluxo |
+| Conferir UX real no piloto | reprodução manual por rota/tema | LCP/INP/CLS agregados em 7 labels fechadas |
+| Evitar repetição do mesmo alarme | cada ciclo podia repetir log | debounce de 15 min por type/platform/stage |
+| Memorizar thresholds e ownership | consultar plano + inferir dono | 1 manifesto executável reúne budget, owner, filtro e resposta |
+| Verificar vazamento em telemetria | conferir Sentry/log/cliente separadamente | 1 redactor central + testes adversariais de todas as superfícies |
+| Risco de ativar observabilidade real cedo | configuração implícita | zero writes externos; gate e pendências gravados no artefato |
+
+Provas locais:
+
+- regressão ampla Python de Marketing/audience/readiness/API/telemetria: **674 testes
+  passaram em 116,91 s**; a bateria final focada de métricas, dashboard, Sentry, logs e
+  endpoint passou **35 testes**;
+- Marketing Nuxt: **25 arquivos/196 testes**, ESLint, Nuxt typecheck e build de produção
+  passaram;
+- testes de redação injetaram telefone, e-mail, bearer token, cookie, query, user, body,
+  breadcrumb, exception e provider response; nenhum valor sentinela atravessou. Os
+  códigos e refs técnicas allowlisted permaneceram úteis;
+- testes de labels tentaram adicionar recipient e ref individual e foram recusados;
+  teste de persistência criou um alerta sintético e comprovou debounce, filtro, runbook,
+  severidade e `order_ref` vazio;
+- Ruff, Django check, migration drift, schema JSON e `git diff --check` passaram. O único
+  warning foi o conhecido uso de SQLite local e o bootstrap defensivo sem schema;
+- a migration `0036_operatoralert_marketing_types` apenas registra os sete tipos de alerta
+  no vocabulário do Django; nenhuma chamada a provider, destinatário, dashboard externo,
+  paging, deploy, produção, push, merge, PR ou escrita externa foi realizada.
+
+A implementação técnica local do MKT-042 está concluída. O dashboard e os alertas ainda
+não estão ativados fora do processo local: nomes de owner/on-call, destinos de paging,
+baseline autorizado e drills permanecem bloqueadores explícitos do G-H08. MKT-043 pode
+agora usar as medições para provar os budgets de carga sem alterá-los.

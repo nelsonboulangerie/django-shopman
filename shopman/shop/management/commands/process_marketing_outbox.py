@@ -77,6 +77,10 @@ class Command(BaseCommand):
 
     def _cycle(self, *, worker_id: str, limit: int, lease_seconds: int) -> None:
         from shopman.shop.services import marketing_outbox
+        from shopman.shop.services.marketing_observability import (
+            collect_reconciler_signals,
+            record_outbox_cycle,
+        )
 
         reconciliation = marketing_outbox.reconcile(limit=limit)
         report = marketing_outbox.process_due(
@@ -84,6 +88,8 @@ class Command(BaseCommand):
             limit=limit,
             lease_seconds=lease_seconds,
         )
+        record_outbox_cycle(reconciliation=reconciliation, process=report)
+        collect_reconciler_signals()
         if reconciliation.dispatched_without_directive:
             logger.error(
                 "marketing.outbox_dispatched_without_directive count=%d",

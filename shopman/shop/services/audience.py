@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import logging
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -276,6 +277,7 @@ def resolve(
         ``AudienceResult`` vazio quando nenhuma regra está ligada ou ninguém passa no
         consentimento. Audiência vazia é resposta normal, não erro.
     """
+    started_at = time.perf_counter()
     rules = rules or {}
     calculated_at = now or timezone.now()
     by_phone: dict[str, Recipient] = {}
@@ -390,21 +392,32 @@ def resolve(
 
     vip_delay = int(rules.get("vip_first_minutes") or 0)
     if vip_delay <= 0:
-        return AudienceResult(
+        result = AudienceResult(
             general=tuple(recipients),
             preferred_hour_window_hours=window,
             **common,
         )
+    else:
+        vips = tuple(r for r in recipients if r.is_vip)
+        general = tuple(r for r in recipients if not r.is_vip)
+        result = AudienceResult(
+            general=general,
+            vip=vips,
+            vip_delay_minutes=vip_delay,
+            preferred_hour_window_hours=window,
+            **common,
+        )
 
-    vips = tuple(r for r in recipients if r.is_vip)
-    general = tuple(r for r in recipients if not r.is_vip)
-    return AudienceResult(
-        general=general,
-        vip=vips,
-        vip_delay_minutes=vip_delay,
-        preferred_hour_window_hours=window,
-        **common,
+    from shopman.shop.services.marketing_observability import (
+        record_audience_resolution,
     )
+
+    record_audience_resolution(
+        seconds=time.perf_counter() - started_at,
+        degraded=bool(result.degraded_sources),
+        size=result.total,
+    )
+    return result
 
 
 def _match_mode(rules: dict) -> str:

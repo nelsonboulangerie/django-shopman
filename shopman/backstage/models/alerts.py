@@ -47,6 +47,13 @@ class OperatorAlert(models.Model):
         ("bi_source_conflict", "B.I.: pedido nativo apagou histórico"),
         ("bi_cash_variance", "B.I.: quebra de caixa acumulada passou da régua"),
         ("bi_curation_pending", "B.I.: de-para de produto pendente"),
+        ("marketing_consent_violation", "Marketing: envio após opt-out/expiração"),
+        ("marketing_duplicate_confirmed", "Marketing: efeito duplicado confirmado"),
+        ("marketing_outbox_stuck", "Marketing: fila ou tentativa travada"),
+        ("marketing_reconciliation_mismatch", "Marketing: divergência de reconciliação"),
+        ("marketing_unknown_stale", "Marketing: resultado desconhecido sem resolução"),
+        ("marketing_partial_without_action", "Marketing: parcial sem ação de recuperação"),
+        ("marketing_readiness_stale", "Marketing: prontidão do canal vencida"),
     ]
     SEVERITY_CHOICES = [
         ("warning", "Aviso"),

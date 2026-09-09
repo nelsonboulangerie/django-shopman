@@ -160,6 +160,14 @@ def ensure_targets(
                 code="delivery_wave_collision",
                 detail="Um target aprovado já pertence a outra lane desta plataforma.",
             )
+        from shopman.shop.services.marketing_observability import record_correlation
+
+        record_correlation(
+            stage="target",
+            receipt_ref=str(outbox.command.ref),
+            outbox_ref=str(outbox.ref),
+            target_count=len(targets),
+        )
         return targets
 
 

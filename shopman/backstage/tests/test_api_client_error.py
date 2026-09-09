@@ -10,9 +10,14 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.urls import reverse
 
-from shopman.backstage.api.telemetry import sanitize_client_report
+from shopman.backstage.api.telemetry import (
+    sanitize_client_report,
+    sanitize_marketing_vital,
+)
 
 
 @pytest.mark.django_db
@@ -77,3 +82,78 @@ class TestSanitize:
     def test_non_dict_payload_is_empty(self):
         assert sanitize_client_report("not a dict") == {}
         assert sanitize_client_report(None) == {}
+
+
+def _marketing_reader():
+    user = get_user_model().objects.create_user(
+        username="marketing-telemetry-reader",
+        is_staff=True,
+    )
+    user.user_permissions.add(Permission.objects.get(codename="view_marketing"))
+    return user
+
+
+@pytest.mark.django_db
+def test_marketing_vital_requires_capability_and_emits_closed_metric(client):
+    url = reverse("api-backstage-marketing-vital")
+    sample = {
+        "name": "LCP",
+        "value": 1843.4422,
+        "rating": "good",
+        "route": "campaigns",
+        "theme": "dark",
+        "url": "https://example.test/?customer=42",
+    }
+
+    assert client.post(url, sample, content_type="application/json").status_code == 403
+    client.force_login(_marketing_reader())
+    with patch("shopman.backstage.api.telemetry.emit_metric") as metric:
+        response = client.post(url, sample, content_type="application/json")
+
+    assert response.status_code == 202
+    metric.assert_called_once_with(
+        "marketing_frontend_vital",
+        1843.442,
+        name="LCP",
+        rating="good",
+        route="campaigns",
+        theme="dark",
+    )
+    assert "url" not in metric.call_args.kwargs
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "sample",
+    [
+        {"name": "TTFB", "value": 1, "rating": "good", "route": "board", "theme": "light"},
+        {"name": "CLS", "value": -1, "rating": "good", "route": "board", "theme": "light"},
+        {"name": "CLS", "value": 0.1, "rating": "good", "route": "/campaign/123", "theme": "light"},
+    ],
+)
+def test_marketing_vital_rejects_unbounded_dimensions(client, sample):
+    client.force_login(_marketing_reader())
+    response = client.post(
+        reverse("api-backstage-marketing-vital"),
+        sample,
+        content_type="application/json",
+    )
+    assert response.status_code == 400
+
+
+def test_marketing_vital_sanitizer_drops_every_extra_field():
+    assert sanitize_marketing_vital({
+        "name": "INP",
+        "value": 120,
+        "rating": "good",
+        "route": "board",
+        "theme": "light",
+        "recipient": "+55 43 99999-8888",
+        "campaign": "campaign:123",
+    }) == {
+        "name": "INP",
+        "value": 120.0,
+        "rating": "good",
+        "route": "board",
+        "theme": "light",
+    }

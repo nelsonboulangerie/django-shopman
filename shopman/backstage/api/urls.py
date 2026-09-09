@@ -178,11 +178,16 @@ from .purchase import (
     PurchaseRequestSendView,
     PurchaseScanInvoiceView,
 )
-from .telemetry import ClientErrorView
+from .telemetry import ClientErrorView, MarketingVitalView
 
 urlpatterns = [
     # Telemetria — erro de cliente das superfícies de operador (operator-kit)
     path("client-error/", ClientErrorView.as_view(), name="api-backstage-client-error"),
+    path(
+        "marketing/telemetry/vital/",
+        MarketingVitalView.as_view(),
+        name="api-backstage-marketing-vital",
+    ),
     # Central de Apps — launcher do operador (surfaces/hub-nuxt)
     path("hub/", HubView.as_view(), name="api-backstage-hub"),
     # KDS

@@ -129,17 +129,21 @@ def execute_target(
         now=clock,
     )
     if attempt.state == DeliveryAttempt.State.COMPLETED:
-        return AttemptExecution(attempt, target, provider_called=False, replayed=True)
+        return _observed_execution(
+            AttemptExecution(attempt, target, provider_called=False, replayed=True)
+        )
     if attempt.state == DeliveryAttempt.State.CALLING:
         # Another worker (or this worker before losing its response) already
         # crossed the call boundary.  Waiting/reconciliation is safe; calling
         # again is not.
-        return AttemptExecution(
-            attempt,
-            target,
-            provider_called=False,
-            replayed=True,
-            in_progress=True,
+        return _observed_execution(
+            AttemptExecution(
+                attempt,
+                target,
+                provider_called=False,
+                replayed=True,
+                in_progress=True,
+            )
         )
 
     attempt, target, began_call = _begin_call(
@@ -148,12 +152,14 @@ def execute_target(
         now=clock,
     )
     if not began_call:
-        return AttemptExecution(
-            attempt,
-            target,
-            provider_called=False,
-            replayed=True,
-            in_progress=attempt.state == DeliveryAttempt.State.CALLING,
+        return _observed_execution(
+            AttemptExecution(
+                attempt,
+                target,
+                provider_called=False,
+                replayed=True,
+                in_progress=attempt.state == DeliveryAttempt.State.CALLING,
+            )
         )
     try:
         # Last reversible check: this is intentionally adjacent to provider.send.
@@ -188,11 +194,13 @@ def execute_target(
             retryable=False,
         )
     attempt, target = _complete_attempt(attempt.ref, outcome=normalized, now=clock)
-    return AttemptExecution(
-        attempt,
-        target,
-        provider_called=True,
-        replayed=replayed,
+    return _observed_execution(
+        AttemptExecution(
+            attempt,
+            target,
+            provider_called=True,
+            replayed=replayed,
+        )
     )
 
 
@@ -319,7 +327,7 @@ def reconcile_calling(
     with transaction.atomic():
         refs = list(query.values_list("ref", flat=True)[:safe_limit])
         for attempt_ref in refs:
-            _complete_attempt(
+            attempt, target = _complete_attempt(
                 attempt_ref,
                 outcome=ProviderOutcome(
                     kind=ProviderOutcomeKind.UNKNOWN,
@@ -328,8 +336,31 @@ def reconcile_calling(
                 ),
                 now=clock,
             )
+            _observed_execution(
+                AttemptExecution(
+                    attempt,
+                    target,
+                    provider_called=False,
+                    replayed=False,
+                )
+            )
             reconciled += 1
     return reconciled
+
+
+def _observed_execution(execution: AttemptExecution) -> AttemptExecution:
+    from shopman.shop.services.marketing_observability import (
+        record_delivery_execution,
+    )
+
+    record_delivery_execution(
+        platform=execution.target.platform,
+        outcome=execution.attempt.outcome_kind,
+        replayed=execution.replayed,
+        target_ref=str(execution.target.ref),
+        attempt_ref=str(execution.attempt.ref),
+    )
+    return execution
 
 
 def _prepare_attempt(

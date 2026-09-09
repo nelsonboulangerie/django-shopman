@@ -143,6 +143,7 @@ def publish_claim(
             .get(ref=outbox_ref)
         )
         if row.state == MarketingOutbox.State.DISPATCHED:
+            _record_correlation(row)
             return row
         if (
             row.state != MarketingOutbox.State.CLAIMED
@@ -206,6 +207,7 @@ def publish_claim(
             announcement.status = AnnouncementStatus.PUBLISHING
             announcement.publish_at = None
             announcement.save(update_fields=["status", "publish_at"])
+        _record_correlation(row)
         return row
 
 
@@ -420,6 +422,17 @@ def _graph_error(row: MarketingOutbox, *, now: datetime) -> str:
 
 def _directive_topic(row: MarketingOutbox) -> str:
     return ANNOUNCEMENT_NOTIFY if row.platform == "whatsapp" else ANNOUNCEMENT_PUBLISH
+
+
+def _record_correlation(row: MarketingOutbox) -> None:
+    from shopman.shop.services.marketing_observability import record_correlation
+
+    record_correlation(
+        stage="outbox",
+        request_id=row.command.request_id,
+        receipt_ref=str(row.command.ref),
+        outbox_ref=str(row.ref),
+    )
 
 
 def _directive_payload(row: MarketingOutbox) -> dict:

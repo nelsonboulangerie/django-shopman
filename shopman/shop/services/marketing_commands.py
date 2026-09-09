@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import json
 import re
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import timedelta
@@ -136,6 +137,7 @@ def execute_announcement_command(
     manufacture a conflict.
     """
 
+    started_at = time.perf_counter()
     normalized = _validate_input(
         kind=kind,
         announcement_id=announcement_id,
@@ -284,9 +286,25 @@ def execute_announcement_command(
                     ])
                 execution = CommandExecution(receipt, announcement, False)
 
+    assert execution is not None
+    from shopman.shop.services.marketing_observability import (
+        record_command,
+        record_correlation,
+    )
+
+    record_command(
+        kind=kind,
+        outcome=execution.receipt.state,
+        seconds=time.perf_counter() - started_at,
+        replayed=execution.replayed,
+    )
+    record_correlation(
+        stage="receipt",
+        request_id=execution.receipt.request_id,
+        receipt_ref=str(execution.receipt.ref),
+    )
     if deferred_error is not None:
         raise deferred_error
-    assert execution is not None
     return execution
 
 

@@ -1467,7 +1467,7 @@ if SENTRY_DSN:
         _sentry_traces = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0") or "0")
 
         def _strip_query_string(event, hint):
-            """Tira a query string da URL antes do evento sair daqui.
+            """Aplica a barreira única de privacidade antes do evento sair daqui.
 
             `send_default_pii=False` NÃO remove query string. E o webhook da
             Efí autentica por `?token=` — não por escolha nossa: a Efí não
@@ -1479,13 +1479,9 @@ if SENTRY_DSN:
             Vale para TODA URL, não só a da Efí: query string é onde token de
             acesso, chave de assinatura e telefone de cliente costumam viajar.
             """
-            request = event.get("request")
-            if isinstance(request, dict):
-                url = request.get("url")
-                if isinstance(url, str) and "?" in url:
-                    request["url"] = url.split("?", 1)[0]
-                request.pop("query_string", None)
-            return event
+            from shopman.shop.telemetry_redaction import scrub_sentry_event
+
+            return scrub_sentry_event(event)
 
         sentry_sdk.init(
             dsn=SENTRY_DSN,

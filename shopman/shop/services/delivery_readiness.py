@@ -75,7 +75,11 @@ def readiness_for(
             out.append(_publication_readiness(platform, now=clock))
         else:
             out.append(_direct_message_readiness(platform, now=clock))
-    return tuple(out)
+    result = tuple(out)
+    from shopman.shop.services.marketing_observability import record_readiness
+
+    record_readiness(result, now=clock)
+    return result
 
 
 def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness:
