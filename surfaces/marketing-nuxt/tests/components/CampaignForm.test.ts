@@ -23,6 +23,9 @@ const TEMPLATES = [
 const OFFERS = [
   { value: "relampago-17h30", label: "Relâmpago das 17h30" },
 ];
+const PRICE_TIERS = [{ value: "atacado", label: "Atacado" }];
+const TAGS = [{ value: "sem-gluten", label: "Sem glúten" }];
+const RFM_SEGMENTS = [{ value: "loyal_customer", label: "Cliente fiel" }];
 
 function form(rule: Campaign | null = null) {
   return mount(CampaignForm, {
@@ -32,6 +35,10 @@ function form(rule: Campaign | null = null) {
       platformOptions: PLATFORMS,
       templates: TEMPLATES as never,
       offers: OFFERS,
+      priceTiers: PRICE_TIERS,
+      tags: TAGS,
+      rfmSegments: RFM_SEGMENTS,
+      platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
     },
     global: { stubs: { Icon: true } },
   });
@@ -82,7 +89,7 @@ describe("CampaignForm — a oferta anunciada", () => {
     const wrapper = mount(CampaignForm, {
       props: {
         rule: null, triggers: TRIGGERS, platformOptions: PLATFORMS,
-        templates: TEMPLATES as never, offers: [],
+        templates: TEMPLATES as never, offers: [], platformLabels: {},
       },
       global: { stubs: { Icon: true } },
     });
@@ -161,5 +168,129 @@ describe("CampaignForm — quando disparar", () => {
     expect((wrapper.find("input[type=\"time\"]").element as HTMLInputElement).value).toBe("06:00");
     const marked = wrapper.findAll("button[aria-pressed=\"true\"]").map((b) => b.text());
     expect(marked).toContain("seg");
+  });
+
+  it("preserva o agendamento inteiro quando ninguém o altera", async () => {
+    const schedule = {
+      type: "recurring" as const,
+      windows: [["06:00", "07:00"], ["16:00", "18:00"]],
+      weekdays: [0, 2, 4],
+      starts_on: "2026-09-10",
+      ends_on: "2026-12-31",
+      timezone_policy: "recipient",
+    };
+    const wrapper = form(makeRule({ schedule }));
+
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.schedule).toEqual(schedule);
+    expect(wrapper.text()).toContain("Horários adicionais preservados: 16:00–18:00");
+  });
+
+  it("edita a primeira hora sem apagar período, janelas extras ou extensão", async () => {
+    const wrapper = form(makeRule({
+      schedule: {
+        type: "recurring",
+        windows: [["06:00", "07:00"], ["16:00", "18:00"]],
+        weekdays: [1, 3],
+        starts_on: "2026-09-10",
+        ends_on: "2026-12-31",
+        timezone_policy: "recipient",
+      },
+    }));
+
+    await wrapper.find("#rule-fire-at").setValue("08:15");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.schedule).toEqual({
+      type: "recurring",
+      windows: [["08:15", "09:15"], ["16:00", "18:00"]],
+      weekdays: [1, 3],
+      starts_on: "2026-09-10",
+      ends_on: "2026-12-31",
+      timezone_policy: "recipient",
+    });
+  });
+
+  it("troca gatilho agendado por evento sem deixar um schedule incompatível", async () => {
+    const wrapper = form(makeRule({
+      schedule: {
+        type: "once",
+        at: "2026-10-10T10:00",
+        provider_hint: "keep-server-extension",
+      },
+    }));
+
+    await wrapper.find("#rule-trigger").setValue("production_finished");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.schedule).toEqual({
+      type: "immediate",
+      provider_hint: "keep-server-extension",
+    });
+  });
+});
+
+describe("CampaignForm — round-trip lossless da audiência", () => {
+  it("salva sem alteração preservando todos os seletores públicos e futuros", async () => {
+    const audienceRules = {
+      favorites: true,
+      alerts: true,
+      bought_within_days: 45,
+      vip_first_minutes: 15,
+      preferred_hour_window_hours: 2,
+      match: "all" as const,
+      price_tiers: ["atacado"],
+      tags: ["sem-gluten"],
+      rfm_segments: ["loyal_customer"],
+      churn_risk_min: 0.8,
+      birthday_today: true,
+      bought_skus: ["PAO-01"],
+      bought_collections: ["cafe-da-manha"],
+      future_selector: { mode: "safe" },
+    };
+    const wrapper = form(makeRule({
+      trigger: "production_finished",
+      trigger_filter: { collections: ["paes"], future_filter: true },
+      audience_rules: audienceRules,
+    }));
+
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.audience_rules).toEqual(audienceRules);
+    expect("trigger_filter" in payload).toBe(false);
+    expect(wrapper.text()).toContain("bought_skus");
+    expect(wrapper.text()).toContain("future_selector");
+    expect(wrapper.text()).toContain("future_filter");
+  });
+
+  it("altera critérios avançados sem apagar os seletores protegidos", async () => {
+    const wrapper = form(makeRule({
+      trigger: "production_finished",
+      audience_rules: {
+        bought_skus: ["PAO-01"],
+        bought_collections: ["cafe-da-manha"],
+      },
+    }));
+
+    await wrapper.findAll("button").find((button) => button.text() === "Sem glúten")!.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Atacado")!.trigger("click");
+    await wrapper.findAll("button").find((button) => button.text() === "Cliente fiel")!.trigger("click");
+    await wrapper.find("#rule-audience-match").setValue("all");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.audience_rules).toEqual({
+      bought_skus: ["PAO-01"],
+      bought_collections: ["cafe-da-manha"],
+      tags: ["sem-gluten"],
+      price_tiers: ["atacado"],
+      rfm_segments: ["loyal_customer"],
+      match: "all",
+    });
   });
 });

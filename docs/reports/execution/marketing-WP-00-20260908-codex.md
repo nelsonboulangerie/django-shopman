@@ -1250,3 +1250,54 @@ Provas locais:
   passaram; permaneceu somente o warning conhecido de SQLite local;
 - nenhuma migration, resolução DNS, fetch de URL, rede de provider, destinatário,
   deploy, produção ou escrita externa foi usada.
+
+## MKT-032 — CampaignForm lossless e schema completo
+
+Implementado sobre o cliente/contrato do MKT-023, com privacidade por construção e sem
+transformar compatibilidade futura em exposição de dados:
+
+- o vocabulário de audiência tem uma allowlist canônica única no serviço; a Projection
+  entrega todos os seletores públicos suportados e nunca entrega `customer_refs` nem
+  campos server-side/legados ao browser;
+- a API de regras recusa campos top-level, seletores desconhecidos e o seletor privado;
+  durante PATCH ela substitui o schema público inteiro, mas preserva no banco os campos
+  privados/legados que o navegador não pode conhecer;
+- o formulário agora representa `match`, tags, faixas de preço, RFM, churn, aniversário,
+  janela de horário preferido e início/fim do período, além dos critérios já existentes;
+- seletores de compras por SKU/coleção e extensões recebidas são preservados byte a byte
+  quando não editáveis naquela tela; filtros do evento, horários adicionais e chaves
+  futuras também não são reconstruídos nem descartados;
+- salvar sem tocar em audiência/agendamento devolve o objeto original, preservando
+  presença de `false`, ordem, extensões e janelas; uma alteração explícita modifica apenas
+  as chaves controladas;
+- trocar uma campanha agendada para gatilho de evento produz `type=immediate`, evitando o
+  par impossível, mas preserva extensões server-side sem significado conflitante;
+- a tela informa os filtros e horários que serão preservados, eliminando a necessidade de
+  conferir JSON/Admin antes de salvar.
+
+Budget de omotenashi comprovado na edição de regra:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Salvar só uma mudança de nome | podia alterar silenciosamente até 10 seletores | 0 diffs fora do campo alterado |
+| Recriar tags/tier/RFM/match depois de abrir | até 4 grupos de redigitação/memória | 0; controles vêm preenchidos |
+| Conferir período e horários adicionais | Admin/JSON externo | 0 navegações; período editável e horários listados |
+| Preservar filtro de SKU/coleção não editável | impossível saber | garantia explícita no próprio formulário |
+| Criar regra comum | nome + até 5 escolhas + salvar | ≤7 ações significativas, 0 mudanças de tela |
+| Detectar campo novo/privado vindo do browser | write silencioso | erro dirigido, 0 writes |
+| Evitar vazamento de membros da audiência | inspeção manual do payload | `customer_refs` impossível na Projection |
+
+Provas locais:
+
+- 17 testes do `CampaignForm` cobrem round-trip de todos os seletores, extensão futura,
+  filtros do evento, schedule completo, janela adicional, edição localizada e troca de
+  gatilho sem pairing inválido;
+- 87 testes da API Marketing passaram, incluindo Projection sem membership, merge
+  privado/legado e rejeição sem write de campos desconhecidos/privados;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 593 testes passaram
+  em 72,60 s;
+- Marketing Nuxt: 9 arquivos/112 testes, ESLint, Nuxt typecheck e build passaram;
+- `export_marketing_client --check`, Ruff, Django check, migration drift e
+  `git diff --check` passaram; permaneceu somente o warning conhecido de SQLite local;
+- nenhuma migration, rede de provider, destinatário, deploy, produção ou escrita externa
+  foi usada.

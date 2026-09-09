@@ -12,6 +12,9 @@ const props = defineProps<{
   platformOptions: Choice[];
   templates: AnnouncementTemplate[];
   offers: Choice[];
+  priceTiers?: Choice[];
+  tags?: Choice[];
+  rfmSegments?: Choice[];
   /** Rótulos de plataforma e template do WhatsApp: a prévia precisa dos dois para não
    *  prometer o que o envio não faz. */
   platformLabels: Record<string, string>;
@@ -33,6 +36,8 @@ const expiresAfterMinutes = ref(0);
 // A oferta que a campanha anuncia. Vazio = a campanha só conta uma novidade.
 const promotionRef = ref("");
 const isActive = ref(true);
+const baseAudienceRules = ref<Record<string, unknown>>({});
+const baseSchedule = ref<Record<string, unknown>>({});
 
 // Audiência: toggles simples em cima do JSON que o serviço lê.
 // Agendamento que DISPARA — só existe com o gatilho "agendado", porque nos outros a
@@ -42,7 +47,10 @@ const scheduleKind = ref<"once" | "recurring">("recurring");
 const onceAt = ref("");
 const fireAt = ref("07:00");
 const weekdays = ref<number[]>([]);
+const startsOn = ref("");
 const endsOn = ref("");
+const extraWindows = ref<string[][]>([]);
+const scheduleTouched = ref(false);
 
 const WEEKDAY_LABELS = ["seg", "ter", "qua", "qui", "sex", "sáb", "dom"]; // 0 = segunda
 
@@ -53,6 +61,29 @@ const alerts = ref(false);
 const boughtOn = ref(false);
 const boughtDays = ref(90);
 const vipFirstMinutes = ref(0);
+const preferredHourWindowHours = ref(0);
+const audienceMatch = ref<"any" | "all">("any");
+const selectedPriceTiers = ref<string[]>([]);
+const selectedTags = ref<string[]>([]);
+const selectedRfmSegments = ref<string[]>([]);
+const churnRiskOn = ref(false);
+const churnRiskMin = ref(0.7);
+const birthdayToday = ref(false);
+
+const MANAGED_AUDIENCE_KEYS = new Set([
+  "alerts", "birthday_today", "bought_within_days", "churn_risk_min", "favorites",
+  "match", "preferred_hour_window_hours", "price_tiers", "rfm_segments", "tags",
+  "vip_first_minutes",
+]);
+
+function cloneRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
 
 // Estado novo a cada campanha aberta — senão o formulário herdaria a anterior.
 watch(
@@ -60,6 +91,7 @@ watch(
   () => {
     const rule = props.rule;
     const audience: AudienceRules = rule?.audience_rules ?? {};
+    baseAudienceRules.value = cloneRecord(audience);
 
     name.value = rule?.name ?? "";
     trigger.value = rule?.trigger ?? props.triggers[0]?.value ?? "";
@@ -71,11 +103,16 @@ watch(
     isActive.value = rule?.is_active ?? true;
 
     const schedule = (rule?.schedule ?? {}) as Record<string, unknown>;
+    baseSchedule.value = cloneRecord(schedule);
     scheduleKind.value = schedule.type === "once" ? "once" : "recurring";
     onceAt.value = typeof schedule.at === "string" ? schedule.at.slice(0, 16) : "";
     const firstWindow = Array.isArray(schedule.windows) ? schedule.windows[0] : null;
     fireAt.value = Array.isArray(firstWindow) ? String(firstWindow[0]) : "07:00";
+    extraWindows.value = Array.isArray(schedule.windows)
+      ? schedule.windows.slice(1).filter(Array.isArray).map((window) => window.map(String))
+      : [];
     weekdays.value = Array.isArray(schedule.weekdays) ? schedule.weekdays.map(Number) : [];
+    startsOn.value = typeof schedule.starts_on === "string" ? schedule.starts_on : "";
     endsOn.value = typeof schedule.ends_on === "string" ? schedule.ends_on : "";
 
     favorites.value = Boolean(audience.favorites);
@@ -83,6 +120,15 @@ watch(
     boughtOn.value = Boolean(audience.bought_within_days);
     boughtDays.value = audience.bought_within_days || 90;
     vipFirstMinutes.value = audience.vip_first_minutes || 0;
+    preferredHourWindowHours.value = audience.preferred_hour_window_hours || 0;
+    audienceMatch.value = audience.match === "all" ? "all" : "any";
+    selectedPriceTiers.value = stringList(audience.price_tiers);
+    selectedTags.value = stringList(audience.tags);
+    selectedRfmSegments.value = stringList(audience.rfm_segments);
+    churnRiskOn.value = Number(audience.churn_risk_min || 0) > 0;
+    churnRiskMin.value = Number(audience.churn_risk_min || 0.7);
+    birthdayToday.value = Boolean(audience.birthday_today);
+    scheduleTouched.value = false;
   },
   { immediate: true },
 );
@@ -102,13 +148,28 @@ const scheduleReady = computed(() =>
 );
 
 function toggleWeekday(day: number) {
+  scheduleTouched.value = true;
   const index = weekdays.value.indexOf(day);
   if (index >= 0) weekdays.value.splice(index, 1);
   else weekdays.value.push(day);
 }
 
 function buildSchedule(): Record<string, unknown> {
-  if (scheduleKind.value === "once") return { type: "once", at: onceAt.value };
+  if (
+    props.rule
+    && Object.keys(baseSchedule.value).length > 0
+    && !scheduleTouched.value
+    && props.rule.trigger === trigger.value
+  ) {
+    return cloneRecord(baseSchedule.value);
+  }
+  const preserved = cloneRecord(baseSchedule.value);
+  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on"]) {
+    Reflect.deleteProperty(preserved, key);
+  }
+  if (scheduleKind.value === "once") {
+    return { ...preserved, type: "once", at: onceAt.value };
+  }
   // O fim da janela é inerte para quem dispara (só o início vira ocasião), mas o
   // formato exige o par — daí uma hora depois, sem inventar significado nenhum.
   // `?? 0` porque um `<input type="time">` pode chegar vazio: sem isso o fim virava
@@ -118,12 +179,100 @@ function buildSchedule(): Record<string, unknown> {
   const minute = Number(rawMinute) || 0;
   const end = `${String((hour + 1) % 24).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
   return {
+    ...preserved,
     type: "recurring",
-    windows: [[fireAt.value, end]],
+    windows: [[fireAt.value, end], ...extraWindows.value],
     // Vazio = a semana toda, igual ao servidor. Não mandamos os 7 dias à mão.
     ...(weekdays.value.length > 0 ? { weekdays: [...weekdays.value].sort() } : {}),
+    ...(startsOn.value ? { starts_on: startsOn.value } : {}),
     ...(endsOn.value ? { ends_on: endsOn.value } : {}),
   };
+}
+
+function sameStringSet(left: string[], value: unknown): boolean {
+  const right = stringList(value);
+  return [...new Set(left)].sort().join("\u0000") === [...new Set(right)].sort().join("\u0000");
+}
+
+function updateBoolean(
+  result: Record<string, unknown>,
+  key: string,
+  value: boolean,
+) {
+  if (value === Boolean(baseAudienceRules.value[key])) return;
+  if (value) result[key] = true;
+  else Reflect.deleteProperty(result, key);
+}
+
+function updateNumber(
+  result: Record<string, unknown>,
+  key: string,
+  value: number,
+  include: boolean,
+) {
+  const before = Number(baseAudienceRules.value[key] || 0);
+  const after = include ? Number(value) : 0;
+  if (before === after) return;
+  if (include) result[key] = after;
+  else Reflect.deleteProperty(result, key);
+}
+
+function updateList(result: Record<string, unknown>, key: string, value: string[]) {
+  if (sameStringSet(value, baseAudienceRules.value[key])) return;
+  if (value.length) result[key] = [...value];
+  else Reflect.deleteProperty(result, key);
+}
+
+function buildAudienceRules(): Record<string, unknown> {
+  const result = cloneRecord(baseAudienceRules.value);
+  updateBoolean(result, "favorites", favorites.value);
+  updateBoolean(result, "alerts", alerts.value);
+  updateBoolean(result, "birthday_today", birthdayToday.value);
+  updateNumber(result, "bought_within_days", boughtDays.value, boughtOn.value);
+  updateNumber(result, "vip_first_minutes", vipFirstMinutes.value, vipFirstMinutes.value > 0);
+  updateNumber(
+    result,
+    "preferred_hour_window_hours",
+    preferredHourWindowHours.value,
+    preferredHourWindowHours.value > 0,
+  );
+  updateNumber(result, "churn_risk_min", churnRiskMin.value, churnRiskOn.value);
+  updateList(result, "price_tiers", selectedPriceTiers.value);
+  updateList(result, "tags", selectedTags.value);
+  updateList(result, "rfm_segments", selectedRfmSegments.value);
+  const originalMatch = baseAudienceRules.value.match === "all" ? "all" : "any";
+  if (audienceMatch.value !== originalMatch) {
+    if (audienceMatch.value === "all") result.match = "all";
+    else delete result.match;
+  }
+  return result;
+}
+
+function toggleChoice(target: string[], value: string) {
+  const index = target.indexOf(value);
+  if (index >= 0) target.splice(index, 1);
+  else target.push(value);
+}
+
+const preservedAudienceKeys = computed(() =>
+  Object.keys(baseAudienceRules.value).filter((key) => !MANAGED_AUDIENCE_KEYS.has(key)),
+);
+
+const preservedTriggerFilterKeys = computed(() =>
+  Object.keys(props.rule?.trigger_filter ?? {}),
+);
+
+function chooseScheduleKind(value: "once" | "recurring") {
+  scheduleTouched.value = true;
+  scheduleKind.value = value;
+}
+
+function eventScheduleAfterTriggerChange(): Record<string, unknown> {
+  const preserved = cloneRecord(baseSchedule.value);
+  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on"]) {
+    Reflect.deleteProperty(preserved, key);
+  }
+  return { ...preserved, type: "immediate" };
 }
 
 /** O texto do modelo escolhido — é ele que a prévia resolve. */
@@ -149,7 +298,7 @@ function togglePlatform(value: string) {
 
 function submit() {
   if (!canSubmit.value) return;
-  emit("submit", {
+  const payload: Record<string, unknown> = {
     name: name.value.trim(),
     trigger: trigger.value,
     template_id: templateId.value,
@@ -161,14 +310,12 @@ function submit() {
     // Só mandamos `schedule` quando ele é a causa. Nos gatilhos de evento a chave fica
     // de fora para não apagar um `preferred_hours` configurado no Admin.
     ...(schedules.value ? { schedule: buildSchedule() } : {}),
-    audience_rules: {
-      favorites: favorites.value,
-      alerts: alerts.value,
-      // Chave ausente quando desligado: o serviço lê "0 dias" como "não usa".
-      ...(boughtOn.value ? { bought_within_days: boughtDays.value } : {}),
-      ...(vipFirstMinutes.value > 0 ? { vip_first_minutes: vipFirstMinutes.value } : {}),
-    },
-  });
+    audience_rules: buildAudienceRules(),
+  };
+  if (props.rule?.trigger === "schedule" && !schedules.value) {
+    payload.schedule = eventScheduleAfterTriggerChange();
+  }
+  emit("submit", payload);
 }
 </script>
 
@@ -271,7 +418,7 @@ function submit() {
               ? 'border-primary bg-primary/10 text-primary'
               : 'border-border hover:bg-muted'
           "
-          @click="scheduleKind = option.value as 'once' | 'recurring'"
+          @click="chooseScheduleKind(option.value as 'once' | 'recurring')"
         >
           {{ option.label }}
         </button>
@@ -284,6 +431,7 @@ function submit() {
           v-model="onceAt"
           type="datetime-local"
           class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-64"
+          @input="scheduleTouched = true"
         >
         <p class="mt-1 text-xs text-muted-foreground">
           Dispara uma única vez. Depois disso a campanha não volta sozinha.
@@ -298,6 +446,7 @@ function submit() {
             v-model="fireAt"
             type="time"
             class="h-9 w-28 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+            @input="scheduleTouched = true"
           >
         </div>
 
@@ -325,19 +474,44 @@ function submit() {
           </p>
         </div>
 
-        <div>
-          <label for="rule-ends-on" class="mb-1 block text-sm font-medium">
-            Parar depois de (opcional)
-          </label>
-          <input
-            id="rule-ends-on"
-            v-model="endsOn"
-            type="date"
-            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-48"
-          >
+        <div class="grid gap-3 sm:grid-cols-2">
+          <div>
+            <label for="rule-starts-on" class="mb-1 block text-sm font-medium">
+              Começar em (opcional)
+            </label>
+            <input
+              id="rule-starts-on"
+              v-model="startsOn"
+              type="date"
+              class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+              @input="scheduleTouched = true"
+            >
+          </div>
+          <div>
+            <label for="rule-ends-on" class="mb-1 block text-sm font-medium">
+              Parar depois de (opcional)
+            </label>
+            <input
+              id="rule-ends-on"
+              v-model="endsOn"
+              type="date"
+              class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+              @input="scheduleTouched = true"
+            >
+          </div>
         </div>
+        <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
+          Horários adicionais preservados: {{ extraWindows.map((window) => window.join("–")).join(", ") }}.
+        </p>
       </div>
     </fieldset>
+
+    <p
+      v-if="!schedules && preservedTriggerFilterKeys.length"
+      class="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+    >
+      Os filtros do evento ({{ preservedTriggerFilterKeys.join(", ") }}) serão preservados.
+    </p>
 
     <fieldset>
       <legend class="mb-1 text-sm font-medium">Publicar em</legend>
@@ -402,6 +576,126 @@ function submit() {
           <span>minutos antes</span>
           <span class="text-xs text-muted-foreground">(0 = todo mundo junto)</span>
         </div>
+
+        <div class="border-t border-border pt-3">
+          <label for="rule-audience-match" class="mb-1 block text-sm font-medium">
+            Quando houver vários critérios
+          </label>
+          <select
+            id="rule-audience-match"
+            v-model="audienceMatch"
+            class="h-8 rounded-md border border-border bg-background px-2 text-sm"
+          >
+            <option value="any">Atender a qualquer um</option>
+            <option value="all">Atender a todos</option>
+          </select>
+        </div>
+
+        <fieldset v-if="tags?.length">
+          <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+            Etiquetas
+          </legend>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="tag in tags"
+              :key="tag.value"
+              type="button"
+              :aria-pressed="selectedTags.includes(tag.value)"
+              class="rounded-full border px-2.5 py-1 text-xs transition"
+              :class="selectedTags.includes(tag.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'"
+              @click="toggleChoice(selectedTags, tag.value)"
+            >
+              {{ tag.label }}
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset v-if="priceTiers?.length">
+          <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+            Faixa de preço
+          </legend>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="tier in priceTiers"
+              :key="tier.value"
+              type="button"
+              :aria-pressed="selectedPriceTiers.includes(tier.value)"
+              class="rounded-full border px-2.5 py-1 text-xs transition"
+              :class="selectedPriceTiers.includes(tier.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'"
+              @click="toggleChoice(selectedPriceTiers, tier.value)"
+            >
+              {{ tier.label }}
+            </button>
+          </div>
+        </fieldset>
+
+        <fieldset v-if="rfmSegments?.length">
+          <legend class="mb-1.5 text-xs font-semibold uppercase text-muted-foreground">
+            Comportamento de compra
+          </legend>
+          <div class="flex flex-wrap gap-1.5">
+            <button
+              v-for="segment in rfmSegments"
+              :key="segment.value"
+              type="button"
+              :aria-pressed="selectedRfmSegments.includes(segment.value)"
+              class="rounded-full border px-2.5 py-1 text-xs transition"
+              :class="selectedRfmSegments.includes(segment.value)
+                ? 'border-primary bg-primary text-primary-foreground'
+                : 'border-border hover:bg-muted'"
+              @click="toggleChoice(selectedRfmSegments, segment.value)"
+            >
+              {{ segment.label }}
+            </button>
+          </div>
+        </fieldset>
+
+        <label class="flex items-center gap-2 text-sm">
+          <input v-model="birthdayToday" type="checkbox" class="size-4 rounded border-border">
+          Aniversariantes de hoje
+        </label>
+
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <label class="flex items-center gap-2">
+            <input v-model="churnRiskOn" type="checkbox" class="size-4 rounded border-border">
+            Risco de não voltar a partir de
+          </label>
+          <input
+            v-model.number="churnRiskMin"
+            type="number"
+            min="0"
+            max="1"
+            step="0.05"
+            :disabled="!churnRiskOn"
+            aria-label="Risco mínimo de churn"
+            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm disabled:opacity-50"
+          >
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-sm">
+          <label for="rule-preferred-window">Respeitar horário preferido em uma janela de</label>
+          <input
+            id="rule-preferred-window"
+            v-model.number="preferredHourWindowHours"
+            type="number"
+            min="0"
+            max="12"
+            class="h-8 w-20 rounded-md border border-border bg-background px-2 text-sm"
+          >
+          <span>horas</span>
+          <span class="text-xs text-muted-foreground">(0 = não segmentar por horário)</span>
+        </div>
+
+        <p
+          v-if="preservedAudienceKeys.length"
+          class="rounded-md bg-muted/50 px-2.5 py-2 text-xs text-muted-foreground"
+        >
+          Filtros protegidos ({{ preservedAudienceKeys.join(", ") }}) serão preservados sem alteração.
+        </p>
       </div>
       <p class="mt-2 text-xs text-muted-foreground">
         Só quem aceitou receber novidades entra na conta. Assinatura de alerta por produto

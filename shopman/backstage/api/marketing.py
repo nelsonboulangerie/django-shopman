@@ -1369,6 +1369,11 @@ class CampaignDetailView(_CampaignBase):
         fields, error = _rule_fields(request.data, partial=True)
         if error:
             return Response(error, status=400)
+        if "audience_rules" in fields:
+            fields["audience_rules"] = _merge_public_audience_rules(
+                rule.audience_rules,
+                fields["audience_rules"],
+            )
         for name, value in fields.items():
             setattr(rule, name, value)
         error = _pairing_error(rule)
@@ -1490,6 +1495,30 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     """Campos válidos de uma regra, ou o erro no dialeto canônico."""
     fields: dict = {}
 
+    if not isinstance(data, dict):
+        return {}, {"detail": "Payload da regra inválido.", "field": "payload"}
+    allowed = {
+        "audience_rules",
+        "expires_after_minutes",
+        "is_active",
+        "name",
+        "notify_users",
+        "platforms",
+        "promotion_ref",
+        "requires_approval",
+        "schedule",
+        "template_id",
+        "trigger",
+        "trigger_filter",
+    }
+    unexpected = sorted(set(data) - allowed)
+    if unexpected:
+        return {}, {
+            "detail": "A regra contém campos desconhecidos.",
+            "field": "payload",
+            "fields": unexpected,
+        }
+
     if not partial or "name" in data:
         name = str(data.get("name") or "").strip()
         if not name:
@@ -1524,6 +1553,16 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
             value = data.get(name)
             if not isinstance(value, dict):
                 return {}, {"detail": "Configuração inválida.", "field": name}
+            if name == "audience_rules":
+                from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+
+                unknown = sorted(set(value) - PUBLIC_RULE_KEYS)
+                if unknown:
+                    return {}, {
+                        "detail": "A audiência contém campos desconhecidos ou privados.",
+                        "field": "audience_rules",
+                        "fields": unknown,
+                    }
             fields[name] = value
 
     if not partial or "promotion_ref" in data:
@@ -1554,6 +1593,18 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["expires_after_minutes"] = minutes
 
     return fields, None
+
+
+def _merge_public_audience_rules(current, incoming: dict) -> dict:
+    """Replace the public schema while preserving private/legacy server state."""
+
+    from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+
+    existing = current if isinstance(current, dict) else {}
+    private_or_legacy = {
+        key: value for key, value in existing.items() if key not in PUBLIC_RULE_KEYS
+    }
+    return {**private_or_legacy, **incoming}
 
 
 def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:

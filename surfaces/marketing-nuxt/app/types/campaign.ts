@@ -97,14 +97,14 @@ export interface Campaign {
   name: string;
   trigger: string;
   trigger_label: string;
-  trigger_filter: Record<string, unknown>;
+  trigger_filter: CampaignTriggerFilter;
   template_id: number;
   template_name: string;
   platforms: string[];
   audience_rules: AudienceRules;
   /** `ref` da oferta anunciada. Vazio = campanha sem desconto atrás. */
   promotion_ref: string;
-  schedule: Record<string, unknown>;
+  schedule: CampaignSchedule;
   /** Frase pronta do agendamento — decidida no servidor, nunca reinterpretada aqui. */
   schedule_label: string;
   /** Cria a ocasião sozinho (`once`/`recurring`), em vez de só adiar um evento. */
@@ -125,6 +125,25 @@ export interface Campaign {
 /** Como as regras se combinam: `any` soma (união), `all` cruza (interseção). */
 export type AudienceMatch = "any" | "all";
 
+export interface CampaignTriggerFilter {
+  collections?: string[];
+  skus?: string[];
+  quality_min?: string;
+  quality_min_share?: number;
+  max_remaining?: number;
+  [key: string]: unknown;
+}
+
+export interface CampaignSchedule {
+  type?: "immediate" | "preferred_hours" | "once" | "recurring";
+  at?: string;
+  windows?: string[][];
+  weekdays?: number[];
+  starts_on?: string;
+  ends_on?: string;
+  [key: string]: unknown;
+}
+
 export interface AudienceRules {
   favorites?: boolean;
   alerts?: boolean;
@@ -138,6 +157,9 @@ export interface AudienceRules {
   rfm_segments?: string[];
   churn_risk_min?: number;
   birthday_today?: boolean;
+  bought_skus?: string[];
+  bought_collections?: string[];
+  preferred_hour_window_hours?: number;
 }
 
 export interface AnnouncementTemplate {

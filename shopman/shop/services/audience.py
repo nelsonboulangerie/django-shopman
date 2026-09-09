@@ -64,6 +64,26 @@ VIP_LOYALTY_TIERS = ("gold", "platinum")
 MATCH_ANY = "any"
 MATCH_ALL = "all"
 MATCH_MODES = (MATCH_ANY, MATCH_ALL)
+RULE_KEYS = frozenset({
+    "alerts",
+    "birthday_today",
+    "bought_collections",
+    "bought_skus",
+    "bought_within_days",
+    "churn_risk_min",
+    "customer_refs",
+    "favorites",
+    "match",
+    "preferred_hour_window_hours",
+    "price_tiers",
+    "rfm_segments",
+    "tags",
+    "vip_first_minutes",
+})
+# Customer refs identify cohort members and never belong in a browser Projection.
+# Existing server-side rows retain them during a patch, but the CRUD API cannot
+# create or replace that private selector.
+PUBLIC_RULE_KEYS = RULE_KEYS - {"customer_refs"}
 AUDIENCE_POLICY_VERSION = "marketing-audience-v1"
 AUDIENCE_PREVIEW_TTL = timedelta(minutes=15)
 

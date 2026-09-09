@@ -602,8 +602,10 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
 def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignProjection:
     """Uma campanha. ``performance`` pronto evita N+1 quando a lista inteira é montada."""
     from shopman.shop.services import campaign_schedule as sched
+    from shopman.shop.services.audience import PUBLIC_RULE_KEYS
 
     fires = sched.fires_on_its_own(rule.schedule)
+    audience_rules = rule.audience_rules if isinstance(rule.audience_rules, dict) else {}
     return CampaignProjection(
         pk=rule.pk,
         name=rule.name,
@@ -613,7 +615,11 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
         template_id=rule.template_id,
         template_name=rule.template.name if rule.template_id else "",
         platforms=tuple(rule.platforms or ()),
-        audience_rules=dict(rule.audience_rules or {}),
+        audience_rules={
+            key: audience_rules[key]
+            for key in sorted(PUBLIC_RULE_KEYS)
+            if key in audience_rules
+        },
         promotion_ref=rule.promotion_ref,
         schedule=dict(rule.schedule or {}),
         **(performance if performance is not None else _performance_by_rule([rule.pk])[rule.pk]),

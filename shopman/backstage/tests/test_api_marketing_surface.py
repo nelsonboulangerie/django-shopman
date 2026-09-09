@@ -784,6 +784,95 @@ class TestRules:
         rule.refresh_from_db()
         assert rule.is_active is False
 
+    def test_rule_projection_exposes_the_complete_public_schema_but_no_members(
+        self, client, gestor, rule
+    ):
+        rule.audience_rules = {
+            "favorites": True,
+            "bought_skus": ["PAO-01"],
+            "bought_collections": ["cafe-da-manha"],
+            "preferred_hour_window_hours": 2,
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+        }
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        response = client.get(f"{RULES_URL}{rule.pk}/")
+
+        assert response.status_code == 200
+        audience = response.json()["rule"]["audience_rules"]
+        assert audience == {
+            "bought_collections": ["cafe-da-manha"],
+            "bought_skus": ["PAO-01"],
+            "favorites": True,
+            "preferred_hour_window_hours": 2,
+        }
+        assert "customer:secret" not in json.dumps(response.json())
+
+    def test_patch_replaces_public_schema_without_erasing_private_or_legacy_state(
+        self, client, gestor, rule
+    ):
+        rule.audience_rules = {
+            "favorites": True,
+            "price_tiers": ["varejo"],
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+        }
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"audience_rules": {"tags": ["sem-gluten"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        rule.refresh_from_db()
+        assert rule.audience_rules == {
+            "customer_refs": ["customer:secret"],
+            "legacy_private_selector": {"ref": "secret"},
+            "tags": ["sem-gluten"],
+        }
+        assert response.json()["rule"]["audience_rules"] == {"tags": ["sem-gluten"]}
+        assert "customer:secret" not in json.dumps(response.json())
+
+    def test_unknown_or_private_audience_field_is_rejected_without_hidden_write(
+        self, client, gestor, rule
+    ):
+        original = dict(rule.audience_rules)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"audience_rules": {"customer_refs": ["customer:injected"]}},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "audience_rules"
+        assert response.json()["fields"] == ["customer_refs"]
+        rule.refresh_from_db()
+        assert rule.audience_rules == original
+
+    def test_unknown_top_level_field_is_rejected_without_hidden_write(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"{RULES_URL}{rule.pk}/",
+            data={"name": "Nome alterado", "silent_flag": True},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert response.json()["field"] == "payload"
+        assert response.json()["fields"] == ["silent_flag"]
+        rule.refresh_from_db()
+        assert rule.name == "Fornada de pães"
+
 
 # ── Modelos de announcement ──────────────────────────────────────────────────
 
