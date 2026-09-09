@@ -473,7 +473,7 @@ Implementado:
 - `fingerprint_key_version` é persistida para rotação; replay do mesmo outbox conserva targets já existentes em vez de recalcular histórico;
 - target referencia somente `AudienceSnapshotMember` protegido e permite `SET_NULL` na janela de erase; não copia telefone, e-mail, nome, body ou conteúdo;
 - retenções separam vínculo de identidade (90 dias após a base operacional) do registro técnico sem PII (5 anos); provider ref possui prazo próprio para MKT-014;
-- `DeliveryAttempt` possui ordinal e idempotency hash únicos por target, lifecycle started/completed e somente outcome/error/receipt sanitizados;
+- `DeliveryAttempt` possui ordinal e idempotency hash únicos por target e somente outcome/error/receipt sanitizados; o lifecycle foi refinado no MKT-014;
 - completion inválida é impedida por check constraint; target/version/key version têm checks positivos;
 - materialização exige outbox já despachada, grafo versionado coerente e seleção explícita de membros WhatsApp;
 - membro externo ao snapshot, recipient em duas waves e lote acima de 5.000 falham antes de qualquer target novo;
@@ -495,3 +495,40 @@ Provas locais:
 - ledger + audience + command/outbox/API/campaign/handlers/capabilities/notifications/maintenance: 414 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0030_marketing_delivery_ledger`; nenhum adapter, provider, rede, produção ou escrita externa foi usado.
+
+## MKT-014 — taxonomia de outcome e `unknown` sem retry cego
+
+Implementado:
+
+- a tentativa agora separa `prepared` de `calling`: antes do boundary é retomável; depois dele um segundo worker nunca chama o provider;
+- a transação curta de início elege explicitamente um único dono da chamada; se outro worker vencer entre prepare/begin, o perdedor recebe `in_progress` sem efeito;
+- o contrato do adapter aceita somente `not_attempted`, `accepted_unconfirmed`, `confirmed`, `failed_retryable`, `failed_final` ou `unknown`, com `retryable=true` restrito aos dois estados comprovadamente repetíveis;
+- exceção após o boundary sem prova de que nada foi escrito vira `unknown`; mensagens, bodies, telefones e segredos do vendor são descartados, nunca persistidos;
+- `effect_happened_response_lost` do fake adversarial termina em `unknown`, sem receipt inventado, e tanto replay da mesma tentativa quanto queue manual são incapazes de reenviar;
+- falha comprovada antes da escrita e `429` preservam respectivamente `not_attempted`/`failed_retryable`, inclusive `Retry-After`, permitindo somente uma nova attempt no mesmo target;
+- resposta aceita é registrada como `accepted_unconfirmed`, não como entrega confirmada; receipt passa por allowlist e retenção própria;
+- artifact, plataforma, content version e request hash são conferidos sob lock antes de criar attempt, evitando ledger órfão e chamada com payload incompatível;
+- o token raw não é persistido: digest estável e escopado preserva replay mesmo depois da rotação da chave usada nos fingerprints;
+- `calling` abandonada converge pelo reconciler para `unknown/call_completion_lost`, sem invocar provider;
+- a migration transforma conservadoramente qualquer `started` legado em `calling` — nunca assume que a chamada não ocorreu — e restaura `started` ao reverter;
+- nenhum adapter real foi conectado e o consumer continua desligado; esta fatia prova somente o boundary persistido com fake hermético.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Decidir se timeout pode ser reenviado | investigar logs/provider | 0 decisões inseguras; estado `unknown` bloqueia retry |
+| Recuperar crash antes da rede | recriar/reconferir intenção | mesma attempt é retomada, 0 chamadas anteriores |
+| Recuperar crash após possível efeito | risco de duplicar ao tentar novamente | reconciler classifica `unknown`, 0 reenvio |
+| Distinguir falha repetível de rejeição final | interpretar exception/texto do vendor | taxonomy + reason code + `Retry-After` no ledger |
+| Conferir se outro worker já iniciou | coordenação manual impossível | ownership atômico; perdedor faz 0 chamadas |
+| Conferir payload/version antes do envio | comparação posterior | bloqueio antes de criar attempt |
+| Sanear erro/receipt para suporte | revisão manual | allowlists e descarte estrutural de detail bruto |
+
+Provas locais:
+
+- 14 testes MKT-014 cobrem accept/replay, reject, `429`, falha antes da escrita + retry seletivo, efeito com resposta perdida, rotação de chave, exception/redaction, resposta malformada, crashes nos dois lados do boundary, corrida entre workers, mismatch de artifact, contrato da taxonomy e reverse/reapply da migration;
+- contracts + ledger + attempts: 34 testes passaram;
+- regressão Marketing/campaign/audience/API/E2E: 456 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0031_marketing_attempt_outcomes`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.

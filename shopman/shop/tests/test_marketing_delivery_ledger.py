@@ -248,7 +248,7 @@ def test_attempt_uniques_prevent_duplicate_ordinal_and_token():
     now = timezone.now()
     common = {
         "target": target,
-        "state": DeliveryAttempt.State.STARTED,
+        "state": DeliveryAttempt.State.PREPARED,
         "request_hash": "a" * 64,
         "started_at": now,
         "retention_until": now + timedelta(days=365 * 5),

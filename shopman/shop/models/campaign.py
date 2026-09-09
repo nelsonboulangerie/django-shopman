@@ -913,7 +913,8 @@ class DeliveryAttempt(models.Model):
     """One sanitized provider-call attempt; raw contact/body/error never lives here."""
 
     class State(models.TextChoices):
-        STARTED = "started", "iniciada"
+        PREPARED = "prepared", "preparada"
+        CALLING = "calling", "chamada iniciada"
         COMPLETED = "completed", "concluída"
 
     class Outcome(models.TextChoices):
@@ -934,7 +935,7 @@ class DeliveryAttempt(models.Model):
     state = models.CharField(
         max_length=16,
         choices=State.choices,
-        default=State.STARTED,
+        default=State.PREPARED,
     )
     outcome_kind = models.CharField(
         max_length=32,
@@ -971,7 +972,7 @@ class DeliveryAttempt(models.Model):
             models.CheckConstraint(
                 condition=(
                     models.Q(
-                        state="started",
+                        state__in=("prepared", "calling"),
                         outcome_kind="",
                         completed_at__isnull=True,
                     )

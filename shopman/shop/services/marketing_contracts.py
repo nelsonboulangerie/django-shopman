@@ -156,6 +156,38 @@ class ProviderOutcome:
             raise ValueError("unknown não pode inventar receipt externo")
 
 
+@dataclass(slots=True)
+class ProviderCallFailure(Exception):
+    """Sanitized adapter-boundary failure; never carries vendor response/body."""
+
+    kind: ProviderOutcomeKind
+    code: str
+    retry_after_seconds: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.kind not in {
+            ProviderOutcomeKind.NOT_ATTEMPTED,
+            ProviderOutcomeKind.FAILED_RETRYABLE,
+            ProviderOutcomeKind.FAILED_FINAL,
+            ProviderOutcomeKind.UNKNOWN,
+        }:
+            raise ValueError("ProviderCallFailure exige um outcome de falha")
+
+    def __str__(self) -> str:
+        return self.code
+
+    def as_outcome(self) -> ProviderOutcome:
+        return ProviderOutcome(
+            kind=self.kind,
+            code=self.code,
+            retryable=self.kind in {
+                ProviderOutcomeKind.NOT_ATTEMPTED,
+                ProviderOutcomeKind.FAILED_RETRYABLE,
+            },
+            retry_after_seconds=self.retry_after_seconds,
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class ResolvedDispatchArtifact:
     """Conteúdo imutável aprovado; propositalmente não contém audiência/PII."""
