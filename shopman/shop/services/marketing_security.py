@@ -259,7 +259,10 @@ def authorize_command(
     _require_capability(actor_row, safe_capability)
     for required_capability in safe_additional:
         _require_capability(actor_row, required_capability)
-    if state.frozen and context.action != ACTION_UNFREEZE:
+    # Lookup-only reconciliation is what lets Security prove that an unknown
+    # effect is safe before unfreezing.  It cannot send/retry and therefore
+    # remains available while all effect-creating commands stay blocked.
+    if state.frozen and context.action not in {ACTION_RECONCILE, ACTION_UNFREEZE}:
         raise MarketingAuthorizationError(
             code="marketing_frozen",
             detail="Marketing está congelado; nenhum novo efeito externo foi autorizado.",
@@ -375,7 +378,10 @@ def issue_confirmation(
         _require_capability(actor_row, required.capability)
         for required_capability in required.additional_capabilities:
             _require_capability(actor_row, required_capability)
-        if state.frozen and required.context.action != ACTION_UNFREEZE:
+        if state.frozen and required.context.action not in {
+            ACTION_RECONCILE,
+            ACTION_UNFREEZE,
+        }:
             raise MarketingAuthorizationError(
                 code="marketing_frozen",
                 detail="Marketing está congelado; nenhum novo efeito externo foi autorizado.",

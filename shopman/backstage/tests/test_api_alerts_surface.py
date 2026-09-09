@@ -65,7 +65,18 @@ def test_list_returns_alerts_and_counts(client, operator, alert):
     assert body["counts"] == {"active": 2, "critical": 1}
     assert len(body["alerts"]) == 2
     first = body["alerts"][0]
-    assert {"pk", "type", "type_label", "severity", "severity_label", "message", "created_at_display"} <= set(first)
+    assert {
+        "pk",
+        "type",
+        "type_label",
+        "severity",
+        "severity_label",
+        "message",
+        "created_at_display",
+        "actions",
+    } <= set(first)
+    assert first["actions"][0]["kind"] == "acknowledge_alert"
+    assert first["actions"][0]["enabled"] is True
 
 
 @pytest.mark.django_db

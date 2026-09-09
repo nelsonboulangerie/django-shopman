@@ -774,3 +774,43 @@ Provas locais:
 - board com 75 pendentes executou exatamente 6 queries, independentemente da cardinalidade;
 - Ruff, `git diff --check`, JSON parse, Django check e migration drift passaram; permaneceram apenas o warning conhecido de SQLite e logs defensivos de bootstrap sem schema no check local;
 - nenhuma migration, provider, destinatário, rede, deploy, produção ou escrita externa foi usada.
+
+## MKT-022 — Action resolver único e autoritativo
+
+Implementado de forma aditiva sobre a Projection v2:
+
+- `marketing_actions.py` passou a ser a única autoridade backend para Actions de anúncio, recuperação, regra, plataforma, notificação pessoal e alerta operacional; o resolver paralelo de recovery foi removido;
+- toda Action tem ref ligada ao recurso/versão, kind, chave de presentation, prioridade, estado habilitado, reason code, href same-origin, método, payload schema, idempotência, confirmação, contagem elegível, capabilities exigidas e indicação de efeito externo;
+- board e detail v2 recebem as mesmas Actions; os endpoints existentes de rules, platforms, notifications, operator alerts e delivery recovery passaram a expor o mesmo shape, preservando seus contratos v1 durante a migração;
+- autorização é lida de um `User` fresco a cada resolução, portanto capability removida depois do primeiro carregamento desabilita a Action sem depender de cache do objeto da sessão; o POST continua reautorizando dentro da transação;
+- permission, freeze, estado, audiência, expiry, readiness, elegibilidade de retry e reconciliação ativa são resolvidos no servidor; o browser não precisa converter status em autoridade;
+- confirmação de publish/schedule/retry/reconcile/cancel/reschedule é derivada diretamente da policy transacional de MKT-020, inclusive password/TOTP, typed/summary e dual control, sem uma segunda tabela de thresholds;
+- audiência zero, expirada, stale/degraded/unavailable, plataforma ausente e readiness diferente de `ready` falham fechadas com reason code explícito;
+- retry aparece somente para `failed_retryable`; unknown oferece apenas lookup de reconciliação quando existe attempt ambígua e fica `reconciliation_pending` quando já há trabalho ativo;
+- notificações ignoram `action_url`, `action` e `href` persistidos ao construir Actions; somente o owner recebe navegação canônica e mark-read, sem approve implícito no novo contrato;
+- rules e platform writes ainda sem command/CAS completo permanecem visíveis porém `command_not_available`, evitando prometer uma mutação que o backend bloqueia;
+- o emergency freeze bloqueia Actions que criam ou retomam efeitos, mas mantém reconciliação lookup-only disponível. Foi corrigido o deadlock em que o primeiro gate aceitava reconcile congelado e a emissão do challenge o recusava;
+- resolução bulk busca autoridade, freeze e fatos de recovery em número constante de queries; não há consulta por card, alerta ou notificação.
+
+Budget de omotenashi comprovado no resolver:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Traduzir status/readiness em botão possível | lógica duplicada por tela | 0; `enabled` + `reason` vêm do backend |
+| Descobrir permissão faltante após tentativa | 1 POST recusado | 0 tentativas; Action já mostra `missing_capability` |
+| Reabrir tela após revogação de papel | estado possivelmente cacheado | próxima Projection reavalia o usuário persistido |
+| Calcular confirmação/2FA/segundo ator | consulta externa ou tentativa | 0; metadados vêm da mesma policy do command |
+| Encontrar reparo de delivery parcial | navegar histórico/log | retry/reconcile contextuais no mesmo recurso |
+| Distinguir retry de lookup unknown | risco de resend | dois kinds explícitos; reconcile declara zero efeito externo |
+| Confiar em deep-link salvo na notificação | risco de URL/payload arbitrário | 0; resolver só emite rotas constantes same-origin |
+| Carregar 75 cards | risco de N+1 | no máximo 5 queries adicionais para todas as Actions |
+| Descongelar com unknown aberto | fluxo antes impossível | challenge TOTP de lookup continua disponível sem send |
+
+Provas locais:
+
+- 7 testes MKT-022 cobrem recovery/permission, readiness/audiência zero, revogação após load, freeze, challenge lookup-only, rules, platforms, alert, notification hostile input, endpoint v2 e orçamento de queries;
+- testes focados de Actions, Projection, Security, recovery, alert e notification: 67 passaram;
+- regressão ampliada Marketing/campaign/audience/notifications/alerts/E2E: 586 testes passaram em 74,05 s;
+- board com 75 pendentes gerou 375 Actions com no máximo 5 queries adicionais, independentemente da cardinalidade;
+- JSON Schema golden agora tipa Actions estritamente; Ruff, `git diff --check`, Django check e migration drift passaram, preservando somente o warning/log conhecido do SQLite sem schema;
+- nenhuma migration, chamada de provider, destinatário, rede, deploy, produção ou escrita externa foi usada.

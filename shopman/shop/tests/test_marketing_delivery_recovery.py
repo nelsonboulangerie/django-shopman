@@ -28,7 +28,6 @@ from shopman.shop.services.marketing_delivery_recovery import (
     claim_reconciliations,
     execute_reconciliation,
     request_reconciliation_command,
-    resolve_delivery_recovery_actions,
     retry_failed_command,
 )
 from shopman.shop.services.marketing_delivery_worker import fanout_in_chunks
@@ -367,53 +366,6 @@ def test_abandoned_reconciliation_lease_is_recovered_without_send():
     assert recovered.stale_reclaimed == 1
     assert recovered.reconciliations[0].lease_owner == "worker-two"
     assert recovered.reconciliations[0].lookup_attempts == 2
-
-
-def test_actions_resolve_permission_eligibility_and_pending_state():
-    announcement, _targets_list = _targets(
-        suffix="actions",
-        states=(DeliveryTarget.State.FAILED_RETRYABLE, DeliveryTarget.State.UNKNOWN),
-    )
-    observer = _actor("observer", "view_marketing")
-    operator = _actor(
-        "operator",
-        "view_marketing",
-        "retry_failed_marketing",
-        "reconcile_unknown_marketing",
-    )
-
-    observer_actions = resolve_delivery_recovery_actions(
-        announcement,
-        actor=observer,
-    )
-    operator_actions = resolve_delivery_recovery_actions(
-        announcement,
-        actor=operator,
-    )
-
-    assert [action.enabled for action in observer_actions] == [False, False]
-    assert [action.disabled_reason for action in observer_actions] == [
-        "missing_capability",
-        "missing_capability",
-    ]
-    assert [action.enabled for action in operator_actions] == [True, True]
-    assert operator_actions[0].confirmation_required is True
-    assert operator_actions[0].creates_external_effect is True
-    assert operator_actions[1].confirmation_required is True
-    assert operator_actions[1].creates_external_effect is False
-
-    request_reconciliation_command(
-        announcement.pk,
-        actor=operator,
-        idempotency_key="reconcile-actions-key",
-        base_version=announcement.version,
-    )
-    pending_actions = resolve_delivery_recovery_actions(
-        announcement,
-        actor=operator,
-    )
-    assert pending_actions[1].enabled is False
-    assert pending_actions[1].disabled_reason == "reconciliation_pending"
 
 
 def test_recovery_api_enforces_distinct_capabilities(client):

@@ -70,6 +70,29 @@ TriggerCode = Literal[
     "schedule",
 ]
 ReasonCode = Literal["", "review_required", "review_window_expired"]
+ActionKind = Literal[
+    "acknowledge_alert",
+    "cancel_announcement",
+    "configure_platform",
+    "edit_announcement",
+    "edit_campaign",
+    "fire_campaign",
+    "mark_notification_read",
+    "open_announcement",
+    "open_platform",
+    "publish_announcement_now",
+    "reconcile_unknown_delivery",
+    "reject_announcement",
+    "reschedule_announcement",
+    "retry_failed_delivery",
+    "schedule_announcement",
+    "send_platform_test",
+]
+ActionPriority = Literal["primary", "secondary", "danger", "quiet"]
+ActionMethod = Literal["GET", "POST", "PATCH", "DELETE"]
+ActionIdempotency = Literal["none", "supported", "required"]
+ConfirmationMode = Literal["none", "simple", "summary", "typed"]
+StepUpLevel = Literal["none", "password", "totp"]
 
 _SAFE_CODE = re.compile(r"^[a-zA-Z0-9_.:/-]{1,160}$")
 _DOMAIN_CODE = re.compile(r"^[a-z][a-z0-9_.-]{0,63}$")
@@ -99,6 +122,34 @@ class FreshnessProjectionV2:
     state: FreshnessState
     as_of: datetime | None
     degraded_sources: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ActionConfirmationProjectionV2:
+    mode: ConfirmationMode
+    token_required: bool
+    consequence_code: str
+    step_up: StepUpLevel
+    dual_control: bool
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingActionProjectionV2:
+    ref: str
+    resource_ref: str
+    kind: ActionKind
+    label: str
+    priority: ActionPriority
+    enabled: bool
+    reason: str
+    href: str
+    method: ActionMethod
+    payload_schema: str
+    idempotency: ActionIdempotency
+    confirmation: ActionConfirmationProjectionV2
+    eligible_count: int
+    required_capabilities: tuple[str, ...]
+    creates_external_effect: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,7 +291,7 @@ class MarketingEnvelopeV2:
     resource_version: int
     freshness: FreshnessProjectionV2
     data: MarketingBoardDataV2 | MarketingAnnouncementDataV2
-    actions: tuple[dict[str, Any], ...]
+    actions: tuple[MarketingActionProjectionV2, ...]
 
 
 def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:

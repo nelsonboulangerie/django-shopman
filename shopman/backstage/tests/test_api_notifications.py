@@ -71,13 +71,20 @@ class TestList:
         assert client.get(LIST_URL).status_code in (401, 403)
 
     def test_own_unread_notifications_are_listed(self, client, gestor):
-        _notification(gestor)
+        notification = _notification(gestor)
+        notification.action_url = "https://evil.example/steal"
+        notification.action_data = {"action": "approve", "href": "//evil.example"}
+        notification.save(update_fields=["action_url", "action_data"])
         client.force_login(gestor)
 
         body = client.get(LIST_URL).json()
         assert len(body["notifications"]) == 1
         assert body["unread_count"] == 1
         assert body["actionable_count"] == 1
+        assert [
+            action["kind"] for action in body["notifications"][0]["actions"]
+        ] == ["mark_notification_read"]
+        assert body["notifications"][0]["actions"][0]["href"].startswith("/")
 
     def test_another_users_box_is_invisible(self, client, gestor, colega):
         """A caixa é da pessoa: nem staff lê a alheia."""

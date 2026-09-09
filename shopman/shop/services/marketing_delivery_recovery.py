@@ -75,19 +75,6 @@ class RecoveryCommandResult:
 
 
 @dataclass(frozen=True, slots=True)
-class DeliveryRecoveryAction:
-    action: str
-    method: str
-    href: str
-    enabled: bool
-    disabled_reason: str
-    eligible_count: int
-    required_permission: str
-    confirmation_required: bool
-    creates_external_effect: bool
-
-
-@dataclass(frozen=True, slots=True)
 class ReconciliationClaimReport:
     reconciliations: tuple[DeliveryReconciliation, ...]
     stale_reclaimed: int
@@ -360,59 +347,6 @@ def request_reconciliation_command(
         request_id=request_id,
     )
     return _command_result(execution, "lookup_count")
-
-
-def resolve_delivery_recovery_actions(
-    announcement: Announcement,
-    *,
-    actor,
-) -> tuple[DeliveryRecoveryAction, DeliveryRecoveryAction]:
-    """Resolve authority and eligibility once so browser clients never infer it."""
-
-    retry_count = DeliveryTarget.objects.filter(
-        announcement=announcement,
-        state=DeliveryTarget.State.FAILED_RETRYABLE,
-    ).count()
-    reconcilable_ids = DeliveryTarget.objects.filter(
-        announcement=announcement,
-        state=DeliveryTarget.State.UNKNOWN,
-        attempts__state=DeliveryAttempt.State.COMPLETED,
-        attempts__outcome_kind=ProviderOutcomeKind.UNKNOWN.value,
-    ).values_list("pk", flat=True).distinct()
-    active_ids = DeliveryReconciliation.objects.filter(
-        target_id__in=reconcilable_ids,
-        state__in=(
-            DeliveryReconciliation.State.PENDING,
-            DeliveryReconciliation.State.CLAIMED,
-        ),
-    ).values_list("target_id", flat=True)
-    reconcile_count = reconcilable_ids.exclude(pk__in=active_ids).count()
-    pending_count = active_ids.count()
-    base = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
-    return (
-        _action(
-            action="retry_failed",
-            href=f"{base}/retry-deliveries/",
-            eligible_count=retry_count,
-            actor=actor,
-            permission="shop.retry_failed_marketing",
-            no_eligible_reason="no_retryable_failures",
-            confirmation_required=True,
-            creates_external_effect=True,
-        ),
-        _action(
-            action="reconcile_unknown",
-            href=f"{base}/reconcile-deliveries/",
-            eligible_count=reconcile_count,
-            actor=actor,
-            permission="shop.reconcile_unknown_marketing",
-            no_eligible_reason=(
-                "reconciliation_pending" if pending_count else "no_unknown_results"
-            ),
-            confirmation_required=True,
-            creates_external_effect=False,
-        ),
-    )
 
 
 def claim_reconciliations(
@@ -794,37 +728,6 @@ def _command_result(
         receipt=execution.receipt,
         affected_count=int((execution.receipt.outcome or {}).get(count_key, 0)),
         replayed=execution.replayed,
-    )
-
-
-def _action(
-    *,
-    action: str,
-    href: str,
-    eligible_count: int,
-    actor,
-    permission: str,
-    no_eligible_reason: str,
-    confirmation_required: bool,
-    creates_external_effect: bool,
-) -> DeliveryRecoveryAction:
-    allowed = bool(getattr(actor, "has_perm", lambda _code: False)(permission))
-    enabled = eligible_count > 0 and allowed
-    disabled_reason = ""
-    if not eligible_count:
-        disabled_reason = no_eligible_reason
-    elif not allowed:
-        disabled_reason = "missing_capability"
-    return DeliveryRecoveryAction(
-        action=action,
-        method="POST",
-        href=href,
-        enabled=enabled,
-        disabled_reason=disabled_reason,
-        eligible_count=eligible_count,
-        required_permission=permission,
-        confirmation_required=confirmation_required,
-        creates_external_effect=creates_external_effect,
     )
 
 

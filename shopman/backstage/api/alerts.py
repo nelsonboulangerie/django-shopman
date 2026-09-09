@@ -15,6 +15,8 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.api.projections import projection_data
+from shopman.backstage.projections.marketing_actions import resolve_actions_for
 from shopman.backstage.services import alerts as alert_service
 
 from .permissions import CanViewOperatorAlerts
@@ -22,7 +24,7 @@ from .permissions import CanViewOperatorAlerts
 _DEFAULT_LIMIT = 20
 
 
-def _alert_dict(alert) -> dict:
+def _alert_dict(alert, *, actions) -> dict:
     return {
         "pk": alert.pk,
         "type": alert.type,
@@ -32,6 +34,7 @@ def _alert_dict(alert) -> dict:
         "message": alert.message,
         "order_ref": alert.order_ref,
         "created_at_display": timezone.localtime(alert.created_at).strftime("%d/%m às %H:%M"),
+        "actions": projection_data(actions),
     }
 
 
@@ -52,9 +55,13 @@ class AlertListView(APIView):
         except (TypeError, ValueError):
             limit = _DEFAULT_LIMIT
         alerts = alert_service.list_active_alerts(limit=limit)
+        actions = resolve_actions_for(alerts, actor=request.user)
         counts = alert_service.active_counts()
         return Response({
-            "alerts": [_alert_dict(a) for a in alerts],
+            "alerts": [
+                _alert_dict(alert, actions=alert_actions)
+                for alert, alert_actions in zip(alerts, actions, strict=True)
+            ],
             "counts": {"active": counts.active, "critical": counts.critical},
         })
 

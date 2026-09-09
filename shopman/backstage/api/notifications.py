@@ -18,7 +18,11 @@ from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_sche
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from shopman.shop.models import UserNotification
+from shopman.backstage.api.projections import projection_data
+from shopman.backstage.projections.marketing_actions import (
+    resolve_notification_actions_for,
+)
+from shopman.shop.models import Announcement, UserNotification
 
 from .permissions import IsBackstageOperator
 
@@ -32,7 +36,11 @@ ACTION_APPROVE = "approve"
 ACTION_REJECT = "reject"
 
 
-def _notification_dict(notification: UserNotification) -> dict:
+def _notification_dict(
+    notification: UserNotification,
+    *,
+    actions,
+) -> dict:
     return {
         "pk": notification.pk,
         "category": notification.category,
@@ -46,6 +54,7 @@ def _notification_dict(notification: UserNotification) -> dict:
         "created_at_display": timezone.localtime(notification.created_at).strftime(
             "%d/%m às %H:%M"
         ),
+        "actions": projection_data(actions),
     }
 
 
@@ -75,8 +84,33 @@ class NotificationListView(APIView):
 
         limit = _limit(request)
         notifications = list(queryset[:limit])
+        announcement_ids = {
+            announcement_id
+            for notification in notifications
+            if (announcement_id := _announcement_id(notification)) is not None
+        }
+        announcements = {
+            announcement.pk: announcement
+            for announcement in Announcement.objects.filter(pk__in=announcement_ids).only(
+                "pk",
+                "version",
+                "status",
+                "expires_at",
+            )
+        }
+        actions = resolve_notification_actions_for(
+            notifications,
+            actor=request.user,
+            announcements=announcements,
+        )
         return Response({
-            "notifications": [_notification_dict(n) for n in notifications],
+            "notifications": [
+                _notification_dict(
+                    notification,
+                    actions=actions[notification.pk],
+                )
+                for notification in notifications
+            ],
             "unread_count": _own(request).filter(is_read=False).count(),
             "actionable_count": _own(request)
             .filter(is_read=False, is_actionable=True)
@@ -178,6 +212,17 @@ class NotificationActionView(APIView):
 
 def _unread(request) -> int:
     return _own(request).filter(is_read=False).count()
+
+
+def _announcement_id(notification: UserNotification) -> int | None:
+    if not notification.is_actionable or not isinstance(notification.action_data, dict):
+        return None
+    raw = notification.action_data.get("announcement_id")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
 
 
 def _limit(request) -> int:

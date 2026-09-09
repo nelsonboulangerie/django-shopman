@@ -1,5 +1,50 @@
 {
   "$defs": {
+    "ActionConfirmationProjectionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "consequence_code": {
+          "title": "Consequence Code",
+          "type": "string"
+        },
+        "dual_control": {
+          "title": "Dual Control",
+          "type": "boolean"
+        },
+        "mode": {
+          "enum": [
+            "none",
+            "simple",
+            "summary",
+            "typed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "step_up": {
+          "enum": [
+            "none",
+            "password",
+            "totp"
+          ],
+          "title": "Step Up",
+          "type": "string"
+        },
+        "token_required": {
+          "title": "Token Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "mode",
+        "token_required",
+        "consequence_code",
+        "step_up",
+        "dual_control"
+      ],
+      "title": "ActionConfirmationProjectionV2",
+      "type": "object"
+    },
     "AnnouncementFactsProjectionV2": {
       "additionalProperties": false,
       "properties": {
@@ -508,6 +553,127 @@
       "title": "FreshnessProjectionV2",
       "type": "object"
     },
+    "MarketingActionProjectionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmation": {
+          "$ref": "#/$defs/ActionConfirmationProjectionV2"
+        },
+        "creates_external_effect": {
+          "title": "Creates External Effect",
+          "type": "boolean"
+        },
+        "eligible_count": {
+          "title": "Eligible Count",
+          "type": "integer"
+        },
+        "enabled": {
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "href": {
+          "title": "Href",
+          "type": "string"
+        },
+        "idempotency": {
+          "enum": [
+            "none",
+            "supported",
+            "required"
+          ],
+          "title": "Idempotency",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "acknowledge_alert",
+            "cancel_announcement",
+            "configure_platform",
+            "edit_announcement",
+            "edit_campaign",
+            "fire_campaign",
+            "mark_notification_read",
+            "open_announcement",
+            "open_platform",
+            "publish_announcement_now",
+            "reconcile_unknown_delivery",
+            "reject_announcement",
+            "reschedule_announcement",
+            "retry_failed_delivery",
+            "schedule_announcement",
+            "send_platform_test"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST",
+            "PATCH",
+            "DELETE"
+          ],
+          "title": "Method",
+          "type": "string"
+        },
+        "payload_schema": {
+          "title": "Payload Schema",
+          "type": "string"
+        },
+        "priority": {
+          "enum": [
+            "primary",
+            "secondary",
+            "danger",
+            "quiet"
+          ],
+          "title": "Priority",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "required_capabilities": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Capabilities",
+          "type": "array"
+        },
+        "resource_ref": {
+          "title": "Resource Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "resource_ref",
+        "kind",
+        "label",
+        "priority",
+        "enabled",
+        "reason",
+        "href",
+        "method",
+        "payload_schema",
+        "idempotency",
+        "confirmation",
+        "eligible_count",
+        "required_capabilities",
+        "creates_external_effect"
+      ],
+      "title": "MarketingActionProjectionV2",
+      "type": "object"
+    },
     "MarketingAnnouncementDataV2": {
       "additionalProperties": false,
       "properties": {
@@ -726,8 +892,7 @@
   "properties": {
     "actions": {
       "items": {
-        "additionalProperties": true,
-        "type": "object"
+        "$ref": "#/$defs/MarketingActionProjectionV2"
       },
       "title": "Actions",
       "type": "array"

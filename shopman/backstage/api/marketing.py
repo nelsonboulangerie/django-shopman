@@ -54,6 +54,13 @@ from shopman.backstage.api.throttles import (
 )
 from shopman.backstage.projections import marketing as marketing_projection
 from shopman.backstage.projections import marketing_v2 as marketing_projection_v2
+from shopman.backstage.projections.marketing_actions import (
+    CampaignActionContext,
+    PlatformActionContext,
+    resolve_actions,
+    resolve_actions_for,
+    with_resolved_actions,
+)
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
 
@@ -250,7 +257,11 @@ class CampaignBoardV2View(_CampaignBase):
     """Additive read contract; the v1 board remains available during cutover."""
 
     def get(self, request):
-        return Response(projection_data(marketing_projection_v2.build_board()))
+        envelope = with_resolved_actions(
+            marketing_projection_v2.build_board(),
+            actor=request.user,
+        )
+        return Response(projection_data(envelope))
 
 
 class AnnouncementDetailV2View(_CampaignBase):
@@ -260,9 +271,11 @@ class AnnouncementDetailV2View(_CampaignBase):
         announcement = _announcement_or_none(pk)
         if announcement is None:
             return Response({"detail": "Anúncio não encontrado."}, status=404)
-        return Response(
-            projection_data(marketing_projection_v2.build_announcement(announcement))
+        envelope = with_resolved_actions(
+            marketing_projection_v2.build_announcement(announcement),
+            actor=request.user,
         )
+        return Response(projection_data(envelope))
 
 
 @extend_schema_view(
@@ -807,13 +820,17 @@ class AnnouncementDeliveryActionsView(_CampaignBase):
         announcement = _announcement_or_none(pk)
         if announcement is None:
             return Response({"detail": "Anúncio não encontrado."}, status=404)
-        from shopman.shop.services.marketing_delivery_recovery import (
-            resolve_delivery_recovery_actions,
-        )
-
-        actions = resolve_delivery_recovery_actions(
-            announcement,
+        envelope = with_resolved_actions(
+            marketing_projection_v2.build_announcement(announcement),
             actor=request.user,
+        )
+        actions = tuple(
+            action
+            for action in envelope.actions
+            if action.kind in {
+                "retry_failed_delivery",
+                "reconcile_unknown_delivery",
+            }
         )
         return Response({
             "resource_ref": f"announcement:{announcement.pk}",
@@ -920,7 +937,27 @@ class CampaignListView(_CampaignBase):
     }
 
     def get(self, request):
-        return Response({"rules": projection_data(marketing_projection.build_rules())})
+        rules = marketing_projection.build_rules()
+        contexts = tuple(
+            CampaignActionContext(
+                ref=f"campaign:{rule.pk}",
+                version=0,
+                active=rule.is_active,
+            )
+            for rule in rules
+        )
+        actions = tuple(
+            action
+            for resource_actions in resolve_actions_for(
+                contexts,
+                actor=request.user,
+            )
+            for action in resource_actions
+        )
+        return Response({
+            "rules": projection_data(rules),
+            "actions": projection_data(actions),
+        })
 
     def post(self, request):
         fields, error = _rule_fields(request.data, partial=False)
@@ -1000,7 +1037,32 @@ class PlatformsView(_CampaignBase):
     """
 
     def get(self, request):
-        return Response({"platforms": projection_data(marketing_projection.build_platforms())})
+        platforms = marketing_projection.build_platforms()
+        contexts = tuple(
+            PlatformActionContext(
+                platform_ref=platform.platform,
+                version=0,
+                state=(
+                    "blocked"
+                    if not platform.ready
+                    else "degraded" if platform.limitation else "ready"
+                ),
+                in_use=platform.in_use,
+            )
+            for platform in platforms
+        )
+        actions = tuple(
+            action
+            for resource_actions in resolve_actions_for(
+                contexts,
+                actor=request.user,
+            )
+            for action in resource_actions
+        )
+        return Response({
+            "platforms": projection_data(platforms),
+            "actions": projection_data(actions),
+        })
 
 
 class WhatsAppTemplateView(_CampaignBase):
@@ -1115,7 +1177,11 @@ class CampaignDetailView(_CampaignBase):
         rule = _rule_or_none(pk)
         if rule is None:
             return Response({"detail": "Regra não encontrada."}, status=404)
-        return Response({"rule": projection_data(marketing_projection.build_rule(rule))})
+        actions = resolve_actions(rule, actor=request.user)
+        return Response({
+            "rule": projection_data(marketing_projection.build_rule(rule)),
+            "actions": projection_data(actions),
+        })
 
     def patch(self, request, pk: int):
         rule = _rule_or_none(pk)

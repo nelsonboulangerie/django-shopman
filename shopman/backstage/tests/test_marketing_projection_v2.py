@@ -34,7 +34,6 @@ FORBIDDEN_PROPERTIES = {
     "body",
     "copy",
     "detail",
-    "label",
     "member",
     "members",
     "platform_results",
