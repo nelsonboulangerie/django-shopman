@@ -172,6 +172,11 @@ def approve_command(
 
             try:
                 flow_binding = verified_whatsapp_flow_binding(force=True, now=now)
+                from shopman.shop.services.manychat_marketing_safety import (
+                    require_safe_delivery,
+                )
+
+                require_safe_delivery()
             except MarketingContractError as exc:
                 raise RejectCommand(
                     code=exc.code,

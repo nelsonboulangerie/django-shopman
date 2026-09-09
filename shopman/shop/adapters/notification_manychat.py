@@ -144,22 +144,23 @@ def _api_call(endpoint: str, payload: dict, config: dict) -> dict:
         with urlopen(request, timeout=timeout) as response:
             resp_data = json.loads(response.read().decode("utf-8"))
             if resp_data.get("status") == "success":
-                return {
-                    "success": True,
-                    "message_id": f"mc_{payload.get('subscriber_id')}",
-                }
-            return {"success": False, "error": resp_data.get("message", "Manychat error")}
+                # G-H03: ManyChat does not document a stable delivery receipt for
+                # this endpoint.  Subscriber id is identity, never a receipt.
+                return {"success": True}
+            return {"success": False, "error": "provider_rejected"}
     except HTTPError as e:
-        error_body = e.read().decode("utf-8") if e.fp else ""
-        return {"success": False, "error": f"HTTP {e.code}: {error_body[:200]}"}
-    except URLError as e:
-        return {"success": False, "error": f"URL error: {e.reason}"}
-    except Exception as e:
+        return {
+            "success": False,
+            "error": "provider_rate_limited" if e.code == 429 else "provider_http_error",
+        }
+    except URLError:
+        return {"success": False, "error": "provider_unreachable"}
+    except Exception as exc:
         logger.warning(
             "manychat._send_whatsapp: unexpected error class=%s; detail redacted",
-            type(e).__name__,
+            type(exc).__name__,
         )
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": "provider_unreadable"}
 
 
 def _build_message(template: str, context: dict) -> str:
@@ -218,6 +219,16 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
         logger.warning("ManyChat API token not configured")
         return False
 
+    ctx = dict(context or {})
+    from shopman.shop.services import manychat_marketing_safety
+
+    sandbox_probe = manychat_marketing_safety.consume_sandbox_probe(ctx)
+    if template in manychat_marketing_safety.MARKETING_FLOW_EVENTS and not sandbox_probe:
+        # The unsafe sequence is fields write(s) → sendFlow.  Blocking before
+        # subscriber resolution guarantees zero provider calls and zero PII egress.
+        logger.warning("manychat.marketing_blocked code=%s", manychat_marketing_safety.BLOCK_CODE)
+        return False
+
     from ._external import inert
 
     if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
@@ -226,8 +237,6 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             template,
         )
         return True
-
-    ctx = context or {}
     subscriber_id = _resolve_subscriber(recipient, mc_config)
     if subscriber_id is None:
         logger.warning("Could not resolve ManyChat subscriber; target redacted")

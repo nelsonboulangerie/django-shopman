@@ -174,6 +174,18 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             reason="Nenhum transporte configurado — o envio falharia para todos.",
             action="Conferir a credencial do canal neste ambiente",
         )
+    if backend != "manychat":
+        return PlatformReadiness(
+            platform=platform,
+            kind=DIRECT_MESSAGE,
+            state="blocked",
+            reason_code="whatsapp_manychat_transport_missing",
+            checked_at=now,
+            facts_as_of=now,
+            source_status="fresh",
+            reason="Marketing por WhatsApp exige o transporte ManyChat da ADR-009.",
+            action="Configurar a credencial ManyChat deste ambiente",
+        )
 
     template = NotificationTemplate.objects.filter(
         event="announcement_published"
@@ -221,6 +233,17 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
         "version": version,
     }
     if catalog.mutation_safe and catalog.contains(flow_ns):
+        from shopman.shop.services import manychat_marketing_safety
+
+        safety = manychat_marketing_safety.safety_state()
+        if not safety.safe:
+            return PlatformReadiness(
+                **common,
+                state="blocked",
+                reason_code=safety.reason_code,
+                reason=safety.reason,
+                action=safety.action,
+            )
         return PlatformReadiness(
             **common,
             state="ready",

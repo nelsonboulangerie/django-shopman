@@ -671,15 +671,22 @@ def send_test(
         ) from exc
 
     try:
+        from shopman.shop.services.manychat_marketing_safety import (
+            sandbox_probe_context,
+        )
+
+        test_context = {
+            "body": message,
+            "cta": "Garanta o seu:",
+            "action_url": fields.get("link", ""),
+            **fields,
+        }
+        if target.backend == "manychat":
+            test_context = sandbox_probe_context(test_context)
         accepted = bool(transport.send(
             recipient=target.recipient,
             template="announcement_published",
-            context={
-                "body": message,
-                "cta": "Garanta o seu:",
-                "action_url": fields.get("link", ""),
-                **fields,
-            },
+            context=test_context,
         ))
     except Exception as exc:  # outcome pós-boundary é desconhecido; nunca retry automático
         receipt.state = MarketingTestReceipt.State.UNKNOWN

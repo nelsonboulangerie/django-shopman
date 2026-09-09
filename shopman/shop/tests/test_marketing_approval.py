@@ -330,6 +330,22 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(
         ),
     )
 
+    with pytest.raises(MarketingCommandRejected) as blocked:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-approval-unverified-flow",
+            platforms=["whatsapp"],
+        )
+    assert blocked.value.code == "manychat_custom_fields_unverified"
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
+
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_marketing_safety.require_safe_delivery",
+        lambda: None,
+    )
+
     result = _approve(
         actor=actor,
         announcement=announcement,

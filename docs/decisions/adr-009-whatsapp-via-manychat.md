@@ -1,7 +1,7 @@
 # ADR-009 — WhatsApp via ManyChat: vendor lock-in consciente
 
 **Data**: 2026-04-18
-**Atualizado**: 2026-05-15
+**Atualizado**: 2026-09-09
 **Status**: Accepted
 
 ---
@@ -23,6 +23,37 @@ Esta ADR-009 documenta explicitamente a decisão para que futuros contribuidores
 - Recebimento de mensagens de cliente via ManyChat webhook → Shopman.
 - Criação de AccessLink disparada por bot de ManyChat via API interna.
 - Fluxos conversacionais de pré-compra (ex.: "quero fazer um pedido") são desenhados e mantidos no editor visual do ManyChat, não em código Shopman.
+
+### Emenda de segurança para Marketing — 2026-09-09
+
+O caminho de Marketing é **ManyChat-only**. O adapter Meta Cloud API direto não é
+fallback elegível, mesmo se estiver registrado ou configurado. Uma troca ou lane
+paralela de fornecedor exige revisão explícita desta ADR; não pode nascer por
+detecção oportunista de credencial. O console continua disponível apenas como
+transporte inerte de desenvolvimento/teste e nunca conta como readiness produtivo.
+
+Os flows atuais do ManyChat materializam variáveis por meio de campos persistentes
+do subscriber antes de chamar `sendFlow`. Não há evidência documental nem ensaio
+sandbox que prove snapshot atômico/isolamento quando dois commands concorrentes
+atingem o mesmo subscriber. Portanto, qualquer flow de Marketing dependente desses
+campos permanece `blocked_unverified`, inclusive quando token e flow estão válidos.
+Credencial não remove esse bloqueio.
+
+O bloqueio só pode ser revisto após o ensaio externo G-H03 provar isolamento,
+respostas, rate limits, `Retry-After`, efeitos de timeout, redaction e eventual
+receipt/callback correlacionável. O ensaio usa target sintético/verificado, no máximo
+um destinatário, e precisa de autorização específica; esta implementação local não
+o executa.
+
+Até essa prova:
+
+- `200`/success significa apenas `accepted_unconfirmed`, nunca “entregue”;
+- subscriber ID não é receipt e não pode virar um message ID fabricado;
+- resposta ambígua após possível write é `unknown` e não sofre retry automático;
+- o adapter bloqueia antes de resolver subscriber, gravar custom fields ou fazer
+  qualquer chamada do caminho Marketing;
+- readiness, aprovação e deploy check expõem o mesmo reason code reparável:
+  `manychat_custom_fields_unverified`.
 
 ## Motivação
 
@@ -98,7 +129,11 @@ conversacional de `order_status` oficial.
 ## Mitigações adotadas
 
 1. **Protocol `NotificationBackend` mantido agnóstico**: embora `notification_manychat` seja implementação default para WhatsApp, o contrato permite substituir por `notification_whatsapp_cloud` no futuro sem mudar callers.
-2. **Fallback chain em notificações**: `manychat → sms → email` já é padrão, reduz dependência single-point. Para autenticação, WhatsApp-first depende da janela/conversa ou de template aprovado; SMS permanece fallback.
+2. **Fallback por intenção/canal**: SMS/e-mail podem ser alternativas explícitas de
+   autenticação ou notificações transacionais quando consentimento e contrato do caso
+   permitirem. Eles não são fallback de uma onda de Marketing cuja audiência consentiu
+   em WhatsApp. Para Marketing, o único transporte WhatsApp é ManyChat e a ausência ou
+   insegurança dele bloqueia a lane.
 3. **Webhook payload normalizado**: `AccessLink.source` aceita enum aberto; handler de webhook ManyChat pode ser replicado para outro provedor sem alterar AccessLink model.
 4. **Templates de mensagem versionados em repo** (quando aplicável): o conteúdo é código Shopman (via `OmotenashiCopy` futuramente); apenas o envio é ManyChat.
 

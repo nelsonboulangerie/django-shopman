@@ -324,7 +324,7 @@ class AnnouncementNotifyHandler:
 
 
 def _whatsapp_backend() -> str | None:
-    """O backend que entrega a onda de WhatsApp, ou ``None`` se nenhum está pronto.
+    """Resolve only the ADR-009 ManyChat lane (plus an inert local console).
 
     ⚠️ Este handler chamava ``notify()`` **sem nomear backend**, e o default é
     ``"console"`` — registrado só em DEBUG. Em staging e produção isso significava
@@ -339,15 +339,24 @@ def _whatsapp_backend() -> str | None:
     (``audience.DELIVERY_CONSENT_CHANNEL``); entregar por SMS seria alcançar a pessoa
     num canal que ela não autorizou. Minha primeira versão desta função incluía `sms`
     como fallback e, sem token de ManyChat, ela escolhia SMS — uma campanha inteira
-    sairia pelo canal errado. Quando o WhatsApp Meta-direto entrar, ele entra AQUI; um
-    canal novo passa a exigir o consentimento dele próprio.
+    sairia pelo canal errado. Qualquer revisão de fornecedor exige nova decisão da
+    ADR-009; não nasce como fallback oportunista neste resolver.
 
-    A ordem é deliberada: o transporte real primeiro, console por último — console é
-    ferramenta de desenvolvimento e nunca deve ganhar de um canal configurado.
+    Meta Cloud API direto deixou de ser fallback de Marketing. Console existe apenas
+    em development/test para tornar fluxos locais observáveis e nunca conta como
+    readiness de produção.
     """
+    from django.conf import settings
+
     from shopman.shop.notifications import get_backend
 
-    for name in ("manychat", "whatsapp", "console"):
+    names = ["manychat"]
+    if getattr(settings, "SHOPMAN_ENVIRONMENT", "development") in {
+        "development",
+        "test",
+    }:
+        names.append("console")
+    for name in names:
         adapter = get_backend(name)
         if adapter is None:
             continue

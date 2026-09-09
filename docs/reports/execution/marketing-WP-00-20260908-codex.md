@@ -1130,3 +1130,65 @@ Provas locais:
 - a inspeção usou conta e dados sintéticos, portas isoladas `3006/8011`, e encerrou ambos
   os processos; o serviço de outra worktree já presente na porta 8000 não foi tocado;
 - nenhuma rede de provider, destinatário, deploy, produção ou escrita externa foi usada.
+
+## MKT-030 — ManyChat-only e isolamento fail-closed de custom fields
+
+Implementado conforme a decisão negativa aprovada no G-H03: a ausência de prova externa
+não foi transformada em capacidade fictícia.
+
+- Marketing por WhatsApp resolve exclusivamente ManyChat; um adapter Meta direto
+  registrado não é fallback e o console só existe em development/test, sem contar como
+  readiness produtivo;
+- a ADR-009 recebeu emenda explícita: troca de fornecedor exige nova decisão, SMS/e-mail
+  não substituem silenciosamente o consentimento de canal de uma onda Marketing e uma
+  credencial não remove a trava de isolamento;
+- os flows Marketing que dependem de campos persistentes do subscriber ficam
+  `blocked_unverified` até o ensaio sandbox G-H03 provar atomicidade/isolamento;
+- readiness, aprovação atômica e adapter aplicam o mesmo reason code
+  `manychat_custom_fields_unverified`; a aprovação rejeitada preserva receipt seguro e
+  cria zero artifact/outbox;
+- o adapter bloqueia antes de resolver subscriber, gravar custom field ou chamar o
+  provider. Duas campanhas concorrentes contra o mesmo destinatário sintético resultam
+  em zero chamadas e zero PII egress;
+- o único bypass não configurável é um sentinel em memória inserido pelo serviço
+  server-side de `send-test`, depois das guardas já existentes de capability, sandbox,
+  ownership/synthetic target, quota, idempotência e máximo de um alvo; o marcador é
+  consumido e nunca serializado no payload;
+- a sequência low-level de custom fields continua disponível apenas para notificações
+  transacionais existentes; os três eventos Marketing conhecidos são fechados por
+  allowlist e têm teste de fronteira;
+- o adapter e o facade de notificações deixaram de fabricar receipt com subscriber ou
+  recipient; success booleano não vira “entregue”, logs não carregam destinatário e
+  exception/body/reason do vendor viram códigos allowlisted;
+- o deploy check diferencia flow ausente (`SHOPMAN_W014`, com reparo no cockpit) de flow
+  presente porém inseguro (`SHOPMAN_E016`, bloqueante);
+- nenhuma chamada sandbox externa foi executada: isso exigiria a autorização humana
+  específica que o G-H03 preservou. O sistema torna a pendência explícita e segura em vez
+  de alegar que a race foi resolvida.
+
+Budget de omotenashi comprovado na fronteira ManyChat:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Descobrir se flow configurado também é seguro | documentação/provider/logs | estado e Action no cockpit |
+| Conferir se Meta direto assumiu a onda | inspeção de registry/credenciais | impossível no resolver Marketing |
+| Distinguir aceitação de entrega confirmada | inferência por `mc_<subscriber>` | receipt não é fabricado; estado honesto |
+| Investigar erro bruto/telefone em logs | revisão manual por ocorrência | códigos allowlisted; zero recipient padrão |
+| Impedir race entre duas campanhas | vigilância/serialização manual | zero provider calls enquanto não comprovado |
+| Preparar ensaio futuro seguro | montar telefone/payload/bypass | fluxo existente: target verificado, max 1, receipt |
+| Descobrir a próxima ação | consultar plano/owner | reason code + ensaio G-H03 no próprio readiness |
+
+Provas locais:
+
+- 5 testes de fronteira cobrem bloqueio default não-retryable, duas execuções
+  concorrentes com zero provider calls, sentinel sandbox não serializado, receipt não
+  fabricado e redaction de exception/recipient;
+- 285 testes focados de ManyChat, backend selection, readiness, aprovação, artifact,
+  Projection/Actions/API e deploy checks passaram em 27,56 s;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 693 testes passaram
+  em 74,59 s;
+- Marketing Nuxt: 9 arquivos/107 testes, ESLint e Nuxt typecheck passaram;
+- Ruff dos arquivos alterados, `git diff --check`, Django check e migration drift
+  passaram; permaneceu somente o warning conhecido de SQLite local;
+- nenhuma migration, rede, provider real, sandbox remoto, destinatário, deploy,
+  produção ou escrita externa foi usada.

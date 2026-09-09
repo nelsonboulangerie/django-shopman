@@ -18,6 +18,7 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
   SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
   SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
+  SHOPMAN_E016  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -860,7 +861,7 @@ def POS_CHANNEL_REF() -> str:
 
 @register(deploy=True)
 def check_whatsapp_flow_coverage(app_configs, **kwargs):
-    """W010 — campanha ativa com WhatsApp e sem flow aprovado só alcança 24h.
+    """Block an unsafe ManyChat Marketing lane and explain missing flow setup.
 
     A Meta não deixa texto livre sair para quem não interagiu nas últimas 24 horas
     (`code 3011`). O escape é um **template aprovado**, que no ManyChat vira um *flow* e
@@ -872,8 +873,9 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     número frio, e um erro opaco. É o tipo de configuração faltando que só aparece no
     dia em que importa, então ela passa a aparecer na subida.
 
-    Aviso, não erro: campanha que alcança só a janela de 24h ainda é campanha válida
-    (quem conversou hoje recebe). O que não pode é a surpresa.
+    A ausência de flow remains a setup warning because runtime approval is already
+    blocked.  A configured flow whose persistent custom-field isolation has not
+    passed G-H03 is a deploy error: credentials must never turn an unproven path on.
     """
     warnings = []
 
@@ -900,11 +902,23 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
 
     event = "announcement_published"
     has_flow = (
-        NotificationTemplate.objects.filter(event=event)
+        NotificationTemplate.objects.filter(event=event, is_active=True)
         .exclude(whatsapp_flow_ns="")
         .exists()
     )
     if has_flow:
+        from shopman.shop.services import manychat_marketing_safety
+
+        safety = manychat_marketing_safety.safety_state()
+        if not safety.safe:
+            warnings.append(
+                Error(
+                    "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
+                    "persistentes do ManyChat ainda não foi comprovada.",
+                    hint=safety.action,
+                    id="SHOPMAN_E016",
+                )
+            )
         return warnings
 
     names = ", ".join(sorted(campaign.name for campaign in targets_whatsapp)[:5])
@@ -913,11 +927,9 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
             f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem "
             f"template aprovado: {names}.",
             hint=(
-                "Sem flow em NotificationTemplate('announcement_published'), a Meta "
-                "recusa texto livre para quem não interagiu nas últimas 24h (code 3011): "
-                "a onda registra falha por destinatário. Crie o template no ManyChat, "
-                "aprove na Meta e cole o ns no Admin — `manage.py manychat_flows` lista "
-                "os ns disponíveis."
+                "Escolha um flow aprovado e ativo no cockpit Marketing → Plataformas. "
+                "A configuração exige versão, lista fresca, TOTP e auditoria; o Admin "
+                "é somente leitura."
             ),
             id="SHOPMAN_W014",
         )

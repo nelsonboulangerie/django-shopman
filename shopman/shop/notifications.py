@@ -65,12 +65,19 @@ def notify(
     try:
         success = adapter.send(recipient=recipient, template=event, context=context)
         if success:
-            logger.info("Notification sent: %s -> %s...", event, recipient[:20])
-            return NotificationResult(success=True, message_id=f"{backend}_{recipient[:20]}")
+            # Function-style adapters return only a bool.  Inventing a provider
+            # receipt from recipient identity is both false evidence and PII in logs.
+            logger.info("Notification sent: event=%s backend=%s", event, backend)
+            return NotificationResult(success=True)
         else:
             error_msg = f"Adapter {backend} returned False"
-            logger.warning("Notification failed: %s -> %s", event, error_msg)
+            logger.warning("Notification failed: event=%s backend=%s", event, backend)
             return NotificationResult(success=False, error=error_msg)
-    except Exception as e:
-        logger.exception("Notification error: %s", event)
-        return NotificationResult(success=False, error=str(e))
+    except Exception as exc:
+        logger.warning(
+            "Notification error: event=%s backend=%s exception_class=%s",
+            event,
+            backend,
+            type(exc).__name__,
+        )
+        return NotificationResult(success=False, error="notification_adapter_error")

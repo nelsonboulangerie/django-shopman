@@ -1,12 +1,12 @@
-"""W010 — campanha com WhatsApp e sem template aprovado alcança só 24h.
+"""Deploy gate: flow ativo é necessário, mas não prova entrega concorrente segura.
 
 Este check nasceu do jeito caro: um disparo real para um número frio devolveu
 `code 3011` da Meta ("Content can't be sent... last interaction was over 18963h ago"),
 e nada no sistema tinha avisado que aquilo ia acontecer. A configuração faltando só
 aparecia no dia em que importava.
 
-O aviso é Warning e não Error de propósito: campanha que alcança apenas a janela de 24h
-ainda é campanha válida — quem conversou hoje recebe. O que não pode é a surpresa.
+Sem flow, o cockpit explica a configuração faltante. Com flow, G-H03 ainda bloqueia o
+piloto até a isolação dos campos persistentes ser provada em sandbox.
 """
 
 from __future__ import annotations
@@ -53,10 +53,10 @@ def test_the_warning_names_the_campaigns_so_the_fix_is_obvious(db):
     (warning,) = check_whatsapp_flow_coverage(None)
     assert "Fornada pronta" in warning.msg
     assert "Recado" in warning.msg
-    assert "manychat_flows" in warning.hint, "o aviso tem de dizer como consertar"
+    assert "Marketing → Plataformas" in warning.hint
 
 
-def test_a_configured_flow_silences_it(db):
+def test_a_configured_flow_still_blocks_deploy_without_isolation_evidence(db):
     from shopman.shop.models import NotificationTemplate
 
     _campaign("Fornada", platforms=["whatsapp"])
@@ -64,7 +64,24 @@ def test_a_configured_flow_silences_it(db):
         event=EVENT, subject="", body="oi", whatsapp_flow_ns="content20260101120000_1"
     )
 
-    assert check_whatsapp_flow_coverage(None) == []
+    (error,) = check_whatsapp_flow_coverage(None)
+    assert error.id == "SHOPMAN_E016"
+    assert type(error).__name__ == "Error"
+
+
+def test_an_inactive_flow_does_not_count_as_approved(db):
+    from shopman.shop.models import NotificationTemplate
+
+    _campaign("Fornada", platforms=["whatsapp"])
+    NotificationTemplate.objects.create(
+        event=EVENT,
+        subject="",
+        body="oi",
+        whatsapp_flow_ns="content20260101120000_inactive",
+        is_active=False,
+    )
+
+    assert _ids(check_whatsapp_flow_coverage(None)) == ["SHOPMAN_W014"]
 
 
 def test_an_empty_flow_ns_does_not_count_as_configured(db):

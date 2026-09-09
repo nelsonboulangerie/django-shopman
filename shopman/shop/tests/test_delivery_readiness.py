@@ -62,6 +62,22 @@ def _flow_catalog(*flows, state="fresh"):
     )
 
 
+def _prove_flow_isolation(monkeypatch):
+    from shopman.shop.services import manychat_marketing_safety
+
+    monkeypatch.setattr(
+        manychat_marketing_safety,
+        "safety_state",
+        lambda: manychat_marketing_safety.ManyChatMarketingSafety(
+            safe=True,
+            state="verified",
+            reason_code="",
+            reason="",
+            action="",
+        ),
+    )
+
+
 def test_each_platform_is_classified_by_how_it_delivers(no_transport):
     states = _by_platform(dr.readiness_for(["instagram", "whatsapp"]))
 
@@ -154,11 +170,37 @@ def test_direct_message_with_active_verified_flow_has_no_limitation(
             ("content20260101120000_1", "Anúncio aprovado")
         ),
     )
+    _prove_flow_isolation(monkeypatch)
 
     (state,) = dr.readiness_for(["whatsapp"])
     assert state.ready is True
     assert state.state == "ready"
     assert state.limitation == ""
+
+
+def test_active_flow_without_concurrency_evidence_is_blocked(
+    with_transport, monkeypatch
+):
+    from shopman.shop.models import NotificationTemplate
+
+    NotificationTemplate.objects.create(
+        event="announcement_published",
+        subject="x",
+        body="y",
+        whatsapp_flow_ns="content_unverified_fields",
+    )
+    monkeypatch.setattr(
+        "shopman.shop.services.manychat_flows.flow_catalog",
+        lambda **kwargs: _flow_catalog(
+            ("content_unverified_fields", "Flow ainda não ensaiado")
+        ),
+    )
+
+    (state,) = dr.readiness_for(["whatsapp"])
+
+    assert state.state == "blocked"
+    assert state.reason_code == "manychat_custom_fields_unverified"
+    assert "sandbox" in state.action
 
 
 def test_direct_message_with_missing_active_flow_is_blocked(with_transport, monkeypatch):
@@ -290,6 +332,7 @@ def test_a_fully_ready_platform_produces_no_noise(with_transport, monkeypatch):
             ("content20260101120000_1", "Anúncio aprovado")
         ),
     )
+    _prove_flow_isolation(monkeypatch)
     template = AnnouncementTemplate.objects.create(name="T", body="oi")
     Campaign.objects.create(
         name="Só WhatsApp", trigger=Trigger.MANUAL, template=template,
@@ -335,6 +378,7 @@ def test_a_healthy_platform_says_it_is_ready(with_transport, monkeypatch):
             ("content20260101120000_1", "Anúncio aprovado")
         ),
     )
+    _prove_flow_isolation(monkeypatch)
     by_ref = {p.platform: p for p in mp.build_platforms()}
 
     assert by_ref["whatsapp"].ready is True
