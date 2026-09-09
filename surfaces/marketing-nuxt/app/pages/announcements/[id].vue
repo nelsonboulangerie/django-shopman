@@ -14,13 +14,17 @@ import {
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
 
-const { data, refresh, pending, error } = await useFetch<{ announcement: Announcement }>(
+const { data, refresh, pending, error } = await useFetch<{
+  announcement: Announcement;
+  shop_timezone: string;
+}>(
   () => `/api/v1/backstage/marketing/announcements/${pk.value}/`,
   { key: () => `announcement-${pk.value}` },
 );
-const { platforms } = useCampaigns();
+const { platforms, shopTimezone: optionsTimezone } = useCampaigns();
 
 const announcement = computed(() => data.value?.announcement);
+const shopTimezone = computed(() => data.value?.shop_timezone || optionsTimezone.value);
 const busy = ref(false);
 const confirmingReject = ref(false);
 const rejectReason = ref("");
@@ -39,6 +43,7 @@ async function decide(
           body as AnnouncementEdits,
           announcement.value!.version,
           publishMode!,
+          shopTimezone.value,
         )
       : { ...body, base_version: announcement.value?.version };
     const fingerprint = `${action}:${pk.value}:${JSON.stringify(commandBody)}`;
@@ -121,6 +126,7 @@ useHead({ title: "Anúncio · Marketing" });
         :platform-options="platforms"
         :busy="busy"
         :draft-owner="draftOwner"
+        :shop-timezone="shopTimezone"
         @approve="(_, edits, publishMode) => decide('approve', edits, publishMode)"
         @reject="confirmingReject = true; rejectReason = ''"
       />

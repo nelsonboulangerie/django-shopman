@@ -19,6 +19,7 @@ from shopman.shop.models import (
     MarketingContentArtifact,
     MarketingOutbox,
 )
+from shopman.shop.services import marketing_time
 from shopman.shop.services.marketing_approval import (
     APPROVAL_RECORD_RETENTION,
     PUBLISH_SCHEDULED,
@@ -224,6 +225,7 @@ def reschedule_command(
     idempotency_key: str,
     base_version: int,
     publish_at: datetime,
+    publish_timezone: str = "",
     request_id: str = "",
     now: datetime | None = None,
     authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
@@ -235,6 +237,26 @@ def reschedule_command(
         now=now,
     )
     assert normalized_publish_at is not None
+    normalized_timezone = str(publish_timezone or "").strip()
+    strict_timing = bool(normalized_timezone)
+    if strict_timing:
+        try:
+            normalized_timezone = marketing_time.require_configured_timezone(
+                normalized_timezone
+            )
+            normalized_publish_at = marketing_time.validate_named_instant(
+                normalized_publish_at,
+                timezone_name=normalized_timezone,
+            )
+        except ValueError as exc:
+            raise MarketingContractError(
+                code=str(exc),
+                detail="A data, o offset e o timezone não representam o mesmo instante.",
+                field_errors={"publish_at": ("Reabra o seletor de horário.",)},
+            ) from exc
+    effective_timezone = (
+        normalized_timezone or marketing_time.configured_timezone_name()
+    )
 
     def operation(announcement, receipt):
         if announcement.status != AnnouncementStatus.APPROVED or not announcement.publish_at:
@@ -246,6 +268,33 @@ def reschedule_command(
         rows = _cancellable_rows(announcement, allow_empty=False)
         old_publish_at = announcement.publish_at
         delta = normalized_publish_at - old_publish_at
+        proposed = [(row, row.available_at + delta) for row in rows]
+        if announcement.expires_at is not None and any(
+            moment >= announcement.expires_at for _row, moment in proposed
+        ):
+            raise RejectCommand(
+                code="delivery_wave_after_expiry",
+                detail="Uma etapa da entrega aconteceria depois da expiração.",
+                outcome={"expires_at": announcement.expires_at.isoformat()},
+                field_errors={
+                    "publish_at": ("Escolha um horário anterior à expiração.",),
+                },
+            )
+        if any(
+            row.platform == "whatsapp"
+            and not marketing_time.delivery_window(
+                moment,
+                timezone_name=effective_timezone,
+            ).allowed
+            for row, moment in proposed
+        ):
+            raise RejectCommand(
+                code="delivery_wave_in_quiet_hours",
+                detail="Uma etapa do WhatsApp cairia no período de silêncio.",
+                field_errors={
+                    "publish_at": ("Escolha um horário entre 08:00 e 20:00.",),
+                },
+            )
         artifact, snapshot = _latest_graph(announcement)
         if authorization is not None:
             from shopman.shop.services.marketing_security import (
@@ -284,12 +333,14 @@ def reschedule_command(
                 "from": old_publish_at.isoformat(),
                 "outbox_rescheduled": len(rows),
                 "to": normalized_publish_at.isoformat(),
+                "timezone": effective_timezone,
             },
             now=now,
         )
         return {
             "outbox_rescheduled": len(rows),
             "publish_at": normalized_publish_at.isoformat(),
+            "publish_timezone": effective_timezone,
             "status": AnnouncementStatus.APPROVED,
         }
 
@@ -299,7 +350,10 @@ def reschedule_command(
         actor=actor,
         idempotency_key=idempotency_key,
         base_version=base_version,
-        payload={"publish_at": normalized_publish_at.isoformat()},
+        payload={
+            "publish_at": normalized_publish_at.isoformat(),
+            "publish_timezone": effective_timezone,
+        },
         operation=operation,
         request_id=request_id,
     )

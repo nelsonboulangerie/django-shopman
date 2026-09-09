@@ -26,6 +26,7 @@ export function useCampaigns() {
   const rfmSegments = computed(() => options.value?.rfm_segments ?? []);
   // Só ofertas que montam sacola chegam aqui — o servidor já filtrou.
   const offers = computed(() => options.value?.offers ?? []);
+  const shopTimezone = computed(() => options.value?.shop_timezone ?? "UTC");
 
   /** Rótulo por ref de plataforma — o que `platformsSummary` espera. */
   const platformLabels = computed<Record<string, string>>(() =>
@@ -129,6 +130,7 @@ export function useCampaigns() {
     tags,
     rfmSegments,
     offers,
+    shopTimezone,
     loading: pending,
     error,
     refresh,

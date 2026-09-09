@@ -8,6 +8,14 @@ import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campa
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
 import {
+  expirySummary,
+  isQuietHoursNow,
+  resolveScheduleInput,
+  scheduleSummary,
+  suggestedScheduleLocal,
+} from "~/utils/marketingSchedule";
+import type { ScheduleFold } from "~/utils/marketingSchedule";
+import {
   audienceSummary,
   displayHashtag,
   expiryLabel,
@@ -26,6 +34,8 @@ const props = defineProps<{
   busy?: boolean;
   /** Stable session-owned scope. Empty disables local persistence. */
   draftOwner?: string;
+  /** Named backend-owned timezone. The browser's local zone is never inferred. */
+  shopTimezone?: string;
 }>();
 
 const emit = defineEmits<{
@@ -39,7 +49,17 @@ const hashtagsText = ref(props.announcement.hashtags.map(displayHashtag).join(" 
 const platforms = ref<string[]>([...props.announcement.platforms]);
 const scheduling = ref(false);
 const publishAt = ref("");
+const publishFold = ref<ScheduleFold>("");
 const rewriting = ref(false);
+const clockMs = ref(Date.now());
+let clockTimer: ReturnType<typeof setInterval> | null = null;
+
+onMounted(() => {
+  clockTimer = setInterval(() => { clockMs.value = Date.now(); }, 30_000);
+});
+onBeforeUnmount(() => {
+  if (clockTimer) clearInterval(clockTimer);
+});
 
 // Reescrever com IA: pede, mostra no MESMO campo e o gestor aceita editando ou apaga.
 // Não grava nada — quem persiste é a aprovação, como todo o resto do card.
@@ -69,6 +89,7 @@ watch(
     platforms.value = [...props.announcement.platforms];
     scheduling.value = false;
     publishAt.value = "";
+    publishFold.value = "";
   },
 );
 
@@ -79,6 +100,7 @@ function editorBase(): MarketingDraftPayload {
     platforms: [...props.announcement.platforms],
     scheduling: false,
     publish_at: "",
+    publish_fold: "",
   };
 }
 
@@ -89,6 +111,7 @@ function editorCurrent(): MarketingDraftPayload {
     platforms: [...platforms.value],
     scheduling: scheduling.value,
     publish_at: publishAt.value,
+    publish_fold: publishFold.value,
   };
 }
 
@@ -102,6 +125,9 @@ function applyEditorDraft(payload: MarketingDraftPayload) {
     : [...props.announcement.platforms];
   scheduling.value = Boolean(payload.scheduling);
   publishAt.value = typeof payload.publish_at === "string" ? payload.publish_at : "";
+  publishFold.value = payload.publish_fold === "earlier" || payload.publish_fold === "later"
+    ? payload.publish_fold
+    : "";
 }
 
 const draft = useMarketingDraft({
@@ -119,9 +145,21 @@ const DRAFT_LABELS = {
   platforms: "Plataformas",
   scheduling: "Modo de publicação",
   publish_at: "Data e hora",
+  publish_fold: "Ocorrência do horário",
 };
 
-const expiry = computed(() => expiryLabel(props.announcement.expires_in_minutes));
+const timezoneName = computed(() => props.shopTimezone || "UTC");
+const expiresAtMs = computed(() => Date.parse(props.announcement.expires_at));
+const exactExpiryMinutes = computed(() => {
+  if (!Number.isFinite(expiresAtMs.value)) return props.announcement.expires_in_minutes;
+  const remaining = expiresAtMs.value - clockMs.value;
+  return remaining <= 0 ? 0 : Math.ceil(remaining / 60_000);
+});
+const expiry = computed(() =>
+  props.announcement.expires_at
+    ? expirySummary(props.announcement.expires_at, timezoneName.value, clockMs.value)
+    : expiryLabel(props.announcement.expires_in_minutes),
+);
 const expiryClass = computed(
   () =>
     ({
@@ -129,14 +167,34 @@ const expiryClass = computed(
       warning: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
       calm: "bg-muted text-muted-foreground",
       none: "",
-    })[expiryTone(props.announcement.expires_in_minutes)],
+    })[expiryTone(exactExpiryMinutes.value)],
 );
 
 const audience = computed(() => audienceSummary(props.announcement.audience));
 const vip = computed(() => vipSummary(props.announcement.audience));
 
+const expired = computed(() => Number.isFinite(expiresAtMs.value) && expiresAtMs.value <= clockMs.value);
 const canPublish = computed(
-  () => !props.busy && body.value.trim().length > 0 && platforms.value.length > 0,
+  () => !props.busy && !expired.value && body.value.trim().length > 0 && platforms.value.length > 0,
+);
+const hasDirectMessage = computed(() => platforms.value.includes("whatsapp"));
+const nowFallsInQuietHours = computed(() =>
+  hasDirectMessage.value && isQuietHoursNow(timezoneName.value, clockMs.value),
+);
+const canPublishNow = computed(() => canPublish.value && !nowFallsInQuietHours.value);
+const scheduleResolution = computed(() => resolveScheduleInput({
+  localValue: publishAt.value,
+  timeZone: timezoneName.value,
+  fold: publishFold.value,
+  nowMs: clockMs.value,
+  expiresAt: props.announcement.expires_at,
+  directMessage: hasDirectMessage.value,
+}));
+const canSchedule = computed(() => canPublish.value && scheduleResolution.value.ok);
+const schedulePreview = computed(() =>
+  scheduleResolution.value.candidate
+    ? scheduleSummary(scheduleResolution.value.candidate.instant, timezoneName.value)
+    : "",
 );
 
 function togglePlatform(value: string) {
@@ -154,20 +212,37 @@ function edits(): AnnouncementEdits {
 }
 
 function publishNow() {
-  if (!canPublish.value) return;
+  if (!canPublishNow.value) return;
   draft.flush();
   emit("approve", props.announcement.pk, edits(), "now");
 }
 
 function schedule() {
-  if (!canPublish.value || !publishAt.value) return;
+  if (!canSchedule.value || !scheduleResolution.value.candidate) return;
   draft.flush();
   emit(
     "approve",
     props.announcement.pk,
-    { ...edits(), publish_at: publishAt.value },
+    { ...edits(), publish_at: scheduleResolution.value.candidate.instant },
     "scheduled",
   );
+}
+
+function toggleScheduling() {
+  scheduling.value = !scheduling.value;
+  if (!scheduling.value || publishAt.value) return;
+  publishAt.value = suggestedScheduleLocal({
+    timeZone: timezoneName.value,
+    suggestedAt: props.announcement.scheduled_for,
+    nowMs: clockMs.value,
+    expiresAt: props.announcement.expires_at,
+  });
+}
+
+function useNextAllowedTime() {
+  if (!scheduleResolution.value.nextAllowedLocal) return;
+  publishAt.value = scheduleResolution.value.nextAllowedLocal;
+  publishFold.value = "";
 }
 
 function askToReject() {
@@ -318,7 +393,7 @@ function askToReject() {
     <footer class="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 px-4 py-3">
       <button
         type="button"
-        :disabled="!canPublish"
+        :disabled="!canPublishNow"
         class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
         @click="publishNow"
       >
@@ -330,7 +405,7 @@ function askToReject() {
         type="button"
         class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
         :aria-expanded="scheduling"
-        @click="scheduling = !scheduling"
+        @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
         Agendar
@@ -346,24 +421,81 @@ function askToReject() {
         Recusar
       </button>
 
+      <p
+        v-if="nowFallsInQuietHours"
+        class="w-full text-xs font-medium text-amber-700 dark:text-amber-400"
+        role="status"
+      >
+        WhatsApp em silêncio das 20:00 às 08:00 ({{ timezoneName }}). Agende o próximo horário permitido.
+      </p>
+      <p v-else-if="expired" class="w-full text-xs font-medium text-destructive" role="alert">
+        O prazo terminou. Atualize os fatos antes de publicar.
+      </p>
+
       <!-- Agendamento: aparece só quando pedido, para não pesar o caminho comum -->
-      <div v-if="scheduling" class="flex w-full flex-wrap items-center gap-2 pt-2">
-        <label :for="`when-${announcement.pk}`" class="text-sm text-muted-foreground">Publicar em</label>
-        <input
-          :id="`when-${announcement.pk}`"
-          v-model="publishAt"
-          type="datetime-local"
-          class="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+      <div v-if="scheduling" class="w-full space-y-2 pt-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <label :for="`when-${announcement.pk}`" class="text-sm text-muted-foreground">Publicar em</label>
+          <input
+            :id="`when-${announcement.pk}`"
+            v-model="publishAt"
+            type="datetime-local"
+            :aria-describedby="`when-help-${announcement.pk}`"
+            class="h-9 rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+            @input="publishFold = ''"
+          >
+          <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
+          <button
+            type="button"
+            :disabled="!canSchedule"
+            class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            @click="schedule"
+          >
+            <Icon name="lucide:calendar-check" class="size-4" />
+            Confirmar agendamento
+          </button>
+        </div>
+        <p
+          v-if="scheduleResolution.problem && scheduleResolution.problem !== 'ambiguous'"
+          :id="`when-help-${announcement.pk}`"
+          class="text-xs text-destructive"
+          role="alert"
         >
-        <button
-          type="button"
-          :disabled="!canPublish || !publishAt"
-          class="inline-flex items-center gap-2 rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-          @click="schedule"
+          {{ scheduleResolution.detail }}
+          <button
+            v-if="scheduleResolution.nextAllowedLocal"
+            type="button"
+            class="ml-1 font-semibold underline"
+            @click="useNextAllowedTime"
+          >
+            Usar 08:00
+          </button>
+        </p>
+        <fieldset
+          v-if="scheduleResolution.problem === 'ambiguous'"
+          class="rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
         >
-          <Icon name="lucide:calendar-check" class="size-4" />
-          Confirmar agendamento
-        </button>
+          <legend class="px-1 text-xs font-semibold">Horário repetido pela mudança do relógio</legend>
+          <p class="text-xs text-muted-foreground">{{ scheduleResolution.detail }}</p>
+          <div class="mt-1 flex flex-wrap gap-3 text-xs">
+            <label
+              v-for="(candidate, index) in scheduleResolution.candidates"
+              :key="candidate.instant"
+              class="flex items-center gap-1.5"
+            >
+              <input
+                v-model="publishFold"
+                type="radio"
+                :value="index === 0 ? 'earlier' : 'later'"
+              >
+              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{ candidate.offset }})
+            </label>
+          </div>
+        </fieldset>
+        <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
+          Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
+          WhatsApp respeita 20:00–08:00.
+        </p>
       </div>
     </footer>
   </article>

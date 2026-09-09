@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -79,6 +79,8 @@ def _approve(
     platforms=None,
     publish_mode=PUBLISH_NOW,
     publish_at=None,
+    publish_timezone="",
+    now=None,
 ):
     return approve_command(
         announcement.pk,
@@ -87,6 +89,7 @@ def _approve(
         base_version=1,
         publish_mode=publish_mode,
         publish_at=publish_at,
+        publish_timezone=publish_timezone,
         content=content or {
             "body": "Croissant saiu do forno.",
             "hashtags": ["feitohoje"],
@@ -96,6 +99,7 @@ def _approve(
         platform_content=platform_content or {},
         platforms=platforms or ["instagram", "google_business"],
         request_id="req_approval_001",
+        now=now,
     )
 
 
@@ -124,6 +128,7 @@ def test_approval_commits_one_connected_graph_without_provider_or_directive(acto
         "platform_count": 2,
         "publish_at": "",
         "publish_mode": "now",
+        "publish_timezone": "America/Sao_Paulo",
     }
     assert {entry.platform for entry in result.outbox} == {
         "instagram",
@@ -145,11 +150,13 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
     }
     variants = {"instagram": {"body": "Pão de queijo às 17h ✨"}}
 
+    decision_time = timezone.now()
     result = _approve(
         actor=actor,
         announcement=announcement,
         content=content,
         platform_content=variants,
+        now=decision_time,
     )
 
     expected_payload = {
@@ -166,6 +173,12 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
             )
         ),
         "schema_version": SCHEMA_VERSION,
+        "schedule": {
+            "effective_at": "",
+            "publish_at": "",
+            "publish_mode": "now",
+            "timezone": "America/Sao_Paulo",
+        },
     }
     expected_bytes = canonical_artifact_bytes(expected_payload)
     assert result.artifact.payload == expected_payload
@@ -173,6 +186,99 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
     assert result.artifact.canonical_bytes() == expected_bytes
     assert result.artifact.artifact_hash == hashlib.sha256(expected_bytes).hexdigest()
     assert result.receipt.outcome["artifact_hash"] == result.artifact.artifact_hash
+
+
+def test_scheduled_instant_is_identical_in_artifact_receipt_and_outbox(
+    actor,
+    announcement,
+):
+    now = datetime.fromisoformat("2026-09-09T09:00:00-03:00")
+    publish_at = datetime.fromisoformat("2026-09-09T10:15:00-03:00")
+
+    result = _approve(
+        actor=actor,
+        announcement=announcement,
+        key="idem-canonical-instant-0001",
+        platforms=["instagram"],
+        publish_mode=PUBLISH_SCHEDULED,
+        publish_at=publish_at,
+        publish_timezone="America/Sao_Paulo",
+        now=now,
+    )
+
+    assert result.artifact.payload["schedule"] == {
+        "effective_at": publish_at.isoformat(),
+        "publish_at": publish_at.isoformat(),
+        "publish_mode": "scheduled",
+        "timezone": "America/Sao_Paulo",
+    }
+    assert result.receipt.outcome["publish_at"] == publish_at.isoformat()
+    assert result.receipt.outcome["publish_timezone"] == "America/Sao_Paulo"
+    assert [row.available_at for row in result.outbox] == [publish_at]
+
+
+def test_schedule_at_expiry_is_rejected_before_any_delivery_graph(actor, announcement):
+    now = datetime.fromisoformat("2026-09-09T09:00:00-03:00")
+    announcement.expires_at = now + timedelta(hours=1)
+    announcement.save(update_fields=["expires_at"])
+
+    with pytest.raises(MarketingCommandRejected) as caught:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-expiry-boundary-0001",
+            platforms=["instagram"],
+            publish_mode=PUBLISH_SCHEDULED,
+            publish_at=announcement.expires_at,
+            publish_timezone="America/Sao_Paulo",
+            now=now,
+        )
+
+    assert caught.value.code == "scheduled_after_expiry"
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
+
+
+def test_whatsapp_now_is_blocked_during_quiet_hours_before_audience_work(
+    actor,
+    announcement,
+):
+    now = datetime.fromisoformat("2026-09-09T21:00:00-03:00")
+
+    with pytest.raises(MarketingCommandRejected) as caught:
+        _approve(
+            actor=actor,
+            announcement=announcement,
+            key="idem-quiet-hours-000001",
+            platforms=["whatsapp"],
+            now=now,
+        )
+
+    assert caught.value.code == "quiet_hours_active"
+    receipt = MarketingCommandReceipt.objects.get(ref=caught.value.receipt_ref)
+    assert receipt.outcome["next_allowed_at"] == "2026-09-10T08:00:00-03:00"
+    assert receipt.outcome["publish_timezone"] == "America/Sao_Paulo"
+    assert MarketingContentArtifact.objects.count() == 0
+    assert MarketingOutbox.objects.count() == 0
+
+
+def test_social_publish_now_is_not_blocked_by_direct_message_quiet_hours(
+    actor,
+    announcement,
+):
+    now = datetime.fromisoformat("2026-09-09T21:00:00-03:00")
+
+    result = _approve(
+        actor=actor,
+        announcement=announcement,
+        key="idem-social-quiet-hours-01",
+        platforms=["instagram"],
+        publish_timezone="America/Sao_Paulo",
+        now=now,
+    )
+
+    assert result.receipt.state == MarketingCommandReceipt.State.COMPLETED
+    assert result.outbox[0].available_at == now
 
 
 def test_input_mutation_after_approval_cannot_change_sealed_artifact(actor, announcement):

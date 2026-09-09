@@ -13,6 +13,7 @@ import {
 
 const {
   rules, templates, triggers, platforms, platformLabels, priceTiers, tags, rfmSegments, offers,
+  shopTimezone,
   loading, error, refresh, toggle, patch, create, fire,
 } = useCampaigns();
 // A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
@@ -249,6 +250,7 @@ useHead({ title: "Campanhas · Marketing" });
             :whatsapp-template="waTemplate.current.value"
             :busy="busy"
             :draft-owner="draftOwner"
+            :shop-timezone="shopTimezone"
             @submit="onSubmit"
             @cancel="close"
           />

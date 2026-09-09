@@ -19,7 +19,7 @@ const OUTCOME_META = {
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
-const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject, aiAssistAvailable } =
+const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject, aiAssistAvailable, shopTimezone } =
   useCampaignBoard();
 const { platforms } = useCampaigns();
 const busyPk = ref<number | null>(null);
@@ -184,6 +184,7 @@ useHead({ title: "Painel · Marketing" });
           :busy="busyPk === announcement.pk"
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
+          :shop-timezone="shopTimezone"
           @approve="onApprove"
           @reject="(pk) => { rejecting = pk; rejectReason = '' }"
         />

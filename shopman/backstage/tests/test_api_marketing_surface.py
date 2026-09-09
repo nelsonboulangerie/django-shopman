@@ -13,7 +13,7 @@ O que este arquivo protege, em ordem de importância:
 from __future__ import annotations
 
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -163,21 +163,38 @@ class TestGate:
 
 class TestBoard:
     def test_pending_post_carries_the_keys_the_surface_reads(self, client, gestor, rule, template):
-        _post(rule, template)
+        suggested = timezone.localtime(timezone.now() + timedelta(hours=2))
+        _post(rule, template, publish_at=suggested)
         client.force_login(gestor)
 
         board = client.get(BOARD_URL).json()["board"]
 
         assert board["stats"]["pending_count"] == 1
+        assert board["shop_timezone"] == "America/Sao_Paulo"
         card = board["pending"][0]
         assert card["body"] == "Croissant saiu do forno"
         assert card["audience_total"] == 15
         assert card["rule_name"] == "Fornada de pães"
         assert card["sku"] == "CRO-001"
+        assert datetime.fromisoformat(card["scheduled_for"]) == suggested
         assert [r["platform"] for r in card["platform_results"]] == [
             "instagram",
             "google_business",
         ]
+
+    def test_expiry_never_reads_zero_while_the_card_is_still_actionable(
+        self,
+        client,
+        gestor,
+        rule,
+        template,
+    ):
+        _post(rule, template, expires_at=timezone.now() + timedelta(seconds=30))
+        client.force_login(gestor)
+
+        card = client.get(BOARD_URL).json()["board"]["pending"][0]
+
+        assert card["expires_in_minutes"] == 1
 
     def test_expired_pending_post_leaves_the_board(self, client, gestor, rule, template):
         """Anúncio vencido não pede decisão: propaganda velha destrói confiança."""
@@ -975,6 +992,7 @@ class TestOptions:
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
         assert template.pk in {t["pk"] for t in options["templates"]}
         assert "product_name" in options["variables"]
+        assert options["shop_timezone"] == "America/Sao_Paulo"
 
     def test_template_options_preserve_platform_variants_for_faithful_preview(
         self, client, gestor, template
@@ -1101,7 +1119,7 @@ class TestScheduledPublishing:
     ):
         announcement = _post(rule, template)
         client.force_login(gestor)
-        when = timezone.now() + timedelta(hours=3)
+        when = timezone.localtime(timezone.now() + timedelta(hours=3))
 
         response = _confirmed_post(
             client,
@@ -1110,15 +1128,91 @@ class TestScheduledPublishing:
                 "base_version": 1,
                 "publish_mode": "scheduled",
                 "publish_at": when.isoformat(),
+                "publish_timezone": "America/Sao_Paulo",
             },
             key="scheduled-publish-contract-0001",
         )
 
         assert response.status_code == 200
         assert response.json()["scheduled"] is True
+        assert response.json()["receipt"]["outcome"]["publish_at"] == when.isoformat()
+        assert response.json()["receipt"]["outcome"]["publish_timezone"] == (
+            "America/Sao_Paulo"
+        )
+        assert list(MarketingOutbox.objects.values_list("available_at", flat=True)) == [
+            when
+        ] * 2
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.APPROVED
         assert announcement.publish_at is not None
+
+    def test_named_timezone_rejects_a_naive_instant(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "2026-09-10T10:00:00",
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="naive-schedule-contract-0001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "scheduled_publish_at_naive"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_named_timezone_rejects_a_forged_offset(self, client, gestor, rule, template):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "2026-09-10T10:00:00-02:00",
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="offset-schedule-contract-001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "timezone_offset_mismatch"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_schedule_at_expiry_is_rejected_without_delivery_rows(
+        self,
+        client,
+        gestor,
+        rule,
+        template,
+    ):
+        expires_at = timezone.localtime(timezone.now() + timedelta(hours=3))
+        announcement = _post(rule, template, expires_at=expires_at)
+        client.force_login(gestor)
+
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": expires_at.isoformat(),
+                "publish_timezone": "America/Sao_Paulo",
+            },
+            key="expiry-schedule-contract-0001",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "scheduled_after_expiry"
+        assert MarketingContentArtifact.objects.count() == 0
+        assert MarketingOutbox.objects.count() == 0
 
     def test_approve_applies_the_card_edits_in_the_same_request(
         self, client, gestor, rule, template

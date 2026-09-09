@@ -227,7 +227,62 @@ def test_reschedule_preserves_relative_wave_delays_and_audits_both_instants(acto
         "from": old_publish_at.isoformat(),
         "outbox_rescheduled": 2,
         "to": new_publish_at.isoformat(),
+        "timezone": "America/Sao_Paulo",
     }
+
+
+def test_reschedule_refuses_any_wave_at_or_after_expiry(actor, announcement):
+    approved = _approve(actor, announcement, scheduled=True)
+    old_publish_at = approved.announcement.publish_at
+    expires_at = old_publish_at + timedelta(hours=4)
+    Announcement.objects.filter(pk=announcement.pk).update(expires_at=expires_at)
+    original_times = list(
+        MarketingOutbox.objects.order_by("pk").values_list("available_at", flat=True)
+    )
+
+    with pytest.raises(MarketingCommandRejected) as caught:
+        reschedule_command(
+            announcement.pk,
+            actor=actor,
+            idempotency_key="idem-transition-expiry-0001",
+            base_version=2,
+            publish_at=timezone.localtime(expires_at),
+            publish_timezone="America/Sao_Paulo",
+        )
+
+    assert caught.value.code == "delivery_wave_after_expiry"
+    assert list(
+        MarketingOutbox.objects.order_by("pk").values_list("available_at", flat=True)
+    ) == original_times
+
+
+def test_reschedule_refuses_a_whatsapp_wave_in_quiet_hours(actor, announcement):
+    _approve(actor, announcement, scheduled=True)
+    first = MarketingOutbox.objects.order_by("pk").first()
+    MarketingOutbox.objects.filter(pk=first.pk).update(platform="whatsapp")
+    original_times = list(
+        MarketingOutbox.objects.order_by("pk").values_list("available_at", flat=True)
+    )
+    next_evening = (
+        timezone.localtime(timezone.now())
+        .replace(hour=21, minute=0, second=0, microsecond=0)
+        + timedelta(days=1)
+    )
+
+    with pytest.raises(MarketingCommandRejected) as caught:
+        reschedule_command(
+            announcement.pk,
+            actor=actor,
+            idempotency_key="idem-transition-quiet-00001",
+            base_version=2,
+            publish_at=next_evening,
+            publish_timezone="America/Sao_Paulo",
+        )
+
+    assert caught.value.code == "delivery_wave_in_quiet_hours"
+    assert list(
+        MarketingOutbox.objects.order_by("pk").values_list("available_at", flat=True)
+    ) == original_times
 
 
 def test_cancel_then_reschedule_with_same_base_has_exactly_one_winner(actor, announcement):

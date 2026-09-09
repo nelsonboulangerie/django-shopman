@@ -17,16 +17,21 @@ export function buildApprovalCommand(
   edits: AnnouncementEdits,
   baseVersion: number,
   publishMode: PublishMode,
+  publishTimezone: string,
 ) {
   const { publish_at: publishAt, ...contentEdits } = edits;
   if (publishMode !== "now" && publishMode !== "scheduled") {
     throw new Error("approval requires an explicit publish mode");
+  }
+  if (!publishTimezone.trim()) {
+    throw new Error("approval requires the shop timezone");
   }
   if (publishMode === "scheduled") {
     if (!publishAt) throw new Error("scheduled approval requires publish_at");
     return {
       ...contentEdits,
       publish_at: publishAt,
+      publish_timezone: publishTimezone,
       base_version: baseVersion,
       publish_mode: publishMode,
     };
@@ -35,6 +40,7 @@ export function buildApprovalCommand(
   // value.  The timestamp is omitted, rather than relying on the API to guess.
   return {
     ...contentEdits,
+    publish_timezone: publishTimezone,
     base_version: baseVersion,
     publish_mode: publishMode,
   };
@@ -53,6 +59,7 @@ export function useCampaignBoard() {
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
   const reachLimits = computed<ReachLimit[]>(() => board.value?.reach_limits ?? []);
   const aiAssistAvailable = computed(() => board.value?.ai_assist_available ?? false);
+  const shopTimezone = computed(() => board.value?.shop_timezone ?? "UTC");
   // Keep one key for the same visible version + consequence. If the response is
   // lost and the operator taps again, the backend returns the original receipt
   // instead of creating a second command.
@@ -82,7 +89,12 @@ export function useCampaignBoard() {
     }
     let command: ReturnType<typeof buildApprovalCommand>;
     try {
-      command = buildApprovalCommand(edits, announcement.version, publishMode);
+      command = buildApprovalCommand(
+        edits,
+        announcement.version,
+        publishMode,
+        shopTimezone.value,
+      );
     } catch {
       useSonner.error("Escolha a data e a hora para agendar.");
       return false;
@@ -170,6 +182,7 @@ export function useCampaignBoard() {
     board,
     reachLimits,
     aiAssistAvailable,
+    shopTimezone,
     pendingPosts,
     recentPosts,
     stats,

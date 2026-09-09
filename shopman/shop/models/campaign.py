@@ -267,6 +267,7 @@ class Campaign(models.Model):
         """
         from shopman.shop.services import audience as aud
         from shopman.shop.services import campaign_schedule as sched
+        from shopman.shop.services import marketing_time
 
         match = (self.audience_rules or {}).get("match")
         if match is not None and str(match).strip().lower() not in aud.MATCH_MODES:
@@ -277,6 +278,18 @@ class Campaign(models.Model):
                     f"encaixa em todas)."
                 ),
             })
+
+        schedule = self.schedule if isinstance(self.schedule, dict) else {}
+        if schedule.get("timezone"):
+            try:
+                marketing_time.require_configured_timezone(str(schedule["timezone"]))
+            except ValueError:
+                raise ValidationError({
+                    "schedule": (
+                        "O timezone do agendamento não corresponde ao configurado "
+                        "para a loja. Reabra o horário antes de salvar."
+                    ),
+                }) from None
 
         fires = sched.fires_on_its_own(self.schedule)
         if self.trigger == Trigger.SCHEDULE and not fires:

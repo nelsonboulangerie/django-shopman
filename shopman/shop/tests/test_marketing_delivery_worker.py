@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -298,6 +298,36 @@ def test_consent_outage_defers_without_lease_or_false_zero():
     assert target.lease_until is None
     assert target.last_error_code == "consent_unavailable"
     assert target.next_attempt_at == now + timedelta(seconds=30)
+
+
+def test_delayed_whatsapp_worker_waits_until_the_next_allowed_shop_time():
+    outbox, _members, _report = _fanout_whatsapp(
+        suffix="claim-quiet-hours",
+        count=1,
+        opted_in=True,
+    )
+    _queue_all(outbox)
+    quiet_now = datetime.fromisoformat("2026-09-09T21:00:00-03:00")
+
+    deferred = claim_due_targets(
+        worker_id="worker-quiet-hours",
+        now=quiet_now,
+    )
+
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    assert (deferred.examined, deferred.deferred) == (1, 1)
+    assert deferred.targets == ()
+    assert target.last_error_code == "quiet_hours_active"
+    assert target.next_attempt_at == datetime.fromisoformat(
+        "2026-09-10T08:00:00-03:00"
+    )
+
+    opened = claim_due_targets(
+        worker_id="worker-opening-hours",
+        now=target.next_attempt_at,
+    )
+
+    assert [item.pk for item in opened.targets] == [target.pk]
 
 
 def test_revoked_specific_subscription_is_suppressed_before_claim():

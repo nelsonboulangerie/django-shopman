@@ -44,6 +44,7 @@ function form(rule: Campaign | null = null, draftOwner = "") {
       tags: TAGS,
       rfmSegments: RFM_SEGMENTS,
       platformLabels: { whatsapp: "WhatsApp", instagram: "Instagram" },
+      shopTimezone: "America/Sao_Paulo",
       draftOwner,
     },
     global: {
@@ -126,6 +127,7 @@ describe("CampaignForm — quando disparar", () => {
     const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
     expect(payload.schedule).toEqual({
       type: "recurring",
+      timezone: "America/Sao_Paulo",
       windows: [["17:30", "18:30"]],
     });
   });
@@ -157,6 +159,31 @@ describe("CampaignForm — quando disparar", () => {
 
     await wrapper.find("form").trigger("submit");
 
+    expect(wrapper.emitted("submit")).toBeUndefined();
+  });
+
+  it("uma vez nova envia offset e timezone sem inferir o computador", async () => {
+    const wrapper = form(makeRule());
+    await wrapper.findAll("button").find(button => button.text() === "Uma vez")!.trigger("click");
+    await wrapper.find("#rule-once-at").setValue("2027-01-10T17:30");
+    await wrapper.find("form").trigger("submit");
+
+    const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
+    expect(payload.schedule).toEqual({
+      type: "once",
+      at: "2027-01-10T17:30:00-03:00",
+      timezone: "America/Sao_Paulo",
+    });
+  });
+
+  it("explica e bloqueia um horário inexistente na mudança de DST", async () => {
+    const wrapper = form(makeRule(), "");
+    await wrapper.setProps({ shopTimezone: "America/New_York" });
+    await wrapper.findAll("button").find(button => button.text() === "Uma vez")!.trigger("click");
+    await wrapper.find("#rule-once-at").setValue("2027-03-14T02:30");
+    await wrapper.find("form").trigger("submit");
+
+    expect(wrapper.text()).toContain("não existe por causa da mudança do relógio");
     expect(wrapper.emitted("submit")).toBeUndefined();
   });
 
@@ -215,6 +242,7 @@ describe("CampaignForm — quando disparar", () => {
     const [payload] = wrapper.emitted("submit")![0] as [Record<string, unknown>];
     expect(payload.schedule).toEqual({
       type: "recurring",
+      timezone: "America/Sao_Paulo",
       windows: [["08:15", "09:15"], ["16:00", "18:00"]],
       weekdays: [1, 3],
       starts_on: "2026-09-10",

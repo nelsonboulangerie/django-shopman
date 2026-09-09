@@ -1,5 +1,5 @@
 import { flushPromises, mount } from "@vue/test-utils";
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import AnnouncementCard from "~/components/AnnouncementCard.vue";
 import DraftRecoveryNotice from "~/components/DraftRecoveryNotice.vue";
@@ -8,11 +8,15 @@ import { installMemoryLocalStorage } from "../support/localStorage";
 
 // Sem runtime Nuxt: os auto-imports viram globais e o Icon vira stub.
 beforeAll(() => {
-  Object.assign(globalThis, { computed, ref, watch });
+  Object.assign(globalThis, { computed, onBeforeUnmount, onMounted, ref, watch });
   installMemoryLocalStorage();
 });
 
-beforeEach(() => window.localStorage.clear());
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-07-18T12:00:00Z"));
+  window.localStorage.clear();
+});
 afterEach(() => vi.useRealTimers());
 
 const PLATFORMS = [
@@ -45,13 +49,23 @@ function makeAnnouncement(over: Partial<Announcement> = {}): Announcement {
     expires_in_minutes: 20,
     published_at: "",
     approved_by: "",
+    scheduled_for: "",
     ...over,
   };
 }
 
-function mountCard(announcement: Announcement, draftOwner = "") {
+function mountCard(
+  announcement: Announcement,
+  draftOwner = "",
+  shopTimezone = "America/Sao_Paulo",
+) {
   return mount(AnnouncementCard, {
-    props: { announcement, platformOptions: PLATFORMS, draftOwner },
+    props: {
+      announcement,
+      platformOptions: PLATFORMS,
+      draftOwner,
+      shopTimezone,
+    },
     global: {
       components: { DraftRecoveryNotice },
       stubs: { Icon: true },
@@ -126,8 +140,50 @@ describe("AnnouncementCard", () => {
     await confirm.trigger("click");
 
     const [, edits] = wrapper.emitted("approve")![0] as [number, Record<string, unknown>];
-    expect(edits.publish_at).toBe("2026-07-19T07:00");
+    expect(edits.publish_at).toBe("2026-07-19T07:00:00-03:00");
     expect(wrapper.emitted("approve")![0]![2]).toBe("scheduled");
+  });
+
+  it("replaces a quiet-hours guess with the next permitted WhatsApp time", async () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
+    const wrapper = mountCard(makeAnnouncement({ platforms: ["whatsapp"] }));
+    const publishNow = wrapper.findAll("button").find(button => button.text().includes("Publicar agora"))!;
+
+    expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
+    expect(wrapper.text()).toContain("WhatsApp em silêncio das 20:00 às 08:00");
+
+    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+
+    expect((wrapper.find("input[type=datetime-local]").element as HTMLInputElement).value)
+      .toBe("2026-07-18T08:00");
+  });
+
+  it("does not allow a schedule at the exact expiry boundary", async () => {
+    const wrapper = mountCard(makeAnnouncement({
+      expires_at: "2026-07-19T07:00:00-03:00",
+    }));
+    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+    await wrapper.find("input[type=datetime-local]").setValue("2026-07-19T07:00");
+
+    expect(wrapper.text()).toContain("expiraria antes desse horário");
+    const confirm = wrapper.findAll("button").find(button => button.text() === "Confirmar agendamento")!;
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("waits for the operator to choose one of two DST occurrences", async () => {
+    vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
+    const wrapper = mountCard(makeAnnouncement(), "", "America/New_York");
+    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+    await wrapper.find("input[type=datetime-local]").setValue("2026-11-01T01:30");
+
+    expect(wrapper.text()).toContain("acontece duas vezes");
+    const confirm = wrapper.findAll("button").find(button => button.text() === "Confirmar agendamento")!;
+    expect((confirm.element as HTMLButtonElement).disabled).toBe(true);
+
+    await wrapper.findAll("input[type=radio]").at(-1)!.setValue();
+    await confirm.trigger("click");
+    const [, edits] = wrapper.emitted("approve")![0] as [number, Record<string, unknown>];
+    expect(edits.publish_at).toBe("2026-11-01T01:30:00-05:00");
   });
 
   it("asks the parent to confirm the rejection instead of rejecting itself", async () => {

@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from math import ceil
 
 from django.utils import timezone
 
@@ -80,6 +81,7 @@ class AnnouncementProjection:
     created_at: str
     expires_at: str
     expires_in_minutes: int  # -1 = não expira
+    scheduled_for: str
     published_at: str
     approved_by: str
     #: Quem recusou e por quê. Vazio em tudo que não foi recusado — mostrar "recusado
@@ -161,6 +163,7 @@ class CampaignBoardProjection:
     #: Há credencial de IA neste ambiente? A tela pergunta ANTES de oferecer o botão de
     #: reescrever: oferecer e falhar depois ensina o gestor a não confiar no recurso.
     ai_assist_available: bool = False
+    shop_timezone: str = "UTC"
 
 
 @dataclass(frozen=True)
@@ -247,6 +250,7 @@ class CampaignOptionsProjection:
     #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
     #: ao gestor um botão que promete o que não cumpre.
     offers: tuple[ChoiceProjection, ...] = ()
+    shop_timezone: str = "UTC"
 
 
 # ── Quantas pessoas isto alcança ─────────────────────────────────────
@@ -367,7 +371,9 @@ def _expires_in_minutes(announcement: Announcement, *, now) -> int:
     if not announcement.expires_at:
         return -1
     remaining = (announcement.expires_at - now).total_seconds() / 60
-    return max(0, int(remaining))
+    # Never show "0 min" while the announcement is still actionable. That
+    # forces the operator to second-guess whether it already expired.
+    return max(0, ceil(remaining))
 
 
 def _result_detail(result: dict) -> str:
@@ -450,6 +456,7 @@ def build_announcement(announcement: Announcement, *, now=None) -> AnnouncementP
         created_at=_iso(announcement.created_at),
         expires_at=_iso(announcement.expires_at),
         expires_in_minutes=_expires_in_minutes(announcement, now=now),
+        scheduled_for=_iso(announcement.publish_at),
         published_at=_iso(announcement.published_at),
         approved_by=(approver.get_full_name() or approver.username) if approver else "",
         rejected_by=(rejecter.get_full_name() or rejecter.username) if rejecter else "",
@@ -495,6 +502,7 @@ def build_board(*, now=None) -> CampaignBoardProjection:
         ),
         reach_limits=_reach_limits(),
         ai_assist_available=_ai_assist_available(),
+        shop_timezone=_marketing_timezone_name(),
     )
 
 
@@ -725,7 +733,14 @@ def build_options() -> CampaignOptionsProjection:
         tags=_tag_choices(),
         rfm_segments=_rfm_segment_choices(),
         offers=_offer_choices(),
+        shop_timezone=_marketing_timezone_name(),
     )
+
+
+def _marketing_timezone_name() -> str:
+    from shopman.shop.services.marketing_time import configured_timezone_name
+
+    return configured_timezone_name()
 
 
 def _offer_choices() -> tuple[ChoiceProjection, ...]:

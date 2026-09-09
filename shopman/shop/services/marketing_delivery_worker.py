@@ -19,6 +19,7 @@ from shopman.shop.models import (
     DeliveryTarget,
     MarketingOutbox,
 )
+from shopman.shop.services import marketing_time
 from shopman.shop.services.marketing_contracts import (
     DeliveryState,
     MarketingContractError,
@@ -256,7 +257,7 @@ def claim_due_targets(
                 target.lease_owner = ""
                 target.lease_until = None
                 target.last_error_code = reason
-                target.next_attempt_at = clock + timedelta(seconds=CONSENT_RETRY_SECONDS)
+                target.next_attempt_at = _defer_until(target, reason=reason, now=clock)
                 deferred += 1
             else:
                 terminal = DeliveryState(outcome)
@@ -330,6 +331,13 @@ def _pre_send_outcome(
     if target.platform != "whatsapp":
         return "claim", ""
 
+    timing = marketing_time.delivery_window(
+        now,
+        timezone_name=_artifact_timezone(target),
+    )
+    if not timing.allowed:
+        return "defer", "quiet_hours_active"
+
     member = target.member
     if member is None:
         return DeliveryState.SUPPRESSED.value, "delivery_identity_unavailable"
@@ -354,6 +362,28 @@ def _pre_send_outcome(
     if customer_ref and status == "opted_in":
         return "claim", ""
     return DeliveryState.SUPPRESSED.value, "missing_consent"
+
+
+def _artifact_timezone(target: DeliveryTarget) -> str:
+    payload = target.artifact.payload if isinstance(target.artifact.payload, dict) else {}
+    schedule = payload.get("schedule")
+    try:
+        return marketing_time.schedule_timezone(
+            schedule if isinstance(schedule, dict) else None
+        )
+    except ValueError:
+        # Invalid legacy metadata cannot authorize a less conservative clock.
+        return marketing_time.configured_timezone_name()
+
+
+def _defer_until(target: DeliveryTarget, *, reason: str, now: datetime) -> datetime:
+    if reason != "quiet_hours_active":
+        return now + timedelta(seconds=CONSENT_RETRY_SECONDS)
+    window = marketing_time.delivery_window(
+        now,
+        timezone_name=_artifact_timezone(target),
+    )
+    return window.next_allowed_at or (now + timedelta(seconds=CONSENT_RETRY_SECONDS))
 
 
 def _facts_outcomes(

@@ -7,6 +7,8 @@
 import type { AudienceRules, Campaign, Choice, AnnouncementTemplate } from "~/types/campaign";
 import { useMarketingDraft } from "~/composables/useMarketingDraft";
 import type { MarketingDraftPayload } from "~/utils/marketingDraft";
+import { resolveScheduleInput, scheduleSummary } from "~/utils/marketingSchedule";
+import type { ScheduleFold } from "~/utils/marketingSchedule";
 
 const props = defineProps<{
   rule: Campaign | null; // null = criando
@@ -23,6 +25,7 @@ const props = defineProps<{
   whatsappTemplate?: string;
   busy?: boolean;
   draftOwner?: string;
+  shopTimezone?: string;
 }>();
 
 const emit = defineEmits<{
@@ -48,6 +51,7 @@ const baseSchedule = ref<Record<string, unknown>>({});
 // mesmo que `services/campaign_schedule.py` lê; o servidor recusa o par impossível.
 const scheduleKind = ref<"once" | "recurring">("recurring");
 const onceAt = ref("");
+const onceFold = ref<ScheduleFold>("");
 const fireAt = ref("07:00");
 const weekdays = ref<number[]>([]);
 const startsOn = ref("");
@@ -122,6 +126,7 @@ watch(
     baseSchedule.value = cloneRecord(schedule);
     scheduleKind.value = schedule.type === "once" ? "once" : "recurring";
     onceAt.value = typeof schedule.at === "string" ? schedule.at.slice(0, 16) : "";
+    onceFold.value = "";
     const firstWindow = Array.isArray(schedule.windows) ? schedule.windows[0] : null;
     fireAt.value = Array.isArray(firstWindow) ? String(firstWindow[0]) : "07:00";
     extraWindows.value = Array.isArray(schedule.windows)
@@ -149,6 +154,14 @@ watch(
   { immediate: true },
 );
 
+const timezoneName = computed(() => props.shopTimezone || "UTC");
+const onceResolution = computed(() => resolveScheduleInput({
+  localValue: onceAt.value,
+  timeZone: timezoneName.value,
+  fold: onceFold.value,
+}));
+const dateRangeValid = computed(() => !startsOn.value || !endsOn.value || startsOn.value <= endsOn.value);
+
 const canSubmit = computed(
   () =>
     !props.busy &&
@@ -160,7 +173,15 @@ const canSubmit = computed(
 );
 
 const scheduleReady = computed(() =>
-  scheduleKind.value === "once" ? onceAt.value !== "" : fireAt.value !== "",
+  scheduleKind.value === "once"
+    ? (
+        onceAt.value !== ""
+        && (
+          Boolean(props.rule && !scheduleTouched.value)
+          || onceResolution.value.ok
+        )
+      )
+    : fireAt.value !== "" && dateRangeValid.value,
 );
 
 function toggleWeekday(day: number) {
@@ -180,11 +201,16 @@ function buildSchedule(): Record<string, unknown> {
     return cloneRecord(baseSchedule.value);
   }
   const preserved = cloneRecord(baseSchedule.value);
-  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on"]) {
+  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on", "timezone"]) {
     Reflect.deleteProperty(preserved, key);
   }
   if (scheduleKind.value === "once") {
-    return { ...preserved, type: "once", at: onceAt.value };
+    return {
+      ...preserved,
+      type: "once",
+      at: onceResolution.value.candidate?.instant ?? onceAt.value,
+      timezone: timezoneName.value,
+    };
   }
   // O fim da janela é inerte para quem dispara (só o início vira ocasião), mas o
   // formato exige o par — daí uma hora depois, sem inventar significado nenhum.
@@ -197,6 +223,7 @@ function buildSchedule(): Record<string, unknown> {
   return {
     ...preserved,
     type: "recurring",
+    timezone: timezoneName.value,
     windows: [[fireAt.value, end], ...extraWindows.value],
     // Vazio = a semana toda, igual ao servidor. Não mandamos os 7 dias à mão.
     ...(weekdays.value.length > 0 ? { weekdays: [...weekdays.value].sort() } : {}),
@@ -285,7 +312,7 @@ function chooseScheduleKind(value: "once" | "recurring") {
 
 function eventScheduleAfterTriggerChange(): Record<string, unknown> {
   const preserved = cloneRecord(baseSchedule.value);
-  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on"]) {
+  for (const key of ["type", "at", "windows", "weekdays", "starts_on", "ends_on", "timezone"]) {
     Reflect.deleteProperty(preserved, key);
   }
   return { ...preserved, type: "immediate" };
@@ -324,7 +351,13 @@ function campaignBase(): MarketingDraftPayload {
       promotion_ref: "",
       is_active: true,
       ...(defaultTrigger === "schedule"
-        ? { schedule: { type: "recurring", windows: [["07:00", "08:00"]] } }
+        ? {
+            schedule: {
+              type: "recurring",
+              timezone: timezoneName.value,
+              windows: [["07:00", "08:00"]],
+            },
+          }
         : {}),
       audience_rules: {},
     };
@@ -375,6 +408,7 @@ function applyCampaignDraft(payload: MarketingDraftPayload) {
   baseSchedule.value = schedule;
   scheduleKind.value = schedule.type === "once" ? "once" : "recurring";
   onceAt.value = typeof schedule.at === "string" ? schedule.at.slice(0, 16) : "";
+  onceFold.value = "";
   const firstWindow = Array.isArray(schedule.windows) ? schedule.windows[0] : null;
   fireAt.value = Array.isArray(firstWindow) ? String(firstWindow[0]) : "07:00";
   extraWindows.value = Array.isArray(schedule.windows)
@@ -541,13 +575,51 @@ function submit() {
 
       <div v-if="scheduleKind === 'once'" class="mt-3">
         <label for="rule-once-at" class="mb-1 block text-sm font-medium">Dia e hora</label>
-        <input
-          id="rule-once-at"
-          v-model="onceAt"
-          type="datetime-local"
-          class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-64"
-          @input="scheduleTouched = true"
+        <div class="flex flex-wrap items-center gap-2">
+          <input
+            id="rule-once-at"
+            v-model="onceAt"
+            type="datetime-local"
+            class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring sm:w-64"
+            @input="scheduleTouched = true; onceFold = ''"
+          >
+          <span class="text-xs font-semibold text-muted-foreground">{{ timezoneName }}</span>
+        </div>
+        <p
+          v-if="scheduleTouched && onceResolution.problem && onceResolution.problem !== 'ambiguous'"
+          class="mt-1 text-xs text-destructive"
+          role="alert"
         >
+          {{ onceResolution.detail }}
+        </p>
+        <fieldset
+          v-if="scheduleTouched && onceResolution.problem === 'ambiguous'"
+          class="mt-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-2"
+        >
+          <legend class="px-1 text-xs font-semibold">Horário repetido pela mudança do relógio</legend>
+          <p class="text-xs text-muted-foreground">{{ onceResolution.detail }}</p>
+          <div class="mt-1 flex flex-wrap gap-3 text-xs">
+            <label
+              v-for="(candidate, index) in onceResolution.candidates"
+              :key="candidate.instant"
+              class="flex items-center gap-1.5"
+            >
+              <input
+                v-model="onceFold"
+                type="radio"
+                :value="index === 0 ? 'earlier' : 'later'"
+              >
+              {{ index === 0 ? "Primeira" : "Segunda" }} ocorrência (UTC{{ candidate.offset }})
+            </label>
+          </div>
+        </fieldset>
+        <p
+          v-if="scheduleTouched && onceResolution.ok && onceResolution.candidate"
+          class="mt-1 text-xs text-muted-foreground"
+        >
+          Instante exato: {{ scheduleSummary(onceResolution.candidate.instant, timezoneName) }}
+          · UTC{{ onceResolution.candidate.offset }}.
+        </p>
         <p class="mt-1 text-xs text-muted-foreground">
           Dispara uma única vez. Depois disso a campanha não volta sozinha.
         </p>
@@ -617,6 +689,13 @@ function submit() {
         </div>
         <p v-if="extraWindows.length" class="text-xs text-muted-foreground">
           Horários adicionais preservados: {{ extraWindows.map((window) => window.join("–")).join(", ") }}.
+        </p>
+        <p v-if="!dateRangeValid" class="text-xs text-destructive" role="alert">
+          A data final precisa ser igual ou posterior à data inicial.
+        </p>
+        <p class="text-xs text-muted-foreground">
+          Horários em {{ timezoneName }}. Se o relógio pular esse horário, aquela data é
+          ignorada; se repetir, a primeira ocorrência dispara uma única vez.
         </p>
       </div>
     </fieldset>

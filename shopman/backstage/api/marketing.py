@@ -418,7 +418,14 @@ class AnnouncementDetailView(_CampaignBase):
         announcement = _announcement_or_none(pk)
         if announcement is None:
             return Response({"detail": "Anúncio não encontrado."}, status=404)
-        return Response({"announcement": projection_data(marketing_projection.build_announcement(announcement))})
+        from shopman.shop.services.marketing_time import configured_timezone_name
+
+        return Response({
+            "announcement": projection_data(
+                marketing_projection.build_announcement(announcement)
+            ),
+            "shop_timezone": configured_timezone_name(),
+        })
 
     def patch(self, request, pk: int):
         announcement = _announcement_or_none(pk)
@@ -515,6 +522,7 @@ class AnnouncementApproveView(_CampaignBase):
             "platforms",
             "publish_at",
             "publish_mode",
+            "publish_timezone",
         } | _AUTHORIZATION_FIELDS
         unexpected = sorted(set(payload) - allowed)
         if unexpected:
@@ -539,13 +547,18 @@ class AnnouncementApproveView(_CampaignBase):
                 status=422,
             )
         publish_mode = str(payload.get("publish_mode") or "").strip()
-        publish_at, error = _publish_at(payload.get("publish_at"))
+        publish_timezone = str(payload.get("publish_timezone") or "").strip()
+        publish_at, error = _publish_at(
+            payload.get("publish_at"),
+            timezone_name=publish_timezone,
+        )
         if error:
+            field = str(error.get("field") or "publish_at")
             return Response(
                 {
-                    "code": "invalid_publish_at",
+                    "code": str(error.get("code") or "invalid_publish_at"),
                     "detail": error["detail"],
-                    "field_errors": {"publish_at": [error["detail"]]},
+                    "field_errors": {field: [error["detail"]]},
                 },
                 status=422,
             )
@@ -596,6 +609,7 @@ class AnnouncementApproveView(_CampaignBase):
                 base_version=base_version,
                 publish_mode=publish_mode,
                 publish_at=publish_at,
+                publish_timezone=publish_timezone,
                 content=content,
                 platform_content=platform_content,
                 platforms=platforms,
@@ -607,6 +621,7 @@ class AnnouncementApproveView(_CampaignBase):
                     "edits": edits,
                     "publish_at": publish_at.isoformat() if publish_at else "",
                     "publish_mode": publish_mode,
+                    "publish_timezone": publish_timezone,
                 },
                 authorization=_command_authorizer(
                     request,
@@ -859,14 +874,18 @@ class AnnouncementRescheduleView(_CampaignBase):
         payload = request.data if isinstance(request.data, dict) else {}
         unexpected = sorted(
             set(payload)
-            - ({"base_version", "publish_at"} | _AUTHORIZATION_FIELDS)
+            - ({"base_version", "publish_at", "publish_timezone"} | _AUTHORIZATION_FIELDS)
         )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
         if error:
             return error
-        publish_at, parse_error = _publish_at(payload.get("publish_at"))
+        publish_timezone = str(payload.get("publish_timezone") or "").strip()
+        publish_at, parse_error = _publish_at(
+            payload.get("publish_at"),
+            timezone_name=publish_timezone,
+        )
         if parse_error or publish_at is None:
             detail = (
                 parse_error["detail"]
@@ -875,9 +894,13 @@ class AnnouncementRescheduleView(_CampaignBase):
             )
             return Response(
                 {
-                    "code": "invalid_publish_at",
+                    "code": str(
+                        (parse_error or {}).get("code") or "invalid_publish_at"
+                    ),
                     "detail": detail,
-                    "field_errors": {"publish_at": [detail]},
+                    "field_errors": {
+                        str((parse_error or {}).get("field") or "publish_at"): [detail]
+                    },
                 },
                 status=422,
             )
@@ -890,6 +913,7 @@ class AnnouncementRescheduleView(_CampaignBase):
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 base_version=base_version,
                 publish_at=publish_at,
+                publish_timezone=publish_timezone,
                 request_id=str(request.headers.get("X-Request-ID") or ""),
                 authorization=_command_authorizer(
                     request,
@@ -1900,8 +1924,24 @@ def _command_response(result) -> dict:
     }
 
 
-def _publish_at(raw) -> tuple[object | None, dict | None]:
-    """ISO 8601 → datetime aware. Vazio = publicar agora."""
+def _publish_at(raw, *, timezone_name: str = "") -> tuple[object | None, dict | None]:
+    """ISO 8601 + named zone → one verified instant. Empty means publish now."""
+    if timezone_name:
+        from shopman.shop.services import marketing_time
+
+        try:
+            marketing_time.require_configured_timezone(timezone_name)
+        except ValueError as exc:
+            code = str(exc)
+            return None, {
+                "code": code,
+                "detail": (
+                    "O timezone não corresponde ao configurado para a loja."
+                    if code == "timezone_mismatch"
+                    else "O timezone informado não existe."
+                ),
+                "field": "publish_timezone",
+            }
     if raw in (None, ""):
         return None, None
 
@@ -1914,8 +1954,28 @@ def _publish_at(raw) -> tuple[object | None, dict | None]:
             "detail": "Data inválida. Use o formato ISO (2026-07-18T07:00).",
             "field": "publish_at",
         }
+    if timezone_name and timezone.is_naive(parsed):
+        return None, {
+            "code": "scheduled_publish_at_naive",
+            "detail": "A data agendada precisa incluir o offset do horário.",
+            "field": "publish_at",
+        }
     if timezone.is_naive(parsed):
         parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    if timezone_name:
+        from shopman.shop.services import marketing_time
+
+        try:
+            parsed = marketing_time.validate_named_instant(
+                parsed,
+                timezone_name=timezone_name,
+            )
+        except ValueError:
+            return None, {
+                "code": "timezone_offset_mismatch",
+                "detail": "O offset não corresponde à data nesse timezone.",
+                "field": "publish_at",
+            }
     return parsed, None
 
 

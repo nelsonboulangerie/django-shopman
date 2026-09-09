@@ -34,6 +34,8 @@ from datetime import datetime, time, timedelta
 
 from django.utils import timezone
 
+from shopman.shop.services import marketing_time
+
 PREFERRED_HOURS = "preferred_hours"
 IMMEDIATE = "immediate"
 #: Tipos que DISPARAM sozinhos: o relógio é o evento, não há fornada por trás.
@@ -71,10 +73,14 @@ def next_publish_at(schedule: dict | None, *, now: datetime | None = None):
     if not windows or not weekdays:
         return None
 
-    now = timezone.localtime(now or timezone.now())
+    try:
+        timezone_name = marketing_time.schedule_timezone(schedule)
+        now = marketing_time.local(now or timezone.now(), timezone_name=timezone_name)
+    except ValueError:
+        return None
     if _is_open(now, windows, weekdays):
         return None
-    return _next_opening(now, windows, weekdays)
+    return _next_opening(now, windows, weekdays, timezone_name=timezone_name)
 
 
 def describe(schedule: dict | None) -> str:
@@ -88,10 +94,13 @@ def describe(schedule: dict | None) -> str:
         f"{start.strftime('%H:%M')} às {end.strftime('%H:%M')}" for start, end in windows
     )
     weekdays = _weekdays(schedule.get("weekdays"))
+    timezone_suffix = (
+        f" · {schedule['timezone']}" if schedule.get("timezone") else ""
+    )
     if weekdays == ALL_WEEKDAYS:
-        return f"Publica entre {faixas}"
+        return f"Publica entre {faixas}{timezone_suffix}"
     dias = ", ".join(_WEEKDAY_NAMES[day] for day in sorted(weekdays))
-    return f"Publica entre {faixas} ({dias})"
+    return f"Publica entre {faixas} ({dias}){timezone_suffix}"
 
 
 _WEEKDAY_NAMES = ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")
@@ -106,22 +115,34 @@ def _is_open(now: datetime, windows, weekdays) -> bool:
     return any(start <= now.time() < end for start, end in windows)
 
 
-def _next_opening(now: datetime, windows, weekdays):
+def _next_opening(now: datetime, windows, weekdays, *, timezone_name: str):
     """A primeira abertura de janela estritamente depois de ``now``."""
     for offset in range(MAX_LOOKAHEAD_DAYS):
         day = (now + timedelta(days=offset)).date()
         if day.weekday() not in weekdays:
             continue
         for start, _end in windows:
-            candidate = _aware(datetime.combine(day, start))
+            try:
+                candidate = marketing_time.resolve_wall_time(
+                    datetime.combine(day, start),
+                    timezone_name=timezone_name,
+                    fold="earlier",
+                )
+            except ValueError:
+                # A DST gap never shifts to an hour the operator did not choose.
+                continue
             if candidate > now:
                 return candidate
     return None
 
 
-def _aware(value: datetime) -> datetime:
+def _aware(value: datetime, *, timezone_name: str) -> datetime:
     if timezone.is_naive(value):
-        return timezone.make_aware(value, timezone.get_current_timezone())
+        return marketing_time.resolve_wall_time(
+            value,
+            timezone_name=timezone_name,
+            fold="earlier",
+        )
     return value
 
 
@@ -197,11 +218,26 @@ def next_occurrence(schedule: dict | None, *, now: datetime | None = None, after
         return None
 
     kind = schedule.get("type")
-    now = timezone.localtime(now or timezone.now())
-    floor = _aware(after) if after else now
+    try:
+        timezone_name = marketing_time.schedule_timezone(schedule)
+        now = marketing_time.local(now or timezone.now(), timezone_name=timezone_name)
+        floor = (
+            marketing_time.local(
+                _aware(after, timezone_name=timezone_name),
+                timezone_name=timezone_name,
+            )
+            if after
+            else now
+        )
+    except ValueError:
+        return None
 
     if kind == ONCE:
-        moment = _parse_datetime(schedule.get("at"))
+        moment = _parse_datetime(
+            schedule.get("at"),
+            timezone_name=timezone_name,
+            strict_timezone=bool(schedule.get("timezone")),
+        )
         if moment is None or moment <= floor:
             return None
         return moment
@@ -226,7 +262,16 @@ def next_occurrence(schedule: dict | None, *, now: datetime | None = None, after
         if ends_on and day > ends_on:
             return None
         for start, _end in windows:
-            candidate = _aware(datetime.combine(day, start))
+            try:
+                candidate = marketing_time.resolve_wall_time(
+                    datetime.combine(day, start),
+                    timezone_name=timezone_name,
+                    # Repeated recurring hours fire once, at the earlier occurrence.
+                    fold="earlier",
+                )
+            except ValueError:
+                # A nonexistent wall time is skipped, never silently shifted.
+                continue
             if candidate > floor:
                 return candidate
     return None
@@ -238,10 +283,20 @@ def describe_occurrence(schedule: dict | None) -> str:
         return ""
     kind = schedule.get("type")
     if kind == ONCE:
-        moment = _parse_datetime(schedule.get("at"))
+        try:
+            timezone_name = marketing_time.schedule_timezone(schedule)
+        except ValueError:
+            return "Timezone inválido"
+        moment = _parse_datetime(
+            schedule.get("at"),
+            timezone_name=timezone_name,
+            strict_timezone=bool(schedule.get("timezone")),
+        )
         if moment is None:
             return "Data inválida"
-        return f"Uma vez, em {timezone.localtime(moment).strftime('%d/%m às %H:%M')}"
+        localized = marketing_time.local(moment, timezone_name=timezone_name)
+        suffix = f" ({timezone_name})" if schedule.get("timezone") else ""
+        return f"Uma vez, em {localized.strftime('%d/%m às %H:%M')}{suffix}"
     if kind != RECURRING:
         return ""
 
@@ -258,20 +313,38 @@ def describe_occurrence(schedule: dict | None) -> str:
     ends_on = _parse_date(schedule.get("ends_on"))
     if ends_on:
         texto += f" (até {ends_on.strftime('%d/%m')})"
+    if schedule.get("timezone"):
+        texto += f" · {schedule['timezone']}"
     # O resumo abre a linha do card sozinho: sentence case, seja "Todo dia" ou "Seg, qua".
     return texto[:1].upper() + texto[1:]
 
 
-def _parse_datetime(value):
+def _parse_datetime(value, *, timezone_name: str, strict_timezone: bool = False):
     if isinstance(value, datetime):
-        return _aware(value)
-    try:
-        from django.utils.dateparse import parse_datetime
+        parsed = value
+    else:
+        try:
+            from django.utils.dateparse import parse_datetime
 
-        parsed = parse_datetime(str(value))
-    except (TypeError, ValueError):
+            parsed = parse_datetime(str(value))
+        except (TypeError, ValueError):
+            return None
+    if parsed is None:
         return None
-    return _aware(parsed) if parsed else None
+    try:
+        if timezone.is_naive(parsed):
+            return marketing_time.resolve_wall_time(
+                parsed,
+                timezone_name=timezone_name,
+            )
+        if strict_timezone:
+            return marketing_time.validate_named_instant(
+                parsed,
+                timezone_name=timezone_name,
+            )
+        return parsed
+    except ValueError:
+        return None
 
 
 def _parse_date(value):

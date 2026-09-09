@@ -27,7 +27,7 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services import audience as audience_service
-from shopman.shop.services import audience_snapshot, marketing_artifacts
+from shopman.shop.services import audience_snapshot, marketing_artifacts, marketing_time
 from shopman.shop.services.marketing_commands import (
     CommandExecution,
     RejectCommand,
@@ -65,6 +65,7 @@ def approve_command(
     platform_content: Mapping[str, Any],
     platforms: Sequence[str],
     publish_at: datetime | None = None,
+    publish_timezone: str = "",
     request_id: str = "",
     now: datetime | None = None,
     idempotency_payload: Mapping[str, Any] | None = None,
@@ -97,6 +98,8 @@ def approve_command(
     safe_content = _json_copy(content, field="content")
     safe_platform_content = _json_copy(platform_content, field="platform_content")
     safe_platforms = _platforms(platforms)
+    normalized_timezone = _publish_timezone(publish_timezone)
+    effective_timezone = normalized_timezone or marketing_time.configured_timezone_name()
     _validate_content(safe_content, safe_platform_content, safe_platforms)
     command_payload = {
         "content": safe_content,
@@ -104,6 +107,7 @@ def approve_command(
         "platforms": safe_platforms,
         "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
         "publish_mode": normalized_mode,
+        "publish_timezone": effective_timezone,
     }
     fingerprint_payload = (
         _json_copy(idempotency_payload, field="idempotency_payload")
@@ -130,6 +134,47 @@ def approve_command(
                 detail="Este anúncio expirou. Atualize os fatos antes de publicar.",
                 outcome={"status": AnnouncementStatus.EXPIRED},
             )
+        if (
+            normalized_publish_at is not None
+            and announcement.expires_at is not None
+            and normalized_publish_at >= announcement.expires_at
+        ):
+            raise RejectCommand(
+                code="scheduled_after_expiry",
+                detail="O anúncio expiraria antes de chegar ao horário escolhido.",
+                outcome={
+                    "expires_at": announcement.expires_at.isoformat(),
+                    "publish_at": normalized_publish_at.isoformat(),
+                },
+                field_errors={
+                    "publish_at": ("Escolha um horário anterior à expiração.",),
+                },
+            )
+        if "whatsapp" in safe_platforms:
+            base_window = marketing_time.delivery_window(
+                normalized_publish_at or now,
+                timezone_name=effective_timezone,
+            )
+            if not base_window.allowed:
+                next_allowed = base_window.next_allowed_at
+                raise RejectCommand(
+                    code=(
+                        "scheduled_in_quiet_hours"
+                        if normalized_publish_at is not None
+                        else "quiet_hours_active"
+                    ),
+                    detail=(
+                        "O WhatsApp fica em silêncio das 20:00 às 08:00. "
+                        "Escolha o próximo horário permitido."
+                    ),
+                    outcome={
+                        "next_allowed_at": next_allowed.isoformat() if next_allowed else "",
+                        "publish_timezone": effective_timezone,
+                    },
+                    field_errors={
+                        "publish_at": ("Escolha um horário entre 08:00 e 20:00.",),
+                    },
+                )
 
         from shopman.shop.services import marketing_facts
 
@@ -206,6 +251,20 @@ def approve_command(
                 resolved_artifacts
             ),
             "schema_version": marketing_artifacts.SCHEMA_VERSION,
+            "schedule": {
+                # A "now" decision is an immediate intent, not a client-chosen
+                # timestamp. Keeping it empty makes the sealed hash stable across
+                # the human-confirmation round trip; the actual instant is still
+                # recorded in the receipt and outbox below.
+                "effective_at": (
+                    normalized_publish_at.isoformat() if normalized_publish_at else ""
+                ),
+                "publish_at": (
+                    normalized_publish_at.isoformat() if normalized_publish_at else ""
+                ),
+                "publish_mode": normalized_mode,
+                "timezone": effective_timezone,
+            },
         }
         if facts is not None:
             artifact_payload["facts"] = facts.as_payload()
@@ -276,6 +335,40 @@ def approve_command(
             available_at=available_at,
             now=now,
         )
+        if announcement.expires_at is not None:
+            expires_late = [
+                row for row in outbox if row.available_at >= announcement.expires_at
+            ]
+            if expires_late:
+                raise RejectCommand(
+                    code="delivery_wave_after_expiry",
+                    detail="Uma etapa da entrega aconteceria depois da expiração.",
+                    outcome={
+                        "expires_at": announcement.expires_at.isoformat(),
+                        "late_wave_count": len(expires_late),
+                    },
+                    field_errors={
+                        "publish_at": ("Antecipe o horário ou amplie o prazo de revisão.",),
+                    },
+                )
+        quiet_rows = [
+            row
+            for row in outbox
+            if row.platform == "whatsapp"
+            and not marketing_time.delivery_window(
+                row.available_at,
+                timezone_name=effective_timezone,
+            ).allowed
+        ]
+        if quiet_rows:
+            raise RejectCommand(
+                code="delivery_wave_in_quiet_hours",
+                detail="Uma etapa do WhatsApp cairia no período de silêncio.",
+                outcome={"quiet_wave_count": len(quiet_rows)},
+                field_errors={
+                    "publish_at": ("Antecipe o horário para concluir antes das 20:00.",),
+                },
+            )
 
         announcement.content = approved_content
         announcement.platform_content = safe_platform_content
@@ -316,6 +409,7 @@ def approve_command(
                 "platform_count": len(safe_platforms),
                 "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
                 "publish_mode": normalized_mode,
+                "publish_timezone": effective_timezone,
             } | (
                 {
                     "facts_as_of": facts.as_of.isoformat(),
@@ -334,6 +428,8 @@ def approve_command(
             "outbox_count": len(outbox),
             "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
             "publish_mode": normalized_mode,
+            "publish_timezone": effective_timezone,
+            "effective_at": available_at.isoformat(),
             "snapshot_ref": str(snapshot.ref),
             "status": announcement.status,
         }
@@ -475,6 +571,25 @@ def normalize_schedule(
             field_errors={"publish_at": ("Escolha um horário futuro.",)},
         )
     return mode, publish_at
+
+
+def _publish_timezone(value: str) -> str:
+    candidate = str(value or "").strip()
+    if not candidate:
+        return ""
+    try:
+        return marketing_time.require_configured_timezone(candidate)
+    except ValueError as exc:
+        code = str(exc)
+        raise MarketingContractError(
+            code=code,
+            detail=(
+                "O timezone não corresponde ao configurado para a loja."
+                if code == "timezone_mismatch"
+                else "O timezone informado não existe."
+            ),
+            field_errors={"publish_timezone": ("Recarregue o horário da loja.",)},
+        ) from exc
 
 
 def _json_copy(value: Mapping[str, Any], *, field: str) -> dict[str, Any]:

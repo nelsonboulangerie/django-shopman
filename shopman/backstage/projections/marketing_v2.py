@@ -15,7 +15,6 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta
 from typing import Any, Literal
 
-from django.conf import settings
 from django.db.models import Count, Q
 from django.utils import timezone
 
@@ -32,6 +31,7 @@ from shopman.shop.services.marketing_delivery_aggregate import (
     DeliverySummary,
     delivery_summaries_for,
 )
+from shopman.shop.services.marketing_time import configured_timezone_name
 
 CONTRACT = "marketing.v2"
 RECENT_WINDOW = timedelta(hours=24)
@@ -381,7 +381,7 @@ def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:
     return MarketingEnvelopeV2(
         contract=CONTRACT,
         generated_at=_local(clock),
-        shop_timezone=settings.TIME_ZONE,
+        shop_timezone=configured_timezone_name(),
         resource_version=_data_version(data),
         freshness=freshness,
         data=data,
@@ -410,7 +410,7 @@ def build_announcement(
     return MarketingEnvelopeV2(
         contract=CONTRACT,
         generated_at=_local(clock),
-        shop_timezone=settings.TIME_ZONE,
+        shop_timezone=configured_timezone_name(),
         resource_version=announcement.version,
         freshness=_combined_freshness((projected,), now=clock),
         data=MarketingAnnouncementDataV2(
@@ -460,7 +460,7 @@ def build_history_page(
     return MarketingEnvelopeV2(
         contract=CONTRACT,
         generated_at=_local(clock),
-        shop_timezone=settings.TIME_ZONE,
+        shop_timezone=configured_timezone_name(),
         resource_version=_data_version(data),
         freshness=_combined_freshness(items, now=clock),
         data=data,

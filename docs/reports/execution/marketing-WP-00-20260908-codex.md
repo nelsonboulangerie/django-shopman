@@ -1347,3 +1347,67 @@ Provas locais:
   `git diff --check` passaram; permaneceu somente o warning conhecido de SQLite local;
 - nenhuma migration, envio, rede de provider, destinatário, deploy, produção ou escrita
   externa foi usada.
+
+## MKT-034 — Schedule, timezone, DST e expiração canônicos
+
+Implementado sobre os comandos explícitos do MKT-019 e os facts/validade do MKT-027,
+mantendo compatibilidade de leitura para schedules legados sem permitir que o cliente
+novo volte a mandar horário ambíguo:
+
+- `marketing_time` passou a ser o único boundary entre horário civil e instante:
+  timezone IANA nomeado vem do backend, horário inexistente em gap de DST é recusado e
+  horário repetido exige escolha explícita entre a primeira e a segunda ocorrência;
+- o browser não infere mais seu próprio timezone. Ele envia data ISO com offset e o
+  timezone nomeado da loja; API e model recusam timezone divergente, offset forjado,
+  instante naive, passado ou sem próxima ocorrência;
+- recorrências em gap pulam a data inexistente sem deslocar silenciosamente o horário;
+  no fold disparam uma única vez, na primeira ocorrência, com teste da ocorrência
+  seguinte;
+- “Publicar agora” e “Agendar” continuam consequências separadas. O artefato sela modo,
+  timezone e instante escolhido; receipt e cada lane da outbox apontam para o mesmo
+  instante absoluto;
+- o hash do artefato para “agora” permanece estável durante o gate de confirmação humana:
+  a intenção imediata não contém um timestamp volátil, enquanto receipt e outbox
+  registram o instante efetivo idêntico;
+- quiet hours de mensagem direta aplicam a policy aprovada 20:00–08:00 no timezone da
+  loja. O botão “agora” bloqueia preventivamente WhatsApp, o formulário sugere 08:00 e
+  backend/reschedule recusam qualquer tentativa ou wave fora da janela; no último
+  boundary, worker atrasado adia o target exatamente até a próxima abertura, antes do
+  provider. Plataformas sociais não herdam indevidamente essa restrição;
+- schedule no limite ou depois da expiração é recusado antes de criar artifact/outbox;
+  reschedule valida todas as waves e preserva seus horários se alguma ultrapassaria a
+  validade;
+- o card mostra timezone, instante exato, outcome de quiet hours e expiração relativa +
+  absoluta. Um prazo ainda positivo nunca aparece como “0 min”; gap, fold, passado e
+  expiração são resolvidos inline sem consulta externa;
+- o `CampaignForm` grava timezone em schedules novos/editados, preserva schedules legados
+  intocados losslessly e explica a policy de recorrência nas duas transições de DST.
+
+Budget de omotenashi comprovado no agendamento:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Descobrir qual timezone vale | inferência do navegador/config externa | 0 inferências; nome ao lado do campo |
+| Converter horário para offset | cálculo/consulta externa | 0; conversão automática e validada |
+| Resolver hora duplicada de DST | tentativa e erro | 1 escolha inline entre duas ocorrências |
+| Corrigir hora inexistente de DST | falha tardia ou normalização silenciosa | erro imediato; 0 writes |
+| Agendar WhatsApp durante silêncio | falha tardia + redigitação | sugestão 08:00; 1 toque, 0 redigitação |
+| Conferir validade contra schedule | comparar relógios/telas | 0 navegações; bloqueio no próprio campo |
+| Saber o prazo real | “0 min” ainda acionável ou relativo solto | relativo + absoluto + timezone |
+| Conferir preview, receipt e worker | inspeção de três registros | igualdade do instante coberta por teste |
+| Reconfirmar “agora” após step-up | podia conflitar por hash temporal | mesma intenção/hash; 0 repetição do comando |
+
+Provas locais:
+
+- 55 testes do cálculo temporal/schedule passaram, incluindo gap e fold de
+  `America/New_York`, offset de `America/Sao_Paulo`, virada do dia e quiet-hour boundaries;
+- 109 testes de aprovação/API passaram após o contrato novo; a regressão ampla de
+  Marketing, scheduling, workers e projections somou 433 testes em 73,66 s;
+- Marketing Nuxt: 12 arquivos/140 testes, incluindo fluxos reais dos dois formulários,
+  ESLint, Nuxt typecheck e build de produção passaram;
+- Ruff dos arquivos alterados, `export_marketing_client --check`, Django check,
+  `makemigrations --check --dry-run` e `git diff --check` passaram; permaneceu somente o
+  warning conhecido de SQLite local e não houve migration;
+- o virtualenv compartilhado continuou sendo executado com `PYTHONPATH` explícito para
+  todos os packages desta worktree, impedindo validação acidental do checkout original;
+- nenhuma rede de provider, destinatário, deploy, produção ou escrita externa foi usada.

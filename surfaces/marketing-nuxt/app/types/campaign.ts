@@ -54,6 +54,8 @@ export interface Announcement {
   expires_at: string;
   /** -1 = não expira; 0 = o prazo já passou. */
   expires_in_minutes: number;
+  /** Suggested or confirmed exact instant, always offset-bearing when present. */
+  scheduled_for: string;
   published_at: string;
   approved_by: string;
   /** Quem recusou, e por quê. Vazios em tudo que não foi recusado. */
@@ -90,6 +92,8 @@ export interface CampaignBoard {
   reach_limits: ReachLimit[];
   /** Credencial de IA presente neste ambiente. */
   ai_assist_available: boolean;
+  /** IANA timezone owned by the backend; browser timezone never overrides it. */
+  shop_timezone: string;
 }
 
 export interface Campaign {
@@ -143,6 +147,7 @@ export interface CampaignSchedule {
   weekdays?: number[];
   starts_on?: string;
   ends_on?: string;
+  timezone?: string;
   [key: string]: unknown;
 }
 
@@ -198,6 +203,8 @@ export interface CampaignOptions {
   /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
    *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
   offers: Choice[];
+  /** Named IANA timezone used to resolve every wall-clock field. */
+  shop_timezone: string;
 }
 
 /** Público escolhido para UM disparo. Não altera a campanha salva. */
