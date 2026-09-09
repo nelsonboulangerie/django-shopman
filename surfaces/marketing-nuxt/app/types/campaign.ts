@@ -302,6 +302,43 @@ export interface HistoryResponse {
   announcements: Announcement[];
 }
 
+/** Receipt persistido pelo command service. Nunca contém recipient, conteúdo ou segredo. */
+export interface MarketingCommandReceipt {
+  ref: string;
+  kind: string;
+  state: string;
+  base_version: number;
+  resulting_version: number;
+  resource_ref: string;
+  outcome: Record<string, unknown>;
+  created_at: string;
+  completed_at: string;
+}
+
+export interface MarketingCommandResponse {
+  ok: true;
+  replayed: boolean;
+  receipt: MarketingCommandReceipt;
+  announcement: Announcement;
+}
+
+/** Consequência exata emitida pelo servidor antes de qualquer efeito externo. */
+export interface MarketingConfirmationChallenge {
+  token: string;
+  ref: string;
+  expires_at: string;
+  mode: "none" | "simple" | "summary" | "typed";
+  step_up: "none" | "password" | "totp";
+  dual_control: boolean;
+  typed_phrase: string;
+  consequence: string;
+  resource_ref: string;
+  base_version: number;
+  audience_count: number;
+  platforms: string[];
+  scheduled_for: string | null;
+}
+
 /** Edições do card enviadas junto com a aprovação. */
 export interface AnnouncementEdits {
   body?: string;

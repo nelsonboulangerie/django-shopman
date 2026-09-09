@@ -3,12 +3,17 @@
 //
 // Ordem deliberada: primeiro o que PEDE decisão (pendentes), depois o que já
 // saiu. Números do dia por último: contexto, não protagonista.
-import { audienceSummary, announcementOutcome, shortDateTime } from "~/presentation/campaign";
+import {
+  audienceSummary,
+  announcementOutcome,
+  shortDateTime,
+} from "~/presentation/campaign";
 import type { AnnouncementEdits, PublishMode } from "~/types/campaign";
 import {
   clearBrowserMarketingDraft,
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
+import { preserveMarketingReceipt } from "~/utils/marketingReceipt";
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
@@ -19,19 +24,46 @@ const OUTCOME_META = {
   pending: { icon: "lucide:clock", class: "text-muted-foreground" },
 } as const;
 
-const { reachLimits, pendingPosts, recentPosts, stats, loading, error, refresh, approve, reject, aiAssistAvailable, shopTimezone } =
-  useCampaignBoard();
+const {
+  reachLimits,
+  pendingPosts,
+  recentPosts,
+  stats,
+  loading,
+  error,
+  refresh,
+  approve,
+  reject,
+  aiAssistAvailable,
+  shopTimezone,
+  pendingDecision,
+  decisionError,
+  confirmDecision,
+  cancelDecision,
+} = useCampaignBoard();
 const { platforms } = useCampaigns();
 const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
+const confirmingDecision = ref(false);
 const draftOwner = useMarketingDraftOwner();
 
-async function onApprove(pk: number, edits: AnnouncementEdits, publishMode: PublishMode) {
+async function onApprove(
+  pk: number,
+  edits: AnnouncementEdits,
+  publishMode: PublishMode,
+) {
   busyPk.value = pk;
-  const ok = await approve(pk, edits, publishMode);
+  const response = await approve(pk, edits, publishMode);
   busyPk.value = null;
-  if (ok) clearBrowserMarketingDraft({ owner: draftOwner.value, resource: `announcement:${pk}` });
+  if (response) {
+    clearBrowserMarketingDraft({
+      owner: draftOwner.value,
+      resource: `announcement:${pk}`,
+    });
+    preserveMarketingReceipt(pk, response.receipt);
+    await navigateTo(`/announcements/${pk}`);
+  }
 }
 
 async function confirmReject() {
@@ -41,9 +73,34 @@ async function confirmReject() {
   busyPk.value = pk;
   rejecting.value = null;
   rejectReason.value = "";
-  const ok = await reject(pk, reason);
+  const response = await reject(pk, reason);
   busyPk.value = null;
-  if (ok) clearBrowserMarketingDraft({ owner: draftOwner.value, resource: `announcement:${pk}` });
+  if (response) {
+    clearBrowserMarketingDraft({
+      owner: draftOwner.value,
+      resource: `announcement:${pk}`,
+    });
+    preserveMarketingReceipt(pk, response.receipt);
+    await navigateTo(`/announcements/${pk}`);
+  }
+}
+
+async function confirmServerDecision(value: {
+  credential: string;
+  typedConfirmation: string;
+}) {
+  const pk = pendingDecision.value?.announcementId;
+  if (!pk) return;
+  confirmingDecision.value = true;
+  const response = await confirmDecision(value);
+  confirmingDecision.value = false;
+  if (!response) return;
+  clearBrowserMarketingDraft({
+    owner: draftOwner.value,
+    resource: `announcement:${pk}`,
+  });
+  preserveMarketingReceipt(pk, response.receipt);
+  await navigateTo(`/announcements/${pk}`);
 }
 
 useHead({ title: "Painel · Marketing" });
@@ -76,13 +133,17 @@ useHead({ title: "Painel · Marketing" });
         v-for="limit in reachLimits"
         :key="limit.code"
         class="flex items-start gap-2.5 rounded-lg border px-3 py-2.5"
-        :class="limit.blocking
-          ? 'border-destructive/40 bg-destructive/5'
-          : 'border-amber-500/40 bg-amber-500/5'"
+        :class="
+          limit.blocking
+            ? 'border-destructive/40 bg-destructive/5'
+            : 'border-amber-500/40 bg-amber-500/5'
+        "
         role="status"
       >
         <Icon
-          :name="limit.blocking ? 'lucide:circle-slash' : 'lucide:triangle-alert'"
+          :name="
+            limit.blocking ? 'lucide:circle-slash' : 'lucide:triangle-alert'
+          "
           class="mt-0.5 size-4 shrink-0"
           :class="limit.blocking ? 'text-destructive' : 'text-amber-600'"
         />
@@ -92,7 +153,10 @@ useHead({ title: "Painel · Marketing" });
           <!-- ⚠️ O aviso NÃO configura mais nada. Ele conta o fato e aponta a casa: a
                configuração vive em Plataformas, e alerta não é lugar de morar config —
                ela desaparecia junto com o alerta. -->
-          <p v-if="limit.action" class="mt-1 text-xs font-medium text-muted-foreground">
+          <p
+            v-if="limit.action"
+            class="mt-1 text-xs font-medium text-muted-foreground"
+          >
             {{ limit.action }}
           </p>
           <NuxtLink
@@ -106,9 +170,12 @@ useHead({ title: "Painel · Marketing" });
       </div>
     </section>
 
-
     <!-- Números do dia -->
-    <section v-if="stats" class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4" aria-label="Números de hoje">
+    <section
+      v-if="stats"
+      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
+      aria-label="Números de hoje"
+    >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold">{{ stats.pending_count }}</p>
         <p class="text-xs text-muted-foreground">Aguardando você</p>
@@ -123,9 +190,16 @@ useHead({ title: "Painel · Marketing" });
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
-        :class="stats.failed_today > 0 ? 'border-destructive/40 bg-destructive/5' : 'border-border bg-card'"
+        :class="
+          stats.failed_today > 0
+            ? 'border-destructive/40 bg-destructive/5'
+            : 'border-border bg-card'
+        "
       >
-        <p class="text-2xl font-bold" :class="stats.failed_today > 0 ? 'text-destructive' : ''">
+        <p
+          class="text-2xl font-bold"
+          :class="stats.failed_today > 0 ? 'text-destructive' : ''"
+        >
           {{ stats.failed_today }}
         </p>
         <p class="text-xs text-muted-foreground">Falharam</p>
@@ -138,33 +212,53 @@ useHead({ title: "Painel · Marketing" });
       class="mb-6 rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
       role="alert"
     >
-      <p class="font-semibold text-destructive">Não conseguimos carregar o painel.</p>
-      <button type="button" class="mt-1 underline underline-offset-2" @click="refresh()">
+      <p class="font-semibold text-destructive">
+        Não conseguimos carregar o painel.
+      </p>
+      <button
+        type="button"
+        class="mt-1 underline underline-offset-2"
+        @click="refresh()"
+      >
         Tentar de novo
       </button>
     </div>
 
     <!-- Pendentes -->
     <section class="mb-8">
-      <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2
+        class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+      >
         Aguardando decisão
       </h2>
 
-      <div v-if="loading && pendingPosts.length === 0" class="space-y-3" aria-busy="true">
-        <div v-for="n in 2" :key="n" class="h-48 animate-pulse rounded-xl bg-muted"></div>
+      <div
+        v-if="loading && pendingPosts.length === 0"
+        class="space-y-3"
+        aria-busy="true"
+      >
+        <div
+          v-for="n in 2"
+          :key="n"
+          class="h-48 animate-pulse rounded-xl bg-muted"
+        ></div>
       </div>
 
       <div
         v-else-if="pendingPosts.length === 0"
         class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
       >
-        <Icon name="lucide:coffee" class="mx-auto size-8 text-muted-foreground" />
+        <Icon
+          name="lucide:coffee"
+          class="mx-auto size-8 text-muted-foreground"
+        />
         <p class="mt-2 font-semibold">Nada esperando por você</p>
         <p class="mt-1 text-sm text-muted-foreground">
           <!-- ⚠️ Dizia "quando uma fornada terminar", e fornada é UM dos gatilhos: há
                estoque baixo, produto novo, hora marcada e o disparo na mão. Copy que nomeia
                um caso ensina o gestor a esperar só aquele. -->
-          Quando uma campanha disparar, o anúncio aparece aqui para você revisar.
+          Quando uma campanha disparar, o anúncio aparece aqui para você
+          revisar.
         </p>
         <NuxtLink
           to="/campaigns"
@@ -186,7 +280,12 @@ useHead({ title: "Painel · Marketing" });
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"
           @approve="onApprove"
-          @reject="(pk) => { rejecting = pk; rejectReason = '' }"
+          @reject="
+            (pk) => {
+              rejecting = pk;
+              rejectReason = '';
+            }
+          "
         />
       </div>
     </section>
@@ -194,7 +293,9 @@ useHead({ title: "Painel · Marketing" });
     <!-- Publicados nas últimas 24h -->
     <section v-if="recentPosts.length > 0">
       <div class="mb-3 flex items-center gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+        <h2
+          class="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
+        >
           Últimas 24 horas
         </h2>
         <!-- A linha do tempo completa deixou de ser aba e virou aprofundamento: a pergunta
@@ -207,20 +308,44 @@ useHead({ title: "Painel · Marketing" });
           <Icon name="lucide:arrow-right" class="size-3" />
         </NuxtLink>
       </div>
-      <ul class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-        <li v-for="announcement in recentPosts" :key="announcement.pk" class="flex items-start gap-3 px-4 py-3">
+      <ul
+        class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+      >
+        <li
+          v-for="announcement in recentPosts"
+          :key="announcement.pk"
+          class="flex items-start gap-3 px-4 py-3"
+        >
           <Icon
-            :name="OUTCOME_META[announcementOutcome(announcement.platform_results)].icon"
+            :name="
+              OUTCOME_META[announcementOutcome(announcement.platform_results)]
+                .icon
+            "
             class="mt-0.5 size-4 shrink-0"
-            :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
+            :class="
+              OUTCOME_META[announcementOutcome(announcement.platform_results)]
+                .class
+            "
           />
           <div class="min-w-0 flex-1">
             <p class="truncate text-sm">{{ announcement.body }}</p>
             <p class="mt-0.5 text-xs text-muted-foreground">
-              {{ shortDateTime(announcement.published_at || announcement.created_at) }} ·
+              {{
+                shortDateTime(
+                  announcement.published_at || announcement.created_at,
+                )
+              }}
+              ·
               {{ audienceSummary(announcement.audience) }}
             </p>
           </div>
+          <NuxtLink
+            :to="`/announcements/${announcement.pk}`"
+            class="inline-flex min-h-11 shrink-0 items-center gap-1 text-xs font-semibold text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Ver resultado
+            <Icon name="lucide:arrow-right" class="size-3.5" />
+          </NuxtLink>
         </li>
       </ul>
       <NuxtLink
@@ -233,13 +358,20 @@ useHead({ title: "Painel · Marketing" });
     </section>
 
     <!-- Recusar é irreversível: confirma antes -->
-    <UiDialog :open="rejecting !== null" @update:open="(v) => { if (!v) rejecting = null }">
+    <UiDialog
+      :open="rejecting !== null"
+      @update:open="
+        (v) => {
+          if (!v) rejecting = null;
+        }
+      "
+    >
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle>Recusar este anúncio?</UiDialogTitle>
           <UiDialogDescription>
-            Ele não vai para nenhuma plataforma e não volta para a fila. A fornada segue
-            normalmente.
+            Ele não vai para nenhuma plataforma e não volta para a fila. A
+            fornada segue normalmente.
           </UiDialogDescription>
         </UiDialogHeader>
         <!-- Opcional de propósito: campo obrigatório aqui só produziria "não" digitado
@@ -256,7 +388,7 @@ useHead({ title: "Painel · Marketing" });
             placeholder="Foto ruim, texto errado, produto acabou…"
             class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
             @keyup.enter="confirmReject"
-          >
+          />
         </div>
         <UiDialogFooter>
           <button
@@ -276,5 +408,14 @@ useHead({ title: "Painel · Marketing" });
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+
+    <MarketingCommandConfirmationDialog
+      :command="pendingDecision"
+      :busy="confirmingDecision"
+      :error="decisionError"
+      :shop-timezone="shopTimezone"
+      @confirm="confirmServerDecision"
+      @cancel="cancelDecision"
+    />
   </main>
 </template>

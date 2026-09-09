@@ -328,11 +328,7 @@ class CampaignHistoryV2View(_CampaignV2Base):
 
         queryset = (
             Announcement.objects.filter(
-                status__in=(
-                    AnnouncementStatus.PUBLISHED,
-                    AnnouncementStatus.PUBLISHING,
-                    AnnouncementStatus.FAILED,
-                ),
+                status__in=marketing_projection.RESULT_VISIBLE_STATUSES,
                 created_at__lte=cursor.as_of,
             )
             .select_related("rule", "template")

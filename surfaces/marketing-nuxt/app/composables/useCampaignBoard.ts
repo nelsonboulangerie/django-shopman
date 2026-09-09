@@ -7,6 +7,7 @@ import type {
   BoardResponse,
   Announcement,
   AnnouncementEdits,
+  MarketingCommandResponse,
   PublishMode,
   ReachLimit,
 } from "~/types/campaign";
@@ -47,18 +48,26 @@ export function buildApprovalCommand(
 }
 
 export function useCampaignBoard() {
+  const decisionCommand = useMarketingDecisionCommand();
+  const decisionError = ref("");
   const { data, refresh, pending, error } = useFetch<BoardResponse>(
     "/api/v1/backstage/marketing/",
     { key: "marketing-board", server: true },
   );
 
   const board = computed(() => data.value?.board);
-  const pendingPosts = computed<Announcement[]>(() => board.value?.pending ?? []);
+  const pendingPosts = computed<Announcement[]>(
+    () => board.value?.pending ?? [],
+  );
   const recentPosts = computed<Announcement[]>(() => board.value?.recent ?? []);
   const stats = computed(() => board.value?.stats);
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
-  const reachLimits = computed<ReachLimit[]>(() => board.value?.reach_limits ?? []);
-  const aiAssistAvailable = computed(() => board.value?.ai_assist_available ?? false);
+  const reachLimits = computed<ReachLimit[]>(
+    () => board.value?.reach_limits ?? [],
+  );
+  const aiAssistAvailable = computed(
+    () => board.value?.ai_assist_available ?? false,
+  );
   const shopTimezone = computed(() => board.value?.shop_timezone ?? "UTC");
   // Keep one key for the same visible version + consequence. If the response is
   // lost and the operator taps again, the backend returns the original receipt
@@ -80,12 +89,14 @@ export function useCampaignBoard() {
     pk: number,
     edits: AnnouncementEdits,
     publishMode: PublishMode,
-  ): Promise<boolean> {
-    const announcement = pendingPosts.value.find(item => item.pk === pk);
+  ): Promise<MarketingCommandResponse | null> {
+    const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
-      useSonner.error("Este anúncio mudou ou saiu da fila. Atualizamos o painel.");
+      useSonner.error(
+        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+      );
       await refresh();
-      return false;
+      return null;
     }
     let command: ReturnType<typeof buildApprovalCommand>;
     try {
@@ -97,7 +108,7 @@ export function useCampaignBoard() {
       );
     } catch {
       useSonner.error("Escolha a data e a hora para agendar.");
-      return false;
+      return null;
     }
     const fingerprint = `approve:${pk}:${JSON.stringify(command)}`;
     let idempotencyKey = approvalKeys.get(fingerprint);
@@ -112,17 +123,22 @@ export function useCampaignBoard() {
       publishMode === "scheduled"
         ? "Anúncio agendado."
         : "Anúncio preparado para publicação.",
-      { "Idempotency-Key": idempotencyKey },
+      idempotencyKey,
     );
   }
 
   // O motivo é opcional: exigir justificativa só ensina o gestor a digitar "não".
-  async function reject(pk: number, reason = ""): Promise<boolean> {
-    const announcement = pendingPosts.value.find(item => item.pk === pk);
+  async function reject(
+    pk: number,
+    reason = "",
+  ): Promise<MarketingCommandResponse | null> {
+    const announcement = pendingPosts.value.find((item) => item.pk === pk);
     if (!announcement) {
-      useSonner.error("Este anúncio mudou ou saiu da fila. Atualizamos o painel.");
+      useSonner.error(
+        "Este anúncio mudou ou saiu da fila. Atualizamos o painel.",
+      );
       await refresh();
-      return false;
+      return null;
     }
     const command = { base_version: announcement.version, reason };
     const fingerprint = `reject:${pk}:${JSON.stringify(command)}`;
@@ -131,13 +147,7 @@ export function useCampaignBoard() {
       idempotencyKey = globalThis.crypto.randomUUID();
       approvalKeys.set(fingerprint, idempotencyKey);
     }
-    return decide(
-      pk,
-      "reject",
-      command,
-      "Anúncio recusado.",
-      { "Idempotency-Key": idempotencyKey },
-    );
+    return decide(pk, "reject", command, "Anúncio recusado.", idempotencyKey);
   }
 
   async function decide(
@@ -147,28 +157,71 @@ export function useCampaignBoard() {
     // que é obrigaria um cast que esconde exatamente essa diferença.
     body: AnnouncementEdits | { reason: string },
     okMessage: string,
-    headers: Record<string, string> = {},
-  ): Promise<boolean> {
+    idempotencyKey: string,
+  ): Promise<MarketingCommandResponse | null> {
+    decisionError.value = "";
     try {
-      await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/${action}/`, {
-        method: "POST",
-        body,
-        headers,
+      const response = await decisionCommand.begin({
+        announcementId: pk,
+        action,
+        body: body as Record<string, unknown>,
+        idempotencyKey,
       });
+      if (!response) return null;
       useSonner.success(okMessage);
       await refresh();
-      return true;
+      return response;
     } catch (err) {
-      useSonner.error(httpErrorMessage(err, "Não foi possível concluir. Tente de novo."));
+      useSonner.error(
+        httpErrorMessage(err, "Não foi possível concluir. Tente de novo."),
+      );
       // Refetch mesmo no erro: quem falhou por expiração precisa sumir do painel.
       await refresh();
-      return false;
+      return null;
     }
   }
 
-  async function saveDraft(pk: number, edits: AnnouncementEdits): Promise<boolean> {
+  async function confirmDecision(value: {
+    credential: string;
+    typedConfirmation: string;
+  }): Promise<MarketingCommandResponse | null> {
+    const command = decisionCommand.pendingDecision.value;
+    if (!command) return null;
+    decisionError.value = "";
     try {
-      await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/`, { method: "PATCH", body: edits });
+      const response = await decisionCommand.confirm(value);
+      const message =
+        command.action === "reject"
+          ? "Anúncio recusado."
+          : command.body.publish_mode === "scheduled"
+            ? "Anúncio agendado."
+            : "Anúncio preparado para publicação.";
+      useSonner.success(message);
+      await refresh();
+      return response;
+    } catch (err) {
+      decisionError.value = httpErrorMessage(
+        err,
+        "Não foi possível confirmar. O anúncio continua sem nova decisão.",
+      );
+      return null;
+    }
+  }
+
+  function cancelDecision() {
+    decisionError.value = "";
+    decisionCommand.cancel();
+  }
+
+  async function saveDraft(
+    pk: number,
+    edits: AnnouncementEdits,
+  ): Promise<boolean> {
+    try {
+      await $fetch(`/api/v1/backstage/marketing/announcements/${pk}/`, {
+        method: "PATCH",
+        body: edits,
+      });
       useSonner.success("Rascunho salvo.");
       await refresh();
       return true;
@@ -191,6 +244,10 @@ export function useCampaignBoard() {
     refresh,
     approve,
     reject,
+    pendingDecision: decisionCommand.pendingDecision,
+    decisionError,
+    confirmDecision,
+    cancelDecision,
     saveDraft,
   };
 }

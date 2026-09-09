@@ -214,6 +214,31 @@ class TestBoard:
         assert len(announcements) == 1
         assert announcements[0]["status"] == AnnouncementStatus.PUBLISHED
 
+    def test_result_states_remain_reachable_for_inline_recovery(
+        self, client, gestor, rule, template
+    ):
+        visible = (
+            AnnouncementStatus.APPROVED,
+            AnnouncementStatus.SETTLED,
+            AnnouncementStatus.CANCELLED,
+            AnnouncementStatus.EXPIRED,
+        )
+        posts = [_post(rule, template, status=state) for state in visible]
+        _post(rule, template)  # pending review belongs only to the decision queue
+        client.force_login(gestor)
+
+        history = client.get(HISTORY_URL)
+        board = client.get(BOARD_URL)
+
+        assert history.status_code == board.status_code == 200
+        expected = {post.pk for post in posts}
+        assert {
+            item["pk"] for item in history.json()["announcements"]
+        } == expected
+        assert {
+            item["pk"] for item in board.json()["board"]["recent"]
+        } == expected
+
 
 # ── Decisão sobre o announcement ─────────────────────────────────────────────
 

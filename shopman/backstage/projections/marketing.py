@@ -47,6 +47,19 @@ PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
 #: Janela do "publicados recentemente" no painel.
 RECENT_WINDOW = timedelta(hours=24)
 
+# Transitional v1 consumers still own the content card while v2 owns delivery
+# facts/Actions. Keep every state the operator may need to inspect or recover
+# reachable until the full history cutover (MKT-045).
+RESULT_VISIBLE_STATUSES = (
+    AnnouncementStatus.APPROVED,
+    AnnouncementStatus.PUBLISHING,
+    AnnouncementStatus.SETTLED,
+    AnnouncementStatus.PUBLISHED,
+    AnnouncementStatus.FAILED,
+    AnnouncementStatus.CANCELLED,
+    AnnouncementStatus.EXPIRED,
+)
+
 
 @dataclass(frozen=True)
 class PlatformResultProjection:
@@ -480,7 +493,7 @@ def build_board(*, now=None) -> CampaignBoardProjection:
     ]
     recent = list(
         _announcements_queryset().filter(
-            status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED),
+            status__in=RESULT_VISIBLE_STATUSES,
             created_at__gte=now - RECENT_WINDOW,
         )[:50]
     )
@@ -603,7 +616,7 @@ def build_history(*, limit: int = 100, now=None) -> tuple[AnnouncementProjection
     """Tudo que já saiu (ou tentou sair), do mais recente para o mais antigo."""
     now = now or timezone.now()
     announcements = _announcements_queryset().filter(
-        status__in=(AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING, AnnouncementStatus.FAILED)
+        status__in=RESULT_VISIBLE_STATUSES,
     )[:limit]
     return tuple(build_announcement(announcement, now=now) for announcement in announcements)
 

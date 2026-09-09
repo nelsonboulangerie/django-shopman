@@ -124,6 +124,32 @@ def test_history_cursor_is_stable_across_identical_timestamps_and_new_inserts(cl
     }
 
 
+def test_history_keeps_settled_scheduled_cancelled_and_expired_results_reachable(client):
+    operator = _reader(username="history-result-states")
+    expected = {
+        Announcement.objects.create(status=state, content={"body": state}).pk
+        for state in (
+            AnnouncementStatus.APPROVED,
+            AnnouncementStatus.SETTLED,
+            AnnouncementStatus.CANCELLED,
+            AnnouncementStatus.EXPIRED,
+        )
+    }
+    Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content={"body": "still pending"},
+    )
+    client.force_login(operator)
+
+    response = client.get(HISTORY_PATH)
+
+    assert response.status_code == 200
+    assert {
+        int(item["ref"].split(":", 1)[1])
+        for item in response.json()["data"]["items"]
+    } == expected
+
+
 @pytest.mark.parametrize(
     ("query", "field"),
     [({"cursor": "tampered"}, "cursor"), ({"limit": "101"}, "limit")],

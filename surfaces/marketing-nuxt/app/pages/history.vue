@@ -4,15 +4,39 @@
 // Sucesso parcial não vira "publicado": se o Google saiu e o Instagram falhou,
 // a linha diz "parcial" e mostra as duas. Esconder a falha aqui seria esconder
 // justamente a informação que o gestor precisa para agir.
-import { announcementOutcome, resultLabel, resultTone, shortDateTime, audienceSummary } from "~/presentation/campaign";
+import {
+  announcementOutcome,
+  resultLabel,
+  resultTone,
+  shortDateTime,
+  audienceSummary,
+} from "~/presentation/campaign";
+import { marketingLoadError } from "~/presentation/marketingResult";
 
 const { announcements, loading, error, refresh } = useCampaignHistory();
+const loadFailure = computed(() => marketingLoadError(error.value));
 
 const OUTCOME_META = {
-  published: { label: "Publicado", icon: "lucide:check-circle-2", class: "text-emerald-600" },
-  partial: { label: "Parcial", icon: "lucide:alert-circle", class: "text-amber-600" },
-  failed: { label: "Falhou", icon: "lucide:x-circle", class: "text-destructive" },
-  pending: { label: "Na fila", icon: "lucide:clock", class: "text-muted-foreground" },
+  published: {
+    label: "Publicado",
+    icon: "lucide:check-circle-2",
+    class: "text-emerald-600",
+  },
+  partial: {
+    label: "Parcial",
+    icon: "lucide:alert-circle",
+    class: "text-amber-600",
+  },
+  failed: {
+    label: "Falhou",
+    icon: "lucide:x-circle",
+    class: "text-destructive",
+  },
+  pending: {
+    label: "Na fila",
+    icon: "lucide:clock",
+    class: "text-muted-foreground",
+  },
 } as const;
 
 const TONE_CLASS = {
@@ -43,24 +67,42 @@ useHead({ title: "Histórico · Marketing" });
       class="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
       role="alert"
     >
-      <p class="font-semibold text-destructive">Não conseguimos carregar o histórico.</p>
-      <button type="button" class="mt-1 underline underline-offset-2" @click="refresh()">
+      <p class="font-semibold text-destructive">{{ loadFailure.title }}</p>
+      <p class="mt-1 text-muted-foreground">{{ loadFailure.detail }}</p>
+      <button
+        v-if="loadFailure.canRetry"
+        type="button"
+        class="mt-2 min-h-11 font-semibold underline underline-offset-2"
+        @click="refresh()"
+      >
         Tentar de novo
       </button>
     </div>
 
-    <div v-else-if="loading && announcements.length === 0" class="space-y-3" aria-busy="true">
-      <div v-for="n in 3" :key="n" class="h-24 animate-pulse rounded-xl bg-muted"></div>
+    <div
+      v-else-if="loading && announcements.length === 0"
+      class="space-y-3"
+      aria-busy="true"
+    >
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="h-24 animate-pulse rounded-xl bg-muted"
+      ></div>
     </div>
 
     <div
       v-else-if="announcements.length === 0"
       class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
-      <Icon name="lucide:megaphone-off" class="mx-auto size-8 text-muted-foreground" />
+      <Icon
+        name="lucide:megaphone-off"
+        class="mx-auto size-8 text-muted-foreground"
+      />
       <p class="mt-2 font-semibold">Nada publicado ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Os announcements aprovados aparecem aqui com o resultado de cada plataforma.
+        Os announcements aprovados aparecem aqui com o resultado de cada
+        plataforma.
       </p>
     </div>
 
@@ -76,33 +118,60 @@ useHead({ title: "Histórico · Marketing" });
             :src="announcement.image_url"
             alt=""
             class="size-14 shrink-0 rounded-md border border-border object-cover"
-          >
+          />
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
               <Icon
-                :name="OUTCOME_META[announcementOutcome(announcement.platform_results)].icon"
+                :name="
+                  OUTCOME_META[
+                    announcementOutcome(announcement.platform_results)
+                  ].icon
+                "
                 class="size-4"
-                :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
+                :class="
+                  OUTCOME_META[
+                    announcementOutcome(announcement.platform_results)
+                  ].class
+                "
               />
               <span
                 class="text-sm font-semibold"
-                :class="OUTCOME_META[announcementOutcome(announcement.platform_results)].class"
+                :class="
+                  OUTCOME_META[
+                    announcementOutcome(announcement.platform_results)
+                  ].class
+                "
               >
-                {{ OUTCOME_META[announcementOutcome(announcement.platform_results)].label }}
+                {{
+                  OUTCOME_META[
+                    announcementOutcome(announcement.platform_results)
+                  ].label
+                }}
               </span>
               <span class="text-xs text-muted-foreground">
-                {{ shortDateTime(announcement.published_at || announcement.created_at) }}
+                {{
+                  shortDateTime(
+                    announcement.published_at || announcement.created_at,
+                  )
+                }}
               </span>
-              <span v-if="announcement.rule_name" class="text-xs text-muted-foreground">
+              <span
+                v-if="announcement.rule_name"
+                class="text-xs text-muted-foreground"
+              >
                 · {{ announcement.rule_name }}
               </span>
             </div>
 
-            <p class="mt-1.5 whitespace-pre-line text-sm">{{ announcement.body }}</p>
+            <p class="mt-1.5 whitespace-pre-line text-sm">
+              {{ announcement.body }}
+            </p>
 
             <p class="mt-1 text-xs text-muted-foreground">
               {{ audienceSummary(announcement.audience) }}
-              <template v-if="announcement.approved_by"> · aprovado por {{ announcement.approved_by }}</template>
+              <template v-if="announcement.approved_by">
+                · aprovado por {{ announcement.approved_by }}</template
+              >
             </p>
 
             <!-- Resultado por plataforma -->
@@ -131,13 +200,27 @@ useHead({ title: "Histórico · Marketing" });
                  traz o motivo (ex.: sem credencial configurada) e o WhatsApp traz
                  quantos saíram de fato. -->
             <p
-              v-for="result in announcement.platform_results.filter((r) => r.detail)"
+              v-for="result in announcement.platform_results.filter(
+                (r) => r.detail,
+              )"
               :key="`detail-${result.platform}`"
               class="mt-1 text-xs"
-              :class="resultTone(result.status) === 'fail' ? 'text-destructive' : 'text-muted-foreground'"
+              :class="
+                resultTone(result.status) === 'fail'
+                  ? 'text-destructive'
+                  : 'text-muted-foreground'
+              "
             >
               {{ result.label }}: {{ result.detail }}
             </p>
+
+            <NuxtLink
+              :to="`/announcements/${announcement.pk}`"
+              class="mt-3 inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold underline underline-offset-2"
+            >
+              Abrir resultado e resolver
+              <Icon name="lucide:arrow-right" class="size-4" />
+            </NuxtLink>
           </div>
         </div>
       </li>

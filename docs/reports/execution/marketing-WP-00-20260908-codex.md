@@ -1411,3 +1411,72 @@ Provas locais:
 - o virtualenv compartilhado continuou sendo executado com `PYTHONPATH` explícito para
   todos os packages desta worktree, impedindo validação acidental do checkout original;
 - nenhuma rede de provider, destinatário, deploy, produção ou escrita externa foi usada.
+
+## MKT-035 — Resultado, partial, cancel, retry e reconcile no contexto
+
+Implementado sobre o ledger/Aggregate do MKT-016, os comandos seletivos do MKT-017 e
+as Actions/contrato gerado dos MKT-022–023, sem devolver autoridade ao browser:
+
+- a rota `/announcements/:id` lê conteúdo compatível v1 e, em paralelo, fatos/Actions
+  v2; o conteúdo mutável não foi recolocado no contrato factual e a UI deixou de inferir
+  recuperação a partir de texto/status legado;
+- resultado geral e por plataforma distingue `confirmed`, `accepted` ainda não
+  confirmado, fila/envio, falha retryable/final, `unknown`, supressão, cancelamento e
+  expiração. `completed_with_failures` é sempre “Entrega parcial” e `unknown` manda
+  explicitamente não reenviar;
+- retry, cancel e reconcile aparecem junto do resultado somente quando a Action canônica
+  existe; `enabled`, `reason`, contagem, método e href são respeitados. Href de command é
+  validado contra recurso/ação same-origin antes de qualquer request;
+- retry repete só `failed_retryable`; reconcile é apresentado e testado como lookup-only;
+  cancel promete somente faixas ainda não iniciadas. Permissão ausente, freeze, dispatch
+  iniciado, reconciliação pendente e provider não reconciliável têm explicação inline;
+- cada Action abre primeiro o challenge exato do servidor. A mesma versão, payload e
+  idempotency key atravessam challenge, password/TOTP e submit final; frase tipada não é
+  preenchida automaticamente. Duplo controle continua obrigatório e uma única sessão é
+  incapaz de contorná-lo;
+- o fluxo de aprovação que conduzia ao resultado também passou a consumir o challenge
+  `428` corretamente; antes, o frontend tratava a confirmação obrigatória como erro e
+  nunca chegava ao receipt;
+- receipt seguro (sem token, membership ou conteúdo) permanece na rota após decisão ou
+  recuperação e sobrevive refresh/navegação na mesma sessão por até 24 horas, isolado
+  pelo `announcement:<id>`; resposta perdida/duplo toque reutiliza a mesma key;
+- painel e histórico apontam diretamente para o anúncio exato. Estados agendado,
+  `settled`, cancelado e expirado deixaram de desaparecer das queries de transição v1 e
+  do histórico v2, preservando o caminho para cancel/recovery durante o cutover;
+- erros 401, 403, 404, 429 e indisponibilidade deixaram de compartilhar “não encontramos”
+  ou vazio. Falha da leitura v2 não inventa sucesso: mantém conteúdo/receipt e oferece
+  refetch do ledger;
+- todos os timestamps novos de confirmação, resultado e receipt são exibidos no timezone
+  nomeado da loja, preservando o contrato do MKT-034.
+
+Budget de omotenashi comprovado para resultado e recuperação:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Reencontrar resultado após publicar | toast + retorno ao painel + busca | rota exata; 0 buscas |
+| Resolver partial retryable | sem Action segura | 2 ações significativas + gate aprovado; 0 mudanças de tela |
+| Tratar unknown | investigar logs/provider ou reenviar no escuro | 2 ações + TOTP; 0 reenvios e 0 consultas externas |
+| Saber quem será repetido | inferir por erro/texto | contagem exata de `failed_retryable`; accepted/confirmed/unknown excluídos |
+| Cancelar schedule ainda reversível | reencontrar item/interpretar estado | Action no resultado; somente lanes não iniciadas |
+| Confirmar efeito do command | toast efêmero | receipt/ref/versão/horário persistem no contexto |
+| Recuperar refresh da rota | receipt perdido | 0 redigitação; sessão restaura por resource ref |
+| Distinguir partial/unknown de sucesso | resultado legado ambíguo | headline, ícone, plataforma e contagens explícitos |
+| Corrigir falha de carregamento | 401/403/404/5xx pareciam o mesmo | causa e próxima ação locais, sem login inútil no 403 |
+
+A frase tipada e password/TOTP adicionam digitação quando a matriz G-H04 exige; isso é a
+exceção de segurança prevista na seção 16 e não foi removido para atingir o budget.
+
+Provas locais:
+
+- Marketing Nuxt: 17 arquivos/159 testes passaram, incluindo partial+unknown na mesma
+  tela, receipt após refresh, adulteração de href, context mismatch, duplo clique,
+  retry/cancel/reconcile, password/TOTP e bloqueio de dual-control numa só sessão;
+- 113 testes focados de API/Actions/recovery e 14 testes de board/history/cursor passaram;
+- regressão ampla de Marketing, campaign, workers, ledger, security, scheduling,
+  projections e E2E: 490 testes passaram em 76,56 s;
+- ESLint, Nuxt typecheck e build de produção passaram; Ruff dos arquivos Python,
+  `export_marketing_client --check`, Django check, migration drift e `git diff --check`
+  passaram;
+- permaneceu somente o warning conhecido de SQLite local; não houve migration;
+- nenhuma chamada a provider, destinatário, deploy, produção, navegador autenticado ou
+  escrita externa foi usada.
