@@ -144,6 +144,7 @@ export interface AnnouncementTemplate {
   pk: number;
   name: string;
   body: string;
+  platform_variants: Record<string, Record<string, unknown>>;
   variables: string[];
   use_ai_generation: boolean;
   /** Instrução da IA. A projection devolve para o gestor poder conferir o que escreveu. */

@@ -752,6 +752,7 @@ def preview(
     promotion_ref: str = "",
     use_ai: bool = False,
     platform: str = "instagram",
+    platform_content: dict | None = None,
     content_version: int = 1,
 ) -> dict:
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
@@ -771,54 +772,121 @@ def preview(
     saber um SKU de cabeça — e devolve qual usou, porque prévia com produto anônimo não
     explica o que está vendo.
     """
+    normalized_platform = str(platform or "").strip()
+    batch = preview_platforms(
+        body,
+        sku=sku,
+        promotion_ref=promotion_ref,
+        use_ai=use_ai,
+        platforms=(normalized_platform,),
+        platform_content=platform_content,
+        content_version=content_version,
+    )
+    resolved = batch["previews"][normalized_platform]
+    artifact = resolved["artifact"]
+    return {
+        **{key: value for key, value in batch.items() if key != "previews"},
+        "body": artifact["body"],
+        "product_image_url": artifact["image_url"],
+        "link": artifact["link"],
+        "hashtags": artifact["hashtags"],
+        "artifact": artifact,
+        "artifact_hash": resolved["artifact_hash"],
+    }
+
+
+def preview_platforms(
+    body: str,
+    *,
+    platforms,
+    sku: str = "",
+    promotion_ref: str = "",
+    use_ai: bool = False,
+    platform_content: dict | None = None,
+    content_version: int = 1,
+) -> dict:
+    """Resolve every selected platform from one fact read and one request epoch."""
+
+    normalized_platforms = tuple(dict.fromkeys(
+        str(value or "").strip() for value in platforms if str(value or "").strip()
+    ))
+    if not normalized_platforms:
+        raise MarketingContractError(
+            code="preview_platform_required",
+            detail="Escolha ao menos uma plataforma para a prévia.",
+            field_errors={"platforms": ("Escolha ao menos uma plataforma.",)},
+        )
+    raw_variants = platform_content if platform_content is not None else {}
+    if not isinstance(raw_variants, dict):
+        raise MarketingContractError(
+            code="invalid_platform_variants",
+            detail="As variantes da prévia precisam ser um objeto.",
+            field_errors={"platform_content": ("Use um objeto por plataforma.",)},
+        )
+
     sample = (sku or "").strip() or _sample_sku()
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
     from shopman.shop.services import marketing_facts
-    from shopman.shop.services.marketing_artifacts import resolve_dispatch_artifact
+    from shopman.shop.services.marketing_artifacts import (
+        resolve_all_dispatch_artifacts,
+    )
 
+    selected_variants = {
+        platform: raw_variants[platform]
+        for platform in normalized_platforms
+        if platform in raw_variants
+    }
     facts = marketing_facts.resolve_facts(
         sku=sample,
         promotion_ref=promotion_ref,
-        referenced=marketing_facts.referenced_variables(body),
+        referenced=marketing_facts.referenced_variables(body, selected_variants),
         seed_variables=variables,
     )
     variables.update(facts.variable_values())
-
-    artifact = resolve_dispatch_artifact(
-        platform=platform,
+    rendered_variants = _render_platform_variants(
+        raw_variants,
+        variables=variables,
+        platforms=normalized_platforms,
+    )
+    artifacts = resolve_all_dispatch_artifacts(
+        platforms=normalized_platforms,
         content={
             "body": render(body or "", variables, field="body"),
             "hashtags": variables["hashtags_list"],
             "link": variables["link"],
             "image_url": variables["product_image_url"],
         },
-        platform_content={},
+        platform_content=rendered_variants,
         content_version=content_version,
         facts_as_of=facts.as_of.isoformat(),
         facts_hash=facts.source_hash,
     )
-
     return {
         "sku": sample,
-        "body": artifact.body,
+        "sample": not bool((sku or "").strip()),
         "product_name": variables["product_name"],
-        "product_image_url": variables["product_image_url"],
-        "link": artifact.link,
-        "hashtags": list(artifact.hashtags),
         # Os campos discretos que o template aprovado recebe. O operador vê os valores
         # usados sem precisar conferir o aparelho ou memorizar o contexto do evento.
         "fields": {
             key: variables[key]
             for key in (
-                "customer_name", "product_name", "product_sku",
-                "available_qty", "availability_phrase",
+                "customer_name",
+                "product_name",
+                "product_sku",
+                "available_qty",
+                "availability_phrase",
             )
             if key in variables
         },
         "ai_writes": bool(use_ai),
         "facts": facts.as_payload(),
-        "artifact": artifact.as_payload(),
-        "artifact_hash": artifact.artifact_hash,
+        "previews": {
+            artifact.platform: {
+                "artifact": artifact.as_payload(),
+                "artifact_hash": artifact.artifact_hash,
+            }
+            for artifact in artifacts
+        },
     }
 
 
@@ -921,10 +989,19 @@ def _platform_content(
 ) -> dict:
     """Resolve only explicit variant fields; absent fields inherit at dispatch."""
 
-    selected = set(platforms) if platforms is not None else None
     variables = content.get("variables")
     variables = variables if isinstance(variables, dict) else {}
-    variants = template.platform_variants or {}
+    return _render_platform_variants(
+        template.platform_variants or {},
+        variables=variables,
+        platforms=platforms,
+    )
+
+
+def _render_platform_variants(variants, *, variables: dict, platforms=None) -> dict:
+    """Render variant fields for both persisted content and the faithful preview."""
+
+    selected = set(platforms) if platforms is not None else None
     if not isinstance(variants, dict):
         raise MarketingContractError(
             code="invalid_platform_variants",

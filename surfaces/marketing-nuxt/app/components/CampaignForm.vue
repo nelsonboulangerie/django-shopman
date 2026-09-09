@@ -131,6 +131,11 @@ const chosenBody = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.body ?? "",
 );
 
+/** Overrides editoriais exatos usados pelo resolver de cada plataforma. */
+const chosenPlatformVariants = computed(
+  () => props.templates.find((t) => t.pk === templateId.value)?.platform_variants ?? {},
+);
+
 /** O modelo escolhido delega o texto à IA? A prévia não finge saber o resultado. */
 const chosenUsesAi = computed(
   () => props.templates.find((t) => t.pk === templateId.value)?.use_ai_generation ?? false,
@@ -220,6 +225,7 @@ function submit() {
       :body="chosenBody"
       :platforms="platforms"
       :platform-labels="platformLabels"
+      :platform-content="chosenPlatformVariants"
       :promotion-ref="promotionRef"
       :use-ai="chosenUsesAi"
       :whatsapp-template="whatsappTemplate"

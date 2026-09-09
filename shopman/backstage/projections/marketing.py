@@ -196,6 +196,7 @@ class AnnouncementTemplateProjection:
     pk: int
     name: str
     body: str
+    platform_variants: dict
     variables: tuple[str, ...]
     use_ai_generation: bool
     #: ⚠️ A API aceitava GRAVAR `ai_prompt` e a projection não o devolvia: o gestor
@@ -665,6 +666,7 @@ def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjec
         pk=template.pk,
         name=template.name,
         body=template.body,
+        platform_variants=dict(template.platform_variants or {}),
         variables=tuple(template.variables or ()),
         use_ai_generation=template.use_ai_generation,
         ai_prompt=template.ai_prompt,

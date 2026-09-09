@@ -1086,14 +1086,32 @@ class PreviewView(_CampaignBase):
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
         try:
-            preview = campaign_service.preview(
-                str(payload.get("body") or ""),
-                sku=str(payload.get("sku") or ""),
-                promotion_ref=str(payload.get("promotion_ref") or ""),
-                use_ai=bool(payload.get("use_ai")),
-                platform=str(payload.get("platform") or "instagram"),
-                content_version=payload.get("content_version", 1),
-            )
+            common = {
+                "sku": str(payload.get("sku") or ""),
+                "promotion_ref": str(payload.get("promotion_ref") or ""),
+                "use_ai": bool(payload.get("use_ai")),
+                "platform_content": payload.get("platform_content"),
+                "content_version": payload.get("content_version", 1),
+            }
+            if "platforms" in payload:
+                platforms, error = _platforms(payload.get("platforms"))
+                if error:
+                    raise MarketingContractError(
+                        code="invalid_preview_platforms",
+                        detail=error["detail"],
+                        field_errors={"platforms": (error["detail"],)},
+                    )
+                preview = campaign_service.preview_platforms(
+                    str(payload.get("body") or ""),
+                    platforms=platforms,
+                    **common,
+                )
+            else:
+                preview = campaign_service.preview(
+                    str(payload.get("body") or ""),
+                    platform=str(payload.get("platform") or "instagram"),
+                    **common,
+                )
         except MarketingContractError as exc:
             return _command_error_response(exc)
         return Response(preview)

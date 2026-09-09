@@ -1004,3 +1004,55 @@ Provas locais:
   bootstrap sem schema;
 - nenhuma migration, rede, provider real, destinatário, deploy, produção ou escrita
   externa foi usada.
+
+## MKT-028 — preview cancelável, ordenado e fiel por plataforma
+
+Implementado sobre o artifact e snapshot factual dos MKT-025–027:
+
+- a API aceita todas as plataformas e variantes em uma única chamada; todos os artifacts
+  usam exatamente o mesmo snapshot factual, `as_of` e hash de origem;
+- o endpoint singular anterior permanece compatível, agora como uma projeção do mesmo
+  resolvedor batch, sem um segundo algoritmo;
+- `AnnouncementTemplateProjection` preserva `platform_variants` para a prévia; o Nuxt não
+  tenta reconstruir overrides que só o backend conhece;
+- a UI cancela imediatamente a requisição anterior quando texto, oferta, plataformas ou
+  variantes mudam e incrementa um epoch; mesmo que o transporte ignore o abort e entregue
+  a resposta antiga, ela não pode alterar estado, loading ou erro atuais;
+- enquanto a nova versão está pendente, a anterior sai da tela e um status vivo explica
+  que todas as plataformas estão sendo atualizadas;
+- abas com área mínima de toque de 44 px exibem o artifact exato de cada canal, incluindo
+  body, hashtags, link, imagem e campos técnicos já selados pelo servidor;
+- a tela identifica explicitamente produto/SKU de amostra, horário dos fatos e prefixo do
+  artifact hash; a troca de canal é local e não cria nova espera;
+- erro estruturado e `field_errors` permanecem no contexto, com uma Action de revalidação;
+  falha não volta a parecer uma prévia vazia;
+- avisos de campo vazio são restritos aos placeholders realmente usados, eliminando o
+  falso alerta de disponibilidade visto na primeira inspeção visual.
+
+Budget de omotenashi comprovado no fluxo de prévia:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir duas plataformas escolhidas | uma simulação genérica e inferência manual | uma chamada batch + abas fiéis |
+| Trocar de Instagram para WhatsApp | sem variante verificável | 1 toque local, 0 request, 0 espera |
+| Resposta fora de ordem durante digitação | podia substituir a mais nova | 0 respostas stale aplicadas |
+| Descobrir qual produto era a amostra | nome lateral ambíguo | rótulo explícito com SKU no título |
+| Conferir frescor e versão | memória/consulta externa | `as_of` + hash no mesmo card |
+| Recuperar erro de variável/fonte | mensagem sumia, sem próximo passo | 1 Action inline, sem navegação/redigitação |
+
+Provas locais:
+
+- 4 testes de componente cobrem abort+epoch adversarial, batch/abas/variantes, erro+retry e
+  identidade/as-of/hash; a resposta antiga foi resolvida propositalmente depois da nova;
+- 154 testes focados de campaign/API/capabilities passaram em 23,96 s;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 573 testes passaram
+  em 68,14 s;
+- Marketing Nuxt: 8 arquivos/105 testes, ESLint, Nuxt typecheck e build passaram;
+- fluxo real local foi exercitado por BFF→Django→SQLite seeded, sem mock do componente:
+  login sintético, criação de campanha, seleção Instagram+WhatsApp, troca de aba e artifacts
+  divergentes foram verificados em desktop e 390×844, sem overflow e sem escrita externa;
+- a inspeção real também reproduziu o fetch protegido antes do login, dívida já destinada
+  ao MKT-039, sem ampliar esta fatia fora da ordem das dependências;
+- o build ainda baixou os fonts declarados por `@nuxt/fonts`; a remoção dessa dependência de
+  rede está explicitamente reservada ao MKT-040. Nenhum provider, destinatário, deploy ou
+  produção foi acessado.

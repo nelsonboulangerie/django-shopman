@@ -649,3 +649,37 @@ class TestPreview:
         result = campaign.preview("{{link}}", sku=product.sku, promotion_ref="semana")
 
         assert "/oferta/semana" in result["body"]
+
+    def test_batch_uses_one_fact_snapshot_and_exact_platform_variants(self, product):
+        result = campaign.preview_platforms(
+            "Base {{product_name}}",
+            sku=product.sku,
+            platforms=("instagram", "whatsapp"),
+            platform_content={
+                "instagram": {
+                    "body": "Instagram {{product_name}} por {{price}}",
+                    "hashtags": ["insta"],
+                },
+                "whatsapp": {
+                    "body": "WhatsApp {{product_name}}",
+                    "template_name": "fornada",
+                },
+            },
+        )
+
+        instagram = result["previews"]["instagram"]["artifact"]
+        whatsapp = result["previews"]["whatsapp"]["artifact"]
+        assert instagram["body"] == "Instagram Croissant Tradicional por R$ 8,50"
+        assert instagram["hashtags"] == ["insta"]
+        assert whatsapp["body"] == "WhatsApp Croissant Tradicional"
+        assert whatsapp["provider_fields"] == {"template_name": "fornada"}
+        assert (
+            instagram["facts_hash"]
+            == whatsapp["facts_hash"]
+            == result["facts"]["source_hash"]
+        )
+        assert (
+            instagram["facts_as_of"]
+            == whatsapp["facts_as_of"]
+            == result["facts"]["as_of"]
+        )

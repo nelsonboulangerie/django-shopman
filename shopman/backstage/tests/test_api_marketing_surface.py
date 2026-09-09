@@ -42,6 +42,7 @@ RULES_URL = "/api/v1/backstage/marketing/rules/"
 TEMPLATES_URL = "/api/v1/backstage/marketing/templates/"
 OPTIONS_URL = "/api/v1/backstage/marketing/options/"
 HISTORY_URL = "/api/v1/backstage/marketing/history/"
+PREVIEW_URL = "/api/v1/backstage/marketing/preview/"
 
 
 @pytest.fixture
@@ -797,6 +798,55 @@ class TestOptions:
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
         assert template.pk in {t["pk"] for t in options["templates"]}
         assert "product_name" in options["variables"]
+
+    def test_template_options_preserve_platform_variants_for_faithful_preview(
+        self, client, gestor, template
+    ):
+        template.platform_variants = {
+            "whatsapp": {"body": "WhatsApp {{product_name}}"},
+        }
+        template.save(update_fields=["platform_variants"])
+        client.force_login(gestor)
+
+        options = client.get(OPTIONS_URL).json()["options"]
+        projected = next(item for item in options["templates"] if item["pk"] == template.pk)
+
+        assert projected["platform_variants"] == template.platform_variants
+
+    def test_preview_batch_returns_exact_artifact_for_each_platform(
+        self, client, gestor
+    ):
+        from shopman.offerman.models import Product
+
+        Product.objects.create(
+            sku="CRO-PREVIEW",
+            name="Croissant da prévia",
+            base_price_q=850,
+            is_published=True,
+            is_sellable=True,
+        )
+        client.force_login(gestor)
+
+        response = client.post(
+            PREVIEW_URL,
+            data={
+                "body": "Base {{product_name}}",
+                "platforms": ["instagram", "whatsapp"],
+                "platform_content": {
+                    "instagram": {"body": "Instagram {{price}}"},
+                    "whatsapp": {"body": "WhatsApp {{product_name}}"},
+                },
+            },
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["sample"] is True
+        assert payload["previews"]["instagram"]["artifact"]["body"] == "Instagram R$ 8,50"
+        assert payload["previews"]["whatsapp"]["artifact"]["body"] == (
+            "WhatsApp Croissant da prévia"
+        )
 
 
 class TestScheduledPublishing:
