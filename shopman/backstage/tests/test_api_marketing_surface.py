@@ -524,6 +524,27 @@ class TestPostDecision:
         # O "#" é do texto, não do dado: guardar a tag limpa evita "##paes".
         assert announcement.content["hashtags"] == ["paes", "artesanal"]
 
+    def test_edit_with_unknown_variable_returns_a_field_addressed_error(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.patch(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/",
+            data={"body": "Olá {{nome_errado}}", "base_version": 1},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "unknown_template_variable"
+        assert response.json()["field_errors"] == {
+            "body": ["Variável não reconhecida: nome_errado."]
+        }
+        announcement.refresh_from_db()
+        assert announcement.version == 1
+        assert announcement.content["body"] == "Croissant saiu do forno"
+
     def test_edit_returns_next_version_and_stale_edit_preserves_current_draft(
         self, client, gestor, rule, template
     ):

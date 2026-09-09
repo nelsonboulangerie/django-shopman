@@ -920,3 +920,36 @@ Provas locais:
 - regressão ampliada Marketing/campaign/audience/notifications/E2E: 494 testes passaram em 70,84 s;
 - Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram;
 - Ruff e `git diff --check` passaram; nenhuma migration, rede, provider real, destinatário, deploy, produção ou escrita externa foi usada.
+
+## MKT-026 — variantes preservadas e render estrito
+
+Implementado sobre o artefato imutável do MKT-025:
+
+- a variante agora preserva todos os campos que declara; corpo, hashtags, link e imagem comuns são herdados somente quando o campo correspondente está ausente;
+- criação, edição e aprovação filtram variantes pelas plataformas realmente selecionadas e renderizam cada string no seu campo de origem, sem reprojetar o corpo comum sobre uma decisão editorial específica do canal;
+- variável desconhecida ou placeholder malformado falha antes da aprovação com `code` estável e `field_errors` apontando exatamente `body` ou o caminho aninhado da variante;
+- o `ResolvedDispatchArtifact` mantém `provider_fields` escalares, ordenados e imutáveis; conteúdo não pode escolher flow, token, credencial ou segredo;
+- hashtags deixam de aceitar coerção silenciosa de objetos/números para texto e artefatos persistidos antes do campo aditivo continuam legíveis;
+- o contrato golden versionado prova Instagram com body/hashtags próprios, Google Business herdando somente ausências e WhatsApp com template técnico permitido;
+- a API de edição devolve `422` estruturado sem avançar a versão nem perder o draft quando encontra variável inválida;
+- a prévia tipa os metadados técnicos devolvidos pelo mesmo artefato que será aprovado e entregue.
+
+Budget de omotenashi comprovado no fluxo de conteúdo:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir se uma variante foi substituída pelo corpo comum | comparação manual por canal | 0; golden + resolver preservam o override |
+| Descobrir variável digitada errada | após envio/aparelho externo | antes da aprovação, no campo exato |
+| Repetir corpo comum em cada plataforma | até uma cópia por canal | 0; herança apenas de campos ausentes |
+| Conferir flow/credencial escolhida por conteúdo | revisão de payload/log | impossível; boundary recusa o campo |
+| Investigar alteração parcial após erro de edição | reabrir e comparar draft | 0; transação conserva conteúdo e versão |
+| Validar três payloads manualmente | três inspeções | uma comparação contra golden versionado |
+
+Provas locais:
+
+- 166 testes focados de campaign/artifact/approval/API passaram;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 569 testes passaram em 74,26 s;
+- Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram;
+- gate canônico Unfold: 229 testes passaram;
+- Ruff, `git diff --check`, Django check e migration drift passaram; permaneceram somente o warning conhecido de SQLite e logs defensivos de bootstrap sem schema;
+- nenhuma migration, chamada de rede/provider, destinatário, deploy, produção ou escrita externa foi usada.

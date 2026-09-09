@@ -448,9 +448,8 @@ class AnnouncementDetailView(_CampaignBase):
                     status=422,
                 )
 
-        # Pelo serviço, não direto no model: ele reprojeta ``platform_content``
-        # a partir do corpo editado. Salvar só ``content`` deixaria a variação
-        # por plataforma com o texto velho — o gestor editaria no vazio.
+        # Pelo serviço, não direto no model: ele renderiza novamente as
+        # variantes explícitas sem substituir seu conteúdo pelo corpo comum.
         try:
             announcement = campaign_service.update_content(
                 pk,
@@ -467,6 +466,8 @@ class AnnouncementDetailView(_CampaignBase):
                 },
                 status=409,
             )
+        except MarketingContractError as exc:
+            return _command_error_response(exc)
         except campaign_service.CampaignError as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
@@ -577,7 +578,11 @@ class AnnouncementApproveView(_CampaignBase):
                 content["image_url"] = edits["image_url"]
             platforms = edits.get("platforms", list(announcement.platforms or []))
             platform_content = (
-                campaign_service._platform_content(announcement.template, content)
+                campaign_service._platform_content(
+                    announcement.template,
+                    content,
+                    platforms=platforms,
+                )
                 if announcement.template_id
                 else dict(announcement.platform_content or {})
             )
@@ -1067,10 +1072,8 @@ class CampaignListView(_CampaignBase):
 class PreviewView(_CampaignBase):
     """POST campaign/preview/ → como a mensagem vai ficar, antes de existir cliente.
 
-    Até agora o gestor escrevia `{{product_name}}` e só via o resultado quando a mensagem
-    chegava no celular de alguém. Variável com nome errado renderiza vazio em SILÊNCIO — foi
-    assim que passaram um `customer_name` que ninguém mandava e uma foto relativa que a Meta
-    não carrega.
+    Variável com nome errado devolve erro no campo antes de aprovar. A tela mostra os valores
+    usados sem exigir conferência em aparelho externo.
 
     Resolve pelo MESMO caminho do envio (`campaign.preview` → `resolve_variables`). Prévia com
     montagem própria concordaria hoje e divergiria no primeiro ajuste, e prévia que mente é

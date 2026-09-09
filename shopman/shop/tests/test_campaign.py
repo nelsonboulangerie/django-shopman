@@ -24,6 +24,7 @@ from shopman.shop.models import (
     UserNotification,
 )
 from shopman.shop.services import campaign
+from shopman.shop.services.marketing_contracts import MarketingContractError
 
 pytestmark = pytest.mark.django_db
 
@@ -174,8 +175,21 @@ class TestContent:
         announcement = campaign.evaluate("production_finished", _context())[0]
         assert announcement.body.startswith("Croissant Tradicional acabou de sair do forno!")
 
-    def test_unknown_variable_becomes_empty(self):
-        assert campaign.render("Olá {{inexistente}}!", {}) == "Olá !"
+    def test_unknown_variable_is_field_addressed(self):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.render("Olá {{inexistente}}!", {}, field="body")
+
+        assert caught.value.code == "unknown_template_variable"
+        assert caught.value.field_errors == {
+            "body": ("Variável não reconhecida: inexistente.",)
+        }
+
+    def test_malformed_variable_is_rejected(self):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.render("Olá {{product_name!", {"product_name": "Pão"})
+
+        assert caught.value.code == "malformed_template_variable"
+        assert "body" in caught.value.field_errors
 
     def test_render_never_leaks_raw_placeholders(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]
@@ -538,9 +552,10 @@ class TestContentEditing:
 
         edited = campaign.update_content(announcement.pk, body="Texto do gestor")
         assert edited.content["body"] == "Texto do gestor"
-        # A variação por plataforma acompanha a edição — senão o Instagram
-        # publicaria o texto antigo.
-        assert edited.platform_content
+        # O corpo explícito da plataforma é uma decisão editorial independente.
+        assert edited.platform_content["instagram"]["body"] == (
+            "Croissant Tradicional no forno!"
+        )
 
     def test_hashtags_are_trimmed_and_emptied_out(self, product, rule):
         announcement = campaign.evaluate("production_finished", _context())[0]
@@ -581,11 +596,12 @@ class TestPreview:
         assert result["body"] == f"{product.name} saiu do forno!"
         assert result["product_name"] == product.name
 
-    def test_an_unknown_variable_shows_up_empty(self, product):
-        """⚠️ O achado que a prévia entrega: nome errado NÃO estoura, renderiza vazio."""
-        result = campaign.preview("Oi {{nome_errado}}, chegou!", sku=product.sku)
+    def test_an_unknown_variable_blocks_preview_at_the_field(self, product):
+        with pytest.raises(MarketingContractError) as caught:
+            campaign.preview("Oi {{nome_errado}}, chegou!", sku=product.sku)
 
-        assert result["body"] == "Oi , chegou!"
+        assert caught.value.code == "unknown_template_variable"
+        assert "body" in caught.value.field_errors
 
     def test_without_a_sku_it_picks_a_real_product(self, product):
         """Prévia que exige SKU de cabeça não é usada. E ela diz qual escolheu."""

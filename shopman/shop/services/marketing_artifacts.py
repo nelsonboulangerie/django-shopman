@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import math
 import re
 from collections.abc import Mapping, Sequence
 from typing import Any
@@ -17,6 +18,19 @@ from shopman.shop.services.marketing_contracts import (
 SCHEMA_VERSION = 2
 SUPPORTED_PLATFORMS = frozenset({"facebook", "google_business", "instagram", "whatsapp"})
 _HASH = re.compile(r"^[a-f0-9]{64}$")
+_FIELD = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_PLACEHOLDER = re.compile(r"\{\{\s*([\w_]+)\s*\}\}")
+_RESERVED_CONTENT_FIELDS = frozenset({"body", "hashtags", "image_url", "link"})
+_FORBIDDEN_PROVIDER_FIELDS = frozenset({
+    "access_token",
+    "credential",
+    "credentials",
+    "flow_id",
+    "flow_ref",
+    "password",
+    "secret",
+    "token",
+})
 
 
 def resolve_dispatch_artifact(
@@ -57,6 +71,14 @@ def resolve_dispatch_artifact(
             detail="O artefato resolvido precisa de texto.",
             field_errors={"content.body": ("Revise o texto antes de publicar.",)},
         )
+    _assert_resolved(body, field="content.body")
+    hashtags = _hashtags(merged.get("hashtags"))
+    for index, hashtag in enumerate(hashtags):
+        _assert_resolved(hashtag, field=f"content.hashtags.{index}")
+    link = str(merged.get("link") or "").strip()
+    image_url = str(merged.get("image_url") or "").strip()
+    _assert_resolved(link, field="content.link")
+    _assert_resolved(image_url, field="content.image_url")
     normalized_facts_hash = str(facts_hash or "").strip().lower()
     if normalized_facts_hash and not _HASH.fullmatch(normalized_facts_hash):
         raise MarketingContractError(
@@ -66,9 +88,10 @@ def resolve_dispatch_artifact(
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
-        hashtags=_hashtags(merged.get("hashtags")),
-        link=str(merged.get("link") or "").strip(),
-        image_url=str(merged.get("image_url") or "").strip(),
+        hashtags=hashtags,
+        link=link,
+        image_url=image_url,
+        provider_fields=_provider_fields(variant, platform=normalized_platform),
         content_version=content_version,
         facts_hash=normalized_facts_hash,
     )
@@ -180,6 +203,12 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
             hashtags=_hashtags(payload.get("hashtags")),
             link=str(payload.get("link") or ""),
             image_url=str(payload.get("image_url") or ""),
+            provider_fields=tuple(
+                _mapping(
+                    payload.get("provider_fields", {}),
+                    field=f"resolved_artifacts.{platform}.provider_fields",
+                ).items()
+            ),
             content_version=int(payload.get("content_version")),
             facts_hash=str(payload.get("facts_hash") or ""),
         )
@@ -197,8 +226,13 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
     # preview and approval without inheriting any later mutable model state.
     return resolve_dispatch_artifact(
         platform=resolved.platform,
-        content=resolved.as_payload(),
-        platform_content={},
+        content={
+            "body": resolved.body,
+            "hashtags": list(resolved.hashtags),
+            "link": resolved.link,
+            "image_url": resolved.image_url,
+        },
+        platform_content={platform: dict(resolved.provider_fields)},
         content_version=resolved.content_version,
         facts_hash=resolved.facts_hash,
     )
@@ -223,4 +257,63 @@ def _hashtags(value: object) -> tuple[str, ...]:
             detail="Hashtags precisam ser uma lista.",
             field_errors={"content.hashtags": ("Envie uma lista de hashtags.",)},
         )
-    return tuple(str(item).strip().lstrip("#") for item in value if str(item).strip())
+    if any(not isinstance(item, str) for item in value):
+        raise MarketingContractError(
+            code="invalid_hashtags",
+            detail="Cada hashtag precisa ser texto.",
+            field_errors={"content.hashtags": ("Use somente textos na lista.",)},
+        )
+    return tuple(item.strip().lstrip("#") for item in value if item.strip())
+
+
+def _provider_fields(
+    variant: Mapping[str, Any],
+    *,
+    platform: str,
+) -> tuple[tuple[str, Any], ...]:
+    fields: list[tuple[str, Any]] = []
+    for raw_key, value in variant.items():
+        key = str(raw_key)
+        if key in _RESERVED_CONTENT_FIELDS:
+            continue
+        if not _FIELD.fullmatch(key) or key in _FORBIDDEN_PROVIDER_FIELDS:
+            raise MarketingContractError(
+                code="invalid_provider_field",
+                detail="A variante contém um campo de provider não permitido.",
+                field_errors={
+                    f"platform_content.{platform}.{key}": (
+                        "Remova este campo da variante.",
+                    )
+                },
+            )
+        if not isinstance(value, str | int | float | bool) and value is not None:
+            raise MarketingContractError(
+                code="invalid_provider_field_value",
+                detail="Campo de provider precisa ter valor escalar.",
+                field_errors={
+                    f"platform_content.{platform}.{key}": (
+                        "Use texto, número, booleano ou nulo.",
+                    )
+                },
+            )
+        if isinstance(value, float) and not math.isfinite(value):
+            raise MarketingContractError(
+                code="invalid_provider_field_value",
+                detail="Campo de provider precisa ter número finito.",
+            )
+        if isinstance(value, str):
+            _assert_resolved(value, field=f"platform_content.{platform}.{key}")
+        fields.append((key, value))
+    return tuple(sorted(fields))
+
+
+def _assert_resolved(value: str, *, field: str) -> None:
+    match = _PLACEHOLDER.search(value)
+    if match is None and "{{" not in value and "}}" not in value:
+        return
+    variable = match.group(1) if match is not None else "malformada"
+    raise MarketingContractError(
+        code="unresolved_template_variable",
+        detail="O conteúdo ainda contém uma variável não resolvida.",
+        field_errors={field: (f"Revise a variável {variable}.",)},
+    )

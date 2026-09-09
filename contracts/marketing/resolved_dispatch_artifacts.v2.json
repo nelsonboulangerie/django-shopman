@@ -1,0 +1,47 @@
+{
+  "google_business": {
+    "body": "Croissant Tradicional acabou de sair do forno ✨",
+    "content_version": 7,
+    "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hashtags": [
+      "feitohoje",
+      "croissant"
+    ],
+    "image_url": "https://cdn.example/croissant.jpg",
+    "link": "https://shop.example/p/croissant",
+    "platform": "google_business",
+    "provider_fields": {
+      "post_type": "OFFER"
+    }
+  },
+  "instagram": {
+    "body": "Croissant Tradicional no forno ✨",
+    "content_version": 7,
+    "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hashtags": [
+      "feitohoje",
+      "instacroissant"
+    ],
+    "image_url": "https://cdn.example/croissant.jpg",
+    "link": "https://shop.example/p/croissant",
+    "platform": "instagram",
+    "provider_fields": {
+      "post_type": "FEED"
+    }
+  },
+  "whatsapp": {
+    "body": "Croissant Tradicional quentinho. Peça agora: https://shop.example/p/croissant",
+    "content_version": 7,
+    "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "hashtags": [
+      "feitohoje",
+      "croissant"
+    ],
+    "image_url": "https://cdn.example/croissant.jpg",
+    "link": "https://shop.example/p/croissant",
+    "platform": "whatsapp",
+    "provider_fields": {
+      "template_name": "fornada_v3"
+    }
+  }
+}

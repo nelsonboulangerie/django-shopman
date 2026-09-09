@@ -39,6 +39,7 @@ type Preview = {
     hashtags: string[];
     link: string;
     image_url: string;
+    provider_fields: Record<string, string | number | boolean | null>;
     content_version: number;
     facts_hash: string;
   };

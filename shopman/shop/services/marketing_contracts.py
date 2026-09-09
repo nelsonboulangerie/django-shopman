@@ -201,6 +201,7 @@ class ResolvedDispatchArtifact:
     hashtags: tuple[str, ...] = ()
     link: str = ""
     image_url: str = ""
+    provider_fields: tuple[tuple[str, Any], ...] = ()
     content_version: int = 1
     facts_hash: str = ""
 
@@ -211,6 +212,7 @@ class ResolvedDispatchArtifact:
             "hashtags": list(self.hashtags),
             "link": self.link,
             "image_url": self.image_url,
+            "provider_fields": dict(self.provider_fields),
             "content_version": self.content_version,
             "facts_hash": self.facts_hash,
         }

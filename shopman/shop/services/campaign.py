@@ -44,6 +44,7 @@ from shopman.shop.models import (
 from shopman.shop.services import audience as audience_service
 from shopman.shop.services import campaign_schedule
 from shopman.shop.services.availability_copy import availability_phrase
+from shopman.shop.services.marketing_contracts import MarketingContractError
 
 logger = logging.getLogger(__name__)
 
@@ -214,7 +215,11 @@ def _create_announcement(
         template=rule.template,
         status=AnnouncementStatus.PENDING_REVIEW if rule.requires_approval else AnnouncementStatus.APPROVED,
         content=content,
-        platform_content=_platform_content(rule.template, content),
+        platform_content=_platform_content(
+            rule.template,
+            content,
+            platforms=rule.platforms,
+        ),
         platforms=list(rule.platforms or []),
         audience=resolved.summary(),
         trigger_context=context,
@@ -358,7 +363,11 @@ def resolve_content(
     # que **nem é chamada**: pedir sugestão para substituir por um texto que já existe
     # gastaria uma chamada para jogar fora. As outras chaves seguem vindo do modelo:
     # hashtags, imagem e link da oferta não são o que ele digitou.
-    body = override_body or _ai_body(template, variables) or render(template.body, variables)
+    body = render(
+        override_body or _ai_body(template, variables) or template.body,
+        variables,
+        field="body",
+    )
     content = {
         "body": body,
         "hashtags": variables["hashtags_list"],
@@ -734,10 +743,8 @@ def preview(
 ) -> dict:
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
 
-    Existe porque até agora o gestor escrevia `{{product_name}}` e só descobria o resultado
-    quando a mensagem chegava no celular de um cliente. Variável com nome errado renderiza
-    vazio em silêncio, e foi assim que passaram despercebidos um `customer_name` que ninguém
-    mandava e uma foto em caminho relativo que a Meta não carrega.
+    Variável desconhecida bloqueia a prévia e aponta o campo antes de o conteúdo chegar à
+    aprovação. O operador corrige no mesmo contexto, sem descobrir o erro no aparelho.
 
     ⚠️ **Mesmo resolvedor do envio, de propósito.** Se a prévia tivesse a própria montagem,
     ela concordaria com o envio hoje e divergiria no primeiro ajuste — e uma prévia que mente
@@ -758,7 +765,7 @@ def preview(
     artifact = resolve_dispatch_artifact(
         platform=platform,
         content={
-            "body": render(body or "", variables),
+            "body": render(body or "", variables, field="body"),
             "hashtags": variables["hashtags_list"],
             "link": variables["link"],
             "image_url": variables["product_image_url"],
@@ -774,8 +781,8 @@ def preview(
         "product_image_url": variables["product_image_url"],
         "link": artifact.link,
         "hashtags": list(artifact.hashtags),
-        # Os campos discretos que o template aprovado recebe. É o que explica variável vazia
-        # no aparelho antes de o aparelho existir.
+        # Os campos discretos que o template aprovado recebe. O operador vê os valores
+        # usados sem precisar conferir o aparelho ou memorizar o contexto do evento.
         "fields": {
             key: variables[key]
             for key in (
@@ -875,36 +882,95 @@ def _ai_prompt(template, variables: dict) -> str:
     instruction = (getattr(template, "ai_prompt", "") or "").strip()
     if instruction:
         parts += ["", "Instrução desta campanha:", instruction]
-    reference = render(template.body, variables).strip()
+    reference = render(template.body, variables, field="body").strip()
     if reference:
         parts += ["", "Versão do modelo, como referência de formato (não repita):", reference]
     return "\n".join(parts)
 
 
-def _platform_content(template, content: dict) -> dict:
-    """Só grava override onde o template realmente diverge do corpo padrão."""
+def _platform_content(
+    template,
+    content: dict,
+    *,
+    platforms=None,
+) -> dict:
+    """Resolve only explicit variant fields; absent fields inherit at dispatch."""
+
+    selected = set(platforms) if platforms is not None else None
+    variables = content.get("variables")
+    variables = variables if isinstance(variables, dict) else {}
+    variants = template.platform_variants or {}
+    if not isinstance(variants, dict):
+        raise MarketingContractError(
+            code="invalid_platform_variants",
+            detail="As variantes por plataforma precisam ser um objeto.",
+            field_errors={
+                "platform_variants": ("Use um objeto indexado pela plataforma.",)
+            },
+        )
     out = {}
-    for platform, variant in (template.platform_variants or {}).items():
-        if not isinstance(variant, dict) or not variant.get("body"):
+    for platform, variant in variants.items():
+        if selected is not None and platform not in selected:
             continue
-        out[platform] = {**variant, "body": content["body"]}
+        field = f"platform_variants.{platform}"
+        if not isinstance(variant, dict):
+            raise MarketingContractError(
+                code="invalid_platform_variant",
+                detail="Cada variante precisa ser um objeto.",
+                field_errors={field: ("Use um objeto de campos da plataforma.",)},
+            )
+        out[platform] = {
+            key: _render_variant_value(
+                value,
+                variables=variables,
+                field=f"{field}.{key}",
+            )
+            for key, value in variant.items()
+        }
     return out
 
 
-def render(body: str, variables: dict) -> str:
-    """Substituir ``{{var}}`` pelos valores. Variável desconhecida vira vazio.
+def render(body: str, variables: dict, *, field: str = "body") -> str:
+    """Substitute known variables and reject every unknown placeholder."""
 
-    Deixar o ``{{cru}}`` na tela seria pior que o silêncio: o gestor aprovaria
-    sem perceber e o cliente veria o template.
-    """
-    import re
+    referenced = {
+        match.group(1).strip()
+        for match in re.finditer(r"\{\{\s*([\w_]+)\s*\}\}", body or "")
+    }
+    unknown = sorted(referenced - set(variables))
+    if unknown:
+        joined = ", ".join(unknown)
+        raise MarketingContractError(
+            code="unknown_template_variable",
+            detail="O conteúdo usa uma variável desconhecida.",
+            field_errors={field: (f"Variável não reconhecida: {joined}.",)},
+        )
 
     def _replace(match):
         return str(variables.get(match.group(1).strip(), ""))
 
     rendered = re.sub(r"\{\{\s*([\w_]+)\s*\}\}", _replace, body or "")
+    if "{{" in rendered or "}}" in rendered:
+        raise MarketingContractError(
+            code="malformed_template_variable",
+            detail="O conteúdo contém uma variável malformada.",
+            field_errors={field: ("Revise a abertura e o fechamento com {{variavel}}.",)},
+        )
     # Um {{price}} vazio no meio da frase deixa espaço duplo.
     return re.sub(r"[ \t]{2,}", " ", rendered).strip()
+
+
+def _render_variant_value(value, *, variables: dict, field: str):
+    if isinstance(value, str):
+        return render(value, variables, field=field)
+    if isinstance(value, list):
+        return [
+            render(item, variables, field=f"{field}.{index}")
+            if isinstance(item, str)
+            else item
+            for index, item in enumerate(value)
+        ]
+    return value
 
 
 def resolve_variables(context: dict, *, promotion_ref: str = "") -> dict:
@@ -1165,16 +1231,29 @@ def update_content(
 
         content = dict(announcement.content or {})
         if body is not None:
-            content["body"] = str(body)
+            variables = content.get("variables")
+            content["body"] = render(
+                str(body),
+                variables if isinstance(variables, dict) else {},
+                field="body",
+            )
         if hashtags is not None:
             content["hashtags"] = [str(tag).strip() for tag in hashtags if str(tag).strip()]
         if image_url is not None:
             content["image_url"] = str(image_url)
 
         announcement.content = content
-        announcement.platform_content = _platform_content(announcement.template, content) if announcement.template_id else {}
         if platforms is not None:
             announcement.platforms = [str(platform) for platform in platforms]
+        announcement.platform_content = (
+            _platform_content(
+                announcement.template,
+                content,
+                platforms=announcement.platforms,
+            )
+            if announcement.template_id
+            else {}
+        )
         announcement.version += 1
         announcement.save(update_fields=["content", "platform_content", "platforms", "version"])
         return announcement

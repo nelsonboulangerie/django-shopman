@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -12,8 +13,10 @@ from shopman.shop.models import Announcement, AnnouncementStatus, DeliveryTarget
 from shopman.shop.services import campaign
 from shopman.shop.services.marketing_approval import approve_command
 from shopman.shop.services.marketing_artifacts import (
+    resolve_all_dispatch_artifacts,
     resolve_approved_dispatch_artifact,
     resolve_dispatch_artifact,
+    resolved_payloads,
 )
 from shopman.shop.services.marketing_contracts import (
     MarketingContractError,
@@ -30,6 +33,12 @@ from shopman.shop.services.marketing_delivery_worker import (
 )
 
 pytestmark = pytest.mark.django_db
+GOLDEN_PATH = (
+    Path(__file__).resolve().parents[3]
+    / "contracts"
+    / "marketing"
+    / "resolved_dispatch_artifacts.v2.json"
+)
 
 
 class CapturingProvider:
@@ -69,6 +78,90 @@ def test_pure_resolver_is_stable_immutable_and_recipient_free():
     assert b"customer" not in serialized
     with pytest.raises(AttributeError):
         first.body = "mutated"  # type: ignore[misc]
+
+
+def test_multichannel_variants_match_the_golden_and_inherit_only_absent_fields():
+    class Template:
+        platform_variants = {
+            "instagram": {
+                "body": "{{product_name}} no forno ✨",
+                "hashtags": ["{{tag}}", "instacroissant"],
+                "post_type": "FEED",
+            },
+            "google_business": {"post_type": "OFFER"},
+            "whatsapp": {
+                "body": "{{product_name}} quentinho. Peça agora: {{link}}",
+                "template_name": "fornada_v3",
+            },
+        }
+
+    variables = {
+        "link": "https://shop.example/p/croissant",
+        "product_name": "Croissant Tradicional",
+        "tag": "feitohoje",
+    }
+    content = {
+        "body": "Croissant Tradicional acabou de sair do forno ✨",
+        "hashtags": ["feitohoje", "croissant"],
+        "image_url": "https://cdn.example/croissant.jpg",
+        "link": variables["link"],
+        "variables": variables,
+    }
+    platforms = ["instagram", "google_business", "whatsapp"]
+    platform_content = campaign._platform_content(
+        Template(),
+        content,
+        platforms=platforms,
+    )
+
+    actual = resolved_payloads(resolve_all_dispatch_artifacts(
+        platforms=platforms,
+        content=content,
+        platform_content=platform_content,
+        content_version=7,
+        facts_hash="a" * 64,
+    ))
+
+    assert actual == json.loads(GOLDEN_PATH.read_text())
+    assert actual["instagram"]["body"] == "Croissant Tradicional no forno ✨"
+    assert actual["google_business"]["body"] == content["body"]
+    assert actual["whatsapp"]["provider_fields"] == {
+        "template_name": "fornada_v3"
+    }
+
+
+def test_unknown_variant_variable_points_to_the_exact_nested_field():
+    class Template:
+        platform_variants = {
+            "instagram": {"body": "Olá {{unknown_product}}"},
+        }
+
+    with pytest.raises(MarketingContractError) as caught:
+        campaign._platform_content(
+            Template(),
+            {"variables": {"product_name": "Croissant"}},
+        )
+
+    assert caught.value.code == "unknown_template_variable"
+    assert caught.value.field_errors == {
+        "platform_variants.instagram.body": (
+            "Variável não reconhecida: unknown_product.",
+        )
+    }
+
+
+@pytest.mark.parametrize("provider_field", ["flow_id", "access_token", "credentials"])
+def test_content_cannot_choose_flow_or_credentials(provider_field):
+    with pytest.raises(MarketingContractError) as caught:
+        resolve_dispatch_artifact(
+            platform="whatsapp",
+            content={"body": "Fornada pronta"},
+            platform_content={"whatsapp": {provider_field: "operator-controlled"}},
+            content_version=1,
+        )
+
+    assert caught.value.code == "invalid_provider_field"
+    assert f"platform_content.whatsapp.{provider_field}" in caught.value.field_errors
 
 
 def test_preview_approved_evidence_and_provider_receive_the_exact_same_hash():
