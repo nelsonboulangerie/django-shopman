@@ -98,13 +98,6 @@ def approve_command(
     safe_platform_content = _json_copy(platform_content, field="platform_content")
     safe_platforms = _platforms(platforms)
     _validate_content(safe_content, safe_platform_content, safe_platforms)
-    resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
-        platforms=safe_platforms,
-        content=safe_content,
-        platform_content=safe_platform_content,
-        content_version=base_version + 1,
-    )
-
     command_payload = {
         "content": safe_content,
         "platform_content": safe_platform_content,
@@ -138,6 +131,26 @@ def approve_command(
                 outcome={"status": AnnouncementStatus.EXPIRED},
             )
 
+        from shopman.shop.services import marketing_facts
+
+        facts = marketing_facts.refresh_for_approval(
+            announcement,
+            safe_content,
+            scheduled_for=normalized_publish_at,
+            now=now,
+        )
+        approved_content = dict(safe_content)
+        if facts is not None:
+            approved_content["facts"] = facts.as_payload()
+        resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
+            platforms=safe_platforms,
+            content=approved_content,
+            platform_content=safe_platform_content,
+            content_version=announcement.version + 1,
+            facts_as_of=facts.as_of.isoformat() if facts is not None else "",
+            facts_hash=facts.source_hash if facts is not None else "",
+        )
+
         rules = _audience_rules(announcement)
         sku = str((announcement.trigger_context or {}).get("sku") or "")
         resolution = audience_service.resolve(rules, sku=sku, now=now)
@@ -162,7 +175,7 @@ def approve_command(
 
         approved_version = announcement.version + 1
         artifact_payload = {
-            "content": safe_content,
+            "content": approved_content,
             "content_version": approved_version,
             "platform_content": safe_platform_content,
             "platforms": safe_platforms,
@@ -171,6 +184,8 @@ def approve_command(
             ),
             "schema_version": marketing_artifacts.SCHEMA_VERSION,
         }
+        if facts is not None:
+            artifact_payload["facts"] = facts.as_payload()
         artifact_bytes = canonical_artifact_bytes(artifact_payload)
         if len(artifact_bytes) > MAX_ARTIFACT_BYTES:
             raise RejectCommand(
@@ -239,7 +254,7 @@ def approve_command(
             now=now,
         )
 
-        announcement.content = safe_content
+        announcement.content = approved_content
         announcement.platform_content = safe_platform_content
         announcement.platforms = safe_platforms
         announcement.audience = resolution.summary()
@@ -278,7 +293,14 @@ def approve_command(
                 "platform_count": len(safe_platforms),
                 "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
                 "publish_mode": normalized_mode,
-            },
+            } | (
+                {
+                    "facts_as_of": facts.as_of.isoformat(),
+                    "facts_hash": facts.source_hash,
+                }
+                if facts is not None
+                else {}
+            ),
             request_id=receipt.request_id,
             occurred_at=now,
             retention_until=now + APPROVAL_RECORD_RETENTION,

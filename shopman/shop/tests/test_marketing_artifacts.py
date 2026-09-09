@@ -172,9 +172,16 @@ def test_preview_approved_evidence_and_provider_receive_the_exact_same_hash():
     )
     preview_artifact = preview["artifact"]
     actor = get_user_model().objects.create_user(username="artifact-operator")
+    approved_content = {
+        "body": preview_artifact["body"],
+        "hashtags": preview_artifact["hashtags"],
+        "link": preview_artifact["link"],
+        "image_url": preview_artifact["image_url"],
+        "facts": preview["facts"],
+    }
     announcement = Announcement.objects.create(
         status=AnnouncementStatus.PENDING_REVIEW,
-        content={"body": "before review"},
+        content=approved_content,
         platforms=["instagram"],
     )
     result = approve_command(
@@ -183,12 +190,7 @@ def test_preview_approved_evidence_and_provider_receive_the_exact_same_hash():
         idempotency_key="artifact-approval-0001",
         base_version=1,
         publish_mode="now",
-        content={
-            "body": preview_artifact["body"],
-            "hashtags": preview_artifact["hashtags"],
-            "link": preview_artifact["link"],
-            "image_url": preview_artifact["image_url"],
-        },
+        content=approved_content,
         platform_content={},
         platforms=["instagram"],
     )

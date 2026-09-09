@@ -206,11 +206,17 @@ def execute_approved_target(
 ) -> AttemptExecution:
     """Canonical worker entrypoint: derive bytes only from sealed approval evidence."""
 
+    from shopman.shop.services import marketing_facts
     from shopman.shop.services.marketing_artifacts import (
         resolve_target_dispatch_artifact,
     )
 
     target = DeliveryTarget.objects.select_related("artifact").get(ref=target_ref)
+    try:
+        marketing_facts.validate_for_dispatch(target.artifact, now=now)
+    except MarketingContractError as exc:
+        _settle_invalid_facts(target.ref, error=exc, now=_aware_now(now))
+        raise
     artifact = resolve_target_dispatch_artifact(target)
     return execute_target(
         target_ref,
@@ -221,6 +227,45 @@ def execute_approved_target(
         worker_id=worker_id,
         now=now,
     )
+
+
+def _settle_invalid_facts(
+    target_ref,
+    *,
+    error: MarketingContractError,
+    now: datetime,
+) -> None:
+    """Release a degraded source or expire a factual drift before provider I/O."""
+
+    with transaction.atomic():
+        target = DeliveryTarget.objects.select_for_update().get(ref=target_ref)
+        if target.state != DeliveryTarget.State.QUEUED:
+            return
+        target.lease_owner = ""
+        target.lease_until = None
+        target.last_error_code = error.code
+        if error.retryable:
+            target.next_attempt_at = now + timedelta(seconds=30)
+        else:
+            ensure_delivery_transition(
+                DeliveryState(target.state),
+                DeliveryState.EXPIRED,
+            )
+            target.state = DeliveryTarget.State.EXPIRED
+            target.settled_at = now
+        target.version += 1
+        target.updated_at = now
+        target.save(update_fields=[
+            "state",
+            "lease_owner",
+            "lease_until",
+            "next_attempt_at",
+            "last_error_code",
+            "settled_at",
+            "version",
+            "updated_at",
+        ])
+        _schedule_aggregate(target.announcement_id)
 
 
 def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:

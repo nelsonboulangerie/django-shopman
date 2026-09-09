@@ -52,8 +52,51 @@
           "title": "Campaign Ref",
           "type": "string"
         },
+        "content_as_of": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Content As Of"
+        },
+        "content_facts_hash": {
+          "title": "Content Facts Hash",
+          "type": "string"
+        },
+        "content_fresh_until": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Content Fresh Until"
+        },
+        "fact_variable_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Fact Variable Refs",
+          "type": "array"
+        },
+        "link_ref": {
+          "title": "Link Ref",
+          "type": "string"
+        },
         "product_ref": {
           "title": "Product Ref",
+          "type": "string"
+        },
+        "promotion_ref": {
+          "title": "Promotion Ref",
           "type": "string"
         },
         "template_ref": {
@@ -78,7 +121,13 @@
         "trigger",
         "campaign_ref",
         "template_ref",
-        "product_ref"
+        "product_ref",
+        "promotion_ref",
+        "link_ref",
+        "content_as_of",
+        "content_fresh_until",
+        "content_facts_hash",
+        "fact_variable_refs"
       ],
       "title": "AnnouncementFactsProjectionV2",
       "type": "object"

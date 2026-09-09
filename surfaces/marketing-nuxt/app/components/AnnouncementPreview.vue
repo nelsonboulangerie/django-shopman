@@ -32,6 +32,21 @@ type Preview = {
   hashtags: string[];
   fields: Record<string, string>;
   ai_writes: boolean;
+  facts: {
+    schema_version: number;
+    as_of: string;
+    fresh_until: string;
+    source_hash: string;
+    sku: string;
+    promotion_ref: string;
+    referenced_variables: string[];
+    variables: Record<string, string>;
+    product: Record<string, string | number | boolean | null>;
+    price: Record<string, string | number | boolean | null>;
+    availability: Record<string, string | number | boolean | null>;
+    promotion: Record<string, string | number | boolean | null>;
+    link: Record<string, string | number | boolean | null>;
+  };
   artifact_hash: string;
   artifact: {
     platform: string;
@@ -41,6 +56,7 @@ type Preview = {
     image_url: string;
     provider_fields: Record<string, string | number | boolean | null>;
     content_version: number;
+    facts_as_of: string;
     facts_hash: string;
   };
 };

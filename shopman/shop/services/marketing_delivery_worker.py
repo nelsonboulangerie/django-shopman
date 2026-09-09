@@ -220,6 +220,7 @@ def claim_due_targets(
         ).filter(Q(lease_owner="") | Q(lease_until__lte=clock))
         query = query.select_related(
             "announcement",
+            "artifact",
             "outbox",
             "member__customer",
         ).order_by("next_attempt_at", "pk")
@@ -230,6 +231,7 @@ def claim_due_targets(
 
         statuses, consent_unavailable = _consent_statuses(rows)
         subscriptions, subscription_unavailable = _active_subscriptions(rows, now=clock)
+        facts_outcomes = _facts_outcomes(rows, now=clock)
         claimed: list[DeliveryTarget] = []
         suppressed = expired = cancelled = deferred = stale_reclaimed = 0
         lease_until = clock + timedelta(seconds=safe_lease)
@@ -241,6 +243,7 @@ def claim_due_targets(
                 subscriptions=subscriptions,
                 consent_unavailable=consent_unavailable,
                 subscription_unavailable=subscription_unavailable,
+                facts_outcomes=facts_outcomes,
                 now=clock,
             )
             if outcome == "claim":
@@ -302,6 +305,7 @@ def _pre_send_outcome(
     subscriptions: set,
     consent_unavailable: bool,
     subscription_unavailable: bool,
+    facts_outcomes: dict[int, tuple[str, str]],
     now: datetime,
 ) -> tuple[str, str]:
     announcement = target.announcement
@@ -320,6 +324,9 @@ def _pre_send_outcome(
         AnnouncementStatus.PUBLISHING,
     }:
         return "defer", "announcement_not_dispatchable"
+    facts_outcome = facts_outcomes.get(target.artifact_id)
+    if facts_outcome is not None:
+        return facts_outcome
     if target.platform != "whatsapp":
         return "claim", ""
 
@@ -347,6 +354,30 @@ def _pre_send_outcome(
     if customer_ref and status == "opted_in":
         return "claim", ""
     return DeliveryState.SUPPRESSED.value, "missing_consent"
+
+
+def _facts_outcomes(
+    rows: list[DeliveryTarget],
+    *,
+    now: datetime,
+) -> dict[int, tuple[str, str]]:
+    """Validate once per approved artifact, never once per recipient."""
+
+    from shopman.shop.services import marketing_facts
+
+    outcomes: dict[int, tuple[str, str]] = {}
+    for target in rows:
+        if target.artifact_id in outcomes:
+            continue
+        try:
+            marketing_facts.validate_for_dispatch(target.artifact, now=now)
+        except MarketingContractError as exc:
+            outcomes[target.artifact_id] = (
+                ("defer", exc.code)
+                if exc.retryable
+                else (DeliveryState.EXPIRED.value, exc.code)
+            )
+    return outcomes
 
 
 def _consent_statuses(rows) -> tuple[dict[str, str], bool]:

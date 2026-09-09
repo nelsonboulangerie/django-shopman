@@ -203,6 +203,7 @@ class ResolvedDispatchArtifact:
     image_url: str = ""
     provider_fields: tuple[tuple[str, Any], ...] = ()
     content_version: int = 1
+    facts_as_of: str = ""
     facts_hash: str = ""
 
     def as_payload(self) -> dict[str, Any]:
@@ -214,6 +215,7 @@ class ResolvedDispatchArtifact:
             "image_url": self.image_url,
             "provider_fields": dict(self.provider_fields),
             "content_version": self.content_version,
+            "facts_as_of": self.facts_as_of,
             "facts_hash": self.facts_hash,
         }
 

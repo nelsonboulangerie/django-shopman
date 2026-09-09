@@ -27,6 +27,7 @@ from shopman.shop.models import (
     MarketingContentArtifact,
     Trigger,
 )
+from shopman.shop.services.marketing_contracts import MarketingContractError
 from shopman.shop.services.marketing_delivery_aggregate import (
     DeliverySummary,
     delivery_summaries_for,
@@ -235,6 +236,12 @@ class AnnouncementFactsProjectionV2:
     campaign_ref: str
     template_ref: str
     product_ref: str
+    promotion_ref: str
+    link_ref: str
+    content_as_of: datetime | None
+    content_fresh_until: datetime | None
+    content_facts_hash: str
+    fact_variable_refs: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -523,6 +530,7 @@ def _project_announcement(
     )
     context = announcement.trigger_context if isinstance(announcement.trigger_context, dict) else {}
     product_ref = _prefixed_ref("product", context.get("sku"))
+    content_facts = _content_facts(announcement, artifact=artifact)
     platform_refs = tuple(
         value
         for value in (_domain_code(item) for item in (announcement.platforms or ()))
@@ -542,6 +550,12 @@ def _project_announcement(
                 else ""
             ),
             product_ref=product_ref,
+            promotion_ref=content_facts["promotion_ref"],
+            link_ref=content_facts["link_ref"],
+            content_as_of=content_facts["as_of"],
+            content_fresh_until=content_facts["fresh_until"],
+            content_facts_hash=content_facts["source_hash"],
+            fact_variable_refs=content_facts["variable_refs"],
         ),
         platform_refs=platform_refs,
         created_at=_local(announcement.created_at),
@@ -639,6 +653,57 @@ def _artifact_summary(
         artifact_hash=artifact_hash if _HEX_HASH.fullmatch(artifact_hash) else "",
         created_at=_local(artifact.created_at),
     )
+
+
+def _content_facts(
+    announcement: Announcement,
+    *,
+    artifact: MarketingContentArtifact | None,
+) -> dict[str, Any]:
+    """Project only allowlisted refs/timestamps/hash from the sealed fact payload."""
+
+    raw = None
+    if artifact is not None and isinstance(artifact.payload, dict):
+        raw = artifact.payload.get("facts")
+    if raw is None and isinstance(announcement.content, dict):
+        raw = announcement.content.get("facts")
+    if raw is None:
+        return {
+            "as_of": None,
+            "fresh_until": None,
+            "link_ref": "",
+            "promotion_ref": "",
+            "source_hash": "",
+            "variable_refs": (),
+        }
+    try:
+        from shopman.shop.services.marketing_facts import from_payload
+
+        facts = from_payload(raw)
+    except MarketingContractError:
+        return {
+            "as_of": None,
+            "fresh_until": None,
+            "link_ref": "",
+            "promotion_ref": "",
+            "source_hash": "",
+            "variable_refs": (),
+        }
+    link = dict(facts.link)
+    link_kind = _domain_code(link.get("kind"))
+    link_ref = _prefixed_ref(link_kind, link.get("ref")) if link_kind else ""
+    return {
+        "as_of": _local(facts.as_of),
+        "fresh_until": _local(facts.fresh_until),
+        "link_ref": link_ref,
+        "promotion_ref": _prefixed_ref("promotion", facts.promotion_ref),
+        "source_hash": facts.source_hash if _HEX_HASH.fullmatch(facts.source_hash) else "",
+        "variable_refs": tuple(
+            value
+            for value in (_domain_code(item) for item in facts.referenced_variables)
+            if value
+        ),
+    }
 
 
 def _delivery_aggregate(

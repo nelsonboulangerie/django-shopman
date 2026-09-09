@@ -953,3 +953,54 @@ Provas locais:
 - gate canônico Unfold: 229 testes passaram;
 - Ruff, `git diff --check`, Django check e migration drift passaram; permaneceram somente o warning conhecido de SQLite e logs defensivos de bootstrap sem schema;
 - nenhuma migration, chamada de rede/provider, destinatário, deploy, produção ou escrita externa foi usada.
+
+## MKT-027 — fatos canônicos, validade e as-of
+
+Implementado sob a política provisória de Produto aprovada no G-H05, mantendo a
+discovery obrigatória de 5–8 gestores para o MKT-047:
+
+- `marketing_facts.py` lê os donos canônicos de catálogo, cotação Offerman,
+  disponibilidade, promoção e links da storefront; preço e estoque recebidos no evento
+  deixam de ser aceitos como verdade editorial;
+- o snapshot factual contém somente os fatos efetivamente referenciados, `as_of`, janela
+  de frescor de até cinco minutos e hash determinístico da origem; o payload não contém
+  cliente, audiência, telefone ou segredo;
+- a prévia e a aprovação compartilham o mesmo snapshot e o mesmo hash; aprovação revalida
+  as fontes sem trocar silenciosamente os bytes que o operador revisou;
+- promoção inexistente, inativa, fora do canal web, dependente de cupom/segmento privado,
+  incompatível com o SKU ou vencida no instante agendado bloqueia antes do outbox;
+- o worker revalida o snapshot uma vez por artefato antes do claim e o entrypoint canônico
+  repete a guarda imediatamente antes do adapter; drift terminal expira o target sem
+  cruzar o boundary do provider, enquanto indisponibilidade transitória apenas adia;
+- a Projection v2 expõe somente refs seguras, `as_of`, `fresh_until`, nomes das variáveis
+  e hash; valores de conteúdo continuam fora da projection;
+- um override escrito pelo operador que introduz um placeholder factual novo também é
+  resolvido pelo dono canônico, em vez de herdar valor antigo do evento;
+- aprovações anteriores ao MKT-027 permanecem legíveis durante a janela de compatibilidade,
+  mas qualquer anúncio novo com promoção precisa ter prévia factual verificável.
+
+Budget de omotenashi comprovado no fluxo de facts:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir preço, estoque, oferta e link fora do cockpit | até 4 consultas | 0 |
+| Memorizar quando os dados foram consultados | implícito | `as_of` e frescor estruturados |
+| Comparar prévia com a aprovação | campos manualmente | uma igualdade de hash |
+| Descobrir que a promoção vence antes do schedule | após agendar/enviar | erro imediato em `publish_at` |
+| Recuperar-se de fato alterado durante a revisão | reabrir e reconstruir | draft e versão permanecem intactos |
+| Evitar mensagem factual já obsoleta | conferência humana de última hora | duas guardas pré-provider, zero chamada externa |
+
+Provas locais:
+
+- 220 testes focados de facts/artifact/approval/worker/campaign/Projection/API passaram;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 570 testes passaram
+  em 70,52 s, incluindo o caso legado sem placeholder factual;
+- 7 casos específicos cobrem preço/estoque/link canônicos, override factual, validade da
+  promoção, drift na aprovação, drift pré-send e adulteração do snapshot;
+- Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram;
+- gate canônico Unfold: 229 testes passaram;
+- Ruff, export de contratos `--check`, Django check, migration drift e `git diff --check`
+  passaram; permaneceram somente o warning conhecido de SQLite e logs defensivos de
+  bootstrap sem schema;
+- nenhuma migration, rede, provider real, destinatário, deploy, produção ou escrita
+  externa foi usada.

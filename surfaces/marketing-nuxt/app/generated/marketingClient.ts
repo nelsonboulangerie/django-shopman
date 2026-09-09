@@ -15,6 +15,12 @@ export interface AnnouncementFactsProjectionV2 {
   campaign_ref: string;
   template_ref: string;
   product_ref: string;
+  promotion_ref: string;
+  link_ref: string;
+  content_as_of: string | null;
+  content_fresh_until: string | null;
+  content_facts_hash: string;
+  fact_variable_refs: Array<string>;
 }
 
 export interface AnnouncementProjectionV2 {

@@ -2,6 +2,7 @@
   "google_business": {
     "body": "Croissant Tradicional acabou de sair do forno ✨",
     "content_version": 7,
+    "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "hashtags": [
       "feitohoje",
@@ -17,6 +18,7 @@
   "instagram": {
     "body": "Croissant Tradicional no forno ✨",
     "content_version": 7,
+    "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "hashtags": [
       "feitohoje",
@@ -32,6 +34,7 @@
   "whatsapp": {
     "body": "Croissant Tradicional quentinho. Peça agora: https://shop.example/p/croissant",
     "content_version": 7,
+    "facts_as_of": "",
     "facts_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "hashtags": [
       "feitohoje",

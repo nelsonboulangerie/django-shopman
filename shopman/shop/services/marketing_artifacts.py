@@ -7,6 +7,7 @@ import hmac
 import math
 import re
 from collections.abc import Mapping, Sequence
+from datetime import datetime
 from typing import Any
 
 from shopman.shop.models import DeliveryTarget, MarketingContentArtifact
@@ -39,6 +40,7 @@ def resolve_dispatch_artifact(
     content: Mapping[str, Any],
     platform_content: Mapping[str, Any],
     content_version: int,
+    facts_as_of: str = "",
     facts_hash: str = "",
 ) -> ResolvedDispatchArtifact:
     """Resolve one immutable provider payload from approved, recipient-free facts."""
@@ -85,6 +87,20 @@ def resolve_dispatch_artifact(
             code="invalid_facts_hash",
             detail="O hash dos fatos do conteúdo é inválido.",
         )
+    normalized_facts_as_of = str(facts_as_of or "").strip()
+    if normalized_facts_as_of:
+        try:
+            parsed_as_of = datetime.fromisoformat(normalized_facts_as_of)
+        except ValueError as exc:
+            raise MarketingContractError(
+                code="invalid_facts_as_of",
+                detail="O instante dos fatos é inválido.",
+            ) from exc
+        if parsed_as_of.tzinfo is None or parsed_as_of.utcoffset() is None:
+            raise MarketingContractError(
+                code="invalid_facts_as_of",
+                detail="O instante dos fatos precisa incluir timezone.",
+            )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,
         body=body,
@@ -93,6 +109,7 @@ def resolve_dispatch_artifact(
         image_url=image_url,
         provider_fields=_provider_fields(variant, platform=normalized_platform),
         content_version=content_version,
+        facts_as_of=normalized_facts_as_of,
         facts_hash=normalized_facts_hash,
     )
 
@@ -103,6 +120,7 @@ def resolve_all_dispatch_artifacts(
     content: Mapping[str, Any],
     platform_content: Mapping[str, Any],
     content_version: int,
+    facts_as_of: str = "",
     facts_hash: str = "",
 ) -> tuple[ResolvedDispatchArtifact, ...]:
     """Resolve each selected platform through the exact same pure function."""
@@ -113,6 +131,7 @@ def resolve_all_dispatch_artifacts(
             content=content,
             platform_content=platform_content,
             content_version=content_version,
+            facts_as_of=facts_as_of,
             facts_hash=facts_hash,
         )
         for platform in platforms
@@ -210,6 +229,7 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
                 ).items()
             ),
             content_version=int(payload.get("content_version")),
+            facts_as_of=str(payload.get("facts_as_of") or ""),
             facts_hash=str(payload.get("facts_hash") or ""),
         )
     except (TypeError, ValueError) as exc:
@@ -234,6 +254,7 @@ def _resolved_from_payload(value: object, *, platform: str) -> ResolvedDispatchA
         },
         platform_content={platform: dict(resolved.provider_fields)},
         content_version=resolved.content_version,
+        facts_as_of=resolved.facts_as_of,
         facts_hash=resolved.facts_hash,
     )
 

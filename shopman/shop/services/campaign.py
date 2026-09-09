@@ -359,6 +359,18 @@ def resolve_content(
     A `Action` vai junto, para a superfície montar a sacola (ADR-012 + ADR-020 §9).
     """
     variables = resolve_variables(context, promotion_ref=promotion_ref)
+    from shopman.shop.services import marketing_facts
+
+    facts = marketing_facts.resolve_facts(
+        sku=str(context.get("sku") or ""),
+        promotion_ref=promotion_ref,
+        referenced=marketing_facts.referenced_variables(
+            override_body or template.body,
+            getattr(template, "platform_variants", {}),
+        ),
+        seed_variables=variables,
+    )
+    variables.update(facts.variable_values())
     # `override_body` é o texto que o gestor escreveu, e ele vence tudo — inclusive a IA,
     # que **nem é chamada**: pedir sugestão para substituir por um texto que já existe
     # gastaria uma chamada para jogar fora. As outras chaves seguem vindo do modelo:
@@ -374,6 +386,7 @@ def resolve_content(
         "link": variables["link"],
         "image_url": _image_url(template, context),
         "variables": {k: v for k, v in variables.items() if not k.endswith("_list")},
+        "facts": facts.as_payload(),
     }
     if promotion_ref:
         from shopman.shop.services.offers import offer_action
@@ -760,7 +773,16 @@ def preview(
     """
     sample = (sku or "").strip() or _sample_sku()
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
+    from shopman.shop.services import marketing_facts
     from shopman.shop.services.marketing_artifacts import resolve_dispatch_artifact
+
+    facts = marketing_facts.resolve_facts(
+        sku=sample,
+        promotion_ref=promotion_ref,
+        referenced=marketing_facts.referenced_variables(body),
+        seed_variables=variables,
+    )
+    variables.update(facts.variable_values())
 
     artifact = resolve_dispatch_artifact(
         platform=platform,
@@ -772,6 +794,8 @@ def preview(
         },
         platform_content={},
         content_version=content_version,
+        facts_as_of=facts.as_of.isoformat(),
+        facts_hash=facts.source_hash,
     )
 
     return {
@@ -792,6 +816,7 @@ def preview(
             if key in variables
         },
         "ai_writes": bool(use_ai),
+        "facts": facts.as_payload(),
         "artifact": artifact.as_payload(),
         "artifact_hash": artifact.artifact_hash,
     }
