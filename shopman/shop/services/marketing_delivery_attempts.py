@@ -196,6 +196,33 @@ def execute_target(
     )
 
 
+def execute_approved_target(
+    target_ref,
+    *,
+    provider: DeliveryProvider,
+    idempotency_token: str,
+    worker_id: str,
+    now: datetime | None = None,
+) -> AttemptExecution:
+    """Canonical worker entrypoint: derive bytes only from sealed approval evidence."""
+
+    from shopman.shop.services.marketing_artifacts import (
+        resolve_target_dispatch_artifact,
+    )
+
+    target = DeliveryTarget.objects.select_related("artifact").get(ref=target_ref)
+    artifact = resolve_target_dispatch_artifact(target)
+    return execute_target(
+        target_ref,
+        provider=provider,
+        artifact=artifact,
+        idempotency_token=idempotency_token,
+        request_hash=artifact.artifact_hash,
+        worker_id=worker_id,
+        now=now,
+    )
+
+
 def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
     """Return a boundary-not-crossed attempt to a safely reclaimable state."""
 
@@ -450,6 +477,16 @@ def _validate_artifact(
         raise MarketingContractError(
             code="delivery_artifact_mismatch",
             detail="O payload resolvido não pertence à versão e plataforma aprovadas.",
+        )
+    from shopman.shop.services.marketing_artifacts import (
+        resolve_target_dispatch_artifact,
+    )
+
+    approved = resolve_target_dispatch_artifact(target)
+    if not hmac.compare_digest(artifact.artifact_hash, approved.artifact_hash):
+        raise MarketingContractError(
+            code="delivery_artifact_mismatch",
+            detail="O payload resolvido diverge do conteúdo aprovado.",
         )
     if not hmac.compare_digest(artifact.artifact_hash, request_hash):
         raise MarketingContractError(

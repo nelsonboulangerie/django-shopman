@@ -1082,12 +1082,18 @@ class PreviewView(_CampaignBase):
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
-        return Response(campaign_service.preview(
-            str(payload.get("body") or ""),
-            sku=str(payload.get("sku") or ""),
-            promotion_ref=str(payload.get("promotion_ref") or ""),
-            use_ai=bool(payload.get("use_ai")),
-        ))
+        try:
+            preview = campaign_service.preview(
+                str(payload.get("body") or ""),
+                sku=str(payload.get("sku") or ""),
+                promotion_ref=str(payload.get("promotion_ref") or ""),
+                use_ai=bool(payload.get("use_ai")),
+                platform=str(payload.get("platform") or "instagram"),
+                content_version=payload.get("content_version", 1),
+            )
+        except MarketingContractError as exc:
+            return _command_error_response(exc)
+        return Response(preview)
 
 
 class AudienceCountView(_CampaignBase):

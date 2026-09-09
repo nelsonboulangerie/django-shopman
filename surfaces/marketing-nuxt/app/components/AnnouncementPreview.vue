@@ -32,6 +32,16 @@ type Preview = {
   hashtags: string[];
   fields: Record<string, string>;
   ai_writes: boolean;
+  artifact_hash: string;
+  artifact: {
+    platform: string;
+    body: string;
+    hashtags: string[];
+    link: string;
+    image_url: string;
+    content_version: number;
+    facts_hash: string;
+  };
 };
 
 const preview = ref<Preview | null>(null);

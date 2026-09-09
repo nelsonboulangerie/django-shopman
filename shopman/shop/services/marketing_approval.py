@@ -27,7 +27,7 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services import audience as audience_service
-from shopman.shop.services import audience_snapshot
+from shopman.shop.services import audience_snapshot, marketing_artifacts
 from shopman.shop.services.marketing_commands import (
     CommandExecution,
     RejectCommand,
@@ -83,6 +83,12 @@ def approve_command(
             code="invalid_clock",
             detail="O relógio da aprovação precisa incluir timezone.",
         )
+    if isinstance(base_version, bool) or not isinstance(base_version, int) or base_version < 1:
+        raise MarketingContractError(
+            code="invalid_base_version",
+            detail="A versão exibida na revisão é inválida.",
+            field_errors={"base_version": ("Use um inteiro positivo.",)},
+        )
     normalized_mode, normalized_publish_at = normalize_schedule(
         publish_mode,
         publish_at=publish_at,
@@ -92,6 +98,12 @@ def approve_command(
     safe_platform_content = _json_copy(platform_content, field="platform_content")
     safe_platforms = _platforms(platforms)
     _validate_content(safe_content, safe_platform_content, safe_platforms)
+    resolved_artifacts = marketing_artifacts.resolve_all_dispatch_artifacts(
+        platforms=safe_platforms,
+        content=safe_content,
+        platform_content=safe_platform_content,
+        content_version=base_version + 1,
+    )
 
     command_payload = {
         "content": safe_content,
@@ -154,7 +166,10 @@ def approve_command(
             "content_version": approved_version,
             "platform_content": safe_platform_content,
             "platforms": safe_platforms,
-            "schema_version": 1,
+            "resolved_artifacts": marketing_artifacts.resolved_payloads(
+                resolved_artifacts
+            ),
+            "schema_version": marketing_artifacts.SCHEMA_VERSION,
         }
         artifact_bytes = canonical_artifact_bytes(artifact_payload)
         if len(artifact_bytes) > MAX_ARTIFACT_BYTES:
@@ -190,6 +205,7 @@ def approve_command(
         artifact = MarketingContentArtifact.objects.create(
             announcement=announcement,
             version=approved_version,
+            schema_version=marketing_artifacts.SCHEMA_VERSION,
             payload=artifact_payload,
             artifact_hash=artifact_hash,
             retention_until=now + APPROVAL_RECORD_RETENTION,

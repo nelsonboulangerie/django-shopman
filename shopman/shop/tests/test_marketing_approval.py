@@ -32,6 +32,11 @@ from shopman.shop.services.marketing_approval import (
     approve_command,
     canonical_artifact_bytes,
 )
+from shopman.shop.services.marketing_artifacts import (
+    SCHEMA_VERSION,
+    resolve_all_dispatch_artifacts,
+    resolved_payloads,
+)
 from shopman.shop.services.marketing_commands import MarketingCommandRejected
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
@@ -145,10 +150,19 @@ def test_artifact_hash_matches_exact_canonical_approved_bytes(actor, announcemen
         "content_version": 2,
         "platform_content": variants,
         "platforms": ["instagram", "google_business"],
-        "schema_version": 1,
+        "resolved_artifacts": resolved_payloads(
+            resolve_all_dispatch_artifacts(
+                platforms=["instagram", "google_business"],
+                content=content,
+                platform_content=variants,
+                content_version=2,
+            )
+        ),
+        "schema_version": SCHEMA_VERSION,
     }
     expected_bytes = canonical_artifact_bytes(expected_payload)
     assert result.artifact.payload == expected_payload
+    assert result.artifact.schema_version == SCHEMA_VERSION
     assert result.artifact.canonical_bytes() == expected_bytes
     assert result.artifact.artifact_hash == hashlib.sha256(expected_bytes).hexdigest()
     assert result.receipt.outcome["artifact_hash"] == result.artifact.artifact_hash

@@ -120,7 +120,6 @@ def _artifact() -> ResolvedDispatchArtifact:
         platform="instagram",
         body="Fornada pronta",
         content_version=2,
-        facts_hash="f" * 64,
     )
 
 

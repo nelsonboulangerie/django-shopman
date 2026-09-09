@@ -888,3 +888,35 @@ Provas locais:
 - Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram; operator-kit: 17 arquivos/174 testes passaram;
 - Ruff, `export_marketing_client --check` e `git diff --check` passaram; o check preservou somente o warning conhecido de SQLite e logs defensivos de bootstrap sem schema;
 - nenhuma migration, provider, destinatário, deploy, produção ou escrita externa foi usada.
+
+## MKT-025 — ResolvedDispatchArtifact único
+
+Implementado sobre o ledger/outbox já existente, sem provider real:
+
+- `marketing_artifacts.py` é o único resolver puro de conteúdo por plataforma; recebe conteúdo base, overrides aprovados, plataforma, versão e hash factual, e devolve o `ResolvedDispatchArtifact` frozen usado pelo contrato de provider;
+- novas aprovações persistem schema de artefato v2 com um payload já resolvido por plataforma, além das fontes aprovadas; o conteúdo que cruza o boundary externo não é renderizado novamente no worker e não depende de template/model mutável;
+- approvals schema v1 continuam legíveis pela janela de compatibilidade, mas passam pelo mesmo resolver ao serem entregues; versão de model, versão interna e plataforma precisam coincidir;
+- o loader recalcula e compara o hash do `MarketingContentArtifact` antes de abrir qualquer payload; alteração de bytes, platform fora da aprovação, schema/version divergente ou shape inválido falham fechados;
+- `execute_approved_target` remove do chamador a montagem e o request hash: lê o artefato selado, resolve a plataforma e entrega ambos ao executor idempotente;
+- o executor de baixo nível também compara o hash recebido com o hash resolvido da evidência aprovada. Assim, nem um caller legado consegue enviar um `ResolvedDispatchArtifact` apenas “parecido” ou reconstruído por lógica paralela;
+- `campaign.preview` agora materializa o mesmo tipo imutável e devolve payload/hash junto do contrato compatível; plataforma e content version inválidas falham como `422` na API;
+- o frontend tipa o artefato/hash retornado sem inferir seu conteúdo nem manter um segundo algoritmo.
+
+Budget de omotenashi comprovado no caminho preview→dispatch:
+
+| Trabalho/risco | Antes | Depois |
+|---|---:|---:|
+| Conferir preview contra payload do worker | comparação manual de campos | 1 igualdade de hash |
+| Remontar conteúdo no worker | corpo + hashtags + link + imagem | 0; loader abre evidência selada |
+| Lembrar de calcular request hash | obrigação por caller | 0 no entrypoint canônico |
+| Descobrir drift de template após aprovação | só após envio | impossível; bytes resolvidos são imutáveis |
+| Validar plataforma/versão/hash separadamente | até 3 conferências | uma chamada fail-closed |
+| Investigar payload “quase igual” | logs/provider | bloqueado antes de criar attempt |
+
+Provas locais:
+
+- 3 testes MKT-025 cobrem determinismo/imutabilidade/ausência de recipient, igualdade exata preview→approval→provider→attempt e adulteração fail-closed;
+- cadeia focada artifact/approval/outbox/worker/attempt/campaign/API: 205 testes passaram;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 494 testes passaram em 70,84 s;
+- Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram;
+- Ruff e `git diff --check` passaram; nenhuma migration, rede, provider real, destinatário, deploy, produção ou escrita externa foi usada.

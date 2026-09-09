@@ -83,7 +83,6 @@ def _artifact(platform: str) -> ResolvedDispatchArtifact:
         platform=platform,
         body="Fornada pronta",
         content_version=2,
-        facts_hash="f" * 64,
     )
 
 

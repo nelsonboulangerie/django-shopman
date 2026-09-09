@@ -724,7 +724,13 @@ def test_fields(*, sku: str = "", name: str = "") -> dict:
 
 
 def preview(
-    body: str, *, sku: str = "", promotion_ref: str = "", use_ai: bool = False,
+    body: str,
+    *,
+    sku: str = "",
+    promotion_ref: str = "",
+    use_ai: bool = False,
+    platform: str = "instagram",
+    content_version: int = 1,
 ) -> dict:
     """Como a mensagem VAI FICAR, resolvida pelo mesmo caminho do envio.
 
@@ -747,14 +753,27 @@ def preview(
     """
     sample = (sku or "").strip() or _sample_sku()
     variables = resolve_variables({"sku": sample}, promotion_ref=promotion_ref)
+    from shopman.shop.services.marketing_artifacts import resolve_dispatch_artifact
+
+    artifact = resolve_dispatch_artifact(
+        platform=platform,
+        content={
+            "body": render(body or "", variables),
+            "hashtags": variables["hashtags_list"],
+            "link": variables["link"],
+            "image_url": variables["product_image_url"],
+        },
+        platform_content={},
+        content_version=content_version,
+    )
 
     return {
         "sku": sample,
-        "body": render(body or "", variables),
+        "body": artifact.body,
         "product_name": variables["product_name"],
         "product_image_url": variables["product_image_url"],
-        "link": variables["link"],
-        "hashtags": variables["hashtags_list"],
+        "link": artifact.link,
+        "hashtags": list(artifact.hashtags),
         # Os campos discretos que o template aprovado recebe. É o que explica variável vazia
         # no aparelho antes de o aparelho existir.
         "fields": {
@@ -766,6 +785,8 @@ def preview(
             if key in variables
         },
         "ai_writes": bool(use_ai),
+        "artifact": artifact.as_payload(),
+        "artifact_hash": artifact.artifact_hash,
     }
 
 
