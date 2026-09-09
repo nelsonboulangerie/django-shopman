@@ -22,6 +22,7 @@ from shopman.stockman.services.movements import StockMovements
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import production as production_service
+from shopman.backstage.tests.support import production_mutation_post
 from shopman.shop.handlers.production_alerts import check_late_started_orders
 from shopman.shop.handlers.production_order_sync import WORK_ORDER_COMMITTED_ORDER_REFS_KEY
 from shopman.shop.models import Shop
@@ -57,7 +58,7 @@ def _confirm_order(*, sku: str, qty: int, ref: str = "E2E-ORDER") -> Order:
 # ── Cenário 1 — order confirmation links to existing planned WO ───────
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_e2e_order_accepted_links_to_planned_work_order(setup):
     """When a confirmed order has SKUs produced, it gets linked to existing planned WOs."""
     from shopman.orderman.signals import order_changed
@@ -123,7 +124,14 @@ def test_e2e_finish_without_materials_raises_stock_short_error(setup, monkeypatc
     monkeypatch.setattr(production_service, "check_finish_materials", lambda work_order: missing)
 
     with pytest.raises(production_service.ProductionStockShortError) as exc_info:
-        production_service.apply_finish(work_order_id=wo.pk, quantity=10, actor="test")
+        wo.refresh_from_db()
+        production_service.apply_finish(
+            work_order_id=wo.pk,
+            quantity=10,
+            actor="test",
+            expected_rev=wo.rev,
+            idempotency_key="e2e-missing-materials",
+        )
 
     assert exc_info.value.work_order_ref == wo.ref
     assert exc_info.value.missing == missing
@@ -208,10 +216,12 @@ def test_e2e_advance_step_via_view_updates_meta(client, setup):
         name="StepE2E",
         output_sku="STEP-SKU",
         batch_size=Decimal("10"),
-        meta={"steps": [
-            {"name": "A", "target_seconds": 60},
-            {"name": "B", "target_seconds": 60},
-        ]},
+        meta={
+            "steps": [
+                {"name": "A", "target_seconds": 60},
+                {"name": "B", "target_seconds": 60},
+            ]
+        },
     )
     wo = craft.plan(recipe, 10, date=date.today())
     craft.start(wo, quantity=10, expected_rev=0)
@@ -219,7 +229,8 @@ def test_e2e_advance_step_via_view_updates_meta(client, setup):
 
     # The production floor moved to the prod. Nuxt app over the headless API;
     # advancing a step is now POST /api/v1/backstage/production/<pk>/advance-step/.
-    response = client.post(
+    response = production_mutation_post(
+        client,
         f"/api/v1/backstage/production/{wo.pk}/advance-step/",
         {"expected_rev": wo.rev, "idempotency_key": "e2e-advance"},
         content_type="application/json",

@@ -29,8 +29,10 @@ def product():
 def rule():
     template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}} saiu do forno")
     return Campaign.objects.create(
-        name="Fornada", trigger="production_finished",
-        template=template, platforms=["instagram"],
+        name="Fornada",
+        trigger="production_finished",
+        template=template,
+        platforms=["instagram"],
     )
 
 
@@ -52,7 +54,10 @@ class TestProductionReceiver:
     def _fire(self, *, action="finished", work_order=None):
         with patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()):
             handlers.on_production_changed(
-                sender=None, product_ref=SKU, date=None, action=action,
+                sender=None,
+                product_ref=SKU,
+                date=None,
+                action=action,
                 work_order=work_order or _work_order(),
             )
 
@@ -87,17 +92,18 @@ class TestProductionReceiver:
 
     def test_evaluation_failure_never_breaks_the_bake(self, product, rule):
         """Marketing quebrado não pode impedir o operador de fechar a fornada."""
-        with patch(
-            "shopman.shop.services.campaign.evaluate", side_effect=RuntimeError("boom")
-        ):
+        with patch("shopman.shop.services.campaign.evaluate", side_effect=RuntimeError("boom")):
             self._fire()  # não levanta
 
     def test_evaluation_waits_for_commit(self, product, rule):
         """Avaliar dentro da transação leria estoque que ainda não existe."""
         with patch("django.db.transaction.on_commit") as on_commit:
             handlers.on_production_changed(
-                sender=None, product_ref=SKU, date=None,
-                action="finished", work_order=_work_order(),
+                sender=None,
+                product_ref=SKU,
+                date=None,
+                action="finished",
+                work_order=_work_order(),
             )
         on_commit.assert_called_once()
         assert Announcement.objects.count() == 0
@@ -116,9 +122,7 @@ class TestAvailabilityReceiver:
 
     def _rule(self, trigger: str):
         template = AnnouncementTemplate.objects.create(name=trigger, body="{{product_name}}")
-        return Campaign.objects.create(
-            name=trigger, trigger=trigger, template=template, platforms=["instagram"]
-        )
+        return Campaign.objects.create(name=trigger, trigger=trigger, template=template, platforms=["instagram"])
 
     def test_scarce_stock_triggers_low_stock(self, product):
         self._rule("low_stock")
@@ -153,8 +157,11 @@ class TestAvailabilityReceiver:
 class TestPostHandler:
     def _announcement(self, rule) -> Announcement:
         return Announcement.objects.create(
-            rule=rule, template=rule.template, status=AnnouncementStatus.PUBLISHING,
-            content={"body": "Croissant saiu do forno"}, platforms=["instagram"],
+            rule=rule,
+            template=rule.template,
+            status=AnnouncementStatus.PUBLISHING,
+            content={"body": "Croissant saiu do forno"},
+            platforms=["instagram"],
         )
 
     def _handle(self, announcement, platform="instagram"):
@@ -224,13 +231,19 @@ class TestNotifyHandler:
     def _announcement(self) -> Announcement:
         template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}}")
         rule = Campaign.objects.create(
-            name="Audiência", trigger="production_finished", template=template,
-            platforms=["whatsapp"], audience_rules={"favorites": True},
+            name="Audiência",
+            trigger="production_finished",
+            template=template,
+            platforms=["whatsapp"],
+            audience_rules={"favorites": True},
         )
         return Announcement.objects.create(
-            rule=rule, template=template, status=AnnouncementStatus.PUBLISHING,
+            rule=rule,
+            template=template,
+            status=AnnouncementStatus.PUBLISHING,
             content={"body": "Saiu do forno", "link": "https://loja/p/x"},
-            platforms=["whatsapp"], trigger_context={"sku": SKU},
+            platforms=["whatsapp"],
+            trigger_context={"sku": SKU},
         )
 
     def _handle(self, announcement, wave="all"):
@@ -345,12 +358,23 @@ class TestAlertQueueSurvivesTheRealFinish:
         from shopman.craftsman.models import Recipe
         from shopman.stockman.models import Position
 
-        position = Position.objects.create(
-            ref="vitrine-e2e", name="Vitrine", is_saleable=True, is_default=True
+        from shopman.shop.models import QualityGrade
+
+        position = Position.objects.create(ref="vitrine-e2e", name="Vitrine", is_saleable=True, is_default=True)
+        QualityGrade.objects.all().delete()
+        QualityGrade.objects.create(
+            ref="standard",
+            label="Padrão",
+            rank=30,
+            markdown_percent=0,
+            is_default=True,
         )
         recipe = Recipe.objects.create(
-            ref="croissant-e2e", output_sku=SKU, batch_size=Decimal("10"),
-            is_active=True, name="Croissant",
+            ref="croissant-e2e",
+            output_sku=SKU,
+            batch_size=Decimal("10"),
+            is_active=True,
+            name="Croissant",
         )
         template = AnnouncementTemplate.objects.create(
             name="Fornada no ar", body="Saiu {{product_name}}!", is_active=True
@@ -382,6 +406,7 @@ class TestAlertQueueSurvivesTheRealFinish:
             position_id=position.pk,
             actor="test",
             partition=[{"quantity": "10", "quality_grade_ref": "standard"}],
+            idempotency_key="campaign-announcement-quick-finish",
         )
 
         announcement = Announcement.objects.get()

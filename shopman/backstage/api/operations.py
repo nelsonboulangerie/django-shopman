@@ -36,16 +36,18 @@ POST endpoints (operator actions):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+from decimal import Decimal
 
 from django.contrib.auth import login, logout
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError
+from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
-from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
 from rest_framework.renderers import BaseRenderer, JSONRenderer
 from rest_framework.response import Response
@@ -67,6 +69,7 @@ from shopman.backstage.api._production_filters import (
 from shopman.backstage.api._production_mutations import (
     ProductionAdvanceStepMutationSerializer,
     ProductionFinishMutationSerializer,
+    ProductionMutationValidationError,
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
@@ -74,6 +77,12 @@ from shopman.backstage.api._production_mutations import (
     ProductionStartMutationSerializer,
     ProductionVoidMutationSerializer,
     validated_body,
+)
+from shopman.backstage.api.production_freshness import (
+    override_attempt_digest,
+    override_shortage_snapshot,
+    signed_override_proof,
+    validate_override_proof,
 )
 from shopman.backstage.constants import POS_CHANNEL_REF
 from shopman.backstage.models import SignInMethod, SignInOutcome
@@ -122,6 +131,7 @@ from shopman.backstage.services.exceptions import (
     POSTerminalAmbiguous,
     ProductionConflict,
     ProductionError,
+    ProductionNotFound,
 )
 from shopman.backstage.services.production import ProductionOrderShortError, ProductionStockShortError
 from shopman.shop.services import cancellation as cancellation_service
@@ -140,6 +150,7 @@ from .permissions import (
     HasProductionCapability,
     IsBackstageOperator,
     IsTrustedStation,
+    deny_production_capability,
 )
 from .projections import projection_data
 
@@ -166,7 +177,26 @@ def _actor(request) -> str:
 def _production_actor(request) -> str:
     """Audit attribution for production actions, matching the retired HTMX floor
     (``production:<username>``) so the event trail stays consistent post-cutover."""
-    return f"production:{_actor(request)}"
+    actor = f"production:{_actor(request)}"
+    if len(actor) <= 100:
+        return actor
+    digest = hashlib.sha256(actor.encode("utf-8")).hexdigest()[:10]
+    return f"{actor[:89]}:{digest}"
+
+
+def _production_quantity(value) -> str:
+    """Stable decimal wire format (``8``, never serializer-specific ``8.000``)."""
+    return format(Decimal(str(value)).normalize(), "f")
+
+
+def _plan_action_ref(body: dict) -> str:
+    prefix = "plan_suggested" if body.get("source") == "suggested" else "plan"
+    if body.get("work_order_id"):
+        target = str(body["work_order_id"])
+    else:
+        target = f"{body['recipe_id']}:{body['target_date'].isoformat()}:{body['position_ref']}"
+    quantity = f":{_production_quantity(body['quantity'])}" if prefix == "plan_suggested" else ""
+    return f"{prefix}:{target}{quantity}"
 
 
 def _resolved_production_access(request, *, selected_date=None):
@@ -183,24 +213,78 @@ def _resolved_production_access(request, *, selected_date=None):
 def _require_production_capability(request, capability: str) -> None:
     access = getattr(request, "production_access", None) or _resolved_production_access(request)
     if not getattr(access, capability, False):
-        raise PermissionDenied("Operador sem capacidade para esta ação de produção.")
+        deny_production_capability(capability)
 
 
-def _shortage_override_reason(request, *, action: str, reason: str) -> str:
-    """Require and observe the reason for a separately-authorized override."""
+def _require_projected_work_order(
+    request,
+    work_order_id: int,
+    *,
+    committed_replay: bool = False,
+) -> None:
+    """Reject a direct target that the actor's projection would have hidden."""
+    if committed_replay:
+        return
+    from shopman.craftsman.models import WorkOrder
+
+    status = WorkOrder.objects.filter(pk=work_order_id).values_list("status", flat=True).first()
+    if status is None:
+        # The canonical service returns the typed 404 after request validation.
+        return
+    access = getattr(request, "production_access", None) or _resolved_production_access(request)
+    visibility = {
+        WorkOrder.Status.PLANNED: (access.can_view_planned, "can_view_planned"),
+        WorkOrder.Status.STARTED: (access.can_view_started, "can_view_started"),
+        WorkOrder.Status.FINISHED: (access.can_view_finished, "can_view_finished"),
+        WorkOrder.Status.VOID: (access.can_manage_all, "can_manage_all"),
+    }
+    visible, capability = visibility.get(status, (False, "can_view_work_order"))
+    if not visible:
+        deny_production_capability(capability)
+
+
+def _shortage_override_reason(request, *, reason: str) -> str:
+    """Validate a separately-authorized override before the domain attempt.
+
+    The durable/observable record is emitted by the service only when a real
+    shortage exists and the mutation commits. Logging here used to create a
+    false audit fact for stale, invalid, or non-short requests.
+    """
     _require_production_capability(request, "can_override_shortage")
     reason = str(reason or "").strip()
     if not reason:
         raise ValueError("Justificativa é obrigatória para forçar uma falta.")
-    logger.warning(
-        "production_shortage_override",
-        extra={
-            "production_action": action,
-            "production_actor": _production_actor(request),
-            "production_reason": reason,
-        },
-    )
     return reason
+
+
+def _require_shortage_override_proof(body: dict) -> None:
+    """Accept force only as the signed continuation of a shortage response."""
+    proof = str(body.get("override_proof") or "")
+    if not body.get("force"):
+        if proof:
+            raise ProductionMutationValidationError({"override_proof": "Autorização de exceção sem force=true."})
+        return
+    errors = validate_override_proof(
+        override_proof=proof,
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+    )
+    if errors:
+        raise ProductionMutationValidationError(errors)
+    body["_approved_shortage_snapshot"] = override_shortage_snapshot(proof)
+
+
+def _shortage_override_proof(body: dict, exc: ProductionError) -> str:
+    snapshot = production_service.production_shortage_snapshot(exc)
+    if snapshot is None:
+        return ""
+    return signed_override_proof(
+        action_proof=body["action_proof"],
+        idempotency_key=body["idempotency_key"],
+        attempt_digest=override_attempt_digest(body),
+        shortage_snapshot=snapshot,
+    )
 
 
 def _production_error_response(
@@ -208,37 +292,81 @@ def _production_error_response(
     *,
     idempotency_key: str = "",
     can_override_shortage: bool = False,
+    projection_generated_at=None,
+    override_proof: str = "",
 ) -> Response | None:
     """Structured error envelope for production error states.
 
     The floor app reproduces the material/order shortage modals from this
     payload (mirrors the POS error envelope shape ``{detail, error: {code,…}}``),
     and state conflicts (fornada fechada/estornada em outra tela) come out as
-    409 ``state_conflict`` so the kiosk can refresh instead of guessing.
-    Returns ``None`` for other errors so callers fall through to the generic
-    400 handling.
+    409 ``conflict`` so the kiosk can refresh instead of guessing.
+    Domain validation failures use the same closed envelope as serializer
+    failures; no production endpoint falls back to an untyped ``{detail}``.
     """
     if isinstance(exc, ProductionConflict):
         data = dict(getattr(exc, "data", {}) or {})
         current = _current_work_order_projection(data.get("work_order"))
+        recovery_action = data.get("recovery_action") or "refresh"
+        recovery_label = data.get("recovery_label") or "Atualizar painel"
+        if data.get("cause") == "stale_revision":
+            return Response(
+                {
+                    "detail": str(exc),
+                    "error": {
+                        "code": "stale_projection",
+                        "age_seconds": _projection_age_seconds(projection_generated_at),
+                        "sent_rev": data.get("expected_rev"),
+                        "current_rev": data.get("current_rev")
+                        if data.get("current_rev") is not None
+                        else (current or {}).get("rev"),
+                        "current": current,
+                        "recovery": {
+                            "action": "refresh",
+                            "label": "Atualizar painel",
+                        },
+                    },
+                },
+                status=409,
+            )
         return Response(
             {
                 "detail": str(exc),
                 "error": {
-                    "code": getattr(exc, "code", "state_conflict"),
+                    "code": getattr(exc, "code", "conflict"),
                     "sent_rev": data.get("expected_rev"),
                     "current_rev": data.get("current_rev")
                     if data.get("current_rev") is not None
                     else (current or {}).get("rev"),
                     "current": current,
-                    "recovery": {"action": "refresh", "label": "Atualizar painel"},
+                    "recovery": {
+                        "action": recovery_action,
+                        "label": recovery_label,
+                    },
                 },
             },
             status=409,
         )
+    if isinstance(exc, ProductionNotFound):
+        return Response(
+            {
+                "detail": str(exc),
+                "error": {
+                    "code": "not_found",
+                    "resource": exc.resource,
+                    "identifier": exc.identifier,
+                },
+            },
+            status=404,
+        )
     if isinstance(exc, ProductionStockShortError):
         possibilities = [
-            {"kind": "retry", "label": "Tentar novamente", "enabled": True},
+            {
+                "kind": "retry",
+                "label": "Tentar novamente",
+                "enabled": True,
+                "proof": "",
+            },
         ]
         if can_override_shortage:
             possibilities.append(
@@ -246,6 +374,7 @@ def _production_error_response(
                     "kind": "force",
                     "label": "Concluir com justificativa",
                     "enabled": True,
+                    "proof": override_proof,
                 }
             )
         return Response(
@@ -271,14 +400,20 @@ def _production_error_response(
         )
     if isinstance(exc, ProductionOrderShortError):
         possibilities = [
-            {"kind": "retry", "label": "Revisar quantidade", "enabled": True},
+            {
+                "kind": "retry",
+                "label": "Revisar quantidade",
+                "enabled": True,
+                "proof": "",
+            },
         ]
-        if can_override_shortage:
+        if can_override_shortage and exc.allow_override:
             possibilities.append(
                 {
                     "kind": "force",
                     "label": "Salvar com justificativa",
                     "enabled": True,
+                    "proof": override_proof,
                 }
             )
         return Response(
@@ -296,7 +431,43 @@ def _production_error_response(
             },
             status=409,
         )
-    return None
+    return _production_validation_error_response(
+        exc,
+        fallback="Dados de produção inválidos.",
+    )
+
+
+def _production_validation_error_response(
+    exc: Exception,
+    *,
+    fallback: str,
+) -> Response:
+    message = str(exc) or fallback
+    return Response(
+        {
+            "detail": message,
+            "error": {
+                "code": "validation_error",
+                "issues": [
+                    {
+                        "field": "non_field_errors",
+                        "code": "invalid",
+                        "message": message,
+                    }
+                ],
+            },
+        },
+        status=400,
+    )
+
+
+def _projection_age_seconds(projection_generated_at) -> int | None:
+    if projection_generated_at is None:
+        return None
+    return max(
+        0,
+        int((timezone.now() - projection_generated_at).total_seconds()),
+    )
 
 
 def _current_work_order_projection(ref_or_pk) -> dict | None:
@@ -966,7 +1137,18 @@ class ProductionBoardView(APIView):
             position_ref=query.get("position", ""),
             access=access,
         )
-        return Response({"board": projection_data(board)})
+        return Response(
+            {
+                "board": projection_data(
+                    board,
+                    freshness_context=(
+                        "board",
+                        board.selected_date,
+                        f"user:{request.user.pk}",
+                    ),
+                )
+            }
+        )
 
 
 @extend_schema_view(
@@ -1009,7 +1191,18 @@ class ProductionKDSView(APIView):
             position_ref=query.get("position", ""),
             access=access,
         )
-        return Response({"kds": projection_data(kds)})
+        return Response(
+            {
+                "kds": projection_data(
+                    kds,
+                    freshness_context=(
+                        "kds",
+                        kds.selected_date,
+                        f"user:{request.user.pk}",
+                    ),
+                )
+            }
+        )
 
 
 @extend_schema_view(
@@ -1027,7 +1220,18 @@ class ProductionQCView(APIView):
         query = validated_query(request, ProductionDateQuerySerializer)
         access = _resolved_production_access(request, selected_date=query.get("date"))
         kiosk = build_qc_kiosk(selected_date=query.get("date"), access=access)
-        return Response({"qc": projection_data(kiosk)})
+        return Response(
+            {
+                "qc": projection_data(
+                    kiosk,
+                    freshness_context=(
+                        "qc",
+                        kiosk.selected_date,
+                        f"user:{request.user.pk}",
+                    ),
+                )
+            }
+        )
 
 
 @extend_schema_view(
@@ -2230,15 +2434,26 @@ class WorkOrderPlanView(_ProductionActionBase):
     required_production_capability = "can_edit_plan"
 
     def post(self, request):
-        body = validated_body(request, ProductionPlanMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionPlanMutationSerializer,
+            projection_kind="board",
+            action_kind="plan",
+            action_href="/api/v1/backstage/production/plan/",
+            action_ref=_plan_action_ref,
+        )
         force = body["force"]
         try:
+            _require_production_capability(
+                request,
+                "can_edit_suggested" if body["source"] == "suggested" else "can_edit_planned",
+            )
             if force:
                 _shortage_override_reason(
                     request,
-                    action="plan",
                     reason=body.get("reason", ""),
                 )
+            _require_shortage_override_proof(body)
             output_sku, wo_ref, qty, result = production_service.apply_planned(
                 recipe_id=body["recipe_id"],
                 quantity=body["quantity"],
@@ -2251,25 +2466,30 @@ class WorkOrderPlanView(_ProductionActionBase):
                 source_ref=("formula:suggestion" if body["source"] == "suggested" else "production_matrix"),
                 expected_rev=body.get("expected_rev"),
                 idempotency_key=body["idempotency_key"],
+                work_order_id=body.get("work_order_id"),
+                approved_shortage=body.get("_approved_shortage_snapshot"),
+                projected_action_proof=body["action_proof"],
             )
         except ProductionError as exc:
-            shortage = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 can_override_shortage=request.production_access.can_override_shortage,
+                projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
             )
-            if shortage is not None:
-                return shortage
-            return Response({"detail": str(exc) or "Falha ao planejar produção."}, status=400)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Dados de planejamento inválidos."}, status=400)
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados de planejamento inválidos.",
+            )
         return Response(
             {
                 "ok": True,
                 "result": result,
                 "output_sku": output_sku,
                 "wo_ref": wo_ref,
-                "quantity": str(qty),
+                "quantity": _production_quantity(qty),
                 "current": _current_work_order_projection(wo_ref),
             }
         )
@@ -2286,7 +2506,20 @@ class WorkOrderStartView(_ProductionActionBase):
     required_production_capability = "can_start"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionStartMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionStartMutationSerializer,
+            projection_kind="board",
+            action_kind="start",
+            action_href=f"/api/v1/backstage/production/{wo_id}/start/",
+            action_ref=f"start:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         try:
             wo_ref, quantity = production_service.apply_start(
                 work_order_id=wo_id,
@@ -2299,20 +2532,21 @@ class WorkOrderStartView(_ProductionActionBase):
                 idempotency_key=body["idempotency_key"],
             )
         except ProductionError as exc:
-            conflict = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
             )
-            if conflict is not None:
-                return conflict
-            return Response({"detail": str(exc) or "Falha ao iniciar produção."}, status=400)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Dados inválidos."}, status=400)
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados inválidos.",
+            )
         return Response(
             {
                 "ok": True,
                 "wo_ref": wo_ref,
-                "quantity": str(quantity),
+                "quantity": _production_quantity(quantity),
                 "current": _current_work_order_projection(wo_ref),
             }
         )
@@ -2329,15 +2563,49 @@ class WorkOrderFinishView(_ProductionActionBase):
     required_production_capability = "can_close_qc"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionFinishMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionFinishMutationSerializer,
+            projection_kind="qc",
+            action_kind="finish",
+            action_href=f"/api/v1/backstage/production/{wo_id}/finish/",
+            action_ref=f"finish:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         force = body["force"]
         try:
             if force:
                 _shortage_override_reason(
                     request,
-                    action="finish",
                     reason=body.get("reason", ""),
                 )
+            from shopman.craftsman.models import WorkOrder
+
+            work_order = WorkOrder.objects.filter(pk=wo_id).first()
+            if work_order is not None and work_order.status not in (
+                WorkOrder.Status.FINISHED,
+                WorkOrder.Status.VOID,
+            ):
+                yield_anchor = work_order.started_qty or work_order.quantity
+                if body["quantity"] < yield_anchor:
+                    raise ProductionMutationValidationError(
+                        {
+                            "quantity": (
+                                "A quantidade total deve incluir toda perda da fornada. "
+                                "Classifique o déficit em partition com um motivo de qualidade."
+                            )
+                        }
+                    )
+            _require_shortage_override_proof(body)
+            current = _current_work_order_projection(wo_id)
+            allow_implicit_start = bool(current and current["status"] == "planned")
+            if allow_implicit_start:
+                _require_production_capability(request, "can_start")
             wo_ref, quantity = production_service.apply_finish(
                 work_order_id=wo_id,
                 quantity=body["quantity"],
@@ -2352,23 +2620,30 @@ class WorkOrderFinishView(_ProductionActionBase):
                 partition=body.get("partition"),
                 expected_rev=body["expected_rev"],
                 idempotency_key=body["idempotency_key"],
+                override_reason=body.get("reason", ""),
+                yield_deviation_confirmed=body["yield_deviation_confirmed"],
+                yield_deviation_reason=body.get("yield_deviation_reason", ""),
+                allow_implicit_start=allow_implicit_start,
+                approved_shortage=body.get("_approved_shortage_snapshot"),
             )
         except ProductionError as exc:
-            shortage = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 can_override_shortage=request.production_access.can_override_shortage,
+                projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
             )
-            if shortage is not None:
-                return shortage
-            return Response({"detail": str(exc) or "Falha ao concluir produção."}, status=400)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Dados inválidos."}, status=400)
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados inválidos.",
+            )
         return Response(
             {
                 "ok": True,
                 "wo_ref": wo_ref,
-                "quantity": str(quantity),
+                "quantity": _production_quantity(quantity),
                 "current": _current_work_order_projection(wo_ref),
             }
         )
@@ -2385,7 +2660,20 @@ class WorkOrderAdvanceStepView(_ProductionActionBase):
     required_production_capability = "can_advance_step"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionAdvanceStepMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionAdvanceStepMutationSerializer,
+            projection_kind="kds",
+            action_kind="advance_step",
+            action_href=f"/api/v1/backstage/production/{wo_id}/advance-step/",
+            action_ref=f"advance_step:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         try:
             new_index = production_service.apply_advance_step(
                 work_order_id=wo_id,
@@ -2394,13 +2682,11 @@ class WorkOrderAdvanceStepView(_ProductionActionBase):
                 idempotency_key=body["idempotency_key"],
             )
         except ProductionError as exc:
-            conflict = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
             )
-            if conflict is not None:
-                return conflict
-            return Response({"detail": str(exc) or "Falha ao avançar passo."}, status=400)
         return Response(
             {
                 "ok": True,
@@ -2422,15 +2708,22 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
     required_production_capability = "can_quick_finish"
 
     def post(self, request):
-        body = validated_body(request, ProductionQuickFinishMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionQuickFinishMutationSerializer,
+            projection_kind="qc",
+            action_kind="quick_finish",
+            action_href="/api/v1/backstage/production/quick-finish/",
+            action_ref=lambda payload: f"quick_finish:{payload['recipe_id']}",
+        )
         try:
             force = body["force"]
             if force:
                 _shortage_override_reason(
                     request,
-                    action="quick_finish",
                     reason=body.get("reason", ""),
                 )
+            _require_shortage_override_proof(body)
             _, wo_ref, qty = production_service.apply_quick_finish(
                 recipe_id=body["recipe_id"],
                 quantity=body["quantity"],
@@ -2441,23 +2734,28 @@ class WorkOrderQuickFinishView(_ProductionActionBase):
                 partition=body.get("partition"),
                 force=force,
                 idempotency_key=body["idempotency_key"],
+                override_reason=body.get("reason", ""),
+                projected_action_proof=body["action_proof"],
+                approved_shortage=body.get("_approved_shortage_snapshot"),
             )
         except ProductionError as exc:
-            shortage = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
                 can_override_shortage=request.production_access.can_override_shortage,
+                projection_generated_at=body.get("projection_generated_at"),
+                override_proof=_shortage_override_proof(body, exc),
             )
-            if shortage is not None:
-                return shortage
-            return Response({"detail": str(exc) or "Falha ao finalizar."}, status=400)
         except ValueError as exc:
-            return Response({"detail": str(exc) or "Dados inválidos."}, status=400)
+            return _production_validation_error_response(
+                exc,
+                fallback="Dados inválidos.",
+            )
         return Response(
             {
                 "ok": True,
                 "wo_ref": wo_ref,
-                "quantity": str(qty),
+                "quantity": _production_quantity(qty),
                 "current": _current_work_order_projection(wo_ref),
             }
         )
@@ -2474,7 +2772,20 @@ class WorkOrderVoidView(_ProductionActionBase):
     required_production_capability = "can_void"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionVoidMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionVoidMutationSerializer,
+            projection_kind=("board", "kds"),
+            action_kind="void",
+            action_href=f"/api/v1/backstage/production/{wo_id}/void/",
+            action_ref=f"void:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         try:
             ref = production_service.apply_void(
                 wo_id,
@@ -2484,13 +2795,11 @@ class WorkOrderVoidView(_ProductionActionBase):
                 idempotency_key=body["idempotency_key"],
             )
         except ProductionError as exc:
-            conflict = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
             )
-            if conflict is not None:
-                return conflict
-            return Response({"detail": str(exc) or "Falha ao estornar."}, status=400)
         return Response({"ok": True, "wo_ref": ref, "current": _current_work_order_projection(ref)})
 
 
@@ -2505,7 +2814,20 @@ class WorkOrderOvenArmView(_ProductionActionBase):
     required_production_capability = "can_record_oven_fact"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionOvenArmMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionOvenArmMutationSerializer,
+            projection_kind="qc",
+            action_kind="oven_arm",
+            action_href=f"/api/v1/backstage/production/{wo_id}/oven/arm/",
+            action_ref=f"oven_arm:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         try:
             run = production_service.apply_oven_arm(
                 work_order_id=wo_id,
@@ -2516,17 +2838,16 @@ class WorkOrderOvenArmView(_ProductionActionBase):
                 idempotency_key=body["idempotency_key"],
             )
         except ProductionError as exc:
-            conflict = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
             )
-            if conflict is not None:
-                return conflict
-            return Response({"detail": str(exc) or "Falha ao registrar o enfornar."}, status=400)
         return Response(
             {
                 "ok": True,
                 "run_id": run.pk,
+                "run_status": run.status,
                 "current": _current_work_order_projection(wo_id),
             }
         )
@@ -2543,7 +2864,20 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
     required_production_capability = "can_record_oven_fact"
 
     def post(self, request, wo_id: int):
-        body = validated_body(request, ProductionOvenConcludeMutationSerializer)
+        body = validated_body(
+            request,
+            ProductionOvenConcludeMutationSerializer,
+            projection_kind="qc",
+            action_kind="oven_conclude",
+            action_href=f"/api/v1/backstage/production/{wo_id}/oven/conclude/",
+            action_ref=f"oven_conclude:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
         try:
             run = production_service.apply_oven_conclude(
                 work_order_id=wo_id,
@@ -2552,17 +2886,17 @@ class WorkOrderOvenConcludeView(_ProductionActionBase):
                 idempotency_key=body["idempotency_key"],
             )
         except ProductionError as exc:
-            conflict = _production_error_response(
+            return _production_error_response(
                 exc,
                 idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
             )
-            if conflict is not None:
-                return conflict
-            return Response({"detail": str(exc) or "Falha ao registrar o retirar."}, status=400)
         return Response(
             {
                 "ok": True,
-                "measured": run is not None,
+                "measured": True,
+                "run_id": run.pk,
+                "run_status": run.status,
                 "current": _current_work_order_projection(wo_id),
             }
         )

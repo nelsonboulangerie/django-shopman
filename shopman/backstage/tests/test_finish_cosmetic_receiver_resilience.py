@@ -32,6 +32,7 @@ from shopman.backstage.services import production as backstage_production
 from shopman.shop.handlers import production_alerts, production_order_sync
 from shopman.shop.handlers.production_order_sync import (
     ORDER_AWAITING_WO_REFS_KEY,
+    ORDER_PRODUCTION_WO_REFS_KEY,
     WORK_ORDER_COMMITTED_ORDER_REFS_KEY,
 )
 
@@ -51,9 +52,7 @@ def vitrine(db):
 
 @pytest.fixture
 def recipe(db, vitrine):
-    return Recipe.objects.create(
-        ref="rc-cosmetic", name="Pão", output_sku=SKU, batch_size=Decimal("1")
-    )
+    return Recipe.objects.create(ref="rc-cosmetic", name="Pão", output_sku=SKU, batch_size=Decimal("1"))
 
 
 def _vitrine_qty(vitrine) -> Decimal:
@@ -66,6 +65,7 @@ def _started_work_order(recipe):
 
     wo = craft.plan(recipe, Decimal("40"), date=timezone.localdate())
     craft.start(wo, quantity=Decimal("40"), actor="test")
+    wo.refresh_from_db()
     return wo
 
 
@@ -87,8 +87,13 @@ def _active_order(ref: str, *, qty: int = 2) -> Order:
         data={"target_date": date.today().isoformat()},
     )
     OrderItem.objects.create(
-        order=order, line_id=f"{ref}-l1", sku=SKU, name=SKU,
-        qty=qty, unit_price_q=500, line_total_q=1000,
+        order=order,
+        line_id=f"{ref}-l1",
+        sku=SKU,
+        name=SKU,
+        qty=qty,
+        unit_price_q=500,
+        line_total_q=1000,
     )
     return order
 
@@ -99,7 +104,11 @@ def test_cosmetic_receiver_failure_neither_500s_nor_corrupts_stock(recipe, vitri
 
     # Sem a blindagem, o alerta estourado propagaria e isto levantaria RuntimeError.
     ref, total = backstage_production.apply_finish(
-        work_order_id=wo.pk, quantity="40", actor="test"
+        work_order_id=wo.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=wo.rev,
+        idempotency_key="cosmetic-receiver-failure",
     )
 
     assert ref == wo.ref
@@ -119,14 +128,19 @@ def test_cosmetic_failure_before_order_sync_leaves_no_orphan(recipe, vitrine, mo
     _blow_up_a_cosmetic_receiver(monkeypatch)
 
     ref, total = backstage_production.apply_finish(
-        work_order_id=wo.pk, quantity="40", actor="test"
+        work_order_id=wo.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=wo.rev,
+        idempotency_key="cosmetic-before-order-sync",
     )
     assert ref == wo.ref  # o finish concluiu, apesar do cosmético estourado
 
     # O sync de pedido (posterior ao cosmético) NÃO ficou órfão: ligou os dois lados.
     order.refresh_from_db()
     wo.refresh_from_db()
-    assert order.data.get("awaiting_wo_refs") == [wo.ref]
+    assert ORDER_AWAITING_WO_REFS_KEY not in order.data
+    assert order.data.get(ORDER_PRODUCTION_WO_REFS_KEY) == [wo.ref]
     assert wo.meta.get(WORK_ORDER_COMMITTED_ORDER_REFS_KEY) == [order.ref]
 
 
@@ -148,7 +162,13 @@ def test_stock_leg_failure_still_screams(recipe, vitrine, monkeypatch):
     # A perna de estoque re-levanta (contrib/stockman ``_realize_output_leg``), e
     # ``apply_finish`` não engole erro que não é ``CraftError``: o finish grita.
     with pytest.raises(RuntimeError, match="realize da vitrine falhou"):
-        backstage_production.apply_finish(work_order_id=wo.pk, quantity="40", actor="test")
+        backstage_production.apply_finish(
+            work_order_id=wo.pk,
+            quantity="40",
+            actor="test",
+            expected_rev=wo.rev,
+            idempotency_key="stock-leg-failure",
+        )
 
     # A falha é real: a vitrine não foi creditada (o carimbo da perna volta atrás
     # junto com a transação), então o sweeper de recuperação ainda a reconhece.
@@ -174,7 +194,11 @@ def test_order_sync_failure_never_aborts_the_finish(recipe, vitrine, monkeypatch
     monkeypatch.setattr(production_order_sync, "link_active_orders_to_work_order", _boom)
 
     ref, total = backstage_production.apply_finish(
-        work_order_id=wo.pk, quantity="40", actor="test"
+        work_order_id=wo.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=wo.rev,
+        idempotency_key="order-sync-failure",
     )
     assert ref == wo.ref
     assert total == Decimal("40")
@@ -196,7 +220,11 @@ def test_guarded_path_rebuilds_order_links_even_without_the_signal(recipe, vitri
     production_changed.disconnect(dispatch_uid=uid)
     try:
         ref, _ = backstage_production.apply_finish(
-            work_order_id=wo.pk, quantity="40", actor="test"
+            work_order_id=wo.pk,
+            quantity="40",
+            actor="test",
+            expected_rev=wo.rev,
+            idempotency_key="order-sync-guarded-path",
         )
     finally:
         production_order_sync.connect()  # reconecta (idempotente por dispatch_uid)
@@ -205,5 +233,6 @@ def test_guarded_path_rebuilds_order_links_even_without_the_signal(recipe, vitri
     order.refresh_from_db()
     wo.refresh_from_db()
     # Só a rede de segurança pôde ter ligado — o sinal estava mudo.
-    assert order.data.get(ORDER_AWAITING_WO_REFS_KEY) == [wo.ref]
+    assert ORDER_AWAITING_WO_REFS_KEY not in order.data
+    assert order.data.get(ORDER_PRODUCTION_WO_REFS_KEY) == [wo.ref]
     assert wo.meta.get(WORK_ORDER_COMMITTED_ORDER_REFS_KEY) == [order.ref]

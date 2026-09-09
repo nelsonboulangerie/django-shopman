@@ -2,6 +2,7 @@
 
 Keeps shop/ free of direct shopman.backstage imports.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -51,14 +52,11 @@ def recent_exists(
     return qs.exists()
 
 
-def acknowledge(type: str, *, order_ref: str = "") -> int:
-    """Acknowledge active alerts matching the type/order pair."""
-    from shopman.backstage.models import OperatorAlert
+def resolve(type: str, *, order_ref: str, actor: str) -> int:
+    """Resolve active alert causes through the canonical audited service."""
+    from shopman.backstage.services.alerts import resolve_alerts
 
-    qs = OperatorAlert.objects.filter(type=type, acknowledged=False)
-    if order_ref:
-        qs = qs.filter(order_ref=order_ref)
-    return qs.update(acknowledged=True)
+    return resolve_alerts(type, order_ref=order_ref, actor=actor)
 
 
 def connect_saved(receiver, *, dispatch_uid: str, weak: bool = False) -> None:

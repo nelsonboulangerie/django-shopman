@@ -7,7 +7,7 @@ from django.contrib.auth.models import Permission, User
 
 from shopman.backstage.models import OperatorAlert
 from shopman.backstage.services import alerts
-from shopman.backstage.services.exceptions import AlertError
+from shopman.backstage.services.exceptions import AlertConflict, AlertError
 
 
 @pytest.mark.django_db
@@ -50,25 +50,33 @@ def test_list_and_count_active_alerts():
 
 
 @pytest.mark.django_db
-def test_ack_alert_marks_alert_and_is_idempotent():
+def test_ack_alert_rejects_an_unprojected_internal_write():
     alert = OperatorAlert.objects.create(type="stock_low", severity="warning", message="Estoque baixo")
 
-    assert alerts.ack_alert(alert.pk) is True
-    assert alerts.ack_alert(alert.pk) is True
+    with pytest.raises(TypeError):
+        alerts.ack_alert(alert.pk)
+    with pytest.raises(AlertConflict):
+        alerts.ack_alert(
+            alert.pk,
+            user=None,
+            expected_rev=alert.rev,
+            idempotency_key="direct-write",
+            action_proof="forged",
+        )
     alert.refresh_from_db()
-    assert alert.acknowledged is True
-    assert alerts.ack_alert(999999) is False
+    assert alert.acknowledged is False
+    assert alert.acknowledged_at is None
 
 
 @pytest.mark.django_db
-def test_list_count_and_ack_share_the_same_audience_scope():
+def test_list_and_count_share_the_same_audience_scope():
     production = OperatorAlert.objects.create(
         type="production_late",
         audience="production",
         severity="warning",
         message="Produção atrasada",
     )
-    finance = OperatorAlert.objects.create(
+    OperatorAlert.objects.create(
         type="payment_failed",
         audience="finance",
         severity="critical",
@@ -84,8 +92,6 @@ def test_list_count_and_ack_share_the_same_audience_scope():
 
     assert alerts.list_active_alerts(user=operator) == [production]
     assert alerts.active_counts(user=operator) == alerts.AlertCounts(active=1, critical=0)
-    assert alerts.ack_alert(finance.pk, user=operator) is False
-    assert alerts.ack_alert(production.pk, user=operator) is True
 
 
 @pytest.mark.django_db
@@ -96,6 +102,7 @@ def test_escalate_alert_updates_severity_and_message():
 
     assert updated.severity == "critical"
     assert updated.message == "Estoque crítico"
+    assert updated.rev == 1
 
 
 @pytest.mark.django_db

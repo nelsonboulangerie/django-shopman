@@ -13,6 +13,10 @@ from datetime import timedelta
 from django.utils import timezone
 from rest_framework import serializers
 
+from shopman.backstage.api._production_mutations import (
+    ProductionMutationValidationError,
+)
+
 VALID_REPORT_KINDS = ("history", "operator_productivity", "recipe_waste", "quality")
 VALID_WORK_ORDER_STATUSES = ("planned", "started", "finished", "void")
 
@@ -108,7 +112,10 @@ class ProductionReportsQuerySerializer(StrictQuerySerializer):
 
 def validated_query(request, serializer_class: type[StrictQuerySerializer]) -> dict:
     serializer = serializer_class(data=request.query_params)
-    serializer.is_valid(raise_exception=True)
+    try:
+        serializer.is_valid(raise_exception=True)
+    except serializers.ValidationError as exc:
+        raise ProductionMutationValidationError(exc.detail) from exc
     return dict(serializer.validated_data)
 
 

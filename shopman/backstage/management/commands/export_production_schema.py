@@ -32,6 +32,11 @@ from shopman.backstage.contracts import (
     render_serializer_interfaces,
     run_contract_export,
 )
+from shopman.backstage.projections.alerts import (
+    OperatorAlertCountsProjection,
+    OperatorAlertProjection,
+    OperatorAlertsProjection,
+)
 from shopman.backstage.projections.production import (
     BaseRecipeOptionProjection,
     BaseRecipeUsageProjection,
@@ -41,6 +46,10 @@ from shopman.backstage.projections.production import (
     OperatorProductivityRow,
     OrderCommitmentProjection,
     PositionOptionProjection,
+    ProductionActionApprovalRequirementProjection,
+    ProductionActionConfirmationProjection,
+    ProductionActionIdempotencyProjection,
+    ProductionActionProjection,
     ProductionBlindMapProjection,
     ProductionBlindMapRowProjection,
     ProductionBoardProjection,
@@ -60,6 +69,8 @@ from shopman.backstage.projections.production import (
     ProductionSurfaceAccess,
     ProductionWeighingIngredientProjection,
     ProductionWeighingProjection,
+    ProductionWeighingTableProjection,
+    ProductionWeighingTableRowProjection,
     ProductionWeighingTicketProjection,
     QCDefectProjection,
     QCGradeProjection,
@@ -77,6 +88,13 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/production-nuxt/app/generated/productionCo
 
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
+    ProductionActionIdempotencyProjection,
+    ProductionActionConfirmationProjection,
+    ProductionActionApprovalRequirementProjection,
+    ProductionActionProjection,
+    OperatorAlertCountsProjection,
+    OperatorAlertProjection,
+    OperatorAlertsProjection,
     OrderCommitmentProjection,
     BaseRecipeUsageProjection,
     WorkOrderCardProjection,
@@ -98,6 +116,8 @@ CONTRACT_DATACLASSES = (
     MiseEnPlaceLineProjection,
     ProductionMiseEnPlaceProjection,
     ProductionWeighingIngredientProjection,
+    ProductionWeighingTableRowProjection,
+    ProductionWeighingTableProjection,
     ProductionWeighingTicketProjection,
     ProductionWeighingProjection,
     ProductionBlindMapRowProjection,
@@ -125,7 +145,7 @@ def output_path() -> Path:
 def render_production_contract_ts() -> str:
     """Render the generated TypeScript contract mirror (deterministic)."""
     return render_contract_module(
-        source="shopman/backstage/projections/production.py + api/_production_mutations.py",
+        source=("shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py"),
         command="export_production_schema",
         dataclasses=CONTRACT_DATACLASSES,
         extra_blocks=(

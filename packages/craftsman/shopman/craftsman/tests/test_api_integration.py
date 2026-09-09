@@ -45,10 +45,18 @@ def recipe(db):
 @pytest.fixture
 def recipe_with_items(recipe):
     RecipeItem.objects.create(
-        recipe=recipe, input_sku="farinha", quantity=Decimal("5"), unit="kg", sort_order=0,
+        recipe=recipe,
+        input_sku="farinha",
+        quantity=Decimal("5"),
+        unit="kg",
+        sort_order=0,
     )
     RecipeItem.objects.create(
-        recipe=recipe, input_sku="agua", quantity=Decimal("3"), unit="L", sort_order=1,
+        recipe=recipe,
+        input_sku="agua",
+        quantity=Decimal("3"),
+        unit="L",
+        sort_order=1,
     )
     return recipe
 
@@ -217,7 +225,9 @@ class TestFinishEndpoint:
             "idempotency_key": "finish-http-001",
         }
         resp1 = api_client.post(
-            f"/api/craftsman/work-orders/{wo.ref}/finish/", payload, format="json",
+            f"/api/craftsman/work-orders/{wo.ref}/finish/",
+            payload,
+            format="json",
         )
         assert resp1.status_code == 200
 
@@ -226,8 +236,8 @@ class TestFinishEndpoint:
             {"finished": "50", "idempotency_key": "finish-http-001"},
             format="json",
         )
-        assert resp2.status_code == 200
-        assert resp2.data["finished"] == "93.000"  # original preserved
+        assert resp2.status_code == 400
+        assert resp2.data["error"] == "IDEMPOTENCY_CONFLICT"
 
 
 # ══════════════════════════════════════════════════════════════

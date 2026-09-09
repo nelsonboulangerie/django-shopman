@@ -13,7 +13,28 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 
 from shopman.backstage.models import OperatorAlert
+from shopman.backstage.services import alerts as alert_service
 from shopman.shop.models import Shop
+
+
+def _ack_body(projection: dict, alert_pk: int, *, key: str = "ack-attempt") -> dict:
+    action = next(
+        item
+        for alert in projection["alerts"]
+        if alert["pk"] == alert_pk
+        for item in alert["actions"]
+        if item["ref"] == f"acknowledge:{alert_pk}"
+    )
+    return {
+        "expected_rev": action["expected_rev"],
+        "idempotency_key": key,
+        "projection_generated_at": projection["generated_at"],
+        "source_revision": projection["source_revision"],
+        "fresh_until": projection["fresh_until"],
+        "contract_version": projection["contract_version"],
+        "action_ref": action["ref"],
+        "action_proof": action["proof"],
+    }
 
 
 def _manage_orders_perm() -> Permission:
@@ -90,22 +111,34 @@ def test_list_returns_alerts_and_counts(client, operator, alert):
     first = body["alerts"][0]
     assert first["audience"] == "orders"
     assert first["actions"][0] == {
-        "ref": "acknowledge",
-        "kind": "mutation",
+        "ref": f"acknowledge:{alert.pk}",
+        "kind": "acknowledge_alert",
         "label": "Reconhecer",
-        "priority": "secondary",
+        "priority": 20,
         "enabled": True,
         "reason": "",
         "method": "POST",
         "href": f"/api/v1/backstage/alerts/{alert.pk}/ack/",
-        "payload_schema": {},
-        "expected_rev": None,
-        "idempotency": "idempotent",
-        "confirmation": {},
+        "payload_schema": "AlertAckMutationRequest",
+        "expected_rev": 0,
+        "idempotency": {
+            "required": True,
+            "key_scope": f"backstage.alert-ack:{alert.pk}",
+        },
+        "confirmation": {
+            "required": False,
+            "reason_required": False,
+            "title": "",
+            "confirm_label": "Confirmar",
+        },
         "approval_requirement": None,
         "source_alert_ref": str(alert.pk),
-        "lifecycle_effect": "acknowledges",
+        "source_alert_effect": "acknowledges",
+        "proof": first["actions"][0]["proof"],
     }
+    assert first["actions"][0]["proof"]
+    assert body["source_revision"].startswith("sha256:")
+    assert body["generated_at"] < body["fresh_until"]
 
 
 @pytest.mark.django_db
@@ -121,17 +154,32 @@ def test_list_excludes_acknowledged(client, operator, alert):
 @pytest.mark.django_db
 def test_ack_marks_alert(client, operator, alert):
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-alert-ack", args=[alert.pk]))
-    assert response.status_code == 200
+    projection = client.get(reverse("api-backstage-alerts")).json()
+    body = _ack_body(projection, alert.pk)
+    response = client.post(
+        reverse("api-backstage-alert-ack", args=[alert.pk]),
+        body,
+        content_type="application/json",
+    )
+    replay = client.post(
+        reverse("api-backstage-alert-ack", args=[alert.pk]),
+        body,
+        content_type="application/json",
+    )
+    assert response.status_code == replay.status_code == 200
     assert response.json() == {"ok": True, "pk": alert.pk}
     alert.refresh_from_db()
     assert alert.acknowledged is True
+    assert alert.acknowledged_at is not None
+    assert alert.acknowledged_by == operator.username
 
 
 @pytest.mark.django_db
-def test_ack_unknown_is_404(client, operator):
+def test_ack_without_a_projected_action_is_rejected_before_target_lookup(client, operator):
     client.force_login(operator)
-    assert client.post(reverse("api-backstage-alert-ack", args=[999999])).status_code == 404
+    response = client.post(reverse("api-backstage-alert-ack", args=[999999]))
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
 
 
 @pytest.mark.django_db
@@ -153,11 +201,16 @@ def test_production_operator_cannot_see_or_ack_finance_alert(client, shop):
     client.force_login(operator)
 
     listed = client.get(reverse("api-backstage-alerts")).json()
-    forbidden_ack = client.post(reverse("api-backstage-alert-ack", args=[finance.pk]))
+    body = _ack_body(listed, production.pk, key="finance-forgery")
+    forbidden_ack = client.post(
+        reverse("api-backstage-alert-ack", args=[finance.pk]),
+        body,
+        content_type="application/json",
+    )
 
     assert [row["pk"] for row in listed["alerts"]] == [production.pk]
     assert listed["counts"] == {"active": 1, "critical": 0}
-    assert forbidden_ack.status_code == 404
+    assert forbidden_ack.status_code == 400
     finance.refresh_from_db()
     assert finance.acknowledged is False
 
@@ -178,3 +231,116 @@ def test_cash_auditor_can_see_finance_audience(client, shop):
 
     assert response.status_code == 200
     assert [row["pk"] for row in response.json()["alerts"]] == [finance.pk]
+
+
+@pytest.mark.django_db
+def test_limited_projection_cannot_ack_an_older_unprojected_alert(
+    client,
+    operator,
+):
+    older = OperatorAlert.objects.create(
+        type="stale_new_order",
+        audience="orders",
+        severity="warning",
+        message="Antigo",
+    )
+    newer = OperatorAlert.objects.create(
+        type="stale_new_order",
+        audience="orders",
+        severity="warning",
+        message="Novo",
+    )
+    client.force_login(operator)
+    projection = client.get(reverse("api-backstage-alerts"), {"limit": 1}).json()
+    assert [item["pk"] for item in projection["alerts"]] == [newer.pk]
+    body = _ack_body(projection, newer.pk, key="limited-proof")
+
+    missing = client.post(reverse("api-backstage-alert-ack", args=[older.pk]))
+    cross_target = client.post(
+        reverse("api-backstage-alert-ack", args=[older.pk]),
+        body,
+        content_type="application/json",
+    )
+
+    assert missing.status_code == 400
+    assert cross_target.status_code == 400
+    older.refresh_from_db()
+    assert older.acknowledged is False
+
+
+@pytest.mark.django_db
+def test_alert_action_proof_and_idempotency_key_are_single_target_single_attempt(
+    client,
+    operator,
+):
+    first = OperatorAlert.objects.create(
+        type="stale_new_order",
+        audience="orders",
+        message="Primeiro",
+    )
+    second = OperatorAlert.objects.create(
+        type="stale_new_order",
+        audience="orders",
+        message="Segundo",
+    )
+    client.force_login(operator)
+    projection = client.get(reverse("api-backstage-alerts")).json()
+    body = _ack_body(projection, first.pk, key="one-alert-action")
+
+    accepted = client.post(
+        reverse("api-backstage-alert-ack", args=[first.pk]),
+        body,
+        content_type="application/json",
+    )
+    reused_key = client.post(
+        reverse("api-backstage-alert-ack", args=[first.pk]),
+        {**body, "idempotency_key": "another-attempt"},
+        content_type="application/json",
+    )
+    cross_target = client.post(
+        reverse("api-backstage-alert-ack", args=[second.pk]),
+        body,
+        content_type="application/json",
+    )
+
+    assert accepted.status_code == 200
+    assert reused_key.status_code == 409
+    assert cross_target.status_code == 400
+    assert OperatorAlert.objects.get(pk=first.pk).acknowledged is True
+    assert OperatorAlert.objects.get(pk=second.pk).acknowledged is False
+
+
+@pytest.mark.django_db
+def test_ack_rejects_an_alert_changed_after_projection(client, operator, alert):
+    client.force_login(operator)
+    projection = client.get(reverse("api-backstage-alerts")).json()
+    stale_body = _ack_body(projection, alert.pk, key="stale-alert")
+    alert_service.escalate_alert(
+        alert.pk,
+        severity="critical",
+        message="Perigo crítico atualizado",
+    )
+
+    stale = client.post(
+        reverse("api-backstage-alert-ack", args=[alert.pk]),
+        stale_body,
+        content_type="application/json",
+    )
+
+    assert stale.status_code == 409
+    assert stale.json()["error"] == {
+        "code": "stale_projection",
+        "sent_rev": 0,
+        "current_rev": 1,
+        "recovery": {"action": "refresh", "label": "Atualizar alertas"},
+    }
+    alert.refresh_from_db()
+    assert alert.acknowledged is False
+
+    current = client.get(reverse("api-backstage-alerts")).json()
+    accepted = client.post(
+        reverse("api-backstage-alert-ack", args=[alert.pk]),
+        _ack_body(current, alert.pk, key="current-alert"),
+        content_type="application/json",
+    )
+    assert accepted.status_code == 200

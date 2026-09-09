@@ -11,6 +11,15 @@ class AlertError(BackstageServiceError):
     """Raised when an alert mutation cannot be applied."""
 
 
+class AlertConflict(AlertError):
+    """Raised when an alert action proof/key was already consumed differently."""
+
+    def __init__(self, message: str, *, code: str = "conflict", data=None):
+        super().__init__(message)
+        self.code = code
+        self.data = dict(data or {})
+
+
 class KDSError(BackstageServiceError):
     """Raised when a KDS mutation cannot be applied."""
 
@@ -63,6 +72,15 @@ class ProductionError(BackstageServiceError):
     """Raised when a production mutation cannot be applied."""
 
 
+class ProductionNotFound(ProductionError):
+    """Raised when a production mutation targets a resource that does not exist."""
+
+    def __init__(self, message: str, *, resource: str, identifier: str):
+        super().__init__(message)
+        self.resource = resource
+        self.identifier = identifier
+
+
 class ProductionConflict(ProductionError):
     """Raised when the work order changed state before the operator action landed.
 
@@ -71,7 +89,7 @@ class ProductionConflict(ProductionError):
     estado), não 400 — mesmo padrão de ``OrderConflict``.
     """
 
-    def __init__(self, message: str, *, code: str = "state_conflict", data=None):
+    def __init__(self, message: str, *, code: str = "conflict", data=None):
         super().__init__(message)
         self.code = code
         self.data = dict(data or {})

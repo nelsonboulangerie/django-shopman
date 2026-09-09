@@ -6,8 +6,12 @@ um retrato, não um ponteiro para esta tabela.
 """
 
 import pytest
+from django.contrib import admin
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
+from django.test import RequestFactory
+from unfold.admin import ModelAdmin
 
 from shopman.shop.models import QualityDefect, QualityGrade
 
@@ -46,9 +50,7 @@ class TestSeed:
 class TestVeto:
     def test_so_contaminacao_veta(self):
         """Cosmético vende com desconto. Veto é só segurança alimentar."""
-        vetoed = list(
-            QualityDefect.objects.filter(forces_discard=True).values_list("ref", flat=True)
-        )
+        vetoed = list(QualityDefect.objects.filter(forces_discard=True).values_list("ref", flat=True))
         assert vetoed == ["contaminated"]
 
     def test_marcas_de_forno_nao_vetam(self):
@@ -69,9 +71,7 @@ class TestVeto:
 class TestInvariantes:
     def test_dois_padroes_nao_convivem(self):
         with pytest.raises(IntegrityError), transaction.atomic():
-            QualityGrade.objects.create(
-                ref="other", label="Outro", rank=99, is_default=True
-            )
+            QualityGrade.objects.create(ref="other", label="Outro", rank=99, is_default=True)
 
     def test_rank_e_unico(self):
         with pytest.raises(IntegrityError), transaction.atomic():
@@ -79,18 +79,14 @@ class TestInvariantes:
 
     def test_percentual_acima_de_cem_e_recusado(self):
         with pytest.raises(IntegrityError), transaction.atomic():
-            QualityGrade.objects.create(
-                ref="absurd", label="Absurdo", rank=5, markdown_percent=101
-            )
+            QualityGrade.objects.create(ref="absurd", label="Absurdo", rank=5, markdown_percent=101)
 
     def test_rank_ordena_sem_depender_de_tupla_literal(self):
         """A hierarquia mora aqui agora — não mais duplicada em código."""
         grades = list(QualityGrade.objects.all())
         assert grades[0].ref == "excellent"
         assert grades[-1].ref == "minimal"
-        assert all(
-            grades[i].rank > grades[i + 1].rank for i in range(len(grades) - 1)
-        )
+        assert all(grades[i].rank > grades[i + 1].rank for i in range(len(grades) - 1))
 
     def test_grau_padrao_nao_pode_ser_desativado(self):
         grade = QualityGrade.objects.get(is_default=True)
@@ -111,6 +107,35 @@ class TestRotuloMudaCodigoFica:
 
     def test_nada_em_qualitygrade_aponta_para_lote(self):
         """O lote carrega o número que recebeu; esta tabela é só a origem dele."""
-        assert not any(
-            f.is_relation for f in QualityGrade._meta.get_fields() if f.concrete
-        )
+        assert not any(f.is_relation for f in QualityGrade._meta.get_fields() if f.concrete)
+
+
+class TestQualityAdmin:
+    def test_catalogs_use_unfold_and_keep_historical_refs(self):
+        request = RequestFactory().get("/admin/shop/quality/")
+        request.user = User.objects.create_superuser("quality-admin")
+
+        for model in (QualityGrade, QualityDefect):
+            model_admin = admin.site._registry[model]
+            assert isinstance(model_admin, ModelAdmin)
+            assert model_admin.has_delete_permission(request) is False
+            assert model_admin.get_readonly_fields(request, model.objects.first()) == ("ref",)
+
+    def test_quality_policy_fields_are_structured(self):
+        grade_admin = admin.site._registry[QualityGrade]
+        defect_admin = admin.site._registry[QualityDefect]
+
+        grade_fields = {
+            field
+            for _title, options in grade_admin.fieldsets
+            for row in options["fields"]
+            for field in (row if isinstance(row, tuple) else (row,))
+        }
+        defect_fields = {
+            field
+            for _title, options in defect_admin.fieldsets
+            for row in options["fields"]
+            for field in (row if isinstance(row, tuple) else (row,))
+        }
+        assert {"rank", "markdown_percent", "is_default", "is_active"} <= grade_fields
+        assert {"hint", "forces_discard", "position", "is_active"} <= defect_fields

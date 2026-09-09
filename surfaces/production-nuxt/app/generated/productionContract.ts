@@ -1,6 +1,78 @@
 // AUTO-GENERATED — do not edit by hand.
-// Source of truth: shopman/backstage/projections/production.py + api/_production_mutations.py
+// Source of truth: shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py
 // Regenerate with: python manage.py export_production_schema
+
+/** How the client must identify retries of one projected mutation. */
+export interface ProductionActionIdempotencyProjection {
+  required: boolean;
+  key_scope: string;
+}
+
+/** Confirmation UX required before dispatching a projected mutation. */
+export interface ProductionActionConfirmationProjection {
+  required: boolean;
+  reason_required: boolean;
+  title: string;
+  confirm_label: string;
+}
+
+/** An additional authority requirement; D1 may extend this contract. */
+export interface ProductionActionApprovalRequirementProjection {
+  capability: string;
+  approver_must_differ: boolean;
+  reason_required: boolean;
+}
+
+/** A server-owned action offered by an operational projection. */
+export interface ProductionActionProjection {
+  ref: string;
+  kind: "plan" | "start" | "advance_step" | "finish" | "quick_finish" | "void" | "oven_arm" | "oven_conclude" | "acknowledge_alert";
+  label: string;
+  priority: number;
+  enabled: boolean;
+  reason: string;
+  method: "POST";
+  href: string;
+  payload_schema: string;
+  expected_rev: number | null;
+  idempotency: ProductionActionIdempotencyProjection;
+  confirmation: ProductionActionConfirmationProjection;
+  approval_requirement: ProductionActionApprovalRequirementProjection | null;
+  source_alert_ref: string | null;
+  source_alert_effect: "keeps_open" | "acknowledges" | "resolves" | null;
+  proof: string;
+}
+
+/** OperatorAlertCountsProjection(active: 'int', critical: 'int') */
+export interface OperatorAlertCountsProjection {
+  active: number;
+  critical: number;
+}
+
+/** OperatorAlertProjection(pk: 'int', rev: 'int', type: 'str', type_label: 'str', severity: "Literal['warning', 'error', 'critical']", severity_label: 'str', audience: 'str', message: 'str', order_ref: 'str', created_at_display: 'str', actions: 'tuple[ProductionActionProjection, ...]') */
+export interface OperatorAlertProjection {
+  pk: number;
+  rev: number;
+  type: string;
+  type_label: string;
+  severity: "warning" | "error" | "critical";
+  severity_label: string;
+  audience: string;
+  message: string;
+  order_ref: string;
+  created_at_display: string;
+  actions: ProductionActionProjection[];
+}
+
+/** OperatorAlertsProjection(alerts: 'tuple[OperatorAlertProjection, ...]', counts: 'OperatorAlertCountsProjection', generated_at: 'str' = '', source_revision: 'str' = '', fresh_until: 'str' = '', contract_version: 'int' = 1) */
+export interface OperatorAlertsProjection {
+  alerts: OperatorAlertProjection[];
+  counts: OperatorAlertCountsProjection;
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+}
 
 /** A compact order commitment for a production work order. */
 export interface OrderCommitmentProjection {
@@ -176,6 +248,11 @@ export interface ProductionBoardProjection {
   matrix_groups: ProductionMatrixGroupProjection[];
   default_position_pk: number | null;
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** A started work order card for the production KDS. */
@@ -201,6 +278,7 @@ export interface ProductionKDSCardProjection {
   step_progress_pct: number;
   next_step_name: string;
   time_remaining_min: number | null;
+  can_advance_step: boolean;
   can_finish: boolean;
   order_refs: string[];
 }
@@ -213,6 +291,11 @@ export interface ProductionKDSProjection {
   total_count: number;
   late_count: number;
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** ForecastRowProjection(ref: 'str', output_sku: 'str', recipe_name: 'str', qty: 'str', eta_display: 'str', eta_is_actual: 'bool', status: 'str', status_label: 'str', history_days: 'int') */
@@ -228,13 +311,18 @@ export interface ForecastRowProjection {
   history_days: number;
 }
 
-/** ProductionForecastProjection(selected_date: 'str', selected_date_display: 'str', generated_at_display: 'str', rows: 'tuple[ForecastRowProjection, ...]', access: 'ProductionSurfaceAccess') */
+/** ProductionForecastProjection(selected_date: 'str', selected_date_display: 'str', generated_at_display: 'str', rows: 'tuple[ForecastRowProjection, ...]', access: 'ProductionSurfaceAccess', actions: 'tuple[ProductionActionProjection, ...]' = (), generated_at: 'str' = '', source_revision: 'str' = '', fresh_until: 'str' = '', contract_version: 'int' = 1) */
 export interface ProductionForecastProjection {
   selected_date: string;
   selected_date_display: string;
   generated_at_display: string;
   rows: ForecastRowProjection[];
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** Quanto deste insumo cada receita do dia consome. */
@@ -271,6 +359,11 @@ export interface ProductionMiseEnPlaceProjection {
   yield_margin_applied: boolean;
   yield_margin_note: string;
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** One ingredient line for a thermal weighing ticket. */
@@ -279,6 +372,18 @@ export interface ProductionWeighingIngredientProjection {
   name: string;
   quantity_display: string;
   is_subrecipe: boolean;
+}
+
+/** Closed printable row contract for one weighing ingredient. */
+export interface ProductionWeighingTableRowProjection {
+  cols: string[];
+}
+
+/** Versioned table contract shared with the thermal renderer. */
+export interface ProductionWeighingTableProjection {
+  contract_version: number;
+  headers: string[];
+  rows: ProductionWeighingTableRowProjection[];
 }
 
 /** A printable 80mm-oriented ticket for one recipe/base recipe. */
@@ -290,7 +395,7 @@ export interface ProductionWeighingTicketProjection {
   dough_weight_display: string;
   sources_display: string;
   ingredients: ProductionWeighingIngredientProjection[];
-  table: Record<string, unknown>;
+  table: ProductionWeighingTableProjection;
   blind_code: string;
   made_display: string;
   expiry_display: string;
@@ -304,6 +409,11 @@ export interface ProductionWeighingProjection {
   selected_base_recipe: string;
   tickets: ProductionWeighingTicketProjection[];
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** One blind code ↔ prep row of the manager's correlation map. */
@@ -319,6 +429,11 @@ export interface ProductionBlindMapProjection {
   selected_date_display: string;
   rows: ProductionBlindMapRowProjection[];
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** A started work order that exceeded its configured target window. */
@@ -348,6 +463,11 @@ export interface ProductionDashboardProjection {
   capacity_percent: number | null;
   late_orders: ProductionLateWorkOrderProjection[];
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** Um grau da escala de QC (ADR-017 §6). */
@@ -401,6 +521,11 @@ export interface QCKioskProjection {
   previous_open_count: number;
   previous_open_date: string;
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** Normalized filters for production reports. */
@@ -474,6 +599,11 @@ export interface ProductionReportsProjection {
   available_recipes: RecipeOptionProjection[];
   available_positions: PositionOptionProjection[];
   access: ProductionSurfaceAccess;
+  actions: ProductionActionProjection[];
+  generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
 }
 
 /** Minimal authoritative WorkOrder state returned after every mutation. */
@@ -517,18 +647,27 @@ export interface ProductionVoidMutationSuccess {
   current: ProductionMutationCurrent | null;
 }
 
-/** ProductionOvenArmMutationSuccess(ok: 'bool', run_id: 'int', current: 'ProductionMutationCurrent | None') */
+/** ProductionOvenArmMutationSuccess(ok: 'bool', run_id: 'int', run_status: 'str', current: 'ProductionMutationCurrent | None') */
 export interface ProductionOvenArmMutationSuccess {
   ok: boolean;
   run_id: number;
+  run_status: string;
   current: ProductionMutationCurrent | null;
 }
 
-/** ProductionOvenConcludeMutationSuccess(ok: 'bool', measured: 'bool', current: 'ProductionMutationCurrent | None') */
+/** ProductionOvenConcludeMutationSuccess(ok: 'bool', measured: 'bool', run_id: 'int', run_status: 'str', current: 'ProductionMutationCurrent | None') */
 export interface ProductionOvenConcludeMutationSuccess {
   ok: boolean;
   measured: boolean;
+  run_id: number;
+  run_status: string;
   current: ProductionMutationCurrent | null;
+}
+
+/** AlertAckMutationSuccess(ok: 'bool', pk: 'int') */
+export interface AlertAckMutationSuccess {
+  ok: boolean;
+  pk: number;
 }
 
 /** ProductionValidationIssue(field: 'str', code: 'str', message: 'str') */
@@ -550,15 +689,15 @@ export interface ProductionValidationErrorEnvelope {
   error: ProductionValidationErrorBody;
 }
 
-/** ProductionConflictRecovery(action: "Literal['refresh']", label: 'str') */
+/** ProductionConflictRecovery(action: "Literal['refresh', 'retry']", label: 'str') */
 export interface ProductionConflictRecovery {
-  action: "refresh";
+  action: "refresh" | "retry";
   label: string;
 }
 
-/** ProductionConflictErrorBody(code: "Literal['conflict', 'state_conflict']", sent_rev: 'int | None', current_rev: 'int | None', current: 'ProductionMutationCurrent | None', recovery: 'ProductionConflictRecovery') */
+/** ProductionConflictErrorBody(code: "Literal['conflict', 'oven_run_missing', 'quick_finish_incomplete']", sent_rev: 'int | None', current_rev: 'int | None', current: 'ProductionMutationCurrent | None', recovery: 'ProductionConflictRecovery') */
 export interface ProductionConflictErrorBody {
-  code: "conflict" | "state_conflict";
+  code: "conflict" | "oven_run_missing" | "quick_finish_incomplete";
   sent_rev: number | null;
   current_rev: number | null;
   current: ProductionMutationCurrent | null;
@@ -571,11 +710,60 @@ export interface ProductionConflictErrorEnvelope {
   error: ProductionConflictErrorBody;
 }
 
-/** ProductionShortagePossibility(kind: "Literal['retry', 'force']", label: 'str', enabled: 'bool') */
+/** ProductionStaleProjectionErrorBody(code: "Literal['stale_projection']", age_seconds: 'int | None', sent_rev: 'int | None', current_rev: 'int | None', current: 'ProductionMutationCurrent | None', recovery: 'ProductionConflictRecovery') */
+export interface ProductionStaleProjectionErrorBody {
+  code: "stale_projection";
+  age_seconds: number | null;
+  sent_rev: number | null;
+  current_rev: number | null;
+  current: ProductionMutationCurrent | null;
+  recovery: ProductionConflictRecovery;
+}
+
+/** ProductionStaleProjectionErrorEnvelope(detail: 'str', error: 'ProductionStaleProjectionErrorBody') */
+export interface ProductionStaleProjectionErrorEnvelope {
+  detail: string;
+  error: ProductionStaleProjectionErrorBody;
+}
+
+/** ProductionForbiddenRecovery(action: "Literal['request_access']", label: 'str') */
+export interface ProductionForbiddenRecovery {
+  action: "request_access";
+  label: string;
+}
+
+/** ProductionForbiddenErrorBody(code: "Literal['forbidden']", capability: 'str', recovery: 'ProductionForbiddenRecovery') */
+export interface ProductionForbiddenErrorBody {
+  code: "forbidden";
+  capability: string;
+  recovery: ProductionForbiddenRecovery;
+}
+
+/** ProductionForbiddenErrorEnvelope(detail: 'str', error: 'ProductionForbiddenErrorBody') */
+export interface ProductionForbiddenErrorEnvelope {
+  detail: string;
+  error: ProductionForbiddenErrorBody;
+}
+
+/** ProductionNotFoundErrorBody(code: "Literal['not_found']", resource: 'str', identifier: 'str') */
+export interface ProductionNotFoundErrorBody {
+  code: "not_found";
+  resource: string;
+  identifier: string;
+}
+
+/** ProductionNotFoundErrorEnvelope(detail: 'str', error: 'ProductionNotFoundErrorBody') */
+export interface ProductionNotFoundErrorEnvelope {
+  detail: string;
+  error: ProductionNotFoundErrorBody;
+}
+
+/** ProductionShortagePossibility(kind: "Literal['retry', 'force']", label: 'str', enabled: 'bool', proof: 'str') */
 export interface ProductionShortagePossibility {
   kind: "retry" | "force";
   label: string;
   enabled: boolean;
+  proof: string;
 }
 
 /** ProductionMaterialShortageItem(sku: 'str', needed: 'str', available: 'str', shortage: 'str') */
@@ -627,10 +815,18 @@ export interface ProductionPartitionGroupRequest {
 
 export interface ProductionPlanMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  override_proof?: string;
   recipe_id: number;
+  work_order_id?: number | null;
   quantity: string;
   target_date: string;
-  position_ref?: string;
+  position_ref: string;
   operator_ref?: string;
   reason?: string;
   source?: "manual" | "suggested";
@@ -640,6 +836,12 @@ export interface ProductionPlanMutationRequest {
 
 export interface ProductionStartMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
   quantity: string;
   position_id?: string;
@@ -649,21 +851,43 @@ export interface ProductionStartMutationRequest {
 
 export interface ProductionFinishMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
+  override_proof?: string;
   quantity: string;
   force?: boolean;
   reason?: string;
+  yield_deviation_confirmed?: boolean;
+  yield_deviation_reason?: string;
   quality?: string;
   partition?: ProductionPartitionGroupRequest[];
 }
 
 export interface ProductionAdvanceStepMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
 }
 
 export interface ProductionQuickFinishMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  override_proof?: string;
   recipe_id: number;
   quantity: string;
   position_id?: string;
@@ -674,12 +898,24 @@ export interface ProductionQuickFinishMutationRequest {
 
 export interface ProductionVoidMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
   reason: string;
 }
 
 export interface ProductionOvenArmMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
   planned_seconds: number;
   operator_ref?: string;
@@ -687,6 +923,23 @@ export interface ProductionOvenArmMutationRequest {
 
 export interface ProductionOvenConcludeMutationRequest {
   idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
+  expected_rev: number;
+}
+
+export interface AlertAckMutationRequest {
+  idempotency_key: string;
+  projection_generated_at: string;
+  source_revision: string;
+  fresh_until: string;
+  contract_version: number;
+  action_ref: string;
+  action_proof: string;
   expected_rev: number;
 }
 
@@ -729,4 +982,8 @@ export function armProductionOven(workOrderId: number, body: ProductionOvenArmMu
 
 export function concludeProductionOven(workOrderId: number, body: ProductionOvenConcludeMutationRequest): Promise<ProductionOvenConcludeMutationSuccess> {
   return postProductionMutation<ProductionOvenConcludeMutationSuccess>(`/api/v1/backstage/production/${workOrderId}/oven/conclude/`, body);
+}
+
+export function acknowledgeOperatorAlert(alertId: number, body: AlertAckMutationRequest): Promise<AlertAckMutationSuccess> {
+  return postProductionMutation<AlertAckMutationSuccess>(`/api/v1/backstage/alerts/${alertId}/ack/`, body);
 }

@@ -223,7 +223,8 @@ def test_invalid_report_kind_is_rejected(client, report_data):
         },
     )
     assert response.status_code == 400
-    assert response.json()["field"] == "report_kind"
+    assert response.json()["error"]["code"] == "validation_error"
+    assert {issue["field"] for issue in response.json()["error"]["issues"]} == {"report_kind"}
 
 
 @pytest.mark.django_db
@@ -240,4 +241,8 @@ def test_invalid_dates_are_rejected(client, report_data):
         },
     )
     assert response.status_code == 400
-    assert set(response.json()["errors"]) == {"date_from", "date_to"}
+    assert response.json()["error"]["code"] == "validation_error"
+    assert {issue["field"] for issue in response.json()["error"]["issues"]} == {
+        "date_from",
+        "date_to",
+    }

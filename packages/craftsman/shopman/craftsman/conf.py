@@ -71,6 +71,10 @@ DEFAULTS = {
     # (d·√(N/12)). Três desvios cobrem a cauda; o colchão encolhe em proporção
     # quando a fornada cresce, porque √N cresce mais devagar que N.
     "YIELD_MARGIN_SIGMAS": Decimal("3"),
+    # Optional host adapter for production mutations that need orchestration
+    # beyond the Craftsman aggregate (orders, stock and oven facts). Kernel
+    # code resolves this dotted path at runtime and never imports a host layer.
+    "PRODUCTION_COMMAND_BACKEND": None,
 }
 
 

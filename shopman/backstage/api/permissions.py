@@ -45,6 +45,24 @@ _MSG_FORBIDDEN = "Acesso restrito a operadores."
 _MSG_SEM_PERMISSAO = "Operador sem permissão para esta ação."
 
 
+def deny_production_capability(capability: str) -> None:
+    """Return the typed denial contract consumed by every production client."""
+    raise PermissionDenied(
+        {
+            "detail": "Operador sem capacidade para esta ação de produção.",
+            "error": {
+                "code": "forbidden",
+                "capability": capability,
+                "recovery": {
+                    "action": "request_access",
+                    "label": "Solicitar acesso a um gestor",
+                },
+            },
+        },
+        code="forbidden",
+    )
+
+
 def _recusa_travada():
     """Levanta a recusa da estação travada — com código, e sem passar pelo DRF.
 
@@ -186,10 +204,10 @@ class HasProductionCapability(BasePermission):
             trusted_station_ref=station_ref(request),
         )
         request.production_access = access
-        capability = str(
-            getattr(view, "required_production_capability", "can_access_board")
-        )
-        return bool(getattr(access, capability, False))
+        capability = str(getattr(view, "required_production_capability", "can_access_board"))
+        if not getattr(access, capability, False):
+            deny_production_capability(capability)
+        return True
 
 
 class IsTrustedStation(BasePermission):

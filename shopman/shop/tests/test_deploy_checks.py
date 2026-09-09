@@ -58,8 +58,8 @@ def test_webhook_tokens_efi_blocks_ifood_warns():
     # EFI (pagamento real) → Error bloqueante; iFood-legado (fail-closed) → Warning.
     messages = checks.check_webhook_tokens(None)
     by_id = {m.id: type(m).__name__ for m in messages}
-    assert by_id.get("SHOPMAN_E004") == "Error"      # EFI bloqueia
-    assert by_id.get("SHOPMAN_W008") == "Warning"    # iFood só avisa
+    assert by_id.get("SHOPMAN_E004") == "Error"  # EFI bloqueia
+    assert by_id.get("SHOPMAN_W008") == "Warning"  # iFood só avisa
     from django.core.checks import Error as CheckError
 
     assert not any(m.id == "SHOPMAN_W008" and isinstance(m, CheckError) for m in messages)
@@ -87,15 +87,18 @@ def test_courier_check_silent_when_adapter_disabled():
 def test_courier_machine_without_credentials_blocks_and_warns_webhook():
     messages = checks.check_courier_credentials(None)
     by_id = {m.id: type(m).__name__ for m in messages}
-    assert by_id.get("SHOPMAN_E011") == "Error"      # sem credenciais bloqueia
-    assert by_id.get("SHOPMAN_W010") == "Warning"    # sem webhook_token só avisa
+    assert by_id.get("SHOPMAN_E011") == "Error"  # sem credenciais bloqueia
+    assert by_id.get("SHOPMAN_W010") == "Warning"  # sem webhook_token só avisa
 
 
 @override_settings(
     DEBUG=False,
     SHOPMAN_COURIER_ADAPTER="shopman.shop.adapters.courier_machine",
     SHOPMAN_MACHINE={
-        "username": "u", "password": "p", "api_key": "k", "webhook_token": "tok",
+        "username": "u",
+        "password": "p",
+        "api_key": "k",
+        "webhook_token": "tok",
     },
 )
 def test_courier_machine_fully_configured_no_messages():
@@ -371,9 +374,7 @@ def test_release_readiness_runs_django_deploy_checks():
 def selling_channel(db):
     from shopman.shop.models import Channel
 
-    return Channel.objects.create(
-        ref="pdv", name="PDV", commerce_policy=Channel.CommercePolicy.ORDER
-    )
+    return Channel.objects.create(ref="pdv", name="PDV", commerce_policy=Channel.CommercePolicy.ORDER)
 
 
 @override_settings(DEBUG=False, SHOPMAN_FISCAL_ADAPTER=None, SHOPMAN_FISCAL_EMISSION_RESOLVER="")
@@ -402,9 +403,7 @@ def test_fiscal_adapter_with_selling_channel_requires_a_resolver(selling_channel
 def test_fiscal_resolver_check_silent_without_active_selling_channel(db):
     from shopman.shop.models import Channel
 
-    Channel.objects.create(
-        ref="menuboard", name="Menu", commerce_policy=Channel.CommercePolicy.DISPLAY
-    )
+    Channel.objects.create(ref="menuboard", name="Menu", commerce_policy=Channel.CommercePolicy.DISPLAY)
     assert checks.check_fiscal_emission_resolver(None) == []
 
 
@@ -433,8 +432,7 @@ def test_fiscal_resolver_configured_is_clean(selling_channel):
     DEBUG=False,
     SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend",
     SHOPMAN_FISCAL_EMISSION_RESOLVER=(
-        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
-        "shopman.shop.fiscal_resolvers.card_payment"
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.card_payment"
     ),
 )
 def test_fiscal_resolver_accepts_the_comma_separated_or_list(selling_channel):
@@ -469,9 +467,7 @@ def test_store_offering_nfce_without_fiscal_adapter_warns(store_offering_nfce):
     assert isinstance(messages[0], CheckWarning)
 
 
-@override_settings(
-    SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend"
-)
+@override_settings(SHOPMAN_FISCAL_ADAPTER="shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend")
 def test_store_offering_nfce_with_adapter_is_clean(store_offering_nfce):
     assert checks.check_fiscal_adapter(None) == []
 
@@ -492,3 +488,65 @@ def test_channel_config_fiscal_enabled_is_not_the_predicate_anymore(db):
     Channel.objects.create(ref="pdv", name="PDV", config={"fiscal": {"enabled": True}})
 
     assert checks.check_fiscal_adapter(None) == []
+
+
+# ── produção: catálogo QC e configuração resolvida são gates de release ─────
+
+
+def test_production_release_checks_accept_seeded_catalog_and_defaults(db):
+    assert checks.check_production_quality_catalog(None) == []
+    assert checks.check_production_configuration(None) == []
+
+
+def test_production_quality_check_requires_exactly_one_active_default(db):
+    from shopman.shop.models import QualityGrade
+
+    QualityGrade.objects.filter(is_default=True).update(is_default=False)
+
+    messages = checks.check_production_quality_catalog(None)
+
+    assert "SHOPMAN_E016" in {message.id for message in messages}
+
+
+def test_production_quality_check_requires_active_full_price_grade(db):
+    from shopman.shop.models import QualityGrade
+
+    QualityGrade.objects.filter(markdown_percent=0).update(is_active=False)
+
+    messages = checks.check_production_quality_catalog(None)
+
+    assert "SHOPMAN_E017" in {message.id for message in messages}
+
+
+def test_production_quality_check_rejects_inactive_discard_veto(db):
+    from shopman.shop.models import QualityDefect
+
+    QualityDefect.objects.filter(forces_discard=True).update(is_active=False)
+
+    messages = checks.check_production_quality_catalog(None)
+
+    assert "SHOPMAN_E018" in {message.id for message in messages}
+
+
+def test_production_quality_check_rejects_blank_active_ref(db):
+    from shopman.shop.models import QualityDefect
+
+    QualityDefect.objects.create(ref="", label="Sem código", is_active=True)
+
+    messages = checks.check_production_quality_catalog(None)
+
+    assert "SHOPMAN_E018" in {message.id for message in messages}
+
+
+def test_production_configuration_check_blocks_invalid_resolved_config(db):
+    from shopman.shop.models import Shop
+
+    Shop.objects.create(
+        name="Nelson",
+        defaults={"production": {"alerts": {"low_yield_threshold": "1.5"}}},
+    )
+
+    messages = checks.check_production_configuration(None)
+
+    assert [message.id for message in messages] == ["SHOPMAN_E019"]
+    assert "low_yield_threshold" in messages[0].msg

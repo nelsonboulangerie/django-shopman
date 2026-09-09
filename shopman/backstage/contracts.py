@@ -141,15 +141,10 @@ def render_serializer_interfaces(
         if isinstance(field, drf.ListSerializer):
             child_name = names.get(type(field.child))
             if child_name is None:
-                raise TypeError(
-                    f"Nested serializer {type(field.child).__name__} is not exported"
-                )
+                raise TypeError(f"Nested serializer {type(field.child).__name__} is not exported")
             rendered = f"{child_name}[]"
         elif isinstance(field, drf.ChoiceField):
-            rendered = " | ".join(
-                json.dumps(str(value), ensure_ascii=False)
-                for value in field.choices
-            )
+            rendered = " | ".join(json.dumps(str(value), ensure_ascii=False) for value in field.choices)
         elif isinstance(field, drf.DecimalField):
             # JSON transports exact quantities as decimal strings.
             rendered = "string"
@@ -160,9 +155,7 @@ def render_serializer_interfaces(
         elif isinstance(field, (drf.DateField, drf.DateTimeField, drf.CharField)):
             rendered = "string"
         else:
-            raise TypeError(
-                f"Unsupported serializer field in production contract: {type(field).__name__}"
-            )
+            raise TypeError(f"Unsupported serializer field in production contract: {type(field).__name__}")
         if getattr(field, "allow_null", False):
             rendered += " | null"
         return rendered
@@ -194,9 +187,16 @@ def render_action_client(specs: tuple[object, ...]) -> str:
     ]
     for spec in specs:
         response_name = spec.response.__name__
-        if spec.work_order_path:
-            signature = f"workOrderId: number, body: {spec.request_name}"
-            href = "`" + spec.href.replace("{workOrderId}", "${workOrderId}") + "`"
+        if spec.path_parameter:
+            signature = f"{spec.path_parameter}: number, body: {spec.request_name}"
+            href = (
+                "`"
+                + spec.href.replace(
+                    "{" + spec.path_parameter + "}",
+                    "${" + spec.path_parameter + "}",
+                )
+                + "`"
+            )
         else:
             signature = f"body: {spec.request_name}"
             href = json.dumps(spec.href)
@@ -222,9 +222,7 @@ def run_contract_export(command, *, relative_path: Path, rendered: str, check: b
     if check:
         if current != rendered:
             command.stderr.write(
-                command.style.ERROR(
-                    f"{relative_path} is stale. Run: python manage.py {command_name(command)}"
-                )
+                command.style.ERROR(f"{relative_path} is stale. Run: python manage.py {command_name(command)}")
             )
             raise SystemExit(1)
         command.stdout.write(command.style.SUCCESS(f"{relative_path} is up to date."))

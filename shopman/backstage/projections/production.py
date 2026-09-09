@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
 from django.conf import settings
 from django.utils import timezone
@@ -47,8 +48,69 @@ WO_STATUS_TONES: dict[str, str] = {
     "void": "danger",
 }
 
+PRODUCTION_CONTRACT_VERSION = 1
+
 
 # ── Projections ────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ProductionActionIdempotencyProjection:
+    """How the client must identify retries of one projected mutation."""
+
+    required: bool
+    key_scope: str
+
+
+@dataclass(frozen=True)
+class ProductionActionConfirmationProjection:
+    """Confirmation UX required before dispatching a projected mutation."""
+
+    required: bool
+    reason_required: bool
+    title: str
+    confirm_label: str
+
+
+@dataclass(frozen=True)
+class ProductionActionApprovalRequirementProjection:
+    """An additional authority requirement; D1 may extend this contract."""
+
+    capability: str
+    approver_must_differ: bool
+    reason_required: bool
+
+
+@dataclass(frozen=True)
+class ProductionActionProjection:
+    """A server-owned action offered by an operational projection."""
+
+    ref: str
+    kind: Literal[
+        "plan",
+        "start",
+        "advance_step",
+        "finish",
+        "quick_finish",
+        "void",
+        "oven_arm",
+        "oven_conclude",
+        "acknowledge_alert",
+    ]
+    label: str
+    priority: int
+    enabled: bool
+    reason: str
+    method: Literal["POST"]
+    href: str
+    payload_schema: str
+    expected_rev: int | None
+    idempotency: ProductionActionIdempotencyProjection
+    confirmation: ProductionActionConfirmationProjection
+    approval_requirement: ProductionActionApprovalRequirementProjection | None
+    source_alert_ref: str | None
+    source_alert_effect: Literal["keeps_open", "acknowledges", "resolves"] | None
+    proof: str
 
 
 @dataclass(frozen=True)
@@ -219,6 +281,22 @@ class ProductionWeighingIngredientProjection:
 
 
 @dataclass(frozen=True)
+class ProductionWeighingTableRowProjection:
+    """Closed printable row contract for one weighing ingredient."""
+
+    cols: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProductionWeighingTableProjection:
+    """Versioned table contract shared with the thermal renderer."""
+
+    contract_version: int
+    headers: tuple[str, ...]
+    rows: tuple[ProductionWeighingTableRowProjection, ...]
+
+
+@dataclass(frozen=True)
 class ProductionWeighingTicketProjection:
     """A printable 80mm-oriented ticket for one recipe/base recipe."""
 
@@ -232,7 +310,7 @@ class ProductionWeighingTicketProjection:
     # do subtítulo pede; "" quando o rendimento já é em massa (evita eco).
     sources_display: str
     ingredients: tuple[ProductionWeighingIngredientProjection, ...]
-    table: dict
+    table: ProductionWeighingTableProjection
     blind_code: str
     # Código cego do dia: etiquetas de pesagem circulam só com ele — o
     # colaborador pesa sem saber a receita. Mapa = visão de gestor.
@@ -250,6 +328,11 @@ class ProductionWeighingProjection:
     selected_base_recipe: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -269,6 +352,11 @@ class ProductionBlindMapProjection:
     selected_date_display: str
     rows: tuple[ProductionBlindMapRowProjection, ...]
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -324,6 +412,11 @@ class ProductionMiseEnPlaceProjection:
     # motivo por linha não tem mais onde morar.
     yield_margin_note: str
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -407,6 +500,294 @@ class ProductionSurfaceAccess:
         return self.can_view_planned or self.can_view_started
 
 
+def _production_action(
+    *,
+    ref: str,
+    kind,
+    label: str,
+    priority: int,
+    enabled: bool,
+    reason: str,
+    href: str,
+    payload_schema: str,
+    expected_rev: int | None,
+    confirmation_title: str = "",
+    confirmation_label: str = "Confirmar",
+    confirmation_reason_required: bool = False,
+) -> ProductionActionProjection:
+    return ProductionActionProjection(
+        ref=ref,
+        kind=kind,
+        label=label,
+        priority=priority,
+        enabled=enabled,
+        reason="" if enabled else reason,
+        method="POST",
+        href=href,
+        payload_schema=payload_schema,
+        expected_rev=expected_rev,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=True,
+            key_scope=f"production.{ref}",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=bool(confirmation_title),
+            reason_required=confirmation_reason_required,
+            title=confirmation_title,
+            confirm_label=confirmation_label,
+        ),
+        # The normal action is authorized by its matching capability. A
+        # shortage override is offered later by the typed 409 envelope; D1
+        # still owns any additional/different-approver policy.
+        approval_requirement=None,
+        source_alert_ref=None,
+        source_alert_effect=None,
+        # Filled only for enabled actions while the containing projection is
+        # serialized, when source revision, operator and freshness are known.
+        proof="",
+    )
+
+
+def _board_actions(
+    rows: tuple[ProductionMatrixRowProjection, ...],
+    *,
+    selected_date: date,
+    position_ref: str,
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for row in rows:
+        if row.recipe_pk is not None and not row.planned_orders:
+            target = f"{row.recipe_pk}:{selected_date.isoformat()}:{position_ref}"
+            actions.append(
+                _production_action(
+                    ref=f"plan:{target}",
+                    kind="plan",
+                    label="Planejar lote",
+                    priority=40,
+                    enabled=access.can_edit_planned and bool(position_ref),
+                    reason=(
+                        "Nenhuma posição padrão está configurada."
+                        if not position_ref
+                        else "Sem capacidade para alterar o planejamento manual."
+                    ),
+                    href="/api/v1/backstage/production/plan/",
+                    payload_schema="ProductionPlanMutationRequest",
+                    expected_rev=None,
+                    confirmation_title="Confirmar quantidade planejada",
+                    confirmation_label="Planejar",
+                )
+            )
+            if row.suggestion is not None:
+                actions.append(
+                    _production_action(
+                        ref=f"plan_suggested:{target}:{row.suggestion.quantity}",
+                        kind="plan",
+                        label="Aplicar sugestão",
+                        priority=30,
+                        enabled=access.can_edit_suggested and bool(position_ref),
+                        reason=(
+                            "Nenhuma posição padrão está configurada."
+                            if not position_ref
+                            else "Sem capacidade para aplicar sugestões."
+                        ),
+                        href="/api/v1/backstage/production/plan/",
+                        payload_schema="ProductionPlanMutationRequest",
+                        expected_rev=None,
+                        confirmation_title="Aplicar sugestão de planejamento",
+                        confirmation_label="Aplicar",
+                    )
+                )
+        for order in row.planned_orders:
+            actions.append(
+                _production_action(
+                    ref=f"plan:{order.pk}",
+                    kind="plan",
+                    label="Ajustar planejado",
+                    priority=40,
+                    enabled=access.can_edit_planned,
+                    reason="Sem capacidade para alterar o planejamento manual.",
+                    href="/api/v1/backstage/production/plan/",
+                    payload_schema="ProductionPlanMutationRequest",
+                    expected_rev=order.rev,
+                    confirmation_title="Confirmar ajuste do lote",
+                    confirmation_label="Ajustar",
+                )
+            )
+            if row.suggestion is not None:
+                actions.append(
+                    _production_action(
+                        ref=f"plan_suggested:{order.pk}:{row.suggestion.quantity}",
+                        kind="plan",
+                        label="Aplicar sugestão",
+                        priority=30,
+                        enabled=access.can_edit_suggested,
+                        reason="Sem capacidade para aplicar sugestões.",
+                        href="/api/v1/backstage/production/plan/",
+                        payload_schema="ProductionPlanMutationRequest",
+                        expected_rev=order.rev,
+                        confirmation_title="Aplicar sugestão de planejamento",
+                        confirmation_label="Aplicar",
+                    )
+                )
+            actions.append(
+                _production_action(
+                    ref=f"start:{order.pk}",
+                    kind="start",
+                    label="Iniciar fornada",
+                    priority=20,
+                    enabled=access.can_start,
+                    reason="Sem capacidade para iniciar fornadas.",
+                    href=f"/api/v1/backstage/production/{order.pk}/start/",
+                    payload_schema="ProductionStartMutationRequest",
+                    expected_rev=order.rev,
+                )
+            )
+        for order in (*row.planned_orders, *row.started_orders):
+            actions.append(
+                _production_action(
+                    ref=f"void:{order.pk}",
+                    kind="void",
+                    label="Estornar fornada",
+                    priority=90,
+                    enabled=access.can_void,
+                    reason="Sem capacidade para estornar fornadas.",
+                    href=f"/api/v1/backstage/production/{order.pk}/void/",
+                    payload_schema="ProductionVoidMutationRequest",
+                    expected_rev=order.rev,
+                    confirmation_title="Estornar esta fornada?",
+                    confirmation_label="Confirmar estorno",
+                    confirmation_reason_required=True,
+                )
+            )
+    return tuple(actions)
+
+
+def _kds_actions(
+    cards: tuple[ProductionKDSCardProjection, ...],
+    *,
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for card in cards:
+        can_advance = card.can_advance_step
+        actions.extend(
+            (
+                _production_action(
+                    ref=f"advance_step:{card.pk}",
+                    kind="advance_step",
+                    label="Avançar etapa",
+                    priority=10,
+                    enabled=access.can_advance_step and can_advance,
+                    reason=(
+                        "A receita não possui etapas configuradas."
+                        if card.total_steps <= 0
+                        else (
+                            "Todos os passos desta fornada já foram concluídos."
+                            if not can_advance
+                            else "Sem capacidade para avançar etapas."
+                        )
+                    ),
+                    href=f"/api/v1/backstage/production/{card.pk}/advance-step/",
+                    payload_schema="ProductionAdvanceStepMutationRequest",
+                    expected_rev=card.rev,
+                ),
+                _production_action(
+                    ref=f"void:{card.pk}",
+                    kind="void",
+                    label="Estornar fornada",
+                    priority=90,
+                    enabled=access.can_void,
+                    reason="Sem capacidade para estornar fornadas.",
+                    href=f"/api/v1/backstage/production/{card.pk}/void/",
+                    payload_schema="ProductionVoidMutationRequest",
+                    expected_rev=card.rev,
+                    confirmation_title="Estornar esta fornada?",
+                    confirmation_label="Confirmar estorno",
+                    confirmation_reason_required=True,
+                ),
+            )
+        )
+    return tuple(actions)
+
+
+def _qc_actions(
+    cards: tuple[QCOrderCardProjection, ...],
+    recipes: tuple[RecipeOptionProjection, ...],
+    *,
+    selected_date: date,
+    open_oven_refs: set[str],
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for card in cards:
+        if card.closed:
+            continue
+        actions.append(
+            _production_action(
+                ref=f"finish:{card.pk}",
+                kind="finish",
+                label="Finalizar fornada",
+                priority=10,
+                enabled=card.can_close,
+                reason=(
+                    "Inicie a fornada antes do QC."
+                    if card.status == WorkOrder.Status.PLANNED and not access.can_start
+                    else "Sem capacidade para concluir o QC."
+                ),
+                href=f"/api/v1/backstage/production/{card.pk}/finish/",
+                payload_schema="ProductionFinishMutationRequest",
+                expected_rev=card.rev,
+                confirmation_title="Confirmar resultado da fornada",
+                confirmation_label="Finalizar",
+            )
+        )
+        if card.status == WorkOrder.Status.STARTED:
+            has_open_oven = card.ref in open_oven_refs
+            kind = "oven_conclude" if has_open_oven else "oven_arm"
+            actions.append(
+                _production_action(
+                    ref=f"{kind}:{card.pk}",
+                    kind=kind,
+                    label="Retirou do forno" if has_open_oven else "Enfornar",
+                    priority=20,
+                    enabled=access.can_record_oven_fact,
+                    reason="Sem capacidade para registrar fatos do forno.",
+                    href=(
+                        f"/api/v1/backstage/production/{card.pk}/oven/conclude/"
+                        if has_open_oven
+                        else f"/api/v1/backstage/production/{card.pk}/oven/arm/"
+                    ),
+                    payload_schema=(
+                        "ProductionOvenConcludeMutationRequest" if has_open_oven else "ProductionOvenArmMutationRequest"
+                    ),
+                    expected_rev=card.rev,
+                )
+            )
+    quick_enabled = access.can_quick_finish and selected_date == timezone.localdate()
+    for recipe in recipes:
+        actions.append(
+            _production_action(
+                ref=f"quick_finish:{recipe.pk}",
+                kind="quick_finish",
+                label="Finalizar fornada avulsa",
+                priority=30,
+                enabled=quick_enabled,
+                reason=(
+                    "Fornada avulsa só pode ser registrada no dia atual."
+                    if selected_date != timezone.localdate()
+                    else "Sem capacidade para conclusão rápida."
+                ),
+                href="/api/v1/backstage/production/quick-finish/",
+                payload_schema="ProductionQuickFinishMutationRequest",
+                expected_rev=None,
+                confirmation_title="Confirmar fornada avulsa",
+                confirmation_label="Finalizar",
+            )
+        )
+    return tuple(actions)
+
+
 @dataclass(frozen=True)
 class ProductionBoardProjection:
     """Top-level read model for the production board."""
@@ -429,6 +810,11 @@ class ProductionBoardProjection:
     matrix_groups: tuple[ProductionMatrixGroupProjection, ...]
     default_position_pk: int | None
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -462,6 +848,11 @@ class ProductionDashboardProjection:
     capacity_percent: int | None
     late_orders: tuple[ProductionLateWorkOrderProjection, ...]
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -489,6 +880,7 @@ class ProductionKDSCardProjection:
     step_progress_pct: int
     next_step_name: str
     time_remaining_min: int | None
+    can_advance_step: bool
     can_finish: bool
     order_refs: tuple[str, ...]
     # Pedidos que aguardam este lote (production_order_sync) — o estorno avisa.
@@ -504,6 +896,11 @@ class ProductionKDSProjection:
     total_count: int
     late_count: int
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -581,6 +978,11 @@ class QCKioskProjection:
     previous_open_count: int
     previous_open_date: str
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -670,6 +1072,11 @@ class ProductionReportsProjection:
     available_recipes: tuple[RecipeOptionProjection, ...]
     available_positions: tuple[PositionOptionProjection, ...]
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -768,6 +1175,12 @@ def build_production_board(
         matrix_groups=matrix_groups,
         default_position_pk=default_pos.pk if default_pos else None,
         access=access,
+        actions=_board_actions(
+            matrix_rows,
+            selected_date=selected_date,
+            position_ref=position_ref or (default_pos.ref if default_pos else ""),
+            access=access,
+        ),
     )
 
 
@@ -1345,6 +1758,7 @@ def build_production_kds(
         total_count=len(cards),
         late_count=sum(1 for card in cards if card.timer_status_code == "late"),
         access=access,
+        actions=_kds_actions(cards, access=access),
     )
 
 
@@ -1423,7 +1837,13 @@ def build_qc_kiosk(
             started_qty=_qty(started_qty) if started_qty is not None else "",
             started_at_display=(timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""),
             elapsed_minutes=elapsed,
-            can_close=(access.can_close_qc and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
+            can_close=(
+                access.can_close_qc
+                and (
+                    wo.status == WorkOrder.Status.STARTED
+                    or (wo.status == WorkOrder.Status.PLANNED and access.can_start)
+                )
+            ),
             closed=closed,
             committed_qty="" if closed else _qty(_committed_units(wo)),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
@@ -1452,6 +1872,20 @@ def build_qc_kiosk(
     )
     previous_dates = list(previous_open)
 
+    recipes = tuple(
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
+    )
+    from shopman.backstage.models import OvenRun
+
+    started_refs = [card.ref for card in cards if card.status == WorkOrder.Status.STARTED]
+    open_oven_refs = set(
+        OvenRun.objects.filter(
+            work_order_ref__in=started_refs,
+            status="open",
+        ).values_list("work_order_ref", flat=True)
+    )
+
     return QCKioskProjection(
         selected_date=selected_date.isoformat(),
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
@@ -1460,13 +1894,17 @@ def build_qc_kiosk(
         total_count=len(cards),
         grades=grades,
         defects=defects,
-        recipes=tuple(
-            RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-            for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
-        ),
+        recipes=recipes,
         previous_open_count=len(previous_dates),
         previous_open_date=previous_dates[0].isoformat() if previous_dates else "",
         access=access,
+        actions=_qc_actions(
+            cards,
+            recipes,
+            selected_date=selected_date,
+            open_oven_refs=open_oven_refs,
+            access=access,
+        ),
     )
 
 
@@ -1736,6 +2174,7 @@ def _build_production_kds_card(
 
     step_state = _production_step_state(wo, elapsed)
     current_step = step_state["current_step_name"] or "Produção"
+    manual_step_index = _manual_step_index(wo.meta, total=step_state["total_steps"])
 
     return ProductionKDSCardProjection(
         pk=wo.pk,
@@ -1759,6 +2198,7 @@ def _build_production_kds_card(
         step_progress_pct=step_state["step_progress_pct"],
         next_step_name=step_state["next_step_name"],
         time_remaining_min=step_state["time_remaining_min"],
+        can_advance_step=(step_state["total_steps"] > 0 and (manual_step_index or 0) < step_state["total_steps"]),
         can_finish=access.can_close_qc,
         order_refs=_linked_order_refs(wo),
     )
@@ -1833,7 +2273,7 @@ def _work_order_progress_pct(wo: WorkOrder) -> int:
 
 
 def _production_step_state(wo: WorkOrder, elapsed_seconds: int) -> dict[str, int | str | None]:
-    steps = _recipe_steps(wo.recipe)
+    steps = _recipe_steps(wo)
     if not steps:
         return {
             "current_step_index": None,
@@ -1879,8 +2319,14 @@ def _production_step_state(wo: WorkOrder, elapsed_seconds: int) -> dict[str, int
     }
 
 
-def _recipe_steps(recipe: Recipe) -> list[dict[str, int | str]]:
-    raw_steps = (recipe.meta or {}).get("steps") or recipe.steps or []
+def _recipe_steps(work_order: WorkOrder) -> list[dict[str, int | str]]:
+    recipe = work_order.recipe
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    production_snapshot = snapshot.get("production") or {}
+    if "steps" in production_snapshot:
+        raw_steps = production_snapshot["steps"]
+    else:
+        raw_steps = (recipe.meta or {}).get("steps") or recipe.steps or []
     result: list[dict[str, int | str]] = []
     for index, raw in enumerate(raw_steps, start=1):
         if isinstance(raw, dict):
@@ -2483,10 +2929,14 @@ def _build_weighing_ticket(
         # shelf_life_days absurdo (erro de digitação no Admin) não derruba a
         # pesagem inteira — cai na validade padrão de 1 dia.
         expiry = selected_date + timedelta(days=1)
-    table = {
-        "headers": ["Insumo", "Quantidade"],
-        "rows": [{"cols": [ingredient.name, ingredient.quantity_display]} for ingredient in ingredients],
-    }
+    table = ProductionWeighingTableProjection(
+        contract_version=PRODUCTION_CONTRACT_VERSION,
+        headers=("Insumo", "Quantidade"),
+        rows=tuple(
+            ProductionWeighingTableRowProjection(cols=(ingredient.name, ingredient.quantity_display))
+            for ingredient in ingredients
+        ),
+    )
     return ProductionWeighingTicketProjection(
         recipe_ref=recipe.ref,
         output_sku=recipe.output_sku,
@@ -2949,6 +3399,11 @@ class ProductionForecastProjection:
     generated_at_display: str
     rows: tuple[ForecastRowProjection, ...]
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 def _median_int(values: list[int]) -> int | None:

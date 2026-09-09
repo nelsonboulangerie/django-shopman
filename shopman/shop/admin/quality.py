@@ -15,10 +15,26 @@ from shopman.shop.models import QualityDefect, QualityGrade
 
 @admin.register(QualityGrade)
 class QualityGradeAdmin(ModelAdmin):
+    compressed_fields = True
+    warn_unsaved_form = True
     list_display = ("label", "ref", "rank", "markdown_display", "is_default", "is_active")
     list_editable = ("is_active",)
+    list_filter = ("is_active", "is_default")
+    search_fields = ("ref", "label")
     ordering = ("-rank",)
-    fields = ("ref", "label", "rank", "markdown_percent", "is_default", "is_active")
+    fieldsets = (
+        ("Identificação", {"fields": ("ref", "label", "is_active")}),
+        (
+            "Política comercial",
+            {
+                "fields": (("rank", "markdown_percent"), "is_default"),
+                "description": (
+                    "O grau define sozinho o desconto. Exatamente um grau ativo deve ser o padrão, "
+                    "e ao menos um grau ativo precisa representar preço cheio."
+                ),
+            },
+        ),
+    )
 
     def get_readonly_fields(self, request, obj=None):
         # O código é fixo (o quiosque e o finish falam por ele); o rótulo edita.
@@ -37,10 +53,26 @@ class QualityGradeAdmin(ModelAdmin):
 
 @admin.register(QualityDefect)
 class QualityDefectAdmin(ModelAdmin):
+    compressed_fields = True
+    warn_unsaved_form = True
     list_display = ("label", "ref", "hint", "veto_display", "position", "is_active")
     list_editable = ("position", "is_active")
+    list_filter = ("is_active", "forces_discard")
+    search_fields = ("ref", "label", "hint")
     ordering = ("position",)
-    fields = ("ref", "label", "hint", "forces_discard", "position", "is_active")
+    fieldsets = (
+        ("Identificação", {"fields": ("ref", "label", "hint", "is_active")}),
+        (
+            "Política operacional",
+            {
+                "fields": (("forces_discard", "position"),),
+                "description": (
+                    "O defeito registra a causa. Somente risco de segurança alimentar deve "
+                    "obrigar descarte; o grau continua sendo o único eixo de preço."
+                ),
+            },
+        ),
+    )
 
     def get_readonly_fields(self, request, obj=None):
         return ("ref",) if obj else ()
@@ -48,3 +80,7 @@ class QualityDefectAdmin(ModelAdmin):
     @display(description="veto", label={"descarta": "danger", "vende com desconto": "success"})
     def veto_display(self, obj):
         return "descarta" if obj.forces_discard else "vende com desconto"
+
+    def has_delete_permission(self, request, obj=None):
+        # As refs permanecem em itens históricos; o catálogo usa inativação.
+        return False

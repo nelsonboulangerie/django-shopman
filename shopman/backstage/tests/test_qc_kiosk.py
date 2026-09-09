@@ -18,6 +18,7 @@ from shopman.stockman import Position
 
 from shopman.backstage.projections.production import build_qc_kiosk
 from shopman.backstage.services import production
+from shopman.backstage.tests.support import production_mutation_post
 
 
 @pytest.fixture
@@ -36,6 +37,10 @@ def floor_operator(db):
             content_type__app_label="backstage",
             codename="void_production",
         ),
+        Permission.objects.get(
+            content_type__app_label="shop",
+            codename="edit_production_started",
+        ),
     )
     return User.objects.get(pk=user.pk)
 
@@ -46,6 +51,7 @@ def recipe(db):
 
     Shop.objects.get_or_create(name="Loja QC")
     Position.objects.create(ref="forno", name="Forno", is_default=True)
+    Position.objects.create(ref="vitrine", name="Vitrine", is_saleable=True)
     return Recipe.objects.create(
         ref="qc-baguete",
         name="Baguete",
@@ -93,10 +99,13 @@ def test_kiosk_orders_open_first_closed_carry_partition(recipe, monkeypatch):
     craft.plan(recipe, 24, date=today, position_ref="forno", operator_ref="ana")
     closed = craft.plan(recipe, 40, date=today, position_ref="forno", operator_ref="bia")
     craft.start(closed, quantity=40, position_ref="forno", operator_ref="bia", expected_rev=0)
+    closed.refresh_from_db()
     production.apply_finish(
         work_order_id=closed.pk,
         quantity="40",
         actor="production:bia",
+        expected_rev=closed.rev,
+        idempotency_key="qc-kiosk-closed-partition",
         partition=[
             {"quantity": "32", "quality_grade_ref": "standard"},
             {"quantity": "5", "quality_grade_ref": "minimal", "quality_defect_ref": "overbaked"},
@@ -131,6 +140,13 @@ def test_kiosk_carries_the_real_oven_quantity(recipe):
     (card,) = kiosk.orders
     assert card.planned_qty == "10"
     assert card.started_qty == "11"
+    finish = next(action for action in kiosk.actions if action.ref == f"finish:{wo.pk}")
+    oven = next(action for action in kiosk.actions if action.ref == f"oven_arm:{wo.pk}")
+    assert finish.enabled is True
+    assert finish.expected_rev == card.rev
+    assert finish.payload_schema == "ProductionFinishMutationRequest"
+    assert oven.enabled is True
+    assert oven.href.endswith(f"/{wo.pk}/oven/arm/")
 
 
 @pytest.mark.django_db
@@ -161,10 +177,13 @@ def test_closed_card_partition_uses_the_frozen_lot_percent(recipe, monkeypatch):
 
     wo = craft.plan(recipe, 10, date=today, position_ref="forno")
     craft.start(wo, quantity=10, position_ref="forno", expected_rev=0)
+    wo.refresh_from_db()
     production.apply_finish(
         work_order_id=wo.pk,
         quantity="10",
         actor="production:op",
+        expected_rev=wo.rev,
+        idempotency_key="qc-kiosk-frozen-percent",
         partition=[
             {"quantity": "7", "quality_grade_ref": "standard"},
             {"quantity": "3", "quality_grade_ref": "fair", "quality_defect_ref": "misshapen"},
@@ -208,12 +227,17 @@ def test_repeating_the_same_finish_is_idempotent(client, floor_operator, recipe,
     client.force_login(floor_operator)
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     url = reverse("api-backstage-wo-finish", args=[wo.pk])
-    body = {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]}
+    body = {
+        "quantity": "10",
+        "partition": [{"quantity": "10", "quality_grade_ref": "standard"}],
+        "expected_rev": wo.rev,
+        "idempotency_key": "qc-finish-repeat",
+    }
 
-    first = client.post(url, body, content_type="application/json")
+    first = production_mutation_post(client, url, body, content_type="application/json")
     assert first.status_code == 200
 
-    second = client.post(url, body, content_type="application/json")
+    second = production_mutation_post(client, url, body, content_type="application/json")
     assert second.status_code == 200
     assert second.json()["wo_ref"] == first.json()["wo_ref"]
 
@@ -230,52 +254,81 @@ def test_finishing_the_same_batch_with_other_numbers_is_a_clean_conflict(client,
     client.force_login(floor_operator)
     wo = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     url = reverse("api-backstage-wo-finish", args=[wo.pk])
+    original_rev = wo.rev
 
-    first = client.post(
+    first = production_mutation_post(
+        client,
         url,
-        {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]},
+        {
+            "quantity": "10",
+            "partition": [{"quantity": "10", "quality_grade_ref": "standard"}],
+            "expected_rev": original_rev,
+            "idempotency_key": "qc-finish-first",
+        },
         content_type="application/json",
     )
     assert first.status_code == 200
 
-    second = client.post(
+    second = production_mutation_post(
+        client,
         url,
-        {"quantity": "8", "partition": [{"quantity": "8", "quality_grade_ref": "standard"}]},
+        {
+            "quantity": "8",
+            "partition": [{"quantity": "8", "quality_grade_ref": "standard"}],
+            "expected_rev": original_rev,
+            "idempotency_key": "qc-finish-disagrees",
+        },
         content_type="application/json",
     )
     assert second.status_code == 409
     payload = second.json()
     assert "fechada em outra tela" in payload["detail"]
-    assert payload["error"]["code"] == "state_conflict"
+    assert payload["error"]["code"] == "conflict"
 
 
 @pytest.mark.django_db
-def test_finish_after_void_and_void_after_finish_conflict(client, floor_operator, recipe, monkeypatch):
-    """Gestor estorna enquanto o forneiro fecha (e vice-versa): 409, com a
-    mensagem dizendo O QUE aconteceu com a fornada."""
+def test_finish_after_void_is_hidden_and_void_after_finish_conflicts(client, floor_operator, recipe, monkeypatch):
+    """Alvo estornado invisível dá 403; alvo concluído visível conflita em 409."""
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     client.force_login(floor_operator)
-    body = {"quantity": "10", "partition": [{"quantity": "10", "quality_grade_ref": "standard"}]}
-
     voided = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
     craft.void(voided, reason="teste")
-    response = client.post(
+    voided.refresh_from_db()
+    response = production_mutation_post(
+        client,
         reverse("api-backstage-wo-finish", args=[voided.pk]),
-        body,
+        {
+            "quantity": "10",
+            "partition": [{"quantity": "10", "quality_grade_ref": "standard"}],
+            "expected_rev": voided.rev,
+            "idempotency_key": "qc-finish-after-void",
+        },
         content_type="application/json",
     )
-    assert response.status_code == 409
-    assert "estornada" in response.json()["detail"]
+    assert response.status_code == 403
+    assert response.json()["error"]["capability"] == "can_manage_all"
 
     finished = craft.plan(recipe, 10, date=date.today(), position_ref="forno")
-    client.post(
+    production_mutation_post(
+        client,
         reverse("api-backstage-wo-finish", args=[finished.pk]),
-        body,
+        {
+            "quantity": "10",
+            "partition": [{"quantity": "10", "quality_grade_ref": "standard"}],
+            "expected_rev": finished.rev,
+            "idempotency_key": "qc-finish-before-void",
+        },
         content_type="application/json",
     )
-    response = client.post(
+    finished.refresh_from_db()
+    response = production_mutation_post(
+        client,
         reverse("api-backstage-wo-void", args=[finished.pk]),
-        {"reason": "corrida entre tablets"},
+        {
+            "reason": "corrida entre tablets",
+            "expected_rev": finished.rev,
+            "idempotency_key": "qc-void-after-finish",
+        },
         content_type="application/json",
     )
     assert response.status_code == 409
@@ -288,12 +341,14 @@ def test_quick_finish_accepts_partition(client, floor_operator, recipe, monkeypa
     monkeypatch.setattr(production, "check_finish_materials", lambda work_order: [])
     client.force_login(floor_operator)
 
-    response = client.post(
+    response = production_mutation_post(
+        client,
         reverse("api-backstage-wo-quick-finish"),
         {
             "recipe_id": recipe.pk,
             "quantity": "10",
             "position_id": Position.objects.get(ref="forno").pk,
+            "idempotency_key": "qc-quick-partition",
             "partition": [
                 {"quantity": "8", "quality_grade_ref": "excellent"},
                 {"quantity": "2", "quality_defect_ref": "misshapen", "loss": True},

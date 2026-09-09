@@ -207,7 +207,32 @@ class OperatorAlert(models.Model):
     )
     message = models.TextField("mensagem")
     order_ref = models.CharField("ref do pedido", max_length=50, blank=True)
+    rev = models.PositiveBigIntegerField("revisão", default=0)
     acknowledged = models.BooleanField("reconhecido", default=False)
+    acknowledged_at = models.DateTimeField(
+        "reconhecido em",
+        null=True,
+        blank=True,
+        help_text="Vazio em registros legados reconhecidos antes da trilha nominal.",
+    )
+    acknowledged_by = models.CharField(
+        "reconhecido por",
+        max_length=100,
+        blank=True,
+        help_text="Identidade operacional que reconheceu o alerta.",
+    )
+    resolved_at = models.DateTimeField(
+        "resolvido em",
+        null=True,
+        blank=True,
+        help_text="Momento em que o sistema confirmou que a causa deixou de existir.",
+    )
+    resolved_by = models.CharField(
+        "resolvido por",
+        max_length=100,
+        blank=True,
+        help_text="Processo ou identidade que confirmou a resolução da causa.",
+    )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
 
     class Meta:

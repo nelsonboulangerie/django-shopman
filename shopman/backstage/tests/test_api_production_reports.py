@@ -175,14 +175,16 @@ def test_reports_reject_inverted_or_oversized_ranges(client, manager, report_dat
         },
     )
     assert inverted.status_code == 400
-    assert inverted.json()["field"] == "date_to"
+    assert inverted.json()["error"]["code"] == "validation_error"
+    assert inverted.json()["error"]["issues"][0]["field"] == "date_to"
 
     oversized = client.get(
         url,
         {"date_from": "2026-01-01", "date_to": "2026-09-08"},
     )
     assert oversized.status_code == 400
-    assert oversized.json()["field"] == "date_to"
+    assert oversized.json()["error"]["code"] == "validation_error"
+    assert oversized.json()["error"]["issues"][0]["field"] == "date_to"
 
 
 @pytest.mark.django_db
@@ -193,7 +195,8 @@ def test_reports_reject_unknown_filter(client, manager, report_data):
         {"date_from": report_data["today"].isoformat(), "surprise": "1"},
     )
     assert response.status_code == 400
-    assert response.json()["field"] == "surprise"
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["issues"][0]["field"] == "surprise"
 
 
 @pytest.mark.django_db

@@ -11,6 +11,24 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class CanonicalProductionCommands:
+    """Host bridge for cross-aggregate production mutations.
+
+    Craftsman resolves this adapter by dotted setting, keeping the package
+    standalone while the installed application still has exactly one writer.
+    """
+
+    def plan(self, **kwargs):
+        from shopman.backstage.services.production import apply_planned
+
+        return apply_planned(**kwargs)
+
+    def void(self, work_order_id: int, **kwargs):
+        from shopman.backstage.services.production import apply_void
+
+        return apply_void(work_order_id, **kwargs)
+
+
 def get_work_order(ref: str) -> dict | None:
     """Retorna {"ref", "quantity", "output_sku", "finished", "recipe_name"} ou None."""
     try:
@@ -44,10 +62,7 @@ def get_prep_skus(skus: list[str]) -> set[str]:
     try:
         from shopman.craftsman.models import Recipe
 
-        return set(
-            Recipe.objects.filter(output_sku__in=skus, is_active=True)
-            .values_list("output_sku", flat=True)
-        )
+        return set(Recipe.objects.filter(output_sku__in=skus, is_active=True).values_list("output_sku", flat=True))
     except ImportError:
         return set()
 

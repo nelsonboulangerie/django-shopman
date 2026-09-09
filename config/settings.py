@@ -1015,6 +1015,9 @@ CRAFTSMAN = {
     # as variantes vivem no dispatch do orquestrador (ADR-007); o pacote só
     # renderiza o que o provider entrega (sem provider = sem campo).
     "PRODUCTION_LIFECYCLE_PROVIDER": "shopman.shop.production_lifecycle.production_lifecycle_choices",
+    # Cross-aggregate production writes use the host's canonical facade without
+    # making the standalone Craftsman package import a surface/orchestrator.
+    "PRODUCTION_COMMAND_BACKEND": "shopman.shop.adapters.production.CanonicalProductionCommands",
 }
 
 STOCKMAN = {
