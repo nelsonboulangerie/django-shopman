@@ -8,6 +8,8 @@
 // aparelho". Este é o caminho de quem tem senha — quem provisiona a estação, e o
 // aparelho pessoal do gestor. No balcão, quem pede identificação é o
 // <OperatorLock>, com PIN ou crachá.
+defineProps<{ expired?: boolean }>();
+
 const username = ref("");
 const password = ref("");
 const pending = ref(false);
@@ -20,10 +22,14 @@ async function submit() {
   try {
     await $fetch("/api/v1/backstage/operator/login/", {
       method: "POST",
+      credentials: "same-origin",
       body: { username: username.value.trim(), password: password.value },
     });
-    // A sessão é do lado do servidor; recarregar refaz o fetch já autenticado.
-    if (import.meta.client) window.location.reload();
+    // Primeiro reconcilia a sessão mantendo o gate fechado pelo sinal `expired`;
+    // só depois o libera. Assim a rota/draft sobrevivem sem um instante de mount
+    // protegido apoiado na identidade stale.
+    await refreshNuxtData("operator-session");
+    useOperatorSession().reset();
   } catch (err) {
     error.value = httpErrorMessage(err, "Não foi possível entrar. Confira usuário e senha.");
     pending.value = false;
@@ -32,17 +38,30 @@ async function submit() {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-[100] grid place-items-center bg-background/95 p-4 backdrop-blur-sm">
+  <div class="fixed inset-0 z-[100] grid place-items-center bg-background p-4">
     <form
       class="w-full max-w-sm rounded-xl border bg-card p-6 shadow-lg"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="operator-login-title"
+      aria-describedby="operator-login-description"
       @submit.prevent="submit"
     >
       <div class="mx-auto mb-3 grid size-12 place-items-center rounded-full border bg-muted">
         <Icon name="lucide:log-in" class="size-6 text-muted-foreground" />
       </div>
-      <h2 class="text-center text-lg font-bold">Entre para operar</h2>
-      <p class="mt-1 text-center text-sm text-muted-foreground">
-        Acesse com sua conta autorizada.
+      <h2 id="operator-login-title" class="text-center text-lg font-bold">
+        {{ expired ? "Sua sessão terminou" : "Entre para operar" }}
+      </h2>
+      <p
+        id="operator-login-description"
+        class="mt-1 text-center text-sm text-muted-foreground"
+      >
+        {{
+          expired
+            ? "Entre novamente. Seu rascunho e sua decisão ainda não enviada foram preservados."
+            : "Acesse com sua conta autorizada."
+        }}
       </p>
 
       <div class="mt-4 space-y-2.5">

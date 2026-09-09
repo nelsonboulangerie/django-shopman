@@ -12,7 +12,7 @@ import type { AnnouncementTemplate } from "~/types/campaign";
 export function useAnnouncementTemplates() {
   const { data, refresh, pending } = useFetch<{ templates: AnnouncementTemplate[] }>(
     "/api/v1/backstage/marketing/templates/",
-    { key: "marketing-templates" },
+    { key: "marketing-templates", onResponseError: operatorSessionOnError },
   );
 
   const templates = computed(() => data.value?.templates ?? []);
@@ -53,6 +53,7 @@ export function useAnnouncementTemplates() {
       await refresh();
       return true;
     } catch (err) {
+      flagMarketingSessionError(err);
       if (conflictMessage && httpError(err).status === 409) {
         useSonner.warning(conflictMessage);
         await refresh();

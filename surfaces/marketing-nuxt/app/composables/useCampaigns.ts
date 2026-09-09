@@ -8,11 +8,11 @@ import type { Campaign, ChosenAudience, OptionsResponse, RulesResponse } from "~
 export function useCampaigns() {
   const { data, refresh, pending, error } = useFetch<RulesResponse>(
     "/api/v1/backstage/marketing/rules/",
-    { key: "marketing-list", server: true },
+    { key: "marketing-list", server: true, onResponseError: operatorSessionOnError },
   );
   const { data: optionsData } = useFetch<OptionsResponse>(
     "/api/v1/backstage/marketing/options/",
-    { key: "marketing-options", server: true },
+    { key: "marketing-options", server: true, onResponseError: operatorSessionOnError },
   );
 
   const rules = computed<Campaign[]>(() => data.value?.rules ?? []);
@@ -48,6 +48,7 @@ export function useCampaigns() {
       await refresh();
       return true;
     } catch (err) {
+      flagMarketingSessionError(err);
       if (httpError(err).status === 409) {
         useSonner.warning("A campanha mudou em outra sessão. Compare as versões no formulário.");
         await refresh();
@@ -101,6 +102,7 @@ export function useCampaigns() {
       await refresh();
       return true;
     } catch (err) {
+      flagMarketingSessionError(err);
       useSonner.error(httpErrorMessage(err, "Não foi possível disparar a campanha."));
       return false;
     }
@@ -113,6 +115,7 @@ export function useCampaigns() {
       await refresh();
       return true;
     } catch (err) {
+      flagMarketingSessionError(err);
       useSonner.error(httpErrorMessage(err, "Não foi possível criar a regra."));
       return false;
     }

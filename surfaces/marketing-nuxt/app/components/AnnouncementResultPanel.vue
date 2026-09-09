@@ -111,6 +111,7 @@ async function startRecovery(action: MarketingActionProjectionV2) {
     }
     challenge.value = started.challenge;
   } catch (error) {
+    flagMarketingSessionError(error);
     commandError.value = httpErrorMessage(
       error,
       "Não foi possível abrir a confirmação. O resultado continua intacto.",
@@ -143,6 +144,7 @@ async function confirmRecovery() {
     );
     finish(response);
   } catch (error) {
+    flagMarketingSessionError(error);
     commandError.value = httpErrorMessage(
       error,
       "Não foi possível concluir. Nenhuma recuperação foi presumida.",

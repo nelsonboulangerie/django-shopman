@@ -4,7 +4,13 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import AnnouncementPreview from "~/components/AnnouncementPreview.vue";
 
 beforeAll(() => {
-  Object.assign(globalThis, { computed, onBeforeUnmount, ref, watch });
+  Object.assign(globalThis, {
+    computed,
+    flagMarketingSessionError: () => false,
+    onBeforeUnmount,
+    ref,
+    watch,
+  });
 });
 
 beforeEach(() => {

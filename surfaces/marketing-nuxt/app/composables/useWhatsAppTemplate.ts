@@ -80,7 +80,12 @@ function errorPayload(error: unknown): unknown {
 export function useWhatsAppTemplate() {
   const { data, refresh, pending } = useFetch<WhatsAppTemplateResponse>(
     "/api/v1/backstage/marketing/whatsapp-template/",
-    { key: "marketing-wa-template", server: false, immediate: false },
+    {
+      key: "marketing-wa-template",
+      server: false,
+      immediate: false,
+      onResponseError: operatorSessionOnError,
+    },
   );
 
   const current = computed(() => data.value?.current ?? "");
@@ -107,6 +112,7 @@ export function useWhatsAppTemplate() {
       );
       return true;
     } catch (error) {
+      flagMarketingSessionError(error);
       useSonner.error(
         httpErrorMessage(error, "Não foi possível atualizar a verificação."),
       );
@@ -135,6 +141,7 @@ export function useWhatsAppTemplate() {
       await verify();
       return true;
     } catch (error) {
+      flagMarketingSessionError(error);
       const code = String(
         (errorPayload(error) as { code?: string }).code ?? "",
       );
@@ -182,6 +189,7 @@ export function useWhatsAppTemplate() {
       }
       return response.ok;
     } catch (error) {
+      flagMarketingSessionError(error);
       useSonner.error(
         httpErrorMessage(error, "Não foi possível enviar o teste."),
       );

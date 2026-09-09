@@ -86,6 +86,7 @@ async function rewrite () {
     suggestion.value = response.suggestion;
     beforeSuggestion.value = { body: body.value, hashtags: hashtagsText.value };
   } catch (err) {
+    flagMarketingSessionError(err);
     assistError.value = httpErrorMessage(err, "O assistente não respondeu. Seu texto segue aqui.");
   } finally {
     rewriting.value = false;
@@ -97,7 +98,9 @@ function recordSuggestionDisposition(action: "accept_draft" | "discard") {
   void $fetch(
     `/api/v1/backstage/marketing/announcements/${props.announcement.pk}/suggestions/${suggestion.value.ref}/disposition/`,
     { method: "POST", credentials: "same-origin", body: { action } },
-  ).catch(() => undefined);
+  ).catch((error) => {
+    flagMarketingSessionError(error);
+  });
 }
 
 function useSuggestion() {

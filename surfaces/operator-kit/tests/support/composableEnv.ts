@@ -41,6 +41,10 @@ export interface ComposableEnv {
    *  COM o erro — foi assim que "403 station_locked vira banner de falha de rede"
    *  atravessou a suíte inteira verde. */
   fetchError: { value: unknown };
+  /** Estado assíncrono que o `useFetch` mockado devolve. */
+  fetchStatus: { value: "idle" | "pending" | "success" | "error" };
+  /** Spy do `useFetch`, inclusive URL e query de capability. */
+  useFetchMock: ReturnType<typeof vi.fn>;
   /** `refresh` do useFetch. */
   refresh: ReturnType<typeof vi.fn>;
   /** `$fetch` (transporte de ação/escrita). */
@@ -65,6 +69,8 @@ export function installNuxtGlobals(): ComposableEnv {
   const env: ComposableEnv = {
     fetchData: { value: null },
     fetchError: { value: null },
+    fetchStatus: { value: "success" },
+    useFetchMock: vi.fn(),
     refresh: vi.fn(),
     fetchMock: vi.fn(),
     sonner: { error: vi.fn(), success: vi.fn() },
@@ -76,6 +82,8 @@ export function installNuxtGlobals(): ComposableEnv {
     reset() {
       env.fetchData.value = null;
       env.fetchError.value = null;
+      env.fetchStatus.value = "success";
+      env.useFetchMock.mockClear();
       env.refresh.mockReset();
       env.fetchMock.mockReset().mockResolvedValue({});
       env.sonner.error.mockReset();
@@ -119,12 +127,14 @@ export function installNuxtGlobals(): ComposableEnv {
   vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
   vi.stubGlobal("useStationLock", useStationLock); // implementação REAL do kit (sobre o useState mockado)
   vi.stubGlobal("reportClientError", env.clientErrorReport);
-  vi.stubGlobal("useFetch", () => ({
+  env.useFetchMock.mockImplementation(() => ({
     data: ref(env.fetchData.value),
-    pending: ref(false),
+    pending: ref(env.fetchStatus.value === "pending"),
+    status: ref(env.fetchStatus.value),
     error: ref(env.fetchError.value),
     refresh: env.refresh,
   }));
+  vi.stubGlobal("useFetch", env.useFetchMock);
   vi.stubGlobal("$fetch", env.fetchMock);
 
   return env;

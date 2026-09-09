@@ -28,7 +28,7 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
 // o descarte de resposta velha, e um stub aqui deixaria justamente essa parte sem teste.
 beforeAll(() => {
   Object.assign(globalThis, {
-    computed, ref, watch, onBeforeUnmount, useAudienceCount,
+    computed, flagMarketingSessionError: () => false, ref, watch, onBeforeUnmount, useAudienceCount,
     $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
       lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
       return counted;

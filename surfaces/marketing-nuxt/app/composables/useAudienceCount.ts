@@ -52,8 +52,9 @@ export function useAudienceCount() {
       if (mine !== epoch) return;
       count.value = data;
       failed.value = false;
-    } catch {
+    } catch (error) {
       if (mine !== epoch) return;
+      flagMarketingSessionError(error);
       count.value = null;
       failed.value = true;
     } finally {

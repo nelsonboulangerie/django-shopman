@@ -7,7 +7,11 @@ import type { HistoryResponse } from "~/types/campaign";
 export function useCampaignHistory() {
   const { data, refresh, pending, error } = useFetch<HistoryResponse>(
     "/api/v1/backstage/marketing/history/",
-    { key: "marketing-history", server: true },
+    {
+      key: "marketing-history",
+      server: true,
+      onResponseError: operatorSessionOnError,
+    },
   );
 
   return {

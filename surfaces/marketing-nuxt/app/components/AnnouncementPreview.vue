@@ -148,6 +148,7 @@ async function load(requestEpoch: number) {
     if (!available.includes(activePlatform.value)) activePlatform.value = available[0] || "";
   } catch (error: unknown) {
     if (requestEpoch !== epoch || requestController.signal.aborted) return;
+    flagMarketingSessionError(error);
     problem.value = previewProblem(error);
   } finally {
     if (requestEpoch === epoch) pending.value = false;

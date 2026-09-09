@@ -90,8 +90,10 @@ function row(
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
+    flagMarketingSessionError: () => false,
     onBeforeUnmount: () => {},
     onMounted: () => {},
+    operatorSessionOnError: () => {},
     ref,
     useRuntimeConfig: () => ({ app: { baseURL: "/" } }),
     useState: (key: string, init: () => unknown) => {

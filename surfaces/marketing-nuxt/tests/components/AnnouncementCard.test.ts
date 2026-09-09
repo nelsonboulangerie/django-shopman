@@ -10,6 +10,7 @@ import { installMemoryLocalStorage } from "../support/localStorage";
 beforeAll(() => {
   Object.assign(globalThis, {
     computed,
+    flagMarketingSessionError: () => false,
     httpErrorMessage: (_error: unknown, fallback: string) => fallback,
     onBeforeUnmount,
     onMounted,

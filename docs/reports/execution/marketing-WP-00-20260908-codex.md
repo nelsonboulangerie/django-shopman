@@ -1698,3 +1698,78 @@ Limite do gate: a implementação técnica local do MKT-038 está concluída. O 
 continua bloqueado pelo G-H06 até Segurança/Privacidade comprovar retenção, no-training e
 transferência do provider e Marca/Jurídico/Produto aprovar a revisão humana. Nenhuma flag
 de ambiente real foi ou será habilitada por esta entrega.
+
+## MKT-039 — Gate real de sessão, 401/403 e retomada segura
+
+Implementado depois de Projection/Actions e drafts (MKT-023, MKT-024 e MKT-033),
+sem antecipar headers ou a revisão completa de acessibilidade dos MKT-040/041:
+
+- a antessala `/operator/session/` passou a receber uma capability allowlisted e
+  responde apenas `authorized: true|false` para a identidade atual; não lista
+  permissões, não concede acesso e recusa nomes fora da allowlist;
+- a API v1 de Marketing mantém `401` para sessão ausente/expirada e `403` para
+  identidade autenticada sem capability. O frontend deixou de tratar os dois como
+  se novo login resolvesse ambos;
+- o shell usa a máquina `checking|authenticated|anonymous|expired|forbidden` do
+  operator-kit. O `NuxtPage` permanece como outlet do router, mas o componente de
+  rota, seus composables, timers e SSE só são instanciados em `authenticated`;
+- erro da antessala mostra indisponibilidade e retry com o cockpit fechado; não vira
+  painel vazio, 404 ou pedido de senha. Forbidden explica que reentrar não amplia
+  acesso e oferece retorno à Central;
+- todos os reads protegidos do Marketing sinalizam 401 para o gate. Um 403 só levanta
+  a trava quando o reason code canônico é `station_locked`; capability negada não é
+  reinterpretada como expiração;
+- login deixou de recarregar a página inteira: primeiro reconcilia a sessão ainda com
+  o gate fechado e só depois libera a rota. Requests de identificação/cadeado declaram
+  credenciais same-origin explicitamente;
+- decisão interrompida preserva anúncio, ação, corpo editado, versão e chave
+  idempotente em estado global do app. Token/challenge antigo é sempre descartado;
+  após reautenticar, um gesto explícito pede nova conferência do servidor e exige nova
+  confirmação. A intenção é ligada ao operador original e é apagada se outra pessoa
+  entrar, impedindo transferência silenciosa de decisão;
+- um 401 vindo de poll/read enquanto o diálogo estava aberto também converte o
+  challenge em intenção retomável antes de desmontar a página. Rascunhos continuam
+  isolados por operador pelo contrato do MKT-033;
+- nenhuma migration foi necessária e nenhum endpoint protegido ficou disponível à
+  antessala.
+
+Budget de omotenashi comprovado para sessão e recuperação:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Abrir Marketing sem sessão | até 4 reads protegidos montavam atrás do overlay | 0 reads protegidos; somente antessala |
+| Saber se é login ou falta de acesso | tentativa, vazio/403 ou novo login inútil | 1 estado explícito; 401 e 403 distintos |
+| Recuperar após login | reload completo e reconstrução mental da rota | 0 reloads; mesma rota retorna automaticamente |
+| Redigitar draft após expiração | risco de perda/reabertura manual | 0 caracteres e 0 navegações perdidos |
+| Retomar approve/reject interrompido | reconstruir texto/ação/chave | 1 gesto “Retomar e reconfirmar”, 0 redigitação |
+| Conferir se a ação saiu antes da expiração | consulta externa ou medo de duplicar | receipt/idempotência preservados; UI afirma “não foi enviada” |
+| Evitar token stale | conferência manual impossível | challenge descartado estruturalmente e reemitido |
+| Troca de operador | risco de herdar intenção anterior | 0 decisões transferidas; owner mismatch bloqueia e apaga |
+| Outage da sessão | login/empty enganoso | cockpit fechado + 1 botão de retry |
+
+Provas locais:
+
+- reproduções contratuais falharam primeiro por ausência de `authorized` e por 403
+  anônimo; depois, 122 testes focados de sessão/login/API Marketing passaram;
+- regressão ampla de Marketing/campaign/notifications/workers/deploy e sessão:
+  **938 testes passaram em 123,33 s**; os únicos 3 warnings são os esperados de
+  override de banco nos testes de deploy;
+- Marketing Nuxt: **23 arquivos/187 testes** passaram; operator-kit: **18 arquivos/179
+  testes** passaram. ESLint, typecheck e build de produção passaram;
+- Ruff, contrato TS, Django check, migration drift e `git diff --check` passaram;
+  permaneceu somente o warning conhecido de SQLite local;
+- teste vivo local em `127.0.0.1` comprovou que anônimo fez somente a consulta de
+  sessão e zero requests a board/rules/options/notifications; esses quatro reads só
+  começaram depois do login autorizado. Uma identidade autenticada sem
+  `shop.view_marketing` recebeu o estado forbidden e também fez zero reads protegidos;
+- a repetição após trocar o outlet pelo slot do `NuxtPage` manteve zero fetch protegido
+  e eliminou o warning de outlet condicional do Nuxt;
+- os dois processos locais foram encerrados. O SQLite exclusivo do QA, com apenas
+  identidades sintéticas, foi movido de forma recuperável para
+  `/Users/pablovalentini/.Trash/django-shopman-marketing-mkt039-qa-20260909.sqlite3`;
+- nenhuma chamada a provider, destinatário, rede externa, deploy, produção, push,
+  merge, PR ou escrita externa foi realizada.
+
+A implementação técnica local do MKT-039 está concluída. Os gates de piloto/release
+permanecem inalterados; MKT-040 (headers/BFF/cache/fonts) é a próxima dependência da
+ordem aprovada.

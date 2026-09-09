@@ -2,17 +2,16 @@ import type {
   MarketingCommandResponse,
   MarketingConfirmationChallenge,
 } from "~/types/campaign";
+import {
+  decisionResumeIntent,
+  MARKETING_DECISION_REAUTH_STATE,
+  PENDING_MARKETING_DECISION_STATE,
+  type MarketingDecisionAction,
+  type MarketingDecisionResumeIntent,
+  type PendingMarketingDecision,
+} from "~/presentation/marketingDecisionSession";
 
-type DecisionAction = "approve" | "reject";
-
-export type PendingMarketingDecision = {
-  announcementId: number;
-  action: DecisionAction;
-  href: string;
-  body: Record<string, unknown>;
-  idempotencyKey: string;
-  challenge: MarketingConfirmationChallenge;
-};
+export type { PendingMarketingDecision };
 
 function errorPayload(error: unknown): unknown {
   if (typeof error !== "object" || error === null || !("data" in error))
@@ -40,22 +39,47 @@ function confirmationChallenge(
 }
 
 export function useMarketingDecisionCommand() {
-  const pendingDecision = ref<PendingMarketingDecision | null>(null);
+  const { data: operatorSession } = useNuxtData<{
+    operator: { id: number } | null;
+  }>("operator-session");
+  const currentOwnerRef = computed(() =>
+    operatorSession.value?.operator?.id
+      ? `operator:${operatorSession.value.operator.id}`
+      : "",
+  );
+  const pendingDecision = useState<PendingMarketingDecision | null>(
+    PENDING_MARKETING_DECISION_STATE,
+    () => null,
+  );
+  const pendingReauthentication =
+    useState<MarketingDecisionResumeIntent | null>(
+      MARKETING_DECISION_REAUTH_STATE,
+      () => null,
+    );
 
   async function begin(options: {
     announcementId: number;
-    action: DecisionAction;
+    action: MarketingDecisionAction;
     body: Record<string, unknown>;
     idempotencyKey: string;
   }): Promise<MarketingCommandResponse | null> {
     const href = `/api/v1/backstage/marketing/announcements/${options.announcementId}/${options.action}/`;
+    const intent = { ...options, href, ownerRef: currentOwnerRef.value };
     try {
-      return await $fetch<MarketingCommandResponse>(href, {
+      const response = await $fetch<MarketingCommandResponse>(href, {
         method: "POST",
+        credentials: "same-origin",
         headers: { "Idempotency-Key": options.idempotencyKey },
         body: options.body,
       });
+      pendingReauthentication.value = null;
+      return response;
     } catch (error) {
+      if (flagMarketingSessionError(error)) {
+        pendingDecision.value = null;
+        pendingReauthentication.value = intent;
+        return null;
+      }
       const challenge = confirmationChallenge(error);
       if (!challenge) throw error;
       if (
@@ -66,7 +90,8 @@ export function useMarketingDecisionCommand() {
           cause: error,
         });
       }
-      pendingDecision.value = { ...options, href, challenge };
+      pendingReauthentication.value = null;
+      pendingDecision.value = { ...intent, challenge };
       return null;
     }
   }
@@ -80,31 +105,61 @@ export function useMarketingDecisionCommand() {
     if (command.challenge.dual_control) {
       throw new Error("marketing_dual_control_required");
     }
-    if (command.challenge.step_up !== "none") {
-      await $fetch("/api/v1/backstage/marketing/security/step-up/", {
+    try {
+      if (command.challenge.step_up !== "none") {
+        await $fetch("/api/v1/backstage/marketing/security/step-up/", {
+          method: "POST",
+          credentials: "same-origin",
+          body: {
+            method: command.challenge.step_up,
+            credential: String(options.credential || "").trim(),
+          },
+        });
+      }
+      const response = await $fetch<MarketingCommandResponse>(command.href, {
         method: "POST",
+        credentials: "same-origin",
+        headers: { "Idempotency-Key": command.idempotencyKey },
         body: {
-          method: command.challenge.step_up,
-          credential: String(options.credential || "").trim(),
+          ...command.body,
+          confirmation_token: command.challenge.token,
+          typed_confirmation: String(options.typedConfirmation || "").trim(),
         },
       });
+      pendingDecision.value = null;
+      return response;
+    } catch (error) {
+      if (flagMarketingSessionError(error)) {
+        // O token pertence à sessão/contexto anterior. Preservamos somente a
+        // intenção, para pedir um challenge novo após reautenticar.
+        pendingDecision.value = null;
+        pendingReauthentication.value = decisionResumeIntent(command);
+      }
+      throw error;
     }
-    const response = await $fetch<MarketingCommandResponse>(command.href, {
-      method: "POST",
-      headers: { "Idempotency-Key": command.idempotencyKey },
-      body: {
-        ...command.body,
-        confirmation_token: command.challenge.token,
-        typed_confirmation: String(options.typedConfirmation || "").trim(),
-      },
-    });
-    pendingDecision.value = null;
-    return response;
+  }
+
+  async function resumeAfterReauthentication(): Promise<MarketingCommandResponse | null> {
+    const intent = pendingReauthentication.value;
+    if (!intent) throw new Error("marketing_reauthentication_intent_missing");
+    if (!intent.ownerRef || intent.ownerRef !== currentOwnerRef.value) {
+      pendingReauthentication.value = null;
+      throw new Error("marketing_reauthentication_actor_changed");
+    }
+    return begin(intent);
   }
 
   function cancel() {
     pendingDecision.value = null;
+    pendingReauthentication.value = null;
   }
 
-  return { pendingDecision, begin, confirm, cancel };
+  return {
+    pendingDecision,
+    pendingReauthentication,
+    begin,
+    confirm,
+    resumeAfterReauthentication,
+    cancel,
+  };
 }

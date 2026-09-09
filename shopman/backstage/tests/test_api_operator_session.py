@@ -57,8 +57,10 @@ def operate_production_perm(db):
 
 @pytest.mark.django_db
 def test_session_reports_locked_then_operator(client, balcao, baker):
-    body = client.get(reverse("api-backstage-operator-session")).json()
+    session_url = reverse("api-backstage-operator-session")
+    body = client.get(session_url, {"perm": "backstage.operate_production"}).json()
     assert body["locked"] is True and body["operator"] is None
+    assert body["authorized"] is False
     # A tela travada precisa saber DE QUE BALCÃO ela é — não com que conta a
     # máquina entrou, porque não há conta de máquina.
     assert body["station"] == balcao
@@ -67,11 +69,32 @@ def test_session_reports_locked_then_operator(client, balcao, baker):
         {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
         content_type="application/json",
     )
-    body = client.get(reverse("api-backstage-operator-session")).json()
+    body = client.get(session_url, {"perm": "backstage.operate_production"}).json()
     assert body["locked"] is False
     assert body["operator"]["username"] == "bia"
+    assert body["authorized"] is True
     # E a estação continua a mesma: quem entrou foi uma pessoa, não o dispositivo.
     assert body["station"] == balcao
+
+
+@pytest.mark.django_db
+def test_session_reports_forbidden_separately_and_rejects_unknown_permission(
+    client, balcao, baker
+):
+    client.post(
+        reverse("api-backstage-operator-unlock"),
+        {"operator_id": baker.pk, "pin": "4321", "perm": "backstage.operate_production"},
+        content_type="application/json",
+    )
+    session_url = reverse("api-backstage-operator-session")
+
+    forbidden = client.get(session_url, {"perm": "shop.view_marketing"})
+    assert forbidden.status_code == 200
+    assert forbidden.json()["operator"]["username"] == "bia"
+    assert forbidden.json()["authorized"] is False
+
+    unknown = client.get(session_url, {"perm": "shop.evil"})
+    assert unknown.status_code == 400
 
 
 @pytest.mark.django_db

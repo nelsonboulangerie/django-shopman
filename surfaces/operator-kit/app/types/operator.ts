@@ -18,6 +18,9 @@ export interface OperatorSession {
   // O operador recebeu um PIN temporário (reset do gerente) e precisa trocá-lo
   // antes de operar. O shell força a troca quando true.
   pin_must_change: boolean;
+  // Resposta somente para a capability solicitada pela superfície. Evita montar
+  // o app para um operador identificado, porém sem acesso.
+  authorized: boolean;
 }
 
 export type OperatorSessionResponse = OperatorSession;

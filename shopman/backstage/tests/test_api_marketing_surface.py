@@ -132,7 +132,7 @@ def _confirmed_post(client, url: str, payload: dict, *, key: str):
 
 class TestGate:
     def test_anonymous_is_rejected(self, client):
-        assert client.get(BOARD_URL).status_code in (401, 403)
+        assert client.get(BOARD_URL).status_code == 401
 
     def test_staff_without_permission_is_rejected(self, client):
         User.objects.create_user(username="caixa", password="x", is_staff=True)

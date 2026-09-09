@@ -40,6 +40,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import ProtectedError, Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
+from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -110,6 +111,18 @@ class _CampaignBase(APIView):
 
     def get_required_permissions(self, request):
         return self.permission_map.get(request.method, ())
+
+    def handle_exception(self, exc):
+        # SessionAuthentication não fornece `WWW-Authenticate`; o DRF converteria
+        # NotAuthenticated em 403. Para o cockpit isso apaga a diferença entre
+        # sessão ausente/expirada (reauth resolve) e capability negada (reauth não
+        # resolve), portanto o dialeto legado também fixa 401 explicitamente.
+        if isinstance(exc, (NotAuthenticated, AuthenticationFailed)):
+            return Response(
+                {"detail": "Autenticação necessária.", "code": "not_authenticated"},
+                status=401,
+            )
+        return super().handle_exception(exc)
 
 
 class _CampaignV2Base(_CampaignBase):

@@ -18,7 +18,11 @@ export function useUserNotifications() {
   const { data, refresh, pending, error } =
     useFetch<MarketingNotificationsResponse>(
       "/api/v1/backstage/notifications/v2/?limit=100",
-      { key: "marketing-notifications-v2", server: true },
+      {
+        key: "marketing-notifications-v2",
+        server: true,
+        onResponseError: operatorSessionOnError,
+      },
     );
 
   const notifications = computed<MarketingNotification[]>(
@@ -100,6 +104,7 @@ export function useUserNotifications() {
       await refresh();
       return true;
     } catch (caught) {
+      flagMarketingSessionError(caught);
       mutationError.value = httpErrorMessage(
         caught,
         "Não foi possível registrar quais alertas você viu.",
@@ -129,6 +134,7 @@ export function useUserNotifications() {
       await refresh();
       return true;
     } catch (caught) {
+      flagMarketingSessionError(caught);
       mutationError.value = httpErrorMessage(
         caught,
         "Não foi possível assumir este alerta. Ele continua pendente.",

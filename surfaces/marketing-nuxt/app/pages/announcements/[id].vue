@@ -29,11 +29,17 @@ const pk = computed(() => Number(route.params.id));
 const [legacyRequest, resultRequest] = await Promise.all([
   useFetch<{ announcement: Announcement; shop_timezone: string }>(
     () => `/api/v1/backstage/marketing/announcements/${pk.value}/`,
-    { key: () => `announcement-${pk.value}` },
+    {
+      key: () => `announcement-${pk.value}`,
+      onResponseError: operatorSessionOnError,
+    },
   ),
   useFetch<MarketingEnvelopeV2>(
     () => `/api/v1/backstage/marketing/v2/announcements/${pk.value}/`,
-    { key: () => `announcement-result-v2-${pk.value}` },
+    {
+      key: () => `announcement-result-v2-${pk.value}`,
+      onResponseError: operatorSessionOnError,
+    },
   ),
 ]);
 const { data, refresh, pending, error } = legacyRequest;
@@ -59,6 +65,7 @@ const loadFailure = computed(() => marketingLoadError(error.value));
 const currentReceipt = ref<MarketingCommandReceipt | null>(null);
 const decisionCommand = useMarketingDecisionCommand();
 const pendingDecision = decisionCommand.pendingDecision;
+const pendingReauthentication = decisionCommand.pendingReauthentication;
 const decisionError = ref("");
 const confirmingDecision = ref(false);
 const busy = ref(false);
@@ -175,11 +182,68 @@ function cancelServerDecision() {
   decisionCommand.cancel();
 }
 
+async function resumeServerDecision() {
+  const command = pendingReauthentication.value;
+  if (!command) return;
+  confirmingDecision.value = true;
+  decisionError.value = "";
+  try {
+    const response = await decisionCommand.resumeAfterReauthentication();
+    if (response) {
+      await finishDecision(
+        response,
+        command.action,
+        command.body.publish_mode as PublishMode | undefined,
+      );
+    }
+  } catch (err) {
+    decisionError.value = httpErrorMessage(
+      err,
+      "Não foi possível retomar. Sua decisão continua preservada.",
+    );
+  } finally {
+    confirmingDecision.value = false;
+  }
+}
+
 useHead({ title: "Anúncio · Marketing" });
 </script>
 
 <template>
   <main class="mx-auto w-full max-w-2xl flex-1 px-4 py-6">
+    <section
+      v-if="pendingReauthentication"
+      class="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4"
+      role="status"
+    >
+      <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
+      <p class="mt-1 text-sm text-muted-foreground">
+        O rascunho e a intenção foram preservados. Retome para receber uma nova
+        conferência do servidor.
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          :disabled="confirmingDecision"
+          @click="resumeServerDecision"
+        >
+          {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
+        </button>
+        <button
+          type="button"
+          class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted"
+          :disabled="confirmingDecision"
+          @click="cancelServerDecision"
+        >
+          Agora não
+        </button>
+      </div>
+      <p v-if="decisionError" class="mt-2 text-sm text-destructive" role="alert">
+        {{ decisionError }}
+      </p>
+    </section>
+
     <NuxtLink
       to="/"
       class="mb-4 inline-flex items-center gap-1.5 text-sm text-muted-foreground transition hover:text-foreground"

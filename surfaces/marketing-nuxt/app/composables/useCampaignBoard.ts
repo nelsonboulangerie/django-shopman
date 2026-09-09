@@ -53,7 +53,11 @@ export function useCampaignBoard() {
   const decisionError = ref("");
   const { data, refresh, pending, error } = useFetch<BoardResponse>(
     "/api/v1/backstage/marketing/",
-    { key: "marketing-board", server: true },
+    {
+      key: "marketing-board",
+      server: true,
+      onResponseError: operatorSessionOnError,
+    },
   );
 
   const board = computed(() => data.value?.board);
@@ -219,6 +223,33 @@ export function useCampaignBoard() {
     decisionCommand.cancel();
   }
 
+  async function resumeDecision(): Promise<MarketingCommandResponse | null> {
+    const command = decisionCommand.pendingReauthentication.value;
+    if (!command) return null;
+    decisionError.value = "";
+    try {
+      const response = await decisionCommand.resumeAfterReauthentication();
+      // `null` significa que o servidor devolveu um challenge novo; o diálogo
+      // normal fará a reconfirmação, sem reaproveitar o token anterior.
+      if (!response) return null;
+      useSonner.success(
+        command.action === "reject"
+          ? "Anúncio recusado."
+          : command.body.publish_mode === "scheduled"
+            ? "Anúncio agendado."
+            : "Anúncio preparado para publicação.",
+      );
+      await refresh();
+      return response;
+    } catch (err) {
+      decisionError.value = httpErrorMessage(
+        err,
+        "Não foi possível retomar. Sua decisão continua preservada.",
+      );
+      return null;
+    }
+  }
+
   async function saveDraft(
     pk: number,
     edits: AnnouncementEdits,
@@ -232,6 +263,7 @@ export function useCampaignBoard() {
       await refresh();
       return true;
     } catch (err) {
+      flagMarketingSessionError(err);
       useSonner.error(httpErrorMessage(err, "Não foi possível salvar."));
       return false;
     }
@@ -251,8 +283,10 @@ export function useCampaignBoard() {
     approve,
     reject,
     pendingDecision: decisionCommand.pendingDecision,
+    pendingReauthentication: decisionCommand.pendingReauthentication,
     decisionError,
     confirmDecision,
+    resumeDecision,
     cancelDecision,
     saveDraft,
   };

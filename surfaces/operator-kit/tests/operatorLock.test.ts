@@ -23,6 +23,7 @@ const session = (over: Partial<OperatorSession> = {}): OperatorSession => ({
   operator: null,
   locked: true,
   pin_must_change: false,
+  authorized: false,
   ...over,
 });
 

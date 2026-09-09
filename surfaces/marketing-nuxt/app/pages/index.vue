@@ -37,8 +37,10 @@ const {
   aiAssistAvailable,
   shopTimezone,
   pendingDecision,
+  pendingReauthentication,
   decisionError,
   confirmDecision,
+  resumeDecision,
   cancelDecision,
 } = useCampaignBoard();
 const { platforms } = useCampaigns();
@@ -103,11 +105,59 @@ async function confirmServerDecision(value: {
   await navigateTo(`/announcements/${pk}`);
 }
 
+async function resumeServerDecision() {
+  const pk = pendingReauthentication.value?.announcementId;
+  if (!pk) return;
+  confirmingDecision.value = true;
+  const response = await resumeDecision();
+  confirmingDecision.value = false;
+  if (!response) return;
+  clearBrowserMarketingDraft({
+    owner: draftOwner.value,
+    resource: `announcement:${pk}`,
+  });
+  preserveMarketingReceipt(pk, response.receipt);
+  await navigateTo(`/announcements/${pk}`);
+}
+
 useHead({ title: "Painel · Marketing" });
 </script>
 
 <template>
   <main class="mx-auto w-full max-w-4xl flex-1 px-4 py-6">
+    <section
+      v-if="pendingReauthentication"
+      class="mb-5 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4"
+      role="status"
+    >
+      <p class="font-semibold">Sua sessão voltou. A decisão não foi enviada.</p>
+      <p class="mt-1 text-sm text-muted-foreground">
+        Guardamos exatamente o anúncio e as edições. Retome para o servidor
+        conferir tudo de novo antes de pedir sua confirmação.
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          class="min-h-11 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+          :disabled="confirmingDecision"
+          @click="resumeServerDecision"
+        >
+          {{ confirmingDecision ? "Retomando…" : "Retomar e reconfirmar" }}
+        </button>
+        <button
+          type="button"
+          class="min-h-11 rounded-md border border-border px-4 text-sm font-medium hover:bg-muted"
+          :disabled="confirmingDecision"
+          @click="cancelDecision"
+        >
+          Agora não
+        </button>
+      </div>
+      <p v-if="decisionError" class="mt-2 text-sm text-destructive" role="alert">
+        {{ decisionError }}
+      </p>
+    </section>
+
     <div class="mb-5 flex items-center gap-3">
       <h1 class="text-xl font-bold">Painel</h1>
       <button
