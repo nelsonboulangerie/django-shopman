@@ -4,7 +4,8 @@
 //
 // O gestor recebe o aviso no celular, toca e cai direto na decisão. Mesmo card
 // do painel: uma única forma de decidir, um único lugar para acertar.
-import type { Announcement, AnnouncementEdits } from "~/types/campaign";
+import { buildApprovalCommand } from "~/composables/useCampaignBoard";
+import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campaign";
 
 const route = useRoute();
 const pk = computed(() => Number(route.params.id));
@@ -24,16 +25,17 @@ const approvalKeys = new Map<string, string>();
 async function decide(
   action: "approve" | "reject",
   body: AnnouncementEdits | { reason: string } = {},
+  publishMode?: PublishMode,
 ) {
   busy.value = true;
   try {
-    const commandBody = {
-      ...body,
-      base_version: announcement.value?.version,
-      ...(action === "approve"
-        ? { publish_mode: "publish_at" in body && body.publish_at ? "scheduled" : "now" }
-        : {}),
-    };
+    const commandBody = action === "approve"
+      ? buildApprovalCommand(
+          body as AnnouncementEdits,
+          announcement.value!.version,
+          publishMode!,
+        )
+      : { ...body, base_version: announcement.value?.version };
     const fingerprint = `${action}:${pk.value}:${JSON.stringify(commandBody)}`;
     let idempotencyKey = approvalKeys.get(fingerprint);
     if (!idempotencyKey) {
@@ -47,7 +49,7 @@ async function decide(
     });
     useSonner.success(
       action === "reject" ? "Anúncio recusado."
-      : "publish_at" in body && body.publish_at ? "Anúncio agendado."
+      : publishMode === "scheduled" ? "Anúncio agendado."
       : "Anúncio preparado para publicação.",
     );
     await navigateTo("/");
@@ -109,7 +111,7 @@ useHead({ title: "Anúncio · Marketing" });
         :announcement="announcement"
         :platform-options="platforms"
         :busy="busy"
-        @approve="(_, edits) => decide('approve', edits)"
+        @approve="(_, edits, publishMode) => decide('approve', edits, publishMode)"
         @reject="confirmingReject = true; rejectReason = ''"
       />
 

@@ -43,11 +43,11 @@ describe('a configuração de plataforma tem casa', () => {
   it('a aprovação envia versão, consequência explícita e reaproveita a mesma key', () => {
     const composable = read('../app/composables/useCampaignBoard.ts')
     const detail = read('../app/pages/announcements/[id].vue')
-    for (const source of [composable, detail]) {
-      expect(source).toContain('base_version')
-      expect(source).toContain('publish_mode')
-      expect(source).toContain('"Idempotency-Key"')
-      expect(source).toContain('approvalKeys')
-    }
+    expect(composable).toContain('base_version')
+    expect(composable).toContain('publish_mode')
+    expect(composable).toContain('"Idempotency-Key"')
+    expect(detail).toContain('buildApprovalCommand')
+    expect(detail).toContain('"Idempotency-Key"')
+    expect(detail).toContain('approvalKeys')
   })
 })

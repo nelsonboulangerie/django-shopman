@@ -4,7 +4,7 @@
 // O gestor lê, ajusta o texto, confere a audiência e decide. Tudo num gesto:
 // as edições viajam JUNTO com a aprovação (um request), porque salvar e depois
 // publicar abriria a janela de publicar a versão anterior.
-import type { Announcement, AnnouncementEdits } from "~/types/campaign";
+import type { Announcement, AnnouncementEdits, PublishMode } from "~/types/campaign";
 import {
   audienceSummary,
   displayHashtag,
@@ -25,7 +25,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  approve: [pk: number, edits: AnnouncementEdits];
+  approve: [pk: number, edits: AnnouncementEdits, publishMode: PublishMode];
   reject: [pk: number];
 }>();
 
@@ -102,12 +102,17 @@ function edits(): AnnouncementEdits {
 
 function publishNow() {
   if (!canPublish.value) return;
-  emit("approve", props.announcement.pk, edits());
+  emit("approve", props.announcement.pk, edits(), "now");
 }
 
 function schedule() {
   if (!canPublish.value || !publishAt.value) return;
-  emit("approve", props.announcement.pk, { ...edits(), publish_at: publishAt.value });
+  emit(
+    "approve",
+    props.announcement.pk,
+    { ...edits(), publish_at: publishAt.value },
+    "scheduled",
+  );
 }
 </script>
 

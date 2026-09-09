@@ -9,6 +9,9 @@ export interface PlatformResult {
   url: string;
 }
 
+/** Explicit consequence carried from the CTA to the command receipt. */
+export type PublishMode = "now" | "scheduled";
+
 export interface Announcement {
   pk: number;
   /** Compare-and-set token required by mutating commands. */

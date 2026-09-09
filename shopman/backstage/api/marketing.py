@@ -182,9 +182,9 @@ class AnnouncementDetailView(_CampaignBase):
 class AnnouncementApproveView(_CampaignBase):
     """Publicar — agora ou na hora marcada.
 
-    O serviço cria uma Directive por plataforma (retry de graça). As edições do
-    card vão no MESMO request: salvar e aprovar em duas chamadas abriria a
-    janela para publicar a versão anterior.
+    O comando v2 cria uma outbox durável por lane; o consumer só a entrega à
+    fila depois do commit. As edições do card vão no MESMO request: salvar e
+    aprovar em duas chamadas abriria a janela para publicar a versão anterior.
     """
 
     permission_map = {

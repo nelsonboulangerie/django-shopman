@@ -4,7 +4,7 @@
 // Ordem deliberada: primeiro o que PEDE decisão (pendentes), depois o que já
 // saiu. Números do dia por último: contexto, não protagonista.
 import { audienceSummary, announcementOutcome, shortDateTime } from "~/presentation/campaign";
-import type { AnnouncementEdits } from "~/types/campaign";
+import type { AnnouncementEdits, PublishMode } from "~/types/campaign";
 
 // Mesma leitura do histórico: sucesso PARCIAL não se disfarça de pendente.
 // Se o Google saiu e o Instagram falhou, a linha precisa chamar atenção.
@@ -22,9 +22,9 @@ const busyPk = ref<number | null>(null);
 const rejecting = ref<number | null>(null);
 const rejectReason = ref("");
 
-async function onApprove(pk: number, edits: AnnouncementEdits) {
+async function onApprove(pk: number, edits: AnnouncementEdits, publishMode: PublishMode) {
   busyPk.value = pk;
-  await approve(pk, edits);
+  await approve(pk, edits, publishMode);
   busyPk.value = null;
 }
 

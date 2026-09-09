@@ -80,6 +80,7 @@ describe("AnnouncementCard", () => {
     expect(edits.body).toBe("Texto revisado");
     expect(edits.hashtags).toEqual(["paes", "fornada"]);
     expect(edits.platforms).toEqual(["instagram"]);
+    expect(wrapper.emitted("approve")![0]![2]).toBe("now");
   });
 
   it("refuses to publish an empty announcement", async () => {
@@ -117,6 +118,7 @@ describe("AnnouncementCard", () => {
 
     const [, edits] = wrapper.emitted("approve")![0] as [number, Record<string, unknown>];
     expect(edits.publish_at).toBe("2026-07-19T07:00");
+    expect(wrapper.emitted("approve")![0]![2]).toBe("scheduled");
   });
 
   it("asks the parent to confirm the rejection instead of rejecting itself", async () => {

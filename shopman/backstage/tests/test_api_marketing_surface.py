@@ -227,6 +227,53 @@ class TestPostDecision:
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
         assert Directive.objects.count() == 0
 
+    def test_v2_now_overrides_the_announcement_suggested_schedule(
+        self, client, gestor, rule, template
+    ):
+        suggested = timezone.now() + timedelta(hours=3)
+        announcement = _post(rule, template, publish_at=suggested)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={"base_version": 1, "publish_mode": "now"},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-now-beats-schedule",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["scheduled"] is False
+        assert response.json()["receipt"]["outcome"]["publish_mode"] == "now"
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PUBLISHING
+        assert announcement.publish_at is None
+        assert suggested not in set(
+            MarketingOutbox.objects.values_list("available_at", flat=True)
+        )
+
+    def test_v2_now_with_a_timestamp_is_rejected_instead_of_guessing(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "now",
+                "publish_at": (timezone.now() + timedelta(hours=3)).isoformat(),
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-now-no-timestamp",
+        )
+
+        assert response.status_code == 422
+        assert response.json()["code"] == "publish_now_has_schedule"
+        announcement.refresh_from_db()
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert MarketingOutbox.objects.count() == 0
+
     def test_v2_same_key_with_changed_content_returns_conflict_not_second_approval(
         self, client, gestor, rule, template
     ):

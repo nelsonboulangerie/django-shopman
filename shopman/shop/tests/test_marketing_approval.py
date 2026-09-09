@@ -355,3 +355,8 @@ def test_approval_schema_migration_reverses_and_reapplies_cleanly():
         "shop_marketingauditevent",
         "shop_marketingoutbox",
     } <= tables_after
+
+    # Migration tests must not leak an old schema into whichever test pytest
+    # schedules next.
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())

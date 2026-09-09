@@ -3,9 +3,42 @@
 // ADR-016 (SSE-first): o push do canal pessoal (`/sse/notifications`) só avisa
 // que chegou coisa nova; a VERDADE é sempre o refetch do board. O poll fica
 // como rede de segurança em cadência calma.
-import type { BoardResponse, Announcement, AnnouncementEdits, ReachLimit } from "~/types/campaign";
+import type {
+  BoardResponse,
+  Announcement,
+  AnnouncementEdits,
+  PublishMode,
+  ReachLimit,
+} from "~/types/campaign";
 
 const POLL_MS = 60_000;
+
+export function buildApprovalCommand(
+  edits: AnnouncementEdits,
+  baseVersion: number,
+  publishMode: PublishMode,
+) {
+  const { publish_at: publishAt, ...contentEdits } = edits;
+  if (publishMode !== "now" && publishMode !== "scheduled") {
+    throw new Error("approval requires an explicit publish mode");
+  }
+  if (publishMode === "scheduled") {
+    if (!publishAt) throw new Error("scheduled approval requires publish_at");
+    return {
+      ...contentEdits,
+      publish_at: publishAt,
+      base_version: baseVersion,
+      publish_mode: publishMode,
+    };
+  }
+  // Clicking "Publicar agora" wins even if the scheduling panel still holds a
+  // value.  The timestamp is omitted, rather than relying on the API to guess.
+  return {
+    ...contentEdits,
+    base_version: baseVersion,
+    publish_mode: publishMode,
+  };
+}
 
 export function useCampaignBoard() {
   const { data, refresh, pending, error } = useFetch<BoardResponse>(
@@ -36,19 +69,25 @@ export function useCampaignBoard() {
   // Push pessoal: announcement novo pedindo revisão chega aqui antes do poll.
   useUserNotifications(() => refresh());
 
-  async function approve(pk: number, edits: AnnouncementEdits = {}): Promise<boolean> {
+  async function approve(
+    pk: number,
+    edits: AnnouncementEdits,
+    publishMode: PublishMode,
+  ): Promise<boolean> {
     const announcement = pendingPosts.value.find(item => item.pk === pk);
     if (!announcement) {
       useSonner.error("Este anúncio mudou ou saiu da fila. Atualizamos o painel.");
       await refresh();
       return false;
     }
-    const command = {
-      ...edits,
-      base_version: announcement.version,
-      publish_mode: edits.publish_at ? "scheduled" : "now",
-    };
-    const fingerprint = `${pk}:${JSON.stringify(command)}`;
+    let command: ReturnType<typeof buildApprovalCommand>;
+    try {
+      command = buildApprovalCommand(edits, announcement.version, publishMode);
+    } catch {
+      useSonner.error("Escolha a data e a hora para agendar.");
+      return false;
+    }
+    const fingerprint = `approve:${pk}:${JSON.stringify(command)}`;
     let idempotencyKey = approvalKeys.get(fingerprint);
     if (!idempotencyKey) {
       idempotencyKey = globalThis.crypto.randomUUID();
@@ -58,7 +97,9 @@ export function useCampaignBoard() {
       pk,
       "approve",
       command,
-      edits.publish_at ? "Anúncio agendado." : "Anúncio preparado para publicação.",
+      publishMode === "scheduled"
+        ? "Anúncio agendado."
+        : "Anúncio preparado para publicação.",
       { "Idempotency-Key": idempotencyKey },
     );
   }

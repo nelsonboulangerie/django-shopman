@@ -313,3 +313,6 @@ def test_transition_schema_migration_reverses_and_reapplies_cleanly():
             )
         }
     assert {"cancelled_at", "cancelled_by_command_id"} <= after_columns
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())

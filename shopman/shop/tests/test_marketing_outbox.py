@@ -338,3 +338,6 @@ def test_outbox_schema_migration_reverses_and_reapplies_cleanly():
             )
         }
     assert {"dispatch_ref", "dispatched_at"} <= columns
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(executor.loader.graph.leaf_nodes())

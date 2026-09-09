@@ -430,3 +430,34 @@ Provas locais:
 - Marketing command/outbox/API/campaign/handlers/capabilities/notifications/maintenance: 359 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0029_marketing_outbox_recovery`; nenhum provider, rede, produção ou escrita externa foi usado.
+
+## MKT-019 — `publish_mode=now|scheduled` ponta a ponta
+
+Implementado:
+
+- `AnnouncementCard` não emite mais uma edição ambígua: cada CTA carrega o enum literal `now` ou `scheduled` até o composable;
+- board e detalhe usam o mesmo `buildApprovalCommand`, em vez de inferirem consequência em dois lugares pela presença de `publish_at`;
+- o caminho `now` remove preventivamente qualquer timestamp residual mantido no painel de agendamento;
+- o caminho `scheduled` exige um instante explícito antes de construir a request;
+- base version, publish mode e consequência completa participam da fingerprint que conserva a idempotency key;
+- API v2 continua fail-closed: `now` com timestamp responde `422 publish_now_has_schedule`, sem receipt/outbox parcial;
+- um anúncio que já carregava horário sugerido não influencia o comando `now`: receipt registra `now`, `publish_at` fica nulo e a outbox nasce disponível imediatamente;
+- copy pós-command continua honesta: “preparado para publicação” para `now`, “agendado” somente para `scheduled`.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Conferir se “agora” respeitou horário sugerido | conferência externa/receio | 0; CTA é a autoridade |
+| Limpar manualmente horário aberto no painel | risco de valor residual | 0; builder remove |
+| Entender combinação inválida | comportamento inferido | erro específico antes de efeito |
+| Repetir após resposta perdida | risco de trocar consequência/key | mesma fingerprint e receipt |
+
+Provas locais:
+
+- testes de componente provam que os CTAs emitem `now`/`scheduled` explicitamente;
+- 3 testes unitários do command builder cobrem now com horário residual, scheduled com instante e scheduled sem instante;
+- testes API provam que now vence horário sugerido e que now+timestamp falha sem outbox;
+- Marketing Nuxt: lint, typecheck e 97 testes passaram;
+- API/approval/outbox/transitions: 122 testes passaram; Ruff e `git diff --check` passaram;
+- nenhuma migration; nenhum provider, rede, produção ou escrita externa foi usado.
