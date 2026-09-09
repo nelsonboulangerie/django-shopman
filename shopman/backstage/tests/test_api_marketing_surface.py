@@ -283,6 +283,89 @@ class TestPostDecision:
         assert first.json()["current_version"] == replay.json()["current_version"] == 2
         assert MarketingCommandReceipt.objects.count() == 1
 
+    def test_v2_reject_has_version_receipt_and_session_actor(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"base_version": 1, "reason": "Imagem incorreta"},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-reject-0000001",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["receipt"]["kind"] == "reject"
+        assert response.json()["announcement"]["version"] == 2
+        receipt = MarketingCommandReceipt.objects.get()
+        assert receipt.actor_id == gestor.pk
+        assert receipt.actor_ref == f"user:{gestor.pk}"
+
+    def test_v2_cancel_tombstones_scheduled_outbox(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
+        when = timezone.now() + timedelta(hours=2)
+        approved = client.post(
+            f"{base_url}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": when.isoformat(),
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-schedule-00001",
+        )
+        cancelled = client.post(
+            f"{base_url}/cancel/",
+            data={"base_version": 2},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-cancel-0000001",
+        )
+
+        assert approved.status_code == cancelled.status_code == 200
+        assert cancelled.json()["announcement"]["status"] == "cancelled"
+        assert cancelled.json()["receipt"]["outcome"]["outbox_cancelled"] == 2
+        assert MarketingOutbox.objects.filter(
+            state=MarketingOutbox.State.CANCELLED,
+            cancelled_by_command__kind="cancel",
+        ).count() == 2
+
+    def test_v2_reschedule_moves_pending_outbox_and_returns_absolute_time(
+        self, client, gestor, rule, template
+    ):
+        announcement = _post(rule, template)
+        client.force_login(gestor)
+        base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
+        first_at = timezone.now() + timedelta(hours=2)
+        next_at = first_at + timedelta(hours=4)
+        client.post(
+            f"{base_url}/approve/",
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": first_at.isoformat(),
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-schedule-00002",
+        )
+
+        response = client.post(
+            f"{base_url}/reschedule/",
+            data={"base_version": 2, "publish_at": next_at.isoformat()},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="idem-api-reschedule-0001",
+        )
+
+        assert response.status_code == 200
+        assert response.json()["receipt"]["kind"] == "reschedule"
+        assert response.json()["receipt"]["outcome"]["publish_at"] == next_at.isoformat()
+        assert set(MarketingOutbox.objects.values_list("available_at", flat=True)) == {next_at}
+
     def test_rejecting_keeps_it_off_the_air_and_records_who(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)

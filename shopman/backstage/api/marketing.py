@@ -501,6 +501,31 @@ class AnnouncementRejectView(_CampaignBase):
         payload = request.data if isinstance(request.data, dict) else {}
         reason = str(payload.get("reason") or "").strip()
 
+        if request.headers.get("Idempotency-Key") or "base_version" in payload:
+            unexpected = sorted(set(payload) - {"base_version", "reason"})
+            if unexpected:
+                return _unknown_command_fields(unexpected)
+            base_version, error = _command_version(payload)
+            if error:
+                return error
+            try:
+                from shopman.shop.services.marketing_transitions import reject_command
+
+                result = reject_command(
+                    pk,
+                    actor=request.user,
+                    idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                    base_version=base_version,
+                    reason=reason,
+                    request_id=str(request.headers.get("X-Request-ID") or ""),
+                )
+            except Exception as exc:
+                response = _command_error_response(exc)
+                if response is not None:
+                    return response
+                raise
+            return Response(_command_response(result))
+
         try:
             announcement = campaign_service.reject(pk, request.user, reason=reason)
         except campaign_service.CampaignError as exc:
@@ -511,6 +536,84 @@ class AnnouncementRejectView(_CampaignBase):
             request.user.pk, pk, reason,
         )
         return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
+
+
+class AnnouncementCancelView(_CampaignBase):
+    """Cancel every outbox lane only while none has started."""
+
+    permission_map = {"POST": "shop.publish_marketing_announcements"}
+
+    def post(self, request, pk: int):
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"base_version"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        try:
+            from shopman.shop.services.marketing_transitions import cancel_command
+
+            result = cancel_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except Exception as exc:
+            response = _command_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(_command_response(result))
+
+
+class AnnouncementRescheduleView(_CampaignBase):
+    """Move all pending lanes while preserving their relative wave delay."""
+
+    permission_map = {"POST": "shop.publish_marketing_announcements"}
+
+    def post(self, request, pk: int):
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"base_version", "publish_at"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        publish_at, parse_error = _publish_at(payload.get("publish_at"))
+        if parse_error or publish_at is None:
+            detail = (
+                parse_error["detail"]
+                if parse_error
+                else "Escolha a nova data e hora."
+            )
+            return Response(
+                {
+                    "code": "invalid_publish_at",
+                    "detail": detail,
+                    "field_errors": {"publish_at": [detail]},
+                },
+                status=422,
+            )
+        try:
+            from shopman.shop.services.marketing_transitions import reschedule_command
+
+            result = reschedule_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                publish_at=publish_at,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except Exception as exc:
+            response = _command_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(_command_response(result))
 
 
 # ── Regras ───────────────────────────────────────────────────────────
@@ -1020,6 +1123,73 @@ def _is_approval_command(request) -> bool:
         or "base_version" in data
         or "publish_mode" in data
     )
+
+
+def _command_version(payload) -> tuple[int, Response | None]:
+    raw = payload.get("base_version")
+    version = None if isinstance(raw, bool) else _as_int(raw)
+    if version is None or version <= 0:
+        return 0, Response(
+            {
+                "code": "invalid_base_version",
+                "detail": "Informe a versão exibida na revisão.",
+                "field_errors": {"base_version": ["Use um inteiro positivo."]},
+            },
+            status=422,
+        )
+    return version, None
+
+
+def _unknown_command_fields(fields: list[str]) -> Response:
+    return Response(
+        {
+            "code": "unknown_command_fields",
+            "detail": "O comando contém campos desconhecidos.",
+            "field_errors": {"payload": fields},
+        },
+        status=422,
+    )
+
+
+def _command_error_response(exc: Exception) -> Response | None:
+    from shopman.shop.services.marketing_commands import (
+        MarketingCommandConflict,
+        MarketingCommandRejected,
+    )
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+
+    if isinstance(exc, MarketingCommandConflict):
+        return Response(exc.as_payload(), status=409)
+    if isinstance(exc, MarketingCommandRejected):
+        status_code = 404 if exc.code == "announcement_not_found" else 422
+        return Response(exc.as_payload(), status=status_code)
+    if isinstance(exc, MarketingContractError):
+        return Response(exc.as_payload(), status=422)
+    return None
+
+
+def _command_response(result) -> dict:
+    receipt = result.receipt
+    return {
+        "ok": True,
+        "replayed": result.replayed,
+        "receipt": {
+            "ref": str(receipt.ref),
+            "kind": receipt.kind,
+            "state": receipt.state,
+            "base_version": receipt.base_version,
+            "resulting_version": receipt.resulting_version,
+            "resource_ref": receipt.resource_ref,
+            "outcome": receipt.outcome,
+            "created_at": receipt.created_at.isoformat(),
+            "completed_at": (
+                receipt.completed_at.isoformat() if receipt.completed_at else ""
+            ),
+        },
+        "announcement": projection_data(
+            marketing_projection.build_announcement(result.announcement)
+        ),
+    }
 
 
 def _publish_at(raw) -> tuple[object | None, dict | None]:

@@ -194,6 +194,7 @@ def execute_announcement_command(
             common = {
                 "kind": kind,
                 "actor": actor_row,
+                "actor_ref": f"user:{actor_row.pk}",
                 "idempotency_key_hash": key_hash,
                 "payload_hash": payload_hash,
                 "base_version": base_version,
@@ -299,12 +300,6 @@ def _validate_input(
     payload: Mapping[str, Any],
     request_id: str,
 ) -> tuple[str, str, str, str]:
-    if kind not in MarketingCommandReceipt.Kind.values:
-        raise MarketingCommandRejected(
-            code="invalid_command_kind",
-            detail="Tipo de comando de Marketing inválido.",
-            field_errors={"kind": ("Use um comando conhecido.",)},
-        )
     if not getattr(actor, "pk", None):
         raise MarketingCommandRejected(
             code="invalid_actor",
@@ -314,6 +309,40 @@ def _validate_input(
         raise MarketingCommandRejected(
             code="invalid_resource_ref",
             detail="Referência de anúncio inválida.",
+        )
+    safe_request_id = str(request_id or "")
+    if safe_request_id and not _REQUEST_ID_RE.fullmatch(safe_request_id):
+        raise MarketingCommandRejected(
+            code="invalid_request_id",
+            detail="Identificador da requisição inválido.",
+        )
+
+    resource_ref = f"announcement:{announcement_id}"
+    key_hash, payload_hash = command_fingerprints(
+        kind=kind,
+        resource_ref=resource_ref,
+        idempotency_key=idempotency_key,
+        base_version=base_version,
+        payload=payload,
+    )
+    return key_hash, payload_hash, resource_ref, safe_request_id
+
+
+def command_fingerprints(
+    *,
+    kind: str,
+    resource_ref: str,
+    idempotency_key: str,
+    base_version: int,
+    payload: Mapping[str, Any],
+) -> tuple[str, str]:
+    """Validate and fingerprint a human or system command without storing raw keys."""
+
+    if kind not in MarketingCommandReceipt.Kind.values:
+        raise MarketingCommandRejected(
+            code="invalid_command_kind",
+            detail="Tipo de comando de Marketing inválido.",
+            field_errors={"kind": ("Use um comando conhecido.",)},
         )
     if isinstance(base_version, bool) or not isinstance(base_version, int) or base_version <= 0:
         raise MarketingCommandRejected(
@@ -340,14 +369,12 @@ def _validate_input(
             code="invalid_command_payload",
             detail="O payload do comando deve ser um objeto.",
         )
-    safe_request_id = str(request_id or "")
-    if safe_request_id and not _REQUEST_ID_RE.fullmatch(safe_request_id):
+    resource_ref = str(resource_ref or "")
+    if not resource_ref or len(resource_ref) > 120:
         raise MarketingCommandRejected(
-            code="invalid_request_id",
-            detail="Identificador da requisição inválido.",
+            code="invalid_resource_ref",
+            detail="Referência do recurso inválida.",
         )
-
-    resource_ref = f"announcement:{announcement_id}"
     envelope = {
         "base_version": base_version,
         "kind": kind,
@@ -369,8 +396,6 @@ def _validate_input(
     return (
         _keyed_hash("idempotency", key),
         _keyed_hash("payload", canonical),
-        resource_ref,
-        safe_request_id,
     )
 
 

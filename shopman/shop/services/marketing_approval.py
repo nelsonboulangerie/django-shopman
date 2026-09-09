@@ -82,7 +82,7 @@ def approve_command(
             code="invalid_clock",
             detail="O relógio da aprovação precisa incluir timezone.",
         )
-    normalized_mode, normalized_publish_at = _schedule(
+    normalized_mode, normalized_publish_at = normalize_schedule(
         publish_mode,
         publish_at=publish_at,
         now=now,
@@ -225,6 +225,7 @@ def approve_command(
             command=receipt,
             announcement=announcement,
             actor_id=receipt.actor_id,
+            actor_ref=receipt.actor_ref,
             snapshot=snapshot,
             artifact=artifact,
             base_version=announcement.version,
@@ -347,7 +348,7 @@ def _audience_rules(announcement: Announcement) -> dict[str, Any]:
     return {}
 
 
-def _schedule(
+def normalize_schedule(
     publish_mode: str,
     *,
     publish_at: datetime | None,

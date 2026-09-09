@@ -69,6 +69,7 @@ class AnnouncementStatus(models.TextChoices):
     #: quê" — e é essa a pergunta que revela modelo de campanha errado.
     REJECTED = "rejected", "recusado"
     EXPIRED = "expired", "expirado"
+    CANCELLED = "cancelled", "cancelado"
 
 
 # A hierarquia de qualidade não vive mais aqui: era o literal QUALITY_LEVELS,
@@ -546,6 +547,7 @@ class MarketingCommandReceipt(models.Model):
         PUBLISH_NOW = "publish_now", "publicar agora"
         CANCEL = "cancel", "cancelar"
         FIRE = "fire", "disparar campanha"
+        EXPIRE = "expire", "expirar"
 
     class State(models.TextChoices):
         ACCEPTED = "accepted", "aceito"
@@ -573,7 +575,10 @@ class MarketingCommandReceipt(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="marketing_command_receipts",
+        null=True,
+        blank=True,
     )
+    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
     idempotency_key_hash = models.CharField(max_length=64)
     payload_hash = models.CharField(max_length=64)
     base_version = models.PositiveIntegerField()
@@ -590,6 +595,11 @@ class MarketingCommandReceipt(models.Model):
             models.UniqueConstraint(
                 fields=["actor", "idempotency_key_hash"],
                 name="shop_marketing_command_actor_idem_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["actor_ref", "idempotency_key_hash"],
+                condition=models.Q(actor__isnull=True) & models.Q(actor_ref__gt=""),
+                name="shop_marketing_command_system_idem_uq",
             ),
         ]
         indexes = [
@@ -671,7 +681,10 @@ class MarketingAuditEvent(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name="marketing_audit_events",
+        null=True,
+        blank=True,
     )
+    actor_ref = models.CharField(max_length=128, blank=True, db_index=True)
     snapshot = models.ForeignKey(
         AudienceSnapshot,
         on_delete=models.PROTECT,
@@ -749,6 +762,14 @@ class MarketingOutbox(models.Model):
     lease_owner = models.CharField(max_length=100, blank=True)
     lease_until = models.DateTimeField(null=True, blank=True)
     last_error_code = models.CharField(max_length=64, blank=True)
+    cancelled_by_command = models.ForeignKey(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="cancelled_outbox_entries",
+        null=True,
+        blank=True,
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

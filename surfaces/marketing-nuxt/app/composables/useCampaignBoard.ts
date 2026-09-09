@@ -65,7 +65,26 @@ export function useCampaignBoard() {
 
   // O motivo é opcional: exigir justificativa só ensina o gestor a digitar "não".
   async function reject(pk: number, reason = ""): Promise<boolean> {
-    return decide(pk, "reject", { reason }, "Anúncio recusado.");
+    const announcement = pendingPosts.value.find(item => item.pk === pk);
+    if (!announcement) {
+      useSonner.error("Este anúncio mudou ou saiu da fila. Atualizamos o painel.");
+      await refresh();
+      return false;
+    }
+    const command = { base_version: announcement.version, reason };
+    const fingerprint = `reject:${pk}:${JSON.stringify(command)}`;
+    let idempotencyKey = approvalKeys.get(fingerprint);
+    if (!idempotencyKey) {
+      idempotencyKey = globalThis.crypto.randomUUID();
+      approvalKeys.set(fingerprint, idempotencyKey);
+    }
+    return decide(
+      pk,
+      "reject",
+      command,
+      "Anúncio recusado.",
+      { "Idempotency-Key": idempotencyKey },
+    );
   }
 
   async function decide(

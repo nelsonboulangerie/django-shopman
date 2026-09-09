@@ -27,16 +27,16 @@ async function decide(
 ) {
   busy.value = true;
   try {
-    const commandBody = action === "approve"
-      ? {
-          ...body,
-          base_version: announcement.value?.version,
-          publish_mode: "publish_at" in body && body.publish_at ? "scheduled" : "now",
-        }
-      : body;
-    const fingerprint = `${pk.value}:${JSON.stringify(commandBody)}`;
+    const commandBody = {
+      ...body,
+      base_version: announcement.value?.version,
+      ...(action === "approve"
+        ? { publish_mode: "publish_at" in body && body.publish_at ? "scheduled" : "now" }
+        : {}),
+    };
+    const fingerprint = `${action}:${pk.value}:${JSON.stringify(commandBody)}`;
     let idempotencyKey = approvalKeys.get(fingerprint);
-    if (action === "approve" && !idempotencyKey) {
+    if (!idempotencyKey) {
       idempotencyKey = globalThis.crypto.randomUUID();
       approvalKeys.set(fingerprint, idempotencyKey);
     }

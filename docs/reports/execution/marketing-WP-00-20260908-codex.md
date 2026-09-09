@@ -357,3 +357,40 @@ Provas locais:
 - Marketing Nuxt: lint, typecheck e 94 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0027_marketing_approval_outbox`; nenhuma rede, credencial, produção ou escrita externa foi usada.
+
+## MKT-011 — reject/cancel/reschedule/expire transacionais e auditados
+
+Implementado:
+
+- `reject`, `cancel` e `reschedule` usam o mesmo executor idempotente/CAS do MKT-009 e produzem receipt + audit na transação da mudança;
+- rejeitar um draft registra ator/motivo e versão; rejeitar um agendamento também cancela todas as lanes ainda pendentes;
+- cancelar marca o anúncio `cancelled`, limpa o horário e grava em cada lane o tombstone `cancelled_by_command`/`cancelled_at`;
+- qualquer lane `claimed`, `dispatched` ou em outro estado não pendente bloqueia a promessa de cancelamento/reagendamento com `dispatch_already_started`;
+- reagendamento aceita somente anúncio aprovado ainda agendado, move todas as lanes por um único delta e preserva atraso relativo de waves;
+- duas decisões com a mesma base version têm um vencedor; a segunda recebe receipt `version_conflict` e não sobrescreve a primeira;
+- expiração deixou de ser `QuerySet.update` opaco: cada item recebe lock, version, command receipt, audit e transição atômica;
+- o ator de expiração é explicitamente `system:marketing-expiry`, com FK humana nula; nenhuma conta/pessoa fictícia é criada;
+- receipts/audit agora têm `actor_ref`; comandos humanos continuam ligados à sessão por FK e ref `user:<pk>`;
+- a migration preenche `actor_ref` dos receipts/audits já existentes e mantém unique próprio para comandos de sistema;
+- endpoints v2 de reject/cancel/reschedule exigem base version e idempotency key, rejeitam campos desconhecidos e devolvem o mesmo envelope seguro;
+- Nuxt passou a gerar e reaproveitar automaticamente idempotency key também na recusa; o motivo continua opcional conforme G-H04;
+- o reject legado permanece somente para consumidores ainda não migrados (notificação pessoal), cuja retirada ordenada está em MKT-036/037.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Cancelar lanes individualmente/conferir fila | não existia | 1 comando atômico |
+| Reagendar plataformas/waves separadamente | N ajustes ou caminho inexistente | 1 horário; offsets preservados |
+| Saber se “cancelar” ainda vale | inferência externa | resposta imediata `dispatch_already_started` |
+| Lembrar version/key ao recusar | manual/inexistente | 0; Nuxt deriva e conserva |
+| Explicar por que um item sumiu por prazo | bulk state sem autoria/evento | receipt + audit + reason code |
+| Recuperar duplo toque/resposta perdida | risco de segunda transição | mesmo receipt, 0 segunda mudança |
+
+Provas locais:
+
+- 10 testes MKT-011 cobrem reject pendente/agendado, tombstone, cancel replay, claimed/dispatched, reschedule com offset, disputa CAS, expiry idempotente, crash rollback e reverse/reapply da migration;
+- transitions + approval + commands + API + campanha/notificações/capabilities: 262 testes passaram;
+- Marketing Nuxt: lint, typecheck e 94 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0028_marketing_transactional_transitions`; nenhum provider, rede, produção ou escrita externa foi usado.

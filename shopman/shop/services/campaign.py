@@ -1435,10 +1435,7 @@ def dispatch_due(*, now=None) -> int:
 
 
 def expire_stale_announcements(*, now=None) -> int:
-    """Caducar announcements pendentes que passaram do prazo. Retorna quantos."""
-    now = now or timezone.now()
-    return Announcement.objects.filter(
-        status=AnnouncementStatus.PENDING_REVIEW,
-        expires_at__isnull=False,
-        expires_at__lte=now,
-    ).update(status=AnnouncementStatus.EXPIRED)
+    """Caducar announcements com version, receipt e audit por item."""
+    from shopman.shop.services.marketing_transitions import expire_due
+
+    return expire_due(now=now)
