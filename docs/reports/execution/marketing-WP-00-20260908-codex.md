@@ -394,3 +394,39 @@ Provas locais:
 - Marketing Nuxt: lint, typecheck e 94 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0028_marketing_transactional_transitions`; nenhum provider, rede, produção ou escrita externa foi usado.
+
+## MKT-012 — outbox claim/lease/reconciler e crash recovery
+
+Implementado:
+
+- consumidor dedicado faz claim somente de rows commitadas e vencidas, em batch limitado, com `select_for_update(skip_locked)` quando o banco suporta;
+- o budget inicial autorizado pelo pacote, sem declarar G-H08 fechado, está codificado: batch 100, lease 60 s, máximo de 5 tentativas e backoff limitado;
+- estado `claimed` exige owner + prazo de lease no banco; qualquer outro estado proíbe lease residual;
+- a `Directive` durável e a transição para `dispatched` são gravadas na mesma transação, com `dispatch_ref` único e timestamp obrigatório;
+- o callback já existente da fila roda somente depois desse commit; queda anterior não cria fila, queda posterior deixa uma única fila retomável;
+- payload da fila carrega refs/hash/version do artifact e snapshot aprovados, sem conteúdo, membership, telefone ou idempotency key;
+- antes do handoff, o consumer revalida status, prazo, command concluído, versões/refs do grafo, platform aprovada e hash byte a byte do artifact;
+- dedupe encontrado com topic/payload divergente falha fechado como `directive_identity_mismatch`; nunca é aceito por coincidência de chave;
+- reconciler liga fila durável já existente, recupera lease stale ainda segura, encerra budget esgotado e apenas alerta — sem blind retry — se um dispatch já conhecido perdeu a fila;
+- anúncio agendado v2 não cai também no scheduler legado; o primeiro handoff válido move `approved` para `publishing` e limpa `publish_at`;
+- `process_marketing_outbox` suporta ciclo único/watch e isola falha por row; o maintenance worker o chama silenciosamente como fallback;
+- `SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED` nasce `False` e é repinado `False` nos testes; `--force` é impossível fora de development/test;
+- logs estruturados expõem somente counts e idade da outbox: claimed/dispatched/requeued/failed, lease recovery/failure, linked e oldest due age.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Resgatar aprovação perdida após crash | inspeção/reenfileiramento manual | 0 ação; próximo ciclo converge |
+| Descobrir worker morto | anúncio preso/estado implícito | lease 60 s + contador de recovery |
+| Conferir se duas filas representam a mesma intenção | comparação manual impossível | `dispatch_ref` e dedupe por outbox |
+| Evitar duplo caminho no agendamento | scheduler legado + novo indefinidos | v2 excluído do legado por grafo |
+| Ativar caminho novo inadvertidamente | risco por simples deploy | flag segura off; force bloqueado em produção |
+| Diagnosticar backlog | consulta ad hoc a rows | 1 log com counts e idade, zero PII |
+
+Provas locais:
+
+- 14 testes MKT-012 cobrem workers concorrentes sequenciais, batch, lease/reclaim/exhaustion, handoff/replay, crash antes/depois do commit, revalidação, reconciliação, mismatch, scheduler legado, flag/force e reverse/reapply da migration;
+- Marketing command/outbox/API/campaign/handlers/capabilities/notifications/maintenance: 359 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0029_marketing_outbox_recovery`; nenhum provider, rede, produção ou escrita externa foi usado.

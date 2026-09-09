@@ -160,7 +160,18 @@ def test_cancel_never_claims_success_after_any_lane_started(
 ):
     _approve(actor, announcement)
     first = MarketingOutbox.objects.order_by("pk").first()
-    MarketingOutbox.objects.filter(pk=first.pk).update(state=started_state)
+    started_fields = {"state": started_state}
+    if started_state == MarketingOutbox.State.CLAIMED:
+        started_fields.update(
+            lease_owner="worker:test",
+            lease_until=timezone.now() + timedelta(minutes=1),
+        )
+    else:
+        started_fields.update(
+            dispatch_ref=f"directive:test:{first.pk}",
+            dispatched_at=timezone.now(),
+        )
+    MarketingOutbox.objects.filter(pk=first.pk).update(**started_fields)
 
     with pytest.raises(MarketingCommandRejected) as caught:
         cancel_command(

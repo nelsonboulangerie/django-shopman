@@ -8,6 +8,7 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_orphan_holds        — holds indefinidos órfãos (sem sessão viva/data passada)
   cleanup_stale_planning    — quants planejados órfãos
   expire_stale_announcements    — announcement pendente sem aprovação a tempo caduca
+  process_marketing_outbox   — recupera leases e publica intents já commitadas
   dispatch_due_announcements — announcement aprovado com hora marcada sai quando chega a hora
   arm_scheduled_campaigns    — ARMA (não dispara) as ocasiões agendadas do próximo horizonte
   reconcile_payments        — PIX pago com webhook perdido é resgatado
@@ -63,6 +64,9 @@ MAINTENANCE_COMMANDS = (
     "evaluate_bi_alerts",
     # Frescor vencido não vira propaganda: announcement pendente além do prazo caduca.
     "expire_stale_announcements",
+    # Antes do scheduler legado: v2 publica intents commitadas; a flag segura é
+    # off por default e o comando continua servindo de reconciler/canary explícito.
+    "process_marketing_outbox",
     # Aprovado com hora marcada sai sozinho quando o relógio chega.
     "dispatch_due_announcements",
     "arm_scheduled_campaigns",
@@ -142,6 +146,9 @@ class Command(BaseCommand):
         worker_heartbeat.beat(MAINTENANCE_WORKER)
         for command in MAINTENANCE_COMMANDS:
             try:
-                call_command(command)
+                if command == "process_marketing_outbox":
+                    call_command(command, quiet_disabled=True)
+                else:
+                    call_command(command)
             except Exception:
                 logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)

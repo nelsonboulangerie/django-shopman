@@ -762,6 +762,8 @@ class MarketingOutbox(models.Model):
     lease_owner = models.CharField(max_length=100, blank=True)
     lease_until = models.DateTimeField(null=True, blank=True)
     last_error_code = models.CharField(max_length=64, blank=True)
+    dispatch_ref = models.CharField(max_length=128, blank=True)
+    dispatched_at = models.DateTimeField(null=True, blank=True)
     cancelled_by_command = models.ForeignKey(
         MarketingCommandReceipt,
         on_delete=models.PROTECT,
@@ -779,6 +781,39 @@ class MarketingOutbox(models.Model):
             models.UniqueConstraint(
                 fields=["command", "platform", "wave_key"],
                 name="shop_marketing_outbox_command_lane_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["dispatch_ref"],
+                condition=models.Q(dispatch_ref__gt=""),
+                name="shop_marketing_outbox_dispatch_ref_uq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state="claimed",
+                        lease_owner__gt="",
+                        lease_until__isnull=False,
+                    )
+                    | (
+                        ~models.Q(state="claimed")
+                        & models.Q(lease_owner="", lease_until__isnull=True)
+                    )
+                ),
+                name="shop_marketing_outbox_lease_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state="dispatched",
+                        dispatch_ref__gt="",
+                        dispatched_at__isnull=False,
+                    )
+                    | (
+                        ~models.Q(state="dispatched")
+                        & models.Q(dispatch_ref="", dispatched_at__isnull=True)
+                    )
+                ),
+                name="shop_marketing_outbox_dispatch_state_ck",
             ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]

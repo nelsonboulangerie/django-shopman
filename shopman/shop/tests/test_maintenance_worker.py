@@ -340,6 +340,7 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         call("refresh_bi_daily_series"),
         call("evaluate_bi_alerts"),
         call("expire_stale_announcements"),
+        call("process_marketing_outbox", quiet_disabled=True),
         call("dispatch_due_announcements"),
         call("arm_scheduled_campaigns"),
         call("reconcile_payments"),

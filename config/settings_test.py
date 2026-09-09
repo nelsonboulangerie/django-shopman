@@ -42,6 +42,7 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 # ── Flags de comportamento (runtime) ─────────────────────────────────────────
 SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
+SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
 #
 SHOPMAN_ADMIN_REQUIRE_2FA = False

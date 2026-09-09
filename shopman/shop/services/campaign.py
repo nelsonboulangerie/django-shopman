@@ -1420,7 +1420,7 @@ def dispatch_due(*, now=None) -> int:
     now = now or timezone.now()
     due = Announcement.objects.filter(
         status=AnnouncementStatus.APPROVED, publish_at__isnull=False, publish_at__lte=now
-    )
+    ).filter(marketing_outbox_entries__isnull=True)
 
     dispatched = 0
     for announcement in due:

@@ -95,6 +95,15 @@ SHOPMAN_ENVIRONMENT = os.environ.get(
     _default_shopman_environment(),
 ).strip().lower()
 
+# Expand/canary flag: approval writes the transactional Marketing outbox in all
+# environments, but no new consumer may hand work to the delivery queue until an
+# operator explicitly enables it.  Consent, redaction and unique guards are not
+# behind this flag.
+SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED",
+    False,
+)
+
 SHOPMAN_EXPOSE_DEBUG_OTP = _env_bool(
     "SHOPMAN_EXPOSE_DEBUG_OTP",
     DEBUG or SHOPMAN_ENVIRONMENT == "staging",
