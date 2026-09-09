@@ -1,121 +1,201 @@
 # Execução — Produção rumo à excelência irreprimível
 
 - Sessão: `codex-production-irrepressible-excellence-20260908`
-- Início: 2026-09-08, `America/Sao_Paulo`
+- Período: 2026-09-08 a 2026-09-09, `America/Sao_Paulo`
 - Worktree exclusivo: `/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-production-irrepressible-20260908`
 - Branch: `codex/production-irrepressible-excellence-20260908`
 - SHA-base: `b589e22c5c6963e79c4bf735b79eaf928b9ae6f7`
-- Escopo: `surfaces/production-nuxt` e cadeia Django/Craftsman/Stockman/Orderman descrita no plano.
-- Checkout compartilhado original: preservado; havia arquivos não rastreados alheios e nenhum foi transportado, exceto o plano normativo.
-- Plano de entrada: SHA-256 `f435f49347391b7d1bdb0e9de29a3278d14d17897bb93022b2880679014ac68d`, idêntico no checkout de origem e no worktree.
+- HEAD técnico antes deste registro: `1e4af38c67da386191ca2a85641aa14cec0fe5fc`
+- Plano de entrada: SHA-256 `f435f49347391b7d1bdb0e9de29a3278d14d17897bb93022b2880679014ac68d`.
+- Estado de entrega: último resultado automatizável seguro; não é “pronto para piloto”, “rollout concluído” nem “plano concluído”.
+
+O checkout compartilhado original foi preservado. O plano foi o único input não commitado
+transportado ao worktree. Não houve merge, push, PR, deploy, escrita em produção, uso de
+credencial real ou operação de hardware.
+
+## Protocolo e preparação
+
+Foram lidos integralmente o plano, ADR-012, ADR-014, ADR-017, ADR-018, o design system do
+Backstage, o playbook e a política canônica do Unfold e o inventário Unfold. Não existe
+`AGENTS.md` rastreado na árvore. A skill `unfold-admin-canonical` foi aplicada à revisão e
+implementação do Admin: configuração permanece em fieldsets/widgets/inlines oficiais e a
+operação diária permanece no Nuxt.
+
+O protocolo multiagente foi executado com escopos serializados no mesmo worktree:
+
+- `audit_domain_admin`: auditou e implementou os adapters de fórmula/reposição e o Admin;
+  8 focais, Craftsman 260/2 skips e Stockman 266/14 skips.
+- `audit_frontend_p0p1`: auditou P0.2/P0.5/P1, implementou borda HTTP e guard de mutação;
+  o relatório exclusivo está em `codex-audit-frontend-p0p1-p0-5-20260908.md`.
+- `audit_backend_p0`: encerrou por limite externo de uso depois de entregar achados; o agente
+  raiz reproduziu, corrigiu e validou cada achado aproveitado.
+- O agente raiz manteve ownership de contratos/migrations, reconciliou as integrações e rodou
+  as suítes amplas. Nenhum subagente criou commit ou tocou outro worktree.
 
 ## Commits locais
 
-| Commit | Slice | Arquivos | Provas | Dependências |
-|---|---|---|---|---|
-| `749f8f1e2` | Registro do plano normativo | `docs/plans/PRODUCTION-IRREPRESSIBLE-EXCELLENCE-PLAN-2026-09-08.md` | SHA-256 conferido; `git diff --cached --check` | SHA-base |
-| `bd0c56268` | Filtros tipados e estritos | `_production_filters.py`, `operations.py` e testes | RED: 5 falhas/1 passe; GREEN: 43 aprovados; Ruff e `git diff --check` | P0.0 |
+| Commit | Slice | Evidência principal |
+|---|---|---|
+| `749f8f1e2` | plano normativo | hash do input e diff staged conferidos |
+| `bd0c56268` | filtros/datas estritos | 43 testes verdes após 5 RED |
+| `3bf936877` | baseline versionada | fixtures e placar de 100 WOs |
+| `73d50e01f` | verdade de quantidade/qualidade | snapshot, started qty, catálogo estrito |
+| `1d7495956` | zero-output seguro | zero não vira estoque vendável |
+| `9e85d0ede` | projeções em lote | budgets abaixo, sem N+1 observado |
+| `3cc03df58` | capacidades efetivas | negação por linha/action/API e alertas escopados |
+| `a066b14f7` | mutações revisionadas | ator, revisão, idempotência, locks e conflitos tipados |
+| `d003be80d` | contrato/cliente gerado | schema versionado e geração sem drift |
+| `dd2aabfda` | integridade/action contracts | domínio, saga, alertas, pedidos, forno, Admin e testes |
+| `1e4af38c6` | superfície de operador | guard stale/offline, QC, actions, headers e corte do menuboard |
 
-## Preparação e baseline
+## Baseline e placar após a mudança
 
-Documentos lidos integralmente antes da primeira alteração de implementação:
+Medição funcional local em SQLite/test client com 100 WOs; serve como comparativo, não como
+p95 de produção.
 
-- plano desta execução;
-- ADR-012, ADR-014, ADR-017 e ADR-018;
-- `docs/engineering/backstage-design-system.md`;
-- `docs/engineering/unfold_admin_page_playbook.md`;
-- `docs/engineering/unfold_canonical_policy.md`;
-- `docs/reference/unfold_canonical_inventory.md`;
-- skill local `.codex/skills/unfold-admin-canonical/SKILL.md`.
+| Projeção | Antes: queries / ms / bytes | Depois: queries / ms / bytes | Resultado |
+|---|---:|---:|---|
+| board | 492 / 160,245 / 231.844 | 18 / 39,235 / 312.380 | N+1 removido; payload cresceu pelo contrato de actions/freshness |
+| KDS | 74 / 16,519 / 16.641 | 7 / 9,621 / 70.125 | budget estável |
+| QC | 78 / 22,383 / 34.053 | 12 / 26,350 / 129.233 | facts/actions explícitos |
+| mise en place | 85 / 24,942 / 5.971 | 14 / 11,472 / 6.711 | snapshot/started qty em lote |
+| relatórios | 146 / 37,232 / 32.055 | 13 / 14,056 / 32.798 | filtros estritos e drilldown |
+| pesagem | 17 / 14,079 / 1.797 | 18 / 9,696 / 2.561 | tabela fechada/versionada; execução real segue D5 |
+| alertas | 8 / 2,521 / 266 | 8 / 3,207 / 1.442 | lifecycle, audiência e actions no payload |
 
-Não há `AGENTS.md` rastreado na árvore do worktree.
+## Resultado por pacote de trabalho
 
-| Data | Comando | Resultado | Observação |
+| WP | Estado verdadeiro | Resultado/evidência | Limite restante |
 |---|---|---|---|
-| 2026-09-08 | `npm test` em `surfaces/production-nuxt` | 20 arquivos, 110 testes aprovados | Primeira coleta falhou porque `.nuxt/tsconfig.app.json` ainda não existia no worktree novo; apó `npm run postinstall`, baseline reproduzido exatamente. |
-| 2026-09-08 | `npm run typecheck` | aprovado | Foi necessário disponibilizar os `node_modules` locais de `production-nuxt` e `operator-kit` no worktree; nenhuma dependência/lock foi alterada. |
-| 2026-09-08 | `npm run lint` | aprovado | Sem achados. |
-| 2026-09-08 | `npm run test:e2e` | 5 aprovados | Confirma o baseline e reproduz o contrato incorreto do menuboard público no teste `guards.spec.ts`. |
-| 2026-09-08 | `python -m pytest` nos cinco arquivos centrais indicados em WP-P0.0 | 58 aprovados em 8,74 s | Subconjunto central atual. |
-| 2026-09-08 | `python -m pytest shopman/backstage/tests/test_*production*.py ...` | 178 aprovados em 15,53 s | Cobertura mais ampla que os 105 testes citados pela auditoria; inclui Produção, QC, forno, quick finish e retry. |
-| 2026-09-08 | `test_production_excellence_baseline.py -q -s` | 2 aprovados | Dataset determinístico de 100 WOs e placar abaixo. |
-| 2026-09-08 | host publicado, desktop e viewport 390 × 844 | shell de Produção carrega; dados operacionais retornam estado de reconexão e login | Inspeção anônima, somente leitura, sem tentativa de autenticação. |
-| 2026-09-08 | host publicado `/menuboard` | 200 anônimo com catálogo e preço reais | Reproduz PROD-009 no sistema publicado; nenhum dado foi copiado para fixture. |
-| 2026-09-08 | host publicado `/api/v1/backstage/production/` | 403 anônimo | O gate de dados operacionais está ativo. |
-| 2026-09-08 | host publicado `/api/v1/storefront/menu/` | 200 anônimo, 140.380 bytes | Confirma que o menuboard paralelo consome contrato público volumoso. |
+| P0.0 | técnico local concluído | fixtures versionadas, 100 WOs, métricas antes/depois e matriz de risco | fixture real anonimizada depende de acesso autorizado |
+| P0.1 | infraestrutura concluída | `resolve_production_access`, filtragem, actions e endpoints usam a mesma capability; SSE espelha todos os grants do board | grants/aprovadores finais são D1; postura final é D2 |
+| P0.2 | concluído | contrato v2, action metadata/proof, erros tipados, filtros estritos, cliente gerado e freshness | OpenAPI global antigo não é um gate verde; ver riscos |
+| P0.3 | concluído em SQLite; runtime aberto | locks, revisão, idempotência, saga quick-finish recuperável, forno e step append-only, pedidos fail-closed | corrida real precisa PostgreSQL/Redis |
+| P0.4 | parcial por D3 | started/snapshot, partição, catálogo estrito, conservação, desvio auditado e zero-output fail-safe | perda total continua bloqueada até semântica D3 |
+| P0.5 | código/build concluídos | headers/cache, upstream fail-fast, `/menuboard` removido, nenhum fetch storefront, Playwright 6/6 | edge/host, TVs e cutover são D4/D8 |
+| P1.1 | concluído localmente | assemblers em lote, `generated_at`, `source_revision`, `fresh_until`, versão e action proof | p95 representativo depende de runtime/piloto |
+| P1.2 | slice seguro concluído | múltiplas WOs expostas; nenhuma escolha `[0]`; edição/ação preserva contexto e conflitos | medição real de esforço é D7 |
+| P1.3 | slice seguro concluído | forno server-stamped, retry, QC por partição, confirmação de desvio e fechamento exato | perda total depende de D3; matriz física depende de D7 |
+| P1.4 | contrato honesto concluído | preparação usa snapshot/started qty; pesagem é projeção fechada e declara que ainda não executa pesagem | sessão/tolerância/impressão auditada são P2.1/D5 |
+| P1.5 | parcial seguro | filtros estritos, drilldown existente, alertas escopados/acionáveis e ack distinto de resolve | export/paginação completa e SLO humano não foram inventados |
+| P1.6 | concluído localmente | todos os blocos `ProductionConfig`, validação/release checks e passaporte somente leitura em Unfold; `make admin` verde | política final de approvals permanece D1 |
+| P2.1 | bloqueado corretamente | pré-condições e lacuna documentadas | P1 precisa de piloto e D5 precisa decisão/hardware |
+| P2.2 | bloqueado corretamente | nenhuma capacidade genérica foi inventada | P1 precisa de piloto e D6 de discovery |
+| P2.3 | bloqueado corretamente | actions/alertas já reduzem ambiguidade sem nova política | depende de D7 e piloto |
 
-### Placar observado — 100 WOs
+## Matriz dos 21 resultados
 
-Medição local funcional (SQLite/test client); é baseline comparativo, não p95 de produção.
+| ID | Estado | Prova resumida/pendência |
+|---|---|---|
+| PROD-001 | infraestrutura entregue; D1/D2 | capability governa projeção, API, SSE e alerta; matriz final não foi presumida |
+| PROD-002 | entregue | 8 mutações usam contrato gerado, ator, rev, chave estável e action proof |
+| PROD-003 | entregue | quick finish tem preflight, uma WO por tentativa, replay e recuperação/compensação explícita |
+| PROD-004 | entregue | step/oven sob transação, lock, rev e eventos append-only |
+| PROD-005 | parcial; D1 | força exige capability, razão e snapshot assinado; aprovador distinto/final depende de D1 |
+| PROD-006 | bloqueado; D3 | zero nunca é creditado, mas o desfecho contábil de perda total não foi inventado |
+| PROD-007 | entregue | planned usa planejado; started usa iniciado; snapshots congelados alimentam leitura/QC |
+| PROD-008 | entregue | grade/defeito ausente, inativo ou desconhecido falha fechado |
+| PROD-009 | código entregue; D4 | rota paralela removida; owner Django por ref preservado; TVs não mapeadas |
+| PROD-010 | código entregue; host pendente | Nitro/BFF têm headers/cache/env fail-fast; scanner do edge exige deploy autorizado |
+| PROD-011 | entregue localmente | budgets 100-WO acima; p95 real depende de PostgreSQL/dataset representativo |
+| PROD-012 | entregue | seleção implícita removida e testada com múltiplas WOs |
+| PROD-013 | entregue | stale/offline bloqueia write, preserva input e só permite refresh/reaplicação consciente |
+| PROD-014 | entregue | audiência, dedupe, lifecycle, ação contextual e ack ≠ resolve |
+| PROD-015 | parcial | validação/janela/drilldown cobertos; paginação/export completos não foram ampliados sem contrato |
+| PROD-016 | parcial | checklist/etiquetas declaram verdade atual; job de impressão auditado pertence a D5/P2.1 |
+| PROD-017 | parcial; D7/hardware | targets/guard/foco básicos e E2E passam; axe, leitor real e matriz visual humana continuam abertos |
+| PROD-018 | entregue localmente | Unfold canônico, config estruturada, checks e passaporte; Admin 234/234 |
+| PROD-019 | D5 | pesagem executada não iniciada antes de processo/tolerância/hardware reais |
+| PROD-020 | D6 | passos/capacidade real não iniciados antes do discovery de gargalo |
+| PROD-021 | D7 | instrumentação/budgets propostos; eficácia exige observar turnos e piloto |
 
-| Superfície | Queries | Tempo local | Payload |
-|---|---:|---:|---:|
-| board | 492 | 160,245 ms | 231.844 B |
-| KDS | 74 | 16,519 ms | 16.641 B |
-| QC | 78 | 22,383 ms | 34.053 B |
-| mise en place | 85 | 24,942 ms | 5.971 B |
-| relatórios | 146 | 37,232 ms | 32.055 B |
-| pesagem | 17 | 14,079 ms | 1.797 B |
-| alertas | 8 | 2,521 ms | 266 B |
+## Provas automatizadas finais
 
-### Cabeçalhos anônimos observados no host publicado
+| Gate/comando | Resultado |
+|---|---|
+| Backstage completo | 2.433 aprovados, 25 skips, 24 subtests; 487,51 s |
+| Shop completo após regressões focais | 2.577 aprovados, 16 skips, 26 runtime deselectados, 10 subtests; 100,56 s |
+| Craftsman | 260 aprovados, 2 skips |
+| Stockman | 266 aprovados, 14 skips |
+| Orderman | 289 aprovados |
+| fluxo HTTP autêntico GET → action proof → POST | KDS advance → QC oven arm → conclude → finish, um evento de cada tipo |
+| Produção Nuxt Vitest | 23 arquivos, 130 testes aprovados |
+| Operator Kit Vitest | 17 arquivos, 177 testes aprovados |
+| typecheck + lint Produção | aprovados |
+| build Nuxt/Nitro Produção | aprovado com ambiente/HTTPS explícitos; warnings de sourcemap/depreciação |
+| Playwright | 6/6: login, shell, menuboard ausente, headers, 404 e reconnect offline |
+| `export_production_schema --check` | aprovado; arquivo gerado sem drift |
+| `makemigrations --check --dry-run` | aprovado |
+| `scripts/check_migrations.py` | 3 aprovados, 2 skips pré-go-live esperados |
+| `make admin` | Unfold maturity aprovado + 234 testes aprovados |
+| Ruff sobre Python alterado + `git diff --check` | aprovado |
 
-As quatro respostas verificadas usam `Cache-Control: private` e `cf-cache-status: BYPASS`. Não foram observados CSP, `frame-ancestors`, `object-src`, `X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`, `Permissions-Policy` ou HSTS. O aceite final de P0.5 continuará exigindo scanner no host após implantação; esta execução não implanta.
+## Gates que não estão verdes
 
-## Gates humanos
+- Runtime: `scripts/check_runtime_gate.py` falhou fechado porque não há `DATABASE_URL`,
+  PostgreSQL, `REDIS_URL` nem `EVENTSTREAM_REDIS`. Os três testes novos de corrida de
+  planejamento estão registrados em `DEFAULT_RUNTIME_TEST_PATHS`; nenhum resultado de SQLite
+  é apresentado como prova de concorrência real.
+- Release readiness em uma base temporária migrada e `seed --flush --profile qa`: 5 checks
+  locais passaram, mas a matriz global Omotenashi ficou 9/11; faltam os cenários pré-existentes
+  `mobile.payment.pix_pending_near_expiry` e `mobile.payment.pix_expired`. Há 3 bloqueios
+  externos: credenciais de sandbox, evidência física/manual e URL de pre-prod. O banco original
+  foi restaurado e a base temporária foi apagada.
+- OpenAPI global: `manage.py spectacular --validate` gerou YAML, mas o extractor global reporta
+  139 erros únicos e 8 warnings de APIs não tipadas fora/ao redor deste contrato. Portanto não é
+  chamado de gate verde; o schema específico de Produção é o artefato versionado aprovado.
+- `npm audit` do lock atual reportou 3 vulnerabilidades (2 moderadas, 1 alta). Não foi executado
+  `audit fix`, pois isso alteraria dependências/lock fora do contrato e sem revisão de impacto.
+- Docker não está instalado neste host; a imagem não foi construída. Browser/hardware reais,
+  impressão 80 mm, balança e leitor de tela físico não foram simulados como evidência.
 
-| Gate | Estado | Trabalho seguro em curso | Escolha pendente |
+## Gates humanos — decisão exata necessária
+
+| Gate | Fato e alternativas | Recomendação | Escolha necessária |
 |---|---|---|---|
-| D1 — matriz de autoridade | aberto | infraestrutura de capabilities, testes de negação e proposta de matriz | capacidades finais e aprovações por persona |
-| D2 — estação confiável | aberto | device posture e enforcement configurável | mutações que exigem estação provisionada |
-| D3 — perda total | aberto | prova da lacuna, invariantes e contrato backward-compatible | nome/semântica contábil se o lifecycle/ADR precisar mudar |
-| D4 — menuboard físico | aberto | aposentar contrato público e preparar entrada canônica por `ref` | refs das TVs e janela de troca |
-| D5 — pesagem | aberto | contrato de sessão/eventos, simulador e fluxo manual por flag | processo, tolerância, lotes, política e hardware reais |
-| D6 — capacidade | aberto | discovery documentado e projeção de conflito | recurso escasso real |
-| D7 — omotenashi medido | aberto | instrumentação, roteiro e budgets provisórios | baseline de turnos e metas finais |
-| D8 — piloto/rollout | aberto | build, runbook, flags, dashboards e rollback | estação, equipe, janela, owner e abort criteria |
+| D1 autoridade | capabilities e negação já existem; pode-se usar grants por grupo ou approvals por ação | grupos concedem leitura/operação comum; force, quick finish e void de alto impacto exigem step-up com aprovador distinto | matriz final por persona e lista de ações com aprovador obrigatório |
+| D2 estação | `PRODUCTION_TRUSTED_STATION_CAPABILITIES` falha fechado por capability | exigir estação em mutações de chão/forno/QC; permitir consulta gerencial fora dela | conjunto exato de capabilities e processo de provisionar/revogar estação |
+| D3 perda total | zero-output é seguro, mas `void` é semanticamente falso | criar outcome/evento explícito de perda total, WASTE integral, zero vendável e replanejamento de pedidos | nome do outcome, efeito contábil e transição/lifecycle aprovada |
+| D4 TVs | Nuxt paralelo acabou; Django por `ref` é único owner | mapear cada TV a ref/credencial e fazer cutover sem redirect adivinhado | refs, credenciais, owner e janela de troca |
+| D5 pesagem | hoje há alvo/etiqueta, não execução | piloto manual advisory antes de integração de balança ou bloqueio | processo, tolerâncias, lote/FIFO, impressora/balança e momento de bloquear |
+| D6 capacidade | nenhum dado prova se gargalo é forno, masseira, bancada ou pessoa | instrumentar sobreposição primeiro, modelar somente o recurso observado | recurso, capacidade, calendário e regra de conflito |
+| D7 omotenashi | budgets existem, baseline de turno não | observar Cozinha e Gerência com roteiro idêntico antes/depois | turnos, participantes, metas e autorização de coleta privacy-safe |
+| D8 piloto | build candidato existe, mas gates anteriores/runtime/host estão abertos | uma estação/equipe, flags advisory, abort criteria e rollback ensaiado | estação, equipe, janela, owner, métricas e autorização de deploy |
 
-## Matriz achado → prova → mudança → observabilidade
+## Manifesto de cobertura
 
-| ID | Achado atual | Teste vermelho/prova | Mudança | Teste verde | Observabilidade | Estado |
-|---|---|---|---|---|---|---|
-| PROD-001 | gate grosso abre todas as ações e APIs constroem acesso total | auditoria estática + testes atuais de coarse gate | pendente | pendente | capabilities projetadas e 403 por capability | aberto; política final D1/D2 |
-| PROD-002 | `rev`/idempotência não atravessam a borda | auditoria de API/cliente e tipos gerados | pendente | pendente | conflito e tentativa correlacionados | aberto |
-| PROD-003 | quick finish cria WO antes de validar shortage/retry | auditoria de `apply_quick_finish` | pendente | pendente | tentativa/WO correlacionadas | aberto |
-| PROD-004 | step/oven atualizam estado sem trava/revisão/idempotência uniforme | auditoria de serviços | pendente | pendente | eventos append-only | aberto |
-| PROD-005 | `force=bool("false")` ativa override e não exige razão/aprovação | teste de borda a adicionar | pendente | pendente | executor/aprovador/razão/snapshot | política final D1/D2 |
-| PROD-006 | perda total é rejeitada; `finished or quantity` criaria saída vendável | testes QC/Stockman a adicionar | correção preventiva + contrato proposto | pendente | ledger/passaporte | semântica final D3 |
-| PROD-007 | mise/pesagem usam planejado/receita viva; zero conhecido some | testes de snapshot/zero a adicionar | pendente | pendente | métricas de divergência | aberto |
-| PROD-008 | grade desconhecida vira default e defeito desconhecido some | teste estrito a adicionar | pendente | pendente | erro tipado por ref | aberto |
-| PROD-009 | menuboard público confirmado em teste e no host | `guards.spec.ts` + GET anônimo publicado 200 | pendente | pendente | probe 403/404/launcher canônico | rollout D4 |
-| PROD-010 | host sem headers defensivos; upstream local permissivo | captura de headers e auditoria de config/proxy | pendente | pendente | release check/scanner | aberto |
-| PROD-011 | N+1 medido: board 492 queries/100 WOs | baseline versionado | pendente | budgets 1/10/100 | query count, latência e payload | aberto |
-| PROD-012 | frontend escolhe `[0]` em múltiplas WOs | teste atual institucionaliza comportamento | pendente | pendente | evento de escolha explícita | aberto |
-| PROD-013 | polling ressuscita após unmount; writes não bloqueiam stale/offline | teste de corrida a adicionar | pendente | pendente | freshness/reconciliação | aberto |
-| PROD-014 | alertas não têm audiência/ciclo/ações projetadas | auditoria de serviço/composable | pendente | pendente | seen/ack/resolved por ator | aberto |
-| PROD-015 | reports sem Apply/paginação; filtros eram permissivos | RED 5 falhas; auditoria frontend | validação estrita e janela 93 dias | 43 testes aprovados | 400 canônico por campo | parcial |
-| PROD-016 | checklist local sem revisão; impressão é `window.print()` | auditoria frontend | pendente | pendente | hash/diff/estado de job | aberto |
-| PROD-017 | falhas de foco, alvo, motion e semântica modal | auditoria frontend | pendente | pendente | axe/matriz de dispositivo | aberto |
-| PROD-018 | Unfold canônico passa, config/passaporte incompletos | `make admin`: 229 aprovados | pendente | pendente | release checks/config resolvida | aberto |
-| PROD-019 | apenas peso-alvo/print, nenhuma pesagem executada | auditoria domínio/frontend | desenho seguro pendente | pendente | sessão/leituras/lote | D5 |
-| PROD-020 | capacidade nominal em `meta`, passos JSON vivos | auditoria domínio | discovery/projeção advisory pendentes | pendente | overlap/duração | D6 |
-| PROD-021 | sem instrumentação de toque/handoff/baseline de turno | auditoria frontend | instrumentação/roteiro pendentes | pendente | métricas privacy-safe | D7 |
+Classificação dos arquivos/áreas exigidos na seção 12:
 
-## WPs
+- **Alterar:** `nuxt.config.ts`, `app.vue`, `ProductionStageGrid.vue`, `QcCloseScreen.vue`,
+  `ShortageDialog.vue`, `AlertsBell.vue`, `expedite.vue`, composables de board/KDS/QC/forno/
+  alertas, tipos, contrato gerado, proxy/headers do Operator Kit, API/filtros/permissões/
+  projeções/serviços/modelos de produção/alertas/forno, handlers Stockman/pedido, configuração,
+  Admin de Shop/qualidade/WO, checks, ADR-018, READMEs, robots e testes correspondentes.
+- **Aposentar:** `app/pages/menuboard.vue`; seus assertions públicas foram substituídas por
+  ausência de rota e ausência de fetch ao storefront. O menuboard Django canônico foi preservado.
+- **Preservar com teste:** rotas `index`, `plan`, `mise-en-place`, `board` e `reports`; login,
+  header, SplitFlap, WeighingLabels; primitivos UI locais; adaptive poll, blind map, board pages,
+  flap audio, timers, reports access, reports presentation e sessão genérica. Não foram
+  reescritos quando o risco já era coberto ou pertencia aos gates D4–D7.
+- **Mover/consolidar:** política de headers/cache e validação do upstream foram para o
+  `operator-kit`; writes de fórmula/reposição agora resolvem o adapter canônico do host por
+  setting, removendo imports Backstage dos pacotes kernel; o adapter Stockman legado virou proxy.
+- **Preservar sem mudança material:** package/lock, favicon, gitignore, configs Vitest/ESLint/
+  TS/UI, CSS/tokens, configs/URLs de deploy e componentes UI gerados. Não havia dependência nova
+  necessária, o cânone existente foi suficiente e mudar esses hotspots não melhoraria o aceite.
 
-| WP | Estado | Evidência/resumo | Próximo passo |
-|---|---|---|---|
-| P0.0 | parcial | baseline funcional, fixtures representativas, placar e auditorias versionados; host publicado inspecionado anonimamente | falta acesso autorizado a dados operacionais reais para produzir fixtures reais anonimizadas; não substituir por dados públicos/Pessoais |
-| P0.1 | em preparação | auditoria confirmou gate grosso e `_full_access()` nas APIs | infraestrutura de capabilities; D1/D2 fecham grants finais |
-| P0.2 | em execução | filtros/datas estritos verdes; schema/rev/idempotência ainda abertos | requests/actions/envelopes gerados e serializers de mutação |
-| P0.3–P0.5 | auditados, não implementados | riscos reproduzidos por leitura e host | introduzir testes vermelhos e slices atômicos |
-| P1.1–P1.6 | não iniciados | mutações dependem de P0.1–P0.3 | aguardar P0 |
-| P2.1–P2.3 | não iniciados | substituição de fluxo depende de piloto P1 e D5–D7 | apenas preparação segura quando desbloqueada |
+## Riscos de integração e rollback
 
-## Riscos novos e colisões
-
-- Nenhuma colisão de escrita detectada no worktree exclusivo.
-- O comando exato que originou os 105 testes backend da auditoria não está documentado no repositório. Foi preservada a evidência histórica e executada uma seleção atual mais ampla, com 178 aprovações.
-- Avisos de sourcemap/depreciação apareceram no build E2E, sem falha; classificar no hardening se permanecerem após os WPs.
-- O pacote editável `shopman-refs` do Python global passou a apontar para um worktree externo inexistente durante a sessão. Os comandos seguintes fixam `PYTHONPATH` para os pacotes deste worktree; nenhuma instalação global foi alterada.
-- A inspeção anônima não dá acesso a WOs, pedidos, estoque ou QC reais. O requisito de fixtures reais anonimizadas permanece explícito, sem copiar catálogo público para fingir equivalência operacional.
+1. A branch `main` observada no handoff está em `e0740f8a7`, muito à frente do SHA-base e com
+   mudanças sobrepostas. A integração precisa ser um rebase/merge semântico em worktree novo,
+   seguido de todas as suítes; não aplicar arquivos inteiros “ours/theirs”.
+2. `main` já possui migrations Backstage até `0047`; as migrations locais `0039`/`0040` colidem
+   nominalmente e devem ser renumeradas/regeneradas depois da integração. Em Craftsman, `main`
+   possui `0007_recipe_book`, enquanto esta linha tem outro `0007` e `0008`; reconciliar o grafo
+   e gerar merge migration quando necessário.
+3. `app/generated/productionContract.ts` é hotspot gerado: integrar backend primeiro e executar
+   novamente `export_production_schema`, nunca resolver o arquivo manualmente.
+4. Rollback local da superfície é desligar o leitor/flag e voltar ao reader anterior, sem
+   reverter eventos já gravados. A rota pública `/menuboard` não deve ser restaurada como rollback.
+5. CSP ainda usa `script-src 'unsafe-inline'` para a hidratação Nuxt; `unsafe-eval` e origens
+   externas permanecem fechados. Nonce é hardening futuro, não motivo para relaxar a política.
