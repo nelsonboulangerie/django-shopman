@@ -7,7 +7,12 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { csrfTokenFromCookieHeader, mergeSetCookieIntoCookieHeader } from "../server/utils/djangoProxy";
+import {
+  csrfTokenFromCookieHeader,
+  DJANGO_CONDITIONAL_REQUEST_HEADERS,
+  DJANGO_OPERATIONAL_RESPONSE_HEADERS,
+  mergeSetCookieIntoCookieHeader,
+} from "../server/utils/djangoProxy";
 import { resolveDjangoBaseUrl } from "../server/utils/djangoBaseUrl";
 
 const proxySource = readFileSync(fileURLToPath(new URL("../server/utils/djangoProxy.ts", import.meta.url)), "utf8");
@@ -35,9 +40,26 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
     expect(proxySource).toContain("headers.origin = djangoOrigin");
     expect(proxySource).toContain("headers.referer = `${djangoOrigin}/`");
     expect(proxySource).toContain('getRequestHeader(event, "idempotency-key")');
-    expect(proxySource).toContain('["retry-after", "etag", "x-request-id", "x-api-version"]');
     expect(proxySource).not.toContain('getRequestHeader(event, "origin")');
     expect(proxySource).not.toContain('getRequestHeader(event, "referer")');
+  });
+
+  it("preserva por allowlist a revalidação e os metadados operacionais", () => {
+    expect(DJANGO_CONDITIONAL_REQUEST_HEADERS).toEqual(["if-none-match", "x-request-id"]);
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toEqual(expect.arrayContaining([
+      "cache-control",
+      "retry-after",
+      "etag",
+      "x-request-id",
+      "x-api-version",
+      "x-contract-version",
+      "x-resource-version",
+      "ratelimit-limit",
+      "ratelimit-remaining",
+      "ratelimit-reset",
+    ]));
+    expect(proxySource).toContain("for (const name of DJANGO_CONDITIONAL_REQUEST_HEADERS)");
+    expect(proxySource).toContain("for (const name of DJANGO_OPERATIONAL_RESPONSE_HEADERS)");
   });
 
   it("mantém a checagem de X-API-Version fiada dentro do proxy", () => {

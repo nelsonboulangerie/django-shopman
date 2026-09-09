@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   MARKETING_V2_BOARD_PATH,
+  MARKETING_V2_HISTORY_PATH,
   createMarketingV2Client,
   type MarketingActionKind,
   type MarketingV2Transport,
@@ -16,7 +17,11 @@ describe("generated Marketing v2 client", () => {
     const client = createMarketingV2Client(transport);
 
     await client.getMarketingBoard();
-    await client.getMarketingAnnouncement(42);
+    await client.getMarketingAnnouncement(42, {
+      etag: 'W/"known"',
+      requestId: "req_ui_42",
+    });
+    await client.getMarketingHistory({ cursor: "opaque+signed", limit: 25 });
 
     expect(calls).toEqual([
       {
@@ -25,9 +30,28 @@ describe("generated Marketing v2 client", () => {
       },
       {
         href: "/api/v1/backstage/marketing/v2/announcements/42/",
+        options: {
+          method: "GET",
+          credentials: "same-origin",
+          headers: {
+            "If-None-Match": 'W/"known"',
+            "X-Request-ID": "req_ui_42",
+          },
+        },
+      },
+      {
+        href: `${MARKETING_V2_HISTORY_PATH}?cursor=opaque%2Bsigned&limit=25`,
         options: { method: "GET", credentials: "same-origin" },
       },
     ]);
+  });
+
+  it("rejects an invalid cursor page size before touching the transport", () => {
+    const transport = vi.fn() as MarketingV2Transport;
+    const client = createMarketingV2Client(transport);
+
+    expect(() => client.getMarketingHistory({ limit: 101 })).toThrow(RangeError);
+    expect(transport).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid resource id before touching the transport", () => {

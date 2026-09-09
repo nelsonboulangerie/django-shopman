@@ -393,6 +393,36 @@
         "title": "AudienceSummaryProjectionV2",
         "type": "object"
       },
+      "CursorPageProjectionV2": {
+        "additionalProperties": false,
+        "properties": {
+          "as_of": {
+            "format": "date-time",
+            "title": "As Of",
+            "type": "string"
+          },
+          "has_more": {
+            "title": "Has More",
+            "type": "boolean"
+          },
+          "limit": {
+            "title": "Limit",
+            "type": "integer"
+          },
+          "next_cursor": {
+            "title": "Next Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "as_of",
+          "limit",
+          "has_more",
+          "next_cursor"
+        ],
+        "title": "CursorPageProjectionV2",
+        "type": "object"
+      },
       "DeliveryAggregateProjectionV2": {
         "additionalProperties": false,
         "properties": {
@@ -751,6 +781,9 @@
               },
               {
                 "$ref": "#/components/schemas/MarketingAnnouncementDataV2"
+              },
+              {
+                "$ref": "#/components/schemas/MarketingHistoryDataV2"
               }
             ],
             "title": "Data"
@@ -782,6 +815,106 @@
           "actions"
         ],
         "title": "MarketingEnvelopeV2",
+        "type": "object"
+      },
+      "MarketingErrorEnvelopeV2": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "$ref": "#/components/schemas/MarketingErrorV2"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "MarketingErrorEnvelopeV2",
+        "type": "object"
+      },
+      "MarketingErrorV2": {
+        "additionalProperties": false,
+        "properties": {
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/MarketingActionProjectionV2"
+            },
+            "title": "Actions",
+            "type": "array"
+          },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "current_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Version"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "field_errors": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "title": "Field Errors",
+            "type": "object"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          },
+          "retryable": {
+            "title": "Retryable",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "detail",
+          "retryable",
+          "field_errors",
+          "request_id",
+          "current_version",
+          "actions"
+        ],
+        "title": "MarketingErrorV2",
+        "type": "object"
+      },
+      "MarketingHistoryDataV2": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AnnouncementProjectionV2"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "kind": {
+            "const": "history",
+            "title": "Kind",
+            "type": "string"
+          },
+          "page": {
+            "$ref": "#/components/schemas/CursorPageProjectionV2"
+          }
+        },
+        "required": [
+          "kind",
+          "items",
+          "page"
+        ],
+        "title": "MarketingHistoryDataV2",
         "type": "object"
       },
       "OperationalCountersProjectionV2": {
@@ -961,6 +1094,16 @@
     "/api/v1/backstage/marketing/v2/": {
       "get": {
         "operationId": "getMarketingBoard",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -970,7 +1113,156 @@
                 }
               }
             },
-            "description": "Canonical Marketing v2 projection."
+            "description": "Canonical Marketing v2 projection.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The caller already has the current semantic representation.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "summary": "Read the canonical Marketing board",
@@ -991,6 +1283,14 @@
               "minimum": 1,
               "type": "integer"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -1002,10 +1302,392 @@
                 }
               }
             },
-            "description": "Canonical Marketing v2 projection."
+            "description": "Canonical Marketing v2 projection.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The caller already has the current semantic representation.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
           }
         },
         "summary": "Read one canonical Marketing announcement",
+        "tags": [
+          "marketing-v2"
+        ]
+      }
+    },
+    "/api/v1/backstage/marketing/v2/history/": {
+      "get": {
+        "operationId": "getMarketingHistory",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-None-Match",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 projection.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "The caller already has the current semantic representation.",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Resource-Version": {
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketingErrorEnvelopeV2"
+                }
+              }
+            },
+            "description": "Canonical Marketing v2 error.",
+            "headers": {
+              "X-Contract-Version": {
+                "schema": {
+                  "const": "marketing.v2",
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read a stable cursor page of Marketing history",
         "tags": [
           "marketing-v2"
         ]

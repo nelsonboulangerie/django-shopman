@@ -284,14 +284,45 @@ class MarketingAnnouncementDataV2:
 
 
 @dataclass(frozen=True, slots=True)
+class CursorPageProjectionV2:
+    as_of: datetime
+    limit: int
+    has_more: bool
+    next_cursor: str
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingHistoryDataV2:
+    kind: Literal["history"]
+    items: tuple[AnnouncementProjectionV2, ...]
+    page: CursorPageProjectionV2
+
+
+@dataclass(frozen=True, slots=True)
 class MarketingEnvelopeV2:
     contract: Literal["marketing.v2"]
     generated_at: datetime
     shop_timezone: str
     resource_version: int
     freshness: FreshnessProjectionV2
-    data: MarketingBoardDataV2 | MarketingAnnouncementDataV2
+    data: MarketingBoardDataV2 | MarketingAnnouncementDataV2 | MarketingHistoryDataV2
     actions: tuple[MarketingActionProjectionV2, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingErrorV2:
+    code: str
+    detail: str
+    retryable: bool
+    field_errors: dict[str, tuple[str, ...]]
+    request_id: str
+    current_version: int | None
+    actions: tuple[MarketingActionProjectionV2, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class MarketingErrorEnvelopeV2:
+    error: MarketingErrorV2
 
 
 def build_board(*, now: datetime | None = None) -> MarketingEnvelopeV2:
@@ -374,12 +405,70 @@ def build_announcement(
     )
 
 
+def build_history_page(
+    announcements: list[Announcement] | tuple[Announcement, ...],
+    *,
+    as_of: datetime,
+    limit: int,
+    has_more: bool,
+    next_cursor: str,
+) -> MarketingEnvelopeV2:
+    """Project one stable history page without per-row evidence queries."""
+
+    clock = _aware_clock(as_of)
+    rows = tuple(announcements)
+    evidence = _evidence_for(rows)
+    summaries = delivery_summaries_for(rows)
+    items = tuple(
+        _project_announcement(
+            announcement,
+            snapshot=evidence.snapshots.get(announcement.pk),
+            artifact=evidence.artifacts.get(announcement.pk),
+            delivery=summaries[announcement.pk],
+            now=clock,
+        )
+        for announcement in rows
+    )
+    data = MarketingHistoryDataV2(
+        kind="history",
+        items=items,
+        page=CursorPageProjectionV2(
+            as_of=_local(clock),
+            limit=limit,
+            has_more=has_more,
+            next_cursor=next_cursor,
+        ),
+    )
+    return MarketingEnvelopeV2(
+        contract=CONTRACT,
+        generated_at=_local(clock),
+        shop_timezone=settings.TIME_ZONE,
+        resource_version=_data_version(data),
+        freshness=_combined_freshness(items, now=clock),
+        data=data,
+        actions=(),
+    )
+
+
 def schema() -> dict[str, Any]:
     """Return the executable JSON Schema that later generates the TS client."""
 
     from pydantic import TypeAdapter
 
     generated = TypeAdapter(MarketingEnvelopeV2).json_schema()
+    generated["additionalProperties"] = False
+    for definition in generated.get("$defs", {}).values():
+        if definition.get("type") == "object":
+            definition["additionalProperties"] = False
+    return generated
+
+
+def error_schema() -> dict[str, Any]:
+    """Return the strict error contract used by every Marketing v2 endpoint."""
+
+    from pydantic import TypeAdapter
+
+    generated = TypeAdapter(MarketingErrorEnvelopeV2).json_schema()
     generated["additionalProperties"] = False
     for definition in generated.get("$defs", {}).values():
         if definition.get("type") == "object":
@@ -678,7 +767,9 @@ def _combined_freshness(
     )
 
 
-def _data_version(data: MarketingBoardDataV2) -> int:
+def _data_version(
+    data: MarketingBoardDataV2 | MarketingAnnouncementDataV2 | MarketingHistoryDataV2,
+) -> int:
     canonical = json.dumps(
         _without_volatile_clock_fields(asdict(data)),
         default=_json_default,

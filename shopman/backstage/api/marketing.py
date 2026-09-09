@@ -37,11 +37,23 @@ from __future__ import annotations
 import logging
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import ProtectedError
+from django.db.models import ProtectedError, Q
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.api.marketing_cursor import (
+    InvalidMarketingCursor,
+    MarketingCursor,
+    decode_cursor,
+    encode_cursor,
+    first_cursor,
+)
+from shopman.backstage.api.marketing_v2_http import (
+    MarketingV2Problem,
+    marketing_v2_response,
+    response_for_exception,
+)
 from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.api.throttles import (
@@ -77,6 +89,9 @@ logger = logging.getLogger(__name__)
 
 _HISTORY_DEFAULT_LIMIT = 100
 _HISTORY_MAX_LIMIT = 300
+_HISTORY_V2_DEFAULT_LIMIT = 50
+_HISTORY_V2_MAX_LIMIT = 100
+_HISTORY_V2_COLLECTION = "marketing-history"
 
 #: Plataformas aceitas numa regra — mesma lista que a tela oferece.
 _VALID_PLATFORMS = {ref for ref, _ in marketing_projection.PLATFORM_CHOICES}
@@ -93,6 +108,14 @@ class _CampaignBase(APIView):
 
     def get_required_permissions(self, request):
         return self.permission_map.get(request.method, ())
+
+
+class _CampaignV2Base(_CampaignBase):
+    """Apply the strict error dialect before DRF can collapse 401 into 403."""
+
+    def handle_exception(self, exc):
+        response = response_for_exception(self.request, exc)
+        return response if response is not None else super().handle_exception(exc)
 
 
 class MarketingStepUpView(_CampaignBase):
@@ -253,7 +276,7 @@ class CampaignBoardView(_CampaignBase):
         responses={200: OpenApiResponse(description="Marketing v2 projection envelope.")},
     ),
 )
-class CampaignBoardV2View(_CampaignBase):
+class CampaignBoardV2View(_CampaignV2Base):
     """Additive read contract; the v1 board remains available during cutover."""
 
     def get(self, request):
@@ -261,21 +284,91 @@ class CampaignBoardV2View(_CampaignBase):
             marketing_projection_v2.build_board(),
             actor=request.user,
         )
-        return Response(projection_data(envelope))
+        return marketing_v2_response(request, envelope)
 
 
-class AnnouncementDetailV2View(_CampaignBase):
+class AnnouncementDetailV2View(_CampaignV2Base):
     """One canonical v2 announcement projection, without audience membership."""
 
     def get(self, request, pk: int):
         announcement = _announcement_or_none(pk)
         if announcement is None:
-            return Response({"detail": "Anúncio não encontrado."}, status=404)
+            raise MarketingV2Problem(
+                status_code=404,
+                code="resource_not_found",
+                detail="presentation.resource_not_found",
+            )
         envelope = with_resolved_actions(
             marketing_projection_v2.build_announcement(announcement),
             actor=request.user,
         )
-        return Response(projection_data(envelope))
+        return marketing_v2_response(request, envelope)
+
+
+class CampaignHistoryV2View(_CampaignV2Base):
+    """A stable, opaque-cursor history page pinned to its first ``as_of``."""
+
+    def get(self, request):
+        limit = _history_v2_limit(request)
+        raw_cursor = str(request.query_params.get("cursor") or "").strip()
+        try:
+            cursor = (
+                decode_cursor(raw_cursor, collection=_HISTORY_V2_COLLECTION)
+                if raw_cursor
+                else first_cursor(collection=_HISTORY_V2_COLLECTION)
+            )
+        except InvalidMarketingCursor as exc:
+            raise MarketingV2Problem(
+                status_code=422,
+                code="invalid_cursor",
+                detail="presentation.invalid_cursor",
+                field_errors={"cursor": ("presentation.invalid_cursor",)},
+            ) from exc
+
+        queryset = (
+            Announcement.objects.filter(
+                status__in=(
+                    AnnouncementStatus.PUBLISHED,
+                    AnnouncementStatus.PUBLISHING,
+                    AnnouncementStatus.FAILED,
+                ),
+                created_at__lte=cursor.as_of,
+            )
+            .select_related("rule", "template")
+            .order_by("-created_at", "-pk")
+        )
+        if cursor.created_at is not None and cursor.pk is not None:
+            queryset = queryset.filter(
+                Q(created_at__lt=cursor.created_at)
+                | Q(created_at=cursor.created_at, pk__lt=cursor.pk)
+            )
+
+        rows = list(queryset[: limit + 1])
+        has_more = len(rows) > limit
+        page_rows = rows[:limit]
+        next_cursor = ""
+        if has_more:
+            last = page_rows[-1]
+            next_cursor = encode_cursor(
+                MarketingCursor(
+                    collection=_HISTORY_V2_COLLECTION,
+                    as_of=cursor.as_of,
+                    created_at=last.created_at,
+                    pk=last.pk,
+                )
+            )
+        envelope = with_resolved_actions(
+            marketing_projection_v2.build_history_page(
+                page_rows,
+                as_of=cursor.as_of,
+                limit=limit,
+                has_more=has_more,
+                next_cursor=next_cursor,
+            ),
+            actor=request.user,
+            now=cursor.as_of,
+        )
+        return marketing_v2_response(request, envelope)
 
 
 @extend_schema_view(
@@ -1658,3 +1751,26 @@ def _limit(request) -> int:
         return max(1, min(int(raw), _HISTORY_MAX_LIMIT)) if raw else _HISTORY_DEFAULT_LIMIT
     except (TypeError, ValueError):
         return _HISTORY_DEFAULT_LIMIT
+
+
+def _history_v2_limit(request) -> int:
+    raw = str(request.query_params.get("limit") or "").strip()
+    if not raw:
+        return _HISTORY_V2_DEFAULT_LIMIT
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise MarketingV2Problem(
+            status_code=422,
+            code="invalid_limit",
+            detail="presentation.invalid_limit",
+            field_errors={"limit": ("presentation.invalid_limit",)},
+        ) from exc
+    if value < 1 or value > _HISTORY_V2_MAX_LIMIT:
+        raise MarketingV2Problem(
+            status_code=422,
+            code="invalid_limit",
+            detail="presentation.invalid_limit",
+            field_errors={"limit": ("presentation.limit_out_of_range",)},
+        )
+    return value

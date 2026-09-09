@@ -10,6 +10,7 @@ from django.conf import settings
 from shopman.backstage.management.commands.export_marketing_client import (
     CLIENT_RELATIVE_PATH,
     OPENAPI_RELATIVE_PATH,
+    PROJECTION_RELATIVE_PATH,
     rendered_artifacts,
     write_artifacts,
 )
@@ -32,6 +33,7 @@ def test_temporary_generation_matches_both_committed_artifacts(tmp_path) -> None
     generated = write_artifacts(tmp_path)
 
     assert set(generated) == {
+        tmp_path / PROJECTION_RELATIVE_PATH,
         tmp_path / OPENAPI_RELATIVE_PATH,
         tmp_path / CLIENT_RELATIVE_PATH,
     }
@@ -53,8 +55,21 @@ def test_openapi_operations_reference_the_strict_projection_schema() -> None:
     assert operations == {
         "getMarketingAnnouncement",
         "getMarketingBoard",
+        "getMarketingHistory",
     }
     assert "#/$defs/" not in encoded
     action = document["components"]["schemas"]["MarketingActionProjectionV2"]
     assert action["additionalProperties"] is False
     assert "publish_announcement_now" in action["properties"]["kind"]["enum"]
+    assert document["paths"]["/api/v1/backstage/marketing/v2/"]["get"]["responses"]["304"]["headers"]["ETag"]
+    error = document["components"]["schemas"]["MarketingErrorV2"]
+    assert error["additionalProperties"] is False
+    assert set(error["required"]) == {
+        "actions",
+        "code",
+        "current_version",
+        "detail",
+        "field_errors",
+        "request_id",
+        "retryable",
+    }

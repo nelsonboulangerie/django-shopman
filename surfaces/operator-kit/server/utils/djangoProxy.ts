@@ -18,6 +18,23 @@ import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+export const DJANGO_CONDITIONAL_REQUEST_HEADERS = ["if-none-match", "x-request-id"] as const;
+export const DJANGO_OPERATIONAL_RESPONSE_HEADERS = [
+  "cache-control",
+  "retry-after",
+  "etag",
+  "x-request-id",
+  "x-api-version",
+  "x-contract-version",
+  "x-resource-version",
+  "ratelimit-limit",
+  "ratelimit-remaining",
+  "ratelimit-reset",
+  "x-ratelimit-limit",
+  "x-ratelimit-remaining",
+  "x-ratelimit-reset",
+] as const;
+
 export function csrfTokenFromCookieHeader(cookie: string | undefined): string {
   return cookie
     ?.split(";")
@@ -94,6 +111,11 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   const contentType = getRequestHeader(event, "content-type");
   if (contentType) headers["content-type"] = contentType;
 
+  for (const name of DJANGO_CONDITIONAL_REQUEST_HEADERS) {
+    const value = getRequestHeader(event, name);
+    if (value) headers[name] = value;
+  }
+
   // Comandos mutantes dependem da mesma key no browser, BFF e Django. Não
   // repassar transformaria um retry de rede em um segundo efeito externo.
   const idempotencyKey = getRequestHeader(event, "idempotency-key");
@@ -146,7 +168,7 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
 
   // Allowlist operacional: o browser precisa saber quando repetir e qual
   // receipt/request citar, sem espelhar headers arbitrários do upstream.
-  for (const name of ["retry-after", "etag", "x-request-id", "x-api-version"]) {
+  for (const name of DJANGO_OPERATIONAL_RESPONSE_HEADERS) {
     const value = response.headers.get(name);
     if (value) appendResponseHeader(event, name, value);
   }

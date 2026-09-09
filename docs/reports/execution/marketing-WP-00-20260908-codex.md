@@ -851,3 +851,40 @@ Provas locais:
 - gate canônico Unfold foi atualizado no registro oficial de surfaces, sem waiver: `make admin` passou com 229 testes;
 - a regressão completa de Backstage passou com 2.313 testes, 22 skips e 24 subtests em 226,61 s; ela também eliminou os broad catches residuais dos commands, que agora só capturam erros contratuais conhecidos;
 - nenhuma dependency, migration, chamada de rede/provider, deploy, produção ou escrita externa foi adicionada/executada.
+
+## MKT-024 — erro, ETag, cursor e metadados API/BFF
+
+Implementado de forma aditiva no namespace v2:
+
+- todo read v2 responde com `X-Request-ID`, `X-Contract-Version`, `X-Resource-Version`, `X-API-Version`, `Cache-Control` privado, `Vary: Cookie` e ETag fraco calculado apenas sobre a semântica projetada, sem PII ou membership;
+- `If-None-Match` retorna `304` vazio e conserva ETag/correlação/versões; relógios voláteis não invalidam cache, enquanto versão, ledger, freshness ou Actions alteradas mudam o ETag;
+- request id válido do browser é preservado ponta a ponta; valor hostil/inválido nunca é refletido e recebe `req_<uuid>` seguro gerado no Django;
+- o envelope de erro v2 é estrito, presentation-keyed e inclui `code`, `retryable`, `field_errors`, request id, versão corrente opcional e Actions; nenhuma exception/copy operacional atravessa a boundary;
+- a base v2 intercepta a coerção do DRF/SessionAuthentication e mantém `401` anônimo diferente de `403` autenticado sem capability; `404`, `409`, `422`, `429` com `Retry-After` e `503` têm mapeamentos distintos e cobertos;
+- `/marketing/v2/history/` usa snapshot `as_of`, ordem total `created_at DESC, pk DESC`, cursor opaco assinado e limite explícito 1–100; cursor adulterado ou limite fora do budget falha em `422`, em vez de truncar silenciosamente;
+- a página de histórico projeta evidência/audience/ledger em bulk e reutiliza o mesmo resolver de Actions; inserções posteriores ao primeiro fetch não entram no snapshot nem deslocam itens;
+- o OpenAPI agora documenta conditional request, headers, 304, erros e history; o cliente gerado aceita ETag/request id, monta cursor/limit e recusa page size impossível antes da rede;
+- o export canônico passou a regenerar também o JSON Schema da Projection, eliminando o passo manual residual entre schema, OpenAPI e TypeScript;
+- o BFF compartilhado encaminha somente `If-None-Match`/request id para o Django e devolve por allowlist cache, retry, ETag, request/contract/resource/API version e famílias RateLimit; um teste com evento H3 e upstream reais simulados comprova que status e `304` continuam intactos e header interno não atravessa.
+
+Budget de omotenashi comprovado no transporte:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Baixar novamente um card sem mudança | payload completo | `304`, zero JSON |
+| Citar uma falha ao suporte | procurar logs/horário | request id visível na resposta e no erro |
+| Distinguir login vencido de acesso negado | mensagem/estado ambíguo | `401` e `403` semanticamente separados |
+| Decidir se deve repetir | inferência por texto/status | `retryable` + `Retry-After` estruturados |
+| Navegar histórico durante novas publicações | risco de repetição/salto | snapshot `as_of` + tie-breaker por id |
+| Descobrir truncamento de histórico | impossível; cap silencioso | limite declarado e excesso rejeitado |
+| Lembrar headers de revalidação por chamada | repetição manual | cliente gerado + BFF allowlist canônicos |
+| Regenerar três artefatos de contrato | dois comandos/passos | um export para schema/OpenAPI/TS |
+
+Provas locais:
+
+- 8 casos MKT-024 cobrem metadados, ETag/304, mudança de versão, cursor com timestamps idênticos, inserção concorrente, cursor adulterado, cap explícito e todos os status prometidos;
+- cadeia focada Projection/Actions/cliente/HTTP: 26 testes passaram;
+- regressão ampliada Marketing/campaign/audience/notifications/E2E: 491 testes passaram em 68,95 s;
+- Marketing Nuxt: 7 arquivos/101 testes, ESLint e Nuxt typecheck passaram; operator-kit: 17 arquivos/174 testes passaram;
+- Ruff, `export_marketing_client --check` e `git diff --check` passaram; o check preservou somente o warning conhecido de SQLite e logs defensivos de bootstrap sem schema;
+- nenhuma migration, provider, destinatário, deploy, produção ou escrita externa foi usada.

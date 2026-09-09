@@ -392,6 +392,36 @@
       "title": "AudienceSummaryProjectionV2",
       "type": "object"
     },
+    "CursorPageProjectionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "as_of": {
+          "format": "date-time",
+          "title": "As Of",
+          "type": "string"
+        },
+        "has_more": {
+          "title": "Has More",
+          "type": "boolean"
+        },
+        "limit": {
+          "title": "Limit",
+          "type": "integer"
+        },
+        "next_cursor": {
+          "title": "Next Cursor",
+          "type": "string"
+        }
+      },
+      "required": [
+        "as_of",
+        "limit",
+        "has_more",
+        "next_cursor"
+      ],
+      "title": "CursorPageProjectionV2",
+      "type": "object"
+    },
     "DeliveryAggregateProjectionV2": {
       "additionalProperties": false,
       "properties": {
@@ -728,6 +758,33 @@
       "title": "MarketingBoardDataV2",
       "type": "object"
     },
+    "MarketingHistoryDataV2": {
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "items": {
+            "$ref": "#/$defs/AnnouncementProjectionV2"
+          },
+          "title": "Items",
+          "type": "array"
+        },
+        "kind": {
+          "const": "history",
+          "title": "Kind",
+          "type": "string"
+        },
+        "page": {
+          "$ref": "#/$defs/CursorPageProjectionV2"
+        }
+      },
+      "required": [
+        "kind",
+        "items",
+        "page"
+      ],
+      "title": "MarketingHistoryDataV2",
+      "type": "object"
+    },
     "OperationalCountersProjectionV2": {
       "additionalProperties": false,
       "properties": {
@@ -909,6 +966,9 @@
         },
         {
           "$ref": "#/$defs/MarketingAnnouncementDataV2"
+        },
+        {
+          "$ref": "#/$defs/MarketingHistoryDataV2"
         }
       ],
       "title": "Data"

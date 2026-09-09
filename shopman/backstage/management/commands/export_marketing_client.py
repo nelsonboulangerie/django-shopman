@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from django.conf import settings
@@ -11,7 +12,9 @@ from shopman.backstage.marketing_client_contract import (
     render_marketing_client_ts,
     render_marketing_openapi_json,
 )
+from shopman.backstage.projections.marketing_v2 import schema
 
+PROJECTION_RELATIVE_PATH = Path("contracts/projections/marketing_v2.schema.json")
 OPENAPI_RELATIVE_PATH = Path("contracts/openapi/marketing_v2.openapi.json")
 CLIENT_RELATIVE_PATH = Path(
     "surfaces/marketing-nuxt/app/generated/marketingClient.ts"
@@ -20,6 +23,9 @@ CLIENT_RELATIVE_PATH = Path(
 
 def rendered_artifacts() -> dict[Path, str]:
     return {
+        PROJECTION_RELATIVE_PATH: (
+            json.dumps(schema(), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+        ),
         OPENAPI_RELATIVE_PATH: render_marketing_openapi_json(),
         CLIENT_RELATIVE_PATH: render_marketing_client_ts(),
     }

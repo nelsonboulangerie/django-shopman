@@ -7,12 +7,13 @@ import re
 from copy import deepcopy
 from typing import Any
 
-from shopman.backstage.projections.marketing_v2 import schema
+from shopman.backstage.projections.marketing_v2 import error_schema, schema
 
 OPENAPI_VERSION = "3.1.0"
 API_VERSION = "2.0.0"
 BOARD_PATH = "/api/v1/backstage/marketing/v2/"
 ANNOUNCEMENT_PATH = "/api/v1/backstage/marketing/v2/announcements/{announcement_id}/"
+HISTORY_PATH = "/api/v1/backstage/marketing/v2/history/"
 _REF_PREFIX = "#/$defs/"
 _COMPONENT_REF_PREFIX = "#/components/schemas/"
 _SAFE_TS_NAME = re.compile(r"^[A-Za-z_$][A-Za-z0-9_$]*$")
@@ -28,13 +29,51 @@ def marketing_openapi() -> dict[str, Any]:
         for name, definition in definitions.items()
     }
     components["MarketingEnvelopeV2"] = _rewrite_refs(projection_schema)
+    error_contract = deepcopy(error_schema())
+    error_definitions = error_contract.pop("$defs", {})
+    for name, definition in error_definitions.items():
+        rewritten = _rewrite_refs(definition)
+        existing = components.get(name)
+        if existing is not None and existing != rewritten:
+            raise ValueError(f"Conflicting Marketing schema definition: {name}")
+        components[name] = rewritten
+    components["MarketingErrorEnvelopeV2"] = _rewrite_refs(error_contract)
+    response_headers = {
+        "ETag": {"schema": {"type": "string"}},
+        "X-Request-ID": {"schema": {"type": "string"}},
+        "X-Resource-Version": {"schema": {"type": "integer", "minimum": 1}},
+        "X-Contract-Version": {"schema": {"type": "string", "const": "marketing.v2"}},
+    }
     response = {
         "description": "Canonical Marketing v2 projection.",
+        "headers": response_headers,
         "content": {
             "application/json": {
                 "schema": {"$ref": f"{_COMPONENT_REF_PREFIX}MarketingEnvelopeV2"}
             }
         },
+    }
+    not_modified = {
+        "description": "The caller already has the current semantic representation.",
+        "headers": response_headers,
+    }
+    error_response = {
+        "description": "Canonical Marketing v2 error.",
+        "headers": {
+            "X-Request-ID": {"schema": {"type": "string"}},
+            "X-Contract-Version": {"schema": {"type": "string", "const": "marketing.v2"}},
+        },
+        "content": {
+            "application/json": {
+                "schema": {"$ref": f"{_COMPONENT_REF_PREFIX}MarketingErrorEnvelopeV2"}
+            }
+        },
+    }
+    conditional_parameter = {
+        "name": "If-None-Match",
+        "in": "header",
+        "required": False,
+        "schema": {"type": "string"},
     }
     return {
         "openapi": OPENAPI_VERSION,
@@ -48,7 +87,21 @@ def marketing_openapi() -> dict[str, Any]:
                     "operationId": "getMarketingBoard",
                     "summary": "Read the canonical Marketing board",
                     "tags": ["marketing-v2"],
-                    "responses": {"200": response},
+                    "parameters": [conditional_parameter],
+                    "responses": {
+                        "200": response,
+                        "304": not_modified,
+                        "401": error_response,
+                        "403": error_response,
+                        "429": {
+                            **error_response,
+                            "headers": {
+                                **error_response["headers"],
+                                "Retry-After": {"schema": {"type": "integer", "minimum": 1}},
+                            },
+                        },
+                        "503": error_response,
+                    },
                 }
             },
             ANNOUNCEMENT_PATH: {
@@ -62,9 +115,54 @@ def marketing_openapi() -> dict[str, Any]:
                             "in": "path",
                             "required": True,
                             "schema": {"type": "integer", "minimum": 1},
-                        }
+                        },
+                        conditional_parameter,
                     ],
-                    "responses": {"200": response},
+                    "responses": {
+                        "200": response,
+                        "304": not_modified,
+                        "401": error_response,
+                        "403": error_response,
+                        "404": error_response,
+                        "429": error_response,
+                        "503": error_response,
+                    },
+                }
+            },
+            HISTORY_PATH: {
+                "get": {
+                    "operationId": "getMarketingHistory",
+                    "summary": "Read a stable cursor page of Marketing history",
+                    "tags": ["marketing-v2"],
+                    "parameters": [
+                        {
+                            "name": "cursor",
+                            "in": "query",
+                            "required": False,
+                            "schema": {"type": "string"},
+                        },
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 100,
+                                "default": 50,
+                            },
+                        },
+                        conditional_parameter,
+                    ],
+                    "responses": {
+                        "200": response,
+                        "304": not_modified,
+                        "401": error_response,
+                        "403": error_response,
+                        "422": error_response,
+                        "429": error_response,
+                        "503": error_response,
+                    },
                 }
             },
         },
@@ -110,6 +208,17 @@ def render_marketing_client_ts() -> str:
         "export interface MarketingV2TransportOptions {",
         '  method: "GET";',
         '  credentials: "same-origin";',
+        "  headers?: Record<string, string>;",
+        "}",
+        "",
+        "export interface MarketingV2ReadOptions {",
+        "  etag?: string;",
+        "  requestId?: string;",
+        "}",
+        "",
+        "export interface MarketingV2HistoryOptions extends MarketingV2ReadOptions {",
+        "  cursor?: string;",
+        "  limit?: number;",
         "}",
         "",
         "export type MarketingV2Transport = <T>(",
@@ -118,29 +227,51 @@ def render_marketing_client_ts() -> str:
         ") => Promise<T>;",
         "",
         "export interface MarketingV2Client {",
-        "  getMarketingBoard(): Promise<MarketingEnvelopeV2>;",
-        "  getMarketingAnnouncement(announcementId: number): Promise<MarketingEnvelopeV2>;",
+        "  getMarketingBoard(options?: MarketingV2ReadOptions): Promise<MarketingEnvelopeV2>;",
+        "  getMarketingAnnouncement(announcementId: number, options?: MarketingV2ReadOptions): Promise<MarketingEnvelopeV2>;",
+        "  getMarketingHistory(options?: MarketingV2HistoryOptions): Promise<MarketingEnvelopeV2>;",
         "}",
         "",
         f'export const MARKETING_V2_BOARD_PATH = "{BOARD_PATH}" as const;',
+        f'export const MARKETING_V2_HISTORY_PATH = "{HISTORY_PATH}" as const;',
+        "",
+        "function marketingReadOptions(options: MarketingV2ReadOptions = {}): MarketingV2TransportOptions {",
+        "  const headers: Record<string, string> = {};",
+        '  if (options.etag) headers["If-None-Match"] = options.etag;',
+        '  if (options.requestId) headers["X-Request-ID"] = options.requestId;',
+        "  return {",
+        '    method: "GET",',
+        '    credentials: "same-origin",',
+        "    ...(Object.keys(headers).length ? { headers } : {}),",
+        "  };",
+        "}",
         "",
         "export function createMarketingV2Client(",
         "  transport: MarketingV2Transport,",
         "): MarketingV2Client {",
-        "  const readOptions: MarketingV2TransportOptions = {",
-        '    method: "GET",',
-        '    credentials: "same-origin",',
-        "  };",
         "  return {",
-        "    getMarketingBoard: () =>",
-        "      transport<MarketingEnvelopeV2>(MARKETING_V2_BOARD_PATH, readOptions),",
-        "    getMarketingAnnouncement: (announcementId: number) => {",
+        "    getMarketingBoard: (options) =>",
+        "      transport<MarketingEnvelopeV2>(MARKETING_V2_BOARD_PATH, marketingReadOptions(options)),",
+        "    getMarketingAnnouncement: (announcementId: number, options) => {",
         "      if (!Number.isSafeInteger(announcementId) || announcementId <= 0) {",
         '        throw new RangeError("announcementId must be a positive integer");',
         "      }",
         "      return transport<MarketingEnvelopeV2>(",
         "        `/api/v1/backstage/marketing/v2/announcements/${announcementId}/`,",
-        "        readOptions,",
+        "        marketingReadOptions(options),",
+        "      );",
+        "    },",
+        "    getMarketingHistory: (options = {}) => {",
+        "      if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {",
+        '        throw new RangeError("limit must be an integer between 1 and 100");',
+        "      }",
+        "      const query = new URLSearchParams();",
+        '      if (options.cursor) query.set("cursor", options.cursor);',
+        '      if (options.limit != null) query.set("limit", String(options.limit));',
+        "      const suffix = query.size ? `?${query.toString()}` : \"\";",
+        "      return transport<MarketingEnvelopeV2>(",
+        '        `${MARKETING_V2_HISTORY_PATH}${suffix}`,',
+        "        marketingReadOptions(options),",
         "      );",
         "    },",
         "  };",

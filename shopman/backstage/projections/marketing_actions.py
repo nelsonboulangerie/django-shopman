@@ -17,6 +17,7 @@ from shopman.backstage.projections.marketing_v2 import (
     MarketingAnnouncementDataV2,
     MarketingBoardDataV2,
     MarketingEnvelopeV2,
+    MarketingHistoryDataV2,
 )
 from shopman.shop.models import (
     Announcement,
@@ -833,6 +834,8 @@ def _announcements_in(
         return (*envelope.data.pending, *envelope.data.recent)
     if isinstance(envelope.data, MarketingAnnouncementDataV2):
         return (envelope.data.announcement,)
+    if isinstance(envelope.data, MarketingHistoryDataV2):
+        return envelope.data.items
     return ()
 
 

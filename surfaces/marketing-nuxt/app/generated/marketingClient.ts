@@ -63,6 +63,13 @@ export interface AudienceSummaryProjectionV2 {
   freshness: FreshnessProjectionV2;
 }
 
+export interface CursorPageProjectionV2 {
+  as_of: string;
+  limit: number;
+  has_more: boolean;
+  next_cursor: string;
+}
+
 export interface DeliveryAggregateProjectionV2 {
   state: "not_started" | "fanout_pending" | "delivering" | "succeeded" | "completed_with_failures" | "unknown" | "cancelled" | "expired" | "legacy_untracked";
   counts: DeliveryCountsProjectionV2;
@@ -129,8 +136,28 @@ export interface MarketingEnvelopeV2 {
   shop_timezone: string;
   resource_version: number;
   freshness: FreshnessProjectionV2;
-  data: MarketingBoardDataV2 | MarketingAnnouncementDataV2;
+  data: MarketingBoardDataV2 | MarketingAnnouncementDataV2 | MarketingHistoryDataV2;
   actions: Array<MarketingActionProjectionV2>;
+}
+
+export interface MarketingErrorEnvelopeV2 {
+  error: MarketingErrorV2;
+}
+
+export interface MarketingErrorV2 {
+  code: string;
+  detail: string;
+  retryable: boolean;
+  field_errors: Record<string, Array<string>>;
+  request_id: string;
+  current_version: number | null;
+  actions: Array<MarketingActionProjectionV2>;
+}
+
+export interface MarketingHistoryDataV2 {
+  kind: "history";
+  items: Array<AnnouncementProjectionV2>;
+  page: CursorPageProjectionV2;
 }
 
 export interface OperationalCountersProjectionV2 {
@@ -171,6 +198,17 @@ export type MarketingFreshnessState = FreshnessProjectionV2["state"];
 export interface MarketingV2TransportOptions {
   method: "GET";
   credentials: "same-origin";
+  headers?: Record<string, string>;
+}
+
+export interface MarketingV2ReadOptions {
+  etag?: string;
+  requestId?: string;
+}
+
+export interface MarketingV2HistoryOptions extends MarketingV2ReadOptions {
+  cursor?: string;
+  limit?: number;
 }
 
 export type MarketingV2Transport = <T>(
@@ -179,29 +217,51 @@ export type MarketingV2Transport = <T>(
 ) => Promise<T>;
 
 export interface MarketingV2Client {
-  getMarketingBoard(): Promise<MarketingEnvelopeV2>;
-  getMarketingAnnouncement(announcementId: number): Promise<MarketingEnvelopeV2>;
+  getMarketingBoard(options?: MarketingV2ReadOptions): Promise<MarketingEnvelopeV2>;
+  getMarketingAnnouncement(announcementId: number, options?: MarketingV2ReadOptions): Promise<MarketingEnvelopeV2>;
+  getMarketingHistory(options?: MarketingV2HistoryOptions): Promise<MarketingEnvelopeV2>;
 }
 
 export const MARKETING_V2_BOARD_PATH = "/api/v1/backstage/marketing/v2/" as const;
+export const MARKETING_V2_HISTORY_PATH = "/api/v1/backstage/marketing/v2/history/" as const;
+
+function marketingReadOptions(options: MarketingV2ReadOptions = {}): MarketingV2TransportOptions {
+  const headers: Record<string, string> = {};
+  if (options.etag) headers["If-None-Match"] = options.etag;
+  if (options.requestId) headers["X-Request-ID"] = options.requestId;
+  return {
+    method: "GET",
+    credentials: "same-origin",
+    ...(Object.keys(headers).length ? { headers } : {}),
+  };
+}
 
 export function createMarketingV2Client(
   transport: MarketingV2Transport,
 ): MarketingV2Client {
-  const readOptions: MarketingV2TransportOptions = {
-    method: "GET",
-    credentials: "same-origin",
-  };
   return {
-    getMarketingBoard: () =>
-      transport<MarketingEnvelopeV2>(MARKETING_V2_BOARD_PATH, readOptions),
-    getMarketingAnnouncement: (announcementId: number) => {
+    getMarketingBoard: (options) =>
+      transport<MarketingEnvelopeV2>(MARKETING_V2_BOARD_PATH, marketingReadOptions(options)),
+    getMarketingAnnouncement: (announcementId: number, options) => {
       if (!Number.isSafeInteger(announcementId) || announcementId <= 0) {
         throw new RangeError("announcementId must be a positive integer");
       }
       return transport<MarketingEnvelopeV2>(
         `/api/v1/backstage/marketing/v2/announcements/${announcementId}/`,
-        readOptions,
+        marketingReadOptions(options),
+      );
+    },
+    getMarketingHistory: (options = {}) => {
+      if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {
+        throw new RangeError("limit must be an integer between 1 and 100");
+      }
+      const query = new URLSearchParams();
+      if (options.cursor) query.set("cursor", options.cursor);
+      if (options.limit != null) query.set("limit", String(options.limit));
+      const suffix = query.size ? `?${query.toString()}` : "";
+      return transport<MarketingEnvelopeV2>(
+        `${MARKETING_V2_HISTORY_PATH}${suffix}`,
+        marketingReadOptions(options),
       );
     },
   };
