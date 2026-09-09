@@ -53,6 +53,15 @@ describe("headers de segurança das superfícies de operador", () => {
     expect(addCspNonceToHtml(secured, "other")).toBe(secured);
   });
 
+  it("abre somente style-src-elem para o HMR quando o host pede modo dev", () => {
+    const csp = operatorContentSecurityPolicy("dev-nonce", true);
+
+    expect(csp).toContain("style-src-elem 'self' 'unsafe-inline'");
+    expect(csp).not.toContain("style-src-elem 'self' 'nonce-dev-nonce'");
+    expect(csp).toContain("script-src 'self' 'nonce-dev-nonce'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+  });
+
   it("reserva cache imutável somente aos assets versionados locais", () => {
     expect(isImmutableOperatorAssetPath("/_nuxt/entry.abc123.js")).toBe(true);
     expect(isImmutableOperatorAssetPath("/fonts/instrument-sans-latin-6219bc4b.woff2")).toBe(true);

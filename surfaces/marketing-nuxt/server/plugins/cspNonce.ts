@@ -8,6 +8,13 @@ export default defineNitroPlugin((nitroApp) => {
     response.headers = Object.fromEntries(
       Object.entries(response.headers || {}).filter(([name]) => name.toLowerCase() !== "x-powered-by"),
     );
-    Object.assign(response.headers, operatorSecurityHeaders(nonce));
+    Object.assign(
+      response.headers,
+      operatorSecurityHeaders(
+        nonce,
+        OPERATOR_PRIVATE_CACHE_CONTROL,
+        import.meta.dev,
+      ),
+    );
   });
 });

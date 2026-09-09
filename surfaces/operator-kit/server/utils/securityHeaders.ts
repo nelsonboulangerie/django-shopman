@@ -11,6 +11,7 @@ export const OPERATOR_IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immut
 const NONCE_BYTES = 18;
 
 interface OperatorSecurityHeaderOptions {
+  allowUnsafeInlineStyleElements?: boolean;
   cacheControl?: string;
   nonce?: string;
 }
@@ -24,7 +25,10 @@ export function ensureOperatorCspNonce(event: H3Event): string {
   return nonce;
 }
 
-export function operatorContentSecurityPolicy(nonce: string): string {
+export function operatorContentSecurityPolicy(
+  nonce: string,
+  allowUnsafeInlineStyleElements = false,
+): string {
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -38,7 +42,9 @@ export function operatorContentSecurityPolicy(nonce: string): string {
     "object-src 'none'",
     `script-src 'self' 'nonce-${nonce}'`,
     "style-src 'self'",
-    `style-src-elem 'self' 'nonce-${nonce}'`,
+    allowUnsafeInlineStyleElements
+      ? "style-src-elem 'self' 'unsafe-inline'"
+      : `style-src-elem 'self' 'nonce-${nonce}'`,
     "style-src-attr 'unsafe-inline'",
     "worker-src 'self' blob:",
   ].join("; ");
@@ -47,10 +53,14 @@ export function operatorContentSecurityPolicy(nonce: string): string {
 export function operatorSecurityHeaders(
   nonce: string,
   cacheControl = OPERATOR_PRIVATE_CACHE_CONTROL,
+  allowUnsafeInlineStyleElements = false,
 ): Readonly<Record<string, string>> {
   return {
     "cache-control": cacheControl,
-    "content-security-policy": operatorContentSecurityPolicy(nonce),
+    "content-security-policy": operatorContentSecurityPolicy(
+      nonce,
+      allowUnsafeInlineStyleElements,
+    ),
     "cross-origin-opener-policy": "same-origin",
     "cross-origin-resource-policy": "same-origin",
     "permissions-policy": "camera=(), microphone=(), geolocation=(), payment=(), usb=(), browsing-topics=()",
@@ -67,7 +77,11 @@ export function applyOperatorSecurityHeaders(
   options: OperatorSecurityHeaderOptions = {},
 ): string {
   const nonce = options.nonce || ensureOperatorCspNonce(event);
-  const headers = operatorSecurityHeaders(nonce, options.cacheControl);
+  const headers = operatorSecurityHeaders(
+    nonce,
+    options.cacheControl,
+    options.allowUnsafeInlineStyleElements,
+  );
   for (const [name, value] of Object.entries(headers)) {
     setResponseHeader(event, name, value);
   }

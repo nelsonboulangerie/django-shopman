@@ -5,6 +5,14 @@ import { describe, expect, it } from "vitest";
 const appRoot = fileURLToPath(new URL("../", import.meta.url));
 const config = readFileSync(new URL("../nuxt.config.ts", import.meta.url), "utf8");
 const css = readFileSync(new URL("../app/assets/css/tailwind.css", import.meta.url), "utf8");
+const securityMiddleware = readFileSync(
+  new URL("../server/middleware/00-security.ts", import.meta.url),
+  "utf8",
+);
+const cspPlugin = readFileSync(
+  new URL("../server/plugins/cspNonce.ts", import.meta.url),
+  "utf8",
+);
 
 describe("entrega local de fontes do Marketing", () => {
   it("não configura provider ou endpoint de fontes de terceiros", () => {
@@ -24,5 +32,14 @@ describe("entrega local de fontes do Marketing", () => {
     ]);
     for (const url of urls) expect(existsSync(`${appRoot}/public${url}`)).toBe(true);
     expect(readFileSync(`${appRoot}/public/fonts/OFL.txt`, "utf8")).toContain("SIL OPEN FONT LICENSE Version 1.1");
+  });
+
+  it("permite o style HMR somente pelo branch compile-time de desenvolvimento", () => {
+    expect(securityMiddleware).toContain(
+      "allowUnsafeInlineStyleElements: import.meta.dev",
+    );
+    expect(cspPlugin).toContain("import.meta.dev");
+    expect(securityMiddleware).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(cspPlugin).not.toContain("script-src 'self' 'unsafe-inline'");
   });
 });
