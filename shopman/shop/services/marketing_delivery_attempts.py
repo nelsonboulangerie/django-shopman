@@ -28,6 +28,7 @@ CALLING_STALE_SECONDS = 60
 _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _SAFE_RECEIPT_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+_WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
 
 
 class DeliveryProvider(Protocol):
@@ -47,6 +48,27 @@ class AttemptExecution:
     provider_called: bool
     replayed: bool
     in_progress: bool = False
+
+
+def deterministic_attempt_token(
+    target_ref,
+    *,
+    worker_id: str,
+    now: datetime | None = None,
+) -> str:
+    """Derive the same provider token after a pre-boundary worker restart."""
+
+    clock = _aware_now(now)
+    safe_worker_id = _worker_id(worker_id)
+    with transaction.atomic():
+        target = DeliveryTarget.objects.select_for_update().get(ref=target_ref)
+        _validate_claim(target, worker_id=safe_worker_id, now=clock)
+        active = DeliveryAttempt.objects.filter(
+            target=target,
+            state__in=(DeliveryAttempt.State.PREPARED, DeliveryAttempt.State.CALLING),
+        ).order_by("ordinal").first()
+        ordinal = active.ordinal if active is not None else target.attempt_count + 1
+        return f"marketing:v1:{target.ref}:attempt:{ordinal}"
 
 
 def queue_target(target_ref, *, now: datetime | None = None) -> DeliveryTarget:
@@ -83,16 +105,19 @@ def execute_target(
     artifact: ResolvedDispatchArtifact,
     idempotency_token: str,
     request_hash: str,
+    worker_id: str,
     now: datetime | None = None,
 ) -> AttemptExecution:
     """Call one provider at most once for this persisted attempt token."""
 
     clock = _aware_now(now)
+    safe_worker_id = _worker_id(worker_id)
     token_hash = _token_hash(idempotency_token)
     safe_request_hash = _request_hash(request_hash)
     attempt, target, replayed = _prepare_attempt(
         target_ref,
         artifact=artifact,
+        worker_id=safe_worker_id,
         token_hash=token_hash,
         request_hash=safe_request_hash,
         now=clock,
@@ -111,7 +136,11 @@ def execute_target(
             in_progress=True,
         )
 
-    attempt, target, began_call = _begin_call(attempt.ref, now=clock)
+    attempt, target, began_call = _begin_call(
+        attempt.ref,
+        worker_id=safe_worker_id,
+        now=clock,
+    )
     if not began_call:
         return AttemptExecution(
             attempt,
@@ -194,6 +223,7 @@ def _prepare_attempt(
     target_ref,
     *,
     artifact: ResolvedDispatchArtifact,
+    worker_id: str,
     token_hash: str,
     request_hash: str,
     now: datetime,
@@ -215,12 +245,15 @@ def _prepare_attempt(
                     code="delivery_attempt_idempotency_conflict",
                     detail="O token desta tentativa pertence a outro payload.",
                 )
+            if existing.state == DeliveryAttempt.State.PREPARED:
+                _validate_claim(target, worker_id=worker_id, now=now)
             return existing, target, True
         if target.state != DeliveryTarget.State.QUEUED:
             raise MarketingContractError(
                 code="delivery_target_not_queued",
                 detail="O target não está disponível para uma nova tentativa.",
             )
+        _validate_claim(target, worker_id=worker_id, now=now)
         if DeliveryAttempt.objects.filter(
             target=target,
             state__in=(DeliveryAttempt.State.PREPARED, DeliveryAttempt.State.CALLING),
@@ -249,6 +282,7 @@ def _prepare_attempt(
 def _begin_call(
     attempt_ref,
     *,
+    worker_id: str,
     now: datetime,
 ) -> tuple[DeliveryAttempt, DeliveryTarget, bool]:
     with transaction.atomic():
@@ -265,15 +299,20 @@ def _begin_call(
                 code="delivery_target_not_queued",
                 detail="O target mudou antes da chamada ao provider.",
             )
+        _validate_claim(target, worker_id=worker_id, now=now)
         ensure_delivery_transition(DeliveryState(target.state), DeliveryState.SENDING)
         attempt.state = DeliveryAttempt.State.CALLING
         attempt.save(update_fields=["state", "updated_at"])
         target.state = DeliveryTarget.State.SENDING
+        target.lease_owner = ""
+        target.lease_until = None
         target.last_attempt_at = now
         target.version += 1
         target.updated_at = now
         target.save(update_fields=[
             "state",
+            "lease_owner",
+            "lease_until",
             "last_attempt_at",
             "version",
             "updated_at",
@@ -406,6 +445,28 @@ def _request_hash(value: str) -> str:
         raise MarketingContractError(
             code="invalid_delivery_request_hash",
             detail="O hash do payload da tentativa é inválido.",
+        )
+    return normalized
+
+
+def _validate_claim(target: DeliveryTarget, *, worker_id: str, now: datetime) -> None:
+    if (
+        target.lease_owner != worker_id
+        or target.lease_until is None
+        or target.lease_until <= now
+    ):
+        raise MarketingContractError(
+            code="delivery_target_not_leased",
+            detail="O worker não possui um lease ativo para este target.",
+        )
+
+
+def _worker_id(value: str) -> str:
+    normalized = str(value or "")
+    if not _WORKER_ID_RE.fullmatch(normalized):
+        raise MarketingContractError(
+            code="invalid_delivery_worker_id",
+            detail="A identidade técnica do worker é inválida.",
         )
     return normalized
 

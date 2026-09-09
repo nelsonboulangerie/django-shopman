@@ -25,7 +25,10 @@ from shopman.shop.services.marketing_delivery_attempts import (
     queue_target,
     reconcile_calling,
 )
-from shopman.shop.services.marketing_delivery_ledger import ensure_targets
+from shopman.shop.services.marketing_delivery_worker import (
+    claim_due_targets,
+    fanout_in_chunks,
+)
 from shopman.shop.tests.marketing_fakes import (
     FakeProviderFailure,
     ProgrammedProvider,
@@ -34,6 +37,7 @@ from shopman.shop.tests.marketing_fakes import (
 from shopman.shop.tests.test_marketing_delivery_ledger import _graph
 
 pytestmark = pytest.mark.django_db
+WORKER_ID = "attempt-test-worker"
 
 
 class CanonicalFakeAdapter:
@@ -102,8 +106,12 @@ def _queued_target(*, suffix: str) -> DeliveryTarget:
         suffix=suffix,
         target_keys=(),
     )
-    target = ensure_targets(outbox.ref)[0]
-    return queue_target(target.ref)
+    fanout_in_chunks(outbox.ref)
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    queue_target(target.ref)
+    claimed = claim_due_targets(worker_id=WORKER_ID)
+    assert [item.pk for item in claimed.targets] == [target.pk]
+    return claimed.targets[0]
 
 
 def _artifact() -> ResolvedDispatchArtifact:
@@ -123,6 +131,7 @@ def _execute(target, provider, *, token="attempt-token-0001", now=None):
         artifact=artifact,
         idempotency_token=token,
         request_hash=artifact.artifact_hash,
+        worker_id=WORKER_ID,
         now=now,
     )
 
@@ -177,7 +186,8 @@ def test_failure_before_write_is_retryable_with_a_new_attempt_only():
     )
 
     failed = _execute(target, adapter, token="attempt-token-before-1")
-    queued = queue_target(target.ref)
+    queue_target(target.ref)
+    queued = claim_due_targets(worker_id=WORKER_ID).targets[0]
     succeeded = _execute(queued, adapter, token="attempt-token-before-2")
 
     assert failed.target.state == DeliveryTarget.State.FAILED_RETRYABLE
@@ -349,6 +359,7 @@ def test_artifact_mismatch_fails_before_creating_an_attempt():
             artifact=artifact,
             idempotency_token="attempt-token-artifact",
             request_hash=artifact.artifact_hash,
+            worker_id=WORKER_ID,
         )
 
     assert caught.value.code == "delivery_artifact_mismatch"

@@ -337,14 +337,26 @@ class ConsentService:
         refs = {str(ref).strip() for ref in customer_refs if str(ref).strip()}
         if not refs:
             return {}
-        return dict(
-            CommunicationConsent.objects.filter(
-                channel=channel,
-                purpose=purpose,
-                customer__ref__in=refs,
-                customer__is_active=True,
-            ).values_list("customer__ref", "status")
-        )
+        rows = CommunicationConsent.objects.filter(
+            channel=channel,
+            purpose=purpose,
+            customer__ref__in=refs,
+            customer__is_active=True,
+        ).values_list("customer__ref", "status", "proof_status")
+        statuses = {}
+        for customer_ref, status, proof_status in rows:
+            if status == ConsentStatus.OPTED_OUT:
+                # Revocation is authoritative even when historical opt-in proof
+                # was incomplete.  Never weaken a do-not-contact tombstone.
+                statuses[customer_ref] = ConsentStatus.OPTED_OUT
+            elif (
+                status == ConsentStatus.OPTED_IN
+                and proof_status == ConsentProofStatus.VERIFIED
+            ):
+                statuses[customer_ref] = ConsentStatus.OPTED_IN
+            else:
+                statuses[customer_ref] = ConsentStatus.PENDING
+        return statuses
 
 
 def _sha256(value: str) -> str:

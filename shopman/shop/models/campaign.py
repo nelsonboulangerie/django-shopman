@@ -764,6 +764,10 @@ class MarketingOutbox(models.Model):
     last_error_code = models.CharField(max_length=64, blank=True)
     dispatch_ref = models.CharField(max_length=128, blank=True)
     dispatched_at = models.DateTimeField(null=True, blank=True)
+    fanout_selection_hash = models.CharField(max_length=64, blank=True)
+    fanout_expected = models.PositiveIntegerField(default=0)
+    fanout_materialized = models.PositiveIntegerField(default=0)
+    fanout_completed_at = models.DateTimeField(null=True, blank=True)
     cancelled_by_command = models.ForeignKey(
         MarketingCommandReceipt,
         on_delete=models.PROTECT,
@@ -814,6 +818,21 @@ class MarketingOutbox(models.Model):
                     )
                 ),
                 name="shop_marketing_outbox_dispatch_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(fanout_materialized__lte=models.F("fanout_expected")),
+                name="shop_marketing_outbox_fanout_count_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(fanout_completed_at__isnull=True)
+                    | models.Q(
+                        fanout_completed_at__isnull=False,
+                        fanout_selection_hash__gt="",
+                        fanout_materialized=models.F("fanout_expected"),
+                    )
+                ),
+                name="shop_marketing_outbox_fanout_complete_ck",
             ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]
@@ -901,6 +920,17 @@ class DeliveryTarget(models.Model):
             models.CheckConstraint(
                 condition=models.Q(version__gt=0),
                 name="shop_delivery_target_version_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(lease_owner="", lease_until__isnull=True)
+                    | models.Q(
+                        state="queued",
+                        lease_owner__gt="",
+                        lease_until__isnull=False,
+                    )
+                ),
+                name="shop_delivery_target_lease_state_ck",
             ),
         ]
         indexes = [

@@ -532,3 +532,44 @@ Provas locais:
 - regressão Marketing/campaign/audience/API/E2E: 456 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0031_marketing_attempt_outcomes`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.
+
+## MKT-015 — fan-out limitado, backpressure e recheck pré-envio
+
+Implementado:
+
+- fan-out grava no outbox o hash protegido da seleção, total esperado, total materializado e instante de conclusão; retomar com outra seleção falha fechado;
+- seleção inteira é validada contra o snapshot antes do primeiro target, impedindo que um ID estranho produza fan-out parcial;
+- targets são criados em transações de chunks, com default local de 100 por chunk e no máximo 10 chunks por invocação; esses números são conservadores e não fecham o G-H08;
+- progresso é derivado do próprio ledger: após kill entre chunks, repetir a mesma chamada descobre os já existentes e continua sem cursor, arquivo ou memória do operador;
+- nenhum target é claimável enquanto a lane não tiver `fanout_materialized == fanout_expected` para o mesmo selection hash; kill não libera envio parcial prematuro;
+- publicação pública materializa exatamente um target e replay é no-op; WhatsApp continua exigindo seleção interna explícita até o selector canônico do MKT-018;
+- claims usam batch 100, lease 60 s, `skip_locked` quando suportado e limite máximo defensivo; workers concorrentes recebem lotes disjuntos;
+- lease ativo cerca o boundary do MKT-014: outro worker não cria attempt nem chama provider; ao cruzar para `sending`, o lease é limpo atomicamente;
+- lease stale é retomável; o token técnico deriva de target+ordinal e é reconstruído pelo novo worker para a mesma attempt `prepared`, enquanto `calling` jamais volta a chamar provider;
+- imediatamente antes do claim, anúncio expirado vira `expired`, cancelado/recusado vira `cancelled`, e identidades inativas/revogadas/sem prova viram `suppressed` com reason code;
+- recheck de consentimento é batched e passou a tratar opt-in `legacy_unverified` como `pending`; opt-out permanece autoritativo mesmo sem prova histórica completa;
+- assinatura específica precisa continuar ativa e verificada; revogação posterior suprime antes de qualquer attempt;
+- outage de consentimento não finge audiência zero nem consome target: mantém `queued`, sem lease, reason `consent_unavailable` e nova tentativa após 30 s;
+- constraints de banco proíbem lease fora de `queued`, contagem materializada acima da esperada e fan-out “completo” sem hash/fechamento matemático;
+- nenhum handler/adaptador real foi conectado e a flag do consumer permanece desligada; rate/capacidade finais continuam reservados ao G-H08/MKT-043.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Guardar cursor após kill de fan-out | necessário em implementação ingênua | 0; ledger deriva o próximo trabalho |
+| Conferir se todos os recipients viraram targets | contagem externa | fechamento `expected/materialized` no outbox |
+| Impedir envio parcial durante fan-out | coordenação manual | claim invisível até `fanout_completed_at` |
+| Encontrar revogação entre aprovação e envio | inspeção de consentimento | 0; recheck batched pré-claim |
+| Distinguir revogação de outage | ambos poderiam parecer zero | `suppressed/global_optout` vs `queued/consent_unavailable` |
+| Coordenar workers | risco de colisão | lease de 60 s + lotes disjuntos + reclaim stale |
+| Conferir prova de opt-in legado | consulta de histórico | `legacy_unverified` bloqueado automaticamente |
+
+Provas locais:
+
+- 17 testes MKT-015 cobrem chunks limitados sem cursor, kill/recovery, validação integral, conflito de seleção, target público, opt-out, consent legado, outage, subscription revoke, expiry, fencing, reclaim stale com reconstrução de token, backpressure, budget de queries, constraints e reverse/reapply;
+- claim de 100 recipients: no máximo 10 queries, sem N+1;
+- focused consent/snapshot/stock-alert/ledger/attempt/worker: 145 testes passaram;
+- regressão Marketing/campaign/audience/API/E2E: 473 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0032_marketing_delivery_leases`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.
