@@ -311,7 +311,8 @@ def test_notification_never_turns_stored_input_into_an_action_or_crosses_owner()
     actions = resolve_notification_actions(notification, actor=owner)
     assert [action.kind for action in actions] == [
         "open_announcement",
-        "mark_notification_read",
+        "mark_notification_seen",
+        "acknowledge_notification",
     ]
     assert all(action.method in {"GET", "POST"} for action in actions)
     assert all(action.href.startswith("/") and not action.href.startswith("//") for action in actions)

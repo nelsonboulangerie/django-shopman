@@ -109,7 +109,7 @@ export interface FreshnessProjectionV2 {
 export interface MarketingActionProjectionV2 {
   ref: string;
   resource_ref: string;
-  kind: "acknowledge_alert" | "cancel_announcement" | "configure_platform" | "edit_announcement" | "edit_campaign" | "fire_campaign" | "mark_notification_read" | "open_announcement" | "open_platform" | "publish_announcement_now" | "reconcile_unknown_delivery" | "reject_announcement" | "reschedule_announcement" | "retry_failed_delivery" | "schedule_announcement" | "send_platform_test";
+  kind: "acknowledge_alert" | "acknowledge_notification" | "cancel_announcement" | "configure_platform" | "edit_announcement" | "edit_campaign" | "fire_campaign" | "mark_notification_seen" | "open_announcement" | "open_platform" | "publish_announcement_now" | "reconcile_unknown_delivery" | "reject_announcement" | "reschedule_announcement" | "retry_failed_delivery" | "schedule_announcement" | "send_platform_test";
   label: string;
   priority: "primary" | "secondary" | "danger" | "quiet";
   enabled: boolean;

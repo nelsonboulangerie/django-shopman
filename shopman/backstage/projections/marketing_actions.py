@@ -27,6 +27,7 @@ from shopman.shop.models import (
     DeliveryReconciliation,
     DeliveryTarget,
     MarketingSafetyState,
+    NotificationLifecycle,
     UserNotification,
 )
 from shopman.shop.services.marketing_contracts import ProviderOutcomeKind
@@ -607,20 +608,37 @@ def _notification_actions(
 ) -> tuple[MarketingActionProjectionV2, ...]:
     if getattr(actor, "pk", None) != notification.user_id:
         return ()
-    if notification.is_read:
+    if notification.lifecycle in {
+        NotificationLifecycle.RESOLVED,
+        NotificationLifecycle.EXPIRED,
+    }:
         return ()
-    actions = [
-        _action(
+    actions = []
+    if notification.lifecycle == NotificationLifecycle.UNSEEN:
+        actions.append(_action(
             resource_ref=f"notification:{notification.pk}",
-            version=1,
-            kind="mark_notification_read",
+            version=notification.version,
+            kind="mark_notification_seen",
             priority="quiet",
             href=f"/api/v1/backstage/notifications/{notification.pk}/read/",
             method="POST",
             idempotency="supported",
             actor=actor,
-        )
-    ]
+        ))
+    if notification.lifecycle in {
+        NotificationLifecycle.UNSEEN,
+        NotificationLifecycle.SEEN,
+    }:
+        actions.append(_action(
+            resource_ref=f"notification:{notification.pk}",
+            version=notification.version,
+            kind="acknowledge_notification",
+            priority="quiet",
+            href=f"/api/v1/backstage/notifications/{notification.pk}/acknowledge/",
+            method="POST",
+            idempotency="supported",
+            actor=actor,
+        ))
     announcement_id = _notification_announcement_id(notification)
     if announcement_id <= 0:
         return tuple(actions)
@@ -647,9 +665,13 @@ def _notification_actions(
             "review_window_expired"
             if expired
             else (
+                "source_version_changed"
+                if announcement.version != notification.source_version
+                else (
                 "announcement_no_longer_actionable"
                 if announcement.status != AnnouncementStatus.PENDING_REVIEW
                 else ""
+                )
             )
         ),
     ))
@@ -878,6 +900,14 @@ def _fresh_actor(actor):
 
 
 def _notification_announcement_id(notification: UserNotification) -> int:
+    source_id = None
+    if notification.source_condition == "announcement_review":
+        try:
+            source_id = _resource_id(notification.source_ref, "announcement")
+        except ValueError:
+            source_id = None
+    if source_id is not None:
+        return source_id
     raw_id = (
         (notification.action_data or {}).get("announcement_id")
         if notification.is_actionable and isinstance(notification.action_data, dict)

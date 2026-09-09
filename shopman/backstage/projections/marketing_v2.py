@@ -73,12 +73,13 @@ TriggerCode = Literal[
 ReasonCode = Literal["", "review_required", "review_window_expired"]
 ActionKind = Literal[
     "acknowledge_alert",
+    "acknowledge_notification",
     "cancel_announcement",
     "configure_platform",
     "edit_announcement",
     "edit_campaign",
     "fire_campaign",
-    "mark_notification_read",
+    "mark_notification_seen",
     "open_announcement",
     "open_platform",
     "publish_announcement_now",

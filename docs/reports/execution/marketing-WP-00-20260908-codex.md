@@ -1480,3 +1480,74 @@ Provas locais:
 - permaneceu somente o warning conhecido de SQLite local; não houve migration;
 - nenhuma chamada a provider, destinatário, deploy, produção, navegador autenticado ou
   escrita externa foi usada.
+
+## MKT-036 — Lifecycle, dedupe, owner e reconciliação de alertas pessoais
+
+Implementado sobre o Action resolver do MKT-022, por contrato aditivo e sem antecipar a
+remoção do endpoint legado que pertence ao MKT-037:
+
+- `UserNotification` agora separa `unseen`, `seen`, `acknowledged`, `resolved` e
+  `expired`; `is_read/read_at` permanece somente como dual projection temporária, e
+  visualizar jamais grava resolução;
+- cada alerta traz severidade, condição/ref/versão de origem, owner funcional, grupo,
+  dedupe por owner, função de escalação, deadline, versão própria e retention de cinco
+  anos. A política aprovada atribui revisão a Product e escalação funcional a Ops, sem
+  inventar pessoa nominal ou SLA ainda não aprovados em G-H08;
+- criação repetida da mesma condição/versão/owner reutiliza o registro e grava evento
+  `deduped`; mudança de versão do anúncio atualiza todos os siblings in-place, preserva
+  `seen/acknowledged` e corrige mensagem, deadline, group/dedupe e Action;
+- eventos append-only registram criação, dedupe, seen, acknowledgement, refresh,
+  escolha, sucesso/falha e fechamento. Resolução originada por command moderno contém
+  FK protegida para o `MarketingCommandReceipt`, ligando alert→receipt→resolution sem
+  inventar receipt para fluxo legado;
+- toda mudança canônica relevante do anúncio reconcilia todas as representações, em
+  lote e na mesma transação. O GET v2 também revalida a origem, portanto signal/SSE
+  perdido converge no próximo fetch;
+- falha de Action grava outcome e preserva o alerta ativo; aprovação/recusa, expiry,
+  objeto ausente ou condição já encerrada resolvem/expiram todos os siblings e emitem
+  invalidação SSE mínima para cada owner;
+- o endpoint aditivo `/api/v1/backstage/notifications/v2/` é owner-scoped, exclui
+  information-only do sino, oferece histórico, counts `unseen` e `unresolved`, cursor
+  opaco assinado, snapshot estável e filtro por retention. O endpoint v1 segue disponível
+  para a troca ordenada do cliente no MKT-037;
+- Actions de lifecycle passaram a ser `mark_notification_seen` e
+  `acknowledge_notification`, com versão real do alerta. Deep-link de revisão é sempre
+  resolvido server-side para o anúncio exato; `action_url`, `href` ou callable armazenado
+  nunca viram autoridade;
+- a migration mapeia `read=true` determinístico para `seen`, nunca para `resolved`;
+  fonte de anúncio é backfilled quando comprovável, duplicata antiga é expirada e todo
+  registro sem origem determinística é explicitamente `expired` com evento — não some
+  por inferência silenciosa.
+
+Budget de omotenashi comprovado no contrato de alertas:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Ver um alerta sem ainda resolver | card sumia como se concluído | permanece `seen`; `unresolved=1` |
+| Saber se alguém assumiu | memória/conversa externa | estado `acknowledged` + owner + timestamp |
+| Fechar avisos da mesma decisão | uma baixa manual por destinatário | 1 decisão fecha todos os siblings |
+| Receber duplicata da mesma condição | N cards/decisões repetidas | 1 card; 0 writes de alerta duplicado |
+| Recuperar SSE perdido | card zumbi até intervenção | próximo fetch reconcilia a origem |
+| Encontrar o objeto certo | busca/navegação genérica | deep-link exato `/announcements/:id#review` |
+| Distinguir visto de encerrado | impossível | dois counts e cinco estados explícitos |
+| Auditar ação até o resultado | cruzar logs/IDs manualmente | evento referencia o receipt moderno |
+| Carregar 20 de 30 alertas | risco N+1 | ≤25 queries, budget do board |
+
+Provas locais:
+
+- 35 testes focados de API/migration e 127 testes do recorte notifications, Actions,
+  campaign e eventstream passaram;
+- regressão ampla de Marketing/campaign/notifications/E2E: 606 testes passaram em
+  106,90 s, incluindo comandos, transações, segurança, workers, ledger e projections;
+- teste de migration executou de 0036 para 0037 com dados legados reais e comprovou
+  `read→seen`, backfill determinístico e expiry explícito do restante;
+- teste de 30 alertas comprovou a página de 20 dentro do budget máximo de 25 queries;
+  testes adicionais cobrem IDOR, cursor adulterado, retention, info-only fora do sino,
+  evento imutável, falha preservada, refresh de versão e SSE para cada sibling;
+- Marketing Nuxt: 17 arquivos/159 testes, ESLint, typecheck e build passaram;
+- Ruff, `export_marketing_client --check`, Django check, migration drift e
+  `git diff --check` passaram; permaneceu somente o warning conhecido de SQLite local;
+- o fallback `approve` do endpoint v1 foi deliberadamente preservado neste commit: sua
+  remoção segura ocorre somente após a migração do cliente, no MKT-037 seguinte;
+- nenhuma chamada a provider, destinatário, deploy, produção, browser autenticado ou
+  escrita externa foi usada.

@@ -42,7 +42,14 @@ from .settings_proxies import (
     ShopPurchase,
 )
 from .shop import NotificationTemplate, Shop
-from .user_notification import NotificationCategory, UserNotification
+from .user_notification import (
+    NotificationCategory,
+    NotificationEventType,
+    NotificationLifecycle,
+    NotificationSeverity,
+    UserNotification,
+    UserNotificationEvent,
+)
 
 __all__ = [
     "Shop",
@@ -89,5 +96,9 @@ __all__ = [
     "MarketingTestReceipt",
     "Trigger",
     "UserNotification",
+    "UserNotificationEvent",
     "NotificationCategory",
+    "NotificationEventType",
+    "NotificationLifecycle",
+    "NotificationSeverity",
 ]

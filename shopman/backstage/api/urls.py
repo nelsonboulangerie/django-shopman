@@ -80,7 +80,9 @@ from .marketing import (
     WhatsAppTestSendView,
 )
 from .notifications import (
+    NotificationAcknowledgeView,
     NotificationActionView,
+    NotificationListV2View,
     NotificationListView,
     NotificationReadView,
 )
@@ -329,10 +331,16 @@ urlpatterns = [
     # Notificações PESSOAIS (vs. alerts, que são da loja): o gestor recebe o
     # pedido de aprovação onde estiver. Push pelo canal SSE ``user-<id>``.
     path("notifications/", NotificationListView.as_view(), name="api-backstage-notifications"),
+    path("notifications/v2/", NotificationListV2View.as_view(), name="api-backstage-notifications-v2"),
     path(
         "notifications/<int:pk>/read/",
         NotificationReadView.as_view(),
         name="api-backstage-notification-read",
+    ),
+    path(
+        "notifications/<int:pk>/acknowledge/",
+        NotificationAcknowledgeView.as_view(),
+        name="api-backstage-notification-acknowledge",
     ),
     path(
         "notifications/<int:pk>/action/",

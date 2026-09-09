@@ -1513,7 +1513,13 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
     Destinatários: ``rule.notify_users`` quando declarado, senão todo mundo
     com ``shop.approve_marketing_announcements``. Retorna quantas notificações criou.
     """
-    from shopman.shop.models import NotificationCategory, UserNotification
+    from shopman.shop.models import NotificationCategory, NotificationSeverity
+    from shopman.shop.services.user_notifications import (
+        ANNOUNCEMENT_REVIEW,
+        ESCALATION_OPS,
+        OWNER_PRODUCT,
+        create_condition_alert,
+    )
 
     users = _reviewers(rule)
     if not users:
@@ -1527,17 +1533,26 @@ def notify_reviewers(rule: Campaign, announcement: Announcement) -> int:
 
     created = 0
     for user in users:
-        notification = UserNotification.objects.create(
+        source_ref = f"announcement:{announcement.pk}"
+        result = create_condition_alert(
             user=user,
             category=NotificationCategory.CAMPAIGN,
             title=f"Anúncio pronto para revisão: {rule.name}",
             message=message,
-            action_url=f"/campaign/announcements/{announcement.pk}/",
-            action_data={"announcement_id": announcement.pk},
-            is_actionable=True,
+            source_condition=ANNOUNCEMENT_REVIEW,
+            source_ref=source_ref,
+            source_version=announcement.version,
+            action_data={
+                "announcement_id": announcement.pk,
+                "resource_ref": source_ref,
+                "base_version": announcement.version,
+            },
+            severity=NotificationSeverity.ACTION_REQUIRED,
+            owner_role=OWNER_PRODUCT,
+            escalation_role=ESCALATION_OPS,
+            expires_at=announcement.expires_at,
         )
-        push_user_notification(notification)
-        created += 1
+        created += int(result.created)
     return created
 
 
@@ -1559,21 +1574,11 @@ def _reviewers(rule: Campaign):
 
 
 def push_user_notification(notification) -> None:
-    """Push SSE no canal pessoal ``user-<id>`` (ADR-016: só avisa que chegou)."""
-    payload = {"id": notification.pk, "category": notification.category}
-    user_id = notification.user_id
+    """Compatibilidade para imports antigos; emissão vive no serviço de alertas."""
 
-    def _send():
-        try:
-            from django_eventstream import send_event
+    from shopman.shop.services.user_notifications import push_user_notification as push
 
-            send_event(f"user-{user_id}", "user-notification", payload)
-        except ImportError:
-            return
-        except Exception:
-            logger.warning("campaign.user_push_failed user=%s", user_id, exc_info=True)
-
-    transaction.on_commit(_send)
+    push(notification)
 
 
 # ── Manutenção ───────────────────────────────────────────────────────

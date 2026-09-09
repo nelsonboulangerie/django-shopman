@@ -78,6 +78,9 @@ class ShopmanConfig(AppConfig):
         #     authorizations and recent-auth evidence.
         import shopman.shop.marketing_security_signals  # noqa: F401
 
+        # 11. Announcement truth closes/refreshes every personal alert sibling.
+        import shopman.shop.user_notification_signals  # noqa: F401
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 
