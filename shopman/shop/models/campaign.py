@@ -594,6 +594,8 @@ class MarketingCommandReceipt(models.Model):
         CANCEL = "cancel", "cancelar"
         FIRE = "fire", "disparar campanha"
         EXPIRE = "expire", "expirar"
+        RETRY_DELIVERY = "retry_delivery", "repetir falhas de entrega"
+        RECONCILE_DELIVERY = "reconcile_delivery", "reconciliar entrega desconhecida"
 
     class State(models.TextChoices):
         ACCEPTED = "accepted", "aceito"
@@ -710,6 +712,8 @@ class MarketingAuditEvent(models.Model):
         RESCHEDULED = "rescheduled", "reagendado"
         CANCELLED = "cancelled", "cancelado"
         EXPIRED = "expired", "expirado"
+        DELIVERY_RETRIED = "delivery_retried", "entrega repetida"
+        RECONCILIATION_REQUESTED = "reconcile_requested", "reconciliação solicitada"
 
     ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     event_type = models.CharField(max_length=24, choices=EventType.choices)
@@ -1086,3 +1090,98 @@ class DeliveryAttempt(models.Model):
             ),
         ]
         indexes = [models.Index(fields=["state", "started_at"])]
+
+
+class DeliveryReconciliation(models.Model):
+    """Durable, lookup-only intent for one uncertain provider attempt.
+
+    The row deliberately points at the protected target and attempt instead of
+    copying recipient data.  A worker may repeat a provider lookup after a
+    lease expires, but this queue never invokes the provider's send boundary.
+    """
+
+    class State(models.TextChoices):
+        PENDING = "pending", "pendente"
+        CLAIMED = "claimed", "reservada"
+        COMPLETED = "completed", "concluída"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    command = models.ForeignKey(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="delivery_reconciliations",
+    )
+    target = models.ForeignKey(
+        DeliveryTarget,
+        on_delete=models.PROTECT,
+        related_name="reconciliations",
+    )
+    attempt = models.ForeignKey(
+        DeliveryAttempt,
+        on_delete=models.PROTECT,
+        related_name="reconciliations",
+    )
+    state = models.CharField(
+        max_length=16,
+        choices=State.choices,
+        default=State.PENDING,
+    )
+    available_at = models.DateTimeField(db_index=True)
+    lookup_attempts = models.PositiveIntegerField(default=0)
+    lease_owner = models.CharField(max_length=100, blank=True)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    outcome_kind = models.CharField(
+        max_length=32,
+        choices=DeliveryAttempt.Outcome.choices,
+        blank=True,
+    )
+    provider_receipt_ref = models.CharField(max_length=128, blank=True)
+    last_error_code = models.CharField(max_length=64, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    retention_until = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["available_at", "pk"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["command", "target"],
+                name="shop_delivery_reconcile_command_target_uq",
+            ),
+            models.UniqueConstraint(
+                fields=["target"],
+                condition=models.Q(state__in=("pending", "claimed")),
+                name="shop_delivery_reconcile_active_target_uq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state="claimed",
+                        lease_owner__gt="",
+                        lease_until__isnull=False,
+                    )
+                    | (
+                        ~models.Q(state="claimed")
+                        & models.Q(lease_owner="", lease_until__isnull=True)
+                    )
+                ),
+                name="shop_delivery_reconcile_lease_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        state__in=("pending", "claimed"),
+                        outcome_kind="",
+                        completed_at__isnull=True,
+                    )
+                    | models.Q(
+                        state="completed",
+                        outcome_kind__gt="",
+                        completed_at__isnull=False,
+                    )
+                ),
+                name="shop_delivery_reconcile_completion_ck",
+            ),
+        ]
+        indexes = [models.Index(fields=["state", "available_at"])]

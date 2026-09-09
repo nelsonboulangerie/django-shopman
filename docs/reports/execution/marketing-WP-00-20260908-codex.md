@@ -614,3 +614,42 @@ Provas locais:
 - regressão Marketing/campaign/audience/API/E2E: 486 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0033_marketing_delivery_aggregate`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.
+
+## MKT-017 — retry seletivo, reconciliação lookup-only e Actions backend
+
+Implementado:
+
+- retry é um command CAS/idempotente próprio e seleciona sob lock somente `failed_retryable`; o operador escolhe no máximo plataformas, nunca recipients ou target refs;
+- accepted, confirmed, unknown, falha final e estados ativos não são tocados pelo retry; a nova tentativa continua pertencendo ao mesmo `DeliveryTarget` e só nasce quando o worker claimar a fila;
+- a seleção efetiva é registrada por contagem, plataformas e hash opaco no receipt/audit, sem membership, contato ou conteúdo;
+- replay da mesma key devolve o mesmo receipt e não altera target/version/horário pela segunda vez; seleção sem falha segura produz receipt recusado `nothing_retryable`;
+- `unknown` cria `DeliveryReconciliation` durável vinculada à attempt incerta; o endpoint não chama provider e o worker conhece apenas o protocolo `lookup`, que estruturalmente não expõe `send`;
+- o lookup usa o token determinístico da attempt e pode concluir como accepted, confirmed, failed final, still unknown ou, quando o provedor prova ausência de efeito, failed retryable;
+- resultados só avançam monotonicamente: target já resolvido nunca regride; `unknown` não vira retryable por timeout, exception ou suposição;
+- outage/retorno malformado de lookup conserva target unknown, descarta erro bruto, reagenda após 30 s e permite que o worker continue;
+- claims de reconciliação usam batch limitado, lease, `skip_locked` quando disponível e reclaim stale; replay de job concluído não consulta novamente;
+- unique constraints impedem dois jobs ativos para o mesmo target e dois jobs do mesmo command/target; checks impedem lease e completion incoerentes;
+- Actions backend resolve URL same-origin, método, capability, elegibilidade, disabled reason, necessidade de confirmação e se há efeito externo; o browser não precisa inventar autorização nem confundir lookup com resend;
+- endpoints separados exigem `retry_failed_marketing` e `reconcile_unknown_marketing`; leitura das Actions exige somente `view_marketing` e mostra razões machine-safe;
+- migration `shop.0034_marketing_delivery_recovery` é aditiva e reversível; nenhum reconciler/provider real foi ligado e nenhum envio foi habilitado.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Identificar manualmente quais falhas podem repetir | inspeção de logs/recipients | 0; backend conta e seleciona apenas retryable |
+| Marcar recipients um a um | potencialmente N seleções | 0; escopo opcional por plataforma |
+| Conferir se success/unknown entrou no retry | auditoria posterior | 0; filtro de estado + máquina + teste adversarial |
+| Decidir se `unknown` deve reenviar | investigação perigosa | 0; única Action possível é lookup-only |
+| Retomar reconciliação após crash | lembrar job/target | 0; intenção durável + lease stale |
+| Descobrir permissão e próximo passo | tentativa/erro ou lógica no browser | 1 fetch de Actions com enabled/reason/count |
+| Repetir clique após resposta perdida | receio de duplicação | mesmo receipt, 0 segunda mutação/lookup |
+| Sanear erro do vendor | conferência manual | detalhe bruto é descartado estruturalmente |
+
+Provas locais:
+
+- 13 casos MKT-017 cobrem retry seletivo/replay/rejeição, criação lookup-only, cinco outcomes monotônicos, outage/redaction, reclaim de lease, Actions/capabilities, API e reverse/reapply da migration;
+- cadeia command/approval/transitions/outbox/ledger/attempt/worker/aggregate/recovery/API/RBAC: 210 testes passaram;
+- regressão Marketing/campaign/audience/notifications/maintenance/E2E: 567 testes passaram;
+- Ruff, `git diff --check`, Django check e migration drift passaram (mantido apenas o warning conhecido de SQLite e bootstrap sem schema no check local);
+- nenhuma chamada real, destinatário, rede, deploy, produção ou escrita externa foi usada.

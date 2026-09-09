@@ -83,6 +83,7 @@ _DELIVERY_TRANSITIONS: dict[DeliveryState, frozenset[DeliveryState]] = {
     DeliveryState.UNKNOWN: frozenset({
         DeliveryState.ACCEPTED,
         DeliveryState.CONFIRMED,
+        DeliveryState.FAILED_RETRYABLE,
         DeliveryState.FAILED_FINAL,
     }),
     DeliveryState.SUPPRESSED: frozenset(),

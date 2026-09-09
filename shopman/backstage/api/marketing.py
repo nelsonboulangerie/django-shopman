@@ -15,6 +15,9 @@ legada só mantém leitura/edição/preview durante a migração.
     PATCH  campaign/announcements/<pk>/         → editar antes de aprovar
     POST   campaign/announcements/<pk>/approve/ → publicar
     POST   campaign/announcements/<pk>/reject/ → recusar (com motivo)
+    GET    campaign/announcements/<pk>/delivery-actions/ → recovery Actions
+    POST   campaign/announcements/<pk>/retry-deliveries/ → repetir falhas seguras
+    POST   campaign/announcements/<pk>/reconcile-deliveries/ → consultar unknown
     POST   campaign/announcements/<pk>/rewrite/ → sugestão de corpo pela IA
     POST   campaign/rules/<pk>/fire/    → disparar AGORA (público opcional)
     GET    campaign/whatsapp-template/  → templates aprovados + o escolhido
@@ -606,6 +609,98 @@ class AnnouncementRescheduleView(_CampaignBase):
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 base_version=base_version,
                 publish_at=publish_at,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except Exception as exc:
+            response = _command_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(_command_response(result))
+
+
+class AnnouncementDeliveryActionsView(_CampaignBase):
+    """Resolve recovery Actions with current authority and ledger state."""
+
+    permission_map = {"GET": "shop.view_marketing"}
+
+    def get(self, request, pk: int):
+        announcement = _announcement_or_none(pk)
+        if announcement is None:
+            return Response({"detail": "Anúncio não encontrado."}, status=404)
+        from shopman.shop.services.marketing_delivery_recovery import (
+            resolve_delivery_recovery_actions,
+        )
+
+        actions = resolve_delivery_recovery_actions(
+            announcement,
+            actor=request.user,
+        )
+        return Response({
+            "resource_ref": f"announcement:{announcement.pk}",
+            "version": announcement.version,
+            "actions": projection_data(actions),
+        })
+
+
+class AnnouncementRetryDeliveriesView(_CampaignBase):
+    """Queue only the currently retryable failures selected by platform."""
+
+    permission_map = {"POST": "shop.retry_failed_marketing"}
+
+    def post(self, request, pk: int):
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"base_version", "platforms"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        try:
+            from shopman.shop.services.marketing_delivery_recovery import (
+                retry_failed_command,
+            )
+
+            result = retry_failed_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                platforms=payload.get("platforms", ()),
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except Exception as exc:
+            response = _command_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(_command_response(result))
+
+
+class AnnouncementReconcileDeliveriesView(_CampaignBase):
+    """Create lookup-only work for unknown outcomes; this endpoint never sends."""
+
+    permission_map = {"POST": "shop.reconcile_unknown_marketing"}
+
+    def post(self, request, pk: int):
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"base_version", "platforms"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        try:
+            from shopman.shop.services.marketing_delivery_recovery import (
+                request_reconciliation_command,
+            )
+
+            result = request_reconciliation_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                platforms=payload.get("platforms", ()),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
             )
         except Exception as exc:
