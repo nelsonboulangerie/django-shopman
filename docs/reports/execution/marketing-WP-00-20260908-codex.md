@@ -688,3 +688,48 @@ Provas locais:
 - regressão Marketing/campaign/audience/notifications/maintenance/E2E: 574 testes passaram;
 - Ruff e `git diff --check` passaram; não há mudança de model/migration;
 - nenhum provider real, destinatário externo, rede, deploy, produção ou escrita externa foi usado.
+
+## MKT-020 — autorização transacional, quotas e emergency freeze
+
+Implementado conforme o G-H04 aprovado:
+
+- todo command com efeito calcula no servidor o contexto exato — actor, action, resource, base version, artifact/cohort hash, contagem, plataformas, horário e consequência — antes de emitir confirmação;
+- o bearer de confirmação é aleatório, one-use, expira em 5 minutos e somente seu HMAC é persistido; qualquer alteração de contexto, versão, pessoa, sessão, senha, capability ou geração de segurança o invalida;
+- `publish now` e retry seguro exigem recent-auth por senha e a frase exata `PUBLICAR <count>`; a partir de 500 destinos exigem TOTP e segundo ator distinto; 2.000–5.000 só agenda com ao menos 15 minutos; acima de 5.000 falha fechado;
+- o segundo controle guarda também fingerprint de senha/permissões e é revalidado no submit final; a mesma pessoa nunca satisfaz os dois papéis;
+- step-up dura 15 minutos, fica na sessão e é ligado ao auth hash, permission fingerprint e geração do freeze; logout/troca de usuário, senha, RBAC ou risk/freeze tornam a evidência inútil;
+- mudanças de permissions/grupos incrementam uma geração persistida após commit; o command ainda consulta usuário ativo e capabilities novamente dentro da mesma transação que consumirá token e produzirá efeito;
+- publish, cancel, reschedule, retry e reconcile receberam o mesmo callback de autorização junto ao boundary transacional; challenge não deixa receipt/outbox parcial e replay idempotente não cria segundo efeito;
+- reject/cancel exigem motivo de até 200 caracteres; a auditoria preserva o motivo e cancel declara separadamente lanes evitadas e targets já irreversíveis;
+- quotas de API seguem 30/min user + 120/min shop para audience, 10/min user + 30/min shop para commands e 3/h user + 10/dia shop para fire; a reserva durável limita 5.000 targets externos/dia e `429` sempre traz `Retry-After`;
+- send-test permanece isolado, allowlisted, max-1 e com suas quotas 5/h por user e 20/dia por shop; o freeze é rechecado imediatamente antes do adapter e deixa receipt `denied`, sem chamada;
+- emergency freeze é um estado persistido com reason, actor, CAS version e audit; ativá-lo é uma ação imediata de um Security/Ops e invalida todas as confirmações/step-ups abertas;
+- na ativação, outboxes/targets/directives que ainda não cruzaram boundary são terminalmente cancelados/suprimidos; `accepted`, `unknown` e calls possivelmente iniciadas são preservados, nunca reenviados;
+- workers consultam o freeze antes de claim/handoff e novamente no último limite antes da chamada externa; uma attempt preparada que encontra freeze volta a estado recuperável sem tocar o provider;
+- desativar exige TOTP, segundo Security/Ops distinto, versão CAS correta e zero `calling`, `unknown` ou reconciliação pendente; trabalho reversível criado durante a janela também é suprimido antes da retomada;
+- writes legados de platform config e fire manual, que ainda não possuem CAS/snapshot/receipt completos, retornam `409` deny-safe e zero mutação até MKT-029 e o command canônico correspondente;
+- eventos de segurança, confirmações consumidas e reservas de quota são protegidos contra update/delete arbitrário e retidos sem body, telefone, username, token raw ou resposta de fornecedor;
+- o sweep amplo também removeu imports diretos de Storefront do core por adapters e eliminou catches silenciosos nas etapas Marketing anteriores, restaurando os gates arquiteturais globais.
+
+Budget de omotenashi comprovado no contrato backend:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Montar blast/plataforma/horário para confirmar | conferências externas e memória | 0; challenge devolve o resumo autoritativo no contexto |
+| Repetir campos do command após step-up | payload inteiro | somente token e, quando exigida, 1 frase pronta para copiar |
+| Descobrir qual step-up/segundo ator é necessário | tentativa e erro | `mode`, `step_up`, `dual_control` e frase resolvidos pelo servidor |
+| Conferir validade da ação já aberta | risco silencioso após revogação | submit revalida tudo; 0 efeitos com capability removida |
+| Coordenar double click/resposta perdida | investigação de receipt | mesma key devolve o mesmo receipt; token não produz segundo efeito |
+| Congelar canais em incidente | deploy/worker a worker | 1 POST + motivo; estado global e contagens auditadas |
+| Separar evitado de irreversível | inspeção de fila/provider | contagens explícitas no cancel/freeze; accepted/unknown preservados |
+| Calcular limites e espera | regra mental | bloqueio server-side + `Retry-After` |
+| Reabrir após incidente | checklist fora do produto | CAS + reconciliação + TOTP + segundo ator obrigatórios |
+
+Provas locais:
+
+- 13 testes MKT-020 cobrem challenge sem efeito parcial, password/TOTP, typed phrase, replay, expiração/context binding, revogação após load, quota/`Retry-After`, segundo ator e sua rotação de senha, thresholds, freeze seletivo, unfreeze dual e reverse/reapply da migration;
+- testes de boundary provam freeze depois de `begin_call` e antes de `provider.send`, além do send-test sem chamada;
+- cadeia focada de segurança/recovery/attempt/transitions/test-send/API/RBAC: 140 testes passaram;
+- regressão ampliada Marketing/campaign/notification e gates arquiteturais: 2.709 testes passaram, 16 ignorados, 26 deselecionados e 10 subtests; somente 3 warnings esperados de override de `DATABASES` nos testes de deploy;
+- Ruff de todos os Python tocados, `git diff --check`, Django check e migration drift passaram; o check preserva apenas o warning conhecido de SQLite e os logs de bootstrap sem schema no banco efêmero;
+- migration única, aditiva e reversível `shop.0035_marketing_security_authorization`; nenhum provider, destinatário, credencial, sandbox, rede, deploy, produção ou escrita externa foi usado.

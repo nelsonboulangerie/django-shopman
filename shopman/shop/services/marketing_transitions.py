@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -50,9 +52,16 @@ def reject_command(
     reason: str = "",
     request_id: str = "",
     now: datetime | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> TransitionResult:
     now = _aware_now(now)
     normalized_reason = str(reason or "").strip()
+    if not normalized_reason:
+        raise MarketingContractError(
+            code="reason_required",
+            detail="Explique brevemente por que o anúncio foi recusado.",
+            field_errors={"reason": ("Informe o motivo da recusa.",)},
+        )
     if len(normalized_reason) > 200:
         raise MarketingContractError(
             code="rejection_reason_too_long",
@@ -93,6 +102,7 @@ def reject_command(
             artifact=artifact,
             snapshot=snapshot,
             reason_code="operator_rejected",
+            decision_reason=normalized_reason,
             facts={
                 "outbox_cancelled": len(rows),
                 "reason_present": bool(normalized_reason),
@@ -124,12 +134,15 @@ def cancel_command(
     actor,
     idempotency_key: str,
     base_version: int,
+    reason: str,
     reason_code: str = "operator_cancelled",
     request_id: str = "",
     now: datetime | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> TransitionResult:
     now = _aware_now(now)
     safe_reason_code = _reason_code(reason_code)
+    normalized_reason = _decision_reason(reason, action="cancelamento")
 
     def operation(announcement, receipt):
         if announcement.status not in {
@@ -142,8 +155,28 @@ def cancel_command(
                 outcome={"status": announcement.status},
             )
         rows = _cancellable_rows(announcement, allow_empty=False)
-        _cancel_rows(rows, receipt=receipt, at=now)
         artifact, snapshot = _latest_graph(announcement)
+        if authorization is not None:
+            from shopman.shop.services.marketing_security import (
+                ACTION_CANCEL,
+                authorization_context,
+            )
+
+            authorization(
+                authorization_context(
+                    action=ACTION_CANCEL,
+                    resource_ref=f"announcement:{announcement.pk}",
+                    base_version=announcement.version,
+                    artifact_hash=artifact.artifact_hash if artifact else "",
+                    audience_hash=snapshot.cohort_hash if snapshot else "",
+                    audience_count=_audience_count(announcement, snapshot),
+                    platforms=announcement.platforms or (),
+                    scheduled_for=announcement.publish_at,
+                    consequence="cancels_only_reversible_delivery_lanes",
+                ),
+                receipt,
+            )
+        _cancel_rows(rows, receipt=receipt, at=now)
 
         announcement.status = AnnouncementStatus.CANCELLED
         announcement.publish_at = None
@@ -155,10 +188,18 @@ def cancel_command(
             artifact=artifact,
             snapshot=snapshot,
             reason_code=safe_reason_code,
-            facts={"outbox_cancelled": len(rows)},
+            decision_reason=normalized_reason,
+            facts={
+                "avoided_lane_count": len(rows),
+                "irreversible_target_count": 0,
+                "outbox_cancelled": len(rows),
+                "reason_hash": hashlib.sha256(normalized_reason.encode()).hexdigest(),
+            },
             now=now,
         )
         return {
+            "avoided_lane_count": len(rows),
+            "irreversible_target_count": 0,
             "outbox_cancelled": len(rows),
             "status": AnnouncementStatus.CANCELLED,
         }
@@ -169,7 +210,7 @@ def cancel_command(
         actor=actor,
         idempotency_key=idempotency_key,
         base_version=base_version,
-        payload={"reason_code": safe_reason_code},
+        payload={"reason": normalized_reason, "reason_code": safe_reason_code},
         operation=operation,
         request_id=request_id,
     )
@@ -185,6 +226,7 @@ def reschedule_command(
     publish_at: datetime,
     request_id: str = "",
     now: datetime | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> TransitionResult:
     now = _aware_now(now)
     _mode, normalized_publish_at = normalize_schedule(
@@ -204,12 +246,31 @@ def reschedule_command(
         rows = _cancellable_rows(announcement, allow_empty=False)
         old_publish_at = announcement.publish_at
         delta = normalized_publish_at - old_publish_at
+        artifact, snapshot = _latest_graph(announcement)
+        if authorization is not None:
+            from shopman.shop.services.marketing_security import (
+                ACTION_RESCHEDULE,
+                authorization_context,
+            )
+
+            authorization(
+                authorization_context(
+                    action=ACTION_RESCHEDULE,
+                    resource_ref=f"announcement:{announcement.pk}",
+                    base_version=announcement.version,
+                    artifact_hash=artifact.artifact_hash if artifact else "",
+                    audience_hash=snapshot.cohort_hash if snapshot else "",
+                    audience_count=_audience_count(announcement, snapshot),
+                    platforms=announcement.platforms or (),
+                    scheduled_for=normalized_publish_at,
+                    consequence="changes_scheduled_delivery_time",
+                ),
+                receipt,
+            )
         for row in rows:
             row.available_at += delta
             row.updated_at = now
         MarketingOutbox.objects.bulk_update(rows, ["available_at", "updated_at"])
-        artifact, snapshot = _latest_graph(announcement)
-
         announcement.publish_at = normalized_publish_at
         announcement.save(update_fields=["publish_at"])
         _audit(
@@ -360,6 +421,37 @@ def _reason_code(value: str) -> str:
     return normalized
 
 
+def _decision_reason(value: str, *, action: str) -> str:
+    normalized = str(value or "").strip()
+    if not normalized:
+        raise MarketingContractError(
+            code="reason_required",
+            detail=f"Explique brevemente o motivo do {action}.",
+            field_errors={"reason": ("Informe o motivo.",)},
+        )
+    if len(normalized) > 200:
+        raise MarketingContractError(
+            code="reason_too_long",
+            detail="O motivo deve ter no máximo 200 caracteres.",
+            field_errors={"reason": ("Use no máximo 200 caracteres.",)},
+        )
+    return normalized
+
+
+def _audience_count(
+    announcement: Announcement,
+    snapshot: AudienceSnapshot | None,
+) -> int:
+    summary = snapshot.summary if snapshot is not None else announcement.audience
+    if not isinstance(summary, dict):
+        return 0
+    value = summary.get("eligible_count", summary.get("total", 0))
+    try:
+        return max(0, int(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
 def _cancellable_rows(
     announcement: Announcement,
     *,
@@ -430,6 +522,7 @@ def _audit(
     reason_code: str,
     facts: dict,
     now: datetime,
+    decision_reason: str = "",
     base_version: int | None = None,
 ) -> MarketingAuditEvent:
     base = announcement.version if base_version is None else base_version
@@ -444,6 +537,7 @@ def _audit(
         base_version=base,
         resulting_version=base + 1,
         reason_code=reason_code,
+        decision_reason=decision_reason,
         facts=facts,
         request_id=receipt.request_id,
         occurred_at=now,

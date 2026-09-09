@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -18,6 +19,7 @@ from shopman.shop.services.audience import AudienceResult, Recipient
 from shopman.shop.services.marketing_contracts import MarketingContractError
 
 SNAPSHOT_RETENTION = timedelta(days=90)
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +136,7 @@ def materialize_active_recipients(
 
         statuses = ConsentService.get_customer_statuses("whatsapp", customer_refs)
     except Exception:
+        logger.warning("marketing.snapshot_consent_source_unavailable")
         return SnapshotAudience(
             excluded_by_reason={"consent_unavailable": len(members)},
             degraded_sources=("consent",),
@@ -142,13 +145,11 @@ def materialize_active_recipients(
     subscription_refs = {
         member.subscription_ref for member in members if member.subscription_ref
     }
-    from shopman.storefront.models import StockAlertSubscription
+    from shopman.shop.adapters.audience_sources import active_alert_subscriptions
 
     subscriptions = {
         sub.ref: sub
-        for sub in StockAlertSubscription.objects.active(now=now).filter(
-            ref__in=subscription_refs
-        )
+        for sub in active_alert_subscriptions(subscription_refs, now=now)
     }
     excluded: dict[str, int] = {}
     by_phone: dict[str, Recipient] = {}

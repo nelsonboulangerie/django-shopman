@@ -14,6 +14,7 @@ effect semantics from MKT-013 onward.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -33,12 +34,14 @@ from shopman.shop.models import (
     MarketingOutbox,
 )
 from shopman.shop.services.marketing_approval import canonical_artifact_bytes
+from shopman.shop.services.marketing_contracts import MarketingContractError
 
 DEFAULT_BATCH_SIZE = 100
 DEFAULT_LEASE_SECONDS = 60
 MAX_ATTEMPTS = 5
 _MAX_BACKOFF_SECONDS = 300
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+logger = logging.getLogger(__name__)
 
 
 class OutboxClaimLost(RuntimeError):
@@ -79,6 +82,12 @@ def claim_due(
     """
 
     safe_worker_id = _worker_id(worker_id)
+    from shopman.shop.services.marketing_security import require_external_effects_enabled
+
+    try:
+        require_external_effects_enabled()
+    except MarketingContractError:
+        return ()
     clock = _aware_now(now)
     safe_limit = max(1, min(int(limit), 1_000))
     safe_lease = max(10, min(int(lease_seconds), 15 * 60))
@@ -123,6 +132,9 @@ def publish_claim(
     """Atomically create/find the durable Directive and finish one hand-off."""
 
     safe_worker_id = _worker_id(worker_id)
+    from shopman.shop.services.marketing_security import require_external_effects_enabled
+
+    require_external_effects_enabled()
     clock = _aware_now(now)
     with transaction.atomic():
         row = (
@@ -224,6 +236,7 @@ def process_due(
         except OutboxClaimLost:
             continue
         except Exception:
+            logger.warning("marketing.outbox_directive_handoff_failed")
             state = release_failed_claim(
                 row.ref,
                 worker_id=worker_id,

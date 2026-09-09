@@ -79,7 +79,7 @@ def test_approver_can_reject_but_coupled_legacy_publish_requires_publisher(clien
     ))
 
     # 404 prova que passou pelo gate e chegou à busca do recurso.
-    assert client.post(REJECT, data={}, content_type="application/json").status_code == 400
+    assert client.post(REJECT, data={}, content_type="application/json").status_code == 409
     # O endpoint legado ainda aprova+despacha; até MKT-009 separá-lo, exige ambas.
     assert client.post(APPROVE, data={}, content_type="application/json").status_code == 403
 
@@ -92,8 +92,8 @@ def test_publisher_passes_approve_and_fire_gates(client):
         "fire_marketing_campaigns",
     ))
 
-    assert client.post(APPROVE, data={}, content_type="application/json").status_code == 400
-    assert client.post(FIRE, data={}, content_type="application/json").status_code == 400
+    assert client.post(APPROVE, data={}, content_type="application/json").status_code == 409
+    assert client.post(FIRE, data={}, content_type="application/json").status_code == 409
 
 
 def test_platform_owner_can_configure_but_publisher_cannot(client, monkeypatch):
@@ -105,7 +105,9 @@ def test_platform_owner_can_configure_but_publisher_cannot(client, monkeypatch):
     assert client.post(PLATFORM_CONFIG, data={}, content_type="application/json").status_code == 403
 
     client.force_login(owner)
-    assert client.post(PLATFORM_CONFIG, data={}, content_type="application/json").status_code == 200
+    response = client.post(PLATFORM_CONFIG, data={}, content_type="application/json")
+    assert response.status_code == 409
+    assert response.json()["code"] == "platform_config_cas_not_ready"
 
 
 def test_setup_groups_matches_approved_role_matrix_and_keeps_dangerous_groups_empty():

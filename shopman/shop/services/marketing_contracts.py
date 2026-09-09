@@ -79,7 +79,10 @@ _DELIVERY_TRANSITIONS: dict[DeliveryState, frozenset[DeliveryState]] = {
         DeliveryState.CONFIRMED,
         DeliveryState.FAILED_FINAL,
     }),
-    DeliveryState.FAILED_RETRYABLE: frozenset({DeliveryState.QUEUED}),
+    DeliveryState.FAILED_RETRYABLE: frozenset({
+        DeliveryState.QUEUED,
+        DeliveryState.CANCELLED,
+    }),
     DeliveryState.UNKNOWN: frozenset({
         DeliveryState.ACCEPTED,
         DeliveryState.CONFIRMED,

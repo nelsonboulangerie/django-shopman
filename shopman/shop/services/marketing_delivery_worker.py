@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -34,6 +35,7 @@ DEFAULT_CLAIM_LIMIT = 100
 DEFAULT_TARGET_LEASE_SECONDS = 60
 CONSENT_RETRY_SECONDS = 30
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +203,12 @@ def claim_due_targets(
     """Lease eligible targets after one batched consent/expiry recheck."""
 
     clock = _aware_now(now)
+    from shopman.shop.services.marketing_security import require_external_effects_enabled
+
+    try:
+        require_external_effects_enabled()
+    except MarketingContractError:
+        return TargetClaimReport((), 0, 0, 0, 0, 0, 0)
     safe_worker_id = _worker_id(worker_id)
     safe_limit = max(1, min(int(limit), 1_000))
     safe_lease = max(10, min(int(lease_seconds), 15 * 60))
@@ -355,6 +363,7 @@ def _consent_statuses(rows) -> tuple[dict[str, str], bool]:
 
         return ConsentService.get_customer_statuses("whatsapp", refs), False
     except Exception:
+        logger.warning("marketing.delivery_consent_source_unavailable")
         return {}, True
 
 
@@ -369,15 +378,14 @@ def _active_subscriptions(rows, *, now: datetime) -> tuple[set, bool]:
     if not refs:
         return set(), False
     try:
-        from shopman.storefront.models import StockAlertSubscription
-
-        active = set(
-            StockAlertSubscription.objects.active(now=now)
-            .filter(ref__in=refs)
-            .values_list("ref", flat=True)
+        from shopman.shop.adapters.audience_sources import (
+            active_alert_subscription_refs,
         )
+
+        active = active_alert_subscription_refs(refs, now=now)
         return active, False
     except Exception:
+        logger.warning("marketing.delivery_subscription_source_unavailable")
         return set(), True
 
 

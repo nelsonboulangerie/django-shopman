@@ -89,6 +89,39 @@ def _post(rule, template, *, status=AnnouncementStatus.PENDING_REVIEW, **kwargs)
     )
 
 
+def _confirmed_post(client, url: str, payload: dict, *, key: str):
+    """Exercise the operator contract without inventing confirmation facts client-side."""
+
+    response = client.post(
+        url,
+        data=payload,
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key,
+    )
+    if response.status_code != 428:
+        return response
+    confirmation = response.json()["confirmation"]
+    if confirmation["step_up"] != "none":
+        method = confirmation["step_up"]
+        credential = "x" if method == "password" else "000000"
+        stepped = client.post(
+            "/api/v1/backstage/marketing/security/step-up/",
+            data={"method": method, "credential": credential},
+            content_type="application/json",
+        )
+        assert stepped.status_code == 200
+    return client.post(
+        url,
+        data={
+            **payload,
+            "confirmation_token": confirmation["token"],
+            "typed_confirmation": confirmation["typed_phrase"],
+        },
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY=key,
+    )
+
+
 # ── Gate ─────────────────────────────────────────────────────────────
 
 
@@ -109,7 +142,12 @@ class TestGate:
         announcement = _post(rule, template)
         User.objects.create_user(username="caixa", password="x", is_staff=True)
         client.login(username="caixa", password="x")
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": 1, "publish_mode": "now"},
+            key="legacy-contract-replaced-0001",
+        )
         assert response.status_code == 403
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
@@ -163,7 +201,12 @@ class TestPostDecision:
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/")
+        response = _confirmed_post(
+            client,
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
+            {"base_version": 1, "publish_mode": "now"},
+            key="approve-dispatch-contract-0001",
+        )
 
         assert response.status_code == 200
         announcement.refresh_from_db()
@@ -184,11 +227,11 @@ class TestPostDecision:
             "platforms": ["instagram", "google_business"],
         }
 
-        first = client.post(
+        first = _confirmed_post(
+            client,
             url,
-            data=payload,
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000001",
+            payload,
+            key="idem-api-approval-000001",
         )
         replay = client.post(
             url,
@@ -234,11 +277,11 @@ class TestPostDecision:
         announcement = _post(rule, template, publish_at=suggested)
         client.force_login(gestor)
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"base_version": 1, "publish_mode": "now"},
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-now-beats-schedule",
+            {"base_version": 1, "publish_mode": "now"},
+            key="idem-api-now-beats-schedule",
         )
 
         assert response.status_code == 200
@@ -282,11 +325,11 @@ class TestPostDecision:
         url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/"
         base = {"base_version": 1, "publish_mode": "now", "body": "Primeiro"}
 
-        assert client.post(
+        assert _confirmed_post(
+            client,
             url,
-            data=base,
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-approval-000002",
+            base,
+            key="idem-api-approval-000002",
         ).status_code == 200
         conflict = client.post(
             url,
@@ -357,21 +400,21 @@ class TestPostDecision:
         client.force_login(gestor)
         base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
         when = timezone.now() + timedelta(hours=2)
-        approved = client.post(
+        approved = _confirmed_post(
+            client,
             f"{base_url}/approve/",
-            data={
+            {
                 "base_version": 1,
                 "publish_mode": "scheduled",
                 "publish_at": when.isoformat(),
             },
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-schedule-00001",
+            key="idem-api-schedule-00001",
         )
-        cancelled = client.post(
+        cancelled = _confirmed_post(
+            client,
             f"{base_url}/cancel/",
-            data={"base_version": 2},
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-cancel-0000001",
+            {"base_version": 2, "reason": "Oferta interrompida"},
+            key="idem-api-cancel-0000001",
         )
 
         assert approved.status_code == cancelled.status_code == 200
@@ -390,22 +433,22 @@ class TestPostDecision:
         base_url = f"/api/v1/backstage/marketing/announcements/{announcement.pk}"
         first_at = timezone.now() + timedelta(hours=2)
         next_at = first_at + timedelta(hours=4)
-        client.post(
+        _confirmed_post(
+            client,
             f"{base_url}/approve/",
-            data={
+            {
                 "base_version": 1,
                 "publish_mode": "scheduled",
                 "publish_at": first_at.isoformat(),
             },
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-schedule-00002",
+            key="idem-api-schedule-00002",
         )
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"{base_url}/reschedule/",
-            data={"base_version": 2, "publish_at": next_at.isoformat()},
-            content_type="application/json",
-            HTTP_IDEMPOTENCY_KEY="idem-api-reschedule-0001",
+            {"base_version": 2, "publish_at": next_at.isoformat()},
+            key="idem-api-reschedule-0001",
         )
 
         assert response.status_code == 200
@@ -419,8 +462,9 @@ class TestPostDecision:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
-            data={"reason": "Foto ruim"},
+            data={"base_version": 1, "reason": "Foto ruim"},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-photo-reason-0001",
         )
 
         assert response.status_code == 200
@@ -430,15 +474,20 @@ class TestPostDecision:
         assert announcement.rejected_by_id == gestor.pk
         assert announcement.rejected_reason == "Foto ruim"
 
-    def test_rejecting_without_a_reason_still_works(self, client, gestor, rule, template):
+    def test_rejecting_without_a_reason_is_blocked(self, client, gestor, rule, template):
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        assert client.post(
-            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/"
-        ).status_code == 200
+        response = client.post(
+            f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
+            data={"base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-reason-required-0001",
+        )
+        assert response.status_code == 422
+        assert response.json()["code"] == "reason_required"
         announcement.refresh_from_db()
-        assert announcement.status == AnnouncementStatus.REJECTED
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
         assert announcement.rejected_reason == ""
 
     def test_the_projection_tells_the_screen_who_rejected_and_why(self, client, gestor, rule, template):
@@ -448,8 +497,9 @@ class TestPostDecision:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
-            data={"reason": "Produto acabou"},
+            data={"base_version": 1, "reason": "Produto acabou"},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="reject-projection-reason-001",
         )
 
         body = response.json()["announcement"]
@@ -738,10 +788,15 @@ class TestScheduledPublishing:
         client.force_login(gestor)
         when = timezone.now() + timedelta(hours=3)
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"publish_at": when.isoformat()},
-            content_type="application/json",
+            {
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": when.isoformat(),
+            },
+            key="scheduled-publish-contract-0001",
         )
 
         assert response.status_code == 200
@@ -756,10 +811,16 @@ class TestScheduledPublishing:
         announcement = _post(rule, template)
         client.force_login(gestor)
 
-        response = client.post(
+        response = _confirmed_post(
+            client,
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"body": "Texto revisado pelo gestor", "platforms": ["instagram"]},
-            content_type="application/json",
+            {
+                "base_version": 1,
+                "publish_mode": "now",
+                "body": "Texto revisado pelo gestor",
+                "platforms": ["instagram"],
+            },
+            key="approval-with-edits-contract-01",
         )
 
         assert response.status_code == 200
@@ -775,12 +836,17 @@ class TestScheduledPublishing:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"publish_at": "amanhã cedo"},
+            data={
+                "base_version": 1,
+                "publish_mode": "scheduled",
+                "publish_at": "amanhã cedo",
+            },
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="invalid-schedule-contract-0001",
         )
 
-        assert response.status_code == 400
-        assert response.json()["field"] == "publish_at"
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_publish_at"
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PENDING_REVIEW
 
@@ -790,12 +856,13 @@ class TestScheduledPublishing:
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/approve/",
-            data={"body": "   "},
+            data={"base_version": 1, "publish_mode": "now", "body": "   "},
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="empty-body-contract-000001",
         )
 
-        assert response.status_code == 400
-        assert response.json()["field"] == "body"
+        assert response.status_code == 422
+        assert response.json()["code"] == "invalid_approval_content"
 
 
 class TestPlatformResultDetail:
@@ -870,109 +937,20 @@ def _fire_url(rule) -> str:
 
 
 class TestManualFire:
-    def test_firing_creates_an_announcement_now(self, client, gestor, rule):
+    def test_legacy_fire_is_contained_before_any_announcement_or_effect(
+        self, client, gestor, rule
+    ):
         client.force_login(gestor)
-        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
-
-        assert resp.status_code == 201
-        body = resp.json()
-        assert body["ok"] is True
-        assert Announcement.objects.filter(rule=rule).count() == 1
-
-    def test_firing_without_a_text_still_goes_to_review(self, client, gestor, rule):
-        """Sem texto escrito, quem escreveu foi o modelo — e aí a revisão tem função."""
-        client.force_login(gestor)
-        client.post(_fire_url(rule), data={}, content_type="application/json")
-
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
-
-    def test_a_text_written_now_publishes_straight_away(self, client, gestor, rule):
-        """⚠️ "Quem cria publica" (ADR-020 §8).
-
-        Não existe segundo par de olhos quando o autor e o revisor são a mesma pessoa. A
-        revisão continua valendo para o que a OPERAÇÃO gerou — fornada, estoque baixo —,
-        que é o caso em que existe outra pessoa para conferir.
-        """
-        client.force_login(gestor)
-
         resp = client.post(
             _fire_url(rule),
             data={"body": "Fornada extra hoje, a partir das 16h."},
             content_type="application/json",
         )
 
-        assert resp.status_code == 201
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status != AnnouncementStatus.PENDING_REVIEW
-        assert announcement.content["body"] == "Fornada extra hoje, a partir das 16h."
-
-    def test_publishing_without_review_still_records_who_decided(self, client, gestor, rule):
-        """Anúncio que saiu sem revisão não pode ficar sem nome atrás."""
-        client.force_login(gestor)
-
-        client.post(
-            _fire_url(rule),
-            data={"body": "Fornada extra hoje."},
-            content_type="application/json",
-        )
-
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.approved_by_id == gestor.pk
-        assert announcement.approved_at is not None
-
-    def test_a_blank_text_is_not_a_text(self, client, gestor, rule):
-        """⚠️ Só espaços publicaria uma mensagem em branco, sem ninguém revisar."""
-        client.force_login(gestor)
-
-        client.post(_fire_url(rule), data={"body": "   "}, content_type="application/json")
-
-        announcement = Announcement.objects.get(rule=rule)
-        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
-
-    def test_writing_the_text_does_not_change_the_saved_campaign(self, client, gestor, rule):
-        """`requires_approval` da campanha não é atropelado em silêncio."""
-        client.force_login(gestor)
-
-        client.post(
-            _fire_url(rule), data={"body": "Fornada extra."}, content_type="application/json"
-        )
-
-        rule.refresh_from_db()
-        assert rule.requires_approval is True
-
-    def test_a_chosen_audience_applies_to_this_shot_only(self, client, gestor, rule):
-        """A campanha salva mantém o público dela; a escolha vale para este disparo."""
-        client.force_login(gestor)
-        resp = client.post(
-            _fire_url(rule),
-            data={"audience_rules": {"birthday_today": True}},
-            content_type="application/json",
-        )
-        assert resp.status_code == 201
-
-        rule.refresh_from_db()
-        assert rule.audience_rules == {"favorites": True}, "a campanha não devia ter mudado"
-
-    def test_an_inactive_campaign_refuses_instead_of_going_quiet(self, client, gestor, rule):
-        """Disparar campanha desligada é quase sempre engano; silêncio esconderia."""
-        rule.is_active = False
-        rule.save(update_fields=["is_active"])
-        client.force_login(gestor)
-
-        resp = client.post(_fire_url(rule), data={}, content_type="application/json")
-        assert resp.status_code == 400
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "fire_command_upgrade_required"
         assert Announcement.objects.filter(rule=rule).count() == 0
-
-    def test_a_malformed_audience_is_a_400_not_a_500(self, client, gestor, rule):
-        client.force_login(gestor)
-        resp = client.post(
-            _fire_url(rule),
-            data={"audience_rules": ["nao", "e", "objeto"]},
-            content_type="application/json",
-        )
-        assert resp.status_code == 400
-        assert resp.json()["field"] == "audience_rules"
+        assert MarketingCommandReceipt.objects.count() == 0
 
     def test_firing_requires_the_permission(self, client, rule):
         outsider = User.objects.create_user(username="curioso", password="x", is_staff=True)
@@ -1019,7 +997,9 @@ class TestWhatsAppTemplateFromTheSurface:
         assert body["current"] == ""
         assert body["configured"] is False
 
-    def test_choosing_one_configures_the_event(self, client, gestor, flows):
+    def test_legacy_config_write_is_contained_until_cas_command(
+        self, client, gestor, flows
+    ):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
@@ -1029,39 +1009,41 @@ class TestWhatsAppTemplateFromTheSurface:
             content_type="application/json",
         )
 
-        assert resp.status_code == 200
-        assert resp.json()["configured"] is True
-        saved = NotificationTemplate.objects.get(event="announcement_published")
-        assert saved.whatsapp_flow_ns == FAKE_FLOWS[0][0]
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "platform_config_cas_not_ready"
+        assert not NotificationTemplate.objects.filter(
+            event="announcement_published"
+        ).exists()
 
-    def test_clearing_is_allowed_and_says_what_it_costs(self, client, gestor, flows):
+    def test_clearing_cannot_bypass_the_same_config_command(self, client, gestor, flows):
         from shopman.shop.models import NotificationTemplate
 
         client.force_login(gestor)
-        client.post(WA_TEMPLATE_URL, data={"flow_ns": FAKE_FLOWS[0][0]},
-                    content_type="application/json")
         resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": ""},
                            content_type="application/json")
 
-        assert resp.status_code == 200
-        assert resp.json()["configured"] is False
-        assert NotificationTemplate.objects.get(event="announcement_published").whatsapp_flow_ns == ""
+        assert resp.status_code == 409
+        assert not NotificationTemplate.objects.filter(
+            event="announcement_published"
+        ).exists()
 
     def test_a_template_that_no_longer_exists_is_refused(self, client, gestor, flows):
         client.force_login(gestor)
         resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20200101000000_000000"},
                            content_type="application/json")
 
-        assert resp.status_code == 400
-        assert resp.json()["field"] == "flow_ns"
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "platform_config_cas_not_ready"
 
-    def test_with_the_platform_down_the_choice_is_not_blocked(self, client, gestor, no_flows):
-        """Indisponibilidade de terceiro não pode travar o operador."""
+    def test_platform_outage_cannot_turn_into_an_unverified_write(
+        self, client, gestor, no_flows
+    ):
         client.force_login(gestor)
         resp = client.post(WA_TEMPLATE_URL, data={"flow_ns": "content20991231235959_999999"},
                            content_type="application/json")
 
-        assert resp.status_code == 200, "sem lista para validar, aceita e confia"
+        assert resp.status_code == 409
+        assert resp.json()["code"] == "platform_config_cas_not_ready"
 
     def test_the_surface_distinguishes_cannot_list_from_empty(self, client, gestor, no_flows):
         client.force_login(gestor)

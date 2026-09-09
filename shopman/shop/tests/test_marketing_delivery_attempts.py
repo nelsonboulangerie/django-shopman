@@ -29,6 +29,7 @@ from shopman.shop.services.marketing_delivery_worker import (
     claim_due_targets,
     fanout_in_chunks,
 )
+from shopman.shop.services.marketing_security import MarketingAuthorizationError
 from shopman.shop.tests.marketing_fakes import (
     FakeProviderFailure,
     ProgrammedProvider,
@@ -152,6 +153,38 @@ def test_provider_accept_is_persisted_and_same_token_replays_without_call():
     assert first.target.state == DeliveryTarget.State.ACCEPTED
     assert first.target.provider_receipt_ref.startswith("fake_")
     assert first.attempt.idempotency_token_hash != "attempt-token-0001"
+
+
+def test_freeze_after_begin_but_before_provider_call_releases_without_effect(monkeypatch):
+    target = _queued_target(suffix="attempt-freeze-last-boundary")
+    adapter = CanonicalFakeAdapter(ProviderScenario.ACCEPT)
+    checks = 0
+
+    def freeze_on_last_check():
+        nonlocal checks
+        checks += 1
+        if checks == 2:
+            raise MarketingAuthorizationError(
+                code="marketing_frozen",
+                detail="frozen",
+                status_code=423,
+            )
+
+    monkeypatch.setattr(
+        "shopman.shop.services.marketing_security.require_external_effects_enabled",
+        freeze_on_last_check,
+    )
+
+    with pytest.raises(MarketingAuthorizationError) as caught:
+        _execute(target, adapter)
+
+    target.refresh_from_db()
+    attempt = DeliveryAttempt.objects.get(target=target)
+    assert caught.value.code == "marketing_frozen"
+    assert adapter.provider.calls == []
+    assert attempt.state == DeliveryAttempt.State.PREPARED
+    assert target.state == DeliveryTarget.State.QUEUED
+    assert target.lease_owner == ""
 
 
 def test_provider_rejection_is_a_final_failure():

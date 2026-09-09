@@ -11,6 +11,7 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from shopman.shop import notifications
+from shopman.shop.services.marketing_security import activate_freeze
 
 pytestmark = pytest.mark.django_db
 
@@ -100,6 +101,19 @@ def test_repeating_command_key_does_not_send_again(adapter, actor):
 
     assert len(adapter.calls) == 1
     assert "nenhum segundo envio" in output
+
+
+def test_emergency_freeze_blocks_sandbox_at_the_last_boundary(adapter, actor):
+    security = get_user_model().objects.create_user(
+        username="marketing-security", password="x", is_staff=True
+    )
+    security.user_permissions.add(Permission.objects.get(codename="freeze_marketing"))
+    activate_freeze(actor=security, reason="Exercício local do kill switch")
+
+    with pytest.raises(CommandError, match="congelado"):
+        _run(*_send_args())
+
+    assert adapter.calls == []
 
 
 def test_unconfigured_target_is_fail_closed(adapter):

@@ -752,6 +752,7 @@ class MarketingAuditEvent(models.Model):
     base_version = models.PositiveIntegerField()
     resulting_version = models.PositiveIntegerField()
     reason_code = models.CharField(max_length=64, blank=True)
+    decision_reason = models.CharField(max_length=200, blank=True)
     facts = models.JSONField(default=dict, blank=True)
     request_id = models.CharField(max_length=100, blank=True)
     occurred_at = models.DateTimeField()
@@ -771,6 +772,256 @@ class MarketingAuditEvent(models.Model):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Eventos de auditoria de Marketing não podem ser apagados.")
+
+
+class MarketingSafetyState(models.Model):
+    """Singleton kill switch for every reversible Marketing external effect."""
+
+    scope = models.CharField(max_length=32, default="default", unique=True)
+    frozen = models.BooleanField(default=False)
+    generation = models.PositiveIntegerField(default=1)
+    version = models.PositiveIntegerField(default=1)
+    reason = models.CharField(max_length=200, blank=True)
+    frozen_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_freezes",
+        null=True,
+        blank=True,
+    )
+    frozen_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(generation__gte=1),
+                name="shop_marketing_safety_generation_ck",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(version__gte=1),
+                name="shop_marketing_safety_version_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        frozen=True,
+                        frozen_by__isnull=False,
+                        frozen_at__isnull=False,
+                        reason__gt="",
+                    )
+                    | models.Q(
+                        frozen=False,
+                        frozen_by__isnull=True,
+                        frozen_at__isnull=True,
+                        reason="",
+                    )
+                ),
+                name="shop_marketing_safety_frozen_evidence_ck",
+            ),
+        ]
+
+
+class MarketingConfirmation(models.Model):
+    """Hashed, one-use transaction authorization bound to exact consequences."""
+
+    class Mode(models.TextChoices):
+        SUMMARY = "summary", "resumo"
+        TYPED = "typed", "digitada"
+
+    class StepUp(models.TextChoices):
+        NONE = "none", "nenhum"
+        PASSWORD = "password", "senha"
+        TOTP = "totp", "TOTP"
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    token_hash = models.CharField(max_length=64, unique=True)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_confirmations",
+    )
+    second_actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_second_confirmations",
+        null=True,
+        blank=True,
+    )
+    command = models.OneToOneField(
+        MarketingCommandReceipt,
+        on_delete=models.PROTECT,
+        related_name="confirmation",
+        null=True,
+        blank=True,
+    )
+    action = models.CharField(max_length=32)
+    capability = models.CharField(max_length=64)
+    resource_ref = models.CharField(max_length=120)
+    base_version = models.PositiveIntegerField()
+    context_hash = models.CharField(max_length=64)
+    artifact_hash = models.CharField(max_length=64, blank=True)
+    audience_hash = models.CharField(max_length=64, blank=True)
+    audience_count = models.PositiveIntegerField(default=0)
+    platforms = models.JSONField(default=list, blank=True)
+    scheduled_for = models.DateTimeField(null=True, blank=True)
+    consequence = models.CharField(max_length=64)
+    confirmation_mode = models.CharField(max_length=16, choices=Mode.choices)
+    step_up_level = models.CharField(max_length=16, choices=StepUp.choices)
+    dual_control = models.BooleanField(default=False)
+    permission_fingerprint = models.CharField(max_length=64)
+    second_permission_fingerprint = models.CharField(max_length=64, blank=True)
+    freeze_generation = models.PositiveIntegerField()
+    second_approved_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(db_index=True)
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(base_version__gte=1),
+                name="shop_marketing_confirmation_version_ck",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(freeze_generation__gte=1),
+                name="shop_marketing_confirmation_generation_ck",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        dual_control=False,
+                        second_actor__isnull=True,
+                        second_approved_at__isnull=True,
+                        second_permission_fingerprint="",
+                    )
+                    | models.Q(
+                        dual_control=True,
+                        second_actor__isnull=False,
+                        second_approved_at__isnull=False,
+                        second_permission_fingerprint__gt="",
+                    )
+                    | models.Q(
+                        dual_control=True,
+                        second_actor__isnull=True,
+                        second_approved_at__isnull=True,
+                        second_permission_fingerprint="",
+                    )
+                ),
+                name="shop_marketing_confirmation_dual_ck",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["actor", "created_at"]),
+            models.Index(fields=["resource_ref", "created_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            update_fields = set(kwargs.get("update_fields") or ())
+            mutable_fields = {
+                "command",
+                "command_id",
+                "consumed_at",
+                "second_actor",
+                "second_actor_id",
+                "second_approved_at",
+                "second_permission_fingerprint",
+            }
+            if not update_fields or not update_fields.issubset(mutable_fields):
+                raise ValidationError(
+                    "Confirmações de Marketing só avançam por transições explícitas."
+                )
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Confirmações de Marketing não podem ser apagadas.")
+
+
+class MarketingQuotaUsage(models.Model):
+    """Low-cardinality durable reservations for command and blast quotas."""
+
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_quota_usage",
+    )
+    action = models.CharField(max_length=32)
+    resource_ref = models.CharField(max_length=120)
+    target_count = models.PositiveIntegerField(default=0)
+    occurred_at = models.DateTimeField(db_index=True)
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["actor", "action", "occurred_at"]),
+            models.Index(fields=["action", "occurred_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Reservas de quota de Marketing são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Reservas de quota de Marketing não podem ser apagadas.")
+
+
+class MarketingSecurityEvent(models.Model):
+    """Append-only, PII-free evidence for authorization and emergency actions."""
+
+    ref = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_security_events",
+        null=True,
+        blank=True,
+    )
+    second_actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="marketing_second_security_events",
+        null=True,
+        blank=True,
+    )
+    confirmation = models.ForeignKey(
+        MarketingConfirmation,
+        on_delete=models.PROTECT,
+        related_name="security_events",
+        null=True,
+        blank=True,
+    )
+    event_type = models.CharField(max_length=32)
+    action = models.CharField(max_length=32, blank=True)
+    resource_ref = models.CharField(max_length=120, blank=True)
+    reason_code = models.CharField(max_length=64, blank=True)
+    facts = models.JSONField(default=dict, blank=True)
+    occurred_at = models.DateTimeField()
+    retention_until = models.DateTimeField()
+
+    objects = models.Manager.from_queryset(_AppendOnlyMarketingQuerySet)()
+
+    class Meta:
+        ordering = ["-occurred_at"]
+        indexes = [
+            models.Index(fields=["event_type", "occurred_at"]),
+            models.Index(fields=["resource_ref", "occurred_at"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValidationError("Eventos de segurança de Marketing são imutáveis.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Eventos de segurança de Marketing não podem ser apagados.")
 
 
 class MarketingOutbox(models.Model):

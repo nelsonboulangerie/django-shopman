@@ -338,21 +338,9 @@ def _deliver_if_still_active(
 def _globally_opted_out(sub) -> bool:
     if not sub.customer_ref:
         return False
-    try:
-        from shopman.guestman import ConsentService
+    from shopman.shop.services.communication_consent import customer_is_opted_out
 
-        statuses = ConsentService.get_customer_statuses(
-            sub.delivery_channel,
-            {sub.customer_ref},
-        )
-    except Exception:
-        logger.warning(
-            "stock_alerts: consent recheck failed sub=%s",
-            sub.pk,
-            exc_info=True,
-        )
-        return True
-    return statuses.get(sub.customer_ref) == "opted_out"
+    return customer_is_opted_out(sub.customer_ref, sub.delivery_channel)
 
 
 # ── private ──────────────────────────────────────────────────────────

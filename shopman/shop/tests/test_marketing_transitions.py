@@ -98,6 +98,7 @@ def test_reject_pending_is_versioned_audited_and_replayable(actor, announcement)
     assert announcement.rejected_reason == "Foto não representa a fornada"
     assert (audit.base_version, audit.resulting_version) == (1, 2)
     assert audit.reason_code == "operator_rejected"
+    assert audit.decision_reason == "Foto não representa a fornada"
     assert audit.facts == {"outbox_cancelled": 0, "reason_present": True}
     assert replay.replayed is True
     assert replay.receipt.pk == first.receipt.pk
@@ -133,18 +134,26 @@ def test_cancel_now_wins_all_pending_lanes_and_is_idempotent(actor, announcement
         actor=actor,
         idempotency_key="idem-transition-cancel-0001",
         base_version=2,
+        reason="Campanha suspensa pelo operador",
     )
     replay = cancel_command(
         announcement.pk,
         actor=actor,
         idempotency_key="idem-transition-cancel-0001",
         base_version=2,
+        reason="Campanha suspensa pelo operador",
     )
 
     announcement.refresh_from_db()
+    audit = MarketingAuditEvent.objects.get(command=first.receipt)
     assert announcement.status == AnnouncementStatus.CANCELLED
     assert announcement.version == 3
+    assert audit.decision_reason == "Campanha suspensa pelo operador"
+    assert audit.facts["avoided_lane_count"] == 2
+    assert audit.facts["irreversible_target_count"] == 0
     assert first.receipt.outcome == {
+        "avoided_lane_count": 2,
+        "irreversible_target_count": 0,
         "outbox_cancelled": 2,
         "status": AnnouncementStatus.CANCELLED,
     }
@@ -179,6 +188,7 @@ def test_cancel_never_claims_success_after_any_lane_started(
             actor=actor,
             idempotency_key=f"idem-transition-cancel-{started_state}",
             base_version=2,
+            reason="Campanha suspensa pelo operador",
         )
 
     announcement.refresh_from_db()
@@ -227,6 +237,7 @@ def test_cancel_then_reschedule_with_same_base_has_exactly_one_winner(actor, ann
         actor=actor,
         idempotency_key="idem-transition-race-cancel",
         base_version=2,
+        reason="Campanha suspensa pelo operador",
     )
 
     with pytest.raises(MarketingCommandConflict) as caught:

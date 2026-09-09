@@ -863,6 +863,12 @@ REST_FRAMEWORK = {
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": _ANON_THROTTLE_RATE or None,
+        "marketing_audience_user": "30/minute",
+        "marketing_audience_shop": "120/minute",
+        "marketing_dangerous_user": "10/minute",
+        "marketing_dangerous_shop": "30/minute",
+        "marketing_fire_user": "3/hour",
+        "marketing_fire_shop": "10/day",
     },
 }
 

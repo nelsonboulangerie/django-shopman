@@ -74,6 +74,10 @@ class ShopmanConfig(AppConfig):
         #    Material (Buyman) — neither core can see the other (ADR-001)
         self._connect_sku_namespace_guard()
 
+        # 10. Any RBAC membership edit invalidates open Marketing transaction
+        #     authorizations and recent-auth evidence.
+        import shopman.shop.marketing_security_signals  # noqa: F401
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 

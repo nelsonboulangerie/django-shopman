@@ -65,6 +65,7 @@ class ExplodingLookupProvider:
 def _actor(suffix: str, *permissions: str):
     actor = get_user_model().objects.create_user(
         username=f"recovery-{suffix}",
+        password="x",
         is_staff=True,
     )
     actor.user_permissions.add(
@@ -398,7 +399,7 @@ def test_actions_resolve_permission_eligibility_and_pending_state():
     assert [action.enabled for action in operator_actions] == [True, True]
     assert operator_actions[0].confirmation_required is True
     assert operator_actions[0].creates_external_effect is True
-    assert operator_actions[1].confirmation_required is False
+    assert operator_actions[1].confirmation_required is True
     assert operator_actions[1].creates_external_effect is False
 
     request_reconciliation_command(
@@ -450,6 +451,25 @@ def test_recovery_api_enforces_distinct_capabilities(client):
         content_type="application/json",
         HTTP_IDEMPOTENCY_KEY="retry-api-key-0001",
     )
+    retry_confirmation = retry_response.json()["confirmation"]
+    assert retry_response.status_code == 428
+    assert retry_confirmation["step_up"] == "password"
+    step_up = client.post(
+        "/api/v1/backstage/marketing/security/step-up/",
+        data={"method": "password", "credential": "x"},
+        content_type="application/json",
+    )
+    assert step_up.status_code == 200
+    retry_response = client.post(
+        f"{base}/retry-deliveries/",
+        data={
+            "base_version": announcement.version,
+            "confirmation_token": retry_confirmation["token"],
+            "typed_confirmation": retry_confirmation["typed_phrase"],
+        },
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="retry-api-key-0001",
+    )
     assert retry_response.status_code == 200
     assert retry_response.json()["receipt"]["outcome"]["queued_count"] == 1
 
@@ -457,6 +477,33 @@ def test_recovery_api_enforces_distinct_capabilities(client):
     reconcile_response = client.post(
         f"{base}/reconcile-deliveries/",
         data={"base_version": announcement.version},
+        content_type="application/json",
+        HTTP_IDEMPOTENCY_KEY="reconcile-api-key-0001",
+    )
+    reconciliation_confirmation = reconcile_response.json()["confirmation"]
+    assert reconcile_response.status_code == 428
+    assert reconciliation_confirmation["step_up"] == "totp"
+    assert DeliveryReconciliation.objects.count() == 0
+
+    from django_otp.oath import totp
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    device = TOTPDevice.objects.create(user=operator, name="recovery", confirmed=True)
+    token = str(
+        totp(device.bin_key, step=device.step, t0=device.t0, digits=device.digits)
+    ).zfill(device.digits)
+    step_up = client.post(
+        "/api/v1/backstage/marketing/security/step-up/",
+        data={"method": "totp", "credential": token},
+        content_type="application/json",
+    )
+    assert step_up.status_code == 200
+    reconcile_response = client.post(
+        f"{base}/reconcile-deliveries/",
+        data={
+            "base_version": announcement.version,
+            "confirmation_token": reconciliation_confirmation["token"],
+        },
         content_type="application/json",
         HTTP_IDEMPOTENCY_KEY="reconcile-api-key-0001",
     )

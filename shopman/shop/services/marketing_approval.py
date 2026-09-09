@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -68,6 +68,7 @@ def approve_command(
     request_id: str = "",
     now: datetime | None = None,
     idempotency_payload: Mapping[str, Any] | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> ApprovalResult:
     """Approve the exact full content supplied by the reviewing surface.
 
@@ -161,11 +162,36 @@ def approve_command(
                 code="artifact_too_large",
                 detail="O conteúdo aprovado excede o limite seguro.",
             )
+        artifact_hash = hashlib.sha256(artifact_bytes).hexdigest()
+        if authorization is not None:
+            from shopman.shop.services.marketing_security import (
+                ACTION_APPROVE,
+                authorization_context,
+            )
+
+            authorization(
+                authorization_context(
+                    action=ACTION_APPROVE,
+                    resource_ref=f"announcement:{announcement.pk}",
+                    base_version=announcement.version,
+                    artifact_hash=artifact_hash,
+                    audience_hash=resolution.cohort_hash,
+                    audience_count=resolution.total,
+                    platforms=safe_platforms,
+                    scheduled_for=normalized_publish_at,
+                    consequence=(
+                        "publishes_now_to_eligible_audience"
+                        if normalized_mode == PUBLISH_NOW
+                        else "schedules_publish_to_eligible_audience"
+                    ),
+                ),
+                receipt,
+            )
         artifact = MarketingContentArtifact.objects.create(
             announcement=announcement,
             version=approved_version,
             payload=artifact_payload,
-            artifact_hash=hashlib.sha256(artifact_bytes).hexdigest(),
+            artifact_hash=artifact_hash,
             retention_until=now + APPROVAL_RECORD_RETENTION,
         )
 

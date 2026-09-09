@@ -190,6 +190,10 @@ class HasMarketingCapability(BasePermission):
         if safe_fallback:
             return True
 
+        from shopman.shop.services.marketing_security import record_security_denial
+
+        record_security_denial(actor=operador, reason_code=reason)
+
         self.message = "Operador sem capacidade para esta ação de Marketing."
         return False
 

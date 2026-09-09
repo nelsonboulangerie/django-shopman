@@ -631,6 +631,22 @@ def send_test(
             "A capacidade de teste foi revogada. Nenhuma mensagem saiu.",
             receipt_ref=str(receipt.ref),
         )
+    from shopman.shop.services.marketing_security import (
+        MarketingAuthorizationError,
+        require_external_effects_enabled,
+    )
+
+    try:
+        require_external_effects_enabled()
+    except MarketingAuthorizationError as exc:
+        receipt.state = MarketingTestReceipt.State.DENIED
+        receipt.failure_code = "marketing_frozen"
+        receipt.finished_at = timezone.now()
+        receipt.save(update_fields=["state", "failure_code", "finished_at"])
+        raise MarketingTestForbidden(
+            "Marketing está congelado. Nenhuma mensagem saiu.",
+            receipt_ref=str(receipt.ref),
+        ) from exc
 
     try:
         accepted = bool(transport.send(

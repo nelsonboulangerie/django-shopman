@@ -44,6 +44,14 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.permissions import HasMarketingCapability
 from shopman.backstage.api.projections import projection_data
+from shopman.backstage.api.throttles import (
+    MarketingAudienceShopThrottle,
+    MarketingAudienceUserThrottle,
+    MarketingDangerousShopThrottle,
+    MarketingDangerousUserThrottle,
+    MarketingFireShopThrottle,
+    MarketingFireUserThrottle,
+)
 from shopman.backstage.projections import marketing as marketing_projection
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
@@ -55,6 +63,11 @@ _HISTORY_MAX_LIMIT = 300
 
 #: Plataformas aceitas numa regra — mesma lista que a tela oferece.
 _VALID_PLATFORMS = {ref for ref, _ in marketing_projection.PLATFORM_CHOICES}
+_AUTHORIZATION_FIELDS = frozenset({"confirmation_token", "typed_confirmation"})
+_DANGEROUS_THROTTLES = (
+    MarketingDangerousUserThrottle,
+    MarketingDangerousShopThrottle,
+)
 
 
 class _CampaignBase(APIView):
@@ -63,6 +76,150 @@ class _CampaignBase(APIView):
 
     def get_required_permissions(self, request):
         return self.permission_map.get(request.method, ())
+
+
+class MarketingStepUpView(_CampaignBase):
+    """Establish password/TOTP freshness for a later exact confirmation."""
+
+    permission_map = {"POST": "shop.view_marketing"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
+
+    def post(self, request):
+        from django.contrib.auth import get_user_model
+        from django_otp.plugins.otp_totp.models import TOTPDevice
+
+        from shopman.shop.services.marketing_security import record_step_up
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"method", "credential"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        method = str(payload.get("method") or "").strip()
+        credential = str(payload.get("credential") or "").strip().replace(" ", "")
+        actor = get_user_model().objects.filter(pk=request.user.pk, is_active=True).first()
+        verified = False
+        if actor is not None and method == "password":
+            verified = actor.check_password(credential)
+        elif actor is not None and method == "totp":
+            verified = bool(
+                credential
+                and any(
+                    device.verify_token(credential)
+                    for device in TOTPDevice.objects.filter(user=actor, confirmed=True)
+                )
+            )
+        if not verified:
+            return Response(
+                {
+                    "code": "step_up_failed",
+                    "detail": "A confirmação de identidade não conferiu.",
+                    "field_errors": {"credential": ["Tente novamente."]},
+                },
+                status=403,
+            )
+        return Response({"ok": True, "step_up": record_step_up(request, level=method)})
+
+
+class MarketingDualControlView(_CampaignBase):
+    """Let a distinct authorized person approve one exact open token."""
+
+    permission_map = {"POST": "shop.view_marketing"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
+
+    def post(self, request):
+        from shopman.shop.services.marketing_security import (
+            approve_second_actor,
+            step_up_evidence_from_session,
+        )
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"confirmation_token"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        try:
+            confirmation = approve_second_actor(
+                str(payload.get("confirmation_token") or ""),
+                actor=request.user,
+                step_up=step_up_evidence_from_session(request),
+            )
+        except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
+            raise
+        return Response(
+            {
+                "ok": True,
+                "confirmation_ref": str(confirmation.ref),
+                "second_control": "approved",
+                "expires_at": confirmation.expires_at.isoformat(),
+            }
+        )
+
+
+class MarketingFreezeView(_CampaignBase):
+    """Read or immediately activate the persisted Marketing kill switch."""
+
+    permission_map = {
+        "GET": "shop.view_marketing",
+        "POST": "shop.freeze_marketing",
+    }
+
+    def get(self, request):
+        from shopman.shop.services.marketing_security import safety_state
+
+        state = safety_state()
+        return Response(_safety_payload(state))
+
+    def post(self, request):
+        from shopman.shop.services.marketing_security import activate_freeze
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"reason"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        try:
+            state = activate_freeze(actor=request.user, reason=payload.get("reason", ""))
+        except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
+            raise
+        return Response({"ok": True, **_safety_payload(state)})
+
+
+class MarketingUnfreezeView(_CampaignBase):
+    """Resume only after CAS, reconciliation, TOTP and distinct second control."""
+
+    permission_map = {"POST": "shop.freeze_marketing"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
+
+    def post(self, request):
+        from shopman.shop.services.marketing_security import (
+            deactivate_freeze,
+            step_up_evidence_from_session,
+        )
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        unexpected = sorted(set(payload) - {"base_version", "confirmation_token"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+        try:
+            state = deactivate_freeze(
+                actor=request.user,
+                base_version=base_version,
+                token=str(payload.get("confirmation_token") or ""),
+                step_up=step_up_evidence_from_session(request),
+            )
+        except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
+            raise
+        return Response({"ok": True, **_safety_payload(state)})
 
 
 # ── Leitura ──────────────────────────────────────────────────────────
@@ -196,6 +353,7 @@ class AnnouncementApproveView(_CampaignBase):
             "shop.publish_marketing_announcements",
         ),
     }
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request, pk: int):
         # Additive v2 migration: a caller that declares version/publish_mode is a
@@ -203,37 +361,7 @@ class AnnouncementApproveView(_CampaignBase):
         # path. Old clients remain readable until the cutover task removes it.
         if _is_approval_command(request):
             return self._post_command(request, pk)
-
-        publish_at, error = _publish_at(request.data.get("publish_at"))
-        if error:
-            return Response(error, status=400)
-
-        edits, error = _announcement_edits(request.data)
-        if error:
-            return Response(error, status=400)
-
-        try:
-            if edits:
-                campaign_service.update_content(pk, **edits)
-            announcement = campaign_service.approve(
-                pk, request.user,
-                publish_at=publish_at,
-                # "Publicar agora" vence a janela preferida da regra; sem ele,
-                # aprovar fora do horário aceita a hora que a regra sugeriu.
-                respect_schedule=not _as_bool(request.data.get("publish_now")),
-            )
-        except campaign_service.CampaignError as exc:
-            return Response({"detail": str(exc)}, status=400)
-
-        logger.info(
-            "campaign.approved user=%s announcement=%s publish_at=%s",
-            request.user.pk, pk, publish_at or "now",
-        )
-        return Response({
-            "ok": True,
-            "scheduled": bool(announcement.publish_at),
-            "announcement": projection_data(marketing_projection.build_announcement(announcement)),
-        })
+        return _command_protocol_required()
 
     def _post_command(self, request, pk: int):
         from shopman.shop.services import marketing_approval
@@ -252,7 +380,7 @@ class AnnouncementApproveView(_CampaignBase):
             "platforms",
             "publish_at",
             "publish_mode",
-        }
+        } | _AUTHORIZATION_FIELDS
         unexpected = sorted(set(payload) - allowed)
         if unexpected:
             return Response(
@@ -341,14 +469,26 @@ class AnnouncementApproveView(_CampaignBase):
                     "publish_at": publish_at.isoformat() if publish_at else "",
                     "publish_mode": publish_mode,
                 },
+                authorization=_command_authorizer(
+                    request,
+                    capability="shop.publish_marketing_announcements",
+                    additional_capabilities=(
+                        "shop.approve_marketing_announcements",
+                    ),
+                ),
             )
-        except MarketingCommandConflict as exc:
-            return Response(exc.as_payload(), status=409)
-        except MarketingCommandRejected as exc:
-            status_code = 404 if exc.code == "announcement_not_found" else 422
-            return Response(exc.as_payload(), status=status_code)
-        except MarketingContractError as exc:
-            return Response(exc.as_payload(), status=422)
+        except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
+            if isinstance(exc, MarketingCommandConflict):
+                return Response(exc.as_payload(), status=409)
+            if isinstance(exc, MarketingCommandRejected):
+                status_code = 404 if exc.code == "announcement_not_found" else 422
+                return Response(exc.as_payload(), status=status_code)
+            if isinstance(exc, MarketingContractError):
+                return Response(exc.as_payload(), status=422)
+            raise
 
         receipt = result.receipt
         logger.info(
@@ -393,6 +533,7 @@ class WhatsAppTestSendView(_CampaignBase):
     """
 
     permission_map = {"POST": "shop.send_marketing_test"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
@@ -494,8 +635,7 @@ class AnnouncementRewriteView(_CampaignBase):
 class AnnouncementRejectView(_CampaignBase):
     """Recusar sem publicar: o gestor viu e disse não.
 
-    O motivo vem do corpo e é opcional. Quem recusou fica registrado — recusa anônima
-    num balcão com quatro pessoas no turno não é auditável.
+    O motivo é obrigatório e a decisão sempre usa o command versionado.
     """
 
     permission_map = {"POST": "shop.approve_marketing_announcements"}
@@ -504,51 +644,44 @@ class AnnouncementRejectView(_CampaignBase):
         payload = request.data if isinstance(request.data, dict) else {}
         reason = str(payload.get("reason") or "").strip()
 
-        if request.headers.get("Idempotency-Key") or "base_version" in payload:
-            unexpected = sorted(set(payload) - {"base_version", "reason"})
-            if unexpected:
-                return _unknown_command_fields(unexpected)
-            base_version, error = _command_version(payload)
-            if error:
-                return error
-            try:
-                from shopman.shop.services.marketing_transitions import reject_command
-
-                result = reject_command(
-                    pk,
-                    actor=request.user,
-                    idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
-                    base_version=base_version,
-                    reason=reason,
-                    request_id=str(request.headers.get("X-Request-ID") or ""),
-                )
-            except Exception as exc:
-                response = _command_error_response(exc)
-                if response is not None:
-                    return response
-                raise
-            return Response(_command_response(result))
-
+        if not (request.headers.get("Idempotency-Key") or "base_version" in payload):
+            return _command_protocol_required()
+        unexpected = sorted(set(payload) - {"base_version", "reason"})
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
         try:
-            announcement = campaign_service.reject(pk, request.user, reason=reason)
-        except campaign_service.CampaignError as exc:
-            return Response({"detail": str(exc)}, status=400)
+            from shopman.shop.services.marketing_transitions import reject_command
 
-        logger.info(
-            "campaign.rejected user=%s announcement=%s reason=%r",
-            request.user.pk, pk, reason,
-        )
-        return Response({"ok": True, "announcement": projection_data(marketing_projection.build_announcement(announcement))})
+            result = reject_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                reason=reason,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+            )
+        except Exception as exc:
+            response = _command_error_response(exc)
+            if response is not None:
+                return response
+            raise
+        return Response(_command_response(result))
 
 
 class AnnouncementCancelView(_CampaignBase):
     """Cancel every outbox lane only while none has started."""
 
     permission_map = {"POST": "shop.publish_marketing_announcements"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"base_version"})
+        unexpected = sorted(
+            set(payload) - ({"base_version", "reason"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -562,9 +695,17 @@ class AnnouncementCancelView(_CampaignBase):
                 actor=request.user,
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 base_version=base_version,
+                reason=str(payload.get("reason") or ""),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorization=_command_authorizer(
+                    request,
+                    capability="shop.publish_marketing_announcements",
+                ),
             )
         except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
             response = _command_error_response(exc)
             if response is not None:
                 return response
@@ -576,10 +717,14 @@ class AnnouncementRescheduleView(_CampaignBase):
     """Move all pending lanes while preserving their relative wave delay."""
 
     permission_map = {"POST": "shop.publish_marketing_announcements"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"base_version", "publish_at"})
+        unexpected = sorted(
+            set(payload)
+            - ({"base_version", "publish_at"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -610,8 +755,15 @@ class AnnouncementRescheduleView(_CampaignBase):
                 base_version=base_version,
                 publish_at=publish_at,
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorization=_command_authorizer(
+                    request,
+                    capability="shop.publish_marketing_announcements",
+                ),
             )
         except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
             response = _command_error_response(exc)
             if response is not None:
                 return response
@@ -647,10 +799,13 @@ class AnnouncementRetryDeliveriesView(_CampaignBase):
     """Queue only the currently retryable failures selected by platform."""
 
     permission_map = {"POST": "shop.retry_failed_marketing"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"base_version", "platforms"})
+        unexpected = sorted(
+            set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -668,8 +823,15 @@ class AnnouncementRetryDeliveriesView(_CampaignBase):
                 base_version=base_version,
                 platforms=payload.get("platforms", ()),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorization=_command_authorizer(
+                    request,
+                    capability="shop.retry_failed_marketing",
+                ),
             )
         except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
             response = _command_error_response(exc)
             if response is not None:
                 return response
@@ -681,10 +843,13 @@ class AnnouncementReconcileDeliveriesView(_CampaignBase):
     """Create lookup-only work for unknown outcomes; this endpoint never sends."""
 
     permission_map = {"POST": "shop.reconcile_unknown_marketing"}
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request, pk: int):
         payload = request.data if isinstance(request.data, dict) else {}
-        unexpected = sorted(set(payload) - {"base_version", "platforms"})
+        unexpected = sorted(
+            set(payload) - ({"base_version", "platforms"} | _AUTHORIZATION_FIELDS)
+        )
         if unexpected:
             return _unknown_command_fields(unexpected)
         base_version, error = _command_version(payload)
@@ -702,8 +867,15 @@ class AnnouncementReconcileDeliveriesView(_CampaignBase):
                 base_version=base_version,
                 platforms=payload.get("platforms", ()),
                 request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorization=_command_authorizer(
+                    request,
+                    capability="shop.reconcile_unknown_marketing",
+                ),
             )
         except Exception as exc:
+            response = _authorization_error_response(exc, request)
+            if response is not None:
+                return response
             response = _command_error_response(exc)
             if response is not None:
                 return response
@@ -752,6 +924,7 @@ class PreviewView(_CampaignBase):
     """
 
     permission_map = {"POST": "shop.preview_marketing_audience"}
+    throttle_classes = [MarketingAudienceUserThrottle, MarketingAudienceShopThrottle]
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
@@ -776,6 +949,7 @@ class AudienceCountView(_CampaignBase):
     """
 
     permission_map = {"POST": "shop.preview_marketing_audience"}
+    throttle_classes = [MarketingAudienceUserThrottle, MarketingAudienceShopThrottle]
 
     def post(self, request):
         payload = request.data if isinstance(request.data, dict) else {}
@@ -822,6 +996,7 @@ class WhatsAppTemplateView(_CampaignBase):
         "GET": "shop.view_marketing",
         "POST": "shop.configure_marketing_platforms",
     }
+    throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def get(self, request):
         from shopman.shop.models import NotificationTemplate
@@ -839,6 +1014,8 @@ class WhatsAppTemplateView(_CampaignBase):
             "available": [{"ns": ns, "name": name} for ns, name in flows],
             "can_list": bool(flows),
             "configured": bool(current),
+            "command_available": False,
+            "command_disabled_reason": "platform_config_cas_not_ready",
             "can_send_test": can_send_test,
             "test_targets": (
                 campaign_service.marketing_test_target_options()
@@ -848,29 +1025,16 @@ class WhatsAppTemplateView(_CampaignBase):
         })
 
     def post(self, request):
-        from shopman.shop.models import NotificationTemplate
-        from shopman.shop.services import manychat_flows
-
-        payload = request.data if isinstance(request.data, dict) else {}
-        ns = str(payload.get("flow_ns") or "").strip()
-
-        # Só valida contra a lista quando ela existe: com a API do provedor fora,
-        # recusar seria travar o operador por indisponibilidade de terceiro.
-        known = {candidate for candidate, _name in manychat_flows.list_flows()}
-        if ns and known and ns not in known:
-            return Response(
-                {"detail": "Este template não existe mais na plataforma.", "field": "flow_ns"},
-                status=400,
-            )
-
-        template, _created = NotificationTemplate.objects.get_or_create(
-            event=self.EVENT,
-            defaults={"subject": "Novidade na padaria", "body": "{body}"},
+        return Response(
+            {
+                "code": "platform_config_cas_not_ready",
+                "detail": (
+                    "A alteração está contida até o comando versionado de configuração "
+                    "validar readiness, TOTP, CAS e auditoria."
+                ),
+            },
+            status=409,
         )
-        template.whatsapp_flow_ns = ns
-        template.save(update_fields=["whatsapp_flow_ns"])
-
-        return Response({"ok": True, "current": ns, "configured": bool(ns)})
 
 
 class CampaignFireView(_CampaignBase):
@@ -894,47 +1058,22 @@ class CampaignFireView(_CampaignBase):
     """
 
     permission_map = {"POST": "shop.fire_marketing_campaigns"}
+    throttle_classes = [
+        *_DANGEROUS_THROTTLES,
+        MarketingFireUserThrottle,
+        MarketingFireShopThrottle,
+    ]
 
     def post(self, request, pk: int):
-        from shopman.shop.services import campaign as campaign_service
-
-        payload = request.data if isinstance(request.data, dict) else {}
-
-        audience_rules = payload.get("audience_rules")
-        if audience_rules is not None and not isinstance(audience_rules, dict):
-            return Response(
-                {"detail": "audience_rules deve ser um objeto.", "field": "audience_rules"},
-                status=400,
-            )
-
-        context = payload.get("context")
-        if context is not None and not isinstance(context, dict):
-            return Response(
-                {"detail": "context deve ser um objeto.", "field": "context"}, status=400
-            )
-
-        body = str(payload.get("body") or "").strip()
-
-        try:
-            announcement = campaign_service.fire_now(
-                pk,
-                context=context,
-                audience_rules=audience_rules,
-                # Texto escrito na hora publica direto, com o nome de quem escreveu.
-                body=body,
-                author=request.user,
-            )
-        except campaign_service.CampaignError as exc:
-            return Response({"detail": str(exc)}, status=400)
-
         return Response(
             {
-                "ok": True,
-                "announcement": projection_data(
-                    marketing_projection.build_announcement(announcement)
+                "code": "fire_command_upgrade_required",
+                "detail": (
+                    "O disparo manual direto está contido até usar receipt, versão, "
+                    "snapshot e confirmação vinculada."
                 ),
             },
-            status=201,
+            status=409,
         )
 
 
@@ -1244,6 +1383,87 @@ def _unknown_command_fields(fields: list[str]) -> Response:
         },
         status=422,
     )
+
+
+def _command_protocol_required() -> Response:
+    return Response(
+        {
+            "code": "command_protocol_required",
+            "detail": (
+                "Atualize esta ação: versão, Idempotency-Key e confirmação são "
+                "obrigatórias antes de qualquer efeito."
+            ),
+        },
+        status=409,
+    )
+
+
+def _command_authorizer(
+    request,
+    *,
+    capability: str,
+    additional_capabilities: tuple[str, ...] = (),
+):
+    from shopman.shop.services.marketing_security import (
+        authorize_command,
+        step_up_evidence_from_session,
+    )
+
+    payload = request.data if isinstance(request.data, dict) else {}
+    token = str(payload.get("confirmation_token") or "")
+    typed = str(payload.get("typed_confirmation") or "")
+    evidence = step_up_evidence_from_session(request)
+
+    def authorize(context, receipt):
+        authorize_command(
+            actor=request.user,
+            capability=capability,
+            additional_capabilities=additional_capabilities,
+            context=context,
+            token=token,
+            typed_confirmation=typed,
+            step_up=evidence,
+            command=receipt,
+        )
+
+    return authorize
+
+
+def _authorization_error_response(exc: Exception, request) -> Response | None:
+    from shopman.shop.services.marketing_security import (
+        MarketingAuthorizationError,
+        MarketingAuthorizationRequired,
+        issue_confirmation,
+        record_security_denial,
+    )
+
+    if isinstance(exc, MarketingAuthorizationRequired):
+        try:
+            payload = issue_confirmation(exc, actor=request.user)
+        except MarketingAuthorizationError as issue_error:
+            return _authorization_error_response(issue_error, request)
+        return Response(payload, status=428)
+    if isinstance(exc, MarketingAuthorizationError):
+        record_security_denial(
+            actor=request.user,
+            reason_code=exc.code,
+            action="command_denied",
+        )
+        response = Response(exc.as_payload(), status=exc.status_code)
+        if exc.retry_after is not None:
+            response["Retry-After"] = str(exc.retry_after)
+        return response
+    return None
+
+
+def _safety_payload(state) -> dict:
+    return {
+        "frozen": state.frozen,
+        "version": state.version,
+        "generation": state.generation,
+        "reason": state.reason if state.frozen else "",
+        "frozen_at": state.frozen_at.isoformat() if state.frozen_at else "",
+    }
 
 
 def _command_error_response(exc: Exception) -> Response | None:

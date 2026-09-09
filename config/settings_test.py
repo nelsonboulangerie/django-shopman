@@ -220,4 +220,12 @@ SHOPMAN_OPERATOR_COOKIE_DOMAIN = ""
 SHOPMAN_OPERATOR_API_HOST = ""
 
 # ── DRF: rate limit no default do CI ─────────────────────────────────────────
-REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {"anon": "120/minute"}  # noqa: F405
+REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"] = {  # noqa: F405
+    "anon": "120/minute",
+    "marketing_audience_user": "10000/minute",
+    "marketing_audience_shop": "10000/minute",
+    "marketing_dangerous_user": "10000/minute",
+    "marketing_dangerous_shop": "10000/minute",
+    "marketing_fire_user": "10000/hour",
+    "marketing_fire_shop": "10000/day",
+}

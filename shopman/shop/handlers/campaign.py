@@ -216,6 +216,21 @@ class AnnouncementHandler:
             _settle(announcement)
             return
 
+        from shopman.shop.services.marketing_security import (
+            MarketingAuthorizationError,
+            require_external_effects_enabled,
+        )
+
+        try:
+            require_external_effects_enabled()
+        except MarketingAuthorizationError:
+            _record_result(
+                announcement,
+                platform,
+                {"status": "cancelled", "reason": "marketing_frozen"},
+            )
+            _settle(announcement)
+            return
         try:
             result = adapter.publish(announcement, platform=platform)
         except Exception as exc:
@@ -387,7 +402,19 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
     destination = _relative_destination(link)
 
     sent = failed = 0
-    for recipient in targets:
+    from shopman.shop.services.marketing_security import (
+        MarketingAuthorizationError,
+        require_external_effects_enabled,
+    )
+
+    for index, recipient in enumerate(targets):
+        try:
+            require_external_effects_enabled()
+        except MarketingAuthorizationError:
+            # Legacy directives have no per-target receipt.  Stop at the first
+            # reversible target and do not raise/retry the already-sent prefix.
+            failed += len(targets) - index
+            break
         try:
             # ⚠️ Link PESSOAL por destinatário. O link comum fazia a pessoa chegar anônima
             # e o checkout pedir login — num canal onde escolhemos o número justamente

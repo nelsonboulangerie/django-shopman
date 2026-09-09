@@ -9,7 +9,9 @@ whose provider protocol intentionally has no ``send`` method.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Protocol
@@ -49,6 +51,7 @@ _PLATFORM_RE = re.compile(r"^[a-z0-9_]{1,32}$")
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
 _SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _SAFE_RECEIPT_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+logger = logging.getLogger(__name__)
 
 
 class DeliveryLookupProvider(Protocol):
@@ -108,6 +111,7 @@ def retry_failed_command(
     platforms=(),
     request_id: str = "",
     now: datetime | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> RecoveryCommandResult:
     """Queue only proven retryable failures in the requested platform scope."""
 
@@ -138,6 +142,27 @@ def retry_failed_command(
                 detail="Uma tentativa desta seleção ainda está em andamento.",
             )
 
+        selection_hash = _selection_hash(targets)
+        artifact, _snapshot = _latest_graph(announcement)
+        if authorization is not None:
+            from shopman.shop.services.marketing_security import (
+                ACTION_RETRY,
+                authorization_context,
+            )
+
+            authorization(
+                authorization_context(
+                    action=ACTION_RETRY,
+                    resource_ref=f"announcement:{announcement.pk}",
+                    base_version=announcement.version,
+                    artifact_hash=artifact.artifact_hash if artifact else "",
+                    audience_hash=selection_hash,
+                    audience_count=len(targets),
+                    platforms=selected_platforms,
+                    consequence="retries_only_proven_safe_failures_now",
+                ),
+                receipt,
+            )
         for target in targets:
             ensure_delivery_transition(
                 DeliveryState(target.state),
@@ -161,7 +186,6 @@ def retry_failed_command(
             "version",
             "updated_at",
         ])
-        selection_hash = _selection_hash(targets)
         _audit(
             event_type=MarketingAuditEvent.EventType.DELIVERY_RETRIED,
             receipt=receipt,
@@ -203,6 +227,7 @@ def request_reconciliation_command(
     platforms=(),
     request_id: str = "",
     now: datetime | None = None,
+    authorization: Callable[[object, MarketingCommandReceipt], None] | None = None,
 ) -> RecoveryCommandResult:
     """Persist lookup jobs for unknown targets without calling a provider."""
 
@@ -267,6 +292,27 @@ def request_reconciliation_command(
             )
             raise RejectCommand(code=code, detail=detail)
 
+        selection_hash = _selection_hash(eligible)
+        artifact, _snapshot = _latest_graph(announcement)
+        if authorization is not None:
+            from shopman.shop.services.marketing_security import (
+                ACTION_RECONCILE,
+                authorization_context,
+            )
+
+            authorization(
+                authorization_context(
+                    action=ACTION_RECONCILE,
+                    resource_ref=f"announcement:{announcement.pk}",
+                    base_version=announcement.version,
+                    artifact_hash=artifact.artifact_hash if artifact else "",
+                    audience_hash=selection_hash,
+                    audience_count=len(eligible),
+                    platforms=selected_platforms,
+                    consequence="lookup_only_unknown_provider_outcomes",
+                ),
+                receipt,
+            )
         DeliveryReconciliation.objects.bulk_create([
             DeliveryReconciliation(
                 command=receipt,
@@ -277,7 +323,6 @@ def request_reconciliation_command(
             )
             for target in eligible
         ])
-        selection_hash = _selection_hash(eligible)
         _audit(
             event_type=MarketingAuditEvent.EventType.RECONCILIATION_REQUESTED,
             receipt=receipt,
@@ -364,7 +409,7 @@ def resolve_delivery_recovery_actions(
             no_eligible_reason=(
                 "reconciliation_pending" if pending_count else "no_unknown_results"
             ),
-            confirmation_required=False,
+            confirmation_required=True,
             creates_external_effect=False,
         ),
     )
@@ -463,6 +508,7 @@ def execute_reconciliation(
         )
         normalized = _validated_lookup_outcome(outcome)
     except Exception:
+        logger.warning("marketing.reconciliation_provider_lookup_failed")
         reconciliation, target = _defer_reconciliation(
             reconciliation.ref,
             worker_id=safe_worker_id,
@@ -685,6 +731,19 @@ def _platforms(values) -> tuple[str, ...]:
 def _selection_hash(targets: list[DeliveryTarget]) -> str:
     refs = ":".join(sorted(str(target.ref) for target in targets))
     return hashlib.sha256(f"marketing-recovery:v1:{refs}".encode()).hexdigest()
+
+
+def _latest_graph(
+    announcement: Announcement,
+) -> tuple[MarketingContentArtifact | None, AudienceSnapshot | None]:
+    return (
+        MarketingContentArtifact.objects.filter(announcement=announcement)
+        .order_by("-version")
+        .first(),
+        AudienceSnapshot.objects.filter(announcement=announcement)
+        .order_by("-version")
+        .first(),
+    )
 
 
 def _audit(

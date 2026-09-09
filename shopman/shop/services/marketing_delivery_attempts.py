@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -29,6 +30,7 @@ _HASH_RE = re.compile(r"^[0-9a-f]{64}$")
 _SAFE_CODE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 _SAFE_RECEIPT_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+logger = logging.getLogger(__name__)
 
 
 class DeliveryProvider(Protocol):
@@ -112,6 +114,9 @@ def execute_target(
     """Call one provider at most once for this persisted attempt token."""
 
     clock = _aware_now(now)
+    from shopman.shop.services.marketing_security import require_external_effects_enabled
+
+    require_external_effects_enabled()
     safe_worker_id = _worker_id(worker_id)
     token_hash = _token_hash(idempotency_token)
     safe_request_hash = _request_hash(request_hash)
@@ -151,6 +156,12 @@ def execute_target(
             in_progress=attempt.state == DeliveryAttempt.State.CALLING,
         )
     try:
+        # Last reversible check: this is intentionally adjacent to provider.send.
+        require_external_effects_enabled()
+    except MarketingContractError:
+        _defer_frozen_call(attempt.ref, now=clock)
+        raise
+    try:
         outcome = provider.send(
             artifact=artifact,
             target_key=target.target_fingerprint,
@@ -159,6 +170,7 @@ def execute_target(
     except ProviderCallFailure as exc:
         outcome = exc.as_outcome()
     except Exception:
+        logger.warning("marketing.delivery_provider_outcome_unclassified")
         # At this boundary an unclassified exception may have happened after
         # bytes were written.  Persist uncertainty, never raw exception text.
         outcome = ProviderOutcome(
@@ -182,6 +194,34 @@ def execute_target(
         provider_called=True,
         replayed=replayed,
     )
+
+
+def _defer_frozen_call(attempt_ref, *, now: datetime) -> None:
+    """Return a boundary-not-crossed attempt to a safely reclaimable state."""
+
+    with transaction.atomic():
+        attempt = DeliveryAttempt.objects.select_for_update().get(ref=attempt_ref)
+        target = DeliveryTarget.objects.select_for_update().get(pk=attempt.target_id)
+        if attempt.state != DeliveryAttempt.State.CALLING:
+            return
+        attempt.state = DeliveryAttempt.State.PREPARED
+        attempt.save(update_fields=["state", "updated_at"])
+        target.state = DeliveryTarget.State.QUEUED
+        target.lease_owner = ""
+        target.lease_until = None
+        target.next_attempt_at = now + timedelta(seconds=30)
+        target.last_error_code = "marketing_frozen"
+        target.version += 1
+        target.updated_at = now
+        target.save(update_fields=[
+            "state",
+            "lease_owner",
+            "lease_until",
+            "next_attempt_at",
+            "last_error_code",
+            "version",
+            "updated_at",
+        ])
 
 
 def reconcile_calling(
