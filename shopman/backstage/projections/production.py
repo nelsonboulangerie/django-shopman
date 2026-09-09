@@ -3115,7 +3115,7 @@ def _recipe_output_units(recipes) -> dict[int, str]:
     loading each catalog only once.
     """
     from shopman.buyman.models import Material
-    from shopman.craftsman.models.recipe import normalize_recipe_item_unit
+    from shopman.craftsman.models import normalize_recipe_item_unit
     from shopman.offerman.models import Product
 
     recipes = tuple(recipes)

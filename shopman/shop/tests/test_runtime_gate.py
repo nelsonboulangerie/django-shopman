@@ -52,14 +52,24 @@ def _files_with_marker() -> set[str]:
     return found
 
 
+def _subprocess_pythonpath() -> str:
+    """Resolve this checkout's namespace packages before editable installs.
+
+    Worktree validation commonly reuses a venv created by another checkout.
+    Pointing only at ``ROOT`` lets that venv supply stale ``shopman.*`` package
+    portions, so the probe can fail before it reaches the skip collector.
+    """
+    package_roots = sorted(str(path) for path in (ROOT / "packages").iterdir() if path.is_dir())
+    return os.pathsep.join((str(ROOT), *package_roots))
+
+
 def test_every_requires_postgres_file_is_listed_in_the_runtime_gate():
     """Nenhum arquivo `requires_postgres` pode ficar fora do gate de runtime."""
     orphans = sorted(_files_with_marker() - _runtime_paths())
 
     assert not orphans, (
         "arquivos com `requires_postgres` fora de DEFAULT_RUNTIME_TEST_PATHS "
-        "(scripts/run_runtime_tests.py) — eles NÃO rodam em lugar nenhum:\n  "
-        + "\n  ".join(orphans)
+        "(scripts/run_runtime_tests.py) — eles NÃO rodam em lugar nenhum:\n  " + "\n  ".join(orphans)
     )
 
 
@@ -68,8 +78,7 @@ def test_runtime_gate_paths_all_exist():
     missing = sorted(p for p in _runtime_paths() if not (ROOT / p).is_file())
 
     assert not missing, (
-        "DEFAULT_RUNTIME_TEST_PATHS aponta para arquivo inexistente "
-        f"(o gate coletaria vazio e passaria): {missing}"
+        f"DEFAULT_RUNTIME_TEST_PATHS aponta para arquivo inexistente (o gate coletaria vazio e passaria): {missing}"
     )
 
 
@@ -82,10 +91,7 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
     """
     fixture = ROOT / "scripts" / "_runtime_gate_probe_test.py"
     fixture.write_text(
-        "import pytest\n\n\n"
-        "@pytest.mark.skip(reason='sonda do gate de runtime')\n"
-        "def test_sonda():\n"
-        "    pass\n",
+        "import pytest\n\n\n@pytest.mark.skip(reason='sonda do gate de runtime')\ndef test_sonda():\n    pass\n",
         encoding="utf-8",
     )
     try:
@@ -103,7 +109,7 @@ def test_runtime_gate_fails_when_a_test_is_skipped():
                 **os.environ,
                 "SHOPMAN_RUNTIME_TEST_PATHS": str(fixture.relative_to(ROOT)),
                 "DJANGO_SETTINGS_MODULE": "config.settings",
-                "PYTHONPATH": str(ROOT),
+                "PYTHONPATH": _subprocess_pythonpath(),
             },
         )
     finally:

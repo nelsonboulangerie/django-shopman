@@ -199,3 +199,47 @@ Classificação dos arquivos/áreas exigidos na seção 12:
    reverter eventos já gravados. A rota pública `/menuboard` não deve ser restaurada como rollback.
 5. CSP ainda usa `script-src 'unsafe-inline'` para a hidratação Nuxt; `unsafe-eval` e origens
    externas permanecem fechados. Nonce é hardening futuro, não motivo para relaxar a política.
+
+## Fechamento da integração com `main` — 09/09/2026
+
+A dívida de integração acima foi resolvida numa worktree isolada, sem escrever na checkout
+principal e sem push/deploy:
+
+- branch: `codex/production-excellence-integrate-main-20260909`;
+- base: `origin/main` em `e0740f8a7`;
+- origem funcional: os 12 commits de
+  `codex/production-irrepressible-excellence-20260908` até `292e2a853`;
+- estratégia: cherry-pick semântico, preservando o histórico; nenhum arquivo conflitante foi
+  aceito integralmente como `ours`/`theirs`.
+
+Resoluções materiais:
+
+1. A semântica recente de margem de rendimento, seleção explícita de múltiplas WOs, grants de
+   relatório do Gerente, navegação Admin e pagamentos da `main` foi combinada com snapshots,
+   capabilities, CAS, idempotência, freshness e action proofs desta execução.
+2. O cliente Nuxt continuou derivado de `export_production_schema`; o arquivo gerado foi
+   regenerado depois do backend, não resolvido à mão.
+3. O grafo de migrations foi linearizado: `shop.0038_qualitygrade_is_active` segue a folha
+   `0037`; Backstage usa `0048`–`0052` após a folha `0047`; Craftsman consolida os choices
+   finais em `0008_alter_workorderevent_kind`, dependente de `0007_recipe_book`.
+4. Testes antigos foram adaptados ao contrato irreversível final — ator, `expected_rev`,
+   `idempotency_key`, prova fresca e linhagem histórica de pedidos — sem afrouxar os guards.
+5. O projection assembler passou a importar `normalize_recipe_item_unit` pela fachada pública
+   de `craftsman.models`; o probe do runtime gate passou a construir um `PYTHONPATH` hermético
+   para worktrees que reutilizam uma venv de outra checkout.
+
+Provas finais sobre a linha integrada:
+
+| Gate | Resultado integrado |
+|---|---|
+| Backend completo | 3.594 aprovados, 16 skips, 26 deselectados e 10 subtests; 135,59 s |
+| Migrações | 3 checks aprovados; schema criado do zero; 2 skips pré-go-live esperados |
+| Produção Nuxt | lint, typecheck e build aprovados; 30 arquivos / 203 testes |
+| Operator Kit | 21 arquivos / 217 testes |
+| schema de Produção | 6 testes; contrato regenerado sem drift |
+| smoke local autenticado | `/`, `/plan`, `/mise-en-place`, `/expedite`, `/reports` e `/board` carregados sem erro |
+| diff | worktree limpa após os commits de integração; `git diff --check` aprovado |
+
+Os gates humanos D1–D8, runtime PostgreSQL/Redis, hardware, host/edge e piloto continuam
+explicitamente abertos. A integração fecha a dívida Git/migrations; não transforma essas
+decisões externas em aprovação implícita.
