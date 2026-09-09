@@ -1,5 +1,24 @@
-// Contrato do Marketing — espelha `shopman/backstage/projections/marketing.py`.
-// Chaves em inglês (convenção de projection); rótulos ficam na apresentação.
+// Tipos v1 permanecem abaixo durante o cutover. O contrato v2 é reexportado do
+// cliente gerado a partir do OpenAPI; não o redescrever manualmente neste arquivo.
+
+export type {
+  ActionConfirmationProjectionV2,
+  AnnouncementProjectionV2,
+  AudienceSummaryProjectionV2,
+  DeliveryAggregateProjectionV2,
+  DeliveryCountsProjectionV2,
+  FreshnessProjectionV2,
+  MarketingActionKind,
+  MarketingActionProjectionV2,
+  MarketingAnnouncementDataV2,
+  MarketingBoardDataV2,
+  MarketingEnvelopeV2,
+  MarketingFreshnessState,
+  OperationalCountersProjectionV2,
+  PlatformDeliveryProjectionV2,
+  PlatformReadinessProjectionV2,
+  ReadinessProjectionV2,
+} from "~/generated/marketingClient";
 
 export interface PlatformResult {
   platform: string;

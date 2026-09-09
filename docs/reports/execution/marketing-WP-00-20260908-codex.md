@@ -814,3 +814,40 @@ Provas locais:
 - board com 75 pendentes gerou 375 Actions com no máximo 5 queries adicionais, independentemente da cardinalidade;
 - JSON Schema golden agora tipa Actions estritamente; Ruff, `git diff --check`, Django check e migration drift passaram, preservando somente o warning/log conhecido do SQLite sem schema;
 - nenhuma migration, chamada de provider, destinatário, rede, deploy, produção ou escrita externa foi usada.
+
+## MKT-023 — OpenAPI para cliente TypeScript e CI sem drift
+
+Implementado sem cortar o consumidor v1:
+
+- a Projection Python continua sendo a fonte de verdade; dela é montado um OpenAPI 3.1 estreito e determinístico com os dois reads v2, autenticação por session cookie e todos os schemas estritos em `components.schemas`;
+- `contracts/openapi/marketing_v2.openapi.json` é o artefato OpenAPI versionado; nenhuma `$ref` privada de JSON Schema vaza para o documento;
+- `marketingClient.ts` é gerado integralmente do OpenAPI: interfaces, unions literais de enum, aliases de Action/freshness, paths e um cliente GET com transporte injetável;
+- o cliente força `credentials: same-origin`, usa somente paths do contrato e rejeita ID inválido antes de tocar rede;
+- `app/types/campaign.ts` reexporta os tipos v2 gerados e mantém os tipos v1 apenas como adapter temporário; novos tipos v2 não têm espelho manual;
+- `python manage.py export_marketing_client` regenera OpenAPI e cliente juntos; `--check` é read-only, aponta exatamente o artefato stale e retorna não-zero;
+- o Runtime Gate do CI executa `export_marketing_client --check` em todo PR/merge group; além disso, a suíte Backstage compara geração in-memory e geração em diretório temporário byte a byte com os arquivos commitados;
+- o teste Vitest usa o cliente real gerado, confirma os dois paths/opções e prova que Action kind permanece union fechada em vez de `string` manual;
+- o cutover dos composables/telas permanece deliberadamente para MKT-032/MKT-035, depois dos contratos MKT-024–029; v1 não foi removido nem alterado silenciosamente.
+
+Budget de omotenashi comprovado para desenvolvimento/operação do contrato:
+
+| Trabalho/risco | Antes | Depois |
+|---|---:|---:|
+| Redigitar shape Python em TypeScript | dezenas de campos por mudança | 0; um comando gera tudo |
+| Lembrar de regenerar antes do merge | memória do autor | 0; CI falha com comando de reparo |
+| Descobrir qual arquivo divergiu | comparação manual | mensagem lista OpenAPI e/ou cliente stale |
+| Conferir enum de Action no frontend | mapa manual sujeito a widening | union literal gerada e typecheckada |
+| Montar path do detail em cada caller | interpolação repetida | método `getMarketingAnnouncement(id)` |
+| Fazer request inválido para ID zero/fracionário | 1 round-trip + erro | 0 requests; validação local imediata |
+| Lembrar credencial same-origin | opção por chamada | default imutável do cliente |
+| Validar geração em outra árvore | diff manual | temp generation byte-identical automatizada |
+
+Provas locais:
+
+- 3 testes Django MKT-023 cobrem drift duplo, geração temporária e integridade das operações/refs/schemas;
+- cadeia focada de contrato/Projection/Actions: 18 testes passaram;
+- Marketing Nuxt: 7 arquivos/100 testes Vitest, ESLint e Nuxt typecheck passaram;
+- `export_marketing_client --check`, parse JSON, Ruff e `git diff --check` passaram;
+- gate canônico Unfold foi atualizado no registro oficial de surfaces, sem waiver: `make admin` passou com 229 testes;
+- a regressão completa de Backstage passou com 2.313 testes, 22 skips e 24 subtests em 226,61 s; ela também eliminou os broad catches residuais dos commands, que agora só capturam erros contratuais conhecidos;
+- nenhuma dependency, migration, chamada de rede/provider, deploy, produção ou escrita externa foi adicionada/executada.

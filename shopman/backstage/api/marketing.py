@@ -63,6 +63,15 @@ from shopman.backstage.projections.marketing_actions import (
 )
 from shopman.shop.models import Announcement, AnnouncementStatus, AnnouncementTemplate, Campaign, Trigger
 from shopman.shop.services import campaign as campaign_service
+from shopman.shop.services.marketing_commands import (
+    MarketingCommandConflict,
+    MarketingCommandRejected,
+)
+from shopman.shop.services.marketing_contracts import MarketingContractError
+from shopman.shop.services.marketing_security import (
+    MarketingAuthorizationError,
+    MarketingAuthorizationRequired,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -150,11 +159,8 @@ class MarketingDualControlView(_CampaignBase):
                 actor=request.user,
                 step_up=step_up_evidence_from_session(request),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
         return Response(
             {
                 "ok": True,
@@ -188,11 +194,8 @@ class MarketingFreezeView(_CampaignBase):
             return _unknown_command_fields(unexpected)
         try:
             state = activate_freeze(actor=request.user, reason=payload.get("reason", ""))
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
         return Response({"ok": True, **_safety_payload(state)})
 
 
@@ -222,11 +225,8 @@ class MarketingUnfreezeView(_CampaignBase):
                 token=str(payload.get("confirmation_token") or ""),
                 step_up=step_up_evidence_from_session(request),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
         return Response({"ok": True, **_safety_payload(state)})
 
 
@@ -517,18 +517,14 @@ class AnnouncementApproveView(_CampaignBase):
                     ),
                 ),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            if isinstance(exc, MarketingCommandConflict):
-                return Response(exc.as_payload(), status=409)
-            if isinstance(exc, MarketingCommandRejected):
-                status_code = 404 if exc.code == "announcement_not_found" else 422
-                return Response(exc.as_payload(), status=status_code)
-            if isinstance(exc, MarketingContractError):
-                return Response(exc.as_payload(), status=422)
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
 
         receipt = result.receipt
         logger.info(
@@ -703,11 +699,12 @@ class AnnouncementRejectView(_CampaignBase):
                 reason=reason,
                 request_id=str(request.headers.get("X-Request-ID") or ""),
             )
-        except Exception as exc:
-            response = _command_error_response(exc)
-            if response is not None:
-                return response
-            raise
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
         return Response(_command_response(result))
 
 
@@ -742,14 +739,14 @@ class AnnouncementCancelView(_CampaignBase):
                     capability="shop.publish_marketing_announcements",
                 ),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            response = _command_error_response(exc)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
         return Response(_command_response(result))
 
 
@@ -800,14 +797,14 @@ class AnnouncementRescheduleView(_CampaignBase):
                     capability="shop.publish_marketing_announcements",
                 ),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            response = _command_error_response(exc)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
         return Response(_command_response(result))
 
 
@@ -872,14 +869,14 @@ class AnnouncementRetryDeliveriesView(_CampaignBase):
                     capability="shop.retry_failed_marketing",
                 ),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            response = _command_error_response(exc)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
         return Response(_command_response(result))
 
 
@@ -916,14 +913,14 @@ class AnnouncementReconcileDeliveriesView(_CampaignBase):
                     capability="shop.reconcile_unknown_marketing",
                 ),
             )
-        except Exception as exc:
-            response = _authorization_error_response(exc, request)
-            if response is not None:
-                return response
-            response = _command_error_response(exc)
-            if response is not None:
-                return response
-            raise
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
         return Response(_command_response(result))
 
 
@@ -1522,10 +1519,11 @@ def _command_authorizer(
     return authorize
 
 
-def _authorization_error_response(exc: Exception, request) -> Response | None:
+def _authorization_error_response(
+    exc: MarketingAuthorizationRequired | MarketingAuthorizationError,
+    request,
+) -> Response:
     from shopman.shop.services.marketing_security import (
-        MarketingAuthorizationError,
-        MarketingAuthorizationRequired,
         issue_confirmation,
         record_security_denial,
     )
@@ -1536,17 +1534,15 @@ def _authorization_error_response(exc: Exception, request) -> Response | None:
         except MarketingAuthorizationError as issue_error:
             return _authorization_error_response(issue_error, request)
         return Response(payload, status=428)
-    if isinstance(exc, MarketingAuthorizationError):
-        record_security_denial(
-            actor=request.user,
-            reason_code=exc.code,
-            action="command_denied",
-        )
-        response = Response(exc.as_payload(), status=exc.status_code)
-        if exc.retry_after is not None:
-            response["Retry-After"] = str(exc.retry_after)
-        return response
-    return None
+    record_security_denial(
+        actor=request.user,
+        reason_code=exc.code,
+        action="command_denied",
+    )
+    response = Response(exc.as_payload(), status=exc.status_code)
+    if exc.retry_after is not None:
+        response["Retry-After"] = str(exc.retry_after)
+    return response
 
 
 def _safety_payload(state) -> dict:
@@ -1559,21 +1555,15 @@ def _safety_payload(state) -> dict:
     }
 
 
-def _command_error_response(exc: Exception) -> Response | None:
-    from shopman.shop.services.marketing_commands import (
-        MarketingCommandConflict,
-        MarketingCommandRejected,
-    )
-    from shopman.shop.services.marketing_contracts import MarketingContractError
-
+def _command_error_response(
+    exc: MarketingCommandConflict | MarketingCommandRejected | MarketingContractError,
+) -> Response:
     if isinstance(exc, MarketingCommandConflict):
         return Response(exc.as_payload(), status=409)
     if isinstance(exc, MarketingCommandRejected):
         status_code = 404 if exc.code == "announcement_not_found" else 422
         return Response(exc.as_payload(), status=status_code)
-    if isinstance(exc, MarketingContractError):
-        return Response(exc.as_payload(), status=422)
-    return None
+    return Response(exc.as_payload(), status=422)
 
 
 def _command_response(result) -> dict:

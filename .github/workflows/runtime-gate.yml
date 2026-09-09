@@ -50,6 +50,9 @@ jobs:
       - name: Migrations are committed
         run: .venv/bin/python manage.py makemigrations --check --dry-run
 
+      - name: Marketing OpenAPI and TypeScript client have no drift
+        run: .venv/bin/python manage.py export_marketing_client --check
+
       # A política ADR-015 arma pela EXISTÊNCIA da tag go-live-v1 — mas o
       # checkout do CI é raso e sem tags, então sem este fetch os checks
       # ficariam num "pré-go-live" eterno mesmo depois do go-live. Antes da
