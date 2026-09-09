@@ -573,3 +573,44 @@ Provas locais:
 - regressão Marketing/campaign/audience/API/E2E: 473 testes passaram;
 - Ruff, `git diff --check` e migration drift passaram;
 - migration reversível `shop.0032_marketing_delivery_leases`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.
+
+## MKT-016 — agregado honesto por plataforma e geral
+
+Implementado:
+
+- `Announcement.delivery_state` separa decisão editorial da verdade de execução: `not_started`, `fanout_pending`, `delivering`, `succeeded`, `completed_with_failures`, `unknown`, `cancelled`, `expired` ou `legacy_untracked`;
+- execução nova encerrada usa o status neutro `settled`; nenhum agregado parcial, desconhecido ou apenas aceito recebe `published`;
+- contagens por plataforma e gerais são uma query agregada sobre `DeliveryTarget`; `platform_results` legado não é lido, reescrito nem usado como oráculo;
+- o resumo inclui todos os estados com zero explícito, total de targets, expected/materialized do fan-out, lanes completas e fechamento matemático verificável;
+- `accepted` aparece como `accepted_unconfirmed`, separado de `confirmed`; nenhuma aceitação de provider é apresentada como entrega;
+- `unknown` tem precedência mesmo quando outras lanes ainda estão ativas, evitando que incerteza acionável desapareça sob um progresso genérico;
+- `failed_retryable` mantém o agregado aberto; success+final failure encerra como `completed_with_failures`; grupos integralmente cancelados e expirados permanecem distintos;
+- plataforma concluída com sucesso e outra com falha produzem geral `completed_with_failures`, nunca sucesso total;
+- fan-out incompleto domina como `fanout_pending`; lane vazia concluída sem target não é sucesso fabricado;
+- histórico `published/failed` sem ledger migra para `legacy_untracked`, preservando o fato histórico sem inventar target, receipt ou confirmação;
+- refresh é idempotente, troca `settled_at` quando um `unknown` é reconciliado e reabre o agregado se selective retry voltar a existir;
+- mutações de fan-out, claim, queue e attempt agendam refresh robusto somente após commit; falha dessa projection não desfaz nem reclassifica o efeito persistido;
+- guards legados tratam `settled`, `failed` e `cancelled` como estados não reaprováveis/rejeitáveis, fechando reenvio acidental pelo caminho antigo;
+- constraints recusam delivery state terminal sem settled-at e valores inventados em target/outbox;
+- a Projection/UI atual ainda não foi trocada: MKT-021 consumirá este contrato; o JSON legado permanece somente para compatibilidade read-only até o cutover.
+
+Budget de omotenashi comprovado:
+
+| Trabalho/risco do operador | Antes | Depois |
+|---|---:|---:|
+| Somar resultados de platforms/waves | N cards/JSON concorrente | 1 resumo geral matematicamente fechado |
+| Descobrir se “aceito” significa entregue | interpretação externa | 0; accepted-unconfirmed e confirmed separados |
+| Encontrar falha escondida por sucessos | inspeção por plataforma | geral `completed_with_failures` imediato |
+| Encontrar efeito incerto | procurar logs/provider | `unknown` tem precedência e freshness própria |
+| Conferir se fan-out terminou | comparar jobs/targets | expected/materialized/lanes complete no resumo |
+| Interpretar histórico sem receipt | certeza falsa `published` | `legacy_untracked` explícito e idempotente |
+| Esperar resumo de 100 targets | risco de N+1 | exatamente 3 queries |
+
+Provas locais:
+
+- 13 casos MKT-016 cobrem fan-out incompleto, accepted não confirmado, partial, unknown contra JSON otimista, retryable, duas plataformas, cancel/expire, legado/replay, callback pós-commit, 100 targets, constraints e reverse/reapply;
+- aggregate + ledger + attempts + worker: 55 testes passaram;
+- campanha + agregado + cadeia Marketing focada: 144 testes passaram;
+- regressão Marketing/campaign/audience/API/E2E: 486 testes passaram;
+- Ruff, `git diff --check` e migration drift passaram;
+- migration reversível `shop.0033_marketing_delivery_aggregate`; nenhum adapter/provider real, rede, produção ou escrita externa foi usado.

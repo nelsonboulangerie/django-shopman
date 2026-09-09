@@ -2,6 +2,7 @@
 
 from .campaign import (
     Announcement,
+    AnnouncementDeliveryState,
     AnnouncementStatus,
     AnnouncementTemplate,
     AudienceSnapshot,
@@ -64,6 +65,7 @@ __all__ = [
     "DeliveryTarget",
     "DeliveryAttempt",
     "Announcement",
+    "AnnouncementDeliveryState",
     "AnnouncementTemplate",
     "AnnouncementStatus",
     "AudienceSnapshot",

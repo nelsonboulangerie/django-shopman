@@ -95,6 +95,7 @@ def queue_target(target_ref, *, now: datetime | None = None) -> DeliveryTarget:
             "version",
             "updated_at",
         ])
+        _schedule_aggregate(target.announcement_id)
         return target
 
 
@@ -381,6 +382,7 @@ def _complete_attempt(
             "version",
             "updated_at",
         ])
+        _schedule_aggregate(target.announcement_id)
         return attempt, target
 
 
@@ -490,3 +492,11 @@ def _aware_now(now: datetime | None) -> datetime:
     if timezone.is_naive(value):
         raise ValueError("Marketing delivery attempts require an aware clock.")
     return value
+
+
+def _schedule_aggregate(announcement_id: int) -> None:
+    from shopman.shop.services.marketing_delivery_aggregate import (
+        schedule_delivery_refresh,
+    )
+
+    schedule_delivery_refresh(announcement_id)

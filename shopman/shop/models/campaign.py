@@ -61,6 +61,7 @@ class AnnouncementStatus(models.TextChoices):
     PENDING_REVIEW = "pending_review", "aguardando aprovação"
     APPROVED = "approved", "aprovado"
     PUBLISHING = "publishing", "publicando"
+    SETTLED = "settled", "execução encerrada"
     PUBLISHED = "published", "publicado"
     FAILED = "failed", "falhou"
     #: ⚠️ Recusa e vencimento são fatos DIFERENTES, e antes os dois colapsavam em
@@ -70,6 +71,20 @@ class AnnouncementStatus(models.TextChoices):
     REJECTED = "rejected", "recusado"
     EXPIRED = "expired", "expirado"
     CANCELLED = "cancelled", "cancelado"
+
+
+class AnnouncementDeliveryState(models.TextChoices):
+    """Ledger-derived execution truth, separate from the operator decision."""
+
+    NOT_STARTED = "not_started", "não iniciada"
+    FANOUT_PENDING = "fanout_pending", "preparando entregas"
+    DELIVERING = "delivering", "em andamento"
+    SUCCEEDED = "succeeded", "concluída"
+    COMPLETED_WITH_FAILURES = "completed_with_failures", "concluída com falhas"
+    UNKNOWN = "unknown", "resultado desconhecido"
+    CANCELLED = "cancelled", "cancelada"
+    EXPIRED = "expired", "expirada"
+    LEGACY_UNTRACKED = "legacy_untracked", "legado sem ledger"
 
 
 # A hierarquia de qualidade não vive mais aqui: era o literal QUALITY_LEVELS,
@@ -334,6 +349,13 @@ class Announcement(models.Model):
         help_text="Só contagens — a lista de destinatários nunca é persistida aqui",
     )
     platform_results = models.JSONField("resultado por plataforma", default=dict, blank=True)
+    delivery_state = models.CharField(
+        max_length=32,
+        choices=AnnouncementDeliveryState.choices,
+        default=AnnouncementDeliveryState.NOT_STARTED,
+    )
+    delivery_state_updated_at = models.DateTimeField(null=True, blank=True)
+    delivery_settled_at = models.DateTimeField(null=True, blank=True)
     trigger_context = models.JSONField("contexto do evento", default=dict, blank=True)
     approved_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
@@ -383,6 +405,30 @@ class Announcement(models.Model):
                 fields=["occurrence_key"],
                 condition=models.Q(occurrence_key__gt=""),
                 name="shop_announcement_occurrence_uq",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(
+                        delivery_state__in=(
+                            "not_started",
+                            "fanout_pending",
+                            "delivering",
+                        ),
+                        delivery_settled_at__isnull=True,
+                    )
+                    | models.Q(
+                        delivery_state__in=(
+                            "succeeded",
+                            "completed_with_failures",
+                            "unknown",
+                            "cancelled",
+                            "expired",
+                            "legacy_untracked",
+                        ),
+                        delivery_settled_at__isnull=False,
+                    )
+                ),
+                name="shop_announcement_delivery_settlement_ck",
             ),
         ]
 
@@ -834,6 +880,12 @@ class MarketingOutbox(models.Model):
                 ),
                 name="shop_marketing_outbox_fanout_complete_ck",
             ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    state__in=("pending", "claimed", "dispatched", "cancelled", "failed")
+                ),
+                name="shop_marketing_outbox_state_ck",
+            ),
         ]
         indexes = [models.Index(fields=["state", "available_at"])]
 
@@ -931,6 +983,24 @@ class DeliveryTarget(models.Model):
                     )
                 ),
                 name="shop_delivery_target_lease_state_ck",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(
+                    state__in=(
+                        "planned",
+                        "suppressed",
+                        "queued",
+                        "sending",
+                        "accepted",
+                        "confirmed",
+                        "failed_retryable",
+                        "failed_final",
+                        "unknown",
+                        "cancelled",
+                        "expired",
+                    )
+                ),
+                name="shop_delivery_target_state_ck",
             ),
         ]
         indexes = [

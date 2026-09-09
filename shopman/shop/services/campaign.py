@@ -1071,7 +1071,13 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
         publish_at = announcement.publish_at
     scheduled = publish_at is not None and publish_at > now
 
-    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+    if announcement.status in {
+        AnnouncementStatus.PUBLISHED,
+        AnnouncementStatus.PUBLISHING,
+        AnnouncementStatus.SETTLED,
+        AnnouncementStatus.FAILED,
+        AnnouncementStatus.CANCELLED,
+    }:
         return announcement
     if announcement.status == AnnouncementStatus.APPROVED and not announcement.publish_at:
         # Já despachado (aprovação imediata anterior) — nada a refazer.
@@ -1156,7 +1162,13 @@ def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:
     # `publishing` entra junto: as Directives já estão na fila, então "recusar" daria
     # ao gestor a impressão de ter parado algo que sai de qualquer jeito. Aprovado COM
     # hora marcada segue recusável de propósito — esse ainda está na mão dele.
-    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+    if announcement.status in {
+        AnnouncementStatus.PUBLISHED,
+        AnnouncementStatus.PUBLISHING,
+        AnnouncementStatus.SETTLED,
+        AnnouncementStatus.FAILED,
+        AnnouncementStatus.CANCELLED,
+    }:
         raise CampaignError("Este anúncio já saiu. Não dá para recusar o que foi publicado.")
 
     announcement.status = AnnouncementStatus.REJECTED

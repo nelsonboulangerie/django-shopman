@@ -267,6 +267,8 @@ def claim_due_targets(
                 "updated_at",
             ],
         )
+        for announcement_id in {target.announcement_id for target in rows}:
+            _schedule_aggregate(announcement_id)
         return TargetClaimReport(
             tuple(claimed),
             len(rows),
@@ -429,6 +431,7 @@ def _initialize_fanout(
                 "fanout_expected",
                 "updated_at",
             ])
+            _schedule_aggregate(outbox.announcement_id)
         return outbox
 
 
@@ -463,6 +466,7 @@ def _checkpoint_fanout(
             "fanout_completed_at",
             "updated_at",
         ])
+        _schedule_aggregate(outbox.announcement_id)
         return materialized
 
 
@@ -487,3 +491,11 @@ def _aware_now(now: datetime | None) -> datetime:
     if timezone.is_naive(value):
         raise ValueError("Marketing delivery worker requires an aware clock.")
     return value
+
+
+def _schedule_aggregate(announcement_id: int) -> None:
+    from shopman.shop.services.marketing_delivery_aggregate import (
+        schedule_delivery_refresh,
+    )
+
+    schedule_delivery_refresh(announcement_id)

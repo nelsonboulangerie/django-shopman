@@ -35,13 +35,20 @@ from shopman.shop.services.marketing_delivery_ledger import (
 pytestmark = pytest.mark.django_db
 
 
-def _graph(*, platform="whatsapp", suffix="one", target_keys=("member-a", "member-b")):
+def _graph(
+    *,
+    platform="whatsapp",
+    suffix="one",
+    target_keys=("member-a", "member-b"),
+    approved_platforms=None,
+):
     now = timezone.now()
+    platforms = list(approved_platforms or (platform,))
     actor = get_user_model().objects.create_user(username=f"ledger-{suffix}")
     announcement = Announcement.objects.create(
         status=AnnouncementStatus.PUBLISHING,
         content={"body": "Fornada pronta"},
-        platforms=[platform],
+        platforms=platforms,
         version=2,
     )
     command = MarketingCommandReceipt.objects.create(
@@ -63,7 +70,7 @@ def _graph(*, platform="whatsapp", suffix="one", target_keys=("member-a", "membe
         "content": {"body": "Fornada pronta"},
         "content_version": 2,
         "platform_content": {},
-        "platforms": [platform],
+        "platforms": platforms,
         "schema_version": 1,
     }
     artifact = MarketingContentArtifact.objects.create(
