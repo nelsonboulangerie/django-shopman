@@ -2,10 +2,11 @@
 // GET /api/v1/backstage/production/forecast/ e poll de 30s: o painel fica
 // aberto o dia inteiro numa tela da loja, então ele se atualiza sozinho.
 import type { ProductionForecastProjection, ProductionForecastResponse } from "~/types/production";
+import { isoForOffset } from "~/presentation/production";
 
 export function useProductionForecast() {
   const path = "/api/v1/backstage/production/forecast/";
-  const selectedDate = ref(todayISO());
+  const selectedDate = ref(isoForOffset(0));
 
   const { data, pending, error, refresh } = useFetch<ProductionForecastResponse>(path, {
     key: "production-forecast",
@@ -20,10 +21,4 @@ export function useProductionForecast() {
   useAdaptivePoll(refresh, () => 30_000);
 
   return { forecast, rows, selectedDate, pending, error, refresh };
-}
-
-function todayISO(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }

@@ -75,6 +75,38 @@ const MONTHS_PT = [
   "dez",
 ];
 
+// A superfície é renderizada duas vezes: primeiro no contêiner Nitro (UTC) e
+// depois no navegador da loja (BRT). "Horário local" do processo produziria
+// duas datas diferentes entre 21h e meia-noite; a data operacional precisa ser
+// a da padaria em ambos os lados.
+export const STORE_TIME_ZONE = "America/Sao_Paulo";
+
+const STORE_DATE_TIME = new Intl.DateTimeFormat("en-US", {
+  timeZone: STORE_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+function storeDateTimeParts(now: Date): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+} {
+  const parts = Object.fromEntries(
+    STORE_DATE_TIME.formatToParts(now).map((part) => [part.type, part.value]),
+  );
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+  };
+}
+
 function parseISODate(iso: string): Date | null {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -94,18 +126,20 @@ export function fullDateLabel(iso: string): string {
   return `${String(date.getDate()).padStart(2, "0")} ${MONTHS_PT[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-/** ISO local (YYYY-MM-DD) para hoje + offsetDays, sem UTC (a padaria é local). */
+/** ISO operacional (YYYY-MM-DD) da padaria para hoje + offsetDays. */
 export function isoForOffset(
   offsetDays: number,
   now: Date = new Date(),
 ): string {
-  const d = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + offsetDays,
-  );
+  const local = storeDateTimeParts(now);
+  const d = new Date(Date.UTC(local.year, local.month - 1, local.day + offsetDays));
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/** Hora corrente no fuso operacional, idêntica no SSR e no navegador. */
+export function storeHour(now: Date = new Date()): number {
+  return storeDateTimeParts(now).hour;
 }
 
 /**

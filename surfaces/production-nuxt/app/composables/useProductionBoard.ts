@@ -13,7 +13,11 @@ import {
   startProductionWorkOrder,
   type ProductionPlanMutationRequest,
 } from "~/generated/productionContract";
-import { parseShortage } from "~/presentation/production";
+import {
+  isoForOffset,
+  parseShortage,
+  storeHour,
+} from "~/presentation/production";
 import { newProductionMutationKey } from "~/utils/api";
 import {
   useProductionMutationGuard,
@@ -30,13 +34,7 @@ export interface BoardActResult {
 /** ISO date default for planning: today's board in the morning, tomorrow's
  *  after noon — o padeiro planeja o dia seguinte na calmaria da tarde. */
 export function defaultPlanningDate(now = new Date()): string {
-  const target = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + (now.getHours() >= 12 ? 1 : 0),
-  );
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${target.getFullYear()}-${pad(target.getMonth() + 1)}-${pad(target.getDate())}`;
+  return isoForOffset(storeHour(now) >= 12 ? 1 : 0, now);
 }
 
 export function useProductionBoard(

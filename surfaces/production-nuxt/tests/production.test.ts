@@ -246,9 +246,15 @@ describe("kiosk day rollover", () => {
     expect(isoForOffset(1, now)).toBe("2026-07-05");
   });
 
+  it("usa o dia da padaria no SSR UTC entre 21h e meia-noite BRT", () => {
+    const serverNow = new Date("2026-09-10T02:30:00Z"); // 09/set 23:30 BRT
+    expect(isoForOffset(0, serverNow)).toBe("2026-09-09");
+    expect(isoForOffset(1, serverNow)).toBe("2026-09-10");
+  });
+
   it("vira o dia à meia-noite e rola a seleção que acompanhava hoje", () => {
     // Era 04/jul; seleção estava em 'hoje' (04). Agora é 05/jul 00:01.
-    const now = new Date(2026, 6, 5, 0, 1);
+    const now = new Date("2026-07-05T03:01:00Z"); // 05/jul 00:01 BRT
     const r = resolveDayRollover("2026-07-04", "2026-07-04", now);
     expect(r.rolled).toBe(true);
     expect(r.todayISO).toBe("2026-07-05");
