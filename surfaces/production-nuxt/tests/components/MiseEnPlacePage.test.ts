@@ -97,6 +97,38 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("Preparação — impressão por preparo", () => {
+  it("abre em Por preparo e mantém Por insumo como segunda visão", () => {
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    const viewMode = wrapper.get('[aria-label="Modo de visualização"]');
+    const buttons = viewMode.findAll("button");
+
+    expect(buttons.map((button) => button.text().trim())).toEqual([
+      "Por preparo",
+      "Por insumo",
+    ]);
+    expect(buttons[0]?.attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find("article").exists()).toBe(true);
+  });
+
+  it("mantém o código junto da identificação e a ação isolada à direita", async () => {
+    const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
+    await wrapper
+      .findAll("button")
+      .find((button) => button.text().trim() === "Por preparo")!
+      .trigger("click");
+
+    const cardHeader = wrapper.find("article header");
+    const leftIdentity = cardHeader.get(":scope > div");
+    const printButton = cardHeader.get(":scope > button");
+
+    expect(leftIdentity.text()).toContain("D8");
+    expect(leftIdentity.text()).toContain("Massa Croissant");
+    expect(printButton.attributes("aria-label")).toBe(
+      "Imprimir etiquetas de pesagem de Massa Croissant",
+    );
+    expect(printButton.classes()).toContain("size-11");
+  });
+
   it("imprime somente as etiquetas de pesagem do cartão escolhido", async () => {
     const wrapper = mount(MiseEnPlacePage, { global: { stubs } });
     await wrapper

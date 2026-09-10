@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // Preparação (mise en place) — the day's separation & weighing station.
 // Two lenses over the same planned WOs:
-//   · "Insumos": aggregated ingredient list (checklist local ao turno) — bom
-//     para conferir provisionamento ("quanto de farinha no total?").
 //   · "Por preparo": each prep with its scaled ingredients — é a pesagem real,
 //     e de onde saem as ETIQUETAS CEGAS (código do dia, ingrediente, peso,
 //     data; nunca o nome da receita — o mapa código↔preparo é visão de gestor
 //     no Admin). Impressão via print CSS: só as etiquetas saem no papel.
+//   · "Por insumo": aggregated ingredient list (checklist local ao turno) — bom
+//     para conferir provisionamento ("quanto de farinha no total?").
 // Tablet/touch-first.
 import { nextTick } from "vue";
 import type { MiseEnPlaceLineProjection } from "~/types/production";
@@ -32,7 +32,7 @@ const {
 } = useMiseEnPlace(selectedDate);
 const weighing = useWeighing(selectedDate);
 
-const mode = ref<"insumos" | "preparos">("insumos");
+const mode = ref<"insumos" | "preparos">("preparos");
 
 // Tolerante a dado velho: se a atualização falhar mas já houver lista, mantém a lista
 // no ar e acende o chip de degradação (dado velho visível > tela em branco).
@@ -176,19 +176,6 @@ function refreshAll() {
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
-              mode === 'insumos'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="mode === 'insumos'"
-            @click="mode = 'insumos'"
-          >
-            Insumos
-          </button>
-          <button
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
               mode === 'preparos'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -197,6 +184,19 @@ function refreshAll() {
             @click="mode = 'preparos'"
           >
             Por preparo
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            :class="
+              mode === 'insumos'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            "
+            :aria-pressed="mode === 'insumos'"
+            @click="mode = 'insumos'"
+          >
+            Por insumo
           </button>
         </div>
 
@@ -530,34 +530,34 @@ function refreshAll() {
               class="flex flex-col gap-2.5 rounded-lg border bg-card p-3 shadow-sm"
             >
               <header class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="text-base font-bold leading-tight">
-                    {{ ticket.name }}
-                  </p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ ticket.output_quantity_display
-                    }}<template v-if="ticket.dough_weight_display">
-                      · {{ ticket.dough_weight_display }}</template
-                    >
-                    · {{ ticket.output_sku }}
-                  </p>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
+                <div class="flex min-w-0 items-start gap-2">
                   <span
-                    class="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
+                    class="shrink-0 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
                     title="Código cego do dia — vai nas etiquetas no lugar do nome"
                     >{{ ticket.blind_code }}</span
                   >
-                  <button
-                    type="button"
-                    class="grid size-11 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                    :aria-label="`Imprimir etiquetas de pesagem de ${ticket.name}`"
-                    :title="`Imprimir somente ${ticket.name} · 80 mm`"
-                    @click="printLabels('pesagem', ticket.recipe_ref)"
-                  >
-                    <Icon name="lucide:printer" class="size-4" />
-                  </button>
+                  <div class="min-w-0">
+                    <p class="text-base font-bold leading-tight">
+                      {{ ticket.name }}
+                    </p>
+                    <p class="text-xs text-muted-foreground">
+                      {{ ticket.output_quantity_display
+                      }}<template v-if="ticket.dough_weight_display">
+                        · {{ ticket.dough_weight_display }}</template
+                      >
+                      · {{ ticket.output_sku }}
+                    </p>
+                  </div>
                 </div>
+                <button
+                  type="button"
+                  class="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  :aria-label="`Imprimir etiquetas de pesagem de ${ticket.name}`"
+                  :title="`Imprimir somente ${ticket.name} · 80 mm`"
+                  @click="printLabels('pesagem', ticket.recipe_ref)"
+                >
+                  <Icon name="lucide:printer" class="size-4" />
+                </button>
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li
