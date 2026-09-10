@@ -12,6 +12,13 @@ import {
   typeDigit,
   type QcPartitionGroup,
 } from "~/presentation/qc";
+import {
+  hasOpenDialogOutside,
+  isEditableKeyboardTarget,
+  isNativeActionTarget,
+  productionContextKeysBlocked,
+  resolveQuantityKeyboardShortcut,
+} from "~/presentation/keyboard";
 
 const props = withDefaults(
   defineProps<{
@@ -451,27 +458,42 @@ function requestBack() {
 
 // Teclado físico: os mesmos alvos do numpad, sem criar campos paralelos.
 function onKeydown(event: KeyboardEvent) {
-  const target = event.target as HTMLElement | null;
-  if (event.key === "Escape") {
-    sheetQuestion.value = null;
-    submitAfterAnswer.value = false;
+  if (event.repeat || event.isComposing || productionContextKeysBlocked())
     return;
-  }
-  if (
-    target?.closest(
-      "button, a, input, textarea, select, [role='button'], [contenteditable='true']",
-    )
-  ) {
+  if (event.key === "Escape") {
+    if (sheetQuestion.value) {
+      sheetQuestion.value = null;
+      submitAfterAnswer.value = false;
+    } else {
+      event.preventDefault();
+      requestBack();
+    }
     return;
   }
   if (sheetQuestion.value) return;
-  if (/^[0-9]$/.test(event.key)) {
-    onDigit(event.key);
-  } else if (event.key === "Backspace") {
-    event.preventDefault();
+  if (hasOpenDialogOutside()) return;
+  if (isEditableKeyboardTarget(event.target)) return;
+
+  const shortcut = resolveQuantityKeyboardShortcut(event);
+  if (!shortcut) return;
+  // Enter comum mantém a semântica nativa do botão em foco. O Enter do numpad
+  // confirma o número, mesmo depois de o operador tocar/clicar no grau.
+  if (
+    shortcut.kind === "confirm" &&
+    event.code !== "NumpadEnter" &&
+    isNativeActionTarget(event.target)
+  ) {
+    return;
+  }
+
+  event.preventDefault();
+  if (shortcut.kind === "digit") {
+    onDigit(shortcut.digit);
+  } else if (shortcut.kind === "backspace") {
     onBackspace();
-  } else if (event.key === "Enter") {
-    event.preventDefault();
+  } else if (shortcut.kind === "clear") {
+    onClear();
+  } else {
     onConfirm();
   }
 }
@@ -484,7 +506,10 @@ const fieldCard =
 </script>
 
 <template>
-  <div class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6">
+  <div
+    class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6"
+    data-production-shortcut-scope="exclusive"
+  >
     <header class="flex h-14 shrink-0 items-center justify-between gap-3">
       <button
         type="button"
@@ -687,6 +712,7 @@ const fieldCard =
         submitting || submitLatched || (mode === 'correct' && !isDirty)
       "
       :aria-busy="submitting || submitLatched"
+      aria-keyshortcuts="Enter"
       @click="onConfirm"
     >
       {{

@@ -106,6 +106,7 @@ function installGlobals() {
 
 function mountQc(
   overrides: Partial<InstanceType<typeof QcCloseScreen>["$props"]> = {},
+  attachToDocument = false,
 ) {
   return mount(QcCloseScreen, {
     props: {
@@ -119,6 +120,7 @@ function mountQc(
       ...overrides,
     },
     global: { stubs },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
   });
 }
 
@@ -276,6 +278,88 @@ describe("QcCloseScreen — classificação por grau", () => {
 
     expect(tab.defaultPrevented).toBe(false);
     expect(wrapper.emitted("confirm")).toBeUndefined();
+  });
+
+  it("digita pelo teclado físico mesmo com o botão do grau em foco", async () => {
+    const wrapper = mountQc({}, true);
+    const grade = wrapper.find('[data-grade-ref="fair"]');
+    await grade.trigger("click");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "1",
+        code: "Numpad1",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "5",
+        code: "Numpad5",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+
+    expect(grade.attributes("aria-label")).toContain("15 unidades");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "NumpadEnter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+    await buttonByText(wrapper, "Formato")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      partition: expect.arrayContaining([
+        {
+          quantity: "15",
+          quality_grade_ref: "fair",
+          quality_defect_ref: "shape",
+        },
+      ]),
+    });
+    wrapper.unmount();
+  });
+
+  it("aceita Backspace e C do teclado físico pelo mesmo alvo do numpad", async () => {
+    const wrapper = mountQc({}, true);
+    const grade = wrapper.find('[data-grade-ref="fair"]');
+    await grade.trigger("click");
+    for (const [key, code] of [
+      ["1", "Digit1"],
+      ["2", "Digit2"],
+      ["Backspace", "Backspace"],
+    ]) {
+      grade.element.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          code,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+    await nextTick();
+    expect(grade.attributes("aria-label")).toContain("1 unidades");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "c",
+        code: "KeyC",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+    expect(grade.attributes("aria-label")).toContain("0 unidades");
+    wrapper.unmount();
   });
 
   it("confirma antes de descartar um QC preenchido", async () => {

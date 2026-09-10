@@ -310,6 +310,22 @@ describe("ProductionStageGrid — planning authority", () => {
     request.resolve({ ok: true });
     await request.promise;
   });
+
+  it("confirms the planned quantity with Enter from its numeric field", async () => {
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await byText(w, "button", "Confirmar")!.trigger("click");
+    const input = w.find('input[aria-label="Quantidade planejada"]');
+    await input.setValue("12");
+    await input.trigger("keydown", { key: "Enter" });
+
+    expect(planSpy).toHaveBeenCalledTimes(1);
+    expect(planSpy).toHaveBeenCalledWith(
+      "PAO-001",
+      expect.objectContaining({ quantity: "12" }),
+    );
+  });
 });
 
 describe("ProductionStageGrid — produce render", () => {
@@ -421,6 +437,24 @@ describe("ProductionStageGrid — produce render", () => {
 
     request.resolve({ ok: true });
     await request.promise;
+  });
+
+  it("confirms the produced quantity with Enter from its numeric field", async () => {
+    boardRows.value = [
+      row({
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountGrid();
+
+    await byText(w, "button", "Confirmar")!.trigger("click");
+    const input = w.find('input[aria-label="Quantidade produzida"]');
+    await input.setValue("27");
+    await input.trigger("keydown", { key: "Enter" });
+
+    expect(startSpy).toHaveBeenCalledTimes(1);
+    expect(startSpy).toHaveBeenCalledWith("PAO-001", 1, 2, "27");
   });
 });
 

@@ -26,10 +26,10 @@ defineProps<{
   <!-- Etiquetas CEGAS de pesagem: uma por (preparo × ingrediente). -->
   <section
     v-if="printMode === 'pesagem'"
-    class="hidden print:block"
+    class="weighing-label-sheet hidden print:block"
     aria-hidden="true"
   >
-    <div class="grid grid-cols-2 gap-2">
+    <div class="grid grid-cols-1 gap-2">
       <div
         v-for="label in labels"
         :key="label.key"
@@ -48,8 +48,12 @@ defineProps<{
   </section>
 
   <!-- Etiquetas EXPLÍCITAS do preparo pronto: uma por preparo. -->
-  <section v-else class="hidden print:block" aria-hidden="true">
-    <div class="grid grid-cols-2 gap-2">
+  <section
+    v-else
+    class="weighing-label-sheet hidden print:block"
+    aria-hidden="true"
+  >
+    <div class="grid grid-cols-1 gap-2">
       <div
         v-for="ticket in tickets"
         :key="ticket.recipe_ref"
@@ -77,3 +81,15 @@ defineProps<{
     </div>
   </section>
 </template>
+
+<style>
+@media print {
+  /* 80 mm com 4 mm de respiro em cada lateral. O driver pode usar papel
+     contínuo ou etiquetas destacáveis sem reescalar a composição. */
+  .weighing-label-sheet {
+    box-sizing: border-box;
+    width: 72mm;
+    margin: 0 auto;
+  }
+}
+</style>
