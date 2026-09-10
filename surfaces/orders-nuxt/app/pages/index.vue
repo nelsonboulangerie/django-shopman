@@ -156,22 +156,35 @@ const rejectReason = ref("");
 const rejectReasons = ref<CancellationReason[]>([]);
 const rejectCode = ref("");
 const rejectReasonsLoading = ref(false);
-const isMarketplaceReject = computed(() => rejectReasons.value.length > 0);
+const rejectReasonsError = ref("");
+const isMarketplaceReject = computed(() => allCards.value.find((c) => c.ref === rejectRef.value)?.channel_ref === "ifood");
 const canConfirmReject = computed(() =>
-  isMarketplaceReject.value ? rejectCode.value !== "" : rejectReason.value.trim() !== "",
+  !rejectReasonsLoading.value && !rejectReasonsError.value && (isMarketplaceReject.value ? rejectReasons.value.some((r) => r.code === rejectCode.value) : rejectReason.value.trim() !== ""),
 );
 async function openReject(ref_: string) {
   rejectRef.value = ref_;
   rejectReason.value = "";
   rejectCode.value = "";
   rejectReasons.value = [];
+  await loadRejectReasons();
+}
+let rejectReasonsRequest = 0;
+async function loadRejectReasons() {
+  const ref_ = rejectRef.value;
+  if (!ref_) return;
+  const request = ++rejectReasonsRequest;
   rejectReasonsLoading.value = true;
+  rejectReasonsError.value = "";
   try {
-    rejectReasons.value = await fetchCancellationReasons(ref_);
+    const result = await fetchCancellationReasons(ref_);
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasons.value = result;
+  } catch {
+    if (request === rejectReasonsRequest && ref_ === rejectRef.value) rejectReasonsError.value = "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
   } finally {
-    rejectReasonsLoading.value = false;
+    if (request === rejectReasonsRequest) rejectReasonsLoading.value = false;
   }
 }
+
 function onRejectCodeChange() {
   // Mirror the picked reason's text into the customer-facing reason.
   const picked = rejectReasons.value.find((r) => r.code === rejectCode.value);
@@ -650,6 +663,11 @@ function printQueue() {
           </UiDialogDescription>
         </UiDialogHeader>
         <p v-if="rejectReasonsLoading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
+        <div v-else-if="rejectReasonsError" role="alert" class="text-sm text-destructive">
+          <p>{{ rejectReasonsError }}</p>
+          <button type="button" class="underline" @click="loadRejectReasons">Consultar novamente</button>
+        </div>
+        <p v-else-if="isMarketplaceReject && !rejectReasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
         <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
         <UiNativeSelect
           v-else-if="isMarketplaceReject"

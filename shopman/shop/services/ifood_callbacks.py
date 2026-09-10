@@ -138,7 +138,9 @@ def fetch_cancellation_reasons(order_id: str) -> list[dict]:
         reasons = resp.json()
     except ValueError as exc:
         raise IFoodCallbackError("iFood cancellationReasons response was not JSON") from exc
-    return reasons if isinstance(reasons, list) else []
+    if not isinstance(reasons, list) or any(not isinstance(r, dict) or not r.get("cancelCodeId") for r in reasons):
+        raise IFoodCallbackError("iFood cancellationReasons response has invalid shape")
+    return reasons
 
 
 def request_cancellation(order_id: str, *, code: str = "", description: str = "") -> None:

@@ -15,10 +15,13 @@ const props = defineProps<{
   reasons: CancellationReason[];
   presets: string[];
   busy: boolean;
+  marketplace: boolean;
+  error?: string;
 }>();
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  retry: [];
   confirm: [payload: { reason: string; cancellationCode: string }];
 }>();
 
@@ -32,10 +35,11 @@ watch(
   (open) => { if (open) { reason.value = ""; code.value = ""; } },
 );
 
-const isMarketplace = computed(() => props.reasons.length > 0);
+const isMarketplace = computed(() => props.marketplace);
 
 const canConfirm = computed(() => {
-  if (isMarketplace.value) return code.value !== "";
+  if (props.loading || props.error) return false;
+  if (isMarketplace.value) return props.reasons.some((r) => r.code === code.value);
   // Free text: a reject needs a reason (the customer is told why); a cancel may go
   // out with the generic fallback, so an empty reason is allowed.
   return props.mode === "cancel" || reason.value.trim() !== "";
@@ -75,6 +79,12 @@ const description = computed(() =>
       </UiDialogHeader>
 
       <p v-if="loading" class="text-sm text-muted-foreground">Carregando motivos do iFood…</p>
+
+      <div v-else-if="error" role="alert" class="text-sm text-destructive">
+        <p>{{ error }}</p>
+        <button type="button" class="underline" @click="emit('retry')">Consultar novamente</button>
+      </div>
+      <p v-else-if="isMarketplace && !reasons.length" class="text-sm">O iFood não oferece motivos de cancelamento neste momento.</p>
 
       <!-- Marketplace (iFood): coded reason picker from the provider's live list -->
       <UiNativeSelect

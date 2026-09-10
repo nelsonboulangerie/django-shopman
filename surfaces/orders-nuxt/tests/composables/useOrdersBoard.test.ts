@@ -159,12 +159,12 @@ describe("useOrdersBoard — bulk + reasons", () => {
     expect(board.actionError("WEB-2")).toBe("x");
   });
 
-  it("fetchCancellationReasons devolve a lista, ou [] em erro", async () => {
+  it("fetchCancellationReasons devolve a lista, propaga indisponibilidade", async () => {
     env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
     const board = useOrdersBoard();
     expect(await board.fetchCancellationReasons("IFOOD-1")).toEqual([{ code: "1", description: "Sem estoque" }]);
     env.fetchMock.mockRejectedValueOnce(new Error("net"));
-    expect(await board.fetchCancellationReasons("IFOOD-2")).toEqual([]);
+    await expect(board.fetchCancellationReasons("IFOOD-2")).rejects.toThrow("net");
   });
 });
 

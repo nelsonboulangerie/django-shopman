@@ -1,0 +1,312 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_______ test_stale_order_does_not_duplicate_collection_or_erase_context ________
+
+    @pytest.mark.django_db
+    def test_stale_order_does_not_duplicate_collection_or_erase_context():
+        user, shifts, order = setup_delivery()
+        stale = Order.objects.get(pk=order.pk)
+        operator_orders.save_kitchen_note(order, notes="Contexto preservado")
+        operator_orders.settle_delivery_cash(stale, cash_shift=shifts[0], actor=f"operator:{user.username}")
+        order.refresh_from_db()
+>       assert order.data["kitchen_note"] == "Contexto preservado"
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'kitchen_note'
+
+shopman/shop/tests/test_cod_custody_concurrency.py:59: KeyError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 20:01:36,986 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 20:01:37,593 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 20:01:41,364 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+INFO 2026-09-10 20:01:51,069 shopman.payman Intent created
+INFO 2026-09-10 20:01:51,076 shopman.payman Intent settled without gateway
+INFO 2026-09-10 20:01:51,087 shopman.shop.services.operator_orders operator_settle_delivery_cash order=COD-LAB shift=1 amount=1200
+_____________ test_two_custodies_cannot_collect_the_same_delivery ______________
+
+self = <django.db.backends.utils.CursorWrapper object at 0x11a7b38c0>
+sql = 'INSERT INTO "payman_paymentintent" ("ref", "order_ref", "method", "status", "amount_q", "currency", "gateway", "gatew...reason") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING "payman_paymentintent"."id"'
+params = ('PAY-2EE62AA3F1C8', 'COD-LAB', 'cash', PaymentIntent.Status.PENDING, Int8(1200), 'BRL', ...)
+ignored_wrapper_args = (False, {'connection': <DatabaseWrapper vendor='postgresql' alias='default'>, 'cursor': <django.db.backends.utils.CursorWrapper object at 0x11a7b38c0>})
+
+    def _execute(self, sql, params, *ignored_wrapper_args):
+        # Raise a warning during app initialization (stored_app_configs is only
+        # ever set during testing).
+        if not apps.ready and not apps.stored_app_configs:
+            warnings.warn(self.APPS_NOT_READY_WARNING_MSG, category=RuntimeWarning)
+        self.db.validate_no_broken_transaction()
+        with self.db.wrap_database_errors:
+            if params is None:
+                # params default might be backend specific.
+                return self.cursor.execute(sql)
+            else:
+>               return self.cursor.execute(sql, params)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [BAD] at 0x119cf3d10>
+query = 'INSERT INTO "payman_paymentintent" ("ref", "order_ref", "method", "status", "amount_q", "currency", "gateway", "gatew...reason") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING "payman_paymentintent"."id"'
+params = ('PAY-2EE62AA3F1C8', 'COD-LAB', 'cash', PaymentIntent.Status.PENDING, Int8(1200), 'BRL', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "pay_intent_idempotency_key_unique"
+E           DETAIL:  Key (idempotency_key)=(order-payment:COD-LAB:cash:1200:on_delivery) already exists.
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: UniqueViolation
+
+The above exception was the direct cause of the following exception:
+
+cls = <class 'shopman.payman.service.PaymentService'>, order_ref = 'COD-LAB'
+amount_q = 1200, method = 'cash'
+
+    @classmethod
+    def create_intent(
+        cls,
+        order_ref: str,
+        amount_q: int,
+        method: str,
+        *,
+        currency: str = "BRL",
+        gateway: str = "",
+        gateway_id: str = "",
+        gateway_data: dict | None = None,
+        expires_at=None,
+        ref: str | None = None,
+        idempotency_key: str = "",
+    ) -> PaymentIntent:
+        """
+        Cria intenção de pagamento.
+    
+        Args:
+            order_ref: Referência do pedido (string, sem FK)
+            amount_q: Valor em centavos
+            method: Método de pagamento (pix, card, cash, external)
+            currency: Código ISO 4217
+            gateway: Nome do gateway (ex: "efi", "stripe")
+            gateway_id: ID da transação no gateway
+            gateway_data: Dados extras do gateway (JSON)
+            expires_at: Datetime de expiração
+            ref: Referência customizada (auto-gerada se None)
+            idempotency_key: Chave estável para retry seguro da mesma criação
+    
+        Returns:
+            PaymentIntent criado com status PENDING ou intent existente para a
+            mesma chave idempotente.
+        """
+        if amount_q <= 0:
+            raise PaymentError(
+                code="invalid_amount",
+                message="Valor deve ser positivo",
+                context={"amount_q": amount_q},
+            )
+    
+        idempotency_key = (idempotency_key or "").strip()
+        if idempotency_key:
+            existing = PaymentIntent.objects.filter(idempotency_key=idempotency_key).first()
+            if existing:
+                cls._require_idempotent_match(
+                    existing,
+                    order_ref=order_ref,
+                    amount_q=amount_q,
+                    method=method,
+                    currency=currency,
+                    gateway=gateway,
+                )
+                return existing
+    
+        try:
+>           intent = PaymentIntent.objects.create(
+                ref=ref or cls._generate_ref(),
+                order_ref=order_ref,
+                method=method,
+                amount_q=amount_q,
+                currency=currency,
+                gateway=gateway,
+                gateway_id=gateway_id,
+                gateway_data=gateway_data or {},
+                expires_at=expires_at,
+                idempotency_key=idempotency_key,
+            )
+
+packages/payman/shopman/payman/service.py:170: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:669: in create
+    obj.save(force_insert=True, using=self.db)
+packages/payman/shopman/payman/models/intent.py:206: in save
+    super().save(*args, **kwargs)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:874: in save
+    self.save_base(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:966: in save_base
+    updated = self._save_table(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1169: in _save_table
+    results = self._do_insert(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/base.py:1220: in _do_insert
+    return manager._insert(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/manager.py:87: in manager_method
+    return getattr(self.get_queryset(), name)(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1918: in _insert
+    return query.get_compiler(using=using).execute_sql(returning_fields)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1925: in execute_sql
+    cursor.execute(sql, params)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:79: in execute
+    return self._execute_with_wrappers(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:92: in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:100: in _execute
+    with self.db.wrap_database_errors:
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/utils.py:94: in __exit__
+    raise dj_exc_value.with_traceback(traceback) from exc_value
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:105: in _execute
+    return self.cursor.execute(sql, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <django.db.backends.postgresql.base.Cursor [closed] [BAD] at 0x119cf3d10>
+query = 'INSERT INTO "payman_paymentintent" ("ref", "order_ref", "method", "status", "amount_q", "currency", "gateway", "gatew...reason") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) RETURNING "payman_paymentintent"."id"'
+params = ('PAY-2EE62AA3F1C8', 'COD-LAB', 'cash', PaymentIntent.Status.PENDING, Int8(1200), 'BRL', ...)
+
+    def execute(
+        self,
+        query: Query,
+        params: Params | None = None,
+        *,
+        prepare: bool | None = None,
+        binary: bool | None = None,
+    ) -> Self:
+        """
+        Execute a query or command to the database.
+        """
+        try:
+            with self._conn.lock:
+                self._conn.wait(
+                    self._execute_gen(query, params, prepare=prepare, binary=binary)
+                )
+        except e._NO_TRACEBACK as ex:
+>           raise ex.with_traceback(None)
+E           django.db.utils.IntegrityError: duplicate key value violates unique constraint "pay_intent_idempotency_key_unique"
+E           DETAIL:  Key (idempotency_key)=(order-payment:COD-LAB:cash:1200:on_delivery) already exists.
+
+../../django-shopman/.venv/lib/python3.12/site-packages/psycopg/cursor.py:117: IntegrityError
+
+The above exception was the direct cause of the following exception:
+
+    @pytest.mark.django_db(transaction=True)
+    def test_two_custodies_cannot_collect_the_same_delivery():
+        if connection.vendor != "postgresql":
+            pytest.skip("Independent PostgreSQL connections and row locks required")
+        user, shifts, order = setup_delivery()
+        barrier = Barrier(2)
+    
+        def collect(shift):
+            try:
+                stale = Order.objects.get(pk=order.pk)
+                barrier.wait(timeout=5)
+                try:
+                    operator_orders.settle_delivery_cash(stale, cash_shift=shift, actor=f"operator:{user.username}")
+                    return "applied"
+                except ValueError as exc:
+                    assert "já foi acertado" in str(exc)
+                    return "refused"
+            finally:
+                connections.close_all()
+    
+        with ThreadPoolExecutor(max_workers=2) as pool:
+>           results = list(pool.map(collect, shifts))
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+shopman/shop/tests/test_cod_custody_concurrency.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:619: in result_iterator
+    yield _result_or_cancel(fs.pop())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:317: in _result_or_cancel
+    return fut.result(timeout)
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:456: in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/_base.py:401: in __get_result
+    raise self._exception
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/concurrent/futures/thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+shopman/shop/tests/test_cod_custody_concurrency.py:36: in collect
+    operator_orders.settle_delivery_cash(stale, cash_shift=shift, actor=f"operator:{user.username}")
+shopman/shop/services/operator_orders.py:657: in settle_delivery_cash
+    intent = PaymentService.settle(
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/contextlib.py:81: in inner
+    return func(*args, **kwds)
+           ^^^^^^^^^^^^^^^^^^^
+packages/payman/shopman/payman/service.py:292: in settle
+    intent = cls.create_intent(
+packages/payman/shopman/payman/service.py:185: in create_intent
+    existing = PaymentIntent.objects.filter(idempotency_key=idempotency_key).first()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:1145: in first
+    for obj in queryset[:1]:
+               ^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:390: in __iter__
+    self._fetch_all()
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:2000: in _fetch_all
+    self._result_cache = list(self._iterable_class(self))
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/query.py:95: in __iter__
+    results = compiler.execute_sql(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py:1624: in execute_sql
+    cursor.execute(sql, params)
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:79: in execute
+    return self._execute_with_wrappers(
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:92: in _execute_with_wrappers
+    return executor(sql, params, many, context)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/utils.py:99: in _execute
+    self.db.validate_no_broken_transaction()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <DatabaseWrapper vendor='postgresql' alias='default'>
+
+    def validate_no_broken_transaction(self):
+        if self.needs_rollback:
+>           raise TransactionManagementError(
+                "An error occurred in the current transaction. You can't "
+                "execute queries until the end of the 'atomic' block."
+            ) from self.rollback_exc
+E           django.db.transaction.TransactionManagementError: An error occurred in the current transaction. You can't execute queries until the end of the 'atomic' block.
+
+../../django-shopman/.venv/lib/python3.12/site-packages/django/db/backends/base/base.py:521: TransactionManagementError
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-10 20:01:51,317 shopman.shop.rules.engine rules.engine: bootstrap already in progress; skipping reentrant call.
+INFO 2026-09-10 20:01:51,342 shopman.payman Intent created
+INFO 2026-09-10 20:01:51,347 shopman.payman Intent settled without gateway
+INFO 2026-09-10 20:01:51,384 shopman.shop.services.operator_orders operator_settle_delivery_cash order=COD-LAB shift=4 amount=1200
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 20:01:52,402 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_cod_custody_concurrency.py::test_stale_order_does_not_duplicate_collection_or_erase_context
+FAILED shopman/shop/tests/test_cod_custody_concurrency.py::test_two_custodies_cannot_collect_the_same_delivery
+2 failed in 15.74s

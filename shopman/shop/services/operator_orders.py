@@ -142,6 +142,37 @@ def confirm_order(order: Order, *, actor: str) -> None:
         order.transition_status(Order.Status.ACCEPTED, actor=actor)
 
 
+class CancellationReasonsUnavailable(Exception):
+    """Provider reasons could not be verified; no local cancellation was applied."""
+
+
+def cancellation_reasons(order: Order) -> list[dict]:
+    if order.channel_ref != "ifood":
+        return []
+    from shopman.shop.services import ifood_callbacks
+
+    external_ref = (order.external_ref or "").strip() or (order.data or {}).get("external_order_code", "")
+    if not external_ref:
+        raise CancellationReasonsUnavailable("Referência iFood ausente. Confira a integração deste pedido.")
+    try:
+        reasons = ifood_callbacks.fetch_cancellation_reasons(external_ref)
+    except ifood_callbacks.IFoodCallbackError as exc:
+        raise CancellationReasonsUnavailable("Não foi possível consultar os motivos do iFood. Tente consultar novamente.") from exc
+    return [{"code": str(r["cancelCodeId"]), "description": r.get("description", "")} for r in reasons]
+
+
+def _cancellation_identity(order: Order) -> tuple[str, str]:
+    return order.channel_ref, (order.external_ref or "").strip() or (order.data or {}).get("external_order_code", "")
+
+
+def _validate_operator_cancellation_code(order: Order, code: str) -> tuple[str, str]:
+    # Read provider before opening a database transaction. The local command
+    # remains distinct from marketplace acceptance; no external mutation here.
+    if order.channel_ref == "ifood" and code not in {r["code"] for r in cancellation_reasons(order)}:
+        raise ValueError("Escolha um motivo atualmente permitido pelo iFood para este pedido.")
+    return _cancellation_identity(order)
+
+
 def reject_order(
     order: Order,
     *,
@@ -160,8 +191,11 @@ def reject_order(
     uma recusa atrasada cancelaria um pedido que o aceite automático acabou de
     aceitar.
     """
+    reason_identity = _validate_operator_cancellation_code(order, cancellation_code)
     with transaction.atomic():
         locked = Order.objects.select_for_update().get(pk=order.pk)
+        if _cancellation_identity(locked) != reason_identity:
+            raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
         if locked.status != Order.Status.NEW:
             raise OrderStateConflict(
                 "Pedido não está mais aguardando confirmação "
@@ -572,6 +606,7 @@ def cancel_order(
     Returns:
         True se cancelou; False quando a máquina de estados recusou a transição.
     """
+    reason_identity = _validate_operator_cancellation_code(order, cancellation_code)
     extra_data: dict[str, str] = {}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
@@ -580,9 +615,14 @@ def cancel_order(
     # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
     # descartá-lo fazia a view responder 200 para um pedido que continuou como
     # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
-    return cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if _cancellation_identity(locked) != reason_identity:
+            raise OrderStateConflict("A referência do pedido mudou. Consulte os motivos novamente.")
+        return cancel(locked, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
+@transaction.atomic
 def settle_delivery_cash(
     order: Order,
     *,
@@ -617,6 +657,13 @@ def settle_delivery_cash(
     """
     from django.db import transaction
     from shopman.cashman import services as cash_ledger
+
+    # Same lock order as dispatch/cash ledger: custody before the order.
+    # Two receiving drawers share the order lock; stale JSON cannot settle twice.
+    if cash_shift is not None:
+        cash_shift = type(cash_shift).objects.select_for_update().get(pk=cash_shift.pk)
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
 
     if get_fulfillment_type(order) != "delivery":
         raise ValueError("Acerto de entrega só se aplica a pedidos delivery.")

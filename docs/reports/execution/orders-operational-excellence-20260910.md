@@ -405,3 +405,34 @@ Nenhum efeito externo ou worker separado. Esses ensaios não comprovam piloto/ca
 Sem DDL; rollback dos emissores volta a depender de polling e perde frescor imediato;
 registro de eventos existentes pode permanecer, sem migração destrutiva. WP06/07 em
 execução: identidade, carga e outros cenários ainda pendentes.
+
+## WP03 — H02 provada e D15 revalidado
+
+H02: duas conexões/turnos com instâncias antigas produziram colisão da chave de pagamento
+seguida de TransactionManagementError; outra prova perdeu kitchen_note ao acertar usando
+Order antigo. Não foi observada duplicidade financeira nessa corrida específica: a
+constraint Payman recusou a segunda inserção, mas o comando não resolveu a concorrência.
+Correção: transação externa, lock turno → pedido, releitura antes dos guards/merge;
+serializa entre gavetas e mantém a autoridade existente do ledger. Sem política nova de
+terminal: current_shift() e a decisão G02 continuam pendentes para o piloto.
+
+PostgreSQL: **59 regressões passaram** (caixa/PDV/reconciliação/troco); **4 ensaios
+específicos passaram**, incluindo duas custódias (um aplicado/um recusado), nota preservada,
+turno já fechado e falha parcial no ledger revertendo Order/Payman/evento. Fixture inicial
+usava Terminal.name inexistente; corrigida para label antes de revalidar a hipótese.
+
+D15 persistia: backend e composables convertiam exceção em []; diálogos inferiam marketplace
+pelo tamanho da lista. Agora consulta indisponível retorna 503 distinto do vazio confirmado;
+loading/erro/vazio iFood impedem confirmar e mantêm diálogo/seleção, com consulta novamente
+em uma ativação. Canal define o seletor. Servidor consulta códigos por referência antes
+da transação, recusa ausente/antigo/inventado e revalida identidade externa sob lock; a
+leitura não equivale a aprovação externa de cancelamento. Não altera transição comercial.
+
+**77 testes Django** (iFood/API/novos) passaram; após proteção de identidade, **34 testes
+Django** passaram. Gestor **237 passed**, typecheck passou. Cinco testes iniciais de UI
+falharam: dois codificavam o comportamento antigo de esconder erro; três expuseram default
+false de boolean opcional Vue. Contrato marketplace tornou-se explícito e testes corrigidos.
+J11 sintético: repetir consulta com 1 ativação, sem fechar/reabrir; J05 código inválido aplica
+zero mutações. Providers todos simulados, sem envio/cancelamento real. H03 e recibos de
+cancelamento/COD ainda pendentes; WP03 não T. Sem DDL. Rollback mantém serialização/guards
+ou suspende ações afetadas; não volta a ocultar falha externa nem remove lançamentos.

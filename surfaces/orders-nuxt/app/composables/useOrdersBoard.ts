@@ -314,14 +314,10 @@ export function useOrdersBoard() {
   // Valid cancellation reasons for a ref: for iFood, the live per-order list
   // ({code, description}); empty for channels without reason codes.
   async function fetchCancellationReasons(ref_: string): Promise<CancellationReason[]> {
-    try {
-      const res = await $fetch<{ reasons: CancellationReason[] }>(
-        `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
-      );
-      return res?.reasons ?? [];
-    } catch {
-      return [];
-    }
+    const res = await $fetch<{ reasons: CancellationReason[] }>(
+      `/api/v1/backstage/orders/${encodeURIComponent(ref_)}/cancellation-reasons/`,
+    );
+    return res.reasons;
   }
   const assign = (ref_: string) => act(ref_, "assign");
   const unassign = (ref_: string) => act(ref_, "unassign");

@@ -125,6 +125,21 @@ function toggleDispatchEquipment(ref_: string) {
 }
 const reasons = ref<CancellationReason[]>([]);
 const reasonsLoading = ref(false);
+const reasonsError = ref("");
+let reasonsRequest = 0;
+async function loadReasons() {
+  const request = ++reasonsRequest;
+  reasonsLoading.value = true;
+  reasonsError.value = "";
+  try {
+    const result = await fetchCancellationReasons();
+    if (request === reasonsRequest) reasons.value = result;
+  } catch {
+    if (request === reasonsRequest) reasonsError.value = "Não foi possível consultar os motivos. Nenhuma ação foi aplicada.";
+  } finally {
+    if (request === reasonsRequest) reasonsLoading.value = false;
+  }
+}
 
 // Store-configured justification presets (Admin/Unfold) for non-marketplace channels.
 const presets = computed(() => order.value?.cancellation_presets ?? []);
@@ -139,12 +154,7 @@ async function openDialog(kind: "reject" | "cancel" | "settle" | "dispatch") {
   if (kind === "reject" || kind === "cancel") {
     // Pull the order's valid cancellation reasons — a coded list for iFood, [] else.
     reasons.value = [];
-    reasonsLoading.value = true;
-    try {
-      reasons.value = await fetchCancellationReasons();
-    } finally {
-      reasonsLoading.value = false;
-    }
+    await loadReasons();
   }
 }
 
@@ -563,6 +573,9 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
       :open="dialog === 'reject' || dialog === 'cancel'"
       :mode="dialog === 'cancel' ? 'cancel' : 'reject'"
       :loading="reasonsLoading"
+      :error="reasonsError"
+      :marketplace="order?.channel_ref === 'ifood'"
+      @retry="loadReasons"
       :reasons="reasons"
       :presets="presets"
       :busy="busy"

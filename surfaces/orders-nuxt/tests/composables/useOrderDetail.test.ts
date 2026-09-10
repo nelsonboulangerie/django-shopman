@@ -41,13 +41,13 @@ describe("useOrderDetail", () => {
     expect(env.fetchMock.mock.calls[1]![1].body).toEqual({ reason: "Loja fechada", cancellation_code: "STORE_CLOSED" });
   });
 
-  it("fetchCancellationReasons devolve a lista do pedido, ou [] em erro", async () => {
+  it("fetchCancellationReasons devolve a lista do pedido, propaga indisponibilidade", async () => {
     env.fetchMock.mockResolvedValueOnce({ reasons: [{ code: "1", description: "Sem estoque" }] });
     const d = useOrderDetail("IFOOD-3");
     expect(await d.fetchCancellationReasons()).toEqual([{ code: "1", description: "Sem estoque" }]);
     expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/IFOOD-3/cancellation-reasons/");
     env.fetchMock.mockRejectedValueOnce(new Error("boom"));
-    expect(await d.fetchCancellationReasons()).toEqual([]);
+    await expect(d.fetchCancellationReasons()).rejects.toThrow("boom");
   });
 
   it("guarda de reentrância: 2ª ação enquanto em voo é no-op", async () => {

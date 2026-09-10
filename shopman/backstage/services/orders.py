@@ -109,7 +109,9 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
             cancellation_code=cancellation_code,
             customer_note=customer_note,
         )
-    except InvalidTransition as exc:
+    except OrderStateConflict as exc:
+        raise OrderConflict(str(exc)) from exc
+    except (ValueError, InvalidTransition) as exc:
         raise OrderError(str(exc)) from exc
     if not cancelled:
         order.refresh_from_db(fields=["status"])
@@ -118,29 +120,7 @@ def cancel_order(order, *, reason: str, actor: str, cancellation_code: str = "",
 
 
 def cancellation_reasons(order) -> list[dict]:
-    """Valid cancellation reasons for an order.
-
-    For iFood orders, the live per-order list from the marketplace
-    (``code`` + ``description``); empty for channels without reason codes.
-    """
-    if (order.channel_ref or "") != "ifood":
-        return []
-    ifood_order_id = (order.external_ref or "").strip() or (order.data or {}).get(
-        "external_order_code", ""
-    )
-    if not ifood_order_id:
-        return []
-    from shopman.shop.services import ifood_callbacks
-
-    try:
-        reasons = ifood_callbacks.fetch_cancellation_reasons(ifood_order_id)
-    except ifood_callbacks.IFoodCallbackError:
-        return []
-    return [
-        {"code": str(r.get("cancelCodeId", "")), "description": r.get("description", "")}
-        for r in reasons
-        if r.get("cancelCodeId")
-    ]
+    return operator_orders.cancellation_reasons(order)
 
 
 def settle_delivery_cash(

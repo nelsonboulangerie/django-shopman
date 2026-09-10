@@ -139,6 +139,7 @@ from shopman.backstage.services.production import ProductionOrderShortError, Pro
 from shopman.shop.services import cancellation as cancellation_service
 from shopman.shop.services import fiscal as fiscal_service
 from shopman.shop.services import notification as notification_service
+from shopman.shop.services import operator_orders
 from shopman.shop.services import pos as pos_tabs_service
 from shopman.shop.services.pos import (
     PosCustomerConflict,
@@ -1760,6 +1761,8 @@ class OrderRejectView(_OrderActionBase):
                 rejected_by="operator",
                 cancellation_code=cancellation_code,
             )
+        except operator_orders.CancellationReasonsUnavailable as exc:
+            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
         except OrderConflict as exc:
             return Response({"detail": str(exc)}, status=409)
         except OrderError as exc:
@@ -1835,6 +1838,8 @@ class OrderCancelView(_OrderActionBase):
                 cancellation_code=cancellation_code,
                 customer_note=operator_reason,
             )
+        except operator_orders.CancellationReasonsUnavailable as exc:
+            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
         except OrderConflict as exc:
             return Response({"detail": str(exc)}, status=409)
         except OrderError as exc:
@@ -1854,7 +1859,11 @@ class OrderCancellationReasonsView(_OrderActionBase):
         order, err = self._get_order(ref)
         if err:
             return err
-        return Response({"reasons": orders_service.cancellation_reasons(order)})
+        try:
+            reasons = orders_service.cancellation_reasons(order)
+        except operator_orders.CancellationReasonsUnavailable as exc:
+            return Response({"detail": str(exc), "error": {"code": "cancellation_reasons_unavailable"}}, status=503)
+        return Response({"reasons": reasons})
 
 
 @extend_schema_view(
