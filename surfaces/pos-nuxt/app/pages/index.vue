@@ -1043,8 +1043,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @move="openMoveDialog"
             @fire="fireTab"
             @unfire="unfireTab"
-            @fire-lines="fireTab"
-            @unfire-lines="unfireSelected"
+            @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
+            @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
             @request-tab="requestTabAssociation('start')"
           />
         </div>

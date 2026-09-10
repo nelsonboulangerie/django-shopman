@@ -2126,7 +2126,7 @@ export function usePosSale(deps: PosSaleDeps) {
   }
 
   async function fireTab(selectedLineIds?: string[]) {
-    if (!cart.tabSessionKey) return;
+    if (!cart.tabSessionKey) return false;
     serverError.value = "";
     firing.value = true;
     try {
@@ -2134,7 +2134,7 @@ export function usePosSale(deps: PosSaleDeps) {
       if (selectedLineIds && selectedLineIds.length) {
         // Multi-select (spec §2.2): fire exactly the chosen lines.
         const lineIds = await lineIdsInState(selectedLineIds, "unfired");
-        if (!lineIds.length) return;
+        if (!lineIds.length) return false;
         body.line_ids = lineIds;
       } else {
         // Delta fire: persist on-screen items so the server fires exactly what the
@@ -2148,8 +2148,10 @@ export function usePosSale(deps: PosSaleDeps) {
       );
       if (response.tab) setFromTabPayload(response.tab);
       await refresh();
+      return true;
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Falha ao enviar à cozinha.");
+      return false;
     } finally {
       firing.value = false;
     }
@@ -2181,15 +2183,17 @@ export function usePosSale(deps: PosSaleDeps) {
   // Multi-select unfire (spec §2.2): das linhas escolhidas, cancela o envio das
   // que a Projection confirma como disparadas.
   async function unfireSelected(selectedLineIds: string[]) {
-    if (!cart.tabSessionKey || !selectedLineIds.length) return;
+    if (!cart.tabSessionKey || !selectedLineIds.length) return false;
     serverError.value = "";
     firing.value = true;
     try {
       const ids = await lineIdsInState(selectedLineIds, "fired");
-      if (!ids.length) return;
+      if (!ids.length) return false;
       await unfireLineIds(ids);
+      return true;
     } catch (error) {
       serverError.value = httpErrorMessage(error, "Falha ao cancelar envio à cozinha.");
+      return false;
     } finally {
       firing.value = false;
     }
