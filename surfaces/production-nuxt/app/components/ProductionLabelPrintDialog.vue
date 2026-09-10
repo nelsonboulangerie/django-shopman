@@ -299,7 +299,7 @@ function close() {
                   :key="label.key"
                   class="rounded border border-black p-2"
                 >
-                  <p class="text-[0.65rem] font-bold uppercase">
+                  <p class="text-xs font-bold uppercase">
                     Pesagem interna · não é rótulo de venda
                   </p>
                   <div class="flex items-baseline justify-between gap-2">
@@ -327,7 +327,7 @@ function close() {
                   :key="ticket.ticket_ref || ticket.output_sku"
                   class="rounded border border-black p-2"
                 >
-                  <span class="block text-[0.65rem] font-bold uppercase">
+                  <span class="block text-xs font-bold uppercase">
                     Uso interno · não é rótulo de venda
                   </span>
                   <strong class="block uppercase leading-tight">{{
