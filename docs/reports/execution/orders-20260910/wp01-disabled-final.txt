@@ -1,0 +1,39 @@
+
+> test:e2e
+> playwright test
+
+[WebServer] (node:78752) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [error] (node:78754) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+[WebServer] [warn] [PLUGIN_TIMINGS] Your build spent 96% of 3.4s inside plugin hooks (3.3s).
+[WebServer] Not measurable — 8 hooks whose calls overlap, so elapsed time covers work other calls were doing. Profile with `node --cpu-prof`:
+[WebServer]   - nuxt:ssr-styles:client resolveId (96 calls)
+[WebServer]   - nuxt:imports-transform transform (937 calls)
+[WebServer]   - vite:vue transform (114 calls)
+[WebServer]   … and 5 more
+[WebServer] See https://rolldown.rs/reference/InputOptions.checks#plugintimings for more details.
+[WebServer] 
+[WebServer] [warn] [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer] 
+[WebServer] [warn] [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x2)
+[WebServer] [warn] [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x3)
+[WebServer] [warn] [plugin @tailwindcss/vite:generate:build] [SOURCEMAP_BROKEN] Sourcemap is likely to be incorrect: a plugin (@tailwindcss/vite:generate:build) was used to transform files, but didn't generate a sourcemap for the transformation. Consult the plugin documentation for help: https://rolldown.rs/guide/troubleshooting#warning-sourcemap-is-likely-to-be-incorrect
+[WebServer]  (x4)
+[WebServer] (node:78845) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[WebServer] (Use `node --trace-warnings ...` to show where the warning was created)
+
+Running 4 tests using 2 workers
+
+(node:78847) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:78846) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ✓  2 [chromium] › tests/e2e/board.spec.ts:6:3 › Gestor — board de pedidos › sessão autenticada + fila → renderiza o card (1.6s)
+  ✓  1 [chromium] › tests/e2e/resilience.spec.ts:5:3 › Gestor — banner de conexão › aparece ao cair a rede e some ao voltar (1.7s)
+  ✓  3 [chromium] › tests/e2e/board.spec.ts:13:3 › Gestor — board de pedidos › indicador de tempo-real: sem SSE (origem do mock) → 'Atualização automática' (211ms)
+  ✓  4 [chromium] › tests/e2e/board.spec.ts:22:1 › card e tabela mantêm o avanço bloqueado e explicam o motivo (280ms)
+
+  4 passed (19.2s)

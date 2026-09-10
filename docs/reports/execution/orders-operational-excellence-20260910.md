@@ -115,3 +115,34 @@ Migração: sem DDL ou backfill; consumidor deve aceitar qty textual, backend e 
 gerado devem ser entregues juntos. Rollback técnico reverte a fatia, mas reintroduziria
 D08: manter rollout suspenso até corrigir, nunca converter fração em inteiro para compatibilidade.
 Esforço: zero gestos adicionais para ler a fração; tempo/clareza humanos não medidos.
+
+## WP00 — limite local de lote e cobertura de writers
+
+PostgreSQL isolado, 20 amostras/tamanho, sync e notificação mock, rollback de cada
+amostra verificado (1.000 células mantiveram preço original). Lote atual de preço:
+10/100/500/1.000 células → p95 4,98/12,01/127,05/155,97ms; cinco queries por amostra.
+Limite inicial de implementação proposto: **100 células congeladas**, somando destinos,
+não 100 SKUs multiplicados implicitamente por todos os canais. O ensaio ainda não inclui
+full_clean/locks/fingerprint/recibo do contrato novo: repetir após WP05; rejeitar integralmente
+acima do limite. Não equivale ao budget HTTP de 800ms nem a aprovação de Operações (G06).
+
+`writer-inventory.md` registra funções/linhas com save de order/locked e ocorrências de locks.
+É inventário estático parcial, explicitamente sem prova de proteção concorrente. Aliases,
+updates diretos e core ainda exigem cobertura. Por isso WP00 não recebe selo T e WP02–WP09
+não estão liberados como pacotes concluídos. Fatias D08/D10 são correções locais verificadas,
+sem ativação/rollout, e não substituem o aceite integral dos pré-requisitos do DAG.
+
+## WP01 — fatia D10, tabela respeita bloqueio
+
+Antes: Playwright reproduziu card disabled versus tabela enabled para pagamento pendente.
+Implementação: tabela respeita `a.disabled` e apresenta `a.reason` como o card; nenhuma
+confirmação/autoridade suprimida. Fixture corrigida de `confirmed` histórico para `accepted`.
+Primeira edição atingiu também botão de atribuição: E2E detectou tela vazia; corrigido antes
+ do commit. Resultado final: **4 E2E Chromium passed (19,2s)**, Nuxt build e typecheck passaram.
+Backend desses E2E é mock; não prova integração Django, autorização ou efeitos reais.
+Build emitiu warnings de sourcemap Tailwind e FORCE_COLOR; não foram ocultados.
+
+Migração: nenhuma. Rollback: reverter dois bindings da tabela, reabrindo D10; preferir
+manter a capacidade fora do rollout a restabelecer clique inválido. J01: zero ativações
+adicionais em ação elegível; bloqueada deixa de aceitar clique. Tempo humano não medido.
+WP01 permanece parcial (unidade, Actions e D11 ainda pendentes).

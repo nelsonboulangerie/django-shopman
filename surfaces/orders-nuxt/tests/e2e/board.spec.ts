@@ -17,3 +17,14 @@ test.describe("Gestor — board de pedidos", () => {
     await expect(page.getByText("Ao vivo")).toHaveCount(0);
   });
 });
+
+
+test("card e tabela mantêm o avanço bloqueado e explicam o motivo", async ({ page }) => {
+  await page.goto("/");
+  const action = page.getByRole("button", { name: "Aguardando pagamento", exact: true });
+  await expect(action).toBeDisabled();
+  await expect(action).toHaveAttribute("title", "O pagamento ainda não foi capturado.");
+  await page.getByTitle("Tabela (atalho: v)").click();
+  await expect(action).toBeDisabled();
+  await expect(action).toHaveAttribute("title", "O pagamento ainda não foi capturado.");
+});

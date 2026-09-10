@@ -580,11 +580,11 @@ function printQueue() {
                       v-for="a in cardAffordances(row.card)"
                       :key="a.ref"
                       type="button"
-                      :disabled="isBusy(row.card.ref)"
+                      :disabled="isBusy(row.card.ref) || a.disabled"
                       class="grid size-7 place-items-center rounded border transition disabled:opacity-50"
                       :class="a.priority === 'primary' ? 'border-transparent bg-primary text-primary-foreground hover:bg-primary/90' : a.priority === 'danger' ? 'border-destructive/40 text-destructive hover:bg-destructive/10 dark:text-orange-300' : 'hover:bg-accent'"
                       :aria-label="a.label"
-                      :title="a.label"
+                      :title="a.reason || a.label"
                       @click="onAction(row.card.ref, a.ref)"
                     >
                       <Icon :name="a.icon" class="size-3.5" />
