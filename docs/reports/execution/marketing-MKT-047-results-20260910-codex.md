@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** sessão P01 concluída; T1–T9 executadas; P02–P03 pendentes
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8` e `6c4bbc3f2`
+**Estado:** sessão P01 e repetições afetadas concluídas; P02–P03 pendentes
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0` e `c6f6de469`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -36,6 +36,10 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 1 | não | 3 inferidas | só senha/frase de segurança | 0 | 335 s totais, incluindo esclarecimento | 0 | N/A | não | Agendou; precisou perguntar entre “Publicar agora” e “Agendar”. Comprovante `899184a4-91a4-4a51-8836-f20a9fc181a3`. |
 | P01 | 2 | sim | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | 84 s totais | 0 | N/A | não | Texto exato aprovado agora; comprovante `0655480d-6127-473d-8b38-d400c61db4f3`; sem dúvida relatada. |
 | P01 | 3 | sim | 3 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | 1.045 s de relógio; tempo ativo não observável | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT; comprovante `7d79ef88-beae-4bd2-8f3d-b919010febc5`; sem dúvida relatada. |
+| P01 | 1R1 | sim | inspeções da ação e do resultado; nenhum comando novo | nenhuma | 0 operadas pelo participante | sem espera relatada | 0 | N/A | sim, no escopo afetado de T1 | Identificou **Agendar (recomendado)** como caminho comum seguro e **Publicar agora** como decisão separada; no resultado original, localizou texto, versão, público, plataformas, 12:00, estado e próxima ação. |
+| P01 | 2R1 | não | inspeção visual | nenhuma | 0 | sem espera relatada | 0 | N/A | não | Os dados existiam, mas P01 perguntou onde encontrá-los: estavam espalhados entre cinco blocos e o texto não tinha rótulo operacional. |
+| P01 | 2R2 | sim | inspeção visual; nenhum comando novo | nenhuma | 0 operadas pelo participante | sem espera relatada | 0 | N/A | sim, no escopo afetado de T2 | Após o resumo unificado, localizou texto exato, versão, público, plataformas, horário imediato, estado e próxima ação sem nova dúvida. |
+| P01 | 3R1 | sim | inspeção visual; nenhum comando novo | nenhuma | 0 operadas pelo participante | sem espera relatada | 0 | N/A | sim, no escopo afetado de T3 | Localizou no resumo único o instante exato 11/09/2026 às 09:15, versão 2, público 12, Instagram + WhatsApp, estado e próxima ação. |
 | P01 | 4 | não | não concluída | houve redigitação aparente | 1 | 207 s até a interrupção | 0 | não | não | Reautenticação fechou o editor. O rascunho existia, mas só reapareceu após abrir manualmente “Nova campanha”; tarefa invalidada. |
 | P01 | 4R1 | sim | não instrumentadas | somente o nome solicitado | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | N/A; sessão não expirou | sim, no escopo de T4 | Repetição concluída sem pedido de ajuda. Regra 6 voltou do servidor ativa, versão 1, com gatilho manual, modelo “Saiu do forno”, Instagram + WhatsApp e tag `qa-marketing-e2e`; lista mostrou público de 12 pessoas. Budgets de clique/latência não são reivindicados sem telemetria. |
 | P01 | 5 | sim | 3 inferidas + senha/frase de segurança | nenhuma editorial | 0 | ≈13 min de relógio; tempo ativo não observável | 0 | N/A | sim, no escopo de T5 | Antes da confirmação viu 12 pessoas e que nasceria para revisão. Criou somente o anúncio 42 pendente, comprovante `c8a62cef-2e47-4b1d-88f1-196c060e33a8`; zero outbox e zero destino. |
@@ -63,6 +67,14 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   ser inferida da tela final.
 - Classificação: concluiu com ajuda; tarefa fora do aceite. Corrigir e repetir T1 depois
   da rodada inicial, sem refazer tarefas que tenham passado.
+- `31b0128e8` tornou o caminho comum explícito e principal: agendamento recomendado
+  aparece antes e com ênfase primária; publicação imediata fica secundária e declarada
+  como decisão separada. A pedido de P01, `c6f6de469` refinou a copy para
+  **“Agendar (recomendado)”**.
+- Em T1-R1, P01 identificou a hierarquia sem clicar e depois reconheceu no resumo do
+  comprovante original texto, versão 2, público 12, Instagram + WhatsApp, horário de
+  12:00, entrega concluída e ausência de ação necessária. Classificação da repetição
+  mínima: aprovada; o incidente original permanece preservado acima.
 
 ### P01/T2 — decisão rápida, resultado assíncrono e contexto incompleto
 
@@ -75,6 +87,16 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   12 clientes; por isso “certeza completa” continua falsa sob o critério estrito.
 - Classificação: fluxo funcional e sem ajuda; corrigir o resumo do comprovante e repetir
   somente a checagem de certeza depois da alteração.
+- A primeira repetição de leitura ainda falhou: mesmo com os valores no comprovante,
+  P01 perguntou onde encontrá-los porque o texto permanecia sem rótulo e estado,
+  decisão e plataformas ocupavam blocos separados. T2-R1 permanece **falha**.
+- `f74d966e0` reuniu em **“Resumo da decisão”**: texto aprovado, versão, público,
+  plataformas, horário, estado da entrega e próxima ação. O texto avulso deixou de
+  competir com o resumo em anúncios aprovados.
+- Validação: 244 testes da interface, typecheck, lint focado e `git diff --check`
+  passaram; a copy final de T1 repetiu o teste do card e o typecheck.
+- Em T2-R2, P01 confirmou a leitura completa sem nova orientação ou navegação.
+  Classificação da repetição mínima: aprovada.
 
 ### P01/T3 — instante correto, mas ausente no encerramento
 
@@ -88,6 +110,12 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   ou conferência externa para confirmar o instante.
 - Classificação: execução funcional sem ajuda; certeza final fora do aceite. A correção
   do comprovante atende T1–T3 em uma única intervenção e requer só a checagem final.
+- Em T3-R1, o mesmo resumo unificado reapresentou o instante como
+  **“Agendada para sexta-feira, 11 de setembro de 2026 às 09:15”**, junto de versão 2,
+  público 12, plataformas, estado ainda não iniciado e a orientação para aguardar ou
+  cancelar antes do início. P01 confirmou tudo sem nova dúvida.
+- Classificação da repetição mínima: aprovada; cliques e latência do fluxo original não
+  são reclassificados porque esta rodada repetiu apenas o critério afetado de certeza.
 
 ### P01/T4 — reautenticação escondeu um rascunho preservado
 
