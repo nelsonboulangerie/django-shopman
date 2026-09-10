@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T1–T6 executadas, T7–T9 pendentes
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5` e `42b2eb7ed`
+**Estado:** coleta P01 em andamento; T1–T7 executadas, T8–T9 pendentes
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8` e `d86e0dce8`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -41,7 +41,8 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 5 | sim | 3 inferidas + senha/frase de segurança | nenhuma editorial | 0 | ≈13 min de relógio; tempo ativo não observável | 0 | N/A | sim, no escopo de T5 | Antes da confirmação viu 12 pessoas e que nasceria para revisão. Criou somente o anúncio 42 pendente, comprovante `c8a62cef-2e47-4b1d-88f1-196c060e33a8`; zero outbox e zero destino. |
 | P01 | 6 | sim | 1 ação + senha/frase de segurança após preparação | nenhuma | 0 | ≈4 min de relógio; tempo ativo não observável | 0 | N/A | não | Repetiu somente 1 falha: 13/13 confirmados ao final, comprovante `d34a7a52-51ed-4fa0-9d0f-ff985c474daa`. A confirmação dizia “Instagram, WhatsApp” embora o alvo fosse só WhatsApp; P01 identificou a ambiguidade. |
 | P01 | 6R1 | sim | inspeção visual; nenhum comando executado | nenhuma | 0 | sem espera relatada | 0 | N/A | sim, no escopo de T6 | P01 confirmou que “1 destino elegível” e o escopo exclusivo de WhatsApp estavam claros. Sugeriu retirar “realmente” da copy; ajuste incorporado como “Plataformas afetadas”. Cenário restaurado a 13/13 sem nova entrega. |
-| P01 | 7 | — | — | — | — | — | — | — | — | pendente |
+| P01 | 7 | não | 1 confirmação + TOTP; inscrição assistida | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | não | A consulta funcionou, mas P01 precisou perguntar de qual autenticador viria o código: o device local não havia sido inscrito no aparelho. Comprovante `b5ecbefe-a1eb-40ff-876a-829118671d09`, versão 4, uma consulta e zero reenvios. |
+| P01 | 7R1 | sim | 1 confirmação + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | sim, no escopo de T7 | Repetição após enrollment concluída sem pedido de ajuda. Comprovante `7cdb3a33-2ccb-4759-9949-cc6c4372b893`, versão 5, somente WhatsApp, uma consulta e zero reenvios; ledger final 13/13. P01 apontou desalinhamento visual das casas do código depois de concluir. |
 | P01 | 8 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 9 | — | — | — | — | — | — | — | — | pendente |
 
@@ -179,6 +180,41 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   **“Plataformas afetadas”**, coberta por teste focado de componente e lint.
 - Classificação: efeito seletivo e certeza aprovados após a repetição mínima. O cenário
   local foi restaurado a 13/13 confirmados, sem falhas repetíveis ou resultados incertos.
+
+### P01/T7 — consulta segura, inscrição do autenticador e acabamento do modal
+
+- O cenário começou com 12 destinos confirmados e 1 resultado incerto somente no
+  WhatsApp. A tela dizia **“não reenvie”** e explicava que a ação apenas consultaria o
+  provedor.
+- Na primeira execução, P01 perguntou de qual autenticador viria o código. Havia um
+  `TOTPDevice` criado no banco descartável, mas ele não havia sido inscrito em nenhum
+  aparelho do participante. A segurança bloqueou corretamente; o preparo e a orientação
+  humana falharam. T7 original permanece **sem ajuda: não**.
+- Com autorização explícita, o device exclusivamente local foi substituído, P01
+  cadastrou o QR no próprio autenticador e o arquivo temporário com o QR foi apagado logo
+  depois. O segredo de provisionamento foi exibido somente no QR autorizado desta sessão;
+  não foi commitado nem será reutilizado em produção.
+- A execução original gerou o comprovante
+  `b5ecbefe-a1eb-40ff-876a-829118671d09`, versão 4: `lookup_count=1`, plataforma
+  `whatsapp`, zero chamada a `send`. O job terminou `completed/confirmed` por `lookup` do
+  simulador e o ledger voltou a 13/13, sem criar nova tentativa de entrega.
+- `a88b550c8` substituiu os três inputs TOTP genéricos pelo `PinInput` acessível já
+  fornecido pelo Reka UI: quantidade parametrizável, casas numéricas, avanço automático,
+  colagem, `one-time-code`, rótulos por dígito e instrução sobre a origem do código.
+- Após feedback de P01, `057f307e8` reorganizou o modal: cabeçalho centralizado,
+  consequência segura destacada, destinos e plataformas em um único resumo, botões
+  responsivos de largura integral e linguagem operacional **“Consultar resultado”** /
+  **“Consulta registrada”**.
+- T7-R1 foi concluída sem novo pedido de ajuda. O comprovante
+  `7cdb3a33-2ccb-4759-9949-cc6c4372b893`, versão 5, novamente registrou exatamente uma
+  consulta só de WhatsApp e zero reenvios; o ledger terminou em 13/13.
+- Depois de concluir, P01 detectou que a fileira de casas ainda estava deslocada dentro
+  do contêiner central. `d86e0dce8` corrigiu a raiz com `justify-center`; o teste focado
+  fixa a classe e a verificação visual no navegador confirmou o eixo do conjunto.
+- Validação: 243 testes da interface, typecheck, lint focado e `git diff --check`
+  passaram para o modal; a correção final de alinhamento repetiu o teste do componente.
+  Classificação: T7 funcional e repetição humana aprovadas; o achado de preparo permanece
+  preservado como falha da rodada original.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
