@@ -1,10 +1,27 @@
 # MKT-047 — protocolo de discovery e budgets do operador
 
-**Estado:** pronto para execução; amostra pré-piloto alterada e aprovada pelo proprietário
+**Estado:** encerrado por dispensa explícita do Product owner; não aprovado por amostra
 **Ambiente permitido:** local ou staging seeded, sem destinatário/provider real
 **Participantes:** 3 gestores reais no pré-piloto; 5 cumulativos antes do rollout de 25%; usar apenas códigos `P01`…`P05`, sem nome ou PII
 **Duração prevista:** três blocos de 10–15 minutos por participante
 **Owner da decisão:** Product owner
+
+## Decisão de Produto que encerra este protocolo
+
+Em 2026-09-10, depois de ser informado de que MKT-047 vinha do plano original como
+“Discovery de 5–8 gestores e budgets”, o Product owner determinou explicitamente:
+“desinventa. dá seus pulos.” A decisão cancela a coleta obrigatória com P02–P05 e retira
+MKT-047 da cadeia bloqueante para MKT-048. O protocolo fica preservado como histórico e
+como opção de discovery futuro, mas não será imposto ao operador nem apresentado como
+trabalho pendente.
+
+Esta é uma **dispensa de Produto**, não uma aprovação fictícia: não se declara que a
+amostra de gestores ou os budgets foram satisfeitos. As evidências humanas já coletadas
+continuam íntegras; os cenários mecânicos restantes passam a regressão técnica local e
+não são atribuídos a participantes. A dispensa não reduz consentimento, autorização,
+step-up, fail-closed, idempotência, reconciliação ou qualquer outra proteção técnica.
+Também não autoriza push, PR, deploy, produção, credencial/provider externo ou envio
+real; G-H09 e G-H10 continuam exigindo autorização contextual própria.
 
 Este protocolo transforma G-H05/MKT-047 em uma sessão repetível. Ele não autoriza
 deploy, produção, sandbox externo, credencial externa ou envio real. O facilitador
@@ -106,5 +123,6 @@ exceções de segurança: <nenhuma ou lista aprovada>
 achados remanescentes: <nenhum bloqueante ou lista>
 ```
 
-Sem essa declaração para os três participantes iniciais, MKT-048 não começa.
-Sem evidência cumulativa de cinco participantes, o rollout de 25% não começa.
+Esta declaração deixou de ser exigida pela dispensa explícita acima. MKT-048 pode
+começar apoiado na decisão G-H07 já aprovada e nas regressões técnicas; nenhum estágio
+externo ou rollout é autorizado por isso.

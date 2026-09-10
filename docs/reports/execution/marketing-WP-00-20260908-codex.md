@@ -2384,3 +2384,17 @@ O protocolo foi atualizado e a planilha sem PII foi criada em
 [`marketing-MKT-047-results-20260910-codex.md`](marketing-MKT-047-results-20260910-codex.md).
 O proprietário será P01; P02 e P03 continuam sendo pessoas reais necessárias antes de
 fechar MKT-047 e iniciar MKT-048.
+
+### Dispensa de Produto de MKT-047
+
+Em 2026-09-10, após ser informado de que MKT-047 era uma entrega explícita do plano
+original, o Product owner determinou que a coleta fosse descontinuada e que o executor
+assumisse os testes mecânicos restantes. MKT-047 fica **dispensado**, não “aprovado”:
+P01 e a parte realmente executada por P02 permanecem no registro; P03–P05 não são
+simulados nem inventados. O gate deixa de bloquear MKT-048 por decisão expressa de
+Produto.
+
+As invariantes técnicas e de segurança permanecem obrigatórias e serão cobertas por
+regressão local. A dispensa não autoriza push, PR, deploy, staging, produção, credenciais
+ou providers externos, envio real nem rollout; G-H09 e G-H10 continuam fechados até uma
+autorização contextual específica.

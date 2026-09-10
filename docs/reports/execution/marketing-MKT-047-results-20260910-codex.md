@@ -1,9 +1,21 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** sessão P01 e repetições afetadas concluídas; P02 em andamento; P03 pendente
+**Estado:** coleta encerrada por dispensa explícita do Product owner; amostra não aprovada
 **Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0`, `c6f6de469`, `6bdb3a37d` e `bd34b3750`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
+
+## Encerramento sem ficção de evidência
+
+Em 2026-09-10, o Product owner dispensou MKT-047 como gate bloqueante depois de ser
+informado de que a exigência constava no plano original. P02 foi interrompida a pedido
+do participante; P03–P05 não foram iniciadas. Nenhuma linha foi inventada, nenhuma
+regressão do facilitador foi contada como pessoa e nenhuma métrica incompleta foi
+promovida a aceite.
+
+Os achados válidos permanecem neste relatório e suas correções continuam cobertas por
+testes automatizados e E2E local. A decisão libera MKT-048, mas não autoriza ambiente
+externo, rollout, produção, deploy ou envio real.
 
 ## Preparação do ambiente
 
@@ -38,10 +50,10 @@ Em 2026-09-10, antes da sessão P02:
 | Código | Perfil operacional resumido, sem identificação | Data | Estado |
 |---|---|---|---|
 | P01 | proprietário/gestor | 2026-09-10 | concluída |
-| P02 | gestor real | 2026-09-10 | em andamento |
-| P03 | gestor real | — | pendente |
-| P04 | participante cumulativo do piloto | — | futuro |
-| P05 | participante cumulativo do piloto | — | futuro |
+| P02 | gestor real | 2026-09-10 | interrompida por decisão do Product owner |
+| P03 | gestor real | — | dispensada antes do início |
+| P04 | participante cumulativo do piloto | — | dispensada antes do início |
+| P05 | participante cumulativo do piloto | — | dispensada antes do início |
 
 ## Resultados por tarefa
 
@@ -72,8 +84,8 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P02 | 3R1 | sim | inspeção visual; nenhum comando novo | nenhuma | 0 | sem espera relatada | 0 | N/A | sim, no escopo afetado de T3 | Após a correção, localizou no mesmo resumo fuso, política do horário permitido e validade e respondeu `CONCLUÍDO`, sem nova dúvida. |
 | P02 | 4 | não executada | — | — | — | — | — | — | — | Participante pediu para pular por já ter feito o mesmo fluxo anteriormente. Não conta como evidência P02 e permanece pendente para o gate. A campanha pré-requisito de T5 foi preparada pelo facilitador. |
 
-As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
-evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
+Não haverá novas linhas obrigatórias. Este histórico não comprova a amostra originalmente
+planejada; ele registra somente o que de fato ocorreu antes da dispensa.
 
 ## Achados vivos
 
