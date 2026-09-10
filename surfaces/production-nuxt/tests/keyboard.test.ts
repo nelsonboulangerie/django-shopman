@@ -21,11 +21,7 @@ function key(
 }
 
 describe("atalhos globais da Produção", () => {
-  it("mapeia as quatro etapas por F1–F4 e Alt+1–4", () => {
-    expect(resolveProductionGlobalShortcut(key("F1"))).toBe("plan");
-    expect(resolveProductionGlobalShortcut(key("F2"))).toBe("mise-en-place");
-    expect(resolveProductionGlobalShortcut(key("F3"))).toBe("produce");
-    expect(resolveProductionGlobalShortcut(key("F4"))).toBe("expedite");
+  it("mapeia as quatro etapas por Alt+1–4 sem sequestrar as teclas de função", () => {
     expect(
       resolveProductionGlobalShortcut(
         key("¡", { altKey: true, code: "Digit1" }),
@@ -36,6 +32,18 @@ describe("atalhos globais da Produção", () => {
         key("€", { altKey: true, code: "Digit2" }),
       ),
     ).toBe("mise-en-place");
+    expect(
+      resolveProductionGlobalShortcut(
+        key("#", { altKey: true, code: "Digit3" }),
+      ),
+    ).toBe("produce");
+    expect(
+      resolveProductionGlobalShortcut(
+        key("¢", { altKey: true, code: "Digit4" }),
+      ),
+    ).toBe("expedite");
+    expect(resolveProductionGlobalShortcut(key("F1"))).toBeNull();
+    expect(resolveProductionGlobalShortcut(key("F5"))).toBeNull();
   });
 
   it("mapeia busca, atualização e ajuda sem roubar modificadores do sistema", () => {

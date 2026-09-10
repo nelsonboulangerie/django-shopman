@@ -61,12 +61,12 @@ afterEach(() => {
 });
 
 describe("ProductionHeader — atalhos descobríveis", () => {
-  it("navega pelas etapas com função ou Alt+número", () => {
-    press("F4");
+  it("navega pelas etapas com Alt+número e preserva as teclas de função", () => {
     press("€", { altKey: true, code: "Digit2" });
+    press("F1");
 
-    expect(navigateSpy).toHaveBeenNthCalledWith(1, "/expedite");
-    expect(navigateSpy).toHaveBeenNthCalledWith(2, "/mise-en-place");
+    expect(navigateSpy).toHaveBeenCalledOnce();
+    expect(navigateSpy).toHaveBeenCalledWith("/mise-en-place");
   });
 
   it("foca a busca com / e não sequestra R enquanto o campo é editado", async () => {
@@ -103,7 +103,7 @@ describe("ProductionHeader — atalhos descobríveis", () => {
     blocker.dataset.productionShortcutScope = "exclusive";
     document.body.append(blocker);
 
-    press("F3");
+    press("#", { altKey: true, code: "Digit3" });
 
     expect(navigateSpy).not.toHaveBeenCalled();
   });

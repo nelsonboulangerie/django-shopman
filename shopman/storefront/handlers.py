@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import logging
 
+from django.utils import timezone
+
 from shopman.shop.handlers._resilient import resilient_receiver
 
 logger = logging.getLogger(__name__)
@@ -45,9 +47,15 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     if getattr(instance, "delta", 0) <= 0:
         return
     metadata = getattr(instance, "metadata", None) or {}
+    if metadata.get("suppress_notifications"):
+        return
     if metadata.get("operation") == "production_qc_correction":
         return
-    sku = getattr(getattr(instance, "quant", None), "sku", None)
+    quant = getattr(instance, "quant", None)
+    target_date = getattr(quant, "target_date", None)
+    if target_date is not None and target_date > timezone.localdate():
+        return
+    sku = getattr(quant, "sku", None)
     if not sku:
         return
 

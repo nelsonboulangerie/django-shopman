@@ -8,7 +8,7 @@
 //   · "Por insumo": aggregated ingredient list (checklist local ao turno) — bom
 //     para conferir provisionamento ("quanto de farinha no total?").
 // Tablet/touch-first.
-import { nextTick } from "vue";
+import { nextTick, onMounted } from "vue";
 import type { MiseEnPlaceLineProjection } from "~/types/production";
 import { isStale, isoForOffset } from "~/presentation/production";
 
@@ -91,6 +91,19 @@ function toggleBreakdown(line: MiseEnPlaceLineProjection) {
 //     não do produto).
 const printMode = ref<"pesagem" | "preparo">("pesagem");
 const printTicketRef = ref<string | null>(null);
+const printUnavailableOpen = ref(false);
+const nativePrintAvailable = ref(
+  typeof window !== "undefined" && typeof window.print === "function",
+);
+const PRINT_START_PROBE_MS = 180;
+// O preview embutido pode expor uma ponte efêmera durante a hidratação e
+// removê-la antes de a tela ficar operável. Revalidar no próximo macrotask
+// distingue essa ponte do window.print estável de Chrome/Safari.
+onMounted(() => {
+  window.setTimeout(() => {
+    nativePrintAvailable.value = typeof window.print === "function";
+  }, 0);
+});
 
 const printableTickets = computed(() => {
   if (!printTicketRef.value) return weighing.tickets.value;
@@ -118,14 +131,34 @@ function printLabels(
   printMode.value = kind;
   printTicketRef.value = ticketRef;
   mode.value = "preparos";
+  if (!nativePrintAvailable.value || typeof window.print !== "function") {
+    // O navegador embutido do preview não expõe a API nativa de impressão.
+    // Um diálogo local é deliberadamente usado aqui: o toast do Sonner não é
+    // materializado nesse host, então parecia que o botão não tinha funcionado.
+    printUnavailableOpen.value = true;
+    return;
+  }
+  // O conteúdo imprimível precisa refletir modo/preparo antes de o diálogo
+  // nativo congelar a renderização da página.
   void nextTick(() => {
-    if (typeof window.print !== "function") {
-      useSonner.warning("Impressão indisponível neste preview.", {
-        description: "Abra Produção no Chrome ou Safari para imprimir.",
-      });
+    let nativeDialogStarted = false;
+    const markNativeDialog = () => {
+      nativeDialogStarted = true;
+    };
+    window.addEventListener("beforeprint", markNativeDialog, { once: true });
+    try {
+      window.print();
+    } catch {
+      window.removeEventListener("beforeprint", markNativeDialog);
+      printUnavailableOpen.value = true;
       return;
     }
-    window.print();
+    // Um window.print real dispara `beforeprint`. O browser embutido expõe
+    // hoje uma função inerte: sem esta sonda, o clique parece não funcionar.
+    window.setTimeout(() => {
+      window.removeEventListener("beforeprint", markNativeDialog);
+      if (!nativeDialogStarted) printUnavailableOpen.value = true;
+    }, PRINT_START_PROBE_MS);
   });
 }
 
@@ -606,5 +639,25 @@ function refreshAll() {
       :labels="labels"
       :tickets="printableTickets"
     />
+
+    <UiDialog
+      :open="printUnavailableOpen"
+      @update:open="printUnavailableOpen = Boolean($event)"
+    >
+      <UiDialogContent class="sm:max-w-sm">
+        <UiDialogHeader>
+          <UiDialogTitle>Impressão indisponível neste preview</UiDialogTitle>
+          <UiDialogDescription>
+            As etiquetas estão prontas. Abra Produção no Chrome ou Safari para
+            imprimir em 80 mm.
+          </UiDialogDescription>
+        </UiDialogHeader>
+        <UiDialogFooter>
+          <UiButton type="button" @click="printUnavailableOpen = false">
+            Entendi
+          </UiButton>
+        </UiDialogFooter>
+      </UiDialogContent>
+    </UiDialog>
   </main>
 </template>

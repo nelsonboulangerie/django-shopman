@@ -88,6 +88,28 @@ def test_rejuvenesce_um_banco_envelhecido_e_e_idempotente(monkeypatch):
             status=WorkOrder.Status.PLANNED, target_date=target
         ).exists(), f"sem fornada planejada em {target}"
 
+    # Todo movimento sintético carrega a trava que vale também no worker de
+    # diretivas. Sem ela, o refresh do alpha já enviou WhatsApp de chegada e
+    # e-mail de estoque baixo para pessoas reais.
+    from shopman.stockman.models import Move
+
+    refresh_moves = Move.objects.filter(reason__startswith="Rejuvenescimento:")
+    assert refresh_moves.exists()
+    assert all(
+        (move.metadata or {}).get("suppress_notifications") is True
+        for move in refresh_moves
+    )
+    future_refresh_moves = Move.objects.filter(
+        reason__startswith="Produção planejada:",
+        quant__target_date__gt=hoje,
+        metadata__synthetic_source="refresh_seed_dates",
+    )
+    assert future_refresh_moves.exists()
+    assert all(
+        (move.metadata or {}).get("suppress_notifications") is True
+        for move in future_refresh_moves
+    )
+
     # ── Segunda passada é no-op: o banco já está ancorado em hoje ───────────
     out = StringIO()
     call_command("refresh_seed_dates", "--apply", stdout=out)

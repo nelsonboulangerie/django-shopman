@@ -9,10 +9,10 @@ const groups: Array<{
   {
     title: "Em toda a Produção",
     items: [
-      { keys: ["F1", "Alt+1"], label: "Planejamento" },
-      { keys: ["F2", "Alt+2"], label: "Preparação" },
-      { keys: ["F3", "Alt+3"], label: "Produção" },
-      { keys: ["F4", "Alt+4"], label: "Expedição" },
+      { keys: ["Alt+1"], label: "Planejamento" },
+      { keys: ["Alt+2"], label: "Preparação" },
+      { keys: ["Alt+3"], label: "Produção" },
+      { keys: ["Alt+4"], label: "Expedição" },
       { keys: ["/"], label: "Buscar por produto, SKU ou receita" },
       { keys: ["R"], label: "Atualizar os dados da tela" },
       { keys: ["?"], label: "Abrir esta ajuda" },

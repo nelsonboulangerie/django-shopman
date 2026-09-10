@@ -37,6 +37,14 @@ def on_move_created(sender, instance, created, **kwargs):
     move = instance
     quant = move.quant
 
+    # Manutenção de dados sintéticos não é um fato operacional e estoque
+    # planejado no futuro não muda o saldo físico de agora. Ambos já chegaram
+    # a disparar e-mail real de estoque baixo durante refresh do alpha.
+    if (move.metadata or {}).get("suppress_notifications"):
+        return
+    if quant.target_date is not None and quant.target_date > timezone.localdate():
+        return
+
     transaction.on_commit(
         partial(
             _check_alerts_for_sku,
