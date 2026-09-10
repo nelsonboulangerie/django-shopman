@@ -5,6 +5,11 @@
 // venda publica via BroadcastChannel (mesmo navegador da estação) e mostra ao
 // cliente o que está sendo cobrado — transparência de preço em primeiro lugar.
 // URL em inglês (/display); todo o texto em pt-BR.
+//
+// REGRA DE KIOSK ("como o feed da TV"): esta janela nunca identifica, nunca
+// trava e nunca pede senha — o único sinal que ela obedece é o BroadcastChannel
+// da estação. Ela sobe no `PosCustomerDisplayShell` (escolhido em `app.vue`),
+// sem nenhum composable de operador; nada aqui busca dado no servidor.
 import type { CustomerDisplayPhase } from "~/types/customerDisplay";
 
 useHead({ title: "Tela do cliente · PDV" });
@@ -106,7 +111,17 @@ const itemCountLabel = computed(() => {
         </div>
         <div class="flex items-baseline justify-between gap-6">
           <span class="text-3xl text-muted-foreground">Total</span>
-          <span class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</span>
+          <span class="grid justify-items-end">
+            <!-- O valor ANTES do desconto, riscado, no mesmo peso da linha
+                 "Descontos": o cliente vê que o desconto JÁ está no total. -->
+            <span
+              v-if="snapshot?.grossTotalDisplay"
+              class="text-xl text-muted-foreground tabular-nums line-through"
+            >
+              <span class="sr-only">Valor sem desconto: </span>{{ snapshot.grossTotalDisplay }}
+            </span>
+            <span class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</span>
+          </span>
         </div>
       </footer>
     </section>
@@ -116,6 +131,11 @@ const itemCountLabel = computed(() => {
       <div class="grid w-full max-w-4xl gap-8 text-center">
         <div class="grid gap-2">
           <p class="text-3xl text-muted-foreground">Total a pagar</p>
+          <!-- O valor ANTES do desconto, riscado, acima do total e no mesmo peso
+               da linha "Descontos" logo abaixo: o desconto JÁ está aplicado. -->
+          <p v-if="snapshot?.grossTotalDisplay" class="text-xl text-muted-foreground tabular-nums line-through">
+            <span class="sr-only">Valor sem desconto: </span>{{ snapshot.grossTotalDisplay }}
+          </p>
           <p class="text-7xl font-semibold tabular-nums tracking-tight md:text-8xl">{{ snapshot?.totalDisplay }}</p>
           <p v-if="snapshot?.discountDisplay" class="text-xl text-primary tabular-nums">
             Descontos −{{ snapshot.discountDisplay }}
