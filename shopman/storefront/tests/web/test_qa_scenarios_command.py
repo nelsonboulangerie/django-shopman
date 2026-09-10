@@ -7,12 +7,15 @@ pela projeção do cardápio, não pelo estoque cru.
 """
 from __future__ import annotations
 
+from datetime import date, timedelta
+from decimal import Decimal
 from io import StringIO
 from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.management import CommandError, call_command
 from shopman.offerman.models import ListingItem, Product
+from shopman.stockman.models import Batch, Quant
 
 from config.management.commands.qa_scenarios import DEFAULT_SKUS
 from shopman.shop.projections.types import Availability
@@ -38,9 +41,15 @@ def vitrine(db):
 
 
 @pytest.fixture
-def cenario(db, listing, vitrine):
+def cenario(db, listing, vitrine, channel):
     """Os SKUs dos cenários, publicados na vitrine web e com estoque cheio."""
     from shopman.stockman import stock
+
+    channel.config = {
+        **(channel.config or {}),
+        "waitlist": {"enabled": True, "horizon_days": 2},
+    }
+    channel.save(update_fields=["config"])
 
     produtos = {}
     for sku in sorted(set(DEFAULT_SKUS.values()) | {FORA_DA_LISTA}):
@@ -53,6 +62,16 @@ def cenario(db, listing, vitrine):
             is_published=True, is_sellable=True,
         )
         stock.receive(quantity=20, sku=sku, position=vitrine, reason="baseline do teste")
+        # A carga real também traz planos futuros para quase todos os pães. O
+        # armador precisa neutralizá-los antes de declarar sold-out/low-stock.
+        if sku in {DEFAULT_SKUS["sold_out"], DEFAULT_SKUS["low_stock"]}:
+            stock.receive(
+                quantity=20,
+                sku=sku,
+                position=vitrine,
+                target_date=date.today() + timedelta(days=1),
+                reason="plano baseline do teste",
+            )
         produtos[sku] = produto
     return produtos
 
@@ -83,7 +102,8 @@ def test_arm_puts_each_sku_in_its_storefront_state(cenario):
     assert ultimas.can_add_to_cart is True
 
     previsto = items[DEFAULT_SKUS["planned"]]
-    assert previsto.availability == Availability.UNAVAILABLE
+    assert previsto.availability == Availability.PLANNED_OK
+    assert previsto.available_qty == 10
 
     pausado = items[DEFAULT_SKUS["paused"]]
     assert pausado.is_paused is True
@@ -160,6 +180,66 @@ def test_reset_puts_every_sku_back_on_sale(cenario):
     assert items[DEFAULT_SKUS["paused_channel"]].is_paused is False
     assert items[DEFAULT_SKUS["sold_out"]].can_add_to_cart is True
     assert items[DEFAULT_SKUS["low_stock"]].availability == Availability.AVAILABLE
+
+
+def test_reset_restores_the_original_ready_and_future_quants(cenario):
+    from shopman.stockman import stock
+
+    sku = DEFAULT_SKUS["sold_out"]
+    before = dict(
+        Quant.objects.filter(sku=sku).values_list("pk", "_quantity")
+    )
+
+    call_command("qa_scenarios", arm=[f"sold_out={sku}"])
+    assert not Quant.objects.filter(sku=sku, _quantity__gt=0).exists()
+    stock.receive(
+        quantity=Decimal("4"),
+        sku=sku,
+        position=Quant.objects.get(pk=next(iter(before))).position,
+        reason="reposição real durante o ensaio",
+    )
+
+    call_command("qa_scenarios", reset=[])
+
+    restored = dict(
+        Quant.objects.filter(pk__in=before).values_list("pk", "_quantity")
+    )
+    ready_pk = Quant.objects.get(sku=sku, target_date__isnull=True).pk
+    assert restored == {**before, ready_pk: before[ready_pk] + Decimal("4")}
+
+
+def test_arm_validates_frozen_qc_before_any_stock_mutation(cenario):
+    sku = DEFAULT_SKUS["low_stock"]
+    Product.objects.filter(sku=sku).update(shelf_life_days=0)
+    ref = f"{sku}-{date.today():%Y%m%d}-SEED"
+    Batch.objects.create(
+        ref=ref,
+        sku=sku,
+        quality_grade_ref="minimal",
+    )
+    before = dict(
+        Quant.objects.filter(sku=sku).values_list("pk", "_quantity")
+    )
+
+    with pytest.raises(CommandError, match="minimal"):
+        call_command("qa_scenarios", arm=[f"low_stock={sku}"])
+
+    assert dict(
+        Quant.objects.filter(sku=sku).values_list("pk", "_quantity")
+    ) == before
+    assert "_qa_scenarios_snapshot" not in (
+        Product.objects.get(sku=sku).metadata or {}
+    )
+
+
+def test_reset_restores_an_original_commercial_pause(cenario):
+    sku = DEFAULT_SKUS["paused"]
+    Product.objects.filter(sku=sku).update(is_sellable=False)
+
+    call_command("qa_scenarios", arm=[f"paused={sku}"])
+    call_command("qa_scenarios", reset=[])
+
+    assert Product.objects.get(sku=sku).is_sellable is False
 
 
 # ── trava ────────────────────────────────────────────────────────────

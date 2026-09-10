@@ -488,21 +488,81 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is False
         assert item.is_notifiable is True
 
-    def test_planned_batch_card_has_no_stepper_ceiling(self, channel):
-        """Card de encomenda não pode nascer com teto 0: o "+" morre na 1ª unidade."""
+    def test_planned_batch_card_uses_the_known_queue_capacity(self, channel):
+        """A quantidade planejada é o teto honesto da fila, nunca ilimitada."""
         self._product("NOTIF-PLANNED")
         item = self._build(
             "NOTIF-PLANNED",
             {
                 "availability_policy": "planned_ok",
-                "total_promisable": Decimal("0"),
+                "total_promisable": Decimal("10"),
+                "ready_physical": Decimal("0"),
                 "is_planned": True,
             },
             channel,
         )
         assert item.availability == Availability.PLANNED_OK
         assert item.can_add_to_cart is True
-        assert item.available_qty is None
+        assert item.available_qty == 10
+
+    def test_fully_reserved_planned_batch_is_not_orderable(self, channel):
+        self._product("NOTIF-PLANNED-FULL")
+        item = self._build(
+            "NOTIF-PLANNED-FULL",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("0"),
+                "ready_physical": Decimal("0"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.UNAVAILABLE
+        assert item.can_add_to_cart is False
+        assert item.available_qty == 0
+
+    def test_fully_held_ready_stock_does_not_mask_a_future_only_offer(self, channel):
+        self._product("NOTIF-READY-HELD")
+        item = self._build(
+            "NOTIF-READY-HELD",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("10"),
+                "available": Decimal("0"),
+                "ready_physical": Decimal("5"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.PLANNED_OK
+        assert item.available_qty == 10
+
+    def test_bundle_with_ready_capacity_is_available_even_with_a_future_plan(self):
+        from shopman.shop.projections import catalog_context
+
+        raw = catalog_context.bundle_availability_from_components(
+            [
+                (
+                    Decimal("1"),
+                    {
+                        "availability_policy": "planned_ok",
+                        "total_promisable": Decimal("15"),
+                        "available": Decimal("5"),
+                        "ready_physical": Decimal("5"),
+                        "is_planned": True,
+                    },
+                )
+            ]
+        )
+
+        assert raw is not None
+        resolved = catalog_context.basic_availability(
+            raw,
+            is_sellable=True,
+            low_stock_threshold=DEFAULT_LOW_STOCK_THRESHOLD,
+        )
+        assert raw["available"] == Decimal("5")
+        assert resolved.status == "available"
 
     def test_not_sellable_is_not_notifiable(self, channel):
         self._product("NOTIF-NS", sellable=False)

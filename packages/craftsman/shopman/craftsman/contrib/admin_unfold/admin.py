@@ -9,7 +9,7 @@ To use, add 'shopman.craftsman.contrib.admin_unfold' to INSTALLED_APPS after 'cr
 """
 
 import logging
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
 from django import forms
@@ -17,8 +17,9 @@ from django.apps import apps
 from django.contrib import admin, messages
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect
-from django.urls import reverse
+from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
+from django.utils.html import format_html_join
 from django.utils.translation import gettext_lazy as _
 from shopman.craftsman.dietary import (
     DIET_CLASSES,
@@ -109,9 +110,7 @@ class RecipeItemInlineForm(forms.ModelForm):
     def save(self, commit=True):
         instance = super().save(commit=False)
         allergens = [
-            token.strip()
-            for token in (self.cleaned_data.get("allergens_text") or "").split(",")
-            if token.strip()
+            token.strip() for token in (self.cleaned_data.get("allergens_text") or "").split(",") if token.strip()
         ]
         diet = self.cleaned_data.get("diet") or ""
         meta = dict(instance.meta or {})
@@ -213,9 +212,7 @@ class RecipeAdminForm(forms.ModelForm):
                 choices=lifecycle_choices,
                 initial=meta.get("production_lifecycle") or lifecycle_choices[0][0],
                 widget=UnfoldAdminSelectWidget(),
-                help_text=_(
-                    "Variante de coordenação do orquestrador para as OPs desta ficha."
-                ),
+                help_text=_("Variante de coordenação do orquestrador para as OPs desta ficha."),
             )
 
     def clean_steps_text(self) -> list[str]:
@@ -287,17 +284,12 @@ def _recipe_input_sku_choices(current: str = "") -> list[tuple[str, str]]:
     Ref = _optional_model("refs", "Ref")
     if Ref is not None:
         for value in (
-            Ref.objects.filter(ref_type="SKU", is_active=True)
-            .order_by("value")
-            .values_list("value", flat=True)
+            Ref.objects.filter(ref_type="SKU", is_active=True).order_by("value").values_list("value", flat=True)
         ):
             add(value)
 
     for value in (
-        RecipeItem.objects.exclude(input_sku="")
-        .order_by("input_sku")
-        .values_list("input_sku", flat=True)
-        .distinct()
+        RecipeItem.objects.exclude(input_sku="").order_by("input_sku").values_list("input_sku", flat=True).distinct()
     ):
         add(value)
 
@@ -322,10 +314,7 @@ def _recipe_output_sku_choices(current: str = "") -> list[tuple[str, str]]:
             add(sku, f"{sku} - {name}{unit_label}")
 
     for value in (
-        Recipe.objects.exclude(output_sku="")
-        .order_by("output_sku")
-        .values_list("output_sku", flat=True)
-        .distinct()
+        Recipe.objects.exclude(output_sku="").order_by("output_sku").values_list("output_sku", flat=True).distinct()
     ):
         add(value)
 
@@ -413,13 +402,26 @@ class WorkOrderItemInline(BaseTabularInline):
     model = WorkOrderItem
     extra = 0
     tab = True
-    fields = ["kind", "item_ref", "quantity", "unit", "recorded_at", "recorded_by"]
-    readonly_fields = ["kind", "item_ref", "quantity", "unit", "recorded_at", "recorded_by"]
+    fields = [
+        "kind",
+        "item_ref",
+        "quantity",
+        "unit",
+        "quality_grade_ref",
+        "quality_defect_ref",
+        "batch_ref",
+        "recorded_at",
+        "recorded_by",
+    ]
+    readonly_fields = fields
 
     def has_add_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
 
@@ -438,6 +440,9 @@ class WorkOrderEventInline(BaseTabularInline):
     def has_delete_permission(self, request, obj=None):
         return False
 
+    def has_change_permission(self, request, obj=None):
+        return False
+
 
 _EVENT_BADGE_COLORS = {
     WorkOrderEvent.Kind.PLANNED: "base",
@@ -450,31 +455,36 @@ _EVENT_BADGE_COLORS = {
 
 class WorkOrderEventSection(TableSection):
     related_name = "events"
-    fields = ["kind", "quantity", "operator", "created_at"]
+    fields = ["revision", "kind", "quantity", "operator", "created_at"]
     verbose_name = _("Histórico operacional")
+
+    def revision(self, obj):
+        return obj.seq
+
+    revision.short_description = _("Revisão")
 
     def kind(self, obj):
         color = _EVENT_BADGE_COLORS.get(obj.kind, "base")
         return unfold_badge(obj.get_kind_display(), color)
+
     kind.short_description = _("Tipo")
 
     def quantity(self, obj):
         payload = obj.payload or {}
-        quantity = (
-            payload.get("quantity")
-            or payload.get("finished_qty")
-            or payload.get("to")
-        )
+        quantity = payload.get("quantity") or payload.get("finished_qty") or payload.get("to")
         return _format_work_order_units(quantity)
+
     quantity.short_description = _("Quantidade")
 
     def operator(self, obj):
         payload = obj.payload or {}
         return payload.get("operator_ref") or obj.actor or "-"
+
     operator.short_description = _("Operador")
 
     def created_at(self, obj):
         return timezone.localtime(obj.created_at).strftime("%d/%m %H:%M")
+
     created_at.short_description = _("Registrado em")
 
 
@@ -484,12 +494,8 @@ class WorkOrderAdmin(BaseModelAdmin):
     Admin de consulta e navegação (vNext).
 
     4 estados: planned, started, finished, void.
-    Campos editáveis: quantity (via adjust enquanto planned), target_date.
-
-    Na suíte, concluir/anular OP é execução operacional e vive no Produção
-    (production-nuxt, API production/<id>/*). O fallback standalone
-    (shopman.craftsman.admin) mantém suas actions de finish/void — drift
-    deliberado: fora da suíte não há superfície de operação.
+    Na suíte, toda mutação operacional vive no Produção (production-nuxt,
+    API production/<id>/*). O Admin é o passaporte imutável da fornada.
     """
 
     compressed_fields = True
@@ -504,7 +510,6 @@ class WorkOrderAdmin(BaseModelAdmin):
         "planned_display",
         "produced_display",
         "loss_display",
-        "commitments_display",
         "status_badge",
     ]
 
@@ -522,8 +527,6 @@ class WorkOrderAdmin(BaseModelAdmin):
     search_fields = ["ref", "recipe__name", "output_sku"]
     date_hierarchy = "target_date"
     ordering = ["-created_at"]
-    autocomplete_fields = ["recipe"]
-
     inlines = [WorkOrderItemInline, WorkOrderEventInline]
     # A visão de compromissos por OP saiu com o console Admin de produção
     # (WP-ADM-7d): os pedidos vinculados aparecem no board do Produção. A
@@ -541,7 +544,25 @@ class WorkOrderAdmin(BaseModelAdmin):
             _("Quantidades"),
             {
                 "classes": ["tab"],
-                "fields": ("quantity", "finished"),
+                "fields": (
+                    ("quantity", "started_quantity_display", "finished"),
+                    "loss_display",
+                ),
+            },
+        ),
+        (
+            _("Passaporte da fornada"),
+            {
+                "classes": ["tab"],
+                "fields": (
+                    "recipe_snapshot_display",
+                    "quality_result_display",
+                    "output_batches_display",
+                    "order_refs_display",
+                    "oven_facts_display",
+                    "reconciliation_state_display",
+                    "actors_display",
+                ),
             },
         ),
         (
@@ -562,20 +583,47 @@ class WorkOrderAdmin(BaseModelAdmin):
             _("Avançado"),
             {
                 "classes": ["tab", "collapse"],
-                "fields": ("rev", "meta"),
+                "fields": (("rev", "created_at", "updated_at"), "meta"),
             },
         ),
     )
 
     readonly_fields = [
         "ref",
+        "recipe",
         "output_sku",
         "status",
+        "quantity",
         "finished",
+        "target_date",
+        "source_ref",
+        "position_ref",
+        "operator_ref",
         "rev",
         "started_at",
         "finished_at",
+        "created_at",
+        "updated_at",
+        "meta",
+        "started_quantity_display",
+        "loss_display",
+        "recipe_snapshot_display",
+        "quality_result_display",
+        "output_batches_display",
+        "order_refs_display",
+        "oven_facts_display",
+        "reconciliation_state_display",
+        "actors_display",
     ]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
     @display(description=_("Produto"), ordering="output_sku")
     def product_display(self, obj):
@@ -617,16 +665,21 @@ class WorkOrderAdmin(BaseModelAdmin):
             return _format_work_order_units(obj.finished)
         return "-"
 
+    @display(description=_("Iniciado"))
+    def started_quantity_display(self, obj):
+        return _format_work_order_units(_started_quantity(obj))
+
     @display(description=_("Perda"))
     def loss_display(self, obj):
         """Display loss quantity and percentage."""
-        loss = obj.loss
-        if loss is None:
+        if obj.finished is None:
             return "-"
+        base_qty = _started_quantity(obj) or obj.quantity
+        loss = max(base_qty - obj.finished, Decimal("0"))
         if loss == 0:
             return _format_work_order_units(0)
 
-        yield_rate = obj.yield_rate
+        yield_rate = obj.finished / base_qty if base_qty else None
         loss_pct = (1 - float(yield_rate)) * 100 if yield_rate else 0
         loss_formatted = _format_work_order_units(loss)
         loss_pct_formatted = f"{loss_pct:.1f}".replace(".", ",")
@@ -634,6 +687,124 @@ class WorkOrderAdmin(BaseModelAdmin):
         if loss_pct > 5:
             return f"{loss_formatted} ({loss_pct_formatted}%)"
         return loss_formatted
+
+    @display(description=_("Snapshot da ficha técnica"))
+    def recipe_snapshot_display(self, obj):
+        snapshot = (obj.meta or {}).get("_recipe_snapshot")
+        if not isinstance(snapshot, dict):
+            return _("Indisponível (ordem anterior ao snapshot)")
+        batch_size = snapshot.get("batch_size")
+        items = snapshot.get("items")
+        item_count = len(items) if isinstance(items, list) else 0
+        batch_label = _format_work_order_units(batch_size) if batch_size is not None else "-"
+        return _("Rendimento base: %(batch)s · %(count)s insumo(s)") % {
+            "batch": batch_label,
+            "count": item_count,
+        }
+
+    @display(description=_("Partição e controle de qualidade"))
+    def quality_result_display(self, obj):
+        partitions = [
+            item
+            for item in _work_order_related(obj, "items")
+            if item.kind in (WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE)
+        ]
+        if not partitions:
+            return "-"
+        result = []
+        for item in partitions:
+            details = [
+                str(item.get_kind_display()),
+                _format_work_order_units(item.quantity),
+            ]
+            if item.quality_grade_ref:
+                details.append(_("grau %(ref)s") % {"ref": item.quality_grade_ref})
+            if item.quality_defect_ref:
+                details.append(_("defeito %(ref)s") % {"ref": item.quality_defect_ref})
+            result.append(" · ".join(details))
+        return "; ".join(result)
+
+    @display(description=_("Lotes de saída"))
+    def output_batches_display(self, obj):
+        refs = sorted(
+            {
+                item.batch_ref
+                for item in _work_order_related(obj, "items")
+                if item.kind == WorkOrderItem.Kind.OUTPUT and item.batch_ref
+            }
+        )
+        return ", ".join(refs) if refs else "-"
+
+    @display(description=_("Pedidos comprometidos"))
+    def order_refs_display(self, obj):
+        refs = _committed_order_refs(obj)
+        if not refs:
+            return "-"
+        try:
+            changelist_url = reverse("admin:orderman_order_changelist")
+        except NoReverseMatch:
+            return ", ".join(refs)
+        return format_html_join(
+            ", ",
+            '<a href="{}?{}">{}</a>',
+            ((changelist_url, urlencode({"q": ref}), ref) for ref in refs),
+        )
+
+    @display(description=_("Fatos de forno"))
+    def oven_facts_display(self, obj):
+        oven_events = [
+            event
+            for event in _work_order_related(obj, "events")
+            if event.kind
+            in (
+                WorkOrderEvent.Kind.OVEN_ARMED,
+                WorkOrderEvent.Kind.OVEN_CONCLUDED,
+                WorkOrderEvent.Kind.OVEN_ABANDONED,
+            )
+        ]
+        if not oven_events:
+            return "-"
+        facts = []
+        for event in oven_events:
+            payload = event.payload or {}
+            fact = [str(event.get_kind_display())]
+            if payload.get("oven_ref"):
+                fact.append(str(payload["oven_ref"]))
+            fact.append(timezone.localtime(event.created_at).strftime("%d/%m %H:%M"))
+            facts.append(" · ".join(fact))
+        return "; ".join(facts)
+
+    @display(description=_("Conciliação de estoque"))
+    def reconciliation_state_display(self, obj):
+        if obj.status != WorkOrder.Status.FINISHED:
+            return _("Não aplicável enquanto a fornada está aberta")
+        meta = obj.meta or {}
+        consumed = bool(meta.get("stock_consumed_at"))
+        realized = bool(meta.get("stock_realized_at"))
+        if consumed and realized:
+            return _("Conciliada · insumos consumidos e saída realizada")
+        if consumed:
+            return _("Divergente · insumos consumidos; saída pendente")
+        if realized:
+            return _("Divergente · saída realizada sem carimbo de consumo")
+        return _("Pendente · sem carimbos de estoque")
+
+    @display(description=_("Atores"))
+    def actors_display(self, obj):
+        actors = []
+
+        def add(value):
+            value = str(value or "").strip()
+            if value and value not in actors:
+                actors.append(value)
+
+        add(obj.operator_ref)
+        for item in _work_order_related(obj, "items"):
+            add(item.recorded_by)
+        for event in _work_order_related(obj, "events"):
+            add(event.actor)
+            add((event.payload or {}).get("operator_ref"))
+        return ", ".join(actors) if actors else "-"
 
     @display(description=_("Compromisso"))
     def commitments_display(self, obj):
@@ -655,20 +826,8 @@ class WorkOrderAdmin(BaseModelAdmin):
         color = colors.get(obj.status, "base")
         return unfold_badge(_work_order_status_label(obj.status), color)
 
-    def get_readonly_fields(self, request, obj=None):
-        """Make ref readonly only for existing objects."""
-        readonly = list(super().get_readonly_fields(request, obj))
-        if obj and "ref" not in readonly:
-            readonly.append("ref")
-        return readonly
-
     def get_queryset(self, request):
-        return (
-            super()
-            .get_queryset(request)
-            .select_related("recipe")
-            .prefetch_related("items", "events")
-        )
+        return super().get_queryset(request).select_related("recipe").prefetch_related("items", "events")
 
     def changelist_view(self, request, extra_context=None):
         """Auto-scope the operational changelist to today when no filter is active."""
@@ -754,6 +913,25 @@ def _work_order_status_label(status: str) -> str:
         WorkOrder.Status.VOID: _("Cancelada"),
     }
     return str(labels.get(status, status))
+
+
+def _work_order_related(wo: WorkOrder, related_name: str) -> list:
+    """Usa o prefetch do Admin quando disponível, sem consultas repetidas."""
+    prefetched = getattr(wo, "_prefetched_objects_cache", {})
+    if related_name in prefetched:
+        return list(prefetched[related_name])
+    return list(getattr(wo, related_name).all())
+
+
+def _started_quantity(wo: WorkOrder) -> Decimal | None:
+    events = (event for event in _work_order_related(wo, "events") if event.kind == WorkOrderEvent.Kind.STARTED)
+    latest = max(events, key=lambda event: event.seq, default=None)
+    if latest is None:
+        return None
+    try:
+        return Decimal(str((latest.payload or {}).get("quantity", "0")))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
 
 
 def _committed_order_refs(wo: WorkOrder) -> tuple[str, ...]:

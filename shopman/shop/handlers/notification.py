@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 
 from django.conf import settings
+from django.utils import timezone
 from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive
 
@@ -51,6 +52,14 @@ class NotificationSendHandler:
         if not order_ref:
             raise DirectiveTerminalError("missing order_ref")
 
+        # Se a prova de aceite já foi persistida e o worker caiu antes de marcar
+        # a Directive como done, o replay conclui sem novo envio. Continua
+        # existindo a janela inevitável entre o aceite externo e este save; sem
+        # chave idempotente aceita pelo provider não há como fechá-la localmente.
+        previous_delivery = payload.get("notification_delivery") or {}
+        if previous_delivery.get("status") in {"accepted", "skipped"}:
+            return
+
         try:
             order = Order.objects.get(ref=order_ref)
         except Order.DoesNotExist as exc:
@@ -60,22 +69,18 @@ class NotificationSendHandler:
         if template == "payment.reminder":
             payment_status = payment_svc.get_payment_status(order) or ""
             if payment_status in ("paid", "captured", "succeeded") or order.status not in ("new", "created"):
+                self._record_skip(message, "payment_not_pending")
                 return
 
         success, last_error = notification_svc.deliver_order_notification(order, template, payload)
+        # ``deliver_order_notification`` registra aceite, skip legítimo ou a
+        # última falha no dicionário recebido. Persistir antes de retornar/lançar
+        # torna o resultado observável no mesmo fato que já governa retries.
+        if payload.get("notification_delivery"):
+            message.payload = payload
+            message.save(update_fields=["payload", "updated_at"])
 
         if success:
-            return
-
-        # F2: "sem destinatário/canal" é condição PERMANENTE — retry não
-        # resolve e alertar é ruído (venda de balcão sem cliente, pedido sem
-        # canal ativo). A Directive segue existindo (contrato canônico de
-        # notificação intocado); o silêncio mora aqui, na escalada, não na
-        # emissão.
-        if last_error in (
-            "no active notification recipient available",
-            "no active notification channel available",
-        ):
             return
 
         # Todos os backends falharam — escalate if exhausted, then raise
@@ -91,6 +96,15 @@ class NotificationSendHandler:
         try:
             from shopman.shop.adapters import alert as alert_adapter
 
+            # Um replay/manual retry do mesmo fato não deve gerar uma pilha de
+            # alertas idênticos. Enquanto a causa estiver aberta, ela é uma só.
+            if alert_adapter.recent_exists(
+                "notification_failed",
+                timezone.now(),
+                message_contains=f"'{template}'",
+                order_ref=order_ref or "",
+            ):
+                return
             alert_adapter.create(
                 "notification_failed",
                 "error",
@@ -106,6 +120,17 @@ class NotificationSendHandler:
             )
         except Exception:
             logger.exception("Failed to create OperatorAlert for notification failure")
+
+    @staticmethod
+    def _record_skip(message: Directive, reason: str) -> None:
+        payload = dict(message.payload or {})
+        payload["notification_delivery"] = {
+            "status": "skipped",
+            "reason": reason,
+            "recorded_at": timezone.now().isoformat(),
+        }
+        message.payload = payload
+        message.save(update_fields=["payload", "updated_at"])
 
     def _handle_system_notification(self, message: Directive) -> None:
         """Handle system notifications (stock alerts, etc.) — routed to operator."""

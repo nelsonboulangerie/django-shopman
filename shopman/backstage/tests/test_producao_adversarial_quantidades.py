@@ -70,11 +70,28 @@ def _vitrine_qty(vitrine) -> Decimal:
     return quant.quantity if quant else Decimal("0")
 
 
+def _mutation_attempt(wo: WorkOrder, action: str, quantity) -> dict:
+    wo.refresh_from_db()
+    return {
+        "actor": "test",
+        "expected_rev": wo.rev,
+        "idempotency_key": f"test:invalid-quantity:{action}:{wo.pk}:{quantity!r}",
+    }
+
+
+def _creation_attempt(action: str, quantity) -> dict:
+    return {
+        "actor": "test",
+        "idempotency_key": f"test:invalid-quantity:{action}:{quantity!r}",
+    }
+
+
 def _assert_dominio(excinfo):
     """A falha tem de ser do domínio, nunca uma exceção aritmética vazada."""
     assert not isinstance(excinfo.value, (InvalidOperation, ArithmeticError)), (
         f"vazou {type(excinfo.value).__name__} pela borda em vez de ProductionError"
     )
+    assert getattr(excinfo.value, "data", {}).get("cause") != "missing_mutation_attempt"
 
 
 # ── FINISH ────────────────────────────────────────────────────────────────
@@ -84,7 +101,9 @@ def test_finish_recusa_quantidade_nao_finita(recipe, vitrine, quantity):
     wo = _started(recipe)
     with pytest.raises(ProductionError) as excinfo:
         backstage_production.apply_finish(
-            work_order_id=wo.pk, quantity=quantity, actor="test"
+            work_order_id=wo.pk,
+            quantity=quantity,
+            **_mutation_attempt(wo, "finish-non-finite", quantity),
         )
     _assert_dominio(excinfo)
     # E nada foi para a vitrine: a fornada continua aberta, não infinita.
@@ -98,7 +117,9 @@ def test_finish_recusa_quantidade_invalida(recipe, vitrine, quantity):
     wo = _started(recipe)
     with pytest.raises(ProductionError) as excinfo:
         backstage_production.apply_finish(
-            work_order_id=wo.pk, quantity=quantity, actor="test"
+            work_order_id=wo.pk,
+            quantity=quantity,
+            **_mutation_attempt(wo, "finish-invalid", quantity),
         )
     _assert_dominio(excinfo)
     assert _vitrine_qty(vitrine) == Decimal("0")
@@ -112,8 +133,8 @@ def test_finish_particionado_recusa_quantidade_nao_finita(recipe, vitrine, quant
         backstage_production.apply_finish(
             work_order_id=wo.pk,
             quantity="40",
-            actor="test",
             partition=[{"quantity": quantity, "quality_grade_ref": ""}],
+            **_mutation_attempt(wo, "finish-partition", quantity),
         )
     _assert_dominio(excinfo)
     assert _vitrine_qty(vitrine) == Decimal("0")
@@ -126,9 +147,11 @@ def test_start_recusa_quantidade_nao_finita(recipe, quantity):
     from django.utils import timezone
 
     wo = craft.plan(recipe, Decimal("40"), date=timezone.localdate())
-    with pytest.raises((ProductionError, ValueError)) as excinfo:
+    with pytest.raises(ProductionError) as excinfo:
         backstage_production.apply_start(
-            work_order_id=wo.pk, quantity=quantity, actor="test"
+            work_order_id=wo.pk,
+            quantity=quantity,
+            **_mutation_attempt(wo, "start", quantity),
         )
     _assert_dominio(excinfo)
     wo.refresh_from_db()
@@ -141,12 +164,12 @@ def test_start_recusa_quantidade_nao_finita(recipe, quantity):
 def test_planned_recusa_quantidade_nao_finita(recipe, quantity):
     from django.utils import timezone
 
-    with pytest.raises((ProductionError, ValueError)) as excinfo:
+    with pytest.raises(ProductionError) as excinfo:
         backstage_production.apply_planned(
             recipe_id=recipe.pk,
             quantity=quantity,
             target_date_value=timezone.localdate().isoformat(),
-            actor="test",
+            **_creation_attempt("planned", quantity),
         )
     _assert_dominio(excinfo)
     # E nenhuma WorkOrder infinita ficou plantada na matriz.
@@ -159,12 +182,12 @@ def test_planned_recusa_quantidade_nao_finita(recipe, quantity):
 
 @pytest.mark.parametrize("quantity", ["NaN", "Infinity", "sNaN"])
 def test_quick_finish_recusa_quantidade_nao_finita(recipe, vitrine, quantity):
-    with pytest.raises((ProductionError, ValueError)) as excinfo:
+    with pytest.raises(ProductionError) as excinfo:
         backstage_production.apply_quick_finish(
             recipe_id=recipe.pk,
             quantity=quantity,
             position_id="",
-            actor="test",
+            **_creation_attempt("quick-finish", quantity),
         )
     _assert_dominio(excinfo)
     assert _vitrine_qty(vitrine) == Decimal("0")

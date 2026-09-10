@@ -4,7 +4,7 @@ WorkOrderEvent — Semantic audit trail + idempotency.
 Replaces django-simple-history with lightweight, queryable events.
 Each mutation creates one event with incremental seq.
 
-Event kinds: planned, adjusted, started, finished, voided.
+Event kinds include lifecycle transitions plus manual step/oven facts.
 
 Canonical payload schemas per kind:
 
@@ -21,6 +21,11 @@ Canonical payload schemas per kind:
         from: str           — previous quantity
         to: str             — new quantity
         reason: str         — adjustment reason
+
+    planning_confirmed:
+        quantity: str       — unchanged quantity acknowledged by the request
+        result: str         — unchanged | consolidated
+        attempt: dict       — immutable canonical request used for replay
 
     started:
         quantity: str       — quantity sent into production
@@ -39,6 +44,19 @@ Canonical payload schemas per kind:
         source_ref: str     — upstream source/request
         position_ref: str   — station/post
         operator_ref: str   — responsible actor
+        context: dict       — opaque caller-owned audit context
+
+    oven_abandoned:
+        run_id: int         — abandoned OvenRun primary key
+        oven_ref: str       — oven/station snapshot
+        transition: str     — finish | void | rearm | sweep
+        reason: str         — why the open measurement became unusable
+
+    shortage_overridden:
+        action: str         — plan | finish | quick_finish
+        reason: str         — required operator justification
+        impact: dict        — frozen shortage/order impact snapshot
+        work_order_rev: int — authoritative revision after the mutation
 
     voided:
         reason: str         — cancellation reason
@@ -63,8 +81,14 @@ class WorkOrderEvent(models.Model):
 
     class Kind(models.TextChoices):
         PLANNED = "planned", _("Planejado")
+        PLANNING_CONFIRMED = "planning_confirmed", _("Planejamento confirmado")
         ADJUSTED = "adjusted", _("Ajustado")
         STARTED = "started", _("Iniciado")
+        STEP_ADVANCED = "step_advanced", _("Passo avançado")
+        OVEN_ARMED = "oven_armed", _("Enfornado")
+        OVEN_CONCLUDED = "oven_concluded", _("Retirado do forno")
+        OVEN_ABANDONED = "oven_abandoned", _("Medição de forno abandonada")
+        SHORTAGE_OVERRIDDEN = "shortage_overridden", _("Falta sobreposta")
         FINISHED = "finished", _("Concluído")
         VOIDED = "voided", _("Cancelado")
 

@@ -13,6 +13,7 @@ Examples:
 from datetime import date, timedelta
 
 from django.db.models import Q
+from django.utils import timezone
 
 
 def is_valid_for_date(quant, product, target_date: date) -> bool:
@@ -39,7 +40,10 @@ def is_valid_for_date(quant, product, target_date: date) -> bool:
 
     if quant.target_date is None:
         # Physical stock: check creation date
-        return quant.created_at.date() >= min_production
+        # ``created_at`` is stored in UTC while the production day is local.
+        # Around 21h in Brazil, ``.date()`` already points at tomorrow and can
+        # make same-day bread survive one extra day in the batch read path.
+        return timezone.localdate(quant.created_at) >= min_production
 
     # Planned stock: must be within shelflife window
     return min_production <= quant.target_date <= target_date

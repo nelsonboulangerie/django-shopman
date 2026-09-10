@@ -210,10 +210,12 @@ class TestLotGates:
         Batch.objects.create(
             sku=product.sku, ref="LOTE-OK",
             expiry_date=today + timedelta(days=1),
+            quality_grade_ref="standard",
         )
         Batch.objects.create(
             sku=product.sku, ref="LOTE-MARCADO",
             expiry_date=today + timedelta(days=1),
+            quality_grade_ref="minimal",
             nonconformity_reason="Assou demais",
             nonconformity_percent=50,
         )
@@ -284,6 +286,7 @@ class TestLotGates:
         Batch.objects.create(
             sku=product.sku, ref="VENCE-2D",
             expiry_date=today + timedelta(days=2),
+            quality_grade_ref="standard",
         )
         StockMovements.receive(
             Decimal("6"), product.sku, position=position_loja,

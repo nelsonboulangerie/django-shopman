@@ -22,6 +22,10 @@ from decimal import Decimal
 import pytest
 from django.utils import timezone
 from shopman.stockman.models import Hold, HoldStatus, Position, PositionKind, Quant
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+)
 
 from shopman.shop.services.availability import classify_planned_hold_for_session_sku
 
@@ -79,6 +83,7 @@ def _make_hold(*, quant, expires_at, planned: bool, qty=Decimal("1")):
         expires_at=expires_at,
         metadata={
             "reference": SESSION_KEY,
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
             **({"planned": True} if planned else {}),
         },
     )

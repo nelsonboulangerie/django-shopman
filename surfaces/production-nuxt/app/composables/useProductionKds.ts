@@ -5,11 +5,22 @@
 // Material/order shortage is surfaced as a structured error so the page can open
 // the shortage modal (a finish can be retried with force=1).
 import type { ProductionKDSCardProjection, ProductionKDSResponse, ProductionShortageError } from "~/types/production";
+import {
+  advanceProductionWorkOrderStep,
+  voidProductionWorkOrder,
+} from "~/generated/productionContract";
 import { parseShortage } from "~/presentation/production";
+import { newProductionMutationKey } from "~/utils/api";
+import {
+  useProductionMutationGuard,
+  type ProductionMutationBlock,
+  type ProductionMutationMetadata,
+} from "~/composables/useProductionMutationGuard";
 
 export interface ActResult {
   ok: boolean;
   shortage?: ProductionShortageError;
+  blocked?: ProductionMutationBlock;
 }
 
 export function useProductionKds() {
@@ -21,7 +32,9 @@ export function useProductionKds() {
     onResponseError: operatorSessionOnError,
   });
 
-  const cards = computed<ProductionKDSCardProjection[]>(() => data.value?.kds?.cards ?? []);
+  const kds = computed(() => data.value?.kds ?? null);
+  const mutationGuard = useProductionMutationGuard(kds, refresh);
+  const cards = computed<ProductionKDSCardProjection[]>(() => kds.value?.cards ?? []);
   const totalCount = computed(() => data.value?.kds?.total_count ?? 0);
   const lateCount = computed(() => data.value?.kds?.late_count ?? 0);
 
@@ -30,18 +43,34 @@ export function useProductionKds() {
 
   // per-WO in-flight guard (disables that card's buttons); POST then reconcile.
   const busy = ref<Set<number>>(new Set());
+  const attempts = new Map<string, string>();
   const isBusy = (pk: number) => busy.value.has(pk);
 
-  async function post(pk: number, url: string, body?: Record<string, unknown>): Promise<ActResult> {
+  async function post(
+    pk: number,
+    action: string,
+    request: (
+      idempotencyKey: string,
+      metadata: ProductionMutationMetadata,
+    ) => Promise<unknown>,
+  ): Promise<ActResult> {
     if (busy.value.has(pk)) return { ok: false };
+    const actionRef = `${action}:${pk}`;
+    const authorization = mutationGuard.authorizeMutation(actionRef);
+    if (!authorization.ok) return { ok: false, blocked: authorization.blocked };
     busy.value = new Set(busy.value).add(pk);
+    const attemptRef = actionRef;
+    const attempt = attempts.get(attemptRef) ?? newProductionMutationKey();
+    attempts.set(attemptRef, attempt);
     try {
-      await $fetch(url, { method: "POST", body: body ?? {} });
+      await request(attempt, authorization.metadata);
       await refresh();
+      attempts.delete(attemptRef);
       return { ok: true };
     } catch (err) {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
+      if (mutationGuard.handleMutationError(err)) return { ok: false };
       useSonner.error(httpErrorMessage(err, "Falha na ação. Tente de novo."));
       return { ok: false };
     } finally {
@@ -51,11 +80,29 @@ export function useProductionKds() {
     }
   }
 
-  const advanceStep = (pk: number) => post(pk, `/api/v1/backstage/production/${pk}/advance-step/`);
+  const advanceStep = (pk: number, rev: number) =>
+    post(pk, "advance_step", (idempotencyKey, metadata) =>
+      advanceProductionWorkOrderStep(pk, {
+        expected_rev:
+          kds.value?.actions.find((action) => action.ref === `advance_step:${pk}`)
+            ?.expected_rev ?? rev,
+        ...metadata,
+        idempotency_key: idempotencyKey,
+      }),
+    );
   // O finish não vive mais aqui: fechar a fornada é a Expedição (quiosque de
   // QC, useQcKiosk), sempre com partição — ADR-017 §9.
-  const voidOrder = (pk: number, reason: string) =>
-    post(pk, `/api/v1/backstage/production/${pk}/void/`, { reason });
+  const voidOrder = (pk: number, rev: number, reason: string) =>
+    post(pk, "void", (idempotencyKey, metadata) =>
+      voidProductionWorkOrder(pk, {
+        reason,
+        expected_rev:
+          kds.value?.actions.find((action) => action.ref === `void:${pk}`)
+            ?.expected_rev ?? rev,
+        ...metadata,
+        idempotency_key: idempotencyKey,
+      }),
+    );
 
   return { cards, totalCount, lateCount, pending, error, refresh, isBusy, advanceStep, voidOrder };
 }

@@ -27,8 +27,8 @@ Estados disponíveis:
 - ``sold_out`` — sem pronto e sem plano. É o esgotado honesto: o card mostra
   "Indisponível" e oferece o sino "Avise quando voltar" (``is_notifiable``).
 - ``low_stock`` — 2 prontos (limiar do canal = 5): badge "Últimas unidades".
-- ``planned`` — sem pronto hoje, fornada planejada amanhã: indisponível no
-  cardápio de hoje, mas orderável ao escolher data futura (encomenda).
+- ``planned`` — sem pronto, fornada planejada amanhã: com a fermata ativa o
+  cardápio mostra a próxima fornada e limita a fila à quantidade planejada.
 - ``paused`` — ``Product.is_sellable=False``: o operador pausou o produto em
   TODO canal. Aparece no cardápio, não vende, e NÃO oferece o sino.
 - ``paused_channel`` — ``ListingItem.is_sellable=False`` só na vitrine ``web``:
@@ -52,6 +52,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
 
 from config.management.commands.seed import (
     STOCK_VITRINE,
@@ -76,6 +77,7 @@ STOREFRONT_LISTING_REF = "web"
 #: Assinatura deixada no `reason` de todo movimento deste comando. É por ela que
 #: o `--reset` reencontra um SKU armado em outra sessão.
 MOVE_REASON_TAG = "Cenário QA"
+QA_SNAPSHOT_KEY = "_qa_scenarios_snapshot"
 
 
 def _mask(phone: str) -> str:
@@ -108,10 +110,9 @@ class Command(BaseCommand):
             nargs="*",
             metavar="SKU",
             help=(
-                "Desarma: religa a venda e repõe a vitrine até o alvo do seed. "
+                "Desarma: restaura exatamente o estado anterior aos movimentos de QA. "
                 "Sem argumento cobre os SKUs padrão + todo SKU que este comando "
-                "já mexeu; nomeie o SKU quando ele foi PAUSADO à mão (pausa não "
-                "deixa rastro no estoque)."
+                "já mexeu; nomeie SKUs adicionais para incluí-los no relatório."
             ),
         )
 
@@ -171,8 +172,14 @@ class Command(BaseCommand):
             targets[state] = (sku.strip() or DEFAULT_SKUS[state]).upper()
         return targets
 
+    @transaction.atomic
     def _arm(self, raw: list[str]) -> None:
-        from shopman.offerman.models import Product
+        from django.utils import timezone
+        from shopman.offerman.models import ListingItem, Product
+        from shopman.stockman.models import Batch
+        from shopman.stockman.shelflife import shelf_life_days_for
+
+        from config.management.commands.seed import _validate_seed_standard_batch
 
         targets = self._parse_targets(raw)
         known = set(
@@ -181,8 +188,36 @@ class Command(BaseCommand):
         for state, sku in targets.items():
             if sku not in known:
                 raise CommandError(f"SKU '{sku}' não existe no catálogo (estado '{state}').")
+        if len(set(targets.values())) != len(targets):
+            raise CommandError("Cada estado precisa usar um SKU diferente.")
+        listed = set(
+            ListingItem.objects.filter(
+                listing__ref=STOREFRONT_LISTING_REF,
+                product__sku__in=set(targets.values()),
+            ).values_list("product__sku", flat=True)
+        )
+        missing = sorted(set(targets.values()) - listed)
+        if missing:
+            raise CommandError(
+                "SKU(s) fora da vitrine web: " + ", ".join(missing)
+            )
+
+        # O lote determinístico de "últimas unidades" pode carregar QC real
+        # congelado. Recuse antes de capturar estado ou ajustar qualquer quant.
+        low_stock_sku = targets.get("low_stock")
+        if low_stock_sku and shelf_life_days_for(low_stock_sku) is not None:
+            ref = f"{low_stock_sku}-{timezone.localdate():%Y%m%d}-SEED"
+            batch = Batch.objects.filter(ref=ref).first()
+            if batch is not None:
+                _validate_seed_standard_batch(
+                    batch=batch,
+                    ref=ref,
+                    sku=low_stock_sku,
+                )
 
         self.stdout.write(self.style.MIGRATE_HEADING("🎬 Armando cenários de vitrine..."))
+        for sku in targets.values():
+            self._remember_sku_state(sku)
         for state, sku in targets.items():
             apply_storefront_state(
                 state,
@@ -195,6 +230,7 @@ class Command(BaseCommand):
         self.session_states.update(targets)
         self.touched.update(targets.values())
 
+    @transaction.atomic
     def _restock(self, raw: str) -> None:
         from shopman.offerman.models import Product
         from shopman.stockman import stock
@@ -212,6 +248,7 @@ class Command(BaseCommand):
         if qty <= 0:
             raise CommandError("A reposição precisa ser maior que zero.")
 
+        self._remember_sku_state(sku)
         self.touched.add(sku)
         pendentes_antes = self._pending(sku)
         self.stdout.write(
@@ -232,59 +269,114 @@ class Command(BaseCommand):
         else:
             self.stdout.write("  🔕 ninguém estava inscrito neste SKU")
 
+    @transaction.atomic
     def _reset(self, extra: list[str] | None = None) -> None:
+        from django.db.models import Sum
         from shopman.offerman.models import ListingItem, Product
         from shopman.stockman import stock
+        from shopman.stockman.models import Move, Quant
 
         skus = sorted(set(DEFAULT_SKUS.values()) | self._previously_touched() | {
             s.strip().upper() for s in (extra or []) if s.strip()
         })
         self.stdout.write(self.style.MIGRATE_HEADING("🧹 Desarmando cenários..."))
 
-        religados = Product.objects.filter(sku__in=skus, is_sellable=False).update(is_sellable=True)
-        religados_canal = ListingItem.objects.filter(
-            listing__ref=STOREFRONT_LISTING_REF, product__sku__in=skus, is_sellable=False
-        ).update(is_sellable=True)
-        if religados or religados_canal:
-            self.stdout.write(
-                f"  ✅ venda religada: {religados} produto(s), {religados_canal} item(ns) de vitrine"
-            )
-
-        for sku in skus:
-            alvo = Decimal(str(STOCK_VITRINE.get(sku, FALLBACK_RESTOCK_QTY)))
-            atual = stock.available(sku, position=self.vitrine)
-            delta = alvo - atual
-            if delta <= 0:
+        products = list(Product.objects.filter(sku__in=skus))
+        restoration: list[tuple[Product, dict, list[tuple[object, Decimal]]]] = []
+        for product in products:
+            snapshot = dict((product.metadata or {}).get(QA_SNAPSHOT_KEY) or {})
+            if not snapshot:
                 continue
-            stock.receive(
-                quantity=delta,
-                sku=sku,
-                position=self.vitrine,
-                reason=f"{MOVE_REASON_TAG}: vitrine de volta ao alvo do seed",
+            marker = int(snapshot.get("after_move_pk") or 0)
+            qa_moves = (
+                Move.objects.filter(
+                    quant__sku=product.sku,
+                    pk__gt=marker,
+                    reason__contains=MOVE_REASON_TAG,
+                )
+                .values("quant_id")
+                .annotate(delta_sum=Sum("delta"))
             )
-            self.stdout.write(f"  ✅ vitrine {sku}: {atual} → {alvo}")
+            quant_targets: list[tuple[object, Decimal]] = []
+            for row in qa_moves:
+                quant = Quant.objects.select_for_update().get(pk=row["quant_id"])
+                target = quant._quantity - Decimal(str(row["delta_sum"] or 0))
+                if target < 0:
+                    raise CommandError(
+                        f"Não é possível desfazer {product.sku} sem saldo negativo; "
+                        "houve consumo do estoque temporário de QA. Reconcilie o SKU manualmente."
+                    )
+                quant_targets.append((quant, target))
+            restoration.append((product, snapshot, quant_targets))
 
-        self.touched.update(skus)
-        # O estoque PLANEJADO de amanhã (cenário `planned`) fica: é indistinguível
-        # de uma fornada real já planejada, e sobra de plano não atrapalha nenhum
-        # outro teste — só deixa o produto orderável para amanhã, como qualquer
-        # produto normal da casa.
-        self.stdout.write("  ℹ️  plano de amanhã preservado (não dá para distinguir do plano real)")
+        for product, snapshot, quant_targets in restoration:
+            for quant, target in quant_targets:
+                stock.adjust(
+                    quant,
+                    target,
+                    reason=f"{MOVE_REASON_TAG}: restaura estado anterior {product.sku}",
+                )
 
-    def _previously_touched(self) -> set[str]:
-        """SKUs que ESTE comando já mexeu, lidos do ledger.
+            Product.objects.filter(pk=product.pk).update(
+                is_sellable=bool(snapshot["product_is_sellable"]),
+                metadata={
+                    key: value
+                    for key, value in (product.metadata or {}).items()
+                    if key != QA_SNAPSHOT_KEY
+                },
+            )
+            listing_sellable = snapshot.get("listing_is_sellable")
+            if listing_sellable is not None:
+                ListingItem.objects.filter(
+                    listing__ref=STOREFRONT_LISTING_REF,
+                    product=product,
+                ).update(is_sellable=bool(listing_sellable))
+            self.stdout.write(f"  ✅ {product.sku}: estado anterior restaurado")
 
-        O rastro sobrevive à sessão: quem armou `sold_out=BF` ontem consegue
-        desarmar hoje sem lembrar do SKU. Só alcança o que passou pelo estoque —
-        pausa não gera movimento, e por isso `--reset` aceita SKU nomeado.
-        """
+        restored_skus = {product.sku for product, _snapshot, _quants in restoration}
+        self.touched.update(restored_skus)
+        self.stdout.write("  ℹ️  apenas movimentos e pausas deste comando foram desfeitos")
+
+    def _remember_sku_state(self, sku: str) -> None:
+        """Congela o estado anterior uma vez; rearmar continua reversível."""
+        from shopman.offerman.models import ListingItem, Product
         from shopman.stockman.models import Move
 
-        return set(
-            Move.objects.filter(reason__contains=MOVE_REASON_TAG)
-            .values_list("quant__sku", flat=True)
-            .distinct()
+        product = Product.objects.select_for_update().get(sku=sku)
+        metadata = dict(product.metadata or {})
+        if metadata.get(QA_SNAPSHOT_KEY):
+            return
+        listing_sellable = (
+            ListingItem.objects.filter(
+                listing__ref=STOREFRONT_LISTING_REF,
+                product=product,
+            )
+            .values_list("is_sellable", flat=True)
+            .first()
         )
+        last_move_pk = (
+            Move.objects.filter(quant__sku=sku)
+            .order_by("-pk")
+            .values_list("pk", flat=True)
+            .first()
+            or 0
+        )
+        metadata[QA_SNAPSHOT_KEY] = {
+            "after_move_pk": last_move_pk,
+            "product_is_sellable": product.is_sellable,
+            "listing_is_sellable": listing_sellable,
+        }
+        Product.objects.filter(pk=product.pk).update(metadata=metadata)
+
+    def _previously_touched(self) -> set[str]:
+        """SKUs com snapshot reversível deste comando, inclusive pausas."""
+        from shopman.offerman.models import Product
+
+        return {
+            sku
+            for sku, metadata in Product.objects.values_list("sku", "metadata")
+            if (metadata or {}).get(QA_SNAPSHOT_KEY)
+        }
 
     # ── relatório ────────────────────────────────────────────────────────
 
@@ -294,11 +386,9 @@ class Command(BaseCommand):
         return StockAlertSubscription.objects.filter(sku=sku, notified_at__isnull=True).count()
 
     def _report(self) -> None:
-        from datetime import timedelta
-
         from django.utils import timezone
-        from shopman.stockman import stock
 
+        from shopman.shop.projections import catalog_context
         from shopman.storefront.models import StockAlertSubscription
         from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
 
@@ -317,16 +407,11 @@ class Command(BaseCommand):
             item.sku: item
             for item in build_catalog_items_for_skus(skus, channel_ref=STOREFRONT_LISTING_REF)
         }
-        # O que dá para ENCOMENDAR para amanhã (pronto que sobrevive à validade
-        # + fornada planejada) sai em coluna própria: sem ela, "esgotado" e
-        # "previsto" imprimem a MESMA linha — os dois são `unavailable` com zero
-        # pronto —, e é justamente essa diferença que separa o teste do sino do
-        # teste da encomenda.
-        amanha = timezone.localdate() + timedelta(days=1)
+        today = timezone.localdate()
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n🛍️  Vitrine web, como o cliente vê:"))
         self.stdout.write(
-            f"  {'SKU':<6} {'cenário':<15} {'estado':<14} {'hoje':>6} {'amanhã':>7}  sino"
+            f"  {'SKU':<6} {'cenário':<15} {'estado':<14} {'agora':>6} {'teto':>7}  sino"
         )
         for sku in skus:
             item = items.get(sku)
@@ -336,7 +421,13 @@ class Command(BaseCommand):
             )
                 continue
             qty = "—" if item.available_qty is None else str(item.available_qty)
-            planejado = stock.available(sku, target_date=amanha, position=self.vitrine)
+            current = catalog_context.availability_for_sku(
+                sku,
+                channel_ref=STOREFRONT_LISTING_REF,
+                target_date=today,
+            )
+            current_qty = catalog_context.promisable_int(current)
+            now_qty = "—" if current_qty is None else str(current_qty)
             if item.is_paused:
                 sino = "não (pausado)"
             elif item.is_notifiable:
@@ -347,7 +438,7 @@ class Command(BaseCommand):
                 sino = "não"
             self.stdout.write(
                 f"  {sku:<6} {('/'.join(por_sku[sku]) or '—'):<15} {item.availability.value:<14} "
-                f"{qty:>6} {planejado:>7}  {sino}"
+                f"{now_qty:>6} {qty:>7}  {sino}"
             )
 
         pendentes = list(

@@ -42,9 +42,7 @@ def perform_day_closing(
             qty_reported = _parse_qty(quantities_by_sku.get(sku, "0"), sku=sku)
 
             if qty_reported <= 0:
-                snapshot.append(
-                    _snapshot(item, qty_reported=qty_reported, qty_expired=0, qty_nonconforming=0)
-                )
+                snapshot.append(_snapshot(item, qty_reported=qty_reported, qty_expired=0, qty_nonconforming=0))
                 continue
 
             qty_unsold = min(qty_reported, item.qty_available)
@@ -132,8 +130,7 @@ def _alert_open_cash_shifts(closing_date: date, open_shifts: list[dict]) -> None
         # ficou sob custódia de alguém que já saiu, e alguém precisa contá-la.
         severity="warning",
         message=(
-            f"O dia {closing_date.strftime('%d/%m')} fechou com caixa aberto: {quem}. "
-            "Conte a gaveta e feche o turno."
+            f"O dia {closing_date.strftime('%d/%m')} fechou com caixa aberto: {quem}. Conte a gaveta e feche o turno."
         ),
         dedupe_key=f"cash-open-at-closing:{closing_date.isoformat()}",
         debounce_minutes=60,
@@ -162,7 +159,12 @@ def _parse_qty(raw_qty, *, sku: str = "") -> int:
 
 
 def _snapshot(
-    item, *, qty_reported: int, qty_unsold: int = 0, qty_expired: int, qty_nonconforming: int,
+    item,
+    *,
+    qty_reported: int,
+    qty_unsold: int = 0,
+    qty_expired: int,
+    qty_nonconforming: int,
 ) -> dict:
     # qty_kept é derivada: o que sobrou, tem validade e FICA na posição — o
     # fechamento não move estoque são (C4).
@@ -180,7 +182,7 @@ def _snapshot(
 
 
 def nonconforming_lot_refs(sku: str) -> set[str]:
-    """Lotes marcados — não vão para o dia seguinte (regra da casa)."""
+    """Lotes com markdown congelado — não vão para o dia seguinte."""
     from shopman.stockman.models import Batch
 
     return set(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
@@ -190,11 +192,7 @@ def expired_lot_refs(sku: str, closing_date: date) -> set[str]:
     """Lotes que não sobrevivem ao fechamento: vencem hoje ou já venceram."""
     from shopman.stockman.models import Batch
 
-    return set(
-        Batch.objects.for_sku(sku)
-        .filter(expiry_date__lte=closing_date)
-        .values_list("ref", flat=True)
-    )
+    return set(Batch.objects.for_sku(sku).filter(expiry_date__lte=closing_date).values_list("ref", flat=True))
 
 
 def day_product_expires_on_close(sku: str) -> bool:
@@ -247,9 +245,7 @@ def _write_off_lots(
         # WASTE, não o ADJUST default do issue(): perda de fim de dia é perda.
         # Sem o kind, agrupar o ledger por tipo conta a perda como ajuste de
         # inventário e a métrica que o write-off existe para alimentar nasce torta.
-        StockMovements.issue(
-            quantity=take, quant=quant, reason=reason, kind=Move.Kind.WASTE
-        )
+        StockMovements.issue(quantity=take, quant=quant, reason=reason, kind=Move.Kind.WASTE)
         remaining -= take
         written_off += take
     return int(written_off)
@@ -326,9 +322,7 @@ def production_summary(closing_date: date) -> dict:
     # denominador dela já está em `finished`; grau só aparece quando declarado.
     if by_pk:
         quality_lines = (
-            WorkOrderItem.objects.filter(
-                work_order_id__in=by_pk, kind=WorkOrderItem.Kind.OUTPUT
-            )
+            WorkOrderItem.objects.filter(work_order_id__in=by_pk, kind=WorkOrderItem.Kind.OUTPUT)
             .exclude(quality_grade_ref="")
             .values_list("work_order_id", "quality_grade_ref", "quantity")
         )
@@ -379,12 +373,14 @@ def _reconciliation_errors(*, closing_date: date, items: list[dict]) -> list[dic
     for sku, sold in sorted(sold_by_sku.items()):
         available = saleable_by_sku.get(sku, 0) + produced_by_sku.get(sku, 0)
         if sold > available:
-            errors.append({
-                "sku": sku,
-                "sold": sold,
-                "available": available,
-                "deficit": sold - available,
-            })
+            errors.append(
+                {
+                    "sku": sku,
+                    "sold": sold,
+                    "available": available,
+                    "deficit": sold - available,
+                }
+            )
     return errors
 
 

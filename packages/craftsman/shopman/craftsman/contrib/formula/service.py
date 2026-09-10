@@ -6,8 +6,6 @@ from datetime import date
 from decimal import ROUND_CEILING, Decimal, InvalidOperation
 from typing import Any
 
-from django.db import models, transaction
-from django.utils import timezone
 from django.utils.module_loading import import_string
 from shopman.craftsman.conf import get_setting
 from shopman.craftsman.exceptions import CraftError
@@ -67,16 +65,18 @@ def accept_suggestion(
     *,
     recipe_ref: str,
     target_date: date,
+    idempotency_key: str,
     quantity: Decimal | str | int | None = None,
     actor: str = "",
     position_ref: str = "",
     operator_ref: str = "",
     allow_shortage: bool = False,
     override_reason: str = "",
+    override_authorized: bool = False,
     basis: dict[str, Any] | None = None,
 ):
-    """Accept a formula suggestion by creating a WorkOrder."""
-    from shopman.craftsman.models import Recipe, WorkOrderEvent
+    """Accept a formula suggestion through the canonical production facade."""
+    from shopman.craftsman.models import Recipe, WorkOrder
 
     recipe = Recipe.objects.get(ref=recipe_ref, is_active=True)
     if basis is None:
@@ -86,50 +86,64 @@ def accept_suggestion(
         planned_qty = _decimal(quantity) if quantity is not None else line.quantity
         formula_basis = _basis_with_quantity(line.basis, planned_qty)
     else:
-        planned_qty = _decimal(quantity) if quantity is not None else _decimal(
-            basis.get("rounded_quantity") or basis.get("adjusted_quantity") or basis.get("base_quantity")
+        planned_qty = (
+            _decimal(quantity)
+            if quantity is not None
+            else _decimal(basis.get("rounded_quantity") or basis.get("adjusted_quantity") or basis.get("base_quantity"))
         )
         formula_basis = _basis_with_quantity(basis, planned_qty)
+
+    if planned_qty <= 0:
+        raise CraftError("INVALID_QUANTITY", quantity=planned_qty)
 
     availability = formula_basis.get("material_availability") or {}
     shortages = list(availability.get("shortages") or [])
     if availability.get("all_available") is False and shortages and not allow_shortage:
         raise FormulaAvailabilityError(shortages)
 
+    formula_basis.pop("availability_override", None)
+    normalized_reason = str(override_reason or "").strip()
+    if allow_shortage and not normalized_reason:
+        raise CraftError(
+            "FORMULA_OVERRIDE_REASON_REQUIRED",
+            message="Informe o motivo para autorizar a sugestao com falta de insumos.",
+        )
     if allow_shortage:
-        formula_basis["availability_override"] = {
-            "reason": override_reason,
-            "actor": actor,
-            "accepted_at": timezone.now().isoformat(),
-        }
+        raise CraftError(
+            "FORMULA_OVERRIDE_POLICY_PENDING",
+            message=(
+                "A sugestão com falta permanece bloqueada até a aprovação "
+                "e a identidade elevada serem definidas no gate D1."
+            ),
+            override_authorized=bool(override_authorized),
+        )
 
-    meta = {
-        "formula_basis": formula_basis,
-    }
-    with transaction.atomic():
-        work_order = craft.plan(
-            recipe,
-            planned_qty,
-            date=target_date,
-            source_ref="formula:suggestion",
-            position_ref=position_ref,
-            operator_ref=operator_ref,
-            actor=actor,
-            meta=meta,
+    request_key = _formula_idempotency_key(explicit_key=idempotency_key)
+    _, work_order_ref, _, _ = _production_commands().plan(
+        recipe_id=recipe.pk,
+        quantity=planned_qty,
+        target_date_value=target_date,
+        position_ref=position_ref,
+        operator_ref=operator_ref,
+        reason=normalized_reason or "formula_accept",
+        actor=actor,
+        force=bool(allow_shortage),
+        source_ref="formula:suggestion",
+        idempotency_key=request_key,
+        planning_meta={"formula_basis": formula_basis},
+        create_new=True,
+    )
+    return WorkOrder.objects.get(ref=work_order_ref)
+
+
+def _production_commands():
+    backend_path = get_setting("PRODUCTION_COMMAND_BACKEND")
+    if not backend_path:
+        raise CraftError(
+            "PRODUCTION_COMMAND_BACKEND_REQUIRED",
+            message="O host deve configurar o adaptador canônico de comandos de produção.",
         )
-        WorkOrderEvent.objects.create(
-            work_order=work_order,
-            seq=_next_seq(work_order),
-            kind=WorkOrderEvent.Kind.ADJUSTED,
-            payload={
-                "reason": "formula_accept",
-                "quantity": str(planned_qty),
-                "formula_basis": formula_basis,
-                "availability_override": bool(allow_shortage),
-            },
-            actor=actor,
-        )
-    return work_order
+    return import_string(backend_path)()
 
 
 def _line_for_recipe(*, recipe, target_date: date) -> FormulaSuggestionLine | None:
@@ -150,17 +164,19 @@ def _build_line(suggestion, *, target_date: date) -> FormulaSuggestionLine:
     adjusted = _apply_factors(base_quantity, factors)
     rounded = _round_quantity(adjusted)
     availability = _material_availability(recipe=recipe, quantity=rounded)
-    basis = _json_basis({
-        **dict(suggestion.basis or {}),
-        "date": target_date.isoformat(),
-        "output_sku": recipe.output_sku,
-        "recipe_ref": recipe.ref,
-        "base_quantity": base_quantity,
-        "adjusted_quantity": adjusted,
-        "rounded_quantity": rounded,
-        "factors": factors,
-        "material_availability": availability,
-    })
+    basis = _json_basis(
+        {
+            **dict(suggestion.basis or {}),
+            "date": target_date.isoformat(),
+            "output_sku": recipe.output_sku,
+            "recipe_ref": recipe.ref,
+            "base_quantity": base_quantity,
+            "adjusted_quantity": adjusted,
+            "rounded_quantity": rounded,
+            "factors": factors,
+            "material_availability": availability,
+        }
+    )
     return FormulaSuggestionLine(
         recipe=recipe,
         quantity=rounded,
@@ -192,14 +208,16 @@ def _factor_dicts(*, recipe, target_date: date, base_basis: dict[str, Any]) -> l
             provider = import_string(capacity_provider_path)()
             capacity = provider.capacity_for(date=target_date, output_sku=recipe.output_sku, recipe=recipe)
             if capacity and capacity.get("max_quantity") not in (None, ""):
-                factors.append({
-                    "ref": capacity.get("ref", "capacity"),
-                    "kind": "cap",
-                    "value": str(capacity["max_quantity"]),
-                    "reason": capacity.get("reason", "capacity"),
-                    "source": capacity_provider_path,
-                    "version": str(capacity.get("version") or target_date),
-                })
+                factors.append(
+                    {
+                        "ref": capacity.get("ref", "capacity"),
+                        "kind": "cap",
+                        "value": str(capacity["max_quantity"]),
+                        "reason": capacity.get("reason", "capacity"),
+                        "source": capacity_provider_path,
+                        "version": str(capacity.get("version") or target_date),
+                    }
+                )
         except Exception:
             logger.warning("formula_capacity_provider_failed provider=%s", capacity_provider_path, exc_info=True)
     return [_json_basis(factor) for factor in factors]
@@ -305,11 +323,11 @@ def _decimal(value) -> Decimal:
         raise CraftError("INVALID_QUANTITY", quantity=value) from exc
 
 
-def _next_seq(work_order) -> int:
-    from django.db.models import Value
-    from django.db.models.functions import Coalesce
-
-    return (
-        work_order.events.aggregate(m=Coalesce(models.Max("seq"), Value(-1)))["m"]
-        + 1
+def _formula_idempotency_key(*, explicit_key: str) -> str:
+    client_key = str(explicit_key or "").strip()
+    if client_key:
+        return f"formula:{client_key}"
+    raise CraftError(
+        "FORMULA_IDEMPOTENCY_KEY_REQUIRED",
+        message="A aceitação da sugestão exige uma chave única da tentativa.",
     )

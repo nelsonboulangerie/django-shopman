@@ -55,6 +55,7 @@ def fornada(db):
         quantity="10",
         target_date_value=date.today().isoformat(),
         actor="setup",
+        idempotency_key="two-benches-setup",
     )
     return receita, WorkOrder.objects.get(recipe=receita, status=WorkOrder.Status.PLANNED)
 
@@ -70,6 +71,7 @@ def test_a_segunda_bancada_e_recusada_em_vez_de_vencer(forneiro, fornada):
         target_date_value=date.today().isoformat(),
         actor="bancada-a",
         expected_rev=rev_que_as_duas_leram,
+        idempotency_key="two-benches-adjust-a",
     )
 
     with pytest.raises(ProductionConflict):
@@ -79,18 +81,15 @@ def test_a_segunda_bancada_e_recusada_em_vez_de_vencer(forneiro, fornada):
             target_date_value=date.today().isoformat(),
             actor="bancada-b",
             expected_rev=rev_que_as_duas_leram,
+            idempotency_key="two-benches-adjust-b",
         )
 
     ordem.refresh_from_db()
     assert ordem.quantity == Decimal("40"), "o primeiro número tem de sobreviver"
 
 
-def test_sem_rev_o_contrato_antigo_continua_valendo(forneiro, fornada):
-    """Assert-positivo: `expected_rev=None` mantém o last-write-wins.
-
-    É o contrato documentado do craftsman para uso standalone, e tornar obrigatório
-    quebraria todo chamador que não tem quadro para ler.
-    """
+def test_cada_novo_gesto_usa_a_revisao_que_acabou_de_ler(forneiro, fornada):
+    """Assert-positivo: atualizar o quadro permite um segundo ajuste legítimo."""
     receita, ordem = fornada
 
     production.apply_planned(
@@ -98,12 +97,17 @@ def test_sem_rev_o_contrato_antigo_continua_valendo(forneiro, fornada):
         quantity="40",
         target_date_value=date.today().isoformat(),
         actor="bancada-a",
+        expected_rev=ordem.rev,
+        idempotency_key="two-benches-fresh-a",
     )
+    ordem.refresh_from_db()
     production.apply_planned(
         recipe_id=receita.pk,
         quantity="25",
         target_date_value=date.today().isoformat(),
         actor="bancada-b",
+        expected_rev=ordem.rev,
+        idempotency_key="two-benches-fresh-b",
     )
 
     ordem.refresh_from_db()
@@ -148,4 +152,9 @@ def test_o_estorno_tambem_confere(forneiro, fornada):
     WorkOrder.objects.filter(pk=ordem.pk).update(rev=rev_velha + 5)
 
     with pytest.raises(ProductionConflict):
-        production.apply_void(ordem.pk, actor="bancada-b", expected_rev=rev_velha)
+        production.apply_void(
+            ordem.pk,
+            actor="bancada-b",
+            expected_rev=rev_velha,
+            idempotency_key="two-benches-stale-void",
+        )

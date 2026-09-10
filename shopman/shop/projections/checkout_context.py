@@ -129,6 +129,7 @@ def _availability_for_sku(
             excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
     except Exception as e:
         logger.warning("checkout_availability_lookup_failed sku=%s: %s", sku, e, exc_info=True)

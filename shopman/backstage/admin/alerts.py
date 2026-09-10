@@ -22,11 +22,26 @@ class OperatorAlertAdmin(ModelAdmin):
         "short_message",
         "order_ref",
         "acknowledged_badge",
+        "acknowledged_by",
+        "acknowledged_at",
+        "resolved_by",
+        "resolved_at",
         "created_at",
     )
     list_filter = ("type", "severity", "acknowledged")
     search_fields = ("message", "order_ref")
-    readonly_fields = ("type", "severity", "message", "order_ref", "created_at")
+    readonly_fields = (
+        "type",
+        "severity",
+        "message",
+        "order_ref",
+        "acknowledged",
+        "acknowledged_by",
+        "acknowledged_at",
+        "resolved_by",
+        "resolved_at",
+        "created_at",
+    )
     list_per_page = 50
     ordering = ("-created_at",)
     list_fullwidth = True
@@ -39,8 +54,10 @@ class OperatorAlertAdmin(ModelAdmin):
 
     @display(description="reconhecido")
     def acknowledged_badge(self, obj):
+        if obj.resolved_at:
+            return unfold_badge("resolvido", "green")
         if obj.acknowledged:
-            return unfold_badge("sim", "green")
+            return unfold_badge("reconhecido", "blue")
         return unfold_badge("pendente", "yellow")
 
     @display(description="mensagem")

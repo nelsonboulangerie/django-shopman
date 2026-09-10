@@ -7,6 +7,9 @@
 
 import type {
   ForecastRowProjection as ForecastRowContract,
+  OperatorAlertProjection as OperatorAlertContract,
+  OperatorAlertsProjection as OperatorAlertsContract,
+  ProductionActionProjection,
   ProductionBlindMapProjection,
   ProductionBoardProjection,
   ProductionDashboardProjection,
@@ -14,6 +17,9 @@ import type {
   ProductionKDSCardProjection as ProductionKDSCardContract,
   ProductionKDSProjection as ProductionKDSContract,
   ProductionMiseEnPlaceProjection,
+  ProductionMaterialShortageErrorBody,
+  ProductionMaterialShortageItem,
+  ProductionOrderShortageErrorBody,
   ProductionReportsProjection,
   ProductionWeighingIngredientProjection,
   ProductionWeighingProjection,
@@ -35,6 +41,7 @@ export type {
   ProductionCountsProjection,
   ProductionDashboardProjection,
   ProductionLateWorkOrderProjection,
+  ProductionMutationCurrent,
   ProductionMatrixGroupProjection,
   ProductionMatrixGroupRowProjection,
   ProductionMatrixRowProjection,
@@ -53,12 +60,12 @@ export type {
   WorkOrderReportRow,
 } from "~/generated/productionContract";
 
-export type ProductionTimerClass = "timer-ok" | "timer-warning" | "timer-late";
+export type ProductionTimerStatusCode = "on_time" | "warning" | "late";
 
 // ── Live floor (KDS) ───────────────────────────────────────────────────────
 
 export interface ProductionKDSCardProjection extends ProductionKDSCardContract {
-  timer_class: ProductionTimerClass;
+  timer_status_code: ProductionTimerStatusCode;
 }
 
 export interface ProductionKDSProjection extends ProductionKDSContract {
@@ -78,7 +85,8 @@ export interface ProductionBoardResponse {
 // ── O PAINEL — previsão da produção (estilo aeroporto) ──────────────────────
 // O status É a escada de confiança: Planejado → Previsto → Confirmado.
 
-export type ForecastStatus = "scheduled" | "in_progress" | "delayed" | "arrived";
+export type ForecastStatus =
+  "scheduled" | "in_progress" | "delayed" | "arrived";
 
 export interface ForecastRowProjection extends ForecastRowContract {
   status: ForecastStatus;
@@ -95,45 +103,45 @@ export interface ProductionForecastResponse {
 // ── Structured shortage envelope (material/order) ──────────────────────────
 // Mirrors backstage/api/operations.py `_shortage_response` (HTTP 409).
 
-export interface MaterialShortageItem {
-  sku: string;
-  needed: string;
-  available: string;
-  shortage: string;
-}
+export type MaterialShortageItem = ProductionMaterialShortageItem;
+export type MaterialShortageError = ProductionMaterialShortageErrorBody;
+export type OrderShortageError = ProductionOrderShortageErrorBody;
 
-export interface MaterialShortageError {
-  code: "material_shortage";
-  work_order_ref: string;
-  missing: MaterialShortageItem[];
-}
-
-export interface OrderShortageError {
-  code: "order_shortage";
-  work_order_ref: string;
-  required: string;
-  requested: string;
-  order_refs: string[];
-}
-
-export type ProductionShortageError = MaterialShortageError | OrderShortageError;
+export type ProductionShortageError =
+  MaterialShortageError | OrderShortageError;
 
 // ── Operator alerts (shared backstage projection) ──────────────────────────
 
-export interface AlertProjection {
-  pk: number;
-  type: string;
-  type_label: string;
+export type AlertAckActionProjection = ProductionActionProjection & {
+  kind: "acknowledge_alert";
+  method: "POST";
+  payload_schema: "AlertAckMutationRequest";
+  expected_rev: number;
+  source_alert_ref: string;
+  source_alert_effect: "acknowledges";
+};
+
+export type AlertContextActionProjection = ProductionActionProjection & {
+  kind: "open_alert_context";
+  method: "GET";
+  expected_rev: null;
+  source_alert_ref: string;
+  source_alert_effect: "keeps_open";
+};
+
+export type AlertActionProjection =
+  AlertAckActionProjection | AlertContextActionProjection;
+
+export interface AlertProjection extends Omit<
+  OperatorAlertContract,
+  "actions" | "severity"
+> {
   severity: "warning" | "error" | "critical";
-  severity_label: string;
-  message: string;
-  order_ref: string;
-  created_at_display: string;
+  actions: AlertActionProjection[];
 }
 
-export interface AlertsResponse {
+export interface AlertsResponse extends Omit<OperatorAlertsContract, "alerts"> {
   alerts: AlertProjection[];
-  counts: { active: number; critical: number };
 }
 
 // ── Mise en place (aggregated material needs) ───────────────────────────────
@@ -145,7 +153,8 @@ export interface MiseEnPlaceResponse {
 // ── Weighing (per-prep tickets + blind codes) ───────────────────────────────
 // Short aliases kept for the surface's components.
 
-export type WeighingIngredientProjection = ProductionWeighingIngredientProjection;
+export type WeighingIngredientProjection =
+  ProductionWeighingIngredientProjection;
 export type WeighingTicketProjection = ProductionWeighingTicketProjection;
 
 export interface WeighingResponse {

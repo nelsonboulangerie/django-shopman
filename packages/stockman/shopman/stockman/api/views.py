@@ -89,13 +89,27 @@ class AvailabilityView(APIView):
 
         channel_ref = request.query_params.get("channel_ref")
         scope = availability_scope_for_channel(channel_ref)
-        allowed_positions = None if position else scope["allowed_positions"]
+        allowed_positions = scope["allowed_positions"]
+        if position and channel_ref:
+            position_allowed = (
+                allowed_positions is None or position.ref in allowed_positions
+            ) and position.ref not in set(scope.get("excluded_positions") or ())
+            # Consulta escopada por canal continua passando pelo mesmo gate de
+            # lote; ``position_ref`` só estreita, nunca contorna a política.
+            allowed_positions = [position.ref] if position_allowed else []
+            position = None
+        elif position:
+            allowed_positions = None
 
         data = availability_for_sku(
             sku,
             position=position,
             safety_margin=scope["safety_margin"],
             allowed_positions=allowed_positions,
+            excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
         serializer = AvailabilitySerializer(data)
         return Response(serializer.data)
@@ -135,6 +149,10 @@ class BulkAvailabilityView(APIView):
             skus,
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
+            excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
 
         zero = Decimal("0")
@@ -144,25 +162,29 @@ class BulkAvailabilityView(APIView):
         for sku in skus:
             data = avail_map.get(sku)
             if data is None:
-                results.append({
-                    "sku": sku,
-                    "total_available": zero,
-                    "total_promisable": zero,
-                    "total_reserved": zero,
-                    "breakdown": zero_breakdown,
-                    "is_planned": False,
-                    "is_paused": False,
-                })
+                results.append(
+                    {
+                        "sku": sku,
+                        "total_available": zero,
+                        "total_promisable": zero,
+                        "total_reserved": zero,
+                        "breakdown": zero_breakdown,
+                        "is_planned": False,
+                        "is_paused": False,
+                    }
+                )
             else:
-                results.append({
-                    "sku": data["sku"],
-                    "total_available": data["total_available"],
-                    "total_promisable": data["total_promisable"],
-                    "total_reserved": data["total_reserved"],
-                    "breakdown": data["breakdown"],
-                    "is_planned": data["is_planned"],
-                    "is_paused": data["is_paused"],
-                })
+                results.append(
+                    {
+                        "sku": data["sku"],
+                        "total_available": data["total_available"],
+                        "total_promisable": data["total_promisable"],
+                        "total_reserved": data["total_reserved"],
+                        "breakdown": data["breakdown"],
+                        "is_planned": data["is_planned"],
+                        "is_paused": data["is_paused"],
+                    }
+                )
 
         serializer = BulkAvailabilitySerializer(results, many=True)
         return Response(serializer.data)
@@ -229,6 +251,10 @@ class PromiseView(APIView):
             target_date=target_date,
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
+            excluded_positions=scope.get("excluded_positions"),
+            expiry_margin_days=scope.get("expiry_margin_days", 0),
+            include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
         serializer = PromiseDecisionSerializer(decision)
         return Response(serializer.data)
@@ -274,9 +300,7 @@ class PositionQuantsView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        quants = Quant.objects.filter(position=position).filter(
-            _quantity__gt=0
-        ).select_related("position")
+        quants = Quant.objects.filter(position=position).filter(_quantity__gt=0).select_related("position")
 
         min_qty = request.query_params.get("min_qty")
         if min_qty:
@@ -312,13 +336,15 @@ class BelowMinimumAlertView(APIView):
             if position_ref and pos_ref != position_ref:
                 continue
 
-            results.append({
-                "sku": alert.sku,
-                "position_ref": pos_ref,
-                "current_qty": current_available,
-                "minimum_qty": alert.min_quantity,
-                "deficit": alert.min_quantity - current_available,
-            })
+            results.append(
+                {
+                    "sku": alert.sku,
+                    "position_ref": pos_ref,
+                    "current_qty": current_available,
+                    "minimum_qty": alert.min_quantity,
+                    "deficit": alert.min_quantity - current_available,
+                }
+            )
 
         serializer = BelowMinimumAlertSerializer(results, many=True)
         return Response(serializer.data)
@@ -373,14 +399,16 @@ class ReceiveView(APIView):
 
         last_move = quant.moves.order_by("-timestamp").first()
 
-        resp = MoveResponseSerializer({
-            "move_id": last_move.pk,
-            "sku": data["sku"],
-            "qty": data["qty"],
-            "position_ref": data["position_ref"],
-            "new_balance": quant._quantity,
-            "created_at": last_move.timestamp,
-        })
+        resp = MoveResponseSerializer(
+            {
+                "move_id": last_move.pk,
+                "sku": data["sku"],
+                "qty": data["qty"],
+                "position_ref": data["position_ref"],
+                "new_balance": quant._quantity,
+                "created_at": last_move.timestamp,
+            }
+        )
         return Response(resp.data, status=status.HTTP_201_CREATED)
 
 
@@ -444,14 +472,16 @@ class IssueView(APIView):
 
         quant.refresh_from_db()
 
-        resp = MoveResponseSerializer({
-            "move_id": move.pk,
-            "sku": data["sku"],
-            "qty": data["qty"],
-            "position_ref": data["position_ref"],
-            "new_balance": quant._quantity,
-            "created_at": move.timestamp,
-        })
+        resp = MoveResponseSerializer(
+            {
+                "move_id": move.pk,
+                "sku": data["sku"],
+                "qty": data["qty"],
+                "position_ref": data["position_ref"],
+                "new_balance": quant._quantity,
+                "created_at": move.timestamp,
+            }
+        )
         return Response(resp.data, status=status.HTTP_201_CREATED)
 
 
@@ -536,8 +566,7 @@ class HoldListView(APIView):
         elif is_active and is_active.lower() == "false":
             now = timezone.now()
             qs = qs.exclude(
-                Q(status__in=["pending", "confirmed"])
-                & (Q(expires_at__isnull=True) | Q(expires_at__gte=now))
+                Q(status__in=["pending", "confirmed"]) & (Q(expires_at__isnull=True) | Q(expires_at__gte=now))
             )
 
         paginator = StockmanPagination()

@@ -66,11 +66,13 @@ def test_history_report_returns_work_order_shape(report_data):
 
 @pytest.mark.django_db
 def test_operator_productivity_aggregates_finished_only(report_data):
-    report = build_production_reports({
-        "date_from": report_data["today"],
-        "date_to": report_data["today"],
-        "report_kind": "operator_productivity",
-    })
+    report = build_production_reports(
+        {
+            "date_from": report_data["today"],
+            "date_to": report_data["today"],
+            "report_kind": "operator_productivity",
+        }
+    )
 
     assert [row.operator_ref for row in report.operator_rows] == ["ana"]
     assert report.operator_rows[0].wo_count == 1
@@ -79,11 +81,13 @@ def test_operator_productivity_aggregates_finished_only(report_data):
 
 @pytest.mark.django_db
 def test_recipe_waste_returns_top_waste_rows(report_data):
-    report = build_production_reports({
-        "date_from": report_data["today"],
-        "date_to": report_data["today"],
-        "report_kind": "recipe_waste",
-    })
+    report = build_production_reports(
+        {
+            "date_from": report_data["today"],
+            "date_to": report_data["today"],
+            "report_kind": "recipe_waste",
+        }
+    )
 
     assert report.waste_rows[0].recipe_ref == "report-cafe"
     assert report.waste_rows[0].loss_total == "4"
@@ -100,31 +104,37 @@ def test_date_range_filter_excludes_old_work_orders(report_data):
 
 @pytest.mark.django_db
 def test_recipe_filter_reduces_history_set(report_data):
-    report = build_production_reports({
-        "date_from": report_data["today"] - timedelta(days=20),
-        "date_to": report_data["today"],
-        "recipe_ref": "report-pao",
-    })
+    report = build_production_reports(
+        {
+            "date_from": report_data["today"] - timedelta(days=20),
+            "date_to": report_data["today"],
+            "recipe_ref": "report-pao",
+        }
+    )
 
     assert [row.ref for row in report.history_rows] == [report_data["old"].ref]
 
 
 @pytest.mark.django_db
 def test_position_operator_and_status_filters(report_data):
-    report = build_production_reports({
-        "date_from": report_data["today"],
-        "date_to": report_data["today"],
-        "position_ref": "forno",
-        "operator_ref": "bia",
-        "status": WorkOrder.Status.STARTED,
-    })
+    report = build_production_reports(
+        {
+            "date_from": report_data["today"],
+            "date_to": report_data["today"],
+            "position_ref": "forno",
+            "operator_ref": "bia",
+            "status": WorkOrder.Status.STARTED,
+        }
+    )
 
     assert [row.ref for row in report.history_rows] == [report_data["started"].ref]
 
 
 @pytest.mark.django_db
 def test_inverted_range_is_normalized(report_data):
-    report = build_production_reports({"date_from": report_data["today"], "date_to": report_data["today"] - timedelta(days=1)})
+    report = build_production_reports(
+        {"date_from": report_data["today"], "date_to": report_data["today"] - timedelta(days=1)}
+    )
 
     assert report.filters.date_from == report_data["today"] - timedelta(days=1)
     assert report.filters.date_to == report_data["today"]
@@ -132,11 +142,13 @@ def test_inverted_range_is_normalized(report_data):
 
 @pytest.mark.django_db
 def test_missing_recipe_filter_returns_empty(report_data):
-    report = build_production_reports({
-        "date_from": report_data["today"],
-        "date_to": report_data["today"],
-        "recipe_ref": "missing",
-    })
+    report = build_production_reports(
+        {
+            "date_from": report_data["today"],
+            "date_to": report_data["today"],
+            "recipe_ref": "missing",
+        }
+    )
 
     assert report.history_rows == ()
 
@@ -197,33 +209,40 @@ def test_csv_export_recipe_waste_header(report_data):
 
 
 @pytest.mark.django_db
-def test_invalid_report_kind_falls_back_to_history(client, report_data):
+def test_invalid_report_kind_is_rejected(client, report_data):
     Shop.objects.create(name="Loja")
     admin = User.objects.create_superuser("admin", "a@test.com", "pw")
     client.force_login(admin)
 
-    response = client.get(reverse("api-backstage-production-reports"), {
-        "date_from": report_data["today"].isoformat(),
-        "date_to": report_data["today"].isoformat(),
-        "report_kind": "; DROP TABLE",
-    })
-    assert response.status_code == 200
-    # invalid kind silently coerced to history
-    assert response.json()["reports"]["filters"]["report_kind"] == "history"
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": report_data["today"].isoformat(),
+            "report_kind": "; DROP TABLE",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
+    assert {issue["field"] for issue in response.json()["error"]["issues"]} == {"report_kind"}
 
 
 @pytest.mark.django_db
-def test_invalid_dates_fall_back_to_default_window(client, report_data):
+def test_invalid_dates_are_rejected(client, report_data):
     Shop.objects.create(name="Loja")
     admin = User.objects.create_superuser("admin", "a@test.com", "pw")
     client.force_login(admin)
 
-    response = client.get(reverse("api-backstage-production-reports"), {
-        "date_from": "not-a-date",
-        "date_to": "also-not-a-date",
-    })
-    assert response.status_code == 200
-    filters = response.json()["reports"]["filters"]
-    today = date.today()
-    assert filters["date_to"] == today.isoformat()
-    assert filters["date_from"] == (today - timedelta(days=6)).isoformat()
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {
+            "date_from": "not-a-date",
+            "date_to": "also-not-a-date",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
+    assert {issue["field"] for issue in response.json()["error"]["issues"]} == {
+        "date_from",
+        "date_to",
+    }

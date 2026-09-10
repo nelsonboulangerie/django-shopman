@@ -82,11 +82,19 @@ def test_revogado_vence_a_origem_whatsapp(settings):
             "customer": {"name": "Ana", "phone": customer.phone},
         }
     )
-    success, error, used = _deliver(order, template="order_ready", chain=("manychat",))
+    payload = {"order_ref": order.ref}
+    success, error, used = _deliver(
+        order,
+        template="order_ready",
+        chain=("manychat",),
+        payload=payload,
+    )
 
     assert used == [], "o canal revogado voltou pela porta da origem"
-    assert success is False
-    assert error == "no active notification channel available"
+    assert success is True
+    assert error is None
+    assert payload["notification_delivery"]["status"] == "skipped"
+    assert payload["notification_delivery"]["reason"] == "customer_opt_out"
 
 
 def test_revogado_vence_ate_o_handle_manychat(settings):
@@ -106,6 +114,59 @@ def test_revogado_vence_ate_o_handle_manychat(settings):
     )
     _, _, used = _deliver(order, chain=("manychat",))
     assert used == []
+
+
+def test_opt_out_explicitly_finishes_as_auditable_skip(settings):
+    from shopman.orderman import registry
+    from shopman.orderman.dispatch import _process_directive
+    from shopman.orderman.models import Directive, Order
+
+    from shopman.shop.handlers.notification import NotificationSendHandler
+    from shopman.shop.services import notification as notification_svc
+
+    settings.DEBUG = False
+    customer = _customer()
+    ConsentService.revoke_consent(customer.ref, "whatsapp")
+    order = Order.objects.create(
+        ref="ORD-CONSENT-DONE",
+        channel_ref="web",
+        session_key="session-ORD-CONSENT-DONE",
+        status="new",
+        total_q=5000,
+        handle_type="phone",
+        handle_ref=customer.phone,
+        data={
+            "customer_ref": customer.ref,
+            "origin_channel": "whatsapp",
+            "customer": {"name": "Ana", "phone": customer.phone},
+        },
+    )
+    directive = Directive.objects.create(
+        topic="notification.send",
+        dedupe_key="notification.send:ORD-CONSENT-DONE:order_ready",
+        payload={
+            "order_ref": order.ref,
+            "template": "order_ready",
+            "customer_ref": customer.ref,
+        },
+    )
+
+    with (
+        patch.object(
+            registry,
+            "get_directive_handler",
+            return_value=NotificationSendHandler(),
+        ),
+        patch.object(notification_svc, "_resolve_backend_chain", return_value=["manychat"]),
+        patch.object(notification_svc, "notify") as mock_notify,
+    ):
+        _process_directive(directive)
+
+    directive.refresh_from_db()
+    assert directive.status == Directive.Status.DONE
+    assert directive.payload["notification_delivery"]["status"] == "skipped"
+    assert directive.payload["notification_delivery"]["reason"] == "customer_opt_out"
+    mock_notify.assert_not_called()
 
 
 def test_sem_registro_o_aviso_do_pedido_sai(settings):
@@ -207,11 +268,99 @@ def test_leitura_de_consentimento_falha_e_o_canal_cala(settings):
         }
     )
     with patch(
-        "shopman.shop.projections.customer_context.revoked_notification_channels",
+        "shopman.guestman.contrib.consent.ConsentService.get_consents",
         side_effect=RuntimeError("banco fora"),
     ):
-        _, _, used = _deliver(order, chain=("manychat",))
+        success, error, used = _deliver(order, chain=("manychat",))
     assert used == []
+    assert success is False
+    assert error == "notification preferences unavailable"
+
+
+def test_falha_ao_resolver_identidade_por_telefone_fecha_o_canal(settings):
+    """Falha do identity store não pode transformar opt-out desconhecido em envio."""
+    settings.DEBUG = False
+    order = _order(
+        data={"customer": {"name": "Ana", "phone": "+5543999001122"}},
+    )
+    payload = {"order_ref": order.ref}
+
+    with patch(
+        "shopman.guestman.services.customer.get_by_phone",
+        side_effect=RuntimeError("identity store unavailable"),
+    ):
+        success, error, used = _deliver(
+            order,
+            template="order_ready",
+            chain=("manychat",),
+            payload=payload,
+        )
+
+    assert used == []
+    assert success is False
+    assert error == "notification customer identity unavailable"
+    assert payload["notification_delivery"]["status"] == "failed"
+    assert payload["notification_delivery"]["error"] == error
+
+
+def test_falha_ao_resolver_uuid_nao_vira_cliente_ausente_com_email(settings):
+    """O helper de projeção degradava outage para None e abria o e-mail."""
+    settings.DEBUG = False
+    order = _order(
+        handle_type="",
+        handle_ref="",
+        data={
+            "customer": {
+                "uuid": "00000000-0000-0000-0000-000000000042",
+                "email": "ana@example.com",
+            },
+        },
+    )
+    payload = {"order_ref": order.ref}
+
+    with patch(
+        "shopman.guestman.services.customer.get_by_uuid",
+        side_effect=RuntimeError("identity store unavailable"),
+    ):
+        success, error, used = _deliver(
+            order,
+            template="order_ready",
+            chain=("email",),
+            payload=payload,
+        )
+
+    assert used == []
+    assert success is False
+    assert error == "notification customer identity unavailable"
+    assert payload["notification_delivery"]["status"] == "failed"
+    assert payload["notification_delivery"]["error"] == error
+
+
+def test_uuid_orfao_nao_cai_para_telefone_de_outro_cliente(settings):
+    """Identidade forte inconsistente fecha, em vez de trocar de titular."""
+    settings.DEBUG = False
+    other = _customer(ref="CLI-OUTRA", phone="+5543999003344")
+    order = _order(
+        handle_ref=other.phone,
+        data={
+            "customer": {
+                "uuid": "00000000-0000-0000-0000-000000000043",
+                "phone": other.phone,
+            },
+        },
+    )
+    payload = {"order_ref": order.ref}
+
+    success, error, used = _deliver(
+        order,
+        template="order_ready",
+        chain=("manychat",),
+        payload=payload,
+    )
+
+    assert used == []
+    assert success is False
+    assert error == "notification customer identity unavailable"
 
 
 def test_pedido_sem_cliente_conhecido_nao_e_filtrado(settings):

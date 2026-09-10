@@ -5,6 +5,16 @@
 **Escopo:** `craftsman` core, `craftsman.contrib.stockman`, `shopman/shop` (politica), `stockman` (duas colunas em `Batch` — ver correção abaixo)
 **Supersede parcialmente:** o §6.2 e o §9 de `docs/plans/QC-FORNADA.md`, que recomendavam uma FK `WorkOrder -> Batch`
 
+> **Refino operacional (2026-09-09):** grau e motivo são eixos ortogonais.
+> Ótimo/Normal são qualidade OK; Razoável/Mínimo exigem um motivo principal,
+> mas o motivo nunca define preço nem elegibilidade comercial. Cada grau pode
+> aparecer no máximo uma vez na mesma fornada. O lote passa a congelar também
+> `quality_grade_ref`, pois disponibilidade remota precisa decidir pelo grau
+> sem importar `craftsman`. Canais remotos aceitam invariavelmente apenas
+> Ótimo/Normal; somente o PDV local pode oferecer lotes com markdown. Perda
+> total é conclusão auditável com `finished_qty=0` e WASTE integral, nunca
+> `void`/estorno.
+
 > ⚠️ **Correção de premissa (2026-08-13, na implementação):** o "Primeiro fato"
 > abaixo afirma que a Onda 14 (`ea429d14`) entregou `Batch.nonconformity_reason`
 > + `nonconformity_percent` com preço/destino/visibilidade amarrados. **Esse
@@ -109,12 +119,17 @@ campo novo em `WorkOrder`. Isso mata o segundo source of truth em vez de institu
 e o `on_production_changed` roda em `transaction.on_commit`, depois das linhas gravadas —
 logo o contexto do broadcast pode ler os itens.
 
-### 4. `stockman` nao muda. A particao de lote nao e mecanismo novo
+### 4. `stockman` espelha o grau comercial congelado; a particao nao e mecanismo novo
 
 Duas linhas de OUTPUT com `batch_ref` diferente sao dois `Batch`. O split de lote e
 **consequencia** de `finish()` receber uma lista, nao uma capacidade a construir. O trabalho
 esta em `craftsman/contrib/stockman/handlers.py`, o contrib que **ja existe** — nenhum contrib
 novo.
+
+`Batch.quality_grade_ref` é um ponteiro opaco adicional ao percentual e ao motivo. Ele não
+faz o Stockman interpretar a escala: o framework entrega uma allowlist de refs ao escopo do
+canal. Isso evita o erro de inferir qualidade pelo motivo — lote Ótimo/Normal pode carregar
+uma observação, e um motivo ausente jamais transforma Razoável/Mínimo em qualidade OK.
 
 ### 5. Nao existe FK `WorkOrder -> Batch`. O elo e `batch_ref` na linha certa
 
@@ -228,11 +243,11 @@ Um app de B.I. permanece frente separada.
 - Some um source of truth (`meta["quality"]`) e some um literal duplicado (`QUALITY_LEVELS`).
 - O split de lote deixa de ser feature e vira consequencia de uma chamada.
 - A escala fica editavel no Admin sem tocar codigo, como o dono pediu.
-- `stockman`, `lot_pricing`, `closing` e o gate de canais remotos: zero mudanca.
+- O gate remoto passa a ler o grau congelado no lote e deixa de inferir elegibilidade pelo motivo.
 
 ### Negativas
 
-- Tres colunas novas em `WorkOrderItem` e uma migration em pacote core.
+- Tres colunas novas em `WorkOrderItem`, uma coluna opaca em `Batch` e migrations correspondentes.
 - Renomear `regular|bom|excelente` para ingles exige data migration em `WorkOrder.meta` e em
   `BroadcastRule.trigger_filter`.
 - Derivar a qualidade da fornada custa uma query a mais no handler de broadcast.
@@ -259,9 +274,12 @@ Um app de B.I. permanece frente separada.
 - `forces_discard` marca apenas seguranca alimentar. Defeito cosmetico nunca leva veto.
 - Nao existe campo de qualidade em `WorkOrder`. A qualidade da fornada e derivada das linhas.
 - `previsto = soma(OUTPUT) + soma(WASTE)`. Os grupos sao disjuntos por construcao.
+- Cada grau aparece no máximo uma vez por fornada; Razoável/Mínimo carregam um motivo principal.
 - Quem define preco e so o grau. `forces_discard` e veto, nunca percentual.
 - `Batch.nonconformity_percent` e escrito no finish e nunca reescrito por mudanca de catalogo.
-- Motivo vazio em `Batch` continua significando lote conforme — ter motivo e ser.
+- `Batch.quality_grade_ref` decide elegibilidade; motivo apenas explica a causa e é ortogonal ao grau.
+- Canais remotos aceitam apenas `excellent|standard`, sem opção de relaxar por override; o PDV local pode vender markdown.
+- Perda total encerra a WO como `finished`, grava WASTE integral e produz zero estoque vendável; nunca usa `void`.
 - Percentual de grau vive em `QualityGrade`, nunca em constante de codigo.
 
 ---
@@ -291,6 +309,9 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
    `DayClosing.data`.
 9. **Superficie.** Quiosque em `production-nuxt` consumindo Projection frozen (ADR-012/014):
    `label` e copy ficam em `presentation/`, a Projection carrega `ref` e `rank`.
+10. **Grau no lote e perda total.** `Batch.quality_grade_ref` congela a decisão comercial,
+    escopos remotos recebem allowlist Ótimo/Normal, partições não repetem grau e conclusão
+    com somente WASTE grava `finished_qty=0` com outcome `total_loss`.
 
 ---
 
@@ -308,7 +329,9 @@ Ordem obrigatoria; cada passo entrega valor sozinho e passa `make test`.
 - `quality_min_share` ausente se comporta como 100: fornada com qualquer unidade fora nao
   dispara ate alguem afrouxar explicitamente.
 - Alterar `markdown_percent` de um grau nao muda `nonconformity_percent` de lote ja gravado.
-- Lote com desconto nao aparece em canal remoto nem sobrevive ao fechamento.
+- Lote Razoável/Mínimo não aparece nem pode ser reservado em canal remoto, mesmo com override de configuração equivocado.
+- Motivos distintos não criam duas partições do mesmo grau.
+- Perda total consome a execução, grava WASTE e não cria lote/Quant vendável nem estorno falso.
 
 ---
 

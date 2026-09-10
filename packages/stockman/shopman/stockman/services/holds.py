@@ -22,16 +22,21 @@ from shopman.stockman.services.availability import promise_decision_for_sku
 from shopman.stockman.services.queries import _resolve_stock_profile
 from shopman.stockman.services.scope import quants_eligible_for
 
-logger = logging.getLogger('shopman.stockman')
+logger = logging.getLogger("shopman.stockman")
+
+QUALITY_GRADE_ALLOWLIST_METADATA_KEY = "_allowed_quality_grade_refs"
+QUALITY_GRADE_POLICY_VERSION_METADATA_KEY = "_quality_grade_policy_version"
+QUALITY_GRADE_POLICY_VERSION = 1
+
 
 def _parse_hold_id(hold_id: str) -> int:
     """Extract PK from hold_id."""
-    if hold_id and hold_id.startswith('hold:'):
+    if hold_id and hold_id.startswith("hold:"):
         try:
-            return int(hold_id.split(':')[1])
-        except (IndexError, ValueError):
+            return int(hold_id.split(":")[1])
+        except (IndexError, ValueError):  # silêncio-deliberado: o StockError canônico é lançado abaixo
             pass
-    raise StockError('INVALID_HOLD', hold_id=hold_id)
+    raise StockError("INVALID_HOLD", hold_id=hold_id)
 
 
 def _find_quant_for_hold(
@@ -44,6 +49,7 @@ def _find_quant_for_hold(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> Quant | None:
     """Find a quant with enough availability for the hold (FEFO).
 
@@ -67,28 +73,25 @@ def _find_quant_for_hold(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
 
     # Annotate held_qty to avoid N+1
     now = timezone.now()
-    batch_expiry = (
-        Batch.objects.filter(sku=OuterRef("sku"), ref=OuterRef("batch"))
-        .values("expiry_date")[:1]
-    )
+    batch_expiry = Batch.objects.filter(sku=OuterRef("sku"), ref=OuterRef("batch")).values("expiry_date")[:1]
     quants = quants.annotate(
         _held_qty=Coalesce(
             Sum(
-                'holds__quantity',
+                "holds__quantity",
                 filter=Q(
                     holds__status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-                ) & (
-                    Q(holds__expires_at__isnull=True) | Q(holds__expires_at__gte=now)
-                ),
+                )
+                & (Q(holds__expires_at__isnull=True) | Q(holds__expires_at__gte=now)),
             ),
-            Decimal('0'),
+            Decimal("0"),
         ),
         _batch_expiry=Subquery(batch_expiry),
-    ).order_by(F('_batch_expiry').asc(nulls_last=True), 'created_at')
+    ).order_by(F("_batch_expiry").asc(nulls_last=True), "created_at")
 
     for quant in quants:
         available = quant._quantity - quant._held_qty
@@ -102,16 +105,23 @@ class StockHolds:
     """Hold lifecycle methods."""
 
     @classmethod
-    def hold(cls, quantity, product, target_date=None,
-             expires_at=None, *,
-             actor=None,
-             allowed_positions: list[str] | None = None,
-             excluded_positions: list[str] | None = None,
-             safety_margin: int = 0,
-             expiry_margin_days: int = 0,
-             include_nonconforming: bool = True,
-             allow_demand: bool = False,
-             **metadata):
+    def hold(
+        cls,
+        quantity,
+        product,
+        target_date=None,
+        expires_at=None,
+        *,
+        actor=None,
+        allowed_positions: list[str] | None = None,
+        excluded_positions: list[str] | None = None,
+        safety_margin: int = 0,
+        expiry_margin_days: int = 0,
+        include_nonconforming: bool = True,
+        allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
+        allow_demand: bool = False,
+        **metadata,
+    ):
         """
         Create quantity hold.
 
@@ -155,7 +165,20 @@ class StockHolds:
                 and policy is not 'demand_ok'
         """
         if quantity <= 0:
-            raise StockError('INVALID_QUANTITY', requested=quantity)
+            raise StockError("INVALID_QUANTITY", requested=quantity)
+
+        metadata = dict(metadata)
+        # Versiona inclusive a política irrestrita do canal local. Ausência
+        # identifica hold legado cujo canal/escopo não foi congelado e deve
+        # falhar fechado durante o rollout.
+        metadata[QUALITY_GRADE_POLICY_VERSION_METADATA_KEY] = QUALITY_GRADE_POLICY_VERSION
+        if allowed_quality_grade_refs is not None:
+            # O hold precisa lembrar a política sob a qual nasceu. Sem esse
+            # fato, a materialização posterior poderia apontar uma reserva
+            # remota para um lote rebaixado que a leitura jamais ofereceria.
+            metadata[QUALITY_GRADE_ALLOWLIST_METADATA_KEY] = sorted(
+                {str(ref) for ref in allowed_quality_grade_refs if str(ref)}
+            )
 
         target = target_date or timezone.localdate()
         profile = _resolve_stock_profile(product)
@@ -165,12 +188,15 @@ class StockHolds:
             # safety_margin: a ESCRITA usa a mesma margem do read — senão a
             # margem do canal protege a vitrine mas não a reserva.
             decision = promise_decision_for_sku(
-                sku, quantity, target_date=target,
+                sku,
+                quantity,
+                target_date=target,
                 allowed_positions=allowed_positions,
                 excluded_positions=excluded_positions,
                 safety_margin=safety_margin,
                 expiry_margin_days=expiry_margin_days,
                 include_nonconforming=include_nonconforming,
+                allowed_quality_grade_refs=allowed_quality_grade_refs,
             )
             policy = profile["availability_policy"] or decision.availability_policy
             approved = decision.approved
@@ -190,27 +216,31 @@ class StockHolds:
             elif decision.is_paused:
                 approved = False
                 available = Decimal("0")
-            elif policy == 'demand_ok' or allow_demand:
+            elif policy == "demand_ok" or allow_demand:
                 approved = True
                 available = max(decision.available_qty, quantity)
-            elif policy == 'stock_only':
+            elif policy == "stock_only":
                 approved = quantity <= decision.available
                 available = decision.available
 
             if not approved:
                 raise StockError(
-                    'INSUFFICIENT_AVAILABLE',
+                    "INSUFFICIENT_AVAILABLE",
                     available=available,
                     requested=quantity,
                     reason_code=decision.reason_code,
                 )
 
             quant = _find_quant_for_hold(
-                sku, product, target, quantity,
+                sku,
+                product,
+                target,
+                quantity,
                 allowed_positions=allowed_positions,
                 excluded_positions=excluded_positions,
                 expiry_margin_days=expiry_margin_days,
                 include_nonconforming=include_nonconforming,
+                allowed_quality_grade_refs=allowed_quality_grade_refs,
             )
 
             if quant:
@@ -239,7 +269,7 @@ class StockHolds:
                     )
                     return hold.hold_id
 
-            if policy == 'demand_ok' or allow_demand:
+            if policy == "demand_ok" or allow_demand:
                 hold = Hold.objects.create(
                     sku=sku,
                     quant=None,
@@ -262,11 +292,7 @@ class StockHolds:
                 )
                 return hold.hold_id
 
-            raise StockError(
-                'INSUFFICIENT_AVAILABLE',
-                available=available,
-                requested=quantity
-            )
+            raise StockError("INSUFFICIENT_AVAILABLE", available=available, requested=quantity)
 
     @classmethod
     def confirm(cls, hold_id, actor=None):
@@ -285,19 +311,15 @@ class StockHolds:
             try:
                 hold = Hold.objects.select_for_update().get(pk=pk)
             except Hold.DoesNotExist:
-                raise StockError('INVALID_HOLD', hold_id=hold_id) from None
+                raise StockError("INVALID_HOLD", hold_id=hold_id) from None
 
             if hold.status != HoldStatus.PENDING:
-                raise StockError(
-                    'INVALID_STATUS',
-                    current=hold.status,
-                    expected=HoldStatus.PENDING
-                )
+                raise StockError("INVALID_STATUS", current=hold.status, expected=HoldStatus.PENDING)
 
             hold.status = HoldStatus.CONFIRMED
             if actor is not None:
-                hold.metadata['confirmed_by'] = actor.pk
-            update_fields = ['status'] + (['metadata'] if actor is not None else [])
+                hold.metadata["confirmed_by"] = actor.pk
+            update_fields = ["status"] + (["metadata"] if actor is not None else [])
             hold.save(update_fields=update_fields)
             logger.info(
                 "stock.hold.confirmed",
@@ -306,7 +328,7 @@ class StockHolds:
             return hold
 
     @classmethod
-    def release(cls, hold_id, reason='Liberado', actor=None):
+    def release(cls, hold_id, reason="Liberado", actor=None):
         """
         Release hold (cancellation).
 
@@ -323,21 +345,19 @@ class StockHolds:
             try:
                 hold = Hold.objects.select_for_update().get(pk=pk)
             except Hold.DoesNotExist:
-                raise StockError('INVALID_HOLD', hold_id=hold_id) from None
+                raise StockError("INVALID_HOLD", hold_id=hold_id) from None
 
             if hold.status not in [HoldStatus.PENDING, HoldStatus.CONFIRMED]:
                 raise StockError(
-                    'INVALID_STATUS',
-                    current=hold.status,
-                    expected=[HoldStatus.PENDING, HoldStatus.CONFIRMED]
+                    "INVALID_STATUS", current=hold.status, expected=[HoldStatus.PENDING, HoldStatus.CONFIRMED]
                 )
 
             hold.status = HoldStatus.RELEASED
             hold.resolved_at = timezone.now()
-            hold.metadata['release_reason'] = reason
+            hold.metadata["release_reason"] = reason
             if actor is not None:
-                hold.metadata['released_by'] = actor.pk
-            hold.save(update_fields=['status', 'resolved_at', 'metadata'])
+                hold.metadata["released_by"] = actor.pk
+            hold.save(update_fields=["status", "resolved_at", "metadata"])
             logger.info(
                 "stock.hold.released",
                 extra={"hold_id": hold_id, "reason": reason, "actor": actor.pk if actor else None},
@@ -345,8 +365,7 @@ class StockHolds:
             return hold
 
     @classmethod
-    def fulfill(cls, hold_id, user=None, actor=None, *, quantity: Decimal | None = None,
-                kind=Move.Kind.ADJUST):
+    def fulfill(cls, hold_id, user=None, actor=None, *, quantity: Decimal | None = None, kind=Move.Kind.ADJUST):
         """
         Fulfill hold (deliver to customer).
 
@@ -372,38 +391,54 @@ class StockHolds:
             try:
                 hold = Hold.objects.select_for_update().get(pk=pk)
             except Hold.DoesNotExist:
-                raise StockError('INVALID_HOLD', hold_id=hold_id) from None
+                raise StockError("INVALID_HOLD", hold_id=hold_id) from None
 
             if hold.status != HoldStatus.CONFIRMED:
-                raise StockError(
-                    'INVALID_STATUS',
-                    current=hold.status,
-                    expected=HoldStatus.CONFIRMED
-                )
+                raise StockError("INVALID_STATUS", current=hold.status, expected=HoldStatus.CONFIRMED)
 
             if hold.is_expired:
-                raise StockError('HOLD_EXPIRED', hold_id=hold_id)
+                raise StockError("HOLD_EXPIRED", hold_id=hold_id)
 
             if hold.quant is None:
-                raise StockError('HOLD_IS_DEMAND', hold_id=hold_id)
+                raise StockError("HOLD_IS_DEMAND", hold_id=hold_id)
 
             quant = Quant.objects.select_for_update().get(pk=hold.quant_id)
 
+            if (hold.metadata or {}).get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
+                raise StockError(
+                    "HOLD_POLICY_UNKNOWN",
+                    hold_id=hold_id,
+                    reason="quality_grade_policy_not_frozen",
+                )
+
+            allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+            if allowed_grades is not None and quant.batch:
+                from shopman.stockman.models import Batch
+
+                grade_ref = (
+                    Batch.objects.filter(sku=hold.sku, ref=quant.batch)
+                    .values_list("quality_grade_ref", flat=True)
+                    .first()
+                )
+                if not grade_ref or grade_ref not in set(allowed_grades):
+                    raise StockError(
+                        "INELIGIBLE_BATCH",
+                        hold_id=hold_id,
+                        batch=quant.batch,
+                        quality_grade_ref=grade_ref or "",
+                    )
+
             consume_qty = quantity if quantity is not None else hold.quantity
             move = Move.objects.create(
-                quant=quant,
-                delta=-consume_qty,
-                reason=f"Entrega hold:{hold.pk}",
-                kind=kind,
-                user=user
+                quant=quant, delta=-consume_qty, reason=f"Entrega hold:{hold.pk}", kind=kind, user=user
             )
 
             _actor = actor or user
             hold.status = HoldStatus.FULFILLED
             hold.resolved_at = timezone.now()
             if _actor is not None:
-                hold.metadata['fulfilled_by'] = _actor.pk
-            update_fields = ['status', 'resolved_at'] + (['metadata'] if _actor is not None else [])
+                hold.metadata["fulfilled_by"] = _actor.pk
+            update_fields = ["status", "resolved_at"] + (["metadata"] if _actor is not None else [])
             hold.save(update_fields=update_fields)
 
             logger.info(
@@ -427,9 +462,7 @@ class StockHolds:
         while True:
             with transaction.atomic():
                 batch_ids = list(
-                    Hold.objects.select_for_update(skip_locked=True)
-                    .expired()
-                    .values_list('pk', flat=True)[:batch_size]
+                    Hold.objects.select_for_update(skip_locked=True).expired().values_list("pk", flat=True)[:batch_size]
                 )
 
                 if not batch_ids:
@@ -481,9 +514,13 @@ class StockHolds:
         Returns:
             QuerySet[Hold] — active holds ordered by pk (FIFO).
         """
-        return Hold.objects.filter(
-            metadata__reference=reference,
-        ).active().order_by("pk")
+        return (
+            Hold.objects.filter(
+                metadata__reference=reference,
+            )
+            .active()
+            .order_by("pk")
+        )
 
     @staticmethod
     def extend(hold_id: str, *, expires_at=None) -> bool:
@@ -497,9 +534,9 @@ class StockHolds:
             True se o hold foi atualizado, False se não encontrado/terminal.
         """
         pk = _parse_hold_id(hold_id)
-        updated = Hold.objects.filter(
-            pk=pk, status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED]
-        ).update(expires_at=expires_at)
+        updated = Hold.objects.filter(pk=pk, status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED]).update(
+            expires_at=expires_at
+        )
         return bool(updated)
 
     @staticmethod

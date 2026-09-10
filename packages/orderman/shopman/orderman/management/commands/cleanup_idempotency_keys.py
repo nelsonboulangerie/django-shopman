@@ -15,6 +15,15 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from shopman.orderman.models import IdempotencyKey
 
+PERSISTENT_SCOPES = frozenset(
+    {
+        "production:planning-attempt",
+        "production:quick-finish-attempt",
+        "notification:original",
+        "notification:resend",
+    }
+)
+
 
 class Command(BaseCommand):
     help = "Remove IdempotencyKeys expiradas ou antigas"
@@ -46,14 +55,14 @@ class Command(BaseCommand):
         now = timezone.now()
 
         # 1. Keys com expires_at definido e expirado
-        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now)
+        expired_qs = IdempotencyKey.objects.filter(expires_at__lt=now).exclude(scope__in=PERSISTENT_SCOPES)
         expired_count = expired_qs.count()
 
         # 2. Keys antigas (criadas há mais de N dias)
         old_qs = IdempotencyKey.objects.filter(
             created_at__lt=cutoff,
             status__in=["done", "failed"],
-        )
+        ).exclude(scope__in=PERSISTENT_SCOPES)
         old_count = old_qs.count()
 
         # 3. Keys "in_progress" antigas (possíveis órfãs de processos interrompidos)
@@ -64,15 +73,13 @@ class Command(BaseCommand):
             orphan_qs = IdempotencyKey.objects.filter(
                 created_at__lt=orphan_cutoff,
                 status="in_progress",
-            )
+            ).exclude(scope__in=PERSISTENT_SCOPES)
             orphan_count = orphan_qs.count()
 
         total = expired_count + old_count + orphan_count
 
         if dry_run:
-            self.stdout.write(
-                self.style.WARNING(f"[DRY RUN] Seriam removidas {total} keys:")
-            )
+            self.stdout.write(self.style.WARNING(f"[DRY RUN] Seriam removidas {total} keys:"))
             self.stdout.write(f"  - {expired_count} expiradas (expires_at < now)")
             self.stdout.write(f"  - {old_count} antigas (> {days} dias, done/failed)")
             if include_in_progress:
@@ -97,6 +104,4 @@ class Command(BaseCommand):
             deleted += count
             self.stdout.write(f"Removidas {count} keys órfãs")
 
-        self.stdout.write(
-            self.style.SUCCESS(f"Total removido: {deleted} IdempotencyKeys")
-        )
+        self.stdout.write(self.style.SUCCESS(f"Total removido: {deleted} IdempotencyKeys"))

@@ -171,7 +171,9 @@ def initiate(order) -> None:
     _persist_intent(order, payment_data=payment_data, method=method, amount_q=amount_q, intent=intent)
     logger.info(
         "payment.initiate: %s intent %s for order %s",
-        method, intent.intent_ref, order.ref,
+        method,
+        intent.intent_ref,
+        order.ref,
     )
 
 
@@ -197,16 +199,9 @@ def _persist_intent(
     if method == "pix":
         qr_data = _extract_qr_data(intent)
         result["qr_code"] = (
-            qr_data.get("imagemQrcode")
-            or qr_data.get("qr_image")
-            or qr_data.get("qr_code")
-            or qr_data.get("qrcode")
+            qr_data.get("imagemQrcode") or qr_data.get("qr_image") or qr_data.get("qr_code") or qr_data.get("qrcode")
         )
-        result["copy_paste"] = (
-            qr_data.get("brcode")
-            or qr_data.get("copy_paste")
-            or qr_data.get("qrcode")
-        )
+        result["copy_paste"] = qr_data.get("brcode") or qr_data.get("copy_paste") or qr_data.get("qrcode")
     elif method in HOSTED_CHECKOUT_METHODS:
         # Sessão hospedada (Stripe Checkout): a URL que o cliente abre para pagar.
         checkout_url = (intent.metadata or {}).get("checkout_url")
@@ -282,7 +277,9 @@ def settle_terminal_tenders(order) -> dict[str, str]:
             settled[method] = existing_intent.intent_ref
             logger.info(
                 "payment.settle_terminal_tenders: reused captured %s intent %s for order %s",
-                method, existing_intent.intent_ref, order.ref,
+                method,
+                existing_intent.intent_ref,
+                order.ref,
             )
             continue
         # Sem o valor na chave. Com ele, um total que mudasse entre duas
@@ -319,7 +316,9 @@ def settle_terminal_tenders(order) -> dict[str, str]:
         settled[method] = intent.ref
         logger.info(
             "payment.settle_terminal_tenders: %s settled at terminal, intent %s for order %s",
-            method, intent.ref, order.ref,
+            method,
+            intent.ref,
+            order.ref,
         )
 
     if settled:
@@ -385,7 +384,7 @@ def _persist_tender_intents(order, *, payment_data: dict, settled: dict[str, str
     if tenders:
         result["tenders"] = tenders
     if single:
-        (method, ref), = settled.items()
+        ((method, ref),) = settled.items()
         result["intent_ref"] = ref
         result["method"] = method
     result.pop("error", None)
@@ -568,7 +567,9 @@ def _cancel_open_account_intents(order) -> None:
         try:
             PaymentService.cancel(intent.ref, reason="order_cancelled")
         except Exception:
-            logger.warning("payment.refund: account intent %s cancel failed order=%s", intent.ref, order.ref, exc_info=True)
+            logger.warning(
+                "payment.refund: account intent %s cancel failed order=%s", intent.ref, order.ref, exc_info=True
+            )
 
 
 def _refundable_intents(order, *, payment_data: dict) -> list[tuple[str, str]]:
@@ -618,9 +619,9 @@ def pending_cash_refunds(*, channel_ref: str | None = None) -> list[PendingCashR
     from shopman.payman import PaymentService
     from shopman.payman.models import PaymentIntent
 
-    intents = PaymentIntent.objects.filter(
-        method="cash", gateway="", status__in={"captured", "refunded"}
-    ).order_by("order_ref", "id")
+    intents = PaymentIntent.objects.filter(method="cash", gateway="", status__in={"captured", "refunded"}).order_by(
+        "order_ref", "id"
+    )
     by_order: dict[str, list] = {}
     for intent in intents:
         by_order.setdefault(intent.order_ref, []).append(intent)
@@ -677,7 +678,8 @@ def refund_cash(order, *, shift, actor, approved_by=None, reason: str = "cancela
         raise ValueError(f"Abra o caixa para devolver o dinheiro da venda {order.ref}.")
 
     cash_intents = [
-        ref for method, ref in _refundable_intents(order, payment_data=(order.data or {}).get("payment") or {})
+        ref
+        for method, ref in _refundable_intents(order, payment_data=(order.data or {}).get("payment") or {})
         if method == "cash"
     ]
     with db_transaction.atomic():
@@ -939,6 +941,7 @@ def get_payment_status(order) -> str | None:
         return embedded_status
     try:
         from shopman.payman import PaymentService
+
         intent = PaymentService.get(intent_ref)
         return intent.status
     except Exception:
@@ -1026,9 +1029,7 @@ def _record_gateway_authorization(order, *, intent_ref: str) -> str:
         actor="payment.gateway_reconcile",
         payload={"intent_ref": intent_ref},
     )
-    logger.info(
-        "payment.gateway_authorization_recovered order=%s intent=%s", order.ref, intent_ref
-    )
+    logger.info("payment.gateway_authorization_recovered order=%s intent=%s", order.ref, intent_ref)
 
     # Pedido já aceito com autorização recém-descoberta: quem captura é a mesma
     # regra do lifecycle (``_on_accepted``), que aqui já passou e não voltará.
@@ -1131,11 +1132,7 @@ def settle_from_gateway(order) -> str:
         # um pedido que nunca teve cobrança.
         # Qualquer outra coisa ("error", status novo do provedor) é estado
         # incerto, e incerto espera.
-        return (
-            "unpaid"
-            if gateway_state in {"pending", "cancelled", "not_found"}
-            else "indeterminate"
-        )
+        return "unpaid" if gateway_state in {"pending", "cancelled", "not_found"} else "indeterminate"
 
     # Só AQUI, já sabendo que o gateway tem captura, é que se escreve.
     #
@@ -1159,9 +1156,7 @@ def settle_from_gateway(order) -> str:
         try:
             result = adapter.capture(intent_ref)
         except Exception:
-            logger.warning(
-                "payment.timeout_gateway_capture_failed order=%s", order.ref, exc_info=True
-            )
+            logger.warning("payment.timeout_gateway_capture_failed order=%s", order.ref, exc_info=True)
             return "indeterminate"
 
         if not result.success:
@@ -1416,9 +1411,7 @@ def _extract_qr_data(intent: PaymentIntent) -> dict:
         try:
             return json.loads(intent.client_secret)
         except (json.JSONDecodeError, TypeError):
-            logger.warning(
-                "payment.qr_data_unreadable intent=%s", intent.intent_ref, exc_info=True
-            )
+            logger.warning("payment.qr_data_unreadable intent=%s", intent.intent_ref, exc_info=True)
 
     return {}
 
@@ -1621,10 +1614,14 @@ def _ack_payment_failed_alerts(order) -> None:
     try:
         from shopman.shop.adapters import alert as alert_adapter
 
-        alert_adapter.acknowledge("payment_failed", order_ref=order.ref)
-    # Os dois irmãos acima (`_alert_payment_failed`, `_notify_payment_failed`)
-    # já gritavam; este ficou em `logger.debug`. Alerta que não baixa é o
-    # operador perseguindo um pagamento que já entrou.
+        # Os dois irmãos acima (`_create_payment_failed_alert`,
+        # `_notify_payment_failed`) já gritavam. Resolver pelo serviço auditado
+        # evita o operador perseguir um pagamento que já entrou.
+        alert_adapter.resolve(
+            "payment_failed",
+            order_ref=order.ref,
+            actor="system:payment",
+        )
     except Exception:
         logger.warning("payment_failed_alert_ack_failed order=%s", order.ref, exc_info=True)
 
@@ -1728,6 +1725,7 @@ def _payman_intent_captured(intent_ref: str) -> bool:
     """Return True if the Payman intent is already captured. Fails silently."""
     try:
         from shopman.payman import PaymentService
+
         intent = PaymentService.get(intent_ref)
         return intent.status in ("captured", "paid", "refunded")
     except Exception:

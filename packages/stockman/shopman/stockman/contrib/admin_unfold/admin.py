@@ -506,13 +506,23 @@ class StockAlertAdmin(BaseModelAdmin):
 
 @admin.register(Batch)
 class BatchAdmin(BaseModelAdmin):
-    """Admin for Batch/Lot model."""
+    """Admin for Batch/Lot model.
+
+    O resultado comercial de QC é histórico congelado. Uma futura correção
+    autorizada precisa de comando auditável que coordene disponibilidade,
+    preço e notificações; edição direta destas três colunas seria parcial.
+    """
 
     list_display = ['ref', 'sku', 'production_date_display',
                     'expiry_date_display', 'supplier', 'is_expired_display']
     list_filter = ['expiry_date', 'production_date', SupplierFilter, ExpiryStatusFilter]
     search_fields = ['ref', 'sku', 'supplier']
-    readonly_fields = ['created_at']
+    readonly_fields = [
+        'quality_grade_ref',
+        'nonconformity_percent',
+        'nonconformity_reason',
+        'created_at',
+    ]
 
     compressed_fields = True
     warn_unsaved_form = True

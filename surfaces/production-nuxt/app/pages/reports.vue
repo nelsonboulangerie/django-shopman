@@ -69,7 +69,8 @@ const forbidden = computed(
 );
 
 const hasRows = computed(() => {
-  if (kind.value === "operator_productivity") return operatorRows.value.length > 0;
+  if (kind.value === "operator_productivity")
+    return operatorRows.value.length > 0;
   if (kind.value === "recipe_waste") return wasteRows.value.length > 0;
   if (kind.value === "quality") return qualityRows.value.length > 0;
   return historyRows.value.length > 0;
@@ -138,16 +139,16 @@ function refreshAll() {
             {{ chip.label }}
           </button>
         </div>
-        <span
-          v-if="management"
-          class="text-sm text-muted-foreground"
-          >{{ management.selected_date_display }}</span
-        >
+        <span v-if="management" class="text-sm text-muted-foreground">{{
+          management.selected_date_display
+        }}</span>
       </div>
 
       <div class="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <p
+            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
             Rendimento médio
           </p>
           <p class="mt-1 text-xl font-bold tabular-nums">
@@ -158,7 +159,9 @@ function refreshAll() {
           </p>
         </div>
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <p
+            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
             Capacidade
           </p>
           <p class="mt-1 text-xl font-bold tabular-nums">
@@ -176,7 +179,9 @@ function refreshAll() {
           </p>
         </div>
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <p
+            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
             Planejado
           </p>
           <p class="mt-1 text-xl font-bold tabular-nums">
@@ -187,7 +192,9 @@ function refreshAll() {
           </p>
         </div>
         <div class="rounded-lg border bg-card p-3">
-          <p class="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          <p
+            class="text-xs font-medium uppercase tracking-wider text-muted-foreground"
+          >
             Perda
           </p>
           <p class="mt-1 text-xl font-bold tabular-nums">
@@ -195,7 +202,7 @@ function refreshAll() {
           </p>
           <p class="text-xs text-muted-foreground">
             Concluído {{ management?.finished_qty || "0" }} de
-            {{ management?.started_qty || "0" }} iniciados
+            {{ management?.started_qty || "0" }} produzidos
           </p>
         </div>
       </div>
@@ -232,7 +239,9 @@ function refreshAll() {
                   {{ item.output_sku }}
                 </p>
               </td>
-              <td class="px-3 py-2 text-right tabular-nums font-semibold text-amber-700 dark:text-amber-300">
+              <td
+                class="px-3 py-2 text-right tabular-nums font-semibold text-amber-700 dark:text-amber-300"
+              >
                 {{ item.elapsed_minutes }}
               </td>
               <td class="px-3 py-2 text-right tabular-nums">
@@ -392,7 +401,7 @@ function refreshAll() {
               <th class="px-3 py-2 font-semibold">Ficha técnica</th>
               <th class="px-3 py-2 font-semibold">Posto</th>
               <th class="px-3 py-2 text-right font-semibold">Planejado</th>
-              <th class="px-3 py-2 text-right font-semibold">Iniciado</th>
+              <th class="px-3 py-2 text-right font-semibold">Produzido</th>
               <th class="px-3 py-2 text-right font-semibold">Concluído</th>
               <th class="px-3 py-2 text-right font-semibold">Perda</th>
               <th class="px-3 py-2 text-right font-semibold">Rendimento</th>
@@ -401,18 +410,34 @@ function refreshAll() {
             </tr>
           </thead>
           <tbody class="divide-y">
-            <tr v-for="row in historyRows" :key="row.ref" class="hover:bg-muted/30">
+            <tr
+              v-for="row in historyRows"
+              :key="row.ref"
+              class="hover:bg-muted/30"
+            >
               <td class="px-3 py-2 font-mono text-xs">{{ row.ref }}</td>
               <td class="px-3 py-2 tabular-nums">{{ row.date }}</td>
               <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
               <td class="px-3 py-2">{{ row.position_ref || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_planned }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_started || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_finished || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_loss }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.yield_rate || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.qty_planned }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.qty_started || "—" }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.qty_finished || "—" }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.qty_loss }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.yield_rate || "—" }}
+              </td>
               <td class="px-3 py-2">{{ row.operator_ref || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.duration_minutes || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.duration_minutes || "—" }}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -431,8 +456,12 @@ function refreshAll() {
               <th class="px-3 py-2 font-semibold">Operador</th>
               <th class="px-3 py-2 text-right font-semibold">Ordens</th>
               <th class="px-3 py-2 text-right font-semibold">Qtd total</th>
-              <th class="px-3 py-2 text-right font-semibold">Rendimento médio</th>
-              <th class="px-3 py-2 text-right font-semibold">Tempo médio (min)</th>
+              <th class="px-3 py-2 text-right font-semibold">
+                Rendimento médio
+              </th>
+              <th class="px-3 py-2 text-right font-semibold">
+                Tempo médio (min)
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y">
@@ -442,17 +471,28 @@ function refreshAll() {
               class="hover:bg-muted/30"
             >
               <td class="px-3 py-2 font-medium">{{ row.operator_name }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.wo_count }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.qty_total }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.yield_avg || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.duration_avg_minutes || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.wo_count }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.qty_total }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.yield_avg || "—" }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.duration_avg_minutes || "—" }}
+              </td>
             </tr>
           </tbody>
         </table>
       </div>
 
       <!-- Qualidade: a partição do QC por receita × grau × defeito -->
-      <div v-else-if="kind === 'quality'" class="overflow-x-auto rounded-lg border">
+      <div
+        v-else-if="kind === 'quality'"
+        class="overflow-x-auto rounded-lg border"
+      >
         <table class="w-full text-sm">
           <thead
             class="bg-muted/50 text-left text-xs uppercase tracking-wide text-muted-foreground"
@@ -474,7 +514,9 @@ function refreshAll() {
               <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
               <td class="px-3 py-2">{{ row.grade_label }}</td>
               <td class="px-3 py-2">{{ row.defect_label || "—" }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.quantity }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.quantity }}
+              </td>
               <td class="px-3 py-2 text-right tabular-nums">{{ row.share }}</td>
             </tr>
           </tbody>
@@ -491,7 +533,9 @@ function refreshAll() {
               <th class="px-3 py-2 font-semibold">Ficha técnica</th>
               <th class="px-3 py-2 text-right font-semibold">Ordens</th>
               <th class="px-3 py-2 text-right font-semibold">Perda total</th>
-              <th class="px-3 py-2 text-right font-semibold">Rendimento médio</th>
+              <th class="px-3 py-2 text-right font-semibold">
+                Rendimento médio
+              </th>
             </tr>
           </thead>
           <tbody class="divide-y">
@@ -501,9 +545,15 @@ function refreshAll() {
               class="hover:bg-muted/30"
             >
               <td class="px-3 py-2 font-medium">{{ row.recipe_name }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.wo_count }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.loss_total }}</td>
-              <td class="px-3 py-2 text-right tabular-nums">{{ row.yield_avg || "—" }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.wo_count }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.loss_total }}
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">
+                {{ row.yield_avg || "—" }}
+              </td>
             </tr>
           </tbody>
         </table>

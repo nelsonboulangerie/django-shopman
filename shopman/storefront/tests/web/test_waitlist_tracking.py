@@ -12,8 +12,13 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.stockman.models import Hold, HoldStatus, Position, PositionKind, Quant
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+)
 
 from shopman.shop.services import waitlist
 
@@ -35,12 +40,37 @@ def _fermata_order(ref: str = "T-1", qty: str = "2") -> Order:
     quant._quantity = Decimal("10")
     quant.save(update_fields=["_quantity"])
     order = Order.objects.create(ref=ref, channel_ref="web", status="new", total_q=1000)
-    Hold.objects.create(
+    hold = Hold.objects.create(
         sku=SKU, quant=quant, quantity=Decimal(qty),
         target_date=date.today() + TOMORROW, status=HoldStatus.PENDING,
-        expires_at=None, metadata={"reference": f"order:{ref}", "planned": True},
+        expires_at=None,
+        metadata={
+            "reference": f"order:{ref}",
+            "planned": True,
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+        },
     )
+    order.data = {
+        "hold_ids": [{"sku": SKU, "hold_id": hold.hold_id, "qty": float(hold.quantity)}],
+    }
+    order.save(update_fields=["data"])
     return order
+
+
+def _materialize(order: Order) -> None:
+    hold = Hold.objects.get(metadata__reference=f"order:{order.ref}")
+    physical, _ = Quant.objects.get_or_create(
+        sku=SKU,
+        position=hold.quant.position,
+        target_date=None,
+        batch=f"{SKU}-MATERIALIZED",
+        defaults={"metadata": {}},
+    )
+    physical._quantity = hold.quantity
+    physical.save(update_fields=["_quantity"])
+    hold.quant = physical
+    hold.expires_at = timezone.now() + timedelta(minutes=30)
+    hold.save(update_fields=["quant", "expires_at"])
 
 
 class TestTrackingSpeaksTheQueueWithoutTheNotification:
@@ -58,6 +88,7 @@ class TestTrackingSpeaksTheQueueWithoutTheNotification:
         from shopman.storefront.presentation.order_tracking import build_order_tracking
 
         order = _fermata_order("T-2")
+        _materialize(order)
         waitlist.open_window(SKU, qty_available=Decimal("5"))
         order.refresh_from_db()
 
@@ -84,6 +115,7 @@ class TestConfirmEndpoint:
 
     def test_confirming_an_open_window_locks_the_slot(self, client, monkeypatch):
         order = _fermata_order("T-4")
+        _materialize(order)
         waitlist.open_window(SKU, qty_available=Decimal("5"))
         monkeypatch.setattr(
             "shopman.shop.services.customer_orders.get_accessible_order",
@@ -123,6 +155,7 @@ class TestTheBoardTellsWaitingApartFromStuck:
         from shopman.backstage.projections.order_queue import build_order_card
 
         order = _fermata_order("T-7")
+        _materialize(order)
         waitlist.open_window(SKU, qty_available=Decimal("5"))
         order.refresh_from_db()
 

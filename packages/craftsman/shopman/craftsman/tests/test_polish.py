@@ -24,10 +24,12 @@ from shopman.craftsman.models import Recipe, RecipeItem
 class TestVersion:
     def test_version_string(self):
         import shopman.craftsman
+
         assert shopman.craftsman.__version__ == "0.3.0"
 
     def test_version_format(self):
         import shopman.craftsman
+
         parts = shopman.craftsman.__version__.split(".")
         assert len(parts) == 3
         assert all(p.isdigit() for p in parts)
@@ -118,10 +120,13 @@ class TestProductionBackendExceptions:
             mock_request.priority = None
             mock_request.reference = None
 
-            with patch(
-                "shopman.stockman.protocols.production.ProductionResult",
-            ), patch(
-                "shopman.stockman.protocols.production.ProductionStatusEnum",
+            with (
+                patch(
+                    "shopman.stockman.protocols.production.ProductionResult",
+                ),
+                patch(
+                    "shopman.stockman.protocols.production.ProductionStatusEnum",
+                ),
             ):
                 backend.request_production(mock_request)
 
@@ -151,12 +156,19 @@ class TestAPIExceptionHandling:
     @pytest.fixture
     def recipe_with_items(self, recipe):
         RecipeItem.objects.create(
-            recipe=recipe, input_sku="farinha", quantity=Decimal("5"), unit="kg",
+            recipe=recipe,
+            input_sku="farinha",
+            quantity=Decimal("5"),
+            unit="kg",
         )
         return recipe
 
-    def test_finish_stale_rev_returns_409(self, recipe_with_items):
+    def test_finish_stale_rev_returns_409(self, recipe_with_items, settings):
         """StaleRevision on finish returns 409 Conflict."""
+        settings.CRAFTSMAN = {
+            **getattr(settings, "CRAFTSMAN", {}),
+            "INVENTORY_BACKEND": None,
+        }
         wo = craft.plan(recipe_with_items, 100)
         craft.adjust(wo, quantity=97)  # bumps rev to 1
 
@@ -231,11 +243,13 @@ class TestDependencyDeclarations:
     def test_commons_exceptions_importable(self):
         """commons.exceptions.BaseError is importable (declared dep)."""
         from shopman.utils.exceptions import BaseError
+
         assert issubclass(CraftError, BaseError)
 
     def test_craft_error_inherits_base_error(self):
         """CraftError is a proper BaseError subclass."""
         from shopman.utils.exceptions import BaseError
+
         err = CraftError("TEST_CODE")
         assert isinstance(err, BaseError)
         assert isinstance(err, Exception)

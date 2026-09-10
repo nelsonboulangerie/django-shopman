@@ -293,16 +293,28 @@ class ConcurrentPaymentCaptureTests(TransactionTestCase):
         mock_adapter.capture.side_effect = mock_capture
 
         def do_capture():
-            # _payman_intent_captured returns False (no Payman record in test DB)
-            with patch("shopman.shop.services.payment._payman_intent_captured", return_value=False):
-                with patch("shopman.shop.services.payment.get_adapter", return_value=mock_adapter):
-                    payment_service.capture(order)
+            payment_service.capture(order)
 
         threads = [threading.Thread(target=do_capture) for _ in range(2)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        # Patch once around the whole race. ``unittest.mock.patch`` mutates a
+        # process-global attribute and is not safe to enter independently from
+        # overlapping threads: whichever context exits last can restore the
+        # other thread's MagicMock instead of the original function, polluting
+        # every payment test that follows in the runtime process.
+        with (
+            patch(
+                "shopman.shop.services.payment._payman_intent_captured",
+                return_value=False,
+            ),
+            patch(
+                "shopman.shop.services.payment.get_adapter",
+                return_value=mock_adapter,
+            ),
+        ):
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
 
         order.refresh_from_db()
         # transaction_id written to order.data on successful capture

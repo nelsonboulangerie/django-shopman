@@ -165,12 +165,78 @@ class OperatorAlert(models.Model):
         ("error", "Erro"),
         ("critical", "Crítico"),
     ]
+    AUDIENCE_CHOICES = [
+        ("production", "Produção"),
+        ("orders", "Pedidos"),
+        ("finance", "Financeiro"),
+        ("operations", "Operação geral"),
+    ]
+    PRODUCTION_TYPES = {
+        "production_late",
+        "production_low_yield",
+        "production_stock_short",
+        "production_stock_shortfall",
+        "production_forgotten",
+        "production_unfinished",
+        "production_batch_traceability",
+        "stock_discrepancy",
+        "stock_low",
+    }
+    FINANCE_TYPES = {
+        "payment_failed",
+        "payment_insufficient",
+        "payment_reconciliation_failed",
+        "payment_disputed",
+        "payment_after_cancel",
+        "cash_shift_open_at_closing",
+        "cash_sale_after_shift_close",
+        "bi_cash_variance",
+    }
+    ORDER_TYPES = {
+        "marketplace_rejected_unavailable",
+        "marketplace_rejected_oos",
+        "pos_rejected_unavailable",
+        "stale_new_order",
+        "lifecycle_phase_stuck",
+    }
 
     type = models.CharField("tipo", max_length=50, choices=TYPE_CHOICES)
     severity = models.CharField("severidade", max_length=10, choices=SEVERITY_CHOICES, default="warning")
+    audience = models.CharField(
+        "público operacional",
+        max_length=20,
+        choices=AUDIENCE_CHOICES,
+        default="operations",
+        db_index=True,
+    )
     message = models.TextField("mensagem")
     order_ref = models.CharField("ref do pedido", max_length=50, blank=True)
+    rev = models.PositiveBigIntegerField("revisão", default=0)
     acknowledged = models.BooleanField("reconhecido", default=False)
+    acknowledged_at = models.DateTimeField(
+        "reconhecido em",
+        null=True,
+        blank=True,
+        help_text="Vazio em registros legados reconhecidos antes da trilha nominal.",
+    )
+    acknowledged_by = models.CharField(
+        "reconhecido por",
+        max_length=100,
+        blank=True,
+        help_text="Identidade operacional que reconheceu o alerta.",
+    )
+    resolved_at = models.DateTimeField(
+        "resolvido em",
+        null=True,
+        blank=True,
+        help_text="Momento em que o sistema confirmou que a causa deixou de existir.",
+    )
+    resolved_by = models.CharField(
+        "resolvido por",
+        max_length=100,
+        blank=True,
+        help_text="Processo ou identidade que confirmou a resolução da causa.",
+    )
     created_at = models.DateTimeField("criado em", auto_now_add=True)
 
     class Meta:
@@ -180,3 +246,21 @@ class OperatorAlert(models.Model):
 
     def __str__(self):
         return f"[{self.get_severity_display()}] {self.message[:80]}"
+
+    def save(self, *args, **kwargs):
+        # Direct ORM writers predate the service/adapter boundary.  Keep them
+        # safe: a typed production/finance/order alert cannot silently inherit
+        # the generic audience merely because the caller omitted the field.
+        if self._state.adding and self.audience == "operations":
+            self.audience = self.audience_for_type(self.type)
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def audience_for_type(cls, alert_type: str) -> str:
+        if alert_type in cls.PRODUCTION_TYPES:
+            return "production"
+        if alert_type in cls.FINANCE_TYPES:
+            return "finance"
+        if alert_type in cls.ORDER_TYPES:
+            return "orders"
+        return "operations"

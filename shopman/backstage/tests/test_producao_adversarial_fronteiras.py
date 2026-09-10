@@ -28,7 +28,10 @@ from shopman.stockman.models import Position, Quant
 from shopman.stockman.models.enums import PositionKind
 
 from shopman.backstage.services import production as production_service
-from shopman.backstage.services.production import ProductionOrderShortError
+from shopman.backstage.services.production import (
+    ProductionOrderShortError,
+    production_shortage_snapshot,
+)
 
 SKU = "PAO-FRONT"
 FARINHA = "FARINHA-T1"
@@ -45,14 +48,22 @@ def cenario_encomenda(db):
     receita = Recipe.objects.create(
         ref="pao-front-v1", name="Pão", output_sku=SKU, batch_size=Decimal("100")
     )
-    pedido = Order.objects.create(ref="ENC-F1", channel_ref="web", total_q=3000)
+    pedido = Order.objects.create(
+        ref="ENC-F1",
+        channel_ref="web",
+        status=Order.Status.ACCEPTED,
+        total_q=3000,
+    )
     OrderItem.objects.create(
         order=pedido, line_id="1", sku=SKU, name="Pão", qty=Decimal("30"),
         unit_price_q=100, line_total_q=3000,
     )
     production_service.apply_planned(
-        recipe_id=receita.pk, quantity=Decimal("50"), target_date_value=None,
+        recipe_id=receita.pk,
+        quantity=Decimal("50"),
+        target_date_value=timezone.localdate().isoformat(),
         position_ref="", operator_ref="", force=False, actor="op",
+        idempotency_key="front-order-setup",
     )
     fornada = WorkOrder.objects.filter(
         recipe=receita, target_date=timezone.localdate(), status=WorkOrder.Status.PLANNED
@@ -70,8 +81,12 @@ def test_limpar_a_celula_com_encomenda_amarrada_e_recusado(cenario_encomenda):
 
     with pytest.raises(ProductionOrderShortError):
         production_service.apply_planned(
-            recipe_id=receita.pk, quantity=Decimal("0"), target_date_value=None,
+            recipe_id=receita.pk,
+            quantity=Decimal("0"),
+            target_date_value=timezone.localdate().isoformat(),
             position_ref="", operator_ref="", force=False, actor="op",
+            expected_rev=fornada.rev,
+            idempotency_key="front-order-clear-blocked",
         )
     # A fornada continua de pé: a recusa veio ANTES de apagar.
     fornada.refresh_from_db()
@@ -84,9 +99,24 @@ def test_force_limpa_a_celula_e_a_encomenda_fica_descoberta(cenario_encomenda):
     """`force` é a saída deliberada do gestor: aí sim zera, sob responsabilidade."""
     receita, fornada, _pedido = cenario_encomenda
 
+    with pytest.raises(ProductionOrderShortError) as blocked:
+        production_service.apply_planned(
+            recipe_id=receita.pk,
+            quantity=Decimal("0"),
+            target_date_value=timezone.localdate().isoformat(),
+            position_ref="", operator_ref="", force=False, actor="op",
+            expected_rev=fornada.rev,
+            idempotency_key="front-order-clear-approved",
+        )
     production_service.apply_planned(
-        recipe_id=receita.pk, quantity=Decimal("0"), target_date_value=None,
+        recipe_id=receita.pk,
+        quantity=Decimal("0"),
+        target_date_value=timezone.localdate().isoformat(),
         position_ref="", operator_ref="", force=True, actor="op",
+        reason="Gestor aceitou a falta da encomenda no teste.",
+        expected_rev=fornada.rev,
+        idempotency_key="front-order-clear-approved",
+        approved_shortage=production_shortage_snapshot(blocked.value),
     )
     fornada.refresh_from_db()
     assert fornada.status == WorkOrder.Status.VOID
@@ -131,12 +161,17 @@ def receita_com_insumo(db, vitrine, despensa):
 @pytest.fixture
 def receiver_posterior_estoura():
     """Um receiver DEPOIS do de estoque estoura no primeiro finish (o hazard real)."""
+    from django.db import transaction
+
     state = {"armed": True}
+
+    def _raise_after_commit():
+        raise RuntimeError("um callback posterior estourou")
 
     def _boom(sender, **kwargs):
         if state["armed"] and kwargs.get("action") == "finished":
             state["armed"] = False
-            raise RuntimeError("um receiver posterior estourou")
+            transaction.on_commit(_raise_after_commit)
 
     production_changed.connect(_boom, dispatch_uid="test-front-later", weak=False)
     try:
@@ -152,18 +187,30 @@ def _qty(sku, position):
 
 @pytest.mark.django_db
 def test_replay_do_finish_nao_repete_saida_nem_consumo(
-    receita_com_insumo, vitrine, despensa, receiver_posterior_estoura
+    receita_com_insumo,
+    vitrine,
+    despensa,
+    receiver_posterior_estoura,
+    django_capture_on_commit_callbacks,
 ):
     from shopman.craftsman import craft
 
     wo = craft.plan(receita_com_insumo, Decimal("40"), date=timezone.localdate())
     craft.start(wo, quantity=Decimal("40"), actor="test")
+    wo.refresh_from_db()
+    finish_rev = wo.rev
+    finish_key = "front-finish-response-loss"
 
     # Primeiro finish: tudo commita, o estoque anda, e um receiver posterior estoura.
     with pytest.raises(RuntimeError):
-        production_service.apply_finish(
-            work_order_id=wo.pk, quantity="40", actor="test"
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            production_service.apply_finish(
+                work_order_id=wo.pk,
+                quantity="40",
+                actor="test",
+                expected_rev=finish_rev,
+                idempotency_key=finish_key,
+            )
     wo.refresh_from_db()
     assert wo.status == WorkOrder.Status.FINISHED
 
@@ -173,7 +220,11 @@ def test_replay_do_finish_nao_repete_saida_nem_consumo(
 
     # O operador aperta de novo, mesmos dados: replay idempotente.
     ref_again, total = production_service.apply_finish(
-        work_order_id=wo.pk, quantity="40", actor="test"
+        work_order_id=wo.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=finish_rev,
+        idempotency_key=finish_key,
     )
     assert ref_again == wo.ref
     assert total == Decimal("40")

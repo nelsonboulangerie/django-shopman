@@ -27,6 +27,11 @@ import logging
 from datetime import date, timedelta
 from decimal import Decimal
 
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,37 +68,96 @@ def promise_horizon(channel_ref: str | None = None) -> date:
     return today + timedelta(days=cfg.horizon_days)
 
 
-def next_batch_date(sku: str, *, channel_ref: str | None = None) -> date | None:
-    """Data da próxima fornada PLANEJADA deste SKU dentro do horizonte.
+def next_batch_availability_for_skus(
+    skus: list[str],
+    *,
+    channel_ref: str | None = None,
+) -> dict[str, tuple[date, dict]]:
+    """Próxima fornada elegível e sua capacidade reservável, por SKU.
 
-    ``None`` quando não há fornada planejada alcançável — que é o caso
-    honesto de "esgotou mesmo", e o chamador deve recusar.
+    A data não pode nascer de ``Quant`` cru: posição, validade, lote e QC fazem
+    parte da promessa do canal. Avaliamos as datas candidatas em ordem com a
+    mesma leitura canônica usada pelo hold e paramos na primeira em que ainda há
+    quantidade planejada líquida. O ``dict`` retornado é a capacidade inteira
+    reservável naquela data — nunca a soma de fornadas incompatíveis.
     """
-    if not sku:
-        return None
+    unique_skus = list(dict.fromkeys(sku for sku in skus if sku))
+    if not unique_skus:
+        return {}
     horizon = promise_horizon(channel_ref)
     from django.utils import timezone
 
     today = timezone.localdate()
     if horizon <= today:
-        return None
+        return {}
     try:
         from shopman.stockman.models import Quant
-    except Exception:
-        logger.debug("waitlist.next_batch_date degraded; returning None", exc_info=True)
-        return None
+        from shopman.stockman.services.availability import availability_for_skus
 
-    return (
-        Quant.objects.filter(
-            sku=sku,
-            _quantity__gt=0,
-            target_date__gt=today,
-            target_date__lte=horizon,
+        from shopman.shop.adapters import stock as stock_adapter
+
+        scope = stock_adapter.get_channel_scope(channel_ref) if channel_ref else {}
+        kwargs = {
+            "safety_margin": int(scope.get("safety_margin") or 0),
+            "allowed_positions": scope.get("allowed_positions"),
+            "excluded_positions": scope.get("excluded_positions"),
+            "expiry_margin_days": int(scope.get("expiry_margin_days") or 0),
+            "include_nonconforming": bool(scope.get("sells_nonconforming", True)),
+            "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+        }
+
+        candidate_dates = list(
+            Quant.objects.filter(
+                sku__in=unique_skus,
+                _quantity__gt=0,
+                target_date__gt=today,
+                target_date__lte=horizon,
+            )
+            .order_by("target_date")
+            .values_list("target_date", flat=True)
+            .distinct()
         )
-        .order_by("target_date")
-        .values_list("target_date", flat=True)
-        .first()
-    )
+        remaining = set(unique_skus)
+        result: dict[str, tuple[date, dict]] = {}
+        for candidate in candidate_dates:
+            if not remaining:
+                break
+            infos = availability_for_skus(
+                sorted(remaining),
+                target_date=candidate,
+                **kwargs,
+            )
+            for sku in tuple(remaining):
+                info = infos.get(sku) or {}
+                if Decimal(str(info.get("planned") or 0)) <= 0:
+                    continue
+                result[sku] = (candidate, info)
+                remaining.remove(sku)
+        return result
+    except Exception:
+        logger.debug(
+            "waitlist.next_batch_availability degraded; returning empty",
+            exc_info=True,
+        )
+        return {}
+
+
+def next_batch_availability(
+    sku: str,
+    *,
+    channel_ref: str | None = None,
+) -> tuple[date, dict] | None:
+    """Próxima fornada elegível e capacidade, para um SKU."""
+    return next_batch_availability_for_skus(
+        [sku],
+        channel_ref=channel_ref,
+    ).get(sku)
+
+
+def next_batch_date(sku: str, *, channel_ref: str | None = None) -> date | None:
+    """Data da próxima fornada elegível no scope/QC deste canal."""
+    next_batch = next_batch_availability(sku, channel_ref=channel_ref)
+    return next_batch[0] if next_batch else None
 
 
 def reserve_target_date(
@@ -124,6 +188,7 @@ def reserve_target_date(
             excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=int(scope.get("expiry_margin_days") or 0),
             include_nonconforming=bool(scope.get("sells_nonconforming", True)),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
     except Exception:
         logger.debug("waitlist.reserve_target_date degraded; returning None", exc_info=True)
@@ -172,16 +237,80 @@ WAITLIST_KEY = "waitlist"
 # acompanhamento — o mesmo bug de três telas, agora só para quem já era
 # cliente. Perguntar pelo quant conserta os dois tempos de uma vez, sem
 # migração de dado.
-WAITLIST_HOLD_FILTER = {"metadata__planned": True, "quant__isnull": False}
+WAITLIST_HOLD_FILTER = {
+    "metadata__planned": True,
+    f"metadata__{QUALITY_GRADE_POLICY_VERSION_METADATA_KEY}": QUALITY_GRADE_POLICY_VERSION,
+    "quant__isnull": False,
+}
 
 
 def is_waitlist_hold(hold) -> bool:
-    """True quando este hold é reserva de FILA (espera uma fornada)."""
-    return bool((hold.metadata or {}).get("planned")) and hold.quant_id is not None
+    """True quando este hold é uma reserva de fila sob a política vigente.
+
+    A versão congelada não é detalhe de implementação: ``StockPlanning.realize``
+    recusa materializar um hold legado porque não sabe quais graus de qualidade o
+    canal aceitava quando a promessa foi feita. Se a fila o aceitasse mesmo assim,
+    o fim da produção chamaria o cliente para confirmar estoque que nunca foi
+    reservado para ele.
+    """
+    metadata = hold.metadata or {}
+    return (
+        bool(metadata.get("planned"))
+        and metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY)
+        == QUALITY_GRADE_POLICY_VERSION
+        and hold.quant_id is not None
+    )
 
 
-def _order_holds(order, *, sku: str | None = None):
-    """Holds vivos deste pedido (opcionalmente de um SKU)."""
+def _quant_reservation_is_sound(hold) -> bool:
+    """A reserva cabe de fato no Quant ao qual está ligada.
+
+    ``Quant.available`` desconta todos os holds vivos. Validar o saldo agregado,
+    e não apenas ``quantity >= hold.quantity``, fecha o caso em que dois holds
+    individualmente parecem caber mas juntos deixam o Quant negativo.
+    """
+    try:
+        quant = hold.quant
+        return quant.quantity >= 0 and quant.available >= 0
+    except (AttributeError, TypeError):
+        return False
+
+
+def _is_waiting_hold(hold) -> bool:
+    """Reserva válida ainda ancorada no lote planejado (fermata)."""
+    return (
+        is_waitlist_hold(hold)
+        and hold.expires_at is None
+        and hold.quant.target_date is not None
+        and _quant_reservation_is_sound(hold)
+    )
+
+
+def _is_materialized_hold(hold) -> bool:
+    """Reserva válida transferida por ``StockPlanning.realize`` ao físico.
+
+    O realize troca o Quant planejado por um Quant físico e inicia o TTL. Os dois
+    fatos são exigidos: somente mudar um carimbo não basta para abrir a janela.
+    """
+    from django.utils import timezone
+
+    return (
+        is_waitlist_hold(hold)
+        and hold.expires_at is not None
+        and hold.expires_at >= timezone.now()
+        and hold.quant.target_date is None
+        and _quant_reservation_is_sound(hold)
+    )
+
+
+def _order_holds(
+    order,
+    *,
+    sku: str | None = None,
+    include_expired: bool = False,
+    for_update: bool = False,
+):
+    """Holds deste pedido (por padrão somente os ainda vivos)."""
     try:
         from django.db.models import Q
         from django.utils import timezone
@@ -193,9 +322,13 @@ def _order_holds(order, *, sku: str | None = None):
     qs = Hold.objects.filter(
         metadata__reference=f"order:{order.ref}",
         status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
-    ).filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+    )
+    if not include_expired:
+        qs = qs.filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
     if sku:
         qs = qs.filter(sku=sku)
+    if for_update:
+        qs = qs.select_for_update()
     return list(qs.order_by("created_at"))
 
 
@@ -212,7 +345,7 @@ def state_for(order) -> str:
     if stored in (CONFIRMING, CONFIRMED, RELEASED):
         return stored
     for hold in _order_holds(order):
-        if hold.expires_at is None and is_waitlist_hold(hold):
+        if _is_waiting_hold(hold):
             return FERMATA
     return NONE
 
@@ -245,7 +378,6 @@ def queue_for(sku: str, target_date: date | None = None) -> list:
     entrou primeiro na fila, mesmo que tenha fechado o pedido depois.
     """
     try:
-        from shopman.orderman.models import Order
         from shopman.stockman.models import Hold, HoldStatus
     except Exception:
         logger.debug("waitlist.queue_for degraded", exc_info=True)
@@ -254,13 +386,45 @@ def queue_for(sku: str, target_date: date | None = None) -> list:
     holds = Hold.objects.filter(
         sku=sku,
         expires_at__isnull=True,
+        quant__target_date__isnull=False,
         metadata__reference__startswith="order:",
         status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
         **WAITLIST_HOLD_FILTER,
-    )
+    ).select_related("quant")
     if target_date is not None:
         holds = holds.filter(target_date__lte=target_date)
-    holds = holds.order_by("created_at")
+    holds = [hold for hold in holds.order_by("created_at") if _is_waiting_hold(hold)]
+
+    return _orders_from_holds(holds, require_state=FERMATA)
+
+
+def _materialized_queue_for(sku: str, target_date: date | None = None) -> list:
+    """Pedidos cujas reservas o realize transferiu ao estoque físico.
+
+    Esta fila curta existe entre ``StockPlanning.realize`` e ``open_window``.
+    Separá-la da fermata é essencial: antes do realize o hold tem Quant planejado
+    e nenhum prazo; depois dele tem Quant físico e TTL vivo.
+    """
+    from django.utils import timezone
+    from shopman.stockman.models import Hold, HoldStatus
+
+    holds = Hold.objects.filter(
+        sku=sku,
+        expires_at__gte=timezone.now(),
+        quant__target_date__isnull=True,
+        metadata__reference__startswith="order:",
+        status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+        **WAITLIST_HOLD_FILTER,
+    ).select_related("quant")
+    if target_date is not None:
+        holds = holds.filter(target_date__lte=target_date)
+    holds = [hold for hold in holds.order_by("created_at") if _is_materialized_hold(hold)]
+    return _orders_from_holds(holds)
+
+
+def _orders_from_holds(holds, *, require_state: str | None = None) -> list:
+    """Converte holds FCFS em pedidos, preservando a ordem do primeiro hold."""
+    from shopman.orderman.models import Order
 
     seen: set[str] = set()
     refs: list[str] = []
@@ -278,7 +442,10 @@ def queue_for(sku: str, target_date: date | None = None) -> list:
             status__in=("cancelled", "rejected", "returned"),
         )
     }
-    return [by_ref[ref] for ref in refs if ref in by_ref]
+    orders = [by_ref[ref] for ref in refs if ref in by_ref]
+    if require_state is not None:
+        orders = [order for order in orders if state_for(order) == require_state]
+    return orders
 
 
 def _held_qty(order, sku: str) -> Decimal:
@@ -286,6 +453,66 @@ def _held_qty(order, sku: str) -> Decimal:
         (h.quantity for h in _order_holds(order, sku=sku)),
         Decimal("0"),
     )
+
+
+def _materialized_holds_for_order(order, sku: str, *, for_update: bool = False) -> list:
+    """Holds materializados somente quando TODA a reserva de fila está pronta.
+
+    Uma linha pode ter sido coberta por mais de um hold e um pedido pode esperar
+    mais de um SKU. A CTA confirma o PEDIDO inteiro; portanto, abrir a janela
+    quando apenas o SKU que disparou esta chamada saiu do forno prometeria os
+    demais sem reserva física. Qualquer hold marcado como fila mas
+    legado/inválido também bloqueia fechado.
+    """
+    from django.utils import timezone
+
+    all_holds = _order_holds(
+        order,
+        include_expired=True,
+        for_update=for_update,
+    )
+    # ``_order_holds`` traz apenas statuses vivos. Isso é correto para saldo,
+    # mas insuficiente como prova do pedido inteiro: se o sweeper já marcou a
+    # reserva pronta de outra linha como RELEASED, ela desaparece da query. Os
+    # IDs adotados no commit são o manifesto canônico; qualquer um ausente do
+    # conjunto vivo significa que a CTA não pode mais prometer o pedido todo.
+    tracked_hold_ids = {
+        str(entry.get("hold_id"))
+        for entry in ((order.data or {}).get("hold_ids") or [])
+        if isinstance(entry, dict) and entry.get("hold_id")
+    }
+    active_hold_ids = {str(hold.hold_id) for hold in all_holds}
+    if tracked_hold_ids and not tracked_hold_ids.issubset(active_hold_ids):
+        return []
+    marked = [
+        hold
+        for hold in all_holds
+        if bool((hold.metadata or {}).get("planned"))
+    ]
+    if not marked or any(not is_waitlist_hold(hold) for hold in marked):
+        return []
+    if not all(_is_materialized_hold(hold) for hold in marked):
+        return []
+    # A confirmação é do pedido inteiro. Itens que já estavam prontos também
+    # precisam conservar uma reserva viva até a fornada pendente sair; aceitar
+    # apenas os holds ``planned`` poderia chamar o cliente depois que outro item
+    # do mesmo pedido já expirou. Demanda preparada sob pedido é válida sem Quant,
+    # mas ainda precisa carregar a política atual e um prazo vivo.
+    for hold in all_holds:
+        if hold in marked:
+            continue
+        metadata = hold.metadata or {}
+        if metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
+            return []
+        if hold.expires_at is not None and hold.expires_at < timezone.now():
+            return []
+        if hold.quant_id is None:
+            if not metadata.get("on_demand"):
+                return []
+            continue
+        if hold.quant.target_date is not None or not _quant_reservation_is_sound(hold):
+            return []
+    return [hold for hold in marked if hold.sku == sku]
 
 
 def open_window(
@@ -303,35 +530,51 @@ def open_window(
 
     Devolve os refs dos pedidos que entraram em confirmação.
     """
+    from django.db import transaction
     from django.utils import timezone
+    from shopman.orderman.models import Order
 
     remaining = Decimal(str(qty_available))
     if remaining <= 0:
         return []
 
-    cfg = config(channel_ref)
-    deadline = timezone.now() + timedelta(minutes=cfg.confirmation_minutes)
     opened: list[str] = []
 
-    for order in queue_for(sku):
+    for candidate in _materialized_queue_for(sku):
         if remaining <= 0:
             break
-        if state_for(order) != FERMATA:
-            continue
-        needed = _held_qty(order, sku)
-        if needed <= 0 or needed > remaining:
-            continue
-        remaining -= needed
-        _write_state(
-            order,
-            state=CONFIRMING,
-            sku=sku,
-            opened_at=timezone.now().isoformat(),
-            deadline=deadline.isoformat(),
-            qty=str(needed),
-        )
-        _notify_customer(order, "waitlist_available", deadline=deadline.isoformat())
-        opened.append(order.ref)
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=candidate.pk)
+            if state_for(order) != NONE:
+                continue
+            materialized = _materialized_holds_for_order(
+                order,
+                sku,
+                for_update=True,
+            )
+            needed = sum((hold.quantity for hold in materialized), Decimal("0"))
+            if needed <= 0 or needed > remaining:
+                continue
+            # ``production.emit_goods`` não tem um canal: a mesma fornada atende a
+            # fila FCFS de todos eles. O prazo, porém, é a promessa do canal em que
+            # cada pedido nasceu. ``channel_ref`` explícito preserva o override dos
+            # callers antigos; sem ele, cada pedido resolve o próprio canal.
+            order_cfg = config(channel_ref or order.channel_ref)
+            now = timezone.now()
+            deadline = now + timedelta(minutes=order_cfg.confirmation_minutes)
+            _write_state(
+                order,
+                state=CONFIRMING,
+                sku=sku,
+                opened_at=now.isoformat(),
+                deadline=deadline.isoformat(),
+                qty=str(needed),
+            )
+            # A janela e sua outbox são um fato só. Se não for possível gravar
+            # o aviso, esta transação volta e o prazo não começa em silêncio.
+            _notify_customer(order, "waitlist_available", deadline=deadline.isoformat())
+            remaining -= needed
+            opened.append(order.ref)
 
     if opened:
         logger.info(
@@ -348,20 +591,45 @@ def confirm(order) -> bool:
     na reserva, então quem desiste não precisa de estorno. Fora do prazo a
     confirmação é recusada: a vaga já é de outro.
     """
+    from django.db import transaction
     from django.utils import timezone
+    from shopman.orderman.models import Order
 
-    if state_for(order) != CONFIRMING:
-        return False
-    block = (order.data or {}).get(WAITLIST_KEY) or {}
-    deadline = _parse_iso(block.get("deadline"))
-    if deadline is not None and timezone.now() > deadline:
-        release(order, reason="confirmation_timeout")
-        return False
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        if state_for(locked) != CONFIRMING:
+            return False
+        block = (locked.data or {}).get(WAITLIST_KEY) or {}
+        deadline = _parse_iso(block.get("deadline"))
+        if deadline is not None and timezone.now() > deadline:
+            _release_locked(locked, reason="confirmation_timeout")
+            return False
+        sku = str(block.get("sku") or "")
+        if not sku or not _materialized_holds_for_order(
+            locked,
+            sku,
+            for_update=True,
+        ):
+            _release_locked(locked, reason="reservation_invalid")
+            return False
 
-    _write_state(order, state=CONFIRMED, confirmed_at=timezone.now().isoformat())
+        _write_state(locked, state=CONFIRMED, confirmed_at=timezone.now().isoformat())
+        # Gateway fora do lock: a reserva confirmada já está durável e o
+        # idempotency key do pagamento protege replay do callback.
+        transaction.on_commit(lambda order_pk=locked.pk: _charge_by_pk(order_pk))
+        logger.info("waitlist.confirm order=%s", locked.ref)
+        return True
+
+
+def _charge_by_pk(order_pk: int) -> None:
+    from shopman.orderman.models import Order
+
+    try:
+        order = Order.objects.get(pk=order_pk)
+    except Order.DoesNotExist:
+        logger.warning("waitlist._charge skipped missing order pk=%s", order_pk)
+        return
     _charge(order)
-    logger.info("waitlist.confirm order=%s", order.ref)
-    return True
 
 
 def _charge(order) -> None:
@@ -373,13 +641,45 @@ def _charge(order) -> None:
     payment-timeout que já existe, e a vaga volta pela mesma porta do
     ``release``.
     """
-    cfg = config(order.channel_ref)
-    if cfg.charge_at != "confirmation":
-        return
     try:
         from shopman.shop.services import notification, payment
 
+        # Callback e sweep podem disputar com cancelamento/liberação. Releia o
+        # fato antes de falar com o gateway: uma instância stale nunca autoriza
+        # cobrar um pedido que já saiu da confirmação.
+        order.refresh_from_db()
+        if state_for(order) != CONFIRMED or order.status in (
+            "cancelled",
+            "rejected",
+            "returned",
+        ):
+            return
+        if config(order.channel_ref).charge_at != "confirmation":
+            return
         payment.initiate(order)
+        order.refresh_from_db()
+        payment_data = (order.data or {}).get("payment") or {}
+        method = str(payment_data.get("method") or "").strip().lower()
+        if not method:
+            # O meio pode ser escolhido depois da confirmação. Não consumir a
+            # identidade permanente do aviso antes de haver o que cobrar.
+            logger.warning(
+                "waitlist._charge pending retry without method order=%s",
+                order.ref,
+            )
+            return
+        if (
+            not payment.settles_without_gateway(method)
+            and not payment_data.get("intent_ref")
+        ):
+            # ``payment.initiate`` já gravou/avisou a falha. Não consumir o
+            # dedupe permanente de payment_requested antes de existir QR/link;
+            # o reconciliador tentará de novo com a mesma chave estável.
+            logger.warning(
+                "waitlist._charge pending retry without intent order=%s",
+                order.ref,
+            )
+            return
         notification.send(order, "payment_requested")
     except Exception:
         logger.warning("waitlist._charge failed order=%s", order.ref, exc_info=True)
@@ -393,7 +693,27 @@ def release(order, *, reason: str) -> list[str]:
     próximo ou pôr na gôndola). Com ``release_policy=serve_next`` a fila tem
     preferência e o próximo é servido na hora.
     """
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        return _release_locked(locked, reason=reason)
+
+
+def _release_locked(order, *, reason: str) -> list[str]:
+    """Libera uma vez sob lock da Order; caller já está em ``atomic``."""
+    from django.db import transaction
     from django.utils import timezone
+
+    current_state = state_for(order)
+    if current_state == RELEASED:
+        return []
+    if reason == "confirmation_timeout":
+        block = (order.data or {}).get(WAITLIST_KEY) or {}
+        deadline = _parse_iso(block.get("deadline"))
+        if current_state != CONFIRMING or deadline is None or timezone.now() <= deadline:
+            return []
 
     block = (order.data or {}).get(WAITLIST_KEY) or {}
     sku = block.get("sku") or ""
@@ -404,7 +724,10 @@ def release(order, *, reason: str) -> list[str]:
                 sku, qty = hold.sku, hold.quantity
                 break
 
-    freed = _release_holds(order, sku)
+    # A CTA é do PEDIDO inteiro. Se ele esperava duas fornadas, expirar a
+    # confirmação precisa devolver as duas reservas; soltar só o SKU que abriu
+    # a janela deixaria o outro estoque físico preso para sempre.
+    freed_by_sku = _release_holds(order)
     _write_state(
         order,
         state=RELEASED,
@@ -412,21 +735,168 @@ def release(order, *, reason: str) -> list[str]:
         release_reason=reason,
     )
     _notify_customer(order, "waitlist_released", reason=reason)
-    _alert_store(order, sku=sku, qty=qty, reason=reason)
+    alert_rows = list(freed_by_sku.items()) or [(sku, qty)]
+    for released_sku, released_qty in alert_rows:
+        _alert_store(
+            order,
+            sku=released_sku,
+            qty=released_qty,
+            reason=reason,
+        )
     logger.info("waitlist.release order=%s sku=%s reason=%s", order.ref, sku, reason)
 
-    if not sku or freed <= 0:
+    if not freed_by_sku:
         return []
     cfg = config(order.channel_ref)
     if cfg.release_policy != "serve_next":
         return []
-    return open_window(sku, qty_available=freed, channel_ref=order.channel_ref)
+    # Não adquirir a próxima Order enquanto ainda seguramos esta Order e seus
+    # Holds. Duas expirações simultâneas poderiam formar A→B / B→A e deadlockar.
+    # O retorno é deliberadamente vazio: servir o próximo virou trabalho
+    # pós-commit, e portanto seu resultado não é síncrono com ``release``.
+    budgets = tuple(freed_by_sku.items())
+    transaction.on_commit(lambda: _serve_next_after_commit(budgets))
+    return []
+
+
+def _serve_next_after_commit(budgets: tuple[tuple[str, Decimal], ...]) -> None:
+    """Serve os próximos somente depois que os locks da liberação caíram.
+
+    Falha transitória não perde o fato: ``reconcile_materialized_windows`` lê os
+    holds físicos ainda sem janela na próxima varredura.
+    """
+    for released_sku, released_qty in budgets:
+        try:
+            # Sem override: cada próximo pedido recebe o prazo do próprio canal.
+            open_window(released_sku, qty_available=released_qty)
+        except Exception:
+            logger.exception(
+                "waitlist.serve_next failed sku=%s; durable sweep will retry",
+                released_sku,
+            )
+
+
+def reconcile_materialized_windows() -> int:
+    """Abre janelas perdidas depois que o estoque já materializou os holds.
+
+    O callback de uma signal não é uma outbox: o processo pode cair ou a fila de
+    Directives pode estar indisponível depois do commit do ``realize``. O próprio
+    hold físico é o receipt durável. Esta varredura encontra pedidos ainda em
+    ``NONE`` e entrega cada SKU ao mesmo ``open_window`` que revalida Order e
+    Holds sob lock, preservando FCFS e idempotência entre workers concorrentes.
+    """
+    from django.utils import timezone
+    from shopman.stockman.models import Hold, HoldStatus
+
+    skus = (
+        Hold.objects.filter(
+            expires_at__gte=timezone.now(),
+            quant__target_date__isnull=True,
+            metadata__reference__startswith="order:",
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            **WAITLIST_HOLD_FILTER,
+        )
+        .order_by()
+        .values_list("sku", flat=True)
+        .distinct()
+    )
+    opened: set[str] = set()
+    for sku in skus.iterator():
+        # O budget inclui apenas holds do próprio SKU em pedidos integralmente
+        # materializados. ``open_window`` repete esta prova sob lock antes de
+        # iniciar qualquer prazo.
+        budget = Decimal("0")
+        for order in _materialized_queue_for(sku):
+            if state_for(order) != NONE:
+                continue
+            budget += sum(
+                (hold.quantity for hold in _materialized_holds_for_order(order, sku)),
+                Decimal("0"),
+            )
+        if budget <= 0:
+            continue
+        try:
+            opened.update(open_window(sku, qty_available=budget))
+        except Exception:
+            logger.exception(
+                "waitlist.reconcile_materialized failed sku=%s; next sweep will retry",
+                sku,
+            )
+    if opened:
+        logger.info("waitlist.reconcile_materialized opened=%s", len(opened))
+    return len(opened)
+
+
+def reconcile_confirmed_charges() -> int:
+    """Recupera cobrança/outbox cujo callback pós-confirmação não terminou.
+
+    ``transaction.on_commit`` impede gateway sob lock, mas não é uma fila
+    durável: o processo pode morrer depois do commit e antes do callback. O
+    estado ``CONFIRMED`` é o receipt da decisão do cliente. A varredura repõe
+    tanto o intent ausente quanto a Directive ausente depois de um crash entre
+    esses dois commits. Os dois efeitos usam identidades permanentes e estáveis.
+    """
+    from shopman.orderman.models import Order
+
+    from shopman.shop.services import payment
+
+    recovered = 0
+    candidates = Order.objects.filter(
+        data__waitlist__state=CONFIRMED,
+    ).exclude(status__in=("cancelled", "rejected", "returned"))
+    for order in candidates.order_by("pk").iterator():
+        payment_data = (order.data or {}).get("payment") or {}
+        method = str(payment_data.get("method") or "").strip().lower()
+        if not method:
+            continue
+        if config(order.channel_ref).charge_at != "confirmation":
+            continue
+        requires_intent = not payment.settles_without_gateway(method)
+        has_intent = bool(payment_data.get("intent_ref"))
+        has_notice = _payment_request_is_recorded(order)
+        if (has_intent or not requires_intent) and has_notice:
+            continue
+        _charge(order)
+        order.refresh_from_db()
+        payment_data = (order.data or {}).get("payment") or {}
+        has_intent = bool(payment_data.get("intent_ref"))
+        if (has_intent or not requires_intent) and _payment_request_is_recorded(order):
+            recovered += 1
+    if recovered:
+        logger.info("waitlist.reconcile_confirmed_charges recovered=%s", recovered)
+    return recovered
+
+
+def _payment_request_is_recorded(order) -> bool:
+    """True quando a outbox original existe ou já existiu permanentemente."""
+    from shopman.orderman.models import Directive, IdempotencyKey
+
+    from shopman.shop.directives import (
+        NOTIFICATION_ORIGINAL_RECEIPT_SCOPE,
+        NOTIFICATION_SEND,
+    )
+
+    dedupe_key = f"{NOTIFICATION_SEND}:{order.ref}:payment_requested"
+    return IdempotencyKey.objects.filter(
+        scope=NOTIFICATION_ORIGINAL_RECEIPT_SCOPE,
+        key=dedupe_key,
+    ).exists() or Directive.objects.filter(
+        topic=NOTIFICATION_SEND,
+        dedupe_key=dedupe_key,
+    ).exists()
 
 
 def sweep_expired() -> int:
     """Libera as janelas de confirmação vencidas. Chamado pelo maintenance worker."""
     from django.utils import timezone
     from shopman.orderman.models import Order
+
+    # Recupera primeiro a janela que uma falha/crash entre o realize e a outbox
+    # deixou sem abrir. O estado físico é durável e a operação é idempotente.
+    reconcile_materialized_windows()
+    # A decisão CONFIRMED também é um fato durável. Se o processo caiu antes do
+    # callback pós-commit, a chave estável de payment.initiate converge o replay.
+    reconcile_confirmed_charges()
 
     now = timezone.now()
     released = 0
@@ -458,37 +928,47 @@ def _parse_iso(value):
         return None
 
 
-def _release_holds(order, sku: str) -> Decimal:
-    """Solta os holds planejados deste SKU e devolve a quantidade liberada."""
+def _release_holds(order, sku: str | None = None) -> dict[str, Decimal]:
+    """Solta todos os holds do pedido e devolve a quantidade por SKU.
+
+    A vaga confirma o pedido, não uma linha. Desistir/expirar precisa devolver
+    também os itens que já estavam prontos e ficaram reservados enquanto outra
+    fornada era aguardada.
+    """
     from shopman.shop.adapters import get_adapter
 
     adapter = get_adapter("stock")
-    planned = [
-        hold
-        for hold in _order_holds(order, sku=sku or None)
-        if is_waitlist_hold(hold)
-    ]
-    if not planned:
-        return Decimal("0")
+    holds = _order_holds(
+        order,
+        sku=sku or None,
+        include_expired=True,
+        for_update=True,
+    )
+    if not holds:
+        return {}
     try:
-        adapter.release_holds([hold.hold_id for hold in planned])
+        adapter.release_holds([hold.hold_id for hold in holds])
     except Exception:
-        logger.warning("waitlist._release_holds failed order=%s", order.ref, exc_info=True)
-        return Decimal("0")
-    return sum((hold.quantity for hold in planned), Decimal("0"))
+        # O caller segura uma transação da Order e de todos os Holds. Propagar é
+        # o que desfaz inclusive uma liberação parcial já feita pelo adapter;
+        # marcar RELEASED depois de engolir deixaria estoque preso em silêncio.
+        logger.exception("waitlist._release_holds failed order=%s", order.ref)
+        raise
+    freed_by_sku: dict[str, Decimal] = {}
+    for hold in holds:
+        # Demanda (quant=None) também é encerrada, mas não devolve capacidade
+        # física/planejada e portanto jamais vira budget para ``serve_next``.
+        if hold.quant_id is None:
+            continue
+        freed_by_sku[hold.sku] = freed_by_sku.get(hold.sku, Decimal("0")) + hold.quantity
+    return freed_by_sku
 
 
 def _notify_customer(order, template: str, **extra) -> None:
     """Aviso ativo ao cliente. Nunca silencioso — nem para dar, nem para tirar."""
-    try:
-        from shopman.shop.services import notification
+    from shopman.shop.services import notification
 
-        notification.send(order, template, **extra)
-    except Exception:
-        logger.warning(
-            "waitlist._notify_customer failed order=%s template=%s",
-            order.ref, template, exc_info=True,
-        )
+    notification.send(order, template, **extra)
 
 
 def _alert_store(order, *, sku: str, qty: Decimal, reason: str) -> None:

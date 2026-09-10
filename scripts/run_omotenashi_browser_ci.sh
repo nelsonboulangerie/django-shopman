@@ -99,7 +99,17 @@ build_surface() {
     (cd "${dir}" && npm ci)
   fi
   echo "── Build: ${label} ──"
-  (cd "${dir}" && npm run build)
+  if [[ "${dir}" == "surfaces/production-nuxt" ]]; then
+    # Nuxt build roda com NODE_ENV=production. O harness local precisa declarar
+    # em duas chaves que o HTTP local é intencional; nenhum release recebe isso.
+    (cd "${dir}" && env \
+      SHOPMAN_ENVIRONMENT=test \
+      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1 \
+      NUXT_DJANGO_BASE_URL="${DJANGO_BASE_URL}" \
+      npm run build)
+  else
+    (cd "${dir}" && npm run build)
+  fi
 }
 
 if [[ ! -d "surfaces/operator-kit/node_modules" ]]; then
@@ -120,12 +130,20 @@ wait_for "${DJANGO_BASE_URL}/ready/" "${DJANGO_PID}" "Servidor Django" "${DJANGO
 
 serve_surface() {
   local dir="$1" port="$2" label="$3" log="$4"
+  local runtime_env=()
+  if [[ "${dir}" == "surfaces/production-nuxt" ]]; then
+    runtime_env=(
+      SHOPMAN_ENVIRONMENT=test
+      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM=1
+    )
+  fi
   # NUXT_APP_BASE_URL=/ espelha o deployment (.do/app.subdomains.yaml): cada app
   # vive na RAIZ do seu subdomínio. Sem isto, KDS e PDV assumem o prefixo /kds/
   # e /pos/ do default de produção e as URLs que `operator_links`/`pos_links`
   # constroem (sem prefixo) cairiam fora do app — o gate testaria um caminho que
   # o Django nunca gera.
-  HOST=127.0.0.1 PORT="${port}" \
+  env "${runtime_env[@]}" \
+    HOST=127.0.0.1 PORT="${port}" \
     NUXT_APP_BASE_URL="/" \
     NUXT_DJANGO_BASE_URL="${DJANGO_BASE_URL}" \
     NUXT_PUBLIC_DJANGO_BASE_URL="${DJANGO_BASE_URL}" \

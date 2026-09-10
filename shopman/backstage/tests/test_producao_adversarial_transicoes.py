@@ -11,8 +11,8 @@ operador tem de ver é o mapeamento da casa:
   - passo/estado inaplicável            → ``ProductionError``    (HTTP 400)
 
 O ``expected_rev`` no ``start`` e no ``finish`` nunca tinha teste — só o ``plan``
-e o ``void`` provavam o compare-and-swap. Aqui as quatro mutações com revisão
-fecham a cobertura.
+e o ``void`` provavam o compare-and-swap. Aqui as quatro mutações com revisão e
+chave idempotente fecham a cobertura.
 """
 
 from __future__ import annotations
@@ -79,6 +79,17 @@ def _no_arithmetic_leak(excinfo):
     assert not isinstance(excinfo.value, (InvalidOperation, ArithmeticError))
 
 
+def _attempt(wo: WorkOrder, action: str, *, expected_rev: int | None = None) -> dict:
+    """Build the complete, replay-safe mutation attempt expected by the facade."""
+    wo.refresh_from_db()
+    revision = wo.rev if expected_rev is None else expected_rev
+    return {
+        "actor": "test",
+        "expected_rev": revision,
+        "idempotency_key": f"test:transition:{action}:{wo.pk}:{revision}",
+    }
+
+
 # ── START numa ordem que não está PLANNED ───────────────────────────────────
 
 @pytest.mark.parametrize("factory", ["_started", "_finished", "_void"])
@@ -86,7 +97,9 @@ def test_start_fora_de_planned_e_conflito(recipe, factory):
     wo = globals()[factory](recipe)
     with pytest.raises(ProductionConflict) as excinfo:
         backstage_production.apply_start(
-            work_order_id=wo.pk, quantity="40", actor="test"
+            work_order_id=wo.pk,
+            quantity="40",
+            **_attempt(wo, f"start-invalid-{factory}"),
         )
     _no_arithmetic_leak(excinfo)
 
@@ -96,14 +109,14 @@ def test_start_fora_de_planned_e_conflito(recipe, factory):
 def test_void_de_ordem_ja_estornada_e_conflito(recipe):
     wo = _void(recipe)
     with pytest.raises(ProductionConflict):
-        backstage_production.apply_void(wo.pk, actor="test")
+        backstage_production.apply_void(wo.pk, **_attempt(wo, "void-already-void"))
 
 
 def test_void_de_fornada_concluida_e_conflito(recipe):
     """Fornada que já saiu não estorna — o dinheiro/estoque já andou."""
     wo = _finished(recipe)
     with pytest.raises(ProductionConflict):
-        backstage_production.apply_void(wo.pk, actor="test")
+        backstage_production.apply_void(wo.pk, **_attempt(wo, "void-finished"))
 
 
 # ── FINISH numa ordem estornada ──────────────────────────────────────────────
@@ -112,7 +125,9 @@ def test_finish_de_ordem_estornada_e_conflito(recipe, vitrine):
     wo = _void(recipe)
     with pytest.raises(ProductionConflict):
         backstage_production.apply_finish(
-            work_order_id=wo.pk, quantity="40", actor="test"
+            work_order_id=wo.pk,
+            quantity="40",
+            **_attempt(wo, "finish-void"),
         )
 
 
@@ -122,7 +137,10 @@ def test_finish_de_ordem_estornada_e_conflito(recipe, vitrine):
 def test_advance_step_fora_de_started_recusa(recipe, factory):
     wo = globals()[factory](recipe)
     with pytest.raises(ProductionError) as excinfo:
-        backstage_production.apply_advance_step(work_order_id=wo.pk, actor="test")
+        backstage_production.apply_advance_step(
+            work_order_id=wo.pk,
+            **_attempt(wo, f"advance-invalid-{factory}"),
+        )
     # Conflito de estado terminal também é aceitável; o que não pode é vazar 500.
     _no_arithmetic_leak(excinfo)
 
@@ -132,12 +150,12 @@ def test_advance_step_fora_de_started_recusa(recipe, factory):
 def test_start_com_revisao_velha_e_conflito(recipe):
     wo = _planned(recipe)
     wo.refresh_from_db()
+    stale_rev = wo.rev + 1
     with pytest.raises(ProductionConflict):
         backstage_production.apply_start(
             work_order_id=wo.pk,
             quantity="40",
-            actor="test",
-            expected_rev=wo.rev + 1,  # a tela leu uma revisão que não é a de agora
+            **_attempt(wo, "start-stale", expected_rev=stale_rev),
         )
     # E a ordem não iniciou por engano.
     wo.refresh_from_db()
@@ -147,12 +165,12 @@ def test_start_com_revisao_velha_e_conflito(recipe):
 def test_finish_com_revisao_velha_e_conflito(recipe, vitrine):
     wo = _started(recipe)
     wo.refresh_from_db()
+    stale_rev = wo.rev + 1
     with pytest.raises(ProductionConflict):
         backstage_production.apply_finish(
             work_order_id=wo.pk,
             quantity="40",
-            actor="test",
-            expected_rev=wo.rev + 1,
+            **_attempt(wo, "finish-stale", expected_rev=stale_rev),
         )
     wo.refresh_from_db()
     assert wo.status == WorkOrder.Status.STARTED
@@ -165,8 +183,7 @@ def test_finish_com_revisao_certa_fecha(recipe, vitrine):
     ref, total = backstage_production.apply_finish(
         work_order_id=wo.pk,
         quantity="40",
-        actor="test",
-        expected_rev=wo.rev,
+        **_attempt(wo, "finish-current"),
     )
     assert ref == wo.ref
     assert total == Decimal("40")

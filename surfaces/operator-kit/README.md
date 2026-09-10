@@ -27,6 +27,10 @@ O layer contribui, via auto-import do Nuxt:
 | `app/utils/tw-helper.ts` | `tw` | identidade para strings de classes Tailwind (DX/lint) |
 | `app/utils/translucent.ts` | `getTranslucentFloatingPanelClasses`, … | classes canônicas de painel flutuante translúcido |
 | `server/utils/djangoProxy.ts` | `proxyDjangoApi`, `proxyDjangoPath` | proxy BFF → Django (cookie, CSRF, redirects, X-API-Version) |
+| `server/utils/djangoBaseUrl.ts` | `configuredDjangoBaseUrl`, `resolveDjangoBaseUrl` | fail-fast de upstream ausente/local/inseguro em produção |
+| `server/plugins/upstream-guard.ts` | — | repete no boot o fail-fast dos apps opt-in, sem confiar no valor embutido no build |
+| `server/middleware/operator-security.ts` | — | CSP/frame/nosniff/referrer/permissões, HSTS em HTTPS e cache privado |
+| `server/utils/operatorSecurity.ts` | `operatorResponseHeaders`, `applyPrivateNoStore` | política testável de headers e preservação de `Vary` no BFF |
 | `server/utils/eventStream.ts` | `proxyEventStream` | streaming SSE same-origin do eventstream do Django |
 | `server/utils/apiVersion.ts` | `warnOnApiVersionMismatch` | warning estruturado de major divergente do contrato |
 | `app/composables/useConnectivity.ts` | `useConnectivity` | sinal offline + reconciliação no reconnect/foco |
@@ -43,6 +47,13 @@ Os testes também têm harness compartilhado: `tests/support/composableEnv.ts`
 (`installNuxtGlobals()`, env `node` com Vue real + fronteira de dados mockada) é importado
 pelos testes de composables de kds/orders/production — os projetos `unit` desses apps
 declaram `resolve.dedupe: ["vue"]` para garantir instância única do Vue.
+
+Apps que ativam `runtimeConfig.operatorSecurityHeaders` recebem documentos e APIs
+privados (`private, no-store`, `Vary: Cookie`). Assets compilados mantêm o cache do
+Nitro. HSTS só é emitido quando a requisição chega como HTTPS; o edge continua
+responsável por preservar `X-Forwarded-Proto: https` e a verificação final deve ocorrer
+no host publicado. O Produção é o primeiro consumidor; os demais apps migram em WPs
+próprios para não quebrar conexões cross-origin preexistentes por surpresa.
 
 ## O que ainda NÃO vive aqui (roadmap — ver docs/plans/completed/BACKSTAGE-EXCELLENCE-HARDENING-PLAN.md)
 

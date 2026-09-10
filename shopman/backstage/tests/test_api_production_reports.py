@@ -4,9 +4,9 @@ Covers the manager-persona REST surface that the ``/reports`` page of the
 production-nuxt app (``prod.``) consumes: report rows (history, operator
 productivity, recipe waste) with CSV export, the day-level management KPIs
 (average yield, capacity, late orders) and the blind-code ↔ prep map. Gated by
-the fine-grained ``backstage.view_production_reports`` permission — the coarse
-floor gate (``backstage.operate_production``) does NOT open these endpoints,
-so the kiosk screens stay blind by design.
+fine-grained report and blind-map permissions — the coarse floor gate
+(``backstage.operate_production``) does NOT open these endpoints, so the kiosk
+screens stay blind by design.
 
 Reuses ``build_production_reports``/``build_production_dashboard``/
 ``export_reports_csv``; no report logic is duplicated here.
@@ -46,7 +46,10 @@ def floor_operator(db):
 @pytest.fixture
 def manager(db):
     user = User.objects.create_user("prod-manager", password="pw", is_staff=True)
-    user.user_permissions.add(_perm("view_production_reports"))
+    user.user_permissions.add(
+        _perm("view_production_reports"),
+        _perm("reveal_production_blind_map"),
+    )
     return user
 
 
@@ -102,6 +105,19 @@ def test_manager_perm_opens_endpoints(client, manager, report_data, url_name):
     assert client.get(reverse(url_name)).status_code == 200
 
 
+@pytest.mark.django_db
+def test_report_reader_cannot_reveal_blind_map_without_separate_capability(
+    client,
+    report_data,
+):
+    reader = User.objects.create_user("reports-without-map", password="pw", is_staff=True)
+    reader.user_permissions.add(_perm("view_production_reports"))
+    client.force_login(reader)
+
+    assert client.get(reverse("api-backstage-production-reports")).status_code == 200
+    assert client.get(reverse("api-backstage-production-blind-map")).status_code == 403
+
+
 # ── Reports ─────────────────────────────────────────────────────────────────
 
 
@@ -144,6 +160,43 @@ def test_reports_filters_reduce_history(client, manager, report_data):
     )
     rows = response.json()["reports"]["history_rows"]
     assert [row["ref"] for row in rows] == [report_data["planned"].ref]
+
+
+@pytest.mark.django_db
+def test_reports_reject_inverted_or_oversized_ranges(client, manager, report_data):
+    client.force_login(manager)
+    url = reverse("api-backstage-production-reports")
+
+    inverted = client.get(
+        url,
+        {
+            "date_from": report_data["today"].isoformat(),
+            "date_to": date(2026, 1, 1).isoformat(),
+        },
+    )
+    assert inverted.status_code == 400
+    assert inverted.json()["error"]["code"] == "validation_error"
+    assert inverted.json()["error"]["issues"][0]["field"] == "date_to"
+
+    oversized = client.get(
+        url,
+        {"date_from": "2026-01-01", "date_to": "2026-09-08"},
+    )
+    assert oversized.status_code == 400
+    assert oversized.json()["error"]["code"] == "validation_error"
+    assert oversized.json()["error"]["issues"][0]["field"] == "date_to"
+
+
+@pytest.mark.django_db
+def test_reports_reject_unknown_filter(client, manager, report_data):
+    client.force_login(manager)
+    response = client.get(
+        reverse("api-backstage-production-reports"),
+        {"date_from": report_data["today"].isoformat(), "surprise": "1"},
+    )
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "validation_error"
+    assert response.json()["error"]["issues"][0]["field"] == "surprise"
 
 
 @pytest.mark.django_db

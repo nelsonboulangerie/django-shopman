@@ -11,7 +11,11 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
-from shopman.shop.config import ChannelConfig, deep_merge
+from shopman.shop.config import (
+    ChannelConfig,
+    deep_merge,
+    quality_grade_refs_for_channel,
+)
 
 _DIGITAL_PAYMENT_METHODS = {"pix", "card"}
 _DEFAULT_FULFILLMENT_TYPES = ("pickup", "delivery")
@@ -53,9 +57,8 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
 
     payment_methods = tuple(str(method) for method in config.payment.available_methods)
     fulfillment_types = _fulfillment_types(overrides)
-    requires_payment_gate = (
-        config.payment.timing != "external"
-        and any(method in _DIGITAL_PAYMENT_METHODS for method in payment_methods)
+    requires_payment_gate = config.payment.timing != "external" and any(
+        method in _DIGITAL_PAYMENT_METHODS for method in payment_methods
     )
     supports_access_link = _bool_override(
         overrides,
@@ -77,6 +80,10 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
         "can_rate",
         config.fulfillment.timing != "external" and channel_ref not in {"pdv", "pos"},
     )
+    allowed_quality_grade_refs = quality_grade_refs_for_channel(
+        channel_ref,
+        sells_nonconforming=config.stock.sells_nonconforming,
+    )
 
     return ChannelPolicyResolution(
         channel_ref=channel_ref,
@@ -93,7 +100,8 @@ def resolve_channel_policy(channel_or_ref: Any) -> ChannelPolicyResolution:
             "check_on_commit": config.stock.check_on_commit,
             "low_stock_threshold": config.stock.low_stock_threshold,
             "preorder": config.stock.preorder,
-            "sells_nonconforming": config.stock.sells_nonconforming,
+            "sells_nonconforming": allowed_quality_grade_refs is None,
+            "allowed_quality_grade_refs": allowed_quality_grade_refs,
             "expiry_margin_days": config.stock.expiry_margin_days,
         },
         notifications={
@@ -156,11 +164,7 @@ def _fulfillment_types(overrides: Mapping[str, Any]) -> tuple[str, ...]:
     else:
         return _DEFAULT_FULFILLMENT_TYPES
 
-    values = tuple(
-        str(value)
-        for value in raw_values
-        if str(value) in _VALID_FULFILLMENT_TYPES
-    )
+    values = tuple(str(value) for value in raw_values if str(value) in _VALID_FULFILLMENT_TYPES)
     return values or _DEFAULT_FULFILLMENT_TYPES
 
 

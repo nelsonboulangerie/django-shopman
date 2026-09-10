@@ -44,9 +44,7 @@ def vitrine(db):
 
 @pytest.fixture
 def recipe(db, vitrine):
-    return Recipe.objects.create(
-        ref="rc-realize-fail", name="Pão", output_sku=SKU, batch_size=Decimal("1")
-    )
+    return Recipe.objects.create(ref="rc-realize-fail", name="Pão", output_sku=SKU, batch_size=Decimal("1"))
 
 
 @pytest.fixture
@@ -82,10 +80,15 @@ def test_operator_sees_error_and_alert_when_realize_fails(recipe, vitrine, reali
     today = timezone.localdate()
     work_order = craft.plan(recipe, Decimal("40"), date=today)
     craft.start(work_order, quantity=Decimal("40"), actor="test")
+    work_order.refresh_from_db()
 
     with pytest.raises(ProductionError):
         backstage_production.apply_finish(
-            work_order_id=work_order.pk, quantity="40", actor="test"
+            work_order_id=work_order.pk,
+            quantity="40",
+            actor="test",
+            expected_rev=work_order.rev,
+            idempotency_key="realize-failure-alert",
         )
 
     assert OperatorAlert.objects.filter(type="production_stock_short").exists()

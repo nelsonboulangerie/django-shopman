@@ -45,6 +45,24 @@ _MSG_FORBIDDEN = "Acesso restrito a operadores."
 _MSG_SEM_PERMISSAO = "Operador sem permissão para esta ação."
 
 
+def deny_production_capability(capability: str) -> None:
+    """Return the typed denial contract consumed by every production client."""
+    raise PermissionDenied(
+        {
+            "detail": "Operador sem capacidade para esta ação de produção.",
+            "error": {
+                "code": "forbidden",
+                "capability": capability,
+                "recovery": {
+                    "action": "request_access",
+                    "label": "Solicitar acesso a um gestor",
+                },
+            },
+        },
+        code="forbidden",
+    )
+
+
 def _recusa_travada():
     """Levanta a recusa da estação travada — com código, e sem passar pelo DRF.
 
@@ -158,6 +176,37 @@ class HasBackstagePermission(BasePermission):
         perms = _required_codes(getattr(view, "required_permission", None))
         if not all(operador.has_perm(code) for code in perms):
             _recusa_sem_permissao()
+        return True
+
+
+class HasProductionCapability(BasePermission):
+    """Authorize one explicit production capability against the active actor.
+
+    The resolved object is attached to the request so the view serializes and
+    enforces the same decision.  Permission caches remain request-scoped: a
+    revoked Django grant is observed on the next refresh or action.
+    """
+
+    message = "Operador sem capacidade para esta ação de produção."
+
+    def has_permission(self, request, view) -> bool:
+        operador = _operador(request)
+        if operador is None:
+            if is_trusted_station(request):
+                _recusa_travada()
+            return False
+
+        from shopman.backstage.projections.production import resolve_production_access
+        from shopman.backstage.station_trust import station_ref
+
+        access = resolve_production_access(
+            operador,
+            trusted_station_ref=station_ref(request),
+        )
+        request.production_access = access
+        capability = str(getattr(view, "required_production_capability", "can_access_board"))
+        if not getattr(access, capability, False):
+            deny_production_capability(capability)
         return True
 
 

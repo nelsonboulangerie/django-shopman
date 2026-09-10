@@ -14,13 +14,17 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
+from django.utils import timezone
 from shopman.craftsman.models import Recipe, WorkOrder
 from shopman.orderman.models import Order, OrderItem
 from shopman.stockman.models import Position
 from shopman.stockman.models.enums import PositionKind
 
 from shopman.backstage.services import production as production_service
-from shopman.backstage.services.production import ProductionOrderShortError
+from shopman.backstage.services.production import (
+    ProductionOrderShortError,
+    production_shortage_snapshot,
+)
 
 SKU = "PAO-FRANCES"
 
@@ -33,8 +37,6 @@ def cenario(db):
     faz — para que ela caia onde o escritor a coloca. Montá-la à mão poria a fornada
     onde o TESTE acha que ela vai, e era essa suposição que escondia o bug.
     """
-    from django.utils import timezone
-
     Position.objects.filter(is_default=True).update(is_default=False)
     Position.objects.create(
         ref="massa", name="Massa", kind=PositionKind.PHYSICAL, is_saleable=False, is_default=True
@@ -42,15 +44,23 @@ def cenario(db):
     receita = Recipe.objects.create(
         ref="pao-frances-v1", name="Pão francês", output_sku=SKU, batch_size=Decimal("100")
     )
-    pedido = Order.objects.create(ref="ENC-1", channel_ref="web", total_q=5000)
+    pedido = Order.objects.create(
+        ref="ENC-1",
+        channel_ref="web",
+        status=Order.Status.ACCEPTED,
+        total_q=5000,
+    )
     OrderItem.objects.create(
         order=pedido, line_id="1", sku=SKU, name="Pão", qty=Decimal("30"),
         unit_price_q=100, line_total_q=3000,
     )
 
     production_service.apply_planned(
-        recipe_id=receita.pk, quantity=Decimal("50"), target_date_value=None,
+        recipe_id=receita.pk,
+        quantity=Decimal("50"),
+        target_date_value=timezone.localdate().isoformat(),
         position_ref="", operator_ref="", force=False, actor="op",
+        idempotency_key="coverage-setup",
     )
     fornada = WorkOrder.objects.filter(
         recipe=receita, target_date=timezone.localdate(), status=WorkOrder.Status.PLANNED
@@ -75,11 +85,13 @@ def test_reduzir_abaixo_do_encomendado_e_recusado_SEM_filtro_de_posicao(cenario)
         production_service.apply_planned(
             recipe_id=receita.pk,
             quantity=Decimal("10"),   # abaixo dos 30 encomendados
-            target_date_value=None,
+            target_date_value=timezone.localdate().isoformat(),
             position_ref="",          # ⬅ o que o board manda quando não há filtro
             operator_ref="",
             force=False,
             actor="op",
+            expected_rev=_fornada.rev,
+            idempotency_key="coverage-below-blocked",
         )
 
 
@@ -91,11 +103,13 @@ def test_manter_acima_do_encomendado_passa(cenario):
     production_service.apply_planned(
         recipe_id=receita.pk,
         quantity=Decimal("40"),   # acima dos 30 encomendados
-        target_date_value=None,
+        target_date_value=timezone.localdate().isoformat(),
         position_ref="",
         operator_ref="",
         force=False,
         actor="op",
+        expected_rev=fornada.rev,
+        idempotency_key="coverage-above-allowed",
     )
 
     fornada.refresh_from_db()
@@ -107,14 +121,30 @@ def test_force_continua_passando_por_cima(cenario):
     """`force` é a saída deliberada — e continua sendo, com o guardrail funcionando."""
     receita, fornada, _pedido = cenario
 
+    with pytest.raises(ProductionOrderShortError) as blocked:
+        production_service.apply_planned(
+            recipe_id=receita.pk,
+            quantity=Decimal("10"),
+            target_date_value=timezone.localdate().isoformat(),
+            position_ref="",
+            operator_ref="",
+            force=False,
+            actor="op",
+            expected_rev=fornada.rev,
+            idempotency_key="coverage-force-approved",
+        )
     production_service.apply_planned(
         recipe_id=receita.pk,
         quantity=Decimal("10"),
-        target_date_value=None,
+        target_date_value=timezone.localdate().isoformat(),
         position_ref="",
         operator_ref="",
         force=True,
         actor="op",
+        reason="Gestor aceitou a falta da encomenda no teste.",
+        expected_rev=fornada.rev,
+        idempotency_key="coverage-force-approved",
+        approved_shortage=production_shortage_snapshot(blocked.value),
     )
 
     fornada.refresh_from_db()
@@ -123,14 +153,10 @@ def test_force_continua_passando_por_cima(cenario):
 
 @pytest.mark.django_db
 def test_data_malformada_nao_cega_o_guardrail(cenario):
-    """O escritor cai silenciosamente para HOJE em qualquer string não-ISO.
+    """Data malformada falha fechada e não altera a fornada existente."""
+    receita, fornada, _pedido = cenario
 
-    O guardrail usava a string crua, então data malformada = guardrail cego E
-    planejamento no dia errado. Agora os dois normalizam igual.
-    """
-    receita, _fornada, _pedido = cenario
-
-    with pytest.raises(ProductionOrderShortError):
+    with pytest.raises(ValueError, match="Data de produção inválida"):
         production_service.apply_planned(
             recipe_id=receita.pk,
             quantity=Decimal("10"),
@@ -139,4 +165,8 @@ def test_data_malformada_nao_cega_o_guardrail(cenario):
             operator_ref="",
             force=False,
             actor="op",
+            expected_rev=fornada.rev,
+            idempotency_key="coverage-malformed-date-blocked",
         )
+    fornada.refresh_from_db()
+    assert fornada.planned_qty == Decimal("50")

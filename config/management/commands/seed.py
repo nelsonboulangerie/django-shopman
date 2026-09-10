@@ -28,6 +28,8 @@ STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
@@ -95,6 +97,8 @@ from shopman.shop.models import (
     Coupon,
     OmotenashiCopy,
     Promotion,
+    QualityDefect,
+    QualityGrade,
     RuleConfig,
     Shop,
 )
@@ -109,6 +113,27 @@ from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_reci
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+
+# O catálogo nasce por data migration em qualquer deployment, mas ``seed
+# --flush`` também precisa reconstruí-lo: testes transacionais e bancos já
+# truncados não reaplicam RunPython. Estes são os quatro botões e os sete
+# motivos do QC aprovados; grau governa markdown, motivo permanece ortogonal.
+QUALITY_GRADES = (
+    ("excellent", "Ótimo", 40, 0, False),
+    ("standard", "Normal", 30, 0, True),
+    ("fair", "Razoável", 20, 20, False),
+    ("minimal", "Mínimo", 10, 50, False),
+)
+
+QUALITY_DEFECTS = (
+    ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
+    ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
+    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
+    ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
+    ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
+    ("contaminated", "Contaminado", "Matéria estranha — não vende", True, 70),
+)
 
 # O plano de produção do dia — calibrado com as médias diárias REAIS dos XMLs
 # de NFC-e (jun/2019 + jun/2021; sex/sáb ×1,25 aplicado na criação das WOs).
@@ -453,7 +478,10 @@ LEFTOVER_ITEMS = [
 #: SKU canônico de cada estado no perfil `qa` do seed.
 #: Contrato de docs/reference/qa-seed-scenarios.md.
 STOREFRONT_STATES = {
-    "sold_out": "KP",      # esgotado + "me avise" (vendável, sem plano)
+    # Fendu não tem uma WorkOrder ativa hoje. Kuro Pan era usado aqui, mas ao
+    # mesmo tempo nascia STARTED no quadro: fazer o estoque dessa fornada sumir
+    # para simular "esgotado" tornava a própria confirmação inexequível.
+    "sold_out": "FE",      # esgotado + "me avise" (vendável, sem plano hoje)
     "low_stock": "ME",     # últimas unidades (≤ limiar)
     "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
     "paused": "TJ",        # pausado pelo operador (is_sellable=False)
@@ -466,18 +494,22 @@ STOREFRONT_PLANNED_QTY = 10
 
 
 def clear_vitrine_stock(sku: str, vitrine, *, reason: str) -> None:
-    """Zera TODO estoque de vitrine do SKU — pronto E planejado.
+    """Zera toda oferta do SKU que contaminaria o cenário da vitrine.
 
-    O estado precisa nascer limpo: um quant residual da produção de hoje ou de
-    uma fornada já planejada faz "esgotado" virar "previsto" sem avisar ninguém.
+    Com a fermata ligada, produção iniciada e fornada futura em qualquer posição
+    também são promessa do canal. Limpar só a posição ``vitrine`` deixava os
+    cenários ``sold_out``/``low_stock`` disponíveis pela produção e somava o
+    plano geral ao cenário ``planned``. Este helper é exclusivo de QA/seed e
+    dirige deliberadamente a oferta inteira dos SKUs escolhidos.
     """
     from shopman.stockman.models import Quant
 
-    for q in Quant.objects.filter(sku=sku, position=vitrine):
+    for q in Quant.objects.filter(sku=sku):
         if (q._quantity or 0) > 0:
             stock.adjust(q, Decimal("0"), reason=reason)
 
 
+@transaction.atomic
 def apply_storefront_state(
     state: str,
     sku: str,
@@ -495,6 +527,26 @@ def apply_storefront_state(
     visível no PDV).
     """
     from shopman.offerman.models import ListingItem, Product
+
+    if state not in {"sold_out", "low_stock", "planned", "paused", "paused_channel"}:
+        raise ValueError(f"Estado de vitrine desconhecido: {state}")
+
+    # Todo preflight que pode recusar o cenário acontece antes do primeiro
+    # ajuste de estoque. O bloco atômico também impede estado parcial se um
+    # writer falhar depois da validação.
+    batch_ref = ""
+    if state == "low_stock":
+        from shopman.stockman.shelflife import shelf_life_days_for
+
+        shelf_life_days = shelf_life_days_for(sku)
+        if shelf_life_days is not None:
+            received_on = timezone.localdate()
+            batch_ref = _ensure_seed_standard_batch(
+                ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                sku=sku,
+                production_date=received_on,
+                expiry_date=received_on + timedelta(days=shelf_life_days),
+            )
 
     if state == "paused":
         # Publicado (aparece no cardápio) mas não vendável. É decisão do
@@ -515,6 +567,7 @@ def apply_storefront_state(
     if state == "low_stock":
         stock.receive(
             Decimal(STOREFRONT_LOW_STOCK_QTY), sku=sku, position=vitrine,
+            batch=batch_ref,
             reason=f"{reason_prefix} {sku}: últimas unidades",
         )
         return
@@ -525,7 +578,194 @@ def apply_storefront_state(
             reason=f"{reason_prefix} {sku}: planejado",
         )
         return
-    raise ValueError(f"Estado de vitrine desconhecido: {state}")
+    raise AssertionError("estado validado sem implementação")
+
+
+def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_date) -> str:
+    """Cria lote Normal do cenário sem reescrever um fato de QC já existente.
+
+    O ``ref`` determinístico identifica lote que pertence ao seed. Campo vazio é
+    legado ainda não classificado e pode ser completado; qualquer outro grau é
+    uma divergência histórica e faz o seed falhar de modo explícito.
+    """
+    from shopman.stockman.models import Batch
+
+    batch, _ = Batch.objects.get_or_create(
+        ref=ref,
+        defaults={
+            "sku": sku,
+            "production_date": production_date,
+            "expiry_date": expiry_date,
+            "quality_grade_ref": "standard",
+        },
+    )
+    _validate_seed_standard_batch(batch=batch, ref=ref, sku=sku)
+    if not batch.quality_grade_ref:
+        Batch.objects.filter(pk=batch.pk, quality_grade_ref="").update(
+            quality_grade_ref="standard"
+        )
+    return batch.ref
+
+
+def _validate_seed_standard_batch(*, batch, ref: str, sku: str) -> None:
+    """Recusa colisão de lote antes de qualquer mutação do cenário."""
+    if batch.sku != sku:
+        raise CommandError(
+            f"Lote de seed {ref} pertence a {batch.sku}, não a {sku}; fato preservado."
+        )
+    if batch.quality_grade_ref not in ("", "standard"):
+        raise CommandError(
+            f"Lote de seed {ref} já foi classificado como {batch.quality_grade_ref}; "
+            "o seed não reescreve QC congelado."
+        )
+
+
+def _discard_owned_seed_output_batch(*, ref: str, sku: str, work_order_ref: str) -> None:
+    """Remove versão anterior de um lote de OUTPUT somente quando a origem é o seed.
+
+    O seed histórico já usou duas assinaturas de ``notes``. Ambas carregam a
+    WorkOrder de cenário; qualquer outra origem é tratada como fato real e não
+    pode ser reclassificada por uma carga demonstrativa.
+    """
+    from shopman.stockman.models import Batch
+
+    batch = Batch.objects.filter(ref=ref).first()
+    if batch is None:
+        return
+    seed_signatures = {
+        f"Seed Nelson producao {work_order_ref}",
+        f"Produção {work_order_ref}",
+    }
+    if batch.sku != sku or batch.notes not in seed_signatures:
+        raise CommandError(
+            f"Lote {ref} já existe fora do domínio do seed; fato de QC preservado."
+        )
+    batch.delete()
+
+
+def _ensure_seed_active_production_supply() -> int:
+    """Make every active seed WorkOrder executable against the stock ledger.
+
+    The production board is not a mock: a seeded ``planned``/``started`` row
+    must be able to cross the same Stockman gates as an operator-created row.
+    Seed WorkOrders are written directly (to preserve their deterministic
+    narrative and timestamps), so their normal lifecycle signals do not run.
+
+    Reconcile the aggregate of every active WorkOrder at each seed-owned
+    coordinate instead of replaying the signals on every seed run. That makes
+    the operation idempotent, removes stale seed supply after status/quantity
+    changes, and preserves real WorkOrders sharing the same coordinate.
+    """
+    from collections import defaultdict
+
+    from shopman.stockman.models import Quant
+
+    active_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
+    seed_orders = list(
+        WorkOrder.objects.filter(
+            source_ref__startswith="seed:production:",
+            status__in=active_statuses,
+            target_date__isnull=False,
+        ).prefetch_related("events")
+    )
+    positions = {position.ref: position for position in Position.objects.all()}
+
+    def base_coordinate(work_order):
+        position = positions.get(work_order.position_ref) if work_order.position_ref else None
+        return work_order.output_sku, work_order.target_date, position
+
+    contract = "active_work_order_supply_v1"
+    tagged_quants = list(
+        Quant.objects.filter(
+            metadata__seed_contract=contract,
+            target_date__isnull=False,
+            batch__in=("", "started"),
+        ).select_related("position")
+    )
+    if not seed_orders and not tagged_quants:
+        return 0
+    managed_coordinates = {base_coordinate(work_order) for work_order in seed_orders}
+    managed_coordinates.update(
+        (quant.sku, quant.target_date, quant.position) for quant in tagged_quants
+    )
+    target_dates = {coordinate[1] for coordinate in managed_coordinates}
+    output_skus = {coordinate[0] for coordinate in managed_coordinates}
+    required = defaultdict(lambda: Decimal("0"))
+
+    # Include every active WorkOrder at a managed coordinate. The exact target
+    # therefore retains the contribution of operator-created WOs while stale
+    # synthetic supply can be removed safely.
+    active_orders = (
+        WorkOrder.objects.filter(
+            status__in=active_statuses,
+            target_date__in=target_dates,
+            output_sku__in=output_skus,
+        )
+        .prefetch_related("events")
+        .order_by("pk")
+    )
+    for work_order in active_orders:
+        sku, target_date, position = base_coordinate(work_order)
+        if (sku, target_date, position) not in managed_coordinates:
+            continue
+        if work_order.status == WorkOrder.Status.PLANNED:
+            required[(sku, target_date, position, "")] += work_order.quantity
+            continue
+
+        started_qty = work_order.started_qty or work_order.quantity
+        required[(sku, target_date, position, "started")] += started_qty
+        unstarted_qty = max(work_order.quantity - started_qty, Decimal("0"))
+        if unstarted_qty:
+            required[(sku, target_date, position, "")] += unstarted_qty
+
+    repaired = 0
+    supply_coordinates = {
+        (sku, target_date, position, batch)
+        for sku, target_date, position in managed_coordinates
+        for batch in ("", "started")
+    }
+    for sku, target_date, position, batch in supply_coordinates:
+        expected = required[(sku, target_date, position, batch)]
+        quant = Quant.objects.filter(
+            sku=sku,
+            target_date=target_date,
+            position=position,
+            batch=batch,
+        ).first()
+        current = quant.quantity if quant is not None else Decimal("0")
+        # Never make a valid reservation impossible merely because a seed
+        # contract was reduced. The surplus remains visible until the hold is
+        # resolved; a later seed pass then closes the coordinate to the WO sum.
+        target = max(expected, quant.held if quant is not None else Decimal("0"))
+        if quant is None and target <= 0:
+            continue
+        reason = (
+            "Reconciliação do seed: produção iniciada"
+            if batch == "started"
+            else "Reconciliação do seed: produção planejada"
+        )
+        if quant is None:
+            quant = stock.receive(
+                quantity=target,
+                sku=sku,
+                position=position,
+                target_date=target_date,
+                batch=batch,
+                reason=reason,
+                kind="make",
+                seed="nelson",
+                seed_contract=contract,
+            )
+            repaired += 1
+        elif current != target:
+            stock.adjust(quant, target, reason=reason)
+            repaired += 1
+
+        metadata = dict(quant.metadata or {})
+        if metadata.get("seed_contract") != contract or metadata.get("seed") != "nelson":
+            metadata.update({"seed": "nelson", "seed_contract": contract})
+            Quant.objects.filter(pk=quant.pk).update(metadata=metadata)
+    return repaired
 
 
 class Command(BaseCommand):
@@ -608,6 +848,7 @@ class Command(BaseCommand):
         # (teste com `transaction=True`, que NÃO repõe dado de migração) ou
         # flushado.
         ensure_definitions()
+        self._seed_quality_catalog()
 
         self._create_superuser(admin_password)
         self._seed_operators()
@@ -708,6 +949,11 @@ class Command(BaseCommand):
         self._seed_qa_orders(products, customers, channels)
         self._seed_production_demand_history(products, channels, timezone.now())
         self._seed_qa_production_stuck_batch()
+        # A fornada presa nasce depois de ``_seed_recipes``; reconcilie-a antes
+        # de a matriz QA deliberadamente dirigir SKUs a estados de vitrine.
+        # Rodar isto depois de ``_seed_qa_storefront_availability`` reabriria o
+        # SKU que o cenário acabou de marcar como indisponível.
+        _ensure_seed_active_production_supply()
         self._seed_qa_pos_tabs()
 
         # Caixa/fechamento já são determinísticos e datados por localdate() — reuso.
@@ -784,6 +1030,56 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # Shop
     # ────────────────────────────────────────────────────────────────
+
+    @transaction.atomic
+    def _seed_quality_catalog(self):
+        """Reinstala o contrato canônico do QC em dados demonstrativos.
+
+        O seed é dono destes refs fixos e pode atualizá-los; lotes históricos
+        continuam imutáveis porque já congelaram grau e percentual próprios.
+        O preflight recusa uma política alheia que ocupe o default ou um rank
+        canônico. A transação garante que o seed nunca deixe meia escala nova
+        misturada com meia escala antiga se encontrar esse conflito.
+        """
+        canonical_refs = [ref for ref, *_ in QUALITY_GRADES]
+        canonical_ranks = [rank for _ref, _label, rank, _markdown, _default in QUALITY_GRADES]
+        conflicts = list(
+            QualityGrade.objects.exclude(ref__in=canonical_refs)
+            .filter(Q(is_default=True) | Q(rank__in=canonical_ranks))
+            .order_by("ref")
+            .values_list("ref", flat=True)
+        )
+        if conflicts:
+            joined = ", ".join(conflicts)
+            raise CommandError(
+                "Catálogo de QC não canônico conflita com default/ranks reservados: "
+                f"{joined}. Use `seed --flush` para reconstruir o catálogo canônico."
+            )
+
+        # Recriar o bloco inteiro, dentro do savepoint, evita a janela em que
+        # ranks trocados entre dois refs canônicos violariam ``rank UNIQUE``.
+        # Não há FK para estes models: os fatos históricos guardam refs opacas.
+        QualityDefect.objects.filter(ref__in=[ref for ref, *_ in QUALITY_DEFECTS]).delete()
+        QualityGrade.objects.filter(ref__in=canonical_refs).delete()
+        for ref, label, rank, markdown, is_default in QUALITY_GRADES:
+            QualityGrade.objects.create(
+                ref=ref,
+                label=label,
+                rank=rank,
+                markdown_percent=markdown,
+                is_default=is_default,
+                is_active=True,
+            )
+        for ref, label, hint, forces_discard, position in QUALITY_DEFECTS:
+            QualityDefect.objects.create(
+                ref=ref,
+                label=label,
+                hint=hint,
+                forces_discard=forces_discard,
+                position=position,
+                is_active=True,
+            )
+        self.stdout.write("  ✓ Catálogo de QC: 4 graus e 7 motivos canônicos")
 
     def _seed_shop(self):
         # Feriados de fechamento SEMPRE à frente da data de hoje (próxima ocorrência do
@@ -1122,6 +1418,14 @@ class Command(BaseCommand):
 
         CraftRefSequence.objects.all().delete()
 
+        # OvenRun guarda apenas a ref textual da WorkOrder. ``--flush`` apaga
+        # TODAS as WOs logo abaixo; deixar uma medição sobreviver criaria fato
+        # órfão e colisão quando a sequência recomeçasse. No seed SEM flush, em
+        # contraste, apenas medições marcadas como sintéticas são renovadas.
+        from shopman.backstage.models import OvenRun
+
+        OvenRun.objects.all().delete()
+
         # Payments
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
@@ -1231,6 +1535,11 @@ class Command(BaseCommand):
         AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
+        # O catálogo de QC é parte do cenário canônico, não configuração que o
+        # ``--flush`` preserva. Os fatos históricos usam refs textuais e as WOs
+        # já foram removidas acima; o seed o recria inteiro logo no início.
+        QualityDefect.objects.all().delete()
+        QualityGrade.objects.all().delete()
         # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
         # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
         # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
@@ -2995,20 +3304,31 @@ class Command(BaseCommand):
     def _seed_stock(self, products, positions):
         self.stdout.write("  📊 Estoque inicial...")
 
+        from shopman.stockman.shelflife import shelf_life_days_for
+
         vitrine = positions["vitrine"]
 
         for sku, qty in STOCK_VITRINE.items():
             if sku in products:
+                batch_ref = ""
+                shelf_life_days = shelf_life_days_for(sku)
+                if shelf_life_days is not None:
+                    received_on = timezone.localdate()
+                    batch_ref = _ensure_seed_standard_batch(
+                        ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                        sku=sku,
+                        production_date=received_on,
+                        expiry_date=received_on + timedelta(days=shelf_life_days),
+                    )
                 stock.receive(
                     quantity=Decimal(str(qty)),
                     sku=sku,
                     position=vitrine,
+                    batch=batch_ref,
                     reason=f"Estoque inicial seed Nelson: {sku}",
                 )
 
         from datetime import timedelta as _td
-
-        from shopman.stockman.models import Batch as _Batch
 
         yesterday = date.today() - _td(days=1)
         for sku, qty in LEFTOVER_ITEMS:
@@ -3016,13 +3336,11 @@ class Command(BaseCommand):
                 continue
             shelf = products[sku].shelf_life_days or 0
             lot_ref = f"{sku}-{yesterday:%Y%m%d}-SOBRA"
-            _Batch.objects.update_or_create(
+            _ensure_seed_standard_batch(
                 ref=lot_ref,
-                defaults={
-                    "sku": sku,
-                    "production_date": yesterday,
-                    "expiry_date": yesterday + _td(days=shelf),
-                },
+                sku=sku,
+                production_date=yesterday,
+                expiry_date=yesterday + _td(days=shelf),
             )
             stock.receive(
                 quantity=Decimal(str(qty)),
@@ -4580,34 +4898,6 @@ class Command(BaseCommand):
             work_order.events.all().delete()
             work_order.items.all().delete()
 
-        def ensure_batch_traceability(work_order: WorkOrder, finished_qty: Decimal) -> None:
-            if not (work_order.recipe.meta or {}).get("requires_batch_tracking"):
-                return
-            from shopman.stockman.models import Batch
-
-            production_date = work_order.target_date or today
-            shelf_life_days = (work_order.recipe.meta or {}).get("shelf_life_days")
-            expiry_date = None
-            if shelf_life_days not in (None, ""):
-                expiry_date = production_date + timedelta(days=int(shelf_life_days))
-            batch_ref = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}"
-            Batch.objects.update_or_create(
-                ref=batch_ref,
-                defaults={
-                    "sku": work_order.output_sku,
-                    "production_date": production_date,
-                    "expiry_date": expiry_date,
-                    "notes": f"Seed Nelson producao {work_order.ref}",
-                },
-            )
-            work_order.meta = {
-                **(work_order.meta or {}),
-                "batch_ref": batch_ref,
-                "batch_quantity": str(finished_qty),
-                "expiry_date": expiry_date.isoformat() if expiry_date else "",
-            }
-            work_order.save(update_fields=["meta", "updated_at"])
-
         def add_event(work_order: WorkOrder, seq: int, kind: str, payload: dict, actor: str, created_at: datetime) -> None:
             event = WorkOrderEvent.objects.create(
                 work_order=work_order,
@@ -4618,7 +4908,75 @@ class Command(BaseCommand):
             )
             WorkOrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
 
-        def add_finished_items(work_order: WorkOrder, started_qty: Decimal, finished_qty: Decimal, recorded_at: datetime) -> None:
+        def seed_qc_partition(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+        ) -> list[dict]:
+            """Dados demo obedecem ao mesmo contrato KISS do QC real."""
+            partition: list[dict] = []
+            scope = str((work_order.meta or {}).get("scope") or "")
+            grade_ref = "standard"
+            defect_ref = ""
+
+            # Um histórico variado alimenta BI e garante que o seed exercite
+            # os quatro botões reais. A fornada de croissant de hoje demonstra
+            # o caso importante: dois graus na mesma fornada, uma linha por
+            # grau, com motivo apenas no grau Razoável/Mínimo.
+            if scope == "today" and work_order.recipe.ref == "croissant":
+                grade_ref, defect_ref = "fair", "overbaked"
+            elif scope.startswith("history-"):
+                selector = (work_order.target_date.toordinal() + work_order.recipe_id) % 4
+                grade_ref, defect_ref = (
+                    ("excellent", ""),
+                    ("standard", ""),
+                    ("fair", "overbaked"),
+                    ("minimal", "misshapen"),
+                )[selector]
+
+            if finished_qty > 0:
+                if grade_ref in {"fair", "minimal"}:
+                    marked_qty = min(Decimal("1"), finished_qty)
+                    normal_qty = finished_qty - marked_qty
+                    if normal_qty > 0:
+                        partition.append(
+                            {
+                                "quantity": str(normal_qty),
+                                "quality_grade_ref": "standard",
+                            }
+                        )
+                    partition.append(
+                        {
+                            "quantity": str(marked_qty),
+                            "quality_grade_ref": grade_ref,
+                            "quality_defect_ref": defect_ref,
+                        }
+                    )
+                else:
+                    partition.append(
+                        {
+                            "quantity": str(finished_qty),
+                            "quality_grade_ref": grade_ref,
+                        }
+                    )
+
+            loss_qty = max(started_qty - finished_qty, Decimal("0"))
+            if loss_qty > 0:
+                partition.append(
+                    {
+                        "quantity": str(loss_qty),
+                        "quality_defect_ref": "overbaked",
+                        "loss": True,
+                    }
+                )
+            return partition
+
+        def add_finished_items(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+            recorded_at: datetime,
+        ) -> list[dict]:
             coefficient = started_qty / work_order.recipe.batch_size
             for item in work_order.recipe.items.filter(is_optional=False).order_by("sort_order"):
                 required = (item.quantity * coefficient).quantize(Decimal("0.001"))
@@ -4640,27 +4998,95 @@ class Command(BaseCommand):
                     recorded_at=recorded_at,
                     recorded_by="seed",
                 )
-            WorkOrderItem.objects.create(
-                work_order=work_order,
-                kind=WorkOrderItem.Kind.OUTPUT,
-                item_ref=work_order.output_sku,
-                quantity=finished_qty,
-                unit="un",
-                recorded_at=recorded_at,
-                recorded_by="seed",
+
+            # O resolver canônico valida unicidade por grau, motivo obrigatório
+            # em Razoável/Mínimo/perda e conservação exata da entrada.
+            from shopman.backstage.services.production import (
+                _record_batch_traceability,
+                resolve_partition,
             )
-            waste_qty = max(started_qty - finished_qty, Decimal("0"))
-            if waste_qty > 0:
+
+            finished_items, wasted_items = resolve_partition(
+                work_order,
+                quantity=started_qty,
+                partition=seed_qc_partition(work_order, started_qty, finished_qty),
+            )
+            for outcome in finished_items:
                 WorkOrderItem.objects.create(
                     work_order=work_order,
-                    kind=WorkOrderItem.Kind.WASTE,
-                    item_ref=work_order.output_sku,
-                    quantity=waste_qty,
+                    kind=WorkOrderItem.Kind.OUTPUT,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
                     unit="un",
                     recorded_at=recorded_at,
                     recorded_by="seed",
-                    meta={"reason": "perda natural / não vendido"},
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref=outcome.get("quality_grade_ref", ""),
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref=outcome.get("batch_ref", ""),
                 )
+            for outcome in wasted_items:
+                WorkOrderItem.objects.create(
+                    work_order=work_order,
+                    kind=WorkOrderItem.Kind.WASTE,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
+                    unit="un",
+                    recorded_at=recorded_at,
+                    recorded_by="seed",
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref="",
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref="",
+                )
+
+            # O seed pode atualizar seus próprios fatos conforme o contrato
+            # evolui. Lote sem assinatura de seed é produção real: preserva e
+            # interrompe a carga em vez de reclassificar silenciosamente.
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                _discard_owned_seed_output_batch(
+                    ref=line.batch_ref,
+                    sku=line.item_ref,
+                    work_order_ref=work_order.ref,
+                )
+            _record_batch_traceability(work_order_id=work_order.pk, replay=True)
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                from shopman.stockman.models import Batch
+
+                batch = Batch.objects.get(ref=line.batch_ref)
+                expected_meta = line.meta or {}
+                if (
+                    batch.sku != line.item_ref
+                    or batch.quality_grade_ref != line.quality_grade_ref
+                    or batch.nonconformity_percent
+                    != int(expected_meta.get("quality_markdown_percent") or 0)
+                    or batch.nonconformity_reason
+                    != str(expected_meta.get("quality_reason") or "")
+                ):
+                    raise CommandError(
+                        f"Lote {batch.ref} já contém outro fato de QC; "
+                        "o seed preservou o histórico e interrompeu a carga."
+                    )
+            return [
+                {
+                    "item_ref": item.item_ref,
+                    "quantity": str(item.quantity),
+                    "quality_grade_ref": item.quality_grade_ref,
+                    "quality_defect_ref": item.quality_defect_ref,
+                    "batch_ref": item.batch_ref,
+                    **({"meta": item.meta} if item.meta else {}),
+                }
+                for item in WorkOrderItem.objects.filter(
+                    work_order=work_order,
+                    kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+                ).order_by("pk")
+            ]
 
         def upsert_work_order(
             *,
@@ -4740,13 +5166,23 @@ class Command(BaseCommand):
                         "quantity": str(effective_started),
                         "operator_ref": operator_ref,
                         "position_ref": position_ref,
-                        "note": "seed operacional",
+                        "note": (
+                            "Quantidade ajustada na bancada (seed)"
+                            if effective_started != planned_qty
+                            else "seed operacional"
+                        ),
                     },
                     "seed",
                     start_at or at(target_date, (5, 0)),
                 )
             if status == WorkOrder.Status.FINISHED and finished_qty is not None:
                 effective_started = started_qty or planned_qty
+                partition_payload = add_finished_items(
+                    work_order,
+                    effective_started,
+                    finished_qty,
+                    finish_at or at(target_date, (8, 0)),
+                )
                 add_event(
                     work_order,
                     2,
@@ -4761,12 +5197,16 @@ class Command(BaseCommand):
                         "source_ref": source_ref,
                         "position_ref": position_ref,
                         "operator_ref": operator_ref,
+                        "partition": partition_payload,
+                        **(
+                            {"context": {"production_outcome": {"kind": "total_loss"}}}
+                            if finished_qty == 0
+                            else {}
+                        ),
                     },
                     "seed",
                     finish_at or at(target_date, (8, 0)),
                 )
-                add_finished_items(work_order, effective_started, finished_qty, finish_at or at(target_date, (8, 0)))
-                ensure_batch_traceability(work_order, finished_qty)
             return work_order
 
         # Remove old seed rows outside the moving operational window. The active window
@@ -4881,19 +5321,11 @@ class Command(BaseCommand):
             )
             wo_count += 1
 
-        # Future horizon: planned production for one week ahead.
-        #
-        # As WOs futuras precisam VIRAR estoque planejado no ledger do Stockman —
-        # senão a loja oferece encomenda para os próximos dias úteis mas o gate de
-        # estoque reprova 100%: não existe Quant com aquele ``target_date`` e o físico
-        # de hoje é inválido para datas futuras (shelflife). O caminho canônico
-        # craftsman→stockman é o signal ``production_changed(action="planned")``, que o
-        # handler de contrib/stockman materializa como Quant planejado datado. O seed
-        # constrói as WOs à mão (narrativa/matriz determinística, idempotente por
-        # ``source_ref``), então emitimos o signal explicitamente. SÓ para o futuro: o
-        # estoque vendável de hoje já vem de ``_seed_stock`` (vitrine) — emitir para
-        # hoje/histórico dobraria o saldo.
-        from shopman.craftsman.signals import production_changed
+        # Future horizon: planned production for one week ahead. Today and the
+        # future are reconciled together below: the old implementation emitted
+        # ``production_changed`` only here, which made future supply cumulative
+        # on every seed run and left today's operator cards without a source
+        # Quant. A board row that cannot be acted on is invalid seed data.
 
         for offset in range(1, 8):
             target = today + timedelta(days=offset)
@@ -4905,20 +5337,13 @@ class Command(BaseCommand):
                     continue
                 recipe = recipes_by_ref[ref]
                 planned = (qty * day_multiplier).quantize(Decimal("1"))
-                work_order = upsert_work_order(
+                upsert_work_order(
                     scope=f"future-{offset}",
                     recipe=recipe,
                     target_date=target,
                     planned_qty=planned,
                     status=WorkOrder.Status.PLANNED,
                     operator_ref="chef:planejamento",
-                )
-                production_changed.send(
-                    sender=WorkOrder,
-                    product_ref=work_order.output_sku,
-                    date=target,
-                    action="planned",
-                    work_order=work_order,
                 )
                 future_count += 1
 
@@ -4967,6 +5392,7 @@ class Command(BaseCommand):
 
         # Historical production: 35 relative days behind today for BI,
         # pickup slots and waste patterns.
+        total_loss_seeded = False
         for days_ago in range(1, 36):
             target = today - timedelta(days=days_ago)
             if not self._shop_operates_on(target):
@@ -4980,7 +5406,9 @@ class Command(BaseCommand):
                 planned = (qty * weekday_multiplier).quantize(Decimal("1"))
                 started = planned
                 loss = Decimal(str((index + days_ago) % 4))
-                finished = max(started - loss, Decimal("1"))
+                is_total_loss_example = not total_loss_seeded and ref == "croissant"
+                finished = Decimal("0") if is_total_loss_example else max(started - loss, Decimal("1"))
+                total_loss_seeded = total_loss_seeded or is_total_loss_example
                 upsert_work_order(
                     scope=f"history-{days_ago}",
                     recipe=recipe,
@@ -4995,9 +5423,12 @@ class Command(BaseCommand):
                 )
                 history_count += 1
 
+        repaired_supply = _ensure_seed_active_production_supply()
+
         self.stdout.write(
             f"  ✅ {len(recipes_data)} receitas, {wo_count} ordens de hoje,"
-            f" {future_count} futuras e {history_count} historico movel"
+            f" {future_count} futuras e {history_count} historico movel;"
+            f" {repaired_supply} coordenadas de produção reconciliadas"
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
@@ -5311,8 +5742,29 @@ class Command(BaseCommand):
             "allow_untracked": False,
             # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
             # Não conforme não sai no remoto (default explícito aqui por
-            # legibilidade); afrouxar é decisão consciente por canal.
+            # legibilidade). O runtime não permite afrouxar esse limite por
+            # override: somente o PDV local pode vender grau com markdown.
             "sells_nonconforming": False,
+        }
+        # Fila de fornada (fermata): o cliente pode reservar a produção futura
+        # conhecida por até dois dias. O relógio de 15 min só começa quando o
+        # Stockman materializa a unidade; até lá a intenção não expira nem cobra.
+        #
+        # Isto precisa ser explícito no seed. Herdar o default desligado fazia o
+        # catálogo demonstrar uma fornada planejada que nenhum cliente conseguia
+        # reservar — e obrigava qualquer QA da notificação a fabricar Hold à mão,
+        # pulando justamente os invariantes que o ensaio deveria provar.
+        _remote_waitlist = {
+            "enabled": True,
+            "horizon_days": 2,
+            "confirmation_minutes": 15,
+            "release_policy": "serve_next",
+            "charge_at": "confirmation",
+            "price_frozen": True,
+        }
+        _remote_notifications = {
+            "backend": "manychat",
+            "fallback_chain": ["sms", "email"],
         }
         _remote_config = {
             # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
@@ -5322,6 +5774,11 @@ class Command(BaseCommand):
             "confirmation": {"mode": "auto_confirm", "timeout_minutes": 1, "stale_new_alert_minutes": 10},
             "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
+            # Canal remoto nunca herda ``console``: console aceita qualquer
+            # mensagem localmente e interrompe a cadeia antes de alcançar a
+            # pessoa. WhatsApp é o primário; SMS e e-mail são redes reais.
+            "notifications": _remote_notifications,
         }
         _marketplace_config = {
             # stale_new_alert < hold_ttl_minutes (20 < 30): o operador é cutucado
@@ -5342,8 +5799,9 @@ class Command(BaseCommand):
             # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
             # o concierge não promete fornada a pedido que ainda não pagou.
             "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
-            "notifications": {"backend": "manychat"},
+            "notifications": _remote_notifications,
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
         }
         channels_data = [
             # (ref, name, display_order, is_active, config_overrides)
@@ -6857,7 +7315,7 @@ class Command(BaseCommand):
                 error="sementes de validação: manteiga francesa abaixo do ponto de reposição",
             )
 
-        active_count = OperatorAlert.objects.filter(acknowledged=False).count()
+        active_count = OperatorAlert.objects.filter(resolved_at__isnull=True).count()
         self.stdout.write(
             f"  ✅ Alertas operacionais ativos: {active_count}"
             f" ({created_late} atraso, {created_yield} rendimento)"
@@ -8954,10 +9412,11 @@ class Command(BaseCommand):
             )
 
     def _seed_oven_runs(self, *, days: int) -> None:
-        """Tempo de forno com cobertura PARCIAL — o KPI de adoção precisa disso.
+        """Fatos sintéticos de forno com cobertura PARCIAL para BI.
 
         Cobertura 100% esconderia o indicador que mostra se a equipe está mesmo
-        usando o timer; aqui ~70% das fornadas têm medição.
+        usando o timer; aqui ~70% das fornadas têm medição. Não são timers locais
+        persistidos: são medições concluídas, marcadas inequivocamente como seed.
         """
         from shopman.craftsman.models import WorkOrder
 
@@ -8965,23 +9424,32 @@ class Command(BaseCommand):
 
         rng = random.Random(20260816)
         finished = WorkOrder.objects.filter(
-            status=WorkOrder.Status.FINISHED, finished_at__isnull=False
+            source_ref__startswith="seed:production:",
+            status=WorkOrder.Status.FINISHED,
+            finished_at__isnull=False,
         ).order_by("-target_date")[: days * 4]
+        OvenRun.objects.filter(metadata__seed="nelson").delete()
         for index, wo in enumerate(finished):
             if index % 10 < 3:  # 30% sem medição: fornada em que ninguém armou
+                continue
+            # Um operador pode ter usado o timer real sobre uma WO de cenário.
+            # Esse fato sem marcador de seed vence e jamais é substituído.
+            if OvenRun.objects.filter(work_order_ref=wo.ref).exists():
                 continue
             planned = rng.choice((18, 22, 25, 30)) * 60
             real = planned + rng.randint(-180, 420)  # às vezes passa do ponto
             armed = wo.finished_at - timedelta(seconds=real)
-            OvenRun.objects.get_or_create(
+            OvenRun.objects.create(
                 work_order_ref=wo.ref,
-                defaults={
-                    "oven_ref": wo.position_ref or "",
-                    "operator_ref": wo.operator_ref or "",
-                    "planned_seconds": planned,
-                    "armed_at": armed,
-                    "concluded_at": wo.finished_at,
-                    "status": "concluded",
+                oven_ref=wo.position_ref or "",
+                operator_ref=wo.operator_ref or "",
+                planned_seconds=planned,
+                armed_at=armed,
+                concluded_at=wo.finished_at,
+                status="concluded",
+                metadata={
+                    "seed": "nelson",
+                    "source": "synthetic_bi_history",
                 },
             )
 

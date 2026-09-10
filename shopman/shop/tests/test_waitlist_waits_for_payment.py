@@ -24,6 +24,10 @@ from decimal import Decimal
 import pytest
 from django.utils import timezone
 from shopman.orderman.models import Order
+from shopman.stockman.services.holds import (
+    QUALITY_GRADE_POLICY_VERSION,
+    QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+)
 
 from shopman.shop.models import Channel
 from shopman.shop.projections.order_tracking import build_tracking
@@ -73,7 +77,11 @@ def _planned_hold(order, *, sku: str = "PAO-DE-FORNADA"):
         status=HoldStatus.PENDING,
         expires_at=None,
         target_date=date.today() + timedelta(days=1),
-        metadata={"reference": f"order:{order.ref}", "planned": True},
+        metadata={
+            "reference": f"order:{order.ref}",
+            "planned": True,
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+        },
     )
 
 

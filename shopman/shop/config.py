@@ -9,6 +9,32 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
+QUALITY_OK_GRADE_REFS = ("excellent", "standard")
+
+
+def quality_grade_refs_for_channel(
+    channel_ref: str,
+    *,
+    sells_nonconforming: bool,
+) -> tuple[str, ...] | None:
+    """Resolve the non-relaxable remote quality boundary.
+
+    ``sells_nonconforming`` is intentionally useful only at the local counter.
+    Remote channels always fail closed to Ótimo/Normal, even if an inherited or
+    stale JSON override tries to enable markdown stock. Deployments may rename
+    their counter through ``SHOPMAN_POS_CHANNEL_REF``.
+    """
+    from django.conf import settings
+
+    local_counter_refs = {
+        "pdv",
+        "pos",
+        str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv") or "pdv"),
+    }
+    if sells_nonconforming and channel_ref in local_counter_refs:
+        return None
+    return QUALITY_OK_GRADE_REFS
+
 
 @dataclass
 class ChannelConfig:
@@ -141,10 +167,13 @@ class ChannelConfig:
         # fornada planejada) quando o produto não declara
         # Product.metadata["lead_time_hours"]. 0 = sem exigência.
         sells_nonconforming: bool = False
-        # O canal oferece lote NÃO CONFORME (Batch.nonconformity_reason
-        # preenchido — ter motivo é ser)? Default falha para o lado seguro:
-        # canal remoto não vende pão com desconto de qualidade sem decisão
-        # explícita. O PDV declara True — no balcão a etiqueta explica.
+        # Política binária de qualidade do canal. False = somente qualidade
+        # integral (excellent/standard, Ótimo/Normal); True = também permite
+        # graus com markdown. Motivo/defeito é ortogonal e nunca decide
+        # elegibilidade sozinho. Default falha para o lado seguro; somente o
+        # canal local de PDV pode declarar True — no balcão a etiqueta explica.
+        # Canais remotos continuam presos a Ótimo/Normal mesmo diante de um
+        # override herdado ou equivocado com True.
         # (D1-RETIREMENT C2: substituiu a antiga cerca por POSIÇÃO;
         # a posição diz ONDE, o lote diz O QUE.)
         expiry_margin_days: int = 0

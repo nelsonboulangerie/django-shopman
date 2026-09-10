@@ -50,22 +50,32 @@ class DayClosingBlindCountTests(TestCase):
         self.loja = Position.objects.create(ref="loja", name="Loja", is_saleable=True)
         # Pão que aguenta o dia seguinte: shelf_life 1, lote vencendo AMANHÃ.
         self.keeper = Product.objects.create(
-            sku="PAO-FICA", name="Pão que fica", shelf_life_days=1,
+            sku="PAO-FICA",
+            name="Pão que fica",
+            shelf_life_days=1,
         )
         Batch.objects.create(
-            sku=self.keeper.sku, ref="FICA-LOTE",
+            sku=self.keeper.sku,
+            ref="FICA-LOTE",
             expiry_date=self.today + timedelta(days=1),
         )
         StockMovements.receive(
-            quantity=3, sku=self.keeper.sku, position=self.loja,
-            batch="FICA-LOTE", reason="fornada de hoje",
+            quantity=3,
+            sku=self.keeper.sku,
+            position=self.loja,
+            batch="FICA-LOTE",
+            reason="fornada de hoje",
         )
         # Pão do dia SEM lote: a validade implícita é o próprio dia.
         self.day_bread = Product.objects.create(
-            sku="PAO-DO-DIA", name="Pão do dia", shelf_life_days=0,
+            sku="PAO-DO-DIA",
+            name="Pão do dia",
+            shelf_life_days=0,
         )
         StockMovements.receive(
-            quantity=2, sku=self.day_bread.sku, position=self.loja,
+            quantity=2,
+            sku=self.day_bread.sku,
+            position=self.loja,
             reason="fornada de hoje",
         )
 
@@ -124,20 +134,26 @@ class DayClosingBlindCountTests(TestCase):
         self.assertEqual(day_quant.quantity, 0)
         self.assertTrue(
             Move.objects.filter(
-                quant=day_quant, reason=f"perda_vencido:{self.today}",
+                quant=day_quant,
+                reason=f"perda_vencido:{self.today}",
             ).exists()
         )
 
     def test_nonconforming_leftover_is_written_off_with_its_own_reason(self) -> None:
         """Lote marcado não vai para o dia seguinte — mesmo com validade."""
         Batch.objects.create(
-            sku=self.keeper.sku, ref="MARCADO-LOTE",
+            sku=self.keeper.sku,
+            ref="MARCADO-LOTE",
             expiry_date=self.today + timedelta(days=1),
-            nonconformity_reason="Assou demais", nonconformity_percent=20,
+            nonconformity_reason="Assou demais",
+            nonconformity_percent=20,
         )
         StockMovements.receive(
-            quantity=2, sku=self.keeper.sku, position=self.loja,
-            batch="MARCADO-LOTE", reason="sublote com desconto",
+            quantity=2,
+            sku=self.keeper.sku,
+            position=self.loja,
+            batch="MARCADO-LOTE",
+            reason="sublote com desconto",
         )
 
         resp = self.client.post(
@@ -155,9 +171,42 @@ class DayClosingBlindCountTests(TestCase):
         self.assertEqual(marked_quant.quantity, 0)
         self.assertTrue(
             Move.objects.filter(
-                quant=marked_quant, reason=f"perda_nao_conformidade:{self.today}",
+                quant=marked_quant,
+                reason=f"perda_nao_conformidade:{self.today}",
             ).exists()
         )
+
+    def test_reason_without_markdown_is_not_written_off(self) -> None:
+        Batch.objects.create(
+            sku=self.keeper.sku,
+            ref="OK-COM-OBSERVACAO",
+            expiry_date=self.today + timedelta(days=1),
+            quality_grade_ref="excellent",
+            nonconformity_reason="Casca irregular",
+            nonconformity_percent=0,
+        )
+        StockMovements.receive(
+            quantity=2,
+            sku=self.keeper.sku,
+            position=self.loja,
+            batch="OK-COM-OBSERVACAO",
+            reason="qualidade OK com observação",
+        )
+
+        response = self.client.post(
+            "/api/v1/backstage/closing/",
+            {"quantities": {self.keeper.sku: "5", self.day_bread.sku: "2"}},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        observed_quant = Quant.objects.get(
+            sku=self.keeper.sku,
+            batch="OK-COM-OBSERVACAO",
+        )
+        self.assertEqual(observed_quant.quantity, 2)
+        row = next(item for item in DayClosing.objects.get().data["items"] if item["sku"] == self.keeper.sku)
+        self.assertEqual(row["qty_nonconforming"], 0)
 
     def test_writeoffs_land_as_waste_not_adjust(self) -> None:
         """Perda de fim de dia entra no ledger como WASTE.
@@ -167,13 +216,18 @@ class DayClosingBlindCountTests(TestCase):
         exatamente a leitura que o write-off por motivo existe para alimentar.
         """
         Batch.objects.create(
-            sku=self.keeper.sku, ref="MARCADO-KIND",
+            sku=self.keeper.sku,
+            ref="MARCADO-KIND",
             expiry_date=self.today + timedelta(days=1),
-            nonconformity_reason="Assou demais", nonconformity_percent=20,
+            nonconformity_reason="Assou demais",
+            nonconformity_percent=20,
         )
         StockMovements.receive(
-            quantity=2, sku=self.keeper.sku, position=self.loja,
-            batch="MARCADO-KIND", reason="sublote com desconto",
+            quantity=2,
+            sku=self.keeper.sku,
+            position=self.loja,
+            batch="MARCADO-KIND",
+            reason="sublote com desconto",
         )
 
         resp = self.client.post(
@@ -187,16 +241,13 @@ class DayClosingBlindCountTests(TestCase):
         self.assertTrue(writeoffs.exists(), "o fechamento não gerou write-off")
         for move in writeoffs:
             self.assertEqual(
-                move.kind, Move.Kind.WASTE,
+                move.kind,
+                Move.Kind.WASTE,
                 f"write-off {move.reason!r} entrou como {move.kind!r}",
             )
         # E as duas famílias de motivo continuam distinguíveis no ledger.
-        self.assertTrue(
-            writeoffs.filter(reason=f"perda_nao_conformidade:{self.today}").exists()
-        )
-        self.assertTrue(
-            writeoffs.filter(reason=f"perda_vencido:{self.today}").exists()
-        )
+        self.assertTrue(writeoffs.filter(reason=f"perda_nao_conformidade:{self.today}").exists())
+        self.assertTrue(writeoffs.filter(reason=f"perda_vencido:{self.today}").exists())
 
     def test_closing_twice_returns_conflict(self) -> None:
         first = self.client.post(

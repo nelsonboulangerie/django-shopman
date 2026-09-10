@@ -24,11 +24,9 @@ class BatchQuerySet(models.QuerySet):
     def active(self):
         """Batches with remaining stock (at least one non-empty quant)."""
         from shopman.stockman.models.quant import Quant
+
         refs_with_stock = (
-            Quant.objects.filter(_quantity__gt=0)
-            .exclude(batch='')
-            .values_list('batch', flat=True)
-            .distinct()
+            Quant.objects.filter(_quantity__gt=0).exclude(batch="").values_list("batch", flat=True).distinct()
         )
         return self.filter(ref__in=refs_with_stock)
 
@@ -39,6 +37,7 @@ class BatchQuerySet(models.QuerySet):
     def expired(self):
         """Batches past their expiry date."""
         from datetime import date as date_cls
+
         return self.expiring_before(date_cls.today())
 
     def for_sku(self, sku: str):
@@ -46,8 +45,8 @@ class BatchQuerySet(models.QuerySet):
         return self.filter(sku=sku)
 
     def nonconforming(self):
-        """Batches carrying a nonconformity reason — having a reason IS being."""
-        return self.exclude(nonconformity_reason="")
+        """Batches whose frozen QC outcome carries a commercial markdown."""
+        return self.filter(nonconformity_percent__gt=0)
 
 
 class Batch(models.Model):
@@ -61,75 +60,86 @@ class Batch(models.Model):
     ref = models.CharField(
         max_length=50,
         unique=True,
-        verbose_name=_('Referência do Lote'),
-        help_text=_('Identificador único do lote (ex: CRO-20260319-M).'),
+        verbose_name=_("Referência do Lote"),
+        help_text=_("Identificador único do lote (ex: CRO-20260319-M)."),
     )
 
     sku = RefField(
         ref_type="SKU",
         max_length=100,
         db_index=True,
-        verbose_name=_('SKU'),
+        verbose_name=_("SKU"),
     )
 
     # Dates
     production_date = models.DateField(
         null=True,
         blank=True,
-        verbose_name=_('Data de Produção'),
+        verbose_name=_("Data de Produção"),
     )
     expiry_date = models.DateField(
         null=True,
         blank=True,
         db_index=True,
-        verbose_name=_('Data de Validade'),
-        help_text=_('Último dia em que o lote pode ser vendido/utilizado'),
+        verbose_name=_("Data de Validade"),
+        help_text=_("Último dia em que o lote pode ser vendido/utilizado"),
     )
 
     # Supplier / origin
     supplier = models.CharField(
         max_length=200,
         blank=True,
-        default='',
-        verbose_name=_('Fornecedor'),
+        default="",
+        verbose_name=_("Fornecedor"),
     )
 
     # Notes
     notes = models.TextField(
         blank=True,
-        default='',
-        verbose_name=_('Observações'),
+        default="",
+        verbose_name=_("Observações"),
     )
 
-    # Não conformidade (ADR-017): o LOTE é o dono do fato. O percentual chega
+    # Qualidade (ADR-017): o LOTE é o dono do fato comercial congelado. O grau
+    # continua opaco para o Stockman; quem decide quais refs um canal aceita é
+    # o orquestrador. Motivo explica causa e nunca serve como proxy do grau.
+    quality_grade_ref = models.CharField(
+        max_length=32,
+        blank=True,
+        default="",
+        verbose_name=_("Grau de qualidade"),
+        help_text=_("Referência opaca do grau resolvido na inspeção."),
+    )
+
+    # Não conformidade (ADR-017): o percentual chega
     # RESOLVIDO por quem inspecionou/fechou a fornada e congela aqui — não há
     # constante de percentual em lugar nenhum, e mudar a tabela de graus amanhã
-    # não reescreve os lotes de ontem. Motivo vazio significa lote conforme:
-    # ter motivo É ser não conforme. O core não interpreta o motivo — é rótulo.
+    # não reescreve os lotes de ontem. O core não interpreta o motivo — é rótulo.
     nonconformity_reason = models.CharField(
         max_length=100,
         blank=True,
-        default='',
-        verbose_name=_('Motivo de não conformidade'),
+        default="",
+        verbose_name=_("Motivo de não conformidade"),
     )
     nonconformity_percent = models.PositiveSmallIntegerField(
         default=0,
-        verbose_name=_('Desconto do lote (%)'),
-        help_text=_('Percentual resolvido na inspeção; 0 = preço cheio.'),
+        verbose_name=_("Desconto do lote (%)"),
+        help_text=_("Percentual resolvido na inspeção; 0 = preço cheio."),
     )
 
     # Tracking
-    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_('Criado em'))
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name=_("Criado em"))
 
     objects = BatchQuerySet.as_manager()
 
     class Meta:
-        verbose_name = _('lote')
-        verbose_name_plural = _('lotes')
-        ordering = ['expiry_date', 'production_date']
+        verbose_name = _("lote")
+        verbose_name_plural = _("lotes")
+        ordering = ["expiry_date", "production_date"]
         indexes = [
-            models.Index(fields=['sku'], name='stocking_ba_sku_idx'),
-            models.Index(fields=['expiry_date'], name='stocking_ba_expiry_idx'),
+            models.Index(fields=["sku"], name="stocking_ba_sku_idx"),
+            models.Index(fields=["expiry_date"], name="stocking_ba_expiry_idx"),
+            models.Index(fields=["quality_grade_ref"], name="stocking_ba_quality_idx"),
         ]
 
     def clean(self) -> None:
@@ -157,6 +167,7 @@ class Batch(models.Model):
         if self.expiry_date is None:
             return False
         from django.utils import timezone
+
         return timezone.localdate() > self.expiry_date
 
     def __str__(self) -> str:

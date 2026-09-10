@@ -145,6 +145,167 @@ class TestFinishWorkOrderStockIntegration:
         )
         assert saleable.quantity == Decimal("18")
 
+    def test_explicit_zero_finished_never_falls_back_to_planned_output(
+        self,
+        recipe,
+        ingredient,
+        croissant,
+        position_producao,
+        position_loja,
+        today,
+    ):
+        """Safety rail for D3: zero output is a total loss, never planned output."""
+        from shopman.craftsman.contrib.stockman import handlers
+
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+        work_order = craft.plan(recipe, quantity=Decimal("20"), date=today)
+        craft.start(work_order, quantity=Decimal("20"), actor="test")
+        WorkOrder.objects.filter(pk=work_order.pk).update(
+            status=WorkOrder.Status.FINISHED,
+            finished=Decimal("0"),
+        )
+        work_order.refresh_from_db()
+
+        handlers._realize_output_leg(work_order, croissant.sku, today)
+
+        assert not Quant.objects.filter(
+            sku=croissant.sku,
+            position=position_loja,
+            target_date=None,
+            _quantity__gt=0,
+        ).exists()
+        started = Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch=handlers.STARTED_BATCH,
+        )
+        assert started.quantity == Decimal("0")
+
+    def test_partial_start_total_loss_cancels_unstarted_plan(
+        self,
+        recipe,
+        ingredient,
+        croissant,
+        position_producao,
+        position_loja,
+        today,
+    ):
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+        work_order = craft.plan(recipe, quantity=Decimal("10"), date=today)
+        craft.start(work_order, quantity=Decimal("4"), actor="test")
+
+        craft.finish(
+            work_order,
+            finished=[],
+            wasted=[{"item_ref": croissant.sku, "quantity": "4"}],
+            actor="test",
+        )
+
+        planned = Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch="",
+        )
+        started = Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch="started",
+        )
+        assert planned.quantity == Decimal("0")
+        assert started.quantity == Decimal("0")
+        assert not Quant.objects.filter(
+            sku=croissant.sku,
+            target_date=None,
+            _quantity__gt=0,
+        ).exists()
+
+    def test_partial_start_output_and_loss_cancel_unstarted_plan(
+        self,
+        recipe,
+        ingredient,
+        croissant,
+        position_producao,
+        position_loja,
+        today,
+    ):
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+        work_order = craft.plan(recipe, quantity=Decimal("10"), date=today)
+        craft.start(work_order, quantity=Decimal("4"), actor="test")
+
+        craft.finish(
+            work_order,
+            finished=[{"item_ref": croissant.sku, "quantity": "3"}],
+            wasted=[{"item_ref": croissant.sku, "quantity": "1"}],
+            actor="test",
+        )
+
+        assert Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch="",
+        ).quantity == Decimal("0")
+        assert Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch="started",
+        ).quantity == Decimal("0")
+        assert Quant.objects.get(
+            sku=croissant.sku,
+            position=position_loja,
+            target_date=None,
+        ).quantity == Decimal("3")
+
+    def test_partial_finish_preserves_other_work_order_planned_contribution(
+        self,
+        recipe,
+        ingredient,
+        croissant,
+        position_producao,
+        position_loja,
+        today,
+    ):
+        stock.receive(
+            quantity=Decimal("10"),
+            sku=ingredient.sku,
+            position=position_producao,
+            target_date=today,
+            reason="Ingredient stock",
+        )
+        closing = craft.plan(recipe, quantity=Decimal("10"), date=today)
+        craft.plan(recipe, quantity=Decimal("5"), date=today)
+        craft.start(closing, quantity=Decimal("4"), actor="test")
+
+        craft.finish(
+            closing,
+            finished=[],
+            wasted=[{"item_ref": croissant.sku, "quantity": "4"}],
+            actor="test",
+        )
+
+        assert Quant.objects.get(
+            sku=croissant.sku,
+            target_date=today,
+            batch="",
+        ).quantity == Decimal("5")
+
     def test_finish_output_lands_at_the_primary_saleable_not_the_alphabetical(
         self, recipe, ingredient, croissant, position_producao, today,
     ):

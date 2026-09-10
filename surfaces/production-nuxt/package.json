@@ -17,8 +17,8 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",
-    "typecheck": "nuxi typecheck",
-    "postinstall": "nuxt prepare"
+    "typecheck": "NUXT_SHOPMAN_ENVIRONMENT=development nuxi typecheck",
+    "postinstall": "NUXT_SHOPMAN_ENVIRONMENT=development nuxt prepare"
   },
   "dependencies": {
     "@nuxt/fonts": "^0.14.0",

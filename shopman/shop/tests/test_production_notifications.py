@@ -43,9 +43,7 @@ def recipe(db):
 
 
 def _shop(notifications: dict):
-    return Shop.objects.create(
-        name="Nelson", defaults={"production": {"notifications": notifications}}
-    )
+    return Shop.objects.create(name="Nelson", defaults={"production": {"notifications": notifications}})
 
 
 def _notification_directives():
@@ -61,17 +59,13 @@ def _late_started_wo(recipe):
 
 class TestNotificationGating:
     def test_disabled_by_default_creates_alert_only(self, recipe):
-        create_stock_short_alert(
-            work_order_ref="WO-X", output_sku="BRIOCHE", error="faltou farinha"
-        )
+        create_stock_short_alert(work_order_ref="WO-X", output_sku="BRIOCHE", error="faltou farinha")
         assert OperatorAlert.objects.filter(type="production_stock_short").exists()
         assert not _notification_directives().exists()
 
     def test_enabled_error_severity_notifies_stock_short(self, recipe):
         _shop({"enabled": True})
-        create_stock_short_alert(
-            work_order_ref="WO-X", output_sku="BRIOCHE", error="faltou farinha"
-        )
+        create_stock_short_alert(work_order_ref="WO-X", output_sku="BRIOCHE", error="faltou farinha")
         directive = _notification_directives().get()
         assert directive.payload["event"] == "production_stock_short"
         assert directive.payload["context"]["work_order_ref"] == "WO-X"
@@ -103,7 +97,9 @@ class TestNotificationGating:
         wo.refresh_from_db()
 
         assert maybe_create_low_yield_alert(wo) is False  # signal já criou (dedup)
-        assert OperatorAlert.objects.filter(type="production_low_yield").count() == 1
+        alert = OperatorAlert.objects.get(type="production_low_yield")
+        assert alert.resolved_at is not None
+        assert alert.resolved_by == "system:production-outcome-recorded"
         directive = _notification_directives().get()
         assert directive.payload["event"] == "production_low_yield"
         assert directive.payload["context"]["yield_percent"] == 50
@@ -114,6 +110,62 @@ class TestNotificationGating:
         assert check_late_started_orders() == 1
         assert check_late_started_orders() == 0  # dedup no alerta
         assert _notification_directives().count() == 1
+
+    def test_visto_does_not_break_dedup_while_cause_is_open(self, recipe):
+        work_order = _late_started_wo(recipe)
+        assert check_late_started_orders() == 1
+        alert = OperatorAlert.objects.get(
+            type="production_late",
+            order_ref=work_order.ref,
+        )
+        alert.acknowledged = True
+        alert.save(update_fields=["acknowledged"])
+        OperatorAlert.objects.filter(pk=alert.pk).update(
+            created_at=timezone.now() - timedelta(hours=13),
+        )
+
+        assert check_late_started_orders() == 0
+        assert (
+            OperatorAlert.objects.filter(
+                type="production_late",
+                order_ref=work_order.ref,
+            ).count()
+            == 1
+        )
+
+    def test_work_order_lifecycle_resolves_transient_alerts(self, recipe):
+        work_order = craft.plan(recipe, 10, date=date.today())
+        forgotten = OperatorAlert.objects.create(
+            type="production_forgotten",
+            message="Fornada esquecida",
+            order_ref=work_order.ref,
+        )
+
+        craft.start(work_order, quantity=10)
+        forgotten.refresh_from_db()
+        assert forgotten.resolved_at is not None
+        assert forgotten.resolved_by == "system:production-lifecycle"
+
+        transient = [
+            OperatorAlert.objects.create(
+                type=alert_type,
+                message="Causa transitória",
+                order_ref=work_order.ref,
+            )
+            for alert_type in (
+                "production_late",
+                "production_unfinished",
+                "production_stock_short",
+                "production_batch_traceability",
+            )
+        ]
+
+        craft.finish(order=work_order, finished=10)
+
+        for alert in transient:
+            alert.refresh_from_db()
+            assert alert.resolved_at is not None
+            assert alert.resolved_by == "system:production-lifecycle"
 
 
 class TestStockShortfallAlert:
@@ -137,36 +189,27 @@ class TestStockShortfallAlert:
         ]
 
     def test_creates_error_alert_naming_ingredient_and_shortfall(self, recipe):
-        create_stock_shortfall_alert(
-            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
-        )
+        create_stock_shortfall_alert(work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls())
         alert = OperatorAlert.objects.get(type="production_stock_shortfall")
         assert alert.severity == "error"
+        assert alert.audience == "production"
         assert alert.order_ref == "WO-9"
         assert "FARINHA" in alert.message
         assert "0.6" in alert.message
         assert not _notification_directives().exists()  # opt-in, desligado por padrão
 
     def test_empty_shortfalls_is_a_noop(self, recipe):
-        create_stock_shortfall_alert(
-            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=[]
-        )
+        create_stock_shortfall_alert(work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=[])
         assert not OperatorAlert.objects.filter(type="production_stock_shortfall").exists()
 
     def test_dedup_prevents_second_alert_for_same_wo(self, recipe):
-        create_stock_shortfall_alert(
-            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
-        )
-        create_stock_shortfall_alert(
-            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
-        )
+        create_stock_shortfall_alert(work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls())
+        create_stock_shortfall_alert(work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls())
         assert OperatorAlert.objects.filter(type="production_stock_shortfall").count() == 1
 
     def test_enabled_error_severity_notifies_with_jsonable_context(self, recipe):
         _shop({"enabled": True})  # severities default = ["error"]
-        create_stock_shortfall_alert(
-            work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls()
-        )
+        create_stock_shortfall_alert(work_order_ref="WO-9", output_sku="BRIOCHE", shortfalls=self._shortfalls())
         directive = _notification_directives().get()
         assert directive.payload["event"] == "production_stock_shortfall"
         # Decimais viram string — o payload da Directive é JSON.
@@ -223,12 +266,14 @@ class TestSystemNotificationDelivery:
         calls = []
 
         def fake_notify(*, event, recipient, context, backend):
-            calls.append({
-                "event": event,
-                "recipient": recipient,
-                "context": context,
-                "backend": backend,
-            })
+            calls.append(
+                {
+                    "event": event,
+                    "recipient": recipient,
+                    "context": context,
+                    "backend": backend,
+                }
+            )
             return SimpleNamespace(success=True, error=None)
 
         monkeypatch.setattr("shopman.shop.handlers.notification.notify", fake_notify)
@@ -266,9 +311,7 @@ class TestHeartbeatNotifies:
         _late_started_wo(recipe)
         Directive.objects.all().delete()
 
-        heartbeat = Directive.objects.create(
-            topic=PRODUCTION_LATE_CHECK, status="running", payload={}
-        )
+        heartbeat = Directive.objects.create(topic=PRODUCTION_LATE_CHECK, status="running", payload={})
         ProductionLateCheckHandler().handle(message=heartbeat, ctx={})
 
         assert _notification_directives().count() == 1

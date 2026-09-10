@@ -104,6 +104,7 @@ class ShopmanConfig(AppConfig):
         try:
             from shopman.refs import register_ref_type
             from shopman.refs.types import RefType
+
             channel = RefType(
                 slug="CHANNEL",
                 label="Canal",
@@ -133,12 +134,8 @@ class ShopmanConfig(AppConfig):
 
         from shopman.shop.loyalty_config import resolve_loyalty_config
 
-        loyalty_conf.set_tier_thresholds_resolver(
-            lambda: resolve_loyalty_config().tier_thresholds()
-        )
-        loyalty_conf.set_default_stamps_target_resolver(
-            lambda: resolve_loyalty_config().stamps_target
-        )
+        loyalty_conf.set_tier_thresholds_resolver(lambda: resolve_loyalty_config().tier_thresholds())
+        loyalty_conf.set_default_stamps_target_resolver(lambda: resolve_loyalty_config().stamps_target)
         logger.info("ShopmanConfig: loyalty resolvers registered.")
 
     def _register_stock_alert_resolvers(self):
@@ -215,6 +212,7 @@ class ShopmanConfig(AppConfig):
         See shopman.handlers.ALL_HANDLERS for the complete list.
         """
         from shopman.shop.handlers import register_all
+
         register_all()
         logger.info("ShopmanConfig: handlers registered.")
 
@@ -266,6 +264,7 @@ class ShopmanConfig(AppConfig):
 
         def on_order_changed(sender, order, event_type, actor, **kwargs):
             from django.db import transaction as _tx
+            from shopman.orderman.models import Order
 
             if event_type == "created":
                 # Gate duro de estoque: roda SÍNCRONO, dentro da transação do
@@ -278,7 +277,17 @@ class ShopmanConfig(AppConfig):
                 phase = f"on_{order.status}"
             else:
                 return
-            _tx.on_commit(lambda: dispatch(order, phase))
+
+            order_pk = order.pk
+
+            def dispatch_fresh_order() -> None:
+                # Other on-commit receivers may have merged operational
+                # lineage into Order.data before lifecycle runs.  Capturing
+                # the signal instance here would later save a stale JSON
+                # snapshot and silently erase those writes.
+                dispatch(Order.objects.get(pk=order_pk), phase)
+
+            _tx.on_commit(dispatch_fresh_order)
 
         order_changed.connect(
             on_order_changed,
@@ -306,8 +315,7 @@ class ShopmanConfig(AppConfig):
             weak=False,
         )
         logger.warning(
-            "ShopmanConfig: piloto automático de STAGING ligado — pedidos avançam "
-            "sozinhos a cada %ds, sem operador.",
+            "ShopmanConfig: piloto automático de STAGING ligado — pedidos avançam sozinhos a cada %ds, sem operador.",
             staging_autopilot.delay_seconds(),
         )
 
@@ -375,14 +383,16 @@ class ShopmanConfig(AppConfig):
             except Exception:
                 logger.exception(
                     "nutrition_from_recipe: failed for product=%s recipe=%s",
-                    instance.output_sku, instance.ref,
+                    instance.output_sku,
+                    instance.ref,
                 )
             try:
                 aggregate_dietary_from_recipe(product)
             except Exception:
                 logger.exception(
                     "dietary_from_recipe: failed for product=%s recipe=%s",
-                    instance.output_sku, instance.ref,
+                    instance.output_sku,
+                    instance.ref,
                 )
 
         post_save.connect(

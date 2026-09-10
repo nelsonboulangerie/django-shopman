@@ -125,6 +125,7 @@ def test_low_yield_alert_created_once(recipe):
     alert = OperatorAlert.objects.get(type="production_low_yield")
     assert alert.order_ref == work_order.ref
     assert "yield de 70%" in alert.message
+    assert alert.resolved_at is not None
 
 
 @pytest.mark.django_db

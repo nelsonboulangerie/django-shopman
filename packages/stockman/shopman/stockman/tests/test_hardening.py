@@ -32,6 +32,7 @@ def _scope_resolver(channel_ref: str | None) -> dict:
             "excluded_positions": ["reserva"],
             "expiry_margin_days": 3,
             "sells_nonconforming": False,
+            "allowed_quality_grade_refs": ["excellent", "standard"],
         }
     return {"safety_margin": 0, "allowed_positions": None}
 
@@ -84,6 +85,7 @@ class TestAvailabilityScopeForChannel:
             "excluded_positions": [],
             "expiry_margin_days": 0,
             "sells_nonconforming": True,
+            "allowed_quality_grade_refs": None,
         }
 
     @override_settings(
@@ -100,4 +102,5 @@ class TestAvailabilityScopeForChannel:
             "excluded_positions": ["reserva"],
             "expiry_margin_days": 3,
             "sells_nonconforming": False,
+            "allowed_quality_grade_refs": ["excellent", "standard"],
         }

@@ -124,6 +124,12 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
 # hide the very bug this test exists to catch.
 # ---------------------------------------------------------------------------
 UNGRANTED_BY_DESIGN: dict[str, str] = {
+    # High-risk production actions were split out before D1.  Their gates fail
+    # closed until the business chooses which role receives each grant.
+    "backstage.quick_finish_production": ("D1 pending: quick finish requires an explicit high-risk grant."),
+    "backstage.override_production_shortage": ("D1 pending: shortage override requires an explicit high-risk grant."),
+    "backstage.void_production": ("D1 pending: work-order reversal requires an explicit high-risk grant."),
+    "backstage.reveal_production_blind_map": ("D1 pending: revealing blind weighing codes requires an explicit grant."),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.
     #
@@ -144,13 +150,8 @@ def _granted_by_group() -> dict[str, set[str]]:
     """group_name -> set of 'app_label.codename' after setup_groups runs."""
     call_command("setup_groups")
     result: dict[str, set[str]] = {}
-    for group in Group.objects.prefetch_related(
-        "permissions__content_type"
-    ):
-        result[group.name] = {
-            f"{p.content_type.app_label}.{p.codename}"
-            for p in group.permissions.all()
-        }
+    for group in Group.objects.prefetch_related("permissions__content_type"):
+        result[group.name] = {f"{p.content_type.app_label}.{p.codename}" for p in group.permissions.all()}
     return result
 
 
@@ -171,10 +172,7 @@ def test_parity_table_every_gate_perm_is_granted_to_expected_group():
 
     for perm, expected_groups in PARITY_TABLE:
         for group_name in expected_groups:
-            assert group_name in granted, (
-                f"expected group {group_name!r} does not exist "
-                f"(needed to grant {perm!r})"
-            )
+            assert group_name in granted, f"expected group {group_name!r} does not exist (needed to grant {perm!r})"
             assert perm in granted[group_name], (
                 f"RBAC parity broken: gate requires {perm!r} but group "
                 f"{group_name!r} does not grant it. A user in {group_name!r} "
@@ -195,16 +193,10 @@ def test_discovered_gate_perms_are_covered_by_some_group():
 
     discovered = _discover_gate_perms()
     # Sanity: the scan actually found the gates (not a silent no-op).
-    assert "cashman.adjust_shift" in discovered, (
-        "discovery regex found no adjust_shift gate — the scan is broken"
-    )
+    assert "cashman.adjust_shift" in discovered, "discovery regex found no adjust_shift gate — the scan is broken"
     assert "cashman.operate_pos" in discovered
 
-    dead_gates = {
-        perm
-        for perm in discovered
-        if perm not in all_granted and perm not in UNGRANTED_BY_DESIGN
-    }
+    dead_gates = {perm for perm in discovered if perm not in all_granted and perm not in UNGRANTED_BY_DESIGN}
     assert not dead_gates, (
         "Dead RBAC gate(s) found: these permissions are required by a runtime "
         f"gate but granted to NO group: {sorted(dead_gates)}. Either grant them "
@@ -215,10 +207,8 @@ def test_discovered_gate_perms_are_covered_by_some_group():
     # longer a real gate) should be removed so the list stays meaningful.
     for perm in UNGRANTED_BY_DESIGN:
         assert perm not in all_granted, (
-            f"{perm!r} is in UNGRANTED_BY_DESIGN but IS granted to a group — "
-            "remove the stale exception."
+            f"{perm!r} is in UNGRANTED_BY_DESIGN but IS granted to a group — remove the stale exception."
         )
         assert perm in discovered, (
-            f"{perm!r} is in UNGRANTED_BY_DESIGN but no gate references it — "
-            "remove the stale exception."
+            f"{perm!r} is in UNGRANTED_BY_DESIGN but no gate references it — remove the stale exception."
         )

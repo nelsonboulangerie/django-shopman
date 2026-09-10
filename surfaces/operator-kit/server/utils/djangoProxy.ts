@@ -16,6 +16,7 @@ import {
 } from "h3";
 import { withQuery } from "ufo";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
+import { applyPrivateNoStore } from "./operatorSecurity";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -188,6 +189,13 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
 
   const responseContentType = response.headers.get("content-type");
   if (responseContentType) appendResponseHeader(event, "content-type", responseContentType);
+
+  const responseApiVersion = response.headers.get("x-api-version");
+  if (responseApiVersion) appendResponseHeader(event, "x-api-version", responseApiVersion);
+
+  // O upstream pode variar também por idioma/encoding; preservamos essa informação,
+  // mas nunca aceitamos que uma resposta de operador se torne pública/cacheável.
+  applyPrivateNoStore(event, response.headers.get("vary"));
 
   setResponseStatus(event, response.status);
   return response._data;
