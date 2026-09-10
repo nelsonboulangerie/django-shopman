@@ -724,10 +724,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
 
   <div
     v-else
-    class="flex min-h-0 flex-col overflow-hidden border bg-card text-card-foreground md:h-full"
+    class="flex min-h-0 flex-col overflow-hidden bg-card text-card-foreground md:h-full"
   >
     <header
-      class="flex min-h-[calc(var(--pos-context-header-height,53px)-1px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
+      class="flex min-h-[var(--pos-context-header-height,53px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
     >
       <div class="flex items-center gap-2">
         <h3 class="whitespace-nowrap text-base font-semibold">{{ items.length }} {{ items.length === 1 ? "item" : "itens" }}</h3>
