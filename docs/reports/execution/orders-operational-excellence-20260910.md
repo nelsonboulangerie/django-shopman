@@ -146,3 +146,24 @@ Migração: nenhuma. Rollback: reverter dois bindings da tabela, reabrindo D10; 
 manter a capacidade fora do rollout a restabelecer clique inválido. J01: zero ativações
 adicionais em ação elegível; bloqueada deixa de aceitar clique. Tempo humano não medido.
 WP01 permanece parcial (unidade, Actions e D11 ainda pendentes).
+
+## WP00 — revalidação adicional de D02
+
+Quatro diagnósticos passaram em PostgreSQL (4,96s); passam ao reproduzir perda, não ao
+aceitar o produto. Courier `_save_block` e payment `_stamp_gateway_check` perdem nota
+independente quando recebem instância obsoleta. Lifecycle `_mark_phase_complete` relê,
+mas o ensaio com duas conexões inseriu nota entre leitura e save e demonstrou perda.
+
+O diagnóstico direto de `_write_state` (waitlist) também reproduz perda com instância
+obsoleta, **mas não prova defeito no caminho canônico**: releitura dos callers
+`open_materialized_windows`/`confirm`/`release` mostrou Order sob lock e instância fresca.
+Não substituir esse caminho maduro com base no teste artificial do helper. Fiscal
+`_record` e `settle_from_gateway` também já mesclam sob lock: preservar e testar regressão.
+O inventário AST não basta para concluir que uma função está desprotegida.
+
+Writer adicional localizado: anonimização em account usa QuerySet.update para exceção
+legítima ao snapshot selado. Não afrouxar Order.save nem remover esse caminho; tratar
+concorrência/PII no contrato, preservando autorização de exclusão e G08 para operações reais.
+
+Gate da meia-correção nos três arquivos de produto alterados: exit 0 (log anexado).
+Não equivale ao runtime-gate completo nem valida código ainda não implementado.
