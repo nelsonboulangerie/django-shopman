@@ -33,8 +33,13 @@ export interface CustomerDisplaySnapshot {
   items: CustomerDisplayItem[];
   itemCount: number;
   totalDisplay: string;
-  /** Desconto agregado do review ("R$ 2,00"); "" quando não há. */
+  /** Desconto agregado ("R$ 2,00"); "" quando não há. */
   discountDisplay: string;
+  /** O total ANTES do desconto ("R$ 20,00"), para riscar acima do total: a
+   *  parede deixa claro que o desconto anunciado JÁ está aplicado. Vale
+   *  `grossTotalDisplay − discountDisplay = totalDisplay`. "" quando não há
+   *  desconto — riscar um número igual ao cobrado é ruído. */
+  grossTotalDisplay: string;
   pix: CustomerDisplayPixView | null;
   /** Troco a devolver ("R$ 33,70"); "" quando não há. */
   changeDisplay: string;

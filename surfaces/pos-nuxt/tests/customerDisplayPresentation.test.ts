@@ -291,6 +291,62 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
     expect(snap.customerFirstName).toBe("");
   });
 
+  it("sem desconto, nada a riscar: `grossTotalDisplay` vazio (local e review)", () => {
+    // Riscar um número igual ao cobrado é ruído — e a parede não pode sugerir
+    // um desconto que não existe.
+    const local = buildCustomerDisplaySnapshot(inputs({ items: [item({ qty: 3, price_q: 500 })] }));
+    expect(local.grossTotalDisplay).toBe("");
+    expect(local.discountDisplay).toBe("");
+
+    const viaReview = buildCustomerDisplaySnapshot(inputs({
+      checkoutMode: true,
+      items: [item()],
+      review: review({ total_q: 1000, discount_q: 0, discount_display: "R$ 0,00" }),
+    }));
+    expect(viaReview.grossTotalDisplay).toBe("");
+  });
+
+  it("desconto via review: risca `total_q + discount_q` — o total antes do desconto manual", () => {
+    // O que o cliente lê de cima para baixo: R$ 10,00 riscado, Descontos
+    // −R$ 2,00, Total R$ 8,00. Não sobra dúvida se os R$ 2,00 já entraram.
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      checkoutMode: true,
+      items: [item()],
+      review: review({ total_display: "R$ 8,00", total_q: 800, discount_q: 200, discount_display: "R$ 2,00" }),
+    }));
+    expect(snap.phase).toBe("payment");
+    expect(snap.grossTotalDisplay).toBe(formatBRL(1000));
+    expect(snap.discountDisplay).toBe("R$ 2,00");
+    expect(snap.totalDisplay).toBe("R$ 8,00");
+  });
+
+  it("desconto só local (sem review): risca a soma de restauração, e o desconto fecha a conta", () => {
+    // Na fase de venda o review ainda não existe. `price_q` é o preço de
+    // restauração (pré-desconto manual) e `charged_price_q` o cobrado: a
+    // diferença é o MESMO desconto manual que o review vai anunciar no "Cobrar"
+    // — o rodapé não muda de história quando ele chega.
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      items: [
+        item({ qty: 2, price_q: 500, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } }),
+        item({ sku: "CAFE", name: "Café", qty: 1, price_q: 300, charged_price_q: 300 }),
+      ],
+    }));
+    expect(snap.phase).toBe("sale");
+    expect(snap.grossTotalDisplay).toBe(formatBRL(1300));
+    expect(snap.discountDisplay).toBe(formatBRL(100));
+    expect(snap.totalDisplay).toBe(formatBRL(1200));
+  });
+
+  it("desconto local que o servidor DESCARTOU não risca nada", () => {
+    // Xepa −25% já levou o unitário a 450; a cortesia de 10% perdeu o "maior
+    // ganha" e o servidor cobra 450 mesmo. Riscar aqui inventaria um desconto.
+    const snap = buildCustomerDisplaySnapshot(inputs({
+      items: [item({ qty: 2, price_q: 450, charged_price_q: 450, discount: { value: 10, reason: "cortesia" } })],
+    }));
+    expect(snap.grossTotalDisplay).toBe("");
+    expect(snap.discountDisplay).toBe("");
+  });
+
   it("o snapshot é um objeto plano: sobrevive ao structuredClone do canal", () => {
     const snap = buildCustomerDisplaySnapshot(inputs({
       items: [item({ discount: { value: 10, reason: "cortesia" } })],
