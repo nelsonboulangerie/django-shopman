@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T1–T7 executadas, T8–T9 pendentes
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8` e `d86e0dce8`
+**Estado:** coleta P01 em andamento; T1–T8 executadas, T9 pendente
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8` e `6c4bbc3f2`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -43,7 +43,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 6R1 | sim | inspeção visual; nenhum comando executado | nenhuma | 0 | sem espera relatada | 0 | N/A | sim, no escopo de T6 | P01 confirmou que “1 destino elegível” e o escopo exclusivo de WhatsApp estavam claros. Sugeriu retirar “realmente” da copy; ajuste incorporado como “Plataformas afetadas”. Cenário restaurado a 13/13 sem nova entrega. |
 | P01 | 7 | não | 1 confirmação + TOTP; inscrição assistida | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | não | A consulta funcionou, mas P01 precisou perguntar de qual autenticador viria o código: o device local não havia sido inscrito no aparelho. Comprovante `b5ecbefe-a1eb-40ff-876a-829118671d09`, versão 4, uma consulta e zero reenvios. |
 | P01 | 7R1 | sim | 1 confirmação + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | sim, no escopo de T7 | Repetição após enrollment concluída sem pedido de ajuda. Comprovante `7cdb3a33-2ccb-4759-9949-cc6c4372b893`, versão 5, somente WhatsApp, uma consulta e zero reenvios; ledger final 13/13. P01 apontou desalinhamento visual das casas do código depois de concluir. |
-| P01 | 8 | — | — | — | — | — | — | — | — | pendente |
+| P01 | 8 | sim | 2 inferidas + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada; sem espera relatada | 1 autenticador, exigido pela segurança | rollback não acionado; gravação concluída | sim, no escopo da configuração | Substituiu a referência indisponível pelo fluxo local aprovado. Comprovante `1e81fb34-29f6-4f58-9d9b-b6773be51db2`, versão 3→4; teste externo permaneceu bloqueado por não existir aparelho verificado e nenhum envio foi criado. |
 | P01 | 9 | — | — | — | — | — | — | — | — | pendente |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
@@ -215,6 +215,35 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   passaram para o modal; a correção final de alinhamento repetiu o teste do componente.
   Classificação: T7 funcional e repetição humana aprovadas; o achado de preparo permanece
   preservado como falha da rodada original.
+
+### P01/T8 — configuração recuperada com CAS e teste externo fechado por segurança
+
+- O facilitador preparou no banco descartável uma referência conhecida, porém ausente
+  do catálogo ativo (`retired_local_flow`, versão 3). A interface identificou a
+  configuração como indisponível e ofereceu somente a alternativa aprovada
+  **“Fluxo local — sem envio externo”**.
+- P01 concluiu sem pedir ajuda. Antes da autorização, o modal mostrou configuração
+  atual, configuração resultante, versão revisada e a consequência explícita
+  **“Nenhuma mensagem será enviada agora”**; o código TOTP foi a única digitação além
+  da seleção e confirmação.
+- O comprovante `1e81fb34-29f6-4f58-9d9b-b6773be51db2` ficou `completed`, com CAS
+  `base_version=3` e `resulting_version=4`. O evento imutável
+  `00f04fec-1130-4592-a9e2-93d7799722f9` registra WhatsApp,
+  `previous_flow_ref=retired_local_flow` e
+  `resulting_flow_ref=local_marketing_e2e`; a leitura posterior confirmou o modelo
+  ativo na versão 4.
+- A área do canal reapresentou o fluxo local como seleção atual. O teste seguro ficou
+  visivelmente **“bloqueado com segurança”**, pois o perfil não possui aparelho de teste
+  verificado. Isso é o resultado fail-closed correto, não um teste externo bem-sucedido:
+  foram criados zero `MarketingTestReceipt`, zero `MarketingOutbox` e zero efeitos
+  externos desde o comando.
+- O rollback não precisou ser acionado porque o CAS foi aceito; sua execução não é
+  reivindicada como evidência humana. A certeza da configuração e do bloqueio seguro
+  foi completa, mas cliques e latência não são aprovados sem telemetria.
+- `6c4bbc3f2` também refinou o modal compartilhado deste fluxo: código centralizado,
+  resumo compacto, botões de largura integral e todo o gate visível sem rolagem na
+  viewport do ensaio. Validação: 243 testes da interface, typecheck, lint focado e
+  `git diff --check` passaram.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
