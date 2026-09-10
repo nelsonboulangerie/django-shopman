@@ -553,9 +553,7 @@ function onWindowKeydown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
 const batchMode = ref(false);
-const itemNavigation = ref(false);
 function finishItemMode() {
-  itemNavigation.value = false;
   batchMode.value = false;
   expandedLineId.value = "";
   clearSelection();
@@ -566,10 +564,10 @@ function toggleBatchMode() {
   batchMode.value = true;
   expandedLineId.value = "";
   clearSelection();
+  void focusItem();
 }
 function markItem(lineId: string) {
   batchMode.value = true;
-  expandedLineId.value = "";
   toggleSelect(lineId);
 }
 const mutationBusy = computed(() => props.loading || props.saving);
@@ -595,7 +593,7 @@ async function focusItem(lineId = activeLineId.value) {
   const button =
     buttons.find((el) => el.dataset.itemSelect === lineId) || buttons[0];
   if (!button) return;
-  itemNavigation.value = true;
+  batchMode.value = true;
   selectLine(button.dataset.itemSelect!);
   await nextTick();
   button.focus({ preventScroll: true });
@@ -606,7 +604,7 @@ function enterList(event: KeyboardEvent) {
     event.altKey &&
     !event.ctrlKey &&
     !event.metaKey &&
-    (event.code === "KeyI" || event.key.toLowerCase() === "i") &&
+    (event.code === "KeyS" || event.key.toLowerCase() === "s") &&
     !globalKeysBlocked() &&
     !props.loading &&
     !props.saving &&
@@ -647,7 +645,7 @@ async function navigateItems(event: KeyboardEvent) {
   );
   const index = buttons.indexOf(primary);
   if (
-    (event.key === " " || (batchMode.value && event.key === "Enter")) &&
+    event.key === " " &&
     target === primary
   ) {
     event.preventDefault();
@@ -668,7 +666,6 @@ async function navigateItems(event: KeyboardEvent) {
       ];
     if (next) await focusItem(next.dataset.itemSelect!);
   } else if (
-    !batchMode.value &&
     (event.key === "ArrowRight" ||
       event.key === "ArrowLeft" ||
       (event.key === "Enter" && target === primary))
@@ -724,31 +721,24 @@ defineExpose({ focusItem, onDigit, onBackspace });
 
   <div
     v-else
-    class="flex min-h-0 flex-col overflow-hidden border bg-card text-card-foreground md:h-full"
+    class="flex min-h-0 flex-col overflow-hidden bg-card text-card-foreground md:h-full"
   >
     <header
-      class="flex min-h-[calc(var(--pos-context-header-height,53px)-1px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
+      class="flex min-h-[var(--pos-context-header-height,53px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
     >
       <div class="flex items-center gap-2">
         <h3 class="whitespace-nowrap text-base font-semibold">{{ items.length }} {{ items.length === 1 ? "item" : "itens" }}</h3>
-        <button
-          ref="listEntry"
-          aria-label="Navegar nos itens"
-          aria-keyshortcuts="Alt+i"
-          title="Alt+I: entrar nos itens. ↑↓ navegar · Enter: detalhes · ←→ fechar/abrir · +/− quantidade · Delete: remover com confirmação · Esc: voltar"
-          class="min-h-9 rounded px-1 text-xs text-muted-foreground hover:text-primary"
-          @click="focusItem()"
-        >
-          <OperatorKbd aria-hidden="true">Alt I</OperatorKbd>
-        </button>
       </div>
-      <button v-if="itemNavigation && !batchMode" class="inline-flex h-9 shrink-0 items-center rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent" @click="finishItemMode">Concluir</button>
       <button
-        class="inline-flex h-9 shrink-0 items-center rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent"
+        ref="listEntry"
+        aria-keyshortcuts="Alt+s"
+        title="Alt+S: selecionar itens"
+        class="inline-flex h-9 shrink-0 items-center gap-2 rounded-full border border-border px-3 text-sm font-medium transition hover:bg-accent"
         :aria-label="batchMode ? 'Concluir seleção' : 'Iniciar seleção'"
         @click="toggleBatchMode"
       >
         {{ batchMode ? "Concluir seleção" : "Selecionar" }}
+        <OperatorKbd v-if="!batchMode" aria-hidden="true">Alt S</OperatorKbd>
       </button>
     </header>
     <div
@@ -767,7 +757,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="relative flex flex-wrap items-start border-l focus-within:ring-1 focus-within:ring-inset focus-within:ring-primary"
+          class="relative flex flex-wrap items-start border-l"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
           :class="
             isSelected(item.line_id)
@@ -849,12 +839,11 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
           </button>
           <button
-            v-if="!batchMode"
             class="grid min-h-11 w-9 shrink-0 place-items-center text-muted-foreground"
             :aria-label="`Detalhes de ${item.name}`"
             :aria-expanded="expandedLineId === item.line_id"
             :aria-controls="detailsId(item.line_id)"
-            @click="toggleDetails(item.line_id)"
+            @click.stop="toggleDetails(item.line_id)"
           >
             <Icon
               :name="
@@ -914,7 +903,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             </button>
           </div>
           <div
-            v-if="!batchMode && expandedLineId === item.line_id"
+            v-if="expandedLineId === item.line_id"
             :id="detailsId(item.line_id)"
             role="region"
             :aria-label="`Detalhes de ${item.name}`"
@@ -963,10 +952,10 @@ defineExpose({ focusItem, onDigit, onBackspace });
               variant="ghost"
               size="sm"
               :disabled="mutationBusy || firing || !unfireAction.enabled"
-              @click="$emit('unfire', item.line_id)"
+              @click.stop="$emit('unfire', item.line_id)"
               >{{ unfireAction.label }}</UiButton
             >
-            <div class="mt-1 flex justify-between">
+            <div v-if="!batchMode" class="mt-1 flex justify-between">
               <button
                 class="min-h-9 font-medium text-primary"
                 @click="
@@ -1132,7 +1121,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <!-- Secondary actions stack on the left; Pagamento is the highlight column
            spanning their full height — saves a vertical row. -->
       <div
-        v-if="!batchMode && !itemNavigation && (fireBar.visible || (hasOpenTab && items.length))"
+        v-if="!batchMode && (fireBar.visible || (hasOpenTab && items.length))"
         class="grid grid-cols-2 gap-2"
       >
         <div class="flex flex-col gap-2">
@@ -1189,7 +1178,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </UiButton>
       </div>
       <UiButton
-        v-else-if="!batchMode && !itemNavigation"
+        v-else-if="!batchMode"
         size="lg"
         class="w-full gap-2"
         :disabled="!items.length || loading || saving"

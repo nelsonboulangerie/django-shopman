@@ -610,7 +610,7 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
       wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed"),
     ).toBe("true");
     expect(wrapper.find('[aria-label="Aumentar"]').exists()).toBe(false);
-    expect(wrapper.find('[aria-label="Detalhes de Pão"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Detalhes de Pão"]').exists()).toBe(true);
     await bread.trigger("click");
     expect(
       wrapper.find('[aria-label="Selecionar Pão"]').attributes("aria-pressed"),
@@ -622,11 +622,14 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     expect(wrapper.emitted("setQty")).toBeUndefined();
   });
 
-  it("Espaço marca o item, setas movem só o foco e Enter marca no modo seleção", async () => {
+  it("Alt+S inicia seleção, Espaço marca, setas navegam e Enter abre detalhes", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props(),
       attachTo: document.body,
     });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "s", code: "KeyS", altKey: true }));
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('[aria-label="Concluir seleção"]').exists()).toBe(true);
     const bread = wrapper.find('[data-item-select="L-PAO"]');
     await bread.trigger("keydown", { key: " " });
     expect(
@@ -640,14 +643,16 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
       wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed"),
     ).toBe("false");
     await coffee.trigger("keydown", { key: "Enter" });
-    expect(
-      wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed"),
-    ).toBe("true");
-    expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
+    expect(wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed")).toBe("false");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
     await coffee.trigger("keydown", { key: " " });
-    expect(
-      wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed"),
-    ).toBe("false");
+    expect(wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
+    await coffee.trigger("keydown", { key: "ArrowLeft" });
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
+    await wrapper.find('button[aria-label="Detalhes de Café"]').trigger("click");
+    expect(wrapper.find('[aria-label="Selecionar Café"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
   });
 
   it("Enter/←/→ controlam detalhes; +/- afetam apenas a linha focada", async () => {
@@ -737,14 +742,14 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
   });
 });
 
-it("mantém o rodapé compacto durante navegação até Concluir, sem depender do foco", async () => {
+it("mantém o rodapé compacto durante seleção até Concluir, sem depender do foco", async () => {
   const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
-  await wrapper.find('[aria-label="Navegar nos itens"]').trigger('click');
+  await wrapper.find('[aria-label="Iniciar seleção"]').trigger('click');
   await wrapper.vm.$nextTick();
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
   await wrapper.find('[aria-label="Dígito 5"]').trigger('focus');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
-  await wrapper.findAll('button').find(b => b.text()==='Concluir')!.trigger('click');
+  await wrapper.find('[aria-label="Concluir seleção"]').trigger('click');
   expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(true);
 });
 
