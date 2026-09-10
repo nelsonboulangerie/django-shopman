@@ -1,10 +1,10 @@
 # SEC-SURF-001 — Convergência do envelope de segurança das surfaces Nuxt
 
-**Status:** registrado; implementação transversal deliberadamente adiada  
-**Prioridade:** P1 de hardening antes de piloto público ou tráfego real  
+**Status:** registrado; implementação transversal deliberadamente adiada
+**Prioridade:** P1 de hardening antes de piloto público ou tráfego real
 **Origem:** MKT-040, [ADR-026](../../decisions/adr-026-operator-surface-security-envelope.md)
-e correção local `0d39cac5f` (2026-09-09)  
-**Owners requeridos:** Segurança + owners das surfaces + QA  
+e correção local `0d39cac5f` (2026-09-09)
+**Owners requeridos:** Segurança + owners das surfaces + QA
 **Autorização atual:** somente documentação e implementação local do Marketing; nenhum
 deploy, staging, produção ou rollout para outras surfaces está autorizado.
 

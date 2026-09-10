@@ -1,7 +1,7 @@
 # ADR-026 — Envelope de segurança compartilhado das surfaces de operador
 
-**Status:** Aceito · 2026-09-09  
-**Escopo:** `operator-kit` e as surfaces Nuxt internas que o estendem  
+**Status:** Aceito · 2026-09-09
+**Escopo:** `operator-kit` e as surfaces Nuxt internas que o estendem
 **Evidência de origem:** MKT-040, correção `0d39cac5f` e
 [`SEC-SURF-001`](../reports/execution/operator-surface-security-followup-20260909.md)
 

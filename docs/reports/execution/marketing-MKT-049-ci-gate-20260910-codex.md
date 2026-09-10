@@ -1,8 +1,8 @@
 # MKT-049 — CI completo e dependência Nuxt determinística
 
-**Estado:** concluído na branch isolada  
-**Runtime contratado:** Node 22.x  
-**Nuxt instalado:** 4.5.2  
+**Estado:** concluído na branch isolada
+**Runtime contratado:** Node 22.x
+**Nuxt instalado:** 4.5.2
 **Efeito externo:** nenhum
 
 ## Cadeia bloqueante

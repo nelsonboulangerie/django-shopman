@@ -1,7 +1,7 @@
 # Threat model de URL e mídia de Marketing
 
-**Versão:** 1.0 — 2026-09-09  
-**Escopo:** MKT-031 / WP-06  
+**Versão:** 1.0 — 2026-09-09
+**Escopo:** MKT-031 / WP-06
 **Owner da política:** Segurança + Platform Owner
 
 ## Fluxos e fronteiras

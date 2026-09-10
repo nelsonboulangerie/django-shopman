@@ -14,6 +14,13 @@ automaticamente sem descartar nenhum deles. As duas folhas legítimas de migrati
 Backstage foram preservadas por uma migration de merge vazia; nenhum histórico foi
 renumerado ou reescrito.
 
+Antes do fechamento, outros nove commits já presentes em `origin/main` também foram
+incorporados. Eles trouxeram ajustes de PDV/display e um chevron canônico para os
+`select` nativos do `operator-kit`; o merge permaneceu limpo e a branch terminou sem
+commits pendentes de `origin/main`. As sete referências visuais que contêm esses
+controles foram revistas e atualizadas somente depois de confirmar que a diferença se
+limitava ao novo ícone e ao espaço reservado para ele.
+
 O merge também trouxe um componente novo do `operator-kit`. A instalação limpa revelou
 um lock ainda em Vitest 4.1.9 e SVGO 4.0.2, com duas vulnerabilidades moderadas e uma
 alta. O follow-up eleva somente Vitest para 4.1.11 e força SVGO 4.1.0, versões já usadas
@@ -53,7 +60,8 @@ que o processo concorrente terminou, o mesmo teste, sem alteração de código, 
   usam capacidades granulares, protocolo CAS/idempotência/confirmação e horário útil
   determinístico; dois casos permanecem pulados por desenho.
 - Marketing Nuxt: 34 arquivos / 245 testes, lint, typecheck e build verdes.
-- Browser: 1 E2E, 2 fluxos de acessibilidade e 69/69 estados visuais verdes.
+- Browser: 1 E2E, 2 fluxos de acessibilidade e 69/69 estados visuais verdes, incluindo
+  uma segunda passagem integral após a atualização dirigida dos sete `select`.
 - Segurança: 4 contratos Marketing, audit Marketing zero; 25 arquivos / 234 testes do
   operator-kit e audit do kit zero.
 - Migration drift, Ruff, YAML e `git diff --check`: verdes.
