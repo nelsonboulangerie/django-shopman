@@ -12,7 +12,7 @@
 
 1. O mecanismo térmico do PDV deve ser reaproveitado: o servidor compõe os bytes e um serviço no dispositivo entrega ao spooler.
 2. O PDV roda tipicamente no PC conectado à impressora; os demais apps rodam sobretudo em tablets. Essa diferença não pode aparecer como configuração manual para o operador.
-3. O agente permanece restrito à loopback. Tablet não chama IP/porta do PC na LAN e não recebe segredo do agente.
+3. O agente permanece restrito à loopback. O cliente de transporte é compartilhado pelo `operator-kit` e o instalador autoriza explicitamente todas as origens operacionais configuradas; isso não publica a rota. Tablet não chama IP/porta do PC na LAN e não recebe segredo do agente.
 4. No PC da impressora, o caminho local continua direto. No tablet, o Django mantém um trabalho durável e o agente da estação o busca por conexão HTTPS de saída.
 5. Impressora e gaveta são capacidades ortogonais. Impressão não pode depender de `canKick`.
 6. Aceite pelo spooler significa “enviado à fila”, nunca prova de que o papel saiu. Confirmação, erro, retry e reimpressão precisam ser honestos e auditados.
@@ -35,7 +35,7 @@ O agente raiz conservou ownership de migrations, contrato integrado, reconcilia�
 - `useCounterAgent.print()` está acoplado à configuração da gaveta e retorna `printed` quando a fila apenas aceitou o job.
 - O agente documenta e exige loopback; expô-lo na LAN criaria superfície para `/print` e `/kick` e ainda enfrentaria HTTPS/PNA nos tablets.
 - A tela de Preparação ainda usa `window.print()` e não possui job persistente, destino/status, idempotência, retry nem reimpressão registrada.
-- O contrato de 80 mm existente conhece rolo de 80 mm / área útil de 72 mm, mas a etiqueta precisa de um renderer térmico próprio e validação em papel real.
+- O recibo do PDV e a etiqueta são mídias distintas. A etiqueta adesiva padrão é 60×40 mm, com 52 mm úteis, configurável no Admin; continua exigindo validação no papel real.
 
 ## Decisão de precisão da balança
 
@@ -62,13 +62,13 @@ O agente raiz conservou ownership de migrations, contrato integrado, reconcilia�
 - Admin/Unfold: verificador canônico aprovado; `249 passed` em integração/smoke.
 - Django: `check` sem erros (somente W001/W003 já conhecidos); `makemigrations --check --dry-run` sem deriva; plano contém apenas `backstage.0058`.
 - Migração `backstage.0058` aplicada no banco local; seed não destrutivo concluído e dados sensíveis à data atualizados.
-- Browser QA local: `/mise-en-place` abriu por `Por preparo`, exibiu todos os alvos em gramas pares, nota de precisão, nomes + SKU, peso total, botão individual de 44 px e modal lógico 80 mm. `/admin`, auditoria de trabalhos e configuração do terminal renderizaram no cânone Unfold.
+- Browser QA local: `/mise-en-place` abriu por `Por preparo`, exibiu todos os alvos em gramas pares, nota de precisão, nomes + SKU, peso total, botão individual de 44 px e preview configurável 60×40 mm. `/admin`, auditoria de trabalhos e configuração do terminal renderizaram no cânone Unfold.
 
 ## Gates e evidências
 
 - [ ] modelo/migração e concorrência em PostgreSQL — testes locais passaram; aguarda o job PostgreSQL do CI;
 - [x] credencial de agente separada e nunca projetada ao tablet;
-- [x] composição canônica 80 mm, hash e documento congelado;
+- [x] composição canônica 60×40 mm configurável, hash e documento congelado;
 - [x] claim/lease/ack idempotentes e redelivery sem impressão duplicada;
 - [x] fluxo PC local e fluxo tablet delegado;
 - [x] preview, status, confirmação, erro, retry e reimpressão auditada;
@@ -76,4 +76,4 @@ O agente raiz conservou ownership de migrations, contrato integrado, reconcilia�
 - [x] testes Backend, Production Nuxt, counter-agent, contrato, a11y e duplo toque;
 - [x] `make admin`, gates de migrations/runtime/surfaces e Browser QA;
 - [x] validação visual local;
-- [ ] hardware 80 mm real — gate humano, não substituível por mock.
+- [ ] hardware adesivo 60×40 mm real — gate humano, não substituível por preview, PDF ou mock.

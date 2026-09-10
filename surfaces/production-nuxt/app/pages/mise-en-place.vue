@@ -595,7 +595,7 @@ function refreshAll() {
                   type="button"
                   class="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
                   :aria-label="`Abrir etiquetas de pesagem de ${ticket.name}`"
-                  :title="`Conferir etiquetas de ${ticket.name} · 80 mm`"
+                  :title="`Conferir etiquetas de ${ticket.name}`"
                   @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
                 >
                   <Icon name="lucide:printer" class="size-4" />

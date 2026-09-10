@@ -1831,6 +1831,7 @@ def write_config(
     *,
     queue: str,
     origin: str,
+    origins: tuple[str, ...] = (),
     token: str = "",
     server_url: str = "",
     station_ref: str = "",
@@ -1848,17 +1849,25 @@ def write_config(
     lados — e ninguém quer descobrir isso no meio de um sábado.
     """
     relay_requested = any((server_url, station_ref, agent_id, relay_token))
+    requested_origins = []
+    for candidate in (origin, *origins):
+        normalized = str(candidate or "").strip().rstrip("/")
+        if normalized and normalized not in requested_origins:
+            requested_origins.append(normalized)
     if path.exists():
         config = json.loads(path.read_text(encoding="utf-8"))
         changed = False
         if token and token != config.get("token"):
             config["token"] = token
             changed = True
-        # Configs antigas vazias deixam de ser abertas a qualquer aba. Quando
-        # o instalador novo já conhece a origem, aproveita para fechar a lacuna
-        # sem substituir allowlists existentes.
-        if origin and not config.get("allowed_origins"):
-            config["allowed_origins"] = [origin.rstrip("/")]
+        # Reinstalar amplia somente com origens operacionais declaradas pelo
+        # Admin e preserva exceções existentes. Assim uma estação já usada no
+        # PDV passa a aceitar Produção sem apagar o PDV nem abrir para qualquer
+        # site.
+        current_origins = list(config.get("allowed_origins") or [])
+        merged_origins = list(dict.fromkeys([*current_origins, *requested_origins]))
+        if merged_origins != current_origins:
+            config["allowed_origins"] = merged_origins
             changed = True
         if relay_requested:
             relay_values = {
@@ -1888,7 +1897,7 @@ def write_config(
         "host": "127.0.0.1",
         # Sem origem declarada a lista fica vazia e pedidos COM Origin são
         # recusados. CLI local e relay não enviam Origin e seguem funcionando.
-        "allowed_origins": [origin.rstrip("/")] if origin else [],
+        "allowed_origins": requested_origins,
     }
     if relay_requested:
         config.update(
@@ -1906,6 +1915,15 @@ def write_config(
 
 def _arg_value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1] if flag in argv and len(argv) > argv.index(flag) + 1 else ""
+
+
+def _arg_values(argv: list[str], flag: str) -> tuple[str, ...]:
+    """Todos os valores de uma opção repetível, na ordem informada."""
+    return tuple(
+        argv[index + 1]
+        for index, value in enumerate(argv[:-1])
+        if value == flag
+    )
 
 
 def stop_legacy_service() -> None:
@@ -2761,11 +2779,12 @@ def install(argv: list[str]) -> int:
         target.chmod(0o755)
 
     token = _arg_value(argv, "--token")
-    origin = _arg_value(argv, "--origin")
+    origins = _arg_values(argv, "--origin")
     config, written = write_config(
         DEFAULT_CONFIG_PATH,
         queue=queue,
-        origin=origin,
+        origin="",
+        origins=origins,
         token=token,
         server_url=server_url,
         station_ref=station_ref,

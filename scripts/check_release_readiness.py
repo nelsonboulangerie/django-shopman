@@ -168,6 +168,7 @@ def build_report(
             _migration_check(),
             _storefront_contact_check(),
             _omotenashi_seed_check(),
+            _preparation_shelf_life_review_check(profile=profile),
             _rules_load_check(),
             _gateway_smoke_check(),
             _gateway_sandbox_check(profile=profile),
@@ -473,6 +474,54 @@ def _omotenashi_seed_check() -> ReadinessCheck:
         status="passed",
         message=f"{report.ready_count}/{len(report.checks)} scenarios ready.",
         details={"counts": details},
+    )
+
+
+def _preparation_shelf_life_review_check(*, profile: ReadinessProfile) -> ReadinessCheck:
+    """Example expiry periods may support alpha, but can never cross go-live."""
+    from shopman.craftsman.models import Recipe
+
+    pending: list[dict[str, object]] = []
+    reviewed = 0
+    for recipe in Recipe.objects.filter(is_active=True).only("ref", "name", "meta"):
+        meta = dict(recipe.meta or {})
+        if meta.get("output_unit") != "kg":
+            continue
+        days = meta.get("shelf_life_days")
+        valid_review = bool(
+            days not in (None, "")
+            and str(meta.get("shelf_life_reviewed_days")) == str(days)
+            and meta.get("shelf_life_reviewed_by")
+            and meta.get("shelf_life_reviewed_at")
+        )
+        if valid_review:
+            reviewed += 1
+            continue
+        pending.append(
+            {
+                "ref": recipe.ref,
+                "name": recipe.name,
+                "days": days,
+                "source": meta.get("shelf_life_source") or "not_declared",
+            }
+        )
+
+    if pending:
+        return ReadinessCheck(
+            id="production.preparation_shelf_life_review",
+            title="Preparation shelf-life review",
+            status="failed" if profile == "production" else "warning",
+            message=(
+                f"{len(pending)} validade(s) de preparo ainda exigem revisão no Admin antes do go-live."
+            ),
+            details={"pending": pending, "reviewed": reviewed},
+        )
+    return ReadinessCheck(
+        id="production.preparation_shelf_life_review",
+        title="Preparation shelf-life review",
+        status="passed",
+        message=f"{reviewed} validade(s) de preparo revisadas e assinadas.",
+        details={"reviewed": reviewed},
     )
 
 

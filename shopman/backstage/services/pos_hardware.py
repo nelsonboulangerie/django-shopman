@@ -35,6 +35,57 @@ CASH_DRAWER_ADAPTERS = (ADAPTER_MANUAL, ADAPTER_AGENT)
 
 
 @dataclass(frozen=True)
+class DeviceAgentConfig:
+    """Ponte local deste dispositivo com seus periféricos.
+
+    Impressora e gaveta são capacidades independentes. O endereço/token vivem
+    em ``hardware.device_agent``; o bloco antigo da gaveta é lido apenas como
+    compatibilidade para estações já instaladas.
+    """
+
+    declared: bool = False
+    enabled: bool = True
+    agent_url: str = DEFAULT_AGENT_URL
+    token: str = ""
+
+    @classmethod
+    def from_terminal(cls, terminal) -> DeviceAgentConfig:
+        metadata = dict(getattr(terminal, "metadata", None) or {})
+        hardware = dict(metadata.get("hardware") or {})
+        raw = hardware.get("device_agent")
+        if not isinstance(raw, dict) or not raw:
+            legacy = hardware.get("cash_drawer")
+            if isinstance(legacy, dict) and (
+                legacy.get("adapter") == ADAPTER_AGENT
+                or legacy.get("agent_url")
+                or legacy.get("token")
+            ):
+                raw = legacy
+        if not isinstance(raw, dict) or not raw:
+            return cls()
+        return cls(
+            declared=True,
+            enabled=raw.get("enabled") is not False,
+            agent_url=str(raw.get("agent_url") or DEFAULT_AGENT_URL).strip().rstrip("/"),
+            token=str(raw.get("token") or "").strip(),
+        )
+
+    @property
+    def available(self) -> bool:
+        return self.declared and self.enabled and not self.misconfigured_reason
+
+    @property
+    def misconfigured_reason(self) -> str:
+        if not self.declared or not self.enabled:
+            return ""
+        if not self.token:
+            return "falta o token — salve este terminal para gerar um"
+        if not self.agent_url:
+            return "sem endereço do agente"
+        return ""
+
+
+@dataclass(frozen=True)
 class CashDrawerConfig:
     """Como ESTE terminal abre a gaveta."""
 
@@ -52,7 +103,21 @@ class CashDrawerConfig:
     def from_terminal(cls, terminal) -> CashDrawerConfig:
         metadata = dict(getattr(terminal, "metadata", None) or {})
         hardware = dict(metadata.get("hardware") or {})
-        return cls.from_dict(hardware.get("cash_drawer"))
+        drawer = cls.from_dict(hardware.get("cash_drawer"))
+        device = DeviceAgentConfig.from_terminal(terminal)
+        if not device.declared:
+            return drawer
+        return cls(
+            declared=drawer.declared,
+            enabled=drawer.enabled,
+            adapter=drawer.adapter,
+            agent_url=device.agent_url,
+            token=device.token,
+            pulse_pin=drawer.pulse_pin,
+            pulse_on_ms=drawer.pulse_on_ms,
+            pulse_off_ms=drawer.pulse_off_ms,
+            open_on_cash_sale=drawer.open_on_cash_sale,
+        )
 
     @classmethod
     def from_dict(cls, raw) -> CashDrawerConfig:

@@ -50,6 +50,7 @@ def plant() -> None:
     from django.contrib.auth import get_user_model
     from django.utils import timezone
     from shopman.cashman.models import Terminal
+    from shopman.craftsman.models import Recipe
     from shopman.offerman.models import Product
 
     from shopman.backstage.models import AliasStatus, ProductAlias
@@ -111,6 +112,19 @@ def plant() -> None:
         metadata={"station": dict(TOTEM_STATION)},
     )
 
+    # Prazo revisado é uma assinatura operacional, não um exemplo de fixture.
+    # O segundo seed pode atualizar pendências, mas não apagar esta decisão.
+    recipe = Recipe.objects.get(ref="creme-baunilha")
+    recipe.meta = {
+        **(recipe.meta or {}),
+        "shelf_life_days": 4,
+        "shelf_life_reviewed_days": 4,
+        "shelf_life_reviewed_by": CURATOR_USERNAME,
+        "shelf_life_reviewed_at": timezone.now().isoformat(),
+        "shelf_life_source": "manager_review",
+    }
+    recipe.save(update_fields=("meta",))
+
     print("✅ plant: alias curado (FK PROTECT), alias de produto extinto, "
           "config do pdv-main e totem-1 no banco")
 
@@ -118,6 +132,7 @@ def plant() -> None:
 def check() -> list[str]:
     """Valida que a segunda passada do seed preservou a curadoria toda."""
     from shopman.cashman.models import Terminal
+    from shopman.craftsman.models import Recipe
 
     from shopman.backstage.models import AliasStatus, ProductAlias
 
@@ -179,6 +194,19 @@ def check() -> list[str]:
             failures.append(
                 f"totem-1 perdeu a espécie da estação: {(totem.metadata or {}).get('station')!r}"
             )
+
+    recipe = Recipe.objects.filter(ref="creme-baunilha").first()
+    recipe_meta = dict(recipe.meta or {}) if recipe is not None else {}
+    if (
+        recipe is None
+        or recipe_meta.get("shelf_life_days") != 4
+        or recipe_meta.get("shelf_life_reviewed_days") != 4
+        or recipe_meta.get("shelf_life_reviewed_by") != CURATOR_USERNAME
+    ):
+        failures.append(
+            "creme-baunilha perdeu a validade revisada no reseed: "
+            f"{recipe_meta or 'receita ausente'}"
+        )
 
     return failures
 

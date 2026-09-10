@@ -45,6 +45,16 @@ fail-closed). Adapters reais, `DJANGO_DEBUG=false`. **Único gap de pagamento/fi
 - [ ] **Domínio/cookie de prod**: `SHOPMAN_DOMAIN` / `SHOPMAN_OPERATOR_COOKIE_DOMAIN` / `AUTH_DEFAULT_DOMAIN`.
 - [ ] **WP-GAP-07**: squash/reset final de migrations + `git tag go-live-v1` + rollback testado em staging.
 - [ ] **iFood** (se canal ativar no v1): `IFOOD_MERCHANT_ID` + `IFOOD_CATALOG_*`.
+- [ ] **Validades dos preparos revisadas e assinadas** no Admin de Fichas
+      técnicas. Massas=1 dia, cremes=2 dias e outros recheios=3 dias são apenas
+      exemplos pré-go-live; `check_release_readiness --profile production`
+      deve passar sem `production.preparation_shelf_life_review` pendente.
+- [ ] **Etiqueta física 60×40 mm validada no equipamento real**: driver/papel,
+      margem, avanço entre adesivos, acentos, uma etiqueta por item e
+      reimpressão. Dimensões devem coincidir com o Terminal no Admin.
+- [ ] **Agente local reinstalado pelo comando atual do Admin** no PC de
+      impressão; o `--doctor` deve mostrar a versão atual e as origens de PDV e
+      Produção devem conseguir usar `/print` sem 403.
 
 ## Deferido (sessão separada)
 - **Pedido inbound por WhatsApp** (ManyChat conversacional, Arc 2/3) — [MANYCHAT-CONVERSACIONAL-PLAN](../plans/MANYCHAT-CONVERSACIONAL-PLAN.md).

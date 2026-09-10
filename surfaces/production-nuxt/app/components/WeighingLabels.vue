@@ -6,6 +6,7 @@
 //     de qualquer rótulo de venda.
 // Os tamanhos aqui são fixos para a etiquetadora, não os papéis tipográficos de tela —
 // por isso este componente é allowlistado no guardrail de tipografia (como o PosReceipt).
+import { computed } from "vue";
 import type {
   ProductionBlindLabel,
   ProductionPreparationLabelTicket,
@@ -15,15 +16,22 @@ import {
   projectedQuantityDisplay,
 } from "~/presentation/weighing";
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     printMode: "pesagem" | "preparo";
     labels: ProductionBlindLabel[];
     tickets: ProductionPreparationLabelTicket[];
     copyNumber?: number;
+    labelWidthMm?: number;
+    labelHeightMm?: number;
   }>(),
-  { copyNumber: 1 },
+  { copyNumber: 1, labelWidthMm: 60, labelHeightMm: 40 },
 );
+
+const labelStyle = computed(() => ({
+  width: `${props.labelWidthMm}mm`,
+  height: `${props.labelHeightMm}mm`,
+}));
 </script>
 
 <template>
@@ -37,11 +45,10 @@ withDefaults(
       <div
         v-for="label in labels"
         :key="label.key"
-        class="flex break-inside-avoid flex-col gap-0.5 rounded border border-black p-2"
+        class="production-print-label flex break-inside-avoid flex-col gap-0.5 overflow-hidden rounded border border-black p-2"
+        :style="labelStyle"
       >
-        <span class="text-center text-[0.6rem] font-bold uppercase"
-          >Pesagem interna · não é rótulo de venda</span
-        >
+        <span class="text-center text-[0.6rem] font-bold uppercase">Pesagem interna</span>
         <span
           v-if="copyNumber > 1"
           class="text-center text-[0.65rem] font-bold uppercase"
@@ -71,11 +78,10 @@ withDefaults(
       <div
         v-for="ticket in tickets"
         :key="ticket.ticket_ref || ticket.output_sku"
-        class="flex break-inside-avoid flex-col gap-0.5 rounded border border-black p-2"
+        class="production-print-label flex break-inside-avoid flex-col gap-0.5 overflow-hidden rounded border border-black p-2"
+        :style="labelStyle"
       >
-        <span class="text-center text-[0.6rem] font-bold uppercase"
-          >Uso interno · não é rótulo de venda</span
-        >
+        <span class="text-center text-[0.6rem] font-bold uppercase">Preparo interno</span>
         <span
           v-if="copyNumber > 1"
           class="text-center text-[0.65rem] font-bold uppercase"
@@ -118,12 +124,24 @@ withDefaults(
 
 <style>
 @media print {
-  /* 80 mm com 4 mm de respiro em cada lateral. O driver pode usar papel
-     contínuo ou etiquetas destacáveis sem reescalar a composição. */
+  /* A mídia física vem do terminal. O driver continua responsável por estar
+     configurado com o mesmo tamanho; cada cartão ocupa exatamente uma folha. */
   .weighing-label-sheet {
     box-sizing: border-box;
-    width: 72mm;
+    width: max-content;
     margin: 0 auto;
+  }
+
+  .weighing-label-sheet > div { gap: 0; }
+
+  .production-print-label {
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .production-print-label:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 }
 </style>

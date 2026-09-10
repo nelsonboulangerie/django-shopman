@@ -395,14 +395,20 @@ export interface ProductionWeighingTableProjection {
   rows: ProductionWeighingTableRowProjection[];
 }
 
-/** Safe preflight for the station's preparation printer (never a secret). */
+/** Print route, media geometry and this device's optional local agent. */
 export interface ProductionPrintDestinationProjection {
   label: string;
   status_label: string;
   available: boolean;
+  label_width_mm: number;
+  label_height_mm: number;
+  printable_width_mm: number;
+  local_agent_available: boolean;
+  local_agent_url: string;
+  local_agent_token: string;
 }
 
-/** A printable 80mm-oriented ticket for one recipe/base recipe. */
+/** A printable weighing ticket for one recipe/base recipe. */
 export interface ProductionWeighingTicketProjection {
   ticket_ref: string;
   recipe_ref: string;

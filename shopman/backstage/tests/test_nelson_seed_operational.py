@@ -92,6 +92,21 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert recipe.meta["max_started_minutes"] > 0
     assert recipe.steps
 
+    # Pré-go-live: exemplos úteis para testar etiquetas, sem fingir que são uma
+    # decisão sanitária. O readiness de produção só libera depois da revisão
+    # assinada no Admin.
+    for ref, kind, days in (
+        ("massa-tradicao", "mass", 1),
+        ("creme-levain", "mass", 1),
+        ("creme-baunilha", "cream", 2),
+        ("recheio-frango", "other_filling", 3),
+    ):
+        meta = Recipe.objects.get(ref=ref).meta
+        assert meta["shelf_life_days"] == days
+        assert meta["preparation_kind"] == kind
+        assert meta["shelf_life_source"] == "pre_go_live_example"
+        assert meta["shelf_life_review_required"] is True
+
     # Buyman Material master (WP-B4): insumos viram Material first-class (sku sem
     # prefixo INS-), com unit + shelf-life. Os input_sku das receitas resolvem.
     from shopman.buyman.models import Material

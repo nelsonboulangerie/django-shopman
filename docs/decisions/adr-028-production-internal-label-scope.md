@@ -19,7 +19,11 @@ documento incompleto.
 ## Decisão
 
 - Todo documento deste fluxo declara `legal_scope=internal_only_not_for_sale`.
-- O papel mostra de forma visível **USO INTERNO — NÃO É RÓTULO DE VENDA**.
+- Antes de imprimir, a tela mostra uma única vez que os papéis apoiam a
+  preparação interna e não substituem o rótulo de venda. Repetir a frase em
+  cada etiqueta não é exigência literal das normas consultadas e rouba área
+  operacional; no papel, os títulos contextuais **Pesagem interna** e
+  **Preparo interno** mantêm o escopo inequívoco.
 - A pesagem mantém o alvo operacional em gramas como informação dominante.
   Quando há `MaterialConversion` canônica, ativa e sem fornecedor, a contagem
   aproximada aparece apenas como ajuda de separação em unidades físicas inteiras
@@ -64,8 +68,10 @@ dispensa.
 ## Consequências e próximos limites
 
 - O operador não informa equivalência nem validade durante a pesagem.
-- O gestor mantém validade na ficha técnica; a rotina já existente cobra
-  revisão periódica dos parâmetros normativos.
+- O gestor mantém validade na ficha técnica. Prazo pré-go-live é exemplo e
+  precisa de confirmação assinada (valor, usuário e instante); alterar o valor
+  invalida a confirmação. O readiness de produção falha enquanto houver ficha
+  de preparo pendente, além da revisão periódica dos parâmetros normativos.
 - A data da identificação atual ainda é a data selecionada no planejamento.
   Se o preparo mudar de dia, a etiqueta deve ser descartada e reemitida. Um
   futuro fluxo de recipiente/lote factual deverá nascer do gesto “preparo

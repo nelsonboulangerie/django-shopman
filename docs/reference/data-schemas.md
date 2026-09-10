@@ -1415,8 +1415,12 @@ alerta que ninguém lê.
 | `model` | `str` | todos | Informativo (ex.: `epson-tm-t20`). Não afeta saúde. |
 | `roll_width_mm` | `int` | `printer` | Largura do rolo em mm (40–120). É o que a loja sabe: o papel que ela compra. Vira `--pos-roll-width` no print CSS do PDV via projection. Ausente → o default do CSS (80mm) manda. |
 | `print_width_mm` | `int` | `printer` | Largura que o cabeçote alcança, em mm. **Só é necessária para rolo fora dos dois padrões** (80mm→72mm, 58mm→48mm), porque a área imprimível não é proporcional à largura do papel e chutar imprime fora do alcance. |
-| `columns` | `int` | `printer` | Colunas ESC/POS aferidas. O primeiro perfil de etiquetas de produção aceita 48 colunas em rolo de 80 mm; outro valor falha fechado em vez de cortar nomes ou pesos. |
+| `columns` | `int` | `printer` | Colunas ESC/POS aferidas para o recibo do PDV. O perfil de etiqueta deriva suas próprias colunas da área útil; não reutiliza este número. |
 | `cut_mode` | `str` | `printer` | `partial` ou `none`, segundo a guilhotina instalada. |
+| `label_width_mm` | `int` | `printer` | Largura física da etiqueta de preparação (40–120). Padrão pré-go-live: **60 mm**. Configurável no Admin do terminal. |
+| `label_height_mm` | `int` | `printer` | Altura física da etiqueta de preparação (20–200). Padrão pré-go-live: **40 mm**. |
+| `label_print_width_mm` | `int` | `printer` | Área útil horizontal da etiqueta. Ausente → largura menos 4 mm de margem por lado; 60 mm → 52 mm úteis → 34 colunas ESC/POS Fonte A. |
+| `label_cut_mode` | `str` | `printer` | `none` para mídia adesiva com separação própria; `partial` somente quando a impressora/guilhotina exigir. |
 | `role` | `str` | `printer` | Capacidade operacional. Neste incremento, `preparation` habilita etiquetas de preparação e pesagem. |
 
 O nome da fila CUPS/Windows **não mora neste JSON**: ele é um fato da máquina e
@@ -1424,12 +1428,31 @@ fica no `agent.json` local. O servidor recebe a fila observada somente como
 telemetria de cada tentativa. Assim uma troca de driver no PC não cria uma
 segunda configuração divergente no Admin.
 
-⚠️ **Declaração inválida não cai calada para o default.** Rolo fora da faixa, rolo não padrão sem
-`print_width_mm`, ou `print_width_mm >= roll_width_mm` viram `warning` na saúde do terminal com o
-motivo. Config ignorada em silêncio é pior que config ausente: a loja acha que configurou.
+⚠️ **Declaração inválida não cai calada para o default.** Geometria de recibo ou
+de etiqueta fora da faixa, ou área útil maior que a mídia, vira indisponibilidade
+com o motivo. Config ignorada em silêncio é pior que config ausente: a loja
+acha que configurou.
 
 A margem é derivada, nunca declarada: `ceil((roll_width_mm - print_width_mm) / 2)`. Um rolo de 80mm
 dá 4mm por lado; um de 58mm dá **5mm**, não 4 — daí ela não ser um segundo botão para alguém errar.
+
+### hardware.device_agent — ponte local compartilhada
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `enabled` | `bool` | Liga a ponte local deste dispositivo. |
+| `agent_url` | `str` | URL em loopback, normalmente `http://127.0.0.1:47811`. Nunca é endereço LAN/público. |
+| `token` | `str` | Segredo por terminal gerado/rotacionado no Admin e enviado somente às projeções autenticadas da estação. |
+
+`/print`, `/health`, `/kick` e demais funções físicas são capacidades do
+dispositivo, não de um app Nuxt. O cliente comum mora no `operator-kit`; cada
+superfície usa somente as operações do seu domínio. O instalador inclui na
+allowlist CORS as origens internas explicitamente enumeradas (PDV, Gestor, KDS,
+Produção, Marketing, BI e Compras) e as mescla em reinstalações; Loja pública
+não entra por acidente. O processo continua escutando apenas na loopback e
+exigindo token. Configurações antigas que ainda
+guardam URL/token em `hardware.cash_drawer` são lidas como compatibilidade e
+migram ao próximo salvamento no Admin.
 
 ---
 

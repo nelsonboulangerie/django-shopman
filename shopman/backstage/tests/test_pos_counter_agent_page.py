@@ -100,22 +100,62 @@ def test_marcar_gerar_novo_troca_o_token():
     assert CashDrawerConfig.from_terminal(Terminal.objects.get(pk=terminal.pk)).token != AGENT["token"]
 
 
+def test_editar_geometria_da_etiqueta_preserva_a_fila_e_o_modelo_aferidos():
+    terminal = _terminal(AGENT)
+    terminal.metadata["hardware"]["printer"] = {
+        "enabled": True,
+        "adapter": "driver",
+        "model": "epson-tm-t20",
+        "queue": "TM-T20",
+        "role": "preparation",
+    }
+    terminal.save(update_fields=("metadata",))
+    form = TerminalForm(
+        _form_data(
+            printer_enabled="on",
+            printer_role="preparation",
+            printer_roll_width_mm="80",
+            printer_label_width_mm="60",
+            printer_label_height_mm="40",
+            printer_cut_mode="none",
+        ),
+        instance=terminal,
+    )
+
+    assert form.is_valid(), form.errors
+    form.save()
+    printer = Terminal.objects.get(pk=terminal.pk).metadata["hardware"]["printer"]
+
+    assert printer["adapter"] == "driver"
+    assert printer["model"] == "epson-tm-t20"
+    assert printer["queue"] == "TM-T20"
+    assert (printer["label_width_mm"], printer["label_height_mm"]) == (60, 40)
+
+
 # ── A projection das instruções ───────────────────────────────────────────
 
 
 def test_o_comando_ja_vem_com_o_token_daquele_balcao(settings):
     settings.SHOPMAN_POS_BASE_URL = "https://pos.staging.exemplo/"
+    settings.SHOPMAN_PRODUCTION_BASE_URL = "https://prod.staging.exemplo/mise-en-place"
     guide = build_agent_install(_terminal(AGENT), download_url="/baixar/")
 
     install = next(step for step in guide.steps if step.command.startswith("python3"))
     assert f"--token {AGENT['token']}" in install.command
     # A origem sai da config do deployment, não de um chute no código.
     assert "--origin https://pos.staging.exemplo" in install.command
+    assert "--origin https://prod.staging.exemplo" in install.command
 
 
 def test_sem_pos_base_url_o_comando_nao_inventa_origem(settings):
     """Melhor o instalador usar o default dele do que escrever endereço errado."""
     settings.SHOPMAN_POS_BASE_URL = ""
+    settings.SHOPMAN_ORDERS_BASE_URL = ""
+    settings.SHOPMAN_KDS_BASE_URL = ""
+    settings.SHOPMAN_PRODUCTION_BASE_URL = ""
+    settings.SHOPMAN_MARKETING_BASE_URL = ""
+    settings.SHOPMAN_BI_BASE_URL = ""
+    settings.SHOPMAN_PURCHASE_BASE_URL = ""
     guide = build_agent_install(_terminal(AGENT), download_url="/baixar/")
 
     install = next(step for step in guide.steps if step.command.startswith("python3"))
@@ -126,7 +166,7 @@ def test_terminal_de_gaveta_manual_explica_em_vez_de_oferecer_download():
     guide = build_agent_install(_terminal({"adapter": "manual"}), download_url="/baixar/")
 
     assert guide.configured is False
-    assert "chave" in guide.blocker
+    assert "Ative a impressora" in guide.blocker
     assert guide.steps == ()
 
 

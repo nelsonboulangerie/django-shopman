@@ -332,16 +332,30 @@ def test_instalar_gera_config_utilizavel(tmp_path):
     assert AgentConfig.from_dict(config).token == config["token"]
 
 
-def test_reinstalar_PRESERVA_o_token(tmp_path):
+def test_reinstalar_preserva_token_e_amplia_allowlist_sem_apagar_a_anterior(tmp_path):
     """Trocar o token numa reinstalação deixaria o PDV levando 401 até alguém
     colar o novo no Admin — descoberto no meio do sábado."""
     path = tmp_path / "agent.json"
     first, _ = counter_agent.write_config(path, queue="TM-T20", origin="https://pos.exemplo")
     second, created = counter_agent.write_config(path, queue="OUTRA", origin="https://outra.exemplo")
 
-    assert created is False
+    assert created is True
     assert second["token"] == first["token"]
     assert second["queue"] == "TM-T20"
+    assert second["allowed_origins"] == ["https://pos.exemplo", "https://outra.exemplo"]
+
+
+def test_config_aceita_varias_origens_operacionais_na_primeira_instalacao(tmp_path):
+    path = tmp_path / "agent.json"
+    config, created = counter_agent.write_config(
+        path,
+        queue="TM-T20",
+        origin="",
+        origins=("https://pdv.exemplo/", "https://prod.exemplo", "https://pdv.exemplo"),
+    )
+
+    assert created is True
+    assert config["allowed_origins"] == ["https://pdv.exemplo", "https://prod.exemplo"]
 
 
 def test_token_do_admin_manda_na_primeira_instalacao(tmp_path):

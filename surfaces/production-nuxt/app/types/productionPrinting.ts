@@ -100,6 +100,9 @@ export interface ProductionPrintJobProjection {
   poll_after_ms: number;
   print_document: ProductionLabelPrintDocument;
   document_sha256: string;
+  payload_b64?: string;
+  payload_sha256?: string;
+  print_title?: string;
 }
 
 export interface ProductionPrintJobResponse {
@@ -123,4 +126,7 @@ export interface ProductionPrintJobCreateRequest {
 }
 
 export type ProductionBrowserPrintResult =
-  "dialog_opened" | "dialog_unavailable";
+  | "dialog_opened"
+  | "dialog_unavailable"
+  | "agent_spooled"
+  | "agent_failed";

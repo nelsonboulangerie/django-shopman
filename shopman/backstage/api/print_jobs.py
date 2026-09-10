@@ -71,7 +71,10 @@ class ConfirmPrintJobSerializer(IdempotentJobActionSerializer):
 
 
 class BrowserResultSerializer(IdempotentJobActionSerializer):
-    result = serializers.ChoiceField(choices=("dialog_opened", "dialog_unavailable"))
+    result = serializers.ChoiceField(
+        choices=("dialog_opened", "dialog_unavailable", "agent_spooled", "agent_failed")
+    )
+    detail = serializers.CharField(required=False, allow_blank=True, max_length=500, default="")
 
 
 class AgentTelemetrySerializer(StrictMutationSerializer):
@@ -94,11 +97,29 @@ class AgentAckSerializer(AgentTelemetrySerializer):
 
 
 def destination_projection(*, request) -> ProductionPrintDestinationProjection:
-    destination = print_jobs.resolve_destination(station_ref=station_trust.station_ref(request))
+    from shopman.cashman.models import Terminal
+
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
+
+    station_ref = station_trust.station_ref(request)
+    destination = print_jobs.resolve_destination(station_ref=station_ref)
+    media = destination.config or print_jobs.PrinterConfig.browser_default()
+    local_agent = None
+    if station_ref:
+        station = Terminal.objects.filter(ref=station_ref, is_active=True).first()
+        if station is not None:
+            local_agent = DeviceAgentConfig.from_terminal(station)
+    local_agent_available = bool(local_agent and local_agent.available)
     return ProductionPrintDestinationProjection(
         label=destination.label,
         status_label=destination.status_label,
         available=destination.available,
+        label_width_mm=media.label_width_mm,
+        label_height_mm=media.label_height_mm,
+        printable_width_mm=media.printable_width_mm,
+        local_agent_available=local_agent_available,
+        local_agent_url=local_agent.agent_url if local_agent_available else "",
+        local_agent_token=local_agent.token if local_agent_available else "",
     )
 
 
@@ -267,6 +288,7 @@ class ProductionPrintJobBrowserResultView(OperatorPrintJobMixin, APIView):
                 job=self.job(request, job_ref),
                 actor=request.user,
                 result=body["result"],
+                detail=body["detail"],
                 idempotency_key=body["idempotency_key"],
             )
         except print_jobs.PrintJobError as error:
