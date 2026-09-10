@@ -17,6 +17,7 @@ from shopman.offerman.models import CollectionItem, ListingItem, Product
 
 from shopman.shop.models import Promotion
 from shopman.shop.projections.types import Availability
+from shopman.shop.services import attributes
 from shopman.storefront.presentation import build_catalog
 from shopman.storefront.presentation.catalog import (
     CatalogItemProjection,
@@ -156,10 +157,8 @@ class TestCatalogItemProjection:
         from shopman.storefront.services.catalog import search_index
 
         product.ingredients_text = "Farinha de trigo, água, fermento natural, sal."
-        product.metadata = {
-            "allergens": ["glúten"],
-            "dietary_info": ["100% vegetal", "sem lactose"],
-        }
+        attributes.set(product, "alergenos", ["glúten"], save=False)
+        attributes.set(product, "dieta", ["100% vegetal"], save=False)
         product.save(update_fields=["ingredients_text", "metadata"])
         _publish_on_listing(listing, product)
 
@@ -172,7 +171,7 @@ class TestCatalogItemProjection:
 
         record = next(r for r in search_index(proj) if r["sku"] == product.sku)
         assert "fermento natural" in " ".join(record["terms"])
-        assert "sem lactose" in record["terms"]
+        assert "100% vegetal" in record["terms"]
 
     def test_available_when_stock_seeded(self, listing, collection, collection_item, product):
         _publish_on_listing(listing, product)
@@ -489,6 +488,82 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is False
         assert item.is_notifiable is True
 
+    def test_planned_batch_card_uses_the_known_queue_capacity(self, channel):
+        """A quantidade planejada é o teto honesto da fila, nunca ilimitada."""
+        self._product("NOTIF-PLANNED")
+        item = self._build(
+            "NOTIF-PLANNED",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("10"),
+                "ready_physical": Decimal("0"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.PLANNED_OK
+        assert item.can_add_to_cart is True
+        assert item.available_qty == 10
+
+    def test_fully_reserved_planned_batch_is_not_orderable(self, channel):
+        self._product("NOTIF-PLANNED-FULL")
+        item = self._build(
+            "NOTIF-PLANNED-FULL",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("0"),
+                "ready_physical": Decimal("0"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.UNAVAILABLE
+        assert item.can_add_to_cart is False
+        assert item.available_qty == 0
+
+    def test_fully_held_ready_stock_does_not_mask_a_future_only_offer(self, channel):
+        self._product("NOTIF-READY-HELD")
+        item = self._build(
+            "NOTIF-READY-HELD",
+            {
+                "availability_policy": "planned_ok",
+                "total_promisable": Decimal("10"),
+                "available": Decimal("0"),
+                "ready_physical": Decimal("5"),
+                "is_planned": True,
+            },
+            channel,
+        )
+        assert item.availability == Availability.PLANNED_OK
+        assert item.available_qty == 10
+
+    def test_bundle_with_ready_capacity_is_available_even_with_a_future_plan(self):
+        from shopman.shop.projections import catalog_context
+
+        raw = catalog_context.bundle_availability_from_components(
+            [
+                (
+                    Decimal("1"),
+                    {
+                        "availability_policy": "planned_ok",
+                        "total_promisable": Decimal("15"),
+                        "available": Decimal("5"),
+                        "ready_physical": Decimal("5"),
+                        "is_planned": True,
+                    },
+                )
+            ]
+        )
+
+        assert raw is not None
+        resolved = catalog_context.basic_availability(
+            raw,
+            is_sellable=True,
+            low_stock_threshold=DEFAULT_LOW_STOCK_THRESHOLD,
+        )
+        assert raw["available"] == Decimal("5")
+        assert resolved.status == "available"
+
     def test_not_sellable_is_not_notifiable(self, channel):
         self._product("NOTIF-NS", sellable=False)
         item = self._build(
@@ -521,10 +596,95 @@ class TestAvailabilityNotifiability:
         assert item.is_paused is True
         assert item.is_notifiable is False
 
+    def test_own_hold_does_not_make_the_card_lie(self, cart_session, channel, product):
+        """Quem tem as últimas unidades na sacola continua vendo o card vendável.
 
-# ──────────────────────────────────────────────────────────────────────
-# Category presentation (Collection.metadata → card-fallback sem foto)
-# ──────────────────────────────────────────────────────────────────────
+        ``total_promisable`` já desconta o hold da PRÓPRIA sessão, então o card do
+        cardápio dizia "Indisponível" (com sino "Me avise") para o SKU que a pessoa
+        acabou de reservar — enquanto PDP e sacola, que corrigem o hold próprio,
+        diziam o contrário sobre o mesmo SKU no mesmo segundo. Pior: o stepper com
+        "2" era SUBSTITUÍDO pelo sino, e não dava para diminuir a partir do card.
+        """
+        from unittest.mock import patch
+
+        from django.test import RequestFactory
+
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        request = RequestFactory().get("/menu/")
+        request.session = cart_session.session  # type: ignore[attr-defined]
+
+        raw = {
+            "availability_policy": "planned_ok",
+            "total_promisable": Decimal("0"),  # zerado PELO hold desta sessão
+            "is_planned": False,
+        }
+        with patch(
+            "shopman.storefront.presentation.catalog._batch_availability",
+            return_value={product.sku: raw},
+        ):
+            item = build_catalog_items_for_skus(
+                [product.sku], channel_ref=channel.ref, request=request,
+            )[0]
+
+        assert item.qty_in_cart == 2
+        # Com as 2 unidades devolvidas, o card volta a ser vendável (aqui LOW_STOCK,
+        # que é a leitura honesta de "restam 2") — o que não pode é UNAVAILABLE.
+        assert item.availability != Availability.UNAVAILABLE
+        assert item.can_add_to_cart is True
+        assert item.is_notifiable is False
+        # O teto do stepper volta somado, senão o "+" trava em 0 com 2 na sacola.
+        assert item.available_qty == 2
+
+
+class TestAdHocSkuCardsRespectTheChannelGate:
+    """Favoritos, cross-sell e trilhos da home montam cards a partir de uma lista
+    explícita de SKUs — e escapavam do portão do canal que o cardápio aplica.
+
+    Um SKU que nunca foi para a vitrine (ou que foi OCULTO nela) nascia com card,
+    preço e "Adicionar" ativo; o toque caía na PDP em 404 e o add falhava.
+    """
+
+    def _product(self, sku):
+        return Product.objects.create(
+            sku=sku, name="Pão Teste", base_price_q=500,
+            is_published=True, is_sellable=True,
+        )
+
+    def _cards(self, sku, channel):
+        from shopman.storefront.presentation.catalog import build_catalog_items_for_skus
+
+        return build_catalog_items_for_skus([sku], channel_ref=channel.ref)
+
+    def test_sku_absent_from_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-ABSENT")
+        assert self._cards(product.sku, channel) == ()
+
+    def test_sku_hidden_in_the_listing_does_not_become_a_card(self, channel, listing):
+        product = self._product("ADHOC-HIDDEN")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=False, is_sellable=True,
+        )
+        assert self._cards(product.sku, channel) == ()
+
+    def test_paused_sku_still_becomes_a_card(self, channel, listing):
+        """Pausar não é ocultar: o item continua na vitrine, dizendo "Indisponível"."""
+        product = self._product("ADHOC-PAUSED")
+        ListingItem.objects.create(
+            listing=listing, product=product, price_q=product.base_price_q,
+            is_published=True, is_sellable=False,
+        )
+        items = self._cards(product.sku, channel)
+
+        assert len(items) == 1
+        assert items[0].availability == Availability.UNAVAILABLE
+        assert items[0].is_paused is True
+
+    def test_channel_without_a_listing_keeps_working(self, channel):
+        """Canal interno/fallback (ex.: PDV) não tem Listing — nada é filtrado."""
+        product = self._product("ADHOC-NO-LISTING")
+        assert len(self._cards(product.sku, channel)) == 1
 
 
 class TestCategoryPresentation:

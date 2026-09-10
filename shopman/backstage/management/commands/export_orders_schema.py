@@ -25,6 +25,7 @@ from django.core.management.base import BaseCommand
 from shopman.backstage.contracts import render_contract_module, run_contract_export
 from shopman.backstage.projections.order_queue import (
     AwaitingWorkOrderProjection,
+    CustomerProfileProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
     OperatorOrderProjection,
@@ -44,6 +45,7 @@ CONTRACT_DATACLASSES = (
     AwaitingWorkOrderProjection,
     EquipmentOptionProjection,
     EquipmentOutProjection,
+    CustomerProfileProjection,
     OrderCardProjection,
     OperatorOrderProjection,
     OrderQueueProjection,

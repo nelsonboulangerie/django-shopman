@@ -23,7 +23,7 @@ import logging
 from contextlib import contextmanager
 
 from django.dispatch import receiver
-from shopman.craftsman.signals import production_changed
+from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
 logger = logging.getLogger(__name__)
 
@@ -78,25 +78,43 @@ def handle_production_changed(sender, product_ref, date, **kwargs):
 
     if not _stockman_available():
         logger.debug(
-            "Stockman not installed, skipping production_changed handler: "
-            "action=%s product_ref=%s",
+            "Stockman not installed, skipping production_changed handler: action=%s product_ref=%s",
             action,
             product_ref,
         )
         return
 
-    if action == "planned":
-        _handle_planned(work_order, product_ref, date)
-    elif action == "adjusted":
-        _handle_adjusted(work_order, product_ref, date, kwargs.get("previous_quantity"))
-    elif action == "started":
-        _handle_started(work_order, product_ref, date)
-    elif action == "voided":
-        _handle_voided(work_order, product_ref, date)
-    elif action == "finished":
-        _handle_finished(work_order, product_ref, date)
-    else:
-        logger.warning("Unknown production_changed action: %s", action)
+    fail_closed = bool(kwargs.get("fail_closed", False))
+    try:
+        if action == "planned":
+            _handle_planned(work_order, product_ref, date)
+        elif action == "adjusted":
+            _handle_adjusted(work_order, product_ref, date, kwargs.get("previous_quantity"))
+        elif action == "started":
+            _handle_started(work_order, product_ref, date)
+        elif action == "voided":
+            _handle_voided(work_order, product_ref, date)
+        elif action == "finished":
+            _handle_finished(
+                work_order,
+                product_ref,
+                date,
+                fail_closed=fail_closed,
+            )
+        else:
+            logger.warning("Unknown production_changed action: %s", action)
+    except Exception:
+        logger.exception(
+            "Production stock leg failed: action=%s work_order=%s",
+            action,
+            getattr(work_order, "ref", ""),
+        )
+        # Shopman operator mutations set this flag and wrap the domain call in
+        # an outer atomic transaction. Standalone Craftsman remains best-effort
+        # for plan/start/adjust/void; finish errors still surface below when the
+        # concrete output realization raises.
+        if fail_closed or action == "finished":
+            raise
 
 
 def _leg_done(work_order, key: str) -> bool:
@@ -159,12 +177,7 @@ def _leg_lock(work_order):
     from shopman.craftsman.models import WorkOrder
 
     with transaction.atomic():
-        fresh = (
-            WorkOrder.objects.select_for_update()
-            .filter(pk=work_order.pk)
-            .values_list("meta", flat=True)
-            .first()
-        )
+        fresh = WorkOrder.objects.select_for_update().filter(pk=work_order.pk).values_list("meta", flat=True).first()
         if fresh is not None:
             work_order.meta = fresh
         yield
@@ -172,9 +185,7 @@ def _leg_lock(work_order):
 
 def stock_legs_complete(work_order) -> bool:
     """As duas pernas do ledger de produção já foram escritas?"""
-    return _leg_done(work_order, STOCK_CONSUMED_KEY) and _leg_done(
-        work_order, STOCK_REALIZED_KEY
-    )
+    return _leg_done(work_order, STOCK_CONSUMED_KEY) and _leg_done(work_order, STOCK_REALIZED_KEY)
 
 
 def realize_finished_production(work_order) -> None:
@@ -186,7 +197,12 @@ def realize_finished_production(work_order) -> None:
     eles já fizeram. Cada perna é guardada pelo seu marcador, então re-rodar
     só refaz o que faltou.
     """
-    _handle_finished(work_order, work_order.output_sku, work_order.target_date)
+    _handle_finished(
+        work_order,
+        work_order.output_sku,
+        work_order.target_date,
+        fail_closed=True,
+    )
 
 
 def _resolve_position(ref: str):
@@ -215,11 +231,7 @@ def _find_planned_quant(work_order, product_ref, date):
         position=_resolve_position(work_order.position_ref),
     )
     if quant is None:
-        quant = (
-            Quant.objects.filter(sku=product_ref, target_date=date, batch="")
-            .order_by("pk")
-            .first()
-        )
+        quant = Quant.objects.filter(sku=product_ref, target_date=date, batch="").order_by("pk").first()
     return quant
 
 
@@ -238,29 +250,22 @@ def _handle_planned(work_order, product_ref, date):
     # Use WO.position_ref to determine position (string ref → Position.ref)
     position = _resolve_position(work_order.position_ref)
 
-    try:
-        StockMovements.receive(
-            quantity=work_order.quantity,
-            sku=product_ref,
-            position=position,
-            target_date=date,
-            reason=f"Produção planejada: {work_order.ref}",
-            kind="make",  # Move.Kind.MAKE — produção (saída produzida)
-        )
-        logger.info(
-            "Planned quant created: sku=%s qty=%s target_date=%s position=%s ref=%s",
-            product_ref,
-            work_order.quantity,
-            date,
-            work_order.position_ref or "(default)",
-            work_order.ref,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to create planned quant for %s (non-fatal)",
-            work_order.ref,
-            exc_info=True,
-        )
+    StockMovements.receive(
+        quantity=work_order.quantity,
+        sku=product_ref,
+        position=position,
+        target_date=date,
+        reason=f"Produção planejada: {work_order.ref}",
+        kind="make",  # Move.Kind.MAKE — produção (saída produzida)
+    )
+    logger.info(
+        "Planned quant created: sku=%s qty=%s target_date=%s position=%s ref=%s",
+        product_ref,
+        work_order.quantity,
+        date,
+        work_order.position_ref or "(default)",
+        work_order.ref,
+    )
 
 
 def _handle_adjusted(work_order, product_ref, date, previous_quantity=None):
@@ -284,50 +289,44 @@ def _handle_adjusted(work_order, product_ref, date, previous_quantity=None):
 
     from shopman.stockman.services.movements import StockMovements
 
-    try:
-        quant = _find_planned_quant(work_order, product_ref, date)
-        if quant is None:
-            # Nenhum Quant ainda — cria com a contribuição desta WO (defensivo).
-            StockMovements.receive(
-                quantity=work_order.quantity,
-                sku=product_ref,
-                position=_resolve_position(work_order.position_ref),
-                target_date=date,
-                reference=work_order.ref,
-                reason=f"Produção planejada (ajuste): {work_order.ref}",
-                kind="make",  # Move.Kind.MAKE
-            )
-        elif previous_quantity is None:
-            # Sem a quantidade anterior não dá para isolar o delta — não clobbear
-            # o Quant compartilhado. (Único emissor de "adjusted" já envia; guarda.)
-            logger.warning(
-                "Adjust sem previous_quantity para %s — pulando p/ não clobbear "
-                "o Quant compartilhado",
-                work_order.ref,
-            )
-            return
-        else:
-            delta = Decimal(str(work_order.quantity)) - Decimal(str(previous_quantity))
-            new_total = max(quant.quantity + delta, Decimal("0"))
-            StockMovements.adjust(
-                quant,
-                new_total,
-                reason=f"Ajuste WO {work_order.ref} (Δ {delta:+})",
-            )
-        logger.info(
-            "Planned quant adjusted (delta): sku=%s qty=%s prev=%s target_date=%s ref=%s",
-            product_ref,
-            work_order.quantity,
-            previous_quantity,
-            date,
-            work_order.ref,
+    quant = _find_planned_quant(work_order, product_ref, date)
+    if quant is None:
+        # Nenhum Quant ainda — cria com a contribuição desta WO (defensivo).
+        StockMovements.receive(
+            quantity=work_order.quantity,
+            sku=product_ref,
+            position=_resolve_position(work_order.position_ref),
+            target_date=date,
+            reference=work_order.ref,
+            reason=f"Produção planejada (ajuste): {work_order.ref}",
+            kind="make",  # Move.Kind.MAKE
         )
-    except Exception:
-        logger.warning(
-            "Failed to adjust planned quant for %s (non-fatal)",
-            work_order.ref,
-            exc_info=True,
+    elif previous_quantity is None:
+        # Sem a quantidade anterior não dá para isolar o delta sem corromper o
+        # Quant compartilhado. Falhar fechado mantém domínio e ledger juntos.
+        from shopman.stockman.exceptions import StockError
+
+        raise StockError(
+            "CONCURRENT_MODIFICATION",
+            work_order=work_order.ref,
+            reason="previous_quantity ausente no ajuste de produção",
         )
+    else:
+        delta = Decimal(str(work_order.quantity)) - Decimal(str(previous_quantity))
+        new_total = max(quant.quantity + delta, Decimal("0"))
+        StockMovements.adjust(
+            quant,
+            new_total,
+            reason=f"Ajuste WO {work_order.ref} (Δ {delta:+})",
+        )
+    logger.info(
+        "Planned quant adjusted (delta): sku=%s qty=%s prev=%s target_date=%s ref=%s",
+        product_ref,
+        work_order.quantity,
+        previous_quantity,
+        date,
+        work_order.ref,
+    )
 
 
 def _handle_started(work_order, product_ref, date):
@@ -352,42 +351,35 @@ def _handle_started(work_order, product_ref, date):
     started_qty = work_order.started_qty or work_order.quantity
     position = _resolve_position(work_order.position_ref)
 
-    try:
-        planned_quant = StockQueries.get_quant(product_ref, target_date=date, position=position)
-        if planned_quant is None:
-            planned_quant = StockQueries.get_quant(product_ref, target_date=date)
+    planned_quant = StockQueries.get_quant(product_ref, target_date=date, position=position)
+    if planned_quant is None:
+        planned_quant = StockQueries.get_quant(product_ref, target_date=date)
 
-        if planned_quant is not None:
-            remaining_planned = max(planned_quant.quantity - started_qty, 0)
-            StockMovements.adjust(
-                planned_quant,
-                remaining_planned,
-                reason=f"Entrada em produção: {work_order.ref}",
-            )
+    if planned_quant is not None:
+        remaining_planned = max(planned_quant.quantity - started_qty, 0)
+        StockMovements.adjust(
+            planned_quant,
+            remaining_planned,
+            reason=f"Entrada em produção: {work_order.ref}",
+        )
 
-        StockMovements.receive(
-            quantity=started_qty,
-            sku=product_ref,
-            position=position,
-            target_date=date,
-            batch=STARTED_BATCH,
-            reason=f"Produção iniciada: {work_order.ref}",
-            kind="make",  # Move.Kind.MAKE
-        )
-        logger.info(
-            "Started supply materialized: sku=%s started=%s target_date=%s position=%s ref=%s",
-            product_ref,
-            started_qty,
-            date,
-            work_order.position_ref or "(default)",
-            work_order.ref,
-        )
-    except Exception:
-        logger.warning(
-            "Failed to materialize started supply for %s (non-fatal)",
-            work_order.ref,
-            exc_info=True,
-        )
+    StockMovements.receive(
+        quantity=started_qty,
+        sku=product_ref,
+        position=position,
+        target_date=date,
+        batch=STARTED_BATCH,
+        reason=f"Produção iniciada: {work_order.ref}",
+        kind="make",  # Move.Kind.MAKE
+    )
+    logger.info(
+        "Started supply materialized: sku=%s started=%s target_date=%s position=%s ref=%s",
+        product_ref,
+        started_qty,
+        date,
+        work_order.position_ref or "(default)",
+        work_order.ref,
+    )
 
 
 def _handle_voided(work_order, product_ref, date):
@@ -410,84 +402,101 @@ def _handle_voided(work_order, product_ref, date):
     from shopman.stockman.services.movements import StockMovements
     from shopman.stockman.services.queries import StockQueries
 
-    try:
-        quant = _find_planned_quant(work_order, product_ref, date)
-        started_quant = StockQueries.get_quant(
-            product_ref,
-            target_date=date,
-            position=_resolve_position(work_order.position_ref),
-            batch=STARTED_BATCH,
-        )
+    quant = _find_planned_quant(work_order, product_ref, date)
+    started_quant = StockQueries.get_quant(
+        product_ref,
+        target_date=date,
+        position=_resolve_position(work_order.position_ref),
+        batch=STARTED_BATCH,
+    )
 
-        if quant is None and started_quant is None:
-            logger.debug(
-                "No planned or started quant found for sku=%s date=%s (already cancelled?)",
-                product_ref,
-                date,
-            )
-            return
-
-        # DELTA por WO: subtrai a contribuição DESTA WO do Quant compartilhado,
-        # em vez de zerar o total (que mataria as outras WOs do mesmo sku/data).
-        # Contribuições: o que entrou em produção (started_qty) vive no batch
-        # STARTED; o restante (quantity - started_qty) vive no planejado.
-        from decimal import Decimal
-
-        started_qty = Decimal(str(work_order.started_qty or 0))
-        planned_contribution = max(Decimal(str(work_order.quantity)) - started_qty, Decimal("0"))
-
-        if quant is not None and quant.quantity > 0 and planned_contribution > 0:
-            new_total = max(quant.quantity - planned_contribution, Decimal("0"))
-            StockMovements.adjust(
-                quant,
-                new_quantity=new_total,
-                reason=f"WO cancelada: {work_order.ref} (−{planned_contribution})",
-            )
-        if started_quant is not None and started_quant.quantity > 0 and started_qty > 0:
-            new_started = max(started_quant.quantity - started_qty, Decimal("0"))
-            StockMovements.adjust(
-                started_quant,
-                new_quantity=new_started,
-                reason=f"WO cancelada após início: {work_order.ref} (−{started_qty})",
-            )
-        logger.info(
-            "Planned/started quants cancelled: sku=%s target_date=%s ref=%s",
+    if quant is None and started_quant is None:
+        logger.debug(
+            "No planned or started quant found for sku=%s date=%s (already cancelled?)",
             product_ref,
             date,
-            work_order.ref,
         )
-    except Exception:
-        logger.warning(
-            "Failed to cancel planned quant for %s (non-fatal)",
-            work_order.ref,
-            exc_info=True,
+        return
+
+    # DELTA por WO: subtrai a contribuição DESTA WO do Quant compartilhado,
+    # em vez de zerar o total (que mataria as outras WOs do mesmo sku/data).
+    # Contribuições: o que entrou em produção (started_qty) vive no batch
+    # STARTED; o restante (quantity - started_qty) vive no planejado.
+    from decimal import Decimal
+
+    started_qty = Decimal(str(work_order.started_qty or 0))
+    planned_contribution = max(Decimal(str(work_order.quantity)) - started_qty, Decimal("0"))
+
+    if quant is not None and quant.quantity > 0 and planned_contribution > 0:
+        new_total = max(quant.quantity - planned_contribution, Decimal("0"))
+        StockMovements.adjust(
+            quant,
+            new_quantity=new_total,
+            reason=f"WO cancelada: {work_order.ref} (−{planned_contribution})",
         )
+    if started_quant is not None and started_quant.quantity > 0 and started_qty > 0:
+        new_started = max(started_quant.quantity - started_qty, Decimal("0"))
+        StockMovements.adjust(
+            started_quant,
+            new_quantity=new_started,
+            reason=f"WO cancelada após início: {work_order.ref} (−{started_qty})",
+        )
+    logger.info(
+        "Planned/started quants cancelled: sku=%s target_date=%s ref=%s",
+        product_ref,
+        date,
+        work_order.ref,
+    )
 
 
-def _consume_materials(work_order):
+def _consume_materials(work_order, *, fail_closed: bool):
     """Deduct a finished WorkOrder's ingredients from stock (kind=MAKE).
 
     Reads the persisted CONSUMPTION ``WorkOrderItem`` rows and issues each
     ingredient from available stock — the ingredients-out leg of the production
     (MAKE) event. Greedy across the ingredient's quants, present stock first.
 
-    A shortfall is logged and left non-fatal (consistent with the other
-    handlers; pre-go-live ingredients are not yet first-class — FEFO and strict
-    near-expiry gating land with Buyman/Material, see BUYMAN-PROCUREMENT-PLAN).
+    Unexpected issue failures and unapproved shortfalls propagate so the outer
+    mutation transaction cannot commit a finished WO with a partial ledger.
+    A shortage explicitly accepted by the production override event remains
+    auditable and consumes only the physically registered balance.
+
+    In graceful mode, a shortfall remains non-fatal but is returned so the
+    orchestrator can emit ``production_stock_shortfall`` and create an
+    operational alert. Returns ``{sku, needed, issued, short}`` dictionaries.
     """
+    from decimal import Decimal
+
     from django.db.models import F
-    from shopman.craftsman.models import WorkOrderItem
+    from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
+    from shopman.stockman.exceptions import StockError
     from shopman.stockman.models.move import Move
     from shopman.stockman.services.movements import StockMovements
     from shopman.stockman.services.queries import StockQueries
 
+    shortfalls = []
+    approved_shortage_by_sku: dict[str, Decimal] = {}
+    for payload in WorkOrderEvent.objects.filter(
+        work_order=work_order,
+        kind=WorkOrderEvent.Kind.SHORTAGE_OVERRIDDEN,
+    ).values_list("payload", flat=True):
+        if str((payload or {}).get("action") or "") not in {"finish", "quick_finish"}:
+            continue
+        for shortage in ((payload or {}).get("impact") or {}).get("missing") or []:
+            sku = str(shortage.get("sku") or "")
+            try:
+                approved = Decimal(str(shortage.get("shortage") or "0"))
+            except Exception:
+                continue
+            approved_shortage_by_sku[sku] = approved_shortage_by_sku.get(sku, Decimal("0")) + approved
     for item in work_order.items.filter(kind=WorkOrderItem.Kind.CONSUMPTION):
         remaining = item.quantity
         if remaining <= 0:
             continue
 
         quants = StockQueries.list_quants(item.item_ref, include_empty=False).order_by(
-            F("target_date").asc(nulls_first=True), "pk",
+            F("target_date").asc(nulls_first=True),
+            "pk",
         )
         for quant in quants:
             if remaining <= 0:
@@ -504,19 +513,119 @@ def _consume_materials(work_order):
                 )
                 remaining -= take
             except Exception:
+                if fail_closed:
+                    raise
                 logger.warning(
-                    "Failed to issue ingredient %s for %s (non-fatal)",
-                    item.item_ref, work_order.ref, exc_info=True,
+                    "Failed to issue ingredient %s for %s (standalone mode)",
+                    item.item_ref,
+                    work_order.ref,
+                    exc_info=True,
                 )
 
         if remaining > 0:
-            logger.warning(
-                "Insufficient stock to consume ingredient %s for %s: short by %s",
-                item.item_ref, work_order.ref, remaining,
+            approved_shortage = approved_shortage_by_sku.get(
+                item.item_ref,
+                Decimal("0"),
+            )
+            if fail_closed and remaining > approved_shortage:
+                raise StockError(
+                    "INSUFFICIENT_QUANTITY",
+                    product=item.item_ref,
+                    work_order=work_order.ref,
+                    requested=item.quantity,
+                    available=item.quantity - remaining,
+                    shortage=remaining,
+                )
+            approved_shortage_by_sku[item.item_ref] = max(
+                approved_shortage - remaining,
+                Decimal("0"),
+            )
+            if approved_shortage:
+                logger.warning(
+                    "Approved production shortage for ingredient %s in %s: short by %s",
+                    item.item_ref,
+                    work_order.ref,
+                    remaining,
+                )
+            else:
+                logger.warning(
+                    "Insufficient stock to consume ingredient %s for %s: short by %s",
+                    item.item_ref,
+                    work_order.ref,
+                    remaining,
+                )
+            shortfalls.append(
+                {
+                    "sku": item.item_ref,
+                    "needed": item.quantity,
+                    "issued": item.quantity - remaining,
+                    "short": remaining,
+                }
             )
 
+    return shortfalls
 
-def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
+
+def _cancel_unstarted_planned_contribution(work_order, product_ref, date) -> None:
+    """Remove only this terminal WO's quantity that never entered production.
+
+    A partial start splits one WO across two shared coordinates: ``started``
+    contains the quantity that entered production, while the blank-batch Quant
+    keeps the remainder planned. Once the WO finishes, that remainder is no
+    longer producible and must stop contributing to promiseable supply. This is
+    a cancellation of plan, not physical waste.
+    """
+    from decimal import Decimal
+
+    from shopman.stockman.exceptions import StockError
+    from shopman.stockman.models.move import Move
+    from shopman.stockman.models.quant import Quant
+
+    started_qty = Decimal(str(work_order.started_qty or work_order.quantity))
+    unstarted = max(
+        Decimal(str(work_order.quantity)) - started_qty,
+        Decimal("0"),
+    )
+    if unstarted <= 0:
+        return
+
+    quant = _find_planned_quant(work_order, product_ref, date)
+    if quant is None:
+        raise StockError(
+            "QUANT_NOT_FOUND",
+            product=product_ref,
+            work_order=work_order.ref,
+            target_date=date,
+            requested=unstarted,
+        )
+
+    locked_quant = Quant.objects.select_for_update().get(pk=quant.pk)
+    available = Decimal(str(locked_quant.quantity))
+    if available < unstarted:
+        raise StockError(
+            "INSUFFICIENT_AVAILABLE",
+            product=product_ref,
+            work_order=work_order.ref,
+            requested=unstarted,
+            available=available,
+        )
+
+    Move.objects.create(
+        quant=locked_quant,
+        delta=-unstarted,
+        reason=f"Plano encerrado após início parcial: {work_order.ref}",
+        kind=Move.Kind.ADJUST,
+    )
+
+
+def _write_off_yield_shortfall(
+    work_order,
+    product_ref,
+    date,
+    finished_qty,
+    *,
+    fail_closed: bool = False,
+):
     """Rendimento MENOR que o iniciado: lançar a perda como WASTE no ledger.
 
     Sem isso o resíduo fica eterno no quant ``batch='started'`` — a
@@ -546,15 +655,46 @@ def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
     )
     if quant is None:
         quant = (
-            Quant.objects.filter(
-                sku=product_ref, target_date=date, batch=STARTED_BATCH, _quantity__gt=0
-            )
+            Quant.objects.filter(sku=product_ref, target_date=date, batch=STARTED_BATCH, _quantity__gt=0)
             .order_by("pk")
             .first()
         )
     if quant is None:
+        # Quick-finish cria o STARTED apenas no ledger do Craftsman; não há um
+        # sinal intermediário que mova o quant planejado para ``batch=started``.
+        # Nesse caminho, o resíduo continua no quant planejado sem lote.
+        quant = StockQueries.get_quant(
+            product_ref,
+            target_date=date,
+            position=_resolve_position(work_order.position_ref),
+            batch="",
+        )
+    if quant is None:
+        quant = (
+            Quant.objects.filter(sku=product_ref, target_date=date, batch="", _quantity__gt=0).order_by("pk").first()
+        )
+    if quant is None:
+        if fail_closed:
+            from shopman.stockman.exceptions import StockError
+
+            raise StockError(
+                "QUANT_NOT_FOUND",
+                product=product_ref,
+                work_order=work_order.ref,
+                target_date=date,
+            )
         return
     write_off = min(shortfall, Decimal(str(quant.quantity)))
+    if fail_closed and write_off != shortfall:
+        from shopman.stockman.exceptions import StockError
+
+        raise StockError(
+            "INSUFFICIENT_AVAILABLE",
+            product=product_ref,
+            work_order=work_order.ref,
+            requested=shortfall,
+            available=write_off,
+        )
     if write_off <= 0:
         return
 
@@ -566,11 +706,13 @@ def _write_off_yield_shortfall(work_order, product_ref, date, finished_qty):
     )
     logger.info(
         "Yield shortfall written off: sku=%s qty=%s (WO %s)",
-        product_ref, write_off, work_order.ref,
+        product_ref,
+        write_off,
+        work_order.ref,
     )
 
 
-def _handle_finished(work_order, product_ref, date):
+def _handle_finished(work_order, product_ref, date, *, fail_closed: bool = False):
     """
     Realize production: consume ingredients, then transfer planned stock →
     saleable position (both legs kind=MAKE).
@@ -586,16 +728,33 @@ def _handle_finished(work_order, product_ref, date):
     # Ingredients-out leg — independent of planned-output target_date.
     # Carimbo ANTES de escrever, sob o lock: quem chega no meio espera, lê o
     # carimbo e desiste. Mesma transação, então uma falha desfaz as duas coisas.
+    shortfalls = []
     with _leg_lock(work_order):
         if not _leg_done(work_order, STOCK_CONSUMED_KEY):
+            shortfalls = _consume_materials(work_order, fail_closed=fail_closed)
             _stamp_leg(work_order, STOCK_CONSUMED_KEY)
-            _consume_materials(work_order)
+
+    # Anúncio FORA do lock (perna já commitada): a sub-baixa vira OperatorAlert no
+    # shop, que não pode ser importado daqui (core, ADR-001). Só quando o consume
+    # de fato rodou (guarda do carimbo) e faltou algo — re-run do sweeper não
+    # reanuncia, e o dedup de 12h no shop cobre a corrida.
+    if shortfalls:
+        production_stock_shortfall.send(
+            sender=type(work_order),
+            work_order=work_order,
+            shortfalls=shortfalls,
+        )
 
     with _leg_lock(work_order):
-        _realize_output_leg(work_order, product_ref, date)
+        _realize_output_leg(
+            work_order,
+            product_ref,
+            date,
+            fail_closed=fail_closed,
+        )
 
 
-def _realize_output_leg(work_order, product_ref, date):
+def _realize_output_leg(work_order, product_ref, date, *, fail_closed: bool = False):
     """Perna de SAÍDA: realiza o planejado na vitrine. Roda sob ``_leg_lock``."""
     if _leg_done(work_order, STOCK_REALIZED_KEY):
         return
@@ -612,7 +771,30 @@ def _realize_output_leg(work_order, product_ref, date):
     from shopman.stockman.services.planning import StockPlanning
     from shopman.stockman.services.queries import StockQueries
 
-    finished_qty = work_order.finished or work_order.quantity
+    # ``0`` is a meaningful finished quantity (the D3 total-loss outcome), not
+    # a missing value. Falling back with ``or`` would credit the entire planned
+    # quantity as saleable stock after an explicit zero-output close.
+    finished_qty = work_order.finished if work_order.finished is not None else work_order.quantity
+    _cancel_unstarted_planned_contribution(
+        work_order,
+        product_ref,
+        date,
+    )
+    if finished_qty <= 0:
+        _write_off_yield_shortfall(
+            work_order,
+            product_ref,
+            date,
+            finished_qty,
+            fail_closed=fail_closed,
+        )
+        _stamp_leg(work_order, STOCK_REALIZED_KEY)
+        logger.info(
+            "Production closed with zero saleable output: sku=%s (WO %s)",
+            product_ref,
+            work_order.ref,
+        )
+        return
 
     try:
         # Find saleable destination (vitrine). A intenção sempre foi "a
@@ -622,13 +804,20 @@ def _realize_output_leg(work_order, product_ref, date):
         # véspera) roubava a fornada recém-assada, que sumia dos canais
         # que a excluem. Ordem de criação (pk) é estável e corresponde à
         # posição de venda primária do deployment.
-        to_position = (
-            Position.objects.filter(is_saleable=True).order_by("pk").first()
-        )
+        to_position = Position.objects.filter(is_saleable=True).order_by("pk").first()
         if not to_position:
             # Sem marcador de propósito: falta uma posição de venda no
             # catálogo, e a fornada VOLTA a ser realizável no minuto em que
             # alguém criar uma. O sweeper insiste (e reclama) até lá.
+            from shopman.stockman.exceptions import StockError
+
+            if fail_closed:
+                raise StockError(
+                    "QUANT_NOT_FOUND",
+                    product=product_ref,
+                    work_order=work_order.ref,
+                    destination="saleable_position",
+                )
             logger.warning(
                 "No saleable position found — cannot realize %s",
                 work_order.ref,
@@ -638,12 +827,17 @@ def _realize_output_leg(work_order, product_ref, date):
         # Find planned quant (may be at position_ref position or default)
         from_position = _resolve_position(work_order.position_ref)
         quant = StockQueries.get_quant(
-            product_ref, target_date=date, position=from_position, batch=STARTED_BATCH,
+            product_ref,
+            target_date=date,
+            position=from_position,
+            batch=STARTED_BATCH,
         )
         from_batch = STARTED_BATCH if quant is not None else ""
         if quant is None:
             quant = StockQueries.get_quant(
-                product_ref, target_date=date, position=from_position,
+                product_ref,
+                target_date=date,
+                position=from_position,
             )
         if quant is None:
             quant = StockQueries.get_quant(product_ref, target_date=date, batch=STARTED_BATCH)
@@ -653,15 +847,20 @@ def _realize_output_leg(work_order, product_ref, date):
             # Fallback: try without position filter
             quant = StockQueries.get_quant(product_ref, target_date=date)
         if quant is None:
-            # Não há o que realizar (WO sem planejado, ou já consumido por
-            # outro caminho). A perna terminou: marcar, senão o sweeper volta
-            # nesta WO para sempre.
-            logger.info(
-                "No planned quant for %s @ %s — nothing to realize",
+            from shopman.stockman.exceptions import StockError
+
+            if fail_closed:
+                raise StockError(
+                    "QUANT_NOT_FOUND",
+                    product=product_ref,
+                    target_date=date,
+                    work_order=work_order.ref,
+                )
+            logger.warning(
+                "No planned quant for %s @ %s — output remains recoverable",
                 product_ref,
                 date,
             )
-            _stamp_leg(work_order, STOCK_REALIZED_KEY)
             return
 
         # A partição de qualidade (ADR-017) nomeia os lotes da fornada nas
@@ -678,25 +877,22 @@ def _realize_output_leg(work_order, product_ref, date):
                 item_ref=product_ref,
             ).exclude(batch_ref="")
         )
-        if partition_lines and sum(
-            line.quantity for line in partition_lines
-        ) == finished_qty:
-            legs = [(line.quantity, line.batch_ref) for line in partition_lines]
+        if partition_lines and sum(line.quantity for line in partition_lines) == finished_qty:
+            legs = [(line.quantity, line.batch_ref, line.quality_grade_ref) for line in partition_lines]
         else:
             if partition_lines:
                 logger.warning(
-                    "Partition lines of %s do not sum to finished_qty=%s — "
-                    "realizing into the daily lot instead",
+                    "Partition lines of %s do not sum to finished_qty=%s — realizing into the daily lot instead",
                     work_order.ref,
                     finished_qty,
                 )
-            legs = [(finished_qty, "")]
+            legs = [(finished_qty, "", "")]
 
         # Carimbo ANTES do realize, pelo mesmo motivo da perna de insumo: a
         # janela entre escrever e carimbar era o que deixava um segundo
         # fechamento simultâneo creditar a vitrine de novo.
         _stamp_leg(work_order, STOCK_REALIZED_KEY)
-        for leg_qty, leg_batch in legs:
+        for leg_qty, leg_batch, leg_grade_ref in legs:
             StockPlanning.realize(
                 product=type("P", (), {"sku": product_ref})(),
                 target_date=date,
@@ -706,6 +902,7 @@ def _realize_output_leg(work_order, product_ref, date):
                 from_batch=from_batch,
                 reason=f"Produção concluída: {work_order.ref}",
                 to_batch=leg_batch,
+                to_quality_grade_ref=leg_grade_ref,
             )
         logger.info(
             "Production realized: sku=%s qty=%s %s → %s em %s lote(s) (WO %s)",
@@ -717,7 +914,13 @@ def _realize_output_leg(work_order, product_ref, date):
             work_order.ref,
         )
 
-        _write_off_yield_shortfall(work_order, product_ref, date, finished_qty)
+        _write_off_yield_shortfall(
+            work_order,
+            product_ref,
+            date,
+            finished_qty,
+            fail_closed=fail_closed,
+        )
     except Exception:
         # "Insumo consumido e NADA realizado" não cabe numa linha de log. Quando
         # esta perna falha a WorkOrder já está FINISHED (o send é pós-commit), a
@@ -727,8 +930,7 @@ def _realize_output_leg(work_order, product_ref, date):
         # `exception` (ERROR) chega, e propagar leva o erro até o operador —
         # é o mesmo tratamento da perna de insumos, que já propaga.
         logger.exception(
-            "Failed to realize production for %s: insumos consumidos e nada "
-            "realizado (divergência de estoque)",
+            "Failed to realize production for %s: insumos consumidos e nada realizado (divergência de estoque)",
             work_order.ref,
         )
         raise

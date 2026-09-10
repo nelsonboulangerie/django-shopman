@@ -12,10 +12,10 @@ from shopman.cashman import services as cash
 from shopman.cashman.models import Shift, Terminal
 from shopman.guestman.models import Customer, CustomerAddress
 from shopman.offerman.models import Listing, ListingItem, Product
-from shopman.orderman.models import Order
+from shopman.orderman.models import Directive, Order
 
 from shopman.backstage.api.projections import projection_data
-from shopman.backstage.models import POSTab
+from shopman.backstage.models import OperatorAlert, POSTab
 from shopman.backstage.projections.pos import build_pos
 from shopman.shop.fiscal import fiscal_pool
 from shopman.shop.models import Channel, Shop
@@ -148,10 +148,32 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(payload["pos"]["products"][0]["price_q"], 1300)
         payment_methods = {method["ref"]: method for method in payload["pos"]["payment_methods"]}
         self.assertEqual(payment_methods["cash"]["label"], "Dinheiro")
+        # O BALCÃO DISTINGUE crédito de débito, e a loja online não: lá o gateway
+        # sabe a bandeira e a diferença não muda nada para quem compra. Aqui ela
+        # muda o prazo de recebimento e a taxa da adquirente, e é isso que o
+        # fechamento do dia separa. Os rótulos vêm do Omotenashi — sem a chave
+        # cadastrada, o operador leria "credit" cru na tela.
+        self.assertEqual(payment_methods["credit"]["label"], "Crédito")
+        self.assertEqual(payment_methods["debit"]["label"], "Débito")
+        # `link` é a forma do PEDIDO REMOTO anotado no balcão: não há maquininha,
+        # há uma URL que o cliente abre depois. É a única das novas que passa por
+        # gateway — e por isso é a única que SOME quando o gateway não está de
+        # pé, como aqui. Botão que existe para falhar no Validar, com o cliente
+        # do outro lado do telefone esperando a URL, é pior do que botão nenhum.
+        self.assertNotIn("link", payment_methods)
+        self.assertNotIn("card", payment_methods)
         self.assertIn("mixed", payment_methods)
         self.assertIn("delivery", {option["ref"] for option in payload["pos"]["fulfillment_options"]})
         payment_collections = {collection["ref"]: collection for collection in payload["pos"]["payment_collections"]}
-        self.assertEqual(payment_collections["terminal"]["payment_method_refs"], ["cash", "pix", "card", "mixed"])
+        # A COLEÇÃO responde "a que recebimento esta forma pertence", e a lista
+        # de formas responde "o que está de pé agora" — duas perguntas
+        # diferentes. Por isso `link` continua aqui mesmo ausente dos botões: a
+        # tela desenha a partir de `payment_methods`, e usa os refs da coleção só
+        # para saber que "Receber no caixa" se aplica à forma escolhida.
+        self.assertEqual(
+            payment_collections["terminal"]["payment_method_refs"],
+            ["cash", "pix", "credit", "debit", "link", "mixed"],
+        )
         self.assertEqual(payment_collections["on_delivery"]["payment_method_refs"], ["cash", "mixed"])
         action_refs = {action["ref"] for action in payload["pos"]["actions"]}
         self.assertIn("review_sale", action_refs)
@@ -185,7 +207,15 @@ class POSHeadlessSurfaceContractTests(TestCase):
         )
         self.assertTrue(checkout["capabilities"]["supports_split_payment"])
         provider_readiness = {item["provider"]: item for item in checkout["capabilities"]["provider_readiness"]}
-        self.assertEqual(set(provider_readiness), {"focus_nfe", "efi_pix", "stripe_card"})
+        # `otp_delivery` entrou no contrato: o PDV também precisa saber se o
+        # cliente consegue receber o código de login — a tela ficava verde com a
+        # cadeia de OTP vazia.
+        # E `payment_link` também: é a linha que a tecla L do balcão consulta,
+        # resolvida pelo adapter do link e não pelo Stripe do cartão.
+        self.assertEqual(
+            set(provider_readiness),
+            {"focus_nfe", "efi_pix", "stripe_card", "payment_link", "otp_delivery"},
+        )
         self.assertIn(provider_readiness["focus_nfe"]["status"], {"ready", "warning", "error"})
         self.assertEqual(checkout["capabilities"]["prepare_checkout_action_ref"], "save_tab")
         self.assertEqual(checkout["capabilities"]["review_action_ref"], "review_sale")
@@ -331,7 +361,156 @@ class POSHeadlessSurfaceContractTests(TestCase):
 
         self.assertFalse(closed["fiscal_expected"])
 
-    def _close_sale_for_fiscal(self, *, payment_method: str) -> dict:
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.on_requested_receipt"
+        ),
+    )
+    def test_close_reports_fiscal_expected_when_the_counter_asked_for_paper(self) -> None:
+        """Pedir papel É pedir a nota — e o eco tem que voltar ao PDV.
+
+        Não existe DANFE sem NFC-e autorizada. Ligar "Impressa?" numa venda em
+        dinheiro sem CPF não emitia nada, e o `autoPrintDanfe` do balcão é
+        guardado por este `fiscal_expected`: sem ele voltando verdadeiro, a
+        correção morre aqui e o operador segue prometendo uma bobina vazia.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["print"])
+
+        self.assertTrue(closed["fiscal_expected"])
+        order = Order.objects.get(ref=closed["order_ref"])
+        self.assertEqual(order.data["receipt"]["channels"], ["print"])
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+            "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+            "shopman.shop.fiscal_resolvers.on_requested_receipt"
+        ),
+    )
+    def test_close_emits_the_nfce_when_the_counter_asked_for_the_email_receipt(self) -> None:
+        """"Enviar por e-mail" É pedir a nota — e tem que NASCER uma directive.
+
+        O dono marcou "Enviar por e-mail", digitou o endereço, e nada aconteceu:
+        o resolver só reconhecia "print", nenhuma NFC-e era emitida, e sem nota
+        o Focus não tem DANFE nem XML para anexar. O envio do e-mail
+        (``NFCeEmitHandler._send_receipt_email``) ficava inalcançável por
+        construção. Dinheiro, sem CPF, balcão: só o pedido do e-mail sustenta a
+        emissão aqui.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["email"])
+
+        self.assertTrue(closed["fiscal_expected"])
+        order = Order.objects.get(ref=closed["order_ref"])
+        self.assertEqual(order.data["receipt"]["channels"], ["email"])
+        self.assertEqual(order.data["receipt"]["email"], "cliente@example.org")
+        self.assertTrue(
+            Directive.objects.filter(
+                topic="fiscal.emit_nfce", payload__order_ref=closed["order_ref"]
+            ).exists(),
+            "pedir a nota por e-mail tem que criar a directive de emissão",
+        )
+
+    @override_settings(
+        SHOPMAN_FISCAL_ADAPTER="shopman.backstage.tests.test_pos_headless_surface_contract.StubFiscalBackend",
+        SHOPMAN_FISCAL_EMISSION_RESOLVER="shopman.shop.fiscal_resolvers.on_request_or_tax_id",
+    )
+    def test_close_alerts_the_counter_when_the_promised_receipt_will_not_be_emitted(self) -> None:
+        """Promessa feita no balcão não morre num ``return`` mudo.
+
+        Deployment mal configurado (sem ``on_requested_receipt``): o operador
+        marca o canal, a regra recusa, e antes disso NINGUÉM ficava sabendo —
+        nem log, nem alerta. O cliente ia embora esperando o anexo.
+        """
+        closed = self._close_sale_for_fiscal(payment_method="cash", receipt_channels=["email"])
+
+        self.assertFalse(closed["fiscal_expected"])
+        self.assertFalse(
+            Directive.objects.filter(topic="fiscal.emit_nfce").exists()
+        )
+        alert = OperatorAlert.objects.filter(type="fiscal_receipt_promised").first()
+        self.assertIsNotNone(alert)
+        self.assertIn(closed["order_ref"], alert.message)
+
+    def test_receipt_email_never_becomes_a_customer_and_never_breaks_the_sale(self) -> None:
+        """Duas vendas anônimas para o MESMO e-mail da nota: 200 nas duas.
+
+        O endereço digitado só para a nota subia para ``fill_email`` e virava
+        ``Customer.email``. Como a RESOLUÇÃO do cadastro nunca olhava esse
+        campo, a segunda venda para o mesmo endereço não achava o cadastro,
+        criava outro, e o UNIQUE global de ``ContactPoint`` (``type``,
+        ``value_normalized``) estourava ``IntegrityError`` — que escapava da view
+        como HTTP 500 sem ``detail``. O operador via "Não foi possível finalizar
+        a venda", revalidava, falhava de novo, e só saía disso desligando
+        "Enviar por e-mail".
+        """
+        antes = Customer.objects.count()
+        refs = []
+        for n in (1, 2):
+            response = self.client.post(
+                "/api/v1/backstage/pos/sale/close/",
+                data=json.dumps({
+                    "intent_version": POS_SALE_INTENT_VERSION,
+                    "items": [{
+                        "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
+                        "qty": 1, "unit_price_q": 1300,
+                    }],
+                    "fulfillment_type": "pickup",
+                    "payment_method": "cash",
+                    "payment_collection": "terminal",
+                    "receipt_channels": ["email"],
+                    "receipt_email": "cliente@example.org",
+                    "client_request_id": f"pos-receipt-email-{n}",
+                }),
+                content_type="application/json",
+            )
+            self.assertEqual(response.status_code, 200, response.content)
+            refs.append(response.json()["order_ref"])
+
+        self.assertEqual(Customer.objects.count(), antes)
+        for ref in refs:
+            order = Order.objects.get(ref=ref)
+            # O endereço é fato DA VENDA, e para de fingir ser identidade.
+            self.assertEqual(order.data["receipt"]["email"], "cliente@example.org")
+            self.assertNotIn("customer_ref", order.data)
+            self.assertEqual((order.data.get("customer") or {}).get("email", ""), "")
+
+    def test_receipt_email_of_an_existing_customer_does_not_500(self) -> None:
+        """E-mail da nota que já pertence a OUTRO cadastro: a venda passa.
+
+        Era o 500 mais cruel: o cliente da vez não é a Dora, mas o endereço que
+        ele pediu é o dela — e a venda travava.
+        """
+        Customer.objects.create(
+            ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
+            phone="+5543999990055", email="dora@example.org",
+        )
+        response = self.client.post(
+            "/api/v1/backstage/pos/sale/close/",
+            data=json.dumps({
+                "intent_version": POS_SALE_INTENT_VERSION,
+                "items": [{
+                    "sku": "POS-HEADLESS-ITEM", "name": "Headless Item",
+                    "qty": 1, "unit_price_q": 1300,
+                }],
+                "fulfillment_type": "pickup",
+                "payment_method": "cash",
+                "payment_collection": "terminal",
+                "receipt_channels": ["email"],
+                "receipt_email": "dora@example.org",
+                "client_request_id": "pos-receipt-email-alheio",
+            }),
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.content)
+        order = Order.objects.get(ref=response.json()["order_ref"])
+        self.assertNotIn("customer_ref", order.data)
+
+    def _close_sale_for_fiscal(
+        self, *, payment_method: str, receipt_channels: list[str] | None = None
+    ) -> dict:
         # O pool fiscal é um singleton de módulo e cacheia os backends na
         # primeira chamada. Sem o reset, um teste anterior que rodou com
         # SHOPMAN_FISCAL_ADAPTER=None deixa a lista vazia em cache e o
@@ -352,8 +531,13 @@ class POSHeadlessSurfaceContractTests(TestCase):
             "fulfillment_type": "pickup",
             "payment_method": payment_method,
             "payment_collection": "terminal",
-            "client_request_id": f"pos-fiscal-{payment_method}",
+            "client_request_id": f"pos-fiscal-{payment_method}-{'-'.join(receipt_channels or [])}",
         }
+        if receipt_channels:
+            payload["receipt_channels"] = receipt_channels
+            if "email" in receipt_channels:
+                # O canal de e-mail exige para ONDE mandar — o intent recusa sem isso.
+                payload["receipt_email"] = "cliente@example.org"
         response = self.client.post(
             "/api/v1/backstage/pos/sale/close/",
             data=json.dumps(payload),
@@ -872,6 +1056,129 @@ class POSHeadlessSurfaceContractTests(TestCase):
         self.assertEqual(again.json()["customer"]["ref"], ref)
         self.assertFalse(again.json()["created"])
         self.assertEqual(Customer.objects.count(), before + 1)
+
+    def test_api_customer_resolve_refuses_stealing_the_sale_by_phone(self) -> None:
+        """⚠️ O BUG: o telefone digitado TROCAVA o dono do pedido, em silêncio.
+
+        Comanda com Ana associada, o operador digita no campo WhatsApp o número
+        que é de Bruno e conclui. Sem o `customer_ref` viajar, o servidor achava
+        um único candidato (Bruno), devolvia Bruno, e o front sobrescrevia o
+        carrinho inteiro. Agora são dois candidatos, e a recusa devolve a
+        escolha para quem está no balcão — com os dois lados nomeados, que é o
+        que a gêmea na tela precisa para oferecer a saída de um toque.
+        """
+        ana = Customer.objects.create(
+            ref="CUST-CONFLICT-A", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+        Customer.objects.create(
+            ref="CUST-CONFLICT-B", first_name="Bruno", last_name="Souza",
+            phone="+5543999990022",
+        )
+        before = Customer.objects.count()
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_name": "Ana Prado",
+                "customer_phone": "43999990022",
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        body = response.json()
+        self.assertEqual(body["error"]["code"], "customer_conflict")
+        self.assertEqual(body["error"]["field"], "customer_phone")
+        self.assertEqual(body["field"], "customer_phone")
+        self.assertIn("WhatsApp", body["detail"])
+        candidates = {row["ref"]: row for row in body["error"]["candidates"]}
+        self.assertEqual(set(candidates), {"CUST-CONFLICT-A", "CUST-CONFLICT-B"})
+        self.assertTrue(candidates["CUST-CONFLICT-A"]["is_current"])
+        self.assertFalse(candidates["CUST-CONFLICT-B"]["is_current"])
+        self.assertEqual(candidates["CUST-CONFLICT-B"]["name"], "Bruno Souza")
+        # Recusa é recusa: nada foi escrito e nenhum cadastro nasceu.
+        self.assertEqual(Customer.objects.count(), before)
+        self.assertEqual(Customer.objects.get(ref="CUST-CONFLICT-A").phone, "+5543999990011")
+
+    def test_api_customer_resolve_keeps_the_associated_customer_own_phone(self) -> None:
+        # O caminho normal não pode ter virado recusa: o telefone no campo é o
+        # do próprio cliente da comanda.
+        ana = Customer.objects.create(
+            ref="CUST-SAME-PHONE", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_name": "Ana Prado", "customer_phone": "43999990011"},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["customer"]["ref"], ana.ref)
+
+    def test_api_customer_resolve_corrects_contact_only_when_told(self) -> None:
+        """Corrigir o telefone pelo PDV: só com a palavra explícita do operador.
+
+        Sem ela o merge segue só-preenche-lacuna (é o que impede uma edição
+        pontual no checkout de reescrever o cadastro de alguém); com ela, o
+        número errado finalmente tem conserto no balcão.
+        """
+        ana = Customer.objects.create(
+            ref="CUST-FIX-PHONE", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+
+        quieto = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {"customer_ref": ana.ref, "customer_phone": "43988887777"},
+            content_type="application/json",
+        )
+        self.assertEqual(quieto.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543999990011")
+
+        corrigido = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_phone": "43988887777",
+                "customer_contact_correction": True,
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(corrigido.status_code, 200)
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543988887777")
+        self.assertEqual(corrigido.json()["customer"]["phone"], "+5543988887777")
+
+    def test_api_customer_resolve_refuses_correcting_into_someone_elses_number(self) -> None:
+        # Corrigir não é roubar: o número novo já é de terceiro → mesma recusa.
+        ana = Customer.objects.create(
+            ref="CUST-FIX-CLASH-A", first_name="Ana", last_name="Prado",
+            phone="+5543999990011",
+        )
+        Customer.objects.create(
+            ref="CUST-FIX-CLASH-B", first_name="Bruno", last_name="Souza",
+            phone="+5543999990022",
+        )
+
+        response = self.client.post(
+            "/api/v1/backstage/pos/customer/resolve/",
+            {
+                "customer_ref": ana.ref,
+                "customer_phone": "43999990022",
+                "customer_contact_correction": True,
+            },
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 422)
+        self.assertEqual(response.json()["error"]["code"], "customer_conflict")
+        ana.refresh_from_db()
+        self.assertEqual(ana.phone, "+5543999990011")
 
     def test_api_customer_lookup_accepts_ref(self) -> None:
         customer = Customer.objects.create(

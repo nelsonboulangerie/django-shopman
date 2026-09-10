@@ -10,6 +10,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from shopman.backstage.admin_console.cash_receipt import cash_receipt_verify_view
 from shopman.backstage.admin_console.copy_catalog import copy_catalog_view
+from shopman.backstage.admin_console.diagnostics import diagnostics_view
 from shopman.backstage.admin_console.operator_badge import operator_badge_view
 from shopman.backstage.admin_console.pos_counter_agent import (
     pos_counter_agent_download,
@@ -60,6 +61,13 @@ urlpatterns = [
         "admin/settings/copy/",
         admin.site.admin_view(copy_catalog_view),
         name="admin_console_copy_catalog",
+    ),
+    # Diagnóstico das integrações. Vive fora de settings/<slug> de propósito:
+    # não é uma configuração que se ajusta, é uma pergunta que se faz.
+    path(
+        "admin/diagnostics/",
+        admin.site.admin_view(diagnostics_view),
+        name="admin_console_diagnostics",
     ),
     path(
         "admin/pos/terminal/<slug:ref>/agent/",
@@ -126,6 +134,8 @@ urlpatterns += _include_optional("api/auth/", "shopman.doorman.api.urls")
 urlpatterns += _include_optional("auth/", "shopman.doorman.urls")
 
 urlpatterns += _include_optional("api/webhooks/", "shopman.shop.webhooks.urls")
+# Concierge de WhatsApp (superfície de cliente): /api/webhooks/manychat/conversation/
+urlpatterns += _include_optional("api/webhooks/", "shopman.storefront.concierge.urls")
 # ManyChat inbound webhook (subscriber sync). HMAC + replay gated; without
 # MANYCHAT_WEBHOOK_SECRET it fails CLOSED outside DEBUG (rejects unsigned payloads);
 # only local dev (DEBUG) skips the signature. The conversational ORDER flow

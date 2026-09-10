@@ -52,10 +52,10 @@ useSeoMeta({ title: 'Favoritos', robots: 'noindex, follow' })
         </UiEmptyMedia>
         <UiEmptyHeader>
           <UiEmptyTitle>{{ emptyCopy?.title || 'Você ainda não salvou favoritos' }}</UiEmptyTitle>
-          <UiEmptyDescription>{{ emptyCopy?.message || 'Toque no coração de um produto para guardá-lo aqui.' }}</UiEmptyDescription>
+          <UiEmptyDescription>{{ emptyCopy?.message || 'Toque no coração de um produto para encontrá-lo aqui na próxima visita.' }}</UiEmptyDescription>
         </UiEmptyHeader>
         <div class="flex justify-center">
-          <UiButton :to="emptyCopy?.cta_href || '/menu'" icon="lucide:utensils">{{ emptyCopy?.cta_label || 'Ver o cardápio' }}</UiButton>
+          <UiButton :to="emptyCopy?.cta_href || '/menu'" icon="lucide:utensils">{{ emptyCopy?.cta_label || 'Descobrir o cardápio' }}</UiButton>
         </div>
       </UiEmpty>
 

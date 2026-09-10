@@ -197,6 +197,20 @@ describe('surface UX guardrails', () => {
     expect(menu).not.toContain('sections.value.filter(section => section.ref === activeSection.value)')
   })
 
+  it('keeps collection pages from dead-ending after the product list', () => {
+    const collection = read('app/pages/colecao/[ref].vue')
+
+    expect(collection).toContain('useSearchOverlay()')
+    expect(collection).toContain('data-collection-end-actions')
+    expect(collection).toContain('rounded-lg border bg-card p-4')
+    expect(collection).toContain('Ainda procurando algo?')
+    expect(collection).toContain('Ver cardápio completo')
+    expect(collection).toContain('Buscar no cardápio')
+    expect(collection).toContain('to="/menu"')
+    expect(collection).toContain('@click="openSearch()"')
+    expect(collection).toContain('class="min-h-11 justify-center"')
+  })
+
   it('renders the menu product grid once instead of duplicating it in hidden tab panels', () => {
     const menu = read('app/pages/menu.vue')
 
@@ -456,7 +470,12 @@ describe('surface UX guardrails', () => {
     expect(header).toContain('Como funciona')
     expect(header).toContain('Redes sociais')
     expect(bottomNav).toContain("to: '/menu'")
-    expect(bottomNav).toContain("to: '/conta'")
+    // O slot da conta continua existindo — mas ele deixou de ser um literal.
+    // Deslogado ele é a PORTA ("Entrar", indo direto ao login com a página atual
+    // guardada); logado ele é a conta. Antes dizia "Conta" nos dois casos, e quem
+    // só queria se identificar acabava numa tela que não pediu.
+    expect(bottomNav).toContain('accountNavEntry(')
+    expect(header).toContain('accountNavEntry(')
     expect(header).not.toContain('shopping-basket')
     expect(header).not.toContain('session.shop.value?.tagline')
     expect(header).not.toContain('Compra rápida e acompanhada')
@@ -541,9 +560,16 @@ describe('surface UX guardrails', () => {
     expect(login).toContain('home.public_config.whatsapp_url')
     expect(login).toContain('const isCheckoutReturn')
     expect(login).toContain('const cartHasItems')
-    expect(login).toContain('const isCheckoutReturnWithCart')
-    expect(login).toContain('if (isCheckoutReturnWithCart.value) return copyMessage(authCopy.value?.wa_cart_kept')
-    expect(login).toContain("isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
+    // A copy da sacola pergunta pela SACOLA, não pela rota de origem: quem entra
+    // pelo cabeçalho com a sacola cheia merece ler "Sua sacola está guardada"
+    // tanto quanto quem volta do checkout.
+    expect(login).toContain('const hasCartToKeep')
+    expect(login).not.toContain('isCheckoutReturnWithCart')
+    expect(login).toContain('if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept')
+    expect(login).toContain("hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'")
+    // O lampejo promete a sacola só quando o SERVIDOR confirma que ela viajou.
+    expect(login).toContain('waCartTravels')
+    expect(login).toContain('wa_glimpse_with_cart')
     expect(login).toContain('const stepTitle')
     expect(login).toContain('const stepDescription')
     expect(login).toContain('<UiInputGroup class="bg-background">')
@@ -642,6 +668,19 @@ describe('surface UX guardrails', () => {
     expect(`${security}\n${passkey}`).not.toMatch(/rosto|digital|scan-face/i)
   })
 
+  it('pins Sair to the top-right of the account header, on the greeting line', () => {
+    const account = read('app/pages/conta/index.vue')
+    const header = account.slice(account.indexOf('<header'), account.indexOf('</header>'))
+
+    // `flex-wrap` decide a quebra pelo tamanho MÁXIMO do conteúdo: assim que a
+    // contagem de pedidos cresce, o botão "Sair" desce para a linha de baixo.
+    expect(header).toContain('class="flex items-start justify-between gap-3"')
+    expect(header).not.toContain('flex-wrap')
+    // A coluna da saudação encolhe; o botão nunca.
+    expect(header).toContain('min-w-0 flex-1')
+    expect(header).toMatch(/<UiButton[^>]*icon="lucide:log-out"[^>]*class="shrink-0"/)
+  })
+
   it('keeps auth routes themed without letting shell home clobber auth/cart state', () => {
     const app = read('app/app.vue')
     const access = read('app/pages/a.vue')
@@ -689,7 +728,7 @@ describe('surface UX guardrails', () => {
     expect(productRoute).not.toContain('<UiCard')
     // Acordeão full-width no mobile: hairlines ponta a ponta; trigger alinhado
     // ao título e interior aberto com recuo extra (+16px sobre o trigger).
-    expect(productRoute).toContain('class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-0 [&_[data-slot=accordion-content]>div]:px-8 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4"')
+    expect(productRoute).toContain('class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4"')
     expect(productRoute).toContain('data-product-cross-sell')
     // Título do cross-sell vem do registro omotenashi (PRODUCT_CROSS_SELL_HEADING).
     expect(productRoute).toContain('cross_sell_heading')
@@ -769,14 +808,28 @@ describe('surface UX guardrails', () => {
   it('keeps alpha-test search discoveries canonized in the UI source', () => {
     const search = read('app/pages/busca.vue')
     const overlay = read('app/components/SearchOverlay.vue')
+    const menu = read('app/pages/menu.vue')
 
-    expect(search).toContain('function collectionTargetFor')
-    expect(search).toContain('`/colecao/${ref}`')
+    expect(search).toContain('collectionTargetForSearchOption')
+    expect(menu).toContain('resolveSectionRefFromParam')
+    expect(menu).toContain('dynamicCollectionPublicSlug')
+    expect(menu).toContain('watch(() => route.query.secao, applyRouteSection)')
+    expect(menu).toContain('class="min-h-11 min-w-11 shrink-0 rounded-full"')
     expect(search).toContain("matchMedia('(pointer: fine)')")
     expect(search).toContain('md:sticky md:top-16')
+    expect(search).toContain('class="h-11 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
+    expect(search).toContain('class="min-h-11 rounded-full px-3"')
+    expect(search).toContain('<ProductListItem')
+    expect(search).toContain('framed')
     expect(overlay).toContain(':placeholder="open ?')
     expect(overlay).toContain('v-if="open" class="min-h-0 flex-1 overflow-y-auto"')
-    expect(overlay).toContain(':to="collectionTargetFor(option)"')
+    expect(overlay).toContain('data-search-filter-chips')
+    expect(overlay).toContain(':to="collectionTargetForSearchOption(option)"')
+    expect(overlay.indexOf('data-search-filter-chips')).toBeLessThan(overlay.indexOf('data-search-results'))
+    expect(overlay).toContain('class="h-11 min-w-0 flex-1 rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0 dark:bg-transparent"')
+    expect(overlay).toContain('class="min-h-11 rounded-full px-3"')
+    expect(overlay).toContain('<ProductListItem')
+    expect(overlay).toContain('framed')
   })
 
   it('keeps alpha-test tap targets and test CTAs visibly actionable', () => {
@@ -790,6 +843,10 @@ describe('surface UX guardrails', () => {
     expect(loginWhatsapp).toContain('bg-cta text-cta-foreground')
     expect(payment).toContain('Pagamento de teste')
     expect(payment).toContain('size="lg"')
+    expect(payment).toContain('{{ copy.pix_pending_note }}')
+    expect(payment).toContain('{{ copy.pix_auto_update_note }}')
+    expect(payment).not.toContain('Assim que o pagamento cair')
+    expect(payment).not.toContain('começa quando o código aparecer.')
     expect(accessBridge).toContain("response.redirect || '/'")
   })
 
@@ -860,6 +917,37 @@ describe('surface UX guardrails', () => {
     expect(profile).toContain('Salvar perfil')
   })
 
+  it('lets the customer change the account phone number, and proves the new one first', () => {
+    const security = read('app/pages/conta/seguranca.vue')
+
+    // Os dois passos, nesta ordem: informar o número novo e confirmar o código
+    // que chega NELE. Um botão que trocasse direto seria sequestro de conta —
+    // apontar a conta de alguém para um número seu e esperar o próximo OTP.
+    expect(security).toContain("apiPath('/api/v1/account/phone/request/')")
+    expect(security).toContain("apiPath('/api/v1/account/phone/confirm/')")
+    expect(security).toContain('Mudar número')
+    expect(security).toContain('Enviar código')
+    expect(security).toContain('Confirmar mudança')
+    expect(security).toContain('<UiPinInput')
+
+    // A recusa rica do servidor chega inteira à tela — com as saídas. Cair no
+    // genérico apagaria o motivo, que foi o defeito que o PR #553 consertou no
+    // e-mail e que esta tela não pode repetir no telefone.
+    expect(security).toContain('profileIssueFrom')
+    expect(security).toContain('phoneChangeIssue.actions')
+
+    // ⚠️ A tela nunca diz de quem é o número: quem pede a troca é um
+    // desconhecido em relação ao dono, e aqui o número é a identidade de quem
+    // entra. A frase vem do servidor, e o servidor não manda o dono.
+    expect(security).not.toMatch(/pertence a|é de |candidates/i)
+
+    // O perfil para de dizer que só existe "entrar com outra conta", agora que
+    // existe o caminho que leva a conta junto.
+    const profile = read('app/pages/conta/perfil.vue')
+    expect(profile).toContain('/conta/seguranca')
+    expect(profile).toContain('Leve a conta junto')
+  })
+
   it('lets authenticated customers manage addresses through the canonical AddressPicker', () => {
     const account = read('app/pages/conta/enderecos.vue')
 
@@ -908,6 +996,21 @@ describe('surface UX guardrails', () => {
     const home = read('app/pages/index.vue')
     expect(home).toContain('bakeryJsonLd(')
     expect(home).toContain("rel: 'canonical'")
+  })
+
+  it('keeps block-level badges out of <p> (hydration-safe content model)', () => {
+    // `<p>` é conteúdo de fraseado: um `<div>` (ex.: UiBadge) dentro de `<p>` é
+    // HTML inválido — o parser do browser auto-fecha o `<p>` no bloco e o vdom
+    // do Vue espera o aninhado → hydration mismatch (revisão alpha 28/08, O7,
+    // /conta/enderecos, badge "Padrão" em endereço default). O alvo para o
+    // guardrail é o bloco dentro do `<p>` (lookahead temperado para não cruzar
+    // o `</p>` e dar falso positivo em `<p>…</p><div>`).
+    const blockInP = /<p\b[^>]*>(?:(?!<\/p>)[\s\S])*<(?:div|UiBadge)\b/
+    const offenders = surfaceVueFiles
+      .filter(file => blockInP.test(read(file)))
+      .map(file => relative(root, join(root, file)))
+
+    expect(offenders).toEqual([])
   })
 
   it('keeps badges discreet and reserves success tone for explicit alerts', () => {
@@ -1196,5 +1299,236 @@ describe('surface UX guardrails', () => {
       .filter(file => offScaleGutter.test(read(file)))
       .map(file => relative(root, join(root, file)))
     expect(gutterOffenders).toEqual([])
+  })
+})
+
+describe('environment ribbon', () => {
+  // A fita é um SISTEMA de quatro números, não quatro escolhas. Ela já quebrou
+  // duas vezes por alguém mexer em um só. O raciocínio está no componente; aqui
+  // ficam as desigualdades que dizem quando ele parou de valer.
+  const template = templateOnly(read('app/components/EnvironmentRibbon.vue'))
+  const windowClass = /class="([^"]*\boverflow-hidden\b[^"]*)"/.exec(template)?.[1] || ''
+  const barClass = /class="(absolute\b[^"]*)"/.exec(template)?.[1] || ''
+
+  // Tailwind v4: uma unidade da escala = 0.25rem = 4px.
+  function px (source: string, token: string) {
+    const match = new RegExp(`(?:^|\\s)-?${token}-(\\d+)(?:\\s|$)`).exec(source)
+    expect(match, `classe ${token}-<n> ausente em "${source}"`).not.toBeNull()
+    return Number(match![1]) * 4
+  }
+
+  const janela = px(windowClass, 'size')
+  const right = px(barClass, 'right')
+  const top = px(barClass, 'top')
+  const altura = px(barClass, 'h')
+  const largura = px(barClass, 'w')
+  const centro = top + altura / 2
+
+  it('centres the bar on the corner diagonal so the label sits mid-chord', () => {
+    // O texto é centrado na BARRA; para cair no meio do trecho VISÍVEL, o centro
+    // da barra tem de pousar na antidiagonal do canto. Esta conta garante isso.
+    expect(largura).toBe(2 * right + 2 * top + altura)
+  })
+
+  it('pushes all four corners past the edge of the screen', () => {
+    // Quina que para dentro vira corte reto boiando na página — o defeito de origem.
+    expect((largura - altura) / (2 * Math.SQRT2) - centro).toBeGreaterThan(16)
+  })
+
+  it('keeps the window big enough that its two fake edges never cut the bar', () => {
+    // Só topo e direita da janela coincidem com a tela. Esquerda e baixo são
+    // falsas: se a barra as alcança, o corte aparece. Aumentar a janela é seguro.
+    expect(janela).toBeGreaterThan(centro * 2 + (altura / 2) * Math.SQRT2 + 16)
+  })
+
+  it('leaves the visible chord room for the longest notice the server sends', () => {
+    // Trecho visível = 2·√2·centro. "AMBIENTE DE TESTES" mede ~105px a text-xs.
+    expect(2 * Math.SQRT2 * centro).toBeGreaterThan(150)
+  })
+
+  it('takes its amber from the house token instead of a raw palette colour', () => {
+    expect(barClass).toContain('bg-warning')
+    expect(template).toContain('text-warning-foreground')
+    expect(template).not.toContain('amber')
+  })
+
+  it('centres the label with flex, not padding around an inline span', () => {
+    // Span inline assentava na linha de base de uma caixa de 24px: fora do centro.
+    expect(barClass).toContain('flex')
+    expect(barClass).toContain('items-center')
+    expect(barClass).toContain('justify-center')
+    expect(barClass).not.toMatch(/\bpy-/)
+  })
+})
+
+// A loja do CLIENTE não conta por que o item sumiu. Esgotado, pausado pela casa
+// ou fora do canal chegam à tela como o mesmo "Indisponível" (AVAILABILITY-PLAN
+// §2, tabela de estados: "um único texto"). O WP-2 furou a regra em 17/06 com o
+// selo "Pausado" e a frase "A loja pausou este item temporariamente"; este teste
+// existe para que a próxima tentativa falhe aqui, e não na PDP em produção.
+describe('customer surface never names the reason behind unavailability', () => {
+  function collectSourceFiles (dir: string): string[] {
+    const absolute = join(root, dir)
+    const files: string[] = []
+    for (const entry of readdirSync(absolute)) {
+      const path = join(absolute, entry)
+      const rel = relative(root, path)
+      if (rel.startsWith('app/components/Ui')) continue
+      if (statSync(path).isDirectory()) {
+        files.push(...collectSourceFiles(rel))
+        continue
+      }
+      if (path.endsWith('.vue') || path.endsWith('.ts')) files.push(rel)
+    }
+    return files
+  }
+
+  // Comentário pode (e deve) explicar a regra em português; o proibido é a copy
+  // que o cliente lê. Por isso o teste olha o código sem os comentários.
+  function withoutComments (source: string) {
+    return source
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+  }
+
+  const forbidden = /pausad|pausou|em pausa/i
+
+  it('keeps "pausado" out of every string the storefront renders', () => {
+    const offenders = collectSourceFiles('app')
+      .filter(file => forbidden.test(withoutComments(read(file))))
+
+    expect(offenders).toEqual([])
+  })
+
+  it('shows one label for every unavailable cause on the product page', () => {
+    const pdp = read('app/pages/produto/[sku].vue')
+
+    expect(pdp).not.toContain('unavailableCtaLabel')
+    expect(pdp).not.toContain('is_paused')
+    expect((pdp.match(/'Adicionar' : 'Indisponível'/g) || [])).toHaveLength(2)
+  })
+
+  it('does not branch the shortage sheet on the pause flag', () => {
+    const sheet = read('app/components/SubstituteSheet.vue')
+
+    expect(sheet).not.toContain('is_paused')
+    expect(sheet).not.toContain('paused_title')
+    expect(sheet).not.toContain('paused_message')
+  })
+})
+
+// Semântica: o que a tela AFIRMA tem de estar escrito no contrato que ela recebeu.
+// Cada caso aqui nasceu de uma tela dizendo mais (ou outra coisa) do que o payload.
+describe('surface claims stay inside what the projection actually says', () => {
+  it('never invites "Adicionar" on a card the contract says is not addable', () => {
+    // `can_add_to_cart` falso só ocorre com `availability === 'unavailable'`
+    // (presentation/catalog.py). O card mostrava o botão cinza escrito
+    // "Adicionar" ao lado do próprio selo "Indisponível" — convite e recusa na
+    // mesma peça. A PDP já fazia certo; só o tile mentia.
+    const tile = read('app/components/ProductTile.vue')
+
+    expect(tile).toContain("'Adicionar' : 'Indisponível'")
+    expect(tile).not.toContain('is_paused')
+  })
+
+  it('does not announce availability in a count that includes unavailable items', () => {
+    // O `aria-live` do cardápio contava TODOS os cards da seção — inclusive os
+    // indisponíveis — e chamava o número de "itens disponíveis".
+    const menu = read('app/pages/menu.vue')
+
+    expect(menu).not.toContain('itens disponíveis')
+    expect(menu).toContain('itens no cardápio')
+  })
+
+  it('does not read payment_status, a field deliberately dropped from tracking', () => {
+    // api/tracking.py::_tracking_payload removeu o campo de propósito: o nome
+    // colide com o `payment_status` (enum cru) do 409 de cancelamento. Enquanto
+    // o tipo o declarava, bastava alguém reintroduzir para a tela exibir
+    // "payment_pending" ao cliente.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+    const types = read('app/types/shopman.ts')
+
+    expect(tracking).not.toMatch(/t\.payment_status(?!_label)/)
+    expect(types).not.toMatch(/^\s*payment_status: /m)
+  })
+
+  it('speaks the product name, not the SKU, in the favorite control', () => {
+    const heart = read('app/components/FavoriteHeart.vue')
+
+    expect(heart).not.toContain('`Remover ${sku} dos favoritos`')
+    expect(heart).toContain('${spoken} dos favoritos')
+  })
+
+  it('does not stamp the completed check on the step that is happening now', () => {
+    // `OrderProgressStepProjection.state` separa completed/current/pending/
+    // cancelled. A timeline marcava `data-completed` até no passo atual, então
+    // "Em preparo" saía com o mesmo ✓ verde de um passo já feito.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain("v-else-if=\"step.state === 'current'\"")
+    expect(tracking).toContain('timelineStepStateLabel(step.state)')
+  })
+
+  it('offers the notify bell on a bag line that fell to a real stockout', () => {
+    // A linha caída mostrava foto em sépia, aviso vermelho e stepper travado —
+    // e a única saída era a lixeira. O sino só entra na falta honesta: pausado
+    // segue vendo o mesmo "Indisponível", sem promessa de volta.
+    const bag = read('app/pages/sacola.vue')
+
+    expect(bag).toContain('<StockNotifyButton')
+    expect(bag).toContain('line.is_notifiable')
+    expect(bag).toContain(':subscribed="line.is_notify_subscribed"')
+    expect(bag).not.toContain('line.is_paused')
+  })
+
+  it('puts the product collection back in the breadcrumb, on screen and in JSON-LD', () => {
+    // `breadcrumb_category` já vinha calculado e ninguém lia: a trilha fixa
+    // Início/Cardápio/nome tirava do cliente o caminho de volta para a coleção,
+    // e o rich-result saía sem o nível que o servidor tinha resolvido.
+    const pdp = read('app/pages/produto/[sku].vue')
+
+    expect((pdp.match(/product(\.value)?\.breadcrumb_category/g) || []).length).toBeGreaterThanOrEqual(2)
+  })
+
+  it('takes the payment-method name from the server, not a client map', () => {
+    // O de-para vivia duplicado: renomear "Cartão" no Admin mudava o checkout e
+    // não o acompanhamento — dois nomes para o mesmo pedido.
+    const payment = read('app/presentation/payment.ts')
+    const block = read('app/components/PaymentBlock.vue')
+
+    expect(payment).not.toContain("=== 'pix') return 'Pix'")
+    expect(block).toContain('promise.payment_method_label')
+  })
+
+  it('shows WHEN the order was promised for, not just what and how much', () => {
+    // `when_display` e `eta_display` vinham prontos do servidor e não apareciam
+    // em tela nenhuma: o resumo listava entrega, taxa e pagamento, nunca quando.
+    const tracking = read('app/pages/pedido/[ref]/index.vue')
+
+    expect(tracking).toContain('t.when_display')
+    expect(tracking).toContain('t.eta_display')
+  })
+
+  it('names what the offer could not add, and offers a way out', () => {
+    // `skipped` chegava como lista de strings e a tela só CONTAVA ("alguns itens
+    // ficaram de fora"). Quem clicou num anúncio ficava sem saber o quê e sem
+    // nada a fazer.
+    const offer = read('app/pages/oferta/[ref].vue')
+
+    expect(offer).toContain('v-for="item in skipped"')
+    expect(offer).toContain('<StockNotifyButton')
+    expect(offer).not.toContain('ref<string[]>([])')
+  })
+
+  it('keeps the progress timeline readable by assistive tech', () => {
+    // O item da timeline carregava `aria-hidden` fixo — e com ele sumia o
+    // conteúdo (rótulo do passo + hora), não só o enfeite. O indicador e o
+    // separador, esses sim decorativos, seguem escondidos.
+    const item = read('app/components/Ui/Timeline/Item.vue')
+    const indicator = read('app/components/Ui/Timeline/Indicator.vue')
+
+    expect(item.replace(/<!--[\s\S]*?-->/g, '')).not.toContain('aria-hidden')
+    expect(indicator).toContain('aria-hidden="true"')
   })
 })

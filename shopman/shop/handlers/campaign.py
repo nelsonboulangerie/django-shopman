@@ -17,6 +17,8 @@ import logging
 
 from django.db import transaction
 
+from shopman.shop.handlers._resilient import resilient_receiver
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,13 +45,14 @@ def connect() -> None:
             dispatch_uid="shopman.shop.handlers.campaign.on_product_created",
             weak=False,
         )
-    except ImportError:
+    except ImportError:  # silêncio-deliberado: OfferMan é integração opcional deste app
         pass
 
 
 # ── Receivers ────────────────────────────────────────────────────────
 
 
+@resilient_receiver
 def on_production_changed(sender, product_ref, date, action, work_order, **kwargs) -> None:
     """Fornada concluída → avalia as regras de ``production_finished``.
 
@@ -196,6 +199,7 @@ def _stage_durable_delivery(*, message, topic: str) -> bool:
         DirectiveTerminalError,
         DirectiveTransientError,
     )
+
     from shopman.shop.services.marketing_contracts import MarketingContractError
     from shopman.shop.services.marketing_delivery_runtime import stage_outbox_directive
 
@@ -229,13 +233,20 @@ class AnnouncementHandler:
     def handle(self, *, message, ctx: dict) -> None:
         if _stage_durable_delivery(message=message, topic=self.topic):
             return
-        from shopman.shop.models import Announcement
+        from shopman.shop.models import Announcement, AnnouncementStatus
 
         payload = message.payload or {}
         platform = payload.get("platform", "")
         announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
         if announcement is None:
             logger.warning("campaign.announcement_missing directive=%s", message.pk)
+            return
+        if announcement.status == AnnouncementStatus.SUPERSEDED:
+            logger.info(
+                "campaign.announcement_superseded directive=%s announcement=%s",
+                message.pk,
+                announcement.pk,
+            )
             return
 
         adapter = _posting_adapter(platform)
@@ -334,7 +345,7 @@ class AnnouncementNotifyHandler:
     def handle(self, *, message, ctx: dict) -> None:
         if _stage_durable_delivery(message=message, topic=self.topic):
             return
-        from shopman.shop.models import Announcement
+        from shopman.shop.models import Announcement, AnnouncementStatus
         from shopman.shop.services import audience as audience_service
 
         payload = message.payload or {}
@@ -342,6 +353,13 @@ class AnnouncementNotifyHandler:
         announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
         if announcement is None:
             logger.warning("campaign.notify_announcement_missing directive=%s", message.pk)
+            return
+        if announcement.status == AnnouncementStatus.SUPERSEDED:
+            logger.info(
+                "campaign.notify_announcement_superseded directive=%s announcement=%s",
+                message.pk,
+                announcement.pk,
+            )
             return
 
         context = announcement.trigger_context or {}
@@ -494,6 +512,11 @@ def _send_to(recipients, *, announcement) -> tuple[int, int]:
                 context={
                     **shared,
                     "action_url": personal or link,
+                    # O link COMUM viaja junto para o ManyChat ter o que PERSISTIR no
+                    # perfil sem levar o token de sessão do cliente para dentro do SaaS.
+                    # Ver `_safe_field_value` no adapter — os canais que interpolam na
+                    # hora (SMS, e-mail) seguem usando o `action_url` pessoal.
+                    "action_url_public": link,
                     "customer_name": getattr(recipient, "first_name", "") or "",
                 },
                 backend=backend,
@@ -607,6 +630,15 @@ def _settle(announcement) -> None:
     from django.utils import timezone
 
     from shopman.shop.models import AnnouncementStatus
+
+    current_status = (
+        announcement.__class__.objects.filter(pk=announcement.pk)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if current_status == AnnouncementStatus.SUPERSEDED:
+        announcement.status = current_status
+        return
 
     results = announcement.platform_results or {}
     if not all(_platform_settled(name, results.get(name)) for name in announcement.platforms or []):

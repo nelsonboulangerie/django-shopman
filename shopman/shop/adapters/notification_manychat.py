@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -38,33 +39,63 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     ),
     "order_dispatched": (
         "Olá{customer_name_greeting}! Seu pedido {order_ref} saiu para"
-        " entrega! \U0001f697{courier_tracking_suffix}{tracking_suffix}"
+        " entrega! \U0001f697{courier_tracking_suffix}"
+        "\nQuando receber, é só confirmar por aqui: {tracking_url}"
     ),
     "order_delivered": (
         "Pedido {order_ref} entregue. Obrigado pela preferência! \u2b50{reorder_suffix}"
     ),
     "order_cancelled": (
-        "Seu pedido {order_ref} foi cancelado.{reason_note}\n\nQualquer dúvida, estamos aqui."
+        "Seu pedido {order_ref} foi cancelado.{reason_note}"
+        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
     "order_rejected": (
-        "Seu pedido {order_ref} não pode ser confirmado pelo estabelecimento. "
-        "Motivo: {reason}. Se precisar de ajuda, estamos aqui."
+        "Seu pedido {order_ref} não pôde ser confirmado pelo estabelecimento.{reason_note}"
+        "\n\nVeja os detalhes do pedido por aqui: {tracking_url}"
     ),
+    # Fila de espera (WP-P2E): o chamado tem prazo, e é ele que faz a fila
+    # funcionar. Sem prazo dito, a vaga fica presa a quem não respondeu.
+    # Entrada na loja pelo WhatsApp: a pessoa mandou a palavra e recebe o acesso.
+    # Uso único e vida curta — dizer isso evita o link guardado que não abre depois.
+    "access_link": (
+        "Oi{customer_name_greeting}! Aqui está seu link para entrar na loja:"
+        "\n{access_url}"
+        "\n{cart_note}O link vale por 5 min."
+    ),
+    "waitlist_available": (
+        "Olá{customer_name_greeting}! Sua fornada saiu \U0001f950 "
+        "Confirme o pedido {order_ref} para garantir o seu: {tracking_url}"
+    ),
+    "waitlist_released": (
+        "O prazo de confirmação do pedido {order_ref} passou e liberamos a sua vaga. "
+        "Nada foi cobrado, e é só entrar na fila da próxima fornada. {tracking_url}"
+    ),
+    # Pagar não é o mesmo que ser aceito: enquanto o pedido está `new`, a tela diz
+    # "estamos conferindo a disponibilidade". Prometer preparo aqui era prometer o
+    # que a tela não cumpre.
     "payment_confirmed": (
-        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido. "
-        "Seu pedido seguirá para preparo."
+        "Olá{customer_name_greeting}! Pagamento do pedido {order_ref} recebido."
+        "\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"
     ),
     "payment_requested": (
         "Olá{customer_name_greeting}! Conferimos a disponibilidade do pedido {order_ref}. "
         "Agora falta o pagamento. Acesse: {payment_url}{pix_suffix}"
+    ),
+    # Pedido remoto anotado no PDV: a venda já fechou, falta o cliente pagar pelo
+    # link. "Anotamos", não "conferimos a disponibilidade" — o pão já está separado.
+    "payment_link_sent": (
+        "Olá{customer_name_greeting}! Anotamos seu pedido {order_ref} — total {total}."
+        "\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}"
+        "\nQualquer coisa, é só responder esta mensagem. \U0001f956"
     ),
     "payment_reminder": (
         "Olá{customer_name_greeting}! Seu pedido {order_ref} aguarda"
         " pagamento PIX. Use o código: {copy_paste}"
     ),
     "payment_expired": (
-        "Seu pedido {order_ref} foi cancelado pois o pagamento PIX"
-        " não foi confirmado a tempo."
+        "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido {order_ref}"
+        " dentro do prazo, então liberamos a reserva."
+        "\nSe ainda quiser, é só falar com a gente que refazemos o pedido. \U0001f956"
     ),
     "payment_failed": (
         "Não conseguimos preparar o pagamento do pedido {order_ref}. "
@@ -88,9 +119,10 @@ MESSAGE_TEMPLATES: dict[str, str] = {
         "Saiu do forno agora: {product_name}! {cta} {action_url}"
     ),
     "purchase_request": (
-        "Olá! Pedido de compra {purchase_ref} da {shop_name}: "
-        "{material_name} {purchase_qty_display}. "
-        "Confirme disponibilidade, prazo e valor final."
+        "Olá, {supplier_greeting}! Aqui é da {shop_name}. "
+        "Precisamos repor {material_name}: {purchase_qty_display}. "
+        "Pode confirmar disponibilidade, prazo e valor final? "
+        "(pedido {purchase_ref})"
     ),
     "purchase_receipt_rejected": (
         "Devolução {receipt_ref} registrada para {supplier_name}. "
@@ -170,23 +202,14 @@ def _build_message(template: str, context: dict) -> str:
     1. NotificationTemplate DB record (event=template, is_active=True) → body field
     2. MESSAGE_TEMPLATES hardcoded fallback
     3. Generic fallback with order_ref
-    """
-    ctx = dict(context)
-    ctx["customer_name_greeting"] = (
-        f", {ctx['customer_name']}" if ctx.get("customer_name") else ""
-    )
-    ctx["tracking_suffix"] = (
-        f"\nAcompanhe: {ctx['tracking_url']}" if ctx.get("tracking_url") else ""
-    )
-    ctx["reorder_suffix"] = (
-        f"\nPeca de novo: {ctx['reorder_url']}" if ctx.get("reorder_url") else ""
-    )
-    # Definido por notification._build_context; default vazio p/ chamadas diretas.
-    ctx.setdefault("courier_tracking_suffix", "")
 
+    As chaves auxiliares (``customer_name_greeting``, ``tracking_suffix``, …) são
+    derivadas por ``_notification_templates.derive_context``, dentro do
+    ``render_message`` — ponto único para WhatsApp, SMS e e-mail.
+    """
     from shopman.shop.adapters._notification_templates import render_message
 
-    return render_message(template, ctx, MESSAGE_TEMPLATES)
+    return render_message(template, context, MESSAGE_TEMPLATES)
 
 
 def _load_db_flow_ns(event: str) -> str | None:
@@ -237,6 +260,11 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             template,
         )
         return True
+    from shopman.shop.adapters._notification_templates import derive_context
+
+    # Também no caminho de FLOW: as variáveis do template aprovado saem dos campos
+    # personalizados, e `customer_name_greeting` é uma delas nos textos semeados.
+    ctx = derive_context(ctx)
     subscriber_id = _resolve_subscriber(recipient, mc_config)
     if subscriber_id is None:
         logger.warning("Could not resolve ManyChat subscriber; target redacted")
@@ -257,8 +285,9 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "subscriber_id": subscriber_id,
             "flow_ns": flow_ns,
             # Mantido por rastreabilidade do lado do ManyChat; NÃO é a fonte das
-            # variáveis do flow (ver acima).
-            "flow_token": ctx,
+            # variáveis do flow (ver acima). Vai o mesmo recorte dos campos: mandar o
+            # contexto CRU punha aqui exatamente o que a denylist barrava logo acima.
+            "flow_token": _shareable_context(ctx),
         }
         result = _api_call("/sending/sendFlow", payload, mc_config)
     else:
@@ -267,7 +296,18 @@ def send(recipient: str, template: str, context: dict | None = None, **config) -
             "subscriber_id": subscriber_id,
             "data": {
                 "version": "v2",
-                "content": {"messages": [{"type": "text", "text": message}]},
+                "content": {
+                    # ⚠️ DECLARAR O CANAL. Sem esta linha o ManyChat trata o envio
+                    # como Messenger e avalia a janela de 24h DE LÁ — que para um
+                    # assinante de WhatsApp nunca abriu. O sintoma foi um 400 com
+                    # o código 3011 dizendo "última interação há 19521h" (mais de
+                    # dois anos) para alguém que tinha ACABADO de mandar mensagem.
+                    # A pista estava na própria recusa: ela fala em "message tag",
+                    # que é conceito do Messenger — o WhatsApp tem template e
+                    # janela, não tag.
+                    "type": "whatsapp",
+                    "messages": [{"type": "text", "text": message}],
+                },
             },
         }
         result = _api_call("/sending/sendContent", payload, mc_config)
@@ -286,6 +326,74 @@ _FIELD_DENYLIST = frozenset({
     "customer_ref", "customer_uuid", "hold_ids",
 })
 
+#: Sufixo das chaves auxiliares: existem só para o link pessoal que SAI daqui poder ser
+#: substituído pelo link COMUM (ver `_safe_field_value`). Elas mesmas nunca viajam.
+#: É sufixo, e não uma lista, porque toda chave de link ganhou a sua gêmea pública —
+#: uma lista voltaria a ficar para trás na próxima.
+_PUBLIC_SUFFIX = "_public"
+
+
+#: Token de acesso na query (`/a?t=<token>`) — a forma do link pessoal cunhado em
+#: `campaign_identity.personal_link`.
+_ACCESS_TOKEN_IN_QUERY = re.compile(r"[?&]t=")
+
+
+def _safe_field_value(name: str, value, ctx: dict):
+    """O valor que pode SAIR daqui, ou ``None`` para "não mande este campo".
+
+    ⚠️ Os links de cliente (`tracking_url`, `payment_url`, `reorder_url`, `action_url`)
+    carregam um LINK DE ACESSO PESSOAL: o despacho o cunha por destinatário, ele vale
+    horas e cria sessão de cliente identificado. Como campo personalizado, esse token
+    passa a viver em texto claro no perfil do cliente dentro de uma ferramenta SaaS de
+    marketing — legível por qualquer pessoa com acesso à conta, e utilizável enquanto o
+    cliente não clicar.
+
+    ⚠️ E simplesmente NÃO mandar não serve: o flow do ManyChat não lê o `flow_token`,
+    as variáveis dele saem dos campos personalizados. Um link ausente sai como botão EM
+    BRANCO, e trocar um vazamento por uma CTA quebrada não é conserto.
+
+    Então o que sai é o link COMUM, informado por quem chama em `<nome>_public`. O
+    cliente chega anônimo por esse caminho e a loja pede login — é o preço, e é o lado
+    seguro dele.
+
+    ⚠️ A recusa vale para QUALQUER chave, não para uma lista delas. Ela nasceu olhando
+    só o `action_url` (campanha/estoque), e por isso não via os três links que TODO aviso
+    de pedido carrega: `tracking_url`, `payment_url` e `reorder_url` saíam com o token
+    inteiro. Era inerte só porque nenhum flow estava mapeado — mapear o primeiro é que
+    ligava o vazamento. Filtro que depende de lembrarem de o inscrever não é filtro.
+    """
+    if not _ACCESS_TOKEN_IN_QUERY.search(str(value)):
+        return value
+    public = str(ctx.get(f"{name}{_PUBLIC_SUFFIX}") or "").strip()
+    if public and not _ACCESS_TOKEN_IN_QUERY.search(public):
+        return public
+    return None
+
+
+def _shareable_context(ctx: dict) -> dict:
+    """O recorte do contexto que pode SAIR daqui para o ManyChat.
+
+    Um só filtro para os dois caminhos que mandam contexto — os campos personalizados
+    e o `flow_token`. Eram dois antes, e o `flow_token` mandava o contexto CRU: o que a
+    denylist barrava no perfil saía inteiro no corpo do envio. Filtro que vale em
+    metade das saídas não é filtro.
+    """
+    shareable: dict[str, str] = {}
+    for name, value in (ctx or {}).items():
+        if (
+            name in _FIELD_DENYLIST
+            or name.endswith(_PUBLIC_SUFFIX)
+            or not isinstance(value, (str, int, float))
+        ):
+            continue
+        safe = _safe_field_value(name, value, ctx or {})
+        if safe is None:
+            continue
+        text = str(safe).strip()
+        if text:
+            shareable[name] = text
+    return shareable
+
 
 def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
     """Gravar os valores do contexto como campos personalizados do assinante.
@@ -299,12 +407,7 @@ def _push_custom_fields(subscriber_id: str, ctx: dict, config: dict) -> int:
     do vocabulário de integração.
     """
     pushed = 0
-    for name, value in (ctx or {}).items():
-        if name in _FIELD_DENYLIST or not isinstance(value, (str, int, float)):
-            continue
-        text = str(value).strip()
-        if not text:
-            continue
+    for name, text in _shareable_context(ctx).items():
         result = _api_call(
             "/subscriber/setCustomFieldByName",
             {"subscriber_id": subscriber_id, "field_name": name, "field_value": text},
@@ -325,3 +428,119 @@ def is_available(recipient: str | None = None, **config) -> bool:
     """Check if ManyChat adapter is configured and available."""
     mc_config = _get_config()
     return bool(mc_config.get("api_token"))
+
+
+# ── Concierge de WhatsApp ───────────────────────────────────────────────
+#
+# Dois verbos que a conversa por IA precisa e que as notificações de pedido não
+# tinham: texto LIVRE (a resposta do turno, sem template) e o campo personalizado
+# que o flow do ManyChat consulta antes de chamar a casa (o gate do handoff).
+
+#: Teto de caracteres de uma mensagem de texto no WhatsApp (via ManyChat).
+TEXT_MAX_CHARS = 4000
+
+
+def _prepare_call(subscriber_id: str | int, what: str) -> tuple[dict | None, int | None]:
+    """Config + assinante como int, ou ``(None, None)`` quando não dá para chamar.
+
+    ``what`` só serve para o log. Sem token a chamada nem sai (aviso no log,
+    ``False`` para quem chamou); em dev a trava ``inert`` deixa tudo no log.
+    """
+    mc_config = _get_config()
+    if not mc_config.get("api_token"):
+        logger.warning("ManyChat API token not configured (%s)", what)
+        return None, None
+    # Só dígitos: "+5543..." é telefone, não assinante (ver `_resolve_subscriber`).
+    raw = str(subscriber_id or "").strip()
+    if not raw.isdigit():
+        logger.warning("ManyChat %s: subscriber_id inválido: %r", what, subscriber_id)
+        return None, None
+    return mc_config, int(raw)
+
+
+def send_text(subscriber_id: str | int, text: str) -> bool:
+    """Manda um texto livre ao assinante pelo WhatsApp (``sendContent``).
+
+    É a resposta do concierge. Ela nasce dentro da janela de 24 h por construção
+    (o cliente acabou de escrever), então não precisa de template aprovado: vai
+    como mensagem comum, do jeito que o modelo escreveu. A declaração
+    ``"type": "whatsapp"`` é a mesma do ``send`` e é o que faz o ManyChat avaliar
+    a janela do WhatsApp, e não a do Messenger.
+
+    Texto acima de ``TEXT_MAX_CHARS`` é cortado com aviso no log: o ManyChat
+    recusa a mensagem inteira em vez de quebrá-la, e resposta nenhuma é pior que
+    resposta sem o rabo.
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+    mc_config, subscriber = _prepare_call(subscriber_id, "send_text")
+    if mc_config is None:
+        return False
+
+    if len(text) > TEXT_MAX_CHARS:
+        logger.warning(
+            "ManyChat send_text: texto com %d caracteres cortado em %d (subscriber=%s)",
+            len(text), TEXT_MAX_CHARS, subscriber,
+        )
+        text = text[:TEXT_MAX_CHARS]
+
+    from ._external import inert
+
+    if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
+        logger.info("ManyChat externo inerte (trava dev/seed): send_text -> %s: %s", subscriber, text[:120])
+        return True
+
+    payload = {
+        "subscriber_id": subscriber,
+        "data": {
+            "version": "v2",
+            "content": {
+                "type": "whatsapp",
+                "messages": [{"type": "text", "text": text}],
+            },
+        },
+    }
+    result = _api_call("/sending/sendContent", payload, mc_config)
+    if not result["success"]:
+        logger.warning("ManyChat send_text failed: %s", result.get("error"))
+    return bool(result["success"])
+
+
+def set_custom_field(subscriber_id: str | int, field_name: str, value: str) -> bool:
+    """Grava UM campo personalizado do assinante (``setCustomFieldByName``).
+
+    O concierge usa isso para o handoff: não existe API do ManyChat para pausar a
+    automação de um contato, então o combinado entre o flow e a casa é um campo
+    (``SHOPMAN_CONCIERGE["handoff_field"]``) que o flow lê ANTES de chamar o
+    webhook. ``"1"`` = a equipe está na conversa, o flow não chama; vazio = o
+    concierge responde. O campo precisa existir no ManyChat com o mesmo nome.
+    """
+    field_name = (field_name or "").strip()
+    if not field_name:
+        logger.warning("ManyChat set_custom_field: field_name vazio")
+        return False
+    mc_config, subscriber = _prepare_call(subscriber_id, "set_custom_field")
+    if mc_config is None:
+        return False
+
+    from ._external import inert
+
+    if inert("SHOPMAN_MANYCHAT_ALLOW_IN_DEBUG"):
+        logger.info(
+            "ManyChat externo inerte (trava dev/seed): set_custom_field %s=%r -> %s",
+            field_name, value, subscriber,
+        )
+        return True
+
+    result = _api_call(
+        "/subscriber/setCustomFieldByName",
+        {"subscriber_id": subscriber, "field_name": field_name, "field_value": "" if value is None else str(value)},
+        mc_config,
+    )
+    if not result.get("success"):
+        logger.warning(
+            "ManyChat custom field não gravado: %s (%s). Crie o campo com este nome no ManyChat.",
+            field_name, result.get("error"),
+        )
+    return bool(result.get("success"))

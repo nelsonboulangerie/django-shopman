@@ -142,6 +142,30 @@ class PinResetTests(TestCase):
         resp = self.client.post(RESET, {"username": "ghost"}, content_type="application/json")
         self.assertEqual(resp.status_code, 404)
 
+    def test_reset_refuses_superuser_target(self):
+        """A Gerente não vira dona da casa redefinindo o PIN do dono.
+
+        A cadeia que isto fecha, medida no código em 01/09: `manage_operators`
+        permitia `reset` sobre a conta superusuária, a resposta devolvia o PIN
+        temporário EM CLARO, e `OperatorUnlockView` fazia `login()` com ele —
+        `_eligible` deixa passar porque `has_perm` de superusuário é sempre True.
+        O cookie de sessão sai com `Domain=.<dominio>`, então a aba ao lado abria
+        o /admin/ como dono. É o mesmo buraco que `station_trust.autonomous_account`
+        já recusa para o totem autônomo; faltava a recusa no caminho do PIN.
+        """
+        dono = User.objects.create_superuser("dono", password="x")
+        dono.is_staff = True
+        dono.save(update_fields=["is_staff"])
+        PinCredential.set_for(dono, "1234")
+
+        self.client.force_login(self.manager)
+        resp = self.client.post(RESET, {"username": "dono"}, content_type="application/json")
+
+        self.assertEqual(resp.status_code, 403)
+        self.assertEqual(resp.json()["error"]["code"], "superuser_target")
+        # E o PIN do dono continua sendo o que era: a recusa não pode ter escrito nada.
+        self.assertTrue(PinCredential.objects.get(user=dono).verify("1234"))
+
     def test_reset_temp_pin_violating_policy_rejected(self):
         self.client.force_login(self.manager)
         resp = self.client.post(

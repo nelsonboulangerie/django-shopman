@@ -12,7 +12,11 @@ export default defineNuxtConfig({
   runtimeConfig: {
     djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     public: {
-      djangoPublicBaseUrl:
+      // O NOME da chave é o contrato com a env: o Nuxt deriva
+      // public.djangoBaseUrl <- NUXT_PUBLIC_DJANGO_BASE_URL. Com outro nome
+      // (era djangoPublicBaseUrl) a env do App Platform é ignorada em runtime
+      // e o bundle serve o fallback 127.0.0.1 — links quebrados no ar, 28/08.
+      djangoBaseUrl:
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
       // A Central é a casa: o rail começa colapsado (o operador abre se quiser).
       railDefaultState: "collapsed",

@@ -3,11 +3,11 @@
 // operador: confirmação destrutiva + desafio gerencial num só diálogo.
 //
 // ⚠️ A identificação vem do `OperatorIdentify` do operator-kit — a MESMA peça da
-// tela de bloqueio e do `PosManagerAuthDialog`. Este era o TERCEIRO componente
+// tela de bloqueio e do `OperatorManagerAuth`. Este era o TERCEIRO componente
 // desenhando lista + teclado por conta própria, e o terceiro em que o crachá do
 // gerente não valia: quem tem o crachá no pescoço digitava o nome à mão.
 //
-// A lista de gerentes é a mesma do `PosManagerAuthDialog`; vazia, cai no campo
+// A lista de gerentes é a mesma do `OperatorManagerAuth`; vazia, cai no campo
 // de nome, que é a única porta quando ninguém foi provisionado.
 import type { POSManagerProjection } from "~/types/pos";
 
@@ -17,6 +17,8 @@ const props = defineProps<{
   reason: string;
   maxAgeMinutes?: number;
   managers?: POSManagerProjection[];
+  /** Quem CONTINUA operando depois da assinatura. Ver OperatorManagerAuth. */
+  operatorName?: string;
   busy?: boolean;
   error?: string;
 }>();
@@ -60,6 +62,10 @@ function onBadge(token: string) {
             Disponível por até {{ maxAgeMinutes }} minutos após a venda; depois, cancele pelo gestor.
           </template>
         </UiDialogDescription>
+        <!-- Autorizar não é logar: a sessão não troca. Ver OperatorManagerAuth. -->
+        <p v-if="operatorName" class="text-sm font-medium text-foreground">
+          Você continua como {{ operatorName }}.
+        </p>
       </UiDialogHeader>
 
       <div class="flex flex-col items-center gap-4 pb-1">

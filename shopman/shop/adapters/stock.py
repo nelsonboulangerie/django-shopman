@@ -143,6 +143,7 @@ def create_hold(
             # da leitura — vitrine e hold nunca discordam.
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
             allow_demand=allow_demand,
             **hold_kwargs,
         )
@@ -152,26 +153,35 @@ def create_hold(
         pk = int(hold_id.split(":")[1])
         hold = Hold.objects.get(pk=pk)
 
-        # Planned holds (AVAILABILITY-PLAN §8): holds on planned quants and
-        # demand-only holds (quant=None) are INDEFINITE. The TTL starts
-        # running only at materialization (``planning.realize()`` fills in
-        # ``expires_at`` when the planned stock is produced). The old 48h
-        # TTL on planned holds meant customers could silently lose their
-        # reservation before production caught up — unacceptable.
+        # Duas reservas SEM PRAZO, e elas não são a mesma coisa (AVAILABILITY-PLAN §8):
         #
-        # ``metadata.planned`` is the durable marker used by the cart
-        # projection to classify the line as "Aguardando confirmação" or
-        # "Tudo pronto! Confirme": once materialize() runs, the hold keeps
-        # the flag AND gets a TTL, which is how the UI distinguishes a
-        # post-materialization hold from a vanilla 30-min cart hold.
+        #   • **fornada planejada** (``quant.target_date`` preenchido) — o pão ainda
+        #     não existe; a pessoa espera o lote sair. Isto É fila de espera.
+        #   • **demanda** (``quant is None``, política ``demand_ok``) — café,
+        #     Jambon-Beurre, croque: montado na hora, não sai de lote nenhum. Não
+        #     existe fila em que entrar, porque não existe lote a esperar.
+        #
+        # Nas duas o TTL fica desligado (a fornada porque o relógio só começa na
+        # materialização, a demanda porque não há o que materializar), e por isso
+        # elas pareciam iguais. Mas só a primeira é fila.
+        #
+        # ⚠️ Enquanto ``metadata.planned`` carimbava as DUAS, um café na sacola lia
+        # "Lista de espera", a revisão do pedido dizia "avisamos quando ficarem
+        # prontos", e o acompanhamento abria o painel de fila (``state_for`` →
+        # ``fermata``) — três telas mentindo a partir de um carimbo só. E o próprio
+        # código já sabia distinguir: ``is_planned`` saía ``False`` para a demanda, e
+        # a distinção era jogada fora na linha seguinte.
+        #
+        # Agora cada uma tem a sua marca. Quem pergunta "isto é fila?" lê
+        # ``planned``; quem pergunta "isto é preparado na hora?" lê ``on_demand``.
         is_planned = False
-        is_indefinite = hold.quant is None or (
-            hold.quant is not None and hold.quant.target_date is not None
-        )
+        is_on_demand = hold.quant is None
+        is_indefinite = is_on_demand or hold.quant.target_date is not None
         if is_indefinite:
-            is_planned = hold.quant is not None and hold.quant.target_date is not None
+            is_planned = not is_on_demand
+            marker = "on_demand" if is_on_demand else "planned"
             hold.expires_at = None
-            hold.metadata = {**(hold.metadata or {}), "planned": True}
+            hold.metadata = {**(hold.metadata or {}), marker: True}
             hold.save(update_fields=["expires_at", "metadata"])
 
         return {
@@ -272,10 +282,7 @@ def fulfill_hold(hold_id: str, *, qty: Decimal | None = None) -> dict:
         return {
             "success": False,
             "error_code": "insufficient_quantity",
-            "message": (
-                "O banco recusou a baixa: o saldo do sistema está acima do "
-                f"físico. ({e})"
-            ),
+            "message": (f"O banco recusou a baixa: o saldo do sistema está acima do físico. ({e})"),
         }
 
 
@@ -287,8 +294,14 @@ def release_holds(hold_ids: list[str]) -> None:
     for hold_id in hold_ids:
         try:
             stock.release(hold_id, reason="Liberado via Shopman")
-        except StockError:
-            logger.debug("release_holds: Hold %s already released or invalid", hold_id)
+        except StockError as exc:
+            if exc.code == "INVALID_STATUS":
+                logger.info("release_holds: Hold %s already terminal", hold_id)
+                continue
+            # INVALID_HOLD e demais falhas não são idempotência comprovada. O
+            # caller decide se pode compensar; a fila depende desta exceção
+            # para desfazer atomicamente uma liberação multi-item.
+            raise
 
 
 def release_holds_for_reference(reference: str) -> int:
@@ -303,8 +316,13 @@ def release_holds_for_reference(reference: str) -> int:
             try:
                 stock.release(hold.hold_id, reason="Idempotency cleanup")
                 count += 1
-            except StockError:
-                pass
+            except StockError as exc:
+                if exc.code != "INVALID_STATUS":
+                    raise
+                logger.info(
+                    "release_holds_for_reference: Hold %s already terminal",
+                    hold.hold_id,
+                )
         return count
     except Exception:
         logger.warning("release_all_holds: unexpected error", exc_info=True)
@@ -388,11 +406,7 @@ def return_fulfilled_hold(hold_id: str, qty: Decimal, *, reference: str, reason:
         pk = int(hold_id.split(":")[1])
     except (IndexError, ValueError):
         return False
-    hold = (
-        Hold.objects.select_related("quant__position")
-        .filter(pk=pk, status=HoldStatus.FULFILLED)
-        .first()
-    )
+    hold = Hold.objects.select_related("quant__position").filter(pk=pk, status=HoldStatus.FULFILLED).first()
     if hold is None:
         return False
 
@@ -418,6 +432,7 @@ def get_availability(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> dict:
     """Return availability info for a SKU.
 
@@ -435,6 +450,7 @@ def get_availability(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
 
 
@@ -442,8 +458,9 @@ def get_channel_scope(channel_ref: str | None) -> dict:
     """Return stock scope for a channel.
 
     Keys: ``safety_margin`` (int), ``allowed_positions`` (list[str] | None),
-    ``excluded_positions`` (list[str] | None), ``expiry_margin_days`` (int)
-    and ``sells_nonconforming`` (bool) — os dois gates de LOTE do C2: a
+    ``excluded_positions`` (list[str] | None), ``expiry_margin_days`` (int),
+    ``sells_nonconforming`` (compatibilidade) e a política resolvida
+    ``allowed_quality_grade_refs`` — os dois gates de LOTE do C2: a
     posição diz onde o estoque conta; o lote diz o que pode ser oferecido
     (near-expiry fora com margem; não conforme só com decisão explícita).
 
@@ -458,15 +475,26 @@ def get_channel_scope(channel_ref: str | None) -> dict:
 
         return availability_scope_for_channel(channel_ref)
 
-    from shopman.shop.config import ChannelConfig
+    from shopman.shop.config import ChannelConfig, quality_grade_refs_for_channel
 
     cfg = ChannelConfig.for_channel(channel_ref)
+    allowed_quality_grade_refs = quality_grade_refs_for_channel(
+        channel_ref,
+        sells_nonconforming=cfg.stock.sells_nonconforming,
+    )
+    sells_nonconforming = allowed_quality_grade_refs is None
     return {
         "safety_margin": cfg.stock.safety_margin,
         "allowed_positions": cfg.stock.allowed_positions,
         "excluded_positions": cfg.stock.excluded_positions,
         "expiry_margin_days": cfg.stock.expiry_margin_days,
-        "sells_nonconforming": cfg.stock.sells_nonconforming,
+        "sells_nonconforming": sells_nonconforming,
+        # A configuração continua binária e simples. O orquestrador traduz a
+        # política em refs opacas antes de atravessar a fronteira do Stockman.
+        # Canais que não permitem markdown aceitam exclusivamente qualidade OK.
+        "allowed_quality_grade_refs": (
+            None if allowed_quality_grade_refs is None else list(allowed_quality_grade_refs)
+        ),
     }
 
 
@@ -480,6 +508,7 @@ def get_promise_decision(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ):
     """Return Stockman's explicit operational promise decision for a SKU."""
     from shopman.stockman.services.availability import promise_decision_for_sku
@@ -493,6 +522,7 @@ def get_promise_decision(
         excluded_positions=excluded_positions,
         expiry_margin_days=expiry_margin_days,
         include_nonconforming=include_nonconforming,
+        allowed_quality_grade_refs=allowed_quality_grade_refs,
     )
 
 

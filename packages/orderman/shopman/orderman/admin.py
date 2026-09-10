@@ -4,11 +4,9 @@ import logging
 from decimal import Decimal
 
 from django import forms
-from django.contrib import admin, messages
-from django.db import models
+from django.contrib import admin
 from django.http import HttpResponseRedirect
 from django.urls import reverse
-from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from shopman.orderman.integrations import get_shop_channel_model
@@ -90,7 +88,6 @@ except ImportError:
             django_kwargs["boolean"] = kwargs["boolean"]
         return admin.display(**django_kwargs)
 
-from shopman.orderman import registry
 from shopman.orderman.models import (
     Directive,
     Fulfillment,
@@ -285,7 +282,13 @@ class SessionAdmin(ModelAdmin):
 
     actions_detail = ["history_detail_action"]
 
-    @action(description=_("Histórico"), url_path="history-action", icon="history")
+    # Leitura, não mutação — mas a URL merece a mesma régua das outras.
+    @action(
+        description=_("Histórico"),
+        url_path="history-action",
+        icon="history",
+        permissions=["view"],
+    )
     def history_detail_action(self, request, object_id):
         return history_action(self, request, object_id)
 
@@ -525,7 +528,13 @@ class OrderAdmin(ModelAdmin):
     actions_detail = ["history_detail_action"]
     list_sections = [OrderItemSection] if UNFOLD_AVAILABLE else []
 
-    @action(description=_("Histórico"), url_path="history-action", icon="history")
+    # Leitura, não mutação — mas a URL merece a mesma régua das outras.
+    @action(
+        description=_("Histórico"),
+        url_path="history-action",
+        icon="history",
+        permissions=["view"],
+    )
     def history_detail_action(self, request, object_id):
         return history_action(self, request, object_id)
 
@@ -763,9 +772,6 @@ class DirectiveAdmin(ModelAdmin):
     compressed_fields = True
     warn_unsaved_form = True
 
-    actions = ["execute_now_action"]
-    actions_row = ["execute_row"]
-
     fieldsets = (
         (
             _("Diretiva"),
@@ -794,9 +800,14 @@ class DirectiveAdmin(ModelAdmin):
     )
 
     actions_detail = ["history_detail_action"]
-    actions_submit_line = ["execute_now_detail_action"]
 
-    @action(description=_("Histórico"), url_path="history-action", icon="history")
+    # Leitura, não mutação — mas a URL merece a mesma régua das outras.
+    @action(
+        description=_("Histórico"),
+        url_path="history-action",
+        icon="history",
+        permissions=["view"],
+    )
     def history_detail_action(self, request, object_id):
         return history_action(self, request, object_id)
 
@@ -807,112 +818,36 @@ class DirectiveAdmin(ModelAdmin):
         context["show_save_and_continue"] = False
         return super().render_change_form(request, context, add, change, form_url, obj)
 
-    def _execute_directive(self, request, directive: Directive) -> tuple[bool, str | None]:
-        """
-        Executa a diretiva usando o handler registrado.
+    # ⚠️ NÃO existe "Executar agora" aqui, e a ausência é a decisão.
+    #
+    # O Admin da casa é CRUD, config, relatórios e AUDITORIA — execução operacional
+    # é exclusiva das superfícies Nuxt dedicadas, e páginas Admin de operação são
+    # GET-only por desenho (decisão do dono em 11/07/2026; mesmo corte que fez o
+    # console de produção virar leitura no commit 01cf765f, com `handle_production_post`,
+    # `bulk_create` e `bulk_plan` REMOVIDOS em vez de repermissionados).
+    #
+    # Esta tela tinha três botões de execução — linha, lote e submit-line — que o
+    # Unfold servia embrulhados só em `admin_site.admin_view`: `is_active and
+    # is_staff`, zero permissão de modelo, e executando em GET. Entre os 25 tópicos
+    # alcançáveis estavam `payment.refund`, `fiscal.emit_nfce`, `fiscal.cancel_nfce`,
+    # `loyalty.revoke` e `announcement.publish` — este último com efeito PÚBLICO e
+    # sem a trava de idempotência que o estorno tem.
+    #
+    # Remover não custa capacidade nenhuma, e é por isso que remover foi o caminho:
+    #
+    #   * a fila roda sozinha — `process_directives` drena `queued` com
+    #     `available_at__lte=now`, e o `maintenance_worker` a chama no ciclo;
+    #   * directive que esgota tentativas NÃO silencia: `check_directive_health`
+    #     vira `OperatorAlert` (a observabilidade que a ADR-003 exige, justamente
+    #     porque não há dead-letter queue);
+    #   * para a emergência de verdade existe `manage.py process_directives`.
+    #
+    # A tela continua inteira como AUDITORIA: campos readonly, histórico, filtros e
+    # o badge de status — que é o que a régua permite, e o que o gestor precisa.
+    #
+    # Se um dia forçar um tópico virar necessidade real de operação, o botão nasce
+    # no app Nuxt de quem opera AQUELE tópico. Não aqui.
 
-        Returns:
-            (ok, error_message)
-        """
-        handler = registry.get_directive_handler(directive.topic)
-        if handler is None:
-            return False, _("Nenhum handler registrado para este tópico.")
-
-        now = timezone.now()
-        if directive.status not in ("queued", "failed"):
-            return False, _("A diretiva não está em fila ou com erro.")
-        if directive.available_at and directive.available_at > now:
-            return False, _("A diretiva ainda não está disponível para execução.")
-
-        Directive.objects.filter(pk=directive.pk).update(
-            status="running",
-            attempts=models.F("attempts") + 1,
-            started_at=now,
-            updated_at=now,
-        )
-        directive.refresh_from_db()
-
-        try:
-            handler.handle(
-                message=directive,
-                ctx={"actor": getattr(getattr(request, "user", None), "username", None) or "admin"},
-            )
-        except Exception as exc:  # pragma: no cover - logging side-effect
-            logger.exception("Falha ao executar diretiva %s #%s", directive.topic, directive.pk)
-            directive.status = "failed"
-            directive.last_error = str(exc)
-            directive.save(update_fields=["status", "last_error", "updated_at"])
-            return False, str(exc)
-
-        # Fallback: se o handler não marcou status, finalize como done.
-        directive.refresh_from_db()
-        if directive.status == "running":
-            directive.status = "done"
-            directive.last_error = ""
-            directive.save(update_fields=["status", "last_error", "updated_at"])
-        return True, None
-
-    @action(description=_("Executar agora"), url_path="execute-now", icon="play_arrow")
-    def execute_now_detail_action(self, request, object_id):
-        directive = self.get_object(request, object_id)
-        if directive is None:
-            self.message_user(request, _("Diretiva não encontrada."), level="error")
-            return HttpResponseRedirect(reverse("admin:orderman_directive_changelist"))
-
-        ok, err = self._execute_directive(request, directive)
-        if ok:
-            self.message_user(request, _("Diretiva executada."))
-        else:
-            self.message_user(request, err or _("Falha ao executar diretiva."), level="error")
-
-        return HttpResponseRedirect(reverse("admin:orderman_directive_change", args=[object_id]))
-
-    @action(
-        description=_("Executar ▸"),
-        url_path="execute-row",
-        icon="play_arrow",
-        variant=ActionVariant.SUCCESS,
-    )
-    def execute_row(self, request, object_id):
-        directive = self.get_object(request, object_id)
-        if directive is None:
-            messages.error(request, _("Diretiva não encontrada."))
-            return HttpResponseRedirect(reverse("admin:orderman_directive_changelist"))
-
-        if directive.status not in ("queued", "failed"):
-            messages.warning(request, _("Diretiva não está em fila ou com erro."))
-            return HttpResponseRedirect(reverse("admin:orderman_directive_changelist"))
-
-        ok, err = self._execute_directive(request, directive)
-        if ok:
-            messages.success(request, _("Diretiva executada."))
-        else:
-            messages.error(request, err or _("Falha ao executar diretiva."))
-
-        return HttpResponseRedirect(reverse("admin:orderman_directive_changelist"))
-
-    @admin.action(description=_("Executar agora"))
-    def execute_now_action(self, request, queryset):
-        ok_count = 0
-        skip_count = 0
-        fail_count = 0
-
-        for directive in queryset:
-            ok, err = self._execute_directive(request, directive)
-            if ok:
-                ok_count += 1
-            else:
-                if err and "handler" in str(err).lower():
-                    skip_count += 1
-                else:
-                    fail_count += 1
-
-        if ok_count:
-            self.message_user(request, _("Diretivas executadas: %(n)s") % {"n": ok_count})
-        if skip_count:
-            self.message_user(request, _("Diretivas ignoradas (sem handler): %(n)s") % {"n": skip_count}, level="warning")
-        if fail_count:
-            self.message_user(request, _("Diretivas com erro: %(n)s") % {"n": fail_count}, level="error")
 
     # Cores de referência BADGES:
     # - Azul=#5EB1EF (info), Amarelo=#E2A336 (warning), Verde=#5BB98B (success), Vermelho=#EB8E90 (danger), Cinza=secondary
@@ -971,7 +906,13 @@ class IdempotencyKeyAdmin(ModelAdmin):
 
     actions_detail = ["history_detail_action"]
 
-    @action(description=_("Histórico"), url_path="history-action", icon="history")
+    # Leitura, não mutação — mas a URL merece a mesma régua das outras.
+    @action(
+        description=_("Histórico"),
+        url_path="history-action",
+        icon="history",
+        permissions=["view"],
+    )
     def history_detail_action(self, request, object_id):
         return history_action(self, request, object_id)
 
@@ -1032,7 +973,13 @@ class FulfillmentAdmin(ModelAdmin):
 
     actions_detail = ["history_detail_action"]
 
-    @action(description=_("Histórico"), url_path="history-action", icon="history")
+    # Leitura, não mutação — mas a URL merece a mesma régua das outras.
+    @action(
+        description=_("Histórico"),
+        url_path="history-action",
+        icon="history",
+        permissions=["view"],
+    )
     def history_detail_action(self, request, object_id):
         return history_action(self, request, object_id)
 

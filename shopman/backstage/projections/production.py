@@ -14,7 +14,9 @@ import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal
+from typing import Literal
 
+from django.conf import settings
 from django.utils import timezone
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
@@ -27,27 +29,90 @@ from shopman.backstage.presentation.status import order_status_label
 logger = logging.getLogger(__name__)
 
 
-# ── Status labels & colors ─────────────────────────────────────────────
+# ── Status labels & semantic tones ─────────────────────────────────────
 # ``WO_STATUS_*`` are WorkOrder states — surface-local presentation, owned by
 # the production board. (Order status labels come from the copy registry via
 # ``order_status_label``.)
 
 WO_STATUS_LABELS: dict[str, str] = {
     "planned": "Planejado",
-    "started": "Iniciado",
+    "started": "Produzido",
     "finished": "Concluído",
     "void": "Estornado",
 }
 
-WO_STATUS_COLORS: dict[str, str] = {
-    "planned": "bg-info/10 text-info border border-info/20",
-    "started": "bg-warning/10 text-warning border border-warning/20",
-    "finished": "bg-success/10 text-success border border-success/20",
-    "void": "bg-danger/10 text-danger border border-danger/20",
+WO_STATUS_TONES: dict[str, str] = {
+    "planned": "info",
+    "started": "warning",
+    "finished": "success",
+    "void": "danger",
 }
+
+PRODUCTION_CONTRACT_VERSION = 1
 
 
 # ── Projections ────────────────────────────────────────────────────────
+
+
+@dataclass(frozen=True)
+class ProductionActionIdempotencyProjection:
+    """How the client must identify retries of one projected mutation."""
+
+    required: bool
+    key_scope: str
+
+
+@dataclass(frozen=True)
+class ProductionActionConfirmationProjection:
+    """Confirmation UX required before dispatching a projected mutation."""
+
+    required: bool
+    reason_required: bool
+    title: str
+    confirm_label: str
+
+
+@dataclass(frozen=True)
+class ProductionActionApprovalRequirementProjection:
+    """An additional authority requirement; D1 may extend this contract."""
+
+    capability: str
+    approver_must_differ: bool
+    reason_required: bool
+
+
+@dataclass(frozen=True)
+class ProductionActionProjection:
+    """A server-owned action offered by an operational projection."""
+
+    ref: str
+    kind: Literal[
+        "plan",
+        "start",
+        "advance_step",
+        "finish",
+        "correct_qc",
+        "quick_finish",
+        "void",
+        "oven_arm",
+        "oven_conclude",
+        "acknowledge_alert",
+        "open_alert_context",
+    ]
+    label: str
+    priority: int
+    enabled: bool
+    reason: str
+    method: Literal["GET", "POST"]
+    href: str
+    payload_schema: str
+    expected_rev: int | None
+    idempotency: ProductionActionIdempotencyProjection
+    confirmation: ProductionActionConfirmationProjection
+    approval_requirement: ProductionActionApprovalRequirementProjection | None
+    source_alert_ref: str | None
+    source_alert_effect: Literal["keeps_open", "acknowledges", "resolves"] | None
+    proof: str
 
 
 @dataclass(frozen=True)
@@ -66,6 +131,11 @@ class WorkOrderCardProjection:
 
     pk: int
     ref: str
+    #: A revisão que ESTE card leu. O cliente a devolve na mutação, e o core compara
+    #: antes de escrever (`_check_rev`). Sem ela, duas bancadas ajustando a mesma
+    #: fornada sobre um quadro de sessenta segundos de idade fazem o último POST vencer
+    #: — sem 409, sem aviso, e sem ninguém saber que o outro número existiu.
+    rev: int
     recipe_pk: int
     recipe_ref: str
     recipe_name: str
@@ -73,7 +143,7 @@ class WorkOrderCardProjection:
     output_sku: str
     status: str
     status_label: str
-    status_color: str
+    tone: str
     planned_qty: str  # pre-formatted, e.g. "100"
     started_qty: str  # "" if not started
     finished_qty: str  # "" if not finished
@@ -111,7 +181,9 @@ class RecipeOptionProjection:
 
     pk: int
     ref: str
-    name: str  # output_sku or recipe ref display
+    #: O nome legível da ficha (``Recipe.name``). Cai no SKU produzido, e só
+    #: depois no ref, quando a ficha não tem nome — a linha continua na tela.
+    name: str
 
 
 @dataclass(frozen=True)
@@ -211,6 +283,22 @@ class ProductionWeighingIngredientProjection:
 
 
 @dataclass(frozen=True)
+class ProductionWeighingTableRowProjection:
+    """Closed printable row contract for one weighing ingredient."""
+
+    cols: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ProductionWeighingTableProjection:
+    """Versioned table contract shared with the thermal renderer."""
+
+    contract_version: int
+    headers: tuple[str, ...]
+    rows: tuple[ProductionWeighingTableRowProjection, ...]
+
+
+@dataclass(frozen=True)
 class ProductionWeighingTicketProjection:
     """A printable 80mm-oriented ticket for one recipe/base recipe."""
 
@@ -224,7 +312,7 @@ class ProductionWeighingTicketProjection:
     # do subtítulo pede; "" quando o rendimento já é em massa (evita eco).
     sources_display: str
     ingredients: tuple[ProductionWeighingIngredientProjection, ...]
-    table: dict
+    table: ProductionWeighingTableProjection
     blind_code: str
     # Código cego do dia: etiquetas de pesagem circulam só com ele — o
     # colaborador pesa sem saber a receita. Mapa = visão de gestor.
@@ -241,6 +329,12 @@ class ProductionWeighingProjection:
     selected_position_ref: str
     selected_base_recipe: str
     tickets: tuple[ProductionWeighingTicketProjection, ...]
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -259,6 +353,12 @@ class ProductionBlindMapProjection:
     selected_date: str
     selected_date_display: str
     rows: tuple[ProductionBlindMapRowProjection, ...]
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -287,6 +387,13 @@ class MiseEnPlaceLineProjection:
     # fornecedor novo é jumbo) atualiza toda lista de separação sozinho. "" quando
     # o insumo não tem conversão de contagem declarada.
     annotation: str
+    # "+ 32 g de margem" — os gramas a mais que a linha já carrega para cobrir o
+    # arredondamento da balança, a perda da masseira e a variação da fornada.
+    # "" quando esta linha não recebeu margem.
+    margin_display: str
+    # O motivo, por extenso. Margem sem motivo é número que cresceu sozinho, e
+    # quem lê a lista de separação tem de saber de onde vieram os gramas.
+    margin_reason: str
 
 
 @dataclass(frozen=True)
@@ -300,6 +407,18 @@ class ProductionMiseEnPlaceProjection:
     has_lines: bool
     work_order_count: int
     has_stock_readings: bool  # False = coluna de saldo se esconde (degrade)
+    # A lista já vem com a margem de segurança do rendimento das massas somada.
+    yield_margin_applied: bool
+    # Explicação de cabeçalho — é o único lugar onde a margem aparece no modo
+    # expandido, em que a linha do preparo foi explodida em matéria-prima e o
+    # motivo por linha não tem mais onde morar.
+    yield_margin_note: str
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -310,9 +429,24 @@ class _RecipeItemData:
     sort_order: int = 0
 
 
+@dataclass
+class _NeedData:
+    item_ref: str
+    quantity: Decimal
+    unit: str
+    has_recipe: bool
+    margin: object | None = None
+
+
 @dataclass(frozen=True)
 class ProductionSurfaceAccess:
-    """Column-level access for the production board surface."""
+    """Effective production capabilities for one operator and station context.
+
+    The legacy column flags remain serialized while the Nuxt client migrates to
+    the action-oriented contract.  New code must authorize mutations with the
+    explicit ``can_*`` capabilities below, never by treating a visible column
+    as permission to mutate it.
+    """
 
     can_manage_all: bool
     can_view_suggested: bool
@@ -325,26 +459,352 @@ class ProductionSurfaceAccess:
     can_edit_finished: bool
     can_view_unsold: bool
     can_edit_unsold: bool
+    can_view_plan: bool
+    can_edit_plan: bool
+    can_start: bool
+    can_advance_step: bool
+    can_close_qc: bool
+    can_correct_qc: bool
+    can_quick_finish: bool
+    can_override_shortage: bool
+    can_void: bool
+    can_record_oven_fact: bool
+    can_view_reports: bool
+    can_reveal_blind_map: bool
 
     @property
     def can_access_board(self) -> bool:
-        return any((
-            self.can_manage_all,
-            self.can_view_suggested,
-            self.can_edit_suggested,
-            self.can_view_planned,
-            self.can_edit_planned,
-            self.can_view_started,
-            self.can_edit_started,
-            self.can_view_finished,
-            self.can_edit_finished,
-            self.can_view_unsold,
-            self.can_edit_unsold,
-        ))
+        return any(
+            (
+                self.can_manage_all,
+                self.can_view_suggested,
+                self.can_edit_suggested,
+                self.can_view_planned,
+                self.can_edit_planned,
+                self.can_view_started,
+                self.can_edit_started,
+                self.can_view_finished,
+                self.can_edit_finished,
+                self.can_view_unsold,
+                self.can_edit_unsold,
+            )
+        )
 
     @property
     def can_see_current_kernel_columns(self) -> bool:
         return self.can_view_planned or self.can_view_started or self.can_view_finished
+
+    @property
+    def can_view_qc(self) -> bool:
+        return self.can_view_planned or self.can_view_started or self.can_view_finished
+
+    @property
+    def can_view_prep(self) -> bool:
+        return self.can_view_planned or self.can_view_started
+
+
+def _production_action(
+    *,
+    ref: str,
+    kind,
+    label: str,
+    priority: int,
+    enabled: bool,
+    reason: str,
+    href: str,
+    payload_schema: str,
+    expected_rev: int | None,
+    confirmation_title: str = "",
+    confirmation_label: str = "Confirmar",
+    confirmation_reason_required: bool = False,
+) -> ProductionActionProjection:
+    return ProductionActionProjection(
+        ref=ref,
+        kind=kind,
+        label=label,
+        priority=priority,
+        enabled=enabled,
+        reason="" if enabled else reason,
+        method="POST",
+        href=href,
+        payload_schema=payload_schema,
+        expected_rev=expected_rev,
+        idempotency=ProductionActionIdempotencyProjection(
+            required=True,
+            key_scope=f"production.{ref}",
+        ),
+        confirmation=ProductionActionConfirmationProjection(
+            required=bool(confirmation_title),
+            reason_required=confirmation_reason_required,
+            title=confirmation_title,
+            confirm_label=confirmation_label,
+        ),
+        # The normal action is authorized by its matching capability. A
+        # shortage override is offered later by the typed 409 envelope; D1
+        # still owns any additional/different-approver policy.
+        approval_requirement=None,
+        source_alert_ref=None,
+        source_alert_effect=None,
+        # Filled only for enabled actions while the containing projection is
+        # serialized, when source revision, operator and freshness are known.
+        proof="",
+    )
+
+
+def _board_actions(
+    rows: tuple[ProductionMatrixRowProjection, ...],
+    *,
+    selected_date: date,
+    position_ref: str,
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for row in rows:
+        if row.recipe_pk is not None and not row.planned_orders:
+            target = f"{row.recipe_pk}:{selected_date.isoformat()}:{position_ref}"
+            actions.append(
+                _production_action(
+                    ref=f"plan:{target}",
+                    kind="plan",
+                    label="Planejar lote",
+                    priority=40,
+                    enabled=access.can_edit_planned and bool(position_ref),
+                    reason=(
+                        "Nenhuma posição padrão está configurada."
+                        if not position_ref
+                        else "Sem capacidade para alterar o planejamento manual."
+                    ),
+                    href="/api/v1/backstage/production/plan/",
+                    payload_schema="ProductionPlanMutationRequest",
+                    expected_rev=None,
+                    confirmation_title="Confirmar quantidade planejada",
+                    confirmation_label="Planejar",
+                )
+            )
+            if row.suggestion is not None:
+                actions.append(
+                    _production_action(
+                        ref=f"plan_suggested:{target}:{row.suggestion.quantity}",
+                        kind="plan",
+                        label="Aplicar sugestão",
+                        priority=30,
+                        enabled=access.can_edit_suggested and bool(position_ref),
+                        reason=(
+                            "Nenhuma posição padrão está configurada."
+                            if not position_ref
+                            else "Sem capacidade para aplicar sugestões."
+                        ),
+                        href="/api/v1/backstage/production/plan/",
+                        payload_schema="ProductionPlanMutationRequest",
+                        expected_rev=None,
+                        confirmation_title="Aplicar sugestão de planejamento",
+                        confirmation_label="Aplicar",
+                    )
+                )
+        for order in row.planned_orders:
+            actions.append(
+                _production_action(
+                    ref=f"plan:{order.pk}",
+                    kind="plan",
+                    label="Ajustar planejado",
+                    priority=40,
+                    enabled=access.can_edit_planned,
+                    reason="Sem capacidade para alterar o planejamento manual.",
+                    href="/api/v1/backstage/production/plan/",
+                    payload_schema="ProductionPlanMutationRequest",
+                    expected_rev=order.rev,
+                    confirmation_title="Confirmar ajuste do lote",
+                    confirmation_label="Ajustar",
+                )
+            )
+            if row.suggestion is not None:
+                actions.append(
+                    _production_action(
+                        ref=f"plan_suggested:{order.pk}:{row.suggestion.quantity}",
+                        kind="plan",
+                        label="Aplicar sugestão",
+                        priority=30,
+                        enabled=access.can_edit_suggested,
+                        reason="Sem capacidade para aplicar sugestões.",
+                        href="/api/v1/backstage/production/plan/",
+                        payload_schema="ProductionPlanMutationRequest",
+                        expected_rev=order.rev,
+                        confirmation_title="Aplicar sugestão de planejamento",
+                        confirmation_label="Aplicar",
+                    )
+                )
+            actions.append(
+                _production_action(
+                    ref=f"start:{order.pk}",
+                    kind="start",
+                    label="Confirmar produzido",
+                    priority=20,
+                    enabled=access.can_start,
+                    reason="Sem capacidade para confirmar a quantidade produzida.",
+                    href=f"/api/v1/backstage/production/{order.pk}/start/",
+                    payload_schema="ProductionStartMutationRequest",
+                    expected_rev=order.rev,
+                )
+            )
+        for order in (*row.planned_orders, *row.started_orders):
+            actions.append(
+                _production_action(
+                    ref=f"void:{order.pk}",
+                    kind="void",
+                    label="Estornar fornada",
+                    priority=90,
+                    enabled=access.can_void,
+                    reason="Sem capacidade para estornar fornadas.",
+                    href=f"/api/v1/backstage/production/{order.pk}/void/",
+                    payload_schema="ProductionVoidMutationRequest",
+                    expected_rev=order.rev,
+                    confirmation_title="Estornar esta fornada?",
+                    confirmation_label="Confirmar estorno",
+                    confirmation_reason_required=True,
+                )
+            )
+    return tuple(actions)
+
+
+def _kds_actions(
+    cards: tuple[ProductionKDSCardProjection, ...],
+    *,
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for card in cards:
+        can_advance = card.can_advance_step
+        actions.extend(
+            (
+                _production_action(
+                    ref=f"advance_step:{card.pk}",
+                    kind="advance_step",
+                    label="Avançar etapa",
+                    priority=10,
+                    enabled=access.can_advance_step and can_advance,
+                    reason=(
+                        "A receita não possui etapas configuradas."
+                        if card.total_steps <= 0
+                        else (
+                            "Todos os passos desta fornada já foram concluídos."
+                            if not can_advance
+                            else "Sem capacidade para avançar etapas."
+                        )
+                    ),
+                    href=f"/api/v1/backstage/production/{card.pk}/advance-step/",
+                    payload_schema="ProductionAdvanceStepMutationRequest",
+                    expected_rev=card.rev,
+                ),
+                _production_action(
+                    ref=f"void:{card.pk}",
+                    kind="void",
+                    label="Estornar fornada",
+                    priority=90,
+                    enabled=access.can_void,
+                    reason="Sem capacidade para estornar fornadas.",
+                    href=f"/api/v1/backstage/production/{card.pk}/void/",
+                    payload_schema="ProductionVoidMutationRequest",
+                    expected_rev=card.rev,
+                    confirmation_title="Estornar esta fornada?",
+                    confirmation_label="Confirmar estorno",
+                    confirmation_reason_required=True,
+                ),
+            )
+        )
+    return tuple(actions)
+
+
+def _qc_actions(
+    cards: tuple[QCOrderCardProjection, ...],
+    recipes: tuple[RecipeOptionProjection, ...],
+    *,
+    selected_date: date,
+    open_oven_refs: set[str],
+    access: ProductionSurfaceAccess,
+) -> tuple[ProductionActionProjection, ...]:
+    actions: list[ProductionActionProjection] = []
+    for card in cards:
+        if card.closed:
+            actions.append(
+                _production_action(
+                    ref=f"correct_qc:{card.pk}",
+                    kind="correct_qc",
+                    label="Corrigir qualidade",
+                    priority=40,
+                    enabled=card.can_correct,
+                    reason="Somente a gestão pode corrigir uma fornada concluída.",
+                    href=f"/api/v1/backstage/production/{card.pk}/quality-correction/",
+                    payload_schema="ProductionQualityCorrectionMutationRequest",
+                    expected_rev=card.rev,
+                    confirmation_title="Corrigir qualidade da fornada",
+                    confirmation_label="Salvar correção",
+                    confirmation_reason_required=True,
+                )
+            )
+            continue
+        actions.append(
+            _production_action(
+                ref=f"finish:{card.pk}",
+                kind="finish",
+                label="Confirmar conclusão",
+                priority=10,
+                enabled=card.can_close,
+                reason=(
+                    "Confirme a quantidade produzida antes do QC."
+                    if card.status == WorkOrder.Status.PLANNED and not access.can_start
+                    else "Sem capacidade para concluir o QC."
+                ),
+                href=f"/api/v1/backstage/production/{card.pk}/finish/",
+                payload_schema="ProductionFinishMutationRequest",
+                expected_rev=card.rev,
+                confirmation_title="Confirmar resultado da fornada",
+                confirmation_label="Confirmar",
+            )
+        )
+        if card.status == WorkOrder.Status.STARTED:
+            has_open_oven = card.ref in open_oven_refs
+            kind = "oven_conclude" if has_open_oven else "oven_arm"
+            actions.append(
+                _production_action(
+                    ref=f"{kind}:{card.pk}",
+                    kind=kind,
+                    label="Retirou do forno" if has_open_oven else "Enfornar",
+                    priority=20,
+                    enabled=access.can_record_oven_fact,
+                    reason="Sem capacidade para registrar fatos do forno.",
+                    href=(
+                        f"/api/v1/backstage/production/{card.pk}/oven/conclude/"
+                        if has_open_oven
+                        else f"/api/v1/backstage/production/{card.pk}/oven/arm/"
+                    ),
+                    payload_schema=(
+                        "ProductionOvenConcludeMutationRequest" if has_open_oven else "ProductionOvenArmMutationRequest"
+                    ),
+                    expected_rev=card.rev,
+                )
+            )
+    quick_enabled = access.can_quick_finish and selected_date == timezone.localdate()
+    for recipe in recipes:
+        actions.append(
+            _production_action(
+                ref=f"quick_finish:{recipe.pk}",
+                kind="quick_finish",
+                label="Confirmar fornada avulsa",
+                priority=30,
+                enabled=quick_enabled,
+                reason=(
+                    "Fornada avulsa só pode ser registrada no dia atual."
+                    if selected_date != timezone.localdate()
+                    else "Sem capacidade para conclusão rápida."
+                ),
+                href="/api/v1/backstage/production/quick-finish/",
+                payload_schema="ProductionQuickFinishMutationRequest",
+                expected_rev=None,
+                confirmation_title="Confirmar fornada avulsa",
+                confirmation_label="Confirmar",
+            )
+        )
+    return tuple(actions)
 
 
 @dataclass(frozen=True)
@@ -369,6 +829,11 @@ class ProductionBoardProjection:
     matrix_groups: tuple[ProductionMatrixGroupProjection, ...]
     default_position_pk: int | None
     access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -378,6 +843,7 @@ class ProductionLateWorkOrderProjection:
     pk: int
     ref: str
     output_sku: str
+    recipe_name: str
     operator_ref: str
     elapsed_minutes: int
     target_minutes: int
@@ -400,6 +866,12 @@ class ProductionDashboardProjection:
     average_yield_rate: str
     capacity_percent: int | None
     late_orders: tuple[ProductionLateWorkOrderProjection, ...]
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -408,6 +880,7 @@ class ProductionKDSCardProjection:
 
     pk: int
     ref: str
+    rev: int
     output_sku: str
     recipe_name: str
     started_qty: str
@@ -417,7 +890,8 @@ class ProductionKDSCardProjection:
     elapsed_seconds: int
     elapsed_minutes: int
     target_seconds: int
-    timer_class: str
+    timer_status_code: str
+    timer_tone: str
     current_step: str
     current_step_index: int | None
     total_steps: int
@@ -425,6 +899,7 @@ class ProductionKDSCardProjection:
     step_progress_pct: int
     next_step_name: str
     time_remaining_min: int | None
+    can_advance_step: bool
     can_finish: bool
     order_refs: tuple[str, ...]
     # Pedidos que aguardam este lote (production_order_sync) — o estorno avisa.
@@ -439,6 +914,12 @@ class ProductionKDSProjection:
     cards: tuple[ProductionKDSCardProjection, ...]
     total_count: int
     late_count: int
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -467,11 +948,22 @@ class QCDefectProjection:
 
 
 @dataclass(frozen=True)
+class QCPartitionGroupProjection:
+    """One mutually-exclusive bucket of the effective closed-batch QC."""
+
+    quantity: str
+    quality_grade_ref: str
+    quality_defect_ref: str
+    loss: bool
+
+
+@dataclass(frozen=True)
 class QCOrderCardProjection:
     """Uma fornada do dia no painel do quiosque de QC."""
 
     pk: int
     ref: str
+    rev: int
     recipe_name: str
     output_sku: str
     position_ref: str
@@ -486,6 +978,10 @@ class QCOrderCardProjection:
     elapsed_minutes: int
     can_close: bool
     closed: bool
+    can_correct: bool
+    partition: tuple[QCPartitionGroupProjection, ...]
+    correction_count: int
+    last_correction_at_display: str
     # UNIDADES comprometidas com pedidos que aguardam esta fornada
     # (production_order_sync): a pergunta do fournil é "quantos pães já têm
     # dono", não "quantos pedidos existem" — um pedido de 6 pesa 6.
@@ -514,6 +1010,12 @@ class QCKioskProjection:
     # data"). A data é a mais recente com pendência, para o toque ir direto.
     previous_open_count: int
     previous_open_date: str
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -602,6 +1104,12 @@ class ProductionReportsProjection:
     quality_rows: tuple[QualityReportRow, ...]
     available_recipes: tuple[RecipeOptionProjection, ...]
     available_positions: tuple[PositionOptionProjection, ...]
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 # ── Builders ───────────────────────────────────────────────────────────
@@ -619,12 +1127,12 @@ def build_production_board(
     selected_date = selected_date or timezone.localdate()
     access = access or _full_access()
 
-    # Fetch work orders for the selected date
+    # Fetch the entire visible slice once; every card is then assembled from
+    # prefetched facts and batch-loaded related objects.
     wos_qs = (
-        WorkOrder.objects
-        .filter(target_date=selected_date)
+        WorkOrder.objects.filter(target_date=selected_date)
         .select_related("recipe")
-        .prefetch_related("recipe__items")
+        .prefetch_related("recipe__items", "events")
         .order_by("-created_at")
     )
 
@@ -633,74 +1141,34 @@ def build_production_board(
     if operator_ref:
         wos_qs = wos_qs.filter(operator_ref=operator_ref)
 
-    wo_cards = tuple(
-        card for card in (_build_wo_card(wo) for wo in wos_qs)
-        if _can_view_card(card, access)
-    )
+    wos = list(wos_qs)
 
-    # Craft summary via service
-    summary = craft.summary(
-        date=selected_date,
-        position_ref=position_ref or None,
-        operator_ref=operator_ref or None,
-    )
-
-    # Queue items (planned + started)
-    queue_items = craft.queue(
-        date=selected_date,
-        position_ref=position_ref or None,
-        operator_ref=operator_ref or None,
-    )
-
-    planned_queue = tuple(
-        _build_wo_card(
-            WorkOrder.objects.select_related("recipe").prefetch_related("recipe__items").get(ref=item.ref),
-        )
-        for item in queue_items
-        if item.status == WorkOrder.Status.PLANNED and access.can_view_planned
-    )
-    started_queue = tuple(
-        _build_wo_card(
-            WorkOrder.objects.select_related("recipe").prefetch_related("recipe__items").get(ref=item.ref),
-        )
-        for item in queue_items
-        if item.status == WorkOrder.Status.STARTED and access.can_view_started
-    )
-    finished_queue = tuple(
-        wo for wo in wo_cards
-        if wo.status == WorkOrder.Status.FINISHED and access.can_view_finished
-    )
-
-    counts = ProductionCountsProjection(
-        total=summary.total_orders,
-        planned=summary.planned_orders,
-        started=summary.started_orders,
-        finished=summary.finished_orders,
-        void=summary.void_orders,
-        planned_qty=_qty(summary.planned_qty),
-        started_qty=_qty(summary.started_qty),
-        finished_qty=_qty(summary.finished_qty),
-        loss_qty=_qty(summary.loss_qty),
-    )
-
+    all_recipes = tuple(Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("name", "ref"))
     recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("ref")
+        RecipeOptionProjection(
+            pk=recipe.pk,
+            ref=recipe.ref,
+            name=recipe.name or recipe.output_sku or recipe.ref,
+        )
+        for recipe in all_recipes
     )
     consumed_recipe_skus = set(
-        RecipeItem.objects.filter(recipe__is_active=True)
-        .exclude(input_sku="")
-        .values_list("input_sku", flat=True)
+        RecipeItem.objects.filter(recipe__is_active=True).exclude(input_sku="").values_list("input_sku", flat=True)
     )
-    matrix_recipes = tuple(
-        Recipe.objects.filter(is_active=True)
-        .exclude(output_sku__in=consumed_recipe_skus)
-        .prefetch_related("items")
-        .order_by("ref")
-    )
+    matrix_recipes = tuple(recipe for recipe in all_recipes if recipe.output_sku not in consumed_recipe_skus)
 
-    positions_qs = Position.objects.all().order_by("name")
-    default_pos = Position.objects.filter(is_default=True).first()
+    raw_suggestions = _production_suggestions(selected_date)
+    _prime_base_recipe_usages([*(wo.recipe for wo in wos), *matrix_recipes, *(row.recipe for row in raw_suggestions)])
+    _prime_order_commitments(wos)
+
+    wo_cards = tuple(card for card in (_build_wo_card(wo, access=access) for wo in wos) if _can_view_card(card, access))
+    planned_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.PLANNED)
+    started_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.STARTED)
+    finished_queue = tuple(card for card in wo_cards if card.status == WorkOrder.Status.FINISHED)
+    counts = _production_counts(wo_cards)
+
+    positions_qs = list(Position.objects.all().order_by("name"))
+    default_pos = next((position for position in positions_qs if position.is_default), None)
     positions = tuple(
         PositionOptionProjection(
             pk=p.pk,
@@ -710,12 +1178,13 @@ def build_production_board(
         )
         for p in positions_qs
     )
-    suggestions = tuple(_build_suggestion(s) for s in _production_suggestions(selected_date))
+    suggestions = tuple(_build_suggestion(suggestion) for suggestion in raw_suggestions)
     visible_suggestions = suggestions if access.can_view_suggested else ()
     all_matrix_rows = _build_matrix_rows(matrix_recipes, wo_cards, visible_suggestions)
     base_recipes = _build_group_options(all_matrix_rows)
     matrix_rows = tuple(
-        row for row in all_matrix_rows
+        row
+        for row in all_matrix_rows
         if not base_recipe or any(usage.output_sku == base_recipe for usage in row.base_usages)
     )
     matrix_groups = _build_matrix_groups(matrix_rows, base_recipe=base_recipe)
@@ -739,6 +1208,12 @@ def build_production_board(
         matrix_groups=matrix_groups,
         default_position_pk=default_pos.pk if default_pos else None,
         access=access,
+        actions=_board_actions(
+            matrix_rows,
+            selected_date=selected_date,
+            position_ref=position_ref or (default_pos.ref if default_pos else ""),
+            access=access,
+        ),
     )
 
 
@@ -747,29 +1222,43 @@ def build_production_weighing(
     selected_date: date | None = None,
     position_ref: str = "",
     base_recipe: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionWeighingProjection:
     """Build thermal weighing tickets from saved planned/started work orders."""
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
-    work_orders = (
+    work_orders_qs = (
         WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
         .select_related("recipe")
-        .prefetch_related("recipe__items")
+        .prefetch_related("recipe__items", "events")
         .order_by("recipe__ref", "output_sku")
     )
     if position_ref:
-        work_orders = work_orders.filter(position_ref=position_ref)
+        work_orders_qs = work_orders_qs.filter(position_ref=position_ref)
+    work_orders = [work_order for work_order in work_orders_qs if _can_view_work_order(work_order, access)]
 
     active_recipes = {
         recipe.output_sku: recipe
         for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items").order_by("ref")
     }
-    tickets: dict[tuple[int, str], dict] = {}
+    tickets: dict[tuple, dict] = {}
 
-    def add_ticket(recipe: Recipe, quantity: Decimal, unit: str, source: str) -> None:
+    def add_ticket(
+        recipe: Recipe,
+        quantity: Decimal,
+        unit: str,
+        source: str,
+        *,
+        items: tuple[_RecipeItemData, ...] | None = None,
+        batch_size: Decimal | None = None,
+    ) -> None:
         if base_recipe and recipe.output_sku != base_recipe:
             return
-        key = (recipe.pk, unit)
+        ticket_items = items if items is not None else _recipe_items(recipe)
+        ticket_batch_size = batch_size if batch_size is not None else recipe.batch_size
+        snapshot_key = tuple((item.input_sku, str(item.quantity), item.unit, item.sort_order) for item in ticket_items)
+        key = (recipe.pk, unit, str(ticket_batch_size), snapshot_key)
         entry = tickets.setdefault(
             key,
             {
@@ -777,6 +1266,8 @@ def build_production_weighing(
                 "quantity": Decimal("0"),
                 "unit": unit,
                 "sources": [],
+                "items": ticket_items,
+                "batch_size": ticket_batch_size,
             },
         )
         entry["quantity"] += quantity
@@ -785,17 +1276,20 @@ def build_production_weighing(
 
     for work_order in work_orders:
         recipe = work_order.recipe
-        if not recipe.batch_size:
+        batch_size = _work_order_recipe_batch_size(work_order)
+        if not batch_size:
             continue
         items = _work_order_recipe_items(work_order)
-        coefficient = Decimal(str(work_order.quantity)) / recipe.batch_size
+        effective_quantity = _work_order_effective_quantity(work_order)
+        coefficient = effective_quantity / batch_size
         base_items = [
-            item for item in items
+            item
+            for item in items
             if item.input_sku in active_recipes and active_recipes[item.input_sku].pk != recipe.pk
         ]
         # Copy de objetivo: quantidade primeiro ("25 un. CIABATTA") — é a meta
         # de produção que este preparo alimenta, não um "destino" físico.
-        source = f"{_measure(Decimal(str(work_order.quantity)), 'un.')} {work_order.output_sku}"
+        source = f"{_measure(effective_quantity, 'un.')} {work_order.output_sku}"
 
         if base_items:
             for item in base_items:
@@ -807,13 +1301,16 @@ def build_production_weighing(
                 )
             continue
 
-        add_ticket(recipe, Decimal(str(work_order.quantity)), "un.", source)
+        add_ticket(
+            recipe,
+            effective_quantity,
+            "un.",
+            source,
+            items=items,
+            batch_size=batch_size,
+        )
 
-    ingredient_skus = {
-        item.input_sku
-        for entry in tickets.values()
-        for item in _recipe_items(entry["recipe"])
-    }
+    ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
 
     return ProductionWeighingProjection(
@@ -830,6 +1327,7 @@ def build_production_weighing(
             )
             for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
         ),
+        access=access,
     )
 
 
@@ -838,6 +1336,7 @@ def build_production_blind_map(
     selected_date: date | None = None,
     position_ref: str = "",
     base_recipe: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionBlindMapProjection:
     """Mapa código-cego ↔ preparo do dia — visão de GESTOR.
 
@@ -846,10 +1345,14 @@ def build_production_blind_map(
     projection, servida exclusivamente à página de relatórios (nunca às telas
     de chão, que são cegas por design).
     """
+    access = access or _full_access()
     weighing = build_production_weighing(
         selected_date=selected_date,
         position_ref=position_ref,
         base_recipe=base_recipe,
+        # Revealing the map is itself the row-level grant.  A reports-only
+        # persona need not also inherit the kitchen's planned/started columns.
+        access=_full_access() if access.can_reveal_blind_map else access,
     )
     return ProductionBlindMapProjection(
         selected_date=weighing.selected_date,
@@ -862,6 +1365,7 @@ def build_production_blind_map(
             )
             for ticket in weighing.tickets
         ),
+        access=access,
     )
 
 
@@ -869,6 +1373,7 @@ def build_production_mise_en_place(
     *,
     selected_date: date | None = None,
     expand: bool = False,
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionMiseEnPlaceProjection:
     """Lista de separação do dia — ``craft.needs()`` com quebra e saldo.
 
@@ -877,26 +1382,48 @@ def build_production_mise_en_place(
     matéria-prima (sem quebra por receita — os caminhos se cruzam). O saldo
     de estoque anota quando o ledger de insumos tem leitura; sem leitura, a
     coluna se esconde (degrade gracioso, nunca bloqueia).
+
+    **A margem de rendimento entra aqui, e só aqui.** Esta é a lista do que se
+    vai FAZER hoje, e é dela que a decisão "quanto de massa" faz parte: a
+    balança de bancada tem divisão finita, e com a régua "nunca abaixo do
+    alvo" cada peça leva meia divisão a mais, em média. A ficha não muda (a
+    proporção é a mesma) e o **consumo do ledger não muda** — quem baixa
+    insumo é ``CraftExecution.finish`` a partir do snapshot congelado, que não
+    passa por ``craft.needs()``. Contaminar o ledger com a margem inflaria a
+    sugestão de compra todo dia, em silêncio.
+
+    E a sobra que a margem produz não é perda: é **massa velha de amanhã**, que
+    a casa já modela como teto (``old_dough`` / ``cap_pct``). O alvo não é
+    sobra zero — é sobra que caiba no teto do dia seguinte.
     """
     selected_date = selected_date or timezone.localdate()
-    needs = craft.needs(selected_date, expand=expand)
-
+    access = access or _full_access()
     open_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
-    work_orders = list(
-        WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
-        .select_related("recipe")
-        .prefetch_related("recipe__items")
-        .order_by("recipe__ref", "ref")
+    work_orders = [
+        work_order
+        for work_order in (
+            WorkOrder.objects.filter(target_date=selected_date, status__in=open_statuses)
+            .select_related("recipe")
+            .prefetch_related("recipe__items", "events")
+            .order_by("recipe__ref", "ref")
+        )
+        if _can_view_work_order(work_order, access)
+    ]
+    needs, margin_applied = _work_order_needs(
+        work_orders,
+        expand=expand,
+        yield_margin=True,
     )
 
     breakdown_by_sku: dict[str, list[MiseEnPlaceBreakdownProjection]] = {}
     if not expand:
         for work_order in work_orders:
             recipe = work_order.recipe
-            if not recipe.batch_size:
+            batch_size = _work_order_recipe_batch_size(work_order)
+            if not batch_size:
                 continue
-            coefficient = Decimal(str(work_order.quantity)) / recipe.batch_size
-            for item in _recipe_items(recipe):
+            coefficient = _work_order_effective_quantity(work_order) / batch_size
+            for item in _work_order_recipe_items(work_order):
                 breakdown_by_sku.setdefault(item.input_sku, []).append(
                     MiseEnPlaceBreakdownProjection(
                         recipe_name=recipe.name or recipe.ref,
@@ -907,8 +1434,7 @@ def build_production_mise_en_place(
 
     skus = {need.item_ref for need in needs}
     active_recipes = {
-        recipe.output_sku: recipe
-        for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
+        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True, output_sku__in=skus)
     }
     product_names = _product_names(skus)
     availability = _ingredient_availability(skus)
@@ -922,18 +1448,18 @@ def build_production_mise_en_place(
         lines.append(
             MiseEnPlaceLineProjection(
                 sku=need.item_ref,
-                name=_ingredient_name(
-                    need.item_ref, active_recipes=active_recipes, product_names=product_names
-                ),
+                name=_ingredient_name(need.item_ref, active_recipes=active_recipes, product_names=product_names),
                 quantity_display=_measure(need.quantity, need.unit),
                 unit=need.unit,
                 is_subrecipe=need.has_recipe,
                 available_display=_measure(available, need.unit) if available is not None else "",
                 is_short=bool(available is not None and available < need.quantity),
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
-                annotation=_preparation_annotation(
-                    need.quantity, need.unit, conversions.get(need.item_ref)
+                annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
+                margin_display=(
+                    f"+ {_measure(need.margin.total, need.unit)} de margem" if need.margin is not None else ""
                 ),
+                margin_reason=need.margin.reason() if need.margin is not None else "",
             )
         )
     lines.sort(key=lambda line: (not line.is_subrecipe, line.name.lower()))
@@ -945,8 +1471,21 @@ def build_production_mise_en_place(
         lines=tuple(lines),
         has_lines=bool(lines),
         work_order_count=len(work_orders),
-        has_stock_readings=any(value and value > 0 for value in availability.values()),
+        has_stock_readings=bool(availability),
+        yield_margin_applied=margin_applied,
+        yield_margin_note=_YIELD_MARGIN_NOTE,
+        access=access,
     )
+
+
+#: Explicação de cabeçalho da margem. Curta de propósito: o detalhe por preparo
+#: vive no ``margin_reason`` de cada linha.
+_YIELD_MARGIN_NOTE = (
+    "As massas já vêm com margem de segurança: meia divisão da balança por peça "
+    "(o excesso esperado quando a régua é nunca sair abaixo do alvo), a perda da "
+    "masseira por fornada e uma folga para a variação. O que sobrar vira massa "
+    "velha de amanhã, dentro do teto."
+)
 
 
 # Alfabeto do código cego: ultra legível e memorizável (pedido do Pablo) —
@@ -960,10 +1499,14 @@ _BLIND_DIGITS = "23456789"
 # veta "D7" na 2ª (dê soa como zê no grito da cozinha), mas libera "M7".
 _BLIND_LETTER_FAMILIES = {
     **dict.fromkeys("BCDGPTVZ", "ê"),  # bê cê dê gê pê tê vê zê
-    "M": "êm", "N": "êm",              # ême/êne
-    "F": "és", "S": "és",              # éfe/ésse
-    "K": "cá", "Q": "cá",              # cá/quê
-    "L": "él", "R": "él",              # éle/érre
+    "M": "êm",
+    "N": "êm",  # ême/êne
+    "F": "és",
+    "S": "és",  # éfe/ésse
+    "K": "cá",
+    "Q": "cá",  # cá/quê
+    "L": "él",
+    "R": "él",  # éle/érre
     # A, E, H, J, U, W, X, Y — sons únicos, família própria (a própria letra)
 }
 
@@ -998,19 +1541,11 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
     window = _blind_window(selected_date)
     space = [letter + digit for letter in _BLIND_LETTERS for digit in _BLIND_DIGITS]
     for _attempt in range(len(space)):
-        window_taken = set(
-            BlindPrepCode.objects.filter(date__in=window).values_list("code", flat=True)
-        )
-        day_codes = set(
-            BlindPrepCode.objects.filter(date=selected_date).values_list("code", flat=True)
-        )
+        window_taken = set(BlindPrepCode.objects.filter(date__in=window).values_list("code", flat=True))
+        day_codes = set(BlindPrepCode.objects.filter(date=selected_date).values_list("code", flat=True))
         day_letters = {code[0] for code in day_codes}
         day_digits = {code[1] for code in day_codes}
-        by_letter = [
-            code
-            for code in space
-            if code not in window_taken and code[0] not in day_letters
-        ]
+        by_letter = [code for code in space if code not in window_taken and code[0] not in day_letters]
         # Escada de qualidade (nunca bloqueia — o código é uma CONVENIÊNCIA
         # anticonfusão, não um gargalo da operação):
         #   1º–8º   ótimos: letra única + número único;
@@ -1023,26 +1558,17 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
             free = strict
         elif by_letter:
             digit_families = {
-                digit: {
-                    _BLIND_LETTER_FAMILIES.get(code[0], code[0])
-                    for code in day_codes
-                    if code[1] == digit
-                }
+                digit: {_BLIND_LETTER_FAMILIES.get(code[0], code[0]) for code in day_codes if code[1] == digit}
                 for digit in day_digits
             }
             quality = [
                 code
                 for code in by_letter
-                if _BLIND_LETTER_FAMILIES.get(code[0], code[0])
-                not in digit_families.get(code[1], set())
+                if _BLIND_LETTER_FAMILIES.get(code[0], code[0]) not in digit_families.get(code[1], set())
             ]
             free = quality or by_letter
         else:
-            free = [
-                code
-                for code in space
-                if code not in window_taken and code not in day_codes
-            ]
+            free = [code for code in space if code not in window_taken and code not in day_codes]
         if not free:
             raise RuntimeError(
                 "Sem código cego disponível: espaço esgotado no dia e na janela "
@@ -1051,14 +1577,10 @@ def blind_prep_code(recipe_ref: str, selected_date: date) -> str:
         candidate = secrets.choice(free)
         try:
             with transaction.atomic():
-                row = BlindPrepCode.objects.create(
-                    date=selected_date, recipe_ref=recipe_ref, code=candidate
-                )
+                row = BlindPrepCode.objects.create(date=selected_date, recipe_ref=recipe_ref, code=candidate)
         except IntegrityError:
             # Colidiu (código do dia levado numa corrida, ou o ref já alocou).
-            existing = BlindPrepCode.objects.filter(
-                date=selected_date, recipe_ref=recipe_ref
-            ).first()
+            existing = BlindPrepCode.objects.filter(date=selected_date, recipe_ref=recipe_ref).first()
             if existing:
                 return existing.code
             continue  # retry com outro sorteio
@@ -1128,7 +1650,9 @@ def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
 
         rows = (
             MaterialConversion.objects.filter(
-                material__sku__in=skus, is_active=True, supplier__isnull=True,
+                material__sku__in=skus,
+                is_active=True,
+                supplier__isnull=True,
             )
             .select_related("material")
             .order_by("material__sku", "to_base_factor", "label")
@@ -1150,9 +1674,7 @@ def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
         return {}
 
 
-def _preparation_annotation(
-    quantity: Decimal, unit: str, conversion: _CountingConversion | None
-) -> str:
+def _preparation_annotation(quantity: Decimal, unit: str, conversion: _CountingConversion | None) -> str:
     """O mesmo número dito na contagem da bancada — "≈ 6 ovos".
 
     O ``≈`` só entra quando o fator é aproximado; número exato não ganha
@@ -1171,13 +1693,15 @@ def _preparation_annotation(
 
 
 def _ingredient_availability(skus: set[str]) -> dict[str, Decimal]:
-    """Saldo por insumo via Stockman — dict vazio quando o ledger não responde."""
+    """Saldo por insumo via Stockman, preserving a legitimate zero reading."""
     if not skus:
         return {}
     try:
         from shopman.stockman import stock
+        from shopman.stockman.models import Quant
 
-        return {sku: stock.available(sku) for sku in sorted(skus)}
+        observed_skus = set(Quant.objects.filter(sku__in=skus).values_list("sku", flat=True))
+        return {sku: stock.available(sku) for sku in sorted(observed_skus)}
     except Exception:
         logger.debug("production.mise_en_place_availability_failed", exc_info=True)
         return {}
@@ -1187,16 +1711,14 @@ def build_production_dashboard(
     *,
     selected_date: date | None = None,
     position_ref: str = "",
+    access: ProductionSurfaceAccess | None = None,
 ) -> ProductionDashboardProjection:
     """Build the dashboard projection for the selected production day."""
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
     summary = craft.summary(date=selected_date, position_ref=position_ref or None)
 
-    wos = list(
-        WorkOrder.objects.filter(target_date=selected_date)
-        .select_related("recipe")
-        .order_by("created_at")
-    )
+    wos = list(WorkOrder.objects.filter(target_date=selected_date).select_related("recipe").order_by("created_at"))
     if position_ref:
         wos = [wo for wo in wos if wo.position_ref == position_ref]
 
@@ -1234,6 +1756,7 @@ def build_production_dashboard(
         average_yield_rate=average_yield_rate,
         capacity_percent=capacity_percent,
         late_orders=late,
+        access=access,
     )
 
 
@@ -1253,6 +1776,7 @@ def build_production_kds(
             status=WorkOrder.Status.STARTED,
         )
         .select_related("recipe")
+        .prefetch_related("events")
         .order_by("started_at", "created_at")
     )
     if position_ref:
@@ -1265,11 +1789,17 @@ def build_production_kds(
         selected_date_display=selected_date.strftime("%d/%m/%Y"),
         cards=cards,
         total_count=len(cards),
-        late_count=sum(1 for card in cards if card.timer_class == "timer-late"),
+        late_count=sum(1 for card in cards if card.timer_status_code == "late"),
+        access=access,
+        actions=_kds_actions(cards, access=access),
     )
 
 
-def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
+def build_qc_kiosk(
+    *,
+    selected_date: date | None = None,
+    access: ProductionSurfaceAccess | None = None,
+) -> QCKioskProjection:
     """O quiosque do fournil (ADR-017 §9): fornadas do dia + catálogos de QC.
 
     Painel de ORDENS, não de SKU: a ordem já traz forno, previsto e horário, e
@@ -1280,6 +1810,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     from shopman.shop.models import QualityDefect, QualityGrade
 
     selected_date = selected_date or timezone.localdate()
+    access = access or _full_access()
 
     grades = tuple(
         QCGradeProjection(
@@ -1289,7 +1820,7 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
             markdown_percent=g.markdown_percent,
             is_default=g.is_default,
         )
-        for g in QualityGrade.objects.order_by("-rank")
+        for g in QualityGrade.objects.filter(is_active=True).order_by("-rank")
     )
     defects = tuple(
         QCDefectProjection(ref=d.ref, label=d.label, hint=d.hint, forces_discard=d.forces_discard)
@@ -1298,12 +1829,18 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     markdown_by_ref = {g.ref: g.markdown_percent for g in grades}
     default_markdown = next((g.markdown_percent for g in grades if g.is_default), 0)
 
-    work_orders = list(
-        WorkOrder.objects.filter(target_date=selected_date)
-        .exclude(status=WorkOrder.Status.VOID)
-        .select_related("recipe")
-        .order_by("started_at", "created_at")
-    )
+    work_orders = [
+        work_order
+        for work_order in (
+            WorkOrder.objects.filter(target_date=selected_date)
+            .exclude(status=WorkOrder.Status.VOID)
+            .select_related("recipe")
+            .prefetch_related("events")
+            .order_by("started_at", "created_at")
+        )
+        if _can_view_work_order(work_order, access)
+    ]
+    _prime_order_commitments(work_orders)
 
     partitions = _qc_closed_partitions(
         [wo.pk for wo in work_orders if wo.status == WorkOrder.Status.FINISHED],
@@ -1316,7 +1853,14 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     closed_cards: list[QCOrderCardProjection] = []
     for wo in work_orders:
         closed = wo.status == WorkOrder.Status.FINISHED
-        full_qty, discounted_qty, loss_qty = partitions.get(wo.pk, (None, None, None))
+        (
+            full_qty,
+            discounted_qty,
+            loss_qty,
+            effective_partition,
+            correction_count,
+            last_correction_at_display,
+        ) = partitions.get(wo.pk, (None, None, None, (), 0, ""))
         elapsed = 0
         if wo.started_at and not closed:
             elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
@@ -1324,18 +1868,27 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         card = QCOrderCardProjection(
             pk=wo.pk,
             ref=wo.ref,
+            rev=wo.rev,
             recipe_name=wo.recipe.name or wo.recipe.ref,
             output_sku=wo.output_sku,
             position_ref=wo.position_ref,
             status=str(wo.status),
             planned_qty=_qty(wo.quantity),
             started_qty=_qty(started_qty) if started_qty is not None else "",
-            started_at_display=(
-                timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""
-            ),
+            started_at_display=(timezone.localtime(wo.started_at).strftime("%H:%M") if wo.started_at else ""),
             elapsed_minutes=elapsed,
-            can_close=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+            can_close=(
+                access.can_close_qc
+                and (
+                    wo.status == WorkOrder.Status.STARTED
+                    or (wo.status == WorkOrder.Status.PLANNED and access.can_start)
+                )
+            ),
             closed=closed,
+            can_correct=closed and access.can_correct_qc,
+            partition=effective_partition,
+            correction_count=correction_count,
+            last_correction_at_display=last_correction_at_display,
             committed_qty="" if closed else _qty(_committed_units(wo)),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
@@ -1352,12 +1905,30 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
     previous_open = (
         WorkOrder.objects.filter(
             target_date__lt=selected_date,
-            status__in=(WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+            status__in=tuple(
+                status
+                for status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
+                if _can_view_status(status, access)
+            ),
         )
         .values_list("target_date", flat=True)
         .order_by("-target_date")
     )
     previous_dates = list(previous_open)
+
+    recipes = tuple(
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in (Recipe.objects.filter(is_active=True).order_by("name", "ref") if access.can_quick_finish else ())
+    )
+    from shopman.backstage.models import OvenRun
+
+    started_refs = [card.ref for card in cards if card.status == WorkOrder.Status.STARTED]
+    open_oven_refs = set(
+        OvenRun.objects.filter(
+            work_order_ref__in=started_refs,
+            status="open",
+        ).values_list("work_order_ref", flat=True)
+    )
 
     return QCKioskProjection(
         selected_date=selected_date.isoformat(),
@@ -1367,12 +1938,17 @@ def build_qc_kiosk(*, selected_date: date | None = None) -> QCKioskProjection:
         total_count=len(cards),
         grades=grades,
         defects=defects,
-        recipes=tuple(
-            RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
-            for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
-        ),
+        recipes=recipes,
         previous_open_count=len(previous_dates),
         previous_open_date=previous_dates[0].isoformat() if previous_dates else "",
+        access=access,
+        actions=_qc_actions(
+            cards,
+            recipes,
+            selected_date=selected_date,
+            open_oven_refs=open_oven_refs,
+            access=access,
+        ),
     )
 
 
@@ -1389,7 +1965,17 @@ def _qc_closed_partitions(
     *,
     markdown_by_ref: dict[str, int],
     default_markdown: int,
-) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+) -> dict[
+    int,
+    tuple[
+        Decimal,
+        Decimal,
+        Decimal,
+        tuple[QCPartitionGroupProjection, ...],
+        int,
+        str,
+    ],
+]:
     """Partição (a preço cheio, com desconto, perda) por fornada fechada.
 
     "Com desconto" é o FATO CONGELADO do lote (``Batch.nonconformity_percent``
@@ -1401,48 +1987,117 @@ def _qc_closed_partitions(
     """
     if not finished_pks:
         return {}
-    from shopman.craftsman.models import WorkOrderItem
+    from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
     from shopman.stockman.models import Batch
 
-    result: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+    corrections: dict[int, list[tuple[dict, object]]] = {}
+    for wo_id, payload, created_at in (
+        WorkOrderEvent.objects.filter(
+            work_order_id__in=finished_pks,
+            kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        )
+        .order_by("work_order_id", "seq")
+        .values_list("work_order_id", "payload", "created_at")
+    ):
+        corrections.setdefault(wo_id, []).append((payload or {}, created_at))
+
+    grouped_lines: dict[int, list[dict]] = {}
     lines = list(
         WorkOrderItem.objects.filter(
             work_order_id__in=finished_pks,
             kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-        ).values_list("work_order_id", "kind", "quality_grade_ref", "quantity", "batch_ref")
+        ).values_list(
+            "work_order_id",
+            "kind",
+            "quality_grade_ref",
+            "quality_defect_ref",
+            "quantity",
+            "batch_ref",
+        )
     )
+    batch_refs = [row[5] for row in lines if row[5]]
+    for rows in corrections.values():
+        batch_refs.extend(
+            str(group.get("batch_ref") or "")
+            for group in rows[-1][0].get("after_partition", [])
+            if group.get("batch_ref")
+        )
     lot_percent = dict(
-        Batch.objects.filter(
-            ref__in=[row[4] for row in lines if row[4]],
-        ).values_list("ref", "nonconformity_percent")
+        Batch.objects.filter(ref__in=batch_refs).values_list("ref", "nonconformity_percent")
     )
-    for wo_id, kind, grade_ref, quantity, batch_ref in lines:
-        full, discounted, loss = result.get(wo_id, (Decimal("0"), Decimal("0"), Decimal("0")))
-        qty = quantity or Decimal("0")
-        if kind == WorkOrderItem.Kind.WASTE:
-            loss += qty
-        elif (
-            lot_percent[batch_ref]
-            if batch_ref in lot_percent
-            else (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown)
-        ) > 0:
-            discounted += qty
-        else:
-            full += qty
-        result[wo_id] = (full, discounted, loss)
+
+    for wo_id, kind, grade_ref, defect_ref, quantity, batch_ref in lines:
+        grouped_lines.setdefault(wo_id, []).append(
+            {
+                "quantity": str(quantity),
+                "quality_grade_ref": grade_ref or "",
+                "quality_defect_ref": defect_ref or "",
+                "loss": kind == WorkOrderItem.Kind.WASTE,
+                "batch_ref": batch_ref or "",
+            }
+        )
+
+    result = {}
+    for wo_id in finished_pks:
+        correction_rows = corrections.get(wo_id, [])
+        groups = (
+            list(correction_rows[-1][0].get("after_partition", []))
+            if correction_rows
+            else grouped_lines.get(wo_id, [])
+        )
+        full = discounted = loss = Decimal("0")
+        projected: list[QCPartitionGroupProjection] = []
+        for group in groups:
+            qty = Decimal(str(group.get("quantity") or "0"))
+            is_loss = bool(group.get("loss"))
+            grade_ref = str(group.get("quality_grade_ref") or "")
+            defect_ref = str(group.get("quality_defect_ref") or "")
+            batch_ref = str(group.get("batch_ref") or "")
+            if is_loss:
+                loss += qty
+            elif (
+                lot_percent[batch_ref]
+                if batch_ref in lot_percent
+                else (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown)
+            ) > 0:
+                discounted += qty
+            else:
+                full += qty
+            projected.append(
+                QCPartitionGroupProjection(
+                    quantity=_qty(qty),
+                    quality_grade_ref=grade_ref,
+                    quality_defect_ref=defect_ref,
+                    loss=is_loss,
+                )
+            )
+        last_at = correction_rows[-1][1] if correction_rows else None
+        result[wo_id] = (
+            full,
+            discounted,
+            loss,
+            tuple(projected),
+            len(correction_rows),
+            timezone.localtime(last_at).strftime("%d/%m %H:%M") if last_at else "",
+        )
     return result
 
 
-def build_production_reports(filters: dict | ProductionReportFilters | None = None) -> ProductionReportsProjection:
+def build_production_reports(
+    filters: dict | ProductionReportFilters | None = None,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> ProductionReportsProjection:
     """Build production report rows for the requested filter set."""
+    access = access or _full_access()
     normalized = _normalize_report_filters(filters)
     qs = _report_queryset(normalized)
     work_orders = list(qs)
     history_rows = tuple(_work_order_report_row(wo) for wo in work_orders)
 
     recipes = tuple(
-        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.output_sku or r.ref)
-        for r in Recipe.objects.filter(is_active=True).order_by("ref")
+        RecipeOptionProjection(pk=r.pk, ref=r.ref, name=r.name or r.output_sku or r.ref)
+        for r in Recipe.objects.filter(is_active=True).order_by("name", "ref")
     )
     positions = tuple(
         PositionOptionProjection(pk=p.pk, ref=p.ref, name=p.name, is_default=p.is_default)
@@ -1457,13 +2112,119 @@ def build_production_reports(filters: dict | ProductionReportFilters | None = No
         quality_rows=_quality_report_rows(work_orders),
         available_recipes=recipes,
         available_positions=positions,
+        access=access,
     )
 
 
 # ── Internals ──────────────────────────────────────────────────────────
 
 
-def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
+def _production_counts(
+    work_orders: tuple[WorkOrderCardProjection, ...],
+) -> ProductionCountsProjection:
+    """Compute aggregates from the already-authorized cards only."""
+
+    by_status = {
+        status: tuple(card for card in work_orders if card.status == status) for status in WorkOrder.Status.values
+    }
+    return ProductionCountsProjection(
+        total=len(work_orders),
+        planned=len(by_status[WorkOrder.Status.PLANNED]),
+        started=len(by_status[WorkOrder.Status.STARTED]),
+        finished=len(by_status[WorkOrder.Status.FINISHED]),
+        void=len(by_status[WorkOrder.Status.VOID]),
+        planned_qty=_sum_qty(list(work_orders), "planned_qty"),
+        started_qty=_sum_qty(list(work_orders), "started_qty"),
+        finished_qty=_sum_qty(list(work_orders), "finished_qty"),
+        loss_qty=_sum_qty(list(work_orders), "loss"),
+    )
+
+
+def _prime_order_commitments(work_orders: list[WorkOrder]) -> None:
+    """Attach all order commitments with one orders query for the board."""
+
+    refs = {ref for work_order in work_orders for ref in _linked_order_refs(work_order)}
+    if refs:
+        try:
+            from shopman.orderman.models import Order
+
+            orders = Order.objects.filter(ref__in=refs).prefetch_related("items")
+            by_ref = {order.ref: order for order in orders}
+        except Exception:
+            logger.debug("production.order_refs_batch_failed", exc_info=True)
+            by_ref = {}
+    else:
+        by_ref = {}
+
+    for work_order in work_orders:
+        commitments = []
+        for ref in _linked_order_refs(work_order):
+            order = by_ref.get(ref)
+            if order is None:
+                continue
+            commitments.append(
+                OrderCommitmentProjection(
+                    ref=order.ref,
+                    status=order.status,
+                    status_label=order_status_label(order.status),
+                    qty_required=_qty(_qty_required_for_order(order, work_order.output_sku)),
+                )
+            )
+        work_order._production_order_commitments = tuple(commitments)
+
+
+def _prime_base_recipe_usages(recipes: list[Recipe]) -> None:
+    """Attach base-recipe usage projections without a query per card/row."""
+
+    if not recipes:
+        return
+    recipe_ids = {recipe.pk for recipe in recipes}
+    items_by_recipe: dict[int, list[_RecipeItemData]] = {}
+    for item in RecipeItem.objects.filter(
+        recipe_id__in=recipe_ids,
+        is_optional=False,
+    ).order_by("sort_order"):
+        items_by_recipe.setdefault(item.recipe_id, []).append(
+            _RecipeItemData(
+                input_sku=item.input_sku,
+                quantity=Decimal(str(item.quantity)),
+                unit=item.unit,
+                sort_order=item.sort_order,
+            )
+        )
+    input_skus = {item.input_sku for items in items_by_recipe.values() for item in items}
+    base_by_output = {
+        recipe.output_sku: recipe
+        for recipe in Recipe.objects.filter(
+            is_active=True,
+            output_sku__in=input_skus,
+        )
+    }
+
+    for recipe in recipes:
+        usages = tuple(
+            BaseRecipeUsageProjection(
+                ref=base_by_output[item.input_sku].ref,
+                output_sku=base_by_output[item.input_sku].output_sku,
+                name=(base_by_output[item.input_sku].name or base_by_output[item.input_sku].output_sku),
+                quantity_display=_measure(item.quantity, item.unit),
+                per_unit_display=_measure(
+                    item.quantity / Decimal(str(recipe.batch_size)),
+                    item.unit,
+                ),
+            )
+            for item in items_by_recipe.get(recipe.pk, ())
+            if item.input_sku in base_by_output and recipe.batch_size
+        )
+        recipe._production_base_recipe_usages = usages
+
+
+def _build_wo_card(
+    wo: WorkOrder,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> WorkOrderCardProjection:
+    access = access or _full_access()
     started_qty = _wo_started_qty(wo)
     finished_qty = wo.finished
     loss = ""
@@ -1483,14 +2244,15 @@ def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
     return WorkOrderCardProjection(
         pk=wo.pk,
         ref=wo.ref,
+        rev=int(wo.rev or 0),
         recipe_pk=wo.recipe_id,
         recipe_ref=wo.recipe.ref,
-        recipe_name=wo.recipe.output_sku or wo.recipe.ref,
+        recipe_name=wo.recipe.name or wo.recipe.output_sku or wo.recipe.ref,
         base_usages=base_usages,
         output_sku=wo.output_sku,
         status=wo.status,
         status_label=WO_STATUS_LABELS.get(wo.status, wo.status),
-        status_color=WO_STATUS_COLORS.get(wo.status, "bg-muted text-muted-foreground"),
+        tone=WO_STATUS_TONES.get(wo.status, "neutral"),
         planned_qty=_qty(wo.quantity),
         started_qty=_qty(started_qty) if started_qty is not None else "",
         finished_qty=_qty(finished_qty) if finished_qty is not None else "",
@@ -1504,7 +2266,7 @@ def _build_wo_card(wo: WorkOrder) -> WorkOrderCardProjection:
         progress_pct=_work_order_progress_pct(wo),
         committed_qty=_qty(committed_qty),
         order_commitments=order_commitments,
-        can_void=wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED),
+        can_void=(access.can_void and wo.status in (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)),
     )
 
 
@@ -1519,28 +2281,34 @@ def _build_production_kds_card(
     target_minutes = _target_minutes(wo)
     target_seconds = target_minutes * 60
     if elapsed < target_seconds:
-        timer_class = "timer-ok"
+        timer_status_code = "on_time"
+        timer_tone = "success"
     elif elapsed < target_seconds * 2:
-        timer_class = "timer-warning"
+        timer_status_code = "warning"
+        timer_tone = "warning"
     else:
-        timer_class = "timer-late"
+        timer_status_code = "late"
+        timer_tone = "danger"
 
     step_state = _production_step_state(wo, elapsed)
     current_step = step_state["current_step_name"] or "Produção"
+    manual_step_index = _manual_step_index(wo.meta, total=step_state["total_steps"])
 
     return ProductionKDSCardProjection(
         pk=wo.pk,
         ref=wo.ref,
+        rev=wo.rev,
         output_sku=wo.output_sku,
         recipe_name=wo.recipe.name or wo.recipe.ref,
-        started_qty=_qty(wo.started_qty or wo.quantity),
+        started_qty=_qty(_wo_started_qty(wo) or wo.quantity),
         operator_ref=wo.operator_ref or "",
         position_ref=wo.position_ref or "",
         started_at_display=_format_datetime(started_at),
         elapsed_seconds=elapsed,
         elapsed_minutes=elapsed // 60,
         target_seconds=target_seconds,
-        timer_class=timer_class,
+        timer_status_code=timer_status_code,
+        timer_tone=timer_tone,
         current_step=str(current_step),
         current_step_index=step_state["current_step_index"],
         total_steps=step_state["total_steps"],
@@ -1548,7 +2316,8 @@ def _build_production_kds_card(
         step_progress_pct=step_state["step_progress_pct"],
         next_step_name=step_state["next_step_name"],
         time_remaining_min=step_state["time_remaining_min"],
-        can_finish=access.can_edit_finished,
+        can_advance_step=(step_state["total_steps"] > 0 and (manual_step_index or 0) < step_state["total_steps"]),
+        can_finish=access.can_close_qc,
         order_refs=_linked_order_refs(wo),
     )
 
@@ -1570,6 +2339,8 @@ def build_work_order_card(ref: str) -> WorkOrderCardProjection:
 
 
 def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentProjection, ...]:
+    if hasattr(wo, "_production_order_commitments"):
+        return wo._production_order_commitments
     refs = _linked_order_refs(wo)
     if not refs:
         return ()
@@ -1580,11 +2351,7 @@ def _order_commitments_for_work_order(wo: WorkOrder) -> tuple[OrderCommitmentPro
         logger.debug("production.order_ref_import_failed wo=%s", wo.ref, exc_info=True)
         return ()
 
-    orders = (
-        Order.objects.filter(ref__in=refs)
-        .prefetch_related("items")
-        .order_by("created_at")
-    )
+    orders = Order.objects.filter(ref__in=refs).prefetch_related("items").order_by("created_at")
     by_ref = {order.ref: order for order in orders}
     result: list[OrderCommitmentProjection] = []
     for ref in refs:
@@ -1624,7 +2391,7 @@ def _work_order_progress_pct(wo: WorkOrder) -> int:
 
 
 def _production_step_state(wo: WorkOrder, elapsed_seconds: int) -> dict[str, int | str | None]:
-    steps = _recipe_steps(wo.recipe)
+    steps = _recipe_steps(wo)
     if not steps:
         return {
             "current_step_index": None,
@@ -1670,8 +2437,14 @@ def _production_step_state(wo: WorkOrder, elapsed_seconds: int) -> dict[str, int
     }
 
 
-def _recipe_steps(recipe: Recipe) -> list[dict[str, int | str]]:
-    raw_steps = (recipe.meta or {}).get("steps") or recipe.steps or []
+def _recipe_steps(work_order: WorkOrder) -> list[dict[str, int | str]]:
+    recipe = work_order.recipe
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    production_snapshot = snapshot.get("production") or {}
+    if "steps" in production_snapshot:
+        raw_steps = production_snapshot["steps"]
+    else:
+        raw_steps = (recipe.meta or {}).get("steps") or recipe.steps or []
     result: list[dict[str, int | str]] = []
     for index, raw in enumerate(raw_steps, start=1):
         if isinstance(raw, dict):
@@ -1684,10 +2457,14 @@ def _recipe_steps(recipe: Recipe) -> list[dict[str, int | str]]:
             target_seconds = int(target or 0)
         except (TypeError, ValueError):
             target_seconds = 0
-        result.append({
-            "name": name or f"Passo {index}",
-            "target_seconds": max(1, target_seconds or int(_target_minutes_for_recipe(recipe) * 60 / max(1, len(raw_steps)))),
-        })
+        result.append(
+            {
+                "name": name or f"Passo {index}",
+                "target_seconds": max(
+                    1, target_seconds or int(_target_minutes_for_recipe(recipe) * 60 / max(1, len(raw_steps)))
+                ),
+            }
+        )
     return result
 
 
@@ -1743,8 +2520,7 @@ def _parse_date(value, default: date) -> date:
 
 def _report_queryset(filters: ProductionReportFilters):
     qs = (
-        WorkOrder.objects
-        .filter(target_date__gte=filters.date_from, target_date__lte=filters.date_to)
+        WorkOrder.objects.filter(target_date__gte=filters.date_from, target_date__lte=filters.date_to)
         .select_related("recipe")
         .prefetch_related("events")
         .order_by("target_date", "recipe__ref", "ref")
@@ -1763,7 +2539,9 @@ def _report_queryset(filters: ProductionReportFilters):
 def _work_order_report_row(wo: WorkOrder) -> WorkOrderReportRow:
     started_qty = _wo_started_qty(wo) or Decimal("0")
     finished_qty = wo.finished or Decimal("0")
-    loss_qty = max((started_qty or wo.quantity) - finished_qty, Decimal("0")) if wo.finished is not None else Decimal("0")
+    loss_qty = (
+        max((started_qty or wo.quantity) - finished_qty, Decimal("0")) if wo.finished is not None else Decimal("0")
+    )
     yield_rate = ""
     if wo.finished is not None and (started_qty or wo.quantity):
         yield_rate = f"{int((finished_qty / (started_qty or wo.quantity)) * 100)}%"
@@ -1826,9 +2604,7 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
     from shopman.shop.models import QualityDefect, QualityGrade
     from shopman.shop.services import quality as quality_service
 
-    finished = {
-        wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED
-    }
+    finished = {wo.pk: wo for wo in work_orders if wo.status == WorkOrder.Status.FINISHED}
     if not finished:
         return ()
 
@@ -1852,9 +2628,7 @@ def _quality_report_rows(work_orders: list[WorkOrder]) -> tuple[QualityReportRow
                 continue  # perda sem defeito é rendimento, não qualidade
             grade = ""
         key = (wo.recipe.ref, grade, defect_ref)
-        bucket = grouped.setdefault(
-            key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")}
-        )
+        bucket = grouped.setdefault(key, {"name": wo.recipe.name or wo.recipe.ref, "qty": Decimal("0")})
         bucket["qty"] = bucket["qty"] + quantity
         recipe_totals[wo.recipe.ref] = recipe_totals.get(wo.recipe.ref, Decimal("0")) + quantity
 
@@ -1966,6 +2740,7 @@ def _late_projection(wo: WorkOrder) -> ProductionLateWorkOrderProjection:
         pk=wo.pk,
         ref=wo.ref,
         output_sku=wo.output_sku,
+        recipe_name=wo.recipe.name or wo.recipe.output_sku or wo.recipe.ref,
         operator_ref=wo.operator_ref or "",
         elapsed_minutes=elapsed_minutes,
         target_minutes=_target_minutes(wo),
@@ -2044,9 +2819,7 @@ def _suggestion_explanation_parts(basis: dict) -> tuple[str, ...]:
         avg_display = format(avg.quantize(Decimal("0.1")).normalize(), "f").replace(".", ",")
         weekday_note = ", mesmo dia da semana" if basis.get("same_weekday") else ""
         day_word = "dia" if sample == 1 else "dias"
-        parts.append(
-            f"Média de venda: {avg_display}/dia ({sample} {day_word} de histórico{weekday_note})"
-        )
+        parts.append(f"Média de venda: {avg_display}/dia ({sample} {day_word} de histórico{weekday_note})")
 
     committed = _decimal_value(basis.get("committed", Decimal("0")))
     if committed:
@@ -2094,7 +2867,7 @@ def _build_matrix_rows(
     for recipe in recipes:
         row = row_for(recipe.output_sku)
         row["recipe_pk"] = recipe.pk
-        row["recipe_name"] = recipe.output_sku or recipe.ref
+        row["recipe_name"] = recipe.name or recipe.output_sku or recipe.ref
         row["base_usages"] = _base_recipe_usages(recipe)
 
     for suggestion in suggestions:
@@ -2131,7 +2904,9 @@ def _build_matrix_rows(
             finished_qty=_sum_qty(row["finished"], "finished_qty"),
             loss_qty=_sum_qty(row["finished"], "loss"),
         )
-        for output_sku, row in sorted(rows.items(), key=lambda item: item[0])
+        # Ordena pelo texto que a bancada lê (o nome), com o SKU como desempate:
+        # lista ordenada por chave invisível parece embaralhada.
+        for output_sku, row in sorted(rows.items(), key=lambda item: (str(item[1]["recipe_name"]).lower(), item[0]))
     )
 
 
@@ -2200,6 +2975,8 @@ def _sum_qty(work_orders: list[WorkOrderCardProjection], field_name: str) -> str
 
 
 def _base_recipe_usages(recipe: Recipe) -> tuple[BaseRecipeUsageProjection, ...]:
+    if hasattr(recipe, "_production_base_recipe_usages"):
+        return recipe._production_base_recipe_usages
     prefetched = getattr(recipe, "_prefetched_objects_cache", {}).get("items")
     if prefetched is not None:
         items = tuple(item for item in prefetched if not item.is_optional)
@@ -2237,15 +3014,16 @@ def _build_weighing_ticket(
     recipe = entry["recipe"]
     output_quantity = Decimal(str(entry["quantity"]))
     output_unit = str(entry["unit"])
-    coefficient = output_quantity / recipe.batch_size
+    items = entry["items"]
+    coefficient = output_quantity / entry["batch_size"]
     ingredients = tuple(
         ProductionWeighingIngredientProjection(
             sku=item.input_sku,
-            name=_ingredient_name(item.input_sku, active_recipes=active_recipes, product_names=product_names),
+            name=_ingredient_label(item.input_sku, active_recipes=active_recipes, product_names=product_names),
             quantity_display=_measure(Decimal(str(item.quantity)) * coefficient, item.unit),
             is_subrecipe=item.input_sku in active_recipes,
         )
-        for item in _recipe_items(recipe)
+        for item in items
     )
 
     # Peso da massa = soma dos insumos mássicos escalados (kg/g/mg → kg).
@@ -2253,26 +3031,30 @@ def _build_weighing_ticket(
     dough_weight = sum(
         (
             Decimal(str(item.quantity)) * coefficient * mass_factors[item.unit]
-            for item in _recipe_items(recipe)
+            for item in items
             if item.unit in mass_factors
         ),
         Decimal("0"),
     )
     dough_weight_display = (
-        f"≈ {_measure(dough_weight, 'kg')} de massa"
-        if output_unit not in mass_factors and dough_weight > 0
-        else ""
+        f"≈ {_measure(dough_weight, 'kg')} de massa" if output_unit not in mass_factors and dough_weight > 0 else ""
     )
 
     shelf_life = _decimal_meta(recipe.meta, "shelf_life_days")
-    expiry = selected_date + timedelta(days=int(shelf_life) if shelf_life else 1)
-    table = {
-        "headers": ["Insumo", "Quantidade"],
-        "rows": [
-            {"cols": [ingredient.name, ingredient.quantity_display]}
+    try:
+        expiry = selected_date + timedelta(days=int(shelf_life) if shelf_life else 1)
+    except (OverflowError, ValueError):
+        # shelf_life_days absurdo (erro de digitação no Admin) não derruba a
+        # pesagem inteira — cai na validade padrão de 1 dia.
+        expiry = selected_date + timedelta(days=1)
+    table = ProductionWeighingTableProjection(
+        contract_version=PRODUCTION_CONTRACT_VERSION,
+        headers=("Insumo", "Quantidade"),
+        rows=tuple(
+            ProductionWeighingTableRowProjection(cols=(ingredient.name, ingredient.quantity_display))
             for ingredient in ingredients
-        ],
-    }
+        ),
+    )
     return ProductionWeighingTicketProjection(
         recipe_ref=recipe.ref,
         output_sku=recipe.output_sku,
@@ -2312,6 +3094,7 @@ def _recipe_items(recipe: Recipe) -> tuple[_RecipeItemData, ...]:
 
 
 def _work_order_recipe_items(work_order: WorkOrder) -> tuple[_RecipeItemData, ...]:
+    """Read the BOM frozen when the work order was planned."""
     snapshot = (work_order.meta or {}).get("_recipe_snapshot")
     if not snapshot:
         return _recipe_items(work_order.recipe)
@@ -2326,16 +3109,179 @@ def _work_order_recipe_items(work_order: WorkOrder) -> tuple[_RecipeItemData, ..
     )
 
 
+def _work_order_recipe_batch_size(work_order: WorkOrder) -> Decimal:
+    snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+    value = snapshot.get("batch_size", work_order.recipe.batch_size)
+    return Decimal(str(value or "0"))
+
+
+def _work_order_effective_quantity(work_order: WorkOrder) -> Decimal:
+    if work_order.status == WorkOrder.Status.STARTED:
+        started = _wo_started_qty(work_order)
+        if started is not None:
+            return Decimal(str(started))
+    return Decimal(str(work_order.quantity))
+
+
+def _work_order_needs(
+    work_orders: list[WorkOrder],
+    *,
+    expand: bool,
+    yield_margin: bool = False,
+) -> tuple[list[_NeedData], bool]:
+    """Aggregate frozen/effective WO needs and the optional preparation margin.
+
+    The core ``craft.needs`` query reads the live recipe and planned quantity.
+    Production execution must instead keep using the BOM snapshot and, after a
+    start, the quantity that actually entered the process.  The yield margin is
+    still budgeted once per shared preparation before recursive expansion.
+    """
+
+    active_recipes = {
+        recipe.output_sku: recipe for recipe in Recipe.objects.filter(is_active=True).prefetch_related("items")
+    }
+    output_units = _recipe_output_units(
+        {work_order.recipe_id: work_order.recipe for work_order in work_orders}.values()
+    )
+    immediate: dict[tuple[str, str], Decimal] = {}
+    pieces: dict[tuple[str, str], Decimal] = {}
+
+    for work_order in work_orders:
+        batch_size = _work_order_recipe_batch_size(work_order)
+        if batch_size <= 0:
+            continue
+        effective_quantity = _work_order_effective_quantity(work_order)
+        coefficient = effective_quantity / batch_size
+        counted_output = units.dimension(output_units.get(work_order.recipe_id, "")) == units.COUNT
+        for item in _work_order_recipe_items(work_order):
+            key = (item.input_sku, item.unit)
+            immediate[key] = immediate.get(key, Decimal("0")) + item.quantity * coefficient
+            if (
+                yield_margin
+                and counted_output
+                and units.dimension(item.unit) == units.MASS
+                and item.input_sku in active_recipes
+            ):
+                pieces[key] = pieces.get(key, Decimal("0")) + effective_quantity
+
+    margins: dict[tuple[str, str], object] = {}
+    if yield_margin:
+        from shopman.craftsman.services.yield_margin import (
+            compute_yield_margin,
+            mixer_loss_g_for,
+        )
+
+        for key, total_pieces in pieces.items():
+            item_ref, unit = key
+            margin = compute_yield_margin(
+                pieces=total_pieces,
+                unit=unit,
+                mixer_loss_g=mixer_loss_g_for(active_recipes[item_ref]),
+            )
+            if margin is not None:
+                margins[key] = margin
+                immediate[key] += margin.total
+
+    aggregated: dict[tuple[str, str], _NeedData] = {}
+
+    def add(
+        item_ref: str,
+        quantity: Decimal,
+        unit: str,
+        *,
+        depth: int = 0,
+        margin: object | None = None,
+    ) -> None:
+        nested_recipe = active_recipes.get(item_ref)
+        if expand and nested_recipe is not None and depth < 5 and nested_recipe.batch_size:
+            coefficient = quantity / Decimal(str(nested_recipe.batch_size))
+            for nested_item in _recipe_items(nested_recipe):
+                add(
+                    nested_item.input_sku,
+                    nested_item.quantity * coefficient,
+                    nested_item.unit,
+                    depth=depth + 1,
+                )
+            return
+
+        key = (item_ref, unit)
+        existing = aggregated.get(key)
+        if existing is None:
+            aggregated[key] = _NeedData(
+                item_ref=item_ref,
+                quantity=quantity,
+                unit=unit,
+                has_recipe=nested_recipe is not None,
+                margin=margin,
+            )
+        else:
+            existing.quantity += quantity
+            if margin is not None:
+                existing.margin = margin
+
+    for (item_ref, unit), quantity in immediate.items():
+        add(item_ref, quantity, unit, margin=None if expand else margins.get((item_ref, unit)))
+
+    return list(aggregated.values()), bool(margins)
+
+
+def _recipe_output_units(recipes) -> dict[int, str]:
+    """Resolve output units with bounded catalog queries.
+
+    Model validation resolves one SKU at a time.  A read projection instead
+    keeps the same Product → Material → recipe metadata precedence while
+    loading each catalog only once.
+    """
+    from shopman.buyman.models import Material
+    from shopman.craftsman.models import normalize_recipe_item_unit
+    from shopman.offerman.models import Product
+
+    recipes = tuple(recipes)
+    output_skus = {recipe.output_sku for recipe in recipes if recipe.output_sku}
+    catalog_units = dict(Product.objects.filter(sku__in=output_skus).values_list("sku", "unit"))
+    missing = output_skus.difference(catalog_units)
+    catalog_units.update(Material.objects.filter(sku__in=missing).values_list("sku", "unit"))
+    return {
+        recipe.pk: normalize_recipe_item_unit(
+            catalog_units.get(recipe.output_sku) or (recipe.meta or {}).get("output_unit")
+        )
+        for recipe in recipes
+    }
+
+
 def _ingredient_name(
     sku: str,
     *,
     active_recipes: dict[str, Recipe],
     product_names: dict[str, str],
 ) -> str:
+    """Só o nome legível. O SKU NÃO entra aqui.
+
+    Quem tem campo próprio para o SKU deve usá-lo — o nome com ``(SKU)`` embutido
+    fazia a lista de insumos repetir o código duas vezes na mesma linha, uma no
+    nome e outra logo abaixo. Sem nome cadastrado, o SKU é o nome: melhor a linha
+    feia que a linha ausente.
+    """
     if sku in active_recipes:
         recipe = active_recipes[sku]
-        return f"{recipe.name} ({sku})"
+        return recipe.name or sku
     return product_names.get(sku, sku)
+
+
+def _ingredient_label(
+    sku: str,
+    *,
+    active_recipes: dict[str, Recipe],
+    product_names: dict[str, str],
+) -> str:
+    """Nome e SKU numa linha só — para superfície SEM campo separado para o código.
+
+    É o caso da etiqueta de pesagem: ali o padeiro tem uma linha por insumo e nada
+    mais, e distinguir dois pré-preparos de nome parecido depende do código estar
+    à vista. Quando o nome JÁ é o SKU (sem cadastro), não se repete.
+    """
+    name = _ingredient_name(sku, active_recipes=active_recipes, product_names=product_names)
+    return name if name == sku else f"{name} ({sku})"
 
 
 def _product_names(skus: set[str]) -> dict[str, str]:
@@ -2355,19 +3301,48 @@ def _measure(value: Decimal, unit: str) -> str:
     return f"{text} {unit}".strip()
 
 
-def resolve_production_access(user) -> ProductionSurfaceAccess:
-    """Resolve canonical column access for the production surface."""
-    if getattr(user, "is_superuser", False) or user.has_perm("shop.manage_production"):
+def resolve_production_access(
+    user,
+    *,
+    trusted_station_ref: str = "",
+    selected_date: date | None = None,
+) -> ProductionSurfaceAccess:
+    """Resolve capabilities from the current user, station and date context.
+
+    ``selected_date`` is deliberately part of the boundary now, even though no
+    calendar-specific grant exists yet.  That prevents a future historical or
+    locked-day rule from being bolted onto individual endpoints.  Station
+    requirements are deployment policy until D2 is decided: capability names
+    listed in ``PRODUCTION_TRUSTED_STATION_CAPABILITIES`` fail closed when the
+    request does not carry a validated station reference.
+    """
+    del selected_date
+    is_superuser = bool(getattr(user, "is_superuser", False))
+    if is_superuser:
         return _full_access()
 
+    can_manage_all = user.has_perm("shop.manage_production")
+    has_surface_entry = user.has_perm("backstage.operate_production")
+
     def view(column: str) -> bool:
-        return user.has_perm(f"shop.view_production_{column}") or edit(column)
+        return can_manage_all or has_surface_entry or user.has_perm(f"shop.view_production_{column}") or edit(column)
 
     def edit(column: str) -> bool:
-        return user.has_perm(f"shop.edit_production_{column}")
+        return can_manage_all or user.has_perm(f"shop.edit_production_{column}")
+
+    station_capabilities = frozenset(getattr(settings, "PRODUCTION_TRUSTED_STATION_CAPABILITIES", ()))
+
+    def capability(name: str, granted: bool) -> bool:
+        if name in station_capabilities and not trusted_station_ref:
+            return False
+        return granted
+
+    can_edit_plan = edit("suggested") or edit("planned")
+    can_start = edit("started")
+    can_close_qc = edit("finished")
 
     return ProductionSurfaceAccess(
-        can_manage_all=False,
+        can_manage_all=can_manage_all,
         can_view_suggested=view("suggested"),
         can_edit_suggested=edit("suggested"),
         can_view_planned=view("planned"),
@@ -2378,6 +3353,36 @@ def resolve_production_access(user) -> ProductionSurfaceAccess:
         can_edit_finished=edit("finished"),
         can_view_unsold=view("unsold"),
         can_edit_unsold=edit("unsold"),
+        can_view_plan=view("suggested") or view("planned"),
+        can_edit_plan=capability("can_edit_plan", can_edit_plan),
+        can_start=capability("can_start", can_start),
+        can_advance_step=capability("can_advance_step", can_start),
+        can_close_qc=capability("can_close_qc", can_close_qc),
+        can_correct_qc=capability(
+            "can_correct_qc",
+            user.has_perm("backstage.correct_production_qc"),
+        ),
+        can_quick_finish=capability(
+            "can_quick_finish",
+            user.has_perm("backstage.quick_finish_production"),
+        ),
+        can_override_shortage=capability(
+            "can_override_shortage",
+            user.has_perm("backstage.override_production_shortage"),
+        ),
+        can_void=capability(
+            "can_void",
+            user.has_perm("backstage.void_production"),
+        ),
+        can_record_oven_fact=capability("can_record_oven_fact", can_start),
+        can_view_reports=capability(
+            "can_view_reports",
+            user.has_perm("backstage.view_production_reports"),
+        ),
+        can_reveal_blind_map=capability(
+            "can_reveal_blind_map",
+            user.has_perm("backstage.reveal_production_blind_map"),
+        ),
     )
 
 
@@ -2394,15 +3399,38 @@ def _full_access() -> ProductionSurfaceAccess:
         can_edit_finished=True,
         can_view_unsold=True,
         can_edit_unsold=True,
+        can_view_plan=True,
+        can_edit_plan=True,
+        can_start=True,
+        can_advance_step=True,
+        can_close_qc=True,
+        can_correct_qc=True,
+        can_quick_finish=True,
+        can_override_shortage=True,
+        can_void=True,
+        can_record_oven_fact=True,
+        can_view_reports=True,
+        can_reveal_blind_map=True,
     )
 
 
 def _can_view_card(card: WorkOrderCardProjection, access: ProductionSurfaceAccess) -> bool:
-    if card.status == WorkOrder.Status.PLANNED:
+    return _can_view_status(card.status, access)
+
+
+def _can_view_work_order(
+    work_order: WorkOrder,
+    access: ProductionSurfaceAccess,
+) -> bool:
+    return _can_view_status(work_order.status, access)
+
+
+def _can_view_status(status: str, access: ProductionSurfaceAccess) -> bool:
+    if status == WorkOrder.Status.PLANNED:
         return access.can_view_planned
-    if card.status == WorkOrder.Status.STARTED:
+    if status == WorkOrder.Status.STARTED:
         return access.can_view_started
-    if card.status == WorkOrder.Status.FINISHED:
+    if status == WorkOrder.Status.FINISHED:
         return access.can_view_finished
     return access.can_manage_all
 
@@ -2411,7 +3439,16 @@ def _wo_started_qty(wo: WorkOrder) -> Decimal | None:
     """Extract started quantity from work order events."""
     if wo.status in (WorkOrder.Status.PLANNED,):
         return None
-    for event in wo.events.filter(kind="started").order_by("-seq")[:1]:
+    prefetched = getattr(wo, "_prefetched_objects_cache", {}).get("events")
+    if prefetched is None:
+        events = wo.events.filter(kind="started").order_by("-seq")[:1]
+    else:
+        events = sorted(
+            (event for event in prefetched if event.kind == "started"),
+            key=lambda event: event.seq,
+            reverse=True,
+        )[:1]
+    for event in events:
         qty = (event.payload or {}).get("quantity")
         if qty is not None:
             return Decimal(str(qty))
@@ -2484,6 +3521,12 @@ class ProductionForecastProjection:
     selected_date_display: str
     generated_at_display: str
     rows: tuple[ForecastRowProjection, ...]
+    access: ProductionSurfaceAccess
+    actions: tuple[ProductionActionProjection, ...] = ()
+    generated_at: str = ""
+    source_revision: str = ""
+    fresh_until: str = ""
+    contract_version: int = PRODUCTION_CONTRACT_VERSION
 
 
 def _median_int(values: list[int]) -> int | None:
@@ -2530,7 +3573,11 @@ def _forecast_eta_display(eta) -> str:
     return timezone.localtime(eta).strftime("%H:%M") if eta else "—"
 
 
-def build_production_forecast(selected_date: date | None = None) -> ProductionForecastProjection:
+def build_production_forecast(
+    selected_date: date | None = None,
+    *,
+    access: ProductionSurfaceAccess | None = None,
+) -> ProductionForecastProjection:
     """O painel: fornadas da data, com previsão histórica e status vivo."""
     from datetime import datetime
     from datetime import time as dt_time
@@ -2539,6 +3586,7 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
 
     panel = ProductionConfig.load().panel
     target = selected_date or timezone.localdate()
+    access = access or _full_access()
     now = timezone.localtime()
     tz_info = timezone.get_current_timezone()
 
@@ -2546,8 +3594,10 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         WorkOrder.objects.filter(target_date=target)
         .exclude(status=WorkOrder.Status.VOID)
         .select_related("recipe")
+        .prefetch_related("events")
         .order_by("output_sku", "created_at")
     )
+    orders = [order for order in orders if _can_view_work_order(order, access)]
     history = _forecast_history(sorted({wo.recipe_id for wo in orders}), target)
 
     rows: list[tuple[tuple, ForecastRowProjection]] = []
@@ -2570,8 +3620,14 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         elif wo.status == WorkOrder.Status.STARTED:
             qty = _wo_started_qty(wo) or wo.quantity
             if duration_min is None:
-                duration_min = int((wo.recipe.meta or {}).get("max_started_minutes") or 0) or None
-            eta = wo.started_at + timedelta(minutes=duration_min) if (wo.started_at and duration_min) else None
+                # `max_started_minutes` é meta editável no Admin: não-numérico
+                # cairia em ValueError e grande demais estouraria o timedelta.
+                # `_decimal_meta` neutraliza o lixo; o try segura o overflow.
+                duration_min = int(_decimal_meta(wo.recipe.meta, "max_started_minutes")) or None
+            try:
+                eta = wo.started_at + timedelta(minutes=duration_min) if (wo.started_at and duration_min) else None
+            except OverflowError:
+                eta = None
             status = "in_progress"
             eta_actual = False
         else:  # planned
@@ -2608,4 +3664,5 @@ def build_production_forecast(selected_date: date | None = None) -> ProductionFo
         selected_date_display=target.strftime("%d/%m/%Y"),
         generated_at_display=now.strftime("%H:%M"),
         rows=tuple(row for _, row in rows),
+        access=access,
     )

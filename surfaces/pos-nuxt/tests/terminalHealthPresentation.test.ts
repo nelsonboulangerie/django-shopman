@@ -109,3 +109,51 @@ describe("terminalOverallStatus", () => {
     expect(terminalOverallStatus(rows)).toBe("ready");
   });
 });
+
+// ── A trava da gaveta está armada NESTE balcão? ───────────────────────────
+//
+// A medição da polaridade vive no `agent.json` da estação, e o Django nunca
+// alcança a loopback do balcão. Sem esta linha, um balcão SEM medição era
+// visualmente idêntico a um protegido: a trava simplesmente não agia, e nada
+// em lugar nenhum dizia que ela não existia.
+
+describe("terminalHealthRows — a linha da trava", () => {
+  const probe = (drawerLock?: { calibrated: boolean }) => ({
+    ok: true,
+    message: "Fila TM-T20 respondendo.",
+    drawerLock,
+  });
+
+  it("estação medida: a trava aparece ARMADA", () => {
+    const rows = terminalHealthRows([], FISCAL, probe({ calibrated: true }));
+    expect(rows.find((row) => row.key === "drawer_lock")).toMatchObject({
+      label: "Trava da gaveta",
+      status: "ready",
+    });
+  });
+
+  it("estação sem medição acende ATENÇÃO e diz onde medir", () => {
+    const row = terminalHealthRows([], FISCAL, probe({ calibrated: false }))
+      .find((r) => r.key === "drawer_lock")!;
+
+    expect(row.status).toBe("warning");
+    expect(row.message).toContain("não age");
+    expect(row.message).toContain("Terminais do PDV");
+  });
+
+  it("sem medição acende o badge geral: proteção ausente não pode passar por 'tudo OK'", () => {
+    const rows = terminalHealthRows([], FISCAL, probe({ calibrated: false }));
+    expect(terminalOverallStatus(rows)).toBe("warning");
+  });
+
+  it("agente antigo (sem o campo) não inventa linha nem alarme", () => {
+    const rows = terminalHealthRows([], FISCAL, probe(undefined));
+    expect(rows.find((row) => row.key === "drawer_lock")).toBeUndefined();
+    expect(terminalOverallStatus(rows)).toBe("ready");
+  });
+
+  it("balcão de gaveta de chave (sem agente) não ganha a linha", () => {
+    const rows = terminalHealthRows([], FISCAL, null);
+    expect(rows.find((row) => row.key === "drawer_lock")).toBeUndefined();
+  });
+});

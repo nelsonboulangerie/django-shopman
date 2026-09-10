@@ -10,6 +10,7 @@ import {
   quickCheckoutDateOptions,
   isClosedWeekday,
   isCustomCheckoutDate,
+  notesToggleState,
   paymentMethodHint,
   reconciledPickupSlotRef,
   shouldOfferPickupSwap,
@@ -49,6 +50,20 @@ describe('checkout flow view model', () => {
     expect(quickCheckoutDateOptions(bounds, closedDates)).toEqual([
       { label: 'Hoje', value: '2026-05-20', disabled: true },
       { label: 'Amanhã', value: '2026-05-21', disabled: false }
+    ])
+  })
+
+  it('disables the quick date shortcuts on a weekday the shop does not open', () => {
+    // Fallback local do "Quando" (só entra quando `available_dates` vem vazia).
+    // Sem repassar `closed_weekdays`, "Amanhã" nascia clicável num dia fechado e
+    // o passo travava sem dizer por quê — enquanto o calendário ao lado, que
+    // recebe o mesmo fato, já pintava o dia como indisponível.
+    const bounds = checkoutDateBounds({ max_preorder_days: 2 }, now)
+    const thursday = 3 // 2026-05-21, convenção Python (segunda = 0)
+
+    expect(quickCheckoutDateOptions(bounds, [], [thursday])).toEqual([
+      { label: 'Hoje', value: '2026-05-20', disabled: false },
+      { label: 'Amanhã', value: '2026-05-21', disabled: true }
     ])
   })
 
@@ -127,11 +142,11 @@ describe('isCustomCheckoutDate', () => {
 
 describe('paymentMethodHint', () => {
   it('descreve cada método pelo que o cliente espera', () => {
-    expect(paymentMethodHint('pix')).toBe('Aprovação na hora')
+    expect(paymentMethodHint('pix')).toBe('Pague com Pix no app do banco')
     expect(paymentMethodHint('card')).toBe('Pagamento em ambiente seguro')
     expect(paymentMethodHint('card', 'Stripe')).toBe('Pagamento seguro via Stripe')
     expect(paymentMethodHint('cartao', 'Efí')).toBe('Pagamento seguro via Efí')
-    expect(paymentMethodHint('cash')).toBe('Pague na entrega')
+    expect(paymentMethodHint('cash')).toBe('Pague ao receber')
     expect(paymentMethodHint('boleto')).toBe('')
   })
 })
@@ -175,5 +190,23 @@ describe('firstCheckoutError', () => {
 
   it('returns null when there are no errors', () => {
     expect(firstCheckoutError({})).toBeNull()
+  })
+})
+
+describe('notesToggleState', () => {
+  it('stashes the typed note when the toggle closes, and empties the payload field', () => {
+    expect(notesToggleState(false, 'tocar o interfone', '')).toEqual({ notes: '', stashed: 'tocar o interfone' })
+  })
+
+  it('restores the stashed note when the toggle reopens', () => {
+    expect(notesToggleState(true, '', 'tocar o interfone')).toEqual({ notes: 'tocar o interfone', stashed: '' })
+  })
+
+  it('keeps the current note over the stash when reopening with text already present', () => {
+    expect(notesToggleState(true, 'nota atual', 'nota antiga')).toEqual({ notes: 'nota atual', stashed: '' })
+  })
+
+  it('keeps an earlier stash when closing again without new text', () => {
+    expect(notesToggleState(false, '   ', 'nota antiga')).toEqual({ notes: '', stashed: 'nota antiga' })
   })
 })

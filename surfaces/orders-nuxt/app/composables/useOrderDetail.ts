@@ -22,22 +22,63 @@ export function useOrderDetail(orderRef: string) {
 
   const busy = ref(false);
 
-  async function act(action: string, body?: Record<string, unknown>): Promise<boolean> {
+  // ── Desafio de gerente ─────────────────────────────────────────────────────
+  //
+  // ⚠️ Cancelar pedido PAGO exige segunda assinatura, e o servidor pede isso com
+  // um erro TIPADO (`manager_approval_required`, de `validate_manager_override`).
+  // O `act` engolia qualquer erro num toast: o gerente lia "Falha na ação",
+  // sem nenhum lugar onde assinar. O pedido pago simplesmente não cancelava pelo
+  // Gestor — e nenhuma outra superfície cancela pedido da loja.
+  //
+  // Guardamos a tentativa para REENVIAR o mesmo ato com a autorização, em vez de
+  // pedir ao gerente que refaça o gesto (e escolha o motivo de novo).
+  const managerChallenge = ref<{ code: string; message: string } | null>(null);
+  let lastAttempt: { action: string; body?: Record<string, unknown> } | null = null;
+
+  async function act(
+    action: string,
+    body?: Record<string, unknown>,
+    approval?: Record<string, string>,
+  ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
     try {
       await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
         method: "POST",
-        body: body ?? {},
+        body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
       });
+      managerChallenge.value = null;
+      lastAttempt = null;
       await refresh();
       return true;
     } catch (error) {
+      const code = httpErrorCode(error);
+      if (code === "manager_approval_required" || code === "manager_approval_invalid") {
+        // Sem toast: o desafio NÃO é falha, é um passo do fluxo. Um toast
+        // vermelho aqui ensina o gerente que o sistema quebrou.
+        lastAttempt = { action, body };
+        managerChallenge.value = {
+          code,
+          message: httpErrorMessage(error, "Esta ação precisa da autorização de um gerente."),
+        };
+        return false;
+      }
       useSonner.error(httpErrorMessage(error, "Falha na ação. Tente de novo."));
       return false;
     } finally {
       busy.value = false;
     }
+  }
+
+  /** Reenvia o ato que pediu assinatura, agora com ela. PIN ou crachá. */
+  async function authorize(approval: Record<string, string>): Promise<boolean> {
+    if (!lastAttempt) return false;
+    return act(lastAttempt.action, lastAttempt.body, approval);
+  }
+
+  function dismissManagerChallenge() {
+    managerChallenge.value = null;
+    lastAttempt = null;
   }
 
   const confirm = () => act("confirm");
@@ -59,6 +100,15 @@ export function useOrderDetail(orderRef: string) {
       ...(equipmentBack ? { equipment_back: true } : {}),
     });
   const requeueFiscal = () => act("requeue-fiscal");
+
+  // Reenvio do link de pagamento ("não chegou"): o servidor enfileira o aviso
+  // de novo com a MESMA URL, e recusa com motivo (vencido, pago, cancelado,
+  // cedo demais) — o motivo chega como `detail` e vira o toast do `act`.
+  async function resendPaymentLink(): Promise<boolean> {
+    const ok = await act("resend-payment-link");
+    if (ok) useSonner.success("Link reenviado ao cliente.");
+    return ok;
+  }
 
   // Valid cancellation reasons for this order: for iFood, the live per-order coded
   // list ({code, description}); empty for channels without reason codes.
@@ -105,5 +155,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote };
+  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
 }

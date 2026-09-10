@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AccountDeviceProjection, AccountDeviceResponse } from '~/types/shopman'
-import { deviceIcon } from '~/presentation/account'
-import { authPhonePayload } from '~/utils/authPhone'
+import { deviceIcon, profileActionIsExternal, profileIssueFrom, type ProfileIssue } from '~/presentation/account'
+import { authPhonePayload, displayE164Phone, maskPhoneInput } from '~/utils/authPhone'
 import { formatCount } from '~/utils/display'
 
 definePageMeta({ middleware: 'account' })
@@ -255,6 +255,94 @@ async function confirmStepUp () {
   }
 }
 
+// ── Mudar meu número ────────────────────────────────────────────────
+//
+// Duas coisas diferentes moravam no mesmo botão: "entrar com outro número" abre
+// OUTRA conta e deixa o histórico para trás. Isto aqui é a que faltava — a conta
+// continua a mesma, o número é que muda.
+//
+// O código vai para o número NOVO, e não para o atual: é a posse dele que falta
+// provar. A sessão já responde pela conta.
+type PhoneChangeStep = 'number' | 'code'
+
+const phoneChangeOpen = ref(false)
+const phoneChangeStep = ref<PhoneChangeStep>('number')
+const phoneChangeInput = ref('')
+const phoneChangeTarget = ref('')
+const phoneChangeCode = ref<number[]>([])
+const phoneChangePending = ref(false)
+const phoneChangeIssue = ref<ProfileIssue | null>(null)
+const phoneChangeCodeStr = computed(() => phoneChangeCode.value.join('').slice(0, 6))
+const currentPhoneDisplay = computed(() => displayE164Phone(session.customerPhone.value || ''))
+
+function openPhoneChange () {
+  phoneChangeStep.value = 'number'
+  phoneChangeInput.value = ''
+  phoneChangeTarget.value = ''
+  phoneChangeCode.value = []
+  phoneChangeIssue.value = null
+  phoneChangeOpen.value = true
+}
+
+function onPhoneChangeInput (event: Event) {
+  const input = event.target as HTMLInputElement
+  phoneChangeInput.value = maskPhoneInput(input.value, 'BR')
+}
+
+async function sendPhoneChangeCode () {
+  if (phoneChangePending.value) return
+  phoneChangePending.value = true
+  phoneChangeIssue.value = null
+  try {
+    const body = await $fetch<{ phone: string }>(apiPath('/api/v1/account/phone/request/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: authPhonePayload(phoneChangeInput.value, 'BR')
+    })
+    phoneChangeTarget.value = body?.phone || phoneChangeInput.value
+    phoneChangeCode.value = []
+    phoneChangeStep.value = 'code'
+  } catch (e) {
+    // A recusa RICA (número de outra conta) vem com saídas — e nunca com o nome
+    // de quem tem o número. Cair no genérico aqui apagaria o motivo.
+    phoneChangeIssue.value = profileIssueFrom(
+      httpError(e).data,
+      'Não foi possível enviar o código agora. Tente novamente.'
+    )
+  } finally {
+    phoneChangePending.value = false
+  }
+}
+
+async function confirmPhoneChange () {
+  if (phoneChangePending.value || phoneChangeCodeStr.value.length !== 6) return
+  phoneChangePending.value = true
+  phoneChangeIssue.value = null
+  try {
+    const body = await $fetch<{ phone: string }>(apiPath('/api/v1/account/phone/confirm/'), {
+      method: 'POST',
+      headers: await csrfHeaders(),
+      credentials: 'include',
+      body: { ...authPhonePayload(phoneChangeTarget.value, 'BR'), code: phoneChangeCodeStr.value }
+    })
+    phoneChangeOpen.value = false
+    // A tela toda lê o telefone da sessão — inclusive o step-up logo abaixo, que
+    // manda o código para "o seu telefone". Deixá-la com o número velho faria a
+    // próxima confirmação sair para um número que não é mais dele.
+    session.setIdentity({ phone: body?.phone || phoneChangeTarget.value })
+    if (import.meta.client) useSonner.success('Pronto: sua conta agora atende neste número.')
+  } catch (e) {
+    phoneChangeIssue.value = profileIssueFrom(
+      httpError(e).data,
+      'Não foi possível confirmar o código. Tente novamente.'
+    )
+    phoneChangeCode.value = []
+  } finally {
+    phoneChangePending.value = false
+  }
+}
+
 // Exportar dados exige step-up antes do download (GET passa pela marca de sessão).
 function startExport () {
   privacyIssue.value = ''
@@ -283,6 +371,33 @@ useSeoMeta({ title: 'Segurança e dados' })
         <h1 class="shop-title">Segurança e dados</h1>
         <p class="shop-muted">{{ devicesCopy.page_message }}</p>
       </div>
+
+      <!-- Seu número: a identidade da conta, e agora também o que dá para mudar -->
+      <section class="space-y-4" data-phone-section>
+        <div>
+          <h2 class="shop-heading">Seu número</h2>
+          <p class="shop-muted">
+            É por ele que você entra e recebe o aviso de que o pão saiu do forno.
+          </p>
+        </div>
+
+        <UiItem variant="outline" class="bg-card">
+          <UiItemMedia variant="icon" class="size-10 rounded-md">
+            <Icon name="lucide:smartphone" />
+          </UiItemMedia>
+          <UiItemContent>
+            <UiItemTitle>{{ currentPhoneDisplay || 'Número não informado' }}</UiItemTitle>
+            <UiItemDescription>
+              Mudou de número? A conta vem junto — seus pedidos, endereços e pontos ficam.
+            </UiItemDescription>
+          </UiItemContent>
+          <UiItemActions>
+            <UiButton variant="outline" size="sm" icon="lucide:arrow-right-left" @click="openPhoneChange">
+              Mudar número
+            </UiButton>
+          </UiItemActions>
+        </UiItem>
+      </section>
 
       <!-- Acesso rápido: a credencial mais forte que ela tem -->
       <section class="space-y-4" data-passkey-section>
@@ -495,6 +610,110 @@ useSeoMeta({ title: 'Segurança e dados' })
           </UiAlertDialogFooter>
         </UiAlertDialogContent>
       </UiAlertDialog>
+
+      <!-- Mudar o número: informar o novo → confirmar o código que chega NELE -->
+      <UiDialog v-model:open="phoneChangeOpen">
+        <UiDialogContent>
+          <UiDialogHeader>
+            <UiDialogTitle>Mudar meu número</UiDialogTitle>
+            <UiDialogDescription>
+              <template v-if="phoneChangeStep === 'number'">
+                Digite o número novo. Vamos mandar um código para ele, para confirmar que é seu.
+              </template>
+              <template v-else>
+                Mandamos um código para {{ displayE164Phone(phoneChangeTarget) }}. Digite-o para
+                concluir a mudança.
+              </template>
+            </UiDialogDescription>
+          </UiDialogHeader>
+
+          <UiAlert v-if="phoneChangeIssue" variant="destructive">
+            <UiAlertTitle>Não deu para mudar</UiAlertTitle>
+            <UiAlertDescription>
+              <p>{{ phoneChangeIssue.message }}</p>
+              <div v-if="phoneChangeIssue.actions.length" class="mt-2 flex flex-wrap gap-2">
+                <UiButton
+                  v-for="action in phoneChangeIssue.actions"
+                  :key="action.ref"
+                  size="sm"
+                  :variant="action.priority === 'primary' ? 'default' : 'outline'"
+                  :to="profileActionIsExternal(action) ? undefined : action.href"
+                  :href="profileActionIsExternal(action) ? action.href : undefined"
+                  :target="profileActionIsExternal(action) ? '_blank' : undefined"
+                  :rel="profileActionIsExternal(action) ? 'noopener noreferrer' : undefined"
+                >
+                  {{ action.label }}
+                </UiButton>
+              </div>
+            </UiAlertDescription>
+          </UiAlert>
+
+          <div v-if="phoneChangeStep === 'number'" class="space-y-2">
+            <UiLabel for="phone-change-input">Número novo</UiLabel>
+            <UiInputGroup class="bg-background">
+              <UiInputGroupAddon align="inline-start">
+                <span class="font-semibold">+55</span>
+              </UiInputGroupAddon>
+              <UiInputGroupInput
+                id="phone-change-input"
+                :value="phoneChangeInput"
+                type="tel"
+                inputmode="numeric"
+                autocomplete="tel-national"
+                placeholder="(43) 98404-9009"
+                :maxlength="16"
+                @input="onPhoneChangeInput"
+              />
+            </UiInputGroup>
+            <p class="shop-caption text-muted-foreground">
+              O número antigo deixa de abrir esta conta assim que você confirmar.
+            </p>
+          </div>
+
+          <div v-else class="space-y-2">
+            <UiPinInput
+              v-model="phoneChangeCode"
+              :input-count="6"
+              type="number"
+              otp
+              :aria-invalid="!!phoneChangeIssue"
+              class="justify-between sm:justify-start"
+            />
+            <UiButton
+              variant="link"
+              size="sm"
+              class="px-0"
+              :loading="phoneChangePending"
+              :disabled="phoneChangePending"
+              @click="sendPhoneChangeCode"
+            >
+              Reenviar código
+            </UiButton>
+          </div>
+
+          <UiDialogFooter>
+            <UiButton variant="ghost" :disabled="phoneChangePending" @click="phoneChangeOpen = false">
+              Cancelar
+            </UiButton>
+            <UiButton
+              v-if="phoneChangeStep === 'number'"
+              :loading="phoneChangePending"
+              :disabled="phoneChangePending || !phoneChangeInput"
+              @click="sendPhoneChangeCode"
+            >
+              Enviar código
+            </UiButton>
+            <UiButton
+              v-else
+              :loading="phoneChangePending"
+              :disabled="phoneChangePending || phoneChangeCodeStr.length !== 6"
+              @click="confirmPhoneChange"
+            >
+              Confirmar mudança
+            </UiButton>
+          </UiDialogFooter>
+        </UiDialogContent>
+      </UiDialog>
 
       <!-- Step-up: reconfirmar identidade por OTP antes de excluir/exportar -->
       <UiDialog v-model:open="stepUpOpen">

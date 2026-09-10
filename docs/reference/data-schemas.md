@@ -19,9 +19,10 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `fulfillment_type` | `string` | CheckoutView, POS, API, iFood webhook | CommitService, MinimumOrderValidator | `"pickup"` ou `"delivery"` |
 | `delivery_address` | `string` | CheckoutView, API, iFood webhook | CommitService, CustomerIdentificationHandler | Endereço formatado (texto livre) |
 | `delivery_date` | `string` | CheckoutView | CommitService | ISO date (`YYYY-MM-DD`). Se futuro, indica encomenda |
-| `delivery_time_slot` | `string` | CheckoutView | CommitService | Ref do slot configurado em `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`); o label ("A partir das 09h") resolve via `storefront.services.pickup_slots.slot_label` |
+| `delivery_time_slot` | `string` | CheckoutView · PDV | CommitService | **Dois vocabulários na mesma chave, e a DATA decide qual.** Encomenda (data futura, loja e PDV) → ref do slot canônico de `Shop.defaults["pickup_slots"]` (`"slot-09"`, `"slot-12"`, `"slot-15"`; label via `shop.services.fulfillment_window.canonical_slots`). Venda para HOJE no PDV → janela de meia hora do expediente, onde o ref É o par de horas (`"14:00-14:30"`) e por isso se lê sozinho num pedido antigo. Quem escolhe a grade é `fulfillment_window._grid_for`; quem lê deve tolerar as duas formas. ⚠️ Ficou assim porque encomenda é TURNO ("a partir das 12h", promessa de fornada) e a entrega de hoje é JANELA (o combinado com o entregador) — são compromissos diferentes, e unificá-los perderia um dos dois. |
 | `order_notes` | `string` | CheckoutView, iFood webhook | CommitService, KDS ticket (`customer_note`) | Observações do pedido escritas pelo **cliente** no checkout. Exibida no ticket do KDS (nota do cliente). Distinta da `kitchen_note` (nota do operador) |
 | `origin_channel` | `string` | CartService, POS, iFood webhook | CommitService, hooks.py | Canal de origem: `"web"`, `"whatsapp"`, `"ifood"`, `"pos"`, `"instagram"` |
+| `concierge` | `dict` | `storefront.concierge.tools` (sessão aberta pelo concierge de WhatsApp) | Admin da conversa, diagnóstico | `{conversation_id}`: a `Conversation` que abriu esta sacola. Só presente em sessões do canal `whatsapp` criadas pelo concierge; acompanha `origin_channel = "whatsapp"`. Ver [Concierge de WhatsApp](#concierge-de-whatsapp) |
 | `coupon_code` | `string` | CartService.apply_coupon | CouponModifier, CartService.get_cart_summary | Código do cupom aplicado (uppercase) |
 | `outside_business_hours` | `bool` | BusinessHoursRule (validation) | CheckoutView, CommitService | `True` se pedido feito fora do horário. Não bloqueia checkout — apenas flag informativa |
 | `delivery_address_structured` | `dict` | CheckoutView (`set_data`) | CommitService | Endereço estruturado do Google Places: `{route, street_number, complement, neighborhood, city, state_code, postal_code, place_id, formatted_address, delivery_instructions, is_verified, latitude, longitude}` |
@@ -32,14 +33,17 @@ O Core não impõe schema — a governança é por convenção documentada aqui.
 | `delivery_distance_km` | `float` | DeliveryFeeModifier (via `session.save`) | checkout/tracking (transparência) | Distância loja→endereço em km (1 casa), quando calculável (lat/lng presentes). Exibida ao cliente p/ justificar a taxa. Ausente quando não há coordenada |
 | `delivery_address_id` | `int` | `web/views/checkout.py` | `checkout_defaults.py` | FK para `CustomerAddress.pk`. Usada para inferir defaults na sessão. **Não propagada ao Order.data** — somente em Session.data |
 | `stock_check_unavailable` | `list[dict]` | `lifecycle._check_availability` (via `check_on_commit`) | — | SKUs rejeitados por indisponibilidade durante check pré-commit. Cada entry: `{sku, error_code}`. Presente quando pedido é cancelado por `auto_reject_unavailable` |
-| `manual_discount` | `dict` | POS `pos_close` view | `ModifyService` (via `set_data`) | Desconto manual do operador: `{type, value, discount_q, reason}`. `type`: `"percent"` ou `"fixed"` |
+| `manual_discount` | `dict` | POS `pos_close` view | `ModifyService` (via `set_data`) | Desconto manual do operador **no PEDIDO**: `{type, value, discount_q, reason}`. `type`: `"percent"` ou `"fixed"`; em `fixed`, `value` está em REAIS e `discount_q` em centavos |
+| `items[].line_id` | `string` | cliente (PDV) → `pos_intent._items` → `build_session_ops` (`add_line`) | `Session._normalize_items`, ledger de fire do KDS, projection do tab | A IDENTIDADE durável da linha, **gerada pelo cliente** ao criar a linha (`L-` + 8 chars) e devolvida em todo save. É ela — nunca o SKU — que diz qual linha é qual: duas linhas do MESMO SKU são legítimas (o segundo chá, pedido depois de o primeiro ir para a cozinha) e não são fundidas por ninguém. Ausente, o kernel gera; REPETIDA no mesmo payload é recusada (`duplicate_line_id`), porque duas linhas com o mesmo id colapsariam numa só no `_persist_items`. Preservada no remove+readd do save e do fechamento, e é por isso que o pedido committado não re-dispara para a cozinha |
+| `items[].meta.manual_discount` | `dict` | POS `build_session_ops` | `DiscountModifier._calc_manual`, `pos._payload_line_discounts_q`, projection do tab | Desconto manual do operador **numa LINHA**: `{type, value, reason, approved_by?}`. Mesma convenção do de pedido — `type` `"percent"` (0–100) ou `"fixed"` (REAIS). ⚠️ Em `fixed` o valor é **POR UNIDADE**: é assim que ele compete com o desconto automático no "maior desconto ganha", que mede tudo por unidade contra a etiqueta. Rateio de um valor pela linha inteira é do desconto de PEDIDO, que não disputa linha com ninguém. A review (`_payload_line_discounts_q`) tem de calcular **o mesmo centavo** que o kernel |
 | `tab_ref` | `string` | POS tab service | POS tab service, projections | Referência canônica da comanda. Aceita texto curto alfanumérico; referências numéricas de até 8 dígitos continuam normalizadas com zeros. Ex: `"00001007"`, `"MESA ANA"` |
 | `tab_display` | `string` | POS tab service | POS UI, Order.data | Rótulo curto para operador. Em numéricos, remove zeros à esquerda; em texto, preserva o rótulo informado. Ex: `"1007"`, `"mesa ana"` |
 | `pos_operator` | `string` | POS tab service | POS projections, Order.data | Username do operador que abriu/tocou o POS tab |
 | `last_touched_at` | `string` | POS tab service | POS projections | Timestamp ISO da última interação operacional |
 | `fired_lines` | `list[str]` | POS `fire_pos_tab` (`session.save`) | `_tab_payload` (flag `fired` por item) | Marker UI de quais `line_id` da comanda já foram disparados à cozinha (KDS). Mirror do ledger autoritativo (tickets KDS por `session_key`, que sobrevive ao commit); escrito direto, sem re-pricing. Disparo progressivo curso-a-curso. **Não propagado ao Order.data** — o ledger pós-commit são os próprios `KDSTicket` |
-| `fiscal` | `dict` | POS checkout | Order.data | Preferências fiscais capturadas no checkout: `{issue_document, tax_id}` |
-| `receipt` | `dict` | POS checkout | Order.data, NFCeEmitHandler (e-mail da nota) | Preferência de comprovante: `{channels: [print\|email], email}` — canais MULTI: imprimir E enviar não competem; lista vazia = sem comprovante |
+| `fired_qty` | `dict[str, int]` | POS `fire_pos_tab` (`session.save`) | `_tab_payload` (`fired_qty` por item) | QUANTAS unidades de cada `line_id` foram à cozinha, escrito no disparo. O `fired_lines` acima já responde "foi?" (a linha vai INTEIRA — não existe meia-linha); este número responde a outra pergunta: a linha enviada **encolheu** depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a SOBRA que o balcão precisa ver antes de fechar. Gravado só para a linha que o ledger confirmou; apagado por `line_id` no unfire. **Não propagado ao Order.data** |
+| `fiscal` | `dict` | POS checkout | Order.data | Preferências fiscais capturadas no checkout: `{issue_document, tax_id}`. ⚠️ `fiscal.tax_id` é o CPF PEDIDO nesta nota, não identidade: nunca vira `customer.document` sozinho (pode ser o do marido, o da empresa) — só com a ordem explícita `save_receipt_tax_id` no payload do intent |
+| `receipt` | `dict` | POS checkout | Order.data, NFCeEmitHandler (e-mail da nota) | Preferência de comprovante: `{channels: [print\|email], email}` — canais MULTI: imprimir E enviar não competem; lista vazia = sem comprovante. ⚠️ `receipt.email` é fato DA VENDA e NUNCA vira `customer.email` sozinho (pode ser o do contador, o do marido); só com a ordem explícita `save_receipt_contact` no payload do intent — que não é persistida, é decisão de quem fecha |
 | `is_gift` | `bool` | CheckoutView, API (`set_data`) | CommitService, KDS/expedição | `True` quando o pedido é presente (entrega para terceiro). Só presente quando é presente. Ver [GIFT-UX-PLAN](../plans/GIFT-UX-PLAN.md) |
 | `recipient` | `dict` | CheckoutView, API (`set_data`) | CommitService, KDS/expedição | Destinatário do presente: `{name, phone}`. **Não** é identidade (não vira Customer) nem sobrescreve o comprador. Integridade garantida por `intents.gift.build_gift_data` (nunca parcial). **Obrigatório só na ENTREGA**; em retirada ("embalar para presente") é opcional/omitido |
 | `gift_message` | `string` | CheckoutView, API (`set_data`) | CommitService | Mensagem do presente para o destinatário. **Separada** de `order_notes` (operacional/cozinha). Opcional; só presente quando informada |
@@ -73,7 +77,7 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
   "fulfillment_type": "delivery",
   "delivery_address": "Rua das Flores 123 - Centro - Londrina",
   "delivery_date": "2026-04-01",
-  "delivery_time_slot": "slot-09",
+  "delivery_time_slot": "slot-09",        // encomenda; hoje no PDV vira "14:00-14:30"
   "order_notes": "Sem cebola",
   "origin_channel": "whatsapp",
   "coupon_code": "WELCOME10",
@@ -89,6 +93,24 @@ Paths **proibidas** (geridas pelo sistema): `checks`, `issues`, `state`, `status
   "issues": []
 }
 ```
+
+### Concierge de WhatsApp
+
+O concierge ([plano](../plans/WHATSAPP-CONCIERGE-PLAN.md), [ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md))
+guarda a conversa em **modelos próprios**, não em JSON de sessão: `Conversation`
+(uma por assinante do ManyChat: telefone, `customer_ref`, `session_key` da sacola,
+orçamento vigente `quote`, estado, contadores de turno e tokens) e
+`ConversationMessage` (a transcrição em blocos no formato da API do modelo), em
+`shopman/shop/models/concierge.py`. Na `Session` do pedido ele escreve só duas chaves,
+pelas ferramentas em `shopman/storefront/concierge/tools.py`:
+
+| Chave | Valor | Para quê |
+|---|---|---|
+| `origin_channel` | `"whatsapp"` | o pedido é roteado como qualquer pedido de WhatsApp (notificação, Gestor) |
+| `concierge` | `{"conversation_id": <Conversation.pk>}` | ligar a sacola/pedido à transcrição no Admin; nada lê isso para decidir regra de pedido |
+
+O `quote_token` que prende a confirmação ao orçamento vive em `Conversation.quote`, não
+na sessão: mudou a sacola, o token muda, e `place_order` recusa o antigo.
 
 ---
 
@@ -143,6 +165,7 @@ for key in (
 | `kitchen_note` | `string` | OrderNotesView (`operator_orders.save_kitchen_note`) | OperatorOrderProjection (`kitchen_note`), KDS ticket (`kitchen_note`) | Nota da cozinha escrita pelo operador no gestor (tags pré-configuradas `Shop.kitchen_note_tags` anexadas + texto livre). **Exibida no ticket do KDS** para a produção. Distinta da `order_notes` (nota do cliente, do checkout) e dos `operator_comment` do histórico |
 | `assignment` | `dict` | OrderAssignView (operator_orders.assign_order) | OrderCardProjection (`assigned_operator`) | Operador que assumiu o pedido ("estou atendendo"): `{operator_id, operator_name, at}`. Removido por OrderUnassignView |
 | `returns` | `list[dict]` | ReturnService | ReturnHandler | Histórico de devoluções (ver detalhamento) |
+| `waitlist` | `dict` | `services.waitlist` (`open_window`, `confirm`, `release`) | `waitlist.state_for`, projections de acompanhamento e do board | Fila de espera (WP-P2E). Contrato: `{state, sku, qty, opened_at, deadline, confirmed_at, released_at, release_reason}`. ⚠️ O estado `fermata` **não** é gravado aqui — ele é DERIVADO do hold planejado indefinido, para não haver duas verdades sobre "ainda estou esperando a fornada". Ver detalhamento abaixo |
 | `nfce_access_key` | `string` | NFCeEmitHandler | NFCeEmitHandler (idempotência), ReturnService | Chave de acesso NFCe |
 | `nfce_number` | `int` | NFCeEmitHandler | — | Número do documento |
 | `nfce_danfe_url` | `string` | NFCeEmitHandler | — | URL do DANFE PDF |
@@ -156,6 +179,7 @@ for key in (
 | `nfce_email_sent_at` | `string` | NFCeEmitHandler (`_send_receipt_email`) | NFCeEmitHandler (idempotência do envio) | ISO datetime de quando o Focus aceitou enviar a nota por e-mail. Só entra quando o provedor aceitou; reenvio manual (Últimas vendas do PDV) não depende dele |
 | `receipt_printed_at` | `string` | `POSSaleReceiptEscposView` (`_stamp_first_print`) | `POSSaleReceiptEscposView` (decisão de 2ª via) | ISO datetime da PRIMEIRA composição do recibo não fiscal (`receipt-escpos`). Presente ⇒ toda composição seguinte sai carimbada "2a VIA". Marca na composição, não na confirmação do papel |
 | `danfe_printed_at` | `string` | `POSDanfeEscposView` (`_stamp_first_print`) | `POSDanfeEscposView` (decisão de 2ª via) | ISO datetime da PRIMEIRA composição da DANFE em bobina (`danfe-escpos`). Mesma semântica de `receipt_printed_at` — o servidor decide "2ª via", a tela não chuta |
+| `ticket_printed_at` | `string` | `OrderTicketEscposView` · `OrderTicketBatchEscposView` (`_stamp_first_print`) | as duas views (decisão de 2ª via) · `order_ticket.preview_rows` (`already_printed`) | ISO datetime da PRIMEIRA composição da **filipeta** do pedido remoto (`ticket-escpos`). Mesma semântica de `receipt_printed_at`, e o lote carimba pedido a pedido: reimprimir a semana devolve as filipetas já impressas marcadas "2a VIA", para o painel não ganhar cópia que passa por original |
 | `fiscal.tax_id` | `string` | POS checkout (só com `issue_fiscal_document`) | `on_request_or_tax_id`, `_fiscal_customer` (payload da emissão) | CPF/CNPJ **pedido NESTA venda** ("CPF na nota"). ⚠️ Nunca ler `customer.tax_id` para fins fiscais: aquele é cadastro/CRM — usá-lo tornava o CPF compulsório para cliente identificado |
 | `availability_decision` | `dict` | `lifecycle.approve_with_adjustments()`, `lifecycle.approve_order()`, `lifecycle.reject_order()` | `lifecycle.has_availability_approval()`, `lifecycle.ensure_confirmable()`, `services/stock.py` | Decisão do operador sobre disponibilidade: `{approved: bool, decisions: [{sku, original_qty, approved_qty, action}], decided_at, decided_by}`. Guard para confirmação |
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
@@ -203,6 +227,37 @@ aceita, `S` em espera, `E` em andamento, `F` finalizada, `N` não atendida,
   "error": {"message": "...", "at": "iso"}  // falha terminal do despacho; limpo no re-despacho
 }
 ```
+
+### waitlist — detalhamento
+
+A fila é uma compra em DUAS fases. A reserva não cobra nada e não corre
+relógio; a confirmação, sim.
+
+```json
+"waitlist": {
+  "state": "confirming",          // fermata | confirming | confirmed | released
+  "sku": "PAO-FRANCES",           // o SKU que espera a fornada
+  "qty": "2",                     // quantidade reservada (string decimal)
+  "opened_at": "iso",             // quando a fornada saiu e a janela abriu
+  "deadline": "iso",              // só em confirming — prazo do cliente
+  "confirmed_at": "iso",          // só em confirmed
+  "released_at": "iso",           // só em released
+  "release_reason": "confirmation_timeout"
+}
+```
+
+| Estado | De onde vem | O que significa |
+|--------|-------------|-----------------|
+| `fermata` | **derivado**: hold com `metadata.planned` e `expires_at IS NULL` | Reservado, esperando a fornada. Sem prazo, sem cobrança |
+| `confirming` | `waitlist.open_window` (sinal de materialização) | A fornada saiu; o cliente tem `deadline` para confirmar |
+| `confirmed` | `waitlist.confirm` (cliente, via `POST /api/v1/orders/{ref}/waitlist-confirm/`) | Vaga garantida; a cobrança acontece aqui (`charge_at=confirmation`) |
+| `released` | `waitlist.release` (timeout via `sweep_waitlist_windows`, ou recusa) | Saiu da fila; hold liberado, cliente avisado, `OperatorAlert` no Gestor |
+
+Liberação **nunca é silenciosa**: cliente (`waitlist_released`) e loja
+(`OperatorAlert type="waitlist_released"`) são avisados, e com
+`release_policy=serve_next` a vaga vai ao próximo da fila (FCFS) na hora.
+
+Configuração em `ChannelConfig.waitlist` — ver [business-rules.md §4.3.1](../business-rules.md).
 
 ### Chaves seed-only para QA adversarial
 
@@ -265,22 +320,24 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
 
 | Sub-chave | Tipo | Classe | Escrito por | Lido por | Descrição |
 |-----------|------|--------|-------------|----------|-----------|
-| `method` | `string` | **canonical** | CheckoutView → CommitService; POS (`shop/services/pos.py`) | lifecycle, views, handlers | `"pix"`, `"card"`, `"cash"`, `"external"`; `"mixed"` quando o PDV recebe em mais de um meio (ver `tenders`) |
+| `method` | `string` | **canonical** | CheckoutView → CommitService; POS (`shop/services/pos.py`) | lifecycle, views, handlers | `"pix"`, `"cash"`, `"credit"`, `"debit"`, `"link"`, `"card"`, `"external"`; `"mixed"` quando o PDV recebe em mais de um meio (ver `tenders`). ⚠️ **`credit`/`debit` são do BALCÃO** — a maquininha é física, os dois liquidam sem gateway (`PaymentIntent.METHODS_WITHOUT_GATEWAY`). **`link`** é o pedido remoto anotado no PDV: sem maquininha, COM gateway, o intent nasce `pending` e o webhook captura. **`card` é da LOJA ONLINE** (o gateway sabe a bandeira) e do histórico: continua aceito e legível, mas o PDV não o oferece mais. Nada de backfill — as leituras convivem |
 | `intent_ref` | `string` | **canonical** | `payment.initiate()` | `payment_svc.get_payment_status`, PaymentStatusView, reconciliação financeira | Ref do intent no Payman. Pix/cartão: intent do gateway. `cash`/`external` **com `collection == "terminal"`** (venda do PDV): intent capturado no ato (`PaymentService.settle`, `gateway=""`), gravado depois do total selado (ADR-022). Sem `collection` (loja online) ou `on_delivery` (COD): ausente até o acerto (`settle_delivery_cash` grava). Venda **mista** do PDV não tem `intent_ref` no topo: cada `tenders[].intent_ref` aponta o intent do seu método (pix/cartão dentro de mista nascem `asserted_at_terminal` no `gateway_data`). `account` ("em conta", só cliente com `Customer.metadata.house_account`): intent nasce **autorizado** (= deve; `PaymentService.charge_to_account`, `gateway_data.customer_ref`) e vira capturado no acerto (`gateway_data.settled_with/settled_by`); saldo devedor = Σ autorizados (derivado) |
 | `idempotency_key` | `string` | idempotency | `payment.initiate()` | adapters Payman/gateway | Chave da tentativa de pagamento para retry seguro; não é status e não libera fluxo operacional |
 | `amount_q` | `int` | **canonical** | `payment.initiate()`, POS (`_reconcile_order_payment_to_total`) | PaymentView, templates, emissão de NFC-e (`shop/services/fiscal`) | Valor em centavos. **Tem de ser o valor final da venda** (ver invariante acima): a NFC-e deriva o desconto dele. Em venda mista quem manda é a soma dos `tenders` |
 | `qr_code` | `string` | display | `payment.initiate()` | PaymentView template | QR code image (data URI) — PIX only |
 | `copy_paste` | `string` | display | `payment.initiate()` | PaymentView template | Brcode PIX copia-e-cola — PIX only |
-| `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração) | ISO datetime de expiração do QR — PIX only |
+| `expires_at` | `string` | display | `payment.initiate()` | PaymentStatusView (expiração), PDV (`_pos_payment_response` → "Pague até …"), acompanhamento (`promise.deadline_at`), `payment.timeout` (agendamento) | ISO datetime (tz-aware) de vencimento da cobrança — o QR do **Pix** e o **link de pagamento**. No link é UM relógio escrito nos dois lados: o mesmo instante vai ao Stripe (`Session.create(expires_at=...)`) e ao `PaymentIntent.expires_at`; vale `min(agora + payment.link_timeout_minutes do canal, corte do atendimento)` preso à régua do Stripe (30 min–24 h) — ver `docs/guides/payments.md`. Vencido, a Directive `payment.timeout` pergunta ao gateway e cancela (`payment_expired`); a reconciliação diária acusa o que escapar (`expired_payment_link`) |
 | `client_secret` | `string` | display | `payment.initiate()` | PaymentView template | Stripe PaymentIntent secret — card only |
 | `e2e_id` | `string` | audit + idempotency | `EfiPixWebhookView` | EfiPixWebhookView (deduplicação) | End-to-end ID da transação PIX |
 | `pix_receipts` | `object` | audit + idempotency | `confirm_pix` | `confirm_pix` (soma dos recebimentos) | Um Pix por chave (`e2e_id`, ou `txid:<txid>` quando o chamador não tem e2e) → centavos. Existe para que dois Pix parciais SOMEM até cobrir a cobrança sem que a reapresentação do mesmo Pix conte duas vezes |
 | `paid_amount_q` | `int` | audit | `confirm_pix` | `confirm_pix` (suficiência do recebido) | Total recebido em Pix para o pedido = soma de `pix_receipts`. **Não é prova de pagamento**: quem diz se a venda está paga é o Payman |
 | `captured_at` | `string` | audit + idempotency | `confirm_pix` / `payment.capture()` / POS | `confirm_pix` (guard de re-dispatch do `on_paid`) | ISO datetime da captura SUFICIENTE (só gravado quando o valor capturado cobre `total_q`; pagamento parcial não grava) |
 | `transaction_id` | `string` | audit | `payment.capture()` | — | Transaction ID do adapter pós-capture |
+| `gateway_checked_at` | `string` | throttle | `payment.reconcile_with_gateway_if_due()` | o próprio (janela mínima entre perguntas) | ISO datetime da última pergunta ao gateway pelo estado deste pagamento. Existe para o acompanhamento poder reconciliar em toda leitura sem transformar cada refresh do cliente numa chamada ao provedor (`GATEWAY_RECHECK_SECONDS`). **Não é status**: quem diz se a venda está paga é o Payman |
 | `marked_paid_by` | `string` | legacy audit | endpoint removido | leitura histórica apenas | Campo legado de versões antigas; não é status de pagamento, não deve liberar fluxo operacional e não existe mais como ação de operador |
 | `error` | `string` | audit | `payment.initiate()` | — | Mensagem de erro se create_intent falhou (max 200 chars) |
-| `collection` | `string` | **canonical** | POS (`shop/services/pos.py`) | POS, cash service | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega) |
+| `checkout_url` | `string` | display | `payment.initiate()` (métodos hospedados: `card`, `link`) | resultado da venda no PDV (`_pos_payment_response`), aviso `payment_link_sent` (`notification._build_context` → `{checkout_url}`) | URL da sessão hospedada (Stripe Checkout) que o cliente abre para pagar. Distinta do `payment_url` do aviso, que é o acompanhamento |
+| `collection` | `string` | **canonical** | POS (`shop/services/pos.py`), checkout da loja (`storefront/intents/checkout.py`, `storefront/api/views.py`) | POS, cash service, `shop/services/payment_gate.py` | `"terminal"` (recebido no balcão) ou `"on_delivery"` (recebido na entrega). O checkout da loja carimba `on_delivery` em **dinheiro + entrega**: é o que faz o Gestor oferecer o acerto (`settle_delivery_cash`) e o que distingue, no `payment_gate`, "combinado receber na porta" de "não pagou" |
 | `tenders` | `list[dict]` | **canonical** | POS (`shop/services/pos.py`), acerto de entrega | POS, leitura X/Z, reconciliação | Linhas do pagamento: `{method, amount_q, collection, status, terminal_ref?, received_at?, reference?, intent_ref?}`. `intent_ref` é o intent do Payman daquele método (um por método; venda mista tem um por linha de método). **Sem `cash_shift_id`**: turno é lançamento no livro do `cashman` |
 | `cash_received_q` | `int` | **canonical** | POS (`shop/services/pos.py`) | fechamento de caixa, B.I. de troco | Soma das linhas em espécie recebidas no terminal. É o que identifica venda em dinheiro num pagamento misto, em que `method` vira `"mixed"` |
 | `tendered_q` | `int` | measurement | POS (`shop/services/pos.py`) | B.I. de troco | Quanto o cliente entregou em espécie. **Ausente quando o operador não digitou** — ausência de medição, nunca "pagou justo" |
@@ -554,8 +611,8 @@ Write-back: `intent_ref` (string)
 
 Templates de notificação: `"order_confirmed"`, `"order_cancelled"`, `"order_cancelled_by_customer"`,
 `"order_rejected"`, `"order_processing"`, `"order_ready"`, `"order_dispatched"`, `"order_delivered"`,
-`"payment_confirmed"`, `"payment_expired"`, `"payment.reminder"`, `"preorder_reminder"`,
-`"production_cancelled"`, `"generic"`.
+`"payment_confirmed"`, `"payment_link_sent"`, `"payment_expired"`, `"payment.reminder"`,
+`"preorder_reminder"`, `"production_cancelled"`, `"generic"`.
 
 #### `notification.send` (system notification)
 
@@ -717,6 +774,12 @@ ChannelConfig.defaults() ← Shop.defaults ← Channel.config
 O método `ChannelConfig.for_channel(channel_or_ref)` faz o merge profundo (deep_merge).
 Chave ausente no override = herda. Chave presente (mesmo None) = sobreescreve.
 
+### 0. Chaves de topo (fora dos aspectos)
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `order_ref_prefix` | `string` | — (ausente = ref do canal em maiúsculas) | Prefixo do ref de pedido gerado no commit (ex.: `"NB"` → `NB-260901-M63`). Escreve: seed/Admin. Lê: `CommitService._do_commit` via config resolvida. Decisão do dono 01/09: pedido da loja online carrega a marca, não o meio. |
+
 ### 1. Confirmation — como o pedido é aceito?
 
 | Campo | Tipo | Default | Descrição |
@@ -732,6 +795,7 @@ Lido por: `hooks._on_order_created`, `ConfirmationTimeoutHandler`, `confirmation
 |-------|------|---------|-----------|
 | `method` | `string \| list[str]` | `"counter"` | `"counter"`, `"pix"`, `"card"`, `"external"`, ou lista |
 | `timeout_minutes` | `int` | `15` | Timeout para PIX/card. Card timeout = `timeout_minutes * 2` |
+| `link_timeout_minutes` | `int` | `120` | Janela do **link de pagamento** (pedido remoto do PDV), contada da venda. É o teto: o link vence em `min(agora + janela, corte do atendimento)` — início da janela combinada ou fechamento da loja no dia do compromisso (`shop/services/payment_deadline`) — preso à régua do Stripe (30 min–24 h). Deve ser > 0 |
 
 Property: `available_methods` → sempre retorna lista.
 
@@ -799,6 +863,22 @@ Lido por: `setup.py` (registro), validators, modifiers.
 | `auto_sync_fulfillment` | `bool` | `False` | Sync automático fulfillment → order status |
 
 Lido por: `hooks.on_payment_confirmed`, `FulfillmentUpdateHandler`.
+
+### 8. Display — como um canal `display` exibe
+
+Só faz sentido em canal com `commerce_policy=display` (menuboard/feed — ADR-018).
+
+| Campo | Tipo | Default | Descrição |
+|-------|------|---------|-----------|
+| `format` | `string` | `""` | Dialeto de XML: `""` (menuboard, rota própria), `"google_merchant"`, `"meta_catalog"` |
+| `collections` | `list[str]` | `[]` | Refs de Collection que compõem a curadoria (ordem de exibição = `Collection.sort_order`) |
+| `prices_from` | `string` | `""` | Ref do canal transacional cujo preço é anunciado. Vazio = `Product.base_price_q` (check W008 avisa) |
+| `paused_skus` | `list[str]` | `[]` | Exceções por SKU: tirado deste canal sem sair da coleção |
+| `rotate_seconds` | `int` | `0` | Menuboard: segundos entre a troca de páginas. `0` = sem rotação; quando > 0, mínimo 5 |
+| `items_per_page` | `int` | `0` | Menuboard: teto de itens por página. `0` = tudo numa página. Anda junto com `rotate_seconds`: ambos > 0 ou ambos 0 |
+
+Lido por: `projections/menuboard.py` (`build_menuboard`), `services/display_prices.py`,
+`views/product_feed.py`, `backstage/projections/feeds.py`, `backstage/services/feeds.py`.
 
 ### Chaves fora do ChannelConfig schema
 
@@ -1029,6 +1109,32 @@ Contexto de venda/operacao do produto fora do schema estrutural do Offerman
 | Chave | Tipo | Escrito por | Lido por | Descrição |
 |-------|------|-------------|----------|-----------|
 | `lead_time_hours` | `int` | seed/admin (Offerman) | `shop/services/lead_time.py` (checkout do storefront + gate de demanda em `shop/services/stock.hold`) | Antecedência mínima (horas) para registrar DEMANDA (encomenda para data sem fornada planejada). Sobrescreve `ChannelConfig.stock.default_lead_time_hours`. Não bloqueia encomenda com Quant planejado da data nem venda imediata do estoque físico de hoje. |
+| `made_to_order` | `bool` | seed/admin (Offerman: switch "Preparado na hora"; catálogo do operador) | `shop/projections/cart.py` → selo da sacola e da revisão | Promessa da casa: o item é **finalizado no momento de servir** (gratinado, montado, extraído). Vale mesmo quando ele sai da vitrine — é sobre o acabamento, não sobre a hora em que a massa foi feita. ⚠️ **Eixo próprio, e de propósito.** O selo já foi deduzido de `availability_policy == "demand_ok"`, que é conferência de ESTOQUE ("aprova a venda mesmo sem saldo"): no cardápio da casa as duas coincidem (café, salgados de vitrine), mas a coincidência não é contrato — marcar um pão como `demand_ok` por razão de estoque dava a ele o selo, e apertar o croque para `stock_only` tirava o selo, calado. Independente da fila de espera: um croque que espera a fornada de amanhã carrega os dois (o selo diz o que É, a fila diz quando vem). |
+| `ready_from` | `str` `"HH:MM"` | seed/admin (Offerman: campo "Pronto a partir de"; catálogo do operador) | `shop/services/product_readiness.py` → prontidão do SKU → janelas oferecidas na loja e no PDV | A que horas este produto fica pronto num dia normal. É a porta para a casa DIZER o que ela já sabe ("a baguete de tradição só sai depois do meio-dia") e é o que impede prometer esse pão para as 9h. ⚠️ **Piso, não teto.** A outra fonte é a mediana do término das WorkOrders recentes; quando as duas existem vence a **mais tarde** — um pão declarado para as 10h que há um mês sai às 11h30 não pode ser prometido para as 10h só porque o cadastro diz isso. Ausente = deduzir do histórico; e histórico ausente É o caso perigoso, porque antes desta chave ele liberava qualquer horário. Hora ilegível é recusada na porta (Admin e Gestor), nunca guardada — cadastro torto viraria "ninguém respondeu". |
+| `gallery` | `list[str]` URLs | seed/admin (Offerman) | `storefront/presentation/product_detail._gallery` → `gallery` da PDP (carrossel com swipe, setas e pontos) | Fotos **adicionais** do produto, URLs absolutas na casa das imagens (`public/img/products/` do storefront). A foto **principal** continua sendo `Product.image_url` — ela abre o carrossel; promover uma foto da galeria = copiar a URL dela para `image_url`; não existe flag de principal aqui, de propósito (uma pergunta, um dono). Lista ausente/malformada = PDP de foto única, sem carrossel. |
+| `enrichment` | `dict` | `manage.py fetch_product_enrichment` (rascunho) · ação **Aceitar sugestão de catálogo** no Admin (aceite) | só a ação de aceite; **a loja NUNCA lê este bloco** | Sugestão de catálogo para item de REVENDA, buscada pelo GTIN (`metadata['social']['gtin']`). Duas fontes, uma por campo: **Cosmos** dá foto oficial, nome, marca e NCM; **Open Food Facts** dá alérgeno estruturado — medido em 05/09/2026, 73% dos produtos brasileiros o têm preenchido. Forma: `{status, fetched_at, sources[], suggested{}, notes[]}`, mais `accepted_by`/`accepted_at` depois do aceite. ⚠️ **Nasce `pending` e nunca vira rótulo sozinho.** O OFF é colaborativo e o campo vazio quase nunca significa "não contém": na mesma amostra, **93% dos que não tinham alérgeno marcado TINHAM a lista de ingredientes** — o silêncio é falta de curadoria, e auto-preencher importaria o defeito que a casa combate. A própria Cosmos pede revisão antes do uso. A autoridade é o rótulo físico; isto é rascunho. ⚠️ `suggested.allergens_unmapped` guarda o que o OFF trouxe e a lista da casa não tem (aipo, molusco e tremoço são obrigatórios na UE e não na RDC 26/2015) — **nunca descartado em silêncio**, aparece para quem aceita. |
+| `derived_from` | `dict` | `shop.services.derived_provenance` (via as três derivações e `record_manual_audit`) | `backstage.projections.product_promise`, `shop.services.unit_weight_from_recipe` (sentinela de escrita) | **De qual versão da ficha veio cada coisa que o catálogo mostra** (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C). Um carimbo por fato — `nutrition`, `dietary`, `unit_weight` — no formato `{source, recipe_ref, version_ref, by, at}`. Ver a tabela abaixo. |
+
+### `Product.metadata["derived_from"][<fato>]`
+
+Os fatos são `nutrition` (tabela nutricional + lista de ingredientes),
+`dietary` (alérgenos + dieta) e `unit_weight` (peso da peça).
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `source` | `string` | `recipe` = o sistema derivou da ficha \| `manual` = alguém conferiu à mão e assinou. Fato com valor publicado e **sem carimbo nenhum** é reportado como origem não registrada (`needs_audit`), nunca como derivado. |
+| `recipe_ref` | `string` | `Recipe.ref` de onde veio. Vazio em produto sem ficha ativa. |
+| `version_ref` | `string` | `Recipe.meta["version_ref"]` no momento do carimbo. **Vencido é comparação exata** contra o `version_ref` atual da ficha: sem limiar, sem tolerância, sem data. `""` = ficha nunca publicada pelo inventário; ali a defasagem é indetectável e a leitura marca `is_versioned=False` em vez de mostrar "em dia". |
+| `by` | `string` | Quem assinou a conferência manual. Vazio em `source="recipe"` (não há autor humano). Conferência manual **sempre** tem autor — `record_manual_audit` recusa assinatura vazia, porque conferência anônima é indistinguível de nenhuma conferência. |
+| `at` | `string` (ISO) | Quando o carimbo foi escrito: a derivação, em `recipe`; a conferência, em `manual`. |
+| `value` | escalar | Só em `unit_weight`: o número que a derivação deixou no campo. Campo diferente disto = alguém editou depois, e a edição vence — sem esta chave, corrigir o peso no Admin seria revertido calado no próximo save da ficha. Fatos compostos (`nutrition`, `dietary`) não a usam: eles têm o próprio sentinela dentro do valor (`auto_filled` / `dietary_auto_filled`). |
+
+⚠️ **O carimbo de `unit_weight` é o sentinela de escrita do peso.** `unit_weight_g`
+só é (re)gravado quando o campo está vazio ou o carimbo diz `source="recipe"`.
+Peso com valor e sem carimbo é peso que alguém digitou — hoje é todo o catálogo —
+e ele nunca é sobrescrito: a divergência aparece na leitura da promessa
+(`expected_value` / `diverges`), que é o oposto de mudar calado o número que o
+cliente lê.
 
 ---
 
@@ -1059,6 +1165,24 @@ Perfil do insumo (nutrição TACO/USDA por 100 g, alergênicos, `diet`,
 | `alt_suppliers` | `list[str]` | seed/admin (Buyman) | telas de compra | Fornecedores alternativos (ex.: Anaconda para as farinhas Embramex). |
 | `supplier_note` | `str` | seed | telas de compra | Nota quando não há fornecedor (ex.: "produção própria (jambon blanc da casa)"). |
 
+### Escopo `purchase` — reposição e solicitação
+
+Lidas por `_purchase_meta()` em `shopman/backstage/projections/purchase.py`, que
+achata `metadata` com `metadata["purchase"]` (a forma aninhada vence).
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `purchase.category` | `str` | seed/admin | projection do Compras (aba Base, Contagem) | Agrupador da tela. Ausente = "Insumos". |
+| `purchase.min_stock` | `str` decimal | `set_min_stock` (`backstage/services/purchase.py`), seed/admin | `_material_projection` | **Estoque mínimo declarado.** Sem ele o alvo de reposição cai para `daily_use * replenish_at`, que é **zero quando não há consumo medido** — e aí `suggestedQty` é zero para sempre e o insumo nunca vira pedido. Declarar o mínimo é o que destrava o insumo sem histórico de produção. Apagar a chave (não gravar `0`) devolve o insumo ao cálculo por consumo. Aceita `minStock` na leitura, por compatibilidade de entrada. |
+| `purchase.request_status` | `str` | `set_purchase_request_status` | projection (`purchaseRequestStatuses`) | `review` \| `approved` \| `sent`. Não há model de solicitação: o estado mora aqui. |
+| `purchase.request_status_at` | `str` ISO 8601 | `set_purchase_request_status` | auditoria | Quando o status mudou. |
+| `purchase.request_ref` | `str` | `_queue_supplier_purchase_request` | auditoria | Ref da solicitação despachada ao fornecedor. |
+| `purchase.request_supplier_ref` | `str` ref | `_queue_supplier_purchase_request` | auditoria | Fornecedor que recebeu o pedido (`Supplier.ref`). |
+| `purchase.request_channel` | `str` | `_queue_supplier_purchase_request` | auditoria | Canal do despacho (`email`/`sms`/`whatsapp`/`console`). |
+| `purchase.request_recipient` | `str` | `_queue_supplier_purchase_request` | auditoria | Endereço/telefone que recebeu. |
+| `purchase.request_contact_name` | `str` | `_queue_supplier_purchase_request` | auditoria | Nome da pessoa (`SupplierContact`) a quem o pedido foi endereçado. Vazio = caiu na central da empresa, e a mensagem cumprimentou a casa, não uma pessoa. |
+| `purchase.request_dedupe_key` | `str` | `_queue_supplier_purchase_request` | `create_deduped` | Chave de idempotência da directive de notificação; inclui o `cost_q` para que mudança de preço gere novo pedido. |
+
 ---
 
 ## Regras de Governança
@@ -1088,7 +1212,7 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | ~~`batch_ref`/`batch_quantity`/`expiry_date`~~ | — | **REMOVIDAS (ADR-017 §5, 2026-08-13)** | — | O lote sai da LINHA de OUTPUT (`WorkOrderItem.batch_ref`), um `Batch` por linha — a fórmula no meta só admitia um lote por ordem. Validade vive em `Batch.expiry_date`; grupo com desconto congela `Batch.nonconformity_percent`/`_reason`. |
 | `formula_basis` | `dict` | `set_planned_quantity` (`shop/services/production.py`) | matriz/auditoria de sugestão | Basis da sugestão aceita (demanda média, committed, margem, `accepted_quantity`). Só quando `source_ref="formula:suggestion"`. |
 | `consolidated_work_order_refs` | `list[string]` | `set_planned_quantity` | auditoria | Refs de WOs planned duplicadas consolidadas nesta. |
-| `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`) | BOM congelada no plan — **gerida pelo Core, nunca editar**. |
+| `_recipe_snapshot` | `dict` | Core (`CraftPlanning.plan`) | Core (`finish`), B.I. | BOM congelada no plan — **gerida pelo Core, nunca editar**. Carrega `version_ref` (`"<ref>@<n>"`, copiado de `Recipe.meta["version_ref"]`, vazio para ficha nunca publicada pelo inventário) para o B.I. cruzar fornada × versão da receita (ADR-027). |
 | `stock_consumed_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de INSUMO do ledger fechou. Ausente numa WO `finished` = o consumo não rodou. O `seed` grava `FINISHED` direto no banco (sem passar pelo handler) e por isso **carimba os dois na mão** — sem o carimbo o sweeper reconsumia a história inteira. |
 | `stock_realized_at` | `string` (ISO 8601) | `craftsman/contrib/stockman/handlers` (`_handle_finished`), `config/.../seed.py` | `sweep_unrealized_production` | Instante em que a perna de OUTPUT do ledger fechou (realize + write-off de rendimento). Ausente numa WO `finished` = a fornada não entrou no estoque. |
 | `unfinished_alerted_at` | `string` (ISO 8601) | `shop/handlers/production_alerts.py` (`check_unfinished_started_orders`) | idem (guarda de idempotência) | Carimbo do alerta `production_unfinished`: WO `started` com `target_date` vencida alerta UMA vez por WO (o operador decide: concluir tarde ou void) — dedup por janela re-alertaria todo turno até alguém agir. |
@@ -1119,6 +1243,36 @@ Contexto operacional de produção mantido fora do core Craftsman.
 | `production_lifecycle` | `string` | admin de receitas (contrib Unfold, campo provider-driven) | `dispatch_production` (`shop/production_lifecycle.py`) | Variante de lifecycle do orquestrador: `standard` (default, chave omitida) \| `forecast` \| `subcontract` (ADR-007). O campo só existe porque `CRAFTSMAN["PRODUCTION_LIFECYCLE_PROVIDER"]` aponta para `production_lifecycle_choices()` do orquestrador — pacote standalone não o renderiza. |
 | `requires_batch_tracking` | `bool` | admin de receitas (contrib Unfold) | `backstage.services.production` | Cria lote ao concluir a produção. |
 | `shelf_life_days` | `int` | admin de receitas (contrib Unfold) | `backstage.services.production` | Validade do lote produzido, em dias. |
+| `output_unit` | `string` | seed (pré-preparo), `publish_version` (inventário) | `Recipe._validate_mass_balance` | Unidade declarada da saída quando o SKU não está no catálogo (ADR-024 §R4: declarar, nunca deduzir). Liga o invariante de massa da ficha. |
+| `version_ref` | `string` | `craftsman.services.recipe_book.publish_version` | projections do inventário (`ficha_in_sync`), `CraftPlanning.plan` (copia para o snapshot da WO) | `"<entry.ref>@<n>"`: a `RecipeVersion` que escreveu esta ficha por último (ADR-027). Ausente = ficha nunca publicada pelo inventário (só seed/Admin). |
+| `mixer_loss_g` | `Decimal` (string) | seed/admin de receitas | `craftsman.services.yield_margin.mixer_loss_g_for` (via `craft.needs(..., yield_margin=True)`) | Filme de massa que fica na bacia da masseira, em gramas — **fixa por fornada**, não por peça. Ausente = `CRAFTSMAN["MIXER_LOSS_G"]` (150 g, **estimativa não auditada**). ⚠️ Chute cadastrado com prazo: o passo seguinte é o sistema aprender a perda real por ficha a partir do ledger (produzido menos consumido). Só entra na lista de separação; **nunca** no consumo do ledger. |
+| `bake_loss_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | `shop.services.unit_weight_from_recipe` | Perda de forno desta ficha, em % da massa crua. Ausente = padrão da casa (`ProductionConfig.weight.default_bake_loss_pct`, hoje 12), que sai rotulado `house_default` — **estimativa nunca auditada**: o número de 12% nunca passou pela balança com a peça pronta, e não pode virar verdade silenciosa na tela. Fora de `[0, 100)` é ignorado e cai no padrão. |
+| `bake_loss_source` | `string` | ficha (Admin/inventário) | idem | Espécie do número acima: `estimated` (default quando `bake_loss_pct` existe) \| `weighed`. **Só `weighed` com `bake_loss_weighed_by` E `bake_loss_weighed_at` conta como conferido** — declaração sem assinatura falha fechado e continua sendo estimativa. |
+| `bake_loss_weighed_by` | `string` | ficha (Admin/inventário) | idem | Quem pesou a peça pronta. Sem ele, `weighed` não vale como conferido. |
+| `bake_loss_weighed_at` | `string` (data ISO) | ficha (Admin/inventário) | idem | Quando pesou. Idem. |
+| `weight_slack_pct` | `Decimal` (string ou número) | ficha (Admin/inventário) | idem | Folga de segurança sobre o assado esperado, em %. Ausente = `ProductionConfig.weight.default_slack_pct` (hoje 5). É o que faz o anunciado ser **piso**: `anunciado = ⌊assado esperado × (1 − folga)⌋`, sempre para baixo. Fora de `[0, 100)` cai no padrão. |
+
+## RecipeItem.meta
+
+| Chave | Tipo | Escrito por | Lido por | Descrição |
+|-------|------|-------------|----------|-----------|
+| `allergens`, `diet` | ver `craftsman/dietary.py` | seed (`INGREDIENT_PROFILES`), admin (contrib Unfold) | `shop.services.dietary_from_recipe` | Perfil dietético do insumo (ADR-008). **Preservado** pelo `publish_version` quando o SKU continua na ficha. |
+| `nutrition` | `dict` | idem | `shop.services.nutrition_from_recipe` | Tabela nutricional por 100 g do insumo. Idem: preservado ao publicar. |
+| `density_g_per_ml` | `Decimal` (string) | seed/admin | `Recipe._validate_mass_balance`, nutrição, `percentages.item_grams` | Ponte volume → massa do insumo (ADR-024). |
+| `role` | `string` | `publish_version` | projections do inventário | Só em item **opcional** de massa velha: `"old_dough"`. O item aponta para o próprio `output_sku` da ficha e fica fora do consumo (`is_optional=True` já é excluído do BOM). |
+| `cap_pct` | `int` | `publish_version` | projections do inventário, WP de saldo de massa velha | Teto de massa velha na fórmula inteira ("até X%"). A leitura do saldo do dia é WP posterior. |
+
+## RecipeVersion.formula / .origin / .source
+
+Schema completo em [RECIPE-INVENTORY-PLAN §3](../plans/RECIPE-INVENTORY-PLAN.md). Resumo:
+`formula = {anchor: {kind: flour|total|ingredient, sku?}, basis_g, standardized, items: [{sku, name,
+role, quantity, unit, note?, grams_per_unit?, density_g_per_ml?}], parts: [{sku, entry_ref, kind:
+preferment|autolyse|soaker|old_dough, flour_pct?, quantity?, unit?, cap_pct?}]}`. `origin` é a
+receita **como foi informada** (imutável). `source = {kind: manual|note|photo|ficha|import,
+text?, language?, image_name?, model?, recipe_ref?, copied_from?}` — `recipe_ref` é a ficha de
+origem no bootstrap (`kind=ficha`); `copied_from` é o `"<ref>@<n>"` da versão copiada quando a
+API cria uma versão com `from_version` (`backstage.services.recipe_book`). Validação:
+`craftsman.models.recipe_book.validate_formula`.
 
 ## DayClosing.data
 
@@ -1163,7 +1317,7 @@ guarda é o "de onde veio" e o "o que está em curso".
 | `location`, `client_secret` | `str` | `adapters/payment_efi.py::create_intent` | storefront (QR do Pix) | Endereço do QR e payload copia-e-cola da cobrança Efí. |
 | `e2e_id` | `str` | `services/pix_confirmation.py::confirm_pix` | conciliação, suporte | Identificador ponta-a-ponta do Pix que pagou. |
 | `efi_status` | `str` | `adapters/payment_efi.py::capture` | suporte | Último status bruto da cobrança na Efí (ex.: `CONCLUIDA`). |
-| `collection` | `str` | `services/payment.py`, `services/operator_orders.py` | reconciliação financeira, livro-caixa | `terminal` (liquidado no balcão, ADR-022) ou `on_delivery` (COD, acertado na entrega). Ausente na loja online. |
+| `collection` | `str` | `services/payment.py`, `services/operator_orders.py` | reconciliação financeira, livro-caixa | `terminal` (liquidado no balcão, ADR-022) ou `on_delivery` (COD, acertado na entrega — inclusive na loja online, cujo checkout de dinheiro + entrega passou a carimbar a marca). |
 | `terminal_ref` | `str` | idem | reconciliação, PDV | Terminal onde o dinheiro foi recebido. |
 | `asserted_at_terminal` | `bool` | `PaymentService.settle` (via `services/payment.py::settle_terminal_tenders`) | reconciliação, estorno | `True` quando um método COM gateway (pix, cartão) foi **atestado por gente** no balcão — QR estático, maquininha avulsa numa venda mista. Distingue "capturado pelo gateway" de "afirmado pelo operador", e é o que faz o estorno saber que não há gateway para chamar. |
 | `settled_with`, `settled_by`, `customer_ref` | `str` | `services/house_account.py` | acerto de conta, livro-caixa | Como e por quem a conta em aberto foi acertada, e de qual cliente ela é. |
@@ -1279,12 +1433,16 @@ TOCTOU. Quem chama recebe `CashError("DUPLICATE_ENTRY")`, não `IntegrityError`.
 | `count` | contado − esperado | — | `{counted_q, notes}` | `services.close_shift`. Quem contou é `Entry.operator`. ⚠️ `supervisory` foi ESCRITO até 21/08/2026 e ainda aparece em lançamentos antigos (o livro é imutável); parou de ser escrito quando a custódia passou a ser da gaveta — turno sem dono não tem substituto, e a gerente fechar o caixa que outra pessoa abriu virou o caso normal |
 | `count_correction` | ± (exige `approved_by`) | `count` | — (motivo em `reason`) | `services.correct_count` |
 | `drawer_open` | 0 | — | — (motivo em `reason`) | abertura sem venda: `backstage/services/pos.py::register_drawer_opening` |
-| `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw}` (o byte que o sensor devolveu, ex. `0x12`) | destrave da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). A trava é do PDV (`useDrawerLock`): recusa INICIAR a próxima venda quando o agente do balcão diz `known: true, open: true`; estado desconhecido nunca trava; sem carência; cada destrave vale UMA venda |
+| `drawer_unlock` | 0 (exige `approved_by`) | — | `{drawer_raw, outcome, duration_ms}` | **EXCEÇÃO** da trava da gaveta: `backstage/services/pos.py::unlock_drawer` (`POST pos/cash/drawer-unlock/`, PIN de gerente). ⚠️ Desde 29/08 a trava é DURA e quem libera é o mundo físico — o bloqueio cai quando o sensor diz que a gaveta fechou. Este caminho existe só para gaveta emperrada aberta ou sensor morto; `outcome` (`manager_override` \| `sensor_lost`) é o que separa a emergência da rotina no B.I., e `duration_ms` é quanto tempo a gaveta ficou aberta |
+| `note` (bloqueio) | 0 | — | `{event: "drawer_blocked", outcome, duration_ms, drawer_raw}` | o bloqueio por gaveta aberta terminou: `record_drawer_block` (`POST pos/cash/drawer-block/`). `outcome` = `closed` (o operador fechou — caminho normal) \| `dismissed` (desistiu da venda pelo X, ou saiu da tela com a trava de pé) \| `sensor_lost` \| `manager_override`. É esta linha que torna a duração real mensurável: no desenho antigo o PIN cortava a medição no meio |
+| `note` (busca da saída) | 0 | — | `{event: "drawer_unlock_attempt", outcome}` | alguém ABRIU a tela de PIN da trava: `record_unlock_attempt` (`POST pos/cash/drawer-unlock-attempt/`). `outcome` = `opened` \| `abandoned` (Esc de volta) \| `denied` (PIN recusado). A tela de trava **não mostra** a saída de emergência — mostrá-la ensinaria o bypass —, e por isso quem a procura é sinal: registrar só o destrave bem-sucedido apagaria justamente quem tenta e desiste |
+| `note` (esquecida) | 0 | — | `{event: "drawer_left_open", minutes}` | gaveta aberta ENTRE vendas além do limiar: `report_drawer_left_open` (`POST pos/cash/drawer-left-open/`). A trava só age quando alguém tenta vender; isto cobre a hora morta. Limiar em `Shop.defaults["pos"]["drawer_idle_alert_minutes"]` (default 3; `0` desliga). Sai junto um `OperatorAlert` `pos_drawer_left_open` |
 | `change_requested` | 0 | — | `{amount_q, denominations: [int], note}` | pedido de troco: `backstage/services/pos.py::request_change`. `amount_q` inteiro > 0 e `denominations` lista de centavos positivos são exigidos pelo próprio `record` (`CashError("INVALID_PAYLOAD")`); QUAIS valores valem é da superfície (ver abaixo) |
 | `change_served` | 0 (exige `approved_by`) | `change_requested` | — | `serve_change_request` (PIN de gerente, `cashman.adjust_shift`) |
 | `change_cancelled` | 0 | `change_requested` | — | `cancel_change_request` |
 | `receipt_result` | 0 | `cash_out`/`cash_in` | `{status: printed\|failed\|skipped, detail}` | comprovante: `record_receipt_result` (só o navegador do balcão sabe se imprimiu; a conferência no Admin lê o ÚLTIMO filho). A lista de status é fonte única em `cashman.Entry.RECEIPT_STATUSES`, exigida pelo `record`; o backstage valida antes só para a mensagem |
 | `note` | 0 | — | `{text}` | anotação gerencial em turno fechado |
+| `note` (sensor cego) | 0 | — | `{event: "drawer_sensor_blind", detail}` | a trava da gaveta caiu numa estação que TINHA medição: `backstage/services/pos.py::report_drawer_blind` (`POST pos/cash/drawer-blind/`). A trava falha aberta de propósito (fila de cliente nunca para por sensor ruim), e por isso o aviso existe — sem ele, puxar o cabo da gaveta desligava a proteção para sempre, em silêncio. Sai junto um `OperatorAlert` `pos_drawer_sensor_blind`. O agente distingue os dois "não sei" por `calibrated`: estação que nunca mediu não é notícia |
 
 **Linhas nascidas do backfill** (`backstage/0030_cashman_backfill_and_cut`, WP-5 do CASHMAN-PLAN;
 o caixa legado `CashShift`/`CashMovement`/`POSTerminal` entrou no livro uma vez e sumiu): levam
@@ -1449,3 +1607,79 @@ exata. É o carimbo da Fase 5 do
 pergunta poder ser feita depois: *este saldo foi medido ou foi convertido?*
 (ADR-024, R3). `projections/purchase.py::_approximate_stock_skus` lê
 `converted_via.approximate` para pôr o `≈` no saldo.
+
+---
+
+## `backstage.SignInEvent.data` — o contexto do acesso
+
+Escrito por `backstage/services/sign_in_audit.py::record`. O que é **coluna** no
+model (`user`, `username`, `method`, `outcome`, `station_ref`, `ip_address`,
+`created_at`) é o que se filtra; o que está aqui é o que se **lê depois de já ter
+achado a linha**, e por isso não vira coluna.
+
+| Chave | Tipo | O que é |
+|-------|------|---------|
+| `user_agent` | `str` (≤300) | navegador/dispositivo de quem entrou. Truncado: o cabeçalho não tem teto e não vale uma linha de 2KB por acesso |
+| `path` | `str` (≤200) | a rota por onde a autenticação passou (`/admin/login/`, `/api/v1/backstage/operator/unlock/`) — separa Admin de balcão sem uma coluna a mais |
+| `reason` | `str` | por que a linha é o que é: `operator_unlock_invalid` (PIN ou crachá que não bateu) ou `not_me` (revogação pedida pelo dono) |
+| `anomalies` | `list[str]` | os códigos que fizeram este acesso ser **destacado**: `failure`, `badge`, `unknown_station`, `outside_hours`, `burst`, `after_failure`. Vazio/ausente = acesso de rotina |
+| `revoked_at` | `str` (ISO) | quando o dono clicou "não fui eu" **sobre este acesso** |
+| `revoked_sign_in_event_id` | `int` | na linha `outcome=revoked`, qual acesso foi repudiado |
+| `sessions_revoked` | `int` | quantas sessões caíram |
+| `requested_by` | `str` | quem pediu a revogação (é sempre o dono da conta — a API recusa o resto) |
+
+`anomalies` mora no JSON e não numa coluna de propósito: é resultado de uma
+**regra editável** (`RuleConfig` `sign_in_highlight`), e virar coluna congelaria
+no banco a resposta de ontem para uma pergunta que o gerente pode mudar hoje. O
+que se filtra — método, estação, resultado — é fato, não julgamento.
+
+Chaves ausentes quando vazias — a ausência diz "não havia", e uma chave com `""`
+fingiria que houve. Ver [SIGN-IN-AUDIT-PLAN](../plans/SIGN-IN-AUDIT-PLAN.md).
+
+### `shop.UserNotification.action_data` — o payload da ação
+
+| Chave | Quando | O que é |
+|-------|--------|---------|
+| `announcement_id` | categoria `campaign` | o anúncio que as ações `approve`/`reject` decidem |
+| `sign_in_event_id` | categoria `sign_in` | o acesso que a ação `not_me` repudia |
+| `anomalies` | categoria `sign_in` | os códigos de destaque, copiados do evento para a tela não precisar de um segundo fetch |
+| `highlight` | categoria `sign_in` | `bool` — atalho de leitura para `anomalies` não vazio |
+
+## `Product.metadata["attributes"]` — os atributos com definição
+
+O registro é `shop.AttributeDefinition`; **a única porta é
+`shopman.shop.services.attributes`** (`get`, `set`, `get_many`). Ninguém lê nem
+escreve estas chaves à mão — é o registro que decide o que existe, que tipo tem
+e onde o valor mora.
+
+```json
+"attributes": {
+  "sabor":          {"value": "doce", "source": "ai", "reviewed": false},
+  "natureza":       {"value": "comida", "source": "derived", "reviewed": false},
+  "peso_unidade_g": {"source": "manual", "reviewed": true}
+}
+```
+
+| Chave do registro | Tipo | O que é |
+|-------------------|------|---------|
+| `value` | conforme a definição | **ausente** quando o `storage` da definição aponta para outro lugar (uma coluna ou uma chave legada): duplicar o valor seria criar duas verdades |
+| `source` | `manual` · `ai` · `derived` · `recipe` | de onde o valor veio. Ausente lê como `manual` — está lá e ninguém disse o contrário |
+| `reviewed` | `bool` | se uma proposta da IA já foi aprovada. `manual` é revisado por definição |
+
+### Onde cada valor mora (o `storage` da definição)
+
+| `storage` | Atributos hoje | Valor em |
+|---|---|---|
+| `attributes` | `natureza`, `sabor`, `temperatura` | `metadata["attributes"][ref]["value"]` |
+| `column:<campo>` | `peso_unidade_g` | a coluna `Product.unit_weight_g` — fato físico, integridade no banco |
+| `metadata:<chave>` | `alergenos`, `dieta`, `porcoes` | `metadata["allergens"]`, `["dietary_info"]`, `["serves"]` |
+
+⚠️ As três chaves com ponteiro são as **legadas**: elas já existiam e continuam
+sendo escritas pelo `ProductAdminForm` do Offerman (o editor de rótulo) e pelo
+`dietary_from_recipe`. Nada se moveu na F1 — mover exige tocar o Core, e isso é
+o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
+
+⚠️ `metadata["dietary_auto_filled"]` **continua** sendo a palavra final do
+`dietary_from_recipe`, e o service de atributos não o toca. Duas fontes
+escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
+`source`/`reviewed` é do WP de rename.

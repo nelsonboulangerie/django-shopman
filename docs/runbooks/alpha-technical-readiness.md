@@ -18,7 +18,9 @@ make omotenashi-qa strict=1
 
 - Pix/card podem estar em `payment_mock`, desde que `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true`.
 - Pix mockado precisa ter caminho de conclusao: `SHOPMAN_EXPOSE_MOCK_CAPTURE=true`
-  ou `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true`.
+  ou `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true`. No alpha o caminho e o MANUAL (botao
+  "Simular pagamento"); as duas envs juntas se contradizem — o botao vence e o
+  auto-confirm nao e injetado (`SHOPMAN_W018`).
 - `SHOPMAN_EXPOSE_DEBUG_OTP=true`, `SHOPMAN_STAGING_AUTOPILOT=true` e o botao
   "Simular pagamento" sao warnings de alpha, nao criterio de go-live.
 - Focus NFe homologacao e iFood OAuth continuam bloqueios externos se faltarem,
@@ -39,7 +41,7 @@ SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
 SHOPMAN_EXPOSE_MOCK_CAPTURE=true
-SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true
+SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 
 SHOPMAN_EXPOSE_DEBUG_OTP=true
 SHOPMAN_STAGING_AUTOPILOT=true
@@ -49,11 +51,18 @@ Para fiscal homologacao:
 
 ```env
 SHOPMAN_FISCAL_ADAPTER=shopman.shop.adapters.fiscal_focusnfe.FocusNFeBackend
-SHOPMAN_FISCAL_EMISSION_RESOLVER=shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.eletronic_payment
+SHOPMAN_FISCAL_EMISSION_RESOLVER=shopman.shop.fiscal_resolvers.on_request_or_tax_id,shopman.shop.fiscal_resolvers.on_requested_receipt,shopman.shop.fiscal_resolvers.eletronic_payment
 FOCUS_NFE_ENVIRONMENT=homologacao
 FOCUS_NFE_TOKEN=<token homologacao>
 FOCUS_NFE_CNPJ_EMITENTE=<cnpj ou Shop.document preenchido>
 ```
+
+⚠️ `on_requested_receipt` **precisa** estar nessa lista. Ele é quem faz o pedido
+do documento no balcão — "Impressa?" ou "Enviar por e-mail" — valer como pedido
+de nota. Sem ele, o alpha aceitava os dois toggles e não emitia NFC-e nenhuma
+numa venda em dinheiro sem CPF: nem DANFE (não existe papel sem nota
+autorizada), nem e-mail (o Focus só envia DANFE+XML de nota que existe). O
+operador prometia ao cliente e nada chegava, em silêncio.
 
 Para iFood real de staging:
 
@@ -96,7 +105,7 @@ Trocas obrigatorias:
 | Cartao | `payment_mock` ou Stripe test | `payment_stripe` + `sk_live_`/`pk_live_` |
 | Mock | `SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true` | removido/`false` |
 | Botao simular | `SHOPMAN_EXPOSE_MOCK_CAPTURE=true` | removido/`false` |
-| Auto-confirm Pix | `SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true` | removido/`false` |
+| Auto-confirm Pix | `false` (o botao manual e o caminho do alpha) | removido/`false` |
 | Fiscal | Focus homologacao | Focus producao |
 | OTP | debug ou sender de staging | SMS/WhatsApp real, sem debug OTP |
 | Autopilot | opcional | removido/`false` |

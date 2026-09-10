@@ -36,6 +36,9 @@ class MaterialProjection:
     stockOnHand: float
     dailyUse: float
     minStock: float
+    #: O mínimo foi DECLARADO pelo operador, ou derivado do consumo? Sem essa
+    #: distinção a tela mostra um número derivado como se fosse cadastrado.
+    minStockDeclared: bool
     recipes: tuple[str, ...]
     leadTimeDays: float
     replenishAtDays: float
@@ -44,11 +47,32 @@ class MaterialProjection:
 
 
 @dataclass(frozen=True)
+class SupplierContactProjection:
+    """Uma pessoa do fornecedor, do jeito que a tela precisa lê-la."""
+
+    id: str
+    name: str
+    role: str
+    roleLabel: str
+    email: str
+    phone: str
+    isPrimary: bool
+    isActive: bool
+    notes: str
+
+
+@dataclass(frozen=True)
 class SupplierProjection:
     ref: str
     name: str
+    tradeName: str
+    displayName: str
     document: str
     contact: str
+    #: As pessoas cadastradas. Vazio significa que tudo cai na central da empresa.
+    contacts: tuple[SupplierContactProjection, ...]
+    #: Para quem o pedido de compra sai hoje — o que a tela mostra sem simular envio.
+    orderContactName: str
     leadTimeDays: int
     reliabilityPercent: int
     isActive: bool
@@ -131,6 +155,26 @@ class ActiveReceiptProjection:
 
 
 @dataclass(frozen=True)
+class ReceiptHistoryProjection:
+    """Uma entrada JÁ registrada — o que responde "essa nota já entrou?".
+
+    ⚠️ A tela não tinha esta lista. O único dado de recebimento era a data da última
+    entrada POR FORNECEDOR, que não responde a pergunta que o operador faz de fato:
+    três horas depois, na dúvida, ele reescaneava a mesma nota — e o estoque
+    dobrava em silêncio.
+    """
+
+    sourceRef: str
+    mode: str
+    supplierRef: str
+    supplierName: str
+    lines: int
+    totalCostQ: int
+    operator: str
+    receivedAtDisplay: str
+
+
+@dataclass(frozen=True)
 class PurchaseProjection:
     materials: tuple[MaterialProjection, ...]
     suppliers: tuple[SupplierProjection, ...]
@@ -138,6 +182,8 @@ class PurchaseProjection:
     costs: tuple[SupplierMaterialCostProjection, ...]
     purchaseRequestStatuses: dict[str, str]
     activeReceipt: ActiveReceiptProjection
+    #: Os últimos recebimentos, do mais novo para o mais velho.
+    receiptHistory: tuple[ReceiptHistoryProjection, ...]
 
 
 def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseProjection:
@@ -148,7 +194,9 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
     SupplierMaterialCost = apps.get_model("buyman", "SupplierMaterialCost")
 
     material_rows = list(Material.objects.all().order_by("-is_active", "sku"))
-    supplier_rows = list(Supplier.objects.all().order_by("-is_active", "name", "ref"))
+    supplier_rows = list(
+        Supplier.objects.prefetch_related("contacts").order_by("-is_active", "name", "ref")
+    )
     skus = [material.sku for material in material_rows]
     supplier_refs = [supplier.ref for supplier in supplier_rows]
 
@@ -215,7 +263,48 @@ def build_purchase(*, active_receipt: dict[str, Any] | None = None) -> PurchaseP
         costs=costs,
         purchaseRequestStatuses=statuses,
         activeReceipt=_active_receipt(active_receipt, default_supplier_ref=default_supplier_ref),
+        receiptHistory=_receipt_history(),
     )
+
+
+#: Quantos recebimentos a tela mostra. O suficiente para responder "essa nota já
+#: entrou?" no turno, sem virar relatório — o relatório é do B.I.
+RECEIPT_HISTORY_LIMIT = 25
+
+
+def _receipt_history() -> tuple[ReceiptHistoryProjection, ...]:
+    """Lê a trava de recibo — que é, por construção, o livro dos recebimentos.
+
+    Nenhum modelo novo: a `IdempotencyKey` do orderman guarda `(scope, key)` com
+    unicidade E o corpo da resposta, que é onde `confirm_receipt` escreve o resumo.
+    A mesma linha que impede a segunda entrada é a que conta a primeira.
+    """
+    from shopman.orderman.models import IdempotencyKey
+
+    from shopman.backstage.services.purchase import RECEIPT_IDEMPOTENCY_SCOPE
+
+    linhas = (
+        IdempotencyKey.objects.filter(scope=RECEIPT_IDEMPOTENCY_SCOPE, status="done")
+        .order_by("-created_at")[:RECEIPT_HISTORY_LIMIT]
+    )
+    historico = []
+    for linha in linhas:
+        corpo = linha.response_body or {}
+        if not isinstance(corpo, dict):
+            continue
+        historico.append(
+            ReceiptHistoryProjection(
+                sourceRef=str(corpo.get("source_ref") or linha.key),
+                mode=str(corpo.get("mode") or ""),
+                supplierRef=str(corpo.get("supplier_ref") or ""),
+                supplierName=str(corpo.get("supplier_name") or ""),
+                lines=int(corpo.get("lines") or 0),
+                totalCostQ=int(corpo.get("total_cost_q") or 0),
+                operator=str(corpo.get("operator") or ""),
+                receivedAtDisplay=timezone.localtime(linha.created_at).strftime("%d/%m %H:%M"),
+            )
+        )
+    return tuple(historico)
 
 
 def _material_projection(
@@ -231,6 +320,11 @@ def _material_projection(
     meta = _purchase_meta(material)
     replenish_at = lead_time_days + Decimal(policy["review_period_days"]) + Decimal(policy["safety_days"])
     min_stock = _meta_decimal(meta, "min_stock", "minStock", default=None)
+    # Declarado pelo operador × derivado do consumo. A tela precisa da diferença:
+    # um número derivado exibido como se fosse declarado convida o operador a
+    # "confirmá-lo" digitando o mesmo valor — e aí ele CONGELA um número que era
+    # para acompanhar o consumo, desligando o insumo da reposição automática.
+    min_stock_declared = min_stock is not None
     if min_stock is None:
         min_stock = daily_use * replenish_at if daily_use > 0 else Decimal("0")
     suggested = _suggested_qty(
@@ -251,6 +345,7 @@ def _material_projection(
         stockOnHand=_number(stock_on_hand),
         dailyUse=_number(daily_use),
         minStock=_number(min_stock),
+        minStockDeclared=min_stock_declared,
         recipes=recipes,
         leadTimeDays=_number(lead_time_days),
         replenishAtDays=_number(replenish_at),
@@ -323,14 +418,41 @@ def _suggested_qty(
     return need.to_integral_value(rounding=ROUND_CEILING)
 
 
+def _supplier_contact_projection(row) -> SupplierContactProjection:
+    return SupplierContactProjection(
+        id=str(row.pk),
+        name=row.name,
+        role=row.role,
+        roleLabel=str(row.get_role_display()),
+        email=row.email,
+        phone=row.phone,
+        isPrimary=bool(row.is_primary),
+        isActive=bool(row.is_active),
+        notes=row.notes,
+    )
+
+
 def _supplier_projection(supplier, last_delivery_at: str) -> SupplierProjection:
     meta = _purchase_meta(supplier)
+    contact_rows = list(supplier.contacts.all())
+    contacts = tuple(_supplier_contact_projection(row) for row in contact_rows)
+    # A central continua sendo o que a tela mostra como "contato" quando não há
+    # ninguém: é o que o sistema realmente usaria.
     contact = _meta_str(meta, "contact") or supplier.email or supplier.phone
+    # Quem receberia o pedido HOJE, pela mesma ordem do envio (comercial, depois
+    # geral). Sem isso, a tela só descobre para quem o pedido foi depois de
+    # mandá-lo — e o operador não tem como conferir antes.
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    order_contact = SupplierContact.pick(contact_rows, SupplierContact.Role.SALES)
     return SupplierProjection(
         ref=supplier.ref,
         name=supplier.name,
+        tradeName=supplier.trade_name,
+        displayName=supplier.display_name,
         document=supplier.document,
         contact=contact,
+        contacts=contacts,
+        orderContactName=order_contact.name if order_contact else "",
         leadTimeDays=_meta_int(meta, "lead_time_days", "leadTimeDays", default=0),
         reliabilityPercent=_meta_int(meta, "reliability_percent", "reliabilityPercent", default=100),
         isActive=bool(supplier.is_active),

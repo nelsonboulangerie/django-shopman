@@ -75,9 +75,6 @@ alpha.nelsonboulangerie.com.br -> storefront-nuxt
 Manter API, Admin e backstage nos dominios operacionais existentes:
 
 ```text
-staging.nelsonboulangerie.com.br        -> storefront-nuxt, ALIAS de rollback
-api.staging.nelsonboulangerie.com.br    -> web, ALIAS tecnico legado
-admin.staging.nelsonboulangerie.com.br  -> web, ALIAS tecnico legado
 api.boulangerie.com.br      -> web para API/backstage/webhooks
 admin.boulangerie.com.br    -> web para Admin tecnico
 gestor.boulangerie.com.br   -> orders-nuxt
@@ -148,8 +145,8 @@ DJANGO_DEBUG=false
 SHOPMAN_ENVIRONMENT=staging
 SHOPMAN_PREPROD_URL=https://alpha.nelsonboulangerie.com.br
 
-DJANGO_ALLOWED_HOSTS=api.staging.nelsonboulangerie.com.br,admin.staging.nelsonboulangerie.com.br,api.boulangerie.com.br,admin.boulangerie.com.br
-CSRF_TRUSTED_ORIGINS=https://alpha.nelsonboulangerie.com.br,https://api.staging.nelsonboulangerie.com.br,https://admin.staging.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
+DJANGO_ALLOWED_HOSTS=api.boulangerie.com.br,admin.boulangerie.com.br
+CSRF_TRUSTED_ORIGINS=https://alpha.nelsonboulangerie.com.br,https://api.boulangerie.com.br,https://admin.boulangerie.com.br,https://gestor.boulangerie.com.br,https://kds.boulangerie.com.br,https://pdv.boulangerie.com.br,https://prod.boulangerie.com.br,https://mkt.boulangerie.com.br,https://central.boulangerie.com.br,https://bi.boulangerie.com.br
 
 SHOPMAN_STOREFRONT_BASE_URL=https://alpha.nelsonboulangerie.com.br
 SHOPMAN_DOMAIN=https://alpha.nelsonboulangerie.com.br
@@ -243,4 +240,4 @@ Isso e bloqueio de go-live/pre-producao real, nao regressao do handoff.
 - Divulgar URLs de backstage para testadores finais.
 - Criar aliases `api.alpha.*`, `admin.alpha.*` ou `*.alpha.*` para backstage sem necessidade.
 - Rodar `apps update --spec` sem backup do spec vivo.
-- Divulgar `staging.nelsonboulangerie.com.br` para testadores.
+- Recriar aliases `*.staging.nelsonboulangerie.com.br` — removidos em 2026-09-01, sem legado.

@@ -170,6 +170,20 @@ def active_order_count_for_phone(phone: str) -> int:
     return active_order_count_for_customer(phone=phone)
 
 
+def order_count_for_customer(
+    *,
+    customer_ref: str | None = None,
+    phone: str | None = None,
+) -> int:
+    """Count every order (any status) for the authenticated customer identity."""
+    from shopman.orderman.models import Order
+
+    identity = customer_identity_filter(customer_ref=customer_ref, phone=phone)
+    if identity is None:
+        return 0
+    return Order.objects.filter(identity).distinct().count()
+
+
 def last_reorder_context(*, customer_uuid, min_days: int) -> tuple[str | None, list[dict]]:
     """Return the last old-enough order ref and sealed snapshot items for reorder."""
     try:
@@ -293,9 +307,10 @@ def resolve_payment_timeout_if_due(order) -> bool:
     if method == "card" and status == "authorized":
         return False
 
-    # Última linha contra webhook perdido: perguntar ao gateway antes de
-    # cancelar um PIX possivelmente pago. Incerto = não cancelar nesta rodada.
-    gateway_state = payment_service.verify_gateway_before_timeout_cancel(order)
+    # Última linha contra webhook perdido: perguntar ao gateway antes de cancelar
+    # um pedido digital possivelmente pago — PIX e cartão. Incerto = não cancelar
+    # nesta rodada; ``authorized`` (cartão em ``requires_capture``) idem.
+    gateway_state = payment_service.settle_from_gateway(order)
     if gateway_state != "unpaid":
         if gateway_state == "paid":
             order.refresh_from_db()
@@ -682,6 +697,7 @@ __all__ = [
     "is_cancelled",
     "last_reorder_context",
     "mock_confirm_payment",
+    "order_count_for_customer",
     "order_matches_customer_identity",
     "payment_is_due",
     "resolve_confirmation_timeout_if_due",

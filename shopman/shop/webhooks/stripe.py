@@ -163,8 +163,13 @@ class StripeWebhookView(APIView):
                 return
 
         if order and intent.status == "authorized" and order.status == Order.Status.ACCEPTED:
-            method = ((order.data or {}).get("payment") or {}).get("method")
-            if method == "card":
+            method = str(((order.data or {}).get("payment") or {}).get("method") or "").lower()
+            # Toda sessão hospedada, não só `card`: o link nasce com captura
+            # automática, mas se chegar aqui `authorized` por qualquer razão
+            # (captura manual configurada no painel, sessão antiga), a rede é a
+            # mesma — capturar agora, senão a autorização vence e o dinheiro
+            # nunca entra.
+            if method in payment_service.HOSTED_CHECKOUT_METHODS:
                 payment_service.capture(order)
                 try:
                     intent = PaymentService.get(intent_ref)

@@ -1161,7 +1161,7 @@ não foi transformada em capacidade fictícia.
   recipient; success booleano não vira “entregue”, logs não carregam destinatário e
   exception/body/reason do vendor viram códigos allowlisted;
 - o deploy check diferencia flow ausente (`SHOPMAN_W014`, com reparo no cockpit) de flow
-  presente porém inseguro (`SHOPMAN_E016`, bloqueante);
+  presente porém inseguro (`SHOPMAN_E020`, bloqueante);
 - nenhuma chamada sandbox externa foi executada: isso exigiria a autorização humana
   específica que o G-H03 preservou. O sistema torna a pendência explícita e segura em vez
   de alegar que a race foi resolvida.
@@ -1221,7 +1221,7 @@ o gate externo G-H03:
   `platform_content.<plataforma>.image_url`; URL rejeitada nunca entra no log;
 - a API responde `422` e mantém anúncio pendente, sem artifact/outbox, quando uma edição
   de imagem tenta alcançar IP privado;
-- `SHOPMAN_E017` bloqueia configuração insegura no deploy check; settings e `.env.example`
+- `SHOPMAN_E021` bloqueia configuração insegura no deploy check; settings e `.env.example`
   explicam o único knob e seu default vazio.
 
 Budget de omotenashi comprovado para URL/mídia:

@@ -18,8 +18,12 @@ foi assim que o balcão logado como ``admin`` deu chave-mestra a quem chegasse.
 
 from __future__ import annotations
 
+import logging
+
 from django.contrib.auth import get_user_model
 from shopman.doorman.models import PinCredential
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -188,6 +192,23 @@ def reset_operator_pin(target_user, *, temp_pin: str | None = None) -> str:
     """
     if target_user is None or not getattr(target_user, "is_active", False):
         raise PinChangeError("no_target", "Operador não encontrado.")
+    if getattr(target_user, "is_superuser", False):
+        # Quem pode redefinir PIN (`cashman.manage_operators`, a Gerente) NÃO pode
+        # virar dono da casa por esse caminho. O reset devolve o PIN temporário em
+        # claro a quem pediu; sobre uma conta superusuária isso é a chave-mestra
+        # entregue em mão — `_eligible` deixa passar porque `has_perm` de
+        # superusuário é sempre True, e o cookie de sessão leva a aba ao lado para
+        # o /admin/. É o mesmo buraco que `station_trust.autonomous_account`
+        # recusa para o totem; a recusa faltava no caminho do PIN.
+        logger.error(
+            "Reset de PIN pedido sobre conta SUPERUSUÁRIA — recusado.",
+            extra={"target": getattr(target_user, "username", "?")},
+        )
+        raise PinChangeError(
+            "superuser_target",
+            "Esta conta administra o sistema e não usa PIN de balcão. "
+            "Troque a senha dela pelo Admin.",
+        )
     temp = (temp_pin or "").strip() or _generate_temp_pin()
     PinCredential.validate_raw(temp)  # policy check before writing (raises PinCredentialError)
     PinCredential.set_for(target_user, temp, must_change=True)

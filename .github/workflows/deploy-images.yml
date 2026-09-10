@@ -41,7 +41,7 @@ jobs:
 
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@v4
         with:
           filters: |
             web:
@@ -144,17 +144,18 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set up Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Login no DOCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
           password: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
       - name: Build e push
-        uses: docker/build-push-action@v6
+        id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -172,3 +173,92 @@ jobs:
           # MB) ficava sem tag. Visto no primeiro push, 26/08.
           provenance: false
           sbom: false
+
+      # ⚠️ O digest é a ÚNICA correlação honesta entre "este run publicou" e
+      # "este deployment subiu". O App Platform aponta o spec para a tag MÓVEL
+      # (`web`, `pos`), então o deployment não carrega o SHA — mas o
+      # `cause_details.docr_push.image_digest` carrega o digest exato. Sem isso,
+      # o smoke pós-deploy só sabe comparar RELÓGIO, e relógio aceita o
+      # deployment do merge anterior.
+      - name: Registrar o que este componente publicou
+        run: |
+          mkdir -p published
+          cat > "published/${{ matrix.tag }}.json" <<EOF
+          {
+            "name": "${{ matrix.name }}",
+            "tag": "${{ matrix.tag }}",
+            "immutable_tag": "${{ matrix.tag }}-${{ github.sha }}",
+            "digest": "${{ steps.build.outputs.digest }}"
+          }
+          EOF
+          cat "published/${{ matrix.tag }}.json"
+
+      - name: Subir o manifesto do componente
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-${{ matrix.tag }}
+          path: published/${{ matrix.tag }}.json
+          retention-days: 7
+
+  manifest:
+    name: O que foi publicado
+    # ⚠️ Roda SEMPRE que o `changes` decidiu — inclusive quando não há o que
+    # construir. É essa a diferença entre o smoke pós-deploy SABER que nada foi
+    # publicado e ele PRESUMIR isso depois de esperar 900s por um deployment que
+    # nunca vem. Presunção é o que produzia falso verde: se a DigitalOcean
+    # falhasse em criar o deployment de uma publicação real, o silêncio era lido
+    # como "push só de documentação".
+    needs: [changes, build-push]
+    if: always() && needs.changes.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Baixar os manifestos dos componentes
+        uses: actions/download-artifact@v5
+        with:
+          pattern: published-*
+          path: parts
+          merge-multiple: true
+        continue-on-error: true
+
+      - name: Compor o manifesto do run
+        env:
+          RUN_SHA: ${{ github.sha }}
+          BUILD_RESULT: ${{ needs.build-push.result }}
+          ANY: ${{ needs.changes.outputs.any }}
+        run: |
+          python3 - <<'EOF'
+          import json, os, pathlib
+
+          partes = sorted(pathlib.Path("parts").glob("*.json")) if pathlib.Path("parts").is_dir() else []
+          componentes = [json.loads(p.read_text()) for p in partes]
+
+          # ⚠️ Um componente sem digest é pior que componente nenhum: o smoke
+          # não teria como correlacionar e cairia no mesmo "presumo que deu
+          # certo". Falha aqui, alto, onde ainda dá para ver a causa.
+          sem_digest = [c["tag"] for c in componentes if not c.get("digest")]
+          if sem_digest:
+              raise SystemExit(f"::error::componentes sem digest: {sem_digest}")
+
+          esperado = os.environ["ANY"] == "true"
+          if esperado and not componentes:
+              raise SystemExit(
+                  "::error::o `changes` disse que havia componente a publicar e "
+                  "nenhum manifesto chegou. O smoke pós-deploy não pode adivinhar."
+              )
+
+          manifesto = {
+              "sha": os.environ["RUN_SHA"],
+              "build_result": os.environ["BUILD_RESULT"],
+              "components": componentes,
+          }
+          pathlib.Path("published.json").write_text(json.dumps(manifesto, indent=2))
+          print(json.dumps(manifesto, indent=2))
+          EOF
+
+      - name: Subir o manifesto do run
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-components
+          path: published.json
+          retention-days: 7

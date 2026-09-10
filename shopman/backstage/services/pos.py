@@ -10,7 +10,11 @@ do pacote e da retaguarda, nunca do terminal (fechamento cego, ADR-011 §4).
 
 from __future__ import annotations
 
-from shopman.backstage.services.exceptions import POSError, POSPermissionError
+from shopman.backstage.services.exceptions import (
+    POSError,
+    POSPermissionError,
+    POSTerminalAmbiguous,
+)
 
 #: Vocabulário do balcão ↔ tipo do livro. O PDV (rota ``pos/cash/movement/``,
 #: relatório X/Z, capability ``movement_kinds``) fala ``sangria``/``suprimento``
@@ -57,12 +61,23 @@ def open_cash_shift(*, operator, opening_amount_raw="0", terminal_ref: str = "")
 
     # Idempotência agora é por GAVETA: reenviar "abrir" na mesma gaveta devolve
     # o turno que já está lá, seja quem for que apertou.
-    terminal = _terminal(terminal_ref)
+    terminal = resolve_terminal(terminal_ref)
     existing = cash.open_shift_for_terminal(terminal)
     if existing:
         return existing
 
-    float_q = max(0, parse_money_to_q(opening_amount_raw))
+    # ⚠️ Sem `max(0, ...)`. A assimetria era gritante: o FECHAMENTO recusa negativo, e
+    # o docstring do próprio `parse_money_to_q` diz que devolver zero silencioso num
+    # fechamento cego transformaria um erro de digitação numa diferença gigante sem
+    # aviso. A abertura fazia exatamente isso: o operador digitava `-10`, o parser
+    # devolvia -1000, o clamp devolvia 0, o turno abria SEM lançar `FLOAT_IN` nenhum,
+    # e o guard do cashman (`float_q < 0`) nunca via o sinal.
+    #
+    # O operador achava que tinha declarado o fundo; a contagem cega no fim do dia
+    # acusava o fundo real como diferença sem explicação. O `CashError` do pacote já
+    # vira `POSError` no `except` abaixo, e a view devolve 400 com o campo nomeado.
+    # Vazio continua valendo zero.
+    float_q = parse_money_to_q(opening_amount_raw)
     try:
         return cash.open_shift(operator=operator, terminal=terminal, float_q=float_q)
     except CashError as exc:
@@ -91,6 +106,7 @@ def register_cash_movement(
     amount_raw="0",
     reason: str = "",
     manager_approval: dict | None = None,
+    terminal_ref: str = "",
 ):
     """Lança sangria (``cash_out``) ou suprimento (``cash_in``) no turno aberto.
 
@@ -103,7 +119,7 @@ def register_cash_movement(
     """
     from shopman.shop.services.pos import validate_manager_override
 
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
 
     api_kind = movement_type if movement_type in MOVEMENT_KIND_BY_API else "sangria"
     amount_q = parse_money_to_q(amount_raw)
@@ -145,7 +161,7 @@ def register_cash_movement(
     )
 
 
-def register_drawer_opening(*, operator, reason: str = ""):
+def register_drawer_opening(*, operator, reason: str = "", terminal_ref: str = ""):
     """Registra uma abertura de gaveta SEM venda e sem movimento (``drawer_open``).
 
     Os outros momentos que abrem a gaveta já deixam rastro sozinhos: a venda em
@@ -161,28 +177,222 @@ def register_drawer_opening(*, operator, reason: str = ""):
     reason = str(reason or "").strip()[:120]
     if not reason:
         raise POSError("Informe o motivo da abertura.")
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     return _record("drawer_open", shift=shift, operator=operator, reason=reason)
 
 
-def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw: str = ""):
-    """O gerente libera a próxima venda com a gaveta ainda aberta (``drawer_unlock``).
+def report_drawer_blind(*, operator, reason: str = "", terminal_ref: str = ""):
+    """A trava caiu numa estação que TINHA medição — registra e avisa o gerente.
 
-    A trava é do PDV: ele recusa INICIAR a próxima venda enquanto SABE que a
-    gaveta está aberta (venda começada nunca vira refém; estado desconhecido
-    nunca trava; sem carência). Este é o único jeito de passar por ela, e existe
-    para a gaveta emperrada, que existe. Cada liberação vale UMA venda: a
-    exceção tratada como exceção é a que se escancara; virasse rotina, o balcão
-    aprenderia a pedir o PIN de olhos fechados.
+    A trava só age quando SABE, e estado desconhecido nunca trava: um sensor
+    ruim tem que degradar para "sem controle", nunca para "balcão parado com
+    fila". Essa escolha está certa e não se reabre aqui — mas ela abria a fuga
+    mais barata que existia contra a trava. Deixar a gaveta aberta é trabalhoso
+    e visível; **puxar o cabo da gaveta é um gesto, uma vez, e desliga a
+    proteção para sempre**. E era silencioso: o PDV lia "não sei", seguia a
+    venda, e nada em lugar nenhum dizia que a trava tinha existido e sumido.
 
-    O lançamento é o produto: quem liberou, para quem, quando, efeito zero. É a
-    contagem de "quantos destraves por operador, em que horário" que motivou o
-    livro. ``drawer_raw`` é o byte que o sensor devolveu na hora: prova de que a
-    trava agiu porque SABIA, não por palpite.
+    Por isso a distinção que o agente passou a reportar (``calibrated``): a
+    estação que NUNCA mediu não tem trava e não é notícia; a que MEDIU e parou
+    de responder é regressão, e é esta função. Duas saídas, porque são duas
+    perguntas diferentes: o ``note`` no livro responde "quando o caixa ficou
+    cego" na conferência do turno, e o alerta responde "isso está acontecendo
+    agora" para o gerente, com reconhecimento.
+
+    Falhar aberto é aceitável. Falhar aberto e calado é um convite.
+    """
+    from shopman.backstage.services.alerts import create_alert
+
+    reason = str(reason or "").strip()[:200]
+    shift = _open_shift_or_raise(operator, terminal_ref)
+    entry = _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Sensor da gaveta parou de responder",
+        payload={"event": "drawer_sensor_blind", "detail": reason},
+    )
+    # O alerta é o que chega ao gerente HOJE; o livro é o que sobrevive à
+    # conferência. Um não substitui o outro: alerta reconhecido some da tela.
+    create_alert(
+        type="pos_drawer_sensor_blind",
+        severity="warning",
+        message=(
+            f"A trava da gaveta parou de agir no terminal de {operator.get_username()}: "
+            f"o sensor foi medido nesta estação e agora não responde ({reason or 'sem detalhe'}). "
+            "As vendas seguem, mas sem a trava. Confira o cabo da gaveta na impressora."
+        ),
+    )
+    return entry
+
+
+#: Como um bloqueio da gaveta terminou. `closed` é o caminho normal (o operador
+#: fechou a gaveta e o balcão voltou sozinho); os outros são exceção e precisam
+#: ser distinguíveis dele no B.I., senão a anomalia some na média.
+#:
+#: ⚠️ `dismissed` entrou depois, e a lacuna que ele fecha foi achada OLHANDO A
+#: TELA, não pelos testes: o X do canto do diálogo encerrava o bloqueio sem
+#: gerar linha nenhuma. Não era brecha de venda — a próxima tentativa trava de
+#: novo — mas era brecha de rastro, e dava para esbarrar na trava e desistir a
+#: manhã inteira sem deixar registro.
+DRAWER_OUTCOMES = ("closed", "sensor_lost", "manager_override", "dismissed")
+
+
+def _drawer_outcome(value, *, default: str) -> str:
+    outcome = str(value or "").strip()
+    return outcome if outcome in DRAWER_OUTCOMES else default
+
+
+def _duration_ms(value) -> int:
+    """Duração vinda da tela: inteiro, não-negativo, e com teto de 24h.
+
+    O número nasce no relógio do navegador do balcão, então não é confiável por
+    construção — um kiosk com a hora errada, ou a aba dormindo, produz duração
+    absurda. O teto impede que um outlier desses envenene a média do B.I. sem
+    que ninguém entenda de onde veio.
+    """
+    try:
+        ms = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, min(ms, 24 * 60 * 60 * 1000))
+
+
+def record_drawer_block(
+    *,
+    operator,
+    duration_ms: int = 0,
+    outcome: str = "closed",
+    drawer_raw: str = "",
+    terminal_ref: str = "",
+):
+    """O bloqueio da gaveta terminou — quanto tempo durou e como acabou.
+
+    Este lançamento é a razão de a trava dura valer mais que o pedágio antigo:
+    com a liberação vindo do sensor, o sistema passa a saber **quanto tempo a
+    gaveta ficou aberta de verdade**. No desenho anterior o PIN cortava a
+    medição no meio — liberava a venda e a gaveta seguia aberta sem ninguém
+    contando.
+
+    Efeito zero no dinheiro: é um ``note``, e o payload é o que o B.I. lê.
+    """
+    shift = _open_shift_or_raise(operator, terminal_ref)
+    payload = {
+        "event": "drawer_blocked",
+        "outcome": _drawer_outcome(outcome, default="closed"),
+        "duration_ms": _duration_ms(duration_ms),
+    }
+    drawer_raw = str(drawer_raw or "").strip()[:16]
+    if drawer_raw:
+        payload["drawer_raw"] = drawer_raw
+    return _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Bloqueio por gaveta aberta",
+        payload=payload,
+    )
+
+
+def report_drawer_left_open(*, operator, minutes: int = 0, terminal_ref: str = ""):
+    """A gaveta ficou aberta ENTRE vendas — avisa o gerente e grava.
+
+    A trava dura resolve o instante da venda: com a gaveta aberta, o balcão não
+    anda. Mas ela só age quando alguém tenta vender, e a hora morta ficava
+    descoberta — ninguém inicia venda, ninguém olha, e a gaveta passa a tarde
+    aberta. Este é o olho dessa hora: a página já sonda o agente a cada 60s, e
+    passa a ler a gaveta junto.
+
+    O limiar é do dono (regra `pos_drawer_idle_alert`, `minutes`), porque
+    "tempo demais" é julgamento de balcão, não constante de código.
+    """
+    from shopman.backstage.services.alerts import create_alert
+
+    minutes = max(0, int(minutes or 0))
+    shift = _open_shift_or_raise(operator, terminal_ref)
+    entry = _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Gaveta aberta sem venda",
+        payload={"event": "drawer_left_open", "minutes": minutes},
+    )
+    create_alert(
+        type="pos_drawer_left_open",
+        severity="warning",
+        message=(
+            f"A gaveta do terminal de {operator.get_username()} está aberta há "
+            f"{minutes} min sem nenhuma venda começar. Confira o balcão."
+        ),
+    )
+    return entry
+
+
+#: O que aconteceu depois de alguém abrir a tela de PIN da trava.
+UNLOCK_ATTEMPT_OUTCOMES = ("opened", "abandoned", "denied")
+
+
+def record_unlock_attempt(*, operator, outcome: str = "opened", terminal_ref: str = ""):
+    """Alguém ABRIU a tela de PIN da trava — mesmo que não tenha destravado.
+
+    A tela de trava não mostra a saída de emergência (botão de PIN ensina o
+    bypass: a exceção vira o caminho conhecido). Quem foi treinado sabe que Esc
+    abre o PIN. Justamente por ser escondida, **procurar a saída é informação** —
+    provavelmente a mais valiosa que essa tela produz.
+
+    Registrar só o destrave bem-sucedido perderia o padrão que interessa: o
+    operador que tenta o PIN do gerente cinco vezes por turno e desiste não
+    aparece em lugar nenhum, e é exatamente ele que se quer enxergar. Por isso
+    ``abandoned`` (Esc de volta) e ``denied`` (PIN recusado) entram no livro do
+    mesmo jeito que ``opened``.
+    """
+    shift = _open_shift_or_raise(operator, terminal_ref)
+    outcome = str(outcome or "").strip()
+    if outcome not in UNLOCK_ATTEMPT_OUTCOMES:
+        outcome = "opened"
+    return _record(
+        "note",
+        shift=shift,
+        operator=operator,
+        reason="Tela de PIN da trava da gaveta",
+        payload={"event": "drawer_unlock_attempt", "outcome": outcome},
+    )
+
+
+def unlock_drawer(
+    *,
+    operator,
+    manager_approval: dict | None = None,
+    drawer_raw: str = "",
+    duration_ms: int = 0,
+    outcome: str = "manager_override",
+    terminal_ref: str = "",
+):
+    """O gerente libera o balcão pela EMERGÊNCIA (``drawer_unlock``).
+
+    ⚠️ Mudou de natureza (decisão do dono, 29/08). A trava era um pedágio — o
+    gerente liberava UMA venda com a gaveta ainda aberta — e virou trava dura:
+    o PDV não anda enquanto a gaveta estiver aberta, e **quem libera é o mundo
+    físico**, o bloqueio cai sozinho quando o sensor diz que fechou.
+
+    Então este caminho deixou de ser o destrave e passou a ser a **exceção**:
+    gaveta emperrada fisicamente aberta, ou sensor morto. No dia normal ninguém
+    digita PIN nenhum, porque fechar a gaveta já destrava — e é por isso que a
+    fadiga de autorização (o gerente que digita no automático até virar reflexo)
+    desapareceu por construção.
+
+    ``outcome`` carrega essa natureza para o livro. Sem ele, a emergência ficaria
+    indistinguível do fechamento normal e a anomalia que interessa — o gerente
+    que libera 20× por dia — sumiria na média. ``duration_ms`` é quanto tempo a
+    gaveta ficou aberta até aqui: antes o PIN mascarava esse número, porque
+    liberava a venda sem ninguém saber se foram 10 segundos ou a manhã inteira.
+
+    ``drawer_raw`` é o byte que o sensor devolveu: prova de que a trava agiu
+    porque SABIA, não por palpite.
     """
     from shopman.shop.services.pos import validate_manager_override
 
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     # A segunda assinatura do livro é o User que o PIN autorizou, não uma
     # releitura pelo nome digitado: quem valida é quem persiste.
     approved_by = validate_manager_override(
@@ -190,10 +400,13 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
         operator_username=operator.get_username(),
         action="drawer_unlock",
     )
-    payload = {}
+    payload = {"outcome": _drawer_outcome(outcome, default="manager_override")}
     drawer_raw = str(drawer_raw or "").strip()[:16]
     if drawer_raw:
         payload["drawer_raw"] = drawer_raw
+    duration_ms = _duration_ms(duration_ms)
+    if duration_ms:
+        payload["duration_ms"] = duration_ms
     return _record(
         "drawer_unlock",
         shift=shift,
@@ -203,7 +416,9 @@ def unlock_drawer(*, operator, manager_approval: dict | None = None, drawer_raw:
     )
 
 
-def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = None) -> int:
+def refund_cash(
+    *, operator, order_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
+) -> int:
     """Devolve ao cliente o dinheiro de uma venda cancelada, pela gaveta deste turno.
 
     Cancelar não é devolver: o cancel (PDV fora da janela, gestor, de noite)
@@ -216,7 +431,7 @@ def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = Non
     from shopman.shop.services import payment as payment_service
     from shopman.shop.services.pos import validate_manager_override
 
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     approved_by = validate_manager_override(
         manager_approval or {},
         operator_username=operator.get_username(),
@@ -239,7 +454,9 @@ def refund_cash(*, operator, order_ref: str, manager_approval: dict | None = Non
     return refunded_q
 
 
-def settle_account(*, operator, customer_ref: str, amount_raw: str, method: str):
+def settle_account(
+    *, operator, customer_ref: str, amount_raw: str, method: str, terminal_ref: str = ""
+):
     """O cliente acertou (parte d)a conta. Em dinheiro, entra no turno ABERTO de quem recebeu.
 
     Entrada não exige PIN (suprimento também não). O shop captura os intents
@@ -251,7 +468,9 @@ def settle_account(*, operator, customer_ref: str, amount_raw: str, method: str)
     from shopman.shop.services import house_account
 
     method = str(method or "").strip().lower()
-    shift = current_shift() if method == "cash" else None
+    # Em dinheiro isto GRAVA no livro da gaveta, então vale a mesma recusa das outras
+    # mutações. Nos outros meios não há gaveta envolvida, e não há o que desambiguar.
+    shift = current_shift(terminal_ref, strict=True) if method == "cash" else None
     try:
         return house_account.settle_account(
             customer_ref,
@@ -315,7 +534,9 @@ def _clean_denominations(raw) -> list[int]:
     return sorted(limpas, reverse=True)
 
 
-def request_change(*, operator, amount_raw="0", denominations=None, note: str = ""):
+def request_change(
+    *, operator, amount_raw="0", denominations=None, note: str = "", terminal_ref: str = ""
+):
     """O operador PEDE troco (``change_requested``). Ninguém sai do balcão.
 
     Este é o ponto todo da feature: quando falta troco, o operador atravessava a
@@ -342,7 +563,7 @@ def request_change(*, operator, amount_raw="0", denominations=None, note: str = 
     denominations = _clean_denominations(denominations)
     note = str(note or "").strip()[:120]
 
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     return _record(
         "change_requested",
         shift=shift,
@@ -351,7 +572,9 @@ def request_change(*, operator, amount_raw="0", denominations=None, note: str = 
     )
 
 
-def serve_change_request(*, operator, request_ref: str, manager_approval: dict | None = None):
+def serve_change_request(
+    *, operator, request_ref: str, manager_approval: dict | None = None, terminal_ref: str = ""
+):
     """O gerente traz o troco e assina no balcão (``change_served``). A gaveta abre; o esperado, não.
 
     Mesma permissão de quem autoriza uma sangria (``cashman.adjust_shift``)
@@ -367,7 +590,7 @@ def serve_change_request(*, operator, request_ref: str, manager_approval: dict |
         action="cash_change_request_serve",
     )
 
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     request = _pending_request(shift, request_ref)
     return _record(
         "change_served",
@@ -378,14 +601,14 @@ def serve_change_request(*, operator, request_ref: str, manager_approval: dict |
     )
 
 
-def cancel_change_request(*, operator, request_ref: str):
+def cancel_change_request(*, operator, request_ref: str, terminal_ref: str = ""):
     """O operador achou troco na gaveta e o pedido não vale mais (``change_cancelled``).
 
     Sem esta saída o pendente fica pendurado para sempre, e uma lista com
     pedidos mortos é uma lista em que ninguém acredita — daí a próxima falta de
     troco volta a ser resolvida na caminhada até o cofre.
     """
-    shift = _open_shift_or_raise(operator)
+    shift = _open_shift_or_raise(operator, terminal_ref)
     request = _pending_request(shift, request_ref)
     return _record("change_cancelled", shift=shift, operator=operator, parent=request)
 
@@ -459,7 +682,7 @@ def close_cash_shift(*, actor_user, closing_amount_raw="0", notes: str = "", ter
     if not can_close_day(actor_user):
         raise POSPermissionError("Fechar o caixa é da gerência. Peça a quem fecha o dia.")
 
-    shift = current_shift(terminal_ref)
+    shift = current_shift(terminal_ref, strict=True)
     if not shift:
         raise POSError("Caixa não aberto.")
     _close(shift, actor=actor_user, counted_raw=closing_amount_raw, notes=notes)
@@ -476,7 +699,7 @@ def _close(shift, *, actor, counted_raw, notes: str) -> None:
         raise POSError(exc.message) from exc
 
 
-def current_shift(terminal_ref: str = ""):
+def current_shift(terminal_ref: str = "", *, strict: bool = False):
     """O turno aberto da GAVETA em que se está trabalhando — ou ``None``.
 
     Dono único da pergunta "qual é o caixa aberto agora". Substituiu
@@ -484,27 +707,76 @@ def current_shift(terminal_ref: str = ""):
     se reveza, a segunda pessoa do dia não tinha turno seu e o sistema concluía
     que não havia caixa aberto.
 
-    ⚠️ Sem ``terminal_ref``, ``_terminal()`` devolve o primeiro terminal ativo.
+    ⚠️ ``strict`` separa LEITURA de ESCRITA, e não "veio ref ou não". A leitura precisa
+    devolver alguma coisa — derrubar o quadro do PDV por ambiguidade trocaria um
+    problema por outro maior. A escrita precisa recusar: é onde o dinheiro anda, e
+    escolher a gaveta errada com convicção é o modo de falha caro. Quem escreve passa
+    ``strict=True`` (ver ``_open_shift_or_raise``).
+
+    ⚠️ Sem ``terminal_ref``, ``resolve_terminal()`` devolve o primeiro terminal ativo.
     Com UMA gaveta isso é exato. Quando a loja tiver balcão + totem, quem chama
     precisa passar o ref — e é por isso que o parâmetro existe desde já, em vez
     de um default escondido que só quebraria no dia da segunda gaveta.
     """
     from shopman.cashman import services as cash
 
-    return cash.open_shift_for_terminal(_terminal(terminal_ref))
+    return cash.open_shift_for_terminal(resolve_terminal(terminal_ref, strict=strict))
 
 
-def _terminal(terminal_ref: str = ""):
+def resolve_terminal(terminal_ref: str = "", *, strict: bool = True):
+    """A gaveta em que se está trabalhando. DONO ÚNICO da pergunta.
+
+    ⚠️ Havia DOIS resolvers, e um segundo terminal cadastrado no Admin paralisava o
+    PDV. A projection resolvia por `Terminal.default()` e mostrava `pdv-main`; toda
+    mutação sem ref resolvia pelo primeiro ativo em ordem alfabética. Bastava a
+    gerente cadastrar `balcao-2` em Equipamentos:
+
+      * o turno abria em `pdv-main` (a tela mandava o ref que ela mostrava);
+      * daí em diante, sangria, suprimento, gaveta, troco e devolução caíam em
+        "Caixa não aberto";
+      * review e close da venda davam 409 — NÃO SE VENDIA MAIS NADA;
+      * e fechar o caixa não manda ref, então o turno aberto não podia ser fechado
+        pela tela.
+
+    O operador lia "abra o caixa antes de finalizar" numa tela que mostrava o caixa
+    aberto. **Não havia saída pela UI.**
+
+    ⚠️ **Falha fechado na ambiguidade.** Com 2+ gavetas ativas e ninguém dizendo qual,
+    um resolver concordante ainda escolheria a errada COM CONVICÇÃO — os dois lados
+    apontam para `balcao-2` consistentemente, e o operador do balcão 1 lança sangria na
+    gaveta do balcão 2 sem erro nenhum. Em dinheiro, falha silenciosa é pior que falha
+    ruidosa, e a régua da casa manda recusar aí. Levanta `POSTerminalAmbiguous` (409):
+    o operador não errou nada, falta a loja dizer qual é o balcão dele.
+
+    `strict=False` — o caminho de LEITURA, que resolve pelo cookie da estação — segue
+    escolhendo, porque derrubar o quadro inteiro do PDV por ambiguidade trocaria um
+    problema por outro maior. Quem recusa é a MUTAÇÃO, que é onde o dinheiro anda.
+
+    Com UMA gaveta — o caso de hoje — nada muda.
+    """
     from shopman.cashman.models import Terminal
 
     ref = str(terminal_ref or "").strip()
     if ref:
         terminal = Terminal.objects.filter(ref=ref, is_active=True).first()
-        if not terminal:
+        if terminal:
+            return terminal
+        # ⚠️ `strict` separa duas coisas que parecem uma. Um ref VINDO DO PAYLOAD é
+        # uma afirmação de quem chama: se não existe, o pedido está errado e tem de
+        # ser recusado. Um ref vindo do COOKIE DE ESTAÇÃO é contexto ambiente — o
+        # dispositivo pode ter sido provisionado com um terminal que depois foi
+        # desativado ou renomeado, e derrubar o PDV inteiro por causa disso seria
+        # trocar um problema por outro maior.
+        if strict:
             raise POSError("Terminal POS inválido.")
-        return terminal
-    terminal = Terminal.objects.filter(is_active=True).order_by("ref").first()
-    return terminal or Terminal.default()
+
+    ativos = list(Terminal.objects.filter(is_active=True).order_by("ref")[:2])
+    if strict and len(ativos) > 1:
+        raise POSTerminalAmbiguous(
+            "Mais de um caixa ativo. Diga em qual balcão você está para continuar."
+        )
+    return ativos[0] if ativos else Terminal.default()
+
 
 
 def cash_movement_receipt_payload(*, operator, entry_id: int, reprint: bool = False, terminal_ref: str = "") -> dict:
@@ -624,7 +896,7 @@ def _movement_entry(operator, entry_id: int, terminal_ref: str = ""):
     entry = (
         Entry.objects.filter(
             pk=_int_or_none(entry_id),
-            shift__terminal=_terminal(terminal_ref),
+            shift__terminal=resolve_terminal(terminal_ref),
             kind__in=list(MOVEMENT_KIND_BY_API.values()),
         )
         .select_related("shift", "shift__terminal", "operator", "approved_by")
@@ -635,8 +907,17 @@ def _movement_entry(operator, entry_id: int, terminal_ref: str = ""):
     return entry
 
 
-def _open_shift_or_raise(operator):
-    shift = current_shift()
+def _open_shift_or_raise(operator, terminal_ref: str = ""):
+    """O turno aberto DESTA gaveta.
+
+    ⚠️ `terminal_ref` atravessa daqui até `resolve_terminal`, e é essa canalização que
+    permite falhar fechado com duas gavetas ativas. Antes, as onze funções de caixa
+    chamavam `current_shift()` sem ref: com 2+ gavetas e nenhuma estação vinculada, o
+    resolver escolhia uma COM CONVICÇÃO e o operador do balcão 1 lançava sangria na
+    gaveta do balcão 2 sem erro nenhum. Em dinheiro, falha silenciosa é pior que falha
+    ruidosa.
+    """
+    shift = current_shift(terminal_ref, strict=True)
     if not shift:
         raise POSError("Caixa não aberto.")
     return shift

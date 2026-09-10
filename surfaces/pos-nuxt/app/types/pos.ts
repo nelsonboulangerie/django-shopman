@@ -316,6 +316,26 @@ export interface POSCustomerLookupResponse {
   created?: boolean;
 }
 
+/** A unificação de dois cadastros pedida pelo balcão — `target` sobrevive. */
+export interface POSCustomerMergeResponse {
+  ok: boolean;
+  customer: POSCustomerLookupProjection | null;
+  merge: {
+    source_ref: string;
+    target_ref: string;
+    /** O comprovante para desfazer dentro da janela. */
+    audit_id: string;
+    undo_deadline: string;
+    migrated: {
+      contact_points: number;
+      identifiers: number;
+      addresses: number;
+      orders: number;
+      loyalty: boolean;
+    };
+  };
+}
+
 export interface POSCustomerSearchResult {
   ref: string;
   name: string;
@@ -350,6 +370,14 @@ export interface POSCashDrawerProjection {
   agent_url?: string;
   token?: string;
   pulse?: { pin: number; on_ms: number; off_ms: number };
+  /**
+   * Minutos de gaveta aberta ENTRE vendas até virar aviso. `0` desliga.
+   *
+   * A trava cuida do instante da venda; isto cobre a hora morta, quando
+   * ninguém inicia venda nenhuma e uma gaveta aberta não seria vista por
+   * ninguém. Configurável no Admin (regra `pos_drawer_idle_alert`).
+   */
+  idle_open_alert_minutes?: number;
 }
 
 export interface POSOperatorProjection {
@@ -450,19 +478,35 @@ export interface POSResponse {
 }
 
 export interface POSCartItem {
+  /** A IDENTIDADE da linha, e a única chave dela. O cliente gera ao criar
+   *  (`L-` + 8 caracteres) e o servidor preserva.
+   *
+   *  ⚠️ Já foi o SKU que fazia esse papel, e o modelo é que estava errado: com
+   *  uma linha por SKU, "mais um chá" virava `qty: 2` numa linha já disparada, o
+   *  fire deduplicava por `line_id` e o segundo chá nunca era feito. Duas linhas
+   *  do mesmo SKU são legítimas — e é o que permite observação, desconto e
+   *  estado de cozinha por rodada. */
+  line_id: string;
   sku: string;
   name: string;
   price_q: number;
   qty: number;
   notes: string;
-  line_id?: string;
   fired?: boolean;
-  /** Em que pé a COZINHA está com este SKU nesta comanda: "" (nada disparado),
-   *  "pending", "in_progress", "done", "cancelled". Vem do ticket do KDS e chega
-   *  por push (canal SSE `tabs`) — o selo da linha segue o ticket em vez de
-   *  congelar no estado do minuto do disparo. */
+  /** QUANTAS unidades desta linha foram à cozinha. A linha vai INTEIRA (não
+   *  existe meia-linha), então isto serve a uma pergunta só: detectar SOBRA —
+   *  linha enviada com 3 que o operador depois baixou para 1. */
+  fired_qty?: number;
+  /** Em que pé a COZINHA está com esta LINHA nesta comanda: "" (nada
+   *  disparado), "pending", "in_progress", "done", "cancelled". Vem do ticket do
+   *  KDS e chega por push (canal SSE `tabs`) — o selo da linha segue o ticket em
+   *  vez de congelar no estado do minuto do disparo. */
   kitchen_status?: string;
-  discount?: { value: number; reason: string };
+  /** Desconto MANUAL desta linha. `value` é percentual em `percent` e REAIS em
+   *  `fixed` — a mesma convenção do desconto do pedido. O R$ é POR UNIDADE:
+   *  é assim que ele compete com o automático no "maior desconto ganha", que é
+   *  medido por unidade contra o preço de etiqueta. */
+  discount?: { value: number; reason: string; type?: "percent" | "fixed" };
   /** Desconto AUTOMÁTICO de pricing que venceu a linha (lote/liquidação, happy
    *  hour, funcionário), carimbado pelo kernel e exposto pelo payload da
    *  comanda. Informativo: o `price_q` da linha já vem reduzido. */
@@ -474,9 +518,6 @@ export interface POSCartItem {
    *  manual). ⚠️ Não é `price_q`: aquele é o número de restauração — pré-desconto
    *  manual — e com desconto na linha ele é MAIOR do que o cliente paga. */
   charged_price_q?: number;
-  /** Operator overrode the unit price (numpad "Preço"): the kernel freezes it and
-   *  the server review requires manager approval. Survives persist→reload. */
-  price_overridden?: boolean;
 }
 
 export interface POSPaymentTenderDraft {
@@ -579,9 +620,42 @@ export interface POSIntentCartState {
   changeForQ: number;
   receiptChannels: string[];
   receiptEmail: string;
+  /** A ORDEM do operador de guardar o contato do comprovante no cadastro. O
+   *  e-mail e o CPF pedidos na nota são fatos DA VENDA (podem ser os do
+   *  contador, os da empresa) e nunca viram identidade sozinhos — a tela
+   *  pergunta, e a resposta viaja aqui. */
+  saveReceiptContact: boolean;
+  saveReceiptTaxId: boolean;
+  /** A SEGUNDA PALAVRA sobre o CPF — a reconfirmação que a tela cobra quando a
+   *  ordem SOBRESCREVE o documento que o cadastro já tem. Viaja separada da
+   *  ordem porque o servidor a exige por conta própria: trava que mora só na
+   *  tela não é trava. */
+  saveReceiptTaxIdConfirmed: boolean;
   manualDiscount: Record<string, unknown> | null;
   managerApproval: Record<string, unknown> | null;
   clientRequestId: string;
+}
+
+/** Resposta de `/pos/schedule/` — o "quando" perguntado na abertura. */
+export interface POSScheduleResponse {
+  ok: boolean;
+  /** O hoje da LOJA (um tablet com fuso errado agendaria para ontem). */
+  today: string;
+  /** O dia a que estas janelas pertencem. */
+  date: string;
+  max_preorder_days: number;
+  /** Datas em que a casa realmente opera — sem dia fechado, sem feriado. */
+  available_dates: string[];
+  windows: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
+  earliest_window_ref: string;
+  /** O gargalo por extenso, para a tela dizer o porquê uma vez só. */
+  ready_at: string;
+  bottleneck_name: string;
+  /** `"half_hour"` (hoje) ou `"canonical"` (encomenda: os 3 turnos da casa). */
+  grid: "half_hour" | "canonical";
+  is_today: boolean;
+  /** Não deu para apurar a prontidão — NÃO é "sem restrição". */
+  readiness_unavailable: boolean;
 }
 
 export interface POSSaleReviewProjection {
@@ -589,8 +663,15 @@ export interface POSSaleReviewProjection {
   tab_ref: string;
   subtotal_q: number;
   subtotal_display: string;
+  /** O desconto manual TOTAL — é ele que leva o subtotal ao total. */
   discount_q: number;
   discount_display: string;
+  /** Os dois escopos do desconto manual, somando `discount_q`: o que o operador
+   *  deu nas LINHAS (no carrinho) e o que deu na VENDA (no checkout). */
+  line_discount_q: number;
+  line_discount_display: string;
+  order_discount_q: number;
+  order_discount_display: string;
   delivery_fee_q: number;
   delivery_fee_display: string;
   total_q: number;
@@ -619,7 +700,11 @@ export interface POSSaleReviewProjection {
   /** A data que o servidor usou — em branco no pedido, é hoje pelo relógio da loja. */
   delivery_date: string;
   /** Janelas de meia hora do expediente daquele dia. Vazio = não há janela. */
-  delivery_slots: Array<{ ref: string; label: string }>;
+  // Anotadas com a prontidão do carrinho: a janela que não cabe volta
+  // `enabled: false` com o motivo, nunca some da lista.
+  delivery_slots: Array<{ ref: string; label: string; enabled?: boolean; reason?: string }>;
+  /** A primeira janela oferecível deste dia para este carrinho, ou "". */
+  delivery_earliest_slot?: string;
 }
 
 export interface POSSaleReviewResponse {

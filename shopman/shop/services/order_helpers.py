@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from django.utils import timezone
+
 
 def get_fulfillment_type(order) -> str:
     """Return the order's fulfillment type.
@@ -78,3 +80,32 @@ def get_commitment_date(source) -> date | None:
         data = getattr(source, "data", None) or {}
 
     return parse_commitment_date(data.get("delivery_date"))
+
+
+def customer_holds_the_goods(order) -> bool:
+    """Venda de balcão presencial: a mercadoria já está na mão do cliente?
+
+    É a pergunta que decide duas coisas, e por isso tem UMA resposta: se a
+    venda fecha no ato (``lifecycle`` — ``system:counter_handoff``) e se o pão
+    de prateleira vira ticket de separação (``kds`` — ``prep_only``). Enquanto
+    cada um respondia por conta própria, uma regra nova entrava num e faltava
+    no outro.
+
+    Sim quando: PDV, retirada, sem data futura — e pagamento que NÃO é link.
+    O link é o pedido REMOTO anotado no balcão: o cliente não está na loja,
+    paga depois pelo celular e vem buscar. A sacola não está na mão dele; há
+    trajeto pela frente por definição. Sem esta linha a venda de link fechava
+    COMPLETED sem um centavo capturado, e o vencimento do link não alcançava
+    mais o pedido. Encomenda agendada e entrega ficam de fora pelo mesmo
+    motivo: têm trabalho e trajeto pela frente, e a esteira existe para elas.
+    """
+    data = order.data or {}
+    if data.get("origin_channel") != "pos":
+        return False
+    if (data.get("fulfillment_type") or "pickup") != "pickup":
+        return False
+    payment = data.get("payment") or {}
+    if str(payment.get("method") or "").strip().lower() == "link":
+        return False
+    commitment = get_commitment_date(order)
+    return not (commitment and commitment > timezone.localdate())

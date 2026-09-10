@@ -83,16 +83,33 @@ describe("httpErrorMessage", () => {
 });
 
 describe("isUnauthenticatedError", () => {
-  it("is true only for 401 (auth perdida), across error shapes", () => {
+  it("is true for 401 (auth perdida), across error shapes", () => {
     expect(isUnauthenticatedError({ status: 401 })).toBe(true);
     expect(isUnauthenticatedError({ statusCode: 401 })).toBe(true);
     expect(isUnauthenticatedError({ response: { status: 401 } })).toBe(true);
   });
 
-  it("is false for 403 (proibido) e demais status/rede", () => {
+  // O Django do backstage roda com um authenticator só (SessionAuthentication),
+  // que não manda header de desafio — e sem ele o DRF rebaixa o NotAuthenticated
+  // para 403. Enquanto este narrowing testava só o 401 o ramo era inalcançável na
+  // zona de operador, e a sessão caída caía no tratamento genérico.
+  it("reconhece a sessão caída que chega REBAIXADA para 403 com not_authenticated", () => {
+    const sessaoCaida = {
+      status: 403,
+      data: { detail: "As credenciais de autenticação não foram fornecidas.", error: { code: "not_authenticated" } },
+    };
+    expect(isUnauthenticatedError(sessaoCaida)).toBe(true);
+    expect(isUnauthenticatedError({ statusCode: 403, data: { error: { code: "not_authenticated" } } })).toBe(true);
+  });
+
+  // Aceitar "todo 403" mandaria o operador digitar senha para uma recusa que
+  // senha não conserta. O narrowing é por CÓDIGO, não por status solto.
+  it("é falso para 403 comum, estação travada e demais status/rede", () => {
     for (const status of [0, 400, 403, 404, 419, 500]) {
       expect(isUnauthenticatedError({ status })).toBe(false);
     }
+    expect(isUnauthenticatedError({ status: 403, data: { detail: "Operador sem permissão." } })).toBe(false);
+    expect(isUnauthenticatedError({ status: 403, data: { error: { code: "station_locked" } } })).toBe(false);
     expect(isUnauthenticatedError(new Error("offline"))).toBe(false);
   });
 });

@@ -50,12 +50,6 @@ def _copy_message(key: str, fallback: str) -> str:
         return fallback
 
 
-def _mock_payment_enabled() -> bool:
-    from shopman.storefront.api.payment import mock_payment_enabled
-
-    return mock_payment_enabled()
-
-
 def _alert_low_rating(order, rating: int, comment: str) -> None:
     """Raise a debounced OperatorAlert for a low customer rating (≤2).
 
@@ -117,7 +111,6 @@ def _tracking_payload(order) -> dict:
     # Fusão PAYMENT-TRACKING-MERGE: ``requires_payment_gate``/``payment_gate_url``
     # sumiram (não há mais para onde rotear); o bloco de Pix/cartão é inline, e a
     # captura simulada (DEBUG/staging) é sinalizada por ``mock_payment_enabled``.
-    data["mock_payment_enabled"] = _mock_payment_enabled()
     data["fulfillments"] = [
         {
             "status": f.status,
@@ -180,6 +173,13 @@ class OrderTrackingView(APIView):
             )
 
         order_service.resolve_timeouts_if_due(order)
+        # ⚠️ A VOLTA DO CARTÃO PASSA POR AQUI, e por muito tempo não passava.
+        # O `success_url` do Stripe devolve o cliente para esta tela, e ela lia
+        # só o Payman — que só sabe o que o webhook contou. Webhook atrasado é
+        # corrida (o cliente chega antes); webhook quebrado é dano permanente.
+        # Nos dois casos o cliente pagava e continuava lendo "Pagar com cartão".
+        # Agora a própria leitura pergunta ao gateway (throttled) e liquida.
+        order_service.reconcile_payment_with_gateway_if_due(order)
         # Fusão PAYMENT-TRACKING-MERGE: o acompanhamento é onde o cliente paga,
         # então é aqui que o intent de pagamento nasce (recovery/idempotente, o
         # mesmo que a antiga tela de pagamento fazia). Sem isto, o Pix de
@@ -318,6 +318,95 @@ class OrderCancelView(APIView):
         except remote_mutations.RemoteMutationInProgress:
             return Response(
                 {"detail": "Cancelamento já está em andamento.", "error_code": "mutation_in_progress"},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(result.response_body, status=result.response_code)
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["tracking"],
+        summary="Customer confirms a waitlist slot after the batch came out",
+        responses={
+            200: OrderTrackingSerializer,
+            404: DetailSerializer,
+            409: OpenApiResponse(description="No open confirmation window for this order."),
+        },
+    ),
+)
+class OrderWaitlistConfirmView(APIView):
+    """
+    POST /api/v1/orders/{ref}/waitlist-confirm/
+
+    A fornada saiu e o cliente confirma que quer o dele (WP-P2E §8). Fora da
+    janela — nunca aberta, ou prazo vencido — a confirmação é recusada com
+    409: a vaga já é de outro, e fingir o contrário prometeria o que não há.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+    serializer_class = OrderTrackingSerializer
+    throttle_classes = []
+
+    def post(self, request, ref: str):
+        if _request_is_rate_limited(
+            request,
+            group="storefront-api-order-waitlist-confirm",
+            rate="20/m",
+            method="POST",
+        ):
+            return _rate_limited_response()
+        try:
+            order = order_service.get_accessible_order(request, ref)
+        except Http404:
+            return Response(
+                {
+                    "detail": _copy_message(
+                        "TRACKING_NOT_FOUND_MESSAGE",
+                        "Confira o link do pedido ou fale com a equipe.",
+                    ),
+                },
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        key = remote_mutations.idempotency_key_from_request(
+            request,
+            fallback=f"waitlist-confirm:{ref}",
+        )
+
+        def execute_confirm() -> tuple[dict, int]:
+            from shopman.shop.services import waitlist
+
+            if not waitlist.confirm(order):
+                order.refresh_from_db()
+                return (
+                    {
+                        "detail": _copy_message(
+                            "TRACKING_WAITLIST_RELEASED_MESSAGE",
+                            "O prazo de confirmação passou e liberamos a sua vaga. "
+                            "Nada foi cobrado, e você pode entrar na fila da próxima fornada.",
+                        ),
+                        "error_code": "waitlist_window_closed",
+                        "waitlist_state": waitlist.state_for(order),
+                    },
+                    status.HTTP_409_CONFLICT,
+                )
+
+            order.refresh_from_db()
+            data = _tracking_payload(order)
+            serializer = OrderTrackingSerializer(data)
+            return dict(serializer.data), status.HTTP_200_OK
+
+        try:
+            result = remote_mutations.run_idempotent_mutation(
+                scope=f"order-waitlist-confirm:{ref}",
+                key=key,
+                execute=execute_confirm,
+                cache_response=lambda _body, code: code < 400,
+            )
+        except remote_mutations.RemoteMutationInProgress:
+            return Response(
+                {"detail": "Confirmação já está em andamento.", "error_code": "mutation_in_progress"},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(result.response_body, status=result.response_code)

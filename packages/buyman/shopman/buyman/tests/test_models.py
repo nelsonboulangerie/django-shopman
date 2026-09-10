@@ -23,15 +23,15 @@ class TestMaterial:
 
 class TestSupplierMaterialCost:
     def test_cost_per_pair_unique(self):
-        s = Supplier.objects.create(ref="SUP-MOINHO", name="Moinho SP")
+        s = Supplier.objects.create(ref="moinho", name="Moinho SP")
         m = Material.objects.create(sku="FARINHA-T65", name="Farinha")
         SupplierMaterialCost.objects.create(supplier=s, material=m, cost_q=350)
         with pytest.raises(IntegrityError), transaction.atomic():
             SupplierMaterialCost.objects.create(supplier=s, material=m, cost_q=400)
 
     def test_one_preferred_cost_per_material(self):
-        s1 = Supplier.objects.create(ref="SUP-A", name="A")
-        s2 = Supplier.objects.create(ref="SUP-B", name="B")
+        s1 = Supplier.objects.create(ref="fornecedor-a", name="A")
+        s2 = Supplier.objects.create(ref="fornecedor-b", name="B")
         m = Material.objects.create(sku="FARINHA", name="Farinha")
         first = SupplierMaterialCost.objects.create(supplier=s1, material=m, cost_q=350, is_preferred=True)
         # marking a second one promotes it and demotes the first (same transaction)
@@ -42,8 +42,8 @@ class TestSupplierMaterialCost:
 
     def test_db_still_refuses_two_preferred_when_save_is_bypassed(self):
         """A promoção é do model; a unicidade continua sendo do banco."""
-        s1 = Supplier.objects.create(ref="SUP-A", name="A")
-        s2 = Supplier.objects.create(ref="SUP-B", name="B")
+        s1 = Supplier.objects.create(ref="fornecedor-a", name="A")
+        s2 = Supplier.objects.create(ref="fornecedor-b", name="B")
         m = Material.objects.create(sku="FARINHA", name="Farinha")
         SupplierMaterialCost.objects.create(supplier=s1, material=m, cost_q=350, is_preferred=True)
         alternative = SupplierMaterialCost.objects.create(supplier=s2, material=m, cost_q=300)

@@ -9,6 +9,7 @@ from django.utils import timezone
 
 from shopman.shop.adapters import alert as alert_adapter
 from shopman.shop.directives import PRODUCTION_LATE_CHECK
+from shopman.shop.handlers._resilient import resilient_receiver
 from shopman.shop.production_config import ProductionConfig
 
 logger = logging.getLogger(__name__)
@@ -21,23 +22,79 @@ logger = logging.getLogger(__name__)
 # decisão (concluir tarde ou cancelar) é dele, não do relógio.
 UNFINISHED_ALERTED_KEY = "unfinished_alerted_at"
 
+_RESOLVED_ALERT_TYPES_BY_ACTION = {
+    "started": ("production_forgotten",),
+    "finished": (
+        "production_late",
+        "production_forgotten",
+        "production_unfinished",
+        "production_stock_short",
+        "production_batch_traceability",
+    ),
+    "voided": (
+        "production_late",
+        "production_forgotten",
+        "production_unfinished",
+        "production_stock_short",
+        "production_batch_traceability",
+    ),
+}
+
 
 def connect() -> None:
     """Connect production alert receivers to Craftsman lifecycle signals."""
-    from shopman.craftsman.signals import production_changed
+    from shopman.craftsman.signals import production_changed, production_stock_shortfall
 
     production_changed.connect(
         on_production_changed,
         dispatch_uid="shopman.shop.handlers.production_alerts.on_production_changed",
         weak=False,
     )
+    production_stock_shortfall.connect(
+        on_production_stock_shortfall,
+        dispatch_uid="shopman.shop.handlers.production_alerts.on_production_stock_shortfall",
+        weak=False,
+    )
 
 
+@resilient_receiver
 def on_production_changed(sender, product_ref, date, action, work_order, **kwargs):
-    """Create operator alerts for production lifecycle events."""
+    """Create operator alerts for production lifecycle events.
+
+    Não-crítico: um alerta que falha não pode derrubar o ``finish`` da fornada
+    nem abortar o sync de pedido, que roda logo em seguida (ver
+    :func:`shopman.shop.handlers._resilient.resilient_receiver`).
+    """
     ensure_late_check_scheduled()
+    _resolve_obsolete_alerts(action, work_order)
     if action == "finished":
         maybe_create_low_yield_alert(work_order)
+
+
+def _resolve_obsolete_alerts(action: str, work_order) -> int:
+    """Close transient alerts when the WO lifecycle proves their cause ended."""
+    alert_types = _RESOLVED_ALERT_TYPES_BY_ACTION.get(action, ())
+    return sum(
+        alert_adapter.resolve(
+            alert_type,
+            order_ref=work_order.ref,
+            actor="system:production-lifecycle",
+        )
+        for alert_type in alert_types
+    )
+
+
+def on_production_stock_shortfall(sender, work_order, shortfalls, **kwargs):
+    """A ponte craftsman→stockman baixou menos insumo que a ficha pede.
+
+    A ponte é core e não importa o shop; ela anuncia por ``production_stock_shortfall``
+    e a tradução para OperatorAlert vive aqui, do lado do shop.
+    """
+    create_stock_shortfall_alert(
+        work_order_ref=work_order.ref,
+        output_sku=work_order.output_sku,
+        shortfalls=shortfalls,
+    )
 
 
 def ensure_late_check_scheduled() -> bool:
@@ -116,7 +173,12 @@ class ProductionLateCheckHandler:
 
 
 def maybe_create_low_yield_alert(work_order) -> bool:
-    """Create a low-yield alert when finished quantity is below threshold."""
+    """Record and notify a low-yield outcome without inventing an open cause.
+
+    O operador já informou a quantidade e o motivo no fechamento. Portanto,
+    yield baixo é um fato histórico/BI, não uma pendência que possa ser
+    "resolvida" depois. Rupturas reais de estoque/pedido têm alertas próprios.
+    """
     if work_order.finished is None:
         return False
 
@@ -132,7 +194,10 @@ def maybe_create_low_yield_alert(work_order) -> bool:
         f"Produção {work_order.ref} ({work_order.output_sku}) fechou com "
         f"yield de {int(yield_rate * 100)}%."
     )
-    if _recent_exists("production_low_yield", work_order.ref):
+    if alert_adapter.exists(
+        "production_low_yield",
+        order_ref=work_order.ref,
+    ):
         return False
     alert_adapter.create(
         "production_low_yield",
@@ -149,6 +214,11 @@ def maybe_create_low_yield_alert(work_order) -> bool:
             "output_sku": work_order.output_sku,
             "yield_percent": int(yield_rate * 100),
         },
+    )
+    alert_adapter.resolve(
+        "production_low_yield",
+        order_ref=work_order.ref,
+        actor="system:production-outcome-recorded",
     )
     return True
 
@@ -311,12 +381,11 @@ def _stamp_meta(work_order, key: str) -> None:
 
 
 def create_batch_traceability_alert(*, work_order_ref: str, output_sku: str, error: str) -> None:
-    """Alerta quando a fornada fechou mas os LOTES não foram gravados.
+    """Alerta quando a tentativa de fechamento não conseguiu gravar os LOTES.
 
-    Era um WARNING de log (best-effort); com a partição (ADR-017) a falha
-    silenciosa ficou mais cara — N lotes carregam desconto e validade, e lote
-    não gravado é preço cheio indevido e rastreabilidade perdida. O finish não
-    desfaz (a fornada FOI produzida); o operador precisa saber e regravar.
+    Com a partição (ADR-017), N lotes carregam desconto e validade. A transação
+    reverte o fechamento inteiro para STARTED e o operador tenta novamente na
+    Expedição; o ``finished`` bem-sucedido seguinte resolve este alerta.
     """
     if _recent_exists("production_batch_traceability", work_order_ref):
         return
@@ -361,6 +430,57 @@ def create_stock_short_alert(*, work_order_ref: str, output_sku: str, error: str
             "work_order_ref": work_order_ref,
             "output_sku": output_sku,
             "error": error,
+        },
+    )
+
+
+def create_stock_shortfall_alert(*, work_order_ref: str, output_sku: str, shortfalls: list[dict]) -> None:
+    """Alerta quando o FECHAMENTO baixou MENOS insumo que a ficha pede.
+
+    Distinto de :func:`create_stock_short_alert` (``production_stock_short``), que
+    é a falta PREVISTA antes do finish, pela borda do operador com
+    ``check_finish_materials`` + ``force``. Este é a falta REAL, já commitada
+    dentro da ponte craftsman→stockman: acontece quando não houve pré-checagem
+    (sem ``INVENTORY_BACKEND``) ou quando a concorrência divergiu do previsto. A
+    fornada NÃO falha (o insumo pré-go-live é best-effort), mas a sub-baixa
+    precisa GRITAR: o estoque de insumo no livro ficou ACIMA do real e alguém
+    precisa recontar. Tipo próprio para não colidir com o dedup do outro alerta.
+
+    ``shortfalls``: lista de ``{sku, needed, issued, short}`` — os insumos que a
+    baixa não cobriu por inteiro.
+    """
+    if not shortfalls:
+        return
+    if _recent_exists("production_stock_shortfall", work_order_ref):
+        return
+    detail = "; ".join(f"{s['sku']} (faltou {s['short']})" for s in shortfalls)
+    message = (
+        f"Produção {work_order_ref} ({output_sku}) baixou menos insumo do que a "
+        f"ficha pede: {detail}. O estoque de insumo no sistema está acima do real "
+        f"— confira e recontagem se preciso."
+    )
+    alert_adapter.create(
+        "production_stock_shortfall",
+        "error",
+        message,
+        order_ref=work_order_ref,
+    )
+    _notify_operator(
+        "production_stock_shortfall",
+        severity="error",
+        context={
+            "message": message,
+            "work_order_ref": work_order_ref,
+            "output_sku": output_sku,
+            "shortfalls": [
+                {
+                    "sku": s["sku"],
+                    "needed": str(s["needed"]),
+                    "issued": str(s["issued"]),
+                    "short": str(s["short"]),
+                }
+                for s in shortfalls
+            ],
         },
     )
 

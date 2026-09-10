@@ -91,5 +91,35 @@ def test_status_and_shape_preserved_for_other_drf_exceptions():
         assert "detail" in response.data
 
 
+def test_sessao_caida_carrega_codigo_de_erro():
+    # Sem código, a tela precisaria casar a mensagem em português para saber que
+    # o caminho é login. `detail` e status ficam onde estavam — só o superset entra.
+    response = exception_handler(exceptions.NotAuthenticated(), context={})
+
+    assert response.data["error"]["code"] == "not_authenticated"
+    assert response.data["detail"] == response.data["error"]["message"]
+    assert "credenciais" in response.data["detail"].lower()
+
+
+def test_recusa_de_permissao_comum_continua_sem_codigo():
+    # Assert-NEGATIVO: nada foi alargado. É a AUSÊNCIA de `error` que diz ao front
+    # "não há nada a oferecer aqui" — se todo 403 ganhasse código, a tela mandaria
+    # o operador digitar senha para uma recusa que senha não resolve.
+    response = exception_handler(exceptions.PermissionDenied(), context={})
+
+    assert response.status_code == 403
+    assert "error" not in response.data
+    assert "detail" in response.data
+
+
+def test_recusa_nomeada_continua_publicando_o_proprio_codigo():
+    # O `station_locked` que já existia não pode ter sido afetado pela entrada do
+    # NotAuthenticated no mesmo ramo.
+    exc = exceptions.PermissionDenied("Estação travada.", code="station_locked")
+    response = exception_handler(exc, context={})
+
+    assert response.data["error"]["code"] == "station_locked"
+
+
 def test_non_drf_exception_returns_none_for_500_path():
     assert exception_handler(RuntimeError("bug"), context={}) is None

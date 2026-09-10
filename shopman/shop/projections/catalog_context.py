@@ -69,6 +69,38 @@ def get_sellable_published_product(sku: str):
     return products_queryset().filter(sku=sku, is_published=True, is_sellable=True).first()
 
 
+def comes_out_of_the_oven(sku: str) -> bool:
+    """Este SKU nasce de uma fornada, ou chega pronto na prateleira?
+
+    Duas evidências, nesta ordem, porque nenhuma sozinha basta:
+
+    1. ``Product.is_batch_produced`` — a declaração do gestor. É a resposta
+       autoritativa quando alguém a deu.
+    2. Uma ``Recipe`` ativa com ``output_sku`` igual a este SKU — a evidência
+       operacional. Existe porque a declaração NÃO é preenchida na prática: no
+       banco vivo do alpha (05/09/2026) todo produto tem ``is_batch_produced``
+       em ``False``, inclusive os pães. Confiar só na flag entregaria uma
+       derivação que nunca dispara, e o defeito voltaria calado.
+
+    A receita ativa é também exatamente o conjunto de SKUs que algum dia vai
+    disparar ``production_changed`` — que é o evento por trás do aviso "saiu do
+    forno". Perguntar por outra coisa prometeria um aviso que nunca chega.
+
+    Falha para ``False``: na dúvida o produto é de prateleira, e o eixo de
+    prateleira (chegada de estoque) tem mais caminhos de chegada.
+    """
+    product = products_queryset().filter(sku=sku).only("sku", "is_batch_produced").first()
+    if product is not None and product.is_batch_produced:
+        return True
+    try:
+        from shopman.craftsman.models import Recipe
+
+        return Recipe.objects.filter(output_sku=sku, is_active=True).exists()
+    except Exception:
+        logger.debug("catalog_context.comes_out_of_the_oven degraded sku=%s", sku, exc_info=True)
+        return False
+
+
 def products_by_sku(skus: list[str], *, only_published: bool = True) -> dict[str, Any]:
     # Prefetch the relations the catalog card reads (tags via ``product_tags``,
     # components via ``is_bundle``) so ad-hoc SKU lists (PDP substitutes,
@@ -335,6 +367,31 @@ def listing_sellable_map(
     return result
 
 
+def visible_skus_in_channel(skus: list[str], channel_ref: str) -> set[str] | None:
+    """Quais destes SKUs APARECEM no canal, em lote. ``None`` = canal sem listing.
+
+    Mesmo eixo de :func:`visible_in_channel` (só ``is_published``), na forma que
+    as listas ad-hoc precisam: favoritos, cross-sell e trilhos da home montam
+    cards a partir de um conjunto explícito de SKUs, sem passar pelo filtro de
+    listing que o cardápio usa. Sem esta leitura, um SKU que nunca foi para a
+    vitrine nascia com card, preço e botão "Adicionar" ativo — e o toque caía
+    em 404. ``None`` (canal sem ``Listing``) mantém canais internos funcionando.
+    """
+    from shopman.offerman.models import ListingItem
+
+    if not skus or not channel_ref or not listing_exists(channel_ref):
+        return None
+
+    return set(
+        ListingItem.objects.filter(
+            listing__ref=channel_ref,
+            listing__is_active=True,
+            product__sku__in=skus,
+            is_published=True,
+        ).values_list("product__sku", flat=True)
+    )
+
+
 def price_q_for_product(product, *, listing_ref: str | None) -> int | None:
     """List price (``_q`` cents) for a product on a channel listing.
 
@@ -349,8 +406,18 @@ def price_q_for_product(product, *, listing_ref: str | None) -> int | None:
     return product.base_price_q
 
 
-def listed_in_channel(product, channel_ref: str, *, fallback_when_listing_missing: bool = True) -> bool:
-    """Return whether a product is publishable/sellable in a channel listing."""
+def visible_in_channel(product, channel_ref: str, *, fallback_when_listing_missing: bool = True) -> bool:
+    """O produto APARECE neste canal?
+
+    ⚠️ Só ``is_published``. Ocultar (o antigo "despublicar") é o eixo do sumiço:
+    item oculto não é listado, não é buscado e a URL direta devolve 404. Pausar
+    (``is_sellable=False``) é outro eixo — o item continua na vitrine, dizendo
+    "Indisponível". Misturar os dois fazia o card aparecer no cardápio e a PDP
+    do mesmo item devolver 404 no toque.
+
+    Canal sem ``Listing`` configurado cai em ``True``, para canais internos/de
+    fallback (ex.: PDV) seguirem funcionando.
+    """
     from shopman.offerman.models import ListingItem
 
     if fallback_when_listing_missing and not listing_exists(channel_ref):
@@ -361,7 +428,6 @@ def listed_in_channel(product, channel_ref: str, *, fallback_when_listing_missin
         listing__is_active=True,
         product=product,
         is_published=True,
-        is_sellable=True,
     ).exists()
 
 
@@ -431,18 +497,47 @@ def availability_for_sku(
         from shopman.stockman.services.availability import availability_for_sku as _availability_for_sku
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
+        explicit_target = target_date
 
-        def promessa(um_sku: str) -> dict | None:
+        def leitura(um_sku: str, on_date: date) -> dict | None:
             return _availability_for_sku(
                 um_sku,
-                target_date=target_date,
+                target_date=on_date,
                 safety_margin=scope["safety_margin"],
                 allowed_positions=scope["allowed_positions"],
                 excluded_positions=scope.get("excluded_positions"),
                 expiry_margin_days=scope.get("expiry_margin_days", 0),
                 include_nonconforming=scope.get("sells_nonconforming", True),
+                allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
+            )
+
+        def promessa(um_sku: str) -> dict | None:
+            if explicit_target is not None:
+                return leitura(um_sku, explicit_target)
+
+            # O cardápio faz duas perguntas distintas: o que pode ser reservado
+            # hoje e qual é a capacidade da PRIMEIRA fornada elegível. Somar o
+            # horizonte inteiro produziria um teto que nenhum hold de data única
+            # consegue honrar.
+            from django.utils import timezone
+
+            today = timezone.localdate()
+            current = leitura(um_sku, today)
+            if current is None:
+                return current
+            next_batch = waitlist.next_batch_availability(
+                um_sku,
+                channel_ref=channel_ref,
+            )
+            if next_batch is None:
+                return current
+            _target_date, future = next_batch
+            return _merge_waitlist_availability(
+                current,
+                future,
             )
 
         # ⚠️ O stockman não sabe o que é bundle — ele conta quant por SKU, e
@@ -456,13 +551,27 @@ def availability_for_sku(
 
         propria = promessa(sku) or {}
         possiveis: list[Decimal] = []
+        prontos: list[Decimal] = []
+        prontos_fisicos: list[Decimal] = []
+        from django.utils import timezone
+
+        component_target = explicit_target or timezone.localdate()
         for componente in componentes:
-            parte = promessa(componente["sku"])
+            # Bundle não tem Quant/fornada própria para ancorar um hold futuro.
+            # Até existir uma promessa multi-componente de data comum, ele falha
+            # fechado para o pronto da data pedida (hoje no catálogo sem target).
+            parte = leitura(componente["sku"], component_target)
             if parte is None:
                 return None
             por_pacote = Decimal(str(componente["qty"])) or Decimal("1")
             possiveis.append(
                 Decimal(str(parte.get("total_promisable", 0))) // por_pacote
+            )
+            prontos.append(
+                Decimal(str(parte.get("available", 0))) // por_pacote
+            )
+            prontos_fisicos.append(
+                Decimal(str(parte.get("ready_physical", 0))) // por_pacote
             )
             propria.setdefault("availability_policy", parte.get("availability_policy"))
             if parte.get("is_paused"):
@@ -470,32 +579,101 @@ def availability_for_sku(
             if parte.get("is_planned"):
                 propria["is_planned"] = True
         propria["total_promisable"] = min(possiveis) if possiveis else Decimal("0")
+        propria["available"] = min(prontos) if prontos else Decimal("0")
+        propria["ready_physical"] = (
+            min(prontos_fisicos) if prontos_fisicos else Decimal("0")
+        )
         return propria
     except Exception as exc:
         logger.warning("availability_lookup_failed sku=%s channel=%s: %s", sku, channel_ref, exc, exc_info=True)
         return None
 
 
-def availability_for_skus(skus: list[str], *, channel_ref: str) -> dict[str, dict | None]:
+def availability_for_skus(
+    skus: list[str],
+    *,
+    channel_ref: str,
+    target_date: date | None = None,
+) -> dict[str, dict | None]:
     if not skus:
         return {}
     try:
+        from django.utils import timezone
         from shopman.stockman.services.availability import availability_for_skus as _availability_for_skus
 
         from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
-        return _availability_for_skus(
+        kwargs = {
+            "safety_margin": scope["safety_margin"],
+            "allowed_positions": scope["allowed_positions"],
+            "excluded_positions": scope.get("excluded_positions"),
+            "expiry_margin_days": scope.get("expiry_margin_days", 0),
+            "include_nonconforming": scope.get("sells_nonconforming", True),
+            "allowed_quality_grade_refs": scope.get("allowed_quality_grade_refs"),
+        }
+        if target_date is not None:
+            return _availability_for_skus(
+                skus,
+                target_date=target_date,
+                **kwargs,
+            )
+        today = timezone.localdate()
+        current = _availability_for_skus(
             skus,
-            safety_margin=scope["safety_margin"],
-            allowed_positions=scope["allowed_positions"],
-            excluded_positions=scope.get("excluded_positions"),
-            expiry_margin_days=scope.get("expiry_margin_days", 0),
-            include_nonconforming=scope.get("sells_nonconforming", True),
+            target_date=today,
+            **kwargs,
         )
+        next_batches = waitlist.next_batch_availability_for_skus(
+            skus,
+            channel_ref=channel_ref,
+        )
+        if not next_batches:
+            return current
+        return {
+            sku: _merge_waitlist_availability(
+                current.get(sku),
+                next_batches.get(sku, (None, None))[1],
+            )
+            for sku in skus
+        }
     except Exception as exc:
         logger.warning("batch_availability_failed channel=%s: %s", channel_ref, exc, exc_info=True)
         return {}
+
+
+def _merge_waitlist_availability(
+    current: dict | None,
+    future: dict | None,
+) -> dict | None:
+    """Escolhe o maior teto integralmente reservável hoje ou na próxima fornada."""
+    if current is None:
+        return future
+    if future is None:
+        return current
+
+    merged = dict(current)
+    planned = Decimal(str(future.get("planned") or 0))
+    current_promisable = Decimal(str(current.get("total_promisable") or 0))
+    future_promisable = Decimal(str(future.get("total_promisable") or 0))
+    policy = str(current.get("availability_policy") or "planned_ok")
+    merged["planned"] = planned
+    merged["is_planned"] = bool(future.get("is_planned"))
+    merged["is_tracked"] = bool(
+        current.get("is_tracked") or future.get("is_tracked")
+    )
+    if policy == "stock_only":
+        merged["total_promisable"] = Decimal(str(current.get("available") or 0))
+    else:
+        # Cada hold carrega uma única target_date. O maior destes dois tetos é
+        # reservável inteiro em uma data; a soma não é (pronto que vence hoje e
+        # fornadas de dias diferentes não podem sustentar o mesmo hold).
+        merged["total_promisable"] = max(current_promisable, future_promisable)
+    breakdown = dict(current.get("breakdown") or {})
+    breakdown["planned"] = planned
+    merged["breakdown"] = breakdown
+    return merged
 
 
 def bundle_availability_from_components(
@@ -518,19 +696,34 @@ def bundle_availability_from_components(
     nenhum componente limita o bundle (→ confia no flag do produto → available).
     """
     binding: tuple[int, dict] | None = None
+    ready_limits: list[int] = []
+    physical_limits: list[int] = []
+    is_planned = False
     for qty_per_bundle, raw in component_entries:
         if qty_per_bundle is None or qty_per_bundle <= 0:
             continue
         if raw is None:
             continue  # componente sem tracking de estoque: nao e gargalo
         if raw.get("is_paused", False):
-            return {"is_paused": True, "total_promisable": Decimal("0")}
+            return {
+                "is_paused": True,
+                "total_promisable": Decimal("0"),
+                "available": Decimal("0"),
+                "ready_physical": Decimal("0"),
+            }
         if raw.get("availability_policy", "planned_ok") == "demand_ok":
             continue  # ilimitado: nao e gargalo
+        is_planned = is_planned or bool(raw.get("is_planned", False))
         promisable = raw.get("total_promisable") or Decimal("0")
         if not isinstance(promisable, Decimal):
             promisable = Decimal(str(promisable))
         bundles = int(promisable // qty_per_bundle)
+        ready_limits.append(
+            int(Decimal(str(raw.get("available") or 0)) // qty_per_bundle)
+        )
+        physical_limits.append(
+            int(Decimal(str(raw.get("ready_physical") or 0)) // qty_per_bundle)
+        )
         if binding is None or bundles < binding[0]:
             binding = (bundles, raw)
 
@@ -540,8 +733,12 @@ def bundle_availability_from_components(
     return {
         "total_promisable": Decimal(bundles),
         "availability_policy": "planned_ok",
-        "is_planned": bool(raw.get("is_planned", False)),
+        "is_planned": is_planned,
         "is_paused": False,
+        "available": Decimal(min(ready_limits)) if ready_limits else Decimal("0"),
+        "ready_physical": (
+            Decimal(min(physical_limits)) if physical_limits else Decimal("0")
+        ),
     }
 
 
@@ -568,7 +765,13 @@ def bundle_availability_for_skus(
         expanded[sku] = components
         component_skus.update(str(c.get("sku") or "") for c in components if c.get("sku"))
 
-    comp_avail = availability_for_skus(sorted(component_skus), channel_ref=channel_ref)
+    from django.utils import timezone
+
+    comp_avail = availability_for_skus(
+        sorted(component_skus),
+        channel_ref=channel_ref,
+        target_date=timezone.localdate(),
+    )
 
     result: dict[str, dict | None] = {}
     for sku, components in expanded.items():
@@ -664,9 +867,20 @@ def basic_availability(
 
     available_qty = int(total_promisable)
     if total_promisable <= 0:
-        if policy == "planned_ok" and raw_avail.get("is_planned", False):
-            return BasicAvailability("planned_ok", 0, True)
         return BasicAvailability("unavailable", 0, False)
+
+    ready_available = Decimal(
+        str(raw_avail.get("available", raw_avail.get("ready_physical")) or 0)
+    )
+    if (
+        policy == "planned_ok"
+        and raw_avail.get("is_planned", False)
+        and ready_available <= 0
+    ):
+        # A fila é limitada pela quantidade realmente planejada. ``is_planned``
+        # sem saldo prometível não abre o stepper; com saldo, a apresentação
+        # distingue a fornada futura de produto pronto na prateleira.
+        return BasicAvailability("planned_ok", available_qty, True)
 
     if total_promisable <= low_stock_threshold:
         return BasicAvailability("low_stock", available_qty, True)
@@ -709,6 +923,30 @@ def promisable_int(raw_avail: dict | None) -> int | None:
         return int(Decimal(str(total)))
     except (ValueError, ArithmeticError):
         return None
+
+
+def orderable_ceiling(raw_avail: dict | None, *, can_add: bool) -> int | None:
+    """Teto do stepper: quantas unidades ainda cabem, ou ``None`` (sem teto).
+
+    ``None`` é "sem teto conhecido", e é a resposta certa para ``demand_ok`` (a
+    promessa não é prateleira) e para pausado (a porta já fechou por outro eixo).
+    Uma fornada planejada tem teto conhecido e deve expô-lo: é justamente quantas
+    unidades ainda cabem na fila.
+
+    Projetar ``0`` num item que PODE ser adicionado é o pior dos dois mundos: o
+    "+" morre no primeiro toque com "Só temos 0 disponíveis" enquanto o selo ao
+    lado promete a fornada. É a mesma armadilha que a sacola já corrigiu em
+    ``cart._line_availability`` (WP-P2E F1); aqui ela sobrevivia no card e na
+    PDP, que ainda liam ``total_promisable`` cru.
+    """
+    if raw_avail is None or raw_avail.get("is_paused", False):
+        return None
+    if raw_avail.get("availability_policy", "planned_ok") == "demand_ok":
+        return None
+    total = promisable_int(raw_avail)
+    if total is None:
+        return None
+    return total
 
 
 def product_tags(product) -> tuple[str, ...]:
@@ -758,3 +996,34 @@ def listing_validity_q(prefix: str = "listing_items__listing__") -> models.Q:
     ) & (
         models.Q(**{f"{prefix}valid_until__isnull": True}) | models.Q(**{f"{prefix}valid_until__gte": today})
     )
+
+
+def label_attributes_by_sku(products) -> dict[str, dict]:
+    """Rotulagem de compra remota por SKU: alérgenos, dieta e porção.
+
+    Existe aqui, e não no service, porque **presentation lê projection, nunca
+    service** (é o contrato que `test_import_boundaries` guarda). O registro de
+    atributos é escrita e política; o que a vitrine precisa é o lado de leitura.
+
+    As chaves do retorno seguem em inglês — convenção da casa para contrato de
+    projection. O ``ref`` do atributo é dado do tenant, em português.
+    """
+    from shopman.shop.services import attributes
+
+    allergens = attributes.get_many(products, "alergenos")
+    dietary = attributes.get_many(products, "dieta")
+    serves = attributes.get_many(products, "porcoes")
+
+    return {
+        p.sku: {
+            "allergens": tuple(str(a) for a in (allergens.get(p.sku) or []) if a),
+            "dietary_info": tuple(str(d) for d in (dietary.get(p.sku) or []) if d),
+            "serves": str(serves.get(p.sku) or "") or None,
+        }
+        for p in products
+    }
+
+
+def label_attributes(product) -> dict:
+    """A rotulagem de UM produto — a forma singular de :func:`label_attributes_by_sku`."""
+    return label_attributes_by_sku([product])[product.sku]

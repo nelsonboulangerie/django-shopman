@@ -1,5 +1,12 @@
 """Shopman models — Shop, Channel, RuleConfig, Promotion, Coupon, entrega, Campaign."""
 
+from .affinity import ProductAffinity
+from .attributes import (
+    AttributeDefinition,
+    AttributePurpose,
+    AttributeSource,
+    AttributeType,
+)
 from .campaign import (
     Announcement,
     AnnouncementDeliveryState,
@@ -27,6 +34,8 @@ from .campaign import (
 )
 from .catalog_sync import CatalogSyncState, SyncStatus
 from .channel import Channel
+from .concierge import Conversation, ConversationMessage
+from .contact_release import ContactRelease, ReleasedContactKind
 from .delivery import DeliveryDistanceBand, DeliveryZone
 from .omotenashi_copy import OmotenashiCopy
 from .promotion import Coupon, Promotion
@@ -55,6 +64,15 @@ from .user_notification import (
 
 __all__ = [
     "Shop",
+    "AttributeDefinition",
+    "AttributePurpose",
+    "AttributeSource",
+    "AttributeType",
+    "ProductAffinity",
+    "Conversation",
+    "ConversationMessage",
+    "ContactRelease",
+    "ReleasedContactKind",
     "Channel",
     "Promotion",
     "Coupon",

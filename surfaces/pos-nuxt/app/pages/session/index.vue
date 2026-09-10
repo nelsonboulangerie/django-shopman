@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ManagerAction } from "../../../../operator-kit/app/presentation/managerAuth";
 // ANTESALA do PDV (benchmark Odoo POS): a tela de SESSÃO antes da venda. O
 // operador abre o caixa (fundo de troco), registra sangria/suprimento e
 // fecha o turno (contagem cega) aqui — não mais num diálogo espremido dentro da
@@ -125,6 +126,10 @@ async function goToCashReport() {
   await navigateTo("/session/report");
 }
 
+async function goToOrderTickets() {
+  await navigateTo("/tickets");
+}
+
 async function goToDayClosing() {
   await navigateTo("/session/closing");
 }
@@ -199,14 +204,11 @@ const managerIntent = ref<ManagerIntent>({ action: "movement" });
 const managerAuthOpen = ref(false);
 watch(managerChallenge, (challenge) => { if (challenge) managerAuthOpen.value = true; });
 
-const managerAuthReasonText = computed(() => {
-  if (managerIntent.value.action === "serve_change") {
-    return "Atender o pedido abre a gaveta: um gerente precisa autorizar e assinar a troca.";
-  }
-  if (managerIntent.value.action === "refund_cash") {
-    return "Devolver dinheiro de venda cancelada tira dinheiro da gaveta: um gerente precisa autorizar.";
-  }
-  return "Retirar dinheiro da gaveta é exceção auditada: um gerente precisa autorizar.";
+// A copy mora em `presentation/managerAuth`; aqui só se escolhe QUAL ato é.
+const managerAuthAction = computed<ManagerAction>(() => {
+  if (managerIntent.value.action === "serve_change") return "serve_change";
+  if (managerIntent.value.action === "refund_cash") return "refund_cash";
+  return "cash_out";
 });
 
 function onManagerAuthorize(username: string, pin: string) {
@@ -246,7 +248,7 @@ async function refundPending(orderRef: string, managerApproval: ManagerApproval 
 // entrada não exige segunda assinatura (suprimento também não).
 const settleCustomerRef = ref<string | null>(null);
 const settleAmount = ref("");
-const settleMethod = ref<"cash" | "pix" | "card" | "external">("cash");
+const settleMethod = ref<"cash" | "pix" | "credit" | "debit" | "external">("cash");
 const settleCustomer = computed(() => accountBalances.value.find((a) => a.customer_ref === settleCustomerRef.value) ?? null);
 function openSettle(customerRef: string, balanceQ: number) {
   settleCustomerRef.value = customerRef;
@@ -398,6 +400,7 @@ async function confirmClose() {
       view="session"
       @board="goToSaleBoard"
       @cash="() => {}"
+      @tickets="goToOrderTickets"
       @lock="lock()"
       @refresh="refresh()"
     />
@@ -599,7 +602,8 @@ async function confirmClose() {
                         <select v-model="settleMethod" class="h-10 rounded-md border bg-background px-3 text-sm" aria-label="Método do acerto">
                           <option value="cash">Dinheiro</option>
                           <option value="pix">Pix</option>
-                          <option value="card">Cartão</option>
+                          <option value="credit">Crédito</option>
+                          <option value="debit">Débito</option>
                           <option value="external">Outro</option>
                         </select>
                       </label>
@@ -1017,9 +1021,10 @@ async function confirmClose() {
       </div>
     </div>
 
-    <PosManagerAuthDialog
+    <OperatorManagerAuth
       v-model:open="managerAuthOpen"
-      :reason-text="managerAuthReasonText"
+      :action="managerAuthAction"
+      :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="busy"
       :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"

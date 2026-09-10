@@ -5,7 +5,7 @@ from datetime import date
 
 import pytest
 from django.test import Client
-from shopman.guestman.models import Customer
+from shopman.guestman.models import ContactPoint, Customer
 
 pytestmark = pytest.mark.django_db
 
@@ -42,10 +42,79 @@ def test_account_summary_returns_customer_memory_contract(client: Client):
     data = response.json()
     assert data["customer_first_name"] == "Ana"
     assert data["recent_order_count"] == 0
+    assert data["active_order_count"] == 0
+    assert data["total_order_count"] == 0
+    assert data["active_orders"] == []
     assert data["last_order"] is None
     assert data["loyalty"] is None
     assert isinstance(data["food_preferences"], list)
     assert isinstance(data["notification_preferences"], list)
+
+
+def _make_order(customer: Customer, *, ref: str, status: str, total_q: int = 2400):
+    from shopman.orderman.models import Order
+
+    return Order.objects.create(
+        ref=ref,
+        channel_ref="web",
+        status=status,
+        total_q=total_q,
+        handle_type="phone",
+        handle_ref=customer.phone,
+        data={},
+    )
+
+
+def test_account_summary_leads_with_active_orders(client: Client):
+    """Pedidos em andamento vêm prontos no summary; o total não tem teto."""
+    customer = Customer.objects.create(
+        ref="CUS-SUMMARY-02",
+        first_name="Bruno",
+        phone="+5543999990013",
+    )
+    _login_as_customer(client, customer)
+    _make_order(customer, ref="ORD-ACT-01", status="preparing")
+    _make_order(customer, ref="ORD-ACT-02", status="ready")
+    _make_order(customer, ref="ORD-DONE-01", status="completed")
+
+    response = client.get("/api/v1/account/summary/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active_order_count"] == 2
+    assert data["total_order_count"] == 3
+    refs = {order["ref"] for order in data["active_orders"]}
+    assert refs == {"ORD-ACT-01", "ORD-ACT-02"}
+    for order in data["active_orders"]:
+        assert order["is_active"] is True
+        assert order["status_label"]
+        assert order["status_tone"]
+
+
+def test_order_history_returns_counts_and_is_active(client: Client):
+    """A lista informa "X em andamento (Y no total)" e marca cada linha."""
+    customer = Customer.objects.create(
+        ref="CUS-HISTORY-01",
+        first_name="Carla",
+        phone="+5543999990014",
+    )
+    _login_as_customer(client, customer)
+    _make_order(customer, ref="ORD-HIS-ACT", status="accepted")
+    _make_order(customer, ref="ORD-HIS-DONE", status="completed")
+
+    response = client.get("/api/v1/account/orders/")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["counts"] == {"total": 2, "active": 1}
+    by_ref = {order["ref"]: order for order in data["orders"]}
+    assert by_ref["ORD-HIS-ACT"]["is_active"] is True
+    assert by_ref["ORD-HIS-DONE"]["is_active"] is False
+
+    # As contagens não mudam com o recorte aplicado.
+    filtered = client.get("/api/v1/account/orders/", {"filter": "ativos"}).json()
+    assert filtered["counts"] == {"total": 2, "active": 1}
+    assert [order["ref"] for order in filtered["orders"]] == ["ORD-HIS-ACT"]
 
 
 def test_account_profile_get_returns_editable_fields(client: Client):
@@ -103,6 +172,70 @@ def test_account_profile_patch_persists_before_returning_success(client: Client)
     assert customer.last_name == "Lima Costa"
     assert customer.email == "bia.new@example.com"
     assert customer.birthday == date(1991, 6, 15)
+
+
+def test_account_profile_patch_so_toca_o_que_veio(client: Client):
+    """PATCH parcial não pode apagar o que não foi mencionado.
+
+    O portão de boas-vindas (`entrar.vue`) manda SÓ `first_name` — ele dispara
+    sempre que o nome guardado tem emoji ou `& + | /`, que é exatamente o
+    formato dos nomes importados do ManyChat. A view lia os quatro campos
+    incondicionalmente, chave ausente virava `""`/`None`, e `""` no e-mail
+    significa APAGAR o ContactPoint primário. Cliente confirmava o próprio nome
+    e perdia e-mail, sobrenome e aniversário, sem aviso.
+    """
+    customer = Customer.objects.create(
+        ref="CUS-PROFILE-PATCH",
+        first_name="Ana&Maria",
+        last_name="Souza",
+        phone="+5543999990009",
+        email="ana@boulangerie.com.br",
+        birthday=date(1990, 3, 2),
+    )
+    assert ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists(), "pré-condição: o e-mail primário existe antes do PATCH"
+    _login_as_customer(client, customer)
+
+    response = client.patch(
+        "/api/v1/account/profile/",
+        data=json.dumps({"first_name": "Ana Maria"}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    customer.refresh_from_db()
+    assert customer.first_name == "Ana Maria"
+    # ...e nada mais mudou.
+    assert customer.last_name == "Souza"
+    assert customer.email == "ana@boulangerie.com.br"
+    assert customer.birthday == date(1990, 3, 2)
+    assert ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists(), "o e-mail primário foi apagado por um PATCH que nem falou dele"
+
+
+def test_account_profile_patch_string_vazia_ainda_limpa(client: Client):
+    """Ausente é "não mexa"; vazio continua sendo "apague". São coisas distintas."""
+    customer = Customer.objects.create(
+        ref="CUS-PROFILE-CLEAR",
+        first_name="Rita",
+        last_name="Alves",
+        phone="+5543999990010",
+        email="rita@boulangerie.com.br",
+    )
+    _login_as_customer(client, customer)
+
+    response = client.patch(
+        "/api/v1/account/profile/",
+        data=json.dumps({"first_name": "Rita", "email": ""}),
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    assert not ContactPoint.objects.filter(
+        customer=customer, type=ContactPoint.Type.EMAIL, is_primary=True
+    ).exists()
 
 
 def test_account_profile_patch_enforces_csrf():

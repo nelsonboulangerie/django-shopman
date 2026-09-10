@@ -75,7 +75,7 @@ describe("proxyDjangoPath — conditional Marketing metadata", () => {
     expect(res.getHeader("retry-after")).toBe("11");
     expect(res.getHeader("ratelimit-remaining")).toBe("4");
     expect(res.getHeader("x-internal-secret")).toBeUndefined();
-    expect(res.getHeader("cache-control")).toBe("private, no-store");
+    expect(res.getHeader("cache-control")).toBe("private, no-store, max-age=0");
     expect(res.getHeader("content-security-policy")).toContain("frame-ancestors 'none'");
     expect(res.getHeader("x-frame-options")).toBe("DENY");
     expect(res.getHeader("x-powered-by")).toBeUndefined();

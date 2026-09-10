@@ -137,6 +137,11 @@ class Command(BaseCommand):
                 shop_shop("manage_catalog"),
                 *_ver("guestman"), *_escrever("guestman", "customer"),
                 *_ver("customer_loyalty"),
+                # A trilha das unificações de cadastro, com o desfazer de 24h. A
+                # tela se ABRE com esta leitura; DESFAZER é `manage_customers`,
+                # que ela já tem e o Caixa não — quem unifica no balcão para sair
+                # do beco da venda não desfaz sozinho.
+                *_ver("customer_merge"),
                 *_ver("storefront"),
                 *_ver("craftsman"),
                 *_ver("buyman"),
@@ -149,7 +154,13 @@ class Command(BaseCommand):
                 *_ver("shop"), *_escrever("shop", "promotion", "coupon", "omotenashicopy"),
                 # O terminal do balcão ("Equipamentos") — ela cadastra a estação.
                 *_ver("cashman", "terminal"), *_escrever("cashman", "terminal"),
+                # A estação de KDS pelo mesmo motivo do terminal: cadastrar o ponto de
+                # cozinha é gesto de gestão, e a Cozinha opera nele sem cadastrá-lo.
+                *_escrever("backstage", "kdsinstance"),
                 shop_shop("manage_orders"),
+                # Cancelar depois de PRONTO (e a venda de balcão já fechada) é o
+                # degrau do gerente; a esteira normal permanece em manage_orders.
+                shop_shop("cancel_advanced_order"),
                 # Marketing seguro durante a transição capability-based. Efeitos
                 # externos ficam nos grupos específicos, deliberadamente vazios.
                 shop_campaign("view_marketing"),
@@ -162,6 +173,16 @@ class Command(BaseCommand):
                 shop_dclo("perform_closing"),
                 shop_dclo("operate_production"),
                 shop_dclo("operate_purchase"),
+                # ⚠️ Os relatórios de produção estavam FORA do alcance dela, e o teste
+                # de paridade dizia o contrário: a isenção afirmava que
+                # `shop.manage_production` cobria "Cozinha/Gerente", mas essa permissão
+                # é só da Cozinha (a Gerente chega ao quadro pelas colunas finas). O
+                # portão aceita as duas, e ela não tinha nenhuma — quem decide o que
+                # assar não conseguia ler o histórico do que foi assado.
+                shop_dclo("view_production_reports"),
+                # Corrigir QC depois do fechamento reclassifica lote e pode
+                # afetar promessa/campanha; é exceção de gestão, não gesto do chão.
+                shop_dclo("correct_production_qc"),
                 # B.I. (ADR-021): leitura analítica cross-suite é persona de gestão.
                 shop_dclo("view_bi"),
                 # …e o que alimenta o B.I. (lotes de importação, vendas históricas)
@@ -231,6 +252,11 @@ class Command(BaseCommand):
             # esperado não conta às cegas — confere um gabarito.
             "Dono": [
                 shop_cash("audit_shift"),
+                # Contagem de insumos no Compras: comparar o saldo do ledger com
+                # o físico e lançar ajuste é a mesma régua do audit_shift —
+                # auditoria é de quem responde pelo resultado. A tela exige
+                # também `operate_purchase`, que o dono soma via "Gerente".
+                shop_dclo("audit_stock"),
                 # Cobrança é dinheiro, e dinheiro é deste portão: Pix, cartão e o
                 # que a maquininha respondeu se conferem aqui, não na tela de quem
                 # opera o balcão (decisão do dono, 22/08/2026).

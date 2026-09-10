@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.test import TestCase
@@ -145,6 +146,40 @@ class RepricingWarningTests(TestCase):
         }
         warnings = repricing_warnings(cart)
         self.assertEqual(len(warnings), 0)
+
+
+class StockErrorCopyTests(TestCase):
+    """Checkout stock errors should read naturally in singular and plural."""
+
+    def test_limited_stock_uses_singular_unit_copy(self) -> None:
+        from shopman.storefront.presentation.checkout import present_stock_errors
+
+        errors = present_stock_errors([
+            SimpleNamespace(
+                line_id="line-1",
+                sku="CROISSANT",
+                name="Croissant",
+                requested_qty=2,
+                available_qty=1,
+            ),
+        ])
+
+        self.assertEqual(errors[0]["message"], "Croissant: temos 1 unidade disponível agora.")
+
+    def test_limited_stock_uses_plural_unit_copy(self) -> None:
+        from shopman.storefront.presentation.checkout import present_stock_errors
+
+        errors = present_stock_errors([
+            SimpleNamespace(
+                line_id="line-1",
+                sku="PAO",
+                name="Pão",
+                requested_qty=4,
+                available_qty=2,
+            ),
+        ])
+
+        self.assertEqual(errors[0]["message"], "Pão: temos 2 unidades disponíveis agora.")
 
 
 class RepricingWarningStructureTests(TestCase):

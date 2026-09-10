@@ -54,6 +54,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [011](adr-011-formula-and-cashshift.md) | Fórmula sem FormulaPlan e caixa como CashShift |
 | [017](adr-017-quality-as-production-outcome.md) | Qualidade é resultado da produção, não domínio novo |
 | [024](adr-024-material-unit-base-and-purchase.md) | Conversão de unidade é cidadã de primeira classe: base única, conversões declaradas |
+| [027](adr-027-recipe-book-authoring-vs-execution.md) | Inventário de receitas: autoria versionada separada da ficha de execução |
 
 ## Comercial e comunicação
 
@@ -62,6 +63,7 @@ pegue o próximo livre e acrescente uma linha aqui.
 | [019](adr-019-promotion-belongs-to-the-orchestrator.md) | A promoção tem um dono: orquestrador, escopada por canal, com renúncia de frete |
 | [020](adr-020-campaign-announces-it-does-not-sell.md) | Campanha anuncia, não vende |
 | [009](adr-009-whatsapp-via-manychat.md) | WhatsApp via ManyChat: vendor lock-in consciente |
+| [026](adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) | Concierge de WhatsApp: a língua é do modelo, o dinheiro é do código |
 
 ## B.I. e operação continuada
 

@@ -176,11 +176,12 @@ def test_desmarcar_numa_venda_nao_apaga_a_preferencia():
     assert customer.metadata["fiscal_prefs"]["cpf_na_nota"] is True
 
 
-def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota(db):
-    """Campo vazio aprende; campo preenchido não muda.
+def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota_QUANDO_MANDAM(db):
+    """Campo vazio aprende — com a ordem do operador, nunca sozinho.
 
-    É o que faz o pré-preenchimento existir: o cliente dá o CPF uma vez e na
-    próxima venda ele já vem no campo da nota. Não confundir com sobrescrever —
+    É o que faz o pré-preenchimento existir: o cliente dá o CPF uma vez, o
+    operador marca "salvar no cadastro", e na próxima venda ele já vem no campo
+    da nota. Não confundir com sobrescrever — sem ordem sobre valor divergente
     ``_merge_pos_customer_fields`` só completa lacuna.
     """
     from shopman.guestman.models import Customer
@@ -196,7 +197,11 @@ def test_cadastro_sem_cpf_APRENDE_o_cpf_pedido_na_nota(db):
     )
 
     _persist_customer_from_payload(
-        {"customer_phone": "43999990011", "fiscal_tax_id": "52998224725"},
+        {
+            "customer_phone": "43999990011",
+            "fiscal_tax_id": "52998224725",
+            "save_receipt_tax_id": True,
+        },
         operator_username="op",
     )
 
@@ -236,10 +241,11 @@ def test_cpf_da_nota_nao_rouba_a_venda_de_quem_ja_foi_identificado(db):
     assert resolvido["ref"] != esposa.ref
 
 
-def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
+def test_sem_ninguem_identificado_o_cpf_da_nota_resolve_QUANDO_MANDAM(db):
     """A outra metade da regra, e a razão de ela ser condicional.
 
-    Cliente anônimo que só pede "põe no CPF tal": esse documento é a ÚNICA
+    Cliente anônimo que só pede "põe no CPF tal", com o operador aceitando o
+    "Salvar como cliente?" que a tela ofereceu: esse documento é a ÚNICA
     identidade que existe. Ignorá-lo criaria um cadastro duplicado a cada venda
     de quem só quer nota — que é a maioria delas.
     """
@@ -256,9 +262,94 @@ def test_sem_ninguem_identificado_o_cpf_da_nota_resolve(db):
     )
 
     resolvido = _persist_customer_from_payload(
-        {"fiscal_tax_id": "52998224725"},   # só o CPF da nota, mais nada
+        # Só o CPF da nota, mais nada — e a ordem explícita de guardá-lo.
+        {"fiscal_tax_id": "52998224725", "save_receipt_tax_id": True},
         operator_username="op",
     )
 
     assert resolvido["ref"] == ja_existe.ref
     assert Customer.objects.count() == 1   # não duplicou
+
+
+def test_o_email_da_nota_nao_vira_identidade_de_ninguem(db):
+    """O invariante que ``pos.py`` DECLARA e o código violava.
+
+    "``customer.email`` é o e-mail DO CLIENTE; o endereço para onde ESTA nota vai
+    mora em ``receipt.email`` e não sobe para cá." O ``fill_email`` lia
+    ``receipt_email`` e desmentia a própria docstring: uma venda anônima com
+    "Enviar por e-mail" criava cadastro no CRM, colava ali o endereço (que pode
+    ser o do contador, o da empresa, o do marido) e o transformava em
+    destinatário das notificações do canal.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+
+    resolvido = _persist_customer_from_payload(
+        {"receipt_channels": ["email"], "receipt_email": "contador@example.org"},
+        operator_username="op",
+    )
+
+    assert resolvido == {}                  # nada a persistir: não há cliente
+    assert Customer.objects.count() == 0    # a venda não cadastra ninguém
+
+
+def test_email_da_nota_de_outro_cadastro_nao_estoura_a_venda(db):
+    """A gêmea do CPF que nunca foi escrita — e é justo a que quebrava.
+
+    Gravava-se ``fill_email`` (com o ``receipt_email`` dentro) mas procurava-se
+    só por ``email``: o cadastro que já tinha aquele endereço nunca era achado,
+    um SEGUNDO nascia com o mesmo e-mail, e o UNIQUE global de ``ContactPoint``
+    (``type``, ``value_normalized``) recusava com ``IntegrityError`` — que não é
+    ``ValueError`` nem ``PosIntentError``, escapava da view e virava HTTP 500 sem
+    ``detail``. O operador lia "Não foi possível finalizar a venda" e revalidar
+    falhava para sempre; a única saída era desligar "Enviar por e-mail".
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+    dona = Customer.objects.create(
+        ref=Customer.generate_ref(), first_name="Dora", last_name="Cliente",
+        phone="+5543999990055", email="dora@example.org",
+    )
+
+    # Duas vendas anônimas seguidas para o MESMO endereço, que já é de alguém.
+    for _ in range(2):
+        assert _persist_customer_from_payload(
+            {"receipt_channels": ["email"], "receipt_email": "dora@example.org"},
+            operator_username="op",
+        ) == {}
+
+    assert Customer.objects.count() == 1
+    assert Customer.objects.get(pk=dona.pk).email == "dora@example.org"
+
+
+def test_quem_quer_gravar_contato_usa_o_campo_do_cliente(db):
+    """Controle positivo: ``customer_email`` continua sendo identidade.
+
+    A correção fecha a porta do e-mail DA NOTA, não a do e-mail DO CLIENTE — o
+    operador que digita o contato no campo do cliente segue cadastrando.
+    """
+    from shopman.guestman.models import Customer
+
+    from shopman.shop.models import Channel, Shop
+    from shopman.shop.services.pos import _persist_customer_from_payload
+
+    Shop.objects.create(name="T", brand_name="T")
+    Channel.objects.create(ref="pdv", name="PDV", is_active=True, config={})
+
+    resolvido = _persist_customer_from_payload(
+        {"customer_name": "Elis", "customer_email": "elis@example.org"},
+        operator_username="op",
+    )
+
+    assert resolvido["email"] == "elis@example.org"
+    assert Customer.objects.get(ref=resolvido["ref"]).email == "elis@example.org"

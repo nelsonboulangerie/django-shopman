@@ -27,7 +27,7 @@
     >(),
     {
       icon: "heroicons:x-mark",
-      srText: "Close",
+      srText: "Fechar",
     }
   );
   const forwarded = useForwardProps(reactiveOmit(props, "icon", "srText", "class"));

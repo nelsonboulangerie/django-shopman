@@ -36,6 +36,17 @@ def active_order_count_for_customer(
     )
 
 
+def order_count_for_customer(
+    *,
+    customer_ref: str | None = None,
+    phone: str | None = None,
+) -> int:
+    return customer_orders.order_count_for_customer(
+        customer_ref=customer_ref,
+        phone=phone,
+    )
+
+
 def order_history_for_phone(phone: str, *, limit: int = 20) -> list[dict]:
     from shopman.storefront.presentation import account as account_presentation
 
@@ -88,6 +99,12 @@ def resolve_confirmation_timeout_if_due(order) -> bool:
 
 def resolve_delivery_auto_complete_if_due(order) -> bool:
     return customer_orders.resolve_delivery_auto_complete_if_due(order)
+
+
+def reconcile_payment_with_gateway_if_due(order) -> bool:
+    from shopman.shop.services import payment as payment_service
+
+    return payment_service.reconcile_with_gateway_if_due(order)
 
 
 def resolve_timeouts_if_due(order) -> bool:

@@ -11,6 +11,15 @@ class AlertError(BackstageServiceError):
     """Raised when an alert mutation cannot be applied."""
 
 
+class AlertConflict(AlertError):
+    """Raised when an alert action proof/key was already consumed differently."""
+
+    def __init__(self, message: str, *, code: str = "conflict", data=None):
+        super().__init__(message)
+        self.code = code
+        self.data = dict(data or {})
+
+
 class KDSError(BackstageServiceError):
     """Raised when a KDS mutation cannot be applied."""
 
@@ -47,8 +56,29 @@ class POSPermissionError(POSError):
     """Raised when a POS actor lacks permission (ex.: fechar caixa de outro)."""
 
 
+class POSTerminalAmbiguous(POSError):
+    """Mais de uma gaveta ativa e ninguém disse em qual se está trabalhando.
+
+    A camada HTTP mapeia para 409 (conflito de estado), não 400 — mesmo padrão de
+    ``OrderConflict`` e ``ProductionConflict``. O operador não errou nada: falta a loja
+    dizer qual é o balcão dele.
+
+    ⚠️ Só a MUTAÇÃO recusa. A leitura escolhe, porque derrubar o quadro do PDV por
+    ambiguidade trocaria um problema por outro maior — ver ``pos.resolve_terminal``.
+    """
+
+
 class ProductionError(BackstageServiceError):
     """Raised when a production mutation cannot be applied."""
+
+
+class ProductionNotFound(ProductionError):
+    """Raised when a production mutation targets a resource that does not exist."""
+
+    def __init__(self, message: str, *, resource: str, identifier: str):
+        super().__init__(message)
+        self.resource = resource
+        self.identifier = identifier
 
 
 class ProductionConflict(ProductionError):
@@ -58,6 +88,11 @@ class ProductionConflict(ProductionError):
     enquanto o forneiro fecha. A camada HTTP mapeia para 409 (conflito de
     estado), não 400 — mesmo padrão de ``OrderConflict``.
     """
+
+    def __init__(self, message: str, *, code: str = "conflict", data=None):
+        super().__init__(message)
+        self.code = code
+        self.data = dict(data or {})
 
 
 class CatalogError(BackstageServiceError):
@@ -74,3 +109,27 @@ class AiAssistNotConfigured(BackstageServiceError):
 
 class AiAssistError(BackstageServiceError):
     """Raised when the AI assist call fails (provider error, empty completion)."""
+
+
+class RecipeBookServiceError(BackstageServiceError):
+    """Recusa do inventário de receitas, já traduzida para a porta HTTP.
+
+    Embrulha o ``RecipeBookError`` do Craftsman: ``detail`` é a mensagem ao
+    operador, ``field`` o campo ofensor (``items[2].sku``) e ``code`` o código
+    original, que a camada HTTP usa para escolher 400 (campo) ou 409 (estado,
+    ex.: ``VERSION_NOT_DRAFT``).
+    """
+
+    def __init__(self, detail: str, *, field: str = "", code: str = ""):
+        super().__init__(detail)
+        self.detail = detail
+        self.field = field
+        self.code = code
+
+
+class RecipeEntryNotFound(BackstageServiceError):
+    """Receita inexistente no inventário. A camada HTTP mapeia para 404."""
+
+
+class RecipeVersionNotFound(BackstageServiceError):
+    """Versão inexistente na receita. A camada HTTP mapeia para 404."""

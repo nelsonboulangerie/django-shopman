@@ -102,7 +102,7 @@ beforeAll(() => {
     onMounted,
     ref,
     navigateTo: navigate,
-    useUserNotifications: () => ({
+    useMarketingNotificationInbox: () => ({
       notifications,
       unseenCount: ref(0),
       unresolvedCount: ref(1),

@@ -17,11 +17,24 @@
 #        - Caso contrário há delta real. Cruza com o conjunto de PRs mergeados:
 #          delta real + SEM PR mergeado = ⚠️ UNMERGED, um humano precisa agir.
 #
+# ⚠️ O cruzamento com PRs NÃO pode depender de uma janela fixa. Este script
+# listava os 300 PRs mergeados mais recentes e decidia por ali; em 08/09/2026 o
+# PR #135 — mergeado — já tinha caído para fora da janela, e o branch
+# `feat/badge-issue-screen` apareceu como ⚠️ UNMERGED. Falso positivo de
+# auditoria é pior que ruído: ele manda um humano procurar trabalho que não
+# existe, e ensina a ignorar a coluna ⚠️, que é a única que importa.
+#
+# A janela continua, mas só como CACHE de consulta rápida. Quem decide é a
+# pergunta DIRIGIDA ao branch (`gh pr list --head <branch>`), que não tem
+# janela: só ela pode dizer "não há PR nenhum".
+#
 # Saída: tabela status | branch | última data | resumo de arquivos.
-# Só as linhas ⚠️ exigem ação humana.
+# Só as linhas ⚠️ exigem ação humana. `◷ PR ABERTO` está em revisão e
+# `✗ PR FECHADO` é decisão registrada do dono (supersedido, recusado) — nenhum
+# dos dois é esquecimento, e por isso nenhum é ⚠️.
 #
 # Uso:  make audit-branches   (ou)   scripts/audit-branches.sh
-# Env:  BASE=origin/main  REMOTE=origin  MERGED_PR_LIMIT=300
+# Env:  BASE=origin/main  REMOTE=origin  MERGED_PR_LIMIT=300 (só o cache)
 
 set -euo pipefail
 
@@ -48,8 +61,11 @@ fi
 BASE_TREE="$(git rev-parse "${BASE}^{tree}")"
 
 # Conjunto de head-branches de PRs já mergeados (uma por linha).
+OPEN_PRS=""
 MERGED_PRS=""
 if command -v gh >/dev/null 2>&1; then
+  OPEN_PRS="$(gh pr list --state open --limit 200 \
+      --json headRefName --jq '.[].headRefName' 2>/dev/null || true)"
   echo "${dim}Consultando PRs mergeados (gh)...${reset}" >&2
   MERGED_PRS="$(gh pr list --state merged --limit "${MERGED_PR_LIMIT}" \
       --json headRefName --jq '.[].headRefName' 2>/dev/null || true)"
@@ -57,15 +73,36 @@ else
   echo "${yellow}aviso: gh não encontrado; cruzamento com PRs mergeados desativado${reset}" >&2
 fi
 
-is_merged_pr() {
-  # $1 = nome do branch (sem prefixo remote)
-  [ -n "${MERGED_PRS}" ] || return 1
-  printf '%s\n' "${MERGED_PRS}" | grep -qxF "$1"
+# Estado do PR de UM branch: "MERGED", "CLOSED" ou "" (nenhum PR).
+#
+# O cache responde na hora quando acerta. Quando erra — e ele erra por
+# construção, porque é uma janela — a pergunta dirigida decide. Ela custa uma
+# chamada por branch, e só é feita para os poucos branches com delta real.
+pr_state_for() {
+  local branch="$1"
+  # ⚠️ PR ABERTO vem primeiro, e vem de uma consulta própria. Um head de PR
+  # aberto — os sete do Dependabot, por exemplo — não é branch esquecida: é
+  # trabalho EM REVISÃO. Listá-lo em ⚠️ UNMERGED enche a única coluna que exige
+  # ação humana de linhas que não exigem nada, e uma coluna assim se aprende a
+  # ignorar. Foi o mesmo erro da janela fixa de PRs mergeados, por outra porta.
+  if [ -n "${OPEN_PRS}" ] && printf '%s\n' "${OPEN_PRS}" | grep -qxF "${branch}"; then
+    printf 'OPEN'
+    return 0
+  fi
+  if [ -n "${MERGED_PRS}" ] && printf '%s\n' "${MERGED_PRS}" | grep -qxF "${branch}"; then
+    printf 'MERGED'
+    return 0
+  fi
+  command -v gh >/dev/null 2>&1 || { printf ''; return 0; }
+  gh pr list --head "${branch}" --state all --limit 1 \
+      --json state --jq '.[0].state // ""' 2>/dev/null || printf ''
 }
 
 # Coleta as linhas em buffers para poder ordenar (⚠️ primeiro) e contar.
 unmerged_rows=""
+open_rows=""
 merged_rows=""
+closed_rows=""
 redundant_rows=""
 unmerged_count=0
 
@@ -92,11 +129,26 @@ while IFS= read -r ref; do
   if [ "${merged_tree}" = "${BASE_TREE}" ]; then
     # merge é no-op: conteúdo já está no main (squash/cherry-pick redundante)
     redundant_rows+="${green}✓ JÁ NO MAIN${reset}\t${branch}\t${last_date}\t${dim}${files_summary} (merge no-op)${reset}\n"
-  elif is_merged_pr "${branch}"; then
-    merged_rows+="${green}✓ PR MERGEADO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
   else
-    unmerged_rows+="${red}${bold}⚠️  UNMERGED${reset}\t${bold}${branch}${reset}\t${last_date}\t${yellow}${files_summary}${reset}\n"
-    unmerged_count=$((unmerged_count + 1))
+    # Uma pergunta por branch, e só para os poucos com delta real.
+    case "$(pr_state_for "${branch}")" in
+      OPEN)
+        open_rows+="${bold}◷ PR ABERTO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
+        ;;
+      MERGED)
+        merged_rows+="${green}✓ PR MERGEADO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
+        ;;
+      CLOSED)
+        # Fechado é DECISÃO registrada (supersedido, recusado), não
+        # esquecimento — o dono já olhou. Aparece na tabela para ficar
+        # rastreável, mas não conta como ação humana pendente.
+        closed_rows+="${dim}✗ PR FECHADO${reset}\t${branch}\t${last_date}\t${dim}${files_summary}${reset}\n"
+        ;;
+      *)
+        unmerged_rows+="${red}${bold}⚠️  UNMERGED${reset}\t${bold}${branch}${reset}\t${last_date}\t${yellow}${files_summary}${reset}\n"
+        unmerged_count=$((unmerged_count + 1))
+        ;;
+    esac
   fi
 done < <(git for-each-ref --format='%(refname)' "refs/remotes/${REMOTE}")
 
@@ -110,7 +162,9 @@ echo
   printf ' +++\t+++\t+++\t+++\n'
   # ⚠️ primeiro, depois entregues
   printf '%b' "${unmerged_rows}"
+  printf '%b' "${open_rows}"
   printf '%b' "${merged_rows}"
+  printf '%b' "${closed_rows}"
   printf '%b' "${redundant_rows}"
 } | column -t -s $'\t' | sed 's/^+++.*/--------------------------------------------------------------------------/'
 

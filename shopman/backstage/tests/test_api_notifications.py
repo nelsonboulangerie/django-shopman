@@ -20,6 +20,7 @@ from shopman.shop.models import (
     AnnouncementTemplate,
     Campaign,
     MarketingCommandReceipt,
+    NotificationCategory,
     NotificationEventType,
     NotificationLifecycle,
     NotificationSeverity,
@@ -66,6 +67,19 @@ def _post() -> Announcement:
     )
 
 
+def _login(client, user) -> None:
+    """Entrar e limpar o aviso do PRÓPRIO login.
+
+    Desde a trilha de acesso (SIGN-IN-AUDIT-PLAN), entrar gera uma
+    ``UserNotification`` de categoria ``sign_in`` — de propósito: o dono pediu
+    aviso de TODO login. Estes testes são da família ``campaign``, e contar o
+    aviso de acesso junto mediria a feature errada. Limpar aqui, num lugar só,
+    mantém cada asserção dizendo exatamente o que ela quer dizer.
+    """
+    client.force_login(user)
+    UserNotification.objects.filter(category=NotificationCategory.SIGN_IN).delete()
+
+
 def _notification(user, *, announcement=None, actionable=True) -> UserNotification:
     source_ref = f"announcement:{announcement.pk}" if announcement else ""
     return UserNotification.objects.create(
@@ -107,7 +121,7 @@ class TestList:
         notification.action_url = "https://evil.example/steal"
         notification.action_data = {"action": "approve", "href": "//evil.example"}
         notification.save(update_fields=["action_url", "action_data"])
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.get(LIST_URL).json()
         assert len(body["notifications"]) == 1
@@ -121,7 +135,7 @@ class TestList:
     def test_another_users_box_is_invisible(self, client, gestor, colega):
         """A caixa é da pessoa: nem staff lê a alheia."""
         _notification(colega)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.get(LIST_URL).json()
         assert body["notifications"] == []
@@ -130,20 +144,20 @@ class TestList:
     def test_read_ones_are_hidden_by_default(self, client, gestor):
         notification = _notification(gestor)
         notification.mark_read()
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.get(LIST_URL).json()["notifications"] == []
 
     def test_all_flag_includes_the_read_ones(self, client, gestor):
         _notification(gestor).mark_read()
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert len(client.get(f"{LIST_URL}?all=1").json()["notifications"]) == 1
 
     def test_limit_is_capped(self, client, gestor):
         for _ in range(5):
             _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert len(client.get(f"{LIST_URL}?limit=2").json()["notifications"]) == 2
 
@@ -154,7 +168,7 @@ class TestList:
 class TestRead:
     def test_marking_read_drops_the_unread_count(self, client, gestor):
         notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.post(f"{LIST_URL}{notification.pk}/read/").json()
         assert body["unread_count"] == 0
@@ -166,7 +180,7 @@ class TestRead:
 
     def test_rereading_keeps_the_first_timestamp(self, client, gestor):
         notification = _notification(gestor)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         client.post(f"{LIST_URL}{notification.pk}/read/")
         notification.refresh_from_db()
@@ -178,7 +192,7 @@ class TestRead:
 
     def test_cannot_read_someone_elses(self, client, gestor, colega):
         notification = _notification(colega)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/read/").status_code == 404
 
@@ -209,7 +223,7 @@ class TestAction:
     def test_explicit_legacy_approve_is_moved_without_side_effect(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "approve"}
@@ -228,7 +242,7 @@ class TestAction:
     def test_missing_action_is_invalid_and_never_defaults_to_approve(self, client, gestor, payload):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/",
@@ -246,7 +260,7 @@ class TestAction:
     def test_explicit_legacy_reject_is_also_moved_without_side_effect(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/",
@@ -260,7 +274,7 @@ class TestAction:
 
     def test_unknown_action_is_rejected(self, client, gestor):
         notification = _notification(gestor, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"{LIST_URL}{notification.pk}/action/", {"action": "incendiar"}
@@ -270,13 +284,13 @@ class TestAction:
 
     def test_a_non_actionable_notification_has_no_action(self, client, gestor):
         notification = _notification(gestor, actionable=False)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 400
 
     def test_cannot_act_on_someone_elses(self, client, gestor, colega):
         notification = _notification(colega, announcement=_post())
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.post(f"{LIST_URL}{notification.pk}/action/").status_code == 404
 
@@ -400,7 +414,7 @@ class TestLifecycleV2:
     def test_modern_command_receipt_is_linked_to_resolution_event(self, client, gestor):
         announcement = _post()
         notification = _notification(gestor, announcement=announcement)
-        client.force_login(gestor)
+        _login(client, gestor)
 
         response = client.post(
             f"/api/v1/backstage/marketing/announcements/{announcement.pk}/reject/",
@@ -502,7 +516,7 @@ class TestLifecycleV2:
             severity=NotificationSeverity.INFORMATION,
             lifecycle=NotificationLifecycle.UNSEEN,
         )
-        client.force_login(gestor)
+        _login(client, gestor)
 
         assert client.get(self.V2_URL).json()["notifications"] == []
         history = client.get(f"{self.V2_URL}?history=1").json()
@@ -515,7 +529,7 @@ class TestLifecycleV2:
             severity=NotificationSeverity.INFORMATION,
             retention_until=timezone.now() - timedelta(seconds=1),
         )
-        client.force_login(gestor)
+        _login(client, gestor)
 
         body = client.get(f"{self.V2_URL}?history=1").json()
 
@@ -580,7 +594,7 @@ class TestLifecycleV2:
                 title=f"Histórico {index}",
                 severity=NotificationSeverity.INFORMATION,
             )
-        client.force_login(gestor)
+        _login(client, gestor)
 
         first = client.get(f"{self.V2_URL}?history=1&limit=2").json()
         assert first["page"]["has_more"] is True

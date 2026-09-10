@@ -62,11 +62,26 @@ GOOGLE_MAPS_API_KEY = ""
 # ── Adapters e seams plugáveis ───────────────────────────────────────────────
 SHOPMAN_PAYMENT_ADAPTERS = {
     "pix": "shopman.shop.adapters.payment_mock",
-    "card": "shopman.shop.adapters.payment_mock",
+    # Cartão aponta para o gateway real, como em produção — não existe cartão
+    # simulado. As chaves do Stripe são vazias aqui, e `_get_stripe()` levanta
+    # `StripeNotConfigured` ANTES de qualquer chamada de rede: quem testa cartão
+    # de propósito faz patch de `payment_stripe._get_stripe`, e quem esbarra em
+    # cartão sem querer recebe falha fechada, nunca uma autorização de mentira.
+    "card": "shopman.shop.adapters.payment_stripe",
     "cash": None,
     "external": None,
 }
-SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = False
+# A suíte É um ambiente de gateway simulado — quase todo teste de pagamento roda
+# no `payment_mock`. O valor honesto aqui é `True`, e ele passou a importar
+# quando a env virou porta de RUNTIME no adapter (antes ela só alimentava o
+# check de deploy `SHOPMAN_E003`, então o pino em `False` não custava nada).
+# O runner do Django força `settings.DEBUG = False` durante os testes, então sem
+# este opt-in o simulador se recusaria a rodar na própria suíte.
+#
+# ⚠️ Isto NÃO afrouxa o guarda: a porta fechada é testada de propósito, com
+# `@override_settings(DEBUG=False, SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=False)`
+# em `shop/tests/test_payment_never_authorized_without_gateway.py`.
+SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS = True
 SHOPMAN_MOCK_PIX_AUTO_CONFIRM = False
 SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS = 10
 SHOPMAN_NOTIFICATION_ADAPTERS = {
@@ -75,7 +90,10 @@ SHOPMAN_NOTIFICATION_ADAPTERS = {
     "console": "shopman.shop.adapters.notification_console",  # DEBUG=true no CI
 }
 SHOPMAN_FISCAL_ADAPTER = None
-SHOPMAN_FISCAL_EMISSION_RESOLVER = "shopman.shop.fiscal_resolvers.on_request_or_tax_id"
+SHOPMAN_FISCAL_EMISSION_RESOLVER = (
+    "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+    "shopman.shop.fiscal_resolvers.on_requested_receipt"
+)
 SHOPMAN_COURIER_ADAPTER = None
 SHOPMAN_CUSTOMER_STRATEGY_MODULES = []
 STOCKMAN["SKU_VALIDATOR"] = "shopman.shop.adapters.sku_validator.ComposedSkuValidator"  # noqa: F405

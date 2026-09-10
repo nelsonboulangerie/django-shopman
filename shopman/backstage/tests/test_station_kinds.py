@@ -116,7 +116,14 @@ def test_a_conta_do_totem_so_pode_o_que_lhe_concederam(client):
     resposta = client.get(POS_URL)
 
     assert resposta.status_code == 403
-    assert "error" not in resposta.json()
+    corpo = resposta.json()
+    assert "error" not in corpo
+    # E a recusa diz a VERDADE. O totem opera sem sessão (não há quem digite
+    # PIN), então enquanto o gate devolvia False o DRF trocava a recusa por
+    # `NotAuthenticated` e o totem identificado ouvia "as credenciais não foram
+    # fornecidas" — mensagem errada, e um caminho que não leva a lugar nenhum,
+    # porque este dispositivo não tem login a oferecer.
+    assert corpo["detail"] == "Operador sem permissão para esta ação."
 
 
 def test_totem_SUPERUSUARIO_e_recusado(client):

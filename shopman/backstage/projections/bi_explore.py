@@ -45,6 +45,17 @@ class MetricSpec:
     unit: str  # "q" (centavos) | "count" | "qty" | "percent" | "minutes"
     dimensions: tuple[str, ...]
     family: str  # sales | sales_items | production | oven | cash
+    #: Como a TELA junta os dias quando a série é longa demais para barras
+    #: diárias (acima de 120 pontos vira semana; acima de 740, mês).
+    #:
+    #: ⚠️ Isto mora no CONTRATO, e não em duas cabeças, porque a página somava
+    #: tudo: o gestor escolhia "1 ano" + "Ticket médio" + "Tempo" e a barra da
+    #: semana mostrava ~7× o ticket real — formatada como reais, "R$ 178,50",
+    #: perfeitamente convincente. Rendimento passava de 100%.
+    #:
+    #: `sum` é o default porque a maioria das métricas é aditiva; quem não é
+    #: declara aqui, e a UI obedece o que o servidor disse.
+    aggregation: str = "sum"  # "sum" | "mean" | "max"
 
 
 METRICS: dict[str, MetricSpec] = {
@@ -56,18 +67,22 @@ METRICS: dict[str, MetricSpec] = {
         MetricSpec("orders", "Pedidos", "count",
                    ("time", "channel", "hour", "weekday", "month_of_year",
                     "week_of_year", "source", "consumption_mode"), "sales"),
+        # Média de médias diárias: somar daria ~7x o ticket real na barra da semana.
         MetricSpec("average_ticket", "Ticket médio", "q",
                    ("time", "channel", "hour", "weekday", "month_of_year",
-                    "week_of_year", "source", "consumption_mode"), "sales"),
+                    "week_of_year", "source", "consumption_mode"), "sales",
+                   aggregation="mean"),
         MetricSpec("qty_sold", "Quantidade vendida", "qty",
                    ("time", "sku", "hour", "weekday", "month_of_year",
                     "week_of_year", "source", "consumption_mode"), "sales_items"),
         MetricSpec("qty_produced", "Quantidade produzida", "qty",
-                   ("time", "recipe", "oven", "operator", "weekday", "grade"), "production"),
+                   ("time", "recipe", "oven", "operator", "weekday", "grade", "defect"), "production"),
         MetricSpec("loss", "Perda de produção", "qty",
                    ("time", "recipe", "oven", "operator", "weekday", "defect"), "production"),
+        # Proporção: somar sete dias passaria de 100%.
         MetricSpec("yield_percent", "Rendimento", "percent",
-                   ("time", "recipe", "oven", "operator", "weekday"), "production"),
+                   ("time", "recipe", "oven", "operator", "weekday"), "production",
+                   aggregation="mean"),
         MetricSpec("oven_minutes", "Tempo de forno", "minutes",
                    ("time", "recipe", "oven", "operator"), "oven"),
         MetricSpec("cash_difference", "Quebra de caixa", "q", ("time", "operator"), "cash"),
@@ -85,9 +100,11 @@ METRICS: dict[str, MetricSpec] = {
                    ("sku", "time", "weekday", "month_of_year", "channel"), "outage"),
         # Proporção do expediente: comparável entre um sábado de nove horas e
         # um feriado de quatro, o que a contagem em horas não permite.
+        # Proporção do expediente, não contagem.
         MetricSpec("unavailable_share", "% do expediente sem vender", "percent",
                    ("sku", "time", "weekday", "month_of_year", "channel",
-                    "outage_reason"), "outage"),
+                    "outage_reason"), "outage",
+                   aggregation="mean"),
         MetricSpec("leftover", "Sobra no fim do dia", "qty",
                    ("sku", "time", "weekday", "month_of_year"), "shelf"),
         # Forma de pagamento: dado durável no pedido, até aqui visível só como
@@ -107,16 +124,22 @@ METRICS: dict[str, MetricSpec] = {
         # cesta diz quem sentou, o expediente congelado é o denominador.
         MetricSpec("room_minutes", "Tempo de salão por lotação", "minutes",
                    ("room_load", "hour", "weekday", "time", "month_of_year"), "room"),
+        # PICO: o pico da semana é o maior dia dela, nunca a soma dos dias.
         MetricSpec("room_peak_groups", "Pico de grupos no salão", "count",
-                   ("hour", "weekday", "time", "month_of_year"), "room"),
+                   ("hour", "weekday", "time", "month_of_year"), "room",
+                   aggregation="max"),
         MetricSpec("room_full_minutes", "Tempo no teto do salão", "minutes",
                    ("hour", "weekday", "time", "month_of_year"), "room"),
         # A métrica que responde "quantas mesas eu deveria ter": acrescentar
         # lugar compensa enquanto ela não cair.
+        # Razão por lugar-hora, não total.
         MetricSpec("room_revenue_per_spot_hour", "Faturamento por lugar-hora", "q",
-                   ("time", "weekday", "month_of_year"), "room"),
+                   ("time", "weekday", "month_of_year"), "room",
+                   aggregation="mean"),
+        # Giro médio, não acumulado.
         MetricSpec("room_turns", "Giro por lugar", "count",
-                   ("time", "weekday", "month_of_year"), "room"),
+                   ("time", "weekday", "month_of_year"), "room",
+                   aggregation="mean"),
         MetricSpec("room_tab_minutes", "Tempo de comanda aberta", "minutes",
                    ("time", "weekday", "month_of_year"), "room"),
     )
@@ -177,6 +200,8 @@ class BIExploreMetricOption:
     label: str
     unit: str
     dimensions: tuple[str, ...]
+    #: Como a tela junta os dias numa série longa — ver `MetricSpec.aggregation`.
+    aggregation: str = "sum"
 
 
 @dataclass(frozen=True)
@@ -190,6 +215,9 @@ class BIExploreReport:
     dimension2_label: str
     date_from: str
     date_to: str
+    #: A regra de junção da métrica ESCOLHIDA, para a página não ter que
+    #: procurá-la na gramática — ver `MetricSpec.aggregation`.
+    aggregation: str
     rows: tuple[BIExploreRow, ...]
     truncated: int  # linhas cortadas do ranking — corte declarado, nunca mudo
     metrics: tuple[BIExploreMetricOption, ...]  # a gramática, para a UI montar os selects
@@ -236,6 +264,7 @@ def metric_options() -> tuple[BIExploreMetricOption, ...]:
         BIExploreMetricOption(
             key=s.key, label=s.label, unit=s.unit,
             dimensions=_dimensions_for(s, context),
+            aggregation=s.aggregation,
         )
         for s in METRICS.values()
     )
@@ -319,6 +348,7 @@ def build_bi_explore(
         dimension2_label=DIMENSION_LABELS.get(by2, ""),
         date_from=date_from.isoformat(),
         date_to=date_to.isoformat(),
+        aggregation=spec.aggregation,
         rows=tuple(rows),
         truncated=truncated,
         metrics=metric_options(),
@@ -694,17 +724,17 @@ def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    from shopman.craftsman.models import WorkOrder, WorkOrderItem
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.shop.services import quality as quality_service
 
     wos = list(
         WorkOrder.objects.filter(
             target_date__range=(date_from, date_to), status=WorkOrder.Status.FINISHED
         ).select_related("recipe")
     )
-    wo_by_pk = {wo.pk: wo for wo in wos}
-
-    needs_items = "grade" in (by, by2) or "defect" in (by, by2)
-    catalog_labels = _quality_labels() if needs_items else {}
+    needs_quality_partition = "grade" in (by, by2) or "defect" in (by, by2)
+    catalog_labels = _quality_labels() if needs_quality_partition else {}
 
     def wo_part(dim: str, wo) -> tuple[str, str]:
         if dim == "time":
@@ -725,29 +755,29 @@ def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     finished: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
-    if needs_items:
-        item_dim = "grade" if "grade" in (by, by2) else "defect"
-        kind = WorkOrderItem.Kind.OUTPUT if item_dim == "grade" else WorkOrderItem.Kind.WASTE
-        ref_field = "quality_grade_ref" if item_dim == "grade" else "quality_defect_ref"
-        rows = WorkOrderItem.objects.filter(
-            work_order_id__in=wo_by_pk, kind=kind
-        ).values_list("work_order_id", ref_field, "quantity")
+    if needs_quality_partition:
+        partitions = quality_service.effective_partitions(wos)
         qty: dict[tuple, Decimal] = defaultdict(Decimal)
-        for wo_pk, ref, quantity in rows:
-            wo = wo_by_pk[wo_pk]
-            ref = ref or "(sem motivo)" if item_dim == "defect" else ref or "(sem grau)"
-            item_part = (ref, catalog_labels.get(ref, ref))
-            parts = []
-            for dim in (by, by2):
-                if not dim:
-                    parts.append(("", ""))
-                elif dim == item_dim:
-                    parts.append(item_part)
-                else:
-                    parts.append(wo_part(dim, wo))
-            key = (parts[0][0], parts[1][0])
-            qty[key] += quantity
-            labels[key] = (parts[0][1], parts[1][1])
+        for wo in wos:
+            for group in partitions.get(wo.pk, []):
+                is_loss = bool(group.get("loss"))
+                if is_loss != (spec.key == "loss"):
+                    continue
+                parts = []
+                for dim in (by, by2):
+                    if not dim:
+                        parts.append(("", ""))
+                    elif dim == "grade":
+                        ref = str(group.get("quality_grade_ref") or "(sem grau)")
+                        parts.append((ref, catalog_labels.get(ref, ref)))
+                    elif dim == "defect":
+                        ref = str(group.get("quality_defect_ref") or "(sem motivo)")
+                        parts.append((ref, catalog_labels.get(ref, ref)))
+                    else:
+                        parts.append(wo_part(dim, wo))
+                key = (parts[0][0], parts[1][0])
+                qty[key] += Decimal(str(group.get("quantity") or "0"))
+                labels[key] = (parts[0][1], parts[1][1])
         return [
             BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=float(qty[(k1, k2)]))
             for (k1, k2) in qty
@@ -835,6 +865,13 @@ def _oven_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 # ── Caixa (turnos fechados) ─────────────────────────────────────────────────
 
+#: Balde dos turnos em que MAIS DE UMA pessoa lançou. A quebra de uma gaveta
+#: compartilhada não tem dono — é o que o `CanonicalShift.sole_operator_key`
+#: documenta —, e somar esses turnos aqui é o que mantém o total honesto: sem o
+#: balde, eles sumiriam da soma e a tela mostraria menos quebra do que houve.
+_SHARED_DRAWER_KEY = "__compartilhado__"
+_SHARED_DRAWER_LABEL = "Gaveta compartilhada"
+
 
 def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     """Diferença de caixa por dia/operador: ``count`` + correções de cada turno fechado, pelo livro do ``cashman``.
@@ -856,7 +893,25 @@ def _cash_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
                 iso = shift.closed_at.date().isoformat()
                 parts.append((iso, iso))
             elif dim == "operator":
-                parts.append((shift.operator_key, shift.operator_key))
+                # ⚠️ `sole_operator_key`, e NÃO um `operator_key` qualquer — que,
+                # aliás, não existe mais. O commit d76a66c70 ("a custódia é da
+                # GAVETA") removeu o campo e esta linha ficou para trás: a
+                # dataclass é `frozen` com `slots`, então o acesso levantava
+                # `AttributeError`. Não era erro de domínio, o `except` da view não
+                # pegava, o handler devolvia `None` para exceção não-DRF, e saía um
+                # 500 SEM `detail` — o painel só renderiza `detail`, então a tela do
+                # gestor ficava EM BRANCO. Pior que stacktrace: silêncio.
+                #
+                # E a regra de atribuição é a que o `sole_operator_key` documenta:
+                # a quebra só tem dono quando uma pessoa só lançou no turno. Com
+                # duas na mesma gaveta não existe conta que divida a diferença, e
+                # ratear inventaria um culpado. O balde COMPARTILHADO existe para
+                # esses turnos aparecerem na soma em vez de sumirem dela.
+                chave = shift.sole_operator_key
+                if chave:
+                    parts.append((chave, chave))
+                else:
+                    parts.append((_SHARED_DRAWER_KEY, _SHARED_DRAWER_LABEL))
         key = (parts[0][0], parts[1][0])
         total[key] += shift.difference_q or 0
         labels[key] = (parts[0][1], parts[1][1])

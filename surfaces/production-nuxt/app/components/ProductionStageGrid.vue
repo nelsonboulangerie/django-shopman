@@ -2,9 +2,9 @@
 // A GRADE por etapa — um motor, três lentes (refinos Pablo 2026-07-03):
 //   PRODUTO | leitura | AÇÃO — cada lente tem UMA coluna de leitura e UMA de
 //   ação com verbo no cabeçalho:
-//   · plan     (Planejamento): SUGERIDO   | PLANEJAR   — todos os SKUs;
-//   · produce  (Produção):     PLANEJADO  | PROCESSAR  — só linhas com número;
-//   · expedite (Expedição):    PROCESSADO | CONCLUIR   — só linhas com número.
+//   · plan     (Planejamento): SUGERIDO   | PLANEJADO  — todos os SKUs;
+//   · produce  (Produção):     PLANEJADO  | PRODUZIDO  — só linhas com número;
+//   · expedite (Expedição):    PRODUZIDO  | CONCLUÍDO  — fechamento no QC.
 // A ação abre overlay com quantidade em stepper touch (+/−) e confirmação
 // explícita; cada informe vira evento imutável (actor + timestamp → BI).
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
@@ -19,7 +19,7 @@ import {
   matchesRowQuery,
   rowCommitments,
   rowCommittedUnits,
-  startableWorkOrder,
+  rowLabel,
   timerChip,
   timerTone,
   weekdayLabel,
@@ -29,13 +29,22 @@ import type {
   ProductionMatrixRowProjection,
   ProductionShortageError,
   ProductionSuggestionProjection,
+  WorkOrderCardProjection,
 } from "~/types/production";
+import { defaultPlanningDate } from "~/composables/useProductionBoard";
 
 const props = defineProps<{
   stage: "plan" | "produce";
   title: string;
 }>();
 
+const route = useRoute();
+const routeDate = typeof route.query.date === "string" ? route.query.date : "";
+
+// A Produção abre em HOJE (a fornada é do dia); só o Planejamento abre no dia
+// seguinte à tarde, quando o padeiro planeja a próxima leva. Sem isto, a grade
+// herdava o default de planejamento e "Produção" amanhecia em amanhã depois do
+// meio-dia.
 const {
   board,
   rows,
@@ -47,17 +56,25 @@ const {
   isBusy,
   plan,
   start,
-} = useProductionBoard();
+} = useProductionBoard(
+  routeDate ||
+    (props.stage === "plan" ? defaultPlanningDate() : isoForOffset(0)),
+);
 const kds = useProductionKds();
 
 const access = computed(() => board.value?.access ?? null);
 
-const route = useRoute();
 const query = ref(typeof route.query.q === "string" ? route.query.q : "");
 watch(
   () => route.query.q,
   (q) => {
     if (typeof q === "string") query.value = q;
+  },
+);
+watch(
+  () => route.query.date,
+  (value) => {
+    if (typeof value === "string") selectedDate.value = value;
   },
 );
 
@@ -88,9 +105,11 @@ const lens = computed(() => {
       },
       action: {
         key: "planned",
-        label: "Planejar",
+        label: "Planejado",
         visible: !!access.value?.can_view_planned,
-        editable: !!access.value?.can_edit_planned,
+        editable: Boolean(
+          access.value?.can_edit_planned || access.value?.can_edit_suggested,
+        ),
       },
     } as const;
   }
@@ -102,7 +121,7 @@ const lens = computed(() => {
     },
     action: {
       key: "started",
-      label: "Processar",
+      label: "Produzido",
       visible: !!access.value?.can_view_started,
       editable: !!access.value?.can_edit_started,
     },
@@ -142,7 +161,7 @@ const emptyCopy = computed(() =>
   props.stage === "plan"
     ? { text: "Nenhuma receita ativa.", cta: "", to: "" }
     : {
-        text: "Nada planejado para processar nesta data.",
+        text: "Nada planejado para produzir nesta data.",
         cta: "Ir para o Planejamento",
         to: "/plan",
       },
@@ -152,6 +171,9 @@ const emptyCopy = computed(() =>
 const explaining = ref<ProductionSuggestionProjection | null>(null);
 const planRow = ref<ProductionMatrixRowProjection | null>(null);
 const planQty = ref("");
+const planSubmitting = ref(false);
+const planSource = ref<"manual" | "suggested">("manual");
+const selectedPlannedPk = ref<number | null>(null);
 
 // O gesto de planejar tem TRÊS sentidos, e o operador precisa saber qual está
 // fazendo (o kernel já distingue: set_planned_quantity ajusta a WO planejada;
@@ -180,20 +202,50 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 };
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
+const startSubmitting = ref(false);
+const selectedStartPk = ref<number | null>(null);
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
+const selectedStartedPk = ref<number | null>(null);
 const voidReason = ref("");
 const voidConfirming = ref(false);
 const commitmentsRow = ref<ProductionMatrixRowProjection | null>(null);
 const shortage = ref<ProductionShortageError | null>(null);
+const lastPlanAttempt = ref<{
+  key: string;
+  payload: Parameters<typeof plan>[1];
+  successMessage: string;
+} | null>(null);
 
 const commitmentsList = computed(() =>
   commitmentsRow.value ? rowCommitments(commitmentsRow.value) : [],
 );
 
+const selectedPlannedOrder = computed<WorkOrderCardProjection | null>(
+  () =>
+    planRow.value?.planned_orders.find(
+      (candidate) => candidate.pk === selectedPlannedPk.value,
+    ) ?? null,
+);
+
+const selectedStartOrder = computed<WorkOrderCardProjection | null>(
+  () =>
+    startRow.value?.planned_orders.find(
+      (candidate) => candidate.pk === selectedStartPk.value,
+    ) ?? null,
+);
+
+const selectedStartedOrder = computed<WorkOrderCardProjection | null>(
+  () =>
+    startedRow.value?.started_orders.find(
+      (candidate) => candidate.pk === selectedStartedPk.value,
+    ) ?? null,
+);
+
 const startedCard = computed<ProductionKDSCardProjection | null>(() => {
-  const wo = startedRow.value?.started_orders[0];
-  if (!wo) return null;
-  return kds.cards.value.find((c) => c.pk === wo.pk) ?? null;
+  if (!selectedStartedOrder.value) return null;
+  return (
+    kds.cards.value.find((c) => c.pk === selectedStartedOrder.value?.pk) ?? null
+  );
 });
 
 // Stepper touch: quantidade sempre editável com +/− generosos.
@@ -212,14 +264,31 @@ function bump(field: keyof typeof qtyFields, delta: number) {
     : next.toFixed(3).replace(/\.?0+$/, "");
 }
 
-function openPlan(row: ProductionMatrixRowProjection) {
+function openPlan(
+  row: ProductionMatrixRowProjection,
+  requestedSource?: "manual" | "suggested",
+) {
+  const source =
+    requestedSource ??
+    (access.value?.can_edit_planned ? "manual" : "suggested");
+  if (source === "suggested" && !row.suggestion) return;
+  planSource.value = source;
   planRow.value = row;
+  selectedPlannedPk.value =
+    row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
   const mode = rowPlanMode(row);
   // Novo lote parte de 0 — a sugestão era para o dia inteiro e a produção já
   // assumiu parte dela; pré-preencher aqui dobraria o dia sem querer.
-  if (mode === "new-batch") planQty.value = "0";
-  else if (mode === "adjust") planQty.value = row.planned_qty;
+  if (source === "suggested") planQty.value = row.suggestion?.quantity ?? "";
+  else if (mode === "new-batch") planQty.value = "0";
+  else if (mode === "adjust")
+    planQty.value = selectedPlannedOrder.value?.planned_qty ?? "";
   else planQty.value = row.suggestion?.quantity ?? "0";
+}
+
+function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
+  selectedPlannedPk.value = workOrder.pk;
+  if (planSource.value === "manual") planQty.value = workOrder.planned_qty;
 }
 
 // Do diálogo "por que essa sugestão?" direto para o planejamento da linha dona da
@@ -227,50 +296,109 @@ function openPlan(row: ProductionMatrixRowProjection) {
 function planFromExplanation() {
   const row = rows.value.find((r) => r.suggestion === explaining.value);
   explaining.value = null;
-  if (row) openPlan(row);
+  if (row) openPlan(row, "suggested");
 }
 
 async function confirmPlan() {
+  if (planSubmitting.value) return;
   const row = planRow.value;
   if (!row || row.recipe_pk == null || !board.value || !planQty.value.trim())
     return;
-  const res = await plan(row.output_sku, {
+  if (row.planned_orders.length > 0 && !selectedPlannedOrder.value) return;
+  const positionRef =
+    selectedPlannedOrder.value?.position_ref ||
+    board.value.selected_position_ref ||
+    board.value.positions.find(
+      (position) => position.pk === board.value?.default_position_pk,
+    )?.ref ||
+    board.value.positions.find((position) => position.is_default)?.ref;
+  if (!positionRef) {
+    useSonner.error("Configure uma posição padrão antes de planejar.");
+    return;
+  }
+  const payload: Parameters<typeof plan>[1] = {
     recipe_id: row.recipe_pk,
+    work_order_id: selectedPlannedOrder.value?.pk,
     quantity: planQty.value.trim(),
     target_date: board.value.selected_date,
-    position_ref: board.value.selected_position_ref || undefined,
-    source:
-      row.suggestion && planQty.value.trim() === row.suggestion.quantity
-        ? "suggested"
-        : undefined,
+    expected_rev: selectedPlannedOrder.value?.rev ?? null,
+    position_ref: positionRef,
+    source: planSource.value,
+  };
+  const label =
+    planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
+  const successMessage = `${label}: ${rowLabel(row)} × ${planQty.value.trim()}`;
+  lastPlanAttempt.value = { key: row.output_sku, payload, successMessage };
+  planSubmitting.value = true;
+  try {
+    const res = await plan(row.output_sku, payload);
+    if (res.ok) {
+      planRow.value = null;
+      selectedPlannedPk.value = null;
+      lastPlanAttempt.value = null;
+      useSonner.success(successMessage);
+    } else if (res.shortage) {
+      planRow.value = null;
+      shortage.value = res.shortage;
+    }
+  } finally {
+    planSubmitting.value = false;
+  }
+}
+
+async function retryPlanWithForce(reason: string, overrideProof: string) {
+  const attempt = lastPlanAttempt.value;
+  if (!attempt) return;
+  shortage.value = null;
+  const result = await plan(attempt.key, {
+    ...attempt.payload,
+    force: true,
+    reason,
+    override_proof: overrideProof,
   });
-  if (res.ok) {
-    const label =
-      planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
-    planRow.value = null;
-    useSonner.success(`${label}: ${row.output_sku} × ${planQty.value.trim()}`);
-  } else if (res.shortage) {
-    planRow.value = null;
-    shortage.value = res.shortage;
+  if (result.ok) {
+    useSonner.success(attempt.successMessage);
+    lastPlanAttempt.value = null;
+  } else if (result.shortage) {
+    shortage.value = result.shortage;
   }
 }
 
 function openStart(row: ProductionMatrixRowProjection) {
   startRow.value = row;
-  startQty.value = startableWorkOrder(row)?.planned_qty ?? row.planned_qty;
+  selectedStartPk.value =
+    row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
+  startQty.value = selectedStartOrder.value?.planned_qty ?? "";
+}
+
+function selectStartWorkOrder(workOrder: WorkOrderCardProjection) {
+  selectedStartPk.value = workOrder.pk;
+  startQty.value = workOrder.planned_qty;
 }
 
 async function confirmStart() {
+  if (startSubmitting.value) return;
   const row = startRow.value;
-  const wo = row && startableWorkOrder(row);
+  const wo = selectedStartOrder.value;
   if (!row || !wo || !startQty.value.trim()) return;
-  const res = await start(row.output_sku, wo.pk, startQty.value.trim());
-  if (res.ok) {
-    startRow.value = null;
-    kds.refresh();
-    useSonner.success(
-      `Em processo: ${row.output_sku} × ${startQty.value.trim()}`,
+  startSubmitting.value = true;
+  try {
+    const res = await start(
+      row.output_sku,
+      wo.pk,
+      wo.rev,
+      startQty.value.trim(),
     );
+    if (res.ok) {
+      startRow.value = null;
+      selectedStartPk.value = null;
+      kds.refresh();
+      useSonner.success(
+        `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
+      );
+    }
+  } finally {
+    startSubmitting.value = false;
   }
 }
 
@@ -285,10 +413,11 @@ function startNextBatch() {
 
 async function confirmVoid() {
   const row = startedRow.value;
-  const wo = row?.started_orders[0];
+  const wo = selectedStartedOrder.value;
   if (!row || !wo) return;
   const res = await kds.voidOrder(
     wo.pk,
+    wo.rev,
     voidReason.value.trim() || "Estornado pelo operador",
   );
   if (res.ok) {
@@ -296,14 +425,14 @@ async function confirmVoid() {
     voidConfirming.value = false;
     voidReason.value = "";
     refresh();
-    useSonner.success(`Estornado: ${row.output_sku}`);
+    useSonner.success(`Estornado: ${rowLabel(row)}`);
   }
 }
 
 async function advanceStep() {
   const card = startedCard.value;
   if (!card) return;
-  await kds.advanceStep(card.pk);
+  await kds.advanceStep(card.pk, card.rev);
   refresh();
 }
 
@@ -311,6 +440,8 @@ function onAction(row: ProductionMatrixRowProjection) {
   if (props.stage === "plan") return openPlan(row);
   if (row.started_orders.length) {
     startedRow.value = row;
+    selectedStartedPk.value =
+      row.started_orders.length === 1 ? row.started_orders[0]!.pk : null;
     voidConfirming.value = false;
     kds.refresh();
     return;
@@ -327,19 +458,25 @@ function rowValue(row: ProductionMatrixRowProjection, key: string): string {
 
 function actionEnabled(row: ProductionMatrixRowProjection): boolean {
   if (!lens.value.action.editable) return false;
-  if (props.stage === "plan") return row.recipe_pk != null;
-  return !!row.started_orders.length || !!startableWorkOrder(row);
+  if (props.stage === "plan") {
+    return Boolean(
+      row.recipe_pk != null &&
+      (access.value?.can_edit_planned ||
+        (row.suggestion && access.value?.can_edit_suggested)),
+    );
+  }
+  return !!row.started_orders.length || row.planned_orders.length > 0;
 }
 
 const ACTION_VERB: Record<string, string> = {
-  plan: "Planejar",
-  produce: "Processar",
+  plan: "Confirmar",
+  produce: "Confirmar",
 };
 
 // Verbo da célula de plano: quando a produção já assumiu a quantidade do dia,
 // o gesto disponível é somar um lote — e a célula diz isso antes do modal.
 function planCellVerb(row: ProductionMatrixRowProjection): string {
-  return rowPlanMode(row) === "new-batch" ? "Novo lote" : "Planejar";
+  return rowPlanMode(row) === "new-batch" ? "Novo lote" : "Confirmar";
 }
 
 const planQtyValid = computed(() => {
@@ -349,6 +486,11 @@ const planQtyValid = computed(() => {
   if (qty === 0) return planMode.value === "adjust";
   return true;
 });
+const planActionAllowed = computed(() =>
+  planSource.value === "suggested"
+    ? access.value?.can_edit_suggested === true
+    : access.value?.can_edit_planned === true,
+);
 
 function cellQty(value: string): string {
   return value === "0" ? "—" : value;
@@ -551,16 +693,16 @@ const headerCount = computed(() => {
                 class="hover:bg-muted/30"
               >
                 <td class="px-3 py-1.5">
-                  <p class="font-bold">{{ row.output_sku }}</p>
+                  <p class="font-bold">{{ rowLabel(row) }}</p>
                   <p
                     class="flex items-center gap-1.5 text-xs text-muted-foreground"
                   >
-                    <span class="truncate">{{ row.recipe_name }}</span>
+                    <span class="truncate">{{ row.output_sku }}</span>
                     <button
                       v-if="rowCommittedUnits(row) > 0"
                       type="button"
                       class="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/5 px-1.5 py-0.5 text-xs font-medium tabular-nums text-primary transition hover:bg-primary/10"
-                      :aria-label="`${rowCommittedUnits(row)} unidades de ${row.output_sku} comprometidas com pedidos`"
+                      :aria-label="`${rowCommittedUnits(row)} unidades de ${rowLabel(row)} comprometidas com pedidos`"
                       @click="commitmentsRow = row"
                     >
                       <Icon name="lucide:shopping-bag" class="size-3" />
@@ -581,7 +723,7 @@ const headerCount = computed(() => {
                         : 'text-muted-foreground',
                       'hover:bg-accent',
                     ]"
-                    :aria-label="`Por que ${row.suggestion.quantity} de ${row.recipe_name}?`"
+                    :aria-label="`Por que ${row.suggestion.quantity} de ${rowLabel(row)}?`"
                     @click="explaining = row.suggestion"
                   >
                     {{ cellQty(row.suggestion.quantity) }}
@@ -612,7 +754,7 @@ const headerCount = computed(() => {
                         : 'text-muted-foreground',
                     ]"
                     :disabled="isBusy(row.output_sku)"
-                    :aria-label="`${ACTION_VERB[stage]} ${row.output_sku}`"
+                    :aria-label="`${ACTION_VERB[stage]} ${rowLabel(row)}`"
                     @click="onAction(row)"
                   >
                     <template v-if="rowValue(row, lens.action.key) !== '0'">
@@ -668,7 +810,10 @@ const headerCount = computed(() => {
       :open="planRow != null"
       @update:open="
         (v) => {
-          if (!v) planRow = null;
+          if (!v) {
+            planRow = null;
+            selectedPlannedPk = null;
+          }
         }
       "
     >
@@ -676,17 +821,46 @@ const headerCount = computed(() => {
         <UiDialogHeader>
           <UiDialogTitle
             >{{ PLAN_TITLE[planMode] }} ·
-            {{ planRow?.output_sku }}</UiDialogTitle
+            {{ planRow ? rowLabel(planRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription>
-            {{ planRow?.recipe_name }} · {{ fullDateLabel(selectedDate) }}
+            {{ planRow?.output_sku }} · {{ fullDateLabel(selectedDate) }}
             <template v-if="planRow?.suggestion">
               · sugestão {{ planRow.suggestion.quantity }}</template
             >
           </UiDialogDescription>
         </UiDialogHeader>
-        <p v-if="planMode === 'adjust'" class="text-sm text-muted-foreground">
-          Substitui o planejado atual ({{ planRow?.planned_qty }}) — 0 remove.
+        <div
+          v-if="
+            planRow &&
+            planRow.planned_orders.length > 1 &&
+            !selectedPlannedOrder
+          "
+          class="grid gap-2"
+        >
+          <p class="text-sm text-muted-foreground">
+            Selecione a fornada exata que deseja ajustar.
+          </p>
+          <button
+            v-for="workOrder in planRow.planned_orders"
+            :key="workOrder.pk"
+            type="button"
+            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            @click="selectPlannedWorkOrder(workOrder)"
+          >
+            <span class="font-medium">#{{ workOrder.ref }}</span>
+            <span class="tabular-nums text-muted-foreground"
+              >{{ workOrder.planned_qty }} un.</span
+            >
+          </button>
+        </div>
+        <p
+          v-if="planMode === 'adjust' && selectedPlannedOrder"
+          class="text-sm text-muted-foreground"
+        >
+          Substitui #{{ selectedPlannedOrder.ref }} ({{
+            selectedPlannedOrder.planned_qty
+          }}) — 0 remove.
         </p>
         <p
           v-else-if="planMode === 'new-batch'"
@@ -698,10 +872,14 @@ const headerCount = computed(() => {
             · {{ planRow?.finished_qty }} concluídas</template
           >.
         </p>
-        <div class="flex items-center gap-2">
+        <div
+          v-if="!planRow?.planned_orders.length || selectedPlannedOrder"
+          class="flex items-center gap-2"
+        >
           <button
             type="button"
             class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
+            :disabled="planSource === 'suggested'"
             aria-label="Diminuir"
             @click="bump('plan', -1)"
           >
@@ -712,11 +890,13 @@ const headerCount = computed(() => {
             type="text"
             inputmode="decimal"
             class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
+            :readonly="planSource === 'suggested'"
             aria-label="Quantidade planejada"
           />
           <button
             type="button"
             class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
+            :disabled="planSource === 'suggested'"
             aria-label="Aumentar"
             @click="bump('plan', 1)"
           >
@@ -733,36 +913,80 @@ const headerCount = computed(() => {
           </button>
           <button
             type="button"
-            :disabled="!planQty.trim() || !planQtyValid"
+            :disabled="
+              !planQty.trim() ||
+              !planQtyValid ||
+              !planActionAllowed ||
+              planSubmitting ||
+              (!!planRow?.planned_orders.length && !selectedPlannedOrder)
+            "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="confirmPlan()"
           >
             {{
-              planMode === "new-batch" ? "Salvar novo lote" : "Salvar planejado"
+              planSubmitting
+                ? "Confirmando…"
+                : planMode === "new-batch"
+                  ? "Confirmar novo lote"
+                  : "Confirmar"
             }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
 
-    <!-- processar (iniciar) -->
+    <!-- confirmar a quantidade produzida (evento interno: start) -->
     <UiDialog
       :open="startRow != null"
       @update:open="
         (v) => {
-          if (!v) startRow = null;
+          if (!v) {
+            startRow = null;
+            selectedStartPk = null;
+          }
         }
       "
     >
       <UiDialogContent class="sm:max-w-sm">
         <UiDialogHeader>
-          <UiDialogTitle>Processar {{ startRow?.output_sku }}</UiDialogTitle>
+          <UiDialogTitle>
+            Confirmar quantidade produzida ·
+            {{ startRow ? rowLabel(startRow) : "" }}
+          </UiDialogTitle>
           <UiDialogDescription
-            >Quantidade que entra em processo agora — registra o início e
-            materializa o lote.</UiDialogDescription
+            >{{ startRow?.output_sku }} · informe quantas unidades produzidas
+            seguem para a Expedição.</UiDialogDescription
           >
         </UiDialogHeader>
-        <div class="flex items-center gap-2">
+        <div
+          v-if="
+            startRow &&
+            startRow.planned_orders.length > 1 &&
+            !selectedStartOrder
+          "
+          class="grid gap-2"
+        >
+          <p class="text-sm text-muted-foreground">
+            Selecione a fornada exata que deseja confirmar como produzida.
+          </p>
+          <button
+            v-for="workOrder in startRow.planned_orders"
+            :key="workOrder.pk"
+            type="button"
+            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            @click="selectStartWorkOrder(workOrder)"
+          >
+            <span class="font-medium">#{{ workOrder.ref }}</span>
+            <span class="tabular-nums text-muted-foreground"
+              >{{ workOrder.planned_qty }} un.</span
+            >
+          </button>
+        </div>
+        <p v-if="selectedStartOrder" class="text-sm text-muted-foreground">
+          Fornada #{{ selectedStartOrder.ref }} · revisão
+          {{ selectedStartOrder.rev }}
+        </p>
+        <div v-if="selectedStartOrder" class="flex items-center gap-2">
           <button
             type="button"
             class="grid size-12 shrink-0 place-items-center rounded-md border text-xl font-bold transition hover:bg-accent"
@@ -776,7 +1000,7 @@ const headerCount = computed(() => {
             type="text"
             inputmode="decimal"
             class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
-            aria-label="Quantidade em processo"
+            aria-label="Quantidade produzida"
           />
           <button
             type="button"
@@ -797,11 +1021,13 @@ const headerCount = computed(() => {
           </button>
           <button
             type="button"
-            :disabled="!startQty.trim()"
+            :disabled="
+              startSubmitting || !startQty.trim() || !selectedStartOrder
+            "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="confirmStart()"
           >
-            Iniciar
+            {{ startSubmitting ? "Confirmando…" : "Confirmar" }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>
@@ -814,6 +1040,7 @@ const headerCount = computed(() => {
         (v) => {
           if (!v) {
             startedRow = null;
+            selectedStartedPk = null;
             voidConfirming = false;
           }
         }
@@ -822,13 +1049,39 @@ const headerCount = computed(() => {
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
           <UiDialogTitle
-            >{{ startedRow?.output_sku }} em processo</UiDialogTitle
+            >{{ startedRow ? rowLabel(startedRow) : "" }} em
+            processo</UiDialogTitle
           >
           <UiDialogDescription>
-            #{{ startedRow?.started_orders[0]?.ref }} ·
-            {{ startedRow?.started_qty }} un. em processo
+            <template v-if="selectedStartedOrder">
+              #{{ selectedStartedOrder.ref }} · {{ startedRow?.output_sku }} ·
+              {{ selectedStartedOrder.started_qty }} un. em processo
+            </template>
+            <template v-else>Selecione a fornada que deseja gerir.</template>
           </UiDialogDescription>
         </UiDialogHeader>
+
+        <div
+          v-if="
+            startedRow &&
+            startedRow.started_orders.length > 1 &&
+            !selectedStartedOrder
+          "
+          class="grid gap-2"
+        >
+          <button
+            v-for="workOrder in startedRow.started_orders"
+            :key="workOrder.pk"
+            type="button"
+            class="flex min-h-11 items-center justify-between rounded-md border px-3 py-2 text-left transition hover:bg-accent"
+            @click="selectedStartedPk = workOrder.pk"
+          >
+            <span class="font-medium">#{{ workOrder.ref }}</span>
+            <span class="tabular-nums text-muted-foreground"
+              >{{ workOrder.started_qty }} un.</span
+            >
+          </button>
+        </div>
 
         <div v-if="startedCard" class="flex flex-col gap-2">
           <div class="flex items-center justify-between gap-2 text-sm">
@@ -850,7 +1103,7 @@ const headerCount = computed(() => {
             </span>
             <span
               class="shrink-0 rounded-md border px-2 py-0.5 text-xs font-semibold tabular-nums"
-              :class="timerChip(timerTone(startedCard.timer_class))"
+              :class="timerChip(timerTone(startedCard.timer_status_code))"
             >
               {{ elapsedLabel(startedCard.elapsed_seconds) }}
             </span>
@@ -867,15 +1120,18 @@ const headerCount = computed(() => {
         </div>
 
         <button
-          v-if="startedRow && startableWorkOrder(startedRow)"
+          v-if="startedRow && startedRow.planned_orders.length"
           type="button"
           class="inline-flex items-center justify-center gap-1.5 rounded-md border border-dashed px-3 py-2 text-sm font-medium transition hover:bg-accent"
           @click="startNextBatch()"
         >
-          <Icon name="lucide:plus" class="size-4" /> Iniciar próximo lote ({{
-            startableWorkOrder(startedRow)?.planned_qty
-          }}
-          un.)
+          <Icon name="lucide:plus" class="size-4" /> Confirmar próximo lote
+          <template v-if="startedRow.planned_orders.length === 1">
+            ({{ startedRow.planned_orders[0]?.planned_qty }} un.)
+          </template>
+          <template v-else>
+            ({{ startedRow.planned_orders.length }} fornadas)
+          </template>
         </button>
 
         <div v-if="voidConfirming" class="flex flex-col gap-2">
@@ -898,7 +1154,7 @@ const headerCount = computed(() => {
 
         <UiDialogFooter class="gap-2">
           <button
-            v-if="!voidConfirming"
+            v-if="selectedStartedOrder && !voidConfirming"
             type="button"
             class="mr-auto rounded-md border px-3 py-2 text-sm font-medium text-destructive transition hover:bg-destructive/10 dark:text-orange-300"
             @click="voidConfirming = true"
@@ -906,7 +1162,7 @@ const headerCount = computed(() => {
             Estornar…
           </button>
           <button
-            v-else
+            v-else-if="selectedStartedOrder"
             type="button"
             class="mr-auto rounded-md border border-transparent bg-destructive px-3 py-2 text-sm font-semibold text-white transition hover:bg-destructive/90"
             @click="confirmVoid()"
@@ -918,6 +1174,7 @@ const headerCount = computed(() => {
             class="rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
             @click="
               startedRow = null;
+              selectedStartedPk = null;
               voidConfirming = false;
             "
           >
@@ -946,11 +1203,12 @@ const headerCount = computed(() => {
         <UiDialogHeader>
           <UiDialogTitle
             >{{ commitmentsRow ? rowCommittedUnits(commitmentsRow) : 0 }} un.
-            comprometidas · {{ commitmentsRow?.output_sku }}</UiDialogTitle
+            comprometidas ·
+            {{ commitmentsRow ? rowLabel(commitmentsRow) : "" }}</UiDialogTitle
           >
           <UiDialogDescription
-            >Encomendas confirmadas que dependem desta
-            produção.</UiDialogDescription
+            >{{ commitmentsRow?.output_sku }} · encomendas confirmadas que
+            dependem desta produção.</UiDialogDescription
           >
         </UiDialogHeader>
         <ul class="flex flex-col gap-2 text-sm">
@@ -1025,7 +1283,7 @@ const headerCount = computed(() => {
         </p>
         <UiDialogFooter>
           <button
-            v-if="stage === 'plan' && access?.can_edit_planned"
+            v-if="stage === 'plan' && access?.can_edit_suggested"
             type="button"
             class="mr-auto rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
             @click="planFromExplanation()"
@@ -1050,6 +1308,7 @@ const headerCount = computed(() => {
           if (!v) shortage = null;
         }
       "
+      @confirm="retryPlanWithForce"
     />
   </main>
 </template>

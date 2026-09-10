@@ -238,6 +238,23 @@ def invalidate_rules_cache(sender, **kwargs):
     cache.delete(CACHE_KEY)
 
 
+def forget_rules_cache() -> None:
+    """Esquece as regras em cache. **Toda migração de dados que mexe em
+    ``RuleConfig`` precisa chamar isto no fim.**
+
+    O cache é invalidado por ``post_save``/``post_delete`` do model — e migração
+    de dados não passa por lá: ela usa o model histórico e escreve por
+    ``.update()``/``bulk_create``, que não disparam signal nenhum. O resultado é
+    silencioso e leva uma hora para passar: o banco tem a regra nova, o Redis
+    responde a antiga, e a regra "não funciona" sem nada no log.
+
+    Aconteceu em 04/09/2026 com a ``0031``, que ligou ``suggestion.substitute``
+    por ``.update()``: no alpha, doce continuou aceitando substituto salgado
+    porque ``get_rule_params`` lia um cache de antes da migração.
+    """
+    cache.delete(CACHE_KEY)
+
+
 def _import_rule_class(dotted_path):
     """Import a rule class from a dotted path. Returns None on failure."""
     try:

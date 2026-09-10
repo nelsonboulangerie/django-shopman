@@ -18,6 +18,8 @@ function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
     parts: [{ label: "Faixa de preço", count: 2 }],
     vip_count: 0,
     empty_selection: false,
+    alerts_pending: -1,
+    alerts_notified: -1,
     ...over,
   };
 }

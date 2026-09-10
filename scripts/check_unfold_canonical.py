@@ -209,6 +209,29 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
         ),
     ),
     Surface(
+        id="admin-console-diagnostics",
+        kind="canonical-admin-unfold-page",
+        templates=(ROOT / "shopman/backstage/templates/admin_console/diagnostics",),
+        controllers=(ROOT / "shopman/backstage/admin_console/diagnostics.py",),
+        projections=(ROOT / "shopman/backstage/projections/diagnostics.py",),
+        url_prefixes=("/admin/diagnostics/",),
+        requires_model_admin_view_mixin=True,
+        required_extends="admin/base.html",
+        required_template_markers=(
+            'include "unfold/helpers/messages.html"',
+            'include "unfold/helpers/label.html"',
+            'component "unfold/components/button.html"',
+            'component "unfold/components/card.html"',
+            'component "unfold/components/container.html"',
+            'component "unfold/components/text.html"',
+            'component "unfold/components/title.html"',
+        ),
+        required_controller_markers=(
+            "UnfoldModelAdminViewMixin",
+            "build_diagnostics",
+        ),
+    ),
+    Surface(
         id="admin-console-operator-badge",
         kind="canonical-admin-unfold-page",
         templates=(ROOT / "shopman/backstage/templates/admin_console/operator_badge",),
@@ -247,8 +270,12 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
     Surface(
         id="backstage-model-admin",
         kind="canonical-unfold-modeladmin",
+        # O `form_before_template` do diálogo de desfazer unificação: a única
+        # template desta superfície, porque é o único ponto em que um ModelAdmin
+        # daqui precisa dizer algo que não cabe numa coluna.
+        templates=(ROOT / "shopman/backstage/templates/admin_console/merge_undo",),
         controllers=_glob("shopman/backstage/admin/*.py"),
-        url_prefixes=("/admin/backstage/",),
+        url_prefixes=("/admin/backstage/", "/admin/customer_merge/"),
     ),
     Surface(
         id="package-admin-unfold",
@@ -257,9 +284,7 @@ CANONICAL_ADMIN_SURFACES: tuple[Surface, ...] = (
             *_glob("packages/*/shopman/*/templates/admin"),
             *_glob("packages/*/shopman/*/templates/*/admin"),
         ),
-        controllers=(
-            *_glob("packages/*/shopman/*/contrib/admin_unfold"),
-        ),
+        controllers=(*_glob("packages/*/shopman/*/contrib/admin_unfold"),),
         url_prefixes=(
             "/admin/craftsman/",
             "/admin/guestman/",
@@ -327,7 +352,11 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
             ROOT / "shopman/backstage/projections/closing.py",
             ROOT / "shopman/backstage/projections/cash_session.py",
             ROOT / "shopman/backstage/projections/production.py",
+            ROOT / "shopman/backstage/projections/product_promise.py",
+            ROOT / "shopman/backstage/projections/recipe_book.py",
+            ROOT / "shopman/backstage/projections/alerts.py",
             ROOT / "shopman/backstage/projections/purchase.py",
+            ROOT / "shopman/backstage/projections/purchase_count.py",
             ROOT / "shopman/backstage/projections/marketing.py",
             ROOT / "shopman/backstage/projections/marketing_v2.py",
             ROOT / "shopman/backstage/projections/marketing_actions.py",
@@ -345,12 +374,16 @@ EXCEPTION_SURFACES: tuple[Surface, ...] = (
         ),
         exception_reason=(
             "Order queue + KDS + catalog-matrix + feeds + day-closing + cash-session + "
-            "production + purchase + campaign projections feed dedicated headless Nuxt operator apps "
+            "production + product-promise + recipe-book + purchase + campaign projections feed dedicated headless Nuxt operator apps "
             "(gestor./kds./pdv./prod./compras./mkt. via api/v1/backstage/*), not Admin/Unfold "
             "pages (OPERATOR-APPS-PLAN Fase 2; CROSS-CHANNEL-CATALOG-HUB-PLAN Frente 3; "
             "ADMIN-ROLE-PLAN WP-ADM-3/WP-ADM-4/WP-ADM-7d — config de rule/capability fica no "
             "Admin/Unfold, a matriz operacional no Gestor, o fechamento do dia e os relatórios "
             "X/Z na antesala do PDV, a produção inteira no Produção). "
+            "Promessa do catálogo (WP-FICHA-DE-PRODUTO-E-PROMESSA bloco C): a leitura de "
+            "'o que o cliente lê ainda corresponde à ficha?' é conferência de chão, "
+            "consumida em api/v1/backstage/catalog/promise/ pelo Produção, onde o operador "
+            "está com a peça na mão. "
             "Campanha (FOMO-MARKETING-SPECS §6.1): a REVISÃO do anúncio é decisão operacional "
             "no app dedicado; o CRUD de regra/modelo segue disponível no Admin/Unfold. "
             "B.I. (ADR-021 §5, decisão do dono 2026-08-14): leitura analítica cross-suite via "
@@ -514,11 +547,7 @@ def _is_allowed(lines: list[str], index: int, rule: str) -> bool:
         candidates.append(lines[index - 1])
     for line in candidates:
         match = ALLOW_RE.search(line)
-        if (
-            match
-            and match.group(1) == rule
-            and _valid_authorization(match.group(2), match.group(3), match.group(4))
-        ):
+        if match and match.group(1) == rule and _valid_authorization(match.group(2), match.group(3), match.group(4)):
             return True
     return False
 
@@ -717,11 +746,7 @@ def iter_templates(targets: list[Path]) -> list[Path]:
 
 
 def targets_for_surfaces(surfaces: tuple[Surface, ...]) -> list[Path]:
-    return [
-        path
-        for surface in surfaces
-        for path in chain(surface.templates, surface.controllers)
-    ]
+    return [path for surface in surfaces for path in chain(surface.templates, surface.controllers)]
 
 
 def _normalize_url(value: str) -> str:
@@ -815,9 +840,7 @@ def scan_surface_registry(
     if enforce_global_contract:
         known_templates = _known_backstage_templates()
         exception_dirs = _exception_template_dirs()
-        backstage_templates = (
-            tuple(sorted(BACKSTAGE_TEMPLATES.rglob("*.html"))) if BACKSTAGE_TEMPLATES.exists() else ()
-        )
+        backstage_templates = tuple(sorted(BACKSTAGE_TEMPLATES.rglob("*.html"))) if BACKSTAGE_TEMPLATES.exists() else ()
 
         for path in (*backstage_templates, *extra_backstage_templates):
             resolved = path.resolve()
@@ -868,9 +891,7 @@ def scan_surface_registry(
                     )
 
         if surface.required_template_markers:
-            combined_template_text = "\n".join(
-                template.read_text(encoding="utf-8") for template in surface_templates
-            )
+            combined_template_text = "\n".join(template.read_text(encoding="utf-8") for template in surface_templates)
             for marker in surface.required_template_markers:
                 if marker not in combined_template_text:
                     violations.append(
@@ -974,7 +995,9 @@ def scan_unfold_installation() -> list[Violation]:
         )
 
     spec = importlib.util.find_spec("unfold")
-    package_root = Path(next(iter(spec.submodule_search_locations))) if spec and spec.submodule_search_locations else None
+    package_root = (
+        Path(next(iter(spec.submodule_search_locations))) if spec and spec.submodule_search_locations else None
+    )
     required_components = (
         "templates/unfold/components/button.html",
         "templates/unfold/components/card.html",
@@ -1069,7 +1092,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--strict", action="store_true", help="also flag visual-shell drift")
     parser.add_argument("--maturity", action="store_true", help="alias for --strict before declaring a page mature")
     parser.add_argument("--surfaces", action="store_true", help="print the registered Admin/backstage surface contract")
-    parser.add_argument("--url", help="scope validation to a registered relative Admin URL, for example /admin/operacao/fechamento/")
+    parser.add_argument(
+        "--url", help="scope validation to a registered relative Admin URL, for example /admin/operacao/fechamento/"
+    )
     parser.add_argument(
         "--skip-surface-contract",
         action="store_true",

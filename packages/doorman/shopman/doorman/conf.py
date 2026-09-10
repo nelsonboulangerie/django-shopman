@@ -101,7 +101,7 @@ class DoormanSettings:
     # phishing: o sistema operacional só assina para ele. Deixe vazio em dev (o host da
     # requisição vale); em produção, aponte para o domínio da loja (`nelsonboulangerie.com.br`
     # — sem esquema, sem porta). Subdomínio herda: uma credencial de `nelsonboulangerie.com.br`
-    # vale em `staging.nelsonboulangerie.com.br`, mas não o contrário.
+    # vale em `menu.nelsonboulangerie.com.br`, mas não o contrário.
     PASSKEY_ENABLED: bool = True
     PASSKEY_RP_ID: str = ""
     PASSKEY_RP_NAME: str = "Nelson Boulangerie"

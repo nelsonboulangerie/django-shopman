@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from django.contrib import admin
 from shopman.cashman.models import Shift
+from shopman.stockman.models import Batch
 
 from shopman.backstage.admin.operation import OperationTaskRunInline
 from shopman.backstage.models import OperationChecklistRun
@@ -41,3 +42,13 @@ def test_operation_task_run_evidence_is_locked():
         "supervised_at",
     ):
         assert field in locked, f"{field} deveria ser read-only (registro anti-fraude)"
+
+
+def test_batch_quality_fact_is_locked_in_the_admin():
+    """Correção de QC não pode contornar preço, canais e notificações."""
+    batch_admin = admin.site._registry[Batch]
+    assert set(batch_admin.readonly_fields) >= {
+        "quality_grade_ref",
+        "nonconformity_percent",
+        "nonconformity_reason",
+    }

@@ -55,21 +55,48 @@ def batch_ref_for_hold(hold_id) -> str:
 
     Hold flutuante (``quant=None``, venda antecipada/demanda) não tem lote — e
     não pode ter: o lote ainda não existe.
+
+    ⚠️ **Isto filtrava por ``pk=hold_id``, e ``hold_id`` NUNCA é um pk.** O
+    formato de identidade do Stockman é ``"hold:<pk>"`` (``Hold.hold_id``), então
+    a query levantava ``ValueError`` em toda chamada, o ``except`` engolia num
+    DEBUG e a função devolvia "" para sempre.
+
+    Efeito: ``meta["batch_ref"]`` nunca era gravado na linha, e como ele é a
+    ÚNICA fonte do ``LotDiscountModifier`` (ADR-017 §7), o desconto de lote
+    estava desligado por inteiro na loja — silenciosamente. Pão do lote que vence
+    hoje saía pelo preço cheio, e nenhuma tela tinha como perceber, porque o
+    modificador simplesmente não encontrava linha nenhuma para aplicar.
+
+    Falha de programação não pode virar feature desligada em silêncio: o
+    ``except`` continua (preço não derruba a sacola) mas grita em WARNING.
     """
-    if not hold_id:
+    pk = _hold_pk(hold_id)
+    if pk is None:
         return ""
     try:
         from shopman.stockman.models import Hold
 
         return (
-            Hold.objects.filter(pk=hold_id)
+            Hold.objects.filter(pk=pk)
             .values_list("quant__batch", flat=True)
             .first()
             or ""
         )
     except Exception:
-        logger.debug("lot_pricing.hold_lookup_failed hold=%s", hold_id, exc_info=True)
+        logger.warning("lot_pricing.hold_lookup_failed hold=%s", hold_id, exc_info=True)
         return ""
+
+
+def _hold_pk(hold_id) -> int | None:
+    """``"hold:12"`` → ``12``. ``None`` quando não dá para ler (inclusive vazio)."""
+    if not hold_id:
+        return None
+    raw = str(hold_id)
+    try:
+        return int(raw.split(":")[1] if ":" in raw else raw)
+    except (IndexError, ValueError):
+        logger.warning("lot_pricing.hold_id_unreadable hold=%s", hold_id)
+        return None
 
 
 def lot_context(batch_ref: str) -> dict:

@@ -307,7 +307,9 @@ def test_every_task_failing_still_completes_the_cycle(caplog):
     # Presença por comando, não contagem total — imune a duplicata de captura / ruído
     # de ordem de coleta (o exato `== len` flakava no CI).
     for command in MAINTENANCE_COMMANDS:
-        assert any(command in message for message in logged), f"faltou log de {command}"
+        # A entrada pode ser `(nome, kwargs)` — o log carrega só o nome.
+        nome = command[0] if isinstance(command, tuple) else command
+        assert any(nome in message for message in logged), f"faltou log de {nome}"
 
 
 # ── (c) Loop: --once, intervalo e floor ──────────────────────────────────────
@@ -354,7 +356,27 @@ def test_once_runs_one_cycle_in_order_and_never_sleeps():
         # Depois do resgate: resíduo de processo de WO morta é zerado pelo
         # ledger — só quando nenhuma WO viva nem ledger aberto o reivindica.
         call("sweep_dead_production_stock"),
+        call("sweep_waitlist_windows"),
         call("check_directive_health"),
+        # Checagem de ESTADO, não de evento: produto que já está invisível hoje
+        # porque a coleção dele foi desativada. A cadência do sino (um alerta por
+        # estado, não um por ciclo) é do comando, não do worker.
+        call("check_catalog_visibility"),
+        call("check_integration_drift"),
+        # Percebe quem PAROU de comprar: o insight do cliente é recalculado a
+        # cada pedido DELE, então só quem sumiu precisa de varredura. Está no
+        # ciclo de 5 min mas carrega a própria janela (madrugada) e o próprio
+        # teto de lote — sem esse portão interno, entrar aqui significaria
+        # varrer a base inteira 288 vezes por dia.
+        call("recalculate_customer_insights"),
+        # Caro e diário: quem segura a cadência é o próprio comando, que recusa
+        # recalcular a afinidade com a tabela mais nova que 20h.
+        call("compute_product_affinity"),
+        # Higiene de fim de ciclo: sem relação de ordem com nada acima.
+        # ⚠️ A única com OPÇÃO: no worker a conferência de parâmetro legal
+        # existe para ALERTAR o gestor, não só para imprimir.
+        call("conferir_parametros_legais", vencidos=True, alertar=True),
+        call("purge_sign_in_audit"),
     ]
 
 

@@ -5,7 +5,20 @@
 // availability arithmetic — those are sealed in the Projection (price_display)
 // and only rendered here.
 
-import type { POSCollectionProjection, POSProductProjection } from "~/types/pos";
+import type { POSCartItem, POSCollectionProjection, POSProductProjection } from "~/types/pos";
+
+/**
+ * Quanto DESTE PRODUTO já entrou no pedido — o número do selo no card do grid.
+ *
+ * ⚠️ SOMA todas as linhas do SKU, e é a única leitura da tela que ainda agrega
+ * por produto. A comanda passou a admitir duas linhas do mesmo item (uma já na
+ * cozinha, outra recém-lançada); para quem olha o grid, são dois. A pergunta
+ * aqui é de catálogo ("quanto deste produto o cliente pediu"), não de linha — e
+ * de identidade para agregado se vai sempre.
+ */
+export function cartQtyForSku(items: POSCartItem[], sku: string): number {
+  return items.reduce((total, item) => (item.sku === sku ? total + item.qty : total), 0);
+}
 
 /** Favourites first (Projection-driven), then alphabetical (pt-BR). */
 export function orderCollections(

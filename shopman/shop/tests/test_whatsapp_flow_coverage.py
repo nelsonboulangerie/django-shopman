@@ -65,7 +65,7 @@ def test_a_configured_flow_still_blocks_deploy_without_isolation_evidence(db):
     )
 
     (error,) = check_whatsapp_flow_coverage(None)
-    assert error.id == "SHOPMAN_E016"
+    assert error.id == "SHOPMAN_E020"
     assert type(error).__name__ == "Error"
 
 

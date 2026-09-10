@@ -44,7 +44,9 @@ function pixProof(): PaymentProofView {
     checkoutUrl: "",
     isPix: true,
     isCard: false,
+    isLink: false,
     hasProof: true,
+    expiresDisplay: "",
   };
 }
 

@@ -56,11 +56,13 @@ filtragem. `QADH-*` carrega `snapshot.source="production_demand_history"`.
 | `seed:production:today:<date>:<recipe>` | `planned` / `started` / `finished` (matriz mista, 14 receitas) | hoje | WO em **cada** estado disponível hoje |
 | `seed:production:today-prep:<date>:<massa>` | `finished` (madrugada, escalonadas) | hoje | **A massa antes do pão** — fecham antes de a primeira fornada de acabado começar, em qualquer hora em que o seed rode |
 | `seed:production:qa-stuck:<ontem>:baguete` | `started` (nunca finalizada) | ontem | **Fornada de dia anterior presa** — claramente identificável pelo `source_ref` |
-| `seed:production:future-<1..7>:...` | `planned` (+ `Quant.target_date`) | hoje..+6 | Estoque planejado datado (gate de encomenda do storefront) |
+| `seed:production:future-<1..7>:...` | `planned` (+ `Quant.target_date`) | amanhã..+7 | Estoque planejado datado (gate de encomenda do storefront) |
 | `seed:production:history-<1..35>:...` | `finished` | hoje-1..hoje-35 | Histórico de BI / pickup slots / perdas |
 
-O estoque planejado (`Quant` com `target_date` de hoje a +6 dias úteis) é
-produzido deterministicamente via o signal `production_changed(action="planned")`.
+O estoque de produção (`Quant` com `target_date`, incluindo o lote operacional
+`started`) é reconciliado deterministicamente com a soma das WorkOrders ativas.
+Assim, os cartões de hoje podem ser realmente concluídos, e um novo seed não
+duplica nem deixa excedentes quando quantidade ou estado mudam.
 
 ## Cenários — Vitrine (disponibilidade da LOJA / cliente)
 
@@ -69,7 +71,7 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 
 | SKU | Estado na loja | Como | Âncora do QA |
 |-----|----------------|------|--------------|
-| `KURO-PAN` | **esgotado + "me avise"** | sem estoque pronto, sem plano | `availability=unavailable`, `is_notifiable=true`, não adiciona |
+| `FENDU` | **esgotado + "me avise"** | sem estoque pronto, sem plano hoje | `availability=unavailable`, `is_notifiable=true`, não adiciona |
 | `MELON-PAN` | **últimas unidades** | pronto = 2 (≤ limiar 5) | `availability=low_stock`, adiciona |
 | `PURIN` | **lista de espera / previsto** | sem pronto hoje, produção planejada amanhã | indisponível no menu de hoje, mas com suprimento planejado → orderável ao escolher data futura (encomenda) |
 | `TEA-JELLY` | **pausado pelo operador** | `is_sellable=False` | publicado (aparece), `is_paused=true`, não adiciona, não notificável |
@@ -78,6 +80,31 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 (`shopman/backstage/tests/test_nelson_seed_operational.py`) afirma cada estado via
 `build_catalog(channel_ref="web")`. Refs canônicos em
 `Command.QA_STOREFRONT_STATES`.
+
+### Os mesmos estados num banco já semeado (`qa_scenarios`)
+
+Chegar nesta tabela custa `seed --flush --profile qa`. O alpha roda o perfil
+`demo`, em que **todo produto tem estoque** — então o "Avise-me" não tinha como
+aparecer na tela para ser testado à mão. O comando `qa_scenarios` faz o recorte
+oposto do reseed: arma o cenário **no banco que já está lá**, um SKU de cada vez.
+
+```bash
+python manage.py qa_scenarios                     # relatório (não escreve)
+python manage.py qa_scenarios --arm               # arma todos os cenários
+python manage.py qa_scenarios --arm sold_out=BF   # esgota a baguete, e só ela
+python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+```
+
+O comando e o perfil `qa` armam os estados pela **mesma função**
+(`seed.apply_storefront_state`), sobre a mesma tabela de SKUs
+(`seed.STOREFRONT_STATES`): o cenário testado à mão é o cenário que a suíte
+afirma, não uma imitação dele. Um quinto estado só do comando, `paused_channel`
+(`ListingItem.is_sellable=False` na vitrine `web`, SKU `CO`), cobre a pausa de
+**superfície** — o produto some do "pode pedir" na loja e segue vendável no
+balcão. Detalhes em [commands.md](commands.md#qa_scenarios); âncora de teste em
+`shopman/storefront/tests/web/test_qa_scenarios_command.py`.
 
 ## Cenários — Caixa e comandas
 

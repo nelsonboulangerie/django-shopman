@@ -16,7 +16,7 @@ from io import StringIO
 
 import pytest
 
-from shopman.shop.models import Campaign, Trigger
+from shopman.shop.models import Campaign, QualityDefect, QualityGrade, Trigger
 from shopman.shop.services import campaign_schedule as sched
 
 pytestmark = pytest.mark.django_db
@@ -56,6 +56,124 @@ def test_the_scheduled_campaign_still_asks_for_review(seeded):
         if campaign.trigger == Trigger.SCHEDULE:
             assert campaign.requires_approval is True
             assert campaign.expires_after_minutes > 0, "relâmpago não revisado caduca"
+
+
+def test_seeded_owned_remote_channels_exercise_the_real_waitlist_and_delivery_chain(db):
+    """Seed de QA não pode provar fermata por atalho nem encerrar aviso no console."""
+    from config.management.commands.seed import Command
+    from shopman.shop.config import ChannelConfig
+
+    command = Command()
+    command.stdout = StringIO()
+    channels = command._seed_channels()
+
+    for ref in ("web", "whatsapp"):
+        config = ChannelConfig.for_channel(channels[ref])
+        assert config.waitlist.enabled is True
+        assert config.waitlist.horizon_days == 2
+        assert config.waitlist.confirmation_minutes == 15
+        assert config.waitlist.charge_at == "confirmation"
+        assert config.waitlist.price_frozen is True
+        assert config.notifications.backend == "manychat"
+        assert config.notifications.fallback_chain == ["sms", "email"]
+
+    assert ChannelConfig.for_channel(channels["ifood"]).waitlist.enabled is False, (
+        "marketplace pago não é fila própria da loja"
+    )
+
+
+def test_seed_rebuilds_the_canonical_quality_catalog_after_a_real_flush(db):
+    """Seed não pode depender de uma data migration que o flush não reaplica."""
+    from config.management.commands.seed import Command
+
+    QualityGrade.objects.filter(is_default=True).update(is_default=False)
+    QualityGrade.objects.create(
+        ref="custom-default",
+        label="Customizado",
+        rank=777,
+        is_default=True,
+    )
+    QualityDefect.objects.create(ref="custom-defect", label="Outro motivo")
+    command = Command()
+    command.stdout = StringIO()
+
+    command._flush()
+    assert not QualityGrade.objects.exists()
+    assert not QualityDefect.objects.exists()
+
+    command._seed_quality_catalog()
+
+    assert list(QualityGrade.objects.order_by("-rank").values_list("ref", "label")) == [
+        ("excellent", "Ótimo"),
+        ("standard", "Normal"),
+        ("fair", "Razoável"),
+        ("minimal", "Mínimo"),
+    ]
+    assert QualityGrade.objects.get(is_default=True).ref == "standard"
+    assert set(QualityDefect.objects.values_list("ref", flat=True)) == {
+        "underproofed",
+        "overproofed",
+        "underbaked",
+        "overbaked",
+        "misshapen",
+        "scorch_marks",
+        "contaminated",
+    }
+
+
+def test_seed_quality_catalog_repairs_swapped_canonical_ranks_without_unique_window(db):
+    from config.management.commands.seed import Command
+
+    QualityGrade.objects.filter(ref="excellent").update(rank=999)
+    QualityGrade.objects.filter(ref="standard").update(rank=40)
+    QualityGrade.objects.filter(ref="excellent").update(rank=30)
+    command = Command()
+    command.stdout = StringIO()
+
+    command._seed_quality_catalog()
+
+    assert dict(QualityGrade.objects.values_list("ref", "rank")) == {
+        "excellent": 40,
+        "standard": 30,
+        "fair": 20,
+        "minimal": 10,
+    }
+
+
+def test_seed_quality_catalog_refuses_noncanonical_conflict_atomically(db):
+    from django.core.management.base import CommandError
+
+    from config.management.commands.seed import Command
+
+    QualityGrade.objects.filter(is_default=True).update(is_default=False)
+    QualityGrade.objects.create(
+        ref="custom-default",
+        label="Customizado",
+        rank=777,
+        is_default=True,
+    )
+    before = list(
+        QualityGrade.objects.order_by("ref").values_list(
+            "ref",
+            "label",
+            "rank",
+            "is_default",
+        )
+    )
+    command = Command()
+    command.stdout = StringIO()
+
+    with pytest.raises(CommandError, match="custom-default"):
+        command._seed_quality_catalog()
+
+    assert list(
+        QualityGrade.objects.order_by("ref").values_list(
+            "ref",
+            "label",
+            "rank",
+            "is_default",
+        )
+    ) == before
 
 
 def test_the_announced_offer_exists_and_assembles_a_bag(seeded):

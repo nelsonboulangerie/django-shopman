@@ -127,6 +127,35 @@ export function reorderActionFrom (order: Pick<OrderHistoryItem, 'actions'>): Ac
   return order.actions?.find(action => action.ref === 'reorder' && action.enabled) || null
 }
 
+// Frase de contagem: "2 pedidos em andamento (8 pedidos no total)". O que está
+// em andamento lidera; sem nada ativo, só o total; sem nada, convite ao cardápio.
+export function ordersCountLabel (active: number, total: number): string {
+  const safeActive = Math.max(0, active || 0)
+  const safeTotal = Math.max(safeActive, total || 0)
+  if (safeTotal === 0) return 'Nenhum pedido ainda'
+  const totalLabel = safeTotal === 1 ? '1 pedido no total' : `${safeTotal} pedidos no total`
+  if (safeActive === 0) return safeTotal === 1 ? '1 pedido' : `${safeTotal} pedidos`
+  const activeLabel = safeActive === 1 ? '1 pedido em andamento' : `${safeActive} pedidos em andamento`
+  return `${activeLabel} (${totalLabel})`
+}
+
+// A regra "em andamento" tem dono único no backend (`is_active`, espelho de
+// ACTIVE_STATUSES no serviço); aqui só se agrupa — nunca se reinterpreta status.
+export function splitOrdersByActive (orders: OrderHistoryItem[]): { active: OrderHistoryItem[], past: OrderHistoryItem[] } {
+  const active: OrderHistoryItem[] = []
+  const past: OrderHistoryItem[] = []
+  for (const order of orders) (order.is_active ? active : past).push(order)
+  return { active, past }
+}
+
+// Pedido finalizado recua com elegância: menos saturação e opacidade, voltando
+// ao vivo no hover/focus — legível nos dois temas, sem trocar a paleta.
+export function orderRowEmphasisClass (isActive: boolean | undefined): string {
+  return isActive
+    ? ''
+    : 'opacity-70 saturate-50 transition hover:opacity-100 hover:saturate-100 focus-within:opacity-100 focus-within:saturate-100'
+}
+
 export interface OrderFilterOption {
   value: 'todos' | 'ativos' | 'anteriores'
   label: string
@@ -193,9 +222,12 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
     {
       to: '/conta/pedidos',
       label: 'Pedidos',
-      description: 'Acompanhe e repita pedidos',
+      description: 'Histórico completo, acompanhar e repetir',
       icon: 'lucide:receipt',
-      count: summary ? summary.recent_order_count : null
+      // Badge = o que pede atenção agora (ativos); sem ativos, cai para o total
+      // (decisão pinada em accountPresentation.test.ts: o cartão é a porta do
+      // histórico, e um badge vazio ali não ajudaria ninguém).
+      count: summary ? summary.active_order_count || summary.total_order_count : null
     },
     {
       to: '/conta/enderecos',
@@ -233,4 +265,41 @@ export function accountNavCards (summary: AccountSummary | null | undefined): Ac
       count: null
     }
   ]
+}
+
+// ── Recusa do perfil: motivo + saída ───────────────────────────────────────
+//
+// Salvar o perfil podia falhar por um motivo que o cliente resolve — o e-mail já
+// é de outra conta — e a tela dizia "não foi possível salvar seu perfil agora",
+// que manda tentar de novo o que tentar de novo não conserta. O backend passou a
+// nomear a recusa (`error_code`, `field`, `actions`); aqui ela vira o que a tela
+// mostra: a frase, o campo que fica marcado, e os caminhos.
+//
+// ⚠️ As saídas vêm do servidor e são deliberadamente ANÔNIMAS: a loja nunca diz
+// de quem é o e-mail. Entrar (se a conta for sua, o OTP prova) ou falar com a
+// padaria (se não for, quem resolve é gente).
+export interface ProfileIssue {
+  message: string
+  field: string
+  actions: Action[]
+}
+
+export function profileIssueFrom (
+  body: Record<string, unknown> | null | undefined,
+  fallback: string
+): ProfileIssue {
+  const detail = typeof body?.detail === 'string' ? body.detail.trim() : ''
+  const field = typeof body?.field === 'string' ? body.field.trim() : ''
+  const rawActions = Array.isArray(body?.actions) ? (body.actions as Action[]) : []
+  return {
+    message: detail || fallback,
+    field,
+    // Ação sem rótulo ou sem destino não é saída nenhuma — não vai para a tela.
+    actions: rawActions.filter(action => Boolean(action?.label) && Boolean(action?.href))
+  }
+}
+
+// Link interno abre na navegação do app; `external` (WhatsApp) sai do app.
+export function profileActionIsExternal (action: Pick<Action, 'kind' | 'href'>): boolean {
+  return action.kind === 'external' || /^https?:\/\//.test(action.href || '')
 }

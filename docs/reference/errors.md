@@ -56,6 +56,63 @@ obrigatório; `error` agrega metadados estáveis de recuperação
 Um front que só entende o dialeto canônico continua funcionando (lê `detail`);
 o operator-kit usa `error.{code,focus,recovery}` para foco e ação de 1 clique.
 
+### Recusa de negócio nomeada: reenvio do link de pagamento (409)
+
+`POST /api/v1/backstage/pos/orders/<ref>/resend-payment-link/` (PDV) e
+`POST /api/v1/backstage/orders/<ref>/resend-payment-link/` (gestor) recusam no
+canônico mais `error.code` — `detail` é o que a tela mostra no toast; o código
+é para a tela distinguir "venceu" de "cedo demais" sem casar a frase
+(`shopman/shop/services/notification.py::resend_payment_link`):
+
+| `error.code` | O que aconteceu | O que resolve |
+|---|---|---|
+| `payment_link_unavailable` | O pedido não é de `link`, ou a cobrança não nasceu (sem `checkout_url`) | Nada a reenviar; refazer a venda se o gateway falhou |
+| `payment_link_order_cancelled` | Pedido cancelado (o vencimento cancela sozinho) | Refazer a venda |
+| `payment_link_already_paid` | Payman mostra captura cobrindo o total | Nada — o cliente pagou |
+| `payment_link_expired` | `payment.expires_at` no passado | Refazer a venda; não existe regenerar o link |
+| `payment_link_send_pending` | O envio anterior ainda está `queued`/`running` | Aguardar; o worker retenta com backoff |
+| `payment_link_resend_too_soon` | Último envio há menos de 60 s | Aguardar o que o `detail` diz |
+
+Todos saem **409**. O 200 devolve `{ok, ref, detail, payment_link_notice}` — a
+prova de envio ("Enviando o link ao cliente…") que o detalhe do gestor também
+carrega em `payment_link_notice`.
+
+### Recusa nomeada: `error.code` em 403
+
+Nem toda recusa é igual, e o status HTTP sozinho não separa as três que o operador
+enfrenta. `shopman/shop/api_errors.py` publica o código da recusa em `error.code`
+quando ela tem nome:
+
+| `error.code` | O que aconteceu | O que resolve |
+|---|---|---|
+| `not_authenticated` | A sessão do operador caiu (ou nunca existiu) | Login |
+| `station_locked` | O operador ativo saiu; a estação está travada | O PIN, ali mesmo |
+| *(ausente)* | Falta de permissão comum | Nada que a tela possa oferecer |
+
+⚠️ **O backstage nunca devolve 401.** `DEFAULT_AUTHENTICATION_CLASSES` tem uma
+classe só (`SessionAuthentication`), que não implementa `authenticate_header()` —
+e sem header de desafio o DRF rebaixa o `NotAuthenticated` para **403**. Por isso a
+sessão expirada chega às superfícies como 403, e a única forma de distingui-la de
+uma recusa de permissão é o `error.code`.
+
+O front decide pelo **código**, nunca pelo status solto: `isUnauthenticatedError`
+aceita 401 **ou** 403 com `not_authenticated`; `isStationLockedError` exige 403 com
+`station_locked` (`surfaces/operator-kit/app/utils/httpError.ts`). Afrouxar isso
+para "todo 403" transformaria toda negativa de permissão em "sessão expirada" e
+mandaria o operador digitar senha para um problema que senha não resolve.
+
+**Recusa de permissão comum continua sem `error`** — o handler ignora
+`code == "permission_denied"` de propósito. É a ausência que diz "não há nada a
+oferecer aqui".
+
+⚠️ **Gate de operador recusa LEVANTANDO, nunca devolvendo `False`.** Um
+`BasePermission` que devolve `False` entrega ao DRF a escolha da exceção, e ele
+escolhe pelo estado da **autenticação**, não pelo que a recusa é: sem authenticator
+bem-sucedido, vira `NotAuthenticated`. A estação autônoma (o totem) opera sem sessão
+— então a recusa por falta de permissão dela saía como credencial ausente, com a
+mensagem certa montada e descartada. `HasBackstagePermission` levanta as duas
+recusas (`station_locked` e falta de permissão) por isso.
+
 ### Superset do storefront (deliberado)
 
 Respostas de **recuperação** e **rate-limit** do storefront agregam metadados de
@@ -75,7 +132,7 @@ resto sem quebrar:
 
 | Chave | Presença | Uso |
 |-------|----------|-----|
-| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`…). |
+| `error_code` | Erros com recuperação | Roteia a UI para a ação certa (`mutation_in_progress`, `rate_limited`, `insufficient_stock`, `order_not_cancellable`, `contact_already_taken`…). |
 | `title` | Alertas ricos (carrinho) | Título curto do alerta quando a tela não deriva o próprio (o 404 NÃO carrega `title` — a tela gera pelo status). |
 | `actions` / `retry_after_seconds` | Rate-limit e conflitos | Ações de 1 clique e cadência de retry (`Retry-After` também vai no header). |
 | `payment_status` | 409 `order_not_cancellable` | Enum **cru** do pagamento (`pending`/`authorized`/`captured`) que explica *por que* o cancelamento foi recusado. É o único ponto onde `payment_status` aparece — o payload de tracking usa `payment_status_label` (rótulo humano), sem colisão de nome. |
@@ -83,6 +140,34 @@ resto sem quebrar:
 **Regra:** respostas simples — em especial **todo 404** — falam só o canônico
 `{detail, field, errors}`. O superset só aparece onde há semântica de recuperação
 real que o front consome; nunca é decoração de um erro comum.
+
+### Recusa nomeada: contato já usado por outro cadastro (409)
+
+`PATCH /api/v1/account/profile/` recusa a troca de e-mail quando o valor já
+pertence a outro cliente (`shopman/shop/services/account.py::ContactAlreadyTaken`):
+
+```json
+{
+  "detail": "Este e-mail já está em uso em outra conta.",
+  "field": "email",
+  "errors": {"email": ["Este e-mail já está em uso em outra conta."]},
+  "error_code": "contact_already_taken",
+  "title": "Confira o e-mail",
+  "actions": [
+    {"ref": "sign_in_with_email", "kind": "link", "label": "Entrar com esse e-mail", "href": "/entrar?next=/conta/perfil"},
+    {"ref": "contact_whatsapp", "kind": "external", "label": "Falar com a padaria", "href": "https://wa.me/..."}
+  ]
+}
+```
+
+⚠️ **É o gêmeo do `customer_conflict` do PDV, menos a identidade.** O PDV manda
+`error.candidates` com nome, telefone e e-mail dos dois cadastros porque é
+superfície de **operador**, e quem está no balcão precisa saber com quem está
+falando. A loja é superfície de **cliente**: dizer "este e-mail é do Fulano" para
+quem digitou um endereço qualquer vazaria dado pessoal de terceiro. Aqui a recusa
+diz que o e-mail não está disponível, aponta o campo, e oferece os dois caminhos
+que servem sem revelar nada — entrar na conta que já o usa (se for dele, o OTP
+prova) ou falar com a padaria. **Nunca acrescente `candidates` a esta resposta.**
 
 ---
 
@@ -191,6 +276,21 @@ raise BaseError(code="SOME_CODE", message="descrição", extra_key="valor")
 | `WORK_ORDER_NOT_FOUND` | Work order não encontrada |
 
 **Subclasse:** `StaleRevision(CraftError)` — levantada com `code="STALE_REVISION"` automaticamente, recebe `(order, expected_rev)`.
+
+**Subclasse:** `RecipeBookError(CraftError)` — inventário de receitas (`RecipeEntry`/`RecipeVersion`, [RECIPE-INVENTORY-PLAN](../plans/RECIPE-INVENTORY-PLAN.md) §5). `data["field"]` carrega o caminho do campo ofensor na fórmula (`items[2].sku`, `parts[0]`).
+
+| Código | Quando ocorre | Na API do backstage (`/api/v1/backstage/recipes/*`) |
+|--------|--------------|------|
+| `FORMULA_INVALID` | Fórmula fora do schema, rendimento/unidade inválidos, ou a ficha recusou uma linha ao publicar (unidade do cadastro) | 400 com `field` |
+| `ITEM_WITHOUT_SKU` | Ingrediente ou parte sem insumo associado ao publicar | 400 com `field` |
+| `ENTRY_WITHOUT_SKU` | Receita sem SKU de saída ao publicar | 400 com `field=output_sku` |
+| `PART_WITHOUT_FORMULA` | Parte cuja receita não tem versão publicada | 400 com `field` |
+| `PART_EXCEEDS_BASE` | Parte leva mais de um ingrediente do que a base declara | 400 com `field` |
+| `ANCHOR_EMPTY` | Âncora soma zero; não há como padronizar | 400 com `field=anchor` |
+| `VERSION_NOT_DRAFT` | Editar ou publicar versão que não é rascunho | 409 com `error.code=version_not_draft` |
+| `ENTRY_ARCHIVED` | Criar versão ou publicar em receita arquivada | 409 com `error.code=entry_archived` |
+
+A tradução vive em `shopman/backstage/services/recipe_book.py` (`RecipeBookServiceError`). Receita ou versão inexistente é 404; leitura por IA sem credencial é 503 e provedor em falha é 502 (o mesmo mapeamento do assist do catálogo).
 
 **Guia:** [craftsman.md](../guides/craftsman.md)
 

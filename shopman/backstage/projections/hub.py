@@ -23,11 +23,11 @@ from dataclasses import dataclass
 from django.conf import settings
 
 from shopman.backstage.permissions import (
-    can_access_production,
     can_manage_campaigns,
     can_manage_orders,
     can_operate_kds,
     can_operate_pos,
+    can_operate_production,
     can_operate_purchase,
     can_view_bi,
     is_superuser,
@@ -82,7 +82,20 @@ _REGISTRY: tuple[_AppSpec, ...] = (
     _AppSpec("pos", "PDV", "Vender no balcão", "banknote", "launch", can_operate_pos),
     _AppSpec("kds", "Cozinha", "Preparo e expedição", "chef-hat", "launch", can_operate_kds),
     _AppSpec("gestor", "Gestor de Pedidos", "Fila e acompanhamento", "clipboard-list", "launch", can_manage_orders),
-    _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_access_production),
+    # ⚠️ `can_operate_production`, e NÃO `can_access_production`: o tile tem de
+    # perguntar a MESMA coisa que o app pergunta na porta. O `can_access_production`
+    # exige `shop.manage_production` ou alguma permissão de COLUNA FINA do console
+    # Admin — nenhuma das duas é o gate do app.
+    #
+    # Errava nos dois sentidos. O gerente concede `operate_production` a um padeiro
+    # novo; ele abre a Central e a grade vem VAZIA, dizendo "nenhum app liberado —
+    # fale com o gerente" — enquanto `prod.boulangerie.com.br` abre normalmente. E
+    # quem tem só `view_production_planned` VIA o tile e levava 403 ao clicar.
+    #
+    # Ninguém no ar hoje é afetado (Cozinha e Gerente têm as duas permissões), mas
+    # qualquer grant customizado cai nele na hora — que é o caso normal quando entra
+    # gente nova.
+    _AppSpec("production", "Produção", "Produção e fornadas", "croissant", "launch", can_operate_production),
     _AppSpec("purchase", "Compras", "Comprar e receber insumos", "package-check", "launch", can_operate_purchase),
     _AppSpec("marketing", "Marketing", "Divulgar a fornada", "megaphone", "launch", can_manage_campaigns),
     _AppSpec("bi", "B.I.", "Números da operação", "chart-line", "launch", can_view_bi),

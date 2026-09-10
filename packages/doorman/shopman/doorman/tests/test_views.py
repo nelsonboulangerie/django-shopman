@@ -388,7 +388,13 @@ class TestAccessLinkCreateViewEdges:
         assert data["access_flow"] == "menu"
         # Store-domain entry link; the destination rides in the token metadata,
         # never as a `next` query param (no open-redirect surface).
-        assert "/a?t=" in data["access_url"]
+        # A URL de entrada tem UM construtor (`AccessLinkService._build_url`), que
+        # estes testes mockam. O formato dela — `{loja}/a?t=` — é pinado onde ela
+        # mora, em `test_access_link_url_de_entrada.py`; aqui o que importa é que a
+        # view NÃO monta uma segunda por conta própria. Eram duas, e discordavam:
+        # a resposta trazia `/a?t=` e a mensagem trazia a rota do Django, o que
+        # rendeu um 404 na cara do cliente em 02/09.
+        assert data["access_url"] == "https://test.local/auth/access-link/?t=mock"
         assert "next=" not in data["access_url"]
         assert data["has_context"] is False
 
@@ -423,7 +429,13 @@ class TestAccessLinkCreateViewEdges:
             "first_name": "Pablo",
             "last_name": "Valentini",
         }
-        assert "/a?t=" in data["access_url"]
+        # A URL de entrada tem UM construtor (`AccessLinkService._build_url`), que
+        # estes testes mockam. O formato dela — `{loja}/a?t=` — é pinado onde ela
+        # mora, em `test_access_link_url_de_entrada.py`; aqui o que importa é que a
+        # view NÃO monta uma segunda por conta própria. Eram duas, e discordavam:
+        # a resposta trazia `/a?t=` e a mensagem trazia a rota do Django, o que
+        # rendeu um 404 na cara do cliente em 02/09.
+        assert data["access_url"] == "https://test.local/auth/access-link/?t=mock"
         assert "next=" not in data["access_url"]
 
     @override_settings(DOORMAN={"ACCESS_LINK_API_KEY": ""})

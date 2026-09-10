@@ -79,6 +79,7 @@ const row = (over: Partial<CatalogRowProjection> = {}): CatalogRowProjection => 
   cells: [cell()],
   social: social(),
   pim_complete: false,
+  hidden_by_inactive_collection: false,
   ...over,
 });
 

@@ -24,6 +24,7 @@ from shopman.backstage.presentation.status import payment_method_label
 from shopman.backstage.services.integration_readiness import (
     build_provider_readiness,
     focus_nfe_readiness,
+    payment_link_readiness,
 )
 from shopman.shop.projections.channel_policy import resolve_channel_policy
 from shopman.shop.projections.types import (
@@ -413,8 +414,45 @@ class POSProjection:
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-_POS_PAYMENT_METHOD_REFS = ("cash", "pix", "card", "mixed")
-_POS_TENDER_METHOD_REFS = ("cash", "pix", "card", "external")
+# ── O QUE O BALCÃO OFERECE ─────────────────────────────────────────────
+#
+# O PDV herdou o `card` indistinto da loja online, onde ele faz sentido: lá o
+# gateway sabe se foi crédito ou débito e a diferença não muda nada para quem
+# compra. No BALCÃO ela importa — prazo de recebimento e taxa da adquirente são
+# outros, e é isso que o fechamento do dia precisa separar. O operador, aliás,
+# já tem a informação na mão: ele viu o cliente escolher na maquininha.
+#
+# `card` SAI da oferta e continua aceito pelo intent: é o vocabulário do
+# histórico (e o da loja online), então a venda antiga segue legível e o B.I.
+# mostra as duas leituras lado a lado, sem backfill.
+#
+# `link` é a forma do PEDIDO REMOTO anotado no balcão — encomenda por telefone,
+# WhatsApp, o cliente que vai pagar do celular. Ela não é do gesto de balcão:
+# não há maquininha, há uma URL, e o dinheiro chega quando o cliente paga.
+_POS_PAYMENT_METHOD_REFS = ("cash", "pix", "credit", "debit", "link", "mixed")
+_POS_TENDER_METHOD_REFS = ("cash", "pix", "credit", "debit", "link", "external")
+
+
+def _link_payment_available() -> bool:
+    """O balcão pode oferecer LINK DE PAGAMENTO agora?
+
+    Link é a única forma do PDV que depende de uma rede que não é nossa. Sem
+    adapter, ou com o gateway pela metade (chave, webhook, domínio de retorno),
+    o botão existiria para falhar no Validar — com o cliente do outro lado do
+    telefone esperando a URL. Oferecer o que não se pode cumprir é pior do que
+    não oferecer.
+
+    Quem responde é ``payment_link_readiness``, que resolve a prontidão PELO
+    ADAPTER configurado em ``SHOPMAN_LINK_ADAPTER``. Enquanto esta função
+    perguntava ao ``stripe_card_readiness`` cravado, trocar o provedor do link
+    não trocava a pergunta — e a tecla L sumia do balcão sempre que o Stripe do
+    cartão estivesse fora, mesmo com o provedor do link inteiro de pé.
+
+    ⚠️ O ``domain`` entra na conta (via a prontidão) porque é ele que monta o
+    ``success_url``: sem domínio certo, o cliente PAGA e volta para lugar nenhum.
+    """
+    return payment_link_readiness(mode="runtime").ready
+
 
 _PAYMENT_COLLECTIONS = (
     POSPaymentCollectionProjection(
@@ -437,8 +475,14 @@ _PAYMENT_COLLECTIONS = (
 # ── Builders ───────────────────────────────────────────────────────────
 
 
-def build_pos(*, terminal=None, operator=None) -> POSProjection:
-    """Build the POS terminal projection."""
+def build_pos(*, terminal=None, operator=None, terminal_ref: str = "") -> POSProjection:
+    """Build the POS terminal projection.
+
+    ``terminal_ref`` vem da ESTAÇÃO da requisição (o cookie de confiança do
+    dispositivo já carrega o ref da gaveta). Passá-lo é o que permite a loja de
+    duas gavetas funcionar: cada balcão resolve o seu, em vez de os dois
+    disputarem o primeiro em ordem alfabética.
+    """
     products = _load_products()
 
     collections = tuple(
@@ -452,9 +496,17 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
     # resolvia pelo operador e o terminal se deduzia dele —, e era isso que fazia
     # a segunda pessoa do balcão não achar turno nenhum e cair na antessala.
     if terminal is None:
-        from shopman.cashman.models import Terminal
+        # ⚠️ O MESMO resolver que as mutações usam. Eram dois — a projection por
+        # `Terminal.default()`, as mutações pelo primeiro ativo em ordem alfabética —,
+        # e um segundo terminal cadastrado no Admin paralisava o PDV: a tela mostrava
+        # caixa aberto e nada mais podia ser lançado nem fechado.
+        from shopman.backstage.services.pos import resolve_terminal
 
-        terminal = Terminal.default()
+        # `strict=False`: aqui o ref vem do cookie de estação, que é contexto
+        # ambiente. Estação provisionada com terminal que depois sumiu não pode
+        # derrubar a leitura do PDV — ela cai na regra de sempre (uma gaveta ativa
+        # resolve; duas sem estação válida pedem a escolha).
+        terminal = resolve_terminal(terminal_ref, strict=False)
     cash_shift = _active_cash_shift_for_terminal(terminal)
     from shopman.backstage.services.pos_hardware import CashDrawerConfig
     from shopman.backstage.services.pos_terminal import runtime_profile
@@ -509,21 +561,23 @@ def build_pos(*, terminal=None, operator=None) -> POSProjection:
     )
 
 
-def _kitchen_status_by_sku(session_key: str) -> dict[str, str]:
-    """Em que pé a COZINHA está, por SKU desta comanda.
+def _kitchen_status_by_line(session_key: str) -> dict[str, str]:
+    """Em que pé a COZINHA está, por LINHA desta comanda.
 
     O balcão marcava a linha disparada com um selo fixo, "Na cozinha", e ele
     ficava lá até a venda fechar: o ticket virava "Pronto" ou era cancelado e o
     operador só descobria clicando em "Atualizar" — ou não descobria.
 
-    O ticket do KDS não carrega `line_id` (ele nasce com uma lista de itens), e
-    inventar essa costura agora seria mudar o KDS para uma pergunta do PDV. O que
-    o balcão precisa saber cabe no SKU: "o pão que eu mandei já está pronto?".
+    A chave é o `line_id`: cada ITEM do ticket carrega o da linha que o originou
+    (o mesmo que o ledger de disparo usa para deduplicar). Isso já era verdade
+    quando o estado era resolvido por SKU — e resolver por SKU passou a mentir no
+    dia em que duas linhas do mesmo produto puderam existir lado a lado: o
+    segundo chá, ainda por enviar, herdava o "Pronto" do primeiro.
 
-    Quando o mesmo SKU aparece em mais de um ticket (estações diferentes), vence o
-    MENOS avançado — uma linha só está pronta quando toda a cozinha terminou com
-    ela. Cancelado é exceção e vence tudo: é o único estado que pede ação de quem
-    está no caixa.
+    Quando a MESMA linha aparece em mais de um ticket (estações diferentes, um
+    combo que se abre), vence o MENOS avançado — a linha só está pronta quando
+    toda a cozinha terminou com ela. Cancelado é exceção e vence tudo: é o único
+    estado que pede ação de quem está no caixa.
     """
     if not session_key:
         return {}
@@ -537,12 +591,12 @@ def _kitchen_status_by_sku(session_key: str) -> dict[str, str]:
         if status not in rank:
             continue
         for entry in ticket.items or []:
-            sku = str((entry or {}).get("sku") or "")
-            if not sku:
+            line_id = str((entry or {}).get("line_id") or "")
+            if not line_id:
                 continue
-            current = out.get(sku)
+            current = out.get(line_id)
             if current is None or rank[status] < rank[current]:
-                out[sku] = status
+                out[line_id] = status
     return out
 
 
@@ -728,7 +782,12 @@ def _birthday_projection(customer) -> dict:
                 .first()
             )
             promo_label = promo.name if promo else ""
-        except Exception:
+        # ⚠️ O marcador fica NA LINHA do `except`, e o log logo abaixo dele: o
+        # gate da meia-correção procura o marcador na linha/no corpo, e o
+        # `test_exception_hygiene` do backstage exige o `logger.` dentro de
+        # quatro linhas. Comentário longo no meio do corpo empurra o log para
+        # fora da janela e reprova.
+        except Exception:  # silêncio-deliberado: sem rótulo, o aviso não promete desconto nenhum
             logger.debug("pos_lookup_birthday_promo_failed", exc_info=True)
     return {
         "birthday_display": birthday.strftime("%d/%m"),
@@ -906,13 +965,19 @@ def _load_products() -> list[POSProductProjection]:
 
 
 def _payment_methods() -> tuple[POSPaymentMethodProjection, ...]:
-    """Return POS tender methods accepted by the canonical POS intent contract."""
+    """As formas que o balcão OFERECE agora — não as que o contrato aceita.
+
+    `link` some quando o gateway não está de pé (ver `_link_payment_available`):
+    o intent continua aceitando o ref, para a venda antiga seguir legível, mas o
+    operador não vê um botão que vai falhar.
+    """
     return tuple(
         POSPaymentMethodProjection(
             ref=ref,
             label=payment_method_label(ref),
         )
         for ref in _POS_PAYMENT_METHOD_REFS
+        if ref != "link" or _link_payment_available()
     )
 
 
@@ -958,6 +1023,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/{tab_ref}/open/",
             payload_schema={"path": {"tab_ref": "string"}},
+            idempotency="none",
         ),
         Action(
             ref="save_tab",
@@ -970,6 +1036,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["tab_session_key", "items"],
                 "optional": ["customer_name", "customer_phone", "fulfillment_type", "payment_method"],
             },
+            idempotency="none",
         ),
         Action(
             ref="review_sale",
@@ -1031,6 +1098,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "optional": ["reason"],
             },
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
         Action(
             ref="open_cash_shift",
@@ -1039,8 +1107,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/cash/open/",
-            payload_schema={"optional": ["opening_amount", "terminal_ref"]},
-            idempotency="none",
+            payload_schema={"optional": ["opening_amount", "terminal_ref", "client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="close_cash_shift",
@@ -1049,9 +1117,14 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/cash/close/",
-            payload_schema={"required": ["closing_amount"], "optional": ["notes"]},
+            payload_schema={
+                "required": ["closing_amount"],
+                # `terminal_ref` faltava, e o endpoint o lê: é por ele que o fechamento
+                # sabe QUAL terminal está sendo fechado quando há mais de um na estação.
+                "optional": ["notes", "terminal_ref", "client_request_id"],
+            },
             confirmation={"style": "destructive"},
-            idempotency="none",
+            idempotency="client_request_id",
         ),
         Action(
             ref="cash_movement",
@@ -1060,8 +1133,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/movement/",
-            payload_schema={"required": ["kind", "amount", "reason"]},
-            idempotency="none",
+            payload_schema={"required": ["kind", "amount", "reason"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="drawer_open",
@@ -1074,13 +1147,53 @@ def _pos_actions() -> tuple[Action, ...]:
             idempotency="none",
         ),
         Action(
+            ref="drawer_unlock_attempt",
+            kind="mutation",
+            label="Registrar que a tela de PIN da trava foi aberta",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-unlock-attempt/",
+            payload_schema={"optional": ["outcome"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="drawer_left_open",
+            kind="mutation",
+            label="Avisar que a gaveta ficou aberta sem venda",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-left-open/",
+            payload_schema={"optional": ["minutes"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="drawer_block",
+            kind="mutation",
+            label="Registrar quanto tempo a gaveta ficou aberta",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-block/",
+            payload_schema={"optional": ["duration_ms", "outcome", "drawer_raw"]},
+            idempotency="none",
+        ),
+        Action(
+            ref="drawer_blind",
+            kind="mutation",
+            label="Registrar que o sensor da gaveta parou de responder",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/cash/drawer-blind/",
+            payload_schema={"optional": ["reason"]},
+            idempotency="none",
+        ),
+        Action(
             ref="drawer_unlock",
             kind="mutation",
             label="Liberar próxima venda com a gaveta aberta",
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/drawer-unlock/",
-            payload_schema={"required": ["manager_approval"], "optional": ["drawer_raw"]},
+            payload_schema={"required": ["manager_approval"], "optional": ["drawer_raw", "duration_ms", "outcome"]},
             idempotency="none",
         ),
         Action(
@@ -1090,8 +1203,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/refund/{order_ref}/",
-            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"]},
-            idempotency="none",
+            payload_schema={"path": {"order_ref": "string"}, "required": ["manager_approval"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="settle_account",
@@ -1100,8 +1213,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/accounts/{customer_ref}/settle/",
-            payload_schema={"path": {"customer_ref": "string"}, "required": ["amount", "method"]},
-            idempotency="none",
+            payload_schema={"path": {"customer_ref": "string"}, "required": ["amount", "method"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="request_change",
@@ -1110,8 +1223,15 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/",
-            payload_schema={"required": ["kind"], "optional": ["amount", "note"]},
-            idempotency="none",
+            # ⚠️ Declarava `required: ["kind"]`, e `kind` não existe em lugar nenhum —
+            # resíduo de um tipo que o próprio docstring conta que foi removido. E
+            # `denominations`, que o endpoint lê, não era declarado. Contrato que descreve
+            # um endpoint que não existe é pior que contrato nenhum: o cliente confia.
+            payload_schema={
+                "required": ["amount"],
+                "optional": ["denominations", "note", "client_request_id"],
+            },
+            idempotency="client_request_id",
         ),
         Action(
             ref="serve_change_request",
@@ -1120,8 +1240,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/{request_ref}/serve/",
-            payload_schema={"path": {"request_ref": "string"}, "required": ["manager_approval"]},
-            idempotency="none",
+            payload_schema={"path": {"request_ref": "string"}, "required": ["manager_approval"], "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="cancel_change_request",
@@ -1130,8 +1250,8 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="quiet",
             method="POST",
             href="/api/v1/backstage/pos/cash/change-request/{request_ref}/cancel/",
-            payload_schema={"path": {"request_ref": "string"}},
-            idempotency="none",
+            payload_schema={"path": {"request_ref": "string"}, "optional": ["client_request_id"]},
+            idempotency="client_request_id",
         ),
         Action(
             ref="customer_lookup",
@@ -1160,7 +1280,43 @@ def _pos_actions() -> tuple[Action, ...]:
             priority="secondary",
             method="POST",
             href="/api/v1/backstage/pos/customer/resolve/",
-            payload_schema={"optional": ["customer_name", "customer_phone", "customer_tax_id", "customer_email"]},
+            payload_schema={"optional": [
+                # `customer_ref` é o cliente já associado à comanda: sem ele o
+                # servidor não tem como saber que o telefone digitado aponta
+                # para OUTRA pessoa.
+                "customer_ref",
+                "customer_name",
+                "customer_phone",
+                "customer_tax_id",
+                "customer_email",
+                # Palavra explícita do operador para CORRIGIR o contato.
+                "customer_contact_correction",
+            ]},
+            idempotency="required",
+        ),
+        Action(
+            # A TERCEIRA saída do conflito de contato: os dois cadastros são a
+            # MESMA pessoa. `source_ref` desaparece, `target_ref` sobrevive e
+            # segue na comanda.
+            ref="customer_merge",
+            kind="mutation",
+            label="Unificar cadastros",
+            priority="secondary",
+            method="POST",
+            href="/api/v1/backstage/pos/customer/merge/",
+            payload_schema={"required": ["source_ref", "target_ref"]},
+            idempotency="required",
+        ),
+        Action(
+            # A saída quando o dono do contato é um cadastro DESATIVADO — que o
+            # merge recusa e a busca não enxerga.
+            ref="customer_contact_release",
+            kind="mutation",
+            label="Liberar contato",
+            priority="quiet",
+            method="POST",
+            href="/api/v1/backstage/pos/customer/contact/release/",
+            payload_schema={"required": ["field", "value"]},
             idempotency="required",
         ),
         Action(
@@ -1169,7 +1325,10 @@ def _pos_actions() -> tuple[Action, ...]:
             label="Resolver coordenadas",
             priority="quiet",
             method="POST",
-            href="/api/v1/geocode/reverse",
+            # ⚠️ Sem a barra final. A rota é `geocode/reverse/`, e com `APPEND_SLASH` um
+            # POST para a versão sem barra vira 301 — o corpo se perde no caminho. As
+            # telas vivas usam a barra; quem seguisse o CONTRATO é que quebraria.
+            href="/api/v1/geocode/reverse/",
             payload_schema={
                 "required": ["lat", "lng"],
                 "returns": {"shape": "delivery_address_structured"},
@@ -1185,6 +1344,7 @@ def _pos_actions() -> tuple[Action, ...]:
             href="/api/v1/backstage/pos/tabs/{session_key}/clear/",
             payload_schema={"path": {"session_key": "string"}},
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
         Action(
             ref="rename_tab",
@@ -1194,6 +1354,7 @@ def _pos_actions() -> tuple[Action, ...]:
             method="POST",
             href="/api/v1/backstage/pos/tabs/rename/",
             payload_schema={"required": ["session_key", "new_tab_ref"]},
+            idempotency="none",
         ),
         Action(
             ref="move_tab_lines",
@@ -1208,6 +1369,7 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["from_session_key", "line_ids"],
                 "optional": ["to_session_key", "to_tab_ref", "close_source_when_empty"],
             },
+            idempotency="none",
         ),
         Action(
             ref="fire_tab",
@@ -1220,7 +1382,12 @@ def _pos_actions() -> tuple[Action, ...]:
                 "required": ["session_key"],
                 "optional": ["line_ids", "client_request_id"],
             },
-            idempotency="client_request_id",
+            # ⚠️ Prometia `client_request_id`, e essa chave só vai para o LOG. Quem
+            # protege é o ledger de tickets da cozinha, por `line_id`: reenviar um
+            # tempo é no-op, e um tempo cancelado pode voltar (reimpressão). A
+            # diferença importa para quem consome o contrato — a chave do cliente não
+            # é o que decide, então uma fila offline não deve confiar nela aqui.
+            idempotency="ledger",
         ),
         Action(
             ref="unfire_tab",
@@ -1231,6 +1398,7 @@ def _pos_actions() -> tuple[Action, ...]:
             href="/api/v1/backstage/pos/tabs/unfire/",
             payload_schema={"required": ["session_key", "line_ids"]},
             confirmation={"style": "destructive"},
+            idempotency="none",
         ),
     )
 
@@ -1450,6 +1618,29 @@ def _checkout_contract(
             max_length=180,
         ),
         POSCheckoutFieldProjection(
+            # A ORDEM do operador, e a razão de ela existir: o e-mail e o CPF
+            # do comprovante são fatos DA VENDA (a nota pode ir para o contador,
+            # no CPF da empresa) e nunca viram cadastro sozinhos. Perguntar é o
+            # que torna gravar honesto — e o cadastro do lookup (`email`,
+            # `tax_id`) é a régua que diz à tela se há o que perguntar: falta,
+            # é igual (nada a dizer) ou diverge (aí a oferta é ATUALIZAR).
+            ref="save_receipt_contact",
+            payload_key="save_receipt_contact",
+            section_ref="receipt",
+            label="Salvar o e-mail no cadastro",
+            input_type="toggle",
+            help_text="Só é perguntado quando há e-mail no comprovante. Sem a ordem, o cadastro fica intacto.",
+        ),
+        POSCheckoutFieldProjection(
+            ref="save_receipt_tax_id",
+            payload_key="save_receipt_tax_id",
+            section_ref="receipt",
+            label="Salvar o CPF no cadastro",
+            input_type="toggle",
+            help_text="Só é perguntado quando há CPF na nota. Sem a ordem, o cadastro fica intacto.",
+            capability_ref="fiscal_document",
+        ),
+        POSCheckoutFieldProjection(
             ref="manual_discount",
             payload_key="manual_discount",
             section_ref="approval",
@@ -1498,7 +1689,13 @@ def _checkout_contract(
             ref="receipt",
             label="Fiscal e comprovante",
             description="Dados opcionais para fiscal e comprovante.",
-            field_refs=("fiscal_tax_id", "receipt_channels", "receipt_email"),
+            field_refs=(
+                "fiscal_tax_id",
+                "receipt_channels",
+                "receipt_email",
+                "save_receipt_contact",
+                "save_receipt_tax_id",
+            ),
         ),
         POSCheckoutSectionProjection(
             ref="approval",
@@ -2093,12 +2290,21 @@ def _int_q(value) -> int:
 
 
 def _tab_payload_line_discount(item: dict) -> dict | None:
-    """Surface the operator's per-line manual discount (percent) for restore."""
+    """O desconto manual da LINHA, para restaurar a comanda salva.
+
+    ⚠️ O ``type`` viaja de volta. Sem ele, uma comanda salva com desconto de
+    R$ 2,00 voltava do banco como 2% — o campo estava gravado, e era a projection
+    que o deixava para trás.
+    """
     manual = (item.get("meta") or {}).get("manual_discount") or {}
     value = manual.get("value")
     if not value:
         return None
-    return {"value": value, "reason": manual.get("reason", "cortesia")}
+    return {
+        "value": value,
+        "reason": manual.get("reason", "cortesia"),
+        "type": str(manual.get("type") or "percent"),
+    }
 
 
 # Descontos AUTOMÁTICOS de pricing que os modifiers carimbam por linha em
@@ -2144,19 +2350,24 @@ def _tab_payload_pricing_discount(item: dict) -> dict | None:
 
 
 def _manual_discount_originals(session: Session) -> dict[str, int]:
-    """Map ``sku -> pre-discount unit price`` for manual per-line discounts.
+    """Map ``line_id -> pre-discount unit price`` for manual per-line discounts.
 
     Sourced from ``session.pricing["discount"]["items"]``, which the
     DiscountModifier writes precisely because the item-level ``modifiers_applied``
     does NOT survive the session save (extra line fields are stripped on
-    ``update_items``). ``original_price_q`` is the price the discount was computed
-    against, deterministic per SKU, so a SKU key is unambiguous.
+    ``update_items``).
+
+    A chave é a LINHA, não o SKU: o desconto manual é digitado numa linha (a
+    cortesia é "este segundo chá", não "todo chá"), e duas linhas do mesmo
+    produto podem ter descontos diferentes — ou uma ter e a outra não. Com o SKU
+    por chave, o registro de uma sobrescrevia o da outra e o preço pré-desconto
+    de uma linha voltava para a outra.
     """
     records = ((session.pricing or {}).get("discount") or {}).get("items") or []
     return {
-        rec["sku"]: int(rec["original_price_q"])
+        rec["line_id"]: int(rec["original_price_q"])
         for rec in records
-        if rec.get("type") == "manual" and rec.get("sku") and rec.get("original_price_q")
+        if rec.get("type") == "manual" and rec.get("line_id") and rec.get("original_price_q")
     }
 
 
@@ -2171,7 +2382,7 @@ def _tab_line_display_price_q(item: dict, manual_originals: dict[str, int]) -> i
     never from the item's ``modifiers_applied`` (stripped on save)."""
     manual = (item.get("meta") or {}).get("manual_discount") or {}
     if manual.get("value"):
-        original = manual_originals.get(item.get("sku", ""))
+        original = manual_originals.get(item.get("line_id", ""))
         if original:
             return int(original)
     return int(item.get("unit_price_q", 0))
@@ -2223,7 +2434,8 @@ def build_open_tab(session: Session) -> dict:
     tab_ref = str(data.get("tab_ref") or session.handle_ref or "")
     tab_display = str(data.get("tab_display") or "") or _display_ref(tab_ref)
     fired_lines = set(data.get("fired_lines") or [])
-    kitchen_by_sku = _kitchen_status_by_sku(session.session_key)
+    fired_qty = {str(k): int(v) for k, v in (data.get("fired_qty") or {}).items()}
+    kitchen_by_line = _kitchen_status_by_line(session.session_key)
     manual_originals = _manual_discount_originals(session)
     items = [
         {
@@ -2234,12 +2446,17 @@ def build_open_tab(session: Session) -> dict:
             "qty": int(item.get("qty", 1)),
             "notes": (item.get("meta") or {}).get("notes", ""),
             "fired": item.get("line_id", "") in fired_lines,
-            "kitchen_status": kitchen_by_sku.get(item["sku"], ""),
+            # QUANTAS unidades desta linha foram para a cozinha. O booleano acima
+            # já responde "foi?" (a linha vai inteira, não existe meia-linha), e
+            # este número responde a OUTRA pergunta: a linha enviada encolheu
+            # depois? Reduzir de 3 para 2 algo que a cozinha já está fazendo é a
+            # sobra que o balcão precisa ver antes de fechar a venda.
+            "fired_qty": fired_qty.get(item.get("line_id", ""), 0),
+            "kitchen_status": kitchen_by_line.get(item.get("line_id", ""), ""),
             "discount": _tab_payload_line_discount(item),
             "pricing_discount": _tab_payload_pricing_discount(item),
             "list_price_q": _tab_line_list_price_q(item, manual_originals),
             "charged_price_q": _int_q(item.get("unit_price_q", 0)),
-            "price_overridden": bool((item.get("meta") or {}).get("price_overridden")),
         }
         for item in (session.items or [])
         if not _is_delivery_fee_item(item)
@@ -2347,6 +2564,65 @@ def customer_history_summary(customer_ref: str, *, limit: int = 5) -> dict:
         "favorite_item": favorite_item,
         "last_order_items": last_order_items[:8],
     }
+
+
+def build_pos_schedule(*, delivery_date: str = "", skus: list[str] | None = None) -> dict:
+    """O "quando" do pedido, para a tela poder PERGUNTAR em vez de adivinhar.
+
+    A review responde isso no checkout, mas o agendamento acontece na ABERTURA do
+    atendimento — o operador está no telefone com o cliente e ainda nem lançou
+    tudo. Ficar sem resposta até a tela de pagamento é o que empurrava a data
+    para o fim do fluxo, onde ela nunca deveria ter morado.
+
+    Devolve as datas que a casa realmente opera (pula fechado e feriado, com o
+    teto de ``max_preorder_days``) e as janelas do dia escolhido, cada uma já
+    anotada com a prontidão DESTE carrinho.
+    """
+    from datetime import date as _date
+
+    from shopman.shop.services import business_calendar, fulfillment_window
+
+    today = _delivery_today()
+    max_preorder_days, _closed = _preorder_days()
+
+    raw = str(delivery_date or "").strip()
+    try:
+        day = _date.fromisoformat(raw) if raw else today
+    except ValueError:
+        day = today
+
+    context = fulfillment_window.annotate(day, list(skus or []))
+    dates = business_calendar.available_dates(
+        max_count=max_preorder_days + 1, horizon_days=max_preorder_days
+    )
+    return {
+        "today": today.isoformat(),
+        "date": day.isoformat(),
+        "max_preorder_days": max_preorder_days,
+        # As datas OPERANTES, não um intervalo cru: um seletor que oferece o
+        # domingo em que a casa não abre é uma promessa que o calendário já sabia
+        # que era falsa.
+        "available_dates": [d.isoformat() for d in dates],
+        "windows": list(context["windows"]),
+        "earliest_window_ref": context["earliest_ref"],
+        # O gargalo por extenso, para a tela dizer o PORQUÊ uma vez só no topo em
+        # vez de repetir a mesma frase em dez janelas apagadas.
+        "ready_at": context["ready_at"],
+        "bottleneck_name": context["bottleneck_name"],
+        # Qual grade veio: HOJE fala em janela ("14:00 às 14:30"), encomenda fala
+        # em turno ("a partir das 12h"). A tela usa para escolher a palavra.
+        "grid": context["grid"],
+        "is_today": context["is_today"],
+        # Não deu para apurar a prontidão: a tela NÃO pode tratar isso como
+        # "sem restrição" — todas as janelas voltam desabilitadas.
+        "readiness_unavailable": bool(context.get("readiness_unavailable")),
+    }
+
+
+def _preorder_days() -> tuple[int, list]:
+    from shopman.shop.projections import checkout_context
+
+    return checkout_context.preorder_config()
 
 
 def build_pos_recent_sales(*, limit: int = 20) -> dict:

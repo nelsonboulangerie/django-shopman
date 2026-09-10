@@ -102,7 +102,10 @@ class ProductConsumptionTagAdmin(ModelAdmin):
     def review_display(self, obj):
         return "revisada" if obj.reviewed else "proposta — revisar"
 
-    @admin.action(description="Marcar como revisada")
+    # Mesma razão do `complete_selected`: ação sem `permissions=` passa sem
+    # filtro. "Revisada" é a afirmação de que GENTE conferiu a proposta da
+    # máquina — quem só pode ver não pode assiná-la.
+    @admin.action(description="Marcar como revisada", permissions=["change"])
     def mark_reviewed(self, request, queryset):
         updated = queryset.update(reviewed=True)
         self.message_user(request, f"{updated} etiqueta(s) marcada(s) como revisada(s).")

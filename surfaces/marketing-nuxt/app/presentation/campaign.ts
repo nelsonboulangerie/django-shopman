@@ -42,10 +42,37 @@ export function audienceSummary(
   );
   const total = counts.total ?? 0;
 
-  if (total === 0) return "Ninguém para avisar por enquanto";
+  if (total === 0)
+    return alertsNote(counts) || "Ninguém para avisar por enquanto";
   if (parts.length === 0)
     return `${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
   return `${parts.join(", ")} = ${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
+}
+
+/**
+ * Por que a fila de "me avise" deste produto está vazia — em uma frase.
+ *
+ * ⚠️ O gestor abriu o Marketing, leu "ninguém para avisar" na Baguette e achou que o
+ * sistema tinha perdido a inscrição que o pai dele acabara de fazer. Não tinha: a
+ * inscrição existia, o estoque voltou 7 minutos depois, o aviso saiu e a linha foi
+ * consumida. A conta estava certa e a tela, muda — e tela muda com número surpreendente
+ * é indistinguível de tela quebrada.
+ *
+ * Fala só do pedaço "alertas", nunca do total: com outras regras ligadas o total tem
+ * outros donos, e uma frase sobre a fila de avisos continua verdadeira ao lado deles.
+ *
+ * Vazio quando a regra `alerts` nem rodou (sem produto no evento, ou desligada) ou
+ * quando ela achou alguém — só o zero precisa de voz.
+ */
+export function alertsNote(
+  counts: { alerts_count?: number; alerts_notified_count?: number } | undefined,
+): string {
+  const pending = counts?.alerts_count;
+  if (pending === undefined || pending > 0) return "";
+  const already = counts?.alerts_notified_count ?? 0;
+  if (already === 1) return "A pessoa que pediu aviso deste produto já foi avisada";
+  if (already > 1) return `As ${already} pessoas que pediram aviso deste produto já foram avisadas`;
+  return "Ninguém pediu para ser avisado deste produto ainda";
 }
 
 /** Quantos VIPs recebem antes, e com quanto de vantagem. */
@@ -297,4 +324,67 @@ export function isStillReviewable(announcement: Announcement): boolean {
     announcement.status === "pending_review" &&
     announcement.expires_in_minutes !== 0
   );
+}
+
+/**
+ * O que dizer depois de aprovar — pela RESPOSTA do servidor, nunca pelo corpo enviado.
+ *
+ * ⚠️ O toast lia o corpo ENVIADO: sem data ele dizia "Anúncio publicado." mesmo quando
+ * o servidor tinha AGENDADO (campanha com janela de horas preferidas nasce com data na
+ * próxima janela). O gestor fechava a tela achando que já estava no ar. Quem sabe o que
+ * aconteceu é o servidor, e ele devolve `scheduled`.
+ */
+export function approvalMessage(resposta: { scheduled?: boolean } | null | undefined): string {
+  return resposta?.scheduled ? "Anúncio agendado." : "Anúncio publicado.";
+}
+
+/**
+ * O corpo do "Publicar": sem data marcada, o gestor quer AGORA.
+ *
+ * ⚠️ Sem `publish_now`, aprovar sem data deixava o anúncio parado esperando a agenda que
+ * a campanha tinha posto sozinha — e o botão se chama "Publicar".
+ */
+export function approvalBody<T extends { publish_at?: string }>(
+  edits: T,
+): T & { publish_now?: boolean } {
+  return edits.publish_at ? { ...edits } : { ...edits, publish_now: true };
+}
+
+//: As chaves de audiência que ESTE formulário controla. Tudo o que não está aqui foi
+//: configurado em outro lugar (Admin: tags, segmento RFM, `match`) e não é dele para
+//: apagar.
+const AUDIENCE_KEYS_OWNED_BY_THE_FORM = [
+  "favorites",
+  "alerts",
+  "bought_within_days",
+  "vip_first_minutes",
+] as const;
+
+/**
+ * As regras de audiência a enviar: as do formulário POR CIMA das que já existiam.
+ *
+ * ⚠️ O `submit()` montava o objeto DO ZERO com quatro chaves, e o PATCH sobrescreve o
+ * JSON inteiro. O gestor abria "Editar" numa campanha com tags, segmento RFM e
+ * `match: "all"`, mudava só o nome, salvava — e perdia dez chaves.
+ *
+ * ⚠️ E a direção importa: com favoritos, alertas e histórico de compra ligados, perder
+ * `match: "all"` troca INTERSEÇÃO por UNIÃO. O disparo vai para MAIS gente do que o
+ * gestor pediu, sem aviso — o erro que não dá para desfazer depois de a mensagem sair.
+ *
+ * O mesmo cuidado que o `schedule` já tinha ("só mandamos quando ele é a causa, para
+ * não apagar um `preferred_hours` configurado no Admin"), agora aqui.
+ *
+ * Desligar uma chave do formulário a REMOVE, e isso é deliberado: o serviço lê
+ * "0 dias" como "não usa", então mandar zero e omitir dizem a mesma coisa — mas omitir
+ * é o que o resto do código espera ver.
+ */
+export function mergeAudienceRules(
+  original: AudienceRules | null | undefined,
+  doFormulario: AudienceRules,
+): AudienceRules {
+  const merged: AudienceRules = { ...(original ?? {}) };
+  for (const chave of AUDIENCE_KEYS_OWNED_BY_THE_FORM) {
+    delete merged[chave];
+  }
+  return { ...merged, ...doFormulario };
 }

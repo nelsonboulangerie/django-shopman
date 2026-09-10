@@ -38,6 +38,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/storefront/tests/security/test_race_and_ratelimit.py",
     "shopman/shop/tests/integration/test_storefront_backstage_stress.py",
     "shopman/shop/tests/test_directive_dedupe.py",
+    "shopman/shop/tests/test_waitlist_lifecycle.py",
     "shopman/shop/tests/test_commit_stock_gate.py",
     # O duplo-submit do PDV se defende com trava de LINHA, e trava de linha
     # não existe em SQLite: no `test-shop` o caso da corrida é pulado por
@@ -54,6 +55,7 @@ DEFAULT_RUNTIME_TEST_PATHS = (
     "shopman/shop/tests/test_payment_webhooks.py",
     "shopman/shop/tests/test_ifood_webhook.py",
     "shopman/backstage/tests/test_gateway_smoke.py",
+    "shopman/backstage/tests/test_planning_idempotency_race.py",
     "shopman/shop/tests/test_deploy_checks.py",
     "shopman/shop/tests/test_health.py",
 )

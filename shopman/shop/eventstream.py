@@ -105,7 +105,8 @@ class ShopmanChannelManager(DefaultChannelManager):
 #:                ``/sse/orders`` no BFF do kds-nuxt. O corpo é ``ref``+``status``,
 #:                exatamente o que as duas telas já leem por REST.
 #:   kds        → views de KDS (``backstage.operate_kds``).
-#:   production → views de produção (``backstage.operate_production``).
+#:   production → qualquer grant nominal que torne ``can_access_board``
+#:                verdadeiro no resolvedor da superfície de produção.
 #:   cash       → o PDV (``cashman.operate_pos``, a mesma régua do ``POSView``).
 #:                Pedido de troco, devolução pendente e turno aberto/fechado —
 #:                o push que faz outra estação refazer o fetch da Projection sem
@@ -119,8 +120,7 @@ class ShopmanChannelManager(DefaultChannelManager):
 #:                não cabe num mapa de códigos — quem só entra por ela segue no
 #:                poll do endpoint, que já a avalia.
 #:
-#: São os MESMOS códigos que as views declaram em ``required_permission`` e que o
-#: ``HasBackstagePermission`` avalia com ``user.has_perm(code)`` — não uma segunda
+#: São os MESMOS códigos que os gates das views resolvem — não uma segunda
 #: régua. Ficam aqui como código, e não como import de
 #: ``shopman.backstage.permissions``, porque ``shop`` não importa superfície fora
 #: de ``adapters/`` (test_architecture / test_import_boundaries), e um seam de
@@ -128,7 +128,20 @@ class ShopmanChannelManager(DefaultChannelManager):
 _BACKSTAGE_CHANNEL_RULES = {
     "orders": ("shop.manage_orders", "backstage.operate_kds"),
     "kds": ("backstage.operate_kds",),
-    "production": ("backstage.operate_production",),
+    "production": (
+        "shop.manage_production",
+        "backstage.operate_production",
+        "shop.view_production_suggested",
+        "shop.edit_production_suggested",
+        "shop.view_production_planned",
+        "shop.edit_production_planned",
+        "shop.view_production_started",
+        "shop.edit_production_started",
+        "shop.view_production_finished",
+        "shop.edit_production_finished",
+        "shop.view_production_unsold",
+        "shop.edit_production_unsold",
+    ),
     "cash": ("cashman.operate_pos",),
     # O balcão precisa saber que a COZINHA mexeu numa comanda dele (o badge "Na
     # cozinha" vira "Pronto", "Cancelado"). Assinar o canal `kds` resolveria o

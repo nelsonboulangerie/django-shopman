@@ -31,7 +31,10 @@ const props = withDefaults(defineProps<{
   ctaLabel: 'Entrar pelo WhatsApp'
 })
 
-const emit = defineEmits<{ regenerate: [] }>()
+// `used`: o código do deep link é de USO ÚNICO. Quem toca o botão gasta o que
+// está no `href`, então a tela precisa saber para preparar o próximo — senão o
+// segundo toque manda um código já consumido e a sacola fica para trás.
+const emit = defineEmits<{ regenerate: [], used: [] }>()
 
 const codeCopied = ref(false)
 const isStarting = computed(() => props.status === 'idle' || props.status === 'loading')
@@ -82,6 +85,7 @@ async function copyMessage () {
           :href="deepLink || undefined"
           target="_blank"
           rel="noopener"
+          @click="emit('used')"
           size="lg"
           icon="lucide:message-circle"
           class="w-full justify-center"

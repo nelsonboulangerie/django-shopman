@@ -20,6 +20,7 @@ from shopman.offerman.models import (
 )
 
 from shopman.shop.models import Channel, Shop
+from shopman.shop.services import attributes
 from shopman.shop.tests._display import display_channel
 
 
@@ -189,6 +190,37 @@ def test_cell_negative_price_rejected(client, operator, catalog):
         content_type="application/json",
     )
     assert resp.status_code == 400
+
+
+def test_preco_ilegivel_e_400_e_nao_um_sucesso_que_nao_mudou_nada(client, operator, catalog):
+    """O `_as_int` antigo devolvia None para lixo, e None significa "não mexe no preço".
+
+    O efeito era o pior possível em dinheiro: a tela recebia 200, o operador via
+    "salvo", e o preço continuava o antigo. Falhar aberto e CALADO — exatamente o que
+    a régua da casa proíbe onde há dinheiro.
+    """
+    antes = ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q
+
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "price_q": "abc"})
+
+    assert resp.status_code == 400
+    assert resp.json()["field"] == "price_q"
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == antes
+
+
+def test_preco_ausente_continua_significando_nao_mexa(client, operator, catalog):
+    """Assert-negativo: a chave ausente NÃO virou erro. Só o lixo virou."""
+    antes = ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q
+
+    resp = _post_cell(client, operator, {"sku": "PAO", "surface_ref": "web", "is_sellable": False})
+
+    assert resp.status_code == 200
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").price_q == antes
+
+
+def _post_cell(client, operator, payload):
+    client.force_login(operator)
+    return client.post(CELL_URL, data=payload, content_type="application/json")
 
 
 # ── write: produto ("globalzinho") ─────────────────────────────────────────────
@@ -558,7 +590,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
     )
     assert bolo_tv["available"] is False
 
-    # reativar remove da lista
+    # ativar remove da lista
     resp = client.post(
         CELL_URL,
         data={"sku": "BOLO", "surface_ref": "tv-salao", "is_sellable": True},
@@ -569,7 +601,7 @@ def test_feed_cell_pause_routes_to_feed(client, operator, catalog_with_display):
 
 
 def test_feed_cell_price_rejected(client, operator, catalog_with_display):
-    """Feed não aceita preço/publicação — só pausar/reativar."""
+    """Feed não aceita preço/publicação — só pausar/ativar."""
     client.force_login(operator)
     resp = client.post(
         CELL_URL,
@@ -798,6 +830,7 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "is_published", "is_sellable", "base_price_q", "base_price_display", "edit_url",
         "stock_tracked", "stock_qty", "sold_out", "low_stock", "replenish_qty",
         "keywords", "cells", "social", "pim_complete",
+        "hidden_by_inactive_collection",
     }
 
     cell = row["cells"][0]
@@ -810,6 +843,25 @@ def test_matrix_contract_keys_are_pinned(client, operator, catalog):
         "brand", "gtin", "mpn", "condition", "google_product_category",
         "tiktok_category_id", "hashtags", "social_caption", "has_data",
     }
+
+
+def test_linha_marca_produto_fora_do_cardapio_por_colecao_desativada(client, operator, catalog):
+    """O bolo tem UMA coleção; desativá-la o tira do cardápio sem tirar do ar.
+
+    O pão fica de controle duplo: sem coleção nenhuma, ele é o "sem categoria"
+    legítimo — o cardápio já o mostra no balde final, e ele não pode ser marcado.
+    """
+    client.force_login(operator)
+
+    rows = {r["sku"]: r for r in client.get(MATRIX_URL).json()["matrix"]["rows"]}
+    assert rows["BOLO"]["hidden_by_inactive_collection"] is False
+
+    catalog["coll"].is_active = False
+    catalog["coll"].save(update_fields=["is_active"])
+
+    rows = {r["sku"]: r for r in client.get(MATRIX_URL).json()["matrix"]["rows"]}
+    assert rows["BOLO"]["hidden_by_inactive_collection"] is True
+    assert rows["PAO"]["hidden_by_inactive_collection"] is False
 
 
 # ── detalhe do produto (painel de edição do Gestor) ──────────────────────────
@@ -835,9 +887,10 @@ def test_product_detail_get_shape(client, operator, catalog):
         "image_url", "primary_collection", "primary_collection_name",
         # rotulagem de compra remota + blocos de JSONField com dono de schema
         "allergens", "dietary_info", "serves", "approx_dimensions",
-        "allows_next_day_sale", "nutrition_facts", "social", "fiscal",
+        "allows_next_day_sale", "made_to_order", "ready_from",
+        "nutrition_facts", "social", "fiscal",
         # somente-leitura: sentinels de derivação + escolhas de perfil fiscal
-        "dietary_auto_filled", "nutrition_auto_filled", "fiscal_profiles",
+        "dietary_from_recipe", "nutrition_auto_filled", "fiscal_profiles",
     }
     assert product["sku"] == "BOLO"
     assert product["base_price_q"] == 4500
@@ -943,6 +996,27 @@ def _patch(client, sku, payload):
     )
 
 
+def test_product_detail_patches_the_made_to_order_promise(client, operator, catalog):
+    """"Preparado na hora" é promessa DECLARADA, e o Gestor precisa poder declará-la.
+
+    Ela vive em ``Product.metadata`` (Core é sagrado: sem campo novo no
+    Offerman) e é o ÚNICO sinal que acende o selo na sacola — antes ele era
+    deduzido de ``availability_policy``, que é conferência de estoque. Sem esta
+    porta, a promessa só existiria via Admin/seed.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"made_to_order": True})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["made_to_order"] is True
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["made_to_order"] is True
+
+    # E a política de estoque não é tocada de raspão: os eixos são independentes.
+    assert resp.json()["product"]["availability_policy"] == catalog["pao"].availability_policy
+
+
 def test_product_detail_patch_labelling(client, operator, catalog):
     client.force_login(operator)
     resp = _patch(client, "PAO", {
@@ -960,7 +1034,7 @@ def test_product_detail_patch_labelling(client, operator, catalog):
     assert product["allows_next_day_sale"] is True
 
     catalog["pao"].refresh_from_db()
-    assert catalog["pao"].metadata["allergens"] == ["glúten"]
+    assert attributes.get(catalog["pao"], "alergenos") == ["glúten"]
 
 
 def test_product_detail_patch_labelling_freezes_recipe_derivation(client, operator, catalog):
@@ -973,7 +1047,7 @@ def test_product_detail_patch_labelling_freezes_recipe_derivation(client, operat
     assert _patch(client, "PAO", {"allergens": ["leite"]}).status_code == 200
 
     catalog["pao"].refresh_from_db()
-    assert catalog["pao"].metadata["dietary_auto_filled"] is False
+    assert attributes.source(catalog["pao"], "alergenos") == "manual"
 
 
 def test_product_detail_patch_nutrition(client, operator, catalog):
@@ -1048,3 +1122,60 @@ def test_product_detail_patch_fiscal_requires_cest_on_resale(client, operator, c
     client.force_login(operator)
     resp = _patch(client, "PAO", {"fiscal": {"profile": "resale", "ncm": "19059090"}})
     assert resp.status_code == 400
+
+
+def test_product_detail_patches_the_declared_ready_time(client, operator, catalog):
+    """A hora em que o produto fica pronto é declaração da CASA, e o Gestor declara.
+
+    Antes desta chave a hora saía só da mediana das WorkOrders, e produto sem
+    fornada recente não restringia horário nenhum: o dado que faltava LIBERAVA a
+    promessa. Sem esta porta, corrigir isso exigiria Admin ou reseed.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "12:00"})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == "12:00"
+    catalog["pao"].refresh_from_db()
+    assert catalog["pao"].metadata["ready_from"] == "12:00"
+
+
+def test_product_detail_normalizes_the_declared_ready_time(client, operator, catalog):
+    """"9:5" é a mesma hora que "09:05" — quem guarda normaliza."""
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "9:5"})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == "09:05"
+
+
+def test_product_detail_refuses_an_unreadable_ready_time(client, operator, catalog):
+    """Hora ilegível é recusada na porta, nunca guardada.
+
+    Guardá-la seria pior que recusá-la: o cadastro diria que a casa respondeu, e
+    o sistema agiria como se ninguém tivesse respondido — que é exatamente o
+    estado sem declaração, o que libera qualquer horário.
+    """
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": "meio-dia"})
+
+    assert resp.status_code == 400
+    catalog["pao"].refresh_from_db()
+    assert "ready_from" not in (catalog["pao"].metadata or {})
+
+
+def test_product_detail_clears_the_declared_ready_time(client, operator, catalog):
+    """Vazio APAGA a declaração — a casa pode voltar a deixar o histórico mandar."""
+    catalog["pao"].metadata = {**(catalog["pao"].metadata or {}), "ready_from": "12:00"}
+    catalog["pao"].save(update_fields=["metadata"])
+    client.force_login(operator)
+
+    resp = _patch(client, "PAO", {"ready_from": ""})
+
+    assert resp.status_code == 200
+    assert resp.json()["product"]["ready_from"] == ""
+    catalog["pao"].refresh_from_db()
+    assert "ready_from" not in (catalog["pao"].metadata or {})

@@ -3,7 +3,7 @@
 Covers:
 - Allergen union + diet resolution from the BOM (vegan/vegetarian/animal).
 - Free-from claims ("sem glúten" / "sem lactose") only when no insumo triggers.
-- ``metadata["dietary_auto_filled"]=False`` blocks overwrite.
+- valor com ``source="manual"`` bloqueia a sobrescrita pela ficha.
 - Bundles are skipped.
 - Incomplete insumo data (no diet declared) is a safe no-op.
 - Multilevel BOM (sub-recipe) is expanded and unioned.
@@ -19,6 +19,7 @@ from shopman.craftsman.dietary import IngredientDietary
 from shopman.craftsman.models import Recipe, RecipeItem
 from shopman.offerman.models import Product, ProductComponent
 
+from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 
 pytestmark = pytest.mark.django_db
@@ -87,12 +88,13 @@ class TestAggregateDietaryFromRecipe:
         product.refresh_from_db()
 
         assert changed is True
-        assert product.metadata["allergens"] == ["glúten"]
+        assert attributes.get(product, "alergenos") == ["glúten"]
         # gluten present → no "sem glúten"; vegan + no lactose → vegetal + sem lactose
-        assert product.metadata["dietary_info"] == ["100% vegetal", "sem lactose"]
-        assert product.metadata["dietary_auto_filled"] is True
+        # Só "100% vegetal": lactose e glúten são lidos dos ALÉRGENOS.
+        assert attributes.get(product, "dieta") == ["100% vegetal", "sem lactose"]
+        assert attributes.source(product, "alergenos") == "recipe"
 
-    def test_gluten_free_vegan_gets_sem_gluten(self):
+    def test_vegan_sem_alergeno_afirma_o_que_a_ficha_prova(self):
         product = _make_product(sku="POLVILHO")
         recipe = _recipe(sku="POLVILHO")
         _item(recipe, "INS-POLVILHO", allergens=[], diet="vegan")
@@ -100,7 +102,8 @@ class TestAggregateDietaryFromRecipe:
         aggregate_dietary_from_recipe(product)
         product.refresh_from_db()
 
-        assert product.metadata["dietary_info"] == ["100% vegetal", "sem glúten", "sem lactose"]
+        # A casa NÃO afirma "sem glúten" — farinha no ar, forno compartilhado.
+        assert attributes.get(product, "dieta") == ["100% vegetal", "sem lactose"]
 
     def test_vegetarian_insumo_blocks_vegan_and_lactose_claim(self):
         product = _make_product(sku="BRIOCHE")
@@ -112,8 +115,9 @@ class TestAggregateDietaryFromRecipe:
         aggregate_dietary_from_recipe(product)
         product.refresh_from_db()
 
-        assert product.metadata["allergens"] == ["glúten", "leite", "ovos"]
-        assert product.metadata["dietary_info"] == ["vegetariano"]
+        assert attributes.get(product, "alergenos") == ["glúten", "leite", "ovos"]
+        # "vegetariano" saiu: leite e ovos já dizem isso, nos alérgenos.
+        assert attributes.get(product, "dieta") == ["vegetariano"]
 
     def test_animal_insumo_blocks_positive_diet_claim(self):
         product = _make_product(sku="FOCACCIA-BACON")
@@ -125,7 +129,8 @@ class TestAggregateDietaryFromRecipe:
         product.refresh_from_db()
 
         # no positive diet claim; gluten present → no sem glúten; no lactose → sem lactose
-        assert product.metadata["dietary_info"] == ["sem lactose"]
+        # Insumo animal derruba a única afirmação que sobrou.
+        assert attributes.get(product, "dieta") == ["sem lactose"]
 
     def test_allergen_union_dedups(self):
         product = _make_product(sku="MISTO")
@@ -137,10 +142,12 @@ class TestAggregateDietaryFromRecipe:
         aggregate_dietary_from_recipe(product)
         product.refresh_from_db()
 
-        assert product.metadata["allergens"] == ["glúten", "gergelim"]
+        assert attributes.get(product, "alergenos") == ["glúten", "gergelim"]
 
     def test_manual_override_blocks(self):
-        product = _make_product(metadata={"dietary_auto_filled": False, "allergens": ["nada"]})
+        product = _make_product()
+        # Valor escrito pelo gestor: é a proveniência que bloqueia a ficha agora.
+        attributes.set(product, "alergenos", ["leite"], source="manual")
         recipe = _recipe()
         _item(recipe, "INS-LEITE", allergens=["leite"], diet="vegetarian")
 
@@ -148,7 +155,7 @@ class TestAggregateDietaryFromRecipe:
         product.refresh_from_db()
 
         assert changed is False
-        assert product.metadata["allergens"] == ["nada"]
+        assert attributes.get(product, "alergenos") == ["leite"]
 
     def test_bundle_is_skipped(self):
         child = _make_product(sku="PAO-SIMPLES")
@@ -167,7 +174,7 @@ class TestAggregateDietaryFromRecipe:
         product.refresh_from_db()
 
         assert changed is False
-        assert "allergens" not in (product.metadata or {})
+        assert attributes.get(product, "alergenos") is None
 
     def test_no_recipe_is_noop(self):
         product = _make_product(sku="REVENDIDO")
@@ -195,8 +202,9 @@ class TestAggregateDietaryFromRecipe:
         aggregate_dietary_from_recipe(product)
         product.refresh_from_db()
 
-        assert product.metadata["allergens"] == ["glúten", "leite"]
-        assert product.metadata["dietary_info"] == ["vegetariano"]
+        assert attributes.get(product, "alergenos") == ["glúten", "leite"]
+        # Leite na cadeia derruba "100% vegetal", e é só isso que dieta diz.
+        assert attributes.get(product, "dieta") == ["vegetariano"]
 
     def test_signal_materializes_on_recipe_save(self):
         product = _make_product(sku="BAGUETE")
@@ -207,6 +215,52 @@ class TestAggregateDietaryFromRecipe:
         recipe.save()  # fires post_save → derivation signal
         product.refresh_from_db()
 
-        assert product.metadata.get("dietary_auto_filled") is True
-        assert product.metadata["allergens"] == ["glúten"]
-        assert "100% vegetal" in product.metadata["dietary_info"]
+        assert attributes.source(product, "alergenos") == "recipe"
+        assert attributes.get(product, "alergenos") == ["glúten"]
+        assert "100% vegetal" in attributes.get(product, "dieta")
+
+
+class TestAlergenoQueVemDoInsumo:
+    """A cadeia insumo → ficha → rótulo não pode ser barrada por vocabulário.
+
+    O caso é real desta casa: **pimenta preta**. A ANVISA não a lista como
+    alergênico, a casa a usa, e já houve reação. Se o insumo sabe, o rótulo
+    precisa saber — e nenhuma lista canônica pode cortar isso no meio.
+    """
+
+    def test_alergeno_fora_da_lista_chega_ao_rotulo(self):
+        product = _make_product()
+        recipe = _recipe()
+        _item(recipe, "INS-PIMENTA", allergens=["pimenta preta"], diet="vegan")
+
+        assert aggregate_dietary_from_recipe(product) is True
+        assert "pimenta preta" in attributes.get(product, "alergenos")
+
+    def test_a_opcao_nova_entra_marcada_para_revisao(self):
+        """Opção que a ficha trouxe não pode entrar parecendo curadoria."""
+        from shopman.shop.models import AttributeDefinition
+
+        product = _make_product()
+        recipe = _recipe()
+        _item(recipe, "INS-PIMENTA", allergens=["pimenta preta"], diet="vegan")
+        aggregate_dietary_from_recipe(product)
+
+        d = AttributeDefinition.objects.get(ref="alergenos")
+        nova = next(o for o in d.options if o["value"] == "pimenta preta")
+        assert nova.get("meta", {}).get("from_recipe") is True
+
+    def test_a_mao_o_erro_de_digitacao_continua_recusado(self):
+        """Ampliar é privilégio da FICHA. No Admin, "glutén" é typo, não alérgeno novo."""
+        from shopman.shop.services.attributes import AttributeError_
+
+        product = _make_product()
+        with pytest.raises(AttributeError_, match="glutén"):
+            attributes.set(product, "alergenos", ["glutén"], source="manual")
+
+    def test_dieta_nao_amplia_sozinha(self):
+        """`dieta` é vocabulário da CASA, não da cadeia: fecha de propósito."""
+        from shopman.shop.services.attributes import AttributeError_
+
+        product = _make_product()
+        with pytest.raises(AttributeError_):
+            attributes.set(product, "dieta", ["low carb"], source="recipe")

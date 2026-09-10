@@ -26,13 +26,13 @@
         /**
          * The title of the command dialog.
          *
-         * @default "Command Palette"
+         * @default "Paleta de comandos"
          */
         title?: string;
         /**
          * The description of the command dialog.
          *
-         * @default "Search for a command to run...".
+         * @default "Busque um comando para executar...".
          */
         description?: string;
         /**
@@ -48,8 +48,8 @@
       }
     >(),
     {
-      title: "Command Palette",
-      description: "Search for a command to run...",
+      title: "Paleta de comandos",
+      description: "Busque um comando para executar...",
     }
   );
   const emits = defineEmits<DialogRootEmits>();

@@ -1,5 +1,13 @@
 # MANYCHAT-CONVERSACIONAL-PLAN — Pedido por WhatsApp conversacional
 
+> ⚠️ **Superado (2026-09-03)** pelo [WHATSAPP-CONCIERGE-PLAN](WHATSAPP-CONCIERGE-PLAN.md)
+> e pela [ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md).
+> As invariantes deste plano continuam (WhatsApp só via ManyChat, um número, o pedido
+> nasce numa `Session` do canal `whatsapp` e passa pelo commit de sempre); o que caiu foi o
+> mecanismo, um flow e um endpoint por intenção: a conversa passou a ser conduzida por um
+> modelo de linguagem com ferramentas determinísticas, e a resposta volta assíncrona pela
+> API do ManyChat. Fica como registro do raciocínio e do inventário de reuso.
+
 > Fechar o fluxo **ManyChat → session → confirmação** (cliente faz pedido por
 > conversa no WhatsApp). Frente **v1** (🆕, Onda 1 · canais externos) do
 > [PRODUCT-V1-SCOPE-BACKLOG](PRODUCT-V1-SCOPE-BACKLOG.md). WhatsApp é **sempre via

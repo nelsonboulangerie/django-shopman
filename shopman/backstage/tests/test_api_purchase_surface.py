@@ -89,7 +89,7 @@ def material(db):
 @pytest.fixture
 def supplier(db):
     return Supplier.objects.create(
-        ref="SUP-MOINHO-SP",
+        ref="moinho-sp",
         name="Moinho São Paulo",
         document="12.345.678/0001-90",
         email="compras@moinho.example",
@@ -136,7 +136,7 @@ def test_purchase_board_returns_composed_projection(client, purchase_operator, m
     assert purchase["materials"][0]["sku"] == "FARINHA-T65"
     assert purchase["materials"][0]["stockOnHand"] == 12.0
     assert purchase["materials"][0]["recipes"] == ["Baguete"]
-    assert purchase["suppliers"][0]["ref"] == "SUP-MOINHO-SP"
+    assert purchase["suppliers"][0]["ref"] == "moinho-sp"
     assert purchase["conversions"][0]["label"] == "saco 25 kg"
     assert purchase["costs"][0]["costQ"] == 18000
 
@@ -250,18 +250,18 @@ def test_scan_invoice_registers_unknown_supplier_from_issuer(tmp_path, client, p
     body = response.json()
     assert "fornecedor cadastrado" in body["message"].lower()
     receipt = body["purchase"]["activeReceipt"]
-    assert receipt["supplierRef"] == "SUP-TAMURA"
+    assert receipt["supplierRef"] == "tamura"
     assert "fornecedor nao cadastrado" not in receipt["note"]
     assert receipt["lines"][0]["materialSku"] == ""
 
     Supplier = apps.get_model("buyman", "Supplier")
-    created = Supplier.objects.get(ref="SUP-TAMURA")
+    created = Supplier.objects.get(ref="tamura")
     assert created.document == "84.290.690/0002-28"
     assert created.name.startswith("INDUSTRIA E COMERCIO")
     assert created.phone == "4333221100"
     assert created.is_active is True
     supplier_refs = [supplier["ref"] for supplier in body["purchase"]["suppliers"]]
-    assert "SUP-TAMURA" in supplier_refs
+    assert "tamura" in supplier_refs
 
 
 @pytest.mark.django_db
@@ -1212,3 +1212,132 @@ def test_receipt_without_a_supplier_lot_keeps_the_derived_batch_ref(
     assert response.status_code == 200
     batch = Batch.objects.get(sku=material.sku)
     assert batch.ref.startswith("BUY-")
+
+
+@pytest.mark.django_db
+def test_min_stock_requires_operate_purchase(client, material):
+    bare = User.objects.create_user("bare-min-stock", password="pw", is_staff=True)
+    client.force_login(bare)
+    response = client.post(
+        reverse("api-backstage-purchase-min-stock"),
+        data={"minimums": [{"materialSku": material.sku, "minStock": "10"}]},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_min_stock_then_cost_turns_a_material_into_a_purchase_request(
+    client, purchase_operator, supplier, position
+):
+    """O caminho completo do pedido: mínimo, custo, e a solicitação sai.
+
+    É a prova de que as duas metades juntas resolvem o "não consigo fazer uma
+    solicitação de compra": sem consumo medido nenhum insumo é sugerido, e sem
+    custo preferencial a sugestão não vira pedido.
+    """
+    Material.objects.create(sku="ALECRIM", name="Alecrim", unit="g")
+    client.force_login(purchase_operator)
+
+    # Sem mínimo e sem consumo, não há o que pedir.
+    board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    assert alecrim["suggestedQty"] == 0
+
+    assert (
+        client.post(
+            reverse("api-backstage-purchase-min-stock"),
+            data={"minimums": [{"materialSku": "ALECRIM", "minStock": "500"}]},
+            content_type="application/json",
+        ).status_code
+        == 200
+    )
+    assert (
+        client.post(
+            reverse("api-backstage-purchase-costs-batch"),
+            data={
+                "supplierRef": supplier.ref,
+                "makePreferred": True,
+                "costs": [{"materialSku": "ALECRIM", "costInput": "6,50"}],
+            },
+            content_type="application/json",
+        ).status_code
+        == 200
+    )
+
+    board = client.get(reverse("api-backstage-purchase")).json()["purchase"]
+    alecrim = next(row for row in board["materials"] if row["sku"] == "ALECRIM")
+    assert alecrim["suggestedQty"] == 500
+
+    # E agora a solicitação sai, em vez de "Defina o custo padrão e o
+    # fornecedor antes de enviar o pedido."
+    response = client.post(
+        reverse("api-backstage-purchase-request-send", args=["ALECRIM"]),
+        data={},
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.json()
+    assert Directive.objects.filter(topic=NOTIFICATION_SEND).exists()
+
+
+@pytest.mark.django_db
+def test_cost_batch_requires_operate_purchase(client, material, supplier):
+    bare = User.objects.create_user("bare-cost-batch", password="pw", is_staff=True)
+    client.force_login(bare)
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={"supplierRef": supplier.ref, "costs": []},
+        content_type="application/json",
+    )
+    assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_cost_batch_saves_many_and_returns_projection(client, purchase_operator, material, supplier):
+    outro = Material.objects.create(sku="SAL", name="Sal", unit="kg")
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={
+            "supplierRef": supplier.ref,
+            "makePreferred": True,
+            "costs": [
+                {"materialSku": material.sku, "costInput": "180,00"},
+                {"materialSku": outro.sku, "costInput": "2,90"},
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ok"] is True
+    # A tela recebe a projeção junto: um gesto, um round-trip.
+    assert {row["sku"] for row in body["purchase"]["materials"]} >= {material.sku, outro.sku}
+    assert SupplierMaterialCost.objects.filter(is_preferred=True).count() == 2
+
+
+@pytest.mark.django_db
+def test_cost_batch_reports_the_offending_line(client, purchase_operator, material, supplier):
+    client.force_login(purchase_operator)
+
+    response = client.post(
+        reverse("api-backstage-purchase-costs-batch"),
+        data={
+            "supplierRef": supplier.ref,
+            "costs": [
+                {"materialSku": material.sku, "costInput": "180,00"},
+                {"materialSku": "NAO-EXISTE", "costInput": "1,00"},
+            ],
+        },
+        content_type="application/json",
+    )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["error"]["code"] == "cost_batch_invalid"
+    assert body["error"]["lines"][0]["index"] == 1
+    assert body["error"]["lines"][0]["materialSku"] == "NAO-EXISTE"
+    # Tudo-ou-nada: a linha boa também não entrou.
+    assert not SupplierMaterialCost.objects.exists()

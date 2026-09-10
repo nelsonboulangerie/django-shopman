@@ -9,16 +9,24 @@
 | Comando | App | Categoria | Descrição |
 |---------|-----|-----------|-----------|
 | [`release_expired_holds`](#release_expired_holds) | stockman | Manutenção | Libera holds expirados |
+| [`compute_product_affinity`](#compute_product_affinity) | shop | Manutenção | Recalcula o que a casa vende junto (cestas do ano, lift) — segura a própria cadência |
+| [`propose_product_attributes`](#propose_product_attributes) | shop | Catálogo | Propõe natureza, sabor e temperatura pela coleção primária, para o gestor revisar |
 | [`sweep_orphan_holds`](#sweep_orphan_holds) | shop | Manutenção | Libera holds indefinidos órfãos (sem sessão viva ou com data passada) |
 | [`sweep_dead_production_stock`](#sweep_dead_production_stock) | shop | Manutenção | Zera pelo ledger o resíduo de processo (target vencida) de WOs mortas |
 | [`load_crafting_demo`](#load_crafting_demo) | craftsman | Seed | Carrega dados demo de produção |
+| [`bootstrap_recipe_book`](#bootstrap_recipe_book) | craftsman | Seed | Cria no inventário uma receita (versão 1 publicada) para cada ficha que ainda não tem — idempotente |
+| [`export_recipe_book_schema`](#export_recipe_book_schema) | backstage | Dev | Regenera o espelho TypeScript do contrato do inventário de receitas (Produção) |
 | [`process_directives`](#process_directives) | orderman | Worker | Processa fila de directives |
+| [`bootstrap_whatsapp_channel`](#bootstrap_whatsapp_channel) | shop | Operação | Cria/ativa o canal de venda `whatsapp` (e o listing) do concierge no banco vivo, sem reseed |
 | [`cleanup_idempotency_keys`](#cleanup_idempotency_keys) | orderman | Manutenção | Remove chaves de idempotência antigas |
 | [`customers_cleanup`](#customers_cleanup) | guestman | Manutenção | Remove eventos processados antigos |
 | [`auth_cleanup`](#auth_cleanup) | doorman | Manutenção | Remove tokens/códigos expirados |
+| [`recalculate_customer_insights`](#recalculate_customer_insights) | shop | Manutenção | Recalcula os insights vencidos por recência — percebe quem PAROU de comprar (1x/dia, madrugada) |
 | [`reconcile_payments`](#reconcile_payments) | shop | Operação | Reconcilia pedidos cujo webhook de pagamento pode ter sido perdido |
 | [`diagnose_remote_order`](#diagnose_remote_order) | shop | Operação | Diagnostica pedido remoto preso lendo fontes canônicas |
 | [`fiscal_audit_catalog`](#fiscal_audit_catalog) | shop | Operação | Lista vendáveis publicados sem classificação fiscal completa (NFC-e) |
+| [`check_catalog_visibility`](#check_catalog_visibility) | shop | Manutenção | Alerta produto que sumiu do cardápio porque a coleção dele foi desativada |
+| [`check_integration_drift`](#check_integration_drift) | backstage | Manutenção | Alerta integração em configuração insegura/incompleta — a prontidão deixa de esperar alguém abrir a tela |
 | [`inject_ifood_order`](#inject_ifood_order) | shop | Dev | Injeta pedido iFood simulado pela ingestão canônica (apenas DEBUG) |
 | [`reconcile_financial_day`](#reconcile_financial_day) | backstage | Operação | Reconcilia pedido, intent, transação e fechamento diário |
 | [`smoke_gateways`](#smoke_gateways) | backstage | Operação | Estressa webhooks/gateways com fixtures locais e matriz sandbox |
@@ -28,8 +36,15 @@
 | [`refresh_bi_daily_series`](#refresh_bi_daily_series) | backstage | B.I. | Recomputa a série diária materializada (últimos dias no worker; `--all` do início) |
 | [`evaluate_bi_alerts`](#evaluate_bi_alerts) | backstage | B.I. | Avalia os alarmes do B.I. (regras no Admin) e avisa o operador quando disparam |
 | [`release-readiness`](#release-readiness) | script | Release | Consolida checks locais e bloqueios externos |
+| [`export_backup`](#export_backup) | shop | Dados | Exporta o cofre de dados curados (XLSX/CSVs, uma aba por entidade) |
+| [`import_backup`](#import_backup) | shop | Dados | Importa o cofre de volta — dry-run por padrão, `--apply` numa transação única |
+| [`export_backup_to_drive`](#export_backup_to_drive) | shop | Dados | Banco → Drive: sobe o cofre como Sheets nativo, atualizando no lugar |
+| [`import_backup_from_drive`](#import_backup_from_drive) | shop | Dados | Drive → banco: baixa a planilha curada e emenda no `import_backup` (dry-run por padrão) |
+| [`convert_material_base_unit`](#convert_material_base_unit) | shop | Dados | Troca a unidade-base de um insumo e reexpressa tudo que o conta (ensaio por padrão) |
+| [`rewrite_recipe_per_unit`](#rewrite_recipe_per_unit) | shop | Dados | Reexpressa por unidade a ficha que rende unidade, preservando a razão (ensaio por padrão) |
 | [`seed`](#seed) | shop | Seed | Popula banco com dados da Nelson Boulangerie |
 | [`refresh_seed_dates`](#refresh_seed_dates) | config | Seed | Re-ancora um banco SEMEADO em hoje (QA; recusa produção) |
+| [`qa_scenarios`](#qa_scenarios) | config | Seed | Arma cenários de vitrine (esgotado, pausado, previsto) num banco SEMEADO, sem reseed |
 
 ---
 
@@ -79,6 +94,45 @@ seed/refresh que apodreceram e planta o horizonte planejado de hoje a +7 no
 virarem estoque planejado. **Não** apaga história, **não** recria a narrativa
 demo do dia e **recusa `SHOPMAN_ENVIRONMENT=production` sem flag de override**.
 Idempotente: a segunda passada no mesmo dia responde "Nada a fazer".
+
+### qa_scenarios
+
+Arma os estados de **disponibilidade da vitrine** num banco já semeado, para QA
+manual. O perfil `qa` do `seed` já nasce com eles, mas chegar lá custa
+`seed --flush`; e o alpha roda o perfil `demo`, em que todo produto tem estoque
+— então o "Avise-me" não tinha como aparecer na tela para ser testado.
+
+```bash
+python manage.py qa_scenarios                     # relatório (não escreve)
+python manage.py qa_scenarios --arm               # arma todos os cenários
+python manage.py qa_scenarios --arm sold_out      # arma só um
+python manage.py qa_scenarios --arm sold_out=BF   # ... num SKU escolhido
+python manage.py qa_scenarios --restock BF        # repõe → dispara o "Avise-me"
+python manage.py qa_scenarios --reset             # devolve tudo ao alvo do seed
+python manage.py qa_scenarios --reset BF          # ... incluindo um SKU pausado à mão
+```
+
+| Estado | Como | O que aparece na loja |
+|--------|------|-----------------------|
+| `sold_out` | sem pronto, sem plano | "Indisponível" + sino **"Avise quando voltar"** |
+| `low_stock` | 2 prontos (limiar 5) | badge "Últimas unidades", ainda vende |
+| `planned` | sem pronto hoje, fornada amanhã | indisponível hoje, orderável ao escolher data futura |
+| `paused` | `Product.is_sellable=False` | aparece, não vende, **sem** sino |
+| `paused_channel` | `ListingItem.is_sellable=False` na vitrine `web` | pausado só na loja; segue vendável no PDV |
+
+Os estados são armados pela **mesma função** que o perfil `qa` usa
+(`seed.apply_storefront_state`) — o cenário testado à mão é o cenário que a
+suíte afirma. O relatório fecha toda execução — sobre os SKUs padrão **e** sobre o que aquela
+execução mirou —, com a coluna "amanhã" separando `sold_out` de `planned` (os
+dois são `unavailable` com zero pronto) e a lista de avisos pendentes com
+telefone mascarado. O `--reset` reencontra sozinho todo SKU que o comando já
+mexeu (rastro no `reason` do `Move`); só a **pausa** precisa do SKU nomeado,
+porque pausar não gera movimento de estoque.
+
+⚠️ `--restock` é um `Move` de entrada de verdade, igual ao que a fornada faz:
+**quem estiver inscrito recebe a mensagem no telefone que informou**. É esse o
+teste; só não use com número de terceiro. Recusa
+`SHOPMAN_ENVIRONMENT=production` sem flag de override.
 
 ### sweep_orphan_holds
 
@@ -148,6 +202,101 @@ python manage.py load_crafting_demo --clear
 
 ---
 
+### convert_material_base_unit
+
+Troca a **unidade-base** de um insumo num banco já povoado e reexpressa, na mesma
+transação, tudo que conta aquele insumo: ledger (`Move`, `Quant`), reservas, alertas de
+mínimo, fichas técnicas, o BOM congelado das fornadas **abertas**, o mínimo do Compras e o
+custo por fornecedor. Fecha deixando a unidade antiga cadastrada como `MaterialConversion`,
+para a nota fiscal seguinte não travar (ADR-024 R4).
+
+**Ensaio por padrão** (como o `refresh_seed_dates`): sem `--apply` ele só relata.
+
+```bash
+python manage.py convert_material_base_unit LEITE AZEITE --to kg              # ensaio
+python manage.py convert_material_base_unit LEITE AZEITE --to kg --apply      # executa
+python manage.py convert_material_base_unit AGUA-FILTRADA --to kg --apply --no-bridge
+```
+
+O fator sai da física (`shopman.utils.units`) quando a dimensão é a mesma, e da
+`density_g_per_ml` declarada no cadastro quando atravessa volume↔massa. **Sem densidade
+declarada ele recusa**, nomeando o que cadastrar; contagem não atravessa nunca. É genérico:
+não conhece SKU da Nelson nem tem tabela de densidade embutida.
+
+`--no-bridge` converte sem deixar a conversão para trás. É para insumo que **não entra por
+nota** (água de torneira): a ponte só viraria anotação sem informação na tela de separação.
+
+O que ele deliberadamente **não** reescreve, e anuncia a cada rodada: item de fornada já
+concluída, a prova de conversão no `Move.metadata`, a `RecipeVersion` publicada do livro de
+receitas, o snapshot do `DayClosing` e os `params` de regra. História não se reescreve.
+
+⚠️ **Depois de rodar, re-exporte o cofre** (`export_backup`): uma planilha anterior
+reimportada escreve a unidade antiga por cima, e como ela reverte cadastro e ficha juntos,
+os dois voltam a concordar e nada grita — só o saldo fica errado. Ver
+[WP-BASE-UNIT-LIQUIDS-KG](../plans/WP-BASE-UNIT-LIQUIDS-KG.md).
+
+### rewrite_recipe_per_unit
+
+Reexpressa por unidade, num banco já povoado, a ficha de produto que **rende unidade**:
+`batch_size` vira `1` e cada quantidade é dividida pelo rendimento antigo. A baguete deixa
+de dizer "7 kg de Massa Tradição rendem 25 un" e passa a dizer "0,280 kg rendem 1 un"
+(WP-FICHA-DE-PRODUTO-E-PROMESSA §A). O `seed` já nasce assim; este comando é o mesmo gesto
+onde o dado já está gravado.
+
+**É reexpressão, não mudança**: o consumo é `quantidade ÷ batch_size × quantidade do item`,
+e dividir os dois lados pelo mesmo número não mexe na razão. Nenhum movimento de estoque
+nasce daqui. **Ensaio por padrão**; sem `--apply` ele só relata.
+
+```bash
+python manage.py rewrite_recipe_per_unit                    # ensaio, todas
+python manage.py rewrite_recipe_per_unit --apply            # executa
+python manage.py rewrite_recipe_per_unit baguete --apply    # só uma ficha
+```
+
+A régua é o que a ficha **rende**, declarado (catálogo ou `meta["output_unit"]`): rende
+unidade, é produto e vira por unidade; rende massa, é fórmula e não se toca — 1 kg de Massa
+Tradição não é "uma" de nada. Ficha já com `batch_size = 1` é pulada, então rodar duas vezes
+é inofensivo. Linha que arredondaria a zero em três casas **recusa a rodada inteira**,
+nomeando a ficha.
+
+Não toca fornada concluída (história) nem fornada aberta: o `meta["_recipe_snapshot"]`
+congela rendimento e itens JUNTOS, então a razão dela já é coerente. A exceção é o snapshot
+com itens e **sem** rendimento, que cairia na ficha viva: nesse o comando grava o rendimento
+de agora, preservando a pesagem. Fecha relatando as `RecipeVersion` publicadas que ainda
+falam o rendimento de lote — republicar uma delas reescreveria a ficha de volta.
+
+### bootstrap_recipe_book
+
+Percorre as `Recipe` (fichas de execução) e cria, para cada uma que ainda não tem, uma
+`RecipeEntry` com a versão 1 **publicada** e `source.kind="ficha"` — o inventário das
+fichas que já existem (ADR-027). Ordem por dependência (partes antes das massas que as
+usam). **Não escreve na `Recipe`**.
+
+A fórmula de quem **rende massa** nasce na forma base: partes com ficha própria (levain,
+pasta autolisada, yudane) são dissolvidas e sua farinha entra na soma. Quem **rende
+unidade** não dissolve nada: a ficha da peça já diz o que entra numa peça, e dissolver ali
+inventaria uma fórmula que ela nunca declarou — a baguete é "280 g de Massa Tradição", não
+farinha, água e levain. Sem farinha própria, a âncora é a massa total e a lente de padaria
+não aparece.
+
+```bash
+python manage.py bootstrap_recipe_book             # cria o que falta
+python manage.py bootstrap_recipe_book --dry-run   # só conta
+```
+
+Idempotente: entry com o mesmo `ref` é pulada. O `seed` chama isto no fim das receitas.
+
+### export_recipe_book_schema
+
+Renderiza as dataclasses de `shopman/backstage/projections/recipe_book.py` em
+`surfaces/production-nuxt/app/generated/recipeBookContract.ts`. Mesmo padrão do
+`export_production_schema`; o teste de deriva `test_recipe_book_schema_export` falha
+quando o arquivo gerado está velho.
+
+```bash
+python manage.py export_recipe_book_schema
+```
+
 ### process_directives
 
 **App:** `shopman.orderman`
@@ -179,6 +328,25 @@ python manage.py process_directives --watch --interval 5 --limit 100 --max-attem
 ```
 
 **Veja também:** [ADR-003 — Directives sem Celery](../decisions/adr-003-directives-sem-celery.md)
+
+---
+
+### bootstrap_whatsapp_channel
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/bootstrap_whatsapp_channel.py`
+
+Põe de pé, no banco vivo, o canal de venda dos pedidos do [concierge de WhatsApp](../guides/whatsapp-concierge.md):
+`Channel` ref `whatsapp` (pagamento `["pix","card"]` a `at_commit`, confirmação `auto_confirm` em 5 min)
+e o listing `whatsapp` espelhando o da web. Idempotente: cria o que falta, ativa o que está inativo,
+não sobrescreve config existente. É o equivalente ao que o `seed` faz num banco novo, para quem
+não pode reseedar (produção/alpha).
+
+```bash
+python manage.py bootstrap_whatsapp_channel
+```
+
+**Veja também:** [WHATSAPP-CONCIERGE-PLAN](../plans/WHATSAPP-CONCIERGE-PLAN.md)
 
 ---
 
@@ -261,6 +429,45 @@ python manage.py auth_cleanup --days 30
 
 ---
 
+### recalculate_customer_insights
+
+O `CustomerInsight` é recalculado no `customer.ensure` de **cada pedido**, então quem
+compra está sempre em dia. Quem **parou** de comprar não dispara nada — e ficava
+congelado no dia da última visita. Esta varredura existe só para isso.
+
+O que envelhece sozinho é apenas a parte derivada de recência
+(`days_since_last_order`, `churn_risk`, `rfm_segment`). Contagem, ticket médio e
+favorito só mudam com pedido novo, e esse caminho já está coberto.
+
+**Cadência: 1x/dia, de madrugada.** A escada de recência do RFM é 7/30/90/180 dias
+(`guestman/contrib/insights/conf.py`); nada se move em menos de um dia-calendário.
+
+```bash
+python manage.py recalculate_customer_insights            # varredura do ciclo
+python manage.py recalculate_customer_insights --force    # ignora a janela
+python manage.py recalculate_customer_insights --dry-run  # só conta os vencidos
+python manage.py recalculate_customer_insights --all      # base inteira (backfill manual)
+```
+
+`--all` **recusa** `--dry-run`: `recalculate_all` não tem ensaio, e deixar o par passar
+recalcularia a base inteira em silêncio para quem só queria contar.
+
+Roda no `maintenance_worker`, depois do `check_directive_health`. Está no ciclo de 5
+min mas **não trabalha a cada 5 min**: carrega a própria janela (03h–05h local) e o
+próprio teto de lote (200 por execução). Três decisões valem registro:
+
+- **Cliente sem nenhum pedido fica de fora.** Sem pedido, `r=1, f=1, m=1` cai em
+  `lost` — carimbar "Perdido" em quem nunca comprou é mentira, não classificação.
+  Para dar insight a cliente importado, use `--all` (ou a ação do CustomerAdmin).
+- **Teto de lote porque o worker é serial.** Varrer a base inteira num ciclo atrasaria
+  `reconcile_payments` e tudo atrás dela. A janela de 2h drena o resto, do insight mais
+  velho para o mais novo.
+- **A marca d'água é o próprio dado.** `calculated_at` é `auto_now`, então "quem está
+  vencido" é uma query — não há estado novo para guardar nem para desincronizar, e noite
+  perdida por worker fora do ar se resolve na noite seguinte.
+
+---
+
 ### reconcile_payments
 
 **App:** `shopman.shop`
@@ -331,6 +538,79 @@ python manage.py fiscal_audit_catalog --strict
 **Veja também:** [procedimento do flip](settings.md#ligar-o-porteiro-fiscal-do-catálogo) ·
 [parametrização fiscal NFC-e](fiscal-parametrizacao-nfce.md) ·
 [auditoria do catálogo (19/08)](../reports/auditoria-catalogo-fiscal-2026-08-19.md).
+
+---
+
+### check_catalog_visibility
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/check_catalog_visibility.py`
+
+**Propósito:** Avisar o operador sobre o produto que sumiu do cardápio sem ninguém ter
+escondido nada. O agrupamento do cardápio põe o produto no grupo de cada coleção **ativa**
+e recolhe no fim quem não tem coleção **nenhuma**; quem tem só coleção **desativada** não
+cabe em nenhum dos dois e some da loja inteira — publicado, na vitrine, com preço e com
+estoque. A política do cardápio não muda: o comando só torna o estado visível.
+
+A regra de detecção mora em `shopman/shop/services/catalog_visibility.py` e é a mesma que
+marca a linha do produto no Gestor (`hidden_by_inactive_collection` na matriz do catálogo).
+
+**Uso:**
+```bash
+python manage.py check_catalog_visibility
+python manage.py check_catalog_visibility --hours 12   # janela do dedupe
+python manage.py check_catalog_visibility --dry-run    # só reporta
+```
+
+**Alerta:** `catalog_hidden_by_inactive_collection` (severidade `warning`), com os SKUs
+nomeados (os 8 primeiros e "e mais N") e as coleções a reativar. É alerta de **estado**, não
+de evento: o dedupe é a lista de coleções presas, numa janela de 24h que conta também os
+alertas já reconhecidos — um aviso enquanto o estado durar, não um por varredura. Coleção
+diferente desativada é fato novo e alerta novo. Roda no `maintenance_worker`, depois do
+`check_directive_health`.
+
+---
+
+### check_integration_drift
+
+**App:** `shopman.backstage`
+**Arquivo:** `shopman/backstage/management/commands/check_integration_drift.py`
+
+**Propósito:** Empurrar o que a tela de prontidão já sabia. `build_provider_readiness`
+responde há tempos que o Pix está no simulador, que a NFC-e aponta para homologação e que
+ninguém entrega o código de login — e essa verdade morava só em `/admin/diagnostics/`,
+esperando alguém abrir. O comando é o irmão do `check_directive_health`: mesma forma
+(varredura no ciclo do `maintenance_worker`, resultado vira alerta com debounce), aplicada à
+**configuração** em vez da fila. Nenhuma regra de prontidão muda aqui; só o caminho até o
+operador.
+
+**Uso:**
+```bash
+python manage.py check_integration_drift
+python manage.py check_integration_drift --dry-run   # só reporta
+```
+
+**Alerta:** `integration_config_drift`, um por provedor degradado. A régua tem dois eixos —
+onde estamos e o que o dono já decidiu:
+
+| instância | prontidão | severidade | janela |
+| --- | --- | --- | --- |
+| produção | `error` (insegura) | `critical` | 24h |
+| produção | `warning` (falta config) | `error` | 24h |
+| não-produção | `error` | `error` | 24h |
+| não-produção | `warning` | `warning` | 7 dias |
+
+A própria prontidão já vira a expectativa pelo ambiente (em `staging`, apontar para a NFC-e
+de **produção** é que é inseguro), então a tabela não repete o julgamento dela — só decide o
+tom. Para a instância que se declara `production` e ainda assim mantém, de propósito, a NFC-e
+em homologação, existe `SHOPMAN_INTEGRATION_DRIFT_EXPECTED`: uma lista de `provider` cujo
+estado degradado é decisão registrada. Provedor listado nunca passa de `warning` e usa a
+janela longa — lembrete semanal em vez de crítico diário, e continua existindo, porque a
+decisão de hoje é a surpresa de daqui a três meses.
+
+O dedupe é `(provider, lista de pendências)`, com `active_only=False`: consertar uma
+pendência de três é fato novo e merece aviso novo; o mesmo conjunto de novo na janela, não —
+nem depois de reconhecido.
 
 ---
 
@@ -701,6 +981,95 @@ readiness ao mesmo tempo em SQLite local.
 
 ---
 
+### export_backup
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/export_backup.py`
+
+Exporta o cofre de dados curados — as entidades não reconstruíveis (catálogo,
+receitas, fornecedores/custos, regras, canais, copy, promoções, de-paras do
+B.I.) — para um XLSX com uma aba por entidade, identidade por chave natural.
+Guia completo: [backup-and-restore.md](../guides/backup-and-restore.md).
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--out` | `var/backups` | Diretório de saída |
+| `--format` | `xlsx` | `xlsx` (um arquivo) ou `csv` (um arquivo por entidade, diff em git) |
+| `--only` | — | Entidades específicas, separadas por vírgula |
+| `--with-transactional` | — | Inclui abas somente-leitura de conferência (pedidos, ledger, caixa, pagamentos, fornadas); o import as recusa |
+
+```bash
+python manage.py export_backup
+python manage.py export_backup --format csv --only products,recipes
+python manage.py export_backup --with-transactional
+```
+
+O mesmo arquivo sai por `GET /api/v1/backstage/backup/export/` (permissão
+`backstage.export_backup`) — o caminho sem shell de um deploy.
+
+---
+
+### import_backup
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/import_backup.py`
+
+Importa um arquivo do `export_backup` de volta — upsert por chave natural, sem
+apagar nada. **Dry-run por padrão**; falha fechado em aba desconhecida, coluna
+renomeada e linha inválida (`full_clean` por linha). `--apply` roda numa
+transação única: qualquer erro desfaz o arquivo inteiro.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--apply` | — | Escreve de verdade (sem isso, só relata) |
+| `--only` | — | Entidades específicas |
+| `--force` | — | Obrigatório para `--apply` em produção (mesmo contrato do `seed`) |
+
+```bash
+python manage.py import_backup var/backups/backup-20260901-090000.xlsx
+python manage.py import_backup var/backups/backup-20260901-090000.xlsx --apply
+```
+
+---
+
+### export_backup_to_drive
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/export_backup_to_drive.py`
+
+**Banco → Drive.** Sobe o cofre como planilha **Google Sheets nativa**,
+atualizando sempre o mesmo arquivo (URL estável). Exige a ponte configurada
+(`SHOPMAN_GOOGLE_SERVICE_ACCOUNT_FILE` + `SHOPMAN_BACKUP_DRIVE_FOLDER`); sem
+ela, falha fechado apontando o guia. Zero dependência nova (PyJWT +
+cryptography, já no lock).
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--name` | `shopman-backup` | Nome da planilha na pasta do Drive |
+| `--only` | — | Entidades específicas |
+| `--with-transactional` | — | Inclui as abas somente-leitura de conferência |
+
+---
+
+### import_backup_from_drive
+
+**App:** `shopman.shop`
+**Arquivo:** `shopman/shop/management/commands/import_backup_from_drive.py`
+
+**Drive → banco.** Baixa a planilha curada como XLSX (fica em `var/backups/`,
+auditável) e emenda no `import_backup`, que continua mandando: **dry-run por
+padrão**, `--apply` numa transação única, `--force` obrigatório em produção.
+
+| Flag | Default | Descrição |
+|------|---------|-----------|
+| `--name` | `shopman-backup` | Nome na pasta do Drive, ou id de arquivo |
+| `--out` | `var/backups` | Onde guardar o XLSX baixado |
+| `--apply` | — | Escreve de verdade (sem isso, só relata) |
+| `--only` | — | Entidades específicas |
+| `--force` | — | Obrigatório para `--apply` em produção |
+
+---
+
 ### seed
 
 **App:** `shop`
@@ -800,3 +1169,60 @@ Cria ou atualiza um superuser nominal de forma idempotente, sem depender do
 # Worker de directives (systemd/supervisor, não cron)
 # python manage.py process_directives --watch
 ```
+
+### compute_product_affinity
+
+Recalcula `shop.ProductAffinity` — o que a casa vende junto — a partir das
+cestas do último ano: pedidos do Orderman e o histórico externo do B.I.
+(`shop/adapters/baskets.py`). É o sinal que substituiu "o item mais popular que
+não está na sacola" no adicional do carrinho e do concierge.
+
+```bash
+python manage.py compute_product_affinity                      # respeita a cadência
+python manage.py compute_product_affinity --force              # recalcula agora
+python manage.py compute_product_affinity --dry-run            # mostra o top 10
+python manage.py compute_product_affinity --window-days 180 --min-support 3
+```
+
+| Flag | Default | O que faz |
+|---|---|---|
+| `--window-days` | 365 | janela de cestas lidas |
+| `--half-life-days` | 120 | aos N dias uma cesta vale metade |
+| `--min-support` | 5 | mínimo de cestas em comum para o par virar linha |
+| `--min-interval-hours` | 20 | não recalcula se a tabela for mais nova que isto (`0` desliga) |
+| `--force` | — | recalcula mesmo com a tabela fresca |
+
+⚠️ **A cadência mora aqui, não no worker.** O `maintenance_worker` roda o ciclo
+a cada 5 minutos e não tem noção de "uma vez por noite"; um ano de cestas não
+cabe nisso. Quem sabe quanto custa o cálculo é o comando, e o relógio é o
+`computed_at` que a própria tabela já tem — sem bookkeeping nova. Por isso ele
+pode ficar no ciclo sem custo: 99% das vezes sai na primeira consulta.
+
+Roda no fim do ciclo do `maintenance_worker`, antes do `purge_sign_in_audit`.
+
+### propose_product_attributes
+
+Propõe `natureza`, `sabor` e `temperatura` por SKU a partir da **coleção
+primária** do produto, para o gestor revisar. É a carga inicial do registro de
+atributos (`shop.AttributeDefinition`).
+
+```bash
+python manage.py propose_product_attributes --dry-run
+python manage.py propose_product_attributes
+python manage.py propose_product_attributes --overwrite-derived
+```
+
+⚠️ **Proposta não é curadoria.** Tudo sai com `source="derived"` e
+`reviewed=False`; o gestor revisa no Admin. O que ele escreveu à mão
+(`source="manual"`) **nunca** é sobrescrito — nem com `--overwrite-derived`,
+que só reescreve propostas anteriores.
+
+Mercearia é desempatada por palavra-chave: geleia, mostarda, patê e queijo são
+`acompanhamento` (comem-se com o pão); café em grão e chá em lata são `outro`
+(saem pela porta). Coleção que não responde a pergunta deixa o atributo em
+branco — ausência de dado é ausência de dado, e "combos" não tem natureza
+própria: ele herda a dos componentes.
+
+O `seed` chama este comando no fim, depois do catálogo e das coleções. **Num
+deployment já no ar, ele precisa ser rodado à mão** — sem ele o registro fica
+vazio e os pareamentos de `suggestion.complement` não casam com nada.

@@ -32,14 +32,8 @@ const props = defineProps<{
   deliveryNeighborhood: string;
   deliveryComplement: string;
   deliveryInstructions: string;
-  deliveryDate: string;
-  /** A data que vale — a escolhida, ou o hoje que o servidor devolveu. */
-  deliveryDateEffective: string;
-  deliveryTimeSlot: string;
-  /** Janelas de meia hora do expediente do dia escolhido. */
-  deliverySlots: Array<{ ref: string; label: string }>;
-  /** Ainda não há resposta sobre as janelas (a review está a caminho). */
-  deliverySlotsPending: boolean;
+  /** O resumo do "quando", só para o atalho se explicar. */
+  scheduleLabel: string;
   deliveryFeeOverride: boolean;
   deliveryFeeOverrideInput: string;
   /** A taxa RESOLVIDA pelo servidor, e de onde ela veio. */
@@ -58,12 +52,11 @@ const emit = defineEmits<{
   "update:deliveryNeighborhood": [string];
   "update:deliveryComplement": [string];
   "update:deliveryInstructions": [string];
-  "update:deliveryDate": [string];
-  "update:deliveryTimeSlot": [string];
   "update:deliveryFeeOverride": [boolean];
   "update:deliveryFeeOverrideInput": [string];
   "update:orderNotes": [string];
   pickSavedAddress: [SavedAddressProjection];
+  openSchedule: [];
 }>();
 
 const isOpen = computed({
@@ -84,11 +77,6 @@ watch(() => props.fulfillmentType, async (type) => {
   if (!props.open || type !== "delivery" || !import.meta.client) return;
   await nextTick();
   addressAutocompleteRef.value?.focus();
-});
-
-const slotPlaceholder = computed(() => {
-  if (props.deliverySlots.length) return "A combinar";
-  return props.deliverySlotsPending ? "Preencha o endereço" : "Sem janela neste dia";
 });
 
 // De onde a taxa saiu, em palavras. O operador precisa poder responder "por que
@@ -188,34 +176,6 @@ function onAddressSelected(address: StructuredAddressProjection) {
               <UiInput :model-value="deliveryInstructions" placeholder="Portaria, referência" @update:model-value="$emit('update:deliveryInstructions', String($event || ''))" />
             </label>
           </div>
-          <!-- QUANDO — data e janela. A data nasce em HOJE (o hoje do servidor,
-               não o do tablet) e o horário deixa de ser texto solto: as janelas
-               de meia hora vêm do EXPEDIENTE daquele dia. Digitar "14:00-14:30"
-               num dia em que a casa fecha às 11h era uma promessa que ninguém
-               podia cumprir, e a tela não tinha como saber. -->
-          <div class="grid gap-2 sm:grid-cols-2">
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Data</span>
-              <UiInput
-                :model-value="deliveryDateEffective"
-                type="date"
-                @update:model-value="$emit('update:deliveryDate', String($event || ''))"
-              />
-            </label>
-            <label class="grid gap-1 text-sm">
-              <span class="font-medium text-muted-foreground">Horário combinado</span>
-              <select
-                :value="deliveryTimeSlot"
-                class="h-9 rounded-md border bg-background px-3 text-sm"
-                :disabled="!deliverySlots.length"
-                @change="$emit('update:deliveryTimeSlot', ($event.target as HTMLSelectElement).value)"
-              >
-                <option value="">{{ slotPlaceholder }}</option>
-                <option v-for="slot in deliverySlots" :key="slot.ref" :value="slot.ref">{{ slot.label }}</option>
-              </select>
-            </label>
-          </div>
-
           <!-- QUANTO — a taxa é RESOLVIDA pelo endereço (zona de CEP, faixa de
                distância, frete grátis por valor), o mesmo motor da loja. Era um
                campo livre, e campo livre é um segundo dono do preço: duas vendas
@@ -244,6 +204,24 @@ function onAddressSelected(address: StructuredAddressProjection) {
             />
           </div>
         </div>
+
+        <!-- QUANDO saiu deste formulário, e essa é a mudança. Data e janela
+             viraram a terceira caixa da barra de contexto (PosScheduleModal),
+             porque *quando* é fato do PEDIDO e não da entrega: presas dentro do
+             bloco de entrega, elas simplesmente NÃO EXISTIAM na retirada, e a
+             encomenda por telefone para retirar na quinta não tinha onde ser
+             escrita. O atalho fica FORA do bloco de entrega pela mesma razão. -->
+        <button
+          type="button"
+          class="flex items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-left text-sm transition hover:bg-accent"
+          @click="$emit('openSchedule')"
+        >
+          <span>
+            <span class="block font-medium text-muted-foreground">Quando</span>
+            <span class="block text-xs opacity-80">{{ scheduleLabel }}</span>
+          </span>
+          <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
+        </button>
 
         <!-- Observações do pedido valem para RETIRADA também (não só entrega):
              o dado sempre viajou no intent; só a tela o escondia. -->

@@ -4,7 +4,6 @@ Tests for pickup slot service — production-based slot assignment.
 Covers:
 - get_slots() reads from Shop.defaults, falls back to defaults
 - get_typical_ready_times() computes median from WorkOrder history
-- _round_up_minutes() rounds to configurable granularity
 - get_earliest_slot_for_skus() maps cart items to correct slot
 - annotate_slots_for_checkout() returns full template context
 """
@@ -21,7 +20,6 @@ from django.utils import timezone
 from shopman.shop.models import Shop
 from shopman.storefront.services.pickup_slots import (
     DEFAULT_SLOTS,
-    _round_up_minutes,
     annotate_slots_for_checkout,
     get_earliest_slot_for_skus,
     get_slots,
@@ -29,23 +27,6 @@ from shopman.storefront.services.pickup_slots import (
     is_slot_available_for_today,
     validate_pickup_slot_selection,
 )
-
-
-class RoundUpMinutesTests(TestCase):
-    def test_exact_boundary(self):
-        self.assertEqual(_round_up_minutes(330, 30), 330)  # 5:30 exact
-
-    def test_rounds_up(self):
-        self.assertEqual(_round_up_minutes(331, 30), 360)  # 5:31 → 6:00
-
-    def test_just_past(self):
-        self.assertEqual(_round_up_minutes(361, 30), 390)  # 6:01 → 6:30
-
-    def test_zero(self):
-        self.assertEqual(_round_up_minutes(0, 30), 0)
-
-    def test_15min_granularity(self):
-        self.assertEqual(_round_up_minutes(46, 15), 60)  # 0:46 → 1:00
 
 
 class GetSlotsTests(TestCase):

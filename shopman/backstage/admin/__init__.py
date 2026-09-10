@@ -21,6 +21,7 @@ from shopman.backstage.admin.consumption import (  # noqa: F401
     ConsumptionRoleAdmin,
     ProductConsumptionTagAdmin,
 )
+from shopman.backstage.admin.contact_releases import ContactReleaseAdmin  # noqa: F401
 from shopman.backstage.admin.curation import hide_curated_screens  # noqa: F401
 from shopman.backstage.admin.episodes import (  # noqa: F401
     OperationEpisodeAdmin,
@@ -32,6 +33,7 @@ from shopman.backstage.admin.imports import (  # noqa: F401
     ImportBatchAdmin,
 )
 from shopman.backstage.admin.kds import KDSInstanceAdmin  # noqa: F401
+from shopman.backstage.admin.merges import MergeAuditAdmin  # noqa: F401
 from shopman.backstage.admin.operation import (  # noqa: F401
     OperationChecklistRunAdmin,
     OperationChecklistTemplateAdmin,
@@ -41,6 +43,7 @@ from shopman.backstage.admin.operation import (  # noqa: F401
 from shopman.backstage.admin.operators import PinCredentialAdmin  # noqa: F401
 from shopman.backstage.admin.pos import POSTabAdmin  # noqa: F401
 from shopman.backstage.admin.seating import SeatingSpotAdmin  # noqa: F401
+from shopman.backstage.admin.sign_in import SignInEventAdmin  # noqa: F401
 from shopman.backstage.admin.terminal import TerminalAdmin  # noqa: F401
 
 register_totp_admin()

@@ -91,6 +91,77 @@ class TestMiseEnPlaceAggregation:
         assert not projection.has_lines
         assert projection.work_order_count == 0
 
+    def test_started_quantity_and_frozen_recipe_drive_existing_work_order(self, pao):
+        """A WO existente não muda quando quantidade/ficha vivas mudam depois do start."""
+        work_order = craft.plan(pao, 10, date=date.today())
+        craft.start(work_order, quantity=5, expected_rev=0)
+
+        pao.batch_size = Decimal("20")
+        pao.save(update_fields=["batch_size"])
+        pao.items.filter(input_sku="FARINHA").update(quantity=Decimal("100"))
+
+        projection = build_production_mise_en_place(selected_date=date.today())
+        by_sku = {line.sku: line for line in projection.lines}
+
+        assert by_sku["FARINHA"].quantity_display == "2,5 kg"
+        assert by_sku["SAL"].quantity_display == "0,05 kg"
+
+    def test_yield_margin_uses_started_quantity_over_the_frozen_bom(self):
+        """A margem da massa preserva a verdade do start e da ficha congelada."""
+        from shopman.craftsman.services.yield_margin import (
+            compute_yield_margin,
+            mixer_loss_g_for,
+        )
+
+        from shopman.backstage.projections.production import _measure
+
+        massa = Recipe.objects.create(
+            ref="massa",
+            name="Massa",
+            output_sku="MASSA",
+            batch_size=1,
+            meta={"output_unit": "kg", "mixer_loss_g": "0"},
+        )
+        RecipeItem.objects.create(
+            recipe=massa,
+            input_sku="FARINHA",
+            quantity="0.5",
+            unit="kg",
+        )
+        pao = Recipe.objects.create(
+            ref="pao-com-massa",
+            name="Pão com massa",
+            output_sku="PAO-MASSA",
+            batch_size=10,
+            meta={"output_unit": "un"},
+        )
+        RecipeItem.objects.create(
+            recipe=pao,
+            input_sku="MASSA",
+            quantity="2",
+            unit="kg",
+        )
+        work_order = craft.plan(pao, 10, date=date.today())
+        craft.start(work_order, quantity=5, expected_rev=0)
+
+        pao.batch_size = Decimal("20")
+        pao.save(update_fields=["batch_size"])
+        pao.items.filter(input_sku="MASSA").update(quantity=Decimal("100"))
+
+        projection = build_production_mise_en_place(selected_date=date.today())
+        line = next(item for item in projection.lines if item.sku == "MASSA")
+        margin = compute_yield_margin(
+            pieces=Decimal("5"),
+            unit="kg",
+            mixer_loss_g=mixer_loss_g_for(massa),
+        )
+
+        assert margin is not None
+        assert projection.yield_margin_applied
+        assert line.quantity_display == _measure(Decimal("1") + margin.total, "kg")
+        assert line.margin_display == f"+ {_measure(margin.total, 'kg')} de margem"
+        assert "5 peças" in line.margin_reason
+
 
 class TestMiseEnPlaceExpand:
     def test_expand_explodes_subrecipe_into_raw_materials(self, pao):
@@ -163,6 +234,19 @@ class TestMiseEnPlaceAvailability:
         assert farinha.is_short
         sal = next(line for line in projection.lines if line.sku == "SAL")
         assert not sal.available_display or sal.available_display == "0 kg"
+
+    def test_known_zero_is_a_reading_and_remains_visible(self, pao):
+        from shopman.stockman.models import Quant
+
+        Quant.objects.create(sku="FARINHA")
+        craft.plan(pao, 10, date=date.today())
+
+        projection = build_production_mise_en_place(selected_date=date.today())
+        farinha = next(line for line in projection.lines if line.sku == "FARINHA")
+
+        assert projection.has_stock_readings
+        assert farinha.available_display == "0 kg"
+        assert farinha.is_short
 
 
 class TestMiseEnPlaceAnnotation:
@@ -258,7 +342,7 @@ class TestMiseEnPlaceAnnotation:
     def test_supplier_scoped_conversion_is_not_read_on_the_bench(self, ovos, madeleine):
         from shopman.buyman.models import MaterialConversion, Supplier
 
-        granja = Supplier.objects.create(ref="SUP-GRANJA", name="Granja")
+        granja = Supplier.objects.create(ref="granja", name="Granja")
         MaterialConversion.objects.create(
             material=ovos, supplier=granja, label="ovos", to_base_factor=Decimal("0.05"),
             kind=MaterialConversion.Kind.APPROXIMATE,

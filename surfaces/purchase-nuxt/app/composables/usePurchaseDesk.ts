@@ -6,318 +6,38 @@ import type {
   PurchaseProjection,
   PurchaseResponse,
   ConversionKind,
+  CountItem,
   Material,
   MaterialConversion,
   ReceiptLine,
   ReceiptLinePreview,
   ReceiptMode,
+  ReceiptOutcome,
   Supplier,
   SupplierMaterialCost,
 } from "~/types/purchase";
 import { PURCHASE_API_ENDPOINTS, usePurchaseApi } from "~/composables/usePurchaseApi";
 import {
+  costBatchLineErrors as buildCostBatchLineErrors,
+  costBatchPayload as buildCostBatchPayload,
   costPerBaseUnitQ,
+  countConfirmPayload,
+  countRows,
+  countSummary,
   enrichMaterial,
   invoiceProbe,
   isApproximateCost,
   parseMoneyInput,
   quotePreview as buildQuotePreview,
+  receiptFirstBlocker as receiptFirstReceiptBlocker,
+  receiptIsBlank as receiptIsBlankDraft,
   receiptLinePreview,
+  receiptLineRows,
+  receiptPendingItems,
+  reorderBlockers as buildReorderBlockers,
+  reorderRows as buildReorderRows,
   supplierCostRows,
 } from "~/presentation/purchase";
-
-const MATERIALS: Material[] = [
-  {
-    sku: "FARINHA-T65",
-    name: "Farinha T65",
-    unit: "kg",
-    shelfLifeDays: 180,
-    isActive: true,
-    category: "Farinhas",
-    stockOnHand: 78,
-    dailyUse: 18,
-    minStock: 60,
-    recipes: ["Baguete", "Croissant", "Pain de campagne"],
-  },
-  {
-    sku: "MANTEIGA-TOURAGE",
-    name: "Manteiga de tourage",
-    unit: "kg",
-    shelfLifeDays: 45,
-    isActive: true,
-    category: "Laticínios",
-    stockOnHand: 22,
-    dailyUse: 9,
-    minStock: 30,
-    recipes: ["Croissant", "Pain au chocolat"],
-  },
-  {
-    // Comprado por cartela e contado em kg: a ponte e aproximada, e o saldo
-    // carrega o "≈" por causa disso (ADR-024, R3).
-    stockIsApproximate: true,
-    sku: "OVOS",
-    name: "Ovos",
-    unit: "kg",
-    shelfLifeDays: 21,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 16,
-    dailyUse: 4,
-    minStock: 12,
-    recipes: ["Quiche", "Brioche", "Creme confeiteiro"],
-  },
-  {
-    sku: "FERMENTO-NAT",
-    name: "Fermento natural",
-    unit: "kg",
-    shelfLifeDays: 14,
-    isActive: true,
-    category: "Fermentação",
-    stockOnHand: 7,
-    dailyUse: 2.4,
-    minStock: 8,
-    recipes: ["Levain", "Pain de campagne"],
-  },
-  {
-    // Pesado em kg e comprado em pacote, e sem conversao cadastrada: e o estado
-    // que a linha do recebimento precisa saber mostrar, e o que o QA de 27/08
-    // encontrou quebrado (10 unidades lidas como 10 kg).
-    sku: "FERMENTO-BIO",
-    name: "Fermento biológico",
-    unit: "kg",
-    shelfLifeDays: 45,
-    isActive: true,
-    category: "Fermentação",
-    stockOnHand: 2.5,
-    dailyUse: 0.6,
-    minStock: 2,
-    recipes: ["Brioche", "Croissant"],
-  },
-  {
-    sku: "SAL",
-    name: "Sal",
-    unit: "kg",
-    shelfLifeDays: null,
-    isActive: true,
-    category: "Secos",
-    stockOnHand: 55,
-    dailyUse: 1.1,
-    minStock: 20,
-    recipes: ["Todas as massas"],
-  },
-  {
-    sku: "CANELA",
-    name: "Canela",
-    unit: "g",
-    shelfLifeDays: 180,
-    isActive: true,
-    category: "Especiarias",
-    stockOnHand: 750,
-    dailyUse: 90,
-    minStock: 600,
-    recipes: ["Pain perdu", "Rabanada"],
-  },
-  {
-    sku: "ALECRIM",
-    name: "Alecrim fresco",
-    unit: "g",
-    shelfLifeDays: 14,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 260,
-    dailyUse: 120,
-    minStock: 400,
-    recipes: ["Focaccia", "Pão de alecrim"],
-  },
-  {
-    sku: "LEITE-INTEGRAL",
-    name: "Leite integral",
-    unit: "l",
-    shelfLifeDays: 7,
-    isActive: true,
-    category: "Laticínios",
-    stockOnHand: 14,
-    dailyUse: 8,
-    minStock: 30,
-    recipes: ["Creme confeiteiro", "Chocolate quente"],
-  },
-  {
-    sku: "QUEIJO-ARTESANAL",
-    name: "Queijo artesanal",
-    unit: "kg",
-    shelfLifeDays: 18,
-    isActive: true,
-    category: "Frescos",
-    stockOnHand: 5.5,
-    dailyUse: 1.3,
-    minStock: 8,
-    recipes: ["Quiche", "Tartine", "Sanduíche de queijo"],
-  },
-];
-
-const SUPPLIERS: Supplier[] = [
-  {
-    ref: "SUP-MOINHO-SP",
-    name: "Moinho São Paulo",
-    document: "12.345.678/0001-90",
-    contact: "compras@moinhosp.example",
-    leadTimeDays: 2,
-    reliabilityPercent: 96,
-    isActive: true,
-    lastDeliveryAt: "2026-08-22",
-    paymentTerm: "14 dias",
-  },
-  {
-    ref: "SUP-COOP-NORTE",
-    name: "Cooperativa Norte",
-    document: "43.210.987/0001-12",
-    contact: "pedidos@coopnorte.example",
-    leadTimeDays: 3,
-    reliabilityPercent: 91,
-    isActive: true,
-    lastDeliveryAt: "2026-08-20",
-    paymentTerm: "7 dias",
-  },
-  {
-    ref: "SUP-LATICINIOS",
-    name: "Laticínios Aurora",
-    document: "18.190.200/0001-05",
-    contact: "aurora@laticinios.example",
-    leadTimeDays: 1,
-    reliabilityPercent: 98,
-    isActive: true,
-    lastDeliveryAt: "2026-08-24",
-    paymentTerm: "à vista",
-  },
-  {
-    ref: "SUP-CEASA-LONDRINA",
-    name: "Ceasa Londrina",
-    document: "09.001.002/0001-33",
-    contact: "banca27@ceasa.example",
-    leadTimeDays: 1,
-    reliabilityPercent: 86,
-    isActive: true,
-    lastDeliveryAt: "2026-08-24",
-    paymentTerm: "7 dias",
-  },
-  {
-    ref: "SUP-DISTRIBUIDORA",
-    name: "Distribuidora Paraná",
-    document: "33.444.555/0001-44",
-    contact: "industrial@parana.example",
-    leadTimeDays: 4,
-    reliabilityPercent: 89,
-    isActive: true,
-    lastDeliveryAt: "2026-08-18",
-    paymentTerm: "21 dias",
-  },
-  {
-    ref: "SUP-FAZENDA-BOA-VISTA",
-    name: "Fazenda Boa Vista",
-    document: "entrega informal",
-    contact: "WhatsApp do produtor",
-    leadTimeDays: 1,
-    reliabilityPercent: 88,
-    isActive: true,
-    lastDeliveryAt: "2026-08-25",
-    paymentTerm: "à vista",
-  },
-];
-
-const CONVERSIONS: MaterialConversion[] = [
-  { id: "conv-farinha-moinho-25", materialSku: "FARINHA-T65", supplierRef: "SUP-MOINHO-SP", label: "saco 25 kg", toBaseFactor: 25, kind: "conventional", isActive: true },
-  { id: "conv-farinha-coop-20", materialSku: "FARINHA-T65", supplierRef: "SUP-COOP-NORTE", label: "saco 20 kg", toBaseFactor: 20, kind: "conventional", isActive: true },
-  { id: "conv-manteiga-caixa-10", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-LATICINIOS", label: "caixa 10 kg", toBaseFactor: 10, kind: "conventional", isActive: true },
-  { id: "conv-manteiga-pacote-5", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-DISTRIBUIDORA", label: "pacote 5 kg", toBaseFactor: 5, kind: "conventional", isActive: true },
-  { id: "conv-ovos-cartela", materialSku: "OVOS", supplierRef: null, label: "cartela", toBaseFactor: 1.5, kind: "approximate", isActive: true },
-  { id: "conv-ovos-caixa", materialSku: "OVOS", supplierRef: "SUP-DISTRIBUIDORA", label: "caixa 12 cartelas", toBaseFactor: 18, kind: "approximate", isActive: true },
-  { id: "conv-canela-pacote", materialSku: "CANELA", supplierRef: "SUP-DISTRIBUIDORA", label: "pacote 500 g", toBaseFactor: 500, kind: "conventional", isActive: true },
-  { id: "conv-leite-caixa", materialSku: "LEITE-INTEGRAL", supplierRef: "SUP-LATICINIOS", label: "caixa 12 l", toBaseFactor: 12, kind: "conventional", isActive: true },
-  { id: "conv-alecrim-maco", materialSku: "ALECRIM", supplierRef: "SUP-CEASA-LONDRINA", label: "maço", toBaseFactor: 80, kind: "approximate", isActive: true },
-  { id: "conv-queijo-peca", materialSku: "QUEIJO-ARTESANAL", supplierRef: "SUP-FAZENDA-BOA-VISTA", label: "peça", toBaseFactor: 0.9, kind: "approximate", isActive: true },
-];
-
-const COSTS: SupplierMaterialCost[] = [
-  { id: "cost-farinha-moinho", materialSku: "FARINHA-T65", supplierRef: "SUP-MOINHO-SP", conversionId: "conv-farinha-moinho-25", costQ: 18000, isPreferred: true, updatedAt: "2026-08-22" },
-  { id: "cost-farinha-coop", materialSku: "FARINHA-T65", supplierRef: "SUP-COOP-NORTE", conversionId: "conv-farinha-coop-20", costQ: 15200, isPreferred: false, updatedAt: "2026-08-20" },
-  { id: "cost-manteiga-laticinios", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-LATICINIOS", conversionId: "conv-manteiga-caixa-10", costQ: 69000, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-manteiga-distribuidora", materialSku: "MANTEIGA-TOURAGE", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-manteiga-pacote-5", costQ: 36500, isPreferred: false, updatedAt: "2026-08-16" },
-  { id: "cost-ovos-ceasa", materialSku: "OVOS", supplierRef: "SUP-CEASA-LONDRINA", conversionId: "conv-ovos-cartela", costQ: 2400, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-ovos-distribuidora", materialSku: "OVOS", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-ovos-caixa", costQ: 25200, isPreferred: false, updatedAt: "2026-08-18" },
-  { id: "cost-sal-distribuidora", materialSku: "SAL", supplierRef: "SUP-DISTRIBUIDORA", conversionId: null, costQ: 290, isPreferred: true, updatedAt: "2026-08-12" },
-  { id: "cost-canela-distribuidora", materialSku: "CANELA", supplierRef: "SUP-DISTRIBUIDORA", conversionId: "conv-canela-pacote", costQ: 2250, isPreferred: true, updatedAt: "2026-08-12" },
-  { id: "cost-leite-laticinios", materialSku: "LEITE-INTEGRAL", supplierRef: "SUP-LATICINIOS", conversionId: "conv-leite-caixa", costQ: 10800, isPreferred: true, updatedAt: "2026-08-24" },
-  { id: "cost-alecrim-ceasa", materialSku: "ALECRIM", supplierRef: "SUP-CEASA-LONDRINA", conversionId: "conv-alecrim-maco", costQ: 650, isPreferred: false, updatedAt: "2026-08-24" },
-  { id: "cost-queijo-fazenda", materialSku: "QUEIJO-ARTESANAL", supplierRef: "SUP-FAZENDA-BOA-VISTA", conversionId: "conv-queijo-peca", costQ: 4200, isPreferred: true, updatedAt: "2026-08-25" },
-];
-
-const INVOICE_ACCESS_KEY = "41260812345678000190550010000012341000123459";
-
-const INVOICE_RECEIPT_LINES: ReceiptLine[] = [
-  {
-    id: "receipt-farinha",
-    materialSku: "FARINHA-T65",
-    conversionId: "conv-farinha-moinho-25",
-    purchaseQty: 2,
-    costInput: "360,00",
-    expiryDate: "2027-02-25",
-    lineNote: "",
-    checked: true,
-  },
-  {
-    id: "receipt-ovos",
-    materialSku: "OVOS",
-    conversionId: "conv-ovos-cartela",
-    purchaseQty: 4,
-    costInput: "96,00",
-    expiryDate: "2026-09-10",
-    lineNote: "",
-    checked: false,
-  },
-  {
-    id: "receipt-fermento",
-    materialSku: "FERMENTO-BIO",
-    conversionId: null,
-    requiresConversion: true,
-    conversionSuggestion: {
-      label: "un 500 g",
-      factor: "0.5",
-      kind: "conventional",
-      source: "invoice-tax-pair",
-      note: "A NF diz 10 UN = 5 KG (12,00 por KG), então 1 UN = 0,5 kg.",
-    },
-    purchaseQty: 10,
-    costInput: "60,00",
-    expiryDate: "2026-10-05",
-    lineNote: "Confirmar a conversao sugerida (un 500 g). NF: FERM BIOL FRESCO MAURI 500G; unidade UN; tributavel 5 KG.",
-    invoiceUnit: "UN",
-    invoiceProductCode: "FERM-500",
-    checked: false,
-  },
-];
-
-const MANUAL_RECEIPT_LINES: ReceiptLine[] = [
-  {
-    id: "receipt-manual-ovos",
-    materialSku: "OVOS",
-    conversionId: "conv-ovos-cartela",
-    purchaseQty: 2,
-    costInput: "48,00",
-    expiryDate: "2026-09-08",
-    lineNote: "Produtor entregou romaneio em papel.",
-    checked: false,
-  },
-  {
-    id: "receipt-manual-queijo",
-    materialSku: "QUEIJO-ARTESANAL",
-    conversionId: "conv-queijo-peca",
-    purchaseQty: 3,
-    costInput: "126,00",
-    expiryDate: "2026-09-06",
-    lineNote: "",
-    checked: false,
-  },
-];
 
 function copy<T>(items: T[]): T[] {
   return items.map((item) => ({ ...item }));
@@ -358,32 +78,63 @@ export function usePurchaseDesk() {
   const baseView = useState<PurchaseBaseView>("purchase-base-view", () => "materials");
   const query = useState("purchase-query", () => "");
   const onlyAlerts = useState("purchase-only-alerts", () => false);
-  const selectedMaterialSku = useState("purchase-selected-material", () => "FARINHA-T65");
-  const selectedSupplierRef = useState("purchase-selected-supplier", () => "SUP-MOINHO-SP");
-  const noteMaterialSku = useState("purchase-note-material", () => "FARINHA-T65");
-  const noteSupplierRef = useState("purchase-note-supplier", () => "SUP-MOINHO-SP");
-  const noteConversionId = useState("purchase-note-conversion", () => "conv-farinha-moinho-25");
-  const noteCostInput = useState("purchase-note-cost", () => "180,00");
+  const selectedMaterialSku = useState("purchase-selected-material", () => "");
+  const selectedSupplierRef = useState("purchase-selected-supplier", () => "");
+  const noteMaterialSku = useState("purchase-note-material", () => "");
+  const noteSupplierRef = useState("purchase-note-supplier", () => "");
+  const noteConversionId = useState("purchase-note-conversion", () => "");
+  const noteCostInput = useState("purchase-note-cost", () => "");
   const receiptMode = useState<ReceiptMode>("purchase-receipt-mode", () => "invoice");
-  const invoiceInput = useState(
-    "purchase-invoice-input",
-    () => `https://www.fazenda.pr.gov.br/nfce/qrcode?p=${INVOICE_ACCESS_KEY}|2|1|1|A1B2C3D4E5`,
-  );
-  const receiptSupplierRef = useState("purchase-receipt-supplier", () => "SUP-MOINHO-SP");
+  const invoiceInput = useState("purchase-invoice-input", () => "");
+  const receiptSupplierRef = useState("purchase-receipt-supplier", () => "");
   const receiptNote = useState("purchase-receipt-note", () => "");
-  const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => copy(INVOICE_RECEIPT_LINES));
-  const receiptConfirmedAt = useState<string | null>("purchase-receipt-confirmed-at", () => null);
-  const receiptRejectedAt = useState<string | null>("purchase-receipt-rejected-at", () => null);
+  const receiptLines = useState<ReceiptLine[]>("purchase-receipt-lines", () => []);
+  // Confirmar zera o rascunho, e um rascunho zerado nao sabe dizer o que acabou
+  // de entrar. O resultado guarda o resumo capturado ANTES da limpeza — e o que
+  // o aviso de sucesso mostra.
+  const receiptOutcome = useState<ReceiptOutcome | null>("purchase-receipt-outcome", () => null);
   const receiptHydrated = useState("purchase-receipt-hydrated", () => false);
   const purchaseRequestStatuses = useState<Record<string, PurchaseRequestStatus>>(
     "purchase-request-statuses",
     () => ({}),
   );
 
-  const materials = useState<Material[]>("purchase-materials", () => copy(MATERIALS));
-  const suppliers = useState<Supplier[]>("purchase-suppliers", () => copy(SUPPLIERS));
-  const conversions = useState<MaterialConversion[]>("purchase-conversions", () => copy(CONVERSIONS));
-  const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => copy(COSTS));
+  // A base nasce VAZIA e só o servidor a preenche.
+  //
+  // Estas quatro listas já nasceram com um catálogo de demonstração dentro
+  // (farinha, manteiga, ovos, leite, alecrim...), e como a busca é client-side
+  // (`server: false`) esse catálogo era o que a primeira pintura mostrava — em
+  // número grande, sem nenhuma marca de que era exemplo. O painel anunciava
+  // "Comprar 8 · R$ 4.293,97" com insumos que a padaria não tinha, e quando a
+  // resposta real chegava o mesmo painel virava 0. Nada mudara nos dados: o
+  // primeiro número nunca fora real. Dado inventado não é estado de partida.
+  const materials = useState<Material[]>("purchase-materials", () => []);
+  const suppliers = useState<Supplier[]>("purchase-suppliers", () => []);
+  const conversions = useState<MaterialConversion[]>("purchase-conversions", () => []);
+  const costs = useState<SupplierMaterialCost[]>("purchase-costs", () => []);
+  // Contagem: a posição vem CRUA do ledger (endpoint próprio, restrito ao
+  // gestor/dono) — o stockOnHand do board desconta hold e lote vencido e não
+  // bateria com o ajuste lançado.
+  const countItems = useState<CountItem[]>("purchase-count-items", () => []);
+  const countInputs = useState<Record<string, string>>("purchase-count-inputs", () => ({}));
+  const countReasons = useState<Record<string, string>>("purchase-count-reasons", () => ({}));
+  const countLoaded = useState("purchase-count-loaded", () => false);
+  const countForbidden = useState("purchase-count-forbidden", () => false);
+  const countConfirmedAt = useState<string | null>("purchase-count-confirmed-at", () => null);
+  // Lançamento em lote: uma tabela de preços do MESMO fornecedor. É o gesto que
+  // tira 54 insumos do estado "sem custo preferencial" — e portanto fora de
+  // qualquer pedido — sem passar pelo Django Admin.
+  const batchSupplierRef = useState("purchase-batch-supplier", () => "");
+  const batchInputs = useState<Record<string, string>>("purchase-batch-inputs", () => ({}));
+  const batchConversionIds = useState<Record<string, string>>("purchase-batch-conversions", () => ({}));
+  const batchOnlyMissing = useState("purchase-batch-only-missing", () => true);
+  const batchQuery = useState("purchase-batch-query", () => "");
+  const batchLineErrors = useState<Record<string, string>>("purchase-batch-line-errors", () => ({}));
+  // Estoque mínimo declarado: sem consumo medido o alvo de reposição é zero e o
+  // insumo nunca vira sugestão. Declarar o mínimo é o que o destrava.
+  const minStockInputs = useState<Record<string, string>>("purchase-min-stock-inputs", () => ({}));
+  const minStockLineErrors = useState<Record<string, string>>("purchase-min-stock-errors", () => ({}));
+  const countPending = ref(false);
   const api = usePurchaseApi();
   const actionPending = ref(false);
   const actionError = ref("");
@@ -408,7 +159,7 @@ export function usePurchaseDesk() {
     if (backendErrorStatus.value === 401) {
       return "Entre novamente para carregar dados reais e registrar ações.";
     }
-    return "A tela está em consulta com dados de exemplo. Ações como receber, enviar pedidos e definir custos ficam bloqueadas até reconectar ao Django.";
+    return "A tela não conseguiu carregar a base de insumos, fornecedores e custos. Nada é exibido enquanto não houver dado real. Toque em Atualizar para tentar de novo.";
   });
 
   const enrichedMaterials = computed(() =>
@@ -475,25 +226,41 @@ export function usePurchaseDesk() {
       .map((line) => receiptLinePreview(line, receiptMode.value, materials.value, conversions.value))
       .filter((preview): preview is ReceiptLinePreview => Boolean(preview)),
   );
+  // A lista da entrada: uma linha por item, com o estado dela. É por ela que o
+  // operador enxerga a nota inteira sem rolar dez formulários abertos.
+  const receiptRows = computed(() => receiptLineRows(receiptLinePreviews.value));
   const receiptLineWarnings = computed(() => receiptLinePreviews.value.flatMap((preview) => preview.warnings));
   const receiptBlockers = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "block"));
   const receiptWatchWarnings = computed(() => receiptLineWarnings.value.filter((warning) => warning.tone === "watch"));
+  // Um rascunho que ainda nao comecou nao tem pendencia — tem convite. Sem
+  // isto, confirmar a entrada devolvia o rascunho zerado do servidor e a tela
+  // acusava "Ler QR, codigo de barras ou chave da NF" em vermelho logo ACIMA do
+  // "Entrada confirmada" em verde. O operador acertou tudo e levou uma bronca.
+  const receiptIsBlank = computed(() =>
+    receiptIsBlankDraft(receiptLines.value, invoiceInput.value, receiptNote.value),
+  );
+
   // O painel listava as pendências ACHATADAS — dez pílulas "Definir insumo"
   // iguais, sem dizer de qual item, e a lista ficava inútil justamente quando
   // era mais necessária (nota grande). Uma linha por item, com nome e gesto.
-  const receiptPendingLines = computed(() =>
-    receiptLinePreviews.value
-      .filter((preview) => preview.nextStep)
-      .map((preview) => ({
-        id: preview.line.id,
-        label: preview.line.invoiceDescription || preview.material.name || "Item sem descrição",
-        step: preview.nextStep,
-      })),
-  );
+  const receiptPendingLines = computed(() => receiptPendingItems(receiptLinePreviews.value));
   const receiptDocumentBlockers = computed(() =>
-    receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"] : [],
+    receiptIsBlank.value ? []
+    : receiptMode.value === "invoice" && !invoiceStatus.value.valid ? ["Ler QR, código de barras ou chave da NF"]
+    : [],
   );
-  const receiptSupplierBlockers = computed(() => (receiptSupplierRef.value ? [] : ["Definir fornecedor"]));
+  const receiptSupplierBlockers = computed(() =>
+    receiptIsBlank.value || receiptSupplierRef.value ? [] : ["Definir fornecedor"],
+  );
+  // O gesto que o botao `Confirmar entrada` responde quando ainda nao da.
+  const receiptFirstBlocker = computed(() =>
+    receiptFirstReceiptBlocker(
+      receiptDocumentBlockers.value,
+      receiptSupplierBlockers.value,
+      receiptPendingLines.value,
+      receiptLinePreviews.value.length > 0,
+    ),
+  );
   const receiptCheckedCount = computed(() => receiptLinePreviews.value.filter((preview) => preview.line.checked).length);
   const receiptTotalCostQ = computed(() =>
     receiptLinePreviews.value.reduce((total, preview) => total + preview.totalCostQ, 0),
@@ -545,20 +312,172 @@ export function usePurchaseDesk() {
       }),
   );
 
+  // A fila de compra vem inteira de `presentation/` e é a resposta do SERVIDOR
+  // (`Material.suggestedQty`). Ver `reorderRows` lá: painel e tela Comprar
+  // faziam duas contas diferentes para a mesma pergunta, e discordavam em voz
+  // alta.
   const reorderRows = computed(() =>
-    enrichedMaterials.value
-      .filter((material) => material.stockOnHand < material.minStock || material.coverageDays <= 5)
-      .map((material) => {
-        const preferred = material.preferredCost;
-        const supplier = preferred ? suppliers.value.find((item) => item.ref === preferred.supplierRef) : null;
-        const target = Math.max(material.minStock * 2, material.dailyUse * 7);
-        const suggestedQty = Math.max(0, Math.ceil(target - material.stockOnHand));
-        const estimatedCostQ =
-          preferred && material.preferredBaseCostQ ? Math.round(material.preferredBaseCostQ * suggestedQty) : null;
-        return { material, supplier, suggestedQty, estimatedCostQ };
-      })
-      .sort((a, b) => a.material.coverageDays - b.material.coverageDays),
+    buildReorderRows(materials.value, suppliers.value, costs.value, conversions.value),
   );
+
+  // Por que a fila está vazia. Só faz sentido depois que o servidor respondeu —
+  // antes disso o vazio é "ainda não chegou", não "não há".
+  const reorderBlockers = computed(() =>
+    backendReady.value ? buildReorderBlockers(materials.value, costs.value) : [],
+  );
+
+  // As linhas da tabela de preços. O filtro nasce em "só os que faltam" porque
+  // é essa a tarefa: fechar o buraco dos insumos sem custo preferencial.
+  const batchRows = computed(() => {
+    const term = batchQuery.value.trim().toLowerCase();
+    return enrichedMaterials.value.filter((material) => {
+      if (!material.isActive) return false;
+      if (batchOnlyMissing.value && material.preferredCost) return false;
+      if (!term) return true;
+      return (
+        material.name.toLowerCase().includes(term) ||
+        material.sku.toLowerCase().includes(term) ||
+        material.category.toLowerCase().includes(term)
+      );
+    });
+  });
+
+  // Conta as MESMAS linhas que o payload manda — as visíveis. Um botão que diz
+  // "Salvar 10" e manda 3 é pior que um botão sem número.
+  const batchFilledCount = computed(
+    () => batchRows.value.filter((row) => Boolean((batchInputs.value[row.sku] ?? "").trim())).length,
+  );
+
+  // Trocar de fornecedor invalida a unidade de compra escolhida: a conversão é
+  // do par (insumo, fornecedor). Sem limpar, o `<select>` fica em branco — a
+  // opção sumiu da lista — enquanto o id antigo continua no estado e viaja no
+  // payload, e o servidor recusa o lote inteiro com "conversão pertence a outro
+  // fornecedor" numa linha que na tela diz "Unidade-base".
+  watch(batchSupplierRef, () => {
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  });
+
+  const batchReady = computed(() => Boolean(batchSupplierRef.value) && batchFilledCount.value > 0);
+
+  function batchConversionsFor(materialSku: string) {
+    return conversions.value.filter(
+      (conversion) =>
+        conversion.isActive &&
+        conversion.materialSku === materialSku &&
+        (!conversion.supplierRef || conversion.supplierRef === batchSupplierRef.value),
+    );
+  }
+
+  function setBatchInput(materialSku: string, value: string) {
+    batchInputs.value = { ...batchInputs.value, [materialSku]: value };
+    // Editar a linha apaga o erro dela: o aviso descreve o que foi enviado, e o
+    // que está na tela já não é isso.
+    if (batchLineErrors.value[materialSku]) {
+      batchLineErrors.value = Object.fromEntries(
+        Object.entries(batchLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function setBatchConversion(materialSku: string, conversionId: string) {
+    batchConversionIds.value = { ...batchConversionIds.value, [materialSku]: conversionId };
+  }
+
+  // Só as linhas visíveis, pelo mesmo motivo do lote de custos: a busca e o
+  // filtro "Atenção" escondem linhas já digitadas, e o erro de uma linha
+  // escondida não teria onde aparecer.
+  const minStockRows = computed(() =>
+    filteredMaterials.value.filter((material) => Boolean((minStockInputs.value[material.sku] ?? "").trim())),
+  );
+
+  const minStockFilledCount = computed(() => minStockRows.value.length);
+
+  function setMinStockInput(materialSku: string, value: string) {
+    minStockInputs.value = { ...minStockInputs.value, [materialSku]: value };
+    if (minStockLineErrors.value[materialSku]) {
+      minStockLineErrors.value = Object.fromEntries(
+        Object.entries(minStockLineErrors.value).filter(([sku]) => sku !== materialSku),
+      );
+    }
+  }
+
+  function clearMinStock() {
+    minStockInputs.value = {};
+    minStockLineErrors.value = {};
+  }
+
+  /** Declara os mínimos digitados. Mesmo contrato do lote de custos. */
+  async function saveMinStock() {
+    if (!minStockFilledCount.value) return;
+    if (!requireBackend("salvar os mínimos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    minStockLineErrors.value = {};
+    try {
+      const minimums = minStockRows.value.map((material) => ({
+        materialSku: material.sku,
+        minStock: (minStockInputs.value[material.sku] ?? "").trim(),
+      }));
+      const response = await api.setMinStock({ minimums });
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearMinStock();
+      await refresh();
+    } catch (err) {
+      minStockLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
+      const message = httpErrorMessage(err, "Não foi possível salvar os mínimos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
+
+  function clearCostBatch() {
+    batchInputs.value = {};
+    batchConversionIds.value = {};
+    batchLineErrors.value = {};
+  }
+
+  /**
+   * Lança a tabela inteira num POST.
+   *
+   * O lote é tudo-ou-nada no servidor, então a recusa precisa dizer QUAL linha
+   * errou — senão o operador recebe "corrija as linhas" olhando para quarenta
+   * campos preenchidos. Os erros voltam em `error.lines` e vão para o campo.
+   */
+  async function saveCostBatch() {
+    if (!batchReady.value) return;
+    if (!requireBackend("salvar os custos")) return;
+    if (actionPending.value) return;
+
+    actionPending.value = true;
+    actionError.value = "";
+    batchLineErrors.value = {};
+    try {
+      const payload = buildCostBatchPayload(
+        batchSupplierRef.value,
+        batchInputs.value,
+        batchConversionIds.value,
+        batchRows.value.map((row) => row.sku),
+      );
+      const response = await api.upsertCostBatch(payload);
+      if (response.purchase) applyProjection(response.purchase);
+      if (response.message) useSonner.success(response.message);
+      clearCostBatch();
+      await refresh();
+    } catch (err) {
+      batchLineErrors.value = buildCostBatchLineErrors(httpError(err).data);
+      const message = httpErrorMessage(err, "Não foi possível salvar os custos.");
+      actionError.value = message;
+      useSonner.error(message);
+    } finally {
+      actionPending.value = false;
+    }
+  }
 
   const supplierSummaries = computed(() =>
     suppliers.value.map((supplier) => {
@@ -662,8 +581,7 @@ export function usePurchaseDesk() {
       invoiceInput.value = next.activeReceipt.invoiceInput || "";
       receiptNote.value = next.activeReceipt.note || "";
       receiptLines.value = receiptLineCopy(next.activeReceipt.lines ?? []);
-      receiptConfirmedAt.value = null;
-      receiptRejectedAt.value = null;
+      receiptOutcome.value = null;
       receiptHydrated.value = true;
     }
     normalizeSelections();
@@ -699,7 +617,7 @@ export function usePurchaseDesk() {
   // vai selecionar. `null` continua sendo o "não deu" dos usos que só testam.
   async function runBackendAction(
     request: () => Promise<PurchaseActionResponse>,
-    options: { receipt?: boolean } = {},
+    options: { receipt?: boolean; quiet?: boolean } = {},
   ): Promise<PurchaseActionResponse | null> {
     if (actionPending.value) return null;
     actionPending.value = true;
@@ -707,7 +625,10 @@ export function usePurchaseDesk() {
     try {
       const response = await request();
       if (response.purchase) applyProjection(response.purchase, options);
-      if (response.message) useSonner.success(response.message);
+      // `quiet`: a própria tela já anuncia o que aconteceu, e em tamanho maior
+      // que um toast. Repetir "Entrada confirmada no estoque" duas vezes na
+      // mesma dobra não é reforço, é ruído.
+      if (response.message && !options.quiet) useSonner.success(response.message);
       await refresh();
       return response;
     } catch (err) {
@@ -754,35 +675,20 @@ export function usePurchaseDesk() {
 
   function setReceiptMode(mode: ReceiptMode) {
     receiptMode.value = mode;
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
-    if (backendReady.value) {
-      receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
-      receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
-      receiptLines.value = [];
-      return;
-    }
-    if (mode === "manual") {
-      receiptSupplierRef.value = "SUP-FAZENDA-BOA-VISTA";
-      receiptNote.value = "Romaneio em papel conferido na entrega";
-      receiptLines.value = copy(MANUAL_RECEIPT_LINES);
-      return;
-    }
-    receiptSupplierRef.value = "SUP-MOINHO-SP";
-    receiptNote.value = "";
-    receiptLines.value = copy(INVOICE_RECEIPT_LINES);
+    receiptOutcome.value = null;
+    receiptSupplierRef.value = suppliers.value[0]?.ref ?? "";
+    receiptNote.value = mode === "manual" ? "Romaneio em papel conferido na entrega" : "";
+    receiptLines.value = [];
   }
 
   function updateReceiptLine(lineId: string, patch: Partial<ReceiptLine>) {
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.map((line) => (line.id === lineId ? { ...line, ...patch } : line));
   }
 
   function setReceiptSupplier(ref: string) {
     receiptSupplierRef.value = ref;
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.map((line) => {
       const currentConversion =
         line.conversionId ? conversions.value.find((conversion) => conversion.id === line.conversionId) : null;
@@ -880,8 +786,7 @@ export function usePurchaseDesk() {
   function addReceiptLine() {
     const materialSku = materials.value[0]?.sku ?? "";
     const conversionId = defaultReceiptConversionId(materialSku);
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.concat({
       id: `receipt-${Date.now()}`,
       materialSku,
@@ -895,8 +800,7 @@ export function usePurchaseDesk() {
   }
 
   function removeReceiptLine(lineId: string) {
-    receiptConfirmedAt.value = null;
-    receiptRejectedAt.value = null;
+    receiptOutcome.value = null;
     receiptLines.value = receiptLines.value.filter((line) => line.id !== lineId);
   }
 
@@ -910,9 +814,29 @@ export function usePurchaseDesk() {
     await runBackendAction(() => api.scanInvoice({ qrPayload: invoiceInput.value }), { receipt: true });
   }
 
-  async function confirmReceipt() {
-    if (!receiptReady.value) return;
-    if (!requireBackend("confirmar a entrada no estoque")) return;
+  /**
+   * O que a entrada foi, fotografado ANTES de o rascunho zerar.
+   *
+   * A resposta do servidor devolve o recibo em branco (o rascunho nao e
+   * persistido), entao ler `receiptLinePreviews` depois de confirmar so acha
+   * lista vazia. Quem quiser mostrar "7 itens, R$ 1.480,00" tem de guardar
+   * antes.
+   */
+  function receiptSnapshot(kind: ReceiptOutcome["kind"]): ReceiptOutcome {
+    return {
+      kind,
+      at: todayStamp(),
+      mode: receiptMode.value,
+      lineCount: receiptLinePreviews.value.length,
+      totalCostQ: receiptTotalCostQ.value,
+      supplierName: receiptSupplier.value?.name ?? "",
+    };
+  }
+
+  async function confirmReceipt(): Promise<boolean> {
+    if (!receiptReady.value) return false;
+    if (!requireBackend("confirmar a entrada no estoque")) return false;
+    const snapshot = receiptSnapshot("confirmed");
     const ok = await runBackendAction(
       () =>
         api.confirmReceipt({
@@ -922,18 +846,20 @@ export function usePurchaseDesk() {
           note: receiptNote.value,
           lines: receiptLines.value,
         }),
-      { receipt: true },
+      { receipt: true, quiet: true },
     );
-    if (ok) receiptConfirmedAt.value = todayStamp();
+    if (ok) receiptOutcome.value = snapshot;
+    return Boolean(ok);
   }
 
-  async function rejectReceipt() {
-    if (!requireBackend("registrar a devolução")) return;
+  async function rejectReceipt(): Promise<boolean> {
+    if (!requireBackend("registrar a devolução")) return false;
     if (!receiptHasRejectionReason.value) {
       actionError.value = "Descreva o motivo da recusa/devolução antes de registrar.";
       useSonner.error(actionError.value);
-      return;
+      return false;
     }
+    const snapshot = receiptSnapshot("rejected");
     const ok = await runBackendAction(
       () =>
         api.rejectReceipt({
@@ -943,9 +869,117 @@ export function usePurchaseDesk() {
           note: receiptNote.value,
           lines: receiptLines.value,
         }),
-      { receipt: true },
+      { receipt: true, quiet: true },
     );
-    if (ok) receiptRejectedAt.value = todayStamp();
+    if (ok) receiptOutcome.value = snapshot;
+    return Boolean(ok);
+  }
+
+  /** Fecha o aviso de sucesso — o proximo recebimento comeca da tela limpa. */
+  function dismissReceiptOutcome() {
+    receiptOutcome.value = null;
+  }
+
+  // ── Contagem de insumos (auditoria de estoque, gestor/dono) ──────────────
+
+  const countBoardItems = computed<CountItem[]>(() => {
+    if (countLoaded.value) return countItems.value;
+    // Modo demonstração (sem backend): a lista dos insumos serve de amostra,
+    // mas nada se lança — confirmar exige backend.
+    if (readonlyFallback.value) {
+      return materials.value.map((material) => ({
+        sku: material.sku,
+        name: material.name,
+        unit: material.unit,
+        category: material.category,
+        isActive: material.isActive,
+        systemQty: material.stockOnHand,
+      }));
+    }
+    return [];
+  });
+
+  const countBoardRows = computed(() => countRows(countBoardItems.value, countInputs.value, countReasons.value));
+
+  const countFilteredRows = computed(() => {
+    const term = query.value.trim().toLowerCase();
+    if (!term) return countBoardRows.value;
+    return countBoardRows.value.filter(
+      (row) =>
+        row.item.name.toLowerCase().includes(term) ||
+        row.item.sku.toLowerCase().includes(term) ||
+        row.item.category.toLowerCase().includes(term),
+    );
+  });
+
+  const countDivergentRows = computed(() => countBoardRows.value.filter((row) => row.divergent));
+  const countTotals = computed(() => countSummary(countBoardRows.value));
+  const countReady = computed(() => backendReady.value && !countForbidden.value && countTotals.value.ready);
+
+  async function loadCount() {
+    if (countPending.value) return;
+    countPending.value = true;
+    try {
+      const response = await api.fetchCount();
+      countItems.value = response.count.items.map((item) => ({ ...item }));
+      countLoaded.value = true;
+      countForbidden.value = false;
+    } catch (err) {
+      countForbidden.value = httpError(err).status === 403;
+    } finally {
+      countPending.value = false;
+    }
+  }
+
+  watch(
+    [view, baseView, backendReady],
+    ([currentView, currentBase, ready]) => {
+      if (currentView === "base" && currentBase === "count" && ready && !countLoaded.value) {
+        void loadCount();
+      }
+    },
+    { immediate: true },
+  );
+
+  function setCountInput(sku: string, value: string) {
+    countConfirmedAt.value = null;
+    countInputs.value = { ...countInputs.value, [sku]: value };
+  }
+
+  function setCountReason(sku: string, value: string) {
+    countReasons.value = { ...countReasons.value, [sku]: value };
+  }
+
+  function resetCount() {
+    countInputs.value = {};
+    countReasons.value = {};
+  }
+
+  async function confirmCount(): Promise<boolean> {
+    if (!countReady.value || actionPending.value) return false;
+    if (!requireBackend("lançar os ajustes da contagem")) return false;
+    actionPending.value = true;
+    actionError.value = "";
+    try {
+      const response = await api.confirmCount(countConfirmPayload(countBoardRows.value));
+      if (response.count) {
+        countItems.value = response.count.items.map((item) => ({ ...item }));
+        countLoaded.value = true;
+      }
+      if (response.message) useSonner.success(response.message);
+      resetCount();
+      countConfirmedAt.value = todayStamp();
+      // O board também muda de figura: o estoque disponível acompanha o ajuste.
+      await refresh();
+      return true;
+    } catch (err) {
+      const message = httpErrorMessage(err, "Falha na ação. Tente de novo.");
+      actionError.value = message;
+      useSonner.error(message);
+      return false;
+    } finally {
+      actionPending.value = false;
+    }
   }
 
   function purchaseRequestStatus(sku: string): PurchaseRequestStatus {
@@ -1021,6 +1055,27 @@ export function usePurchaseDesk() {
     metrics,
     integrityQueue,
     reorderRows,
+    reorderBlockers,
+    batchSupplierRef,
+    batchInputs,
+    batchConversionIds,
+    batchOnlyMissing,
+    batchQuery,
+    batchLineErrors,
+    batchRows,
+    batchFilledCount,
+    batchReady,
+    batchConversionsFor,
+    setBatchInput,
+    setBatchConversion,
+    clearCostBatch,
+    saveCostBatch,
+    minStockInputs,
+    minStockLineErrors,
+    minStockFilledCount,
+    setMinStockInput,
+    clearMinStock,
+    saveMinStock,
     supplierSummaries,
     projection,
     receiptMode,
@@ -1028,11 +1083,14 @@ export function usePurchaseDesk() {
     receiptSupplierRef,
     receiptNote,
     receiptLines,
-    receiptConfirmedAt,
-    receiptRejectedAt,
+    receiptOutcome,
+    receiptIsBlank,
+    receiptFirstBlocker,
+    dismissReceiptOutcome,
     receiptSupplier,
     invoiceStatus,
     receiptLinePreviews,
+    receiptRows,
     receiptBlockers,
     receiptWatchWarnings,
     receiptPendingLines,
@@ -1069,6 +1127,20 @@ export function usePurchaseDesk() {
     readInvoice,
     confirmReceipt,
     rejectReceipt,
+    countBoardRows,
+    countFilteredRows,
+    countDivergentRows,
+    countTotals,
+    countReady,
+    countPending,
+    countLoaded,
+    countForbidden,
+    countConfirmedAt,
+    loadCount,
+    setCountInput,
+    setCountReason,
+    resetCount,
+    confirmCount,
     purchaseRequestStatus,
     sendPurchaseRequest,
     setPreferredCost,

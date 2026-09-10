@@ -38,8 +38,11 @@ def producao(db):
     from shopman.stockman.models import PositionKind
 
     return Position.objects.create(
-        ref="producao", name="Produção", kind=PositionKind.PHYSICAL,
-        is_saleable=False, is_default=True,
+        ref="producao",
+        name="Produção",
+        kind=PositionKind.PHYSICAL,
+        is_saleable=False,
+        is_default=True,
     )
 
 
@@ -55,8 +58,12 @@ def pao_product(db):
     from shopman.offerman.models import Product
 
     return Product.objects.create(
-        sku="PAO", name="Pão", unit="un", base_price_q=100,
-        availability_policy="planned_ok", is_sellable=True,
+        sku="PAO",
+        name="Pão",
+        unit="un",
+        base_price_q=100,
+        availability_policy="planned_ok",
+        is_sellable=True,
     )
 
 
@@ -68,17 +75,18 @@ def recipe(db, pao_product):
 
 
 def _completed_order(ref: str, *, days_ago: int, sku: str = "PAO", qty: int) -> Order:
-    order = Order.objects.create(
-        ref=ref, channel_ref="web", status="completed", total_q=qty * 100
-    )
+    order = Order.objects.create(ref=ref, channel_ref="web", status="completed", total_q=qty * 100)
     OrderItem.objects.create(
-        order=order, line_id=f"{ref}-1", sku=sku, name=sku, qty=qty,
-        unit_price_q=100, line_total_q=qty * 100,
+        order=order,
+        line_id=f"{ref}-1",
+        sku=sku,
+        name=sku,
+        qty=qty,
+        unit_price_q=100,
+        line_total_q=qty * 100,
     )
     # created_at é auto_now_add — retrodata para virar histórico de demanda.
-    Order.objects.filter(pk=order.pk).update(
-        created_at=timezone.now() - timedelta(days=days_ago)
-    )
+    Order.objects.filter(pk=order.pk).update(created_at=timezone.now() - timedelta(days=days_ago))
     return order
 
 
@@ -107,9 +115,7 @@ class TestProductionChainE2E:
         )
         assert result == "created"
         assert planned_qty == Decimal("12")
-        assert Directive.objects.filter(
-            topic=PRODUCTION_LATE_CHECK, status__in=("queued", "running")
-        ).exists()
+        assert Directive.objects.filter(topic=PRODUCTION_LATE_CHECK, status__in=("queued", "running")).exists()
         assert stock.available("PAO", target_date=today) == Decimal("12")
 
         # 3. MISE EN PLACE — a lista do dia escala o insumo pelo coeficiente.
@@ -138,38 +144,54 @@ class TestProductionChainE2E:
         # Insumo consumido do ledger.
         assert stock.available("FARINHA") < Decimal("20")
         # Alerta de yield baixo nasceu do próprio signal.
-        assert OperatorAlert.objects.filter(
-            type="production_low_yield", message__contains=wo.ref
-        ).exists()
+        assert OperatorAlert.objects.filter(type="production_low_yield", message__contains=wo.ref).exists()
 
         # 6. VENDA — o lote realizado atende um hold de cliente.
         hold = stock.hold(Decimal("2"), "PAO")
         assert hold is not None
         assert stock.available("PAO") == Decimal("7")
 
-    def test_void_with_linked_order_unlinks_and_releases_plan(self, recipe, vitrine, producao):
+    def test_void_with_linked_order_unlinks_and_releases_plan(
+        self,
+        recipe,
+        vitrine,
+        producao,
+        django_capture_on_commit_callbacks,
+    ):
         today = date.today()
         order = Order.objects.create(
-            ref="E2E-ORD-1", channel_ref="web", status="accepted", total_q=400,
+            ref="E2E-ORD-1",
+            channel_ref="web",
+            status="accepted",
+            total_q=400,
             data={"target_date": today.isoformat()},
         )
         OrderItem.objects.create(
-            order=order, line_id="E2E-ORD-1-1", sku="PAO", name="Pão", qty=4,
-            unit_price_q=100, line_total_q=400,
+            order=order,
+            line_id="E2E-ORD-1-1",
+            sku="PAO",
+            name="Pão",
+            qty=4,
+            unit_price_q=100,
+            line_total_q=400,
         )
 
         # PLAN dispara o signal; o sync vincula o pedido ativo ao lote.
-        _, wo_ref, _, _ = set_planned_quantity(
-            recipe_id=recipe.pk, quantity=Decimal("10"),
-            target_date_value=today.isoformat(), actor="e2e",
-        )
+        with django_capture_on_commit_callbacks(execute=True):
+            _, wo_ref, _, _ = set_planned_quantity(
+                recipe_id=recipe.pk,
+                quantity=Decimal("10"),
+                target_date_value=today.isoformat(),
+                actor="e2e",
+            )
         order.refresh_from_db()
         assert order.data.get("awaiting_wo_refs") == [wo_ref]
         assert stock.available("PAO", target_date=today) == Decimal("10")
 
         # VOID desfaz o vínculo e cancela o planejado no estoque.
         wo = WorkOrder.objects.get(ref=wo_ref)
-        craft.void(order=wo, reason="e2e", actor="e2e")
+        with django_capture_on_commit_callbacks(execute=True):
+            craft.void(order=wo, reason="e2e", actor="e2e")
 
         order.refresh_from_db()
         assert "awaiting_wo_refs" not in (order.data or {})
@@ -181,8 +203,10 @@ class TestProductionChainE2E:
         today = date.today()
         stock.receive(quantity=Decimal("20"), sku="FARINHA", position=producao, reason="e2e")
         _, wo_ref, _, _ = set_planned_quantity(
-            recipe_id=recipe.pk, quantity=Decimal("10"),
-            target_date_value=today.isoformat(), actor="e2e",
+            recipe_id=recipe.pk,
+            quantity=Decimal("10"),
+            target_date_value=today.isoformat(),
+            actor="e2e",
         )
         wo = WorkOrder.objects.get(ref=wo_ref)
         craft.adjust(wo, quantity=Decimal("6"), reason="e2e", actor="e2e")
@@ -196,17 +220,27 @@ class TestProductionChainE2E:
         """Guardrail V1 do Core, vivo na config real do orquestrador (DEMAND_BACKEND)."""
         today = date.today()
         order = Order.objects.create(
-            ref="E2E-ORD-2", channel_ref="web", status="accepted", total_q=600,
+            ref="E2E-ORD-2",
+            channel_ref="web",
+            status="accepted",
+            total_q=600,
             data={"target_date": today.isoformat()},
         )
         OrderItem.objects.create(
-            order=order, line_id="E2E-ORD-2-1", sku="PAO", name="Pão", qty=6,
-            unit_price_q=100, line_total_q=600,
+            order=order,
+            line_id="E2E-ORD-2-1",
+            sku="PAO",
+            name="Pão",
+            qty=6,
+            unit_price_q=100,
+            line_total_q=600,
         )
         # Committed via hold ativo (o backend soma Holds do Stockman).
         _, wo_ref, _, _ = set_planned_quantity(
-            recipe_id=recipe.pk, quantity=Decimal("10"),
-            target_date_value=today.isoformat(), actor="e2e",
+            recipe_id=recipe.pk,
+            quantity=Decimal("10"),
+            target_date_value=today.isoformat(),
+            actor="e2e",
         )
         stock.hold(Decimal("6"), "PAO", target_date=today)
 

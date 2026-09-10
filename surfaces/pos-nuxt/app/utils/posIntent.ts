@@ -3,15 +3,34 @@ import { POS_SALE_INTENT_VERSION } from "~/generated/posContract";
 
 export { POS_SALE_INTENT_VERSION };
 
-export function formatBRL(amountQ: number): string {
-  return new Intl.NumberFormat("pt-BR", {
-    style: "currency",
-    currency: "BRL",
-  }).format((Number.isFinite(amountQ) ? amountQ : 0) / 100);
-}
+// `formatBRL` mora no operator-kit: é a MESMA formatação em toda superfície de
+// operador, e era ela que prendia o diálogo de autorização do gerente ao PDV.
+// Repassado daqui — e não duplicado — para os call sites do PDV seguirem
+// intactos com uma implementação só. Ver `operator-kit/app/utils/money.ts`.
+export { formatBRL } from "../../../operator-kit/app/utils/money";
+
+
 
 export function cartTotalQ(items: POSCartItem[]): number {
   return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);
+}
+
+/**
+ * A identidade de uma linha nova do carrinho — `L-` + 8 caracteres.
+ *
+ * Quem gera é o CLIENTE, e é isto que sustenta o modelo: duas linhas do mesmo
+ * SKU precisam nascer distintas aqui, na tela, no instante do toque. Deduzir a
+ * identidade do SKU (como era) fazia "mais um chá" virar `qty: 2` numa linha já
+ * disparada — o servidor deduplicava por `line_id` e a cozinha nunca via o
+ * segundo. O servidor preserva o id que recebe.
+ *
+ * O formato é curto de propósito (cabe num log e num payload de comanda) e
+ * estável: `crypto.randomUUID` quando existe, relógio + aleatório quando não.
+ */
+export function newLineId(): string {
+  const random = globalThis.crypto?.randomUUID?.().replace(/-/g, "")
+    ?? `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+  return `L-${random.slice(0, 8)}`;
 }
 
 export function moneyInputToQ(value: string): number {
@@ -92,6 +111,10 @@ export function buildPosSaleIntent(
     tab_ref: state.tabRef,
     tab_session_key: state.tabSessionKey,
     items: state.items.map((item) => ({
+      // A identidade viaja SEMPRE. Sem ela o servidor gerava um id novo a cada
+      // save e perdia o vínculo com o ticket de KDS já disparado — era por isso
+      // que ele precisava adivinhar qual linha era qual pelo SKU.
+      line_id: item.line_id,
       sku: item.sku,
       name: item.name,
       qty: item.qty,
@@ -102,9 +125,17 @@ export function buildPosSaleIntent(
       // prometia abatimento que a venda não dava.
       ...(typeof item.list_price_q === "number" ? { list_price_q: item.list_price_q } : {}),
       notes: item.notes,
-      ...(item.price_overridden ? { price_overridden: true } : {}),
       ...(item.discount && item.discount.value > 0
-        ? { discount: { type: "percent", value: item.discount.value, reason: item.discount.reason } }
+        ? {
+            discount: {
+              // O formato viaja: "percent" (0-100) ou "fixed" (reais por
+              // unidade). Era fixo em "percent", e um desconto em R$ subia como
+              // percentual — R$ 2,00 virava 2%.
+              type: item.discount.type || "percent",
+              value: item.discount.value,
+              reason: item.discount.reason,
+            },
+          }
         : {}),
     })),
     fulfillment_type: state.fulfillmentType,
@@ -127,6 +158,16 @@ export function buildPosSaleIntent(
   if (state.customerEmail.trim()) payload.customer_email = state.customerEmail.trim();
   if (state.customerMemoryAction.trim()) payload.customer_memory_action = state.customerMemoryAction.trim();
 
+  // QUANDO — fato do PEDIDO, e por isso FORA do bloco de entrega.
+  //
+  // Estas duas linhas moravam lá dentro, e era o terceiro portão do mesmo
+  // mal-entendido (os outros dois eram do servidor: a review não respondia para
+  // retirada, e o commit descartava as chaves). O operador combinava quinta às
+  // 10h para retirar, a tela mostrava "Amanhã, 10:00 às 10:30" — e o intent
+  // subia sem data nenhuma. O pedido nascia para hoje, calado.
+  if (state.deliveryDate.trim()) payload.delivery_date = state.deliveryDate.trim();
+  if (state.deliveryTimeSlot.trim()) payload.delivery_time_slot = state.deliveryTimeSlot.trim();
+
   if (state.fulfillmentType === "delivery") {
     payload.delivery_address = state.deliveryAddress.trim();
     payload.delivery_address_structured = {
@@ -134,8 +175,6 @@ export function buildPosSaleIntent(
       complement: state.deliveryComplement.trim() || state.deliveryAddressStructured.complement,
       delivery_instructions: state.deliveryInstructions.trim() || state.deliveryAddressStructured.delivery_instructions,
     };
-    if (state.deliveryDate.trim()) payload.delivery_date = state.deliveryDate.trim();
-    if (state.deliveryTimeSlot.trim()) payload.delivery_time_slot = state.deliveryTimeSlot.trim();
     // A TAXA não viaja daqui. Quem a resolve é o motor de entrega do servidor
     // (zona de CEP → faixa de distância → frete grátis por valor), o mesmo que a
     // loja usa. O que sobe é só a EXCEÇÃO que o operador assumiu — e ela só
@@ -165,6 +204,16 @@ export function buildPosSaleIntent(
     payload.change_for_q = state.changeForQ;
   }
   if (state.receiptEmail.trim()) payload.receipt_email = state.receiptEmail.trim();
+  // A ORDEM só viaja quando há o que guardar. Mandar "grave" sobre campo vazio
+  // é ruído, e o servidor a descartaria de qualquer jeito.
+  if (state.saveReceiptContact && state.receiptEmail.trim()) payload.save_receipt_contact = true;
+  if (state.saveReceiptTaxId && state.invoiceTaxId.trim()) {
+    payload.save_receipt_tax_id = true;
+    // A reconfirmação só faz sentido acompanhando a ordem que ela confirma.
+    // Sem ela o servidor recusa a SOBRESCRITA do documento do cadastro — a
+    // gêmea da fricção que a tela cobra antes de deixar a ordem sair daqui.
+    if (state.saveReceiptTaxIdConfirmed) payload.save_receipt_tax_id_confirmed = true;
+  }
   if (state.manualDiscount) payload.manual_discount = state.manualDiscount;
   if (state.managerApproval) payload.manager_approval = state.managerApproval;
 

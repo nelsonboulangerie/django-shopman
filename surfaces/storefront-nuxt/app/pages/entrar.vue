@@ -34,6 +34,7 @@ const {
   message: waMessage,
   deepLink: waDeepLink,
   waNumber: waNumber,
+  hasCartContext: waCartTravels,
   status: waStatus,
   start: waStart
 } = useWhatsappVerify()
@@ -77,6 +78,13 @@ watch(() => loginHome.value, value => {
 }, { immediate: true })
 
 const nextUrl = computed(() => safeInternalPath(route.query.next))
+// Chegada pelo access link com boas-vindas pendentes (`/entrar?welcome=1`, vindo
+// de a.vue): a sessão JÁ está autenticada — não há telefone nem código a pedir.
+// Entramos direto no passo do nome, semeado pela sessão; o destino segue em `next`.
+const welcomeRequested = computed(() => route.query.welcome != null)
+if (import.meta.client && welcomeRequested.value && session.isAuthenticated.value && session.requiresWelcome.value) {
+  enterWelcomeGateFromSession()
+}
 // Zero-telefone: por padrão não pedimos número. A identidade é quem ENVIA a mensagem
 // no WhatsApp. O campo só aparece quando o cliente quer usar OUTRO número (via SMS,
 // o único caminho que mira um número digitado). O deep link é pré-aquecido no mount.
@@ -100,34 +108,48 @@ const cartHasItems = computed(() => {
   const cart = loginHome.value?.cart
   return Boolean(cart && cart.items_count > 0 && !cart.is_empty)
 })
-const isCheckoutReturnWithCart = computed(() => isCheckoutReturn.value && cartHasItems.value)
+// ⚠️ A copy da sacola pergunta pela SACOLA, não pela rota. Ela era
+// `isCheckoutReturn && cartHasItems`, e `isCheckoutReturn` só é verdade quando o
+// `next` traz /checkout ou /finalizar. Quem entrava pelo cabeçalho ou pelo menu
+// com a sacola cheia — o caminho mais comum — nunca lia "Sua sacola está
+// guardada", e a tela ficava com a voz genérica de quem chega sem nada na mão.
+// Origem de navegação não é contexto; sacola com itens é.
+const hasCartToKeep = computed(() => cartHasItems.value)
 
 const codeSentLine = computed(() => codeSentPrefix(deliveryLabel.value))
 const stepTitle = computed(() => {
   if (step.value === 'phone') return copyTitle(authCopy.value?.phone_heading, 'Vamos entrar?')
   if (step.value === 'code') return copyTitle(authCopy.value?.code_heading, 'Informe o código')
-  return copyTitle(authCopy.value?.name_heading, 'Como podemos te chamar?')
+  return copyTitle(authCopy.value?.name_heading, 'Como quer ser chamado?')
 })
 const stepDescription = computed(() => {
   if (step.value === 'phone') {
     // Vindo do checkout com sacola real: a sacola é o que importa dizer. Sem itens,
     // a copy fica neutra; origem/rota não pode virar contexto inventado.
-    if (isCheckoutReturnWithCart.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
+    if (hasCartToKeep.value) return copyMessage(authCopy.value?.wa_cart_kept, 'Sua sacola está guardada.')
     if (isCheckoutReturn.value) return copyMessage(authCopy.value?.phone_subtitle, 'Sem senha, rápido e seguro.')
     return ''
   }
   if (step.value === 'code') return copyMessage(authCopy.value?.code_help, 'Você pode colar o código. Ao completar, a confirmação é automática.')
-  return copyMessage(authCopy.value?.name_subtitle, 'Pode ser seu primeiro nome ou um apelido. O que for mais natural.')
+  return copyMessage(authCopy.value?.name_subtitle, 'Pode ser só o primeiro nome ou um apelido.')
 })
 // Lampejo (o que vai acontecer), reasseguro (sem senha) e intro do envio manual: alimentam
 // o WhatsappVerifyPanel (configuráveis no Admin). O login em si é pelo access link.
-const waGlimpse = computed(() => copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.'))
+// O lampejo diz o que vai acontecer. Com sacola VIAJANDO no código (confirmado
+// pelo servidor em `has_cart_context`, não deduzido da tela), o que vai acontecer
+// inclui a sacola chegar junto — e é isso que tira o medo de tocar no botão.
+const waGlimpse = computed(() => {
+  if (waCartTravels.value) {
+    return copyMessage(authCopy.value?.wa_glimpse_with_cart, 'Envie a mensagem pronta: você entra e sua sacola vai junto.')
+  }
+  return copyMessage(authCopy.value?.wa_glimpse, 'Envie a mensagem pronta e receba um link para entrar.')
+})
 const waNoPasswordNote = computed(() => copyMessage(authCopy.value?.no_password_note, 'É prático e seguro, e não exige senha.'))
 const waManualTitle = computed(() => copyTitle(authCopy.value?.wa_manual_title, 'Quer fazer você mesmo?'))
 const waManualIntro = computed(() => copyMessage(authCopy.value?.wa_manual_intro, 'Envie esta mensagem diretamente para o nosso WhatsApp'))
 const supportUrl = computed(() => withWhatsAppText(
   loginHome.value?.home.public_config.whatsapp_url || '',
-  isCheckoutReturnWithCart.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
+  hasCartToKeep.value ? 'Quero finalizar meu pedido' : 'Quero entrar na loja'
 ))
 // "O código não chegou?" só cabe no passo de código (SMS). No WhatsApp/telefone não
 // há código enviado ao cliente — ele é quem manda o token —, então o convite à ajuda
@@ -160,11 +182,26 @@ const momentSavedNote = computed(() => moment.value === 'confirmed' && trustSave
   : ''
 )
 
-onMounted(() => {
+onMounted(async () => {
   nowMs.value = Date.now()
   clockTimer = setInterval(() => { nowMs.value = Date.now() }, 1000)
   // Pré-aquece o deep link (zero-telefone) para o CTA abrir o WhatsApp num toque.
   if (import.meta.client) void waStart(nextUrl.value)
+  // `?welcome=1` numa CARGA NOVA (ex.: travessia de navegador): o estado do
+  // cliente nasce vazio e só o cookie sabe se há sessão. Perguntamos ao servidor
+  // antes de mostrar o passo de telefone a quem já entrou.
+  if (welcomeRequested.value && !welcomeNeeded.value) {
+    const auth = await $fetch<AuthSessionResponse>(apiPath('/api/auth/session/'), {
+      credentials: 'include'
+    }).catch(() => null)
+    if (auth?.is_authenticated) {
+      session.setFromAuthSession(auth)
+      if (auth.requires_welcome) enterWelcomeGateFromSession()
+      // Autenticado e sem nada a confirmar: o convite de boas-vindas já não vale;
+      // segue direto ao destino.
+      else await navigateTo(nextUrl.value)
+    }
+  }
 })
 
 onBeforeUnmount(() => {
@@ -258,6 +295,15 @@ async function celebrateAndGo (kind: 'recognized' | 'confirmed') {
 function enterWelcomeGate (sessionResponse: AuthSessionResponse) {
   welcomeNeeded.value = true
   welcomeName.value = sessionResponse.welcome_suggested_name?.trim() || ''
+}
+
+// Welcome gate a partir da SESSÃO (não de uma resposta de verificação): quem
+// chega já autenticado pelo access link pula telefone e código — `verified`
+// vira true para a máquina de passos aterrissar direto em 'welcome'.
+function enterWelcomeGateFromSession () {
+  verified.value = true
+  welcomeNeeded.value = true
+  welcomeName.value = (session.welcomeSuggestedName.value || '').trim()
 }
 
 async function requestCode (method: AuthDeliveryMethod = 'whatsapp', event?: Event) {
@@ -378,7 +424,7 @@ async function submitWelcome () {
       credentials: 'include',
       body: { first_name: name }
     })
-    session.setIdentity({ name })
+    session.setIdentity({ name, requiresWelcome: false })
     await navigateTo(nextUrl.value)
   } catch (e) {
     error.value = fetchErrorView(e, 'Não foi possível salvar seu nome.')
@@ -453,6 +499,7 @@ useSeoMeta({
             :manual-intro="waManualIntro"
             :cta-label="copyTitle(authCopy?.phone_cta_wa, 'Entrar pelo WhatsApp')"
             @regenerate="() => waStart(nextUrl)"
+            @used="() => waStart(nextUrl)"
           />
 
           <!-- Alternativa: usar OUTRO número = via SMS (o único caminho que mira um número

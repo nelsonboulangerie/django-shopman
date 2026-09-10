@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TrackingPromiseProjection, TrackingCopyProjection } from '~/types/shopman'
-import { canSimulatePayment, paymentMethodLabel } from '~/presentation/payment'
+import { canSimulatePayment, isHostedCheckout } from '~/presentation/payment'
 
 // Bloco de pagamento INLINE no acompanhamento (PAYMENT-TRACKING-MERGE). Não é
 // mais uma tela: o promise carrega o método e o payload (QR/copia-e-cola/link do
@@ -21,10 +21,11 @@ const tentouAbrirCheckout = ref(false)
 
 const method = computed(() => props.promise.payment_method)
 const hasPixCode = computed(() => Boolean(props.promise.pix_qr_code || props.promise.pix_copy_paste))
-const isCard = computed(() => method.value === 'card')
+// Cartão da loja OU link do balcão: os dois abrem a URL do gateway.
+const abreCheckout = computed(() => isHostedCheckout(method.value))
 const isPix = computed(() => method.value === 'pix')
-// Pix ainda sem código (a loja confere antes, com `timing=post_commit`): o card
-// mostra "vai aparecer aqui" sem afirmar que já está sendo gerado.
+// Pix ainda sem código não é ação do cliente: pode ser a janela curta de geração
+// do gateway, especialmente depois do aceite no `timing=post_commit`.
 const esperandoCodigoPix = computed(() => isPix.value && !hasPixCode.value)
 // A caixa de captura simulada. A regra mora em presentation/payment.ts, junto
 // com a que a página usa para mostrar o bloco — uma pergunta, um dono.
@@ -45,11 +46,11 @@ async function copyPix () {
     <UiCardHeader>
       <p class="shop-muted text-sm">{{ copy.total_label }}</p>
       <UiCardTitle>{{ totalDisplay }}</UiCardTitle>
-      <UiCardDescription>{{ paymentMethodLabel(method) }}</UiCardDescription>
+      <UiCardDescription>{{ promise.payment_method_label || 'Pagamento' }}</UiCardDescription>
     </UiCardHeader>
     <UiCardContent class="space-y-4">
-      <!-- Cartão: ambiente seguro externo (Stripe). -->
-      <div v-if="isCard && promise.checkout_url" class="shop-stack-block rounded-lg border p-4">
+      <!-- Cartão ou link: ambiente seguro externo (Stripe). -->
+      <div v-if="abreCheckout && promise.checkout_url" class="shop-stack-block rounded-lg border p-4">
         <div class="flex items-start gap-3">
           <Icon name="lucide:shield-check" :size="22" class="mt-0.5 shrink-0 text-emerald-600" />
           <div class="space-y-1">
@@ -69,7 +70,7 @@ async function copyPix () {
         <div class="flex size-48 max-w-full items-center justify-center rounded-lg border border-dashed text-muted-foreground">
           <Icon name="lucide:qr-code" class="size-12 motion-safe:animate-pulse" />
         </div>
-        <p class="shop-meta text-center">{{ copy.pix_expires_label }} começa quando o código aparecer.</p>
+        <p class="shop-meta text-center">{{ copy.pix_pending_note }}</p>
       </div>
 
       <!-- Pix com código: QR + copia-e-cola. O countdown do prazo já é mostrado
@@ -99,12 +100,12 @@ async function copyPix () {
           </div>
         </div>
 
-        <p class="shop-meta">Assim que o pagamento cair, atualizamos esta tela automaticamente.</p>
+        <p class="shop-meta">{{ copy.pix_auto_update_note }}</p>
       </div>
 
       <!-- Cartão sem página do gateway (payment_mock): sem isto o bloco ficaria
            só com o total, e o testador não saberia o que fazer. -->
-      <div v-if="isCard && !promise.checkout_url && podeSimular" class="shop-stack-tight rounded-lg border p-4">
+      <div v-if="abreCheckout && !promise.checkout_url && podeSimular" class="shop-stack-tight rounded-lg border p-4">
         <div class="flex items-start gap-3">
           <Icon name="lucide:credit-card" :size="22" class="mt-0.5 shrink-0 text-muted-foreground" />
           <p class="shop-muted">Neste ambiente o cartão não abre a página do gateway. Use a captura simulada abaixo.</p>

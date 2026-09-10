@@ -67,6 +67,55 @@ describe("useOrderDetail", () => {
     expect(env.sonner.error).toHaveBeenCalledWith("Pagamento pendente");
   });
 
+  it("resendPaymentLink posta em /orders/{ref}/resend-payment-link/ e tosta sucesso", async () => {
+    const d = useOrderDetail("PDV-9");
+    expect(await d.resendPaymentLink()).toBe(true);
+    expect(String(env.fetchMock.mock.calls[0]![0])).toBe("/api/v1/backstage/orders/PDV-9/resend-payment-link/");
+    expect(env.refresh).toHaveBeenCalledTimes(1);
+    expect(env.sonner.success).toHaveBeenCalledWith("Link reenviado ao cliente.");
+  });
+
+  it("reenvio recusado pelo servidor → o motivo vira toast, sem sucesso", async () => {
+    env.fetchMock.mockRejectedValueOnce({ data: { detail: "O link venceu. Refaça a venda para gerar um novo.", error: { code: "payment_link_expired" } } });
+    const d = useOrderDetail("PDV-10");
+    expect(await d.resendPaymentLink()).toBe(false);
+    expect(env.sonner.error).toHaveBeenCalledWith("O link venceu. Refaça a venda para gerar um novo.");
+    expect(env.sonner.success).not.toHaveBeenCalled();
+  });
+
+  it("cancelamento de pedido pago abre o desafio do gerente em vez de tostar erro", async () => {
+    // ⚠️ O servidor pede a segunda assinatura com um erro TIPADO
+    // (`validate_manager_override` → `manager_approval_required`). O `act`
+    // engolia qualquer erro num toast, então o gerente lia "Falha na ação" e
+    // não tinha ONDE assinar — o pedido pago não cancelava pelo Gestor, e
+    // nenhuma outra superfície cancela pedido da loja.
+    env.fetchMock.mockRejectedValueOnce({
+      data: { detail: "Cancelar pedido pago exige autorização.", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-PAGO");
+
+    expect(await d.cancel("cliente desistiu")).toBe(false);
+    // Desafio NÃO é falha: um toast vermelho aqui ensina que o sistema quebrou.
+    expect(env.sonner.error).not.toHaveBeenCalled();
+    expect(d.managerChallenge.value?.code).toBe("manager_approval_required");
+  });
+
+  it("assinar reenvia o MESMO ato com a autorização, sem refazer o gesto", async () => {
+    env.fetchMock.mockRejectedValueOnce({
+      data: { detail: "precisa de gerente", error: { code: "manager_approval_required" } },
+    });
+    const d = useOrderDetail("WEB-PAGO2");
+    await d.cancel("cliente desistiu", "");
+
+    expect(await d.authorize({ username: "joyce", pin: "1234" })).toBe(true);
+
+    // O motivo escolhido sobrevive ao desafio — o gerente não redigita nada.
+    const body = env.fetchMock.mock.calls[1]![1].body;
+    expect(body.reason).toBe("cliente desistiu");
+    expect(body.manager_approval).toEqual({ username: "joyce", pin: "1234" });
+    expect(d.managerChallenge.value).toBeNull();
+  });
+
   it("saveNotes/addComment enviam o corpo e tostam sucesso", async () => {
     const d = useOrderDetail("WEB-5");
     await d.saveNotes("frágil");

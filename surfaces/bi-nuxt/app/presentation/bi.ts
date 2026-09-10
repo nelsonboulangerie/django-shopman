@@ -376,6 +376,25 @@ export function bucketRows<T extends { date: string }>(
   return [...buckets.values()].sort((a, b) => a.date.localeCompare(b.date));
 }
 
+/**
+ * Junta os valores de um balde do jeito que a MÉTRICA manda.
+ *
+ * ⚠️ A página somava tudo. Com "1 ano" + "Ticket médio" + "Tempo", a barra da
+ * semana mostrava ~7× o ticket real — formatada como reais, "R$ 178,50",
+ * perfeitamente convincente. Rendimento passava de 100%.
+ *
+ * A regra não é adivinhada aqui: vem do contrato (`report.aggregation`), porque
+ * quem sabe se uma métrica é aditiva é quem a calcula. Uma métrica nova entra
+ * com o default `sum` do servidor, e trocar a regra é uma linha lá, não uma
+ * lista para manter aqui.
+ */
+export function aggregateBucket(values: readonly number[], aggregation: string): number {
+  if (!values.length) return 0;
+  if (aggregation === "max") return Math.max(...values);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  return aggregation === "mean" ? total / values.length : total;
+}
+
 export interface SalesDayLike {
   date: string;
   orders: number;

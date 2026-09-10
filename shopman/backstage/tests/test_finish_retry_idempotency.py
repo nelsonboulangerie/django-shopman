@@ -16,9 +16,9 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from shopman.craftsman.models import Recipe, WorkOrder
+from shopman.craftsman.models import Recipe, WorkOrder, WorkOrderItem
 from shopman.craftsman.signals import production_changed
-from shopman.stockman.models import Position, PositionKind, Quant
+from shopman.stockman.models import Batch, Position, PositionKind, Quant
 
 from shopman.backstage.services import production as backstage_production
 from shopman.backstage.services.exceptions import ProductionConflict
@@ -39,9 +39,7 @@ def vitrine(db):
 
 @pytest.fixture
 def recipe(db, vitrine):
-    return Recipe.objects.create(
-        ref="rc-retry", name="Pão", output_sku=SKU, batch_size=Decimal("1")
-    )
+    return Recipe.objects.create(ref="rc-retry", name="Pão", output_sku=SKU, batch_size=Decimal("1"))
 
 
 @pytest.fixture
@@ -70,16 +68,17 @@ def _vitrine_qty(vitrine) -> Decimal:
     return quant.quantity if quant else Decimal("0")
 
 
-def test_retry_after_a_post_commit_error_closes_the_batch(
-    recipe, vitrine, a_later_receiver_explodes
-):
-    _, wo_ref, _ = _first_attempt_fails(recipe)
+def test_receiver_failure_rolls_back_and_retry_closes_the_batch(recipe, vitrine, a_later_receiver_explodes):
+    _, wo_ref, _ = _first_attempt_rolls_back(recipe, vitrine)
+    work_order = WorkOrder.objects.get(ref=wo_ref)
 
     # O operador aperta de novo, com exatamente os mesmos dados.
     ref_again, total = backstage_production.apply_finish(
-        work_order_id=WorkOrder.objects.get(ref=wo_ref).pk,
+        work_order_id=work_order.pk,
         quantity="40",
         actor="test",
+        expected_rev=work_order.rev,
+        idempotency_key="receiver-failure-retry",
     )
 
     assert ref_again == wo_ref
@@ -88,33 +87,98 @@ def test_retry_after_a_post_commit_error_closes_the_batch(
     assert _vitrine_qty(vitrine) == Decimal("40")
 
 
-def test_retry_with_a_different_quantity_is_still_a_conflict(
-    recipe, vitrine, a_later_receiver_explodes
-):
+def test_retry_with_a_different_quantity_is_still_a_conflict(recipe, vitrine):
     """Fechar de novo com OUTRO número não é retry: é conflito, e tem que doer."""
-    _, wo_ref, _ = _first_attempt_fails(recipe)
-
-    with pytest.raises(ProductionConflict):
-        backstage_production.apply_finish(
-            work_order_id=WorkOrder.objects.get(ref=wo_ref).pk,
-            quantity="35",
-            actor="test",
-        )
-
-
-def _first_attempt_fails(recipe):
-    """Planeja, inicia e falha o primeiro finish depois do commit."""
     from django.utils import timezone
     from shopman.craftsman.service import craft
 
     work_order = craft.plan(recipe, Decimal("40"), date=timezone.localdate())
     craft.start(work_order, quantity=Decimal("40"), actor="test")
+    work_order.refresh_from_db()
+    backstage_production.apply_finish(
+        work_order_id=work_order.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=work_order.rev,
+        idempotency_key="accepted-finish",
+    )
+    work_order.refresh_from_db()
+
+    with pytest.raises(ProductionConflict):
+        backstage_production.apply_finish(
+            work_order_id=work_order.pk,
+            quantity="35",
+            actor="test",
+            expected_rev=work_order.rev,
+            idempotency_key="different-finish",
+        )
+
+
+def test_finish_replay_never_rewrites_historical_batch(recipe, vitrine):
+    """Recipe/catalog edits and manual lot corrections stay immutable on retry."""
+    from datetime import date, timedelta
+
+    from shopman.craftsman.service import craft
+
+    recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 2}
+    recipe.save(update_fields=["meta", "updated_at"])
+    work_order = craft.plan(recipe, Decimal("40"), date=date.today())
+    craft.start(work_order, quantity=Decimal("40"), actor="test")
+    work_order.refresh_from_db()
+    attempt_rev = work_order.rev
+    backstage_production.apply_finish(
+        work_order_id=work_order.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=attempt_rev,
+        idempotency_key="immutable-batch-finish",
+    )
+
+    output = WorkOrderItem.objects.get(
+        work_order=work_order,
+        kind=WorkOrderItem.Kind.OUTPUT,
+    )
+    assert output.meta["batch_traceability"]["expiry_date"] == str(date.today() + timedelta(days=2))
+    batch = Batch.objects.get(ref=output.batch_ref)
+    corrected_expiry = date.today() + timedelta(days=5)
+    batch.expiry_date = corrected_expiry
+    batch.notes = "Correção manual auditada"
+    batch.save(update_fields=["expiry_date", "notes"])
+    recipe.meta = {"requires_batch_tracking": True, "shelf_life_days": 30}
+    recipe.save(update_fields=["meta", "updated_at"])
+
+    backstage_production.apply_finish(
+        work_order_id=work_order.pk,
+        quantity="40",
+        actor="test",
+        expected_rev=attempt_rev,
+        idempotency_key="immutable-batch-finish",
+    )
+
+    batch.refresh_from_db()
+    assert batch.expiry_date == corrected_expiry
+    assert batch.notes == "Correção manual auditada"
+
+
+def _first_attempt_rolls_back(recipe, vitrine):
+    """Plan/start, then prove that a later receiver cannot leak a partial finish."""
+    from django.utils import timezone
+    from shopman.craftsman.service import craft
+
+    work_order = craft.plan(recipe, Decimal("40"), date=timezone.localdate())
+    craft.start(work_order, quantity=Decimal("40"), actor="test")
+    work_order.refresh_from_db()
 
     with pytest.raises(RuntimeError):
         backstage_production.apply_finish(
-            work_order_id=work_order.pk, quantity="40", actor="test"
+            work_order_id=work_order.pk,
+            quantity="40",
+            actor="test",
+            expected_rev=work_order.rev,
+            idempotency_key="receiver-failure-retry",
         )
 
     work_order.refresh_from_db()
-    assert work_order.status == WorkOrder.Status.FINISHED  # commitada mesmo assim
+    assert work_order.status == WorkOrder.Status.STARTED
+    assert _vitrine_qty(vitrine) == Decimal("0")
     return recipe.output_sku, work_order.ref, Decimal("40")

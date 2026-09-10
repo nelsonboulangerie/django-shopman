@@ -18,6 +18,12 @@ logger = logging.getLogger(__name__)
 # Notification
 NOTIFICATION_SEND = "notification.send"
 
+# Receipts permanentes para a identidade de entrega. O envio original e os
+# reenvios vivem em scopes distintos: o primeiro nunca volta a nascer depois de
+# concluído; cada gesto explícito de reenvio ganha a própria chave sufixada.
+NOTIFICATION_ORIGINAL_RECEIPT_SCOPE = "notification:original"
+NOTIFICATION_RESEND_RECEIPT_SCOPE = "notification:resend"
+
 # Fulfillment
 FULFILLMENT_CREATE = "fulfillment.create"
 FULFILLMENT_UPDATE = "fulfillment.update"
@@ -136,3 +142,64 @@ def create_deduped(topic, *, payload, dedupe_key, available_at=None):
     except IntegrityError:
         logger.info("directives.dedupe_hit topic=%s dedupe_key=%s", topic, dedupe_key)
         return None
+
+
+def create_persistently_deduped(
+    topic,
+    *,
+    payload,
+    dedupe_key,
+    receipt_scope,
+    available_at=None,
+):
+    """Cria uma Directive uma única vez para uma identidade durável.
+
+    A constraint parcial de :class:`Directive` protege apenas tarefas vivas. Isso
+    é correto para o contrato genérico, mas insuficiente para uma notificação:
+    duas requisições podem atravessar o pré-check enquanto a primeira tarefa
+    termina e criar dois envios externos. ``IdempotencyKey`` fornece a identidade
+    permanente e concorrente; receipt e Directive são gravados na mesma transação,
+    portanto nunca sobra claim sem tarefa quando o INSERT falha.
+
+    Uma Directive histórica anterior ao receipt também é adotada: criamos o
+    receipt apontando para ela e não recriamos o efeito. Isso mantém o rollout
+    compatível com filas existentes.
+    """
+    from django.db import transaction
+    from shopman.orderman.models import IdempotencyKey
+
+    with transaction.atomic():
+        receipt, created = IdempotencyKey.objects.get_or_create(
+            scope=receipt_scope,
+            key=dedupe_key,
+            defaults={
+                "status": "done",
+                "expires_at": None,
+                "response_body": {"topic": topic},
+            },
+        )
+        if not created:
+            logger.info(
+                "directives.persistent_dedupe_hit topic=%s dedupe_key=%s",
+                topic,
+                dedupe_key,
+            )
+            return None
+
+        existing = (
+            Directive.objects.filter(topic=topic, dedupe_key=dedupe_key)
+            .order_by("pk")
+            .first()
+        )
+        if existing is not None:
+            receipt.response_body = {"topic": topic, "directive_pk": existing.pk}
+            receipt.save(update_fields=["response_body"])
+            return None
+
+        kwargs = {"topic": topic, "payload": payload, "dedupe_key": dedupe_key}
+        if available_at is not None:
+            kwargs["available_at"] = available_at
+        directive = Directive.objects.create(**kwargs)
+        receipt.response_body = {"topic": topic, "directive_pk": directive.pk}
+        receipt.save(update_fields=["response_body"])
+        return directive

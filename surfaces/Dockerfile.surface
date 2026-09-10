@@ -14,7 +14,17 @@ WORKDIR /repo
 COPY surfaces/operator-kit ./surfaces/operator-kit
 COPY surfaces/${SURFACE} ./surfaces/${SURFACE}
 WORKDIR /repo/surfaces/${SURFACE}
-RUN npm ci && npm run build
+RUN npm ci
+# production-nuxt exige config também no build. A origem .invalid (RFC 2606) é
+# deliberadamente não roteável e existe apenas nesta camada; não é copiada como ENV.
+# No boot, upstream-guard continua exigindo SHOPMAN_ENVIRONMENT e a URL HTTPS reais.
+RUN if [ "${SURFACE}" = "production-nuxt" ]; then \
+      SHOPMAN_ENVIRONMENT=build \
+      NUXT_DJANGO_BASE_URL=https://django-upstream.invalid \
+      npm run build; \
+    else \
+      npm run build; \
+    fi
 
 FROM node:22-alpine
 ARG SURFACE

@@ -316,6 +316,150 @@ class TestShopAdminDefaults:
         assert production_suggestion["safety_stock_percent"] == "0.15"
 
 
+class TestShopProductionAdmin:
+    def test_change_page_exposes_every_structured_block(self, admin_user, shop):
+        client = Client()
+        client.force_login(admin_user)
+
+        response = client.get(reverse("admin:shop_shopproduction_change", args=[shop.pk]))
+
+        assert response.status_code == 200
+        for field_name in (
+            "defaults_season_hot_months",
+            "defaults_high_demand_multiplier",
+            "defaults_safety_stock_percent",
+            "defaults_production_low_yield_threshold",
+            "defaults_production_default_max_started_minutes",
+            "defaults_production_late_check_cadence_minutes",
+            "defaults_sales_silence_minutes",
+            "defaults_production_notifications_enabled",
+            "defaults_production_notification_severities",
+            "defaults_production_panel_delay_tolerance_minutes",
+            "defaults_production_panel_confirmed_ttl_minutes",
+            "defaults_production_order_match",
+        ):
+            assert f'name="{field_name}"'.encode() in response.content
+        assert b'name="defaults"' not in response.content
+
+    def test_initial_shows_only_stored_overrides(self, shop):
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+
+        shop.defaults = {
+            "production": {
+                "alerts": {"low_yield_threshold": "0.72"},
+                "notifications": {"enabled": False},
+                "panel": {"confirmed_ttl_minutes": 55},
+                "order_match": "manual",
+            }
+        }
+        shop.save(update_fields=["defaults"])
+
+        form = _section_form(_PRODUCTION_FIELDSETS)(instance=shop)
+
+        assert form.fields["defaults_production_low_yield_threshold"].initial == "0.72"
+        assert form.fields["defaults_production_default_max_started_minutes"].initial is None
+        assert form.fields["defaults_production_notifications_enabled"].initial == "disabled"
+        assert form.fields["defaults_production_panel_confirmed_ttl_minutes"].initial == 55
+        assert form.fields["defaults_production_order_match"].initial == "manual"
+        assert "herda 240" in form.fields["defaults_production_default_max_started_minutes"].help_text.lower()
+
+    def test_form_saves_every_block_and_preserves_unknown_keys(self, shop):
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+
+        shop.defaults = {
+            "another_domain": {"keep": True},
+            "production": {
+                "future_block": {"keep": True},
+                "alerts": {"future_key": "kept"},
+            },
+        }
+        shop.save(update_fields=["defaults"])
+        form_class = _section_form(_PRODUCTION_FIELDSETS)
+        form = form_class(
+            data={
+                "defaults_season_hot_months": ["1", "2"],
+                "defaults_season_mild_months": ["3", "4"],
+                "defaults_season_cold_months": ["6", "7"],
+                "defaults_high_demand_multiplier": "1.25",
+                "defaults_safety_stock_percent": "0.10",
+                "defaults_production_low_yield_threshold": "0.75",
+                "defaults_production_default_max_started_minutes": "180",
+                "defaults_production_late_check_cadence_minutes": "0",
+                "defaults_sales_silence_minutes": "90",
+                "defaults_production_notifications_enabled": "enabled",
+                "defaults_production_notification_severities": ["warning", "critical"],
+                "defaults_production_panel_delay_tolerance_minutes": "20",
+                "defaults_production_panel_confirmed_ttl_minutes": "45",
+                "defaults_production_order_match": "earliest_target",
+            },
+            instance=shop,
+        )
+
+        assert form.is_valid(), form.errors
+        saved = form.save()
+        production = saved.defaults["production"]
+        assert saved.defaults["another_domain"] == {"keep": True}
+        assert production["future_block"] == {"keep": True}
+        assert production["suggestion"] == {
+            "seasons": {"hot": [1, 2], "mild": [3, 4], "cold": [6, 7]},
+            "high_demand_multiplier": "1.25",
+            "safety_stock_percent": "0.10",
+        }
+        assert production["alerts"] == {
+            "future_key": "kept",
+            "low_yield_threshold": "0.75",
+            "default_max_started_minutes": 180,
+            "late_check_cadence_minutes": 0,
+        }
+        assert production["episodes"] == {"sales_silence_minutes": 90}
+        assert production["notifications"] == {
+            "enabled": True,
+            "severities": ["warning", "critical"],
+        }
+        assert production["panel"] == {
+            "delay_tolerance_minutes": 20,
+            "confirmed_ttl_minutes": 45,
+        }
+        assert production["order_match"] == "earliest_target"
+
+    def test_blank_fields_remove_only_known_overrides(self, shop):
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+        from shopman.shop.production_config import ProductionConfig
+
+        shop.defaults = {
+            "production": {
+                "alerts": {"low_yield_threshold": "0.50", "future_key": "kept"},
+                "notifications": {"enabled": True, "severities": ["critical"]},
+                "order_match": "manual",
+            }
+        }
+        shop.save(update_fields=["defaults"])
+        form = _section_form(_PRODUCTION_FIELDSETS)(data={}, instance=shop)
+
+        assert form.is_valid(), form.errors
+        production = form.save().defaults["production"]
+        assert production == {"alerts": {"future_key": "kept"}}
+        resolved = ProductionConfig.from_dict(production)
+        resolved.validate()
+        assert resolved.alerts.low_yield_threshold == "0.80"
+        assert resolved.notifications.enabled is False
+        assert resolved.order_match == "first_planned"
+
+    def test_cross_block_validation_rejects_overlapping_seasons(self, shop):
+        from shopman.shop.admin.shop import _PRODUCTION_FIELDSETS, _section_form
+
+        form = _section_form(_PRODUCTION_FIELDSETS)(
+            data={
+                "defaults_season_hot_months": ["1", "2"],
+                "defaults_season_mild_months": ["2", "3"],
+            },
+            instance=shop,
+        )
+
+        assert not form.is_valid()
+        assert "mesmo mês" in str(form.non_field_errors())
+
+
 class TestShopAdminLoyaltyDefaults:
     """WP-1 — fidelidade editável como campos estruturados no ShopForm."""
 
@@ -332,10 +476,16 @@ class TestShopAdminLoyaltyDefaults:
     def test_initial_reflects_existing_loyalty_block(self, shop):
         from shopman.shop.admin.shop import ShopForm
 
-        shop.defaults = {"loyalty": {"points_per_real": 3, "stamps_target": 8, "tiers": [
-            {"name": "bronze", "threshold": 0},
-            {"name": "silver", "threshold": 250},
-        ]}}
+        shop.defaults = {
+            "loyalty": {
+                "points_per_real": 3,
+                "stamps_target": 8,
+                "tiers": [
+                    {"name": "bronze", "threshold": 0},
+                    {"name": "silver", "threshold": 250},
+                ],
+            }
+        }
         shop.save(update_fields=["defaults"])
 
         form = ShopForm(instance=shop)
@@ -471,8 +621,7 @@ class TestGuestmanLoyaltyAdminUnfold:
             registered = admin.site._registry.get(model)
             assert registered is not None, f"{model.__name__} não registrado"
             assert isinstance(registered, UnfoldModelAdmin), (
-                f"{model.__name__} não está em Unfold: "
-                f"{type(registered).__module__}"
+                f"{model.__name__} não está em Unfold: {type(registered).__module__}"
             )
 
     def test_loyalty_transaction_history_stays_unfold_inside_the_account(self, db):
@@ -484,9 +633,7 @@ class TestGuestmanLoyaltyAdminUnfold:
 
         account_admin = admin.site._registry[LoyaltyAccount]
         transaction_inlines = [
-            inline
-            for inline in account_admin.inlines
-            if inline.model.__name__ == "LoyaltyTransaction"
+            inline for inline in account_admin.inlines if inline.model.__name__ == "LoyaltyTransaction"
         ]
 
         assert transaction_inlines, "o extrato de pontos sumiu da conta de fidelidade"
@@ -514,9 +661,7 @@ class TestShopIntegrationsForm:
         saved.refresh_from_db()
         assert saved.integrations["payment"]["pix"] == "shopman.shop.adapters.payment_efi"
         assert saved.integrations["payment"]["card"] == "shopman.shop.adapters.payment_stripe"
-        assert saved.integrations["notification"]["default"] == (
-            "shopman.shop.adapters.notification_manychat"
-        )
+        assert saved.integrations["notification"]["default"] == ("shopman.shop.adapters.notification_manychat")
         assert "fiscal" not in saved.integrations
 
     def test_initial_reflects_stored_integrations(self, shop):
@@ -526,9 +671,7 @@ class TestShopIntegrationsForm:
         shop.save(update_fields=["integrations"])
         Form = _section_form(_INTEGRATIONS_FIELDSETS)
         form = Form(instance=shop)
-        assert form.fields["integrations_payment_pix"].initial == (
-            "shopman.shop.adapters.payment_efi"
-        )
+        assert form.fields["integrations_payment_pix"].initial == ("shopman.shop.adapters.payment_efi")
 
     def test_other_domains_preserved_on_save(self, shop):
         from shopman.shop.admin.shop import _INTEGRATIONS_FIELDSETS, _section_form
@@ -741,10 +884,13 @@ class TestSocialLinksArrayWidget:
         from shopman.shop.admin.shop import ShopForm
 
         data = _shop_form_data(shop)
-        data.setlist("social_links", [
-            "https://instagram.com/nelson",
-            "https://wa.me/5543999998888",
-        ])
+        data.setlist(
+            "social_links",
+            [
+                "https://instagram.com/nelson",
+                "https://wa.me/5543999998888",
+            ],
+        )
         form = ShopForm(data=data, instance=shop)
         assert form.is_valid(), form.errors
         saved = form.save()
@@ -771,8 +917,7 @@ class TestProxyPagesIsolation:
         from shopman.shop.admin.shop import _LOYALTY_FIELDSETS, _section_form
 
         shop.defaults = {
-            "loyalty": {"points_per_real": 1, "stamps_target": 10,
-                        "tiers": [{"name": "bronze", "threshold": 0}]},
+            "loyalty": {"points_per_real": 1, "stamps_target": 10, "tiers": [{"name": "bronze", "threshold": 0}]},
             "pos": {"discount_approval_threshold_q": 500},
             "rules": {"minimum_order_q": 1500},
         }
@@ -782,10 +927,7 @@ class TestProxyPagesIsolation:
         bound = LoyaltyForm(instance=shop)
         # só os campos de fidelidade existem nesta página
         assert "defaults_pos_discount_approval_threshold_q" not in bound.fields
-        data = {
-            name: ("" if field.initial is None else field.initial)
-            for name, field in bound.fields.items()
-        }
+        data = {name: ("" if field.initial is None else field.initial) for name, field in bound.fields.items()}
         data["defaults_loyalty_points_per_real"] = "3"
 
         form = LoyaltyForm(data=data, instance=shop)
@@ -811,8 +953,15 @@ class TestProxyPagesIsolation:
         )
 
         for model in (
-            ShopAppearance, ShopOperation, ShopMenu, ShopOrdering,
-            ShopLoyalty, ShopPurchase, ShopPos, ShopProduction, ShopIntegrations,
+            ShopAppearance,
+            ShopOperation,
+            ShopMenu,
+            ShopOrdering,
+            ShopLoyalty,
+            ShopPurchase,
+            ShopPos,
+            ShopProduction,
+            ShopIntegrations,
         ):
             assert model in admin.site._registry
 
@@ -974,9 +1123,16 @@ class TestDashboardCallback:
         result = dashboard_callback(self._request("root-no-live"), {})
 
         for gone in (
-            "order_summary", "revenue", "production", "chart_pedidos_status",
-            "chart_vendas_7dias", "table_pedidos_pendentes", "recent_orders",
-            "table_recentes", "table_producao", "table_sugestao_producao",
+            "order_summary",
+            "revenue",
+            "production",
+            "chart_pedidos_status",
+            "chart_vendas_7dias",
+            "table_pedidos_pendentes",
+            "recent_orders",
+            "table_recentes",
+            "table_producao",
+            "table_sugestao_producao",
         ):
             assert gone not in result
 

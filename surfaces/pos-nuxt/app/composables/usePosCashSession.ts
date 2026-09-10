@@ -67,12 +67,45 @@ export function usePosCashSession({ pos, actions, refresh, action }: CashSession
   // reenvia o mesmo movimento com a autorização. Vazio = nada pendente.
   const managerChallenge = ref<{ code: string; message: string } | null>(null);
 
+  // ── A chave de replay do dinheiro ──────────────────────────────────────────
+  //
+  // ⚠️ As oito mutações de dinheiro do caixa não tinham trava nenhuma. O operador
+  // lança uma sangria de R$ 200, a rede do salão oscila (é a mesma do kiosk e do
+  // KDS), o botão não responde, ele toca de novo — e o livro-caixa aceita as duas
+  // linhas. O livro é imutável de propósito, então o conserto não é apagar: é um
+  // ajuste, com o gerente, no fechamento, com o dono perguntando por que faltam
+  // R$ 200.
+  //
+  // A chave identifica ESTE GESTO, e a regra é o que a torna correta nos dois casos:
+  //
+  //   * a MESMA chave volta enquanto a tentativa anterior, com o MESMO conteúdo,
+  //     tiver falhado — é o retry depois do timeout, onde o servidor já gravou e a
+  //     resposta se perdeu;
+  //   * a chave é DESCARTADA no sucesso — então duas sangrias deliberadamente
+  //     iguais nascem com chaves diferentes e viram dois lançamentos, que é o certo.
+  let ultimaTentativa: { assinatura: string; chave: string } | null = null;
+
+  function novaChave(): string {
+    const aleatorio =
+      globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    return `pos-cash:${aleatorio}`;
+  }
+
+  function chaveDoGesto(path: string, body: Record<string, unknown>): string {
+    const assinatura = `${path}:${JSON.stringify(body)}`;
+    if (ultimaTentativa?.assinatura === assinatura) return ultimaTentativa.chave;
+    ultimaTentativa = { assinatura, chave: novaChave() };
+    return ultimaTentativa.chave;
+  }
+
   async function run(path: string, body: Record<string, unknown>, failMessage: string): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
+    const comChave = { ...body, client_request_id: chaveDoGesto(path, body) };
     try {
-      const resposta = await action.call<{ entry_id?: number }>(path, { body });
+      const resposta = await action.call<{ entry_id?: number }>(path, { body: comChave });
       lastEntryId.value = resposta?.entry_id ?? null;
+      ultimaTentativa = null; // gesto concluído: o próximo é outro lançamento
       await refresh();
       return true;
     } catch (error) {

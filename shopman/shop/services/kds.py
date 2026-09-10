@@ -23,6 +23,7 @@ from collections import defaultdict
 from django.utils import timezone
 from shopman.orderman.models import Order
 
+from shopman.shop.services import payment_gate
 from shopman.shop.services.order_helpers import get_fulfillment_type
 
 logger = logging.getLogger(__name__)
@@ -86,18 +87,14 @@ def _customer_holds_the_goods(order) -> bool:
     remoto/agendado que alguém precisa separar, não para a sacola que o cliente
     já está segurando. Sem isto, toda venda de pão criava ticket com som e meta
     de 5 minutos para uma mercadoria já entregue.
+
+    A resposta é a MESMA que o lifecycle usa para fechar a venda no ato
+    (``order_helpers.customer_holds_the_goods``): o pedido de link, por exemplo,
+    é remoto — alguém precisa separá-lo quando o cliente pagar.
     """
-    data = order.data or {}
-    if data.get("origin_channel") != "pos":
-        return False
-    if (data.get("fulfillment_type") or "pickup") != "pickup":
-        return False
-    from django.utils import timezone
+    from shopman.shop.services.order_helpers import customer_holds_the_goods
 
-    from shopman.shop.services.order_helpers import get_commitment_date
-
-    commitment = get_commitment_date(order)
-    return not (commitment and commitment > timezone.localdate())
+    return customer_holds_the_goods(order)
 
 
 def fire_lines(*, session_key: str, lines: list[dict], prep_only: bool = False) -> list:
@@ -449,22 +446,38 @@ def _ticket_order(ticket, *, for_update: bool = False):
     return qs.first()
 
 
-def toggle_ticket_item(ticket, *, index: int, actor: str) -> bool:
-    """Toggle a KDS ticket item and start preparation when work begins."""
+def set_ticket_item_checked(ticket, *, index: int, checked: bool, actor: str) -> bool:
+    """Escreve o estado DESEJADO de um item, e inicia o preparo quando o trabalho começa.
+
+    ⚠️ É `set`, e não `toggle`, e a diferença aparece com dois tablets na mesma
+    bancada — que é a configuração normal de uma cozinha.
+
+    Com toggle, quem decide "isto muda ou não" precisa ler o estado antes, e essa
+    leitura acontecia FORA do lock: o `select_for_update` protegia só a inversão.
+    Dois cozinheiros tocam o mesmo item quase juntos, ambos querendo MARCAR. A
+    requisição A lê "desmarcado" → inverte → marcado. A B, que também tinha lido
+    "desmarcado", inverte → DESMARCADO. As duas telas mostram marcado por otimismo
+    e, meio segundo depois, a reconciliação reverte as duas juntas: o cozinheiro vê
+    o pão que ele acabou de marcar desmarcar sozinho, sem explicação na tela.
+
+    Escrevendo o estado desejado dentro do lock, a operação vira idempotente **por
+    construção** — que é o que a API já dizia ser. O teste chamado "idempotent" só
+    passava porque roda em série.
+    """
     from django.db import transaction
 
     with transaction.atomic():
         ticket = _locked_ticket(ticket)
-        return _toggle_ticket_item_locked(ticket, index=index, actor=actor)
+        return _set_ticket_item_checked_locked(ticket, index=index, checked=checked, actor=actor)
 
 
-def _toggle_ticket_item_locked(ticket, *, index: int, actor: str) -> bool:
+def _set_ticket_item_checked_locked(ticket, *, index: int, checked: bool, actor: str) -> bool:
     if ticket.status not in OPEN_TICKET_STATUSES:
         return False
     if not 0 <= index < len(ticket.items):
         return False
 
-    ticket.items[index]["checked"] = not ticket.items[index].get("checked", False)
+    ticket.items[index]["checked"] = checked
 
     if ticket.status == "pending" and any(it.get("checked") for it in ticket.items):
         ticket.status = "in_progress"
@@ -579,8 +592,36 @@ def _locked_ticket(ticket):
     return ticket.__class__.objects.select_for_update().get(pk=ticket.pk)
 
 
+def expedition_block_reason(order, *, action: str) -> str:
+    """Por que a expedição NÃO pode aplicar esta ação agora, na voz do operador.
+
+    "" quando pode. A pergunta sobre dinheiro é feita ao ``payment_gate`` — a
+    MESMA régua do Gestor (``operator_orders.advance_block``) — e a frase vem do
+    mesmo dicionário, para que o operador leia a mesma coisa nos dois painéis.
+    """
+    from shopman.shop.services import operator_orders
+
+    target = EXPEDITION_TRANSITIONS.get(action)
+    if not target:
+        return ""
+    if payment_gate.payment_blocks_transition(
+        order, current_status=order.status, target_status=target
+    ):
+        return operator_orders.advance_block_message(
+            operator_orders.AdvanceBlock.PAYMENT_NOT_CAPTURED
+        )
+    return ""
+
+
 def expedition_action(order, *, action: str, actor: str) -> str:
-    """Apply an expedition action and return the new order status."""
+    """Apply an expedition action and return the new order status.
+
+    A expedição é o painel por onde a mercadoria fisicamente sai, então ela
+    consulta o gate de pagamento como o Gestor consulta — antes ela chamava
+    ``transition_status`` direto e uma venda de link/pix não capturada saía pela
+    porta sem um centavo. Dinheiro na entrega (COD) passa: é venda legítima cujo
+    pagamento acontece na porta, por desenho (ver ``payment_gate``).
+    """
     is_delivery = get_fulfillment_type(order) == "delivery"
     if action == "dispatch" and not is_delivery:
         raise ValueError("Pedido de retirada não pode ser despachado")
@@ -590,6 +631,9 @@ def expedition_action(order, *, action: str, actor: str) -> str:
     next_status = EXPEDITION_TRANSITIONS.get(action)
     if not next_status or not order.can_transition_to(next_status):
         raise ValueError("Ação inválida")
+    blocked = expedition_block_reason(order, action=action)
+    if blocked:
+        raise ValueError(blocked)
     order.transition_status(next_status, actor=actor)
     logger.info("kds_expedition %s order=%s", action, order.ref)
     return next_status
@@ -617,13 +661,10 @@ def expedition_action_by_order_id(order_id: int, *, action: str, actor: str) -> 
 
 
 def _payment_allows_physical_work(order) -> bool:
-    payment = (order.data or {}).get("payment") or {}
-    method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
-        return True
-    from shopman.shop.services import payment as payment_service
-
-    return payment_service.has_sufficient_captured_payment(order) is True
+    """Delegado ao ``payment_gate``: o KDS não tem régua de dinheiro própria."""
+    return not payment_gate.payment_blocks_transition(
+        order, current_status=Order.Status.ACCEPTED, target_status=Order.Status.PREPARING
+    )
 
 
 def _ensure_order_preparing_for_work(order, *, actor: str) -> bool:

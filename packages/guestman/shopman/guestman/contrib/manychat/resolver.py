@@ -189,6 +189,67 @@ class ManychatSubscriberResolver:
         return None
 
     @classmethod
+    def fetch_subscriber_info(cls, subscriber_id: str | int) -> dict | None:
+        """O contato como o ManyChat o conhece — ``GET /fb/subscriber/getInfo``.
+
+        Existe porque o `subscriber_id` é a única coisa que um fluxo do ManyChat
+        nunca erra, e todo o resto (telefone, texto da última mensagem) tem nome
+        e disponibilidade que variam por canal. Buscar na fonte substitui o corpo
+        do request adivinhar qual variável usar.
+
+        O que o getInfo devolve, medido num contato real de WhatsApp em 01/09:
+        ``whatsapp_phone="+55..."``, ``last_input_text="#menu NB-282SW9"`` — e
+        ``phone=None``. O campo sistêmico `phone` é nulo mesmo num contato de
+        WhatsApp saudável; foi assumi-lo que quebrou o login por dias.
+        """
+        from django.conf import settings
+
+        api_token = getattr(settings, "MANYCHAT_API_TOKEN", "")
+        subscriber_id = str(subscriber_id or "").strip()
+        if not api_token or not subscriber_id:
+            return None
+
+        url = f"{_API_BASE}/subscriber/getInfo?{urlencode({'subscriber_id': subscriber_id})}"
+        request = Request(url, headers={
+            "Authorization": f"Bearer {api_token}",
+            "Accept": "application/json",
+        })
+        try:
+            with urlopen(request, timeout=_API_TIMEOUT) as response:
+                data = json.loads(response.read().decode("utf-8"))
+            if data.get("status") == "success" and isinstance(data.get("data"), dict):
+                return data["data"]
+            logger.warning(
+                "Manychat resolver: getInfo failed for %s: %s",
+                subscriber_id, _manychat_failure_message(data),
+            )
+        except HTTPError as e:
+            logger.warning(
+                "Manychat resolver: getInfo HTTP error %d for %s: %s",
+                e.code, subscriber_id, _read_http_error_body(e),
+            )
+        except (URLError, ValueError, Exception):
+            logger.debug(
+                "Manychat resolver: getInfo call failed for %s", subscriber_id, exc_info=True
+            )
+        return None
+
+    @staticmethod
+    def phone_from_subscriber_info(info: dict | None) -> str:
+        """O telefone do contato, na ordem em que ele de fato existe.
+
+        ``whatsapp_phone`` primeiro porque é o único preenchido em contato de
+        WhatsApp. ``optin_phone`` NÃO entra na cascata: apesar do nome, é booleano.
+        """
+        if not isinstance(info, dict):
+            return ""
+        for key in ("whatsapp_phone", "phone"):
+            value = info.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        return ""
+
+    @classmethod
     def _find_customer(cls, recipient: str) -> Customer | None:
         """Busca customer por phone, code ou email."""
         from shopman.guestman.contrib.identifiers.models import (

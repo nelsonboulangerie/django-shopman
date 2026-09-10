@@ -3,7 +3,8 @@
 // por permissão) e a apresenta como uma grade de ícones fortes. Sem CRUD: cada tile
 // abre a superfície dedicada (ou deep-linka pro Unfold, no caso da Loja). Herda do kit
 // o OfflineBanner, o re-gate de 401 (useOperatorSession) e httpErrorMessage.
-import { hubGreeting, hubIsEmpty, tileIcon, tileTarget } from "~/presentation/hub";
+import type { HubFailure } from "~/presentation/hub";
+import { hubFailure, hubFailureCopy, hubGreeting, hubIsEmpty, tileIcon, tileTarget } from "~/presentation/hub";
 
 const apiPath = useHubApiPath();
 
@@ -36,9 +37,25 @@ const { tiles, operatorName, error, refresh } = await useOperatorHub();
 const { onReconnect } = useConnectivity();
 onReconnect(() => refresh());
 
-// Re-gate de sessão (kit): 401 (sessão expirada) → volta pro login.
+// Re-gate de sessão (kit): sessão expirada → volta pro login.
 const { expired: sessionExpired, reset: resetSession } = useOperatorSession();
-const needsLogin = computed(() => Boolean(error.value) || sessionExpired.value);
+
+// ⚠️ Cinco causas distintas viravam UM booleano que subia o formulário de senha.
+// API fora do ar, deploy em andamento e estação travada pediam senha — num balcão
+// onde a credencial é PIN ou crachá, e onde senha não conserta nenhuma das três.
+// A classificação é pura (`presentation/hub.ts`) para poder ser testada sem montar
+// componente; os utilitários de erro são os do kit.
+const failure = computed<HubFailure>(() =>
+  hubFailure(error.value, {
+    isUnauthenticated: isUnauthenticatedError,
+    isStationLocked: isStationLockedError,
+    isTransient: isTransientError,
+    status: (e) => httpError(e).status,
+  }),
+);
+const failureCopy = computed(() => hubFailureCopy(failure.value));
+const needsLogin = computed(() => failure.value === "login" || sessionExpired.value);
+const hasBlockingFailure = computed(() => failure.value !== "none" || sessionExpired.value);
 const isEmpty = computed(() => hubIsEmpty(tiles.value));
 </script>
 
@@ -92,6 +109,32 @@ const isEmpty = computed(() => hubIsEmpty(tiles.value));
           {{ loginPending ? "Entrando…" : "Entrar" }}
         </button>
       </form>
+    </div>
+
+    <!-- Falha que NÃO se resolve com senha: estação travada, sem permissão, ou a
+         Central fora do ar. Cada uma tem a sua saída — e "tentar de novo" só aparece
+         onde tentar de novo faz sentido. -->
+    <div v-else-if="hasBlockingFailure" class="grid min-h-dvh place-items-center p-4">
+      <div class="grid w-full max-w-sm gap-4 text-center">
+        <div class="mx-auto grid size-14 place-items-center rounded-full border bg-muted">
+          <Icon
+            :name="failure === 'station' ? 'lucide:lock' : failure === 'forbidden' ? 'lucide:shield-alert' : 'lucide:cloud-off'"
+            class="size-7 text-muted-foreground"
+          />
+        </div>
+        <div class="grid gap-1.5">
+          <h1 class="text-lg font-semibold">{{ failureCopy.title }}</h1>
+          <p class="text-sm text-muted-foreground">{{ failureCopy.hint }}</p>
+        </div>
+        <button
+          v-if="failureCopy.retry"
+          type="button"
+          class="inline-flex h-11 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground"
+          @click="refresh()"
+        >
+          Tentar de novo
+        </button>
+      </div>
     </div>
 
     <!-- Launcher -->

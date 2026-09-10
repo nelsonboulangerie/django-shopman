@@ -9,6 +9,32 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
+QUALITY_OK_GRADE_REFS = ("excellent", "standard")
+
+
+def quality_grade_refs_for_channel(
+    channel_ref: str,
+    *,
+    sells_nonconforming: bool,
+) -> tuple[str, ...] | None:
+    """Resolve the non-relaxable remote quality boundary.
+
+    ``sells_nonconforming`` is intentionally useful only at the local counter.
+    Remote channels always fail closed to Ótimo/Normal, even if an inherited or
+    stale JSON override tries to enable markdown stock. Deployments may rename
+    their counter through ``SHOPMAN_POS_CHANNEL_REF``.
+    """
+    from django.conf import settings
+
+    local_counter_refs = {
+        "pdv",
+        "pos",
+        str(getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv") or "pdv"),
+    }
+    if sells_nonconforming and channel_ref in local_counter_refs:
+        return None
+    return QUALITY_OK_GRADE_REFS
+
 
 @dataclass
 class ChannelConfig:
@@ -70,6 +96,14 @@ class ChannelConfig:
         # "at_commit"   — initiate payment at commit time
         # "external"    — no digital payment (local counter / marketplace)
         timeout_minutes: int = 10  # só para method=pix
+        # Janela do LINK de pagamento (pedido remoto anotado no balcão), em
+        # minutos, contada da venda. É o teto: o link vence em
+        # ``min(agora + janela, corte do atendimento)`` — o corte é o início da
+        # janela combinada de retirada/entrega ou o fechamento da loja no dia do
+        # compromisso (``services/payment_deadline``). Duas horas porque o pão é
+        # para hoje ou para amanhã e a encomenda remota só é liberada contra o
+        # pagamento: um link de 24 h segurava estoque por um dia inteiro.
+        link_timeout_minutes: int = 120
 
         @property
         def available_methods(self) -> list[str]:
@@ -133,10 +167,13 @@ class ChannelConfig:
         # fornada planejada) quando o produto não declara
         # Product.metadata["lead_time_hours"]. 0 = sem exigência.
         sells_nonconforming: bool = False
-        # O canal oferece lote NÃO CONFORME (Batch.nonconformity_reason
-        # preenchido — ter motivo é ser)? Default falha para o lado seguro:
-        # canal remoto não vende pão com desconto de qualidade sem decisão
-        # explícita. O PDV declara True — no balcão a etiqueta explica.
+        # Política binária de qualidade do canal. False = somente qualidade
+        # integral (excellent/standard, Ótimo/Normal); True = também permite
+        # graus com markdown. Motivo/defeito é ortogonal e nunca decide
+        # elegibilidade sozinho. Default falha para o lado seguro; somente o
+        # canal local de PDV pode declarar True — no balcão a etiqueta explica.
+        # Canais remotos continuam presos a Ótimo/Normal mesmo diante de um
+        # override herdado ou equivocado com True.
         # (D1-RETIREMENT C2: substituiu a antiga cerca por POSIÇÃO;
         # a posição diz ONDE, o lote diz O QUE.)
         expiry_margin_days: int = 0
@@ -144,6 +181,32 @@ class ChannelConfig:
         # 0 = só exclui o já vencido (comportamento de sempre). O queijo de
         # 20 dias sai da vitrine remota com antecedência; o pão de 1 dia
         # não é afetado.
+
+    # ── 4b. Fila de espera (WP-P2E) ──
+    @dataclass
+    class Waitlist:
+        """Fila de espera: quanto da fornada AINDA NÃO ASSADA o canal promete.
+
+        A promessa é do canal, não do estoque: o Stockman sempre soube somar
+        quant planejado (``total_promisable = expected + planned``), mas quem
+        lê sempre perguntou "e para HOJE?" — e fornada de amanhã, por
+        construção, não conta para hoje. ``horizon_days`` é a pergunta certa:
+        até que dia de fornada planejada este canal aceita entrar na fila.
+        """
+
+        enabled: bool = False
+        # Fila desligada = comportamento de sempre (só o que existe/sai hoje).
+        horizon_days: int = 0
+        # Quantos dias de fornada PLANEJADA além de hoje entram na promessa.
+        # 0 com enabled=True é contradição — validate() recusa.
+        confirmation_minutes: int = 15
+        # Prazo do cliente para confirmar quando a fornada sai.
+        release_policy: str = "serve_next"
+        # "serve_next" (fila tem preferência) | "store" (vaga volta à gôndola).
+        charge_at: str = "confirmation"
+        # Onde a cobrança acontece. "confirmation" = nada é cobrado na reserva.
+        price_frozen: bool = True
+        # O preço da reserva é o preço da confirmação.
 
     # ── 5. Notificações ──
     @dataclass
@@ -206,6 +269,14 @@ class ChannelConfig:
         # Ref do canal transacional cujo preço é anunciado.
         paused_skus: list[str] = field(default_factory=list)
         # Exceções por SKU: tirado deste canal sem sair da coleção.
+        rotate_seconds: int = 0
+        # Menuboard: segundos entre a troca de páginas. 0 = sem rotação (tudo
+        # numa tela, comportamento clássico). Quando > 0, mínimo de 5s — abaixo
+        # disso a TV vira estroboscópio, não cardápio.
+        items_per_page: int = 0
+        # Menuboard: teto de itens por página. 0 = tudo numa página. Seções
+        # inteiras se agrupam até o teto; seção maior que o teto quebra em
+        # partes com o mesmo título e sufixo de continuação.
 
     # ── 8. Regras ──
 
@@ -233,6 +304,7 @@ class ChannelConfig:
     payment: Payment = field(default_factory=Payment)
     fulfillment: Fulfillment = field(default_factory=Fulfillment)
     stock: Stock = field(default_factory=Stock)
+    waitlist: Waitlist = field(default_factory=Waitlist)
     notifications: Notifications = field(default_factory=Notifications)
     pricing: Pricing = field(default_factory=Pricing)
     editing: Editing = field(default_factory=Editing)
@@ -259,6 +331,14 @@ class ChannelConfig:
     # Vazio = usa o `name` do canal. Ex: "Loja online" → "Site". O nome completo
     # segue valendo em toda lista/tooltip onde há espaço.
 
+    # ── Identidade do pedido ──
+
+    order_ref_prefix: str = ""
+    # Prefixo do ref gerado no commit. Vazio = o próprio `channel_ref` em maiúsculas
+    # (`WEB-260901-M63`), que é o comportamento de sempre. A loja online da Nelson
+    # usa "NB" — o ref que o cliente lê carrega a MARCA, não o meio por onde entrou.
+    # Quem consome: `CommitService._do_commit` via config resolvida.
+
     # ── Serialização ──
 
     def to_dict(self) -> dict:
@@ -271,6 +351,7 @@ class ChannelConfig:
             payment=_safe_init(cls.Payment, data.get("payment", {})),
             fulfillment=_safe_init(cls.Fulfillment, data.get("fulfillment", {})),
             stock=_safe_init(cls.Stock, data.get("stock", {})),
+            waitlist=_safe_init(cls.Waitlist, data.get("waitlist", {})),
             notifications=_safe_init(cls.Notifications, data.get("notifications", {})),
             pricing=_safe_init(cls.Pricing, data.get("pricing", {})),
             editing=_safe_init(cls.Editing, data.get("editing", {})),
@@ -280,6 +361,7 @@ class ChannelConfig:
             handle_label=data.get("handle_label", cls.handle_label),
             handle_placeholder=data.get("handle_placeholder", cls.handle_placeholder),
             short_name=data.get("short_name", cls.short_name),
+            order_ref_prefix=data.get("order_ref_prefix", cls.order_ref_prefix),
         )
 
     @classmethod
@@ -344,6 +426,8 @@ class ChannelConfig:
                 raise ValueError(f"payment.method inválido: {m}")
         if "pix" in self.payment.available_methods and self.payment.timeout_minutes <= 0:
             raise ValueError("timeout_minutes deve ser > 0 para method=pix")
+        if self.payment.link_timeout_minutes <= 0:
+            raise ValueError("payment.link_timeout_minutes deve ser > 0")
         valid_timings = {"at_commit", "post_commit", "external"}
         if self.payment.timing not in valid_timings:
             raise ValueError(f"payment.timing inválido: {self.payment.timing}")
@@ -397,6 +481,48 @@ class ChannelConfig:
             raise ValueError("rules.modifiers deve ser uma lista ou null")
         if not isinstance(self.rules.checks, list):
             raise ValueError("rules.checks deve ser uma lista")
+        if not isinstance(self.waitlist.enabled, bool):
+            raise ValueError("waitlist.enabled deve ser true/false")
+        if (
+            isinstance(self.waitlist.horizon_days, bool)
+            or not isinstance(self.waitlist.horizon_days, int)
+            or self.waitlist.horizon_days < 0
+        ):
+            raise ValueError("waitlist.horizon_days deve ser um inteiro >= 0")
+        # Fila ligada com horizonte 0 é promessa vazia: a fila existiria e não
+        # alcançaria nenhuma fornada. Recusa em vez de aceitar calada.
+        if self.waitlist.enabled and self.waitlist.horizon_days <= 0:
+            raise ValueError("waitlist.horizon_days deve ser > 0 quando waitlist.enabled")
+        if self.waitlist.confirmation_minutes <= 0:
+            raise ValueError("waitlist.confirmation_minutes deve ser > 0")
+        if self.waitlist.release_policy not in ("serve_next", "store"):
+            raise ValueError(f"waitlist.release_policy inválido: {self.waitlist.release_policy}")
+        if self.waitlist.charge_at not in ("confirmation",):
+            raise ValueError(f"waitlist.charge_at inválido: {self.waitlist.charge_at}")
+        if not isinstance(self.waitlist.price_frozen, bool):
+            raise ValueError("waitlist.price_frozen deve ser true/false")
+        if (
+            isinstance(self.display.rotate_seconds, bool)
+            or not isinstance(self.display.rotate_seconds, int)
+            or self.display.rotate_seconds < 0
+        ):
+            raise ValueError("display.rotate_seconds deve ser um inteiro >= 0")
+        # Rotação ligada abaixo de 5s é strobe, não cardápio: ninguém lê a página.
+        if 0 < self.display.rotate_seconds < 5:
+            raise ValueError("display.rotate_seconds deve ser >= 5 quando > 0")
+        if (
+            isinstance(self.display.items_per_page, bool)
+            or not isinstance(self.display.items_per_page, int)
+            or self.display.items_per_page < 0
+        ):
+            raise ValueError("display.items_per_page deve ser um inteiro >= 0")
+        # Um sem o outro é promessa vazia: rotação sem teto não tem página para
+        # trocar, e teto sem rotação esconderia tudo além da primeira tela.
+        if (self.display.rotate_seconds > 0) != (self.display.items_per_page > 0):
+            raise ValueError(
+                "display.rotate_seconds e display.items_per_page andam juntos: "
+                "defina ambos > 0 (rotação ligada) ou ambos 0 (desligada)"
+            )
 
 
 def _safe_init(cls, data: dict):

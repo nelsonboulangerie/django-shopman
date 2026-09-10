@@ -49,6 +49,8 @@ export interface KDSExpeditionCardProjection {
   total_display: string;
   items: KDSItemProjection[];
   is_expedition: boolean;
+  advance_block_label: string;
+  advance_block_reason: string;
 }
 
 /** A KDS instance in the index (station selector). */

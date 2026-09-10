@@ -8,10 +8,16 @@ from rest_framework.views import APIView
 
 from shopman.backstage.api.projections import projection_data
 from shopman.backstage.projections.purchase import build_purchase
+from shopman.backstage.projections.purchase_count import build_purchase_count
 from shopman.backstage.services import purchase as purchase_service
+from shopman.backstage.services import purchase_count as purchase_count_service
 from shopman.backstage.services.purchase import PurchaseError
 
 from .permissions import HasBackstagePermission
+
+# Contagem é auditoria de estoque: além de operar Compras, só quem tem o papel
+# de dono/gestor com `audit_stock` enxerga e ajusta o saldo dos insumos.
+PURCHASE_COUNT_PERMISSIONS = ("backstage.operate_purchase", "backstage.audit_stock")
 
 
 def _purchase_response(projection, *, message: str = "") -> Response:
@@ -30,6 +36,11 @@ def _error_response(exc: PurchaseError) -> Response:
     if exc.field:
         payload["field"] = exc.field
         payload["errors"] = {exc.field: [str(exc)]}
+    if exc.lines:
+        # `errors` é o dialeto da casa e fala por CAMPO; um lote erra por
+        # LINHA, e a linha não cabe ali sem torcer o contrato. Vai como
+        # superset em `error`, no mesmo molde de `error.code`.
+        payload["error"]["lines"] = exc.lines
     return Response(payload, status=exc.status_code)
 
 
@@ -114,6 +125,52 @@ class PurchaseCostView(APIView):
         return _purchase_response(projection, message="Custo salvo.")
 
 
+class PurchaseCostBatchView(APIView):
+    """Tabela de preços do fornecedor num gesto só — ver `upsert_costs`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Create/update several supplier material costs at once",
+        responses={200: OpenApiResponse(description="Costs saved and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            result = purchase_service.upsert_costs(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        saved = result["saved"]
+        return _purchase_response(
+            result["purchase"],
+            message=f"{saved} custo(s) salvo(s)." if saved != 1 else "1 custo salvo.",
+        )
+
+
+class PurchaseMinStockView(APIView):
+    """Estoque mínimo declarado — ver `set_min_stock`."""
+
+    permission_classes = [HasBackstagePermission]
+    required_permission = "backstage.operate_purchase"
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Declare the minimum stock of several materials",
+        responses={200: OpenApiResponse(description="Minimums saved and projection refreshed.")},
+    )
+    def post(self, request):
+        try:
+            result = purchase_service.set_min_stock(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        saved = result["saved"]
+        return _purchase_response(
+            result["purchase"],
+            message="1 mínimo salvo." if saved == 1 else f"{saved} mínimos salvos.",
+        )
+
+
 class PurchaseConversionView(APIView):
     """Declarar uma conversão de unidade sem sair do recebimento.
 
@@ -150,6 +207,36 @@ class PurchaseConversionView(APIView):
         response = _purchase_response(projection, message=message)
         response.data["conversionId"] = conversion_id
         return response
+
+
+class PurchaseCountView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = PURCHASE_COUNT_PERMISSIONS
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Stock count board (raw ledger position per material)",
+        responses={200: OpenApiResponse(description="Materials with current ledger quantity for physical counting.")},
+    )
+    def get(self, request):
+        return Response({"count": projection_data(build_purchase_count())})
+
+
+class PurchaseCountConfirmView(APIView):
+    permission_classes = [HasBackstagePermission]
+    required_permission = PURCHASE_COUNT_PERMISSIONS
+
+    @extend_schema(
+        tags=["backstage"],
+        summary="Confirm a physical stock count into Stockman adjustments",
+        responses={200: OpenApiResponse(description="Divergences written as ADJUST moves; count refreshed.")},
+    )
+    def post(self, request):
+        try:
+            projection, message = purchase_count_service.submit_count(dict(request.data or {}), user=request.user)
+        except PurchaseError as exc:
+            return _error_response(exc)
+        return Response({"ok": True, "count": projection_data(projection), "message": message})
 
 
 class PurchaseRequestApproveView(APIView):

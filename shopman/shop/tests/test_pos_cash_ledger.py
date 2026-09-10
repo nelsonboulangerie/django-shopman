@@ -133,6 +133,48 @@ def test_venda_em_pix_passa_pelo_turno_sem_tocar_na_gaveta(counter):
     assert result.payment.get("method") == "pix"
 
 
+@pytest.mark.parametrize("forma", ["credit", "debit"])
+def test_venda_so_em_cartao_do_balcao_liquida_sem_gateway(counter, forma):
+    """⚠️ O BURACO SILENCIOSO DE RECEITA que este teste existe para impedir.
+
+    Crédito e débito do balcão não passam por gateway: a maquininha é física, o
+    cartão é passado fora do sistema e o operador atesta o que aconteceu. Isso só
+    funciona porque os dois estão em ``PaymentIntent.METHODS_WITHOUT_GATEWAY``.
+
+    Sem essa entrada, o desastre é mudo: ``gateway_only`` não casa (a forma não é
+    pix nem card), a venda cai no ramo do terminal, e lá o ``PaymentService`` vê
+    um método "de gateway" fora de venda mista e PULA o intent. A venda commita,
+    a linha ``sale`` é gravada com ``amount_q`` zero — e não existe
+    ``PaymentIntent`` nenhum. O dinheiro some do Payman, do fechamento de turno e
+    do B.I., sem erro, sem alerta, sem nada na tela. O estorno viraria no-op pelo
+    mesmo motivo.
+
+    Por isso o teste afirma as DUAS coisas: a gaveta não se mexe (não é dinheiro)
+    E o intent existe capturado (a receita foi registrada).
+    """
+    result = counter.close(
+        client_request_id=f"cartao-{forma}",
+        payment_tenders=[{"method": forma, "amount_q": 1200, "collection": "terminal"}],
+    )
+
+    (line,) = counter.sale_lines()
+    intent = PaymentIntent.objects.get(order_ref=result.order_ref)
+
+    # A gaveta não se mexe: cartão não é dinheiro em espécie.
+    assert line.amount_q == 0
+    assert cash.balance(counter.shift) == 10000
+    # Mas a RECEITA existe, e aponta para o intent — é isto que somia.
+    assert line.payload["method"] == forma
+    assert line.payload["intents"] == {forma: intent.ref}
+    assert line.payment_ref == intent.ref
+    assert intent.method == forma
+    assert intent.status == PaymentIntent.Status.CAPTURED
+    assert intent.gateway == ""
+    # E nenhuma prova remota é oferecida ao operador: não há QR nem link para
+    # mostrar, porque não houve cobrança remota nenhuma.
+    assert not result.payment.get("checkout_url")
+
+
 def test_venda_mista_e_uma_linha_com_o_dinheiro_e_todos_os_intents(counter):
     result = counter.close(
         client_request_id="c3",
@@ -642,3 +684,142 @@ def test_dois_submits_simultaneos_com_a_mesma_chave_viram_uma_venda_so():
         assert pedidos[0].total_q == 1200, f"rodada {rodada}: carrinho dobrado ({pedidos[0].total_q})"
         assert {r.order_ref for r in resultados} == {pedidos[0].ref}
         assert len(Entry.objects.filter(kind=Entry.Kind.SALE, order_ref=pedidos[0].ref)) == 1
+
+
+@override_settings(
+    SHOPMAN_PAYMENT_ADAPTERS={
+        "pix": "shopman.shop.adapters.payment_mock",
+        "link": "shopman.shop.adapters.payment_mock",
+        "cash": None,
+        "external": None,
+    }
+)
+def test_venda_em_link_entrega_a_url_e_fica_aguardando(counter):
+    """O LINK tem que CHEGAR na mão do operador — senão o fluxo morre no clique.
+
+    Ele é a forma do pedido remoto: sem maquininha, com gateway, e o dinheiro
+    chega quando o cliente paga. O que o balcão precisa é da URL para mandar.
+
+    ⚠️ Duas coisas quebravam isto, e as duas eram invisíveis pelo botão:
+    o adapter do Stripe gravava TODA cobrança como `card` (um literal cravado
+    que ninguém via enquanto só o cartão da loja o usava), e o simulador só
+    sabia produzir artefato de Pix — o link nascia sem `checkout_url` e a tela
+    não tinha o que mostrar.
+
+    E o intent fica PENDING: link não é dinheiro recebido, é dinheiro
+    prometido. É isso que separa esta venda de uma em crédito/débito.
+    """
+    result = counter.close(
+        client_request_id="link-1",
+        # O contato é obrigatório no link (ver `_require_contact_if_payment_link`):
+        # a URL existe para ser ENVIADA a alguém.
+        customer_phone="43999990000",
+        payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+    )
+
+    # A URL chega ao operador — é o que ele copia e manda.
+    assert result.payment.get("method") == "link"
+    assert result.payment.get("checkout_url", "").startswith("http")
+
+    intent = PaymentIntent.objects.get(order_ref=result.order_ref)
+    assert intent.method == "link", "o adapter gravava tudo como `card`"
+    assert intent.status == PaymentIntent.Status.PENDING, "link não é recebido, é prometido"
+
+    # A gaveta não se mexe, e a venda é deste turno.
+    (line,) = counter.sale_lines()
+    assert line.amount_q == 0
+    assert cash.balance(counter.shift) == 10000
+
+
+#: ⚠️ As duas recusas que protegem o link — e a receita.
+#:
+#: A primeira é buraco de dinheiro: em venda MISTA o `settle_terminal_tenders`
+#: liquida toda forma de gateway com `asserted_at_terminal=True`. O link seria
+#: CAPTURADO como se o dinheiro tivesse entrado, e nenhuma URL seria gerada —
+#: venda paga, cliente sem link, dinheiro que nunca chega. Só a venda sozinha
+#: passa por `initiate()`, que é quem cria a cobrança remota.
+#:
+#: A segunda é de fluxo: o link é uma URL que alguém precisa RECEBER. Sem
+#: contato, a venda fecha aguardando um pagamento que ninguém vai pedir.
+_LINK_ADAPTERS = override_settings(
+    SHOPMAN_PAYMENT_ADAPTERS={
+        "pix": "shopman.shop.adapters.payment_mock",
+        "link": "shopman.shop.adapters.payment_mock",
+        "cash": None,
+        "external": None,
+    }
+)
+
+
+@_LINK_ADAPTERS
+def test_link_com_outra_forma_e_recusado_antes_do_commit(counter):
+    with pytest.raises(PosIntentError) as exc:
+        counter.close(
+            client_request_id="link-misto",
+            customer_phone="43999990000",
+            payment_tenders=[
+                {"method": "cash", "amount_q": 200, "collection": "terminal"},
+                {"method": "link", "amount_q": 1000, "collection": "terminal"},
+            ],
+        )
+    assert exc.value.code == "link_requires_full_payment"
+
+
+@_LINK_ADAPTERS
+def test_link_sem_contato_e_recusado(counter):
+    with pytest.raises(PosIntentError) as exc:
+        counter.close(
+            client_request_id="link-sem-contato",
+            customer_name="Seu Jorge",  # ⚠️ nome NÃO é contato
+            payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+        )
+    assert exc.value.code == "link_requires_customer_contact"
+
+
+@_LINK_ADAPTERS
+def test_link_com_telefone_passa(counter):
+    r = counter.close(
+        client_request_id="link-com-tel",
+        customer_phone="43999990000",
+        payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+    )
+    assert r.payment.get("checkout_url", "").startswith("http")
+
+
+@_LINK_ADAPTERS
+def test_link_com_email_tambem_passa(counter):
+    r = counter.close(
+        client_request_id="link-com-email",
+        customer_email="jorge@casa.com",
+        payment_tenders=[{"method": "link", "amount_q": 1200, "collection": "terminal"}],
+    )
+    assert r.payment.get("checkout_url", "").startswith("http")
+
+
+@_LINK_ADAPTERS
+@override_settings(DEBUG=True)
+def test_o_link_so_aparece_na_tela_com_gateway_de_pe():
+    from shopman.backstage.projections.pos import _payment_methods
+
+    assert "link" in {m.ref for m in _payment_methods()}
+
+
+@override_settings(SHOPMAN_PAYMENT_ADAPTERS={"link": ""})
+def test_sem_adapter_de_link_o_balcao_nao_oferece_o_botao():
+    # A gêmea na TELA da recusa do commit: se o Validar vai negar, o botão nem
+    # pode existir. Sem esta prova, um deploy sem gateway devolve ao operador um
+    # botão que só falha depois que o cliente já está esperando a URL.
+    from shopman.backstage.projections.pos import _payment_methods
+
+    assert "link" not in {m.ref for m in _payment_methods()}
+    assert "cash" in {m.ref for m in _payment_methods()}
+
+
+def test_a_regra_do_contato_e_do_link_e_de_mais_ninguem(counter):
+    # Dinheiro anônimo é A venda do balcão. Exigir contato ali seria a regra do
+    # link vazando para toda venda.
+    r = counter.close(
+        client_request_id="dinheiro-anonimo",
+        payment_tenders=[{"method": "cash", "amount_q": 1200, "collection": "terminal"}],
+    )
+    assert r.order_ref

@@ -14,9 +14,11 @@ import {
   flattenZones,
   lucideIcon,
   fulfillmentCounts,
+  joinFacts,
   matchesChannel,
   matchesFulfillment,
   matchesQuery,
+  newOrderPush,
   nextSort,
   preorderGroups,
   resolveShortcut,
@@ -63,7 +65,10 @@ const card = (over: Partial<OrderCardProjection> = {}): OrderCardProjection => (
   can_settle_delivery_cash: false,
   fiscal_status_label: "",
   fiscal_status: "",
-  has_notes: false,
+  has_kitchen_note: false,
+  has_customer_note: false,
+  is_gift: false,
+  gift_has_recipient: false,
   assigned_operator: "",
   awaiting_work_orders: [],
   change_for_q: 0,
@@ -453,6 +458,27 @@ describe("realtimeIndicator — honestidade do tempo-real", () => {
   });
 });
 
+describe("newOrderPush — só pedido NOVO dispara o aviso", () => {
+  it("kind 'created' devolve o ref do pedido", () => {
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "new", kind: "created" }))).toBe("WEB-9");
+  });
+
+  it("'created' sem ref ainda é pedido novo (ref vazio, aviso genérico)", () => {
+    expect(newOrderPush(JSON.stringify({ kind: "created" }))).toBe("");
+  });
+
+  it("mudança de status NÃO é pedido novo — o som não pode gritar em transição", () => {
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9", status: "ready", kind: "status_changed" }))).toBeNull();
+  });
+
+  it("payload imparseável/vazio degrada em silêncio (null)", () => {
+    expect(newOrderPush("not-json")).toBeNull();
+    expect(newOrderPush(undefined)).toBeNull();
+    expect(newOrderPush("")).toBeNull();
+    expect(newOrderPush(JSON.stringify({ ref: "WEB-9" }))).toBeNull();
+  });
+});
+
 describe("appendTag — tags de nota da cozinha (anexa)", () => {
   it("nota vazia → só a tag", () => {
     expect(appendTag("", "Bem assado")).toBe("Bem assado");
@@ -478,5 +504,29 @@ describe("appendTag — tags de nota da cozinha (anexa)", () => {
 
   it("tag vazia é no-op (retorna a nota aparada)", () => {
     expect(appendTag("Sem cebola", "  ")).toBe("Sem cebola");
+  });
+});
+
+// O bloco "quem é este cliente" é feito de dados que faltam com frequência:
+// cliente sem insight não tem ticket nem favorito, cliente novo não tem
+// recência. O vazio precisa DESAPARECER, não virar pontuação.
+describe("joinFacts", () => {
+  it("junta os fatos que existem com ' · '", () => {
+    expect(joinFacts("12 pedidos", "última compra há 12 dias")).toBe(
+      "12 pedidos · última compra há 12 dias",
+    );
+  });
+
+  it("um fato só: nenhum separador órfão", () => {
+    expect(joinFacts("", "última compra há 3 meses")).toBe("última compra há 3 meses");
+    expect(joinFacts("Primeira compra", "")).toBe("Primeira compra");
+  });
+
+  it("nada a dizer devolve string vazia (a linha some da tela)", () => {
+    expect(joinFacts("", "", undefined, null)).toBe("");
+  });
+
+  it("branco só não conta como fato", () => {
+    expect(joinFacts("   ", "R$ 42,00")).toBe("R$ 42,00");
   });
 });

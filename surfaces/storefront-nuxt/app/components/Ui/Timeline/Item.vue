@@ -1,3 +1,6 @@
+<!-- `aria-hidden` vive no Indicator e no Separator, que SÃO decorativos. No item
+     ele escondia o conteúdo: rótulo do passo e carimbo de hora — no
+     acompanhamento, a aba "Histórico" inteira sumia para leitor de tela. -->
 <template>
   <Primitive
     :data-completed="
@@ -5,7 +8,6 @@
     "
     :data-step="step"
     data-slot="timeline-item"
-    aria-hidden="true"
     v-bind="forwarded"
     :class="styles({ class: normalizeClass(props.class) || undefined })"
   >

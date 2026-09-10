@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { isInAppBrowser, systemBrowserUrl } from '~/composables/useBrowserHandoff'
+import { accessLinkLanding } from '~/presentation/auth'
 
 // Magic-link bridge: the customer arrives from a notification at `/a?t=<token>`.
 // We exchange the token through the BFF (`/api/auth/access/`), so the session
@@ -78,7 +79,13 @@ async function exchangeToken () {
     // Sacola não veio (handoff expirou): aviso gentil que sobrevive à navegação (Sonner
     // vive no layout). O login segue normal; só comunicamos a sacola ausente.
     if (response.handoff_expired && response.notice) useSonner(response.notice)
-    const redirect = response.redirect || '/'
+    // Boas-vindas pendentes (nome veio do WhatsApp, ainda não confirmado): o
+    // destino passa pelo passo do nome em /entrar, com o campo já semeado pela
+    // sessão (welcome_suggested_name) e o destino original preservado em `next`.
+    const redirect = accessLinkLanding(
+      response.redirect || '/',
+      !!(response.is_authenticated && response.requires_welcome)
+    )
     if (await trySystemBrowserHandoff(redirect)) return
     await navigateTo(redirect)
   } catch {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  alertsNote,
   audienceRulesSummary,
   audienceSummary,
   displayHashtag,
@@ -10,6 +11,9 @@ import {
   parseHashtags,
   platformsSummary,
   announcementOutcome,
+  approvalBody,
+  approvalMessage,
+  mergeAudienceRules,
   resultLabel,
   resultTone,
   shortDateTime,
@@ -32,6 +36,23 @@ function result(platform: string, status: string): PlatformResult {
   return { platform, label: platform, status, detail: "", url: "" };
 }
 
+describe("alertsNote", () => {
+  it("separates an empty queue from a queue already served", () => {
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 0 }))
+      .toBe("Ninguém pediu para ser avisado deste produto ainda");
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 1 }))
+      .toBe("A pessoa que pediu aviso deste produto já foi avisada");
+    expect(alertsNote({ alerts_count: 0, alerts_notified_count: 4 }))
+      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
+  });
+
+  it("stays quiet when the rule did not run or found somebody", () => {
+    expect(alertsNote(undefined)).toBe("");
+    expect(alertsNote({})).toBe("");
+    expect(alertsNote({ alerts_count: 3, alerts_notified_count: 4 })).toBe("");
+  });
+});
+
 describe("audienceSummary", () => {
   it("lists each source and closes with the deduplicated total", () => {
     expect(audienceSummary({ favorites_count: 12, bought_count: 28, alerts_count: 3, total: 43 }))
@@ -52,6 +73,13 @@ describe("audienceSummary", () => {
   it("says nobody rather than showing a zero", () => {
     expect(audienceSummary({ total: 0 })).toBe("Ninguém para avisar por enquanto");
     expect(audienceSummary(undefined)).toBe("Ninguém para avisar por enquanto");
+  });
+
+  it("explains a zero that came from an already-served alert queue", () => {
+    // O caso do Pablo: quatro pessoas pediram aviso da Baguette, o estoque voltou e
+    // todas foram avisadas. "Ninguém para avisar" era verdade e parecia bug.
+    expect(audienceSummary({ alerts_count: 0, alerts_notified_count: 4, total: 0 }))
+      .toBe("As 4 pessoas que pediram aviso deste produto já foram avisadas");
   });
 
   it("agrees in the singular", () => {
@@ -268,5 +296,97 @@ describe("isStillReviewable", () => {
 
   it("refuses one that was already decided", () => {
     expect(isStillReviewable(announcement({ status: "published" }))).toBe(false);
+  });
+});
+
+describe("approvalMessage", () => {
+  it("says scheduled when the SERVER scheduled", () => {
+    // ⚠️ O toast dizia "publicado" sempre. Uma campanha com janela de horas preferidas
+    // faz o servidor AGENDAR, e o gestor fechava a tela achando que já estava no ar.
+    expect(approvalMessage({ scheduled: true })).toBe("Anúncio agendado.");
+  });
+
+  it("says published when the server dispatched", () => {
+    expect(approvalMessage({ scheduled: false })).toBe("Anúncio publicado.");
+  });
+
+  it("does not invent a schedule when the server said nothing", () => {
+    expect(approvalMessage({})).toBe("Anúncio publicado.");
+    expect(approvalMessage(null)).toBe("Anúncio publicado.");
+    expect(approvalMessage(undefined)).toBe("Anúncio publicado.");
+  });
+});
+
+describe("approvalBody", () => {
+  it("asks to publish NOW when no date was set", () => {
+    // ⚠️ Sem isto, "Publicar" não publicava: o anúncio nascia com data na próxima
+    // janela da campanha, a aprovação respeitava a agenda e nada era despachado.
+    expect(approvalBody({})).toEqual({ publish_now: true });
+    expect(approvalBody({ publish_at: "" })).toEqual({
+      publish_at: "",
+      publish_now: true,
+    });
+  });
+
+  it("respects a date the manager actually set", () => {
+    expect(approvalBody({ publish_at: "2026-09-01T07:00" })).toEqual({
+      publish_at: "2026-09-01T07:00",
+    });
+  });
+
+  it("carries the rest of the edits through untouched", () => {
+    expect(approvalBody({ body: "Saiu do forno", publish_at: "" })).toEqual({
+      body: "Saiu do forno",
+      publish_at: "",
+      publish_now: true,
+    });
+  });
+});
+
+describe("mergeAudienceRules", () => {
+  it("keeps the keys the form does not own", () => {
+    // ⚠️ O gestor abria "Editar" numa campanha configurada no Admin, mudava só o nome
+    // e salvava: o PATCH sobrescreve o JSON inteiro e dez chaves sumiam.
+    const original = {
+      favorites: false,
+      match: "all",
+      tags: ["vip", "padaria"],
+      rfm_segment: "champions",
+      min_orders: 3,
+    };
+    const resultado = mergeAudienceRules(original, { favorites: true, alerts: false });
+
+    expect(resultado.match).toBe("all");
+    expect(resultado.tags).toEqual(["vip", "padaria"]);
+    expect(resultado.rfm_segment).toBe("champions");
+    expect(resultado.min_orders).toBe(3);
+  });
+
+  it("lets the form win on the keys it owns", () => {
+    const resultado = mergeAudienceRules({ favorites: false }, { favorites: true, alerts: true });
+    expect(resultado.favorites).toBe(true);
+    expect(resultado.alerts).toBe(true);
+  });
+
+  it("removes an owned key the form turned off", () => {
+    // "0 dias" e ausência dizem a mesma coisa ao serviço, mas ausência é o que o
+    // resto do código espera ver — e preservar o valor antigo seria não desligar.
+    const resultado = mergeAudienceRules(
+      { favorites: true, bought_within_days: 30, vip_first_minutes: 15 },
+      { favorites: true, alerts: false },
+    );
+    expect("bought_within_days" in resultado).toBe(false);
+    expect("vip_first_minutes" in resultado).toBe(false);
+  });
+
+  it("works on a campaign that had no rules yet", () => {
+    expect(mergeAudienceRules(null, { favorites: true, alerts: false })).toEqual({
+      favorites: true,
+      alerts: false,
+    });
+    expect(mergeAudienceRules(undefined, { favorites: false, alerts: true })).toEqual({
+      favorites: false,
+      alerts: true,
+    });
   });
 });

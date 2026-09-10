@@ -46,22 +46,29 @@ function goMenu () {
 function goHome () {
   clearError({ redirect: '/' })
 }
+
+// "Tente de novo" é a promessa da mensagem do 5xx — o botão a cumpre no lugar,
+// sem obrigar a pessoa a conhecer o gesto de recarregar.
+function retry () {
+  if (import.meta.client) window.location.reload()
+}
 </script>
 
 <template>
-  <div class="flex min-h-svh flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-    <div class="shop-stack-block max-w-md">
+  <div class="error-screen flex min-h-svh flex-col items-center justify-center gap-6 px-6 py-16 text-center">
+    <div class="error-screen-copy shop-stack-block max-w-md">
       <p v-if="kicker" class="shop-kicker">{{ kicker }}</p>
       <h1 class="shop-display">{{ title }}</h1>
       <p class="shop-muted">{{ message }}</p>
     </div>
-    <div class="flex flex-col gap-3 sm:flex-row">
+    <div class="error-screen-actions flex flex-col gap-3 sm:flex-row">
       <template v-if="is404">
         <UiButton icon="lucide:utensils" @click="goMenu">Voltar ao cardápio</UiButton>
         <UiButton variant="outline" icon="lucide:house" @click="goHome">Página inicial</UiButton>
       </template>
       <template v-else>
-        <UiButton icon="lucide:house" @click="goHome">Página inicial</UiButton>
+        <UiButton icon="lucide:rotate-cw" @click="retry">Tentar de novo</UiButton>
+        <UiButton variant="outline" icon="lucide:house" @click="goHome">Página inicial</UiButton>
         <UiButton
           v-if="whatsappUrl"
           variant="outline"
@@ -87,3 +94,33 @@ function goHome () {
     </UiButton>
   </div>
 </template>
+
+<style>
+/* Esqueleto autossuficiente da tela de erro. A folha global (utilities com
+   hash) pode ter morrido junto com o erro — é exatamente o cenário pós-deploy
+   em que esta tela aparece — e o Nuxt inline os estilos de componente no HTML
+   do SSR, então ESTE bloco chega mesmo quando o resto do CSS não chega.
+   Duplicar o layout das utilities aqui é o custo de a tela nunca abrir crua. */
+.error-screen {
+  box-sizing: border-box;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  padding: 4rem 1.5rem;
+  text-align: center;
+}
+.error-screen-copy {
+  max-width: 28rem;
+}
+.error-screen-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+}
+</style>

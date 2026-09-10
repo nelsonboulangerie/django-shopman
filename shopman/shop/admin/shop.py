@@ -49,6 +49,7 @@ from shopman.shop.models import (
     ShopProduction,
     ShopPurchase,
 )
+from shopman.shop.production_config import ProductionConfig
 from shopman.shop.purchase_policy import POLICY_MINIMUMS, PurchasePolicy
 
 logger = logging.getLogger(__name__)
@@ -84,9 +85,38 @@ DEFAULTS_CLOSED_DATE_ROWS = 8
 DEFAULTS_LOYALTY_TIERS = ("silver", "gold", "platinum")
 
 MONTH_CHOICES = (
-    ("1", "Janeiro"), ("2", "Fevereiro"), ("3", "Março"), ("4", "Abril"),
-    ("5", "Maio"), ("6", "Junho"), ("7", "Julho"), ("8", "Agosto"),
-    ("9", "Setembro"), ("10", "Outubro"), ("11", "Novembro"), ("12", "Dezembro"),
+    ("1", "Janeiro"),
+    ("2", "Fevereiro"),
+    ("3", "Março"),
+    ("4", "Abril"),
+    ("5", "Maio"),
+    ("6", "Junho"),
+    ("7", "Julho"),
+    ("8", "Agosto"),
+    ("9", "Setembro"),
+    ("10", "Outubro"),
+    ("11", "Novembro"),
+    ("12", "Dezembro"),
+)
+
+PRODUCTION_NOTIFICATION_STATE_CHOICES = (
+    ("", "Herdar — desligadas"),
+    ("enabled", "Ativar"),
+    ("disabled", "Desativar explicitamente"),
+)
+
+PRODUCTION_NOTIFICATION_SEVERITY_CHOICES = (
+    ("info", "Informativa"),
+    ("warning", "Atenção"),
+    ("error", "Erro"),
+    ("critical", "Crítica"),
+)
+
+PRODUCTION_ORDER_MATCH_CHOICES = (
+    ("", "Herdar — primeiro planejado"),
+    ("first_planned", "Primeiro planejado"),
+    ("earliest_target", "Menor data-alvo"),
+    ("manual", "Associação manual"),
 )
 
 
@@ -239,19 +269,21 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             required=False,
             choices=MONTH_CHOICES,
             widget=UnfoldAdminSelect2MultipleWidget,
-            help_text="Selecione os meses de clima quente.",
+            help_text="Em branco = sem sazonalidade quente configurada nesta loja.",
         ),
         "defaults_season_mild_months": forms.MultipleChoiceField(
             label="Meses amenos",
             required=False,
             choices=MONTH_CHOICES,
             widget=UnfoldAdminSelect2MultipleWidget,
+            help_text="Em branco = sem sazonalidade amena configurada nesta loja.",
         ),
         "defaults_season_cold_months": forms.MultipleChoiceField(
             label="Meses frios",
             required=False,
             choices=MONTH_CHOICES,
             widget=UnfoldAdminSelect2MultipleWidget,
+            help_text="Em branco = sem sazonalidade fria configurada nesta loja.",
         ),
         "defaults_high_demand_multiplier": forms.DecimalField(
             label="Multiplicador de alta demanda",
@@ -260,6 +292,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             max_digits=5,
             decimal_places=2,
             widget=UnfoldAdminDecimalFieldWidget,
+            help_text="Fator adimensional. Em branco = herda 1,00 (sem aumento).",
         ),
         "defaults_sales_silence_minutes": forms.IntegerField(
             label="Silêncio de vendas (minutos)",
@@ -270,7 +303,7 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
                 "Quanto tempo sem nenhuma venda, dentro do expediente, faz o "
                 "fechamento perguntar o que houve. Depende do movimento da casa: "
                 "num dia de jogo grande a rua some por mais tempo e isso é normal. "
-                "0 desliga a pergunta."
+                "0 desliga a pergunta. Em branco = herda 120 minutos."
             ),
         ),
         "defaults_safety_stock_percent": forms.DecimalField(
@@ -281,7 +314,66 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
             max_digits=4,
             decimal_places=2,
             widget=UnfoldAdminDecimalFieldWidget,
-            help_text="Percentual em decimal. Ex.: 0,20 para 20%.",
+            help_text="Percentual em decimal. Ex.: 0,20 para 20%. Em branco = herda 0%.",
+        ),
+        "defaults_production_low_yield_threshold": forms.DecimalField(
+            label="Limiar de rendimento baixo",
+            required=False,
+            min_value=Decimal("0"),
+            max_value=Decimal("1"),
+            max_digits=4,
+            decimal_places=2,
+            widget=UnfoldAdminDecimalFieldWidget,
+            help_text="Proporção produzido/iniciado. Em branco = herda 0,80.",
+        ),
+        "defaults_production_default_max_started_minutes": forms.IntegerField(
+            label="Tempo máximo em produção (minutos)",
+            required=False,
+            min_value=1,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text=("Idade para uma fornada em produção ser considerada atrasada. Em branco = herda 240 minutos."),
+        ),
+        "defaults_production_late_check_cadence_minutes": forms.IntegerField(
+            label="Cadência de nova checagem (minutos)",
+            required=False,
+            min_value=0,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text=("Intervalo entre alertas de atraso. 0 desliga a repetição; em branco = herda 15 minutos."),
+        ),
+        "defaults_production_notifications_enabled": forms.ChoiceField(
+            label="Notificações de produção",
+            required=False,
+            choices=PRODUCTION_NOTIFICATION_STATE_CHOICES,
+            widget=UnfoldAdminSelectWidget,
+            help_text="Em branco herda o padrão seguro: notificações desligadas.",
+        ),
+        "defaults_production_notification_severities": forms.MultipleChoiceField(
+            label="Severidades notificadas",
+            required=False,
+            choices=PRODUCTION_NOTIFICATION_SEVERITY_CHOICES,
+            widget=UnfoldAdminSelect2MultipleWidget,
+            help_text="Em branco = herda somente Erro. Só tem efeito com notificações ativas.",
+        ),
+        "defaults_production_panel_delay_tolerance_minutes": forms.IntegerField(
+            label="Tolerância de atraso no painel (minutos)",
+            required=False,
+            min_value=0,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text="Margem antes de marcar uma fornada como atrasada. Em branco = herda 15 minutos.",
+        ),
+        "defaults_production_panel_confirmed_ttl_minutes": forms.IntegerField(
+            label="Permanência de confirmação no painel (minutos)",
+            required=False,
+            min_value=0,
+            widget=UnfoldAdminIntegerFieldWidget,
+            help_text="Tempo de exibição de uma confirmação. Em branco = herda 30 minutos.",
+        ),
+        "defaults_production_order_match": forms.ChoiceField(
+            label="Associação de fornada a pedido",
+            required=False,
+            choices=PRODUCTION_ORDER_MATCH_CHOICES,
+            widget=UnfoldAdminSelectWidget,
+            help_text="Em branco = herda a associação ao primeiro pedido planejado.",
         ),
     }
     fields["defaults_dynamic_collections"] = forms.Field(
@@ -391,29 +483,22 @@ def _defaults_form_fields() -> dict[str, forms.Field]:
     }
     purchase_help = {
         "consumption_window_days": (
-            "Dias de movimento do estoque usados para calcular o consumo médio "
-            "diário de cada insumo."
+            "Dias de movimento do estoque usados para calcular o consumo médio diário de cada insumo."
         ),
         "review_period_days": (
             "De quantos em quantos dias as compras são revisadas. Entra no limiar "
             "de reposição e na quantidade sugerida."
         ),
         "safety_days": (
-            "Dias extras de consumo cobertos pela sugestão, como folga contra "
-            "atraso e pico. 0 desliga a folga."
+            "Dias extras de consumo cobertos pela sugestão, como folga contra atraso e pico. 0 desliga a folga."
         ),
         "min_lead_time_days": (
-            "Piso do prazo quando o insumo não tem histórico de entrega nem prazo "
-            "cadastrado no fornecedor."
+            "Piso do prazo quando o insumo não tem histórico de entrega nem prazo cadastrado no fornecedor."
         ),
         "lead_time_history_days": (
-            "Janela do histórico pedido → entrega usada para calcular o prazo "
-            "real de cada insumo (mediana)."
+            "Janela do histórico pedido → entrega usada para calcular o prazo real de cada insumo (mediana)."
         ),
-        "lead_time_max_days": (
-            "Entregas que demoraram mais que isso são descartadas como ruído no "
-            "cálculo do prazo."
-        ),
+        "lead_time_max_days": ("Entregas que demoraram mais que isso são descartadas como ruído no cálculo do prazo."),
     }
     for field_name, key in DEFAULTS_PURCHASE_FIELDS:
         fields[field_name] = forms.IntegerField(
@@ -445,7 +530,7 @@ def _adapter_choices(prefix: str) -> list[tuple[str, str]]:
         if name.startswith("_") or name in _ADAPTER_EXCLUDE:
             continue
         if name.startswith(prefix):
-            label = name[len(prefix):].replace("_", " ").title() or name
+            label = name[len(prefix) :].replace("_", " ").title() or name
             choices.append((f"shopman.shop.adapters.{name}", label))
     return sorted(choices)
 
@@ -491,28 +576,6 @@ def _production_suggestion_defaults(defaults: dict) -> dict:
         return {}
     suggestion = production_cfg.get("suggestion")
     return suggestion if isinstance(suggestion, dict) else {}
-
-
-def _ensure_production_suggestion(defaults: dict) -> dict:
-    """Escrita: garante e retorna ``defaults["production"]["suggestion"]`` mutável."""
-    production_cfg = defaults.get("production")
-    production_cfg = dict(production_cfg) if isinstance(production_cfg, dict) else {}
-    suggestion = production_cfg.get("suggestion")
-    suggestion = dict(suggestion) if isinstance(suggestion, dict) else {}
-    production_cfg["suggestion"] = suggestion
-    defaults["production"] = production_cfg
-    return suggestion
-
-
-def _ensure_production_episodes(defaults: dict) -> dict:
-    """Escrita: garante e retorna ``defaults["production"]["episodes"]`` mutável."""
-    production_cfg = defaults.get("production")
-    production_cfg = dict(production_cfg) if isinstance(production_cfg, dict) else {}
-    episodes = production_cfg.get("episodes")
-    episodes = dict(episodes) if isinstance(episodes, dict) else {}
-    production_cfg["episodes"] = episodes
-    defaults["production"] = production_cfg
-    return episodes
 
 
 def _months_to_choice(months) -> list[str]:
@@ -685,14 +748,10 @@ class ShopForm(forms.ModelForm):
     social_links = forms.Field(label="Redes sociais", required=False, widget=ArrayWidget())
 
     # Justificativas de cancelamento/recusa — mesma edição add/remove (ArrayWidget).
-    cancellation_presets = forms.Field(
-        label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget()
-    )
+    cancellation_presets = forms.Field(label="Motivos de cancelamento e recusa", required=False, widget=ArrayWidget())
 
     # Tags de nota da cozinha — mesma edição add/remove (ArrayWidget).
-    kitchen_note_tags = forms.Field(
-        label="Tags de nota da cozinha", required=False, widget=ArrayWidget()
-    )
+    kitchen_note_tags = forms.Field(label="Tags de nota da cozinha", required=False, widget=ArrayWidget())
 
     locals().update(_defaults_form_fields())
     locals().update(_integrations_form_fields())
@@ -707,7 +766,9 @@ class ShopForm(forms.ModelForm):
             "neutral_color": UnfoldAdminColorInputWidget,
             "neutral_dark_color": UnfoldAdminColorInputWidget,
             "heading_font": FontPreviewWidget(sample_text="Aa Bb Cc \u2014 O sabor que encanta"),
-            "body_font": FontPreviewWidget(sample_text="O p\u00e3o fresco de cada dia, feito com amor e tradi\u00e7\u00e3o."),
+            "body_font": FontPreviewWidget(
+                sample_text="O p\u00e3o fresco de cada dia, feito com amor e tradi\u00e7\u00e3o."
+            ),
         }
 
     def __init__(self, *args, **kwargs):
@@ -781,21 +842,13 @@ class ShopForm(forms.ModelForm):
         menu = defaults.get("menu") if isinstance(defaults.get("menu"), dict) else {}
         notifications = defaults.get("notifications") if isinstance(defaults.get("notifications"), dict) else {}
         pickup_config = (
-            defaults.get("pickup_slot_config")
-            if isinstance(defaults.get("pickup_slot_config"), dict)
-            else {}
+            defaults.get("pickup_slot_config") if isinstance(defaults.get("pickup_slot_config"), dict) else {}
         )
         production_suggestion = _production_suggestion_defaults(defaults)
-        seasons = (
-            production_suggestion.get("seasons")
-            if isinstance(production_suggestion.get("seasons"), dict)
-            else {}
-        )
+        seasons = production_suggestion.get("seasons") if isinstance(production_suggestion.get("seasons"), dict) else {}
 
         if self._has("defaults_dynamic_collections"):
-            self.fields["defaults_dynamic_collections"].initial = list(
-                menu.get("dynamic_collections") or []
-            )
+            self.fields["defaults_dynamic_collections"].initial = list(menu.get("dynamic_collections") or [])
         if self._has("defaults_notifications_backend"):
             self.fields["defaults_notifications_backend"].initial = notifications.get("backend") or "console"
         if self._has("defaults_max_preorder_days"):
@@ -809,19 +862,42 @@ class ShopForm(forms.ModelForm):
             self.fields["defaults_season_mild_months"].initial = _months_to_choice(seasons.get("mild"))
             self.fields["defaults_season_cold_months"].initial = _months_to_choice(seasons.get("cold"))
         if self._has("defaults_high_demand_multiplier"):
-            self.fields["defaults_high_demand_multiplier"].initial = production_suggestion.get(
-                "high_demand_multiplier"
-            )
-            self.fields["defaults_safety_stock_percent"].initial = production_suggestion.get(
-                "safety_stock_percent"
-            )
+            self.fields["defaults_high_demand_multiplier"].initial = production_suggestion.get("high_demand_multiplier")
+            self.fields["defaults_safety_stock_percent"].initial = production_suggestion.get("safety_stock_percent")
 
         if self._has("defaults_sales_silence_minutes"):
             production = defaults.get("production") if isinstance(defaults.get("production"), dict) else {}
             episodes_cfg = production.get("episodes") if isinstance(production.get("episodes"), dict) else {}
-            self.fields["defaults_sales_silence_minutes"].initial = episodes_cfg.get(
-                "sales_silence_minutes"
+            self.fields["defaults_sales_silence_minutes"].initial = episodes_cfg.get("sales_silence_minutes")
+
+        if self._has("defaults_production_low_yield_threshold"):
+            production = defaults.get("production") if isinstance(defaults.get("production"), dict) else {}
+            alerts_cfg = production.get("alerts") if isinstance(production.get("alerts"), dict) else {}
+            notifications_cfg = (
+                production.get("notifications") if isinstance(production.get("notifications"), dict) else {}
             )
+            panel_cfg = production.get("panel") if isinstance(production.get("panel"), dict) else {}
+            self.fields["defaults_production_low_yield_threshold"].initial = alerts_cfg.get("low_yield_threshold")
+            self.fields["defaults_production_default_max_started_minutes"].initial = alerts_cfg.get(
+                "default_max_started_minutes"
+            )
+            self.fields["defaults_production_late_check_cadence_minutes"].initial = alerts_cfg.get(
+                "late_check_cadence_minutes"
+            )
+            if "enabled" in notifications_cfg:
+                self.fields["defaults_production_notifications_enabled"].initial = (
+                    "enabled" if notifications_cfg["enabled"] else "disabled"
+                )
+            self.fields["defaults_production_notification_severities"].initial = list(
+                notifications_cfg.get("severities") or []
+            )
+            self.fields["defaults_production_panel_delay_tolerance_minutes"].initial = panel_cfg.get(
+                "delay_tolerance_minutes"
+            )
+            self.fields["defaults_production_panel_confirmed_ttl_minutes"].initial = panel_cfg.get(
+                "confirmed_ttl_minutes"
+            )
+            self.fields["defaults_production_order_match"].initial = production.get("order_match") or ""
 
         if self._has(DEFAULTS_RULE_Q_FIELDS[0][0]):
             rules = defaults.get("rules") if isinstance(defaults.get("rules"), dict) else {}
@@ -832,9 +908,7 @@ class ShopForm(forms.ModelForm):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
             threshold_q = pos_cfg.get("discount_approval_threshold_q")
             if threshold_q is not None:
-                self.fields["defaults_pos_discount_approval_threshold_q"].initial = (
-                    Decimal(int(threshold_q)) / 100
-                )
+                self.fields["defaults_pos_discount_approval_threshold_q"].initial = Decimal(int(threshold_q)) / 100
 
         if self._has("defaults_pos_fiscal_toggle"):
             pos_cfg = defaults.get("pos") if isinstance(defaults.get("pos"), dict) else {}
@@ -868,11 +942,7 @@ class ShopForm(forms.ModelForm):
             self.fields[_defaults_pickup_field(index, "starts_at")].initial = _format_admin_time(slot.get("starts_at"))
 
         closed_dates = defaults.get("closed_dates") if isinstance(defaults.get("closed_dates"), list) else []
-        dated_entries = [
-            entry
-            for entry in closed_dates
-            if isinstance(entry, dict) and entry.get("date")
-        ]
+        dated_entries = [entry for entry in closed_dates if isinstance(entry, dict) and entry.get("date")]
         for index, closed_date in enumerate(dated_entries[:DEFAULTS_CLOSED_DATE_ROWS], start=1):
             self.fields[_defaults_closed_date_field(index, "date")].initial = _format_admin_date(
                 closed_date.get("date")
@@ -898,7 +968,9 @@ class ShopForm(forms.ModelForm):
                 if not opens_at or not closes_at:
                     raise forms.ValidationError(f"Informe abertura e fechamento para {label}, ou marque como fechado.")
                 if opens_at >= closes_at:
-                    raise forms.ValidationError(f"Em {label}, o horário de abertura precisa ser anterior ao fechamento.")
+                    raise forms.ValidationError(
+                        f"Em {label}, o horário de abertura precisa ser anterior ao fechamento."
+                    )
         self._clean_defaults(cleaned_data)
         return cleaned_data
 
@@ -973,6 +1045,14 @@ class ShopForm(forms.ModelForm):
                     "defaults_purchase_lead_time_max_days",
                     "O teto do prazo de entrega precisa ser maior ou igual ao prazo mínimo.",
                 )
+
+        if self._has("defaults_production_low_yield_threshold"):
+            candidate = dict(_shop_defaults(self.instance))
+            self._apply_production_defaults(candidate, cleaned_data)
+            try:
+                ProductionConfig.from_dict(candidate.get("production") or {}).validate()
+            except (TypeError, ValueError) as exc:
+                self.add_error(None, f"Configuração de produção inválida: {exc}")
 
     def _existing_extra_pickup_slots(self) -> list[dict]:
         pickup_slots = _shop_defaults(self.instance).get("pickup_slots")
@@ -1054,23 +1134,135 @@ class ShopForm(forms.ModelForm):
 
         return integrations
 
+    def _apply_production_defaults(self, defaults: dict, cleaned_data: dict) -> None:
+        """Aplica só os overrides estruturados presentes neste form."""
+        raw_production = defaults.get("production")
+        production = dict(raw_production) if isinstance(raw_production, dict) else {}
+
+        def block(name: str) -> dict:
+            value = production.get(name)
+            return dict(value) if isinstance(value, dict) else {}
+
+        def store_block(name: str, value: dict) -> None:
+            if value:
+                production[name] = value
+            else:
+                production.pop(name, None)
+
+        if self._has("defaults_season_hot_months"):
+            suggestion = block("suggestion")
+            seasons_value = suggestion.get("seasons")
+            seasons = dict(seasons_value) if isinstance(seasons_value, dict) else {}
+            for field_name, key in (
+                ("defaults_season_hot_months", "hot"),
+                ("defaults_season_mild_months", "mild"),
+                ("defaults_season_cold_months", "cold"),
+            ):
+                months = _choice_to_months(cleaned_data.get(field_name))
+                if months:
+                    seasons[key] = months
+                else:
+                    seasons.pop(key, None)
+            if seasons:
+                suggestion["seasons"] = seasons
+            else:
+                suggestion.pop("seasons", None)
+
+            for field_name, key in (
+                ("defaults_high_demand_multiplier", "high_demand_multiplier"),
+                ("defaults_safety_stock_percent", "safety_stock_percent"),
+            ):
+                value = cleaned_data.get(field_name)
+                if value is None:
+                    suggestion.pop(key, None)
+                else:
+                    suggestion[key] = str(value)
+            store_block("suggestion", suggestion)
+
+        if self._has("defaults_sales_silence_minutes"):
+            episodes = block("episodes")
+            value = cleaned_data.get("defaults_sales_silence_minutes")
+            if value is None:
+                episodes.pop("sales_silence_minutes", None)
+            else:
+                episodes["sales_silence_minutes"] = int(value)
+            store_block("episodes", episodes)
+
+        if self._has("defaults_production_low_yield_threshold"):
+            alerts = block("alerts")
+            for field_name, key, serializer in (
+                ("defaults_production_low_yield_threshold", "low_yield_threshold", str),
+                (
+                    "defaults_production_default_max_started_minutes",
+                    "default_max_started_minutes",
+                    int,
+                ),
+                (
+                    "defaults_production_late_check_cadence_minutes",
+                    "late_check_cadence_minutes",
+                    int,
+                ),
+            ):
+                value = cleaned_data.get(field_name)
+                if value is None:
+                    alerts.pop(key, None)
+                else:
+                    alerts[key] = serializer(value)
+            store_block("alerts", alerts)
+
+            notifications = block("notifications")
+            notification_state = cleaned_data.get("defaults_production_notifications_enabled") or ""
+            if notification_state:
+                notifications["enabled"] = notification_state == "enabled"
+            else:
+                notifications.pop("enabled", None)
+            severities = list(cleaned_data.get("defaults_production_notification_severities") or [])
+            if severities:
+                notifications["severities"] = severities
+            else:
+                notifications.pop("severities", None)
+            store_block("notifications", notifications)
+
+            panel = block("panel")
+            for field_name, key in (
+                (
+                    "defaults_production_panel_delay_tolerance_minutes",
+                    "delay_tolerance_minutes",
+                ),
+                (
+                    "defaults_production_panel_confirmed_ttl_minutes",
+                    "confirmed_ttl_minutes",
+                ),
+            ):
+                value = cleaned_data.get(field_name)
+                if value is None:
+                    panel.pop(key, None)
+                else:
+                    panel[key] = int(value)
+            store_block("panel", panel)
+
+            order_match = cleaned_data.get("defaults_production_order_match") or ""
+            if order_match:
+                production["order_match"] = order_match
+            else:
+                production.pop("order_match", None)
+
+        if production:
+            defaults["production"] = production
+        else:
+            defaults.pop("production", None)
+
     def _build_defaults(self) -> dict:
         defaults = dict(_shop_defaults(self.instance))
 
         if self._has("defaults_dynamic_collections"):
             menu = defaults.get("menu") if isinstance(defaults.get("menu"), dict) else {}
             menu = dict(menu)
-            menu["dynamic_collections"] = list(
-                self.cleaned_data.get("defaults_dynamic_collections") or []
-            )
+            menu["dynamic_collections"] = list(self.cleaned_data.get("defaults_dynamic_collections") or [])
             defaults["menu"] = menu
 
         if self._has("defaults_notifications_backend"):
-            notifications = (
-                defaults.get("notifications")
-                if isinstance(defaults.get("notifications"), dict)
-                else {}
-            )
+            notifications = defaults.get("notifications") if isinstance(defaults.get("notifications"), dict) else {}
             notifications = dict(notifications)
             backend = self.cleaned_data.get("defaults_notifications_backend") or "console"
             notifications["backend"] = backend
@@ -1084,18 +1276,18 @@ class ShopForm(forms.ModelForm):
                 starts_at = self.cleaned_data.get(_defaults_pickup_field(index, "starts_at"))
                 if not (ref and label and starts_at):
                     continue
-                pickup_slots.append({
-                    "ref": ref,
-                    "label": label,
-                    "starts_at": _format_admin_time(starts_at),
-                })
+                pickup_slots.append(
+                    {
+                        "ref": ref,
+                        "label": label,
+                        "starts_at": _format_admin_time(starts_at),
+                    }
+                )
             pickup_slots.extend(self._existing_extra_pickup_slots())
             defaults["pickup_slots"] = pickup_slots
 
             pickup_config = (
-                defaults.get("pickup_slot_config")
-                if isinstance(defaults.get("pickup_slot_config"), dict)
-                else {}
+                defaults.get("pickup_slot_config") if isinstance(defaults.get("pickup_slot_config"), dict) else {}
             )
             pickup_config = dict(pickup_config)
             pickup_config["rounding_minutes"] = self.cleaned_data.get("defaults_pickup_rounding_minutes") or 30
@@ -1126,38 +1318,7 @@ class ShopForm(forms.ModelForm):
             closed_dates.extend(self._existing_extra_closed_dates())
             defaults["closed_dates"] = closed_dates
 
-        if self._has("defaults_season_hot_months"):
-            suggestion_cfg = _ensure_production_suggestion(defaults)
-            seasons = (
-                dict(suggestion_cfg["seasons"])
-                if isinstance(suggestion_cfg.get("seasons"), dict)
-                else {}
-            )
-            seasons["hot"] = _choice_to_months(self.cleaned_data.get("defaults_season_hot_months"))
-            seasons["mild"] = _choice_to_months(self.cleaned_data.get("defaults_season_mild_months"))
-            seasons["cold"] = _choice_to_months(self.cleaned_data.get("defaults_season_cold_months"))
-            suggestion_cfg["seasons"] = seasons
-
-        for field, key in (
-            ("defaults_high_demand_multiplier", "high_demand_multiplier"),
-            ("defaults_safety_stock_percent", "safety_stock_percent"),
-        ):
-            if not self._has(field):
-                continue
-            suggestion_cfg = _ensure_production_suggestion(defaults)
-            value = self.cleaned_data.get(field)
-            if value is None:
-                suggestion_cfg.pop(key, None)
-            else:
-                suggestion_cfg[key] = str(value)
-
-        if self._has("defaults_sales_silence_minutes"):
-            episodes_cfg = _ensure_production_episodes(defaults)
-            minutos = self.cleaned_data.get("defaults_sales_silence_minutes")
-            if minutos is None:
-                episodes_cfg.pop("sales_silence_minutes", None)
-            else:
-                episodes_cfg["sales_silence_minutes"] = int(minutos)
+        self._apply_production_defaults(defaults, self.cleaned_data)
 
         if self._has(DEFAULTS_RULE_Q_FIELDS[0][0]):
             rules = defaults.get("rules") if isinstance(defaults.get("rules"), dict) else {}
@@ -1174,9 +1335,7 @@ class ShopForm(forms.ModelForm):
                 if threshold is None:
                     pos_cfg.pop("discount_approval_threshold_q", None)
                 else:
-                    pos_cfg["discount_approval_threshold_q"] = int(
-                        (Decimal(threshold) * 100).to_integral_value()
-                    )
+                    pos_cfg["discount_approval_threshold_q"] = int((Decimal(threshold) * 100).to_integral_value())
             if self._has("defaults_pos_fiscal_toggle"):
                 if self.cleaned_data.get("defaults_pos_fiscal_toggle"):
                     pos_cfg["fiscal_toggle"] = True
@@ -1206,12 +1365,8 @@ class ShopForm(forms.ModelForm):
             loyalty = defaults.get("loyalty") if isinstance(defaults.get("loyalty"), dict) else {}
             loyalty = dict(loyalty)
             points_per_real = self.cleaned_data.get("defaults_loyalty_points_per_real")
-            loyalty["points_per_real"] = (
-                points_per_real if points_per_real is not None else DEFAULT_POINTS_PER_REAL
-            )
-            loyalty["stamps_target"] = (
-                self.cleaned_data.get("defaults_loyalty_stamps_target") or DEFAULT_STAMPS_TARGET
-            )
+            loyalty["points_per_real"] = points_per_real if points_per_real is not None else DEFAULT_POINTS_PER_REAL
+            loyalty["stamps_target"] = self.cleaned_data.get("defaults_loyalty_stamps_target") or DEFAULT_STAMPS_TARGET
             tiers = [{"name": "bronze", "threshold": 0}]
             for name in DEFAULTS_LOYALTY_TIERS:
                 threshold = self.cleaned_data.get(_defaults_loyalty_tier_field(name))
@@ -1248,7 +1403,7 @@ def _token_value_to_hex(val: str) -> str:
             r, g, b = int(parts[0]), int(parts[1]), int(parts[2])
             if 0 <= r <= 255 and 0 <= g <= 255 and 0 <= b <= 255:
                 return f"#{r:02x}{g:02x}{b:02x}"
-        except ValueError:
+        except ValueError:  # silêncio-deliberado: token legado cai no parser OKLCH/fallback abaixo
             pass
         if "." in parts[0]:
             return _oklch_raw_to_hex(val)
@@ -1258,237 +1413,362 @@ def _token_value_to_hex(val: str) -> str:
 # ── Fieldsets por domínio (uma página focada cada, estilo Shopify Settings) ──
 
 _IDENTITY_FIELDSETS = (
-    ("Identidade", {
-        "fields": ("name", "legal_name", "document"),
-    }),
-    ("Endereço", {
-        "fields": (
-            "formatted_address", "route", "street_number", "complement",
-            "neighborhood", "city", "state_code", "postal_code",
-            "country", "country_code", "latitude", "longitude", "place_id",
-        ),
-        "description": "Endereço no padrão Google Places. Preencha 'endereço completo' OU os campos individuais.",
-    }),
-    ("Contato", {
-        "fields": ("phone", "email", "default_ddd"),
-    }),
+    (
+        "Identidade",
+        {
+            "fields": ("name", "legal_name", "document"),
+        },
+    ),
+    (
+        "Endereço",
+        {
+            "fields": (
+                "formatted_address",
+                "route",
+                "street_number",
+                "complement",
+                "neighborhood",
+                "city",
+                "state_code",
+                "postal_code",
+                "country",
+                "country_code",
+                "latitude",
+                "longitude",
+                "place_id",
+            ),
+            "description": "Endereço no padrão Google Places. Preencha 'endereço completo' OU os campos individuais.",
+        },
+    ),
+    (
+        "Contato",
+        {
+            "fields": ("phone", "email", "default_ddd"),
+        },
+    ),
 )
 
 _APPEARANCE_FIELDSETS = (
-    ("Marca", {
-        "fields": ("brand_name", "short_name", "tagline", "description", "logo"),
-    }),
-    ("Voz da marca (IA)", {
-        "fields": ("brand_voice",),
-        "description": (
-            "Como a IA escreve quando o gestor pede uma sugestão — no catálogo e nos "
-            "anúncios, com a mesma voz. Antes isto era um texto fixo no código, "
-            "invisível para quem opera. Vazio = a IA usa a voz padrão do sistema."
-        ),
-    }),
-    ("Conteúdo padrão do PDP", {
-        "fields": ("conservation_tips_default", "food_safety_notice"),
-        "description": (
-            "Texto exibido na seção de conservação do PDP quando o produto "
-            "não tiver dica específica. O aviso de produção compartilhada "
-            "aparece na seção de ingredientes."
-        ),
-    }),
-    ("Paleta de Cores", {
-        "fields": (
-            "primary_color", "secondary_color", "accent_color",
-            "neutral_color", "neutral_dark_color", "color_mode",
-            "color_preview",
-        ),
-        "description": (
-            "Seletor de cor (Unfold) para primária, secundária, destaque e neutros. "
-            "Cores derivadas automaticamente da primária se deixadas em branco. "
-            "Neutra claro: fundo no modo claro; neutra escuro: fundo no modo escuro. "
-            "Use 'Automático' para seguir o tema do sistema. "
-            "Abaixo, prévia da paleta gerada (claro + escuro)."
-        ),
-    }),
-    ("Tipografia & Forma", {
-        "fields": ("heading_font", "body_font", "border_radius"),
-        "description": (
-            "Fontes com prévia ao vivo (Google Fonts). Raio dos cantos aplica-se a cards e botões."
-        ),
-    }),
-    ("Prévia da loja", {
-        "fields": ("storefront_preview",),
-        "description": (
-            "Página inicial embutida (mesma origem). Salve o formulário e clique em "
-            "<strong>Atualizar prévia</strong> para ver cores e tipografia sem sair do admin."
-        ),
-    }),
-    ("Redes Sociais", {
-        "fields": ("social_links",),
-        "description": "Cole as URLs completas das redes sociais. Ícones são detectados automaticamente.",
-    }),
+    (
+        "Marca",
+        {
+            "fields": ("brand_name", "short_name", "tagline", "description", "logo"),
+        },
+    ),
+    (
+        "Voz da marca (IA)",
+        {
+            "fields": ("brand_voice",),
+            "description": (
+                "Como a IA escreve quando o gestor pede uma sugestão — no catálogo e nos "
+                "anúncios, com a mesma voz. Antes isto era um texto fixo no código, "
+                "invisível para quem opera. Vazio = a IA usa a voz padrão do sistema."
+            ),
+        },
+    ),
+    (
+        "Conteúdo padrão do PDP",
+        {
+            "fields": ("conservation_tips_default", "food_safety_notice"),
+            "description": (
+                "Texto exibido na seção de conservação do PDP quando o produto "
+                "não tiver dica específica. O aviso de produção compartilhada "
+                "aparece na seção de ingredientes."
+            ),
+        },
+    ),
+    (
+        "Paleta de Cores",
+        {
+            "fields": (
+                "primary_color",
+                "secondary_color",
+                "accent_color",
+                "neutral_color",
+                "neutral_dark_color",
+                "color_mode",
+                "color_preview",
+            ),
+            "description": (
+                "Seletor de cor (Unfold) para primária, secundária, destaque e neutros. "
+                "Cores derivadas automaticamente da primária se deixadas em branco. "
+                "Neutra claro: fundo no modo claro; neutra escuro: fundo no modo escuro. "
+                "Use 'Automático' para seguir o tema do sistema. "
+                "Abaixo, prévia da paleta gerada (claro + escuro)."
+            ),
+        },
+    ),
+    (
+        "Tipografia & Forma",
+        {
+            "fields": ("heading_font", "body_font", "border_radius"),
+            "description": ("Fontes com prévia ao vivo (Google Fonts). Raio dos cantos aplica-se a cards e botões."),
+        },
+    ),
+    (
+        "Prévia da loja",
+        {
+            "fields": ("storefront_preview",),
+            "description": (
+                "Página inicial embutida (mesma origem). Salve o formulário e clique em "
+                "<strong>Atualizar prévia</strong> para ver cores e tipografia sem sair do admin."
+            ),
+        },
+    ),
+    (
+        "Redes Sociais",
+        {
+            "fields": ("social_links",),
+            "description": "Cole as URLs completas das redes sociais. Ícones são detectados automaticamente.",
+        },
+    ),
 )
 
 _OPERATION_FIELDSETS = (
-    ("Operação", {
-        "fields": (
-            "currency",
-            "timezone",
-            ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close"),
-            ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close"),
-            ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close"),
-            ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close"),
-            ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
-            ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
-            ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
-        ),
-        "description": "Moeda, fuso e horários de funcionamento, editados como campos por dia.",
-    }),
-    ("Feriados e fechamentos", {
-        "fields": _defaults_closed_date_admin_rows(),
-        "description": "Datas de fechamento usadas pelo calendário de negócio e checkout.",
-    }),
+    (
+        "Operação",
+        {
+            "fields": (
+                "currency",
+                "timezone",
+                ("opening_hours_monday_status", "opening_hours_monday_open", "opening_hours_monday_close"),
+                ("opening_hours_tuesday_status", "opening_hours_tuesday_open", "opening_hours_tuesday_close"),
+                ("opening_hours_wednesday_status", "opening_hours_wednesday_open", "opening_hours_wednesday_close"),
+                ("opening_hours_thursday_status", "opening_hours_thursday_open", "opening_hours_thursday_close"),
+                ("opening_hours_friday_status", "opening_hours_friday_open", "opening_hours_friday_close"),
+                ("opening_hours_saturday_status", "opening_hours_saturday_open", "opening_hours_saturday_close"),
+                ("opening_hours_sunday_status", "opening_hours_sunday_open", "opening_hours_sunday_close"),
+            ),
+            "description": "Moeda, fuso e horários de funcionamento, editados como campos por dia.",
+        },
+    ),
+    (
+        "Feriados e fechamentos",
+        {
+            "fields": _defaults_closed_date_admin_rows(),
+            "description": "Datas de fechamento usadas pelo calendário de negócio e checkout.",
+        },
+    ),
 )
 
 _MENU_FIELDSETS = (
-    ("Cardápio", {
-        "fields": (
-            "defaults_dynamic_collections",
-            "defaults_notifications_backend",
-        ),
-        "description": (
-            "Coleções dinâmicas do cardápio (a ordem da lista define a ordem no "
-            "cardápio) e o canal padrão de notificações. As coleções vêm do "
-            "registry canônico do core."
-        ),
-    }),
+    (
+        "Cardápio",
+        {
+            "fields": (
+                "defaults_dynamic_collections",
+                "defaults_notifications_backend",
+            ),
+            "description": (
+                "Coleções dinâmicas do cardápio (a ordem da lista define a ordem no "
+                "cardápio) e o canal padrão de notificações. As coleções vêm do "
+                "registry canônico do core."
+            ),
+        },
+    ),
 )
 
 _ORDERING_FIELDSETS = (
-    ("Pedido e entrega", {
-        "fields": (
-            "defaults_rules_minimum_order_q",
-            "defaults_rules_delivery_minimum_q",
-            "defaults_rules_free_delivery_above_q",
-        ),
-        "description": (
-            "Políticas em Reais gravadas em Shop.defaults.rules (centavos). "
-            "0 ou vazio desliga a regra. O mínimo de entrega e o frete grátis "
-            "valem só para entrega; a taxa por região fica nas Zonas de Entrega."
-        ),
-    }),
-    ("Retirada e encomendas", {
-        "fields": (
-            ("defaults_max_preorder_days", "defaults_pickup_rounding_minutes", "defaults_pickup_history_days"),
-            "defaults_pickup_fallback_slot",
-        ) + _defaults_pickup_admin_rows(),
-        "description": "Slots padrão de retirada e janela máxima para encomendas.",
-    }),
-    ("Motivos de cancelamento e recusa", {
-        "fields": ("cancellation_presets",),
-        "description": (
-            "Justificativas prontas para o operador recusar ou cancelar um pedido com um "
-            "toque no gestor. O motivo escolhido é enviado ao cliente na notificação."
-        ),
-    }),
-    ("Tags de nota da cozinha", {
-        "fields": ("kitchen_note_tags",),
-        "description": (
-            "Etiquetas prontas para o operador anexar com um toque à nota da cozinha de um "
-            "pedido no gestor. A nota é exibida no ticket do KDS para a produção."
-        ),
-    }),
+    (
+        "Pedido e entrega",
+        {
+            "fields": (
+                "defaults_rules_minimum_order_q",
+                "defaults_rules_delivery_minimum_q",
+                "defaults_rules_free_delivery_above_q",
+            ),
+            "description": (
+                "Políticas em Reais gravadas em Shop.defaults.rules (centavos). "
+                "0 ou vazio desliga a regra. O mínimo de entrega e o frete grátis "
+                "valem só para entrega; a taxa por região fica nas Zonas de Entrega."
+            ),
+        },
+    ),
+    (
+        "Retirada e encomendas",
+        {
+            "fields": (
+                ("defaults_max_preorder_days", "defaults_pickup_rounding_minutes", "defaults_pickup_history_days"),
+                "defaults_pickup_fallback_slot",
+            )
+            + _defaults_pickup_admin_rows(),
+            "description": "Slots padrão de retirada e janela máxima para encomendas.",
+        },
+    ),
+    (
+        "Motivos de cancelamento e recusa",
+        {
+            "fields": ("cancellation_presets",),
+            "description": (
+                "Justificativas prontas para o operador recusar ou cancelar um pedido com um "
+                "toque no gestor. O motivo escolhido é enviado ao cliente na notificação."
+            ),
+        },
+    ),
+    (
+        "Tags de nota da cozinha",
+        {
+            "fields": ("kitchen_note_tags",),
+            "description": (
+                "Etiquetas prontas para o operador anexar com um toque à nota da cozinha de um "
+                "pedido no gestor. A nota é exibida no ticket do KDS para a produção."
+            ),
+        },
+    ),
 )
 
 _PRODUCTION_FIELDSETS = (
-    ("Produção", {
-        "fields": (
-            ("defaults_season_hot_months", "defaults_season_mild_months", "defaults_season_cold_months"),
-            ("defaults_high_demand_multiplier", "defaults_safety_stock_percent"),
-            ("defaults_sales_silence_minutes",),
-        ),
-        "description": (
-            "Parâmetros usados por sugestões operacionais e estoque de segurança. "
-            "O silêncio de vendas é o que faz o fechamento perguntar se houve "
-            "algum episódio no dia."
-        ),
-    }),
+    (
+        "Sugestão e sazonalidade",
+        {
+            "fields": (
+                ("defaults_season_hot_months", "defaults_season_mild_months", "defaults_season_cold_months"),
+                ("defaults_high_demand_multiplier", "defaults_safety_stock_percent"),
+            ),
+            "description": (
+                "Overrides da loja usados por sugestões operacionais e estoque de segurança. "
+                "Campos em branco herdam o padrão indicado em cada ajuda."
+            ),
+        },
+    ),
+    (
+        "Alertas e episódios",
+        {
+            "fields": (
+                (
+                    "defaults_production_low_yield_threshold",
+                    "defaults_production_default_max_started_minutes",
+                    "defaults_production_late_check_cadence_minutes",
+                ),
+                ("defaults_sales_silence_minutes",),
+            ),
+            "description": (
+                "Limiares operacionais para rendimento, fornadas atrasadas e investigação de períodos sem vendas."
+            ),
+        },
+    ),
+    (
+        "Notificações e painel",
+        {
+            "fields": (
+                (
+                    "defaults_production_notifications_enabled",
+                    "defaults_production_notification_severities",
+                ),
+                (
+                    "defaults_production_panel_delay_tolerance_minutes",
+                    "defaults_production_panel_confirmed_ttl_minutes",
+                ),
+            ),
+            "description": (
+                "Entrega de alertas e tolerâncias visuais do painel de produção. "
+                "Ativar notificações exige uma decisão explícita."
+            ),
+        },
+    ),
+    (
+        "Associação a pedidos",
+        {
+            "fields": ("defaults_production_order_match",),
+            "description": "Regra usada para associar a fornada a pedidos planejados.",
+        },
+    ),
 )
 
 _LOYALTY_FIELDSETS = (
-    ("Fidelidade", {
-        "fields": (
-            ("defaults_loyalty_points_per_real", "defaults_loyalty_stamps_target"),
-            (
-                "defaults_loyalty_tier_silver_threshold",
-                "defaults_loyalty_tier_gold_threshold",
-                "defaults_loyalty_tier_platinum_threshold",
+    (
+        "Fidelidade",
+        {
+            "fields": (
+                ("defaults_loyalty_points_per_real", "defaults_loyalty_stamps_target"),
+                (
+                    "defaults_loyalty_tier_silver_threshold",
+                    "defaults_loyalty_tier_gold_threshold",
+                    "defaults_loyalty_tier_platinum_threshold",
+                ),
             ),
-        ),
-        "description": (
-            "Programa de fidelidade da loja. A taxa de acúmulo vale para todos os pedidos. "
-            "Os limiares definem quando o cliente sobe de nível — Bronze é o nível inicial "
-            "(a partir de 0 pontos) e cada nível seguinte exige mais pontos acumulados. "
-            "A meta de carimbos vale para novas contas."
-        ),
-    }),
+            "description": (
+                "Programa de fidelidade da loja. A taxa de acúmulo vale para todos os pedidos. "
+                "Os limiares definem quando o cliente sobe de nível — Bronze é o nível inicial "
+                "(a partir de 0 pontos) e cada nível seguinte exige mais pontos acumulados. "
+                "A meta de carimbos vale para novas contas."
+            ),
+        },
+    ),
 )
 
 _PURCHASE_FIELDSETS = (
-    ("Compras", {
-        "fields": (
-            ("defaults_purchase_consumption_window_days", "defaults_purchase_review_period_days"),
-            ("defaults_purchase_safety_days", "defaults_purchase_min_lead_time_days"),
-            ("defaults_purchase_lead_time_history_days", "defaults_purchase_lead_time_max_days"),
-        ),
-        "description": (
-            "Política de reposição do app Compras. A sugestão de compra cobre o "
-            "ciclo prazo de entrega + revisão + segurança, com o consumo médio "
-            "lido do estoque. O prazo por insumo vem da mediana das entregas "
-            "reais; sem histórico, vale o prazo cadastrado no fornecedor "
-            "preferencial e, sem ambos, o prazo mínimo."
-        ),
-    }),
+    (
+        "Compras",
+        {
+            "fields": (
+                ("defaults_purchase_consumption_window_days", "defaults_purchase_review_period_days"),
+                ("defaults_purchase_safety_days", "defaults_purchase_min_lead_time_days"),
+                ("defaults_purchase_lead_time_history_days", "defaults_purchase_lead_time_max_days"),
+            ),
+            "description": (
+                "Política de reposição do app Compras. A sugestão de compra cobre o "
+                "ciclo prazo de entrega + revisão + segurança, com o consumo médio "
+                "lido do estoque. O prazo por insumo vem da mediana das entregas "
+                "reais; sem histórico, vale o prazo cadastrado no fornecedor "
+                "preferencial e, sem ambos, o prazo mínimo."
+            ),
+        },
+    ),
 )
 
 _POS_FIELDSETS = (
-    ("Ponto de venda (PDV)", {
-        "fields": ("defaults_pos_discount_approval_threshold_q", "defaults_pos_fiscal_toggle"),
-        "description": (
-            "Políticas do balcão. O limite de aprovação vale para descontos "
-            "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
-            "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado."
-        ),
-    }),
-    ("Alertas de estoque", {
-        "fields": ("defaults_stock_alert_cooldown_minutes",),
-        "description": (
-            "O limite de cada alerta (quantidade mínima por produto) fica em "
-            "“Alertas de estoque”. Aqui você ajusta só a frequência de aviso."
-        ),
-    }),
+    (
+        "Ponto de venda (PDV)",
+        {
+            "fields": ("defaults_pos_discount_approval_threshold_q", "defaults_pos_fiscal_toggle"),
+            "description": (
+                "Políticas do balcão. O limite de aprovação vale para descontos "
+                "manuais aplicados no PDV — acima dele, é preciso o PIN do gerente. "
+                "A emissão de NFC-e só aparece se ligada aqui E com o Focus configurado."
+            ),
+        },
+    ),
+    (
+        "Alertas de estoque",
+        {
+            "fields": ("defaults_stock_alert_cooldown_minutes",),
+            "description": (
+                "O limite de cada alerta (quantidade mínima por produto) fica em "
+                "“Alertas de estoque”. Aqui você ajusta só a frequência de aviso."
+            ),
+        },
+    ),
 )
 
 _INTEGRATIONS_FIELDSETS = (
-    ("Pagamentos", {
-        "fields": ("integrations_payment_pix", "integrations_payment_card"),
-        "description": (
-            "Escolha o gateway de cada meio de pagamento. Sobreescreve o padrão do "
-            "deployment (settings). Em branco = herda do sistema."
-        ),
-    }),
-    ("Notificações e fiscal", {
-        "fields": ("integrations_notification_default", "integrations_fiscal"),
-        "description": (
-            "Canal padrão de notificação ao cliente e emissor fiscal. "
-            "Em branco = herda do sistema."
-        ),
-    }),
-    ("Canais do sistema (deployment)", {
-        "fields": ("channel_refs_display",),
-        "description": (
-            "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
-            "deployment (settings/env) — exibidos aqui só para conferência."
-        ),
-    }),
+    (
+        "Pagamentos",
+        {
+            "fields": ("integrations_payment_pix", "integrations_payment_card"),
+            "description": (
+                "Escolha o gateway de cada meio de pagamento. Sobreescreve o padrão do "
+                "deployment (settings). Em branco = herda do sistema."
+            ),
+        },
+    ),
+    (
+        "Notificações e fiscal",
+        {
+            "fields": ("integrations_notification_default", "integrations_fiscal"),
+            "description": ("Canal padrão de notificação ao cliente e emissor fiscal. Em branco = herda do sistema."),
+        },
+    ),
+    (
+        "Canais do sistema (deployment)",
+        {
+            "fields": ("channel_refs_display",),
+            "description": (
+                "Quais canais respondem pela Loja online e pelo PDV. Definidos no "
+                "deployment (settings/env) — exibidos aqui só para conferência."
+            ),
+        },
+    ),
 )
 
 
@@ -1556,28 +1836,40 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
 
         # Token groups to preview
         groups = [
-            ("Primária", [
-                ("primary", "Primary"),
-                ("primary_hover", "Hover"),
-                ("secondary", "Secondary"),
-                ("accent", "Accent"),
-            ]),
-            ("Superfícies", [
-                ("background", "Background"),
-                ("surface", "Surface"),
-                ("muted", "Muted"),
-                ("border", "Border"),
-            ]),
-            ("Texto", [
-                ("foreground", "Foreground"),
-                ("foreground_muted", "Muted"),
-            ]),
-            ("Status", [
-                ("success", "Success"),
-                ("warning", "Warning"),
-                ("error", "Error"),
-                ("info", "Info"),
-            ]),
+            (
+                "Primária",
+                [
+                    ("primary", "Primary"),
+                    ("primary_hover", "Hover"),
+                    ("secondary", "Secondary"),
+                    ("accent", "Accent"),
+                ],
+            ),
+            (
+                "Superfícies",
+                [
+                    ("background", "Background"),
+                    ("surface", "Surface"),
+                    ("muted", "Muted"),
+                    ("border", "Border"),
+                ],
+            ),
+            (
+                "Texto",
+                [
+                    ("foreground", "Foreground"),
+                    ("foreground_muted", "Muted"),
+                ],
+            ),
+            (
+                "Status",
+                [
+                    ("success", "Success"),
+                    ("warning", "Warning"),
+                    ("error", "Error"),
+                    ("info", "Info"),
+                ],
+            ),
         ]
 
         # Texto e layout saem dos componentes do Unfold. O ÚNICO estilo inline é a
@@ -1599,7 +1891,10 @@ class ShopAppearanceAdmin(_ShopSingletonAdmin):
                     '<div class="w-9 h-9" style="background:{}" title="Claro: {}"></div>'
                     '<div class="w-9 h-9" style="background:{}" title="Escuro: {}"></div>'
                     "</div>",
-                    hex_color, hex_color, dark_hex, dark_hex,
+                    hex_color,
+                    hex_color,
+                    dark_hex,
+                    dark_hex,
                 )
                 caption = unfold_component(
                     "unfold/components/text.html",

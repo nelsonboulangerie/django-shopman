@@ -89,11 +89,17 @@ def _make_position(ref: str, *, saleable: bool = True):
 
 def _receive(qty: int, sku: str, position, *, target_date=None):
     from shopman.stockman import stock
+    from shopman.stockman.models import Batch
 
-    stock.receive(
+    quant = stock.receive(
         Decimal(str(qty)), sku, position,
         target_date=target_date, reason="stress setup",
     )
+    # Estoque físico íntegro do cenário precisa carregar o fato de QC. Lote
+    # sem classificação falha fechado nos canais, como deve acontecer em uso
+    # real; este helper representa uma fornada já conferida como Normal.
+    if quant.batch:
+        Batch.objects.filter(ref=quant.batch).update(quality_grade_ref="standard")
 
 
 def _open_session(

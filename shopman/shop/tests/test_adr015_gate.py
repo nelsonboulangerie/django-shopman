@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import importlib.util
+import json
 import subprocess
 from pathlib import Path
 
@@ -285,3 +286,192 @@ def test_deprecated_violations_scan_tracked_files(tagged_repo):
 
     violations = check_adr015.deprecated_violations(tagged_repo, today=_TODAY)
     assert [(loc, "vencido" in reason) for loc, reason in violations] == [("app/compat.py:1", True)]
+
+
+# ---------------------------------------------------------------------------
+# resolve_diff_base — a base do diff não pode ser a ponta que anda
+# ---------------------------------------------------------------------------
+#
+# Medido no PR #554: o #549 entrou no main entre o push e o job. A ponta da
+# base andou, o merge ref (gerado no push, e nunca refeito) não, e o diff
+# passou a mostrar as mudanças do PR alheio AO CONTRÁRIO — o gate reprovou
+# apontando um arquivo que aquele PR nunca abriu. Este bloco monta o cenário.
+
+
+def _pull_request_scenario(tmp_path, *, move_base: bool, shallow: bool):
+    """Origem + merge ref publicado no push; opcionalmente a base anda depois."""
+    origin = tmp_path / "origin"
+    origin.mkdir()
+    _git(origin, "init", "--quiet", "--bare", "-b", "main")
+
+    work = tmp_path / "work"
+    work.mkdir()
+    _git(work, "init", "--quiet", "-b", "main")
+    (work / "apps.py").write_text("x = 1\n")
+    _git(work, "add", "apps.py")
+    _git(work, "commit", "--quiet", "-m", "base")
+    base_sha = _git(work, "rev-parse", "HEAD").strip()
+
+    _git(work, "checkout", "--quiet", "-b", "feature")
+    (work / "feature.py").write_text("y = 2\n")
+    _git(work, "add", "feature.py")
+    _git(work, "commit", "--quiet", "-m", "o que ESTE PR fez")
+    head_sha = _git(work, "rev-parse", "HEAD").strip()
+
+    # O merge sintético que o GitHub publica em refs/pull/N/merge, no push.
+    _git(work, "checkout", "--quiet", base_sha)
+    _git(work, "merge", "--quiet", "--no-ff", "-m", "Merge pull request", head_sha)
+    merge_sha = _git(work, "rev-parse", "HEAD").strip()
+    _git(work, "update-ref", "refs/pull/1/merge", merge_sha)
+
+    _git(work, "checkout", "--quiet", "main")
+    moved_tip = base_sha
+    if move_base:
+        # A base anda DEPOIS: outro PR entra e mexe num arquivo alheio.
+        (work / "apps.py").write_text("x = 1\nz = 3  # o PR alheio\n")
+        _git(work, "add", "apps.py")
+        _git(work, "commit", "--quiet", "-m", "PR alheio entrou no main")
+        moved_tip = _git(work, "rev-parse", "HEAD").strip()
+    _git(work, "push", "--quiet", str(origin), "main", "refs/pull/1/merge:refs/pull/1/merge")
+
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    _git(runner, "init", "--quiet")
+    _git(runner, "remote", "add", "origin", str(origin))
+    depth = ["--depth=1"] if shallow else []
+    _git(runner, "fetch", "--quiet", *depth, "origin", "refs/pull/1/merge")
+    # A ponta da base também chega ao runner — era ela que a versão anterior
+    # usava como base do diff, e é contra ela que a prova do defeito corre.
+    _git(runner, "fetch", "--quiet", *depth, "origin", "main")
+    _git(runner, "checkout", "--quiet", merge_sha)
+
+    return runner, {"base": base_sha, "head": head_sha, "merge": merge_sha, "moved_tip": moved_tip}
+
+
+@pytest.fixture
+def moved_base_repo(tmp_path):
+    """Um PR cujo merge ref ficou para trás porque a base andou depois do push."""
+    return _pull_request_scenario(tmp_path, move_base=True, shallow=False)
+
+
+def _arm_pull_request_event(monkeypatch, tmp_path, shas, *, base_sha=None, head_sha=None):
+    payload = tmp_path / "event.json"
+    payload.write_text(
+        json.dumps(
+            {
+                "pull_request": {
+                    "base": {"sha": shas["base"] if base_sha is None else base_sha, "ref": "main"},
+                    "head": {"sha": shas["head"] if head_sha is None else head_sha},
+                }
+            }
+        )
+    )
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "pull_request")
+    monkeypatch.setenv("GITHUB_BASE_REF", "main")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+
+
+def test_a_ponta_da_base_acusa_o_arquivo_do_pr_alheio(moved_base_repo):
+    """A prova do defeito, antes do remédio: contra a ponta, o alheio aparece.
+
+    Sem esta asserção o teste seguinte poderia estar verde por acaso — é ela
+    que demonstra que o cenário reproduz a reprovação medida no PR #554.
+    """
+    runner, shas = moved_base_repo
+    diff = _git(runner, "diff", "--name-status", "--no-renames", shas["moved_tip"], "HEAD")
+    assert "apps.py" in diff, "contra a ponta, o arquivo do PR alheio aparece — e ao contrário"
+
+
+def test_base_movida_nao_contamina_o_diff(moved_base_repo, monkeypatch, tmp_path):
+    """A base é o commit sobre o qual o merge ref foi montado, não a ponta."""
+    runner, shas = moved_base_repo
+    _arm_pull_request_event(monkeypatch, tmp_path, shas)
+
+    base, description = check_adr015.resolve_diff_base(runner)
+
+    assert base == shas["base"], "a base tem de ser o commit do merge ref, não a ponta que andou"
+    assert base != shas["moved_tip"]
+    assert "merge ref" in description
+
+    diff = _git(runner, "diff", "--name-status", "--no-renames", base, "HEAD").split()
+    assert diff == ["A", "feature.py"], "o diff só pode ter o arquivo deste PR"
+
+
+def test_checkout_raso_ainda_resolve_a_base(tmp_path, monkeypatch):
+    """`fetch-depth: 1` esconde os pais na revision walk; o objeto os mantém.
+
+    O job `quality` faz checkout raso. Ali `rev-list --parents` e `HEAD^1`
+    voltam vazios por causa do enxerto do shallow, e um gate que dependesse
+    deles reprovaria todo PR — ou, pior, passaria vendo zero arquivo.
+    """
+    runner, shas = _pull_request_scenario(tmp_path, move_base=False, shallow=True)
+    assert (runner / ".git" / "shallow").exists(), "o cenário precisa ser mesmo raso"
+    _arm_pull_request_event(monkeypatch, tmp_path, shas)
+
+    base, _ = check_adr015.resolve_diff_base(runner)
+
+    assert base == shas["base"]
+    diff = _git(runner, "diff", "--name-status", "--no-renames", base, "HEAD").split()
+    assert diff == ["A", "feature.py"]
+
+
+def test_base_irresolvivel_devolve_none_em_vez_de_chutar(moved_base_repo, monkeypatch, tmp_path):
+    """Sem base confiável o gate não chuta: devolve None e o chamador reprova.
+
+    Aqui HEAD não é o merge ref (o `head.sha` do evento não bate com o pai 2),
+    o `base.sha` do evento não existe, e o remoto sumiu. A resposta certa é
+    "não sei", nunca a ponta de alguma coisa.
+    """
+    runner, shas = moved_base_repo
+    _git(runner, "remote", "remove", "origin")
+    _arm_pull_request_event(monkeypatch, tmp_path, shas, base_sha="0" * 40, head_sha="1" * 40)
+
+    base, description = check_adr015.resolve_diff_base(runner)
+
+    assert base is None
+    assert "não resolvida" in description
+    assert "merge ref" in description
+
+
+def test_merge_group_continua_usando_o_base_sha_da_fila(moved_base_repo, monkeypatch, tmp_path):
+    runner, shas = moved_base_repo
+    payload = tmp_path / "merge_group.json"
+    payload.write_text(json.dumps({"merge_group": {"base_sha": shas["base"]}}))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "merge_group")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+
+    base, description = check_adr015.resolve_diff_base(runner)
+
+    assert base == shas["base"]
+    assert "merge_group" in description
+
+
+def test_merge_group_sem_o_commit_reprova(moved_base_repo, monkeypatch, tmp_path):
+    runner, _shas = moved_base_repo
+    _git(runner, "remote", "remove", "origin")
+    payload = tmp_path / "merge_group.json"
+    payload.write_text(json.dumps({"merge_group": {"base_sha": "0" * 40}}))
+    monkeypatch.setenv("GITHUB_EVENT_NAME", "merge_group")
+    monkeypatch.setenv("GITHUB_EVENT_PATH", str(payload))
+
+    base, description = check_adr015.resolve_diff_base(runner)
+
+    assert base is None
+    assert "indisponível" in description
+
+
+def test_append_only_reprova_quando_a_base_nao_resolve(monkeypatch, capsys, tmp_path):
+    """O gate do ADR-015 falha FECHADO — nunca verde por não ter olhado nada."""
+    monkeypatch.setenv("SHOPMAN_ADR015_FORCE", "1")
+    monkeypatch.setattr(
+        check_adr015,
+        "resolve_diff_base",
+        lambda *a, **k: (None, "base do PR não resolvida — remoto indisponível"),
+    )
+    monkeypatch.setattr(check_adr015, "deprecated_violations", lambda *a, **k: [])
+    monkeypatch.chdir(tmp_path)
+
+    assert check_adr015.main([]) == 1
+    saida = capsys.readouterr().out
+    assert "FAIL" in saida
+    assert "base do diff não resolvida" in saida

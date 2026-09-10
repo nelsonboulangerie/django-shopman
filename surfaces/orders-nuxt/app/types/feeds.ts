@@ -16,6 +16,8 @@ export interface FeedProjection {
   is_active: boolean;
   output_path: string;
   collections: FeedCollectionRef[];
+  rotate_seconds: number; // menuboard: cadência da troca de páginas (0 = sem rotação)
+  items_per_page: number; // menuboard: teto de itens por tela (0 = tudo numa página)
 }
 
 export interface CollectionOptionProjection {

@@ -350,6 +350,48 @@ vendas cash não gera falso positivo.
 > caixa exige `cashman.audit_shift` além de `view_bi`. A metade "trava da gaveta" (cherry-pick
 > do #198 no PDV) segue neste WP.
 
+> ⚠️ **Revisto em 29/08: a trava virou DURA.** O desenho abaixo (pedágio + PIN
+> por venda) foi substituído a pedido do dono. Agora o PDV não anda com a gaveta
+> aberta e **quem libera é o mundo físico** — o bloqueio cai quando o sensor diz
+> que fechou (sondagem de 400ms enquanto o diálogo está na tela). O "Já fechei"
+> foi REMOVIDO: era auto-declaração, e com o diálogo aberto dava para puxar o
+> cabo e clicar nele para liberar em silêncio. O PIN do gerente continua, como
+> **exceção** (gaveta emperrada, sensor morto), e a linha do livro carrega essa
+> natureza. Efeito colateral desejado: o gerente sai do fluxo do dia a dia e a
+> fadiga de autorização acaba por construção. Ver ADR-022, nota de 29/08.
+>
+> Junto vieram três coisas que o desenho antigo não tinha: a **duração real** da
+> gaveta aberta (o PIN mascarava), o aviso de **gaveta esquecida** na hora morta
+> (limiar em `Shop.defaults["pos"]["drawer_idle_alert_minutes"]`, default 3 min),
+> e a **degradação barulhenta** quando o sensor morre numa estação medida.
+>
+> ⚠️ E a trava também morde no primeiro item de uma venda sem comanda: a
+> capability deste balcão é `requires_open_tab_for_cart: false`, então depender
+> só do `openTab` deixaria um flanco aberto no dia em que a tela expuser venda
+> direta. (Na UI de hoje o `openTab` continua sendo o caminho de entrada.)
+>
+> **A tela não mostra a saída de emergência.** Nada de botão de PIN: um botão na
+> frente de todo operador ensina o bypass, a exceção vira o caminho conhecido e a
+> fraude aprende sozinha. **Esc** abre o PIN, **Esc** volta — gesto de quem foi
+> treinado. Toda abertura da tela de PIN vai para o livro, inclusive as que
+> terminam sem destrave. O que fica escondido é a saída; o estado continua
+> anunciado a leitor de tela (`role="alertdialog"` + `aria-live`).
+>
+> **A tela de autorização não se confunde com o DESTRAVE DE SESSÃO** (não com o
+> login — esse acontece uma vez por turno e ninguém erra). O par perigoso são as
+> duas telas do meio do expediente, as duas um teclado de PIN, as duas
+> interrompendo quem atende. As duas metades agora dizem o que são:
+> `OperatorLock` → "Você assume o balcão"; autorização → "Você continua como
+> <fulano>", com o ato no título ("Autorizar destrave da gaveta"). Toda a copy
+> de autorização mora em `surfaces/pos-nuxt/app/presentation/managerAuth.ts` —
+> eram quatro pontos de chamada com frase própria, cada uma mais longa que a
+> outra, e sem um lugar comum ninguém via que o conjunto estava prolixo.
+>
+> **Bateria de estresse** em `shopman/backstage/tests/test_pos_drawer_stress.py`
+> e `surfaces/pos-nuxt/tests/composables/useDrawerLock.stress.test.ts`: corridas,
+> ataque ao sensor, ataque ao canal, abuso do PIN e integridade do rastro — com o
+> que é indefensável escrito na cara, e o sinal que o denuncia no B.I.
+
 **Entrega**
 
 - Cherry-pick da branch do #198: `useCashDrawer.readState`, `useDrawerLock`,

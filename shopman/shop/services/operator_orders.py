@@ -14,6 +14,7 @@ from enum import StrEnum
 from django.db import transaction
 from shopman.orderman.models import Order
 
+from shopman.shop.services import payment_gate
 from shopman.shop.services.cancellation import cancel
 from shopman.shop.services.order_helpers import get_fulfillment_type
 
@@ -65,15 +66,27 @@ class AdvanceBlock(StrEnum):
     # Encomenda para data futura: não dá pra iniciar o preparo antes do dia
     # (o pedido de sábado não vai pra cozinha na terça). Some sozinho na data.
     PREORDER_NOT_DUE = "preorder_not_due"
+    # Fila de espera, ainda em fermata: o pão que este pedido espera NÃO EXISTE —
+    # está na fornada que ainda não saiu. O card já trazia o selo "Na fila da
+    # fornada", mas o botão de avançar continuava vivo ao lado dele, e avisar
+    # sem barrar não é barreira: um toque mandava para o KDS uma separação
+    # impossível de fazer. Some sozinho quando ``open_window`` chama o cliente.
+    WAITLIST_FERMATA = "waitlist_fermata"
 
 
 _ADVANCE_BLOCK_MESSAGES: dict[AdvanceBlock, str] = {
     AdvanceBlock.NO_NEXT_STEP: "Pedido não possui próxima etapa",
+    # A frase serve os três degraus que o gate cobre (preparo, despacho e
+    # entrega no balcão), então não fala de "preparo": o mesmo bloqueio aparece
+    # quando a sacola ia sair pela porta.
     AdvanceBlock.PAYMENT_NOT_CAPTURED: (
-        "Pagamento ainda não foi confirmado. Aguarde antes de iniciar o preparo."
+        "Pagamento ainda não foi confirmado. O pedido só avança depois que o dinheiro entra."
     ),
     AdvanceBlock.PREORDER_NOT_DUE: (
         "Encomenda para uma data futura. O preparo abre no dia combinado."
+    ),
+    AdvanceBlock.WAITLIST_FERMATA: (
+        "Reserva na fila da fornada. O preparo abre quando o lote sair."
     ),
 }
 
@@ -183,13 +196,23 @@ def advance_block(order: Order) -> AdvanceBlock:
     Single source for the operator-advance gate: ``advance_order`` raises with
     the matching message, and a fila do operador lê o código para decidir se
     oferece a ação — a previsão e a regra nunca divergem.
+
+    O gate de pagamento vale em TODA transição que entrega trabalho ou
+    mercadoria, não só em ``ACCEPTED``: quem decide é ``payment_gate``, a mesma
+    régua que a expedição do KDS consulta. Antes o pix/link não capturado era
+    barrado no primeiro degrau e depois avançava à mão até ``DISPATCHED``.
     """
-    if not next_status_for(order):
+    next_status = next_status_for(order)
+    if not next_status:
         return AdvanceBlock.NO_NEXT_STEP
-    if order.status == Order.Status.ACCEPTED and _requires_captured_payment_for_work(order):
+    if payment_gate.payment_blocks_transition(
+        order, current_status=order.status, target_status=next_status
+    ):
         return AdvanceBlock.PAYMENT_NOT_CAPTURED
     if order.status == Order.Status.ACCEPTED and _preorder_not_due(order):
         return AdvanceBlock.PREORDER_NOT_DUE
+    if order.status == Order.Status.ACCEPTED and _waiting_for_the_batch(order):
+        return AdvanceBlock.WAITLIST_FERMATA
     return AdvanceBlock.NONE
 
 
@@ -514,7 +537,7 @@ def cancel_order(
     actor: str,
     cancellation_code: str = "",
     customer_note: str = "",
-) -> None:
+) -> bool:
     """Cancel an order through the canonical cancellation service.
 
     ``cancellation_code`` (iFood) rides ``order.data`` to the status-callback handler.
@@ -525,13 +548,19 @@ def cancel_order(
     which also carries machine codes (``pix_timeout``, ``customer_requested``) that
     must never reach the customer. Empty when the operator gave no reason → the
     customer gets the plain cancellation message.
+
+    Returns:
+        True se cancelou; False quando a máquina de estados recusou a transição.
     """
     extra_data: dict[str, str] = {}
     if cancellation_code:
         extra_data["ifood_cancellation_code"] = cancellation_code
     if customer_note.strip():
         extra_data["cancellation_note"] = customer_note.strip()
-    cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
+    # O retorno do serviço canônico é a resposta à pergunta "cancelou?", e
+    # descartá-lo fazia a view responder 200 para um pedido que continuou como
+    # estava. ``reject_order``, a ação irmã, sempre conferiu; esta não.
+    return cancel(order, reason=reason, actor=actor, extra_data=extra_data or None)
 
 
 def settle_delivery_cash(
@@ -737,14 +766,21 @@ def add_comment(order: Order, *, note: str, actor: str) -> None:
     order.emit_event(event_type="operator_comment", actor=actor, payload={"note": text})
 
 
-def _requires_captured_payment_for_work(order: Order) -> bool:
-    payment = (order.data or {}).get("payment") or {}
-    method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
-        return False
-    from shopman.shop.services import payment as payment_service
+def _waiting_for_the_batch(order: Order) -> bool:
+    """True enquanto a reserva de fila espera a fornada sair (``fermata``).
 
-    return payment_service.has_sufficient_captured_payment(order) is not True
+    Não é encomenda (não há data combinada com o cliente, então
+    ``_preorder_not_due`` não a alcança) e não é falta de pagamento: é pão que
+    ainda não foi assado. Degrada para False — pergunta que falha não pode
+    travar o board.
+    """
+    try:
+        from shopman.shop.services import waitlist
+
+        return waitlist.state_for(order) == waitlist.FERMATA
+    except Exception:
+        logger.debug("operator_orders._waiting_for_the_batch degraded ref=%s", order.ref, exc_info=True)
+        return False
 
 
 def _preorder_not_due(order: Order) -> bool:

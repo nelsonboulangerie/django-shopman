@@ -4,8 +4,8 @@ import { toast } from "vue-sonner";
 import { resolveAffordance } from "~/presentation/actions";
 import { requiresOpenShiftForSale } from "~/presentation/cash";
 import { rollStyle } from "~/presentation/printGeometry";
-import { askedMarkFor, shouldAskFulfillment } from "~/presentation/fulfillmentPrompt";
-import { enterAdvances } from "~/presentation/saleResult";
+import { isScheduled, scheduleChipTone, scheduledNeedsCustomer, scheduleLabel, selectedWindowConflict, windowLabel } from "~/presentation/schedule";
+import { enterAdvances, paymentFailed } from "~/presentation/saleResult";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // Tela de VENDA — wires the read-side (usePosTerminal) and write-side (usePosSale)
 // composables to the three core screens (PosTabBoard / PosProductGrid /
@@ -20,7 +20,7 @@ const runtimeConfig = useRuntimeConfig();
 // The Django admin (login) lives on its own operator host (api.<zona>), a different
 // subdomain from the POS — so the DANFE link must be ABSOLUTE to that host, not
 // relative to the POS origin.
-const djangoOrigin = computed(() => String(runtimeConfig.public.djangoPublicBaseUrl || ""));
+const djangoOrigin = computed(() => String(runtimeConfig.public.djangoBaseUrl || ""));
 // Gestor de Pedidos (orders-nuxt) — destino do link pós-venda "Abrir no gestor".
 const ordersUrl = computed(() => String(runtimeConfig.public.ordersUrl || ""));
 const requestHeaders = import.meta.server ? useRequestHeaders(["cookie"]) : undefined;
@@ -45,6 +45,11 @@ async function goToCashSession() {
   await navigateTo("/session");
 }
 
+// Filipetas do pedido remoto: o lote da semana para o painel físico da padaria.
+async function goToOrderTickets() {
+  await navigateTo("/tickets");
+}
+
 // Write-side of the open sale: cart draft + every session command.
 const {
   cart,
@@ -59,6 +64,7 @@ const {
   cancelSaleError,
   lookupBusy,
   managerApprovalError,
+  customerFocusNonce,
   result,
   pendingPixOrderRef,
   pixStatus,
@@ -95,6 +101,17 @@ const {
   deliverySlots,
   deliverySlotsPending,
   deliveryDateEffective,
+  scheduleToday,
+  scheduleAvailableDates,
+  scheduleBottleneckName,
+  scheduleReadyAt,
+  scheduleFailed,
+  scheduleMaxDate,
+  refreshSchedule,
+  splitCount,
+  splitPaidCount,
+  splitNote,
+  setSplitCount,
   selectedTenderMethod,
   tabDialogTitle,
   tabDialogDescription,
@@ -111,19 +128,26 @@ const {
   tenderClear,
   tenderAdd,
   tenderExact,
-  productQty,
+  lineQty,
   addProduct,
   setQty,
   restoreItem,
   setLineNotes,
   setLineDiscount,
-  setLinePrice,
   requestTabAssociation,
   openTab,
   openTabFromDialog,
   applySavedAddress,
   lookupCustomer,
   resolveCustomer,
+  customerDecision,
+  confirmCustomerDecision,
+  cancelCustomerDecision,
+  pickConflictCandidate,
+  mergeConflictCustomers,
+  customerMergeBusy,
+  releaseConflictContact,
+  customerReleaseBusy,
   customerSearchResults,
   customerSearchBusy,
   customerResolvedNew,
@@ -134,8 +158,11 @@ const {
   repeatCustomerLastOrder,
   prepareCheckout,
   reviewCheckout,
+  reviewFailed,
   submitSale,
   dismissResult,
+  resendingLink,
+  resendPaymentLink,
   onExternalSaleCancelled,
   clearCurrentTab,
   openMoveDialog,
@@ -174,7 +201,10 @@ const unfireAction = computed(() => resolveAffordance(actions.value, "unfire_tab
 // Top context bar title (unified layout language, Arc 5): one band names the
 // current work-area screen across Board / Sale / Payment.
 const screenTitle = computed(() => {
-  if (result.value) return "Venda concluída";
+  // A barra do topo não pode discordar da tela: com a cobrança recusada pelo
+  // gateway, "Venda concluída" ali em cima desmente o aviso vermelho logo
+  // abaixo — e é a barra que fica na periferia da visão do operador.
+  if (result.value) return paymentFailed(result.value.payment) ? "Cobrança não criada" : "Venda concluída";
   if (checkoutMode.value) return cart.tabDisplay ? `Pagamento · #${cart.tabDisplay}` : "Pagamento";
   if (inSaleView.value) return cart.tabDisplay || "Venda";
   return "Comandas";
@@ -332,30 +362,11 @@ const tabHeaderRef = ref<{ openCustomer: () => void } | null>(null);
 // abrem a MESMA caixa — o checkout tem o seu próprio, para o F7 continuar
 // funcionando lá dentro sem passar por cima desta.
 const fulfillmentSheetOpen = ref(false);
+// QUANDO — terceira caixa da barra, irmã de Cliente e Recebimento. Vive na tela
+// de venda porque agendar acontece na ABERTURA do atendimento (o operador está no
+// telefone), não no fim. O checkout abre a MESMA caixa.
+const scheduleSheetOpen = ref(false);
 
-// A PRIMEIRA PERGUNTA DO ATENDIMENTO — "é pra comer aqui ou pra levar?".
-//
-// Recebimento decide taxa, janela de horário e endereço, e decide também se vale
-// a pena pedir o telefone. Perguntado no fim, tudo isso chega depois de o preço
-// já ter sido dito em voz alta.
-//
-// NÃO é modal, de propósito. A venda dominante no balcão é anônima, à vista e de
-// retirada; um diálogo que se dispensa em 80% dos atendimentos ensina o operador
-// a fechar sem ler, e aí ele para de capturar nos 20% que importam — custa tempo
-// E não captura. Aqui a resposta padrão está visível e a um toque, então
-// "dispensar" é aceitar o padrão, que é uma resposta honesta.
-//
-// Some sozinha no primeiro item lançado: quem começou a vender já respondeu
-// "retirada" com o corpo.
-const fulfillmentAskedFor = ref("");
-const showFulfillmentPrompt = computed(() => shouldAskFulfillment({
-  inSaleView: inSaleView.value,
-  checkoutMode: checkoutMode.value,
-  hasOpenTab: hasOpenTab.value,
-  itemCount: cart.items.length,
-  askedFor: fulfillmentAskedFor.value,
-  tabSessionKey: cart.tabSessionKey,
-}));
 // O chip da barra abre a caixa de quem é dono dela na tela atual: no checkout, a
 // da tela de pagamento (mesmo componente, outro estado) — assim F7 e o chip
 // nunca abrem duas caixas diferentes.
@@ -363,22 +374,6 @@ function openFulfillmentHere() {
   if (checkoutMode.value) paymentWorkspaceRef.value?.openFulfillment();
   else fulfillmentSheetOpen.value = true;
 }
-function markFulfillmentAsked() {
-  fulfillmentAskedFor.value = askedMarkFor(cart.tabSessionKey);
-}
-function answerPickup() {
-  cart.fulfillmentType = "pickup";
-  markFulfillmentAsked();
-}
-function answerDelivery() {
-  cart.fulfillmentType = "delivery";
-  markFulfillmentAsked();
-  fulfillmentSheetOpen.value = true;
-}
-// Lançou item sem responder: o padrão valeu, e a faixa não volta nesta comanda.
-watch(() => cart.items.length, (count) => {
-  if (count > 0 && showFulfillmentPrompt.value) markFulfillmentAsked();
-});
 // ENTREGA identifica o cliente. Num pedido que sai da loja o telefone é praxe —
 // é por ele que se liga quando o entregador não acha o portão —, e a faixa de
 // preço do cadastro precisa valer ANTES de o primeiro item ser lançado, não
@@ -389,6 +384,67 @@ watch(fulfillmentSheetOpen, (open, wasOpen) => {
   if (cart.customerName.trim() || cart.customerPhone.trim()) return;
   void nextTick(() => tabHeaderRef.value?.openCustomer());
 });
+// AGENDADO também identifica o cliente — o servidor recusa encomenda anônima
+// (é o contato se algo mudar até a data), então a pergunta vem já na agenda,
+// não como surpresa no Validar. Mesmo desenho do irmão acima: só oferecido.
+watch(scheduleSheetOpen, (open, wasOpen) => {
+  if (open || !wasOpen) return;
+  if (!isScheduled(cart.deliveryDate, scheduleToday.value)) return;
+  if (cart.customerName.trim() || cart.customerPhone.trim()) return;
+  void nextTick(() => tabHeaderRef.value?.openCustomer());
+});
+// O servidor recusou pedindo o CLIENTE (`focus: "customer"`): abre a
+// identificação de quem é dona dela na tela atual — motivo sem caminho de um
+// toque é beco sem saída (mesmo desvio de `openFulfillmentHere`).
+watch(customerFocusNonce, () => {
+  void nextTick(() => {
+    if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
+    else tabHeaderRef.value?.openCustomer();
+  });
+});
+
+// O chip da barra abre a caixa de quem é DONO dela na tela atual — no checkout, a
+// da tela de pagamento. As duas estão montadas ao mesmo tempo; sem este desvio,
+// o chip abriria a da tela de venda por cima do pagamento, e o "Quando" dentro do
+// Recebimento abriria a outra. Duas caixas para a mesma pergunta na mesma tela é
+// exatamente o que a barra de contexto veio desfazer (mesmo desvio de
+// `openFulfillmentHere`).
+function openScheduleHere() {
+  // A grade do dia só é buscada quando alguém vai agendar de fato — a venda
+  // dominante do balcão é para agora e não paga por essa pergunta.
+  void refreshSchedule();
+  if (checkoutMode.value) paymentWorkspaceRef.value?.openSchedule();
+  else scheduleSheetOpen.value = true;
+}
+// O rótulo do terceiro chip. "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um
+// campo vazio: a esmagadora maioria das vendas é para agora, e a barra não pode
+// parecer que falta preencher alguma coisa.
+const scheduleChipLabel = computed(() => scheduleLabel(
+  cart.deliveryDate,
+  windowLabel(deliverySlots.value, cart.deliveryTimeSlot),
+  scheduleToday.value,
+));
+const scheduleChipActive = computed(() => isScheduled(cart.deliveryDate, scheduleToday.value));
+// ENCOMENDA ANÔNIMA — o servidor recusa (`customer_required_for_scheduled`), e o
+// checkout trava o Validar por isso. A barra é quem tem o botão que resolve, e
+// portanto é ela que chama: o chip pulsa. A REGRA é a mesma do bloqueio do CTA
+// porque as duas chamam a mesma função — um dono só, em `presentation/schedule`.
+const customerRequiredForSchedule = computed(() => scheduledNeedsCustomer({
+  deliveryDate: cart.deliveryDate,
+  today: scheduleToday.value,
+  customerName: cart.customerName,
+  customerPhone: cart.customerPhone,
+  customerRef: cart.customerRef,
+}));
+// A escolha que virou impossível SOZINHA (o operador marcou 09:00 e só depois
+// lançou a baguete). O chip é onde ele olha de relance; sem isto ele só
+// descobria num 422 seco no Finalizar, com o cliente já tendo ouvido o horário.
+const scheduleChipConflict = computed(
+  () => scheduleChipTone(deliverySlots.value, cart.deliveryTimeSlot) === "conflict",
+);
+const scheduleConflictReason = computed(
+  () => selectedWindowConflict(deliverySlots.value, cart.deliveryTimeSlot),
+);
 
 // O rótulo do chip: com entrega, o BAIRRO diz mais que a palavra "entrega" — é o
 // que o operador confere de relance quando o cliente muda de ideia no meio.
@@ -403,9 +459,12 @@ const paymentWorkspaceRef = ref<{
   validate: () => void;
   openCustomer: () => void;
   openFulfillment: () => void;
+  openSchedule: () => void;
   openDiscount: () => void;
+  openSplit: () => void;
   pressMethodKey: (letter: string) => boolean;
-  toggleCpfOnInvoice: () => void;
+  pressReceiptKey: (letter: string) => boolean;
+  toggleCpfOnInvoice: () => boolean;
 } | null>(null);
 const shortcutsHelpOpen = ref(false);
 
@@ -511,7 +570,21 @@ function onGlobalKeydown(event: KeyboardEvent) {
     && !event.metaKey && !event.ctrlKey && !event.altKey
     && /^[a-zA-Z]$/.test(event.key)
   ) {
-    if (paymentWorkspaceRef.value?.pressMethodKey(event.key.toUpperCase())) {
+    const letra = event.key.toUpperCase();
+    if (paymentWorkspaceRef.value?.pressMethodKey(letra)) {
+      event.preventDefault();
+      return;
+    }
+    // F (CPF na nota), I (impressa) e M (e-mail) — as três perguntas da seção
+    // Nota fiscal, pela letra. Vêm DEPOIS das formas de pagamento de propósito:
+    // lançar dinheiro é o gesto de toda venda. E nenhuma forma pode tomar estas
+    // três letras: `methodShortcuts` as reserva, para que cadastrar um "Fiado"
+    // não roube o F em silêncio.
+    if (letra === "F" && paymentWorkspaceRef.value?.toggleCpfOnInvoice()) {
+      event.preventDefault();
+      return;
+    }
+    if (paymentWorkspaceRef.value?.pressReceiptKey(letra)) {
       event.preventDefault();
       return;
     }
@@ -532,6 +605,20 @@ function onGlobalKeydown(event: KeyboardEvent) {
 
   switch (event.key) {
     case "Escape":
+      // ⚠️ DENTRO DE UM CAMPO, Esc SAI DO CAMPO — não da tela.
+      //
+      // As letras de atalho são desligadas enquanto se digita, e têm que ser:
+      // sem isso, escrever "cliente@email.com" ligaria e desligaria coisas pelo
+      // caminho. Mas o operador que entra no CPF ficava PRESO ali, porque o
+      // gesto instintivo de sair (Esc) derrubava o checkout inteiro — perder o
+      // pagamento por querer apertar "I" é caro demais para um reflexo.
+      // Agora Esc tira o foco do campo e a tela continua de pé; o Esc seguinte,
+      // já fora do campo, é que volta para a venda.
+      if (isEditing) {
+        event.preventDefault();
+        (event.target as HTMLElement | null)?.blur();
+        return;
+      }
       if (checkoutMode.value) {
         event.preventDefault();
         checkoutMode.value = false;
@@ -555,23 +642,46 @@ function onGlobalKeydown(event: KeyboardEvent) {
       if (checkoutMode.value) paymentWorkspaceRef.value?.openCustomer();
       else if (inSaleView.value) tabHeaderRef.value?.openCustomer();
       return;
-    // F7/F8 completam o trio do contexto da venda, ao lado do F6 do cliente —
-    // os três chips da linha de contexto do checkout, na mesma ordem.
-    // F7 vale na venda TAMBÉM: recebimento deixou de ser assunto do checkout.
+    // ── F6·F7·F8 — OS TRÊS FATOS DO PEDIDO, na ordem dos chips da barra ──
+    //
+    // Quem compra · como recebe · quando quer. É a ordem da conversa do balcão,
+    // é a ordem em que os três aparecem no topo da tela, e agora é a ordem das
+    // teclas. O "Quando" era o único dos três sem tecla — nasceu depois dos
+    // outros dois e ficou órfão —, então ele entra no F8 e as duas ações do
+    // checkout (desconto, CPF) andam uma casa. Pré-go-live, ninguém decorou
+    // nada, e o dicionário (tecla `?`) é quem ensina.
+    //
+    // Os três valem na VENDA também: são fatos decididos na abertura do
+    // atendimento, revistos de relance daí em diante — não são assunto do
+    // checkout.
     case "F7":
       if (!inSaleView.value) return;
       event.preventDefault();
       openFulfillmentHere();
       return;
     case "F8":
-      if (!checkoutMode.value) return;
+      if (!inSaleView.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.openDiscount();
+      openScheduleHere();
       return;
+    // ── F9·F10 — AS DUAS AÇÕES DA TELA EM QUE SE ESTÁ ───────────────────
+    //
+    // Na comanda: mandar para a cozinha e transferir linhas. No pagamento: os
+    // dois Ajustes da conta — desconto e dividir a conta —, que são o par de
+    // botões vizinhos na tela, agindo sobre o VALOR. As duas telas nunca
+    // coexistem, e o par sempre significa a mesma coisa: "as duas ações daqui".
+    // Foi a saída possível: de F2 a F8 está tudo tomado, F5 é reload, F11 é
+    // tela-cheia (que o quiosque usa) e F12 abre o DevTools antes de a página
+    // ver a tecla. O que a seção Nota fiscal pergunta anda pelas letras F·I·M.
     case "F9":
-      if (!checkoutMode.value) return;
       event.preventDefault();
-      paymentWorkspaceRef.value?.toggleCpfOnInvoice();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.openDiscount();
+      else if (inSaleView.value && cart.items.length) fireTab();
+      return;
+    case "F10":
+      event.preventDefault();
+      if (checkoutMode.value) paymentWorkspaceRef.value?.openSplit();
+      else if (inSaleView.value && cart.items.length) openMoveDialog();
       return;
     case "Enter":
       // Total coberto + review fresca → Enter valida, pelo MESMO caminho do
@@ -611,6 +721,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :view="checkoutMode ? 'checkout' : (inSaleView ? 'sale' : 'board')"
       @board="goToTabs"
       @cash="goToCashSession"
+      @tickets="goToOrderTickets"
       @lock="lock()"
       @refresh="refresh()"
     />
@@ -659,20 +770,34 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :search-results="customerSearchResults"
           :search-busy="customerSearchBusy"
           :customer-resolved-new="customerResolvedNew"
+          :customer-decision="customerDecision"
+          :customer-merge-busy="customerMergeBusy"
+          :customer-release-busy="customerReleaseBusy"
           :read-only="checkoutMode"
           :fulfillment-type="cart.fulfillmentType"
           :fulfillment-label="fulfillmentChipLabel"
+          :schedule-label="scheduleChipLabel"
+          :scheduled="scheduleChipActive"
+          :customer-required="customerRequiredForSchedule"
+          :schedule-conflict="scheduleChipConflict"
+          :schedule-conflict-reason="scheduleConflictReason"
           :loading="busy"
           @rename="renameTab"
           @clear="clearCurrentTab"
           @clear-customer="clearCustomer"
           @lookup-customer="lookupCustomer"
           @resolve-customer="resolveCustomer"
+          @decision-confirm="confirmCustomerDecision"
+          @decision-cancel="cancelCustomerDecision"
+          @decision-merge="mergeConflictCustomers"
+          @decision-release="releaseConflictContact"
+          @decision-pick="pickConflictCandidate"
           @search="searchCustomers"
           @select-result="selectCustomerResult"
           @apply-customer-favorite="applyCustomerFavorite"
           @repeat-customer-last-order="repeatCustomerLastOrder"
           @open-fulfillment="openFulfillmentHere"
+          @open-schedule="openScheduleHere"
           @open-customer="paymentWorkspaceRef?.openCustomer()"
         />
         <h1 v-else class="min-w-0 truncate text-lg font-semibold leading-tight tracking-tight">{{ screenTitle }}</h1>
@@ -721,10 +846,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
           :danfe-screen-url="resultDanfeScreenUrl"
           :printing-receipt="printingReceipt"
           :printing-danfe="printingDanfe"
+          :resending-link="resendingLink"
           @new-sale="startNextSale"
           @print-receipt="printReceipt"
           @print-danfe="printDanfe"
           @cancel-sale="openCancelSaleDialog"
+          @resend-link="resendPaymentLink"
         />
       </div>
 
@@ -765,7 +892,20 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         v-model:order-notes="cart.orderNotes"
         v-model:receipt-channels="cart.receiptChannels"
         v-model:receipt-email="cart.receiptEmail"
+        v-model:save-receipt-contact="cart.saveReceiptContact"
+        v-model:save-receipt-tax-id="cart.saveReceiptTaxId"
+        v-model:confirm-receipt-tax-id="cart.confirmReceiptTaxId"
+        :schedule-today="scheduleToday"
+        :schedule-available-dates="scheduleAvailableDates"
+        :schedule-bottleneck-name="scheduleBottleneckName"
+        :schedule-ready-at="scheduleReadyAt"
+        :schedule-failed="scheduleFailed"
+        :schedule-max-date="scheduleMaxDate"
+        :split-count="splitCount"
+        :split-paid-count="splitPaidCount"
+        :split-note="splitNote"
         :managers="pos?.managers || []"
+        :operator-name="activeOperator?.name || ''"
         :tab-display="cart.tabDisplay"
         :items="cart.items"
         :has-open-tab="hasOpenTab"
@@ -778,6 +918,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :search-results="customerSearchResults"
         :search-busy="customerSearchBusy"
         :customer-resolved-new="customerResolvedNew"
+        :customer-decision="customerDecision"
+        :customer-merge-busy="customerMergeBusy"
+        :customer-release-busy="customerReleaseBusy"
         :review="review"
         :discount-types="checkoutContract?.discount_types || []"
         :discount-reasons="checkoutContract?.discount_reasons || []"
@@ -790,11 +933,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         :payment-covered="paymentCovered"
         :loading="busy"
         :lookup-busy="lookupBusy"
+        :review-failed="reviewFailed"
         @back="checkoutMode = false"
         @submit="submitSale"
         @add-tender="addTender"
         @remove-tender="removeTender"
         @select-tender="selectTender"
+        @set-split-count="setSplitCount"
         @tender-digit="tenderDigit"
         @tender-comma="tenderComma"
         @tender-backspace="tenderBackspace"
@@ -803,6 +948,11 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
         @tender-exact="tenderExact"
         @lookup-customer="lookupCustomer"
         @resolve-customer="resolveCustomer"
+        @decision-confirm="confirmCustomerDecision"
+        @decision-cancel="cancelCustomerDecision"
+        @decision-merge="mergeConflictCustomers"
+        @decision-release="releaseConflictContact"
+        @decision-pick="pickConflictCandidate"
         @search="searchCustomers"
         @select-result="selectCustomerResult"
         @clear-customer="clearCustomer"
@@ -850,48 +1000,16 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
         <!-- SALE VIEW · product grid (the ticket/comanda is a full-height sibling
              of the work column, so it reaches the top edge like the rail) -->
-        <div v-else class="flex h-full min-h-0 flex-col gap-3">
-          <!-- A primeira pergunta do atendimento. Retirada já vem escolhida e
-               grande: no balcão ela é a resposta quase sempre, e o toque que a
-               confirma é o mesmo que seguiria para o produto. -->
-          <div
-            v-if="showFulfillmentPrompt"
-            class="flex shrink-0 flex-wrap items-center gap-2 rounded-md border bg-card px-3 py-2"
-          >
-            <span class="text-sm font-medium">Como o cliente recebe?</span>
-            <div class="flex flex-1 flex-wrap items-center gap-2">
-              <UiButton size="sm" class="h-9 gap-1.5" @click="answerPickup">
-                <Icon name="lucide:store" class="size-4" />
-                Retirada · Balcão
-              </UiButton>
-              <UiButton variant="outline" size="sm" class="h-9 gap-1.5" @click="answerDelivery">
-                <Icon name="lucide:bike" class="size-4" />
-                Entrega
-              </UiButton>
-            </div>
-            <UiButton
-              variant="ghost"
-              size="icon-sm"
-              class="shrink-0"
-              aria-label="Deixar como retirada"
-              title="Deixar como retirada"
-              @click="markFulfillmentAsked"
-            >
-              <Icon name="lucide:x" class="size-4" />
-            </UiButton>
-          </div>
-
-          <PosProductGrid
-            ref="productGridRef"
-            class="min-h-0 flex-1"
-            :products="pos?.products || []"
-            :collections="pos?.collections || []"
-            :favorite-refs="pos?.favorite_collection_refs || []"
-            :cart-items="cart.items"
-            :pending="pending"
-            @add="addProduct"
-          />
-        </div>
+        <PosProductGrid
+          v-else
+          ref="productGridRef"
+          :products="pos?.products || []"
+          :collections="pos?.collections || []"
+          :favorite-refs="pos?.favorite_collection_refs || []"
+          :cart-items="cart.items"
+          :pending="pending"
+          @add="addProduct"
+        />
       </div>
       </div>
       </div>
@@ -914,14 +1032,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             :unfire-action="unfireAction"
             :firing="firing"
             :discount-reasons="checkoutContract?.discount_reasons || []"
-            @increment="(sku) => setQty(sku, productQty(sku) + 1)"
-            @decrement="(sku) => setQty(sku, productQty(sku) - 1)"
-            @remove="(sku) => setQty(sku, 0)"
+            @increment="(lineId) => setQty(lineId, lineQty(lineId) + 1)"
+            @decrement="(lineId) => setQty(lineId, lineQty(lineId) - 1)"
+            @remove="(lineId) => setQty(lineId, 0)"
             @restore="restoreItem"
-            @set-qty="(sku, qty) => setQty(sku, qty)"
+            @set-qty="(lineId, qty) => setQty(lineId, qty)"
             @set-notes="setLineNotes"
             @set-discount="setLineDiscount"
-            @set-price="setLinePrice"
             @prepare="prepareCheckout"
             @move="openMoveDialog"
             @fire="fireTab"
@@ -946,21 +1063,35 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       v-model:delivery-neighborhood="cart.deliveryNeighborhood"
       v-model:delivery-complement="cart.deliveryComplement"
       v-model:delivery-instructions="cart.deliveryInstructions"
-      v-model:delivery-date="cart.deliveryDate"
-      v-model:delivery-time-slot="cart.deliveryTimeSlot"
       v-model:delivery-fee-override="cart.deliveryFeeOverride"
       v-model:delivery-fee-override-input="cart.deliveryFeeOverrideInput"
       v-model:order-notes="cart.orderNotes"
       :fulfillment-options="pos?.fulfillment_options || []"
       :saved-addresses="customerLookup?.saved_addresses || []"
       :address-autocomplete="addressAutocomplete"
-      :delivery-date-effective="deliveryDateEffective"
-      :delivery-slots="deliverySlots"
-      :delivery-slots-pending="deliverySlotsPending"
+      :schedule-label="scheduleChipLabel"
       :delivery-fee-q="deliveryFeeQ"
       :delivery-fee-source="deliveryFeeSource"
       :delivery-distance-km="deliveryDistanceKm"
       @pick-saved-address="applySavedAddress"
+      @open-schedule="openScheduleHere"
+    />
+
+    <!-- QUANDO — data e janela, para retirada E entrega. Extraído do formulário
+         de entrega, onde a retirada agendada era literalmente impossível. -->
+    <PosScheduleModal
+      v-model:open="scheduleSheetOpen"
+      v-model:delivery-date="cart.deliveryDate"
+      v-model:delivery-time-slot="cart.deliveryTimeSlot"
+      :today="scheduleToday"
+      :delivery-date-effective="deliveryDateEffective"
+      :available-dates="scheduleAvailableDates"
+      :windows="deliverySlots"
+      :bottleneck-name="scheduleBottleneckName"
+      :ready-at="scheduleReadyAt"
+      :pending="deliverySlotsPending"
+      :failed="scheduleFailed"
+      :max-date="scheduleMaxDate"
     />
 
     <PosTabPickerDialog
@@ -980,23 +1111,25 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     />
 
     <!-- A trava da gaveta: só aparece quando o sensor DISSE que está aberta.
-         Fechar o diálogo desiste da venda que esperava; "já fechei" relê o
-         sensor; o gerente libera pelo PIN e o destrave vai para o log. -->
+         A saída normal não é botão nenhum — a tela sonda o sensor e sai sozinha
+         quando a gaveta fecha. Fechar o diálogo desiste da venda que esperava; o
+         PIN do gerente é a EXCEÇÃO (gaveta emperrada, sensor morto) e vai para o
+         livro marcado como tal. -->
     <PosDrawerLockDialog
       :open="drawerLock.open.value"
-      :still-open="drawerLock.stillOpen.value"
+      :sensor-lost="drawerLock.sensorLost.value"
       :busy="drawerLock.busy.value"
       @update:open="(value) => { if (!value) drawerLock.dismiss(); }"
-      @recheck="drawerLock.recheck"
       @manager="drawerLock.askManager"
     />
-    <PosManagerAuthDialog
+    <OperatorManagerAuth
       :open="drawerLock.managerOpen.value"
-      reason-text="Liberar a próxima venda com a gaveta aberta."
+      action="drawer_unlock"
+      :operator-name="activeOperator?.name || ''"
       :managers="pos?.managers || []"
       :busy="drawerLock.busy.value"
       :error="drawerLock.managerError.value"
-      @update:open="(value) => { if (!value) drawerLock.managerOpen.value = false; }"
+      @update:open="(value) => { if (!value) drawerLock.backToLock(); }"
       @authorize="drawerLock.unlock"
       @authorize-badge="drawerLock.unlockWithBadge"
     />
@@ -1009,6 +1142,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
       :busy="cancellingSale"
       :error="cancelSaleError"
       :managers="pos?.managers"
+      :operator-name="activeOperator?.name || ''"
       @confirm="cancelRecentSale"
       @confirm-badge="cancelRecentSaleWithBadge"
     />

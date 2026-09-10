@@ -6,6 +6,7 @@
 // do apiVersion.ts ao lado).
 import {
   appendResponseHeader,
+  createError,
   getQuery,
   getRequestHeader,
   readRawBody,
@@ -18,8 +19,8 @@ import { withQuery } from "ufo";
 import { resolveDjangoBaseUrl } from "./djangoBaseUrl";
 import {
   applyOperatorSecurityHeaders,
-  OPERATOR_PRIVATE_CACHE_CONTROL,
 } from "./securityHeaders";
+import { applyPrivateNoStore } from "./operatorSecurity";
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
@@ -161,12 +162,47 @@ async function ensureDjangoCsrfCookie(
   return { cookie: mergedCookie, token: token ? decodeURIComponent(token) : "" };
 }
 
+/**
+ * O caminho tenta ESCAPAR do prefixo em que foi admitido?
+ *
+ * O catch-all do Nitro entrega `event.context.params.path` CRU e sem
+ * normalizar, e o parser de URL do `$fetch` colapsa `..` ao montar o alvo. Sem
+ * esta trava, `GET /api/v1/cart/../backstage/pos/cash/movement/` passava pela
+ * allowlist (começa com `cart/`) e chegava no backstage — e é o PRÓPRIO BFF que
+ * fornece o `X-CSRFToken` e forja `Origin`/`Referer`. Como o cookie de operador
+ * é de domínio-pai, um foothold same-site na loja deixava de "incomodar o
+ * cliente" e passava a MOVER DINHEIRO no caixa.
+ *
+ * Decodifica até estabilizar (no máximo 3 voltas) porque `%2e%2e` e
+ * `%252e%252e` são o mesmo pedido escrito de outro jeito. Percent-encoding
+ * malformado é recusa, não tentativa de adivinhação.
+ */
+export function hasPathTraversal (path: string): boolean {
+  let current = path;
+  for (let i = 0; i < 3; i++) {
+    if (current.includes("\\")) return true;
+    if (current.split("/").some((seg) => seg === "." || seg === "..")) return true;
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      return true; // encoding malformado: recusa, não adivinha
+    }
+    if (next === current) return false;
+    current = next;
+  }
+  return true // não estabilizou em 3 voltas: recusa
+}
+
 export async function proxyDjangoApi(event: H3Event, path: string) {
   return proxyDjangoPath(event, `/api/v1/${path}`);
 }
 
 export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   applyOperatorSecurityHeaders(event);
+  if (hasPathTraversal(fullPath)) {
+    throw createError({ statusCode: 400, statusMessage: "Bad Request" });
+  }
   const config = useRuntimeConfig(event);
   const djangoBaseUrl = resolveDjangoBaseUrl(config.djangoBaseUrl);
   const method = event.method || "GET";
@@ -194,6 +230,20 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
   // repassar transformaria um retry de rede em um segundo efeito externo.
   const idempotencyKey = getRequestHeader(event, "idempotency-key");
   if (idempotencyKey) headers["idempotency-key"] = idempotencyKey;
+
+  // O IP do cliente tem de atravessar o BFF, senão TODO visitante anônimo vira
+  // um balde de rate limit só. O navegador fala com o Nitro same-origin, e o
+  // Nitro abre conexão NOVA para o Django: sem repassar o XFF, o único IP que o
+  // Django vê é o de saída deste processo — idêntico para todo mundo. Efeito
+  // medido: ~20 chamadas em /auth/request-code/ e ninguém mais entra na loja
+  // por uma hora; checkout anônimo em 3/min para a loja INTEIRA.
+  //
+  // Repassar o valor CRU é seguro porque quem lê conta da DIREITA
+  // (`doorman.get_client_ip(trusted_proxy_depth)` e o `NUM_PROXIES` do DRF): o
+  // edge da plataforma acrescenta o IP real à direita, então um XFF forjado
+  // pelo cliente entra à esquerda e não desloca a contagem.
+  const forwardedFor = getRequestHeader(event, "x-forwarded-for");
+  if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
 
   if (isUnsafeMethod) {
     headers.origin = djangoOrigin;
@@ -248,9 +298,9 @@ export async function proxyDjangoPath(event: H3Event, fullPath: string) {
     if (value) setResponseHeader(event, name, value);
   }
 
-  // Respostas BFF autenticadas nunca entram em cache compartilhado, mesmo se
-  // o upstream publicar uma diretiva mais permissiva por engano.
-  setResponseHeader(event, "cache-control", OPERATOR_PRIVATE_CACHE_CONTROL);
+  // O upstream pode variar também por idioma/encoding; preservamos essa informação,
+  // mas nunca aceitamos que uma resposta de operador se torne pública/cacheável.
+  applyPrivateNoStore(event, response.headers.get("vary"));
 
   setResponseStatus(event, response.status);
   return response._data;

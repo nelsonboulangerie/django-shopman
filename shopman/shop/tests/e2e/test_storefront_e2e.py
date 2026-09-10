@@ -130,7 +130,15 @@ class TestCustomerStore:
         # Contraparte estrutural do estado vazio (test_05): sacola com item TEM
         # linha de produto. As duas asserções juntas impedem que uma página que
         # não renderizou satisfaça qualquer um dos dois testes.
-        assert page.locator("main a[href*='/produto/']").count() > 0
+        #
+        # ⚠️ O seletor era `main a[href*='/produto/']`, e ele NUNCA olhou para a
+        # linha da sacola: a linha não linka para a PDP. O único `/produto/` da
+        # página vem do `CartUpsellRail`, então o teste afirmava "tem linha de
+        # produto" e media "tem sugestão de adicional" — duas coisas diferentes,
+        # e a segunda deixou de ser garantida quando o adicional passou a exigir
+        # um motivo (WP-SUGESTÃO). `data-cart-line-item` é o que a intenção
+        # sempre quis dizer.
+        assert page.locator("main [data-cart-line-item]").count() > 0
 
     def test_04_checkout_surfaces_auth_gate(self, page, store_base_url):
         """Anonymous checkout surfaces the login guardrail (expected, not a bug).

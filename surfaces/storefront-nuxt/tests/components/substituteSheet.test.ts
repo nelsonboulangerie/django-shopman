@@ -36,7 +36,7 @@ describe('SubstituteSheet', () => {
 
   it('stays closed when there is no cart issue', async () => {
     await mountSuspended(SubstituteSheet)
-    expect(document.body.textContent).not.toContain('Esgotou enquanto você escolhia')
+    expect(document.body.textContent).not.toContain('Ficou indisponível enquanto você escolhia.')
   })
 
   it('surfaces the out-of-stock copy and the substitute when an issue is present', async () => {
@@ -44,7 +44,7 @@ describe('SubstituteSheet', () => {
     await mountSuspended(SubstituteSheet)
     await nextTick()
     const body = document.body.textContent || ''
-    expect(body).toContain('Esgotou enquanto você escolhia')
+    expect(body).toContain('Ficou indisponível enquanto você escolhia.')
     expect(body).toContain('Pão')
   })
 

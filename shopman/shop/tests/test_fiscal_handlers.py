@@ -147,6 +147,111 @@ def test_existing_access_key_is_noop(order):
     assert backend.emit_calls == 0
 
 
+# ── e-mail da nota (o Focus envia DANFE + XML) ────────────────────────────────
+
+
+class EmailingBackend(FakeBackend):
+    """Backend com ``send_email`` — o do Focus. Sem ele o envio é no-op."""
+
+    def __init__(self, *, ok=True, message="", raises=None, **kwargs):
+        super().__init__(**kwargs)
+        self.ok = ok
+        self.message = message
+        self.raises = raises
+        self.email_calls: list[tuple[str, list[str]]] = []
+
+    def send_email(self, *, reference, emails):
+        self.email_calls.append((reference, list(emails)))
+        if self.raises is not None:
+            raise self.raises
+        return self.ok, self.message
+
+
+def _wants_email(order, address="cliente@example.org"):
+    order.data["receipt"] = {"channels": ["email"], "email": address}
+    order.save(update_fields=["data"])
+
+
+def test_authorized_note_goes_to_the_email_the_counter_typed(order):
+    """O canal "email" do balcão faz o Focus enviar DANFE + XML.
+
+    Este caminho nunca teve cobertura, e era o único que o cliente via: a nota
+    autorizada não vira nada na caixa de entrada dele sem esta chamada.
+    """
+    _wants_email(order)
+    backend = EmailingBackend(emit_result=AUTHORIZED)
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    assert backend.email_calls == [(order.ref, ["cliente@example.org"])]
+    order.refresh_from_db()
+    assert order.data["nfce_email_sent_at"]
+
+
+def test_email_is_sent_once_even_when_the_directive_runs_again(order):
+    _wants_email(order)
+    backend = EmailingBackend(emit_result=AUTHORIZED)
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    assert len(backend.email_calls) == 1
+
+
+def test_note_emitted_by_another_path_still_gets_its_promised_email(order):
+    """A guarda de idempotência da NOTA não pode engolir a promessa do E-MAIL.
+
+    ``nfce_access_key`` presente significa "a nota já existe" — e nada mais. Sair
+    aqui antes do envio deixava nota autorizada, cliente esperando o anexo e
+    ninguém enviando: a directive nunca mais chega ao ``_send_receipt_email``.
+    """
+    _wants_email(order)
+    order.data["nfce_access_key"] = "ja-existia"
+    order.save(update_fields=["data"])
+    backend = EmailingBackend(emit_result=AUTHORIZED)
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    assert backend.emit_calls == 0  # a nota não é re-emitida
+    assert backend.email_calls == [(order.ref, ["cliente@example.org"])]
+
+
+def test_focus_refusing_the_email_reaches_the_operator(order):
+    """Recusa do Focus vira ALERTA, não só ``logger.warning``.
+
+    A nota está autorizada e o retry automático não pode existir (re-POSTar o
+    ref daria 422 eterno): o reenvio é gesto humano nas "Últimas vendas". Um
+    warning no log não chega a ninguém no balcão.
+    """
+    _wants_email(order)
+    backend = EmailingBackend(emit_result=AUTHORIZED, ok=False, message="endereço inválido")
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    order.refresh_from_db()
+    assert "nfce_email_sent_at" not in order.data
+    alert = OperatorAlert.objects.get(type="fiscal_email_failed")
+    assert order.ref in alert.message
+    assert "cliente@example.org" in alert.message
+
+
+def test_email_transport_blowing_up_alerts_and_never_fails_the_directive(order):
+    _wants_email(order)
+    backend = EmailingBackend(emit_result=AUTHORIZED, raises=RuntimeError("timeout"))
+
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    order.refresh_from_db()
+    assert order.data["nfce_access_key"] == AUTHORIZED.access_key  # a nota vale
+    assert OperatorAlert.objects.filter(type="fiscal_email_failed").exists()
+
+
+def test_sale_without_the_email_channel_sends_nothing(order):
+    backend = EmailingBackend(emit_result=AUTHORIZED)
+    NFCeEmitHandler(backend).handle(message=_emit_directive(order), ctx={})
+
+    assert backend.email_calls == []
+
+
 def test_processing_status_is_transient(order):
     backend = FakeBackend(emit_result=_error("focus_nfe_processing"))
     with pytest.raises(DirectiveTransientError):

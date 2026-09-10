@@ -10,13 +10,22 @@ from shopman.shop import fiscal_resolvers
 from shopman.shop.services.fiscal import emission_resolver
 
 
-def _order(fiscal=None, customer=None, total_q=0, channel_ref="web", payment=None, fulfillment_type="pickup"):
+def _order(
+    fiscal=None,
+    customer=None,
+    total_q=0,
+    channel_ref="web",
+    payment=None,
+    fulfillment_type="pickup",
+    receipt=None,
+):
     return SimpleNamespace(
         data={
             "fiscal": fiscal or {},
             "customer": customer or {},
             "payment": payment or {},
             "fulfillment_type": fulfillment_type,
+            "receipt": receipt or {},
         },
         total_q=total_q,
         channel_ref=channel_ref,
@@ -155,6 +164,49 @@ def test_example_on_request_or_tax_id():
     assert r(_order(fiscal={"tax_id": "12345678909"})) is True
     assert r(_order(customer={"tax_id": "12345678909"})) is False  # cadastro ≠ pedido
     assert r(_order(fiscal={}, customer={})) is False
+
+
+def test_example_on_requested_receipt():
+    # Pedir o documento É pedir a nota, em QUALQUER canal: não existe DANFE nem
+    # XML sem NFC-e autorizada.
+    #
+    # ⚠️ A expectativa do e-mail MUDOU (antes: `["email"]` → False). A versão
+    # anterior deste resolver só reconhecia "print" e congelava aqui o bug que o
+    # dono viveu no balcão: marcar "Enviar por e-mail" não emitia nota nenhuma,
+    # e sem nota o Focus não tem DANFE nem XML para anexar — o cliente esperava
+    # um e-mail que nunca podia chegar. O comprovante por e-mail do PDV É a nota
+    # por e-mail; não existe um segundo documento por trás dele.
+    r = fiscal_resolvers.on_requested_receipt
+    assert r(_order(receipt={"channels": ["print"]})) is True
+    assert r(_order(receipt={"channels": ["email"]})) is True
+    assert r(_order(receipt={"channels": ["print", "email"]})) is True
+    assert r(_order(receipt={"channels": []})) is False
+    assert r(_order()) is False
+    # Endereço gravado sem canal pedido não é pedido de nada.
+    assert r(_order(receipt={"email": "cliente@example.org"})) is False
+
+
+def test_on_requested_receipt_survives_a_broken_channels_value():
+    # ``receipt.channels`` é JSONField: um dado torto não pode derrubar o
+    # fechamento da venda.
+    assert fiscal_resolvers.on_requested_receipt(_order(receipt={"channels": "print"})) is False
+    assert fiscal_resolvers.on_requested_receipt(_order(receipt={"channels": [None, " PRINT "]})) is True
+    assert fiscal_resolvers.on_requested_receipt(_order(receipt={"channels": [None, "  "]})) is False
+
+
+@override_settings(
+    SHOPMAN_FISCAL_EMISSION_RESOLVER=(
+        "shopman.shop.fiscal_resolvers.on_request_or_tax_id,"
+        "shopman.shop.fiscal_resolvers.on_requested_receipt"
+    )
+)
+def test_default_pair_lets_the_receipt_toggles_rule_like_the_cpf_one():
+    # O padrão do deployment: os pedidos do balcão, combinados por OR. Os
+    # toggles de documento passam a imperar sobre a regra, como o do CPF impera.
+    assert emission_resolver(_order(receipt={"channels": ["print"]})) is True
+    assert emission_resolver(_order(receipt={"channels": ["email"]})) is True
+    assert emission_resolver(_order(fiscal={"tax_id": "12345678909"})) is True
+    assert emission_resolver(_order()) is False
 
 
 def test_example_channels_factory():

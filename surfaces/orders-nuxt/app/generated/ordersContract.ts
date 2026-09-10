@@ -46,6 +46,23 @@ export interface EquipmentOutProjection {
   out_at: string;
 }
 
+/** Quem é este cliente, para o operador decidir como tratá-lo. */
+export interface CustomerProfileProjection {
+  is_first_order: boolean;
+  total_orders: number;
+  orders_label: string;
+  last_order_display: string;
+  average_ticket_display: string;
+  favorite_product: string;
+  segment: string;
+  segment_label: string;
+  segment_tone: string;
+  notes: string;
+  dietary_restrictions: string;
+  birthday_display: string;
+  is_birthday_today: boolean;
+}
+
 /** A single order card in the operator queue. */
 export interface OrderCardProjection {
   ref: string;
@@ -75,6 +92,7 @@ export interface OrderCardProjection {
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
+  payment_status_label: string;
   payment_pending: boolean;
   payment_tone: string;
   advance_block_label: string;
@@ -82,7 +100,10 @@ export interface OrderCardProjection {
   can_settle_delivery_cash: boolean;
   fiscal_status_label: string;
   fiscal_status: string;
-  has_notes: boolean;
+  has_kitchen_note: boolean;
+  has_customer_note: boolean;
+  is_gift: boolean;
+  gift_has_recipient: boolean;
   assigned_operator: string;
   awaiting_work_orders: AwaitingWorkOrderProjection[];
   confirmation_deadline_iso: string;
@@ -102,6 +123,9 @@ export interface OrderCardProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  waitlist_state: string;
+  waitlist_deadline_iso: string;
+  waitlist_label: string;
 }
 
 /** Expanded detail for a single order (operator side-panel). */
@@ -111,6 +135,11 @@ export interface OperatorOrderProjection {
   status_label: string;
   status_color: string;
   customer_name: string;
+  customer_phone: string;
+  customer_phone_uri: string;
+  customer_whatsapp_url: string;
+  customer_email: string;
+  customer_ref: string;
   channel_ref: string;
   channel_icon: string;
   fulfillment_label: string;
@@ -121,11 +150,16 @@ export interface OperatorOrderProjection {
   items: OrderItemProjection[];
   timeline: TimelineEventProjection[];
   kitchen_note: string;
+  customer_note: string;
   payment_method: string;
   payment_method_label: string;
   payment_status: string;
+  payment_status_label: string;
   can_confirm: boolean;
   can_advance: boolean;
+  can_cancel: boolean;
+  cancel_requires_approval: boolean;
+  cancel_block_label: string;
   next_action_label: string;
   advance_block_label: string;
   advance_block_reason: string;
@@ -141,6 +175,7 @@ export interface OperatorOrderProjection {
   gift_hide_values: boolean;
   cancellation_presets: string[];
   kitchen_note_tags: string[];
+  customer_profile: CustomerProfileProjection | null;
   courier: Record<string, unknown> | null;
   change_for_q: number;
   change_out_suggested_q: number;
@@ -152,6 +187,8 @@ export interface OperatorOrderProjection {
   equipment_out: string[];
   equipment_label: string;
   equipment_back_pending: boolean;
+  can_resend_payment_link: boolean;
+  payment_link_notice: string;
 }
 
 /** Top-level read model for the operator order queue. */

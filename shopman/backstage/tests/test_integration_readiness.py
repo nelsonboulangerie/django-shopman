@@ -172,4 +172,10 @@ def test_provider_readiness_projection_does_not_expose_secret_values(settings):
     encoded = str(projected)
 
     assert "super-secret-focus" not in encoded
-    assert {item["provider"] for item in projected} == {"focus_nfe", "efi_pix", "stripe_card"}
+    # `otp_delivery` entrou porque a tela cobria pagamento e fiscal e ficava
+    # VERDE com a cadeia de OTP vazia — loja impecável em que ninguém entra.
+    # `payment_link` tem linha própria: a prontidão do link segue o adapter
+    # configurado, não o Stripe do cartão.
+    assert {item["provider"] for item in projected} == {
+        "focus_nfe", "efi_pix", "stripe_card", "payment_link", "otp_delivery",
+    }

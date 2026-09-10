@@ -67,19 +67,38 @@ def register_totp_admin() -> None:
     class UnfoldTOTPDeviceAdmin(TOTPDeviceAdmin, ModelAdmin):
         """O django_otp vem inteiro em inglês, e nada disso é nosso vocabulário.
 
-        Os fieldsets herdados diziam "Timestamps", "Configuration", "State"; os
-        campos, "Step", "Drift", "Tolerance". Redeclarar os fieldsets é o que dá
-        para fazer sem tocar no pacote de terceiros: os rótulos dos campos técnicos
-        (`step`, `drift`) seguem do django_otp, mas quem mexe nesta tela é
-        superusuário configurando 2FA, não o dono da padaria.
+        Os fieldsets herdados dizem "Timestamps", "Configuration", "State". Traduzir
+        os TÍTULOS é o que dá para fazer sem tocar no pacote de terceiros; os rótulos
+        dos campos técnicos (`step`, `drift`) seguem do django_otp, e quem mexe nesta
+        tela é superusuário configurando 2FA, não o dono da padaria.
+
+        ⚠️ A tradução vive num `get_fieldsets` e NÃO num atributo `fieldsets`, e a
+        diferença não é estilo. O `TOTPDeviceAdmin` sobrescreve `get_fieldsets()` e
+        ignora `self.fieldsets` — então o atributo que existia aqui era código morto,
+        e a tela seguiu em inglês desde sempre. Ninguém percebeu porque a tela é
+        superusuário-only.
+
+        ⚠️ E o `get_fieldsets` do upstream é chamado, não copiado. Ele é quem decide
+        se `key` e `qrcode_link` aparecem, conforme `OTP_ADMIN_HIDE_SENSITIVE_DATA`.
+        Copiar a lista de campos para traduzir o título teria congelado uma decisão
+        de SEGURANÇA num arquivo de tradução — e é justamente essa decisão que não
+        pode envelhecer sozinha aqui.
         """
 
+        #: Título do upstream → título da casa. Título que o django_otp mudar cai
+        #: fora do mapa e aparece em inglês — visível, e não silenciosamente errado.
+        TITULOS = {
+            "Identity": "Identificação",
+            "Timestamps": "Datas",
+            "Configuration": "Configuração",
+            "State": "Estado",
+            "Throttling": "Bloqueio por tentativa",
+        }
+
         compressed_fields = True
-        fieldsets = (
-            ("Identificação", {"fields": ("user", "name", "confirmed")}),
-            ("Chave", {"fields": ("key", "step", "t0", "digits", "tolerance", "drift")}),
-            (
-                "Bloqueio por tentativa",
-                {"fields": ("throttling_failure_timestamp", "throttling_failure_count")},
-            ),
-        )
+
+        def get_fieldsets(self, request, obj=None):
+            return [
+                (self.TITULOS.get(titulo, titulo), opcoes)
+                for titulo, opcoes in super().get_fieldsets(request, obj)
+            ]

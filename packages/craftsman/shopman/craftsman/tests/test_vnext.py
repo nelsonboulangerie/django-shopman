@@ -121,10 +121,13 @@ class TestPlan:
         assert ev.payload["operator_ref"] == "user:joao"
 
     def test_plan_batch(self, recipe, recipe_simple, tomorrow):
-        orders = craft.plan([
-            (recipe, 100),
-            (recipe_simple, 45),
-        ], date=tomorrow)
+        orders = craft.plan(
+            [
+                (recipe, 100),
+                (recipe_simple, 45),
+            ],
+            date=tomorrow,
+        )
 
         assert len(orders) == 2
         assert orders[0].output_sku == "croissant"
@@ -134,7 +137,8 @@ class TestPlan:
 
     def test_plan_with_kwargs(self, recipe):
         wo = craft.plan(
-            recipe, 100,
+            recipe,
+            100,
             source_ref="order:123",
             position_ref="station:forno-01",
             operator_ref="user:joao",
@@ -393,11 +397,16 @@ class TestFinish:
 
     def test_finish_explicit_consumed(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
-        craft.finish(wo, finished=93, consumed=[
-            {"item_ref": "farinha", "quantity": 48.5, "unit": "kg"},
-            {"item_ref": "agua", "quantity": 29, "unit": "L"},
-            {"item_ref": "fermento", "quantity": "0.95", "unit": "kg"},
-        ], expected_rev=0)
+        craft.finish(
+            wo,
+            finished=93,
+            consumed=[
+                {"item_ref": "farinha", "quantity": 48.5, "unit": "kg"},
+                {"item_ref": "agua", "quantity": 29, "unit": "L"},
+                {"item_ref": "fermento", "quantity": "0.95", "unit": "kg"},
+            ],
+            expected_rev=0,
+        )
 
         consumptions = WorkOrderItem.objects.filter(work_order=wo, kind=WorkOrderItem.Kind.CONSUMPTION)
         assert consumptions.count() == 3
@@ -432,10 +441,15 @@ class TestFinish:
 
     def test_finish_explicit_waste(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
-        craft.finish(wo, finished=93, wasted=[
-            {"item_ref": "croissant", "quantity": 3, "meta": {"reason": "queimado"}},
-            {"item_ref": "massa", "quantity": 2, "unit": "kg", "meta": {"reason": "caiu"}},
-        ], expected_rev=0)
+        craft.finish(
+            wo,
+            finished=93,
+            wasted=[
+                {"item_ref": "croissant", "quantity": 3, "meta": {"reason": "queimado"}},
+                {"item_ref": "massa", "quantity": 2, "unit": "kg", "meta": {"reason": "caiu"}},
+            ],
+            expected_rev=0,
+        )
 
         wastes = WorkOrderItem.objects.filter(work_order=wo, kind=WorkOrderItem.Kind.WASTE)
         assert wastes.count() == 2
@@ -444,10 +458,47 @@ class TestFinish:
         wo = craft.plan(recipe_with_items, 100)
         result1 = craft.finish(wo, finished=93, expected_rev=0, idempotency_key="finish-001")
 
-        # Second call with same key — returns without mutating
-        result2 = craft.finish(wo, finished=50, idempotency_key="finish-001")
+        # Exact retry returns without mutating.
+        result2 = craft.finish(wo, finished="93.000", idempotency_key="finish-001")
         assert result2.pk == result1.pk
-        assert result2.finished == Decimal("93")  # original value preserved
+        assert result2.finished == Decimal("93")
+
+        # Reusing the same key for a different payload is never a retry.
+        with pytest.raises(CraftError) as exc:
+            craft.finish(wo, finished=50, idempotency_key="finish-001")
+        assert exc.value.code == "IDEMPOTENCY_CONFLICT"
+
+    def test_advance_step_idempotency_rejects_a_different_attempt(self, recipe):
+        from shopman.craftsman.services.execution import CraftExecution
+
+        wo = craft.plan(recipe, 10)
+        craft.start(wo, quantity=10, expected_rev=wo.rev)
+        first = CraftExecution.advance_step(
+            wo,
+            step_index=1,
+            step_name="Mistura",
+            expected_rev=wo.rev,
+            actor="operator:a",
+            idempotency_key="advance-step-001",
+        )
+        replay = CraftExecution.advance_step(
+            wo,
+            step_index=1,
+            step_name="Mistura",
+            actor="operator:a",
+            idempotency_key="advance-step-001",
+        )
+        assert replay.pk == first.pk
+
+        with pytest.raises(CraftError) as exc:
+            CraftExecution.advance_step(
+                wo,
+                step_index=2,
+                step_name="Modelagem",
+                actor="operator:a",
+                idempotency_key="advance-step-001",
+            )
+        assert exc.value.code == "IDEMPOTENCY_CONFLICT"
 
     def test_finish_idempotency_key_is_scoped_to_work_order(self, recipe_with_items):
         wo1 = craft.plan(recipe_with_items, 100)
@@ -466,6 +517,69 @@ class TestFinish:
             craft.finish(wo, finished=0, expected_rev=0)
 
         assert exc.value.code == "INVALID_QUANTITY"
+
+    def test_finish_accepts_zero_saleable_only_with_auditable_waste(
+        self,
+        recipe_with_items,
+    ):
+        wo = craft.plan(recipe_with_items, 4)
+
+        craft.finish(
+            wo,
+            finished=[],
+            wasted=[
+                {
+                    "item_ref": "croissant",
+                    "quantity": 4,
+                    "quality_defect_ref": "overbaked",
+                }
+            ],
+            expected_rev=0,
+            event_context={"production_outcome": {"kind": "total_loss"}},
+        )
+
+        wo.refresh_from_db()
+        assert wo.status == WorkOrder.Status.FINISHED
+        assert wo.finished == Decimal("0")
+        assert not WorkOrderItem.objects.filter(
+            work_order=wo,
+            kind=WorkOrderItem.Kind.OUTPUT,
+        ).exists()
+        waste = WorkOrderItem.objects.get(
+            work_order=wo,
+            kind=WorkOrderItem.Kind.WASTE,
+        )
+        assert waste.quantity == Decimal("4")
+        event = wo.events.get(kind="finished")
+        assert event.payload["finished_qty"] == "0"
+        assert event.payload["loss_qty"] == "4"
+        assert event.payload["context"]["production_outcome"]["kind"] == "total_loss"
+
+    @pytest.mark.parametrize("waste_quantity", [1, 5])
+    def test_finish_rejects_total_loss_that_does_not_conserve_the_batch(
+        self,
+        recipe_with_items,
+        waste_quantity,
+    ):
+        wo = craft.plan(recipe_with_items, 4)
+
+        with pytest.raises(CraftError) as exc:
+            craft.finish(
+                wo,
+                finished=[],
+                wasted=[
+                    {
+                        "item_ref": "croissant",
+                        "quantity": waste_quantity,
+                        "quality_defect_ref": "overbaked",
+                    }
+                ],
+                expected_rev=0,
+            )
+
+        assert exc.value.code == "PARTITION_MISMATCH"
+        wo.refresh_from_db()
+        assert wo.status == WorkOrder.Status.PLANNED
 
     def test_finish_rejects_zero_consumed_quantity(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
@@ -506,7 +620,7 @@ class TestFinish:
             finished=[
                 {
                     "item_ref": "croissant",
-                    "quantity": 32,
+                    "quantity": 29,
                     "batch_ref": "CROISSANT-20260813-1",
                     "quality_grade_ref": "standard",
                     "meta": {"oven": "A"},
@@ -530,9 +644,7 @@ class TestFinish:
             expected_rev=0,
         )
 
-        outputs = WorkOrderItem.objects.filter(
-            work_order=wo, kind=WorkOrderItem.Kind.OUTPUT
-        ).order_by("batch_ref")
+        outputs = WorkOrderItem.objects.filter(work_order=wo, kind=WorkOrderItem.Kind.OUTPUT).order_by("batch_ref")
         assert outputs.count() == 2
         full, marked = outputs
         assert full.batch_ref == "CROISSANT-20260813-1"
@@ -547,7 +659,7 @@ class TestFinish:
         assert waste.batch_ref == ""  # perda não vira lote
 
         wo.refresh_from_db()
-        assert wo.finished == Decimal("40")  # 32 + 8; a perda fica fora
+        assert wo.finished == Decimal("37")  # 29 + 8; a perda fica fora
 
     def test_finish_rejects_malformed_finished_item(self, recipe_with_items):
         wo = craft.plan(recipe_with_items, 100)
@@ -617,16 +729,26 @@ class TestFinish:
     def test_finish_with_lot_tracking(self, recipe_with_items):
         """Lot tracking via meta on consumed items."""
         wo = craft.plan(recipe_with_items, 100)
-        craft.finish(wo, finished=93, consumed=[
-            {"item_ref": "farinha", "quantity": 50, "unit": "kg",
-             "meta": {"lot": "FAR-2026-02-23"}},
-            {"item_ref": "agua", "quantity": 30, "unit": "L"},
-            {"item_ref": "fermento", "quantity": 1, "unit": "kg",
-             "meta": {"lot": "FER-2026-02-20", "expires": "2026-03-20"}},
-        ], expected_rev=0)
+        craft.finish(
+            wo,
+            finished=93,
+            consumed=[
+                {"item_ref": "farinha", "quantity": 50, "unit": "kg", "meta": {"lot": "FAR-2026-02-23"}},
+                {"item_ref": "agua", "quantity": 30, "unit": "L"},
+                {
+                    "item_ref": "fermento",
+                    "quantity": 1,
+                    "unit": "kg",
+                    "meta": {"lot": "FER-2026-02-20", "expires": "2026-03-20"},
+                },
+            ],
+            expected_rev=0,
+        )
 
         farinha = WorkOrderItem.objects.get(
-            work_order=wo, kind=WorkOrderItem.Kind.CONSUMPTION, item_ref="farinha",
+            work_order=wo,
+            kind=WorkOrderItem.Kind.CONSUMPTION,
+            item_ref="farinha",
         )
         assert farinha.meta["lot"] == "FAR-2026-02-23"
 
@@ -750,7 +872,11 @@ class TestNeeds:
     def test_needs_has_recipe_flag(self, recipe_with_items, sub_recipe, tomorrow):
         """massa is a sub-recipe, so has_recipe=True."""
         RecipeItem.objects.create(
-            recipe=recipe_with_items, input_sku="massa", quantity=Decimal("2"), unit="kg", sort_order=10,
+            recipe=recipe_with_items,
+            input_sku="massa",
+            quantity=Decimal("2"),
+            unit="kg",
+            sort_order=10,
         )
         craft.plan(recipe_with_items, 10, date=tomorrow)
 
@@ -762,7 +888,11 @@ class TestNeeds:
     def test_needs_expand(self, recipe_with_items, sub_recipe, tomorrow):
         """Expand sub-recipe to raw materials."""
         RecipeItem.objects.create(
-            recipe=recipe_with_items, input_sku="massa", quantity=Decimal("5"), unit="kg", sort_order=10,
+            recipe=recipe_with_items,
+            input_sku="massa",
+            quantity=Decimal("5"),
+            unit="kg",
+            sort_order=10,
         )
         craft.plan(recipe_with_items, 10, date=tomorrow)
 
@@ -906,7 +1036,10 @@ class TestModels:
     def test_recipe_validation(self, db):
         with pytest.raises(DjangoValidationError):
             Recipe.objects.create(
-                ref="bad", name="Bad", output_sku="x", batch_size=Decimal("0"),
+                ref="bad",
+                name="Bad",
+                output_sku="x",
+                batch_size=Decimal("0"),
             )
 
     def test_recipe_active_output_sku_is_unique(self, db):
@@ -964,15 +1097,18 @@ class TestProtocols:
 
     def test_inventory_protocol_importable(self):
         from shopman.craftsman.protocols import InventoryProtocol
+
         assert InventoryProtocol is not None
 
     def test_catalog_protocol_importable(self):
         from shopman.craftsman.protocols import CatalogProtocol, ProductInfoBackend
+
         assert CatalogProtocol is not None
         assert ProductInfoBackend is not None
 
     def test_demand_protocol_importable(self):
         from shopman.craftsman.protocols import DailyDemand, DemandProtocol
+
         assert DemandProtocol is not None
         assert DailyDemand is not None
 
@@ -982,6 +1118,7 @@ class TestProtocols:
             MaterialNeed,
             MaterialStatus,
         )
+
         mn = MaterialNeed(sku="farinha", quantity=Decimal("10"))
         assert mn.sku == "farinha"
         assert mn.quantity == Decimal("10")
@@ -995,11 +1132,13 @@ class TestProtocols:
 
     def test_catalog_dataclasses(self):
         from shopman.craftsman.protocols.catalog import ItemInfo
+
         info = ItemInfo(ref="farinha", name="Farinha T55", unit="kg")
         assert info.ref == "farinha"
 
     def test_demand_dataclasses(self):
         from shopman.craftsman.protocols.demand import DailyDemand
+
         dd = DailyDemand(date=date(2026, 2, 25), sold=Decimal("50"), wasted=Decimal("3"))
         assert dd.sold == Decimal("50")
         assert dd.soldout_at is None
@@ -1007,12 +1146,14 @@ class TestProtocols:
     def test_stock_module_reexport(self):
         """protocols/stock.py re-exports from inventory."""
         from shopman.craftsman.protocols.stock import InventoryProtocol, MaterialNeed
+
         assert InventoryProtocol is not None
         assert MaterialNeed is not None
 
     def test_backward_compat_product_module(self):
         """protocols/product.py still works as re-export."""
         from shopman.craftsman.protocols.product import ProductInfo, ProductInfoBackend
+
         assert ProductInfoBackend is not None
         assert ProductInfo is not None
 
@@ -1167,9 +1308,7 @@ class TestSuggest:
             "django.utils.module_loading.import_string",
             return_value=mock_backend_class,
         ):
-            suggestions = craft.suggest(
-                tomorrow, selling_window=(time(6, 0), time(18, 0))
-            )
+            suggestions = craft.suggest(tomorrow, selling_window=(time(6, 0), time(18, 0)))
 
         assert len(suggestions) == 1
         # Extrapolated: 100, safety 20% => 120
@@ -1203,17 +1342,13 @@ class TestSuggest:
             "django.utils.module_loading.import_string",
             return_value=mock_backend_class,
         ):
-            suggestions = craft.suggest(
-                tomorrow, selling_window=(time(6, 0), time(18, 0))
-            )
+            suggestions = craft.suggest(tomorrow, selling_window=(time(6, 0), time(18, 0)))
 
         assert len(suggestions) == 1
         # Capped at 2*50=100, safety 20% => 120
         assert suggestions[0].quantity == Decimal("120")
 
-    def test_without_selling_window_nothing_is_extrapolated(
-        self, recipe, tomorrow, settings
-    ):
+    def test_without_selling_window_nothing_is_extrapolated(self, recipe, tomorrow, settings):
         """Sem horário declarado, o dia esgotado conta o que vendeu.
 
         Extrapolar exigiria supor um expediente que ninguém informou — a casa
@@ -1365,10 +1500,7 @@ class TestSuggest:
         from shopman.craftsman.protocols.demand import DailyDemand
 
         def _make_history(n):
-            return [
-                DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0"))
-                for i in range(n)
-            ]
+            return [DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0")) for i in range(n)]
 
         def _run(n):
             mock_backend = MagicMock()
@@ -1405,8 +1537,7 @@ class TestSuggest:
         mock_backend = MagicMock()
         # 5 records with 20% waste rate: sold=100, wasted=20 each
         mock_backend.history.return_value = [
-            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("20"))
-            for i in range(5)
+            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("20")) for i in range(5)
         ]
         mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
@@ -1431,8 +1562,7 @@ class TestSuggest:
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = [
-            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("10"))
-            for i in range(5)
+            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("10")) for i in range(5)
         ]
         mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
@@ -1456,14 +1586,15 @@ class TestSuggest:
         assert friday.weekday() == 4
 
         Recipe.objects.create(
-            ref="croissant-fri", name="Croissant Fri", output_sku="croissant-fri",
+            ref="croissant-fri",
+            name="Croissant Fri",
+            output_sku="croissant-fri",
             batch_size=Decimal("10"),
         )
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = [
-            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0"))
-            for i in range(5)
+            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0")) for i in range(5)
         ]
         mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)
@@ -1489,8 +1620,7 @@ class TestSuggest:
 
         mock_backend = MagicMock()
         mock_backend.history.return_value = [
-            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0"))
-            for i in range(5)
+            DailyDemand(date=date(2025, 1, i + 1), sold=Decimal("100"), wasted=Decimal("0")) for i in range(5)
         ]
         mock_backend.committed.return_value = Decimal("0")
         mock_backend_class = MagicMock(return_value=mock_backend)

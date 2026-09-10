@@ -97,6 +97,15 @@ class TestCopyCoversObligations:
                 },
             ),
             ("payment_card_ready", {"actions": (_action("pay_card"),), "requires_active_notification": True}),
+            # O link do balcão: mesmo estado, com prazo e consequência.
+            (
+                "payment_card_ready",
+                {
+                    "actions": (_action("pay_card"),),
+                    "deadline_action": "cancel_order_on_timeout",
+                    "requires_active_notification": True,
+                },
+            ),
             ("payment_retry", {"actions": (_action("retry_payment"),)}),
             ("payment_preparing", {"requires_active_notification": True}),
             ("dispatched", {"actions": (_action("confirm_received"),), "requires_active_notification": True}),

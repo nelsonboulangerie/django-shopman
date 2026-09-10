@@ -23,6 +23,13 @@ wires it to shopman.shop.adapters.inventory.InventoryAvailabilityBackend (Buyman
 WP-B5b), and the seed gives ingredients real Stockman stock so the guardrails
 have something to check. With a real backend, adjust()/finish() validate that the
 recipe's ingredients are on hand (insufficient → INSUFFICIENT_MATERIALS).
+
+SCALE_PRECISION_G, MIXER_LOSS_G e YIELD_MARGIN_SIGMAS orçam a margem de
+segurança do rendimento das massas — a conta de "quanto de massa fazer" para N
+peças numa balança de divisão finita. São decisão de PRODUÇÃO, não de ficha: a
+ficha diz a proporção, a margem diz quanto se faz. Ver
+``shopman.craftsman.services.yield_margin`` para a aritmética e para o motivo
+de o excesso esperado por peça ser meia divisão, e não uma.
 """
 
 from decimal import Decimal
@@ -49,6 +56,25 @@ DEFAULTS = {
     "FORMULA_FACTOR_PROVIDERS": [],
     "FORMULA_ROUNDING_MULTIPLE": None,
     "FORMULA_CAPACITY_PROVIDER": None,
+    # ── Margem de rendimento das massas (ver services/yield_margin.py) ──
+    # Divisão da balança de bancada, em gramas. É propriedade do EQUIPAMENTO
+    # (uma balança serve todas as fichas), por isso settings e não Recipe.meta.
+    # A casa usa balança de 2 g; trocar a balança é trocar esta linha.
+    "SCALE_PRECISION_G": Decimal("2"),
+    # Perda da masseira por fornada, em gramas — o filme que fica na bacia.
+    # Padrão CONSERVADOR e **estimativa não auditada**: existe para a conta não
+    # parar. Cada ficha declara a sua em Recipe.meta["mixer_loss_g"], e o passo
+    # seguinte é o sistema APRENDER a real (produzido menos consumido, que o
+    # ledger já sabe) em vez de manter um chute cadastrado.
+    "MIXER_LOSS_G": Decimal("150"),
+    # Colchão de variância, em desvios-padrão da SOMA dos arredondamentos
+    # (d·√(N/12)). Três desvios cobrem a cauda; o colchão encolhe em proporção
+    # quando a fornada cresce, porque √N cresce mais devagar que N.
+    "YIELD_MARGIN_SIGMAS": Decimal("3"),
+    # Optional host adapter for production mutations that need orchestration
+    # beyond the Craftsman aggregate (orders, stock and oven facts). Kernel
+    # code resolves this dotted path at runtime and never imports a host layer.
+    "PRODUCTION_COMMAND_BACKEND": None,
 }
 
 

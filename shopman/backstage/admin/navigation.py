@@ -60,6 +60,7 @@ def get_sidebar_navigation(request):
     O histórico/CRUD de pedidos segue no grupo "Pedidos".
     """
     from shopman.backstage.admin_console.cash_receipt import CashReceiptVerifyView
+    from shopman.backstage.admin_console.diagnostics import DiagnosticsView
     from shopman.backstage.admin_console.settings_hub import SettingsHubView
 
     live_items = []
@@ -127,7 +128,18 @@ def get_sidebar_navigation(request):
         _group("Clientes", "people", [
             _model_item("Clientes", "person_search", "guestman.Customer"),
             _model_item("Contas de fidelidade", "loyalty", "customer_loyalty.LoyaltyAccount"),
+            # Fica em Clientes, e não em Auditoria, porque aqui se OPERA: o
+            # desfazer da unificação vive nesta tela, e o grupo de Auditoria é
+            # trilha que só se confere.
+            _model_item("Unificações de cadastro", "merge", "customer_merge.MergeAudit"),
+            # A vizinha da unificação, e pelo mesmo motivo: as duas são o rastro
+            # de um gesto destrutivo que o balcão faz para destravar uma venda.
+            # A tela do PDV promete "fica registrado, dá para refazer depois" —
+            # é AQUI que essa promessa vira alcançável.
+            _model_item("Contatos liberados", "lock_open", "shop.ContactRelease"),
             _model_item("Avisos de reposição", "notifications_active", "storefront.StockAlertSubscription"),
+            # Concierge de WhatsApp: a transcrição de cada conversa e a volta ao bot.
+            _model_item("Conversas do WhatsApp", "chat", "shop.Conversation"),
         ]),
         # O que se fabrica e com o quê. A régua de qualidade e o planejamento do dia
         # são ajuste, não operação: moram na Configuração.
@@ -177,6 +189,10 @@ def get_sidebar_navigation(request):
             # caso em que alguém quer conferir, não teria porta nenhuma.
             _view_item("Conferir comprovante", "qr_code_scanner", "admin_console_cash_receipt_lookup", CashReceiptVerifyView),
             _model_item("Alertas do operador", "warning", "backstage.OperatorAlert"),
+            # O crachá é a credencial que se perde no chão: posse pura, sem
+            # segundo fator. A EMISSÃO já deixava rastro no histórico do
+            # Admin; o USO não deixava nenhum. Esta é a outra metade.
+            _model_item("Acessos de operador", "login", "backstage.SignInEvent"),
         ]),
         # O que entrou de fora no B.I. — trilha, como Auditoria, mas com dono
         # próprio: Auditoria está no teto que ainda se escaneia, e o B.I. vai
@@ -228,6 +244,17 @@ def get_sidebar_navigation(request):
                 )
                 for section in settings_nav_sections()
             ],
+            # Fora da lista de escopos de propósito: os itens acima ajustam a
+            # loja, este PERGUNTA se as integrações estão de pé. A prontidão já
+            # era calculada e não tinha porta — o único jeito de consultá-la era
+            # um comando que exige o console, e o console não recebe segredo.
+            _view_item(
+                "Diagnóstico",
+                "cable",
+                "admin_console_diagnostics",
+                DiagnosticsView,
+                active=_exactly(_url("admin_console_diagnostics")),
+            ),
         ]),
     ]
 

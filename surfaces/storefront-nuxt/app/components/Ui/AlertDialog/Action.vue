@@ -35,7 +35,7 @@
       }
     >(),
     {
-      text: "Continue",
+      text: "Continuar",
       variant: "default",
       size: "default",
     }

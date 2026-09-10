@@ -1,8 +1,33 @@
 """
-Mock payment adapter for development and testing.
+Gateway simulado de **Pix** e de **link de pagamento**, para dev e teste.
 
-Persists via PaymentService (DB) + simulates gateway in-memory.
-All payments succeed by default.
+Persiste via PaymentService (DB) e simula o lado do gateway em memória.
+
+⚠️ **Cartão não passa por aqui.** Cartão é redirect para ambiente hospedado
+(Stripe Checkout), e simular isso não testava nada: testava o simulador. Um
+cartão de teste do Stripe (``4242…``) exercita o caminho REAL inteiro — Checkout
+Session, redirect, webhook assinado, captura. Por isso ``method="card"`` é
+recusado (:func:`_refuse_card`) em vez de atendido; a configuração certa é
+``SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_stripe`` com chave
+``sk_test_``.
+
+Foi exatamente esse ramo que custou dinheiro: o mock autorizava o cartão no ato,
+o storefront pulava o Stripe e o acompanhamento anunciava "Pagamento autorizado";
+um minuto depois a confirmação otimista capturava a autorização de mentira
+(``lifecycle._on_accepted``: cartão + autorizado → ``payment.capture``). Pedido
+pago, pão entregue, zero dinheiro.
+
+⚠️ **Um simulador nunca autoriza.** Autorizar é o gateway dizendo "conferi o
+instrumento do cliente e ele cobre este valor". Aqui não existe gateway, então
+não existe essa frase para dizer: o intent nasce ``pending`` e só anda por ato
+explícito — ``mock_confirm`` (atrás de ``SHOPMAN_EXPOSE_MOCK_CAPTURE``) ou a
+confirmação de Pix agendada por ``SHOPMAN_MOCK_PIX_AUTO_CONFIRM``.
+
+⚠️ **E um simulador não roda fora de dev.** Ver :func:`_ensure_simulation_allowed`.
+A porta fica nos verbos que CRIAM ou CAPTURAM dinheiro (``create_intent``,
+``capture``). ``refund`` e ``cancel`` ficam abertos de propósito: nenhum dos dois
+consegue inventar receita, e recusá-los num ambiente mal configurado só prende
+pedido que precisa ser desfeito.
 
 Returns canonical DTOs from shopman.shop.adapters.payment_types.
 """
@@ -16,11 +41,66 @@ import logging
 from datetime import timedelta
 from uuid import uuid4
 
+from django.conf import settings
 from django.utils import timezone
 
+from shopman.shop.adapters._payment_link import link_expires_at
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 
 logger = logging.getLogger(__name__)
+
+
+class MockCardNotSupported(RuntimeError):
+    """Pediram cartão ao simulador — que deliberadamente não atende cartão."""
+
+
+def _refuse_card(method: str) -> None:
+    """Cartão não tem versão simulada. Recusa alto, no primeiro ponto possível.
+
+    Antes daqui o mock atendia cartão e devolvia um intent sem ``checkout_url``,
+    o que fazia a loja anunciar pagamento sem nunca ter cobrado. Fechar o ramo
+    seria suficiente para não perder dinheiro, mas ainda deixaria de pé a ideia
+    de que existe "cartão de mentira" — e é justamente ela que não se sustenta:
+    o que precisa ser testado no cartão (redirect, 3DS, recusa, webhook) só
+    existe no gateway de verdade, e o Stripe entrega tudo isso em modo de teste.
+    """
+    if str(method or "").strip().lower() != "card":
+        return
+    raise MockCardNotSupported(
+        "O gateway simulado não atende cartão. Configure "
+        "SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_stripe e use os "
+        "cartões de teste do Stripe (chave sk_test_)."
+    )
+
+
+class MockGatewayNotAllowed(RuntimeError):
+    """O gateway simulado foi chamado num ambiente que não autoriza simulação."""
+
+
+def _ensure_simulation_allowed() -> None:
+    """Recusa a simulação fora de dev — o simulador FALHA, nunca inventa dinheiro.
+
+    ``SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS`` já existia, mas só como *check de
+    deploy* (``SHOPMAN_E003``/``SHOPMAN_W006``, ``@register(deploy=True)``): ele
+    roda em ``manage.py check --deploy``, não no boot e muito menos por
+    requisição. Um deploy com ``SHOPMAN_CARD_ADAPTER`` apontando para cá subia
+    normalmente e cobrava ninguém em silêncio.
+
+    Aqui a mesma env vira porta de runtime. Fora de ``DEBUG`` e sem opt-in
+    explícito, ``create_intent`` levanta — ``payment.initiate`` grava o erro em
+    ``order.data["payment"]["error"]`` e o cliente vê o degrau de falha do
+    acompanhamento. Parar é o comportamento correto: melhor um pedido que não
+    fecha do que um pedido "pago" que ninguém pagou.
+    """
+    if settings.DEBUG:
+        return
+    if getattr(settings, "SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS", False):
+        return
+    raise MockGatewayNotAllowed(
+        "Gateway de pagamento simulado (payment_mock) recusado fora de DEBUG. "
+        "Configure SHOPMAN_PIX_ADAPTER/SHOPMAN_CARD_ADAPTER com um gateway real, "
+        "ou ligue SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true apenas em staging técnico."
+    )
 
 
 def create_intent(
@@ -32,23 +112,37 @@ def create_intent(
     metadata: dict | None = None,
     **config,
 ) -> PaymentIntent:
-    """Create a mock payment intent with persistence via PaymentService.
+    """Create a mock **Pix** intent with persistence via PaymentService.
 
-    For ``method="pix"`` this creates the QR/payment intent only. Manual dev
-    flows must confirm payment explicitly through the storefront dev action.
-    Tests that need to exercise the asynchronous webhook parity path can opt
-    in with ``mock_pix_auto_confirm=True``.
+    O intent nasce ``pending``. Confirmar é ato explícito: a captura simulada do
+    acompanhamento (``mock_confirm``, atrás de ``SHOPMAN_EXPOSE_MOCK_CAPTURE``)
+    ou a directive agendada por ``mock_pix_auto_confirm=True``, para quem
+    precisa exercitar a paridade com o webhook assíncrono.
+
+    ⚠️ ``method="card"`` não existe aqui — ver :func:`_refuse_card`.
     """
+    _ensure_simulation_allowed()
+    _refuse_card(method)
+
     from shopman.orderman.models import Directive
     from shopman.payman import PaymentService
 
     metadata = metadata or {}
     idempotency_key = config.get("idempotency_key") or metadata.get("idempotency_key", "")
     pix_timeout = config.get("pix_timeout_minutes", 30)
-    expires_at = timezone.now() + timedelta(minutes=pix_timeout) if method == "pix" else None
-    # Mock backend is "authorized" at the payman level immediately; the PIX
-    # capture/on_paid path happens via the scheduled directive below.
-    auto_authorize = config.get("auto_authorize", True)
+    if method == "pix":
+        expires_at = timezone.now() + timedelta(minutes=pix_timeout)
+    elif method == "link":
+        # O link simulado vence no MESMO prazo do real (janela do canal e corte
+        # do atendimento, vindos do `_adapter_config`): quem desenvolve o balcão
+        # precisa ver o "pague até …" na tela e o `payment.timeout` cancelar o
+        # pedido vencido — sem isso o vencimento só existiria em produção.
+        expires_at = link_expires_at(
+            timeout_minutes=config.get("link_timeout_minutes"),
+            expires_by=config.get("link_expires_by"),
+        )
+    else:
+        expires_at = None
 
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
@@ -59,11 +153,7 @@ def create_intent(
         expires_at=expires_at,
         idempotency_key=idempotency_key,
     )
-    if db_intent.gateway_id and (
-        db_intent.gateway_data.get("client_secret")
-        or db_intent.gateway_data.get("checkout_url")
-        or method == "card"
-    ):
+    if db_intent.gateway_id and db_intent.gateway_data.get("client_secret"):
         return _intent_from_db(db_intent, currency=currency)
 
     gateway_id = f"mock_pi_{uuid4().hex[:12]}"
@@ -72,7 +162,23 @@ def create_intent(
     gateway_data = {**metadata}
     intent_metadata = {}
     client_secret = None
-    if method == "pix":
+    if method == "link":
+        # LINK DE PAGAMENTO simulado: uma URL para o operador copiar e mandar.
+        #
+        # ⚠️ Por que isto NÃO repete o erro do cartão. O desastre do cartão foi o
+        # mock AUTORIZAR: o intent nascia autorizado, a confirmação otimista
+        # capturava, e o pedido ficava pago sem ninguém ter cobrado. Aqui o
+        # intent nasce e FICA `pending` — não há auto-confirmação, e o gatilho da
+        # captura otimista é "cartão + autorizado", que este intent nunca
+        # satisfaz. Sem dinheiro inventado.
+        #
+        # E existe porque o que precisa ser exercitado no link não é a cobrança
+        # (essa é do gateway): é o gesto do BALCÃO — a URL aparecer, o operador
+        # copiar, o pedido ficar aguardando. Isso o simulador reproduz inteiro.
+        checkout_url = f"https://pagamento.exemplo/simulado/{gateway_id}"
+        gateway_data["checkout_url"] = checkout_url
+        intent_metadata = {"checkout_url": checkout_url}
+    elif method == "pix":
         mock_brcode = (
             f"00020126580014br.gov.bcb.pix0136mock-{gateway_id}"
             f"5204000053039865404{amount_q / 100:.2f}"
@@ -82,19 +188,10 @@ def create_intent(
         client_secret = json.dumps({"qrcode": mock_brcode, "brcode": mock_brcode, "imagemQrcode": mock_qr_image})
         gateway_data["client_secret"] = client_secret
         intent_metadata = {"qrcode": mock_brcode, "brcode": mock_brcode, "imagemQrcode": mock_qr_image}
-    if method == "card":
-        checkout_url = config.get("mock_card_checkout_url")
-        if checkout_url:
-            gateway_data["checkout_url"] = checkout_url
-            intent_metadata = {"checkout_url": checkout_url}
-
     db_intent.gateway_data = gateway_data
     db_intent.save(update_fields=["gateway_id", "gateway_data"])
 
     status = db_intent.status
-    if auto_authorize and db_intent.status == "pending":
-        PaymentService.authorize(db_intent.ref, gateway_id=gateway_id)
-        status = "authorized"
 
     if method == "pix" and config.get("mock_pix_auto_confirm") is True:
         delay_seconds = int(config.get("mock_pix_confirm_delay_seconds", 10))
@@ -175,7 +272,13 @@ def capture(
     amount_q: int | None = None,
     **config,
 ) -> PaymentResult:
-    """Capture mock payment via PaymentService."""
+    """Capture mock payment via PaymentService.
+
+    Captura é escrita de dinheiro no livro do Payman, então passa pela mesma
+    porta de ambiente do ``create_intent``: fora de dev, sem opt-in, levanta.
+    """
+    _ensure_simulation_allowed()
+
     from shopman.payman import PaymentError, PaymentService
 
     try:
@@ -281,8 +384,8 @@ def check_gateway_status(intent_ref: str) -> str:
 
     Mesmo contrato do ``payment_efi.check_gateway_status``: devolve ``captured``,
     ``pending``, ``cancelled``, ``not_found`` ou ``error``. Quem pergunta é
-    ``shop.services.payment.verify_gateway_before_timeout_cancel``, antes de
-    auto-cancelar um PIX vencido.
+    ``shop.services.payment.settle_from_gateway``, antes de
+    auto-cancelar um pedido digital vencido.
 
     ``not_found`` e ``error`` são respostas DIFERENTES e não podem ser a mesma:
     intent que nunca existiu é ausência de pagamento (cancelar é certo), enquanto

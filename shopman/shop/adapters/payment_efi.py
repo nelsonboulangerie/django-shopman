@@ -49,6 +49,29 @@ def _get_base_url() -> str:
     return SANDBOX_URL if config.get("sandbox", True) else PRODUCTION_URL
 
 
+class EfiNotConfigured(RuntimeError):
+    """Gateway Pix sem credencial — não há como cobrar, e não se finge."""
+
+
+def _require_credentials(config: dict) -> tuple[str, str]:
+    """Credenciais presentes, ou levanta ANTES de qualquer chamada de rede.
+
+    Mesma regra do Stripe (``payment_stripe._get_stripe``): faltando gateway, o
+    pedido para com erro visível — ``payment.initiate`` grava o erro e o
+    acompanhamento mostra o degrau de falha. Antes daqui um ``client_id`` vazio
+    virava uma tentativa de autenticação contra a Efí com credencial em branco,
+    e um ``KeyError`` cru quando a chave nem existia.
+    """
+    client_id = str(config.get("client_id") or "").strip()
+    client_secret = str(config.get("client_secret") or "").strip()
+    if not client_id or not client_secret:
+        raise EfiNotConfigured(
+            "Pix está apontado para a Efí, mas EFI_CLIENT_ID/EFI_CLIENT_SECRET "
+            "estão vazios. Configure as credenciais do ambiente."
+        )
+    return client_id, client_secret
+
+
 def _get_access_token() -> str:
     """Obtain or renew access token. Token is cached — thread-safe across workers."""
     token = cache.get(_EFI_TOKEN_CACHE_KEY)
@@ -56,8 +79,7 @@ def _get_access_token() -> str:
         return token
 
     config = _get_config()
-    client_id = config["client_id"]
-    client_secret = config["client_secret"]
+    client_id, client_secret = _require_credentials(config)
     certificate_path = config["certificate_path"]
 
     auth = b64encode(f"{client_id}:{client_secret}".encode()).decode()
@@ -259,20 +281,55 @@ def capture(
 
         if status == "CONCLUIDA":
             amount_q = _brl_to_q(response["valor"]["original"])
-            PaymentService.reconcile_gateway_status(
-                intent_ref,
-                gateway_status="captured",
-                amount_q=amount_q,
-                captured_q=amount_q,
-                refunded_q=0,
-                gateway_id=txid,
-                capture_gateway_id=txid,
-                gateway_data={"efi_status": status},
-            )
+            # ⚠️ O Pix JÁ ENTROU. Daqui para baixo, tudo o que falhar é
+            # divergência entre o dinheiro real e o livro — nunca "não pagou".
+            #
+            # Duas coisas mudaram aqui, e as duas eram a mesma meia-correção. A
+            # primeira: o `reconcile_gateway_status` era chamado solto, e um
+            # `PaymentError` dele caía no `except Exception` lá embaixo como se
+            # fosse falha de rede — `success=False`, `logger.warning`, dinheiro
+            # recebido e ninguém avisado. A segunda: logo abaixo vinha um
+            # `authorize` com `except PaymentError: pass` que NUNCA podia dar
+            # certo — o `reconcile` acima já leva o intent de `pending` a
+            # `captured` e já anuncia `payment_authorized`. Era um handler mudo
+            # guardando uma chamada morta, e o `success=True` do retorno parecia
+            # afirmar algo sobre ela. O Core já resolvia; sobrou o ruído.
             try:
-                PaymentService.authorize(intent_ref, gateway_id=txid)
-            except PaymentError:
-                pass
+                PaymentService.reconcile_gateway_status(
+                    intent_ref,
+                    gateway_status="captured",
+                    amount_q=amount_q,
+                    captured_q=amount_q,
+                    refunded_q=0,
+                    gateway_id=txid,
+                    capture_gateway_id=txid,
+                    gateway_data={"efi_status": status},
+                )
+            except PaymentError as exc:
+                from shopman.shop.services import observability
+
+                logger.error(
+                    "payment_efi.capture: Pix CONCLUIDA de %sq sem registro no Payman "
+                    "intent=%s txid=%s code=%s",
+                    amount_q, intent_ref, txid, exc.code,
+                    exc_info=True,
+                )
+                observability.record_payment_reconciliation_failure(
+                    gateway="efi",
+                    intent_ref=intent_ref,
+                    order_ref=str(getattr(intent, "order_ref", "") or ""),
+                    code=exc.code,
+                    context={**(exc.context or {}), "txid": txid, "amount_q": amount_q},
+                    exc=exc,
+                )
+                return PaymentResult(
+                    success=False,
+                    error_code="reconciliation_failed",
+                    message=(
+                        "Pix confirmado na Efí e NÃO registrado no Payman. "
+                        "Concilie antes de cobrar de novo."
+                    ),
+                )
             return PaymentResult(
                 success=True,
                 transaction_id=txid,
@@ -393,6 +450,49 @@ def refund(
         )
 
 
+def _record_cancel_drift(intent_ref: str, exc, *, txid: str) -> None:
+    """A cobrança morreu na Efí e o Payman não acompanhou.
+
+    Espelha o que ``refund`` já fazia neste mesmo arquivo — dinheiro SAINDO
+    alertava, o resto se calava. Um intent já cancelado é o retry benigno e não
+    vira alerta; qualquer outro estado é divergência que precisa de gente.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    from shopman.shop.services import observability
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        intent = None
+    local_status = str(getattr(intent, "status", "") or "")
+    if local_status == "cancelled":
+        observability.operational_event(
+            "efi.cancel_already_cancelled", intent_ref=intent_ref, txid=txid,
+        )
+        return
+
+    logger.error(
+        "payment_efi.cancel: cobrança removida na Efí sem baixa no Payman "
+        "intent=%s txid=%s local_status=%s code=%s",
+        intent_ref, txid, local_status or "-", getattr(exc, "code", ""),
+        exc_info=True,
+    )
+    observability.record_payment_reconciliation_failure(
+        gateway="efi",
+        intent_ref=intent_ref,
+        order_ref=str(getattr(intent, "order_ref", "") or ""),
+        code=getattr(exc, "code", "") or exc.__class__.__name__,
+        context={
+            **(getattr(exc, "context", None) or {}),
+            "operation": "cancel",
+            "txid": txid,
+            "local_status": local_status,
+        },
+        exc=exc,
+    )
+
+
 def cancel(intent_ref: str, **config) -> PaymentResult:
     """Cancel a PIX charge via Efi gateway + PaymentService."""
     from shopman.payman import PaymentError, PaymentService
@@ -411,10 +511,13 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
         payload = {"status": "REMOVIDA_PELO_USUARIO_RECEBEDOR"}
         _request("PATCH", f"/v2/cob/{txid}", payload)
 
+        # A cobrança JÁ morreu na Efí. Sem a baixa local, o Payman segue com um
+        # intent de pé que ninguém mais consegue pagar — e o `success=True`
+        # abaixo jurava que os dois lados estavam alinhados.
         try:
             PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
-        except PaymentError:
-            pass
+        except PaymentError as exc:
+            _record_cancel_drift(intent_ref, exc, txid=txid)
 
         return PaymentResult(success=True)
     except Exception as e:
@@ -465,7 +568,7 @@ def check_gateway_status(intent_ref: str) -> str:
     Check status directly at the Efi gateway (bypasses DB).
 
     Used as safety check before cancelling expired intents — é o verbo de LEITURA
-    que ``shop.services.payment.verify_gateway_before_timeout_cancel`` consulta.
+    que ``shop.services.payment.settle_from_gateway`` consulta.
 
     Devolve ``captured``, ``pending``, ``cancelled``, ``not_found`` ou ``error``.
     ``not_found`` e ``error`` são respostas diferentes de propósito: intent que

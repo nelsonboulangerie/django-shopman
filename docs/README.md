@@ -78,10 +78,12 @@ Guias de domínio seguem a estrutura: Conceitos → Modelos → Serviços → Pr
 | [Lifecycle](guides/lifecycle.md) | `shopman/shop` | Orquestrador: Lifecycle, Services, Adapters, Rules |
 | [Fechamento do dia](guides/day-closing.md) | `shopman` | Sobras, não vendidos, D-1 em `ontem`, às cegas vs vendas |
 | [WhatsApp Access Link](guides/whatsapp-access-link.md) | auth | Login WhatsApp-first por access link (`NB-XxXx`) |
+| [Concierge de WhatsApp](guides/whatsapp-concierge.md) | `shopman/storefront/concierge` | Pedido por conversa no WhatsApp: env, flow no ManyChat, transcrições no Admin, kill switch |
 | [Storefront backend surface](guides/storefront_backend_surface.md) | `shopman/storefront` | API headless + projections da loja |
 | [Backstage realtime](guides/backstage-realtime.md) | `shopman/backstage` | SSE, canais nomeados e fallback de polling |
 | [Backstage accessibility](guides/backstage-accessibility.md) | superfícies operador | Acessibilidade das telas de operador |
 | [Operations](guides/operations.md) | operação | Rotinas operacionais do dia a dia |
+| [Backup e restore](guides/backup-and-restore.md) | dados | As três camadas: Postgres gerenciado, cofre de dados curados (`export_backup`/`import_backup`), ciclo com Google Sheets |
 | [Operator security hardening](guides/operator-security-hardening.md) | operação | PIN, lock de operador, sessões staff |
 | [RBAC personas](guides/rbac-personas.md) | operação | Grupos/permissões por persona |
 | [Demo personas](guides/demo-personas.md) | demo | Personas do seed Nelson |

@@ -42,8 +42,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_CHANNEL_REF = "web"
-
+from shopman.storefront.constants import STOREFRONT_CHANNEL_REF as _DEFAULT_CHANNEL_REF
 
 # ──────────────────────────────────────────────────────────────────────
 # Dataclass
@@ -64,6 +63,15 @@ class CheckoutCopyProjection:
     switch_account_confirm: str
     switch_account_keep: str
     loyalty_savings_prefix: str
+
+
+@dataclass(frozen=True)
+class StripeTestCardProjection:
+    """Um cartão de teste do Stripe, para o testador do alpha copiar."""
+
+    label: str
+    number: str
+    hint: str
 
 
 @dataclass(frozen=True)
@@ -137,6 +145,11 @@ class CheckoutProjection:
     # checkout ("pagamento seguro via X"). Vazio quando não há provedor real
     # configurado (ex.: mock no dev). Tenant-safe: vem do adapter, não hardcoded.
     card_provider: str = ""
+
+    # Cartões de teste do Stripe. VAZIO em produção — a lista só existe quando a
+    # chave configurada é `pk_test_`/`sk_test_`. Como o bloco é renderizado a
+    # partir desta tupla, chave `live` não deixa os números nem no HTML.
+    stripe_test_cards: tuple[StripeTestCardProjection, ...] = ()
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -231,6 +244,7 @@ def build_checkout(
         pickup_hint="Gratuita",
         delivery_hint=_delivery_hint(cart),
         card_provider=_card_provider(),
+        stripe_test_cards=_stripe_test_cards(),
         default_ddd=get_default_ddd(),
     )
 
@@ -278,6 +292,40 @@ def _card_provider() -> str:
     if "efi" in path:
         return "Efí"
     return ""
+
+
+# Cartões de teste do Stripe (documentação oficial). Só aparecem em modo de
+# teste — ver `_stripe_test_cards`.
+_STRIPE_TEST_CARDS: tuple[tuple[str, str, str], ...] = (
+    ("Pagamento aprovado", "4242 4242 4242 4242", "O caminho feliz."),
+    ("Cartão recusado", "4000 0000 0000 0002", "Para ver a mensagem de recusa."),
+    ("Pede autenticação", "4000 0025 0000 3155", "Abre o desafio 3D Secure."),
+)
+
+
+def _stripe_test_cards() -> tuple[StripeTestCardProjection, ...]:
+    """Números de teste do Stripe — só quando o gateway está em modo de teste.
+
+    Estamos em alpha e quem testa precisa dos números à mão, na própria tela.
+    Mas isto é conteúdo que JAMAIS pode aparecer numa loja de verdade, então a
+    condição não é ``DEBUG`` (o alpha roda com ``DEBUG=False``) nem uma flag
+    manual (flag manual vaza): é a chave do Stripe dizer ``test``.
+
+    Devolve tupla vazia quando o cartão não está no Stripe ou quando a chave é
+    ``live``. A tela renderiza a partir desta tupla, então vazio = nada no HTML.
+    """
+    if _card_provider() != "Stripe":
+        return ()
+
+    from shopman.shop.adapters import payment_stripe
+
+    if not payment_stripe.test_mode():
+        return ()
+
+    return tuple(
+        StripeTestCardProjection(label=label, number=number, hint=hint)
+        for label, number, hint in _STRIPE_TEST_CARDS
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -417,6 +465,7 @@ def _auth_action() -> Action:
         label="Entrar por telefone",
         priority="primary",
         href="/login?next=/checkout",
+        idempotency="none",
     )
 
 
@@ -514,10 +563,11 @@ def present_stock_errors(shortfalls) -> list[dict]:
     errors = []
     for sf in shortfalls:
         if sf.available_qty > 0:
+            unit = _stock_unit_label(int(sf.available_qty))
             message = copy.message(
                 "CHECKOUT_STOCK_LIMITED",
-                "{name}: disponível {qty} unidade(s) no momento.",
-            ).format(name=sf.name, qty=sf.available_qty)
+                "{name}: temos {qty} {unit} agora.",
+            ).format(name=sf.name, qty=sf.available_qty, unit=unit)
         else:
             message = copy.message(
                 "CHECKOUT_STOCK_SOLD_OUT",
@@ -531,6 +581,10 @@ def present_stock_errors(shortfalls) -> list[dict]:
             "message": message,
         })
     return errors
+
+
+def _stock_unit_label(qty: int) -> str:
+    return "unidade disponível" if qty == 1 else "unidades disponíveis"
 
 
 __all__ = [

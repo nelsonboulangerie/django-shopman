@@ -11,7 +11,7 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -26,6 +26,10 @@ from django.utils.module_loading import import_string
 
 from shopman.backstage.projections.purchase import build_purchase
 from shopman.shop.adapters.purchase_invoice_nfe import INVOICE_PRODUCT_MAP_KEYS
+from shopman.shop.services.remote_mutations import (
+    RemoteMutationInProgress,
+    run_idempotent_mutation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +37,22 @@ logger = logging.getLogger(__name__)
 class PurchaseError(Exception):
     """Operator-facing purchase error with a stable code."""
 
-    def __init__(self, message: str, *, code: str = "purchase_error", field: str = "", status_code: int = 400):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "purchase_error",
+        field: str = "",
+        status_code: int = 400,
+        lines: list[dict[str, Any]] | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.field = field
         self.status_code = status_code
+        #: Erros por LINHA, quando o gesto foi em lote. Um lote recusado sem
+        #: dizer qual linha errou obriga o operador a procurar no escuro.
+        self.lines = lines or []
 
 
 @dataclass(frozen=True)
@@ -54,6 +69,15 @@ class ResolvedReceiptLine:
     invoice_product_code: str
     invoice_lot: str
     checked: bool
+
+
+#: Escopo da trava de recibo na `IdempotencyKey` do orderman.
+#:
+#: ⚠️ Nenhum modelo novo e nenhuma migração: a casa já tem esta tabela, com
+#: `UniqueConstraint(scope, key)`, e já tem o envelope genérico
+#: (`shop/services/remote_mutations.run_idempotent_mutation`). É o mesmo
+#: mecanismo do commit de sessão, do replay de webhook e do submit do PDV.
+RECEIPT_IDEMPOTENCY_SCOPE = "purchase.receipt"
 
 
 def parse_invoice_access_key(raw: str) -> str | None:
@@ -112,9 +136,6 @@ def scan_invoice(qr_payload: str) -> tuple[dict[str, Any], str]:
 def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     """Confirm a material receipt, writing Stockman BUY moves atomically."""
     Supplier = apps.get_model("buyman", "Supplier")
-    Batch = apps.get_model("stockman", "Batch")
-    Move = apps.get_model("stockman", "Move")
-    from shopman.stockman import stock
 
     mode = str(payload.get("mode") or "").strip()
     if mode not in {"invoice", "manual"}:
@@ -139,10 +160,99 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
     if not isinstance(raw_lines, list) or not raw_lines:
         raise PurchaseError("Inclua ao menos um item recebido.", code="receipt_empty", field="lines")
 
+    if mode == "invoice":
+        _require_supplier_is_issuer(supplier=supplier, invoice_key=invoice_key)
+
     lines = [_resolve_receipt_line(raw, index=index, supplier=supplier) for index, raw in enumerate(raw_lines)]
     note = str(payload.get("note") or "").strip()
-    source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note)
+    source_ref = invoice_key or _manual_source_ref(supplier_ref=supplier.ref, note=note, lines=lines)
     position = _default_receive_position()
+
+    def _receber() -> tuple[dict[str, Any], int]:
+        _write_receipt(
+            mode=mode,
+            invoice_key=invoice_key,
+            supplier=supplier,
+            lines=lines,
+            note=note,
+            source_ref=source_ref,
+            position=position,
+            user=user,
+        )
+        return (
+            {
+                "source_ref": source_ref,
+                "mode": mode,
+                "supplier_ref": supplier.ref,
+                "supplier_name": supplier.name or supplier.ref,
+                "lines": len(lines),
+                "total_cost_q": sum(line.total_cost_q for line in lines),
+                "operator": (getattr(user, "get_username", lambda: "")() if user else "") or "",
+                "received_at": timezone.now().isoformat(),
+            },
+            200,
+        )
+
+    # ⚠️ A trava é do BANCO, não da tela. A guarda que existia era só o botão
+    # desabilitado enquanto o primeiro clique estava em voo — nenhuma delas
+    # sobrevive a um 504 no proxy, a uma aba fechada, ou a um segundo tablet.
+    #
+    # E o caminho mais provável no chão nem é o retry: três horas depois ninguém
+    # conseguia responder "essa nota já entrou?", e reescanear é o gesto natural de
+    # quem está em dúvida — duplicando o estoque em silêncio.
+    #
+    # Ironia que serviu de prova: `reject_receipt` JÁ era idempotente (dedupe de
+    # directive). RECUSAR duas vezes não duplicava nada; RECEBER duas vezes sim.
+    try:
+        resultado = run_idempotent_mutation(
+            scope=RECEIPT_IDEMPOTENCY_SCOPE, key=source_ref, execute=_receber
+        )
+    except RemoteMutationInProgress as exc:
+        raise PurchaseError(
+            "Esta entrada já está sendo registrada. Aguarde alguns segundos e recarregue.",
+            code="receipt_in_progress",
+            field="invoiceAccessKey" if mode == "invoice" else "note",
+        ) from exc
+
+    if resultado.replayed:
+        # Não é replay silencioso de propósito: responder "deu certo" a quem
+        # REESCANEOU faria o operador acreditar numa entrada nova. Dizer quando e
+        # por quem serve aos dois casos — o retry e a dúvida.
+        raise PurchaseError(
+            _receipt_already_received_message(resultado.response_body),
+            code="receipt_already_received",
+            field="invoiceAccessKey" if mode == "invoice" else "note",
+        )
+
+    return build_purchase()
+
+
+def _receipt_already_received_message(recibo: dict[str, Any]) -> str:
+    quando = _format_receipt_moment(str(recibo.get("received_at") or ""))
+    quem = str(recibo.get("operator") or "").strip()
+    partes = ["Esta nota já entrou"]
+    if quando:
+        partes.append(f"em {quando}")
+    if quem:
+        partes.append(f"por {quem}")
+    return " ".join(partes) + ". Confira o histórico de recebimentos antes de lançar de novo."
+
+
+def _format_receipt_moment(raw: str) -> str:
+    if not raw:
+        return ""
+    try:
+        momento = timezone.localtime(datetime.fromisoformat(raw))
+    except ValueError:
+        return ""
+    return momento.strftime("%d/%m às %H:%M")
+
+
+def _write_receipt(*, mode, invoice_key, supplier, lines, note, source_ref, position, user) -> None:
+    """O corpo do recebimento — o que era o `with transaction.atomic()` de sempre."""
+    Batch = apps.get_model("stockman", "Batch")
+    Move = apps.get_model("stockman", "Move")
+    from shopman.stockman import stock
 
     with transaction.atomic():
         for line in lines:
@@ -194,8 +304,6 @@ def confirm_receipt(payload: dict[str, Any], *, user) -> dict[str, Any]:
         if mode == "invoice":
             _learn_invoice_product_map(supplier=supplier, lines=lines)
 
-    return build_purchase()
-
 
 def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], str]:
     """Record a supplier delivery refusal/return without touching stock."""
@@ -237,7 +345,8 @@ def reject_receipt(payload: dict[str, Any], *, user) -> tuple[dict[str, Any], st
     context = {
         "receipt_ref": receipt_ref,
         "supplier_ref": supplier.ref,
-        "supplier_name": supplier.name or supplier.ref,
+        "supplier_name": supplier.display_name,
+        "supplier_contact": _supplier_contact_line(supplier),
         "document_ref": source_ref,
         "receipt_mode": mode,
         "reason": reason,
@@ -293,7 +402,7 @@ def upsert_cost(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         supplier=supplier,
         conversion=conversion,
         cost_q=cost_q,
-        make_preferred=bool(payload.get("makePreferred") or payload.get("make_preferred")),
+        make_preferred=_as_flag(payload, "makePreferred", "make_preferred", field="makePreferred"),
     )
     # Custo de fornecedor é dado de dinheiro: quem alterou fica no log
     # estruturado (o modelo não tem trilha própria — decisão adiada com o
@@ -308,6 +417,225 @@ def upsert_cost(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
         },
     )
     return build_purchase()
+
+
+def upsert_costs(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
+    """Vários custos de uma vez, quase sempre do mesmo fornecedor.
+
+    Um insumo só vira pedido quando tem custo padrão e fornecedor preferencial
+    — ``_queue_supplier_purchase_request`` recusa sem isso. Cadastrar dezenas
+    de insumos um a um, com dois selects e um round-trip que devolve a projeção
+    inteira a cada salvamento, é trabalho de horas para uma tarefa que é, na
+    prática, uma tabela de preços do mesmo fornecedor. O ``supplierRef`` do
+    lote é o padrão herdado por todas as linhas; a linha que discordar traz o
+    seu.
+
+    **Tudo-ou-nada.** Custo é dado de dinheiro: um lote meio-aplicado deixa o
+    operador sem saber o que entrou e o que não entrou. Toda linha é validada
+    antes de qualquer escrita, e o lote inválido volta com o índice, o SKU e o
+    campo de cada linha errada — sem isso a recusa manda procurar no escuro.
+
+    Linha em branco é omissão, não erro: a tela lista todos os insumos e o
+    operador preenche os que sabe.
+    """
+    Material = apps.get_model("buyman", "Material")
+    Supplier = apps.get_model("buyman", "Supplier")
+
+    default_supplier_ref = str(payload.get("supplierRef") or payload.get("supplier_ref") or "").strip()
+    make_preferred = _as_flag(payload, "makePreferred", "make_preferred", field="makePreferred")
+    raw_lines = payload.get("costs") or payload.get("lines") or []
+    if not isinstance(raw_lines, list):
+        raise PurchaseError("Lote de custos inválido.", code="cost_batch_invalid", field="costs")
+
+    resolved: list[tuple[Any, Any, Any, int]] = []
+    line_errors: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for index, raw in enumerate(raw_lines):
+        entry = dict(raw or {})
+        material_sku = str(entry.get("materialSku") or entry.get("material_sku") or "").strip()
+        cost_text = str(entry.get("costInput") or entry.get("cost_input") or "")
+        if not cost_text.strip():
+            continue
+
+        def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
+            line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
+
+        material = Material.objects.filter(sku=material_sku).first()
+        if not material:
+            fail("Insumo não encontrado.", field="materialSku")
+            continue
+        # Insumo e fornecedor aposentados são recusados AQUI, na validação, e
+        # não lá na frente pelo `full_clean` do modelo: um custo preferencial
+        # não pode apontar para par retirado, e essa recusa chegava como
+        # `ValidationError` crua no meio do loop de escrita — sem número de
+        # linha, que é exatamente a busca no escuro que o lote veio eliminar.
+        if not material.is_active:
+            fail("Insumo inativo.", field="materialSku")
+            continue
+
+        supplier_ref = (
+            str(entry.get("supplierRef") or entry.get("supplier_ref") or "").strip() or default_supplier_ref
+        )
+        supplier = Supplier.objects.filter(ref=supplier_ref).first()
+        if not supplier:
+            fail("Fornecedor não encontrado.", field="supplierRef")
+            continue
+        if not supplier.is_active:
+            fail("Fornecedor inativo.", field="supplierRef")
+            continue
+
+        key = (material.sku, supplier.ref)
+        if key in seen:
+            fail("Insumo repetido no lote para o mesmo fornecedor.", field="materialSku")
+            continue
+
+        try:
+            cost_q = parse_money_input(cost_text)
+        except PurchaseError as exc:
+            fail(str(exc), field="costInput")
+            continue
+        if cost_q <= 0:
+            fail("Informe um valor de compra maior que zero.", field="costInput")
+            continue
+
+        try:
+            conversion = _resolve_conversion(
+                entry.get("conversionId") or entry.get("conversion_id"),
+                material=material,
+                supplier=supplier,
+                field="conversionId",
+            )
+        except PurchaseError as exc:
+            fail(str(exc), field=exc.field or "conversionId")
+            continue
+
+        seen.add(key)
+        resolved.append((material, supplier, conversion, cost_q))
+
+    if line_errors:
+        raise PurchaseError(
+            "Corrija as linhas indicadas para lançar o lote.",
+            code="cost_batch_invalid",
+            lines=line_errors,
+        )
+    if not resolved:
+        raise PurchaseError("Informe ao menos um valor para lançar.", code="cost_batch_empty", field="costs")
+
+    with transaction.atomic():
+        for material, supplier, conversion, cost_q in resolved:
+            _upsert_supplier_cost(
+                material=material,
+                supplier=supplier,
+                conversion=conversion,
+                cost_q=cost_q,
+                make_preferred=make_preferred,
+                # O primeiro custo de um insumo vira o preferencial sozinho —
+                # mesma regra do recebimento. Sem preferencial o insumo
+                # continua fora do pedido, que é justamente o que o lote veio
+                # resolver.
+                prefer_if_missing=True,
+            )
+
+    logger.info(
+        "purchase.costs_batch_upserted",
+        extra={
+            "count": len(resolved),
+            "suppliers": sorted({supplier.ref for _, supplier, _, _ in resolved}),
+            "user": getattr(user, "username", "") or "anon",
+        },
+    )
+    return {"saved": len(resolved), "purchase": build_purchase()}
+
+
+def set_min_stock(payload: dict[str, Any], *, user=None) -> dict[str, Any]:
+    """Declara o estoque mínimo dos insumos — a outra metade da solicitação.
+
+    ``dailyUse`` sai das baixas que a produção lança ao finalizar uma ficha; sem
+    fornada rodando no sistema ele é zero. E aí o cálculo fecha o círculo contra
+    o operador: sem consumo, o mínimo também cai para zero
+    (``daily_use * replenish_at if daily_use > 0 else 0``), o alvo de reposição
+    vira zero e ``suggestedQty`` é zero para sempre. Cadastrar custo e
+    fornecedor não muda isso — o insumo simplesmente não aparece no Compras.
+
+    O mínimo declarado quebra esse círculo: com ele o alvo existe sem histórico
+    nenhum, e o insumo volta a poder virar pedido. Mora em
+    ``Material.metadata["purchase"]["min_stock"]``, que é onde a projeção já o
+    procura — nenhum campo novo, nenhuma migração.
+
+    Zero **apaga** a declaração em vez de gravar zero: os dois levam ao mesmo
+    alvo hoje, mas só o campo ausente volta a seguir o consumo quando a produção
+    começar a rodar.
+    """
+    Material = apps.get_model("buyman", "Material")
+
+    raw_lines = payload.get("minimums") or payload.get("min_stocks") or []
+    if not isinstance(raw_lines, list):
+        raise PurchaseError("Lote de mínimos inválido.", code="min_stock_batch_invalid", field="minimums")
+
+    resolved: list[tuple[Any, Decimal | None]] = []
+    line_errors: list[dict[str, Any]] = []
+    seen: set[str] = set()
+
+    for index, raw in enumerate(raw_lines):
+        entry = dict(raw or {})
+        material_sku = str(entry.get("materialSku") or entry.get("material_sku") or "").strip()
+        raw_value = entry.get("minStock", entry.get("min_stock"))
+        text = "" if raw_value is None else str(raw_value)
+        if not text.strip():
+            continue
+
+        def fail(detail: str, *, field: str, sku: str = material_sku, at: int = index) -> None:
+            line_errors.append({"index": at, "materialSku": sku, "field": field, "detail": detail})
+
+        material = Material.objects.filter(sku=material_sku).first()
+        if not material:
+            fail("Insumo não encontrado.", field="materialSku")
+            continue
+        if material.sku in seen:
+            fail("Insumo repetido no lote.", field="materialSku")
+            continue
+
+        value = parse_qty_input(text)
+        if value is None:
+            fail("Informe uma quantidade válida.", field="minStock")
+            continue
+
+        seen.add(material.sku)
+        resolved.append((material, None if value == 0 else value))
+
+    if line_errors:
+        raise PurchaseError(
+            "Corrija as linhas indicadas para lançar os mínimos.",
+            code="min_stock_batch_invalid",
+            lines=line_errors,
+        )
+    if not resolved:
+        raise PurchaseError("Informe ao menos um mínimo.", code="min_stock_batch_empty", field="minimums")
+
+    with transaction.atomic():
+        for material, value in resolved:
+            metadata = dict(material.metadata or {})
+            purchase = dict(metadata.get("purchase") or {})
+            if value is None:
+                purchase.pop("min_stock", None)
+                purchase.pop("minStock", None)
+            else:
+                purchase["min_stock"] = str(value)
+                purchase.pop("minStock", None)
+            metadata["purchase"] = purchase
+            material.metadata = metadata
+            material.save(update_fields=["metadata", "updated_at"])
+
+    logger.info(
+        "purchase.min_stock_set",
+        extra={
+            "count": len(resolved),
+            "materials": sorted(material.sku for material, _ in resolved),
+            "user": getattr(user, "username", "") or "anon",
+        },
+    )
+    return {"saved": len(resolved), "purchase": build_purchase()}
 
 
 #: Rótulo de conversão cabe em 60 caracteres (``MaterialConversion.label``).
@@ -466,6 +794,7 @@ def set_purchase_request_status(material_sku: str, status: str, *, user=None) ->
             purchase["request_supplier_ref"] = dispatch["supplier_ref"]
             purchase["request_channel"] = dispatch["channel"]
             purchase["request_recipient"] = dispatch["recipient"]
+            purchase["request_contact_name"] = dispatch["contact_name"]
             purchase["request_dedupe_key"] = dispatch["dedupe_key"]
         metadata["purchase"] = purchase
         material.metadata = metadata
@@ -495,14 +824,17 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
             field="supplierRef",
         )
 
-    channel, recipient, backends = _supplier_dispatch_route(supplier)
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    route = _supplier_dispatch_route(supplier, role=SupplierContact.Role.SALES)
     snapshot = _purchase_request_snapshot(material, cost)
     purchase_ref = _purchase_ref(material.sku, supplier.ref, snapshot["purchase_qty_display"])
     context = {
         **snapshot,
         "purchase_ref": purchase_ref,
         "supplier_ref": supplier.ref,
-        "supplier_name": supplier.name or supplier.ref,
+        "supplier_name": supplier.display_name,
+        "supplier_legal_name": supplier.name or supplier.ref,
+        "contact_name": route.contact_name,
         "shop_name": _shop_name(),
         "requested_delivery_label": _requested_delivery_label(supplier),
         "operator_username": getattr(user, "get_username", lambda: "")() if user else "",
@@ -510,8 +842,8 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
     }
     payload = {
         "event": "purchase_request",
-        "recipient": recipient,
-        "backends": backends,
+        "recipient": route.recipient,
+        "backends": route.backends,
         "context": context,
     }
     dedupe_key = _purchase_request_dedupe_key(
@@ -527,13 +859,52 @@ def _queue_supplier_purchase_request(material, *, user=None) -> dict[str, str]:
     return {
         "purchase_ref": purchase_ref,
         "supplier_ref": supplier.ref,
-        "channel": channel,
-        "recipient": recipient,
+        "channel": route.channel,
+        "recipient": route.recipient,
+        "contact_name": route.contact_name,
         "dedupe_key": dedupe_key,
     }
 
 
-def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
+@dataclass(frozen=True)
+class SupplierRoute:
+    """Por onde a mensagem sai, para quem, e com que nome ela cumprimenta."""
+
+    channel: str
+    recipient: str
+    backends: list[str]
+    contact_name: str = ""
+
+
+def _supplier_contact_reach(supplier, role: str) -> tuple[str, str, str]:
+    """O e-mail e o telefone da **pessoa** que responde por este assunto.
+
+    Devolve ``(email, phone, nome)``. O nome é o de quem venceu a rota — e cada
+    meio é procurado separadamente, porque quem responde o comercial pode ter
+    deixado só o e-mail enquanto outra pessoa do mesmo papel deixou só o
+    telefone. Resolver os dois de uma vez escolheria uma pessoa e perderia o
+    meio da outra.
+    """
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    rows = list(SupplierContact.objects.filter(supplier=supplier))
+    by_email = SupplierContact.pick(rows, role, requires="email")
+    by_phone = SupplierContact.pick(rows, role, requires="phone")
+    winner = by_email or by_phone
+    return (
+        by_email.email if by_email else "",
+        by_phone.phone if by_phone else "",
+        winner.first_name if winner else "",
+    )
+
+
+def _supplier_dispatch_route(supplier, *, role: str = "sales") -> SupplierRoute:
+    """Escolhe o canal e o destinatário do pedido de compra.
+
+    Três degraus, do mais específico ao mais genérico: a **pessoa** que responde
+    pelo papel, o contato de compras gravado no ``metadata``, e a **central** da
+    empresa. A central existe para o pedido sair mesmo sem ninguém cadastrado —
+    não para ser o destino normal.
+    """
     meta = _purchase_meta(supplier)
     preferred = _meta_text(
         meta,
@@ -545,17 +916,34 @@ def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
         "preferredChannel",
     ).lower()
     contact = _meta_text(meta, "order_contact", "orderContact", "contact")
-    email = _meta_text(meta, "order_email", "orderEmail", "email") or supplier.email or _email_from_contact(contact)
-    phone = _meta_text(meta, "order_phone", "orderPhone", "whatsapp", "phone") or supplier.phone or _phone_from_contact(contact)
+    contact_email, contact_phone, contact_name = _supplier_contact_reach(supplier, role)
+    email = (
+        contact_email
+        or _meta_text(meta, "order_email", "orderEmail", "email")
+        or supplier.email
+        or _email_from_contact(contact)
+    )
+    phone = (
+        contact_phone
+        or _meta_text(meta, "order_phone", "orderPhone", "whatsapp", "phone")
+        or supplier.phone
+        or _phone_from_contact(contact)
+    )
+
+    def route(channel: str, recipient: str, backends: list[str], *, personal: bool) -> SupplierRoute:
+        # O nome só acompanha a rota que realmente foi para a pessoa: cumprimentar
+        # "Olá, Marcelo" numa mensagem que caiu na central da empresa é pior do
+        # que não cumprimentar ninguém.
+        return SupplierRoute(channel, recipient, backends, contact_name if personal else "")
 
     if preferred == "email" and email:
-        return "email", email, ["email", "console"]
+        return route("email", email, ["email", "console"], personal=email == contact_email)
     if preferred in {"sms", "phone"} and phone:
-        return "sms", phone, ["sms", "console"]
+        return route("sms", phone, ["sms", "console"], personal=phone == contact_phone)
     if preferred in {"whatsapp", "manychat"} and phone:
-        return "whatsapp", phone, ["manychat", "console"]
+        return route("whatsapp", phone, ["manychat", "console"], personal=phone == contact_phone)
     if preferred == "console":
-        return "console", supplier.ref, ["console"]
+        return SupplierRoute("console", supplier.ref, ["console"], contact_name)
     if preferred:
         raise PurchaseError(
             f"Canal preferencial do fornecedor sem contato utilizável: {preferred}.",
@@ -563,14 +951,30 @@ def _supplier_dispatch_route(supplier) -> tuple[str, str, list[str]]:
             field="supplierRef",
         )
     if email:
-        return "email", email, ["email", "console"]
+        return route("email", email, ["email", "console"], personal=email == contact_email)
     if phone:
-        return "sms", phone, ["sms", "console"]
+        return route("sms", phone, ["sms", "console"], personal=phone == contact_phone)
     raise PurchaseError(
-        "Fornecedor sem e-mail ou telefone para envio do pedido.",
+        "Fornecedor sem contato, e-mail ou telefone para envio do pedido.",
         code="supplier_contact_missing",
         field="supplierRef",
     )
+
+
+def _supplier_contact_line(supplier) -> str:
+    """Quem o operador chama sobre um recebimento recusado.
+
+    A devolução é um aviso **interno** — não sai para o fornecedor. Quem lê
+    precisa saber a quem ligar, e devolução é assunto de qualidade antes de ser
+    de vendas. Sem ninguém cadastrado a linha some, em vez de mentir uma central
+    como se fosse pessoa.
+    """
+    SupplierContact = apps.get_model("buyman", "SupplierContact")
+    contact = SupplierContact.resolve(supplier, SupplierContact.Role.QUALITY)
+    if not contact:
+        return ""
+    reach = " / ".join(part for part in (contact.email, contact.phone) if part)
+    return f"{contact.name} ({contact.get_role_display()}) — {reach}"
 
 
 def _purchase_request_snapshot(material, cost) -> dict[str, str]:
@@ -650,8 +1054,14 @@ def _format_decimal(value: Decimal) -> str:
 
 
 def _format_money_q(value: int) -> str:
-    reais = Decimal(value) / Decimal("100")
-    return f"R$ {reais:.2f}".replace(".", ",")
+    """O total como se escreve num pedido: com ponto de milhar.
+
+    ``R$ 1185,00`` num e-mail que sai para fora da casa lê como número de
+    sistema; o separador é o que faz o valor ser lido de relance.
+    """
+    from shopman.utils.monetary import format_money
+
+    return f"R$ {format_money(value)}"
 
 
 def _meta_text(meta: dict[str, Any], *keys: str) -> str:
@@ -682,8 +1092,87 @@ def _purchase_meta(obj) -> dict[str, Any]:
     return metadata
 
 
-def parse_money_input(value: str) -> int:
-    """Parse BR/US-ish money input into cents."""
+#: Casas decimais da quantidade em toda a superfície de Compras.
+QTY_PLACES = Decimal("0.001")
+
+#: O que conta como "sim" e como "não" numa flag vinda do JSON.
+_FLAG_TRUE = {"true", "1", "yes", "on"}
+_FLAG_FALSE = {"false", "0", "no", "off", ""}
+
+
+def _as_flag(payload: dict[str, Any], *keys: str, field: str = "") -> bool:
+    """Flag booleana do payload, no dialeto desta camada (levanta `PurchaseError`).
+
+    O `bool()` cru aceita qualquer coisa e chama de verdade: `"false"` e `"não"`
+    viram `True`, e `[]` vira `False`. Numa flag que decide se o custo vira o
+    preferencial do insumo, isso é o tipo de "sim" que ninguém disse.
+
+    Espelha `parsing.as_bool` da camada de API; o que muda é a exceção — a
+    camada HTTP mapeia por TIPO (`services/exceptions.py`), e importar o parser
+    do DRF aqui quebraria essa separação. Mesmo caminho que `services/catalog.py`
+    seguiu com o seu `_as_flag`.
+    """
+    for key in keys:
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, int):
+            if value in (0, 1):
+                return bool(value)
+        elif isinstance(value, str):
+            text = value.strip().lower()
+            if text in _FLAG_TRUE:
+                return True
+            if text in _FLAG_FALSE:
+                return False
+        raise PurchaseError(
+            "Valor inválido para uma opção de sim/não.",
+            code="flag_invalid",
+            field=field or key,
+        )
+    return False
+
+
+def parse_qty_input(raw: Any) -> Decimal | None:
+    """Quantidade digitada pelo operador, no teclado da casa ou no do sistema.
+
+    ``None`` é "não informado" — vazio, ilegível ou negativo. Quem chama decide
+    se isso é omissão (linha em branco) ou erro (valor inválido); aqui não dá
+    para saber a diferença.
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, str):
+        text = raw.strip().replace(" ", "")
+        # Vírgula presente = notação pt-BR ("1.250,5"); sem vírgula, o ponto é decimal.
+        if "," in text:
+            text = text.replace(".", "").replace(",", ".")
+    else:
+        text = str(raw)
+    try:
+        value = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    if value < 0:
+        return None
+    return value.quantize(QTY_PLACES)
+
+
+def parse_money_input(value: str, *, field: str = "costInput") -> int:
+    """Dinheiro digitado → centavos. Vazio é zero; ILEGÍVEL é erro.
+
+    ⚠️ A distinção é o achado. Um custo impossível de parsear virava `0` em
+    silêncio, e o confirm simplesmente pulava o custo: digitar
+    ``"12,50 (com frete)"`` gravava a entrada com custo ZERO e não dizia nada.
+    Isso é falhar aberto em dinheiro — contra a régua explícita da casa.
+
+    Vazio continua valendo zero de propósito: "não informei o custo" é uma resposta
+    legítima do balcão, e é diferente de "escrevi algo que ninguém entende".
+    """
     raw = value.strip().replace("R$", "").replace(" ", "")
     if not raw:
         return 0
@@ -695,10 +1184,18 @@ def parse_money_input(value: str) -> int:
         normalized = raw.replace(".", "")
     try:
         amount = Decimal(normalized)
-    except InvalidOperation:
-        return 0
-    if amount <= 0:
-        return 0
+    except InvalidOperation as exc:
+        raise PurchaseError(
+            f"Não entendi o valor {value.strip()!r}. Escreva só o número, como 12,50.",
+            code="money_input_invalid",
+            field=field,
+        ) from exc
+    if amount < 0:
+        raise PurchaseError(
+            "O valor não pode ser negativo.",
+            code="money_input_negative",
+            field=field,
+        )
     return int((amount * Decimal("100")).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
@@ -989,8 +1486,13 @@ def _supplier_name_key(name: str) -> str:
 
 
 def _supplier_ref_from_name(name: str) -> str:
+    """Ref limpo, minúsculo, sem prefixo de tipo — o padrão da casa.
+
+    O tipo já mora no lugar certo (a tabela, o ref_type do registro); `SUP-` era
+    ruído de ERP, e o dono normalizou os 4 que nasceram assim (01/09/2026).
+    """
     slug = _supplier_name_key(name)
-    return f"SUP-{slug}" if slug else ""
+    return slug.lower() if slug else ""
 
 
 def _adopt_supplier_by_name(issuer_names: list[str], document_text: str, phone: str) -> str:
@@ -1072,6 +1574,44 @@ def _register_supplier_from_issuer(issuer: dict[str, Any]) -> tuple[str, bool]:
     return ref, True
 
 
+def _require_supplier_is_issuer(*, supplier, invoice_key: str) -> None:
+    """O fornecedor escolhido tem de ser quem EMITIU a nota.
+
+    O confirm validava a chave e validava que o fornecedor existe e está ativo —
+    mas nunca cruzava os dois. Os 14 dígitos do CNPJ do emitente estão DENTRO da
+    própria chave, e o código já sabia disso (`_supplier_ref_from_invoice_key`).
+
+    No chão: o scan preenche o fornecedor certo, e o que volta no confirm é o do
+    dropdown, que o operador pode ter trocado sem perceber ao navegar entre abas. O
+    resultado é movimento com fornecedor errado, custo no fornecedor errado e — o
+    pior — o de-para fiscal aprendido NO FORNECEDOR ERRADO, envenenando o scan de
+    todas as notas futuras daquele fornecedor. O overwrite loga um aviso; o
+    aprendizado inicial não loga nada.
+
+    ⚠️ Fornecedor SEM documento cadastrado não é recusado: recusar quebraria
+    entrada legítima por causa de cadastro incompleto, e a nota não fica melhor
+    guardada por isso. É o único caso em que a checagem se cala — e ela se cala
+    dizendo por quê no log, não em silêncio.
+    """
+    chave = parse_invoice_access_key(invoice_key) or ""
+    if not chave:
+        return
+    emitente = chave[6:20]
+    documento = re.sub(r"\D", "", getattr(supplier, "document", "") or "")
+    if not documento:
+        logger.info(
+            "purchase.issuer_check_skipped supplier=%s reason=sem_documento", supplier.ref
+        )
+        return
+    if documento != emitente:
+        raise PurchaseError(
+            "O fornecedor selecionado não é quem emitiu esta nota. "
+            "Confira o fornecedor antes de dar entrada.",
+            code="supplier_not_issuer",
+            field="supplierRef",
+        )
+
+
 def _supplier_ref_from_invoice_key(access_key: str) -> str:
     Supplier = apps.get_model("buyman", "Supplier")
     issuer_cnpj = access_key[6:20]
@@ -1146,8 +1686,24 @@ def _receipt_rejection_lines(raw_lines: list[Any]) -> str:
     return "\n".join(rows)
 
 
-def _manual_source_ref(*, supplier_ref: str, note: str) -> str:
-    seed = f"{timezone.now().isoformat()}:{supplier_ref}:{note}"
+def _manual_source_ref(*, supplier_ref: str, note: str, lines: list | None = None) -> str:
+    """A identidade de uma entrada SEM nota — derivada do conteúdo, não do relógio.
+
+    ⚠️ Isto carregava `timezone.now()` no seed, então a mesma entrada gerava um ref
+    diferente a cada chamada. Servia para nomear um lote; NÃO serve para responder
+    "essa entrada já foi feita?", que é o que a trava de recibo precisa perguntar.
+
+    Com o conteúdo no seed, dois envios do mesmo recebimento colidem — que é o
+    ponto. Duas entradas legitimamente iguais no mesmo dia (o fornecedor voltou com
+    outra remessa idêntica) também colidem: é o preço, e é o lado seguro do erro.
+    Quem precisa registrar a segunda declara a diferença na observação.
+    """
+    corpo = ""
+    if lines:
+        corpo = "|".join(
+            f"{line.material.sku}:{line.purchase_qty}:{line.total_cost_q}" for line in lines
+        )
+    seed = f"{supplier_ref}:{note}:{corpo}"
     digest = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10].upper()
     return f"MANUAL-{digest}"
 

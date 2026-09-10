@@ -236,11 +236,21 @@ def interpret_checkout(request, channel_ref: str) -> IntentResult:
     if chosen_method in ("pix", "card"):
         checkout_data["payment"] = {"method": chosen_method}
     elif chosen_method == "cash":
+        # Dinheiro em ENTREGA é recebido na porta, e a marca canônica disso é
+        # ``collection: "on_delivery"`` — a mesma que o PDV grava. Sem ela o
+        # pedido da loja não era reconhecido como pagamento na entrega: o Gestor
+        # não oferecia o acerto (``settle_delivery_cash`` recusa por falta da
+        # marca), o troco do entregador não saía da gaveta e o gate de pagamento
+        # não sabia distinguir "combinado receber na porta" de "não pagou".
         # Troco: na ENTREGA o cliente informa "troco para R$ X"; o operador/motoboy
         # leva o troco. Guardado no dict payment (copiado Session→Order pelo commit).
-        change_for_q = parse_change_for(post.get("change_for", ""))
-        if change_for_q and fulfillment_type == "delivery":
-            checkout_data["payment"] = {"method": "cash", "change_for_q": change_for_q}
+        payment_data = {"method": "cash"}
+        if fulfillment_type == "delivery":
+            payment_data["collection"] = "on_delivery"
+            change_for_q = parse_change_for(post.get("change_for", ""))
+            if change_for_q:
+                payment_data["change_for_q"] = change_for_q
+        checkout_data["payment"] = payment_data
     if gift_data:
         checkout_data.update(gift_data)
 

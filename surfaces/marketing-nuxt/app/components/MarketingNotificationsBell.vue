@@ -24,7 +24,7 @@ const {
   markVisible,
   acknowledge,
   openHref,
-} = useUserNotifications();
+} = useMarketingNotificationInbox();
 
 const open = ref(false);
 const trigger = ref<HTMLButtonElement | null>(null);

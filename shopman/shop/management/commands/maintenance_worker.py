@@ -15,7 +15,14 @@ manutenção num loop (default: a cada 5 minutos):
   sweep_stuck_orders        — fase de lifecycle perdida (crash pós-commit) é re-despachada
   sweep_unrealized_production — fornada concluída sem o ledger de estoque fechado é re-realizada
   sweep_dead_production_stock — resíduo de processo de WO morta é zerado pelo ledger
+  sweep_waitlist_windows    — janela de confirmação da fila vencida libera a vaga p/ o próximo
   check_directive_health    — failed/backlog/heartbeat da fila viram OperatorAlert (ADR-003)
+  check_catalog_visibility  — produto fora do cardápio por coleção desativada vira alerta
+  check_integration_drift   — integração em configuração degradada vira alerta (push, não pull)
+  compute_product_affinity  — o que a casa vende junto (uma vez por noite; o
+                              próprio comando recusa recálculo fora da hora)
+  recalculate_customer_insights — quem PAROU de comprar volta a ser percebido (1x/dia)
+  purge_sign_in_audit       — trilha de acessos de operador fora da retenção
 
 Cada tarefa é isolada: uma falha loga e NUNCA derruba o ciclo das demais.
 Cada ciclo grava o heartbeat "maintenance_worker" (shopman.orderman.worker_heartbeat).
@@ -87,8 +94,52 @@ MAINTENANCE_COMMANDS = (
     # morta (void com ajuste falho, quant órfão) é zerado pelo ledger — mas só
     # quando nenhuma WO viva nem ledger aberto ainda reivindica o quant.
     "sweep_dead_production_stock",
+    # DEPOIS da produção resgatada, de propósito: é a materialização que abre a
+    # janela de confirmação, e varrer antes dela olharia um estado que este
+    # mesmo ciclo ainda vai criar. A janela é a única parte da fila com
+    # relógio; sem a varredura o prazo seria decorativo e a vaga ficaria presa
+    # a quem não respondeu, com o próximo da fila esperando para sempre.
+    "sweep_waitlist_windows",
     # Por último: as checagens veem o estado PÓS-remediação do ciclo (menos flap).
     "check_directive_health",
+    # Produto que sumiu do cardápio porque a coleção dele foi desativada. É
+    # checagem de ESTADO, não de evento: o que importa não é o instante em que
+    # alguém desmarcou a categoria, é o produto que já está invisível hoje. O
+    # dedupe (janela de um dia, chaveado pela coleção presa) mora no comando —
+    # o worker não sabe cadência.
+    "check_catalog_visibility",
+    # Integração em configuração degradada (Pix no simulador, NFC-e em
+    # homologação, ninguém entregando o código de login). A prontidão já sabia
+    # e esperava alguém abrir /admin/diagnostics/; aqui ela passa a avisar. A
+    # cadência (diária, ou semanal quando o estado é decisão registrada) e a
+    # severidade moram no comando — o worker não sabe régua.
+    "check_integration_drift",
+    # Percebe quem PAROU de comprar. O insight do cliente é recalculado a cada
+    # pedido dele, então quem compra está sempre em dia; quem sumiu ficava
+    # congelado no dia da última visita, porque não comprar não dispara nada.
+    #
+    # Está na lista do ciclo de 5 min mas NÃO trabalha a cada 5 min: o comando
+    # carrega a própria janela (madrugada) e o próprio teto de lote — fora da
+    # janela ele volta na hora. Sem esse portão interno, entrar aqui significaria
+    # varrer a base inteira 288 vezes por dia. Ver o topo do comando.
+    "recalculate_customer_insights",
+    # Higiene, e por isso por último: não tem relação de ordem com nada acima.
+    # A trilha de acessos envelhece por PRAZO e não por clique — se o Admin
+    # pudesse apagar uma linha escolhida a dedo, quem usasse um crachá
+    # esquecido teria, na aba ao lado, o botão de sumir com a própria.
+    # Caro e diário, e por isso perto do fim: um ano de cestas é trabalho de
+    # minutos. Quem segura a cadência é o próprio comando (`--min-interval-hours`),
+    # que sabe quanto custa — o worker não tem noção de "uma vez por noite".
+    "compute_product_affinity",
+    # A lei muda e ninguém avisa. Este é o único item da lista que não olha o
+    # movimento da casa — olha o RELÓGIO contra a data em que alguém conferiu a
+    # norma. Barato (nenhuma consulta externa) e carrega o próprio portão: só
+    # cria alerta quando há vencido, e o alerta é deduplicado pela janela.
+    #
+    # ⚠️ Vai para o GESTOR, não para o CI: quem responde por cumprir a norma é
+    # quem opera, e teste vermelho ele não vê.
+    ("conferir_parametros_legais", {"vencidos": True, "alertar": True}),
+    "purge_sign_in_audit",
 )
 
 MAINTENANCE_WORKER = "maintenance_worker"
@@ -144,11 +195,15 @@ class Command(BaseCommand):
         # até um restart — a manutenção viraria no-op silencioso.
         close_old_connections()
         worker_heartbeat.beat(MAINTENANCE_WORKER)
-        for command in MAINTENANCE_COMMANDS:
+        for entrada in MAINTENANCE_COMMANDS:
+            # A entrada é o nome, ou `(nome, kwargs)` quando a tarefa precisa de
+            # opção — o `call_command` aceita as duas formas, e assim não é
+            # preciso um comando-embrulho só para passar uma flag.
+            command, kwargs = entrada if isinstance(entrada, tuple) else (entrada, {})
             try:
                 if command == "process_marketing_outbox":
-                    call_command(command, quiet_disabled=True)
+                    call_command(command, quiet_disabled=True, **kwargs)
                 else:
-                    call_command(command)
+                    call_command(command, **kwargs)
             except Exception:
                 logger.exception("maintenance_worker: %s falhou (ciclo continua)", command)

@@ -12,6 +12,15 @@ class StorefrontConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
 
     def ready(self) -> None:
+        # Concierge de WhatsApp: o turno roda no worker de diretivas. O handler é
+        # desta superfície (fala com o cliente), então é registrado daqui, não pelo
+        # `shop.handlers` — o shop não importa superfície.
+        from shopman.orderman import registry
+
+        from shopman.storefront.concierge.handler import ConciergeTurnHandler
+
+        registry.register_directive_handler(ConciergeTurnHandler())
+
         # Stock-back alerts: react to Stockman Move arrivals to notify waiters.
         from django.db.models.signals import post_save
         from shopman.stockman.models import Move

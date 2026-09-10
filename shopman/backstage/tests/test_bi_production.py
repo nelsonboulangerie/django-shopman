@@ -16,8 +16,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
-from shopman.stockman.models import Position
+from shopman.craftsman.models import Recipe, WorkOrderEvent
+from shopman.stockman.models import Batch, Position
 
 from shopman.backstage.models import DayClosing, OvenRun
 from shopman.backstage.projections.bi_production import build_bi_production
@@ -44,6 +44,7 @@ def bi_viewer(db):
 
 @pytest.fixture
 def position(db):
+    Position.objects.create(ref="loja", name="Loja", is_saleable=True)
     return Position.objects.create(ref="forno", name="Forno", kind="oven", is_default=True)
 
 
@@ -68,6 +69,8 @@ def _finished_wo(recipe, *, partition=None, quantity="40"):
         quantity=quantity,
         actor="test",
         partition=partition,
+        expected_rev=wo.rev,
+        idempotency_key="bi-production-finish",
     )
     wo.refresh_from_db()
     return wo
@@ -85,9 +88,7 @@ def test_view_bi_is_a_valid_unlock_perm(client, bi_viewer):
     que já mordeu o marketing (shop.manage_campaigns).
     """
     client.force_login(bi_viewer)
-    response = client.get(
-        reverse("api-backstage-operator-eligible"), {"perm": "backstage.view_bi"}
-    )
+    response = client.get(reverse("api-backstage-operator-eligible"), {"perm": "backstage.view_bi"})
     assert response.status_code == 200
 
 
@@ -137,6 +138,43 @@ def test_daily_series_yield_loss_and_quality_mix(recipe):
 
 
 @pytest.mark.django_db
+def test_quality_mix_uses_latest_qc_partition_and_frozen_batch_markdown(recipe):
+    wo = _finished_wo(recipe, quantity="10")
+    Batch.objects.create(
+        ref="BI-PROD-QC-CORRECTED",
+        sku=wo.output_sku,
+        quality_grade_ref="fair",
+        nonconformity_reason="Ficou menor",
+        nonconformity_percent=17,
+    )
+    WorkOrderEvent.objects.create(
+        work_order=wo,
+        seq=wo.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={
+            "schema_version": 1,
+            "after_partition": [
+                {
+                    "quantity": "10",
+                    "quality_grade_ref": "fair",
+                    "quality_defect_ref": "misshapen",
+                    "loss": False,
+                    "batch_ref": "BI-PROD-QC-CORRECTED",
+                    # O evento não é a fonte comercial: o lote congelado acima é.
+                    "markdown_percent": 0,
+                }
+            ],
+        },
+    )
+
+    today_row = build_bi_production().days[-1]
+
+    assert today_row.full_price == "0"
+    assert today_row.discounted == "10"
+
+
+@pytest.mark.django_db
 def test_window_normalization_swaps_and_defaults(db):
     today = timezone.localdate()
     report = build_bi_production(date_from=today, date_to=today - timedelta(days=6))
@@ -152,9 +190,28 @@ def test_window_normalization_swaps_and_defaults(db):
 def test_oven_time_rows_and_coverage(recipe):
     measured = craft.plan(recipe, Decimal("10"), date=date.today(), position_ref="forno")
     craft.start(measured, quantity=Decimal("10"), position_ref="forno", expected_rev=0)
-    apply_oven_arm(work_order_id=measured.pk, planned_seconds=900, actor="test")
-    apply_oven_conclude(work_order_id=measured.pk, actor="test")
-    apply_finish(work_order_id=measured.pk, quantity="10", actor="test")
+    apply_oven_arm(
+        work_order_id=measured.pk,
+        planned_seconds=900,
+        actor="test",
+        expected_rev=measured.rev,
+        idempotency_key="bi-production-arm",
+    )
+    measured.refresh_from_db()
+    apply_oven_conclude(
+        work_order_id=measured.pk,
+        actor="test",
+        expected_rev=measured.rev,
+        idempotency_key="bi-production-conclude",
+    )
+    measured.refresh_from_db()
+    apply_finish(
+        work_order_id=measured.pk,
+        quantity="10",
+        actor="test",
+        expected_rev=measured.rev,
+        idempotency_key="bi-production-measured-finish",
+    )
 
     _finished_wo(recipe)  # fechada sem medição — pesa na cobertura
 
@@ -177,12 +234,23 @@ def test_oven_time_rows_and_coverage(recipe):
 def test_open_and_abandoned_runs_never_measure(recipe):
     wo = craft.plan(recipe, Decimal("10"), date=date.today(), position_ref="forno")
     craft.start(wo, quantity=Decimal("10"), position_ref="forno", expected_rev=0)
-    apply_oven_arm(work_order_id=wo.pk, planned_seconds=900, actor="test")  # aberto…
-    apply_finish(work_order_id=wo.pk, quantity="10", actor="test")
-    # …e nunca concluído (o Confirmar do QC não mede): fora das linhas e da cobertura.
-    OvenRun.objects.create(
-        work_order_ref=wo.ref, oven_ref="forno", planned_seconds=900, status="abandoned"
+    apply_oven_arm(
+        work_order_id=wo.pk,
+        planned_seconds=900,
+        actor="test",
+        expected_rev=wo.rev,
+        idempotency_key="bi-production-open-arm",
+    )  # aberto…
+    wo.refresh_from_db()
+    apply_finish(
+        work_order_id=wo.pk,
+        quantity="10",
+        actor="test",
+        expected_rev=wo.rev,
+        idempotency_key="bi-production-open-finish",
     )
+    # …e nunca concluído (o Confirmar do QC não mede): fora das linhas e da cobertura.
+    OvenRun.objects.create(work_order_ref=wo.ref, oven_ref="forno", planned_seconds=900, status="abandoned")
     report = build_bi_production()
     assert report.batches_measured == 0
     assert report.oven_time_by_recipe == ()

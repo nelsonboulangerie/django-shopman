@@ -7,6 +7,7 @@
 // um gesto só; as ações (salvar/favoritar/apagar) recuam para o menu ⋯.
 import {
   EXPLORE_DIMENSION_LABELS,
+  aggregateBucket,
   availableExamples,
   bucketLabel,
   bucketRows,
@@ -96,9 +97,13 @@ async function removeLoaded() {
 const timeSeries = computed(() => {
   if (!report.value || report.value.dimension !== "time") return [];
   const rows = report.value.rows.map((row) => ({ date: row.key, value: row.value }));
+  // `report.aggregation` e não uma soma incondicional: ticket médio, rendimento,
+  // share e giro não se somam, e pico de salão se pega pelo maior — quem declara
+  // é o servidor, no spec da métrica.
+  const aggregation = report.value.aggregation;
   return bucketRows(rows).map((bucket) => ({
     label: bucketLabel(bucket.date, bucket.span),
-    value: bucket.rows.reduce((sum, r) => sum + r.value, 0),
+    value: aggregateBucket(bucket.rows.map((r) => r.value), aggregation),
   }));
 });
 

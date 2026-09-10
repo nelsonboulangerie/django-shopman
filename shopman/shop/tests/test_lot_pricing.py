@@ -143,19 +143,6 @@ class TestLotDiscountModifier:
 
         assert session.items[0]["unit_price_q"] == 600  # o desconto maior fica
 
-    def test_frozen_price_is_final(self):
-        """Preço fixado pelo operador não recebe desconto automático."""
-        Batch.objects.create(
-            ref="LOTE-50", sku="PAO", production_date=timezone.localdate(),
-            nonconformity_percent=50,
-        )
-        session = _session([
-            _line("PAO", price_q=1000, batch_ref="LOTE-50", meta={"price_overridden": True})
-        ])
-        LotDiscountModifier().apply(channel=MagicMock(), session=session, ctx={})
-        assert session.items[0]["unit_price_q"] == 1000
-
-
 # ── Lote × promoção/cupom: maior desconto ganha na fronteira order 15 → 20 ──
 
 

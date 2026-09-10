@@ -23,6 +23,11 @@ def _isolate_rules_state():
     * ``shopman.shop.rules.engine._bootstrapped`` is a module-level flag set once
       by ``bootstrap_active_rules()`` and never reset, so a test that triggers a
       bootstrap blocks re-bootstrap for every later test.
+    * ``shopman.shop.services.attributes`` cacheia o REGISTRO de atributos sob
+      ``CACHE_KEY``. Uma definição criada (ou alterada por migração) num teste
+      sobrevive em cache para o seguinte, e a leitura passa a coagir o valor com
+      a definição errada — devolvendo ``None`` em silêncio. Foi assim que o
+      ``porcoes`` (texto) lido com a definição antiga (número) sumiu do seed.
     * ``shopman.shop.adapters._external._suppressed_reason`` is a module-level
       flag set by ``suppress()`` — which the ``seed`` command calls at startup and
       never restores. A test that runs ``seed`` (e.g. the Nelson seed coverage in
@@ -41,6 +46,7 @@ def _isolate_rules_state():
     from shopman.shop.adapters import _external
     from shopman.shop.models.shop import SHOP_CACHE_KEY
     from shopman.shop.rules import engine as rules_engine
+    from shopman.shop.services import attributes as attributes_service
 
     reg = orderman_registry._registry
     with reg._lock:
@@ -48,6 +54,7 @@ def _isolate_rules_state():
 
     def _reset_process_state() -> None:
         cache.delete(rules_engine.CACHE_KEY)
+        cache.delete(attributes_service.CACHE_KEY)
         cache.delete(SHOP_CACHE_KEY)
         rules_engine._bootstrapped = False
         _external._suppressed_reason = None

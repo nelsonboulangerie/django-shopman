@@ -202,14 +202,15 @@ export function isCheckoutDateUnavailable (
 
 export function quickCheckoutDateOptions (
   bounds: Pick<CheckoutDateBounds, 'todayValue' | 'tomorrowValue' | 'maxDateValue'>,
-  entries: ClosedDateEntry[]
+  entries: ClosedDateEntry[],
+  closedWeekdays: number[] | readonly number[] = []
 ): CheckoutQuickDateOption[] {
   return [
     { label: 'Hoje', value: bounds.todayValue },
     { label: 'Amanhã', value: bounds.tomorrowValue }
   ].filter(option => option.value <= bounds.maxDateValue).map(option => ({
     ...option,
-    disabled: isCheckoutDateUnavailable(option.value, bounds, entries)
+    disabled: isCheckoutDateUnavailable(option.value, bounds, entries, closedWeekdays)
   }))
 }
 
@@ -379,14 +380,14 @@ export function shouldOfferPickupSwap ({ field, fulfillmentType, hasPickup, hasA
 // no lugar do antigo "Padrão da loja" (que não significava nada pra ele).
 export function paymentMethodHint (ref: string, cardProvider = ''): string {
   const value = ref.toLowerCase()
-  if (value.includes('pix')) return 'Aprovação na hora'
+  if (value.includes('pix')) return 'Pague com Pix no app do banco'
   if (value.includes('card') || value.includes('cart') || value.includes('credito') || value.includes('debito')) {
     // Nomear o provedor reconhecido (Stripe/Efí) dá previsibilidade e
     // confiança — reduz a hesitação de digitar cartão. Provedor vem do
     // backend (config); sem ele, mensagem genérica de segurança.
     return cardProvider ? `Pagamento seguro via ${cardProvider}` : 'Pagamento em ambiente seguro'
   }
-  if (value.includes('cash') || value.includes('dinheiro')) return 'Pague na entrega'
+  if (value.includes('cash') || value.includes('dinheiro')) return 'Pague ao receber'
   return ''
 }
 
@@ -453,4 +454,19 @@ export function canContinueCheckoutWhen (
   if (!form.delivery_date || isCheckoutDateUnavailable(form.delivery_date, bounds, closedDates, closedWeekdays)) return false
   if (form.fulfillment_type !== 'pickup' || !slots.length) return true
   return !!selectedSlot?.enabled
+}
+
+// Toggle "Adicionar observação": fechar NÃO destrói o texto — ele vai para um
+// rascunho interno e volta ao reabrir. Com o toggle fechado, `notes` fica
+// vazio, então observação dispensada nunca viaja escondida no payload
+// (buildCheckoutPayload envia `state.notes` como está).
+export interface NotesToggleState {
+  notes: string
+  stashed: string
+}
+
+export function notesToggleState (open: boolean, notes: string, stashed: string): NotesToggleState {
+  const kept = notes.trim() ? notes : stashed
+  if (open) return { notes: kept, stashed: '' }
+  return { notes: '', stashed: kept }
 }

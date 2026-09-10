@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -33,21 +34,25 @@ MESSAGE_TEMPLATES: dict[str, str] = {
     "order_preparing": "Pedido {order_ref} em preparo! Avisaremos quando estiver pronto.",
     "order_ready_pickup": "Pedido {order_ref} pronto para retirada!",
     "order_ready_delivery": "Pedido {order_ref} pronto! Sera enviado em breve.",
-    "order_dispatched": "Pedido {order_ref} saiu para entrega!",
+    "order_dispatched": "Pedido {order_ref} saiu para entrega! Quando receber, confirme aqui: {tracking_url}",
     "order_delivered": "Pedido {order_ref} entregue. Obrigado!",
-    "order_cancelled": "Pedido {order_ref} cancelado. Em caso de duvidas, entre em contato.{reason_note}",
-    "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento. Motivo: {reason}",
-    "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Seu pedido seguira para preparo.",
+    "order_cancelled": "Pedido {order_ref} cancelado.{reason_note}\nVeja os detalhes: {tracking_url}",
+    "order_rejected": "Pedido {order_ref} nao foi confirmado pelo estabelecimento.{reason_note}\nVeja os detalhes: {tracking_url}",
+    "payment_confirmed": "Pagamento do pedido {order_ref} recebido. Avisamos a cada passo: {tracking_url}",
     "payment_requested": "Pedido {order_ref}: disponibilidade confirmada. Pague aqui: {payment_url}",
-    "payment_expired": "Pedido {order_ref} cancelado: o prazo de pagamento expirou.",
+    "payment_link_sent": "Anotamos o pedido {order_ref}, {total}. Pague aqui: {checkout_url}{payment_deadline_note}",
+    "payment_expired": "Nao recebemos o pagamento do pedido {order_ref} no prazo e liberamos a reserva. Se ainda quiser, fale com a gente que refazemos o pedido.",
     "payment_failed": "Nao conseguimos preparar o pagamento do pedido {order_ref}. Tente novamente: {payment_url}",
     "preorder_reminder": "Lembrete: seu pedido {order_ref} esta agendado para amanha. Ja estamos preparando tudo!",
+    "waitlist_available": "Sua fornada saiu! Confirme o pedido {order_ref} para garantir o seu: {tracking_url}",
+    "waitlist_released": "O prazo de confirmacao do pedido {order_ref} passou e liberamos a sua vaga. Nada foi cobrado.",
     "stock_arrived": "{product_name} chegou!{reserve_note}{deadline_note} {cta} {action_url}",
     "production_ready": "Saiu do forno agora: {product_name}! {cta} {action_url}",
     "announcement_published": "{body} {cta} {action_url}",
     "purchase_request": (
-        "Pedido {purchase_ref}: {material_name} {purchase_qty_display}. "
-        "Confirme disponibilidade e prazo. {shop_name}"
+        "Ola, {supplier_greeting}! Pedido {purchase_ref} da {shop_name}: "
+        "{material_name} {purchase_qty_display}. "
+        "Pode confirmar disponibilidade e prazo?"
     ),
     "purchase_receipt_rejected": "Devolução {receipt_ref}: {supplier_name}. Motivo: {reason}",
 }
@@ -59,11 +64,23 @@ def _get_config() -> dict:
     return getattr(settings, "SHOPMAN_SMS", {}) or {}
 
 
+# O template do Admin é escrito pensando no WhatsApp e usa `*negrito*` de markdown.
+# No SMS não existe formatação: o asterisco chega literal na tela do cliente
+# ("pedido *NB-260901-M63*"). Tirar na SAÍDA do canal, e não no texto, é o que
+# preserva o negrito onde ele funciona sem obrigar o lojista a escrever duas versões.
+# Limite de 80 e sem quebra de linha: `*` solto no meio de uma frase não vira par.
+_MARKDOWN_BOLD = re.compile(r"\*([^*\n]{1,80})\*")
+
+
+def _strip_markdown_bold(text: str) -> str:
+    return _MARKDOWN_BOLD.sub(r"\1", text)
+
+
 def _build_message(template: str, context: dict) -> str:
     # O texto editado no Admin (NotificationTemplate) vale para SMS também.
     from shopman.shop.adapters._notification_templates import render_message
 
-    return render_message(template, context, MESSAGE_TEMPLATES)
+    return _strip_markdown_bold(render_message(template, context, MESSAGE_TEMPLATES))
 
 
 def send(recipient: str, template: str, context: dict | None = None, **config) -> bool:

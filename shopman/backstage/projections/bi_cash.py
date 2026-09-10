@@ -79,12 +79,62 @@ class BICashAccounts:
 
 
 @dataclass(frozen=True)
+class BICashDrawerRow:
+    """O comportamento de gaveta de UMA pessoa — para reconhecer padrão, não só contar.
+
+    A trava é dura: com a gaveta aberta o balcão não anda, e quem libera é
+    fechá-la. Por isso ``blocks`` (quantas vezes a pessoa esbarrou na trava) e
+    ``open_seconds`` (quanto tempo a gaveta ficou aberta somada) são a medida
+    honesta do hábito — antes o PIN cortava essa medição no meio.
+
+    O resto é o que denuncia:
+
+    - ``overrides`` — destraves de emergência. Deveria ser quase zero.
+    - ``unlock_attempts`` — quantas vezes ALGUÉM abriu a tela de PIN, inclusive
+      desistindo. A saída é escondida (Esc), então procurá-la é sinal.
+    - ``sensor_blind`` — vezes que o sensor sumiu numa estação medida. Cabo
+      solto acontece; cabo solto toda tarde, não.
+    - ``left_open`` — gaveta esquecida aberta sem ninguém vender.
+    - ``dismissals`` — esbarrou na trava e DESISTIU da venda em vez de fechar a
+      gaveta. Uma é rotina (o cliente foi embora); repetida no mesmo turno é o
+      hábito de trabalhar com a gaveta aberta.
+    - ``longest_open_seconds`` — o pior episódio, que a média esconde.
+    """
+
+    operator: str
+    blocks: int
+    open_seconds: int
+    longest_open_seconds: int
+    overrides: int
+    unlock_attempts: int
+    sensor_blind: int
+    left_open: int
+    dismissals: int = 0
+
+
+@dataclass(frozen=True)
+class BICashDrawerAnomaly:
+    """Um padrão que pede explicação. Não é acusação: é onde olhar.
+
+    Nasce da frase do dono: *se não pudermos evitar a fraude, pelo menos temos
+    que reconhecê-la*. Cada linha aponta um turno e diz o que não fecha.
+    """
+
+    code: str
+    operator: str
+    shift_key: int
+    detail: str
+
+
+@dataclass(frozen=True)
 class BICashHourRow:
     """Uma hora do dia com atividade de gaveta. Só horas com algo aparecem."""
 
     hour: int
     drawer_openings: int
     drawer_unlocks: int
+    blocks: int = 0
+    open_seconds: int = 0
 
 
 @dataclass(frozen=True)
@@ -117,6 +167,8 @@ class BICashReport:
     previous: BICashPrevious
     drawer_by_hour: tuple[BICashHourRow, ...]
     accounts: BICashAccounts = BICashAccounts()
+    drawer_by_operator: tuple[BICashDrawerRow, ...] = ()
+    drawer_anomalies: tuple[BICashDrawerAnomaly, ...] = ()
 
 
 def build_bi_cash(
@@ -160,7 +212,9 @@ def build_bi_cash(
     hour_events: dict[int, dict[str, int]] = defaultdict(lambda: defaultdict(int))
     counted = (Kind.DRAWER_OPEN, Kind.DRAWER_UNLOCK, Kind.CHANGE_REQUESTED)
     operator_account_settled: dict[str, int] = defaultdict(int)
+    forensics = _DrawerForensics()
     for event in cashman.read_events(local_window(date_from, date_to)):
+        forensics.observe(event)
         if event.kind in (Kind.CASH_OUT, Kind.CASH_IN):
             day_movements[event.day][event.kind] += abs(event.amount_q)  # o sinal já é o tipo
         elif event.kind == Kind.ACCOUNT_SETTLED:
@@ -224,9 +278,13 @@ def build_bi_cash(
                 hour=hour,
                 drawer_openings=hour_events[hour][Kind.DRAWER_OPEN],
                 drawer_unlocks=hour_events[hour][Kind.DRAWER_UNLOCK],
+                blocks=forensics.hour_blocks[hour],
+                open_seconds=forensics.hour_open_ms[hour] // 1000,
             )
-            for hour in sorted(hour_events)
+            for hour in sorted(set(hour_events) | set(forensics.hour_blocks))
         ),
+        drawer_by_operator=forensics.by_operator(),
+        drawer_anomalies=forensics.anomalies(),
         accounts=_cash_accounts(date_from, date_to, settled_cash_q=sum(operator_account_settled.values())),
     )
 
@@ -275,3 +333,180 @@ def _cash_previous(date_from: date, date_to: date) -> BICashPrevious:
         difference_total_q=sum(day_difference.values()),
         difference_by_day=tuple(day_difference.get(day, 0) for day in iter_days(prev_from, prev_to)),
     )
+
+
+class _DrawerForensics:
+    """Lê o livro uma vez e responde: quem abre a gaveta, por quanto tempo, e o que não fecha.
+
+    ⚠️ **Isto existe porque a fraude nem sempre dá para impedir.** O agente do
+    balcão roda NA máquina do caixa: quem tem a máquina tem o canal. Dá para
+    derrubar o agente, puxar o cabo da gaveta, ou — com trabalho — fazer a
+    loopback responder ``open: false`` para sempre. Nenhuma trava do PDV alcança
+    isso, e prometer o contrário seria mentira.
+
+    O que **é** garantível é o reconhecimento depois, e é para isso que esta
+    classe existe: cada uma dessas manobras deixa uma assinatura no livro, e a
+    assinatura é justamente a AUSÊNCIA do que deveria estar lá. Um turno com
+    sangrias e nenhum bloqueio é possível (o operador pode ser cuidadoso), mas um
+    balcão inteiro sem UM episódio de gaveta aberta, com o sensor armado, não é
+    hábito — é sensor que não está falando.
+    """
+
+    #: Um turno com movimento de dinheiro e ZERO bloqueio é o padrão que denuncia
+    #: o sensor silenciado. Abaixo disto é ruído estatístico de um balcão calmo.
+    MIN_CASH_EVENTS_FOR_SILENCE = 5
+    #: Destraves de emergência num turno. Emperrar acontece; emperrar toda hora
+    #: é outra coisa.
+    MAX_OVERRIDES_PER_SHIFT = 2
+    #: Tentativas de abrir a tela de PIN num turno. A saída é escondida: quem a
+    #: procura repetidamente está procurando alguma coisa.
+    MAX_ATTEMPTS_PER_SHIFT = 3
+    #: Desistências num turno. Cliente que vai embora acontece; acontecer o dia
+    #: inteiro é outra coisa — é fechar a gaveta que está sobrando.
+    MAX_DISMISSALS_PER_SHIFT = 3
+
+    def __init__(self) -> None:
+        self.blocks: dict[str, int] = defaultdict(int)
+        self.open_ms: dict[str, int] = defaultdict(int)
+        self.longest_ms: dict[str, int] = defaultdict(int)
+        self.overrides: dict[str, int] = defaultdict(int)
+        self.attempts: dict[str, int] = defaultdict(int)
+        self.blind: dict[str, int] = defaultdict(int)
+        self.left_open: dict[str, int] = defaultdict(int)
+        self.dismissals: dict[str, int] = defaultdict(int)
+        self.hour_blocks: dict[int, int] = defaultdict(int)
+        self.hour_open_ms: dict[int, int] = defaultdict(int)
+        # Por (turno, pessoa). ⚠️ A chave inclui a PESSOA de propósito: várias
+        # mãos trabalham na mesma gaveta, e uma anomalia que aponta "o turno"
+        # acusa quem abriu o caixa em vez de quem fez. Isso seria pior que não
+        # apontar nada — o padrão é sobre comportamento de gente.
+        self._blocks_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._cash_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._overrides_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._attempts_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._blind_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._dismissals_by: dict[tuple[int, str], int] = defaultdict(int)
+        self._seen: set[tuple[int, str]] = set()
+
+    def observe(self, event) -> None:
+        from shopman.cashman.models import Entry
+
+        who = event.operator_key
+        chave = (event.shift_key, who)
+        self._seen.add(chave)
+        payload = event.payload or {}
+
+        # "Mexeu na gaveta" para efeito de silêncio suspeito: dinheiro entrando
+        # ou saindo em espécie, mais as aberturas sem venda. Pix e cartão não
+        # contam — não abrem gaveta nenhuma.
+        if event.kind in (Entry.Kind.CASH_IN, Entry.Kind.CASH_OUT, Entry.Kind.DRAWER_OPEN, Entry.Kind.REFUND):
+            self._cash_by[chave] += 1
+
+        if event.kind == Entry.Kind.DRAWER_UNLOCK:
+            self.overrides[who] += 1
+            self._overrides_by[chave] += 1
+            return
+
+        if event.kind != Entry.Kind.NOTE:
+            return
+
+        evento = payload.get("event")
+        if evento == "drawer_blocked":
+            duracao = int(payload.get("duration_ms") or 0)
+            self.blocks[who] += 1
+            self.open_ms[who] += duracao
+            self.longest_ms[who] = max(self.longest_ms[who], duracao)
+            self.hour_blocks[event.at.hour] += 1
+            self.hour_open_ms[event.at.hour] += duracao
+            self._blocks_by[chave] += 1
+            if payload.get("outcome") == "dismissed":
+                self.dismissals[who] += 1
+                self._dismissals_by[chave] += 1
+        elif evento == "drawer_unlock_attempt":
+            self.attempts[who] += 1
+            self._attempts_by[chave] += 1
+        elif evento == "drawer_sensor_blind":
+            self.blind[who] += 1
+            self._blind_by[chave] += 1
+        elif evento == "drawer_left_open":
+            self.left_open[who] += 1
+
+    def by_operator(self) -> tuple[BICashDrawerRow, ...]:
+        pessoas = (
+            set(self.blocks) | set(self.overrides) | set(self.attempts)
+            | set(self.blind) | set(self.left_open) | set(self.dismissals)
+        )
+        return tuple(
+            BICashDrawerRow(
+                operator=who,
+                blocks=self.blocks[who],
+                open_seconds=self.open_ms[who] // 1000,
+                longest_open_seconds=self.longest_ms[who] // 1000,
+                overrides=self.overrides[who],
+                unlock_attempts=self.attempts[who],
+                sensor_blind=self.blind[who],
+                left_open=self.left_open[who],
+                dismissals=self.dismissals[who],
+            )
+            for who in sorted(pessoas)
+        )
+
+    def anomalies(self) -> tuple[BICashDrawerAnomaly, ...]:
+        achados: list[BICashDrawerAnomaly] = []
+        for shift_key, operador in sorted(self._seen):
+            chave = (shift_key, operador)
+            caixa = self._cash_by[chave]
+            bloqueios = self._blocks_by[chave]
+            if caixa >= self.MIN_CASH_EVENTS_FOR_SILENCE and bloqueios == 0:
+                achados.append(BICashDrawerAnomaly(
+                    code="drawer_never_blocked",
+                    operator=operador,
+                    shift_key=shift_key,
+                    detail=(
+                        f"{caixa} movimentos de dinheiro e NENHUM bloqueio por gaveta aberta. "
+                        "Ou a gaveta fechou instantaneamente todas as vezes, ou o sensor não "
+                        "estava falando com o PDV."
+                    ),
+                ))
+            if self._overrides_by[chave] > self.MAX_OVERRIDES_PER_SHIFT:
+                achados.append(BICashDrawerAnomaly(
+                    code="too_many_overrides",
+                    operator=operador,
+                    shift_key=shift_key,
+                    detail=(
+                        f"{self._overrides_by[chave]} destraves de emergência no mesmo turno. "
+                        "A emergência é a gaveta emperrada; emperrar tantas vezes é conserto, não exceção."
+                    ),
+                ))
+            if self._attempts_by[chave] > self.MAX_ATTEMPTS_PER_SHIFT:
+                achados.append(BICashDrawerAnomaly(
+                    code="hunting_for_the_exit",
+                    operator=operador,
+                    shift_key=shift_key,
+                    detail=(
+                        f"A tela de PIN da trava foi aberta {self._attempts_by[chave]}× neste turno. "
+                        "A saída é escondida de propósito: procurá-la repetidamente é procurar alguma coisa."
+                    ),
+                ))
+            if self._dismissals_by[chave] > self.MAX_DISMISSALS_PER_SHIFT:
+                achados.append(BICashDrawerAnomaly(
+                    code="gave_up_repeatedly",
+                    operator=operador,
+                    shift_key=shift_key,
+                    detail=(
+                        f"Esbarrou na trava e desistiu da venda {self._dismissals_by[chave]}× neste turno, "
+                        "em vez de fechar a gaveta. Fechar leva um segundo; desistir tantas vezes é "
+                        "trabalhar com a gaveta aberta de propósito."
+                    ),
+                ))
+            if self._blind_by[chave]:
+                achados.append(BICashDrawerAnomaly(
+                    code="sensor_went_blind",
+                    operator=operador,
+                    shift_key=shift_key,
+                    detail=(
+                        f"O sensor da gaveta parou de responder {self._blind_by[chave]}× neste turno, "
+                        "numa estação que TINHA medição. Cabo solto acontece uma vez; toda tarde é outra coisa."
+                    ),
+                ))
+        return tuple(achados)

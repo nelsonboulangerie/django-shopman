@@ -10,6 +10,8 @@ from datetime import datetime
 
 from django.http import HttpResponse
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.authentication import SessionAuthentication
@@ -39,6 +41,13 @@ from shopman.storefront.presentation.account import (
 )
 from shopman.storefront.services import orders as order_service
 
+from .actions import action_payload
+
+# O portão do OTP de depuração mora no módulo de auth e é reusado — nunca
+# reescrito. Ele falha fechado em três camadas (DEBUG, flag, segredo conferido
+# por `compare_digest`), e uma segunda cópia da regra é uma segunda chance de
+# alguma delas ficar para trás.
+from .auth import _debug_otp_response, _normalize_payload_phone
 from .projections import projection_data
 from .serializers import (
     AddressSerializer,
@@ -301,6 +310,86 @@ def _favorites_copy() -> dict:
     }
 
 
+def _support_whatsapp_url() -> str:
+    """O WhatsApp da padaria — a única saída que não depende de o cliente lembrar de nada."""
+    try:
+        from shopman.shop.models import Shop
+
+        shop = Shop.load()
+        return shop.whatsapp_url if shop else ""
+    except Exception:
+        logger.debug("storefront_account_support_whatsapp_failed", exc_info=True)
+        return ""
+
+
+def _contact_taken_response(exc) -> Response:
+    """A recusa com SAÍDA — o dialeto canônico mais o superset do storefront.
+
+    ``{detail, field, errors}`` é o que toda superfície entende; ``error_code``,
+    ``title`` e ``actions`` são o superset que a loja já consome em recusas com
+    recuperação (carrinho, rate-limit). Um front que só lê ``detail`` continua
+    funcionando.
+
+    ⚠️ PRIVACIDADE — a diferença que este payload guarda em relação ao gêmeo do
+    PDV. O PDV manda ``candidates`` com nome, telefone e e-mail dos dois
+    cadastros, porque é superfície de OPERADOR: quem está no balcão precisa saber
+    com quem está falando para decidir. Aqui é superfície de CLIENTE e o
+    solicitante é um desconhecido em relação ao dono do e-mail — nomear o dono
+    seria vazar dado pessoal de terceiro para quem digitou um endereço qualquer.
+    Então a loja diz que o e-mail não está disponível, aponta o campo, e oferece
+    os dois caminhos que servem sem revelar nada: entrar na conta que já usa esse
+    e-mail (se for dele, ele passa pelo OTP e prova), ou falar com a padaria (se
+    não for, quem resolve é gente).
+
+    Vale igual para o TELEFONE, e ali a privacidade aperta ainda mais: o número
+    é a identidade de quem entra, então dizer de quem ele é entregaria a chave
+    junto com o nome. Muda a copy, não a regra.
+    """
+    field = getattr(exc, "field", "email") or "email"
+    is_phone = field == "phone"
+    padrao = account_service.PHONE_TAKEN_DETAIL if is_phone else account_service.EMAIL_TAKEN_DETAIL
+    detail = str(exc) or padrao
+
+    actions = [
+        action_payload(
+            ref="sign_in_with_phone" if is_phone else "sign_in_with_email",
+            kind="link",
+            label="Entrar com esse número" if is_phone else "Entrar com esse e-mail",
+            href="/entrar?next=/conta/seguranca" if is_phone else "/entrar?next=/conta/perfil",
+            priority="primary",
+            reason=(
+                "Se a conta é sua, entre nela por esse número."
+                if is_phone
+                else "Se a conta é sua, entre nela pelo telefone cadastrado."
+            ),
+            idempotency="none",
+        )
+    ]
+    whatsapp_url = _support_whatsapp_url()
+    if whatsapp_url:
+        actions.append(action_payload(
+            ref="contact_whatsapp",
+            kind="external",
+            label="Falar com a padaria",
+            href=whatsapp_url,
+            priority="secondary",
+            reason="A gente resolve com você pelo WhatsApp.",
+            idempotency="none",
+        ))
+
+    return Response(
+        {
+            "detail": detail,
+            "field": field,
+            "errors": {field: [detail]},
+            "error_code": "contact_already_taken",
+            "title": "Confira o número" if is_phone else "Confira o e-mail",
+            "actions": actions,
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
 @extend_schema_view(
     get=extend_schema(
         tags=["account"],
@@ -310,7 +399,13 @@ def _favorites_copy() -> dict:
     patch=extend_schema(
         tags=["account"],
         summary="Update customer profile",
-        responses={200: CustomerProfileSerializer, 400: DetailSerializer, 401: DetailSerializer},
+        responses={
+            200: CustomerProfileSerializer,
+            400: DetailSerializer,
+            401: DetailSerializer,
+            # Contato já é de outro cadastro: recusa nomeada, com campo e saídas.
+            409: DetailSerializer,
+        },
     ),
 )
 class ProfileView(APIView):
@@ -346,7 +441,7 @@ class ProfileView(APIView):
     def patch(self, request):
         from datetime import date as date_type
 
-        from shopman.storefront.intents.types import ProfileUpdateIntent
+        from shopman.storefront.intents.types import UNSET, ProfileUpdateIntent
 
         customer = get_authenticated_customer(request)
         if not customer:
@@ -355,22 +450,30 @@ class ProfileView(APIView):
         payload = request.data if hasattr(request, "data") else {}
         # Nomes vao para o ticket do KDS/pedido: sanitiza controle/bidi e limita
         # o comprimento antes de persistir (clean_name), nao so ``.strip()``.
+        # PATCH de verdade: chave AUSENTE não é chave vazia. O portão de
+        # boas-vindas manda só `first_name`; ler os quatro incondicionalmente
+        # fazia dele um PUT, e `""` no e-mail significa APAGAR o ContactPoint
+        # primário — o cliente perdia e-mail, sobrenome e aniversário só por
+        # confirmar o próprio nome. Quem quer limpar um campo manda ele vazio.
         first_name = clean_name(payload.get("first_name"))
-        last_name = clean_name(payload.get("last_name"))
-        email = clean_text(payload.get("email"))
-        birthday_raw = clean_text(payload.get("birthday"))
         if not first_name:
             return Response(
                 {"detail": "Nome é obrigatório.", "field": "first_name"},
                 status=400,
             )
 
-        birthday = None
-        if birthday_raw:
-            try:
-                birthday = date_type.fromisoformat(birthday_raw)
-            except ValueError:
-                birthday = None
+        last_name = clean_name(payload["last_name"]) if "last_name" in payload else UNSET
+        email = clean_text(payload["email"]) if "email" in payload else UNSET
+
+        birthday = UNSET
+        if "birthday" in payload:
+            birthday_raw = clean_text(payload["birthday"])
+            birthday = None
+            if birthday_raw:
+                try:
+                    birthday = date_type.fromisoformat(birthday_raw)
+                except ValueError:
+                    birthday = None
 
         intent = ProfileUpdateIntent(
             first_name=first_name,
@@ -380,6 +483,12 @@ class ProfileView(APIView):
         )
         try:
             updated = account_service.update_profile(customer.ref, intent)
+        except account_service.ContactAlreadyTaken as exc:
+            # A recusa que TEM motivo não pode cair no `except Exception` abaixo:
+            # ali a frase real é descartada e o cliente lê "tente novamente"
+            # sobre um problema que tentar de novo não resolve. Por isso este
+            # handler vem SEMPRE antes do genérico.
+            return _contact_taken_response(exc)
         except Exception:
             # Nunca devolver ``str(exc)`` ao cliente: vazaria nomes de modelo/campo
             # internos. Mensagem fixa pt-BR; o detalhe técnico fica só no log.
@@ -416,6 +525,23 @@ class AccountSummaryView(APIView):
 
         account = build_account(customer, reduced_addresses=knows_only_the_number(request))
         last_order = account.recent_orders[0] if account.recent_orders else None
+        # Pedidos em andamento vêm prontos no summary: são o primeiro conteúdo da
+        # tela da conta (e o único acesso razoável quando há mais de um ativo).
+        # Leitura degrada para vazio — a conta responde mesmo com o histórico fora.
+        try:
+            active_orders = order_service.order_history_for_customer(
+                customer_ref=customer.ref,
+                phone=customer.phone,
+                filter_param="ativos",
+                limit=5,
+            )
+        except Exception:
+            logger.warning(
+                "storefront_account_active_orders_failed customer=%s",
+                customer.ref,
+                exc_info=True,
+            )
+            active_orders = []
         loyalty = None
         if account.loyalty:
             loyalty = {
@@ -445,6 +571,15 @@ class AccountSummaryView(APIView):
                 customer_ref=customer.ref,
                 phone=customer.phone,
             ),
+            # Total real (sem o teto de 10 dos recentes) — alimenta a frase
+            # "X em andamento (Y no total)".
+            "total_order_count": order_service.order_count_for_customer(
+                customer_ref=customer.ref,
+                phone=customer.phone,
+            ),
+            "active_orders": OrderHistoryItemSerializer(
+                [_with_order_actions(order) for order in active_orders], many=True
+            ).data,
             "last_order": {
                 "ref": last_order.ref,
                 "created_at_display": last_order.created_at_display,
@@ -662,6 +797,18 @@ class OrderHistoryView(APIView):
         serializer = OrderHistoryItemSerializer([_with_order_actions(order) for order in data], many=True)
         return Response({
             "orders": serializer.data,
+            # Contagens independem do filtro aplicado: a tela mostra
+            # "X em andamento (Y no total)" seja qual for o recorte.
+            "counts": {
+                "total": order_service.order_count_for_customer(
+                    customer_ref=customer.ref,
+                    phone=customer.phone,
+                ),
+                "active": order_service.active_order_count_for_customer(
+                    customer_ref=customer.ref,
+                    phone=customer.phone,
+                ),
+            },
             "copy": {"empty": _history_empty_copy(filter_param)},
         })
 
@@ -892,6 +1039,140 @@ class AccountStepUpView(APIView):
             # só o atalho durável não pôde ser gravado.
             logger.warning("account.step_up_trust_failed", exc_info=True)
         return response
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="5/m", method="POST", block=False),
+    name="dispatch",
+)
+class PhoneChangeRequestView(APIView):
+    """POST /api/v1/account/phone/request/ — manda o código para o número NOVO.
+
+    Nada muda no cadastro aqui. O código vai para o número que o cliente quer
+    adotar, porque é a posse DELE que falta provar — a sessão já responde pela
+    conta atual.
+    """
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["account"],
+        summary="Request OTP to change the account phone number",
+        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+    )
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde alguns minutos."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        payload = request.data if hasattr(request, "data") else {}
+        try:
+            phone, resultado = account_service.request_phone_change(
+                customer,
+                # Mesma leitura de telefone do login: região, DDD padrão da loja
+                # e máscara já resolvidos num lugar só.
+                _normalize_payload_phone(payload) or str(payload.get("phone") or ""),
+                ip_address=auth_service.client_ip(request),
+            )
+        except account_service.ContactAlreadyTaken as exc:
+            return _contact_taken_response(exc)
+        except account_service.PhoneChangeRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "errors": {exc.field: [str(exc)]},
+                    "error_code": exc.error_code,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not resultado.success:
+            return Response(
+                {
+                    "detail": auth_service.request_code_error_message(resultado),
+                    "field": "phone",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "ok": True,
+                "phone": phone,
+                "code_expires_at": getattr(resultado, "expires_at", None) or "",
+                # O código só sai daqui pelo mesmo portão do login — que falha
+                # fechado fora de DEBUG e exige o segredo no cabeçalho. Repetir
+                # a regra à mão aqui seria abrir uma segunda porta para o mesmo
+                # cofre, e é assim que uma delas fica destrancada.
+                **_debug_otp_response(resultado, request),
+            }
+        )
+
+
+@method_decorator(
+    ratelimit(key="user_or_ip", rate="10/m", method="POST", block=False),
+    name="dispatch",
+)
+class PhoneChangeConfirmView(APIView):
+    """POST /api/v1/account/phone/confirm/ — confere o código e troca o número."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = [SessionAuthentication]
+
+    @extend_schema(
+        tags=["account"],
+        summary="Confirm the OTP and change the account phone number",
+        responses={200: DetailSerializer, 400: DetailSerializer, 409: DetailSerializer},
+    )
+    def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {"detail": "Muitas tentativas. Aguarde alguns minutos."},
+                status=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        customer = get_authenticated_customer(request)
+        if not customer:
+            return Response({"detail": "Entre na sua conta para continuar."}, status=401)
+
+        payload = request.data if hasattr(request, "data") else {}
+        try:
+            phone = account_service.confirm_phone_change(
+                customer,
+                _normalize_payload_phone(payload) or str(payload.get("phone") or ""),
+                str(payload.get("code") or ""),
+            )
+        except account_service.ContactAlreadyTaken as exc:
+            return _contact_taken_response(exc)
+        except account_service.PhoneChangeRefused as exc:
+            return Response(
+                {
+                    "detail": str(exc),
+                    "field": exc.field,
+                    "errors": {exc.field: [str(exc)]},
+                    "error_code": exc.error_code,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception:
+            logger.exception(
+                "storefront_account_phone_change_failed",
+                extra={"customer_ref": customer.ref},
+            )
+            return Response(
+                {"detail": "Não foi possível mudar seu número agora. Tente novamente."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response({"ok": True, "phone": phone})
 
 
 class AccountDeleteView(APIView):

@@ -80,7 +80,7 @@ class BIProductionReport:
 def build_bi_production(
     *, date_from: date | None = None, date_to: date | None = None
 ) -> BIProductionReport:
-    from shopman.craftsman.models import WorkOrder, WorkOrderItem
+    from shopman.craftsman.models import WorkOrder
 
     from shopman.backstage.models import OvenRun
 
@@ -101,9 +101,7 @@ def build_bi_production(
     batches_finished = len(work_orders)
     batches_measured = sum(1 for ref in wo_by_ref if ref in measured_refs)
 
-    quality_by_day = _quality_mix_by_day(
-        work_order_item_model=WorkOrderItem, date_from=date_from, date_to=date_to
-    )
+    quality_by_day = _quality_mix_by_day(work_orders=work_orders)
     days = tuple(
         BIProductionDay(
             date=day.date,
@@ -217,24 +215,17 @@ def _daily_series(work_orders, *, date_from: date, date_to: date) -> tuple[BIPro
     return tuple(days)
 
 
-def _quality_mix_by_day(*, work_order_item_model, date_from: date, date_to: date):
-    """OUTPUT por dia, partido em preço cheio × com desconto pelo grau (ADR-017)."""
-    from shopman.shop.models import QualityGrade
+def _quality_mix_by_day(*, work_orders):
+    """Effective OUTPUT by day, split by the lot's frozen commercial markdown."""
+    from shopman.shop.services import quality as quality_service
 
-    markdown = dict(QualityGrade.objects.values_list("ref", "markdown_percent"))
-    rows = (
-        work_order_item_model.objects.filter(
-            kind=work_order_item_model.Kind.OUTPUT,
-            work_order__target_date__range=(date_from, date_to),
-            work_order__status="finished",
-        )
-        .values_list("work_order__target_date", "quality_grade_ref", "quantity")
-    )
+    partitions = quality_service.effective_partitions(work_orders, include_loss=False)
     mix: dict[str, dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
-    for target_date, grade_ref, quantity in rows:
-        # Linha sem grau = fluxo escalar antigo: vale como grau padrão (cheio).
-        bucket = "discounted" if markdown.get(grade_ref, 0) else "full_price"
-        mix[target_date.isoformat()][bucket] += quantity
+    for work_order in work_orders:
+        for group in partitions.get(work_order.pk, []):
+            quantity = Decimal(str(group.get("quantity") or "0"))
+            bucket = "discounted" if int(group.get("markdown_percent") or 0) else "full_price"
+            mix[work_order.target_date.isoformat()][bucket] += quantity
     return mix
 
 

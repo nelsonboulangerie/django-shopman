@@ -15,6 +15,16 @@ const tabs = [
   { to: "/catalog", key: "catalog", label: "Catálogo", icon: "lucide:book-open" },
   { to: "/feeds", key: "feeds", label: "Feeds", icon: "lucide:monitor-play" },
 ] as const;
+
+// Porta para o cadastro de clientes. Fica FORA do segmented control de propósito:
+// aquele conjunto é de seções DESTE app, e esta é uma saída para o Admin — que
+// hoje é o único lugar onde se busca, edita e cria cliente. Quem atende precisa
+// de um caminho permanente até lá, não só do link que nasce dentro de um pedido.
+// Quando o Gestor tiver a própria tela de clientes, isto vira mais uma aba.
+const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+const customersUrl = computed(() =>
+  adminBaseUrl ? `${adminBaseUrl}/admin/guestman/customer/` : "",
+);
 </script>
 
 <template>
@@ -36,5 +46,18 @@ const tabs = [
         <span>{{ t.label }}</span>
       </NuxtLink>
     </nav>
+    <a
+      v-if="customersUrl"
+      :href="customersUrl"
+      target="_blank"
+      rel="noopener"
+      class="inline-flex h-8 items-center gap-1.5 rounded-md px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      title="Buscar, editar e cadastrar clientes (abre o Admin)"
+      data-customers-link
+    >
+      <Icon name="lucide:users" class="size-4" />
+      <span>Clientes</span>
+      <Icon name="lucide:external-link" class="size-3 opacity-60" />
+    </a>
   </header>
 </template>

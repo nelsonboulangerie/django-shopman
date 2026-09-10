@@ -38,6 +38,9 @@ _IDEMPOTENCY_SCOPE = "webhook:ifood"
 # Event codes that create a new order. iFood sends both a short ``code`` (PLC)
 # and a ``fullCode`` (PLACED); we accept either.
 _PLACED_CODES = {"PLC", "PLACED"}
+# Cancelamento originado no iFood (cliente desistiu no app / iFood cancelou):
+# refletir no Order local para o Gestor nao tratar pedido ja cancelado pelo iFood.
+_CANCELLATION_CODES = {"CAN", "CANCELLED"}
 _ACK_BATCH = 100  # iFood acknowledges in batches.
 
 
@@ -134,6 +137,19 @@ def process_events(events: list[dict]) -> dict:
             failed += 1
             continue
 
+        # Cancelamento originado no iFood: reflete no nosso Order.
+        if code in _CANCELLATION_CODES:
+            outcome = _process_cancellation(event_id, order_id)
+            if outcome == "ingested":
+                ingested += 1
+                handled_ids.append(event_id)
+            elif outcome == "deduped":
+                deduped += 1
+                handled_ids.append(event_id)
+            else:  # failed — sem ack, iFood reentrega
+                failed += 1
+            continue
+
         # Non-order-creating codes are acknowledged and ignored (WP-2 scope).
         if code not in _PLACED_CODES:
             ignored += 1
@@ -202,6 +218,61 @@ def _process_placed(event_id: str, order_id: str) -> str:
 
     webhook_idempotency.mark_done(claim, response_body={"status": "accepted", "order_ref": created.ref})
     return "ingested"
+
+
+def _process_cancellation(event_id: str, order_id: str) -> str:
+    """Reflect an iFood-originated cancellation into our Order.
+
+    Mesma disciplina do PLACED: claim por event id (idempotente), ack só
+    quando tratado, sem ack em falha (o iFood reentrega). Usa o serviço
+    canônico de cancelamento (grava cancellation_reason/cancelled_by antes
+    da transição) com a marca ifood_cancelled para o ifood_status não
+    responder requestCancellation de volta para quem já cancelou.
+    """
+    if not order_id:
+        logger.warning("ifood_events: CAN event %s without orderId", event_id)
+        return "failed"
+
+    claim = webhook_idempotency.claim(
+        _IDEMPOTENCY_SCOPE,
+        f"event:{webhook_idempotency.stable_webhook_key(event_id)}",
+    )
+    if claim.replayed:
+        return "deduped"
+    if claim.in_progress:
+        return "failed"
+
+    from shopman.orderman.models import Order
+
+    order = Order.objects.filter(
+        channel_ref=ifood_ingest.IFOOD_CHANNEL_REF,
+        external_ref=order_id,
+    ).first()
+    if order is None:
+        # Pedido que não conhecemos (ou já varrido): nada a refletir — ack.
+        webhook_idempotency.mark_done(claim, response_body={"status": "already_processed"})
+        return "ingested"
+    if order.status == "cancelled":
+        webhook_idempotency.mark_done(claim, response_body={"status": "already_cancelled"})
+        return "deduped"
+
+    try:
+        from shopman.shop.services import cancellation
+
+        cancelled = cancellation.cancel(
+            order,
+            reason="Cancelado pelo cliente no iFood",
+            actor="system:ifood",
+            extra_data={"ifood_cancelled": True},
+        )
+        outcome = "ingested" if cancelled else "deduped"
+    except Exception:
+        logger.exception("ifood_events: failed to cancel order %s (event %s)", order_id, event_id)
+        webhook_idempotency.mark_failed(claim)
+        return "failed"
+
+    webhook_idempotency.mark_done(claim, response_body={"status": "cancelled", "order_ref": order.ref})
+    return outcome
 
 
 def run_once() -> dict:

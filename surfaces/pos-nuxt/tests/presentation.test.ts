@@ -26,20 +26,25 @@ import { countOpenTabs, filterTabs, filterTabsByQuery, sanitizeTabRef, sortTabs,
 import { nextFreeNumericTabRef } from "../app/utils/posTabLifecycle";
 import { clampPercent, clampQty, popDigit, pushDigit } from "../app/presentation/numpad";
 import {
+  cashNoteLabel,
   cashNotesQ,
   cashTenderSumQ,
   changeForShortfallQ,
   collectionsForFulfillment,
   injectableMethods,
   isPaymentCovered,
+  machineTenderLines,
   methodLabel,
   nonCashExcessQ,
   paymentChangeQ,
   methodShortcuts,
   paymentIcon,
+  paymentDeadlineLabel,
   paymentProofView,
   paymentRemainingQ,
   qrCodeSrc,
+  splitHint,
+  splitShareQ,
   tenderLineView,
   tenderSumQ,
 } from "../app/presentation/payment";
@@ -61,7 +66,8 @@ import {
   requiresOpenShiftForSale,
   sessionScreenState,
 } from "../app/presentation/cash";
-import { managerAuthReason } from "../app/presentation/managerAuth";
+import type { ManagerAction } from "../../operator-kit/app/presentation/managerAuth";
+import { MANAGER_ACTIONS, managerAuthReason, managerAuthTitle } from "../../operator-kit/app/presentation/managerAuth";
 import {
   availableMoveModes,
   buildMovePayload,
@@ -76,6 +82,8 @@ import {
 } from "../app/presentation/moveLines";
 import {
   allLinesFired,
+  kitchenHandoffNote,
+  kitchenSurplusQty,
   fireBarView,
   firedCount,
   kitchenBadge,
@@ -83,17 +91,17 @@ import {
   unfiredCount,
 } from "../app/presentation/kitchen";
 import { pruneSelection, selectedItems, selectionView, toggleSelected } from "../app/presentation/selection";
-import { receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
+import { cashLandedInDrawer, receiptLineTotalQ, receiptLines, receiptPayments, type PosReceiptSnapshot } from "../app/presentation/receipt";
 import type { ActionAffordance } from "../app/presentation/actions";
 import { formatBRL } from "../app/utils/posIntent";
 
 function cartItem(overrides: Partial<POSCartItem> & { sku: string }): POSCartItem {
   return {
+    line_id: `L-${overrides.sku}`,
     name: overrides.sku,
     price_q: 0,
     qty: 1,
     notes: "",
-    
     ...overrides,
   };
 }
@@ -206,6 +214,9 @@ describe("presentation/actions — Action → affordance", () => {
     expect(aff.enabled).toBe(false);
     expect(aff.href).toBe("/fallback/");
     expect(aff.method).toBe("POST");
+    // Ação ausente da projection não pode ler como "não precisa de trava de
+    // replay": o fallback repete o default restritivo do backend.
+    expect(aff.idempotency).toBe("required");
   });
 });
 
@@ -746,26 +757,51 @@ describe("presentation/cash — pedido de troco (o dinheiro não anda)", () => {
 });
 
 describe("presentation/managerAuth — o que se assina e quem assina", () => {
-  it("prefers the ready-made reason text over the review codes", () => {
+  // O motivo do SERVIDOR ganha do fixo do ato: quando a review disse por que
+  // parou, é isso que o gerente precisa ler, não a frase genérica da exceção.
+  it("prefers the review codes over the action's fixed reason", () => {
     expect(
-      managerAuthReason({ reasonText: "Retirar dinheiro da gaveta é exceção auditada.", reasons: ["price_override"] }),
-    ).toBe("Retirar dinheiro da gaveta é exceção auditada.");
+      managerAuthReason({ action: "cash_out", reasons: ["discount_over_threshold"], thresholdQ: 5000 }),
+    ).toBe(`Desconto acima de ${formatBRL(5000)}.`);
+  });
+
+  // ⚠️ Frase curta, sem explicação. A copy antiga explicava a política dentro do
+  // diálogo ("Retirar dinheiro da gaveta é exceção auditada: um gerente precisa
+  // autorizar") e o dono achou prolixo: quem está de pé com fila não lê parágrafo.
+  it("a frase de cada ato é curta", () => {
+    for (const acao of Object.keys(MANAGER_ACTIONS) as ManagerAction[]) {
+      const frase = MANAGER_ACTIONS[acao].reason;
+      expect(frase.length).toBeLessThanOrEqual(40);
+      expect(frase).not.toContain(":");
+    }
+  });
+
+  // O título nomeia O ATO — "Autorizar destrave da gaveta", não "Autorização".
+  it("o título nomeia o ato", () => {
+    expect(managerAuthTitle("drawer_unlock")).toBe("Autorizar destrave da gaveta");
+    expect(managerAuthTitle(undefined)).toBe("Autorização do gerente");
   });
 
   it("spells out the review codes, threshold included", () => {
-    const text = managerAuthReason({ reasons: ["discount_over_threshold", "price_override"], thresholdQ: 1500 });
+    const text = managerAuthReason({ reasons: ["discount_over_threshold"], thresholdQ: 1500 });
     expect(text).toContain("Desconto acima de");
     expect(text).toContain("15,00");
-    expect(text).toContain("Preço alterado à mão.");
+  });
+
+  // ⚠️ Havia um segundo código, `price_override` — o operador digitava o preço à
+  // mão. O mecanismo saiu inteiro: preço à mão não passava pela régua do
+  // desconto (limite da loja, motivo, "maior desconto ganha") e tinha portão
+  // próprio. Código sem tradução cai na frase genérica, que é o certo: dizer
+  // pouco é melhor que dizer errado.
+  it("um código que a tela não conhece cai no genérico, não inventa motivo", () => {
+    expect(managerAuthReason({ reasons: ["price_override"] })).toBe("Precisa de um gerente.");
   });
 
   // Dizer pouco é melhor que dizer errado: o diálogo já afirmou "desconto acima de
   // R$ X" quando o gatilho era preço alterado, e o gerente assinou sem saber o quê.
   it("falls back to a generic line instead of guessing a reason", () => {
-    expect(managerAuthReason({})).toBe("Esta operação precisa da autorização de um gerente.");
-    expect(managerAuthReason({ reasons: ["codigo_desconhecido"] })).toBe(
-      "Esta operação precisa da autorização de um gerente.",
-    );
+    expect(managerAuthReason({})).toBe("Precisa de um gerente.");
+    expect(managerAuthReason({ reasons: ["codigo_desconhecido"] })).toBe("Precisa de um gerente.");
   });
 
   // Sem username o servidor não sabe contra QUAL credencial validar o PIN, e a
@@ -789,9 +825,11 @@ describe("presentation/moveLines — move modes, gate & payload", () => {
     expect(freezesPriceOnMove(null)).toBe(true);
   });
 
-  it("addresses a line by server line_id, falling back to sku", () => {
+  it("addresses a line by its line_id — e por nada mais", () => {
+    // O fallback para o sku saiu: numa comanda com dois chás ele endereçaria as
+    // duas linhas de uma vez, e a transferência levaria a errada.
     expect(moveLineId(cartItem({ sku: "CR", line_id: "L1" }))).toBe("L1");
-    expect(moveLineId(cartItem({ sku: "CR" }))).toBe("CR");
+    expect(moveLineId(cartItem({ sku: "CR", line_id: "L2" }))).toBe("L2");
   });
 
   it("needs line selection for split/transfer but not merge", () => {
@@ -859,12 +897,63 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     expect(allLinesFired([])).toBe(false);
   });
 
+  it("mais um do mesmo item vira LINHA NOVA, e é ela que o botão conta", () => {
+    // ⚠️ O defeito que isto tranca, e o modelo que o resolveu: enquanto havia
+    // uma linha por SKU, pedir mais um chá aumentava a quantidade de uma linha
+    // já enviada — o botão dizia "Enviado" e o segundo chá nunca era feito,
+    // porque o fire deduplica por `line_id`. Agora o segundo chá é outra linha,
+    // com identidade própria, e não existe meia-linha para contar.
+    const jaFoi = cartItem({ sku: "CHA", line_id: "L-cha-1", qty: 1, fired: true, fired_qty: 1 });
+    const novo = cartItem({ sku: "CHA", line_id: "L-cha-2", qty: 1 });
+
+    expect(unfiredCount([jaFoi, novo])).toBe(1);
+    expect(allLinesFired([jaFoi, novo])).toBe(false);
+    expect(allLinesFired([jaFoi])).toBe(true);
+    // A linha enviada não anuncia sobra nenhuma: ela foi inteira.
+    expect(kitchenBadge(jaFoi)).toEqual({ label: "Na cozinha", tone: "neutral" });
+
+    const bar = fireBarView({ items: [jaFoi, novo], affordance: affordance(), hasOpenTab: true, busy: false });
+    expect(bar.disabled).toBe(false);
+    expect(bar.unfired).toBe(1);
+  });
+
+  it("a contagem é de UNIDADES, não de linhas", () => {
+    // "Enviar 1" com três croissants pendentes é o número errado: o que a
+    // cozinha vai fazer são três.
+    const items = [cartItem({ sku: "CROISSANT", qty: 3 })];
+    expect(unfiredCount(items)).toBe(3);
+  });
+
+  it("a cozinha fazendo MAIS do que a conta cobra aparece na linha", () => {
+    // ⚠️ A diferença NEGATIVA: a linha foi com 3 e o operador baixou para 1
+    // (cliente desistiu, digitou errado). Nada é disparado — certo, ninguém quer
+    // duplicar — e nada é desfeito: o fogão segue com 3 e a conta cobra 1. Sem
+    // este selo, a tela dizia só "Na cozinha" e dois pães saíam sem pagamento.
+    const sobra = cartItem({ sku: "PAO", qty: 1, fired: true, fired_qty: 3 });
+    expect(kitchenSurplusQty(sobra)).toBe(2);
+    expect(kitchenBadge(sobra)).toEqual({ label: "3 na cozinha · 1 na conta", tone: "warning" });
+
+    // Nada a mais na cozinha, nada a dizer.
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 3, fired: true, fired_qty: 3 }))).toBe(0);
+    expect(kitchenSurplusQty(cartItem({ sku: "PAO", qty: 4, fired: true, fired_qty: 3 }))).toBe(0);
+  });
+
+  it("linha enviada sem `fired_qty` não inventa sobra", () => {
+    // O `fired_qty` existe para UMA pergunta só — quanto o fogão está fazendo a
+    // mais do que a conta cobra. Sem ele não há divergência a anunciar, e a
+    // linha segue simplesmente enviada.
+    const semQuantia = cartItem({ sku: "CHA", qty: 2, fired: true });
+    expect(kitchenSurplusQty(semQuantia)).toBe(0);
+    expect(kitchenBadge(semQuantia)).toEqual({ label: "Na cozinha", tone: "neutral" });
+    expect(allLinesFired([semQuantia])).toBe(true);
+    expect(unfiredCount([semQuantia])).toBe(0);
+  });
+
   it("derives per-line kitchen state", () => {
     expect(kitchenLineState(cartItem({ sku: "A" }), { canUnfire: true })).toBe("unfired");
     expect(kitchenLineState(cartItem({ sku: "A", fired: true, line_id: "L1" }), { canUnfire: true })).toBe("fired_cancellable");
-    // Fired but no unfire affordance, or no line_id to target → non-interactive.
+    // Fired but no unfire affordance → non-interactive.
     expect(kitchenLineState(cartItem({ sku: "A", fired: true, line_id: "L1" }), { canUnfire: false })).toBe("fired");
-    expect(kitchenLineState(cartItem({ sku: "A", fired: true }), { canUnfire: true })).toBe("fired");
   });
 
   it("linha que a cozinha já encerrou não oferece mais desfazer o envio", () => {
@@ -898,7 +987,9 @@ describe("presentation/kitchen — fire-to-kitchen shaping", () => {
     const items = [cartItem({ sku: "A", fired: true }), cartItem({ sku: "B" })];
     const bar = fireBarView({ items, affordance: affordance(), hasOpenTab: true, busy: false });
     expect(bar.visible).toBe(true);
-    expect(bar.label).toBe("Enviar itens (1)");
+    // A contagem saiu do RÓTULO e virou badge na tela — o texto do botão é o
+    // que a Action manda, sem número colado.
+    expect(bar.label).toBe("Enviar itens");
     expect(bar.unfired).toBe(1);
     expect(bar.disabled).toBe(false);
 
@@ -924,29 +1015,45 @@ describe("presentation/selection — multi-select batch shaping", () => {
   const items = [
     cartItem({ sku: "A", line_id: "L1" }),
     cartItem({ sku: "B", line_id: "L2", fired: true }),
-    cartItem({ sku: "C" }), // no line_id yet (unsaved)
+    cartItem({ sku: "C", line_id: "L3" }),
   ];
 
-  it("toggles a sku immutably", () => {
-    const a = toggleSelected(new Set<string>(), "A");
-    expect([...a]).toEqual(["A"]);
-    const b = toggleSelected(a, "B");
-    expect([...b].sort()).toEqual(["A", "B"]);
-    expect([...toggleSelected(b, "A")].sort()).toEqual(["B"]);
+  it("toggles a line immutably", () => {
+    const a = toggleSelected(new Set<string>(), "L1");
+    expect([...a]).toEqual(["L1"]);
+    const b = toggleSelected(a, "L2");
+    expect([...b].sort()).toEqual(["L1", "L2"]);
+    expect([...toggleSelected(b, "L1")].sort()).toEqual(["L2"]);
     // original set is untouched (new Set each time)
-    expect([...a]).toEqual(["A"]);
+    expect([...a]).toEqual(["L1"]);
   });
 
   it("shapes the batch toolbar: counts, firable vs unfirable line_ids", () => {
-    const view = selectionView(items, new Set(["A", "B", "C"]));
+    const view = selectionView(items, new Set(["L1", "L2", "L3"]));
     expect(view.count).toBe(3);
-    expect(view.skus.sort()).toEqual(["A", "B", "C"]);
-    // A is unfired with a line_id → firable; C has no line_id → excluded.
-    expect(view.firableLineIds).toEqual(["L1"]);
+    expect(view.lineIds).toEqual(["L1", "L2", "L3"]);
+    // A não foi à cozinha → pode ir; C também não.
+    expect(view.firableLineIds).toEqual(["L1", "L3"]);
     expect(view.canFire).toBe(true);
-    // B is fired with a line_id → unfirable.
+    // B já foi → pode voltar.
     expect(view.unfirableLineIds).toEqual(["L2"]);
     expect(view.canUnfire).toBe(true);
+  });
+
+  it("duas linhas do MESMO sku são selecionáveis uma sem a outra", () => {
+    // ⚠️ Com a seleção chaveada por sku, marcar o segundo chá marcava os dois: o
+    // lote agia sobre uma linha que o operador não escolheu, e o "1 selec." da
+    // barra mentia. A identidade da linha é o que separa as duas.
+    const dosChas = [
+      cartItem({ sku: "CHA", line_id: "L-cha-1", fired: true }),
+      cartItem({ sku: "CHA", line_id: "L-cha-2" }),
+    ];
+    const view = selectionView(dosChas, new Set(["L-cha-2"]));
+    expect(view.count).toBe(1);
+    expect(view.lineIds).toEqual(["L-cha-2"]);
+    expect(view.firableLineIds).toEqual(["L-cha-2"]);
+    expect(view.canUnfire).toBe(false);
+    expect(selectedItems(dosChas, new Set(["L-cha-1"])).map((i) => i.line_id)).toEqual(["L-cha-1"]);
   });
 
   it("empty selection has no batch affordances", () => {
@@ -956,15 +1063,15 @@ describe("presentation/selection — multi-select batch shaping", () => {
     expect(view.canUnfire).toBe(false);
   });
 
-  it("prunes selected skus no longer in the cart", () => {
-    const pruned = pruneSelection(new Set(["A", "Z"]), items);
-    expect([...pruned]).toEqual(["A"]);
+  it("prunes selected lines no longer in the cart", () => {
+    const pruned = pruneSelection(new Set(["L1", "L-fantasma"]), items);
+    expect([...pruned]).toEqual(["L1"]);
   });
 
-  it("selectedItems returns the cart items whose sku is selected", () => {
-    expect(selectedItems(items, new Set(["A", "C"])).map((i) => i.sku)).toEqual(["A", "C"]);
+  it("selectedItems returns the cart items whose line is selected", () => {
+    expect(selectedItems(items, new Set(["L1", "L3"])).map((i) => i.sku)).toEqual(["A", "C"]);
     expect(selectedItems(items, new Set())).toEqual([]);
-    expect(selectedItems(items, new Set(["Z"]))).toEqual([]);
+    expect(selectedItems(items, new Set(["L-fantasma"]))).toEqual([]);
   });
 });
 
@@ -1018,22 +1125,334 @@ describe("troco não é sangria", () => {
 describe("atalhos das formas de pagamento", () => {
   const m = (ref: string, label: string) => ({ ref, label }) as never;
 
-  it("a tecla é a inicial do RÓTULO, vinda do contrato", () => {
-    // Derivado, não fixo no código: a casa renomeia "Dinheiro" ou ganha uma
-    // forma nova e o atalho acompanha, em vez de disparar a linha errada.
-    expect(methodShortcuts([m("cash", "Dinheiro"), m("pix", "Pix"), m("card", "Cartão")]))
-      .toEqual({ cash: "D", pix: "P", card: "C" });
+  it("as quatro formas do balcão têm tecla, e nenhuma disputa a do vizinho", () => {
+    // ⚠️ A tecla era DERIVADA da inicial do rótulo, e a derivação morreu no dia
+    // em que o balcão passou a distinguir crédito de débito: "Dinheiro" e
+    // "Débito" disputam o D, "Cartão" e "Crédito" disputam o C. Quem chegasse
+    // depois ficava mudo, sem nada na tela dizendo por quê. O dinheiro virou R,
+    // de Reais, e o D ficou com o débito.
+    expect(methodShortcuts([
+      m("cash", "Dinheiro"),
+      m("pix", "Pix"),
+      m("credit", "Crédito"),
+      m("debit", "Débito"),
+    ])).toEqual({ cash: "R", pix: "P", credit: "C", debit: "D" });
   });
 
-  it("acento não atrapalha — 'Cartão' é C", () => {
-    expect(methodShortcuts([m("card", "Cartão")])).toEqual({ card: "C" });
+  it("a tecla vem do REF, não do rótulo — renomear a forma não move a tecla", () => {
+    // O músculo do operador é da tecla, não da palavra. Se a casa resolver
+    // chamar de "Cartão de crédito", o C continua sendo o C.
+    expect(methodShortcuts([m("credit", "Cartão de crédito")])).toEqual({ credit: "C" });
+    expect(methodShortcuts([m("cash", "Espécie")])).toEqual({ cash: "R" });
   });
 
-  it("colisão deixa o segundo SEM atalho, nunca com o do vizinho", () => {
+  it("forma fora do mapa cai na inicial do rótulo, como antes", () => {
+    // "Em conta" (E) é o caso vivo: só aparece para cliente com conta na casa.
+    expect(methodShortcuts([m("account", "Em conta")])).toEqual({ account: "E" });
+  });
+
+  it("F, I e M são RESERVADAS — nenhuma forma nova as toma pela inicial", () => {
+    // As três teclas da seção Nota fiscal: F (CPF na nota), I (impressa) e M
+    // (por e-mail). Bastaria a casa cadastrar "Fiado" para o F trocar de dono em
+    // silêncio, e o operador lançaria uma forma de pagamento onde esperava ligar
+    // o CPF, com o cliente na frente. A forma fica sem atalho — o botão continua
+    // na tela, que é o mesmo destino de qualquer colisão.
+    expect(methodShortcuts([m("fiado", "Fiado")])).toEqual({});
+    expect(methodShortcuts([m("interno", "Interno")])).toEqual({});
+    expect(methodShortcuts([m("maquina", "Máquina")])).toEqual({});
+    // E não estraga a fila: quem vem depois continua ganhando a letra dele.
+    expect(methodShortcuts([m("fiado", "Fiado"), m("account", "Em conta")])).toEqual({ account: "E" });
+  });
+
+  it("colisão ainda deixa o segundo SEM atalho, nunca com o do vizinho", () => {
     // Melhor sem tecla do que com uma que lança a forma errada com o cliente na
-    // frente. Quem chega primeiro fica com a letra.
-    const keys = methodShortcuts([m("cash", "Dinheiro"), m("debit", "Débito")]);
-    expect(keys).toEqual({ cash: "D" });
-    expect(keys.debit).toBeUndefined();
+    // frente. `card` e `credit` compartilham o C de propósito — eles nunca
+    // aparecem juntos, porque o balcão só oferece um dos dois.
+    const keys = methodShortcuts([m("credit", "Crédito"), m("card", "Cartão")]);
+    expect(keys).toEqual({ credit: "C" });
+    expect(keys.card).toBeUndefined();
+  });
+});
+
+describe("dividir a conta — a máquina faz a conta, não o operador", () => {
+  it("dois iguais numa conta par", () => {
+    expect(splitShareQ(10000, 2, 0, 10000)).toBe(5000);
+    expect(splitShareQ(10000, 2, 1, 5000)).toBe(5000);
+  });
+
+  it("os centavos FECHAM numa conta que não divide redondo", () => {
+    // 100,00 ÷ 3. Três vezes 33,33 deixaria um centavo órfão para o operador
+    // caçar com três clientes olhando.
+    const total = 10000;
+    let restante = total;
+    const parcelas: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const parcela = splitShareQ(total, 3, i, restante);
+      parcelas.push(parcela);
+      restante -= parcela;
+    }
+    // O centavo sobrando cai na parcela do MEIO — consequência da acumulação
+    // (round(10000·2/3) = 6667). Onde ele cai não importa; que a soma feche, sim.
+    expect(parcelas).toEqual([3333, 3334, 3333]);
+    expect(parcelas.reduce((a, b) => a + b, 0)).toBe(total);
+    expect(restante).toBe(0);
+  });
+
+  it("fecha para qualquer total e qualquer número de pessoas", () => {
+    for (const total of [1, 99, 4245, 9945, 123457]) {
+      for (const n of [2, 3, 4, 5, 6, 7]) {
+        let restante = total;
+        for (let i = 0; i < n; i++) restante -= splitShareQ(total, n, i, restante);
+        expect(restante).toBe(0);
+      }
+    }
+  });
+
+  it("a ÚLTIMA parcela leva o que restou, mesmo depois de o operador editar", () => {
+    // "Esse aqui paga os R$ 50, o resto divide": a primeira linha foi editada
+    // para 5000 num total de 9945, dividido em 3.
+    const total = 9945;
+    // já existem 2 linhas somando 5000 + 2000 → faltam 2945
+    expect(splitShareQ(total, 3, 2, 2945)).toBe(2945);
+  });
+
+  it("nunca lança mais do que falta", () => {
+    expect(splitShareQ(10000, 4, 0, 900)).toBe(900);
+  });
+
+  it("sem divisão, a próxima linha é o restante inteiro", () => {
+    expect(splitShareQ(10000, 1, 0, 10000)).toBe(10000);
+    expect(splitShareQ(10000, 0, 0, 7000)).toBe(7000);
+  });
+
+  it("total já coberto não lança nada", () => {
+    expect(splitShareQ(10000, 3, 1, 0)).toBe(0);
+  });
+});
+
+describe("splitHint — quanto pedir a quem está na frente", () => {
+  it("manda FAZER, e diz de quem é a vez", () => {
+    // ⚠️ `formatBRL` separa com espaço NÃO-QUEBRÁVEL. Comparar com um espaço
+    // comum passa despercebido na leitura e reprova no runner.
+    // O verbo entrou quando a frase virou a instrução do rodapé do checkout,
+    // lida de longe e dita em voz alta: "R$ 33,15 · pessoa 1 de 3" é etiqueta de
+    // mostrador; "Peça R$ 33,15" é o que fazer agora.
+    expect(splitHint(9945, 3, 0, 9945)).toBe(`Peça ${formatBRL(3315)} · pessoa 1 de 3`);
+    expect(splitHint(9945, 3, 1, 6630)).toBe(`Peça ${formatBRL(3315)} · pessoa 2 de 3`);
+  });
+
+  it("coberto, avisa que acabou", () => {
+    expect(splitHint(9945, 3, 3, 0)).toBe("Dividido em 3. Total coberto.");
+  });
+
+  it("sem divisão, sem frase", () => {
+    expect(splitHint(9945, 1, 0, 9945)).toBe("");
+  });
+});
+
+describe("cashLandedInDrawer — a gaveta só abre com dinheiro que ENTROU nela", () => {
+  // ⚠️ A pergunta parece "teve dinheiro?" e não é: é "teve dinheiro AQUI?".
+  // Numa entrega paga na porta o operador ainda precisa lançar uma linha de
+  // dinheiro para liberar o Validar — e a gaveta do balcão chutava e abria com o
+  // dinheiro ainda na rua. Gaveta aberta sem motivo é caixa exposto.
+  const linha = (method: string, collection?: string) => ({ method, amount_q: 1000, collection });
+
+  it("dinheiro no terminal abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("dinheiro NA PORTA não abre", () => {
+    expect(cashLandedInDrawer([linha("cash", "on_delivery")])).toBe(false);
+  });
+
+  it("misto com uma parte na gaveta abre", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("cash", "terminal")])).toBe(true);
+  });
+
+  it("cartão e Pix nunca abrem", () => {
+    expect(cashLandedInDrawer([linha("card", "terminal"), linha("pix", "terminal")])).toBe(false);
+  });
+
+  it("sem coleta declarada, dinheiro é dinheiro na gaveta (o padrão do balcão)", () => {
+    expect(cashLandedInDrawer([linha("cash")])).toBe(true);
+  });
+
+  it("venda sem pagamento nenhum não abre", () => {
+    expect(cashLandedInDrawer([])).toBe(false);
+  });
+});
+
+describe("formas de pagamento do balcão — o que vai ao gateway e o que não vai", () => {
+  const m = (ref: string, label: string) => ({ ref, label }) as never;
+
+  it("as cinco formas do balcão têm tecla própria", () => {
+    expect(methodShortcuts([
+      m("cash", "Dinheiro"),
+      m("pix", "Pix"),
+      m("credit", "Crédito"),
+      m("debit", "Débito"),
+      m("link", "Link de pagamento"),
+    ])).toEqual({ cash: "R", pix: "P", credit: "C", debit: "D", link: "L" });
+  });
+
+  it("crédito e débito NÃO têm comprovante remoto — a maquininha é física", () => {
+    // A prova deles é o papel que a maquininha imprime. Oferecer um QR ou um
+    // link ali seria a tela prometendo uma cobrança que não existe.
+    for (const method of ["credit", "debit", "cash"]) {
+      expect(paymentProofView({ method, status: "pending" } as never)).toBeNull();
+    }
+  });
+
+  it("o LINK tem comprovante: é uma URL para o cliente abrir depois", () => {
+    // Ele é o oposto do cartão de balcão — não há maquininha, há gateway, e o
+    // dinheiro chega quando o cliente paga.
+    const proof = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+      amount_display: "R$ 63,00",
+    } as never);
+    expect(proof).not.toBeNull();
+    expect(proof!.isPix).toBe(false);
+    expect(proof!.isLink).toBe(true);
+    // ⚠️ NÃO é `isCard`. O cartão da loja online ABRE o checkout numa aba — faz
+    // sentido lá, onde quem está na frente da tela é quem compra. No balcão quem
+    // está na frente é o OPERADOR, e abrir a página de pagamento ali significaria
+    // ele digitando o cartão do cliente — o oposto do que a maquininha existe
+    // para evitar. O link é para ENTREGAR: copiar e mandar.
+    expect(proof!.isCard).toBe(false);
+    expect(proof!.checkoutUrl).toBe("https://pay.example.com/abc");
+    expect(proof!.hasProof).toBe(true);
+  });
+
+  it("o cartão da loja online continua sendo para ABRIR, não para entregar", () => {
+    const proof = paymentProofView({
+      method: "card", status: "pending", checkout_url: "https://pay.stripe.com/x",
+    } as never);
+    expect(proof!.isCard).toBe(true);
+    expect(proof!.isLink).toBe(false);
+  });
+});
+
+describe("vale até — o prazo do link, dito como o operador diz", () => {
+  // Terça, 2 de setembro de 2026, 15:00 no fuso local da tela.
+  const agora = new Date(2026, 8, 2, 15, 0, 0);
+  const local = (y: number, m: number, d: number, h: number, min = 0) => new Date(y, m - 1, d, h, min).toISOString();
+
+  it("hoje, amanhã, e depois o dia da semana com a data curta", () => {
+    expect(paymentDeadlineLabel(local(2026, 9, 2, 18), agora)).toBe("hoje às 18h");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 9), agora)).toBe("amanhã às 9h");
+    expect(paymentDeadlineLabel(local(2026, 9, 5, 14), agora)).toBe("sáb. 5/9 às 14h");
+    expect(paymentDeadlineLabel(local(2026, 9, 10, 8), agora)).toBe("qui. 10/9 às 8h");
+  });
+
+  it("minuto só aparece quando não é cheio", () => {
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 9, 30), agora)).toBe("amanhã às 9h30");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 0, 5), agora)).toBe("amanhã às 0h05");
+  });
+
+  it("'amanhã' é o dia civil seguinte, não 'daqui a 24 h'", () => {
+    // Às 23h, um link que vence à 0h30 já é amanhã — e o das 15h de amanhã também.
+    const tarde = new Date(2026, 8, 2, 23, 0, 0);
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 0, 30), tarde)).toBe("amanhã às 0h30");
+    expect(paymentDeadlineLabel(local(2026, 9, 3, 15), tarde)).toBe("amanhã às 15h");
+  });
+
+  it("lê o ISO com fuso do servidor e traduz para a hora local da tela", () => {
+    // O servidor grava tz-aware (UTC); a tela fala na hora do balcão.
+    const utc = new Date(2026, 8, 3, 9, 0, 0).toISOString();
+    expect(paymentDeadlineLabel(utc, agora)).toBe("amanhã às 9h");
+  });
+
+  it("sem prazo (ou lixo), sem frase", () => {
+    expect(paymentDeadlineLabel("", agora)).toBe("");
+    expect(paymentDeadlineLabel("ontem", agora)).toBe("");
+  });
+
+  it("o comprovante do LINK carrega o prazo; o do Pix, não", () => {
+    const link = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+      expires_at: local(2026, 9, 3, 9),
+    } as never, agora);
+    expect(link!.expiresDisplay).toBe("amanhã às 9h");
+
+    const pix = paymentProofView({
+      method: "pix",
+      status: "pending",
+      copy_paste: "000201",
+      expires_at: local(2026, 9, 2, 15, 30),
+    } as never, agora);
+    expect(pix!.expiresDisplay).toBe("");
+
+    const semPrazo = paymentProofView({
+      method: "link",
+      status: "pending",
+      checkout_url: "https://pay.example.com/abc",
+    } as never, agora);
+    expect(semPrazo!.expiresDisplay).toBe("");
+  });
+});
+
+describe("a maquininha e as cédulas", () => {
+  const linha = (method: string) => ({
+    method,
+    label: method,
+    icon: "lucide:credit-card",
+    amountQ: 2500,
+    amountDisplay: "R$ 25,00",
+  });
+
+  it("só crédito e débito pedem conferência na maquininha", () => {
+    // Pix, dinheiro e link não passam por terminal físico: pedir confirmação
+    // neles seria um clique a mais em todo atendimento do balcão.
+    const lines = [linha("cash"), linha("credit"), linha("pix"), linha("debit"), linha("link")];
+    expect(machineTenderLines(lines).map((l) => l.method)).toEqual(["credit", "debit"]);
+  });
+
+  it("cédula perde o centavo, preset quebrado o mantém", () => {
+    expect(cashNoteLabel(200)).toBe("R$ 2");
+    expect(cashNoteLabel(10000)).toBe("R$ 100");
+    expect(cashNoteLabel(250)).toBe(formatBRL(250));
+  });
+});
+
+describe("a frase da cozinha no checkout conta unidades", () => {
+  // ⚠️ Ela contava LINHAS: com três chás numa linha só, dizia "1 item já está na
+  // cozinha" — número errado justamente na tela onde o operador confere o que já
+  // saiu. E depois da identidade por linha, "linha" virou artefato interno: o
+  // mesmo produto ocupa duas, e ninguém fala "linha" em voz alta.
+  const linha = (o: Partial<POSCartItem> & { sku: string }) => cartItem(o);
+
+  it("nada enviado: anuncia o que vai sair", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3 })]))
+      .toBe("Ao finalizar, os 3 itens vão para a cozinha.");
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1 })]))
+      .toBe("Ao finalizar, o item vai para a cozinha.");
+  });
+
+  it("parte na cozinha: os dois números, ambos em unidades", () => {
+    const note = kitchenHandoffNote([
+      linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 }),
+      linha({ sku: "PAO", qty: 2 }),
+    ]);
+    expect(note).toBe("3 itens já estão na cozinha; mais 2 vão ao finalizar.");
+  });
+
+  it("tudo enviado: fala do total, não de 'todos'", () => {
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 3, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("a linha que encolheu não some da conta: a cozinha tem o que tem", () => {
+    // O fogão está fazendo 3; a conta cobra 1. A frase fala do FOGÃO — quem
+    // avisa da diferença é o selo âmbar da linha.
+    expect(kitchenHandoffNote([linha({ sku: "CHA", qty: 1, fired: true, fired_qty: 3 })]))
+      .toBe("Os 3 itens já estão na cozinha.");
+  });
+
+  it("carrinho vazio não fala", () => {
+    expect(kitchenHandoffNote([])).toBe("");
   });
 });

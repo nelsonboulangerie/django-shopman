@@ -1,16 +1,36 @@
 import { describe, expect, it } from "vitest";
-import type { Material, MaterialConversion, ReceiptLine, Supplier, SupplierMaterialCost } from "~/types/purchase";
+import type { CountItem, Material, MaterialConversion, ReceiptLine, Supplier, SupplierMaterialCost } from "~/types/purchase";
 import {
   PURCHASE_API_ENDPOINTS,
   PURCHASE_API_BASE,
 } from "~/composables/usePurchaseApi";
 import {
   costPerBaseUnitQ,
+  countConfirmPayload,
+  countRow,
+  countRows,
+  countSummary,
   formatMoney,
+  formatQtyDiff,
+  costBatchLineErrors,
+  costBatchPayload,
+  formatShortDate,
   formatStockOnHand,
+  reorderBlockers,
+  reorderRows,
+  receiptFirstBlocker,
+  receiptIsBlank,
+  receiptLineDigest,
+  receiptLineLabel,
+  receiptLineRows,
+  receiptLineStatus,
+  receiptOutcomeSummary,
+  receiptPendingItems,
   receiptSettledSummary,
   materialIssues,
   parseInvoiceAccessKey,
+  parseMoneyInput,
+  parseQtyInput,
   quotePreview,
   receiptLinePreview,
   receiptLineSuggestion,
@@ -61,9 +81,25 @@ const fermento: Material = {
 const suppliers: Supplier[] = [
   {
     ref: "SUP-MOINHO",
-    name: "Moinho SP",
+    name: "MOINHO SAO PAULO INDUSTRIA E COMERCIO LTDA",
+    tradeName: "Moinho SP",
+    displayName: "Moinho SP",
     document: "",
     contact: "",
+    contacts: [
+      {
+        id: "1",
+        name: "Marcelo Tanaka",
+        role: "sales",
+        roleLabel: "Comercial",
+        email: "marcelo@moinhosp.com.br",
+        phone: "",
+        isPrimary: true,
+        isActive: true,
+        notes: "",
+      },
+    ],
+    orderContactName: "Marcelo Tanaka",
     leadTimeDays: 2,
     reliabilityPercent: 96,
     isActive: true,
@@ -73,8 +109,12 @@ const suppliers: Supplier[] = [
   {
     ref: "SUP-COOP",
     name: "Cooperativa",
+    tradeName: "",
+    displayName: "Cooperativa",
     document: "",
     contact: "",
+    contacts: [],
+    orderContactName: "",
     leadTimeDays: 3,
     reliabilityPercent: 91,
     isActive: true,
@@ -653,5 +693,610 @@ describe("purchase presentation", () => {
     expect(PURCHASE_API_ENDPOINTS.requestApprove("FARINHA T65")).toBe(
       "/api/v1/backstage/purchase/requests/FARINHA%20T65/approve/",
     );
+    expect(PURCHASE_API_ENDPOINTS.count).toBe("/api/v1/backstage/purchase/count/");
+    expect(PURCHASE_API_ENDPOINTS.countConfirm).toBe("/api/v1/backstage/purchase/count/confirm/");
+  });
+});
+
+describe("avisos do recebimento", () => {
+  function lineOf(patch: Partial<ReceiptLine> = {}): ReceiptLine {
+    return {
+      id: "line-1",
+      materialSku: "OVOS",
+      conversionId: null,
+      purchaseQty: 2,
+      costInput: "24,00",
+      expiryDate: "2026-10-01",
+      lineNote: "",
+      invoiceDescription: "OVOS BRANCOS CX 30",
+      checked: true,
+      ...patch,
+    };
+  }
+
+  it("a pendencia sabe em QUE campo ela mora, para a tela poder levar ate la", () => {
+    const preview = receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], []);
+
+    expect(preview?.nextStep).toBe("Informe a validade");
+    expect(preview?.nextStepField).toBe("expiry");
+    expect(receiptPendingItems([preview!])).toEqual([
+      { id: "line-1", label: "OVOS BRANCOS CX 30", step: "Informe a validade", field: "expiry", tone: "block" },
+    ]);
+  });
+
+  it("cada bloqueio aponta o campo dele, e nao o topo do card", () => {
+    const semInsumo = receiptLinePreview(lineOf({ materialSku: "" }), "invoice", [ovos], []);
+    const semQuantidade = receiptLinePreview(lineOf({ purchaseQty: 0 }), "invoice", [ovos], []);
+    const semConversao = receiptLinePreview(
+      lineOf({ requiresConversion: true }),
+      "invoice",
+      [ovos],
+      [],
+    );
+
+    expect(semInsumo?.nextStepField).toBe("material");
+    expect(semQuantidade?.nextStepField).toBe("qty");
+    expect(semConversao?.nextStepField).toBe("conversion");
+  });
+
+  // O buraco mais silencioso da tela: a linha estava inteira, o botao ficava
+  // cinza, e NADA na pagina dizia que faltava conferir.
+  it("linha pronta que ninguem conferiu tambem e pendencia — era invisivel", () => {
+    const preview = receiptLinePreview(lineOf({ checked: false }), "invoice", [ovos], []);
+
+    expect(preview?.nextStep).toBe("");
+    expect(receiptPendingItems([preview!])).toEqual([
+      { id: "line-1", label: "OVOS BRANCOS CX 30", step: "Marcar como conferido", field: "check", tone: "watch" },
+    ]);
+  });
+
+  it("linha conferida e sem bloqueio nao pendura nada", () => {
+    const preview = receiptLinePreview(lineOf(), "invoice", [ovos], []);
+
+    expect(receiptPendingItems([preview!])).toEqual([]);
+  });
+
+  // O estado do item era um ternario no template somado a `nextStep`,
+  // `line.checked` e `conversionDiverges`: tres lugares decidindo a mesma coisa,
+  // e a mesma linha saia ambar num canto e verde no outro.
+  it("um item tem UM estado, e ele nao depende de quem esta perguntando", () => {
+    const semValidade = receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], [])!;
+    const pronto = receiptLinePreview(lineOf({ checked: false }), "invoice", [ovos], [])!;
+    const conferido = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semValor = receiptLinePreview(lineOf({ costInput: "", checked: false }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(semValidade)).toBe("blocked");
+    expect(receiptLineStatus(pronto)).toBe("ready");
+    expect(receiptLineStatus(conferido)).toBe("checked");
+    expect(receiptLineStatus(semValor)).toBe("attention");
+  });
+
+  it("bloqueio ganha do conferido — verde com bloqueio seria mentira", () => {
+    // Da para marcar como conferido e depois trocar o insumo. A linha verde
+    // seguiria segurando o `Confirmar entrada` sem a lista dizer por que.
+    const preview = receiptLinePreview(lineOf({ materialSku: "", checked: true }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(preview)).toBe("blocked");
+  });
+
+  it("conferido ganha da atencao — repintar o que ele acabou de assinar desfaz o gesto", () => {
+    const preview = receiptLinePreview(lineOf({ costInput: "", checked: true }), "invoice", [ovos], [])!;
+
+    expect(receiptLineStatus(preview)).toBe("checked");
+  });
+
+  // O amarelo que aparece SEMPRE nao avisa nada: "sem documento fiscal" e a
+  // origem que a casa escolheu para a entrada inteira, e nao uma anomalia deste
+  // item. Sem esta regra, todo romaneio nasceria com dez linhas ambar.
+  it("lancamento sem NF nao pinta o item de atencao", () => {
+    const preview = receiptLinePreview(lineOf({ checked: false }), "manual", [ovos], [])!;
+
+    expect(preview.warnings.some((warning) => warning.key === "manual-source")).toBe(true);
+    expect(receiptLineStatus(preview)).toBe("ready");
+  });
+
+  it("o item se chama a MESMA coisa na lista, na gaveta e na pendencia", () => {
+    const daNota = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semNota = receiptLinePreview(
+      lineOf({ invoiceDescription: "", checked: false }),
+      "manual",
+      [ovos],
+      [],
+    )!;
+    const semNada = receiptLinePreview(
+      lineOf({ invoiceDescription: "", materialSku: "" }),
+      "manual",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineLabel(daNota)).toBe("OVOS BRANCOS CX 30");
+    expect(receiptLineLabel(semNota)).toBe("Ovos");
+    expect(receiptLineLabel(semNada)).toBe("Item lançado à mão");
+    expect(receiptPendingItems([semNota]).at(0)?.label).toBe("Ovos");
+  });
+
+  // Sem insumo escolhido nao ha o que apurar: repetir a quantidade na unidade
+  // errada ("4 kg" para 4 sacos) e justamente o engano que a conversao existe
+  // para evitar. Ai a linha mostra o que veio na NOTA.
+  it("a segunda linha diz o apurado, ou o que a nota diz", () => {
+    const comInsumo = receiptLinePreview(lineOf(), "invoice", [ovos], [])!;
+    const semInsumo = receiptLinePreview(
+      lineOf({ materialSku: "", invoiceQty: 4, invoiceUnit: "CX" }),
+      "invoice",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineDigest(comInsumo)).toBe(`2 × kg · ${formatMoney(2400)}`);
+    expect(receiptLineDigest(semInsumo)).toContain("4 CX");
+  });
+
+  it("a lista da entrada chega pronta para desenhar — a linha nao calcula nada", () => {
+    const previews = [
+      receiptLinePreview(lineOf({ expiryDate: "", checked: false }), "invoice", [ovos], [])!,
+      receiptLinePreview(lineOf({ id: "line-2" }), "invoice", [ovos], [])!,
+    ];
+
+    expect(receiptLineRows(previews)).toEqual([
+      {
+        id: "line-1",
+        label: "OVOS BRANCOS CX 30",
+        digest: `2 × kg · ${formatMoney(2400)}`,
+        status: "blocked",
+        statusLabel: "Pendente",
+        statusIcon: "lucide:circle-alert",
+        nextStep: "Informe a validade",
+        note: "",
+        total: formatMoney(2400),
+      },
+      {
+        id: "line-2",
+        label: "OVOS BRANCOS CX 30",
+        digest: `2 × kg · ${formatMoney(2400)}`,
+        status: "checked",
+        statusLabel: "Conferido",
+        statusIcon: "lucide:circle-check-big",
+        nextStep: "",
+        note: "",
+        total: formatMoney(2400),
+      },
+    ]);
+  });
+
+  // Enquanto ninguem digitou o valor, o numero que existe e o da NOTA — dizer
+  // "R$ 0,00" seria afirmar um preco que ninguem apurou.
+  it("sem valor digitado, a linha mostra o dinheiro da nota", () => {
+    const preview = receiptLinePreview(
+      lineOf({ costInput: "", invoiceTotal: "R$ 730,00" }),
+      "invoice",
+      [ovos],
+      [],
+    )!;
+
+    expect(receiptLineRows([preview]).at(0)?.total).toBe("R$ 730,00");
+  });
+
+  // Confirmar zera o rascunho, e o rascunho zerado disparava os mesmos
+  // bloqueios de sempre: vermelho de "escaneie a NF" logo ACIMA do verde de
+  // "entrada confirmada". Rascunho em branco e convite, nao erro.
+  it("rascunho em branco nao e erro", () => {
+    expect(receiptIsBlank([], "", "")).toBe(true);
+    expect(receiptIsBlank([], "  ", "\n")).toBe(true);
+    expect(receiptIsBlank([lineOf()], "", "")).toBe(false);
+    expect(receiptIsBlank([], "35190812...", "")).toBe(false);
+    expect(receiptIsBlank([], "", "Romaneio em papel")).toBe(false);
+  });
+
+  it("o primeiro bloqueio segue a ordem em que a tela pede as coisas", () => {
+    const pending = receiptPendingItems([receiptLinePreview(lineOf({ expiryDate: "" }), "invoice", [ovos], [])!]);
+
+    expect(receiptFirstBlocker(["Ler QR, código de barras ou chave da NF"], ["Definir fornecedor"], pending, true)).toEqual({
+      scope: "document",
+      step: "Ler QR, código de barras ou chave da NF",
+      label: "",
+      lineId: "",
+      field: null,
+      anchor: "invoice",
+    });
+    expect(receiptFirstBlocker([], ["Definir fornecedor"], pending, true)?.anchor).toBe("supplier");
+    expect(receiptFirstBlocker([], [], pending, true)).toEqual({
+      scope: "line",
+      step: "Informe a validade",
+      label: "OVOS BRANCOS CX 30",
+      lineId: "line-1",
+      field: "expiry",
+      anchor: null,
+    });
+  });
+
+  it("sem nada lancado, o bloqueio e ter algo a lancar — nao um botao mudo", () => {
+    expect(receiptFirstBlocker([], [], [], false)?.step).toBe("Lance ao menos um item para dar entrada");
+  });
+
+  it("pronto para confirmar nao inventa bloqueio", () => {
+    expect(receiptFirstBlocker([], [], [], true)).toBeNull();
+  });
+
+  it("o aviso de sucesso diz o que entrou, e nao so que deu certo", () => {
+    expect(
+      receiptOutcomeSummary({
+        kind: "confirmed",
+        at: "2026-08-29",
+        mode: "invoice",
+        lineCount: 7,
+        totalCostQ: 148000,
+        supplierName: "Moinho SP",
+      }),
+      // `formatMoney` para montar a expectativa: o Intl usa espaco NAO-QUEBRAVEL
+    // entre "R$" e o numero (a mesma armadilha do resumo da linha, acima).
+    ).toBe(`7 itens · ${formatMoney(148000)} · Moinho SP`);
+    expect(
+      receiptOutcomeSummary({ kind: "confirmed", at: "2026-08-29", mode: "manual", lineCount: 1, totalCostQ: 0, supplierName: "" }),
+    ).toBe("1 item");
+  });
+});
+
+describe("parseMoneyInput — a tela e o servidor lendo o mesmo número", () => {
+  // ⚠️ Havia DOIS parsers de dinheiro com regras diferentes. Este removia TODOS os
+  // pontos antes de olhar a vírgula; o do servidor trata ponto como milhar só se
+  // houver vírgula. O operador digita no campo livre (`inputmode="decimal"`) e os
+  // dois lados divergiam em até 100×, sem nenhum deles avisar:
+  //
+  //     "12.50"  tela: R$ 1.250,00   servidor: R$ 12,50
+  //
+  // Havia 30 testes neste arquivo e ZERO sobre dinheiro digitado.
+  it("lê o teclado da casa (vírgula decimal)", () => {
+    expect(parseMoneyInput("12,50")).toBe(1250);
+    expect(parseMoneyInput("1.250,00")).toBe(125000);
+    expect(parseMoneyInput("R$ 360,00")).toBe(36000);
+  });
+
+  it("lê o teclado do sistema (ponto decimal) — era aqui que divergia 100×", () => {
+    expect(parseMoneyInput("12.50")).toBe(1250);
+    expect(parseMoneyInput("12.5")).toBe(1250);
+    expect(parseMoneyInput("360.00")).toBe(36000);
+  });
+
+  it("vírgula presente decide a notação — a mesma regra do parseQtyInput", () => {
+    // Com vírgula, o ponto é milhar.
+    expect(parseMoneyInput("1.250,50")).toBe(125050);
+    // Sem vírgula, o ponto é decimal.
+    expect(parseMoneyInput("1250.50")).toBe(125050);
+  });
+
+  it("vazio é zero, e lixo não vira número", () => {
+    expect(parseMoneyInput("")).toBe(0);
+    expect(parseMoneyInput("   ")).toBe(0);
+    expect(parseMoneyInput("abc")).toBe(0);
+  });
+});
+
+describe("contagem de insumos", () => {
+  const farinhaCount: CountItem = {
+    sku: "FARINHA-T65",
+    name: "Farinha T65",
+    unit: "kg",
+    category: "Farinhas",
+    isActive: true,
+    systemQty: 12,
+  };
+
+  const ovosCount: CountItem = {
+    sku: "OVOS",
+    name: "Ovos",
+    unit: "kg",
+    category: "Frescos",
+    isActive: true,
+    systemQty: 16,
+  };
+
+  it("aceita o teclado da casa e o do sistema no contado", () => {
+    expect(parseQtyInput("12,5")).toBe(12.5);
+    expect(parseQtyInput("1.250,5")).toBe(1250.5);
+    expect(parseQtyInput("12.5")).toBe(12.5);
+    expect(parseQtyInput("12")).toBe(12);
+    expect(parseQtyInput("")).toBeNull();
+    expect(parseQtyInput("abc")).toBeNull();
+    expect(parseQtyInput("-3")).toBeNull();
+  });
+
+  it("linha sem contado nao diverge; divergencia sem motivo fica marcada", () => {
+    expect(countRow(farinhaCount, "", "").divergent).toBe(false);
+    expect(countRow(farinhaCount, "12", "").divergent).toBe(false);
+
+    const shortage = countRow(farinhaCount, "10,5", "");
+    expect(shortage.diff).toBe(-1.5);
+    expect(shortage.divergent).toBe(true);
+    expect(shortage.missingReason).toBe(true);
+
+    const justified = countRow(farinhaCount, "10,5", "Quebra na produção");
+    expect(justified.missingReason).toBe(false);
+  });
+
+  it("resumo so libera com algo contado e toda divergencia justificada", () => {
+    const empty = countSummary(countRows([farinhaCount, ovosCount], {}, {}));
+    expect(empty.ready).toBe(false);
+
+    const pendingReason = countSummary(
+      countRows([farinhaCount, ovosCount], { "FARINHA-T65": "10" }, {}),
+    );
+    expect(pendingReason).toEqual({ filled: 1, divergent: 1, missingReason: 1, ready: false });
+
+    const ready = countSummary(
+      countRows(
+        [farinhaCount, ovosCount],
+        { "FARINHA-T65": "10", OVOS: "16" },
+        { "FARINHA-T65": "Quebra na produção" },
+      ),
+    );
+    expect(ready).toEqual({ filled: 2, divergent: 1, missingReason: 0, ready: true });
+  });
+
+  it("payload leva so as linhas contadas, com quantidade numerica", () => {
+    const rows = countRows(
+      [farinhaCount, ovosCount],
+      { "FARINHA-T65": "10,5" },
+      { "FARINHA-T65": "  Quebra na produção  " },
+    );
+    expect(countConfirmPayload(rows)).toEqual({
+      counts: [{ materialSku: "FARINHA-T65", countedQty: 10.5, reason: "Quebra na produção" }],
+    });
+  });
+
+  it("formata a diferenca com sinal e unidade", () => {
+    expect(formatQtyDiff(-1.5, "kg")).toBe("−1,5 kg");
+    expect(formatQtyDiff(2, "un")).toBe("+2 un");
+    expect(formatQtyDiff(0, "kg")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// formatShortDate — a data que faltava derrubava a tela
+// ---------------------------------------------------------------------------
+// 14 dos 15 fornecedores cadastrados nunca entregaram, e a projeção manda
+// `lastDeliveryAt: ""` para todos eles (`last_delivery.get(supplier.ref, "")`
+// em `_supplier_projection`). O formatador antigo montava a data por
+// interpolação de string, que para "" vira Invalid Date — e
+// `Intl.DateTimeFormat.format(Invalid Date)` NÃO devolve "—": ele lança
+// `RangeError: Invalid time value` no meio do render, derrubando a árvore de
+// componentes. Era o "não clica, não abre" da aba Fornecedores.
+describe("formatShortDate", () => {
+  it("formata a data que existe", () => {
+    expect(formatShortDate("2026-08-27")).toBe("27/08");
+  });
+
+  it("não estoura com fornecedor que nunca entregou (string vazia)", () => {
+    expect(() => formatShortDate("")).not.toThrow();
+    expect(formatShortDate("")).toBe("—");
+  });
+
+  it("não estoura com campo ausente vindo da API", () => {
+    expect(() => formatShortDate(undefined)).not.toThrow();
+    expect(() => formatShortDate(null)).not.toThrow();
+    expect(formatShortDate(undefined)).toBe("—");
+    expect(formatShortDate(null)).toBe("—");
+  });
+
+  it("não estoura com data impossível de ler", () => {
+    expect(() => formatShortDate("sem data")).not.toThrow();
+    expect(formatShortDate("sem data")).toBe("—");
+    expect(formatShortDate("2026-13-45")).toBe("—");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderRows — o painel e a tela respondem à MESMA pergunta
+// ---------------------------------------------------------------------------
+// O painel dizia "Comprar 8 · R$ 4.293,97" e a tela Comprar mostrava 0 pedidos
+// e R$ 0,00, com os mesmos dados. Eram dois cálculos diferentes: o servidor
+// respondia `suggestedQty` (política de reposição: prazo + revisão + segurança,
+// limitada pela validade) e a tela ignorava esse número e refazia a conta com
+// uma heurística própria — `ceil(max(minStock*2, dailyUse*7) - stockOnHand)`
+// sobre um filtro próprio. Duas respostas para "o que comprar" é uma a mais.
+// A resposta é do servidor; a tela mostra, não recalcula.
+const semConsumo: Material = {
+  sku: "MANTEIGA-TOURAGE",
+  name: "Manteiga de tourage",
+  unit: "kg",
+  shelfLifeDays: 45,
+  isActive: true,
+  category: "Laticínios",
+  stockOnHand: 22,
+  dailyUse: 0,
+  minStock: 30,
+  recipes: ["Croissant"],
+  suggestedQty: 0,
+};
+
+describe("reorderRows", () => {
+  it("não inventa compra que o servidor não sugeriu", () => {
+    // Estoque (22) abaixo do mínimo (30) faria a heurística antiga sugerir
+    // compra; o servidor diz 0 porque não há consumo medido. Vale o servidor.
+    expect(reorderRows([semConsumo], [], [], [])).toEqual([]);
+  });
+
+  it("mostra a quantidade que o servidor sugeriu, sem recalcular", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    const rows = reorderRows([material], [], [], []);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.suggestedQty).toBe(12);
+  });
+
+  it("estima o custo pelo preferencial, e deixa nulo quando não há", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 10 };
+    const semCusto = reorderRows([material], [], [], []);
+    expect(semCusto[0]!.estimatedCostQ).toBeNull();
+
+    const supplier: Supplier = {
+      ref: "SUP-LAT",
+      name: "Laticínio",
+      document: "",
+      contact: "",
+      leadTimeDays: 2,
+      reliabilityPercent: 100,
+      isActive: true,
+      lastDeliveryAt: "",
+      paymentTerm: "A combinar",
+    };
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const comCusto = reorderRows([material], [supplier], [cost], []);
+    expect(comCusto[0]!.supplier?.ref).toBe("SUP-LAT");
+    expect(comCusto[0]!.estimatedCostQ).toBe(50000);
+  });
+
+  it("sem insumo nenhum, não há fila de compra", () => {
+    expect(reorderRows([], [], [], [])).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// reorderBlockers — zero explicado, com o caminho
+// ---------------------------------------------------------------------------
+// Mostrar zero sem dizer por quê é o pecado da tela: o operador não distingue
+// "não precisa comprar nada" de "o app não consegue calcular". São situações
+// opostas e a segunda tem conserto. Cada motivo vem com o gesto que o resolve.
+describe("reorderBlockers", () => {
+  it("cala a boca quando há compra a fazer", () => {
+    const material: Material = { ...semConsumo, dailyUse: 9, suggestedQty: 12 };
+    expect(reorderBlockers([material], [])).toEqual([]);
+  });
+
+  it("diz quando a base está vazia", () => {
+    const blockers = reorderBlockers([], []);
+    expect(blockers).toHaveLength(1);
+    expect(blockers[0]!.key).toBe("no-materials");
+  });
+
+  it("aponta o consumo não medido como causa da lista vazia", () => {
+    const blockers = reorderBlockers([semConsumo], []);
+    const consumo = blockers.find((item) => item.key === "no-consumption");
+    expect(consumo).toBeDefined();
+    // O número tem de ser o que a tela mostra, não um vago "alguns".
+    expect(consumo!.count).toBe(1);
+    expect(consumo!.action).not.toBeNull();
+  });
+
+  it("conta os insumos sem custo preferencial e manda para Custos", () => {
+    const comConsumo: Material = { ...semConsumo, sku: "FARINHA-T45", dailyUse: 9, suggestedQty: 0 };
+    const blockers = reorderBlockers([semConsumo, comConsumo], []);
+    const custo = blockers.find((item) => item.key === "no-preferred-cost");
+    expect(custo).toBeDefined();
+    expect(custo!.count).toBe(2);
+    expect(custo!.action?.baseView).toBe("costs");
+  });
+
+  it("não acusa falta de custo no insumo que já tem preferencial", () => {
+    const cost: SupplierMaterialCost = {
+      id: "c1",
+      materialSku: "MANTEIGA-TOURAGE",
+      supplierRef: "SUP-LAT",
+      conversionId: null,
+      costQ: 5000,
+      isPreferred: true,
+      updatedAt: "2026-08-01",
+    };
+    const blockers = reorderBlockers([semConsumo], [cost]);
+    expect(blockers.find((item) => item.key === "no-preferred-cost")).toBeUndefined();
+  });
+
+  it("ignora insumo inativo na contagem", () => {
+    const inativo: Material = { ...semConsumo, sku: "VELHO", isActive: false };
+    const blockers = reorderBlockers([inativo], []);
+    expect(blockers.find((item) => item.key === "no-materials")).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// costBatchPayload — a tabela de preços do fornecedor vira um POST
+// ---------------------------------------------------------------------------
+const TODOS = ["CAFE-GRAO", "FARINHA-T45", "ACUCAR"];
+
+describe("costBatchPayload", () => {
+  it("manda só as linhas preenchidas", () => {
+    const payload = costBatchPayload(
+      "SUP-TAMURA",
+      { "CAFE-GRAO": "45,00", "FARINHA-T45": "", ACUCAR: "   " },
+      {},
+      TODOS,
+    );
+    expect(payload).toEqual({
+      supplierRef: "SUP-TAMURA",
+      makePreferred: false,
+      costs: [{ materialSku: "CAFE-GRAO", costInput: "45,00", conversionId: null }],
+    });
+  });
+
+  // O lote é tudo-ou-nada: uma linha escondida pelo filtro, inválida, derrubaria
+  // o lote inteiro sem ter onde mostrar o próprio erro.
+  it("não manda linha que o filtro escondeu", () => {
+    const payload = costBatchPayload(
+      "SUP-TAMURA",
+      { "CAFE-GRAO": "45,00", "FARINHA-T45": "3,20" },
+      {},
+      ["CAFE-GRAO"],
+    );
+    expect(payload.costs.map((cost) => cost.materialSku)).toEqual(["CAFE-GRAO"]);
+  });
+
+  // `is_preferred` alimenta o custeio de receita. O servidor já promove o
+  // primeiro custo de um insumo; pedir promoção explícita repontaria o custo
+  // canônico de dezenas de insumos num gesto de "atualizar tabela".
+  it("não pede a promoção do custo padrão", () => {
+    expect(costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, {}, TODOS).makePreferred).toBe(false);
+  });
+
+  it("leva a unidade de compra escolhida na linha", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "45,00" }, { "CAFE-GRAO": "7" }, TODOS);
+    expect(payload.costs[0]!.conversionId).toBe("7");
+  });
+
+  it("ignora conversão de linha que não foi preenchida", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "" }, { "CAFE-GRAO": "7" }, TODOS);
+    expect(payload.costs).toEqual([]);
+  });
+
+  it("apara o espaço em volta do valor digitado", () => {
+    const payload = costBatchPayload("SUP-TAMURA", { "CAFE-GRAO": "  45,00 " }, {}, TODOS);
+    expect(payload.costs[0]!.costInput).toBe("45,00");
+  });
+});
+
+describe("costBatchLineErrors", () => {
+  it("aponta a linha culpada pelo SKU", () => {
+    const data = {
+      detail: "Corrija as linhas indicadas para lançar o lote.",
+      error: {
+        code: "cost_batch_invalid",
+        lines: [
+          { index: 1, materialSku: "NAO-EXISTE", field: "materialSku", detail: "Insumo não encontrado." },
+          { index: 4, materialSku: "SAL", field: "costInput", detail: "Informe um valor maior que zero." },
+        ],
+      },
+    };
+    expect(costBatchLineErrors(data)).toEqual({
+      "NAO-EXISTE": "Insumo não encontrado.",
+      SAL: "Informe um valor maior que zero.",
+    });
+  });
+
+  it("não estoura com recusa que não fala de linha", () => {
+    expect(costBatchLineErrors({ detail: "Sessão expirada", error: { code: "not_authenticated" } })).toEqual({});
+    expect(costBatchLineErrors(null)).toEqual({});
+    expect(costBatchLineErrors(undefined)).toEqual({});
+    expect(costBatchLineErrors("erro")).toEqual({});
+  });
+
+  it("descarta linha malformada em vez de virar undefined na tela", () => {
+    const data = { error: { lines: [{ index: 0 }, { materialSku: "SAL", detail: "Valor inválido." }] } };
+    expect(costBatchLineErrors(data)).toEqual({ SAL: "Valor inválido." });
   });
 });

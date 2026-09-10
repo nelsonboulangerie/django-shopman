@@ -61,7 +61,11 @@ export function resolveAffordance(
     reason: action?.reason ?? "",
     href,
     method: action?.method ?? "POST",
-    idempotency: action?.idempotency ?? "none",
+    // O mesmo default restritivo do backend (`Action.idempotency`): ação
+    // ausente da projection não pode ler como "não precisa de trava". Aqui o
+    // fallback só dispara quando `present` é false, mas repetir o permissivo na
+    // superfície era a segunda metade do mesmo default invertido.
+    idempotency: action?.idempotency ?? "required",
     confirmation: action?.confirmation ?? {},
   };
 }

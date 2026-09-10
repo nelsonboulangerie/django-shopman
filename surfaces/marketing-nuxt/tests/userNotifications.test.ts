@@ -1,6 +1,6 @@
 import { computed, ref } from "vue";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { useUserNotifications } from "~/composables/useUserNotifications";
+import { useMarketingNotificationInbox } from "~/composables/useMarketingNotificationInbox";
 import type { MarketingActionProjectionV2 } from "~/types/campaign";
 import type {
   MarketingNotification,
@@ -130,7 +130,7 @@ beforeEach(() => {
   });
 });
 
-describe("useUserNotifications", () => {
+describe("useMarketingNotificationInbox", () => {
   it("marks only visible unseen canonical alerts in one owner-scoped batch", async () => {
     response.value.notifications.push({
       ...row(3, "unseen"),
@@ -142,7 +142,7 @@ describe("useUserNotifications", () => {
         ),
       ],
     });
-    const box = useUserNotifications();
+    const box = useMarketingNotificationInbox();
 
     await box.markVisible();
 
@@ -157,7 +157,7 @@ describe("useUserNotifications", () => {
 
   it("keeps the alert and an actionable error when acknowledgement fails", async () => {
     fetcher.mockRejectedValueOnce(new Error("network"));
-    const box = useUserNotifications();
+    const box = useMarketingNotificationInbox();
 
     expect(await box.acknowledge(response.value.notifications[0]!)).toBe(false);
 
@@ -167,7 +167,7 @@ describe("useUserNotifications", () => {
   });
 
   it("refuses a stored open URL that no longer matches its source", () => {
-    const box = useUserNotifications();
+    const box = useMarketingNotificationInbox();
     const unsafe = {
       ...response.value.notifications[0]!,
       actions: [
@@ -226,7 +226,7 @@ describe("useUserNotifications", () => {
         removeEventListener: removeWindowListener,
       },
     });
-    const box = useUserNotifications();
+    const box = useMarketingNotificationInbox();
 
     mounted!();
     listeners.get("user-notification")!();

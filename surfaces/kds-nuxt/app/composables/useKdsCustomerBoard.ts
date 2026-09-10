@@ -1,5 +1,5 @@
 // Customer pickup board read-side (Arc 4). Public endpoint (no auth) —
-// GET /api/v1/backstage/kds/cliente/ → orders split into preparing / ready, with
+// GET /api/v1/backstage/kds/pickup/ → orders split into preparing / ready, with
 // privacy-safe refs only. Polls every 10s (mirrors the HTMX board); SSE
 // same-origin via BFF (/sse/orders) is best-effort, poll covers the gaps.
 import type {
@@ -10,7 +10,7 @@ import type {
 export function useKdsCustomerBoard() {
   const config = useRuntimeConfig();
   const { data, pending, error, refresh } = useFetch<KDSCustomerStatusResponse>(
-    "/api/v1/backstage/kds/cliente/",
+    "/api/v1/backstage/kds/pickup/",
     { key: "kds-customer-board" },
   );
   const status = computed<KDSCustomerStatusProjection | null>(

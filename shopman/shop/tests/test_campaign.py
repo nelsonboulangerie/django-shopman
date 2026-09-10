@@ -210,10 +210,10 @@ class TestContent:
         assert variables["product_name"] == "fantasma"
 
     def test_quality_reaches_the_template(self, product, template, rule):
-        template.body = "Fornada {{quality}} de {{product_name}}"
+        template.body = "{{product_name}} — grau {{quality}}"
         template.save()
         announcement = campaign.evaluate("production_finished", _context(quality="excellent"))[0]
-        assert announcement.body == "Fornada ótima de Croissant Tradicional"
+        assert announcement.body == "Croissant Tradicional — grau ótimo"
 
 
 # ── Aprovação ────────────────────────────────────────────────────────

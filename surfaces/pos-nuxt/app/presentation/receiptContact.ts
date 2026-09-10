@@ -1,0 +1,331 @@
+/**
+ * O contato do comprovante vira cadastro quando PERGUNTAM — e só então.
+ *
+ * O crime nunca foi gravar. O crime era gravar CALADO: o e-mail digitado para
+ * receber a nota virava identidade do cliente sem que ninguém dissesse nada, e
+ * o CPF pedido na nota entrava no cadastro pela mesma porta muda. A metade
+ * defensiva cortou o vazamento; esta é a metade generosa — a tela pergunta, e a
+ * resposta viaja como ordem explícita (`save_receipt_contact` /
+ * `save_receipt_tax_id`).
+ *
+ * A matriz, igual para e-mail e para CPF em TRÊS das quatro linhas:
+ *
+ *   cliente sem o contato no cadastro   → "Salvar este e-mail no cadastro?"
+ *   cliente com o MESMO contato         → nada a perguntar (silêncio é a resposta)
+ *   cliente com contato DIFERENTE       → cadastro INTACTO; atualizar é ação à parte
+ *   sem cliente identificado            → "Salvar como cliente?", JÁ MARCADO
+ *
+ * ⚠️ A QUARTA linha é onde CPF e e-mail deixam de ser a mesma coisa, e a
+ * assimetria é o objetivo — não um descuido a "uniformizar" depois.
+ *
+ * E-mail MUDA. Troca-se de provedor, troca-se de emprego, e um endereço novo
+ * substituindo o velho é rotina de cadastro. Ali "Atualizar o e-mail de Ana?"
+ * está certo do jeito que sempre esteve: oferta simples, desmarcada, um toque.
+ *
+ * CPF NÃO MUDA. A pessoa tem um a vida inteira. Se o cadastro diz 111 e a nota
+ * traz 222, a hipótese provável não é "o CPF de Ana mudou" — é "esta nota é de
+ * outra pessoa". Oferecer a troca como rotina, a um clique no meio da venda,
+ * era trocar a IDENTIDADE FISCAL de um cadastro sem que ninguém pesasse nada.
+ * A oferta continua existindo (o dono a quis: quer o conserto possível no
+ * balcão), mas com ATRITO — aviso forte do que ela troca, e uma segunda
+ * palavra: marcar a caixa não basta.
+ *
+ * ⚠️ O "já marcado" da última linha é decisão do dono, tomada contra a
+ * recomendação de nascer desmarcado ("no aperto do balcão ninguém desmarca").
+ * Ele leu o trade-off e escolheu marcado. Não "corrigir" para desmarcado — o
+ * que segura a promessa de transparência aqui é a VISIBILIDADE: a oferta fica à
+ * vista, com a consequência escrita, e desmarcar é um toque.
+ *
+ * Puro de propósito: sem DOM, sem rede, sem Vue. Quem monta o popover e a linha
+ * do resumo é a tela; quem decide o que perguntar é isto.
+ */
+
+import { isValidTaxId } from "~/presentation/taxId";
+
+export type ReceiptContactField = "email" | "tax_id";
+
+/**
+ * - `none`   — não há o que perguntar (campo vazio, incompleto, ou já igual)
+ * - `save`   — o cadastro existe e o campo está VAZIO: preencher lacuna
+ * - `update` — o cadastro tem OUTRO valor: atualizar é ação nomeada, desmarcada
+ * - `create` — ninguém identificado: "Salvar como cliente?", marcada
+ *
+ * ⚠️ `create` não promete cadastro NOVO. Numa venda sem ninguém identificado o
+ * servidor resolve o contato como identidade — e se esse e-mail (ou esse CPF) já
+ * é de alguém, a venda vai para o cadastro dele, com a faixa de preço e a
+ * fidelidade junto. É o comportamento certo, e é o que evita um duplicado por
+ * venda. A frase é que precisa dizer isso: prometer "nasce um cadastro novo"
+ * numa caixa que vem MARCADA seria vender uma consequência que não é a que
+ * acontece.
+ */
+export type ReceiptContactOfferKind = "none" | "save" | "update" | "create";
+
+export interface ReceiptContactOffer {
+  kind: ReceiptContactOfferKind;
+  field: ReceiptContactField;
+  /** O valor digitado, normalizado (e-mail em minúsculas, documento só dígitos). */
+  typed: string;
+  /** O que o cadastro tem HOJE — vazio quando não tem, ou quando não há cadastro. */
+  onFile: string;
+  customerName: string;
+  /** O padrão da caixa quando o operador ainda não tocou nela. */
+  defaultChecked: boolean;
+  /** A pergunta do popover. */
+  title: string;
+  /** A consequência, dita ANTES de acontecer. */
+  hint: string;
+  /** O rótulo da ação — "Salvar" e "Atualizar" não são a mesma promessa. */
+  confirmLabel: string;
+  /** A linha discreta do resumo do fechamento, quando marcada. */
+  summaryLine: string;
+  /**
+   * Marcar a caixa NÃO basta: falta a segunda palavra.
+   *
+   * Só o CPF divergente pede isto, e o motivo é a natureza do dado — trocar o
+   * CPF do cadastro é trocar a identidade fiscal de uma pessoa, não corrigir um
+   * endereço. O atrito é proporcional ao dano, e é por isso que o e-mail não o
+   * carrega.
+   */
+  requiresConfirmation: boolean;
+  /** O aviso forte, dito antes da segunda palavra. Vazio quando não há atrito. */
+  warning: string;
+  /** A pergunta da reconfirmação — a segunda palavra que a tela cobra. */
+  confirmPrompt: string;
+}
+
+export interface ReceiptContactInput {
+  field: ReceiptContactField;
+  /** O que está no campo do comprovante (e-mail da nota / CPF na nota). */
+  typed: string;
+  /** O cadastro associado à comanda, se houver. */
+  customer: { name?: string; email?: string; tax_id?: string } | null;
+}
+
+function digitsOf(value: string): string {
+  return String(value || "").replace(/\D/g, "");
+}
+
+/** Normaliza como o servidor normaliza — senão "igual" e "diferente" divergem. */
+export function normalizeReceiptValue(field: ReceiptContactField, value: string): string {
+  return field === "email"
+    ? String(value || "").trim().toLowerCase()
+    : digitsOf(value);
+}
+
+/**
+ * O valor está COMPLETO o bastante para perguntar?
+ *
+ * Perguntar no meio da digitação é o defeito que faz o operador rápido fechar
+ * o popover no reflexo: "a@" ainda não é endereço, "529" ainda não é documento.
+ */
+export function receiptValueIsAskable(field: ReceiptContactField, value: string): boolean {
+  const normalized = normalizeReceiptValue(field, value);
+  if (!normalized) return false;
+  if (field === "tax_id") return isValidTaxId(normalized);
+  // Endereço mínimo plausível: algo@algo.algo, sem espaço.
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized);
+}
+
+function firstName(name: string): string {
+  return String(name || "").trim().split(/\s+/)[0] || "";
+}
+
+/** Como o campo se chama na tela. `cpf` fica em português: é nome próprio. */
+const FIELD_COPY: Record<ReceiptContactField, { noun: string }> = {
+  email: { noun: "e-mail" },
+  tax_id: { noun: "CPF" },
+};
+
+const EMPTY: Omit<ReceiptContactOffer, "field" | "typed" | "onFile" | "customerName"> = {
+  kind: "none",
+  defaultChecked: false,
+  title: "",
+  hint: "",
+  confirmLabel: "",
+  summaryLine: "",
+  requiresConfirmation: false,
+  warning: "",
+  confirmPrompt: "",
+};
+
+/** Sem atrito — o padrão de toda oferta que não troca identidade fiscal. */
+const SEM_ATRITO = { requiresConfirmation: false, warning: "", confirmPrompt: "" };
+
+/** Que pergunta (se alguma) a tela deve fazer sobre este campo do comprovante. */
+export function receiptContactOffer(input: ReceiptContactInput): ReceiptContactOffer {
+  const { field, customer } = input;
+  const typed = normalizeReceiptValue(field, input.typed);
+  const onFile = normalizeReceiptValue(
+    field,
+    (field === "email" ? customer?.email : customer?.tax_id) || "",
+  );
+  const customerName = String(customer?.name || "").trim();
+  const base = { field, typed, onFile, customerName };
+  const copy = FIELD_COPY[field];
+
+  if (!receiptValueIsAskable(field, input.typed)) {
+    return { ...base, ...EMPTY };
+  }
+
+  // Sem cliente identificado: a única identidade que existe é a que o
+  // comprovante carrega. JÁ MARCADO — decisão do dono.
+  //
+  // ⚠️ A frase NÃO promete cadastro novo. O servidor procura antes de criar, e
+  // quem já tem este contato recebe a venda em vez de ganhar um duplicado — com
+  // a faixa de preço e a fidelidade dele junto. Numa caixa que vem marcada, a
+  // consequência dita tem de ser a que acontece.
+  if (!customer) {
+    return {
+      ...base,
+      ...SEM_ATRITO,
+      kind: "create",
+      defaultChecked: true,
+      title: "Salvar como cliente?",
+      hint: `Este ${copy.noun} fica salvo como cliente — ou vai para o cadastro que já o tem. `
+        + "Desmarque para vender sem cadastrar.",
+      confirmLabel: "Salvar como cliente",
+      summaryLine: `Este ${copy.noun} será salvo como cliente — ou vai para o cadastro que já o tem.`,
+    };
+  }
+
+  // Já é o mesmo: silêncio é a resposta certa. Perguntar aqui seria ruído.
+  if (onFile && onFile === typed) {
+    return { ...base, ...EMPTY };
+  }
+
+  const ownerName = firstName(customerName) || "cliente";
+
+  if (!onFile) {
+    return {
+      ...base,
+      ...SEM_ATRITO,
+      kind: "save",
+      defaultChecked: false,
+      title: `Salvar este ${copy.noun} no cadastro de ${ownerName}?`,
+      hint: `Hoje o cadastro não tem ${copy.noun}.`,
+      confirmLabel: "Salvar no cadastro",
+      summaryLine: `O ${copy.noun} será salvo no cadastro de ${ownerName}.`,
+    };
+  }
+
+  // DIVERGE: o padrão é não tocar em nada. A nota vai para o informado e o
+  // cadastro fica como está — "a pessoa pode querer enviar para outro e-mail".
+  const base_update = {
+    ...base,
+    ...SEM_ATRITO,
+    kind: "update" as const,
+    defaultChecked: false,
+    title: `Atualizar o ${copy.noun} do cadastro de ${ownerName}?`,
+    hint: `Hoje: ${onFile}. A nota vai para o informado de qualquer jeito; o cadastro só muda se você mandar.`,
+    confirmLabel: "Atualizar o cadastro",
+    summaryLine: `O ${copy.noun} do cadastro de ${ownerName} será atualizado para este.`,
+  };
+
+  // ⚠️ O CPF divergente é o ÚNICO ponto da matriz com atrito, e é de propósito.
+  // Aqui não se está corrigindo um contato: está-se trocando o documento pelo
+  // qual a Receita conhece este cadastro. A oferta fica (o dono quis o conserto
+  // possível no balcão), mas ela para e pergunta de novo.
+  if (field !== "tax_id") return base_update;
+  return {
+    ...base_update,
+    requiresConfirmation: true,
+    warning: `Isto troca a identidade fiscal do cadastro de ${ownerName}: `
+      + `o CPF ${onFile} sai e o ${typed} entra, em todas as próximas notas. `
+      + "CPF não muda — se este é de outra pessoa, não atualize o cadastro.",
+    confirmPrompt: `Confirmar a troca do CPF de ${ownerName}?`,
+    summaryLine: `A identidade fiscal do cadastro de ${ownerName} passará de ${onFile} para ${typed}.`,
+  };
+}
+
+export interface ReceiptSaveOffersInput {
+  /** O e-mail do COMPROVANTE (campo da nota). */
+  receiptEmail: string;
+  /** O e-mail digitado no PAINEL DO CLIENTE — identidade por definição. */
+  customerEmail: string;
+  invoiceTaxId: string;
+  wantsCpfOnInvoice: boolean;
+  /** O CPF digitado no painel do cliente — identidade por definição. */
+  customerTaxId: string;
+  customer: ReceiptContactInput["customer"];
+}
+
+/**
+ * As DUAS ofertas da venda, decididas num lugar só.
+ *
+ * O campo do painel do cliente (`customer_email` / `customer_tax_id`) já é
+ * identidade: quando o comprovante repete o que foi digitado lá, não há o que
+ * perguntar — perguntar seria oferecer o que já está acontecendo. A tela e o
+ * builder do intent leem esta mesma função, senão a pergunta e o payload
+ * divergem e a confirmação vira mentira.
+ */
+export function receiptSaveOffers(state: ReceiptSaveOffersInput): {
+  email: ReceiptContactOffer;
+  taxId: ReceiptContactOffer;
+} {
+  const email = normalizeReceiptValue("email", state.receiptEmail);
+  const taxId = normalizeReceiptValue("tax_id", state.wantsCpfOnInvoice ? state.invoiceTaxId : "");
+  const emailIsIdentity = Boolean(email) && email === normalizeReceiptValue("email", state.customerEmail);
+  const taxIdIsIdentity = Boolean(taxId) && taxId === normalizeReceiptValue("tax_id", state.customerTaxId);
+  return {
+    email: receiptContactOffer({
+      field: "email",
+      typed: emailIsIdentity ? "" : email,
+      customer: state.customer,
+    }),
+    taxId: receiptContactOffer({
+      field: "tax_id",
+      typed: taxIdIsIdentity ? "" : taxId,
+      customer: state.customer,
+    }),
+  };
+}
+
+/**
+ * A caixa está marcada?
+ *
+ * `override` é o que o operador tocou; `null` significa "não tocou", e aí vale
+ * o padrão da oferta. Sem esta distinção o "já marcado" da venda anônima seria
+ * reimposto a cada tecla, desfazendo o desmarque do operador.
+ */
+export function receiptContactChecked(
+  offer: ReceiptContactOffer,
+  override: boolean | null,
+): boolean {
+  if (offer.kind === "none") return false;
+  return override === null ? offer.defaultChecked : override;
+}
+
+/**
+ * A ordem chegou ARMADA? — a caixa marcada MAIS a segunda palavra, quando ela
+ * é exigida.
+ *
+ * `receiptContactChecked` responde o que o interruptor mostra; isto responde o
+ * que o intent pode mandar. As duas coisas coincidem em três das quatro linhas
+ * da matriz, e divergem exatamente onde o atrito existe: no CPF divergente, a
+ * caixa marcada sem a reconfirmação NÃO grava nada. Sem esta separação a
+ * fricção seria decorativa — o interruptor bastaria, e a segunda pergunta viraria
+ * um popup que o operador aprende a fechar.
+ */
+export function receiptContactArmed(
+  offer: ReceiptContactOffer,
+  override: boolean | null,
+  confirmed: boolean,
+): boolean {
+  if (!receiptContactChecked(offer, override)) return false;
+  return offer.requiresConfirmation ? confirmed : true;
+}
+
+/**
+ * As linhas do resumo do fechamento — a segunda metade da promessa.
+ *
+ * Perguntar junto do campo não basta: quem chega ao resumo pelo teclado nunca
+ * viu o popover. A confirmação aparece de novo, discreta, dizendo o que VAI
+ * acontecer e como desfazer.
+ */
+export function receiptSaveSummary(
+  entries: Array<{ offer: ReceiptContactOffer; checked: boolean }>,
+): string[] {
+  return entries
+    .filter((entry) => entry.checked && entry.offer.kind !== "none")
+    .map((entry) => entry.offer.summaryLine);
+}

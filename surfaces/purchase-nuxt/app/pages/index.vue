@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import type {
+  ConversionKind,
   EnrichedMaterial,
   Material,
   MaterialTone,
   PurchaseBaseView,
   PurchaseRequestStatus,
-  ReceiptLinePreview,
+  ReceiptBlocker,
+  ReceiptDocumentAnchor,
+  ReceiptFieldAnchor,
+  ReceiptLine,
   ReceiptMode,
   ReceiptWarningTone,
   SupplierMaterialCost,
@@ -15,11 +19,15 @@ import {
   coverageLabel,
   formatMoney,
   formatQty,
+  formatQtyDiff,
+  formatShortDate,
   formatStockOnHand,
-  receiptSettledSummary,
+  receiptOutcomeSummary,
   isApproximateCost,
   purchaseUnitLabel,
 } from "~/presentation/purchase";
+import { RECEIPT_LINE_STATUS_BADGE, RECEIPT_LINE_STATUS_ROW, RECEIPT_LINE_STATUS_TEXT } from "~/utils/receiptLineStatus";
+import { FLASH_RING, receiptFieldSelector, waitForElement } from "~/utils/receiptFocus";
 
 const {
   view,
@@ -43,16 +51,40 @@ const {
   metrics,
   integrityQueue,
   reorderRows,
+  reorderBlockers,
+  batchSupplierRef,
+  batchInputs,
+  batchConversionIds,
+  batchOnlyMissing,
+  batchQuery,
+  batchLineErrors,
+  batchRows,
+  batchFilledCount,
+  batchReady,
+  batchConversionsFor,
+  setBatchInput,
+  setBatchConversion,
+  clearCostBatch,
+  saveCostBatch,
+  minStockInputs,
+  minStockLineErrors,
+  minStockFilledCount,
+  setMinStockInput,
+  clearMinStock,
+  saveMinStock,
   supplierSummaries,
   receiptMode,
   invoiceInput,
   receiptSupplierRef,
   receiptNote,
-  receiptConfirmedAt,
-  receiptRejectedAt,
+  receiptOutcome,
+  receiptIsBlank,
+  receiptFirstBlocker,
+  dismissReceiptOutcome,
   receiptSupplier,
   invoiceStatus,
   receiptLinePreviews,
+  receiptRows,
   receiptWatchWarnings,
   receiptPendingLines,
   receiptDocumentBlockers,
@@ -85,6 +117,17 @@ const {
   readInvoice,
   confirmReceipt,
   rejectReceipt,
+  countFilteredRows,
+  countDivergentRows,
+  countTotals,
+  countReady,
+  countPending,
+  countForbidden,
+  countConfirmedAt,
+  setCountInput,
+  setCountReason,
+  resetCount,
+  confirmCount,
   purchaseRequestStatus,
   sendPurchaseRequest,
   setPreferredCost,
@@ -125,7 +168,19 @@ const baseTabs: { key: PurchaseBaseView; label: string; icon: string }[] = [
   { key: "materials", label: "Insumos", icon: "lucide:package-search" },
   { key: "suppliers", label: "Fornecedores", icon: "lucide:truck" },
   { key: "costs", label: "Custos", icon: "lucide:calculator" },
+  { key: "count", label: "Contagem", icon: "lucide:clipboard-check" },
 ];
+
+const countConfirmOpen = ref(false);
+
+function openCountConfirm() {
+  if (countReady.value) countConfirmOpen.value = true;
+}
+
+async function submitCount() {
+  const ok = await confirmCount();
+  if (ok) countConfirmOpen.value = false;
+}
 
 const invoiceShortKey = computed(() =>
   invoiceStatus.value.accessKey ?
@@ -135,8 +190,10 @@ const invoiceShortKey = computed(() =>
 
 // Conta ITENS travados, não avisos: uma linha que precisa de insumo E de
 // validade é um item para resolver, não dois bloqueios. O número tem de bater
-// com o tamanho da lista logo abaixo dele, senão vira ruído.
-const receiptTotalBlockers = computed(
+// com o tamanho da lista logo abaixo dele, senão vira ruído — e com o que
+// realmente segura o `Confirmar entrada`, inclusive a linha pronta que ninguém
+// marcou como conferida.
+const receiptTotalPending = computed(
   () => receiptPendingLines.value.length + receiptDocumentBlockers.value.length + receiptSupplierBlockers.value.length,
 );
 const purchaseTotalQ = computed(() =>
@@ -153,6 +210,12 @@ type SupplierPortfolioRow = {
   baseCostQ: number;
   approximate: boolean;
 };
+
+// Contato inativo continua no cadastro (historico), mas nao na tela de quem
+// vai ligar hoje.
+const activeSupplierContacts = computed(
+  () => selectedSupplier.value?.contacts.filter((person) => person.isActive) ?? [],
+);
 
 const selectedSupplierPortfolio = computed(() => {
   if (!selectedSupplier.value) return [];
@@ -182,10 +245,6 @@ const scannerVideo = ref<HTMLVideoElement | null>(null);
 const scannerFileInput = ref<HTMLInputElement | null>(null);
 let scannerControls: { stop: () => void; switchTorch?: (onOff: boolean) => Promise<void> } | null = null;
 let scannerAccepted = false;
-
-function formatDate(value: string): string {
-  return new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" }).format(new Date(`${value}T12:00:00`));
-}
 
 function openBase(tab: PurchaseBaseView) {
   baseView.value = tab;
@@ -338,26 +397,78 @@ async function readInvoiceImage(event: Event) {
   }
 }
 
-// Linha conferida recolhe: numa nota de dez itens, formulario aberto de quem ja
-// decidiu so atrapalha quem procura o que falta. Estado de TELA, e nao do
-// recebimento — por isso vive aqui e nao na projection.
-const expandedLines = ref(new Set<string>());
+// QUAL item está aberto na gaveta. Estado de TELA, e nao do recebimento — por
+// isso vive aqui e nao na projection.
+const openLineId = ref("");
 
-function isCompact(preview: ReceiptLinePreview): boolean {
-  return preview.line.checked && !expandedLines.value.has(preview.line.id);
+const openPreview = computed(
+  () => receiptLinePreviews.value.find((preview) => preview.line.id === openLineId.value) ?? null,
+);
+
+// A gaveta so esta aberta se o item ainda existe: apagar a linha de dentro dela
+// deixaria uma gaveta vazia por cima da lista.
+const lineSheetOpen = computed({
+  get: () => Boolean(openPreview.value),
+  set: (value: boolean) => {
+    if (!value) openLineId.value = "";
+  },
+});
+
+function openReceiptLine(lineId: string) {
+  openLineId.value = lineId;
 }
 
-function expandReceiptLine(lineId: string) {
-  expandedLines.value = new Set(expandedLines.value).add(lineId);
+// Lançar um item à mão é pedir o formulário dele: a gaveta abre no item recém
+// criado, e não numa linha vazia no fim da lista esperando um segundo toque.
+async function addAndOpenReceiptLine() {
+  addReceiptLine();
+  await nextTick();
+  const created = receiptRows.value.at(-1);
+  if (created) openReceiptLine(created.id);
+}
+
+function removeOpenReceiptLine() {
+  const lineId = openLineId.value;
+  openLineId.value = "";
+  removeReceiptLine(lineId);
 }
 
 function setReceiptLineChecked(lineId: string, checked: boolean) {
   updateReceiptLine(lineId, { checked });
-  if (!checked) return;
-  // Conferir recolhe na hora, mesmo que o operador tenha aberto a linha antes.
-  const next = new Set(expandedLines.value);
-  next.delete(lineId);
-  expandedLines.value = next;
+}
+
+// Os gestos da gaveta chegam sem o id: quem está aberto é estado da tela, e não
+// da gaveta. Ela edita UM item — o que o operador tocou.
+function onSheetUpdate(patch: Partial<ReceiptLine>) {
+  if (openLineId.value) updateReceiptLine(openLineId.value, patch);
+}
+
+function onSheetSelectMaterial(sku: string) {
+  if (openLineId.value) setReceiptLineMaterial(openLineId.value, sku);
+}
+
+function onSheetAcceptSuggestion() {
+  if (openLineId.value) acceptReceiptLineSuggestion(openLineId.value);
+}
+
+function onSheetSelectConversion(conversionId: string | null) {
+  if (openLineId.value) updateReceiptLine(openLineId.value, { conversionId });
+}
+
+function onSheetAcceptConversion() {
+  if (openLineId.value) acceptReceiptLineConversion(openLineId.value);
+}
+
+function onSheetAcceptAxes() {
+  if (openLineId.value) acceptReceiptLineInvoiceAxes(openLineId.value);
+}
+
+function onSheetDeclareConversion(input: { label: string; factor: string; kind: ConversionKind }) {
+  if (openLineId.value) declareReceiptLineConversion(openLineId.value, input);
+}
+
+function onSheetCheck(checked: boolean) {
+  if (openLineId.value) setReceiptLineChecked(openLineId.value, checked);
 }
 
 // Um aviso do MESMO tipo repetido em oito linhas vira oito pílulas iguais no
@@ -368,14 +479,143 @@ const uniqueWatchWarnings = computed(() =>
   ),
 );
 
+// O campo que a tela acabou de apontar, marcado por alguns segundos.
+//
+// Rolar até o campo resolve metade do problema: o operador chega lá e ainda
+// precisa achar QUAL dos quatro campos do card é o que falta. O anel some
+// sozinho — é um dedo apontando, não um estado do recebimento.
+const flashedField = ref("");
+let flashTimer: ReturnType<typeof setTimeout> | null = null;
+
+function flashTarget(key: string) {
+  flashedField.value = key;
+  if (flashTimer) clearTimeout(flashTimer);
+  flashTimer = setTimeout(() => {
+    flashedField.value = "";
+  }, 2600);
+}
+
+// O campo apontado dentro da gaveta que esta aberta AGORA. Se a tela apontou um
+// campo de outro item, este nao pisca.
+const sheetFlashField = computed<ReceiptFieldAnchor | null>(() => {
+  const [lineId, field] = flashedField.value.split(":");
+  if (!field || lineId !== openLineId.value) return null;
+  return field as ReceiptFieldAnchor;
+});
+
+function anchorRing(anchor: ReceiptDocumentAnchor): string {
+  return flashedField.value === anchor ? FLASH_RING : "";
+}
+
+// Salto, e não rolagem suave. O `behavior: "smooth"` é um PEDIDO: onde ele não
+// roda — reduced-motion, webview, e o pane de automação onde isto foi medido —
+// a chamada não faz nada e o campo continua fora da tela, que é exatamente a
+// falha que esta frente veio corrigir. O anel âmbar dá a continuidade que a
+// animação daria, e chega sempre.
+const FOCUSABLE = "input:not([type=hidden]), select, textarea, button";
+
+function revealTarget(target: HTMLElement, key: string, block: ScrollLogicalPosition = "center") {
+  target.scrollIntoView({ behavior: "auto", block });
+  // O alvo as vezes E o controle — o "Marcar como conferido" da gaveta e um
+  // botao, e nao um card com um campo dentro. Procurar so para dentro deixava
+  // justamente essa pendencia sem foco.
+  const control = target.matches(FOCUSABLE) ? target : target.querySelector<HTMLElement>(FOCUSABLE);
+  control?.focus({ preventScroll: true });
+  flashTarget(key);
+}
+
 // Clicar na pendência leva ao item — numa nota de dez linhas, achar "aquele
 // que falta a validade" rolando a lista é o trabalho que a tela devia poupar.
-function focusReceiptLine(lineId: string) {
-  const card = document.querySelector<HTMLElement>(`[data-receipt-line="${lineId}"]`);
-  if (!card) return;
-  card.scrollIntoView({ behavior: "smooth", block: "center" });
-  card.querySelector<HTMLElement>("select, input")?.focus({ preventScroll: true });
+// Com a âncora do campo, leva ao CAMPO: a gaveta do item abre, a tela rola até
+// ele e o cursor já pousa dentro.
+//
+// ⚠️ A espera não é decoração. A gaveta monta num portal, no fim do `<body>`,
+// e um `nextTick` sozinho devolve `null`: quem clicasse na pendência não veria
+// nada acontecer. `waitForElement` espera o campo existir, por poucos quadros.
+async function focusReceiptLine(lineId: string, field: ReceiptFieldAnchor | null = null) {
+  openReceiptLine(lineId);
+  await nextTick();
+  const target = await waitForElement(receiptFieldSelector(lineId, field));
+  if (!target) return;
+  revealTarget(target, field ? `${lineId}:${field}` : lineId);
 }
+
+function focusReceiptAnchor(anchor: ReceiptDocumentAnchor) {
+  const target = document.querySelector<HTMLElement>(`[data-receipt-anchor="${anchor}"]`);
+  if (target) revealTarget(target, anchor);
+}
+
+/**
+ * O que o `Confirmar entrada` responde quando ainda não dá para confirmar.
+ *
+ * O botão cinza era o pior aviso possível: o operador aperta, nada acontece, e
+ * a explicação está no rodapé de uma página longa. Agora o botão sempre
+ * responde — diz o gesto que falta, em cima da tela, e leva até o campo.
+ */
+function reportReceiptBlocker(blocker: ReceiptBlocker) {
+  const goThere = () => {
+    if (blocker.scope === "line") void focusReceiptLine(blocker.lineId, blocker.field);
+    else if (blocker.anchor) focusReceiptAnchor(blocker.anchor);
+  };
+  // O aviso leva na hora; o botão do aviso continua levando depois, para quem
+  // rolou para outro lugar antes de ler.
+  useSonner.error(blocker.step, {
+    description: blocker.label || undefined,
+    action: { label: "Ir até lá", onClick: goThere },
+  });
+  goThere();
+}
+
+async function onConfirmReceipt() {
+  const blocker = receiptFirstBlocker.value;
+  if (blocker) {
+    reportReceiptBlocker(blocker);
+    return;
+  }
+  if (await confirmReceipt()) await revealReceiptOutcome();
+}
+
+async function onRejectReceipt() {
+  if (await rejectReceipt()) await revealReceiptOutcome();
+}
+
+// Deu certo: a tela volta ao topo. O aviso de sucesso mora lá, e logo abaixo
+// dele está o "Escanear NF" — quem acabou de dar entrada numa nota quase sempre
+// tem a próxima na mão. Quem não tem, tem a navegação.
+//
+// Duas escolhas medidas, não superstição:
+//
+// - **Os dois quadros de espera.** Confirmar esvazia o rascunho, e a página
+//   encolhe DEPOIS do render (de 3.855px para 1.677px na medição). Rolar antes
+//   disso é rolar num documento que já não existe.
+// - **Salto, não rolagem suave.** Enquanto a altura muda, a âncora de rolagem
+//   do browser corrige o `scrollTop` para manter o que está à vista — e essa
+//   correção atropela a animação: o `behavior: "smooth"` saía de 697px e
+//   terminava em 818px, mais longe do topo do que começou.
+async function revealReceiptOutcome() {
+  await nextTick();
+  await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+  window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+// O convite fala da entrada que ACABOU de acontecer: quem deu baixa numa NF tem
+// a próxima nota na mão; quem lançou sem NF tem o próximo romaneio. Oferecer
+// "escanear NF" a quem acabou de conferir um romaneio de produtor é oferecer a
+// ferramenta errada.
+function startNextReceipt() {
+  const manual = receiptOutcome.value?.mode === "manual";
+  dismissReceiptOutcome();
+  if (!manual) {
+    void openInvoiceScanner();
+    return;
+  }
+  setReceiptMode("manual");
+  addReceiptLine();
+}
+
+onBeforeUnmount(() => {
+  if (flashTimer) clearTimeout(flashTimer);
+});
 
 function stockAfterReceipt(sku: string): number {
   const material = materials.value.find((item) => item.sku === sku);
@@ -443,7 +683,7 @@ onBeforeUnmount(stopInvoiceScanner);
               Receber
             </p>
             <p class="mt-2 text-3xl font-bold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</p>
-            <p class="mt-1 text-xs text-muted-foreground">{{ receiptTotalBlockers }} bloqueios</p>
+            <p class="mt-1 text-xs text-muted-foreground">{{ receiptTotalPending }} pendências</p>
           </button>
           <button type="button" class="rounded-md border border-border bg-card p-4 text-left transition hover:bg-accent" @click="openBase('costs')">
             <p class="flex items-center gap-2 text-xs font-medium text-muted-foreground">
@@ -469,6 +709,32 @@ onBeforeUnmount(stopInvoiceScanner);
             <p class="mt-1 text-sm text-muted-foreground">Fila de decisão operacional.</p>
           </div>
           <div class="divide-y divide-border">
+            <!-- A fila de decisão vazia tem de dizer o motivo aqui, onde o
+                 operador olha primeiro — não só na tela Comprar. -->
+            <div
+              v-for="blocker in (reorderRows.length ? [] : reorderBlockers)"
+              :key="`panel-blocker-${blocker.key}`"
+              class="flex items-start gap-3 p-4"
+            >
+              <Icon
+                :name="blocker.key === 'stocked' ? 'lucide:circle-check' : 'lucide:info'"
+                class="mt-0.5 size-5 shrink-0"
+                :class="blocker.key === 'stocked' ? 'text-success' : 'text-info'"
+              />
+              <div class="min-w-0">
+                <p class="font-semibold">{{ blocker.headline }}</p>
+                <p class="mt-1 text-sm text-muted-foreground">{{ blocker.detail }}</p>
+                <button
+                  v-if="blocker.action"
+                  type="button"
+                  class="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"
+                  @click="openBase(blocker.action.baseView)"
+                >
+                  <Icon name="lucide:arrow-right" class="size-4" />
+                  {{ blocker.action.label }}
+                </button>
+              </div>
+            </div>
             <button
               v-for="row in reorderRows.slice(0, 5)"
               :key="`panel-buy-${row.material.sku}`"
@@ -546,7 +812,38 @@ onBeforeUnmount(stopInvoiceScanner);
           </span>
         </div>
 
-        <div class="grid gap-3 p-3 md:grid-cols-2 2xl:grid-cols-3">
+        <!-- Zero explicado: sem isto, "não precisa comprar nada" e "o app não
+             consegue calcular" são a mesma tela vazia. -->
+        <div v-if="!reorderRows.length && reorderBlockers.length" class="space-y-3 p-4">
+          <div
+            v-for="blocker in reorderBlockers"
+            :key="`buy-blocker-${blocker.key}`"
+            class="rounded-md border border-border bg-background p-4"
+          >
+            <div class="flex items-start gap-3">
+              <Icon
+                :name="blocker.key === 'stocked' ? 'lucide:circle-check' : 'lucide:info'"
+                class="mt-0.5 size-5 shrink-0"
+                :class="blocker.key === 'stocked' ? 'text-success' : 'text-info'"
+              />
+              <div class="min-w-0">
+                <h2 class="font-semibold">{{ blocker.headline }}</h2>
+                <p class="mt-1 text-sm text-muted-foreground">{{ blocker.detail }}</p>
+                <button
+                  v-if="blocker.action"
+                  type="button"
+                  class="mt-3 inline-flex h-9 items-center gap-1.5 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent"
+                  @click="openBase(blocker.action.baseView)"
+                >
+                  <Icon name="lucide:arrow-right" class="size-4" />
+                  {{ blocker.action.label }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div v-else class="grid gap-3 p-3 md:grid-cols-2 2xl:grid-cols-3">
           <article v-for="row in reorderRows" :key="row.material.sku" class="rounded-md border border-border bg-background p-3">
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0">
@@ -589,6 +886,43 @@ onBeforeUnmount(stopInvoiceScanner);
 
     <section v-else-if="view === 'receive'" class="grid min-h-0 gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
       <div class="min-w-0 space-y-4">
+        <!-- Deu certo, e a tela diz isso onde o olho está: no topo, do tamanho
+             do que aconteceu, com o que entrou escrito por extenso. O gesto
+             seguinte fica dentro do próprio aviso — quem deu entrada numa nota
+             quase sempre tem a próxima na mão. -->
+        <section
+          v-if="receiptOutcome"
+          data-receipt-outcome
+          class="scroll-mt-4 rounded-md border p-4"
+          :class="receiptOutcome.kind === 'confirmed' ? 'border-success/40 bg-success/10' : 'border-warning/40 bg-warning/10'"
+          aria-live="polite"
+        >
+          <div class="flex items-start gap-3">
+            <Icon
+              :name="receiptOutcome.kind === 'confirmed' ? 'lucide:circle-check-big' : 'lucide:undo-2'"
+              class="mt-0.5 size-6 shrink-0"
+              :class="receiptOutcome.kind === 'confirmed' ? 'text-success' : 'text-warning'"
+            />
+            <div class="min-w-0 flex-1">
+              <h2 class="text-lg font-semibold" :class="receiptOutcome.kind === 'confirmed' ? 'text-success' : 'text-warning'">
+                {{ receiptOutcome.kind === "confirmed" ? "Entrada confirmada no estoque" : "Devolução registrada" }}
+              </h2>
+              <p class="mt-1 text-sm text-foreground">{{ receiptOutcomeSummary(receiptOutcome) }}</p>
+              <p class="mt-0.5 text-xs text-muted-foreground">{{ receiptOutcome.at }}</p>
+              <div class="mt-3 flex flex-col gap-2 sm:flex-row">
+                <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || actionPending" @click="startNextReceipt">
+                  <Icon :name="receiptOutcome.mode === 'manual' ? 'lucide:clipboard-pen-line' : 'lucide:scan-line'" class="size-4" />
+                  {{ receiptOutcome.mode === "manual" ? "Lançar outra entrada" : "Escanear outra NF" }}
+                </button>
+                <button type="button" class="inline-flex h-12 items-center justify-center gap-2 rounded-md border border-border bg-card px-4 text-sm font-semibold hover:bg-accent" @click="dismissReceiptOutcome">
+                  <Icon name="lucide:x" class="size-4" />
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section class="rounded-md border border-border bg-card">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border p-4">
             <div>
@@ -618,7 +952,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <p v-if="scannerError" class="rounded-md border border-warning/30 bg-warning/10 p-2 text-sm text-warning">
                 {{ scannerError }}
               </p>
-              <label v-if="receiptMode === 'invoice'" class="block text-sm font-medium">
+              <label v-if="receiptMode === 'invoice'" data-receipt-anchor="invoice" class="block scroll-mt-4 p-0.5 text-sm font-medium transition-shadow" :class="anchorRing('invoice')">
                 QR, código de barras ou chave da NF
                 <textarea v-model="invoiceInput" rows="3" class="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Escaneie, cole ou digite a chave de acesso" />
               </label>
@@ -661,11 +995,11 @@ onBeforeUnmount(stopInvoiceScanner);
             </div>
 
             <div class="space-y-3">
-              <label class="block text-sm font-medium">
+              <label data-receipt-anchor="supplier" class="block scroll-mt-4 p-0.5 text-sm font-medium transition-shadow" :class="anchorRing('supplier')">
                 Fornecedor
                 <select :value="receiptSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm" @change="onReceiptSupplierChange">
                   <option value="">Definir fornecedor</option>
-                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.name }}</option>
+                  <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
                 </select>
               </label>
               <div class="rounded-md border border-border bg-background p-3 text-sm">
@@ -683,196 +1017,90 @@ onBeforeUnmount(stopInvoiceScanner);
               <h2 class="text-lg font-semibold">Itens da entrada</h2>
               <p class="text-sm text-muted-foreground">{{ receiptCheckedCount }} de {{ receiptLinePreviews.length }} conferidos</p>
             </div>
-            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="addReceiptLine">
+            <button type="button" class="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" @click="addAndOpenReceiptLine">
               <Icon name="lucide:plus" class="size-4" />
               Item
             </button>
           </div>
 
-          <!-- `min-w-0` no item do grid: sem ele a coluna e dimensionada pelo
-               min-content do card mais largo (nome de item longo, select com
-               opcoes compridas) e passa da largura do telefone. O corte ficava
-               invisivel porque o `overflow-x-hidden` do main o escondia. -->
-          <div class="grid min-w-0 gap-3 p-3">
-            <article
-              v-for="preview in receiptLinePreviews"
-              :key="preview.line.id"
-              :data-receipt-line="preview.line.id"
-              class="min-w-0 scroll-mt-4 rounded-md border p-3 transition-colors"
-              :class="
-                preview.nextStep ? 'border-warning/40 bg-background'
-                : preview.line.checked ? 'border-success/40 bg-success/5'
-                : 'border-border bg-background'
-              "
+          <!-- A LISTA da entrada: uma linha por item, e o que falta dito na
+               própria linha. Eram formulários abertos empilhados — para saber
+               como estava uma nota de dez itens, o operador rolava dez cards.
+               Tocar na linha abre a gaveta daquele item.
+
+               `min-w-0` no item da lista: sem ele a coluna é dimensionada pelo
+               min-content do nome mais comprido e passa da largura do telefone.
+               O corte ficava invisível atrás do `overflow-x-hidden` do main. -->
+          <ul v-if="receiptRows.length" class="grid min-w-0 gap-2 p-3">
+            <li
+              v-for="row in receiptRows"
+              :key="row.id"
+              :data-receipt-line="row.id"
+              class="flex min-w-0 scroll-mt-4 items-stretch gap-1 rounded-md border pr-1 transition-colors"
+              :class="RECEIPT_LINE_STATUS_ROW[row.status]"
             >
-              <!-- Conferido: a linha recolhe para uma frase, e "Editar" a abre
-                   de volta inteira. -->
-              <div v-if="isCompact(preview)" class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="flex items-center gap-1.5 text-sm font-medium">
-                    <Icon name="lucide:circle-check-big" class="size-4 shrink-0 text-success" />
-                    <span class="truncate">{{ preview.line.invoiceDescription || preview.material.name }}</span>
-                  </p>
-                  <p class="mt-0.5 truncate text-xs text-muted-foreground">{{ receiptSettledSummary(preview) }}</p>
-                  <p v-if="preview.line.lineNote" class="mt-0.5 truncate text-xs text-warning">{{ preview.line.lineNote }}</p>
-                </div>
-                <button type="button" class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-border bg-card px-3 text-xs font-medium hover:bg-accent" @click="expandReceiptLine(preview.line.id)">
-                  <Icon name="lucide:pencil" class="size-3.5" />
-                  Editar
-                </button>
-              </div>
-
-              <template v-else>
-              <!-- 1. O que a NOTA diz. É a âncora: sem isto o operador vê uma
-                   fila de 'Definir insumo' e não sabe qual linha do papel é. -->
-              <header class="flex flex-wrap items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="truncate text-sm font-semibold" :title="preview.line.invoiceDescription">
-                    {{ preview.line.invoiceDescription || "Item lançado à mão" }}
-                  </p>
-                  <p v-if="preview.invoiceSummary" class="mt-0.5 text-xs text-muted-foreground">
-                    {{ preview.invoiceSummary }}
-                  </p>
-                </div>
-                <div class="flex shrink-0 items-center gap-2">
-                  <span v-if="preview.line.invoiceTotal" class="text-sm font-semibold tabular-nums">{{ preview.line.invoiceTotal }}</span>
-                  <button type="button" class="inline-flex size-8 items-center justify-center rounded-md border border-border hover:bg-accent" :aria-label="`Remover ${preview.line.invoiceDescription || 'item'}`" @click="removeReceiptLine(preview.line.id)">
-                    <Icon name="lucide:trash-2" class="size-4" />
-                  </button>
-                </div>
-              </header>
-
-              <!-- O passo do topo cala quando o proprio campo ja o diz: repetir
-                   "confirme a sugestao" duas vezes na mesma linha e ruido. -->
-              <p v-if="preview.nextStep && !preview.nextStepIsOnField" class="mt-2 flex items-center gap-1.5 rounded-md bg-warning/10 px-2 py-1.5 text-xs font-medium text-warning">
-                <Icon name="lucide:arrow-right" class="size-3.5 shrink-0" />
-                {{ preview.nextStep }}
-              </p>
-
-              <!-- 2. Qual insumo é. Quando há sugestão, o campo INTEIRO entra
-                   num card de atenção: a proposta fica colada ao campo de que
-                   ela fala, em vez de flutuar como uma caixa à parte que o
-                   operador precisa relacionar de cabeça. -->
-              <ReceiptField
-                class="mt-3"
-                :attention="Boolean(preview.suggestion) || (!preview.line.materialSku && !preview.suggestion)"
-                :title="preview.suggestion ? 'Confirme a sugestão' : 'Escolha o insumo desta linha'"
-                :icon="preview.suggestion ? 'lucide:sparkles' : 'lucide:package-search'"
+              <button
+                type="button"
+                class="flex min-w-0 flex-1 items-center gap-3 rounded-md py-2.5 pl-3 text-left"
+                :aria-label="`Abrir ${row.label}`"
+                @click="openReceiptLine(row.id)"
               >
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Insumo
-                  <MaterialPicker
-                    class="mt-1"
-                    :materials="materials"
-                    :model-value="preview.line.materialSku"
-                    @update:model-value="setReceiptLineMaterial(preview.line.id, $event)"
-                  />
-                </label>
-                <template v-if="preview.suggestion">
-                  <p class="mt-2 text-xs text-muted-foreground">
-                    Parece <span class="font-medium text-foreground">{{ preview.suggestion.name }}</span> ({{ preview.suggestion.scorePercent }}% parecido)
-                  </p>
-                  <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-1.5 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground sm:w-auto" @click="acceptReceiptLineSuggestion(preview.line.id)">
-                    <Icon name="lucide:check" class="size-3.5" />
-                    É este
-                  </button>
-                </template>
-              </ReceiptField>
-
-              <!-- 3. Só depois do insumo: quanto isso vale na unidade dele.
-                   Pedir conversão antes de saber o insumo é pedir o impossível
-                   — não há unidade-base para converter PARA. -->
-              <div v-if="preview.line.materialSku" class="mt-3">
-                <ReceiptConversion
-                  :preview="preview"
-                  :conversions="receiptConversionsFor(preview.line.materialSku)"
-                  :pending="actionPending"
-                  @select="updateReceiptLine(preview.line.id, { conversionId: $event })"
-                  @accept="acceptReceiptLineConversion(preview.line.id)"
-                  @accept-axes="acceptReceiptLineInvoiceAxes(preview.line.id)"
-                  @declare="declareReceiptLineConversion(preview.line.id, $event)"
-                />
-              </div>
-
-              <!-- 4. Quanto e quanto custou. O custo por unidade-base mora COM o
-                   valor, porque é dele que ele deriva — estava misturado com o
-                   que entra no estoque, que é outra pergunta. -->
-              <div class="mt-3 grid gap-3 sm:grid-cols-2">
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Quantidade{{ preview.purchaseUnitLabel ? ` (${preview.purchaseUnitLabel})` : "" }}
-                  <input v-model.number="preview.line.purchaseQty" type="number" min="0" step="0.01" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" />
-                </label>
-                <label class="block text-xs font-medium text-muted-foreground">
-                  Valor total (R$)
-                  <input v-model="preview.line.costInput" inputmode="decimal" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm tabular-nums text-foreground" placeholder="0,00" />
-                  <span v-if="preview.baseQtyKnown && preview.baseCostQ > 0" class="mt-1 block text-xs font-normal text-muted-foreground">
-                    {{ formatMoney(preview.baseCostQ) }} por {{ preview.material.unit }}
-                  </span>
-                </label>
-              </div>
-
-              <!-- 5. De onde veio e até quando vale. Os dois saem do mesmo grupo
-                   `rastro` da NF-e e respondem à mesma pergunta. -->
-              <ReceiptField
-                class="mt-3"
-                :attention="preview.needsExpiry"
-                title="Informe a validade"
-                icon="lucide:calendar-clock"
-              >
-                <div class="grid gap-3 sm:grid-cols-2">
-                  <label class="block text-xs font-medium text-muted-foreground">
-                    Validade
-                    <input v-model="preview.line.expiryDate" type="date" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" />
-                    <span v-if="preview.line.expiryFromInvoice" class="mt-1 block text-xs font-normal text-muted-foreground">Veio na nota</span>
-                    <span v-else-if="preview.needsExpiry" class="mt-1 block text-xs font-normal text-muted-foreground">A nota não informou. Olhe na embalagem.</span>
-                  </label>
-                  <label class="block text-xs font-medium text-muted-foreground">
-                    Lote do fornecedor
-                    <input v-model="preview.line.invoiceLot" class="mt-1 h-11 w-full rounded-md border border-border bg-card px-3 text-sm text-foreground" placeholder="Opcional" />
-                    <span v-if="preview.line.invoiceLot" class="mt-1 block text-xs font-normal text-muted-foreground">É por ele que um recall chama.</span>
-                  </label>
-                </div>
-              </ReceiptField>
-
-              <!-- 6. O que entra no estoque, e a consequência disso. Uma coisa
-                   por linha: eram três semânticas numa frase só. -->
-              <div class="mt-3 rounded-md border border-border bg-card px-3 py-2">
-                <template v-if="preview.baseQtyKnown && preview.line.materialSku">
-                  <p class="text-lg font-semibold tabular-nums">Entra {{ formatQty(preview.baseQty, preview.material.unit) }}</p>
-                  <p class="mt-0.5 text-xs text-muted-foreground">
-                    Estoque depois: {{ formatQty(stockAfterReceipt(preview.material.sku), preview.material.unit) }}
-                  </p>
-                </template>
-                <p v-else class="text-sm text-muted-foreground">A entrada aparece aqui quando o insumo e a embalagem estiverem definidos.</p>
-              </div>
-
-              <!-- Conferir é o gesto que FECHA a linha, e por isso ele tem o
-                   tamanho de um gesto: largura inteira no celular, com o estado
-                   dito por um ícone e pela cor do card, não por uma caixinha. -->
-              <label
-                class="mt-3 flex h-12 w-full cursor-pointer items-center gap-2.5 rounded-md border px-3 text-sm font-medium transition-colors"
-                :class="preview.line.checked ? 'border-success/40 bg-success/10 text-success' : 'border-border bg-card hover:bg-accent'"
-              >
-                <input
-                  :checked="preview.line.checked"
-                  type="checkbox"
-                  class="sr-only"
-                  @change="setReceiptLineChecked(preview.line.id, ($event.target as HTMLInputElement).checked)"
-                />
-                <Icon :name="preview.line.checked ? 'lucide:circle-check-big' : 'lucide:circle'" class="size-5 shrink-0" />
-                {{ preview.line.checked ? "Conferido" : "Marcar como conferido" }}
-              </label>
-              <input v-model="preview.line.lineNote" class="mt-2 h-11 w-full rounded-md border border-border bg-card px-3 text-sm" placeholder="Ocorrência: avaria, falta, ressalva" />
-
-              <div v-if="preview.warnings.length > 1 || preview.warnings.some((warning) => warning.tone === 'watch')" class="mt-2 flex flex-wrap gap-1.5">
-                <span v-for="warning in preview.warnings.filter((item) => item.label !== preview.nextStep)" :key="`${preview.line.id}-${warning.key}`" class="rounded-md border px-2 py-0.5 text-xs font-medium" :class="receiptWarningClasses[warning.tone]">
-                  {{ warning.label }}
+                <Icon :name="row.statusIcon" class="size-5 shrink-0" :class="RECEIPT_LINE_STATUS_TEXT[row.status]" />
+                <span class="min-w-0 flex-1">
+                  <span class="block truncate text-sm font-medium">{{ row.label }}</span>
+                  <span v-if="row.digest" class="block truncate text-xs text-muted-foreground">{{ row.digest }}</span>
+                  <!-- A pendência mora na LINHA. Era isto que obrigava a abrir
+                       o item para descobrir que faltava a validade dele. -->
+                  <span v-if="row.nextStep" class="block truncate text-xs font-medium text-destructive">{{ row.nextStep }}</span>
+                  <span v-else-if="row.note" class="block truncate text-xs text-warning">{{ row.note }}</span>
                 </span>
-              </div>
-              </template>
-            </article>
-          </div>
+                <span class="flex shrink-0 flex-col items-end gap-1">
+                  <span v-if="row.total" class="text-sm font-semibold tabular-nums">{{ row.total }}</span>
+                  <span
+                    class="inline-flex h-6 items-center rounded-md border px-1.5 text-xs font-medium"
+                    :class="RECEIPT_LINE_STATUS_BADGE[row.status]"
+                  >
+                    {{ row.statusLabel }}
+                  </span>
+                </span>
+                <Icon name="lucide:chevron-right" class="size-4 shrink-0 text-muted-foreground" />
+              </button>
+              <button
+                type="button"
+                class="inline-flex w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-destructive"
+                :aria-label="`Remover ${row.label}`"
+                @click="removeReceiptLine(row.id)"
+              >
+                <Icon name="lucide:trash-2" class="size-4" />
+              </button>
+            </li>
+          </ul>
+          <p v-else class="px-4 py-6 text-center text-sm text-muted-foreground">
+            Nenhum item na entrada ainda. Escaneie a NF, ou toque em "Item" para lançar à mão.
+          </p>
         </section>
+
+        <!-- A gaveta do item: título fixo no topo, formulário rolando por
+             baixo. Confirmar ali fecha a gaveta e a linha da lista muda de cor
+             na frente do operador. -->
+        <ReceiptLineSheet
+          v-model:open="lineSheetOpen"
+          :preview="openPreview"
+          :materials="materials"
+          :conversions="openPreview ? receiptConversionsFor(openPreview.line.materialSku) : []"
+          :pending="actionPending"
+          :stock-after="openPreview ? stockAfterReceipt(openPreview.material.sku) : 0"
+          :flash-field="sheetFlashField"
+          @update="onSheetUpdate"
+          @select-material="onSheetSelectMaterial"
+          @accept-suggestion="onSheetAcceptSuggestion"
+          @select-conversion="onSheetSelectConversion"
+          @accept-conversion="onSheetAcceptConversion"
+          @accept-axes="onSheetAcceptAxes"
+          @declare-conversion="onSheetDeclareConversion"
+          @check="onSheetCheck"
+          @remove="removeOpenReceiptLine"
+        />
       </div>
 
       <aside class="min-w-0 rounded-md border border-border bg-card p-4">
@@ -881,7 +1109,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div><dt class="text-xs text-muted-foreground">Origem</dt><dd class="font-semibold">{{ receiptMode === "invoice" ? "NF" : "Sem NF" }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Itens</dt><dd class="font-semibold tabular-nums">{{ receiptCheckedCount }}/{{ receiptLinePreviews.length }}</dd></div>
           <div><dt class="text-xs text-muted-foreground">Valor</dt><dd class="font-semibold tabular-nums">{{ formatMoney(receiptTotalCostQ) }}</dd></div>
-          <div><dt class="text-xs text-muted-foreground">Bloqueios</dt><dd class="font-semibold tabular-nums" :class="receiptTotalBlockers ? 'text-destructive' : 'text-success'">{{ receiptTotalBlockers }}</dd></div>
+          <div><dt class="text-xs text-muted-foreground">Pendências</dt><dd class="font-semibold tabular-nums" :class="receiptTotalPending ? 'text-destructive' : 'text-success'">{{ receiptTotalPending }}</dd></div>
         </dl>
 
         <div class="mt-4 rounded-md border border-border bg-background p-3">
@@ -894,16 +1122,44 @@ onBeforeUnmount(stopInvoiceScanner);
           <textarea v-model="receiptNote" rows="3" class="mt-1 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm" placeholder="Avaria, falta, devolução, observação na NF/CT-e" />
         </label>
 
-        <div v-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
-          <div v-for="blocker in receiptDocumentBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
-          <div v-for="blocker in receiptSupplierBlockers" :key="blocker" class="rounded-md border border-destructive/30 bg-destructive/10 p-2 text-sm text-destructive">{{ blocker }}</div>
+        <!-- Rascunho em branco não tem pendência: tem convite. Era daqui que
+             saía o vermelho "Ler QR, código de barras ou chave da NF" logo
+             depois de uma entrada dar certo — o rascunho zerava e a tela
+             cobrava do zero. -->
+        <div v-if="receiptIsBlank" class="mt-4 rounded-md border border-dashed border-border p-3 text-sm text-muted-foreground">
+          Nada em conferência. Escaneie a NF da próxima entrega, ou lance sem NF.
+        </div>
+
+        <!-- Toda pendência é um GESTO: clicar leva ao campo que falta, não a
+             uma acusação parada no rodapé. -->
+        <div v-else-if="receiptDocumentBlockers.length || receiptSupplierBlockers.length || receiptPendingLines.length || uniqueWatchWarnings.length" class="mt-4 space-y-2">
+          <button
+            v-for="blocker in receiptDocumentBlockers"
+            :key="blocker"
+            type="button"
+            class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
+            :class="receiptWarningClasses.block"
+            @click="focusReceiptAnchor('invoice')"
+          >
+            {{ blocker }}
+          </button>
+          <button
+            v-for="blocker in receiptSupplierBlockers"
+            :key="blocker"
+            type="button"
+            class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
+            :class="receiptWarningClasses.block"
+            @click="focusReceiptAnchor('supplier')"
+          >
+            {{ blocker }}
+          </button>
           <button
             v-for="item in receiptPendingLines"
             :key="`pending-${item.id}`"
             type="button"
             class="block w-full min-w-0 rounded-md border p-2 text-left text-sm"
-            :class="receiptWarningClasses.block"
-            @click="focusReceiptLine(item.id)"
+            :class="receiptWarningClasses[item.tone]"
+            @click="focusReceiptLine(item.id, item.field)"
           >
             <span class="block truncate font-medium">{{ item.label }}</span>
             <span class="block text-xs opacity-80">{{ item.step }}</span>
@@ -911,21 +1167,24 @@ onBeforeUnmount(stopInvoiceScanner);
           <div v-for="(warning, index) in uniqueWatchWarnings" :key="`watch-${warning.key}-${index}`" class="rounded-md border p-2 text-sm" :class="receiptWarningClasses[warning.tone]">{{ warning.label }}</div>
         </div>
 
-        <div class="mt-4 border-t border-border pt-4">
-          <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground disabled:opacity-50" :disabled="readonlyFallback || !receiptReady || actionPending" @click="confirmReceipt">
-            <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:package-check'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
+        <div v-if="!receiptIsBlank" class="mt-4 border-t border-border pt-4">
+          <!-- O botão nunca fica mudo. Se ainda falta algo ele diz o quê, e ao
+               ser apertado leva até o campo — botão cinza que não explica nada
+               é o pior aviso que um formulário pode dar. -->
+          <button type="button" class="inline-flex h-12 w-full items-center justify-center gap-2 rounded-md px-3 text-sm font-semibold disabled:opacity-50" :class="receiptReady ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:bg-accent'" :disabled="readonlyFallback || actionPending" @click="onConfirmReceipt">
+            <Icon :name="actionPending ? 'lucide:loader-circle' : receiptReady ? 'lucide:package-check' : 'lucide:list-checks'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
             {{ actionPending ? "Confirmando" : "Confirmar entrada" }}
           </button>
-          <p v-if="receiptConfirmedAt" class="mt-3 rounded-md border border-success/25 bg-success/10 p-2 text-sm font-medium text-success">
-            Entrada confirmada em {{ receiptConfirmedAt }}
+          <p v-if="!receiptReady && receiptFirstBlocker" class="mt-2 flex items-start gap-1.5 text-xs text-muted-foreground">
+            <Icon name="lucide:arrow-right" class="mt-0.5 size-3.5 shrink-0" />
+            <span>
+              {{ receiptFirstBlocker.step }}{{ receiptFirstBlocker.label ? ` em ${receiptFirstBlocker.label}` : "" }}<template v-if="receiptTotalPending > 1"> · e mais {{ receiptTotalPending - 1 }}</template>
+            </span>
           </p>
-          <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50" :disabled="readonlyFallback || !receiptHasRejectionReason || actionPending" @click="rejectReceipt">
+          <button type="button" class="mt-2 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-destructive/30 px-3 text-sm font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50" :disabled="readonlyFallback || !receiptHasRejectionReason || actionPending" @click="onRejectReceipt">
             <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:undo-2'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
             {{ actionPending ? "Registrando" : "Registrar devolução" }}
           </button>
-          <p v-if="receiptRejectedAt" class="mt-3 rounded-md border border-warning/30 bg-warning/10 p-2 text-sm font-medium text-warning">
-            Devolução registrada em {{ receiptRejectedAt }}
-          </p>
         </div>
       </aside>
     </section>
@@ -961,7 +1220,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <div class="overflow-x-auto">
             <table class="min-w-full divide-y divide-border text-sm">
               <thead class="bg-muted text-left text-xs font-medium text-muted-foreground">
-                <tr><th class="px-3 py-2">SKU</th><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Estoque</th><th class="px-3 py-2">Cobertura</th><th class="px-3 py-2">Custo-base</th><th class="px-3 py-2">Status</th></tr>
+                <tr><th class="px-3 py-2">SKU</th><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Estoque</th><th class="px-3 py-2">Cobertura</th><th class="px-3 py-2 w-32">Mínimo</th><th class="px-3 py-2">Custo-base</th><th class="px-3 py-2">Status</th></tr>
               </thead>
               <tbody class="divide-y divide-border">
                 <tr v-for="material in filteredMaterials" :key="material.sku" class="hover:bg-accent/70">
@@ -972,6 +1231,34 @@ onBeforeUnmount(stopInvoiceScanner);
                   </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatStockOnHand(material) }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ coverageLabel(material.coverageDays) }}</td>
+                  <!-- Sem consumo medido, o alvo de reposição é zero e o insumo
+                       nunca vira sugestão. O mínimo declarado é o que destrava. -->
+                  <td class="px-3 py-2">
+                    <input
+                      inputmode="decimal"
+                      :placeholder="material.unit"
+                      class="h-9 w-full rounded-md border bg-background px-2 text-sm tabular-nums"
+                      :class="minStockLineErrors[material.sku] ? 'border-destructive' : 'border-border'"
+                      :value="minStockInputs[material.sku] ?? ''"
+                      @input="setMinStockInput(material.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                    <!-- Declarado × derivado do consumo. O derivado NÃO vai no
+                         placeholder: pré-preenchido, ele convida a "confirmar"
+                         digitando o mesmo número — e isso congela um mínimo que
+                         era para acompanhar o consumo. -->
+                    <p class="mt-0.5 text-xs text-muted-foreground">
+                      <template v-if="material.minStockDeclared">
+                        definido: {{ formatQty(material.minStock, material.unit) }}
+                      </template>
+                      <template v-else-if="material.minStock">
+                        pelo consumo: {{ formatQty(material.minStock, material.unit) }}
+                      </template>
+                      <template v-else>sem mínimo</template>
+                    </p>
+                    <p v-if="minStockLineErrors[material.sku]" class="mt-0.5 text-xs font-medium text-destructive">
+                      {{ minStockLineErrors[material.sku] }}
+                    </p>
+                  </td>
                   <td class="px-3 py-2 tabular-nums">{{ formatMoney(material.preferredBaseCostQ) }} / {{ material.unit }}</td>
                   <td class="px-3 py-2">
                     <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="toneClasses[material.tone]">{{ toneLabels[material.tone] }}</span>
@@ -979,6 +1266,33 @@ onBeforeUnmount(stopInvoiceScanner);
                 </tr>
               </tbody>
             </table>
+          </div>
+
+          <div
+            v-if="minStockFilledCount"
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3"
+          >
+            <p class="text-sm text-muted-foreground">
+              {{ minStockFilledCount }} mínimo(s) para salvar · zero apaga o mínimo do insumo
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                :disabled="actionPending"
+                @click="clearMinStock()"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                :disabled="readonlyFallback || actionPending"
+                @click="saveMinStock()"
+              >
+                Salvar mínimos
+              </button>
+            </div>
           </div>
         </div>
 
@@ -1003,7 +1317,7 @@ onBeforeUnmount(stopInvoiceScanner);
           <button v-for="summary in supplierSummaries" :key="summary.supplier.ref" type="button" class="rounded-md border p-3 text-left transition" :class="summary.supplier.ref === selectedSupplierRef ? 'border-primary bg-primary/5' : 'border-border bg-card hover:bg-accent'" @click="selectSupplier(summary.supplier.ref)">
             <div class="flex items-start justify-between gap-3">
               <div>
-                <h2 class="font-semibold">{{ summary.supplier.name }}</h2>
+                <h2 class="font-semibold">{{ summary.supplier.displayName }}</h2>
                 <p class="text-xs text-muted-foreground">{{ summary.supplier.ref }}</p>
               </div>
               <span class="rounded-md border px-2 py-1 text-xs font-medium" :class="summary.supplier.isActive ? 'border-success/25 bg-success/10 text-success' : 'border-border text-muted-foreground'">{{ summary.supplier.isActive ? "Ativo" : "Inativo" }}</span>
@@ -1017,14 +1331,56 @@ onBeforeUnmount(stopInvoiceScanner);
         </div>
 
         <aside v-if="selectedSupplier" class="rounded-md border border-border bg-card p-4">
-          <h2 class="text-lg font-semibold">{{ selectedSupplier.name }}</h2>
-          <p class="text-sm text-muted-foreground">{{ selectedSupplier.document }}</p>
+          <h2 class="text-lg font-semibold">{{ selectedSupplier.displayName }}</h2>
+          <!-- A razao social so aparece quando difere do nome do dia a dia:
+               repeti-la nas duas linhas nao informa nada. -->
+          <p v-if="selectedSupplier.tradeName && selectedSupplier.name !== selectedSupplier.displayName" class="text-sm text-muted-foreground">
+            {{ selectedSupplier.name }}
+          </p>
+          <p v-if="selectedSupplier.document" class="text-sm text-muted-foreground">{{ selectedSupplier.document }}</p>
           <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
             <div><dt class="text-xs text-muted-foreground">Prazo</dt><dd class="font-semibold">{{ selectedSupplier.leadTimeDays }} dia(s)</dd></div>
             <div><dt class="text-xs text-muted-foreground">Entrega</dt><dd class="font-semibold">{{ selectedSupplier.reliabilityPercent }}%</dd></div>
-            <div><dt class="text-xs text-muted-foreground">Última</dt><dd class="font-semibold">{{ formatDate(selectedSupplier.lastDeliveryAt) }}</dd></div>
+            <div><dt class="text-xs text-muted-foreground">Última</dt><dd class="font-semibold">{{ formatShortDate(selectedSupplier.lastDeliveryAt) }}</dd></div>
             <div><dt class="text-xs text-muted-foreground">Pagamento</dt><dd class="font-semibold">{{ selectedSupplier.paymentTerm }}</dd></div>
           </dl>
+          <div class="mt-4 border-t border-border pt-4">
+            <div class="flex items-baseline justify-between gap-2">
+              <h3 class="font-semibold">Contatos</h3>
+              <!-- O cadastro de pessoa e config, e config se edita no Admin.
+                   A tela mostra para conferir antes de enviar, nao para editar. -->
+              <span class="text-xs text-muted-foreground">Cadastro no Admin</span>
+            </div>
+
+            <!-- A pergunta que o operador faz antes de apertar "enviar" e "vai
+                 para quem?". Responder depois do envio nao serve. -->
+            <p class="mt-2 text-xs" :class="selectedSupplier.orderContactName ? 'text-muted-foreground' : 'text-warning'">
+              <template v-if="selectedSupplier.orderContactName">
+                O pedido de compra vai para <span class="font-medium">{{ selectedSupplier.orderContactName }}</span>.
+              </template>
+              <template v-else-if="selectedSupplier.contact">
+                Sem contato comercial — o pedido cai na central ({{ selectedSupplier.contact }}).
+              </template>
+              <template v-else>
+                Sem contato e sem central: o pedido de compra nao tem para onde ir.
+              </template>
+            </p>
+
+            <div v-if="activeSupplierContacts.length" class="mt-3 space-y-2">
+              <div v-for="person in activeSupplierContacts" :key="person.id" class="rounded-md border border-border bg-background p-2">
+                <div class="flex items-start justify-between gap-2">
+                  <p class="font-medium">{{ person.name }}</p>
+                  <span class="rounded-md border border-border px-2 py-0.5 text-xs text-muted-foreground">
+                    {{ person.roleLabel }}<template v-if="person.isPrimary"> · principal</template>
+                  </span>
+                </div>
+                <p v-if="person.email" class="text-xs text-muted-foreground">{{ person.email }}</p>
+                <p v-if="person.phone" class="text-xs text-muted-foreground">{{ person.phone }}</p>
+                <p v-if="person.notes" class="mt-1 text-xs text-muted-foreground">{{ person.notes }}</p>
+              </div>
+            </div>
+          </div>
+
           <div class="mt-4 border-t border-border pt-4">
             <h3 class="font-semibold">Carteira</h3>
             <div class="mt-2 space-y-2">
@@ -1042,7 +1398,134 @@ onBeforeUnmount(stopInvoiceScanner);
         </aside>
       </section>
 
-      <section v-else class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
+      <section v-else-if="baseView === 'costs'" class="space-y-4">
+        <!-- Tabela de preços do fornecedor: o gesto que tira dezenas de insumos
+             do estado "sem custo preferencial" — e portanto fora de qualquer
+             pedido — sem passar pelo Django Admin. -->
+        <section class="rounded-md border border-border bg-card">
+          <div class="flex flex-wrap items-end justify-between gap-3 border-b border-border p-4">
+            <div>
+              <h1 class="text-lg font-semibold">Tabela do fornecedor</h1>
+              <p class="mt-1 text-sm text-muted-foreground">
+                Escolha o fornecedor e preencha os que você sabe. Quem ficar em branco não entra.
+              </p>
+            </div>
+            <div class="flex flex-wrap items-end gap-2">
+              <label class="block text-sm font-medium">Fornecedor
+                <select
+                  v-model="batchSupplierRef"
+                  class="mt-1 h-10 w-56 rounded-md border border-border bg-background px-3 text-sm"
+                >
+                  <option value="">Escolher…</option>
+                  <!-- Fornecedor inativo não pode receber custo preferencial; o
+                       servidor recusa. Não oferecer é melhor que recusar. -->
+                  <option
+                    v-for="supplier in suppliers.filter((item) => item.isActive)"
+                    :key="supplier.ref"
+                    :value="supplier.ref"
+                  >
+                    {{ supplier.displayName }}
+                  </option>
+                </select>
+              </label>
+              <input
+                v-model="batchQuery"
+                type="search"
+                placeholder="Buscar insumo"
+                class="h-10 w-48 rounded-md border border-border bg-background px-3 text-sm"
+              />
+              <label class="inline-flex h-10 items-center gap-2 text-sm">
+                <input v-model="batchOnlyMissing" type="checkbox" class="size-4 rounded border-border" />
+                Só os que faltam
+              </label>
+            </div>
+          </div>
+
+          <!-- "Nenhuma linha" tem três causas diferentes e a tela precisa dizer
+               qual: base não carregada, filtro fechando tudo, ou nada a fazer. -->
+          <div v-if="!batchRows.length" class="p-6 text-center text-sm text-muted-foreground">
+            <template v-if="!materials.length">Base de insumos ainda não carregada.</template>
+            <template v-else-if="batchQuery.trim()">Nenhum insumo encontrado para “{{ batchQuery }}”.</template>
+            <template v-else-if="batchOnlyMissing">Todo insumo ativo já tem custo preferencial.</template>
+            <template v-else>Nenhum insumo ativo na base.</template>
+          </div>
+
+          <div v-else class="max-h-[28rem] overflow-y-auto">
+            <table class="min-w-full divide-y divide-border text-sm">
+              <thead class="sticky top-0 bg-muted text-left text-xs font-medium text-muted-foreground">
+                <tr>
+                  <th class="px-3 py-2">Insumo</th>
+                  <th class="px-3 py-2">Unidade de compra</th>
+                  <th class="px-3 py-2 w-40">Valor</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-for="row in batchRows" :key="`batch-${row.sku}`" class="hover:bg-accent/70">
+                  <td class="px-3 py-2">
+                    <span class="font-medium">{{ row.name }}</span>
+                    <span class="ml-1 text-xs text-muted-foreground">{{ row.sku }} · {{ row.unit }}</span>
+                    <p v-if="batchLineErrors[row.sku]" class="mt-0.5 text-xs font-medium text-destructive">
+                      {{ batchLineErrors[row.sku] }}
+                    </p>
+                  </td>
+                  <td class="px-3 py-2">
+                    <select
+                      class="h-9 w-full rounded-md border border-border bg-background px-2 text-sm"
+                      :value="batchConversionIds[row.sku] ?? ''"
+                      @change="setBatchConversion(row.sku, ($event.target as HTMLSelectElement).value)"
+                    >
+                      <option value="">Unidade-base ({{ row.unit }})</option>
+                      <option
+                        v-for="conversion in batchConversionsFor(row.sku)"
+                        :key="conversion.id"
+                        :value="conversion.id"
+                      >
+                        {{ conversion.label }}
+                      </option>
+                    </select>
+                  </td>
+                  <td class="px-3 py-2">
+                    <input
+                      inputmode="decimal"
+                      placeholder="0,00"
+                      class="h-9 w-full rounded-md border bg-background px-2 text-sm tabular-nums"
+                      :class="batchLineErrors[row.sku] ? 'border-destructive' : 'border-border'"
+                      :value="batchInputs[row.sku] ?? ''"
+                      @input="setBatchInput(row.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3">
+            <p class="text-sm text-muted-foreground">
+              <template v-if="!batchSupplierRef">Escolha o fornecedor para lançar.</template>
+              <template v-else>{{ batchFilledCount }} valor(es) preenchido(s)</template>
+            </p>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50"
+                :disabled="!batchFilledCount || actionPending"
+                @click="clearCostBatch()"
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                class="h-10 rounded-md bg-primary px-4 text-sm font-semibold text-primary-foreground disabled:opacity-50"
+                :disabled="readonlyFallback || !batchReady || actionPending"
+                @click="saveCostBatch()"
+              >
+                Salvar {{ batchFilledCount || "" }} como padrão
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div class="grid gap-4 xl:grid-cols-[24rem_minmax(0,1fr)]">
         <aside class="rounded-md border border-border bg-card p-4">
           <h1 class="text-lg font-semibold">Lançar custo</h1>
           <div class="mt-3 space-y-3">
@@ -1053,7 +1536,7 @@ onBeforeUnmount(stopInvoiceScanner);
             </label>
             <label class="block text-sm font-medium">Fornecedor
               <select v-model="noteSupplierRef" class="mt-1 h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
-                <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.name }}</option>
+                <option v-for="supplier in suppliers" :key="supplier.ref" :value="supplier.ref">{{ supplier.displayName }}</option>
               </select>
             </label>
             <label class="block text-sm font-medium">Unidade de compra
@@ -1091,7 +1574,7 @@ onBeforeUnmount(stopInvoiceScanner);
               <tbody class="divide-y divide-border">
                 <tr v-for="cost in costs" :key="cost.id" class="hover:bg-accent/70">
                   <td class="px-3 py-2 font-medium">{{ materials.find((material) => material.sku === cost.materialSku)?.name }}</td>
-                  <td class="px-3 py-2">{{ suppliers.find((supplier) => supplier.ref === cost.supplierRef)?.name }}</td>
+                  <td class="px-3 py-2">{{ suppliers.find((supplier) => supplier.ref === cost.supplierRef)?.displayName }}</td>
                   <td class="px-3 py-2 tabular-nums">{{ formatMoney(cost.costQ) }} / {{ purchaseUnitLabel(cost, materials.find((material) => material.sku === cost.materialSku), conversions) }}</td>
                   <td class="px-3 py-2 font-semibold tabular-nums"><span v-if="isApproximateCost(cost, conversions)">≈ </span>{{ formatMoney(costPerBaseUnitQ(cost, conversions)) }}</td>
                   <td class="px-3 py-2">
@@ -1104,8 +1587,146 @@ onBeforeUnmount(stopInvoiceScanner);
             </table>
           </div>
         </div>
+        </div>
+      </section>
+
+      <section v-else class="space-y-4">
+        <div v-if="countForbidden" class="rounded-md border border-border bg-card p-8 text-center">
+          <Icon name="lucide:lock" class="mx-auto size-6 text-muted-foreground" />
+          <h2 class="mt-3 text-lg font-semibold">Contagem restrita ao gestor</h2>
+          <p class="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+            Auditar e ajustar o estoque de insumos pede a permissão de auditoria. Entre com o operador do gestor para contar.
+          </p>
+        </div>
+
+        <div v-else class="rounded-md border border-border bg-card">
+          <div class="flex flex-wrap items-center gap-3 border-b border-border p-3">
+            <label class="relative min-w-64 flex-1">
+              <Icon name="lucide:search" class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <input v-model="query" type="search" placeholder="Buscar insumo" class="h-10 w-full rounded-md border border-border bg-background pl-9 pr-3 text-sm" />
+            </label>
+            <p class="text-sm text-muted-foreground">Informe o que contou no físico. Divergência pede motivo e vira ajuste no estoque.</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-border text-sm">
+              <thead class="bg-muted text-left text-xs font-medium text-muted-foreground">
+                <tr><th class="px-3 py-2">Insumo</th><th class="px-3 py-2">Sistema</th><th class="px-3 py-2">Contado</th><th class="px-3 py-2">Diferença</th><th class="px-3 py-2">Motivo</th></tr>
+              </thead>
+              <tbody class="divide-y divide-border">
+                <tr v-for="row in countFilteredRows" :key="row.item.sku" class="hover:bg-accent/70">
+                  <td class="px-3 py-2">
+                    <p class="font-semibold">{{ row.item.name }}</p>
+                    <p class="font-mono text-xs text-muted-foreground">{{ row.item.sku }} · {{ row.item.category }}</p>
+                  </td>
+                  <td class="px-3 py-2 tabular-nums">{{ formatQty(row.item.systemQty, row.item.unit) }}</td>
+                  <td class="px-3 py-2">
+                    <input
+                      :value="row.input"
+                      type="text"
+                      inputmode="decimal"
+                      :placeholder="`0 ${row.item.unit}`"
+                      :aria-label="`Quantidade contada de ${row.item.name}`"
+                      class="h-10 w-28 rounded-md border border-border bg-background px-3 text-sm tabular-nums"
+                      @input="setCountInput(row.item.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                  </td>
+                  <td class="px-3 py-2">
+                    <span
+                      v-if="row.counted !== null"
+                      class="rounded-md border px-2 py-1 text-xs font-medium tabular-nums"
+                      :class="
+                        row.divergent ?
+                          (row.diff < 0 ? 'border-destructive/30 bg-destructive/10 text-destructive' : 'border-warning/30 bg-warning/10 text-warning')
+                        : 'border-success/25 bg-success/10 text-success'
+                      "
+                    >
+                      {{ row.divergent ? formatQtyDiff(row.diff, row.item.unit) : "Confere" }}
+                    </span>
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                  <td class="px-3 py-2">
+                    <input
+                      v-if="row.divergent"
+                      :value="row.reason"
+                      type="text"
+                      placeholder="Por que divergiu?"
+                      :aria-label="`Motivo da divergência de ${row.item.name}`"
+                      class="h-10 w-56 rounded-md border bg-background px-3 text-sm"
+                      :class="row.missingReason ? 'border-destructive/50' : 'border-border'"
+                      @input="setCountReason(row.item.sku, ($event.target as HTMLInputElement).value)"
+                    />
+                    <span v-else class="text-xs text-muted-foreground">—</span>
+                  </td>
+                </tr>
+                <tr v-if="!countFilteredRows.length">
+                  <td colspan="5" class="px-3 py-8 text-center text-sm text-muted-foreground">
+                    {{ countPending ? "Carregando posições do estoque..." : "Nenhum insumo para contar." }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-border p-3">
+            <div class="text-sm text-muted-foreground">
+              <span class="tabular-nums">{{ countTotals.filled }}</span> contado(s) ·
+              <span class="tabular-nums">{{ countTotals.divergent }}</span> divergência(s)
+              <span v-if="countTotals.missingReason" class="text-destructive"> · {{ countTotals.missingReason }} sem motivo</span>
+              <span v-if="countConfirmedAt" class="text-success"> · Última contagem lançada {{ countConfirmedAt }}</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent disabled:opacity-50" :disabled="actionPending || !countTotals.filled" @click="resetCount">
+                Limpar
+              </button>
+              <button type="button" class="h-10 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground disabled:opacity-50" :disabled="actionPending || countPending || !countReady" @click="openCountConfirm">
+                Lançar contagem
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
     </section>
+
+    <div v-if="countConfirmOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-label="Confirmar contagem">
+      <div class="w-full max-w-lg rounded-md border border-border bg-card p-4 shadow-lg">
+        <div class="flex items-start gap-3">
+          <Icon name="lucide:clipboard-check" class="mt-0.5 size-5 text-muted-foreground" />
+          <div>
+            <h2 class="text-lg font-semibold">Lançar a contagem no estoque?</h2>
+            <p class="mt-1 text-sm text-muted-foreground">
+              Cada divergência vira um ajuste definitivo no livro de estoque, registrado com o seu usuário e o motivo informado.
+            </p>
+          </div>
+        </div>
+        <div v-if="countDivergentRows.length" class="mt-4 max-h-64 space-y-2 overflow-y-auto">
+          <div v-for="row in countDivergentRows" :key="row.item.sku" class="rounded-md border border-border bg-background p-2 text-sm">
+            <div class="flex items-center justify-between gap-2">
+              <p class="font-medium">{{ row.item.name }}</p>
+              <span class="font-semibold tabular-nums" :class="row.diff < 0 ? 'text-destructive' : 'text-warning'">{{ formatQtyDiff(row.diff, row.item.unit) }}</span>
+            </div>
+            <p class="text-xs text-muted-foreground tabular-nums">{{ formatQty(row.item.systemQty, row.item.unit) }} no sistema · {{ formatQty(row.counted ?? 0, row.item.unit) }} contado</p>
+            <p class="mt-1 text-xs">{{ row.reason }}</p>
+          </div>
+        </div>
+        <p v-else class="mt-4 rounded-md border border-success/25 bg-success/10 p-2 text-sm text-success">
+          Sem divergência: a contagem confirma o saldo do sistema e nenhum ajuste será lançado.
+        </p>
+        <div class="mt-4 flex items-center justify-end gap-2">
+          <button type="button" class="h-10 rounded-md border border-border px-3 text-sm font-medium hover:bg-accent" :disabled="actionPending" @click="countConfirmOpen = false">
+            Voltar
+          </button>
+          <button
+            type="button"
+            class="inline-flex h-10 items-center gap-2 rounded-md px-3 text-sm font-medium disabled:opacity-50"
+            :class="countDivergentRows.length ? 'border border-destructive/30 text-destructive hover:bg-destructive/10' : 'bg-primary text-primary-foreground'"
+            :disabled="actionPending"
+            @click="submitCount"
+          >
+            <Icon :name="actionPending ? 'lucide:loader-circle' : 'lucide:check'" class="size-4" :class="actionPending ? 'animate-spin' : ''" />
+            Confirmar ajustes
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div v-if="scannerOpen" class="fixed inset-0 z-50 flex flex-col bg-black p-3 text-white md:p-6" role="dialog" aria-modal="true" aria-label="Escanear NF">
       <div class="flex items-center justify-between gap-3 pb-3">

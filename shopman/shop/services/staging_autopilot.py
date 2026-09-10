@@ -29,11 +29,9 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 
 from shopman.shop.directives import STAGING_AUTOPILOT, create_deduped
+from shopman.shop.environment import environment_name, is_production
 
 logger = logging.getLogger(__name__)
-
-# Ambientes onde um operador de mentira é aceitável.
-_NON_PRODUCTION_ENVIRONMENTS = {"development", "dev", "local", "staging"}
 
 # Status de onde o piloto tem um próximo passo a dar. NEW sai por
 # ``confirm_order``; o resto sai por ``advance_order`` (o mesmo botão "avançar"
@@ -62,8 +60,8 @@ def is_enabled() -> bool:
     """
     if not getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False):
         return False
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in _NON_PRODUCTION_ENVIRONMENTS:
+    if is_production():
+        environment = environment_name()
         logger.error(
             "staging_autopilot: recusado em ambiente %s — pedidos de cliente real não "
             "avançam sozinhos.",

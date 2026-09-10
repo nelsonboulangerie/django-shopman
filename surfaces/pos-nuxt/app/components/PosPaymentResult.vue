@@ -10,7 +10,18 @@ import type { PaymentProofView } from "~/presentation/payment";
 // 'paid' (confirmado), 'expired' (desistiu — terminal/timeout). Cartão/dinheiro
 // não pollam → 'idle'. `large` = palco da tela de resultado: QR maior, para o
 // cliente escanear de longe.
-const props = defineProps<{ proof: PaymentProofView; status?: "idle" | "polling" | "paid" | "expired"; large?: boolean }>();
+// `resending` = o reenvio do link está em voo (o composable manda; a tela só
+// trava o botão para o clique duplo não virar dois pedidos).
+const props = defineProps<{
+  proof: PaymentProofView;
+  status?: "idle" | "polling" | "paid" | "expired";
+  large?: boolean;
+  resending?: boolean;
+}>();
+
+// O reenvio é um GESTO de rede (Directive nova no servidor), não estado local:
+// sobe para quem tem o transporte (usePosSale), como todo comando do balcão.
+const emit = defineEmits<{ resendLink: [] }>();
 
 const TONE_CLASS: Record<PaymentProofView["tone"], string> = {
   info: "border-info/30 bg-info/10 text-info",
@@ -25,6 +36,16 @@ async function copyCode() {
   try {
     await navigator.clipboard.writeText(props.proof.copyPaste);
     toast.success("Código PIX copiado");
+  } catch {
+    toast.error("Não foi possível copiar. Selecione e copie manualmente.");
+  }
+}
+
+async function copyLink() {
+  if (!props.proof.checkoutUrl) return;
+  try {
+    await navigator.clipboard.writeText(props.proof.checkoutUrl);
+    toast.success("Link copiado — mande para o cliente");
   } catch {
     toast.error("Não foi possível copiar. Selecione e copie manualmente.");
   }
@@ -49,8 +70,18 @@ async function copyCode() {
     <div class="flex items-center gap-2">
       <Icon :name="proof.icon" class="size-5" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Pagamento por cartão" }} · {{ proof.amountDisplay }}</p>
-        <p v-if="proof.message" class="text-xs opacity-90">{{ proof.message }}</p>
+        <p class="text-sm font-semibold">{{ proof.isPix ? "Pagamento PIX" : "Link de pagamento" }} · {{ proof.amountDisplay }}</p>
+        <!-- Duas coisas diferentes moram nesta linha, e as duas valem.
+             (1) No LINK, a frase diz o que a casa FAZ com a URL — a cadeia
+             WhatsApp → e-mail → SMS enfileirada na venda — e deixa a cópia
+             manual como rede, não como gesto padrão.
+             (2) A mensagem do servidor ("Pagamento criado. Aguarde confirmação
+             do gateway...") é jargão e, no PIX com prova viva, repete o que a
+             linha de baixo já diz em cinco palavras, com o giro do polling ao
+             lado. Três frases para um fato é o operador parando de ler as três.
+             Ela volta a aparecer quando NÃO há prova: aí é a única voz. -->
+        <p v-if="proof.isLink" class="text-xs opacity-90">Enviando o link ao cliente por WhatsApp, e-mail ou SMS. Se preferir, copie e mande você.</p>
+        <p v-else-if="proof.message && !(proof.isPix && proof.hasProof)" class="text-xs opacity-90">{{ proof.message }}</p>
         <!-- Aguardando: gira só ENQUANTO polla. Ao desistir, para de mentir. -->
         <p v-if="proof.isPix && proof.hasProof && status === 'polling'" class="mt-0.5 flex items-center gap-1 text-xs opacity-80">
           <Icon name="lucide:loader-circle" class="size-3 animate-spin" /> Aguardando confirmação do PIX…
@@ -80,6 +111,41 @@ async function copyCode() {
       </div>
     </template>
 
+    <!-- LINK DE PAGAMENTO: para ENTREGAR, não para abrir aqui.
+         Ele é a forma do PEDIDO REMOTO — encomenda por telefone, WhatsApp —, e
+         nesse pedido o cliente NÃO está no balcão: não há para quem mostrar um
+         QR. O gesto real é copiar e mandar pela mesma conversa em que o pedido
+         chegou. Abrir a página aqui seria o operador digitando o cartão do
+         cliente, o oposto do que a maquininha existe para evitar. -->
+    <!-- Uma faixa só: a URL (que ninguém lê — truncada) e o botão que a leva
+         embora. Eram três blocos empilhados dizendo a mesma coisa; o gesto é
+         um só, e ele cabe numa linha. -->
+    <!-- `min-w-0` no próprio contêiner: filho de grid nasce com `min-width:auto`
+         e o `truncate` do filho não segura nada — a faixa cresce além do cartão
+         e o botão sai pela borda. -->
+    <div v-else-if="proof.isLink && proof.checkoutUrl" class="flex min-w-0 items-center gap-2">
+      <p class="min-w-0 flex-1 truncate rounded-md border bg-background/70 px-2.5 py-2 font-mono text-xs">{{ proof.checkoutUrl }}</p>
+      <UiButton variant="outline" size="sm" class="shrink-0 gap-2" @click="copyLink">
+        <Icon name="lucide:copy" class="size-4" />
+        Copiar link
+      </UiButton>
+      <!-- "Não chegou": manda de novo a MESMA URL pela cadeia da casa
+           (WhatsApp → e-mail → SMS). O servidor recusa link vencido, pedido
+           pago/cancelado e clique cedo demais — a recusa vira toast com o
+           motivo, não botão escondido. -->
+      <UiButton
+        variant="outline"
+        size="sm"
+        class="shrink-0 gap-2"
+        :disabled="resending"
+        data-action="resend-link"
+        @click="emit('resendLink')"
+      >
+        <Icon :name="resending ? 'lucide:loader-circle' : 'lucide:send'" class="size-4" :class="resending && 'animate-spin'" />
+        Reenviar
+      </UiButton>
+    </div>
+
     <!-- Card: hosted checkout link (delegated; no capture here) -->
     <a
       v-else-if="proof.isCard && proof.checkoutUrl"
@@ -91,5 +157,13 @@ async function copyCode() {
       <Icon name="lucide:external-link" class="size-4" />
       Abrir checkout do cartão
     </a>
+
+    <!-- Até quando o LINK vale — o mesmo relógio do pedido e do gateway, dito
+         como o operador diz ao cliente. Sem o prazo na tela, ele não tem o que
+         dizer ao telefone, e "o link parou de funcionar" vira ligação. -->
+    <p v-if="proof.isLink && proof.expiresDisplay" class="flex items-center gap-1 text-xs opacity-80">
+      <Icon name="lucide:clock" class="size-3.5" />
+      Pague até {{ proof.expiresDisplay }} para garantir o pedido
+    </p>
   </div>
 </template>

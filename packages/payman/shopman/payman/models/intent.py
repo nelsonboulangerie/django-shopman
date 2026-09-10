@@ -40,7 +40,29 @@ class PaymentIntent(models.Model):
     class Method(models.TextChoices):
         PIX = "pix", _("PIX")
         CASH = "cash", _("Dinheiro")
+        #: Cartão SEM distinção — é o que a loja online conhece, porque lá o
+        #: gateway (Stripe) é quem sabe se foi crédito ou débito, e a bandeira
+        #: não muda nada para quem comprou. Segue válido, e é o que está gravado
+        #: no histórico.
         CARD = "card", _("Cartão")
+        #: No BALCÃO a distinção existe e importa: prazo de recebimento e taxa
+        #: da adquirente são outros, e é isso que o fechamento do dia precisa
+        #: separar. Os dois liquidam NO TERMINAL — a maquininha é física, o
+        #: sistema só anota (ver ``METHODS_WITHOUT_GATEWAY``).
+        #:
+        #: 🔜 TEF: quando o balcão falar com a maquininha (Stone AutoTEF/Connect,
+        #: WP próprio), o que muda é DENTRO deles — a captura deixa de ser
+        #: atestada e passa a vir do TEF, com NSU e autorização. O ref não muda,
+        #: nem a tela, nem o fechamento do dia: só a origem da prova.
+        CREDIT = "credit", _("Crédito")
+        DEBIT = "debit", _("Débito")
+        #: LINK DE PAGAMENTO — o pedido remoto anotado no PDV: a cobrança vive
+        #: numa URL que o cliente abre depois, do celular dele. É o oposto do
+        #: crédito/débito do balcão: aqui NÃO há maquininha, há gateway, e o
+        #: dinheiro chega quando o cliente paga — nunca no gesto do operador.
+        #: Por isso fica FORA de ``METHODS_WITHOUT_GATEWAY``: o intent nasce
+        #: ``pending`` e é o webhook que o captura.
+        LINK = "link", _("Link de pagamento")
         EXTERNAL = "external", _("Externo")
         # Conta do cliente: a venda aconteceu e a obrigação está reconhecida
         # (``authorized`` = deve); vira ``captured`` no acerto (= pagou). Sem
@@ -71,7 +93,25 @@ class PaymentIntent(models.Model):
     # ``PaymentService.settle``, com ``gateway=""``. Único dono da lista.
     #: Liquidam/nascem sem gateway. ``account`` entra aqui porque não tem adapter,
     #: mas NÃO liquida na venda: ``settle`` recusa; o caminho é ``charge_to_account``.
-    METHODS_WITHOUT_GATEWAY = frozenset({Method.CASH, Method.EXTERNAL, Method.ACCOUNT})
+    #:
+    #: ⚠️ ``credit``/``debit`` PRECISAM estar aqui, e a omissão seria um buraco
+    #: silencioso de receita: sem gateway configurado e sem esta lista, o
+    #: ``PaymentService`` pula o intent (``payment.py``: ``gateway_method and not
+    #: mixed → continue``) e a venda fecha com ZERO ``PaymentIntent``. O pedido
+    #: existe, o cashman registra a linha, e o dinheiro some do Payman, do
+    #: fechamento de turno e do B.I. — sem erro, sem alerta. O estorno viraria
+    #: no-op pelo mesmo motivo (``refund`` sem adapter devolve 0).
+    #:
+    #: Eles entram porque a maquininha do balcão é FÍSICA: o cartão é passado
+    #: fora do sistema e o operador atesta o que aconteceu. É o mesmo caminho
+    #: que o ``card`` já percorre dentro de uma venda mista.
+    METHODS_WITHOUT_GATEWAY = frozenset({
+        Method.CASH,
+        Method.CREDIT,
+        Method.DEBIT,
+        Method.EXTERNAL,
+        Method.ACCOUNT,
+    })
 
     STATUS_TIMESTAMP_FIELDS = {
         Status.AUTHORIZED: "authorized_at",

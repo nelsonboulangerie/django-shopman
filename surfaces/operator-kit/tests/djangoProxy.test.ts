@@ -15,7 +15,13 @@ import {
   isSafeDjangoSetCookieHeader,
   mergeSetCookieIntoCookieHeader,
 } from "../server/utils/djangoProxy";
-import { resolveDjangoBaseUrl } from "../server/utils/djangoBaseUrl";
+import {
+  assertProductionDjangoConfiguration,
+  configuredDjangoBaseUrl,
+  isExplicitTestRuntime,
+  isProductionRuntime,
+  resolveDjangoBaseUrl,
+} from "../server/utils/djangoBaseUrl";
 
 const proxySource = readFileSync(fileURLToPath(new URL("../server/utils/djangoProxy.ts", import.meta.url)), "utf8");
 
@@ -84,22 +90,56 @@ describe("Django proxy — transporte de CSRF/cookie do BFF de operador", () => 
 
   it("mantém a checagem de X-API-Version fiada dentro do proxy", () => {
     expect(proxySource).toContain('warnOnApiVersionMismatch(response.headers.get("x-api-version")');
+    expect(DJANGO_OPERATIONAL_RESPONSE_HEADERS).toContain("x-api-version");
+    expect(proxySource).toContain('applyPrivateNoStore(event, response.headers.get("vary"))');
   });
 
-  it("recusa upstream local do Django em production", () => {
-    const previous = process.env.SHOPMAN_ENVIRONMENT;
-    process.env.SHOPMAN_ENVIRONMENT = "production";
-    try {
-      try {
-        resolveDjangoBaseUrl("http://127.0.0.1:8000/");
-        throw new Error("expected local upstream to be rejected");
-      } catch (error: any) {
-        expect(error.statusCode).toBe(503);
-      }
-      expect(resolveDjangoBaseUrl("https://api.example.test/")).toBe("https://api.example.test");
-    } finally {
-      if (previous == null) delete process.env.SHOPMAN_ENVIRONMENT;
-      else process.env.SHOPMAN_ENVIRONMENT = previous;
+  it("recusa upstream ausente, local ou HTTP remoto em production", () => {
+    for (const value of [undefined, "http://127.0.0.1:8000/", "http://api.example.test/"]) {
+      expect(() => resolveDjangoBaseUrl(value, { production: true })).toThrow();
     }
+    expect(resolveDjangoBaseUrl("https://api.example.test/", { production: true })).toBe(
+      "https://api.example.test",
+    );
+  });
+
+  it("faz fail-fast pela configuração real de build e só libera localhost em dev/test explícito", () => {
+    expect(isProductionRuntime({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "staging" })).toBe(true);
+    expect(isExplicitTestRuntime({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "test" })).toBe(false);
+    expect(isExplicitTestRuntime({
+      NODE_ENV: "production",
+      SHOPMAN_ENVIRONMENT: "test",
+      SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
+    })).toBe(true);
+    expect(() => configuredDjangoBaseUrl({ NODE_ENV: "production" })).toThrow();
+    expect(() =>
+      configuredDjangoBaseUrl({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "staging",
+        NUXT_DJANGO_BASE_URL: "http://api.example.test",
+      }),
+    ).toThrow();
+    expect(() =>
+      configuredDjangoBaseUrl({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "development",
+        NUXT_DJANGO_BASE_URL: "https://api.example.test",
+      }),
+    ).toThrow();
+    expect(
+      assertProductionDjangoConfiguration({
+        SHOPMAN_ENVIRONMENT: "production",
+        NUXT_DJANGO_BASE_URL: "https://api.example.test/",
+      }),
+    ).toBe("https://api.example.test");
+    expect(
+      configuredDjangoBaseUrl({
+        NODE_ENV: "production",
+        SHOPMAN_ENVIRONMENT: "test",
+        SHOPMAN_ALLOW_INSECURE_TEST_UPSTREAM: "1",
+      }),
+    ).toBe("http://127.0.0.1:8000");
+    expect(() => configuredDjangoBaseUrl({ NODE_ENV: "production", SHOPMAN_ENVIRONMENT: "test" })).toThrow();
+    expect(configuredDjangoBaseUrl({ NODE_ENV: "development" })).toBe("http://127.0.0.1:8000");
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { AccountLoyalty, AccountSummary, Action } from '~/types/shopman'
+import type { AccountLoyalty, AccountSummary, Action, OrderHistoryItem } from '~/types/shopman'
 import {
   ORDER_FILTER_OPTIONS,
   accountGreeting,
@@ -10,10 +10,15 @@ import {
   loyaltyStampSlots,
   loyaltyStampsLabel,
   loyaltyView,
+  orderRowEmphasisClass,
+  ordersCountLabel,
   orderStatusAccentClass,
   orderStatusDotClass,
   ordersEmptyCopy,
-  reorderActionFrom
+  profileActionIsExternal,
+  profileIssueFrom,
+  reorderActionFrom,
+  splitOrdersByActive
 } from '~/presentation/account'
 
 function loyalty (overrides: Partial<AccountLoyalty> = {}): AccountLoyalty {
@@ -190,12 +195,121 @@ describe('accountNavCards', () => {
       '/conta/seguranca'
     ])
   })
-  it('mostra a contagem de pedidos do summary', () => {
-    const summary = { recent_order_count: 4 } as AccountSummary
+  it('badge de Pedidos prioriza os em andamento', () => {
+    const summary = { active_order_count: 2, total_order_count: 8 } as AccountSummary
     const cards = accountNavCards(summary)
-    expect(cards[0]!.count).toBe(4)
+    expect(cards[0]!.count).toBe(2)
+  })
+  it('sem ativos, badge cai para o total', () => {
+    const summary = { active_order_count: 0, total_order_count: 8 } as AccountSummary
+    expect(accountNavCards(summary)[0]!.count).toBe(8)
   })
   it('contagem null sem summary', () => {
     expect(accountNavCards(null)[0]!.count).toBeNull()
+  })
+})
+
+describe('ordersCountLabel', () => {
+  it('compõe ativos e total', () => {
+    expect(ordersCountLabel(2, 8)).toBe('2 pedidos em andamento (8 pedidos no total)')
+  })
+  it('singular nos dois eixos', () => {
+    expect(ordersCountLabel(1, 1)).toBe('1 pedido em andamento (1 pedido no total)')
+  })
+  it('sem ativos, só o total', () => {
+    expect(ordersCountLabel(0, 8)).toBe('8 pedidos')
+    expect(ordersCountLabel(0, 1)).toBe('1 pedido')
+  })
+  it('sem pedidos, convite', () => {
+    expect(ordersCountLabel(0, 0)).toBe('Nenhum pedido ainda')
+  })
+  it('nunca mostra total menor que os ativos', () => {
+    expect(ordersCountLabel(3, 0)).toBe('3 pedidos em andamento (3 pedidos no total)')
+  })
+})
+
+describe('splitOrdersByActive', () => {
+  it('agrupa pelo is_active do backend preservando a ordem', () => {
+    const orders = [
+      { ref: 'A', is_active: true },
+      { ref: 'B', is_active: false },
+      { ref: 'C', is_active: true }
+    ] as OrderHistoryItem[]
+    const { active, past } = splitOrdersByActive(orders)
+    expect(active.map(o => o.ref)).toEqual(['A', 'C'])
+    expect(past.map(o => o.ref)).toEqual(['B'])
+  })
+  it('sem a flag, trata como finalizado', () => {
+    const { active, past } = splitOrdersByActive([{ ref: 'X' } as OrderHistoryItem])
+    expect(active).toEqual([])
+    expect(past.map(o => o.ref)).toEqual(['X'])
+  })
+})
+
+describe('orderRowEmphasisClass', () => {
+  it('ativo fica em cor plena', () => {
+    expect(orderRowEmphasisClass(true)).toBe('')
+  })
+  it('finalizado recua e volta no hover/focus', () => {
+    const cls = orderRowEmphasisClass(false)
+    expect(cls).toContain('opacity-70')
+    expect(cls).toContain('saturate-50')
+    expect(cls).toContain('hover:opacity-100')
+    expect(cls).toContain('focus-within:opacity-100')
+  })
+})
+
+// A GÊMEA NA TELA da recusa do servidor. Trocar o e-mail para um que já é de
+// outra conta é a única falha do perfil que o cliente pode resolver — e era a
+// que a tela contava pior: "não foi possível salvar seu perfil agora" manda
+// tentar de novo o que tentar de novo não conserta.
+describe('profileIssueFrom', () => {
+  const conflito = {
+    detail: 'Este e-mail já está em uso em outra conta.',
+    field: 'email',
+    error_code: 'contact_already_taken',
+    actions: [
+      { ref: 'sign_in_with_email', kind: 'link', label: 'Entrar com esse e-mail', href: '/entrar?next=/conta/perfil', priority: 'primary' },
+      { ref: 'contact_whatsapp', kind: 'external', label: 'Falar com a padaria', href: 'https://wa.me/554333231997', priority: 'secondary' }
+    ]
+  }
+
+  it('mostra o motivo, aponta o campo e leva as duas saídas', () => {
+    const issue = profileIssueFrom(conflito, 'fallback')
+    expect(issue.message).toBe('Este e-mail já está em uso em outra conta.')
+    expect(issue.field).toBe('email')
+    expect(issue.actions.map(a => a.label)).toEqual(['Entrar com esse e-mail', 'Falar com a padaria'])
+  })
+
+  it('não nomeia quem é o dono do e-mail — a loja é superfície de cliente', () => {
+    const issue = profileIssueFrom(conflito, 'fallback')
+    const rendered = JSON.stringify(issue)
+    expect(rendered).not.toContain('candidates')
+    expect(rendered.toLowerCase()).not.toContain('pertence a')
+  })
+
+  it('cai no texto neutro quando o servidor não nomeia a recusa', () => {
+    expect(profileIssueFrom(null, 'Não foi possível salvar seu perfil agora.')).toEqual({
+      message: 'Não foi possível salvar seu perfil agora.',
+      field: '',
+      actions: []
+    })
+    expect(profileIssueFrom({ detail: '   ' }, 'fallback').message).toBe('fallback')
+  })
+
+  it('descarta ação sem rótulo ou sem destino — não é saída', () => {
+    const issue = profileIssueFrom(
+      { detail: 'x', actions: [{ ref: 'a', label: '', href: '/entrar' }, { ref: 'b', label: 'Ir', href: '' }] },
+      'fallback'
+    )
+    expect(issue.actions).toEqual([])
+  })
+})
+
+describe('profileActionIsExternal', () => {
+  it('WhatsApp sai do app; rota interna fica na navegação', () => {
+    expect(profileActionIsExternal({ kind: 'external', href: 'https://wa.me/55' })).toBe(true)
+    expect(profileActionIsExternal({ kind: 'link', href: 'https://exemplo.com' })).toBe(true)
+    expect(profileActionIsExternal({ kind: 'link', href: '/entrar?next=/conta/perfil' })).toBe(false)
   })
 })

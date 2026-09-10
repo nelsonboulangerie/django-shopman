@@ -1,15 +1,28 @@
 import type {
+  CountItem,
+  CountRow,
+  CountSummary,
   EnrichedMaterial,
   Material,
   MaterialConversion,
   MaterialIssue,
   MaterialTone,
+  ReceiptBlocker,
   ReceiptConversionSuggestion,
+  ReceiptFieldAnchor,
   ReceiptLine,
   ReceiptLinePreview,
+  ReceiptLineRow,
+  ReceiptLineStatus,
+  ReceiptLineStatusBadge,
   ReceiptLineSuggestion,
   ReceiptMode,
+  ReceiptOutcome,
+  ReceiptPendingItem,
+  PurchaseCostBatchPayload,
   ReceiptWarning,
+  ReorderBlocker,
+  ReorderRow,
   QuotePreview,
   Supplier,
   SupplierCostRow,
@@ -32,12 +45,23 @@ export function formatMoney(cents: number | null | undefined): string {
   return moneyFormatter.format(cents / 100);
 }
 
+/**
+ * Dinheiro digitado → centavos, com a MESMA regra do `parseQtyInput` abaixo:
+ * **vírgula presente decide a notação**.
+ *
+ * ⚠️ Isto removia TODOS os pontos antes de olhar a vírgula, então o teclado do
+ * sistema divergia do servidor em até 100×:
+ *
+ *     "12.50"  tela: R$ 1.250,00   servidor: R$ 12,50
+ *     "12.5"   tela: R$ 125,00     servidor: R$ 12,50
+ *
+ * Nenhum dos dois lados avisava. O caminho pré-preenchido pela NF estava a salvo —
+ * o buraco era a DIGITAÇÃO, que é exatamente o modo manual "sem NF".
+ */
 export function parseMoneyInput(value: string): number {
-  const normalized = value
-    .trim()
-    .replace(/[R$\s]/g, "")
-    .replace(/\./g, "")
-    .replace(",", ".");
+  const text = value.trim().replace(/[R$\s]/g, "");
+  if (!text) return 0;
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
   const parsed = Number(normalized);
   if (!Number.isFinite(parsed) || parsed <= 0) return 0;
   return Math.round(parsed * 100);
@@ -63,6 +87,25 @@ export function formatStockOnHand(material: Pick<Material, "stockOnHand" | "unit
 export function formatFactor(value: number, unit: string, approximate = false): string {
   const prefix = approximate ? "≈ " : "";
   return `${prefix}${quantityFormatter.format(value)} ${unit}`;
+}
+
+const shortDateFormatter = new Intl.DateTimeFormat("pt-BR", { day: "2-digit", month: "2-digit" });
+
+/**
+ * Data curta (dd/mm) para carimbo de tela — "—" quando não há data.
+ *
+ * `Intl.DateTimeFormat.format()` **lança** `RangeError: Invalid time value`
+ * diante de um Invalid Date, em vez de devolver texto. Como a projeção manda
+ * `lastDeliveryAt: ""` para todo fornecedor que ainda não entregou, formatar
+ * sem checar derrubava o render inteiro da aba Fornecedores. Ausência de data é
+ * um estado normal do domínio, não um erro: ela vira travessão, não exceção.
+ */
+export function formatShortDate(value: string | null | undefined): string {
+  const text = (value ?? "").trim();
+  if (!text) return "—";
+  const parsed = new Date(`${text}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return "—";
+  return shortDateFormatter.format(parsed);
 }
 
 export function coverageDays(material: Pick<Material, "stockOnHand" | "dailyUse">): number {
@@ -242,6 +285,205 @@ export function receiptNextStepIsOnField(warnings: ReceiptWarning[]): boolean {
 }
 
 /**
+ * O ENDERECO de cada bloqueio dentro do card da linha.
+ *
+ * Um aviso que sabe o que falta e nao sabe onde nao e um aviso, e uma acusacao:
+ * "informe a validade" no rodape de uma nota de dez itens deixa o operador
+ * rolando a tela para achar qual item e qual campo. Com a ancora, o mesmo aviso
+ * vira um gesto — a tela rola ate o campo e foca nele.
+ */
+const BLOCKER_FIELD: Record<ReceiptWarning["key"], ReceiptFieldAnchor | null> = {
+  "missing-material": "material",
+  "confirm-suggestion": "material",
+  "confirm-conversion": "conversion",
+  "missing-conversion": "conversion",
+  "invalid-qty": "qty",
+  "missing-expiry": "expiry",
+  "diverging-conversion": null,
+  "missing-cost": null,
+  "approximate-conversion": null,
+  "manual-source": null,
+};
+
+export function receiptNextStepField(warnings: ReceiptWarning[]): ReceiptFieldAnchor | null {
+  const blocker = warnings.find((warning) => warning.tone === "block");
+  return blocker ? BLOCKER_FIELD[blocker.key] : null;
+}
+
+/**
+ * COMO o item se chama — o mesmo nome na lista, na gaveta e na pendência.
+ *
+ * O operador nunca pode ter dúvida sobre qual item está mexendo, e essa
+ * certeza só existe se os três lugares disserem a mesma palavra. Eram três
+ * fórmulas parecidas em três arquivos, e a do cabeçalho perdia o nome do
+ * insumo quando a entrada era lançada à mão.
+ */
+export function receiptLineLabel(preview: ReceiptLinePreview): string {
+  if (preview.line.invoiceDescription) return preview.line.invoiceDescription;
+  if (preview.line.materialSku) return preview.material.name;
+  return "Item lançado à mão";
+}
+
+/**
+ * Avisos que pedem OLHO, e não gesto.
+ *
+ * `manual-source` fica de fora de propósito: "sem documento fiscal" é a origem
+ * que a CASA escolheu para a entrada inteira, e não uma anomalia deste item.
+ * Pintar de âmbar todas as linhas de um romaneio é ruído — o amarelo que
+ * aparece sempre não avisa nada.
+ */
+const ATTENTION_WARNINGS = new Set<ReceiptWarning["key"]>([
+  "diverging-conversion",
+  "approximate-conversion",
+  "missing-cost",
+]);
+
+/**
+ * O estado do item, em uma palavra — a cor da linha sai daqui e de nenhum
+ * outro lugar.
+ *
+ * A ordem não é arbitrária:
+ *
+ * 1. **bloqueio ganha de tudo**, inclusive de conferido: dá para marcar como
+ *    conferido e depois trocar o insumo, e a linha verde com bloqueio seria uma
+ *    mentira — o `Confirmar entrada` continuaria travado sem a lista dizer por
+ *    quê.
+ * 2. **conferido ganha da atenção**: a divergência foi vista e assinada pelo
+ *    operador; repintar de âmbar o que ele acabou de confirmar desfaz o gesto.
+ */
+export function receiptLineStatus(preview: ReceiptLinePreview): ReceiptLineStatus {
+  if (preview.warnings.some((warning) => warning.tone === "block")) return "blocked";
+  if (preview.line.checked) return "checked";
+  if (preview.warnings.some((warning) => ATTENTION_WARNINGS.has(warning.key))) return "attention";
+  return "ready";
+}
+
+const RECEIPT_LINE_STATUS_BADGE: Record<ReceiptLineStatus, ReceiptLineStatusBadge> = {
+  blocked: { label: "Pendente", icon: "lucide:circle-alert" },
+  attention: { label: "Revisar", icon: "lucide:triangle-alert" },
+  ready: { label: "Confirmável", icon: "lucide:circle-dashed" },
+  checked: { label: "Conferido", icon: "lucide:circle-check-big" },
+};
+
+export function receiptLineStatusBadge(status: ReceiptLineStatus): ReceiptLineStatusBadge {
+  return RECEIPT_LINE_STATUS_BADGE[status];
+}
+
+/**
+ * A segunda linha da lista: o que já está apurado, ou o que a nota diz.
+ *
+ * Sem insumo escolhido não há o que apurar — repetir a quantidade na unidade
+ * errada ("4 kg" para 4 sacos) seria exatamente o engano que a conversão
+ * existe para evitar. Aí a linha mostra o que veio na nota, que é o que o
+ * operador tem na mão.
+ */
+export function receiptLineDigest(preview: ReceiptLinePreview): string {
+  return preview.line.materialSku ? receiptSettledSummary(preview) : preview.invoiceSummary;
+}
+
+/**
+ * A LISTA da entrada — uma linha por item, pronta para desenhar.
+ *
+ * A tela do recebimento era uma pilha de formulários abertos, um por item: para
+ * saber o que faltava numa nota de dez linhas, o operador rolava dez cards. A
+ * lista dá a visão geral que faltava, e cada linha já diz em que pé está.
+ */
+export function receiptLineRows(previews: ReceiptLinePreview[]): ReceiptLineRow[] {
+  return previews.map((preview) => {
+    const status = receiptLineStatus(preview);
+    const badge = receiptLineStatusBadge(status);
+    return {
+      id: preview.line.id,
+      label: receiptLineLabel(preview),
+      digest: receiptLineDigest(preview),
+      status,
+      statusLabel: badge.label,
+      statusIcon: badge.icon,
+      nextStep: preview.nextStep,
+      note: preview.line.lineNote,
+      // Enquanto ninguém digitou o valor, o número que existe é o da NOTA — e
+      // dizer "R$ 0,00" seria afirmar um preço que ninguém apurou.
+      total: preview.totalCostQ > 0 ? formatMoney(preview.totalCostQ) : (preview.line.invoiceTotal ?? ""),
+    };
+  });
+}
+
+/**
+ * As pendencias da entrada, uma por item, com nome e endereco.
+ *
+ * Entram duas coisas que travam o `Confirmar entrada`, e nao so uma: o bloqueio
+ * de campo (validade, insumo, embalagem, quantidade) e a linha COMPLETA que
+ * ninguem conferiu ainda. A segunda nao aparecia em lugar nenhum — o botao
+ * ficava cinza sem que nada na tela dissesse por que.
+ */
+export function receiptPendingItems(previews: ReceiptLinePreview[]): ReceiptPendingItem[] {
+  return previews.flatMap<ReceiptPendingItem>((preview) => {
+    const label = receiptLineLabel(preview);
+    if (preview.nextStep) {
+      return [
+        {
+          id: preview.line.id,
+          label,
+          step: preview.nextStep,
+          field: preview.nextStepField ?? "material",
+          tone: "block",
+        },
+      ];
+    }
+    if (!preview.line.checked) {
+      return [{ id: preview.line.id, label, step: "Marcar como conferido", field: "check", tone: "watch" }];
+    }
+    return [];
+  });
+}
+
+/**
+ * O rascunho ainda nao comecou.
+ *
+ * Confirmar a entrada zera o rascunho, e um rascunho zerado dispara os mesmos
+ * bloqueios de sempre ("Ler QR, codigo de barras ou chave da NF"). O operador
+ * acabava de acertar tudo e recebia um vermelho por cima do verde. Rascunho em
+ * branco nao e erro: e convite.
+ */
+export function receiptIsBlank(lines: ReceiptLine[], invoiceInput: string, note: string): boolean {
+  return lines.length === 0 && !invoiceInput.trim() && !note.trim();
+}
+
+/**
+ * O primeiro gesto que falta para confirmar — na ordem em que a tela os pede.
+ *
+ * Documento e fornecedor vem antes das linhas porque sem eles a entrada nao tem
+ * de onde vir. `null` significa pronto para confirmar.
+ */
+export function receiptFirstBlocker(
+  documentBlockers: string[],
+  supplierBlockers: string[],
+  pending: ReceiptPendingItem[],
+  hasLines: boolean,
+): ReceiptBlocker | null {
+  if (documentBlockers.length) {
+    return { scope: "document", step: documentBlockers[0]!, label: "", lineId: "", field: null, anchor: "invoice" };
+  }
+  if (supplierBlockers.length) {
+    return { scope: "supplier", step: supplierBlockers[0]!, label: "", lineId: "", field: null, anchor: "supplier" };
+  }
+  if (!hasLines) {
+    return { scope: "document", step: "Lance ao menos um item para dar entrada", label: "", lineId: "", field: null, anchor: "invoice" };
+  }
+  const item = pending[0];
+  if (!item) return null;
+  return { scope: "line", step: item.step, label: item.label, lineId: item.id, field: item.field, anchor: null };
+}
+
+/** O recibo em uma frase: "7 itens · R$ 1.480,00 · Moinho SP". */
+export function receiptOutcomeSummary(outcome: ReceiptOutcome): string {
+  const parts = [`${outcome.lineCount} ${outcome.lineCount === 1 ? "item" : "itens"}`];
+  if (outcome.totalCostQ > 0) parts.push(formatMoney(outcome.totalCostQ));
+  if (outcome.supplierName) parts.push(outcome.supplierName);
+  return parts.join(" · ");
+}
+
+/**
  * Em que unidade está a quantidade desta linha — "4 o quê?".
  *
  * A resposta nunca é "não sei": a nota já diz `4 SC` antes de qualquer insumo
@@ -379,6 +621,7 @@ export function receiptLinePreview(
     invoiceSummary: receiptInvoiceSummary(line),
     nextStep: receiptNextStep(warnings),
     nextStepIsOnField: receiptNextStepIsOnField(warnings),
+    nextStepField: receiptNextStepField(warnings),
     needsExpiry: Boolean(matchedMaterial && matchedMaterial.shelfLifeDays !== null && !line.expiryDate),
     conversionSuggestion: receiptConversionSuggestion(line),
     invoiceAxes: receiptInvoiceAxes(line),
@@ -449,6 +692,70 @@ export function enrichMaterial(
   };
 }
 
+// Contagem aceita o teclado da casa ("1.250,5" ou "12,5") e o do sistema
+// ("12.5"): vírgula presente decide a notação. Vazio = linha não contada.
+export function parseQtyInput(value: string): number | null {
+  const text = value.trim().replace(/\s/g, "");
+  if (!text) return null;
+  const normalized = text.includes(",") ? text.replace(/\./g, "").replace(",", ".") : text;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed) || parsed < 0) return null;
+  return Math.round(parsed * 1000) / 1000;
+}
+
+export function countRow(item: CountItem, input: string, reason: string): CountRow {
+  const counted = parseQtyInput(input);
+  const diff = counted === null ? 0 : Math.round((counted - item.systemQty) * 1000) / 1000;
+  const divergent = counted !== null && diff !== 0;
+  return {
+    item,
+    input,
+    reason,
+    counted,
+    diff,
+    divergent,
+    missingReason: divergent && !reason.trim(),
+  };
+}
+
+export function countRows(
+  items: CountItem[],
+  inputs: Record<string, string>,
+  reasons: Record<string, string>,
+): CountRow[] {
+  return items.map((item) => countRow(item, inputs[item.sku] ?? "", reasons[item.sku] ?? ""));
+}
+
+export function countSummary(rows: CountRow[]): CountSummary {
+  const filled = rows.filter((row) => row.counted !== null);
+  const divergent = filled.filter((row) => row.divergent);
+  const missingReason = divergent.filter((row) => row.missingReason);
+  return {
+    filled: filled.length,
+    divergent: divergent.length,
+    missingReason: missingReason.length,
+    ready: filled.length > 0 && missingReason.length === 0,
+  };
+}
+
+export function countConfirmPayload(rows: CountRow[]) {
+  return {
+    counts: rows
+      .filter((row) => row.counted !== null)
+      .map((row) => ({
+        materialSku: row.item.sku,
+        countedQty: row.counted as number,
+        reason: row.reason.trim(),
+      })),
+  };
+}
+
+export function formatQtyDiff(diff: number, unit: string): string {
+  if (diff === 0) return "—";
+  const sign = diff > 0 ? "+" : "−";
+  return `${sign}${quantityFormatter.format(Math.abs(diff))} ${unit}`;
+}
+
 export function supplierCostRows(
   material: Material,
   costs: SupplierMaterialCost[],
@@ -481,4 +788,167 @@ export function supplierCostRows(
     })
     .filter((row): row is SupplierCostRow => Boolean(row))
     .sort((a, b) => a.baseCostQ - b.baseCostQ);
+}
+
+/**
+ * A fila de compra — quem precisa ser reposto, quanto e de quem.
+ *
+ * **A quantidade é a do servidor.** `Material.suggestedQty` já é a resposta da
+ * política de reposição (prazo do fornecedor + revisão + segurança, limitada
+ * pela validade do insumo), calculada em `_suggested_qty` na projeção. A tela
+ * mostra esse número; não o recalcula.
+ *
+ * Antes havia duas contas para a mesma pergunta: o servidor respondia uma coisa
+ * e o painel refazia a conta com uma heurística própria
+ * (`ceil(max(minStock*2, dailyUse*7) - stockOnHand)`, sobre um filtro próprio).
+ * O resultado foi o painel anunciar "Comprar 8 · R$ 4.293,97" enquanto a tela
+ * Comprar, com os mesmos dados, mostrava 0 e R$ 0,00 — e um painel que promete
+ * oito e entrega zero queima a confiança no app inteiro. Uma pergunta, um dono.
+ */
+export function reorderRows(
+  materials: Material[],
+  suppliers: Supplier[],
+  costs: SupplierMaterialCost[],
+  conversions: MaterialConversion[],
+): ReorderRow[] {
+  return materials
+    .filter((material) => (material.suggestedQty ?? 0) > 0)
+    .map((material) => {
+      const enriched = enrichMaterial(material, costs, conversions);
+      const preferred = enriched.preferredCost;
+      const supplier = preferred ? (suppliers.find((item) => item.ref === preferred.supplierRef) ?? null) : null;
+      const suggestedQty = material.suggestedQty ?? 0;
+      const estimatedCostQ =
+        enriched.preferredBaseCostQ === null ? null : Math.round(enriched.preferredBaseCostQ * suggestedQty);
+      return { material: enriched, supplier, suggestedQty, estimatedCostQ };
+    })
+    .sort((a, b) => a.material.coverageDays - b.material.coverageDays);
+}
+
+/**
+ * A tabela de preços digitada vira o corpo do POST em lote.
+ *
+ * Só a linha com valor entra: a tela lista todos os insumos justamente para o
+ * operador percorrer a lista e preencher o que sabe, e uma linha em branco é
+ * omissão, não erro. O `makePreferred` é sempre verdadeiro porque o lote existe
+ * para tornar o insumo comprável, e sem custo preferencial ele continua fora do
+ * pedido.
+ */
+export function costBatchPayload(
+  supplierRef: string,
+  inputs: Record<string, string>,
+  conversionIds: Record<string, string>,
+  visibleSkus: string[],
+): PurchaseCostBatchPayload {
+  // Só vai o que está NA TELA. O filtro ("só os que faltam", a busca) esconde
+  // linhas já preenchidas, e mandá-las assim mesmo quebra a promessa do lote:
+  // como ele é tudo-ou-nada, uma linha escondida e inválida derruba tudo, e o
+  // erro dela não tem onde aparecer — o operador lê "corrija as linhas
+  // indicadas" com todas as linhas visíveis limpas.
+  const visible = new Set(visibleSkus);
+  const costs = Object.entries(inputs)
+    .filter(([materialSku, value]) => visible.has(materialSku) && Boolean((value ?? "").trim()))
+    .map(([materialSku, value]) => ({
+      materialSku,
+      costInput: value.trim(),
+      conversionId: conversionIds[materialSku] || null,
+    }));
+  // `makePreferred` fica FALSE de propósito. O servidor já promove o primeiro
+  // custo de um insumo (`prefer_if_missing`), que é o que destrava os insumos
+  // sem custo preferencial — o objetivo do lote. Pedir a promoção explícita
+  // repontaria o custo canônico (o que alimenta o custeio de receita) de
+  // dezenas de insumos de uma vez, ao gesto de "atualizar a tabela do
+  // fornecedor". Trocar o padrão é escolha de uma linha só, no formulário
+  // avulso, onde ela tem botão próprio.
+  return { supplierRef, makePreferred: false, costs };
+}
+
+/**
+ * Traduz a recusa do lote em "qual linha errou, e por quê".
+ *
+ * O lote é tudo-ou-nada no servidor. Sem apontar a linha, a recusa manda o
+ * operador procurar o erro entre dezenas de campos preenchidos — e o custo de
+ * procurar é maior que o de digitar tudo de novo. O servidor manda os erros em
+ * `error.lines` (o dialeto `errors` fala por campo, e linha não cabe ali);
+ * aqui eles viram um mapa por SKU, que é como a tabela endereça suas linhas.
+ */
+export function costBatchLineErrors(data: unknown): Record<string, string> {
+  const body = data as { error?: { lines?: unknown } } | null | undefined;
+  const lines = body?.error?.lines;
+  if (!Array.isArray(lines)) return {};
+  const entries = lines
+    .map((line) => line as { materialSku?: unknown; detail?: unknown })
+    .filter((line) => typeof line?.materialSku === "string" && typeof line?.detail === "string")
+    .map((line) => [line.materialSku as string, line.detail as string] as const);
+  return Object.fromEntries(entries);
+}
+
+/**
+ * O que impede a fila de compra de existir — vazio explicado, com o caminho.
+ *
+ * Um zero mudo é indistinguível de um app quebrado: o operador não sabe se não
+ * precisa comprar nada ou se a conta não fecha por falta de cadastro. Os dois
+ * estados pedem reações opostas, e só um deles tem conserto do lado dele.
+ *
+ * A ordem é a da causa: sem insumo não há o que medir; sem consumo medido não
+ * há sugestão; sem custo preferencial a sugestão não vira pedido. Quando há
+ * fila, não há o que explicar — a lista fala por si.
+ */
+export function reorderBlockers(materials: Material[], costs: SupplierMaterialCost[]): ReorderBlocker[] {
+  if (materials.some((material) => (material.suggestedQty ?? 0) > 0)) return [];
+
+  const active = materials.filter((material) => material.isActive);
+  if (!active.length) {
+    return [
+      {
+        key: "no-materials",
+        headline: "Nenhum insumo ativo na base",
+        detail: "Sem insumo cadastrado não há o que repor. Cadastre os insumos para o Compras ter o que calcular.",
+        count: 0,
+        action: { label: "Abrir Insumos", baseView: "materials" },
+      },
+    ];
+  }
+
+  const blockers: ReorderBlocker[] = [];
+
+  // O consumo não é digitado: sai das baixas de estoque que a produção lança ao
+  // FINALIZAR uma ficha (Move negativo, kind=MAKE). Enquanto a fornada não for
+  // fechada no sistema, o insumo tem consumo zero e o Compras não sugere nada.
+  const semConsumo = active.filter((material) => material.dailyUse <= 0);
+  if (semConsumo.length) {
+    blockers.push({
+      key: "no-consumption",
+      headline: `${semConsumo.length} de ${active.length} insumos sem consumo medido`,
+      detail:
+        "A sugestão de reposição vem do consumo real, e o consumo é registrado quando uma fornada é finalizada na Produção. Sem fornada fechada, não há quanto repor — defina o estoque mínimo do insumo para comprar mesmo assim.",
+      count: semConsumo.length,
+      action: { label: "Abrir Insumos", baseView: "materials" },
+    });
+  }
+
+  const preferidos = new Set(costs.filter((cost) => cost.isPreferred).map((cost) => cost.materialSku));
+  const semCusto = active.filter((material) => !preferidos.has(material.sku));
+  if (semCusto.length) {
+    blockers.push({
+      key: "no-preferred-cost",
+      headline: `${semCusto.length} de ${active.length} insumos sem custo preferencial`,
+      detail:
+        "Só dá para enviar pedido de um insumo que tenha custo padrão e fornecedor definidos. Cadastre em Custos — dá para lançar vários de uma vez pelo mesmo fornecedor.",
+      count: semCusto.length,
+      action: { label: "Abrir Custos", baseView: "costs" },
+    });
+  }
+
+  if (!blockers.length) {
+    blockers.push({
+      key: "stocked",
+      headline: "Nenhum insumo abaixo do ponto de reposição",
+      detail: "Todo insumo com consumo medido tem estoque para cobrir o prazo de entrega. Não há o que comprar agora.",
+      count: 0,
+      action: null,
+    });
+  }
+
+  return blockers;
 }

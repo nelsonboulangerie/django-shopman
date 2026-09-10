@@ -22,25 +22,49 @@ class OvenRun(models.Model):
     ]
 
     work_order_ref = models.CharField(
-        "ordem de produção", max_length=64, db_index=True,
+        "ordem de produção",
+        max_length=64,
+        db_index=True,
         help_text="WorkOrder.ref (string ref, nunca FK cross-domain — ADR-004).",
     )
     oven_ref = models.CharField(
-        "forno", max_length=64, blank=True,
+        "forno",
+        max_length=100,
+        blank=True,
         help_text="Snapshot de WorkOrder.position_ref no momento do arm.",
     )
-    operator_ref = models.CharField("operador", max_length=64, blank=True)
+    operator_ref = models.CharField("operador", max_length=100, blank=True)
+    arm_idempotency_key = models.CharField(
+        "chave idempotente do arm",
+        max_length=160,
+        unique=True,
+        null=True,
+        blank=True,
+    )
+    conclude_idempotency_key = models.CharField(
+        "chave idempotente da conclusão",
+        max_length=160,
+        unique=True,
+        null=True,
+        blank=True,
+    )
     planned_seconds = models.PositiveIntegerField(
         "duração armada (s)",
         help_text="Duração do timer no arm. Referência, não medição.",
     )
     armed_at = models.DateTimeField("enfornou em", default=timezone.now, db_index=True)
     concluded_at = models.DateTimeField(
-        "retirou em", null=True, blank=True,
+        "retirou em",
+        null=True,
+        blank=True,
         help_text="Só o Concluir declarado escreve aqui.",
     )
     status = models.CharField(
-        "status", max_length=20, choices=STATUS_CHOICES, default="open", db_index=True,
+        "status",
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default="open",
+        db_index=True,
     )
     metadata = models.JSONField("metadata", default=dict, blank=True)
 

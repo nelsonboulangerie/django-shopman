@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { navigateTo } from '#app'
 import type { CheckoutMutationResponse, CheckoutResponse } from '~/types/shopman'
-import { labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
+import { addressLabelDisplay, labelPatchPayload, type AddressSelection, type AddressLabelKey } from '~/presentation/address'
 import { reviewWaitlist } from '~/presentation/cart'
 import { displayBrazilianPhone, normalizeAuthPhone } from '~/utils/authPhone'
+import { CHECKOUT_DRAFT_KEY, parseCheckoutDraft } from '~/utils/checkoutDraft'
 import { buildCheckoutPayload, createCheckoutAttemptKey, type CheckoutFormState } from '~/utils/checkoutPayload'
 import { formatCount } from '~/utils/display'
 import {
@@ -30,6 +31,7 @@ import {
   isCheckoutDateUnavailable,
   localDateValue,
   isCustomCheckoutDate,
+  notesToggleState,
   parseClosedDateEntries,
   parseLocalDate,
   paymentIcon as resolvePaymentIcon,
@@ -153,8 +155,15 @@ const confirmOpen = ref(false)
 const receiptOpen = ref(false)
 const datePopoverOpen = ref(false)
 const notesOpen = ref(false)
-// Desligar o toggle é o dismiss: descarta a observação para não enviá-la oculta.
-watch(notesOpen, (open) => { if (!open) state.notes = '' })
+// Desligar o toggle é o dismiss VISUAL, não a destruição do texto: a observação
+// digitada vai para o rascunho interno e volta ao reabrir. Com o toggle fechado,
+// `state.notes` fica vazio — observação dispensada nunca viaja oculta no payload.
+const stashedNotes = ref('')
+watch(notesOpen, (open) => {
+  const next = notesToggleState(open, state.notes, stashedNotes.value)
+  state.notes = next.notes
+  stashedNotes.value = next.stashed
+})
 watch(() => state.name, value => {
   if (value.trim()) clearFieldError('name')
 })
@@ -374,7 +383,7 @@ const datepickerDisabledDates = computed(() => buildDatepickerDisabledDates(clos
 const quickDateOptions = computed(() => {
   const available = checkout.value?.available_dates || []
   if (!available.length) {
-    return quickCheckoutDateOptions(dateBounds.value, closedDateEntries.value)
+    return quickCheckoutDateOptions(dateBounds.value, closedDateEntries.value, closedWeekdays.value)
       .map(option => ({ value: option.value, title: option.label, disabled: option.disabled }))
   }
   const today = dateBounds.value.todayValue
@@ -414,11 +423,9 @@ const stepIcons = checkoutStepIcons
 
 // Rascunho do checkout: sair do navegador e voltar (ou o iOS recarregar a aba por
 // memória) NÃO pode perder o que já foi preenchido. Usa localStorage (sobrevive à aba
-// ser morta/recarregada — sessionStorage é apagado nesses casos). Restaura no onMounted
-// (pós-hidratação, p/ não divergir do HTML do servidor); o save só liga após restaurar,
-// pra não sobrescrever o rascunho antigo com os defaults desta carga. Validade 6h.
-const CHECKOUT_DRAFT_KEY = 'shopman-checkout-draft'
-const CHECKOUT_DRAFT_TTL = 6 * 60 * 60 * 1000
+// ser morta/recarregada — sessionStorage é apagado nesses casos). O parse/validação
+// vive em utils/checkoutDraft (puro, testado); o save só liga após restaurar, pra não
+// sobrescrever o rascunho antigo com os defaults desta carga. Validade 6h.
 let draftRestored = false
 function clearCheckoutDraft () {
   if (import.meta.client) { try { localStorage.removeItem(CHECKOUT_DRAFT_KEY) } catch { /* noop */ } }
@@ -428,25 +435,33 @@ function clearCheckoutDraft () {
 // e sobrescrito). Há um leve mismatch de hidratação (estado é client-only), aceitável.
 if (import.meta.client) {
   try {
-    const raw = localStorage.getItem(CHECKOUT_DRAFT_KEY)
-    if (raw) {
-      const draft = JSON.parse(raw)
-      const fresh = draft.savedAt && (Date.now() - draft.savedAt) < CHECKOUT_DRAFT_TTL
-      if (fresh && draft.state) {
-        Object.assign(state, draft.state)
-        if (draft.activeStep && checkoutSteps(state.fulfillment_type).includes(draft.activeStep)) activeStep.value = draft.activeStep
-        if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
-      } else if (!fresh) {
-        clearCheckoutDraft()
-      }
+    const { draft, stale } = parseCheckoutDraft(localStorage.getItem(CHECKOUT_DRAFT_KEY))
+    if (draft) {
+      Object.assign(state, draft.state)
+      if (draft.activeStep) activeStep.value = draft.activeStep
+      if (draft.pendingAddressLabel) pendingAddressLabel.value = draft.pendingAddressLabel
+      // A seleção de endereço restaurada alimenta o AddressPicker (prop
+      // `selection`): salvo re-marca o rádio; novo reabre o form preenchido.
+      // Sem ela, o preselect do picker SOBRESCREVIA o endereço do rascunho.
+      if (draft.addressSelection) addressSelection.value = draft.addressSelection
+      // Observação restaurada reabre o toggle — texto nunca viaja escondido.
+      if (draft.notesOpen) notesOpen.value = true
+    } else if (stale) {
+      clearCheckoutDraft()
     }
   } catch { /* rascunho corrompido: ignora */ }
 }
 draftRestored = true
-watch([state, activeStep, pendingAddressLabel], () => {
+watch([state, activeStep, pendingAddressLabel, addressSelection], () => {
   if (!import.meta.client || !draftRestored) return
   try {
-    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify({ state, activeStep: activeStep.value, pendingAddressLabel: pendingAddressLabel.value, savedAt: Date.now() }))
+    localStorage.setItem(CHECKOUT_DRAFT_KEY, JSON.stringify({
+      state,
+      activeStep: activeStep.value,
+      pendingAddressLabel: pendingAddressLabel.value,
+      addressSelection: addressSelection.value,
+      savedAt: Date.now()
+    }))
   } catch { /* quota/serialização: ignora */ }
 }, { deep: true })
 
@@ -922,8 +937,12 @@ async function submitCheckout () {
     // um endereço novo, oferecemos a etiqueta nele antes de seguir.
     const newAddressId = await findNewlySavedAddress()
     if (newAddressId && pendingAddressLabel.value) {
-      // Etiqueta já escolhida ao adicionar o endereço: aplica direto (sem perguntar de novo).
+      // Etiqueta já escolhida ao adicionar o endereço: aplica direto (sem perguntar
+      // de novo) — e CONTA que salvou (transparência: nada de endereço "aparecendo"
+      // salvo em silêncio na próxima compra). O toast sobrevive à navegação.
+      const chosenLabel = addressLabelDisplay(pendingAddressLabel.value.key, pendingAddressLabel.value.custom)
       await applyPendingLabel(newAddressId)
+      if (import.meta.client) useSonner.success(`Endereço salvo como ${chosenLabel}.`)
     } else if (newAddressId) {
       // Sem etiqueta escolhida antes: oferece agora (fallback pós-pedido).
       savedAddressIdForLabel.value = newAddressId
@@ -1192,6 +1211,19 @@ useSeoMeta({
                     Faltam {{ cart.delivery_minimum_progress.remaining_display }} para o mínimo de entrega
                   </p>
                   <UiProgress :model-value="cart.delivery_minimum_progress.percent" class="mt-2" />
+                  <!-- CTA que resolve (mesmo idioma da sacola): volta ao cardápio para
+                       completar o mínimo. O rascunho do checkout preserva endereço e
+                       escolhas — voltar não perde nada do que já foi preenchido. -->
+                  <UiButton
+                    variant="outline"
+                    size="sm"
+                    icon="lucide:plus"
+                    class="mt-3 w-full"
+                    data-checkout-minimum-add-items
+                    @click="goToMenu"
+                  >
+                    {{ cart.delivery_minimum_progress.add_more_cta || 'Adicionar mais itens' }}
+                  </UiButton>
                   <UiButton
                     v-if="availableFulfillment.includes('pickup')"
                     variant="link"
@@ -1231,6 +1263,17 @@ useSeoMeta({
                 @addresses-changed="refresh"
               />
               <UiFieldError v-if="fieldErrors.delivery_address" :errors="fieldErrors.delivery_address" />
+              <!-- Transparência: endereço NOVO é guardado no perfil quando o pedido
+                   fecha (comportamento do Core). O cliente fica sabendo ANTES, aqui,
+                   em vez de o endereço "aparecer" salvo na próxima compra. -->
+              <p
+                v-if="addressSelection && !addressSelection.savedAddressId"
+                class="mt-3 flex items-center gap-2 shop-meta"
+                data-checkout-address-will-save
+              >
+                <Icon name="lucide:bookmark-plus" class="size-3.5 shrink-0" />
+                Vamos guardar este endereço para a sua próxima entrega.
+              </p>
               <p v-if="quotingZone" class="mt-3 flex items-center gap-2 shop-muted">
                 <Icon name="lucide:loader-circle" class="size-4 animate-spin" /> Verificando se entregamos aqui…
               </p>
@@ -1395,6 +1438,30 @@ useSeoMeta({
                 </UiFieldLabel>
               </UiRadioGroup>
               <UiFieldError v-if="fieldErrors.payment_method" :errors="fieldErrors.payment_method" />
+
+              <!-- Cartões de teste do Stripe. A lista chega VAZIA quando a chave
+                   não é de teste, então em produção este bloco não existe nem no
+                   HTML — a condição é a chave do gateway, não uma flag de tela. -->
+              <div
+                v-if="state.payment_method === 'card' && checkout.stripe_test_cards?.length"
+                class="shop-stack-tight rounded-lg border border-dashed p-4"
+              >
+                <div class="flex items-start gap-3">
+                  <Icon name="lucide:flask-conical" :size="20" class="mt-0.5 shrink-0 text-muted-foreground" />
+                  <div class="min-w-0 space-y-1">
+                    <p class="shop-item-title font-semibold text-foreground">Ambiente de teste</p>
+                    <p class="shop-meta">Nenhuma cobrança real acontece aqui. Use um destes números no {{ checkout.card_provider || 'gateway' }}.</p>
+                  </div>
+                </div>
+                <ul class="space-y-2">
+                  <li v-for="card in checkout.stripe_test_cards" :key="card.number" class="rounded-lg bg-muted px-3 py-2">
+                    <p class="shop-meta">{{ card.label }}</p>
+                    <p class="font-mono text-sm text-foreground">{{ card.number }}</p>
+                    <p class="shop-meta">{{ card.hint }}</p>
+                  </li>
+                </ul>
+                <p class="shop-meta">Validade: qualquer data futura. CVC: quaisquer 3 dígitos. CEP: qualquer um.</p>
+              </div>
 
               <UiField v-if="state.payment_method === 'cash' && !isPickup" class="mt-3">
                 <UiFieldLabel for="checkout-change-for">Precisa de troco?</UiFieldLabel>
@@ -1597,13 +1664,19 @@ useSeoMeta({
                 <li v-for="line in cart?.items || []" :key="line.line_id" class="shop-body">
                   <span class="font-semibold tabular-nums">{{ line.qty }}×</span>
                   {{ line.name }}
-                  <!-- Lista de espera = história do MESMO dia (fila da fornada de hoje).
+                  <!-- Lista de espera = história do MESMO dia (fila de espera da produção).
                        Pedido agendado para outra data não tem fila: a reserva nasce na
                        data com prioridade de pedido, e o "Quando" já conta o combinado. -->
                   <UiBadge v-if="reviewWaitlist(line, state.delivery_date)" variant="outline" class="ml-1 align-middle">
                     Lista de espera
                   </UiBadge>
                   <span v-if="reviewWaitlist(line, state.delivery_date)?.notice" class="ml-1 shop-meta">{{ reviewWaitlist(line, state.delivery_date)?.notice }}</span>
+                  <!-- Preparado na hora: promessa declarada da casa, eixo próprio.
+                       Não disputa com a lista de espera acima — as duas podem valer
+                       para o mesmo item, e cada uma responde uma pergunta. -->
+                  <UiBadge v-if="line.is_made_to_order && line.made_to_order_label" variant="outline" class="ml-1 align-middle">
+                    {{ line.made_to_order_label }}
+                  </UiBadge>
                 </li>
               </ul>
 

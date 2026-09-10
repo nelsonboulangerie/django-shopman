@@ -23,6 +23,7 @@ from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 
+from shopman.shop.adapters._payment_link import link_expires_at, link_expires_at_epoch
 from shopman.shop.adapters.payment_types import PaymentIntent, PaymentResult
 from shopman.shop.services import storefront_links
 
@@ -68,8 +69,19 @@ def _get_config() -> dict:
     return getattr(settings, "SHOPMAN_STRIPE", {})
 
 
+class StripeNotConfigured(RuntimeError):
+    """Gateway de cartão sem credencial — não há como cobrar, e não se finge."""
+
+
 def _get_stripe():
-    """Lazy import of stripe SDK."""
+    """Lazy import of stripe SDK.
+
+    ⚠️ Sem ``secret_key`` isto levanta ANTES de qualquer chamada de rede. É o
+    contrário do que o simulador fazia: faltando gateway, o certo é o pedido
+    parar com erro visível (``payment.initiate`` grava o erro e o
+    acompanhamento mostra o degrau de falha), nunca seguir em frente. Falhar
+    aqui também evita que a suíte tente falar com api.stripe.com por acidente.
+    """
     try:
         import stripe
     except ImportError as err:
@@ -77,8 +89,33 @@ def _get_stripe():
             "stripe package is required. Install with: pip install stripe"
         ) from err
     config = _get_config()
-    stripe.api_key = config.get("secret_key")
+    secret_key = str(config.get("secret_key") or "").strip()
+    if not secret_key:
+        raise StripeNotConfigured(
+            "Cartão está apontado para o Stripe, mas STRIPE_SECRET_KEY está vazia. "
+            "Configure a credencial (sk_test_ no alpha, sk_live_ em produção)."
+        )
+    stripe.api_key = secret_key
     return stripe
+
+
+def test_mode() -> bool:
+    """O Stripe configurado está em modo de TESTE?
+
+    A verdade vem da própria chave (``pk_test_``/``sk_test_``), nunca de
+    ``DEBUG`` nem de uma flag manual: flag manual é exatamente o tipo de coisa
+    que vaza para produção. Chave ``live`` — ou ausente — responde ``False``.
+    """
+    config = _get_config()
+    publishable = str(config.get("publishable_key") or "").strip()
+    secret = str(config.get("secret_key") or "").strip()
+    if not publishable and not secret:
+        return False
+    # Qualquer lado em `live` derruba o modo de teste: uma configuração
+    # meio-a-meio é erro, e na dúvida a resposta segura é "isto é produção".
+    if publishable.startswith("pk_live_") or secret.startswith("sk_live_"):
+        return False
+    return publishable.startswith("pk_test_") or secret.startswith("sk_test_")
 
 
 def create_intent(
@@ -103,19 +140,58 @@ def create_intent(
     stripe_config = _get_config()
     stripe_currency = currency.lower()
 
+    # ⚠️ Credencial ANTES de escrever no Payman. Enquanto a ordem era a inversa,
+    # um deploy sem `STRIPE_SECRET_KEY` criava a linha de cobrança, falhava ao
+    # falar com o Stripe e deixava um intent órfão — que a recuperação de
+    # `payment.initiate` (`_existing_active_intent`) então adotava como se fosse
+    # boa, limpando o erro do pedido. Cobrança que o gateway nunca viu não pode
+    # virar a cobrança do pedido.
+    stripe = _get_stripe()
+
+    # O LINK tem prazo, e o prazo é UM: o mesmo instante vai para o Payman
+    # (agenda o `payment.timeout` e aparece no PDV como "vale até …") e para o
+    # Stripe, logo abaixo. Sem mandar, o Stripe expirava a sessão em 24 h por
+    # conta própria e a casa não sabia — o pedido ficava aberto, o estoque
+    # preso, e o cliente ligava dizendo que "o link parou de funcionar".
+    # O cartão da loja online segue sem prazo: lá o cliente está na tela, e o
+    # abandono tem a própria rede (`reconcile_with_gateway_if_due`).
+    # A janela e o corte do atendimento chegam prontos pelo `_adapter_config`;
+    # aqui só se fecha o `min(agora + janela, corte)` na régua do Stripe.
+    expires_at = (
+        link_expires_at(
+            timeout_minutes=config.get("link_timeout_minutes"),
+            expires_by=config.get("link_expires_by"),
+        )
+        if method == "link"
+        else None
+    )
+
     db_intent = PaymentService.create_intent(
         order_ref=order_ref,
         amount_q=amount_q,
-        method="card",
+        # ⚠️ O MÉTODO É O QUE O CHAMADOR PEDIU, não "card" cravado. O literal
+        # aqui era invisível enquanto só o cartão da loja usava este adapter; com
+        # o LINK do balcão apontando para cá, ele gravava a cobrança do link como
+        # `card` e a distinção morria no Payman, no fechamento do dia e no B.I.
+        #
+        # `payment_method_types=["card"]` logo abaixo continua "card" de
+        # propósito: aquilo é vocabulário do STRIPE (o instrumento que a sessão
+        # aceita), e vocabulário de terceiro morre na porta de entrada. O nosso
+        # `method` diz de que forma a CASA está cobrando.
+        method=method,
         gateway="stripe",
         gateway_data=metadata,
+        expires_at=expires_at,
         idempotency_key=idempotency_key,
     )
     if db_intent.gateway_id and db_intent.gateway_data.get("checkout_url"):
         return _intent_from_db(db_intent, currency=currency)
 
-    stripe = _get_stripe()
     create_options = {"idempotency_key": idempotency_key} if idempotency_key else {}
+    if expires_at is not None:
+        # `expires_at` é o nome do Stripe para o mesmo instante (epoch, em
+        # segundos). Vocabulário de terceiro, na porta de saída.
+        create_options["expires_at"] = link_expires_at_epoch(expires_at)
     session = stripe.checkout.Session.create(
         mode="payment",
         payment_method_types=["card"],
@@ -163,6 +239,7 @@ def create_intent(
         status="pending",
         amount_q=amount_q,
         currency=currency,
+        expires_at=expires_at,
         gateway_id=session.id,
         metadata={"checkout_url": session.url},
     )
@@ -175,6 +252,7 @@ def _intent_from_db(intent, *, currency: str = "BRL") -> PaymentIntent:
         status=intent.status,
         amount_q=intent.amount_q,
         currency=currency or intent.currency,
+        expires_at=intent.expires_at,
         gateway_id=intent.gateway_id,
         metadata={"checkout_url": gateway_data.get("checkout_url", "")},
     )
@@ -200,15 +278,69 @@ def capture(
 
     stripe = _get_stripe()
 
+    # ⚠️ Capturar exige o ``pi_...``, e o ``gateway_id`` só vira ``pi_`` quando o
+    # webhook ``checkout.session.completed`` chega para promovê-lo. Enquanto ele
+    # não chega (ou não chega nunca — endpoint errado no painel), o id guardado é
+    # a Checkout Session, e capturar com ele falha. A reconciliação existe
+    # justamente para o caso do webhook perdido, então ela não pode depender dele.
+    payment_intent_id = gateway_payment_intent_id(intent_ref) or intent.gateway_id
+    if payment_intent_id and payment_intent_id != intent.gateway_id:
+        # Não é silêncio deliberado: sem a promoção, a captura logo abaixo sai
+        # com o id da Checkout Session e o Stripe recusa — o dinheiro fica
+        # autorizado e não capturado. Em `logger.debug` isso nunca saiu do
+        # processo (o nível padrão do deploy é INFO), então a causa da captura
+        # recusada morria aqui. O fallback continua; ele só passou a gritar.
+        try:
+            intent.gateway_id = payment_intent_id
+            intent.save(update_fields=["gateway_id"])
+        except Exception:
+            logger.warning(
+                "stripe.capture_gateway_id_promotion_failed intent=%s", intent_ref, exc_info=True
+            )
+
     try:
         capture_params = {}
         if amount_q is not None:
             capture_params["amount_to_capture"] = amount_q
 
-        stripe_intent = stripe.PaymentIntent.capture(
-            intent.gateway_id,
-            **capture_params,
-        )
+        # Já capturado no Stripe e não no Payman é divergência a RECONCILIAR, não
+        # a recobrar: mandar ``capture`` de novo devolve erro do provedor, e o
+        # erro fazia a reconciliação desistir de um pedido efetivamente pago.
+        stripe_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+        if str(getattr(stripe_intent, "status", "") or "") != "succeeded":
+            stripe_intent = stripe.PaymentIntent.capture(
+                payment_intent_id,
+                **capture_params,
+            )
+
+        # ⚠️ O Payman só captura o que está `authorized`, e o degrau de
+        # autorização é do webhook. Com `capture_method="automatic"` (o link) o
+        # Stripe vai direto a `succeeded`; se o webhook não chega — endpoint
+        # errado no painel, ou nunca cadastrado — o intent fica `pending` e a
+        # reconciliação, que existe para ESSE caso, morria aqui com
+        # `invalid_transition`: gateway pago, casa "aguardando", para sempre.
+        #
+        # E não é `authorize` + `capture`: `authorize` recusa intent VENCIDO
+        # (`intent_expired`), e quem chega aqui atrasado chega justamente depois
+        # do prazo — o cliente pagou dentro dele (o Stripe fecha a sessão no
+        # mesmo instante que o nosso), só a casa ficou sabendo tarde. O verbo
+        # certo é o snapshot do gateway: `reconcile_gateway_status` leva o
+        # intent de `pending` a `captured` com a transação, sem inventar um
+        # "agora" para a autorização.
+        if str(intent.status) == "pending":
+            captured_q = int(getattr(stripe_intent, "amount_received", 0) or 0) or intent.amount_q
+            PaymentService.reconcile_gateway_status(
+                intent_ref,
+                gateway_status="captured",
+                captured_q=captured_q,
+                gateway_id=stripe_intent.id,
+                capture_gateway_id=str(getattr(stripe_intent, "latest_charge", "") or ""),
+            )
+            return PaymentResult(
+                success=True,
+                transaction_id=stripe_intent.latest_charge,
+                amount_q=PaymentService.captured_total(intent_ref),
+            )
 
         txn = PaymentService.capture(
             intent_ref,
@@ -309,6 +441,79 @@ def refund(
         )
 
 
+#: Estado local em que a transição pedida **já aconteceu**: a segunda tentativa
+#: não tem o que fazer, e isso não é divergência. O Stripe entrega webhook
+#: repetido e fora de ordem por contrato, e ``checkout.session.completed`` e
+#: ``payment_intent.succeeded`` descrevem o MESMO dinheiro — alertar aqui seria
+#: alarme falso em toda venda de cartão, e alarme falso é como um alerta
+#: verdadeiro morre.
+_ALREADY_SETTLED_STATUSES = {
+    "authorize": {"authorized", "captured", "refunded"},
+    "capture": {"captured", "refunded"},
+    "fail": {"failed", "cancelled"},
+    "cancel": {"cancelled"},
+}
+
+
+def _local_intent(intent_ref: str):
+    """O intent do Payman, ou ``None`` quando ele não existe."""
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        return PaymentService.get(intent_ref)
+    except PaymentError:
+        return None
+
+
+def _record_ledger_drift(operation: str, intent_ref: str, exc, **context) -> bool:
+    """O Stripe moveu o dinheiro e o Payman não acompanhou.
+
+    Devolve ``True`` quando isto era divergência de verdade (alerta aberto) e
+    ``False`` quando a transição pedida já estava feita.
+
+    Este é o irmão calado de ``handle_webhook_event`` no ``charge.refunded``,
+    que desde sempre chamou ``record_payment_reconciliation_failure``: dinheiro
+    SAINDO alertava, dinheiro ENTRANDO era ``except PaymentError: pass``. O
+    cartão era cobrado, o pedido continuava pendente e ninguém ficava sabendo —
+    a forma exata do incidente E54.
+
+    Não levanta: quem chama é o handler do webhook, e derrubá-lo faria o Stripe
+    reentregar o mesmo evento contra o mesmo defeito. O contrato é o da casa —
+    falhar GRITANDO, com alerta aberto no Gestor até alguém conciliar.
+    """
+    from shopman.shop.services import observability
+
+    intent = _local_intent(intent_ref)
+    local_status = str(getattr(intent, "status", "") or "")
+    if local_status in _ALREADY_SETTLED_STATUSES.get(operation, set()):
+        observability.operational_event(
+            "stripe.ledger_already_settled",
+            operation=operation,
+            intent_ref=intent_ref,
+            local_status=local_status,
+            **context,
+        )
+        return False
+
+    logger.error(
+        "stripe.ledger_drift operation=%s intent=%s local_status=%s code=%s",
+        operation,
+        intent_ref,
+        local_status or "-",
+        getattr(exc, "code", ""),
+        exc_info=True,
+    )
+    observability.record_payment_reconciliation_failure(
+        gateway="stripe",
+        intent_ref=intent_ref,
+        order_ref=str(getattr(intent, "order_ref", "") or ""),
+        code=getattr(exc, "code", "") or exc.__class__.__name__,
+        context={**(getattr(exc, "context", None) or {}), "operation": operation, **context},
+        exc=exc,
+    )
+    return True
+
+
 def cancel(intent_ref: str, **config) -> PaymentResult:
     """Cancel a Stripe PaymentIntent + PaymentService."""
     from shopman.payman import PaymentError, PaymentService
@@ -327,10 +532,13 @@ def cancel(intent_ref: str, **config) -> PaymentResult:
     try:
         stripe.PaymentIntent.cancel(intent.gateway_id)
 
+        # A cobrança JÁ morreu no Stripe. Sem a baixa local, o Payman segue com
+        # um intent de pé para um pedido que ninguém mais pode pagar, e o
+        # `success=True` abaixo jurava que os dois lados estavam alinhados.
         try:
             PaymentService.cancel(intent_ref, reason=str(config.get("reason") or ""))
-        except PaymentError:
-            pass
+        except PaymentError as exc:
+            _record_ledger_drift("cancel", intent_ref, exc)
 
         return PaymentResult(success=True)
     except Exception as e:
@@ -374,6 +582,119 @@ def get_status(intent_ref: str, **config) -> dict:
             "refunded_q": 0,
             "currency": "",
         }
+
+
+def check_gateway_status(intent_ref: str) -> str:
+    """O que o STRIPE diz sobre este intent? LEITURA pura, sem efeito colateral.
+
+    Mesmo contrato de ``payment_efi.check_gateway_status``, com um degrau a mais
+    que só o cartão tem: ``authorized``. Devolve ``captured``, ``authorized``,
+    ``pending``, ``cancelled``, ``not_found`` ou ``error``.
+
+    ⚠️ **Este verbo existia na Efí e no mock, e não existia aqui.** Sem ele,
+    NADA no sistema jamais perguntava ao Stripe: ``get_status`` lê o Payman, o
+    webhook é a única escrita, e ``reconcile_payments`` também só lê o Payman.
+    Webhook perdido (endpoint errado no painel, segredo de outro ambiente, 400
+    na assinatura) virava dano permanente — o cliente pagava, voltava para o
+    acompanhamento e continuava lendo "Pagar com cartão", para sempre. E o
+    guard de timeout, sem ninguém a quem perguntar, respondia ``unpaid`` para
+    cartão por construção, autorizando o cancelamento de um pedido pago.
+
+    ``authorized`` é degrau próprio porque ``capture_method="manual"`` é o
+    padrão da casa: o Stripe segura o dinheiro em ``requires_capture`` até
+    alguém capturar. Achatar isso em ``pending`` diria "não pagou" sobre quem
+    pagou; achatar em ``captured`` diria que o dinheiro entrou antes de entrar.
+
+    ``not_found`` e ``error`` seguem sendo respostas DIFERENTES: intent que
+    nunca existiu é ausência de pagamento (cancelar é certo), gateway mudo é
+    incerteza (esperar é certo).
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return "not_found"
+
+    gateway_id = str(intent.gateway_id or "")
+    session_id = str((intent.gateway_data or {}).get("checkout_session_id") or "")
+
+    try:
+        stripe = _get_stripe()
+    except (StripeNotConfigured, ImportError):
+        # Sem credencial não se responde "não pagou": responde-se "não sei".
+        logger.warning("stripe.check_gateway_status_unconfigured intent=%s", intent_ref)
+        return "error"
+
+    try:
+        payment_intent_id = gateway_id if gateway_id.startswith("pi_") else ""
+        if not payment_intent_id:
+            # Antes do webhook o ``gateway_id`` ainda é a Checkout Session; é ela
+            # quem sabe qual PaymentIntent nasceu do checkout.
+            lookup_session = session_id or (gateway_id if gateway_id.startswith("cs_") else "")
+            if not lookup_session:
+                return "not_found"
+            session = stripe.checkout.Session.retrieve(lookup_session)
+            if str(getattr(session, "status", "") or "") == "expired":
+                return "cancelled"
+            payment_intent_id = _stripe_object_id(getattr(session, "payment_intent", None))
+            if not payment_intent_id:
+                # Sessão aberta, cliente ainda não concluiu: não há cobrança.
+                return "pending"
+
+        stripe_intent = stripe.PaymentIntent.retrieve(payment_intent_id)
+    except Exception as e:
+        logger.warning("stripe.check_gateway_status_failed intent=%s: %s", intent_ref, e)
+        return "error"
+
+    status = str(getattr(stripe_intent, "status", "") or "")
+    if status == "succeeded" or int(getattr(stripe_intent, "amount_received", 0) or 0) > 0:
+        return "captured"
+    if status == "requires_capture":
+        return "authorized"
+    if status == "canceled":
+        return "cancelled"
+    if status in {
+        "requires_payment_method",
+        "requires_confirmation",
+        "requires_action",
+        "processing",
+    }:
+        return "pending"
+    # Status novo do provedor: incerteza, e incerteza espera.
+    logger.warning("stripe.check_gateway_status_unknown intent=%s status=%s", intent_ref, status)
+    return "error"
+
+
+def gateway_payment_intent_id(intent_ref: str) -> str:
+    """O id do PaymentIntent no Stripe, resolvendo a Checkout Session se preciso.
+
+    Existe para a reconciliação poder CAPTURAR uma autorização cujo webhook se
+    perdeu: o ``gateway_id`` do Payman ainda pode ser o ``cs_...``, e capturar
+    exige o ``pi_...``. Devolve string vazia quando não dá para resolver.
+    """
+    from shopman.payman import PaymentError, PaymentService
+
+    try:
+        intent = PaymentService.get(intent_ref)
+    except PaymentError:
+        return ""
+
+    gateway_id = str(intent.gateway_id or "")
+    if gateway_id.startswith("pi_"):
+        return gateway_id
+
+    session_id = str((intent.gateway_data or {}).get("checkout_session_id") or "")
+    lookup_session = session_id or (gateway_id if gateway_id.startswith("cs_") else "")
+    if not lookup_session:
+        return ""
+    try:
+        stripe = _get_stripe()
+        session = stripe.checkout.Session.retrieve(lookup_session)
+    except Exception as e:
+        logger.warning("stripe.gateway_payment_intent_lookup_failed intent=%s: %s", intent_ref, e)
+        return ""
+    return _stripe_object_id(getattr(session, "payment_intent", None))
 
 
 def construct_webhook_event(payload: bytes, sig_header: str):
@@ -732,14 +1053,19 @@ def handle_webhook_event(event) -> dict:
                     if db_intent.gateway_id != payment_intent_id:
                         db_intent.gateway_id = payment_intent_id
                         db_intent.save(update_fields=["gateway_id"])
+                # `PaymentService.get` só levanta `PaymentError` por intent
+                # inexistente, e o `authorize` logo abaixo pergunta pelo MESMO ref.
+                # silêncio-deliberado: a ausência sai gritando lá, uma vez em vez de duas.
                 except PaymentError:
                     pass
             try:
                 PaymentService.authorize(
                     shopman_ref, gateway_id=payment_intent_id or shopman_ref,
                 )
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                _record_ledger_drift(
+                    "authorize", shopman_ref, exc, event_type=event.type,
+                )
 
     elif event.type == "payment_intent.succeeded":
         stripe_intent = event.data.object
@@ -749,14 +1075,25 @@ def handle_webhook_event(event) -> dict:
         )
         if shopman_ref:
             intent_ref = shopman_ref
+            drifted = False
             try:
                 PaymentService.authorize(shopman_ref, gateway_id=stripe_intent.id)
-            except PaymentError:
-                pass
-            try:
-                PaymentService.capture(shopman_ref, gateway_id=stripe_intent.id)
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                drifted = _record_ledger_drift(
+                    "authorize", shopman_ref, exc, event_type=event.type,
+                )
+            # Autorização que já estava feita (o `checkout.session.completed`
+            # chegou antes) NÃO impede a captura — é o caminho normal. Só a
+            # divergência de verdade interrompe: capturar depois de um authorize
+            # quebrado renderia um segundo alerta para a mesma causa, e dois
+            # alarmes para um defeito ensinam a ignorar os dois.
+            if not drifted:
+                try:
+                    PaymentService.capture(shopman_ref, gateway_id=stripe_intent.id)
+                except PaymentError as exc:
+                    _record_ledger_drift(
+                        "capture", shopman_ref, exc, event_type=event.type,
+                    )
 
     elif event.type == "payment_intent.payment_failed":
         stripe_intent = event.data.object
@@ -773,8 +1110,11 @@ def handle_webhook_event(event) -> dict:
                     error_code=last_error.code if last_error else "unknown",
                     message=last_error.message if last_error else "",
                 )
-            except PaymentError:
-                pass
+            except PaymentError as exc:
+                # O caso grave aqui é o inverso do E54: o Stripe diz que a
+                # cobrança FALHOU e o Payman a tem como capturada. O pedido sai
+                # como pago sem dinheiro nenhum, e é preciso alguém conferir.
+                _record_ledger_drift("fail", shopman_ref, exc, event_type=event.type)
 
     elif event.type in DISPUTE_EVENT_TYPES:
         intent_ref = handle_dispute_event(event) or None

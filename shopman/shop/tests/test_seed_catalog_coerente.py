@@ -89,17 +89,25 @@ def test_nenhum_vinculo_de_colecao_repetido(colecoes):
 
 
 def test_um_produto_mora_em_uma_categoria_so(colecoes):
-    # Vale para as categorias, que são vínculo PRIMÁRIO. As coleções "do dia"
-    # são agrupamento rotativo e entram como secundárias — "Chausson" é Finos e
-    # também é "Folhado do dia", sem ambiguidade.
-    dono = {}
-    duplos = {}
+    """Uma categoria PRINCIPAL por produto — as outras são só as outras.
+
+    O produto pode aparecer em mais de uma lista: o Pain au Chocolat é Folhados
+    (a massa) e também é Doces (o sabor). A regra que vale é que ele MORA num
+    lugar só, e esse lugar é a primeira lista em que aparece — é o que o seed
+    grava como `is_primary`. Sem estrutura paralela: a ordem das listas decide.
+    """
+    principal = {}
     for ref, skus in colecoes.items():
         for sku in skus:
-            if sku in dono:
-                duplos[sku] = (dono[sku], ref)
-            dono[sku] = ref
-    assert not duplos, f"produto em duas coleções: {duplos}"
+            principal.setdefault(sku, ref)
+
+    sem_casa = [sku for skus in colecoes.values() for sku in skus if sku not in principal]
+    assert not sem_casa, f"produto sem categoria principal: {sem_casa}"
+
+    # O que a regra proíbe é a MESMA lista repetir o produto — isso é erro de
+    # edição, não taxonomia, e criaria dois vínculos idênticos.
+    for ref, skus in colecoes.items():
+        assert len(skus) == len(set(skus)), f"'{ref}' repete SKU: {sorted({s for s in skus if skus.count(s) > 1})}"
 
 
 def test_o_catalogo_usa_os_codigos_reais(catalogo):
@@ -183,6 +191,35 @@ def test_as_duas_curadorias_de_consumo_nao_se_contradizem():
     )
 
 
+def test_a_promessa_ao_cliente_nao_e_a_politica_de_estoque(arvore):
+    """⚠️ Duas perguntas, duas listas — e a água é quem prova que são duas.
+
+    ``sells_without_stock_skus`` responde "a venda pode passar sem saldo?".
+    ``made_to_order_skus`` responde "a casa promete finalizar isto na hora?".
+
+    Elas quase coincidem, e a quase-coincidência é a armadilha: enquanto havia
+    uma lista só, a Água saía da sacola anunciada como "Preparado na hora". Ela
+    é ``demand_ok`` porque sempre há outra garrafa na geladeira — não porque
+    alguém a prepare. Era a mesma confusão entre política e promessa que já
+    tinha sido tirada do código, reaparecendo na camada do dado.
+
+    Este teste existe para que ninguém volte a fundir as listas "porque são
+    quase iguais".
+    """
+    politica = _atribuicao(arvore, "sells_without_stock_skus")
+    promessa = _atribuicao(arvore, "made_to_order_skus")
+
+    assert "AG" in politica, "água vende sem saldo: sempre há outra na geladeira"
+    assert "AG" not in promessa, (
+        "ninguém prepara uma água na hora — o selo é sobre o acabamento, e "
+        "garrafa não tem acabamento"
+    )
+    assert set(promessa) != set(politica), (
+        "as duas listas viraram a mesma: é o sinal de que alguém tornou a "
+        "tratar política de estoque e promessa ao cliente como uma coisa só"
+    )
+
+
 def test_produto_sem_foto_e_decisao_nao_esquecimento(arvore):
     """Foto vazia no seed é uma DECISÃO por produto, nunca item esquecido.
 
@@ -226,9 +263,12 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
             ref, _nome, cor, icone = (e.value for e in node.elts)
             fixas[ref] = (cor, icone)
 
+    # Taxonomia do dono (01/09): finos→macios, torneira absorvida, folhados
+    # nasce, e as rotativas "*-do-dia" morreram — rotativo é vitrine, não
+    # taxonomia. A lista espelha as categorias ESTÁVEIS do seed.
     esperadas = {
-        "bebidas-quentes", "bebidas-geladas", "torneira", "rusticos", "finos",
-        "salgados", "doces", "combos", "mercearia",
+        "rusticos", "macios", "folhados", "salgados", "doces",
+        "bebidas-quentes", "bebidas-geladas", "mercearia", "combos",
     }
     assert esperadas <= set(fixas), (
         f"categorias sem (cor, ícone): {sorted(esperadas - set(fixas))}"
@@ -237,6 +277,61 @@ def test_toda_categoria_tem_cor_e_icone(arvore):
         assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
         assert icone.strip(), f"{ref}: ícone vazio"
 
-    for ref, _nome, cor, icone, _skus in _atribuicao(arvore, "colecoes_do_dia"):
-        assert hexa.match(cor), f"{ref}: cor `{cor}` não é hex #RRGGBB"
-        assert icone.strip(), f"{ref}: ícone vazio"
+
+# ── Folhados: a MASSA manda, não o sabor (decisão do dono, 02/09) ────────────
+#
+# Antes disso a taxonomia seguia o paladar: Folhado de Frango em Salgados,
+# Bichon au Citron em Doces, Croissant Mini em Macios. Três massas laminadas em
+# três categorias diferentes, e nenhuma delas em Folhados. O cliente que abre
+# "Folhados" quer ver folhado.
+#
+# O contraexemplo é o Pain aux Raisins: o nome é francês e o vizinho de vitrine
+# é folhado, mas o NOSSO é feito de brioche. Ele mora em Macios, e é por isso
+# que a regra é sobre a massa e não sobre o nome.
+
+FAMILIA_LAMINADA = {
+    "CT": "Croissant",
+    "PC": "Pain au Chocolat",
+    "CM": "Croissant Mini",
+    "CN": "Chausson",
+    "FF": "Folhado de Frango",
+    "BH": "Bichon au Citron",
+}
+
+
+@pytest.mark.parametrize("sku,nome", sorted(FAMILIA_LAMINADA.items()))
+def test_massa_laminada_mora_em_folhados(sku, nome, colecoes):
+    assert sku in colecoes["folhados"], (
+        f"{nome} ({sku}) é massa laminada e tem de estar em Folhados — "
+        "a categoria segue a massa, não o recheio."
+    )
+
+
+def test_pain_aux_raisins_e_brioche_e_fica_em_macios(colecoes):
+    assert "PR" in colecoes["macios"]
+    assert "PR" not in colecoes["folhados"], (
+        "o nosso Pain aux Raisins é de brioche; o nome francês não decide a categoria"
+    )
+
+
+
+def test_a_categoria_principal_do_laminado_e_folhados(colecoes):
+    """A massa decide onde o produto MORA; o sabor é a categoria adicional."""
+    principal = {}
+    for ref, skus in colecoes.items():
+        for sku in skus:
+            principal.setdefault(sku, ref)
+
+    for sku in ("CT", "PC", "CM", "CN", "FF", "BH", "CPQ"):
+        assert principal[sku] == "folhados", (
+            f"{sku} mora em '{principal[sku]}' — massa laminada mora em Folhados"
+        )
+    assert principal["PR"] == "macios", "o nosso Pain aux Raisins é de brioche"
+
+
+def test_o_sabor_entra_como_categoria_adicional(colecoes):
+    for sku in ("PC", "CM", "CN", "BH", "PR"):
+        assert sku in colecoes["doces"], f"{sku} é recheado doce e também é Doces"
+    for sku in ("FF", "CPQ"):
+        assert sku in colecoes["salgados"], f"{sku} é salgado e também é Salgados"
+    assert "CT" not in colecoes["doces"], "o croissant puro não é doce"

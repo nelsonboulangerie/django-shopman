@@ -34,7 +34,10 @@ export function useAgentHealth(pos: ComputedRef<POSProjection | null>) {
     if (probe.value === null) probe.value = { ok: null, message: "" };
     try {
       const result = await agent.probe();
-      probe.value = { ok: result.ok, message: result.message };
+      // `drawerLock` vem junto: é o único lugar de onde a tela pode saber se a
+      // trava está armada nesta estação (a medição vive no agent.json do
+      // balcão). Deixar cair aqui apagava a linha do card.
+      probe.value = { ok: result.ok, message: result.message, drawerLock: result.drawerLock };
     } finally {
       checking.value = false;
     }

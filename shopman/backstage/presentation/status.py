@@ -48,3 +48,25 @@ def order_status_label(status: str | None, fallback: str | None = None) -> str:
 def payment_method_label(method: str) -> str:
     """Resolve a payment-method ref to its display label."""
     return build_copy("PAYMENT_METHOD").title(f"PAYMENT_METHOD_{method.upper()}", method)
+
+
+#: O que o operador lê no lugar do status cru do Payman. O gestor mostrava
+#: "pending" em inglês ao lado de "Link de pagamento" — vocabulário de máquina
+#: numa tela de balcão. A chave desconhecida devolve o próprio valor, para
+#: nunca esconder um estado novo atrás de um rótulo vazio.
+_PAYMENT_STATUS_LABELS = {
+    "": "",
+    "pending": "Aguardando pagamento",
+    "authorized": "Autorizado",
+    "captured": "Pago",
+    "failed": "Falhou",
+    "cancelled": "Cancelado",
+    "refunded": "Reembolsado",
+    "unknown": "Não confirmado",
+}
+
+
+def payment_status_label(status: str | None) -> str:
+    """Rótulo em português do status de pagamento do Payman."""
+    key = str(status or "").strip().lower()
+    return _PAYMENT_STATUS_LABELS.get(key, key)

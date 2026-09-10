@@ -21,7 +21,7 @@ está simulado/degradado no staging** (e o que isso significa para o teste), e
 
 Staging: loja `https://shopman-staging-cdjpy.ondigitalocean.app` ·
 gestor `https://gestor.boulangerie.com.br` (PIN) · admin
-`https://admin.staging.nelsonboulangerie.com.br`.
+`https://admin.boulangerie.com.br`.
 
 ---
 

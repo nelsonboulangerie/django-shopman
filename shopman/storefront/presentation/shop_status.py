@@ -18,53 +18,101 @@ def _shop_status() -> dict:
 
     Returns dict: {is_open, opens_at, closes_at, message}
     """
-    from shopman.shop.projections.shop_status import business_state, next_opening_phrase
+    from shopman.shop.projections.shop_status import business_state
 
     state = business_state()
-    message = state.message or ""
-    if state.is_closed and state.next_open_at:
-        next_opening = next_opening_phrase(state.next_open_at, now=state.resolved_at)
-        if next_opening and "abrimos" not in message.lower():
-            message = f"{message}. Abrimos {next_opening}." if message else f"Abrimos {next_opening}."
     return {
         "is_open": state.is_open,
         "label": _status_label(state),
         "opens_at": state.opens_at,
         "closes_at": state.closes_at,
-        "message": message,
+        "message": _status_message(state),
     }
+
+
+_STATUS_FALLBACKS = {
+    "SHOP_STATUS_OPEN": "Aberto agora",
+    "SHOP_STATUS_OPEN_UNTIL": "Aberto até",
+    "SHOP_STATUS_OPEN_CLOSING_SOON": "Últimos pedidos até",
+    "SHOP_STATUS_CLOSED": "Fechado agora",
+    "SHOP_STATUS_CLOSED_OPENS_AT": "Fechado agora. Abrimos",
+}
+
+_LEGACY_STATUS_COPY = {
+    "Aberto. Fecha em": "Últimos pedidos até",
+    "Fechado": "Fechado agora",
+    "Fechado. Abre às": "Fechado agora. Abrimos",
+}
 
 
 def _status_label(state) -> str:
     """Status badge label — copy owned by the omotenashi registry (``SHOP_STATUS_*``).
 
-    Escapa o genérico fixo pelo conjunto granular do registro: aberto até
-    {hora}, fecha em breve, fechado, abre às {hora}. Os prefixos vêm do
-    registro (admin-configurável); a hora vem do estado do calendário. Só o
-    fechamento antes de abrir carrega um horário de abertura útil — depois de
-    fechar ou em feriado, ``opens_at`` não serve, então fica "Fechado" seco.
+    Escapa o genérico fixo pelo conjunto granular do registro: aberto agora,
+    aberto até {hora}, últimos pedidos até {hora}, fechado com próxima abertura
+    quando o calendário souber, ou fechado agora sem prometer horário.
     """
-    from shopman.shop.omotenashi import resolve_copy
-
-    def _copy(key: str) -> str:
-        return (resolve_copy(key, moment="*").message or "").strip()
-
     if state.is_open:
         closes = _human_time(state.closes_at)
         if not closes:
             return _copy("SHOP_STATUS_OPEN")
         prefix = "SHOP_STATUS_OPEN_CLOSING_SOON" if _closing_soon(state) else "SHOP_STATUS_OPEN_UNTIL"
-        return f"{_copy(prefix)} {closes}".strip()
+        return _join_copy(_copy(prefix), closes)
+
+    next_opening = _next_opening_display(state)
+    if next_opening:
+        return _join_copy(_copy("SHOP_STATUS_CLOSED_OPENS_AT"), next_opening)
+    return _copy("SHOP_STATUS_CLOSED")
+
+
+def _status_message(state) -> str:
+    """Normalize calendar messages so full status copy stays client-facing."""
+    message = (getattr(state, "message", "") or "").strip()
+    if not getattr(state, "is_closed", not getattr(state, "is_open", False)):
+        return message
+
+    next_opening = _next_opening_display(state)
+    if not next_opening:
+        return _LEGACY_STATUS_COPY.get(message, message)
+
+    lower = message.lower()
+    if lower.startswith("fechado. abrimos às") or lower == "fechado":
+        return f"{_copy('SHOP_STATUS_CLOSED_OPENS_AT')} {next_opening}."
+    if "abrimos" not in lower:
+        return f"{message}. Abrimos {next_opening}." if message else f"Abrimos {next_opening}."
+    return message
+
+
+def _next_opening_display(state) -> str:
+    """Return "hoje às 9h", "amanhã às 9h", "quinta às 9h" or "às 9h"."""
+    next_open_at = getattr(state, "next_open_at", None)
+    if next_open_at:
+        from shopman.shop.projections.shop_status import next_opening_phrase
+
+        phrase = next_opening_phrase(next_open_at, now=getattr(state, "resolved_at", None))
+        if phrase:
+            return phrase
 
     if (
-        state.opens_at
+        getattr(state, "opens_at", None)
         and getattr(state, "closure_source", "") != "after_close"
         and not getattr(state, "closed_reason", "")
     ):
         opens = _human_time(state.opens_at)
         if opens:
-            return f"{_copy('SHOP_STATUS_CLOSED_OPENS_AT')} {opens}".strip()
-    return _copy("SHOP_STATUS_CLOSED")
+            return f"às {opens}"
+    return ""
+
+
+def _copy(key: str) -> str:
+    from shopman.shop.omotenashi import resolve_copy
+
+    raw = (resolve_copy(key, moment="*").message or _STATUS_FALLBACKS.get(key, "")).strip()
+    return _LEGACY_STATUS_COPY.get(raw, raw)
+
+
+def _join_copy(prefix: str, suffix: str) -> str:
+    return f"{prefix.rstrip()} {suffix.lstrip()}".strip()
 
 
 def _closing_soon(state, *, threshold_min: int = 60) -> bool:

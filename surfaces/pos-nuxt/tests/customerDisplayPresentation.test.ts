@@ -9,7 +9,7 @@ import {
   displayPhase,
   firstName,
 } from "~/presentation/customerDisplay";
-import { lineDiscountBadge, lineTotalQ, pricingDiscountBadge } from "~/presentation/lineDiscounts";
+import { lineDiscountBadge, lineTotalQ, manualDiscountLabel, manualDiscountWasOverridden, pricingDiscountBadge } from "~/presentation/lineDiscounts";
 import type { PaymentProofView } from "~/presentation/payment";
 import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
 import type { POSCartItem, POSCheckoutOptionProjection, POSSaleReviewProjection } from "~/types/pos";
@@ -296,5 +296,53 @@ describe("buildCustomerDisplaySnapshot — o que viaja para a parede", () => {
       items: [item({ discount: { value: 10, reason: "cortesia" } })],
     }));
     expect(structuredClone(snap)).toEqual(snap);
+  });
+});
+
+describe("lineDiscounts — o desconto manual só se diz perdido quando PERDE", () => {
+  // A checagem era um chute: "tem automático carimbado e o operador pediu
+  // manual, logo o manual perdeu". Acertava por acidente enquanto o manual só
+  // existia em percentuais pequenos, e passou a errar assim que ele aceitou
+  // reais. A régua agora é a do kernel: os dois medidos por unidade, contra a
+  // etiqueta.
+  const tabatiere = (discount: POSCartItem["discount"]): POSCartItem => ({
+    sku: "TAB",
+    name: "Tabatière",
+    qty: 2,
+    price_q: 510,
+    charged_price_q: 510,
+    list_price_q: 600, // "Semana do Pão −15%" já tirou R$ 0,90 por unidade
+    notes: "",
+    pricing_discount: { type: "promotion", label: "Semana do Pão", amount_q: 90, percent: 15 },
+    discount,
+  });
+
+  it("10% (R$ 0,60) perde para o automático de R$ 0,90", () => {
+    expect(manualDiscountWasOverridden(tabatiere({ value: 10, reason: "cortesia", type: "percent" }))).toBe(true);
+  });
+
+  it("30% (R$ 1,80) ganha — e o operador não pode ouvir que não valeu", () => {
+    expect(manualDiscountWasOverridden(tabatiere({ value: 30, reason: "cortesia", type: "percent" }))).toBe(false);
+  });
+
+  it("R$ 2,50 por unidade ganha; R$ 0,50 perde", () => {
+    expect(manualDiscountWasOverridden(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }))).toBe(false);
+    expect(manualDiscountWasOverridden(tabatiere({ value: 0.5, reason: "cortesia", type: "fixed" }))).toBe(true);
+  });
+
+  it("sem desconto automático na linha, o manual nunca perde", () => {
+    const semAuto: POSCartItem = {
+      sku: "PAO", name: "Pão", qty: 1, price_q: 500, charged_price_q: 500, list_price_q: 500, notes: "",
+      discount: { value: 1, reason: "cortesia", type: "fixed" },
+    };
+    expect(manualDiscountWasOverridden(semAuto)).toBe(false);
+  });
+
+  it("o rótulo da linha fala o formato que o operador digitou", () => {
+    const reasons = [{ ref: "cortesia", label: "Cortesia" }];
+    expect(manualDiscountLabel(tabatiere({ value: 10, reason: "cortesia", type: "percent" }), reasons))
+      .toBe("Cortesia −10%");
+    expect(manualDiscountLabel(tabatiere({ value: 2.5, reason: "cortesia", type: "fixed" }), reasons))
+      .toBe(`Cortesia −${formatBRL(250)}`);
   });
 });

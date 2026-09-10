@@ -2,8 +2,11 @@
 // telefone existe) e o resolve marca "criado agora" para a confirmação visual.
 import { mockNuxtImport } from "@nuxt/test-utils/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { toast } from "vue-sonner";
 
 import { makeSale } from "./_posSaleHarness";
+
+vi.mock("vue-sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn(), warning: vi.fn() } }));
 
 // `$fetch` é auto-import do Nuxt (ofetch): stub de global não o alcança — o
 // mock entra pelo registro de auto-imports, como o `useFetch` nos outros testes.
@@ -89,5 +92,82 @@ describe("usePosSale — cliente por ref e o flag de cadastro novo", () => {
     expect(sale.customerResolvedNew.value).toBe(false);
     expect(sale.cart.customerRef).toBe("");
     expect(sale.customerLookup.value).toBeNull();
+  });
+});
+
+// UNIFICAR TEM VOLTA, E A VOLTA TEM PRAZO. O servidor devolve `undo_deadline`
+// desde sempre; o PDV descartava. Quem unifica no balcão é o Caixa, que não
+// tem `shop.manage_customers` — se o toast não contar, ninguém conta, e a
+// janela de 24h fecha sozinha.
+describe("usePosSale — o toast da unificação carrega o prazo do desfazer", () => {
+  const disposers: Array<() => void> = [];
+
+  beforeEach(() => {
+    vi.mocked(toast.success).mockClear();
+    dollarFetch.mockReset().mockResolvedValue({ customer: lookupProjection() });
+  });
+
+  afterEach(() => {
+    disposers.forEach((dispose) => dispose());
+    disposers.length = 0;
+  });
+
+  function armDecision(sale: ReturnType<typeof makeSale>["sale"]) {
+    sale.customerDecision.value = {
+      kind: "contact_conflict",
+      field: "phone",
+      typed: "(43) 99999-0011",
+      current: { ref: "CUST-A", name: "Ana Prado", value: "" },
+      other: { ref: "CUST-B", name: "Ana P.", value: "+5543999990011" },
+    };
+  }
+
+  it("diz até quando dá para desfazer e a quem pedir", async () => {
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const actionCall = vi.fn().mockResolvedValue({
+      ok: true,
+      customer: lookupProjection({ name: "Ana Prado" }),
+      merge: {
+        source_ref: "CUST-B",
+        target_ref: "CUST-A",
+        audit_id: "AUD-1",
+        undo_deadline: deadline.toISOString(),
+        migrated: { contact_points: 2, identifiers: 0, addresses: 0, orders: 3, loyalty: false },
+      },
+    });
+    const { sale, handles } = makeSale({ actionCall });
+    disposers.push(handles.dispose);
+
+    armDecision(sale);
+    await sale.mergeConflictCustomers();
+
+    const [title, options] = vi.mocked(toast.success).mock.calls.at(-1) as [string, { description?: string }];
+    expect(title).toBe("Cadastros unificados em Ana Prado.");
+    expect(options.description).toContain("2 contatos e 3 pedidos passaram para este cadastro.");
+    expect(options.description).toContain("Dá para desfazer até");
+    expect(options.description).toContain("com o gerente, em Clientes → Unificações de cadastro");
+  });
+
+  it("sem prazo do servidor, o toast não promete um desfazer que não sabe datar", async () => {
+    const actionCall = vi.fn().mockResolvedValue({
+      ok: true,
+      customer: lookupProjection({ name: "Ana Prado" }),
+      merge: {
+        source_ref: "CUST-B",
+        target_ref: "CUST-A",
+        audit_id: "AUD-2",
+        undo_deadline: "",
+        migrated: { contact_points: 1, identifiers: 0, addresses: 0, orders: 0, loyalty: false },
+      },
+    });
+    const { sale, handles } = makeSale({ actionCall });
+    disposers.push(handles.dispose);
+
+    armDecision(sale);
+    await sale.mergeConflictCustomers();
+
+    const [, options] = vi.mocked(toast.success).mock.calls.at(-1) as [string, { description?: string }];
+    expect(options.description).toBe("1 contato e 0 pedidos passaram para este cadastro.");
+    expect(options.description).not.toContain("desfazer");
   });
 });

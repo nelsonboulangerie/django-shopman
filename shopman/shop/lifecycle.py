@@ -48,10 +48,11 @@ from shopman.shop.services import (
     loyalty,
     notification,
     payment,
+    payment_gate,
     stock,
 )
 from shopman.shop.services.business_calendar import next_operational_deadline
-from shopman.shop.services.order_helpers import get_commitment_date
+from shopman.shop.services.order_helpers import customer_holds_the_goods, get_commitment_date
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +106,11 @@ _OFFLINE_PAYMENT_METHODS = {
     "cash", "credit", "debit",
     "",
 }
-_UPFRONT_DIGITAL_PAYMENT_METHODS = {"pix", "card"}
+# `link` é o pedido remoto anotado no PDV: passa por gateway e o dinheiro chega
+# quando o cliente paga — antecipado e digital como o Pix e o cartão da loja.
+# A lista mora no `payment_gate`, a régua única que o Gestor e a expedição do KDS
+# também consultam: dois conjuntos de métodos digitais seriam duas regras.
+_UPFRONT_DIGITAL_PAYMENT_METHODS = payment_gate.UPFRONT_DIGITAL_PAYMENT_METHODS
 _ACCEPTED_PAYMENT_STATUSES = {"captured", "paid"}
 
 
@@ -394,7 +399,12 @@ def _on_accepted(order, config: ChannelConfig) -> None:
             payment.initiate(order)
 
         if not _payment_is_captured(order):
-            notification.send(order, "payment_requested")
+            # A venda de LINK do balcão avisa o cliente onde a URL nasce — no
+            # fechamento da venda, com a copy do balcão ("anotamos seu pedido").
+            # `payment_requested` é a copy da loja online ("conferimos a
+            # disponibilidade…"); mandar as duas é a casa falando duas vezes.
+            if not _counter_link_sale(order, config):
+                notification.send(order, "payment_requested")
             return
 
     # Encomenda: pedido para data FUTURA confirma hoje, mas o trabalho físico
@@ -414,7 +424,16 @@ def _on_accepted(order, config: ChannelConfig) -> None:
 
     if _stock_fulfill_allowed(order, config):
         stock.fulfill(order)
-    notification.send(order, "order_accepted")
+
+    # Quem já levou a mercadoria não recebe aviso de pedido. A copy de
+    # ``order_accepted`` é da esteira remota ("Seu pedido {ref} foi
+    # confirmado…") e no balcão é falsa por construção: o cliente pagou, pegou o
+    # pão e saiu — avisá-lo de que "a loja confirmou seu pedido" o faz procurar
+    # uma compra online que ele nunca fez.
+    counter_handoff = _counter_handoff(order)
+    if not counter_handoff:
+        notification.send(order, "order_accepted")
+
     if physical_work_dispatched:
         _mark_preparing_after_physical_work_dispatch(order)
         return
@@ -424,24 +443,25 @@ def _on_accepted(order, config: ChannelConfig) -> None:
     # O gate é config-driven: só fecha se o CANAL declarou a transição
     # ACCEPTED→COMPLETED no seu ``lifecycle.transitions`` (assado no snapshot).
     # Canais sem essa config nunca entram aqui.
-    if _counter_handoff(order) and order.can_transition_to(Order.Status.COMPLETED):
+    if counter_handoff and order.can_transition_to(Order.Status.COMPLETED):
         order.transition_status(Order.Status.COMPLETED, actor="system:counter_handoff")
 
 
 def _counter_handoff(order) -> bool:
     """A mercadoria já está na mão do cliente quando a venda fecha?
 
-    Balcão presencial (PDV, retirada, sem data futura): a venda documenta um
-    fato passado. Encomenda agendada e entrega ficam de fora — essas têm
-    trabalho e trajeto pela frente, e a esteira existe para elas.
+    Balcão presencial (PDV, retirada, sem data futura, pagamento que não é
+    link): a venda documenta um fato passado. Encomenda agendada, entrega e o
+    pedido de LINK ficam de fora — esses têm trabalho e trajeto pela frente, e
+    a esteira existe para eles. A pergunta é a mesma que o KDS faz para não
+    criar ticket de separação (``order_helpers.customer_holds_the_goods``).
     """
-    data = order.data or {}
-    if data.get("origin_channel") != "pos":
-        return False
-    if (data.get("fulfillment_type") or "pickup") != "pickup":
-        return False
-    commitment = get_commitment_date(order)
-    return not (commitment and commitment > timezone.localdate())
+    return customer_holds_the_goods(order)
+
+
+def _counter_link_sale(order, config: ChannelConfig) -> bool:
+    """Venda de LINK anotada no PDV: o pedido remoto que o balcão registrou."""
+    return (order.data or {}).get("origin_channel") == "pos" and _payment_method(order, config) == "link"
 
 
 def _on_paid(order, config: ChannelConfig) -> None:
@@ -716,9 +736,18 @@ def _requires_captured_payment_before_confirmation(order, config: ChannelConfig)
 
 
 def _requires_payment_before_physical_work(order, config: ChannelConfig) -> bool:
+    method = _payment_method(order, config)
+    # O LINK é cobrança REMOTA: o dinheiro ainda não entrou, seja qual for o
+    # `timing` do canal. "external" descreve o balcão recebendo na hora
+    # (dinheiro, maquininha) — e o link existe justamente para o pedido que
+    # NÃO está no balcão. Sem esta linha a venda de link do PDV ia para a
+    # cozinha, baixava o estoque e fechava como entregue sem um centavo
+    # capturado; e, uma vez além de ACCEPTED, o vencimento do link não a
+    # alcançava mais.
+    if method == "link":
+        return True
     if config.payment.timing == "external":
         return False
-    method = _payment_method(order, config)
     return method in _UPFRONT_DIGITAL_PAYMENT_METHODS
 
 
@@ -759,8 +788,13 @@ def _prep_starts_automatically(config: ChannelConfig) -> bool:
 
 def _stock_fulfill_allowed(order, config: ChannelConfig) -> bool:
     """Baixa de estoque liberada: pagamento no balcão ou já capturado."""
-    if config.payment.timing == "external" and config.payment.method != "external":
+    if (
+        config.payment.timing == "external"
+        and config.payment.method != "external"
+        and _payment_method(order, config) != "link"
+    ):
         # Counter payment — no digital payment step, fulfill immediately.
+        # (O link não é pagamento de balcão: baixa só depois de capturado.)
         return True
     # Payment may have arrived while the order was still NEW. In that case
     # the paid hook deliberately waited for operational confirmation.

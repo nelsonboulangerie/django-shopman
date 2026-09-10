@@ -226,6 +226,8 @@ MANYCHAT_OTP_FLOW_NS=<flow namespace do OTP, quando aplicavel>
 MANYCHAT_SUBSCRIBER_RESOLVER=shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve
 MANYCHAT_WHATSAPP_ID_FIELD_ID=<id do campo espelho WhatsApp ID no ManyChat>
 DOORMAN_ACCESS_LINK_API_KEY=<mesmo segredo core acima>
+SHOPMAN_CONCIERGE_ENABLED=false            # concierge de WhatsApp; ligar só com o flow do ManyChat montado
+# CONCIERGE_API_KEY=<opcional; sem ela o webhook usa DOORMAN_ACCESS_LINK_API_KEY>
 ```
 
 Nao confunda:

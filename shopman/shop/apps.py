@@ -6,6 +6,7 @@ Wiring:
   2. Rules engine boot + cache invalidation signal
   3. Core signal order_changed → lifecycle.dispatch()
   4. Core signal production_changed → production_lifecycle.dispatch_production()
+  5. Django signal got_request_exception → OperatorAlert (erro 500 vira aviso)
 """
 
 from __future__ import annotations
@@ -81,6 +82,26 @@ class ShopmanConfig(AppConfig):
         # 11. Announcement truth closes/refreshes every personal alert sibling.
         import shopman.shop.user_notification_signals  # noqa: F401
 
+        # 12. Register curated-data backup resources (shop + Core packages)
+        self._register_backup_resources()
+
+        # 13. Connect got_request_exception → OperatorAlert (o 500 deixa de
+        #     morrer no log). Ver shopman/shop/services/unhandled_errors.py.
+        self._connect_unhandled_exception_alert()
+
+    def _connect_unhandled_exception_alert(self):
+        """Exceção não tratada vira alerta operacional.
+
+        Um ponto só, e o mais abrangente: ``got_request_exception`` cobre DRF,
+        Admin, webhooks e views simples, e não tem como alterar a resposta. O
+        porquê da escolha (e por que não o ``EXCEPTION_HANDLER`` do DRF nem um
+        middleware) está no topo de ``shop/services/unhandled_errors.py``.
+        """
+        from shopman.shop.services import unhandled_errors
+
+        unhandled_errors.connect()
+        logger.info("ShopmanConfig: unhandled exception alert connected.")
+
     def _register_admin_dashboard(self):
         from django.contrib import admin
 
@@ -90,6 +111,7 @@ class ShopmanConfig(AppConfig):
         try:
             from shopman.refs import register_ref_type
             from shopman.refs.types import RefType
+
             channel = RefType(
                 slug="CHANNEL",
                 label="Canal",
@@ -99,9 +121,9 @@ class ShopmanConfig(AppConfig):
             )
             try:
                 register_ref_type(channel)
-            except ValueError:
+            except ValueError:  # silêncio-deliberado: registro é idempotente — o CHANNEL já está no registro
                 pass
-        except ImportError:
+        except ImportError:  # silêncio-deliberado: shopman.refs é opcional; sem ele não há registro a alimentar
             pass
 
     def _register_loyalty_resolvers(self):
@@ -119,12 +141,8 @@ class ShopmanConfig(AppConfig):
 
         from shopman.shop.loyalty_config import resolve_loyalty_config
 
-        loyalty_conf.set_tier_thresholds_resolver(
-            lambda: resolve_loyalty_config().tier_thresholds()
-        )
-        loyalty_conf.set_default_stamps_target_resolver(
-            lambda: resolve_loyalty_config().stamps_target
-        )
+        loyalty_conf.set_tier_thresholds_resolver(lambda: resolve_loyalty_config().tier_thresholds())
+        loyalty_conf.set_default_stamps_target_resolver(lambda: resolve_loyalty_config().stamps_target)
         logger.info("ShopmanConfig: loyalty resolvers registered.")
 
     def _register_stock_alert_resolvers(self):
@@ -185,6 +203,14 @@ class ShopmanConfig(AppConfig):
         )
         logger.info("ShopmanConfig: SKU namespace guard connected.")
 
+    def _register_backup_resources(self):
+        from shopman.shop.backup.resources import register_shop_resources
+        from shopman.shop.backup.transactional import register_transactional_resources
+
+        register_shop_resources()
+        register_transactional_resources()
+        logger.info("ShopmanConfig: backup resources registered.")
+
     def _register_handlers(self):
         """Register all directive handlers, modifiers, validators, and stock signals.
 
@@ -193,6 +219,7 @@ class ShopmanConfig(AppConfig):
         See shopman.handlers.ALL_HANDLERS for the complete list.
         """
         from shopman.shop.handlers import register_all
+
         register_all()
         logger.info("ShopmanConfig: handlers registered.")
 
@@ -215,6 +242,21 @@ class ShopmanConfig(AppConfig):
             sender=RuleConfig,
             dispatch_uid="shopman.shop.rules.invalidate_cache",
         )
+
+        # O registro de atributos é lido a cada sugestão e a cada leitura de
+        # produto; cadastrar um atributo no Admin precisa valer na hora, e não
+        # daqui a uma hora.
+        from django.db.models.signals import post_delete
+
+        from shopman.shop.models import AttributeDefinition
+        from shopman.shop.services.attributes import invalidate_cache
+
+        for signal in (post_save, post_delete):
+            signal.connect(
+                invalidate_cache,
+                sender=AttributeDefinition,
+                dispatch_uid=f"shopman.shop.attributes.invalidate_cache.{signal is post_save}",
+            )
         logger.info("ShopmanConfig: rules engine wired.")
 
     def _connect_lifecycle_signal(self):
@@ -229,6 +271,7 @@ class ShopmanConfig(AppConfig):
 
         def on_order_changed(sender, order, event_type, actor, **kwargs):
             from django.db import transaction as _tx
+            from shopman.orderman.models import Order
 
             if event_type == "created":
                 # Gate duro de estoque: roda SÍNCRONO, dentro da transação do
@@ -241,7 +284,17 @@ class ShopmanConfig(AppConfig):
                 phase = f"on_{order.status}"
             else:
                 return
-            _tx.on_commit(lambda: dispatch(order, phase))
+
+            order_pk = order.pk
+
+            def dispatch_fresh_order() -> None:
+                # Other on-commit receivers may have merged operational
+                # lineage into Order.data before lifecycle runs.  Capturing
+                # the signal instance here would later save a stale JSON
+                # snapshot and silently erase those writes.
+                dispatch(Order.objects.get(pk=order_pk), phase)
+
+            _tx.on_commit(dispatch_fresh_order)
 
         order_changed.connect(
             on_order_changed,
@@ -269,8 +322,7 @@ class ShopmanConfig(AppConfig):
             weak=False,
         )
         logger.warning(
-            "ShopmanConfig: piloto automático de STAGING ligado — pedidos avançam "
-            "sozinhos a cada %ds, sem operador.",
+            "ShopmanConfig: piloto automático de STAGING ligado — pedidos avançam sozinhos a cada %ds, sem operador.",
             staging_autopilot.delay_seconds(),
         )
 
@@ -288,13 +340,23 @@ class ShopmanConfig(AppConfig):
         logger.info("ShopmanConfig: production lifecycle signal connected.")
 
     def _connect_recipe_derivation_signal(self):
-        """Materialize Product ingredients, nutrition and dietary on Recipe save.
+        """Materialize Product weight, ingredients, nutrition and dietary on Recipe save.
 
-        Two derivations share the BOM and the same idempotency contract,
-        each refusing to overwrite its own manual override:
+        Three derivations share the BOM and the same idempotency contract,
+        cada uma recusando sobrescrever o próprio override manual:
+        - peso da peça (carimbo ``metadata["derived_from"]["unit_weight"]``);
         - nutrition + ingredients (``nutrition_facts["auto_filled"]=False``);
-        - allergens + diet (``metadata["dietary_auto_filled"]=False``).
+        - alérgenos + dieta (proveniência ``source="manual"`` bloqueia).
         See ``docs/decisions/adr-008-pdp-nutrition.md``.
+
+        **A ordem importa.** O peso vem primeiro porque a porção do rótulo
+        nutricional é calculada a partir de ``unit_weight_g``: derivar a
+        nutrição antes do peso a deixaria descrevendo a peça anterior até o
+        próximo save da ficha.
+
+        Toda derivação carimba de qual versão da ficha ela veio
+        (``shop.services.derived_provenance``), e é esse carimbo que a leitura
+        da promessa compara para dizer o que envelheceu.
         """
         from django.db.models.signals import post_save
         from shopman.craftsman.models import Recipe
@@ -306,6 +368,9 @@ class ShopmanConfig(AppConfig):
         from shopman.shop.services.nutrition_from_recipe import (
             fill_nutrition_from_recipe,
         )
+        from shopman.shop.services.unit_weight_from_recipe import (
+            fill_unit_weight_from_recipe,
+        )
 
         def on_recipe_saved(sender, instance: Recipe, created: bool, **kwargs):
             if not instance.is_active:
@@ -314,18 +379,27 @@ class ShopmanConfig(AppConfig):
             if product is None:
                 return
             try:
+                fill_unit_weight_from_recipe(product)
+            except Exception:
+                logger.exception(
+                    "unit_weight_from_recipe: failed for product=%s recipe=%s",
+                    instance.output_sku, instance.ref,
+                )
+            try:
                 fill_nutrition_from_recipe(product)
             except Exception:
                 logger.exception(
                     "nutrition_from_recipe: failed for product=%s recipe=%s",
-                    instance.output_sku, instance.ref,
+                    instance.output_sku,
+                    instance.ref,
                 )
             try:
                 aggregate_dietary_from_recipe(product)
             except Exception:
                 logger.exception(
                     "dietary_from_recipe: failed for product=%s recipe=%s",
-                    instance.output_sku, instance.ref,
+                    instance.output_sku,
+                    instance.ref,
                 )
 
         post_save.connect(

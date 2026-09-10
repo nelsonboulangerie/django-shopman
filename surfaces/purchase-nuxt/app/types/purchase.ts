@@ -1,5 +1,5 @@
 export const PURCHASE_VIEWS = ["panel", "buy", "receive", "base"] as const;
-export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs"] as const;
+export const PURCHASE_BASE_VIEWS = ["materials", "suppliers", "costs", "count"] as const;
 
 export type PurchaseView = (typeof PURCHASE_VIEWS)[number];
 export type PurchaseBaseView = (typeof PURCHASE_BASE_VIEWS)[number];
@@ -25,6 +25,14 @@ export interface Material {
   stockOnHand: number;
   dailyUse: number;
   minStock: number;
+  /**
+   * O mínimo foi DECLARADO pelo operador, ou derivado do consumo?
+   *
+   * Sem a distinção a tela exibe um número derivado como se fosse cadastrado, e
+   * o operador que "confirma" o valor digitando o mesmo número CONGELA um
+   * mínimo que era para acompanhar o consumo.
+   */
+  minStockDeclared?: boolean;
   recipes: string[];
   leadTimeDays?: number;
   replenishAtDays?: number;
@@ -34,11 +42,31 @@ export interface Material {
   stockIsApproximate?: boolean;
 }
 
+export interface SupplierContact {
+  id: string;
+  name: string;
+  role: "sales" | "finance" | "quality" | "general";
+  roleLabel: string;
+  email: string;
+  phone: string;
+  isPrimary: boolean;
+  isActive: boolean;
+  notes: string;
+}
+
 export interface Supplier {
   ref: string;
+  // A razao social — nome de contrato e de nota fiscal.
   name: string;
+  tradeName: string;
+  // Como a casa chama este fornecedor: fantasia, senao a razao social.
+  displayName: string;
   document: string;
+  // A central da empresa. So vale quando nao ha ninguem cadastrado.
   contact: string;
+  contacts: SupplierContact[];
+  // Quem receberia o pedido de compra HOJE. Vazio = cai na central.
+  orderContactName: string;
   leadTimeDays: number;
   reliabilityPercent: number;
   isActive: boolean;
@@ -105,6 +133,34 @@ export interface EnrichedMaterial extends Material {
   conversionCount: number;
   tone: MaterialTone;
   issues: MaterialIssue[];
+}
+
+/**
+ * Uma linha da fila de compra: o insumo, de quem comprar e quanto.
+ *
+ * `suggestedQty` é a resposta do SERVIDOR (`Material.suggestedQty`), não uma
+ * conta refeita na tela — ver `reorderRows` em `presentation/purchase.ts`.
+ */
+export interface ReorderRow {
+  material: EnrichedMaterial;
+  supplier: Supplier | null;
+  suggestedQty: number;
+  estimatedCostQ: number | null;
+}
+
+/**
+ * Por que a fila de compra está vazia — e o que fazer a respeito.
+ *
+ * "Nada a comprar" e "não dá para calcular o que comprar" parecem iguais na
+ * tela e são opostos. Cada motivo carrega o número exato e o gesto que o
+ * resolve; sem o gesto, a explicação vira desculpa.
+ */
+export interface ReorderBlocker {
+  key: "no-materials" | "no-consumption" | "no-preferred-cost" | "stocked";
+  headline: string;
+  detail: string;
+  count: number;
+  action: { label: string; baseView: PurchaseBaseView } | null;
 }
 
 export interface SupplierCostRow {
@@ -195,6 +251,9 @@ export interface ReceiptLinePreview {
   // O gesto pendente ja esta escrito no card do proprio campo (insumo ou
   // embalagem), entao o aviso do topo da linha se cala para nao repetir.
   nextStepIsOnField: boolean;
+  // EM QUE campo do card mora o gesto que falta. E o que permite a tela levar o
+  // operador ate la em vez de so acusar a falta la embaixo, no rodape.
+  nextStepField: ReceiptFieldAnchor | null;
   // Pereciveis nao entram no estoque sem validade — e a nota nem sempre a traz.
   needsExpiry: boolean;
   conversionSuggestion: ReceiptConversionSuggestion | null;
@@ -219,6 +278,109 @@ export interface ReceiptWarning {
     | "invalid-qty";
   label: string;
   tone: ReceiptWarningTone;
+}
+
+/**
+ * Em que pé está UM item da entrada — a cor da linha na lista, em uma palavra.
+ *
+ * Antes isto era um ternário no template somado a `preview.nextStep`,
+ * `line.checked` e `conversionDiverges`: três lugares decidindo a mesma coisa,
+ * e nenhum deles com nome. Um item tem UM estado, e a lista, o cabeçalho da
+ * gaveta e a pendência do rodapé têm de dizer o mesmo.
+ *
+ * - `blocked` — falta algo que segura a entrada inteira (insumo, embalagem,
+ *   quantidade, validade). É o que o operador tem de resolver.
+ * - `checked` — o operador conferiu e assinou. Fecha o item.
+ * - `attention` — nada trava, mas há o que olhar: a NF diverge da conversão, a
+ *   conversão é estimada, o valor ainda não foi conferido.
+ * - `ready` — está completo e ninguém marcou como conferido ainda.
+ */
+export type ReceiptLineStatus = "blocked" | "checked" | "attention" | "ready";
+
+/** Como o estado se apresenta: a palavra e o ícone. A cor mora na tela. */
+export interface ReceiptLineStatusBadge {
+  label: string;
+  icon: string;
+}
+
+/**
+ * UMA linha da lista de itens da entrada — a visão geral da nota.
+ *
+ * A tela do recebimento era uma pilha de formulários abertos: para saber o que
+ * faltava numa nota de dez itens o operador rolava dez cards. A lista responde
+ * "como está a entrada?" de uma olhada, e a edição de cada item acontece na
+ * gaveta. Tudo aqui já vem pronto para desenhar — a linha não calcula nada.
+ */
+export interface ReceiptLineRow {
+  id: string;
+  /** O nome do item, o MESMO que a gaveta e a pendência dizem. */
+  label: string;
+  /** O que já está apurado ("4 × saco 25 kg = 100 kg · R$ 730,00"), ou o que a nota diz. */
+  digest: string;
+  status: ReceiptLineStatus;
+  statusLabel: string;
+  statusIcon: string;
+  /** O gesto que falta neste item. Vazio quando não falta nada. */
+  nextStep: string;
+  /** A ocorrência anotada pelo operador (avaria, falta, ressalva). */
+  note: string;
+  /** O dinheiro da linha, já formatado. O da NOTA enquanto ninguém digitou o valor. */
+  total: string;
+}
+
+/**
+ * Onde, dentro do card da linha, mora o gesto que falta.
+ *
+ * A ancora e o endereco do campo na TELA — o painel de pendencias e o botao de
+ * confirmar usam isto para rolar ate o campo e focar nele. Sem ela o aviso sabe
+ * o QUE falta e nao sabe ONDE, que era o buraco: "informe a validade" no rodape
+ * de uma nota de dez itens nao diz em qual item.
+ */
+export type ReceiptFieldAnchor = "material" | "conversion" | "qty" | "expiry" | "check";
+
+/** Onde mora um gesto que nao esta dentro de nenhuma linha. */
+export type ReceiptDocumentAnchor = "invoice" | "supplier";
+
+/** Uma pendencia da entrada, com nome do item e endereco do campo. */
+export interface ReceiptPendingItem {
+  id: string;
+  label: string;
+  step: string;
+  field: ReceiptFieldAnchor;
+  tone: ReceiptWarningTone;
+}
+
+/**
+ * O PRIMEIRO gesto que falta para confirmar — o que o botao responde.
+ *
+ * Confirmar com pendencia deixou de ser um botao morto: ele responde com esta
+ * pendencia, e a tela leva o operador ate ela.
+ */
+export interface ReceiptBlocker {
+  scope: "document" | "supplier" | "line";
+  /** O gesto, em uma frase: "Informe a validade". */
+  step: string;
+  /** De que item se trata. Vazio quando a pendencia nao e de uma linha. */
+  label: string;
+  lineId: string;
+  field: ReceiptFieldAnchor | null;
+  anchor: ReceiptDocumentAnchor | null;
+}
+
+/**
+ * O que ENTROU (ou voltou), guardado antes de o rascunho zerar.
+ *
+ * Confirmar limpa o rascunho — e um rascunho vazio nao sabe dizer o que acabou
+ * de acontecer. O resumo e capturado antes da limpeza para o aviso de sucesso
+ * ter o que mostrar: quantos itens, quanto, de quem.
+ */
+export interface ReceiptOutcome {
+  kind: "confirmed" | "rejected";
+  at: string;
+  mode: ReceiptMode;
+  lineCount: number;
+  totalCostQ: number;
+  supplierName: string;
 }
 
 export interface InvoiceProbe {
@@ -269,6 +431,43 @@ export interface PurchaseCostUpsertPayload {
   makePreferred: boolean;
 }
 
+/** Uma linha da tabela de preços do fornecedor. */
+export interface PurchaseCostBatchLine {
+  materialSku: string;
+  costInput: string;
+  conversionId: string | null;
+}
+
+export interface PurchaseCostBatchPayload {
+  supplierRef: string;
+  makePreferred: boolean;
+  costs: PurchaseCostBatchLine[];
+}
+
+/**
+ * Estoque mínimo declarado por insumo.
+ *
+ * Sem consumo medido o alvo de reposição é zero e o insumo nunca é sugerido —
+ * declarar o mínimo é o que o traz de volta para o Compras. Valor vazio ou zero
+ * apaga a declaração.
+ */
+export interface PurchaseMinStockPayload {
+  minimums: { materialSku: string; minStock: string }[];
+}
+
+/**
+ * Erro de UMA linha do lote, como o servidor devolve em `error.lines`.
+ *
+ * O dialeto `errors` da casa fala por campo; um lote erra por linha, e a linha
+ * não cabe ali sem torcer o contrato.
+ */
+export interface PurchaseCostBatchLineError {
+  index: number;
+  materialSku: string;
+  field: string;
+  detail: string;
+}
+
 export interface PurchaseActionResponse {
   ok: boolean;
   purchase?: PurchaseProjection;
@@ -276,4 +475,54 @@ export interface PurchaseActionResponse {
   // Só a rota de declarar conversão devolve: é por ele que a linha que estava
   // travada seleciona a conversão recém-criada, sem procurar por rótulo.
   conversionId?: string;
+}
+
+export interface CountItem {
+  sku: string;
+  name: string;
+  unit: MaterialUnit;
+  category: string;
+  isActive: boolean;
+  systemQty: number;
+}
+
+export interface PurchaseCountProjection {
+  items: CountItem[];
+}
+
+export interface PurchaseCountResponse {
+  count: PurchaseCountProjection;
+}
+
+export interface CountLinePayload {
+  materialSku: string;
+  countedQty: number;
+  reason: string;
+}
+
+export interface PurchaseCountConfirmPayload {
+  counts: CountLinePayload[];
+}
+
+export interface PurchaseCountActionResponse {
+  ok: boolean;
+  count?: PurchaseCountProjection;
+  message?: string;
+}
+
+export interface CountRow {
+  item: CountItem;
+  input: string;
+  reason: string;
+  counted: number | null;
+  diff: number;
+  divergent: boolean;
+  missingReason: boolean;
+}
+
+export interface CountSummary {
+  filled: number;
+  divergent: number;
+  missingReason: number;
+  ready: boolean;
 }

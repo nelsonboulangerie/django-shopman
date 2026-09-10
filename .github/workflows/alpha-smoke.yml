@@ -8,35 +8,222 @@ name: Alpha Smoke
 # renderiza? Ver docs/plans e a auditoria de prontidão de 26/08/2026.
 
 "on":
+  # ⚠️ DEPOIS DE CADA DEPLOY é o gatilho que importa. Push no `main` publica
+  # (ver Deploy Images), e é exatamente aí que a quebra entra — perguntar ao
+  # vivo logo depois fecha a janela entre publicar e descobrir.
+  workflow_run:
+    workflows: ["Deploy Images"]
+    types: [completed]
+    branches: [main]
   schedule:
-    # A cada 15 minutos. Quebrou → o workflow fica vermelho e o GitHub avisa.
+    # ⚠️ O `cron` PEDE 15 minutos e o GitHub NÃO CUMPRE. Medido em 05/09/2026,
+    # nas 12 execuções anteriores: os intervalos reais foram de 1h40 a 4h06,
+    # média ~2h50. O GitHub estrangula workflow agendado em repositório movimentado
+    # e não avisa — o comentário antigo dizia "a cada 15 minutos" e quem lia
+    # acreditava. Fica como REDE (pega o alpha quebrando sem deploy nenhum:
+    # dado que envelhece, insumo que zera, certificado que vence), não como a
+    # guarda principal.
     - cron: "*/15 * * * *"
   workflow_dispatch:
+    inputs:
+      probe_deploy_wait:
+        description: >-
+          Exercita o passo de espera (credencial, API da DigitalOcean, parsing)
+          fora de um deploy. Sem isto, o único jeito de saber que a espera
+          funciona é merger e torcer — que foi como o defeito de 06-08/09
+          sobreviveu três tentativas de conserto.
+        type: boolean
+        default: false
 
 concurrency:
-  group: alpha-smoke
+  # ⚠️ O grupo é POR GATILHO, e por commit no caso do deploy. Um grupo único com
+  # `cancel-in-progress` era inofensivo enquanto o workflow só corria em segundos
+  # pelo `cron`; passou a ser furo no dia em que ele ganhou 7 minutos de espera
+  # pela DigitalOcean. Nessa janela, QUALQUER outro disparo — o cron da rede ou
+  # o deploy seguinte — mata o run em andamento.
+  #
+  # E o pior não é a morte, é o silêncio: run **cancelado não fica vermelho**.
+  # A guarda simplesmente não roda, e ninguém fica sabendo. Aconteceu na estreia
+  # do gatilho (run de 20:52Z sobre `089d164a`, cancelado sem deixar rastro
+  # vermelho) — que é o mesmo defeito que este workflow existe para impedir:
+  # ausência de sinal lida como sinal bom.
+  #
+  # Com a chave por `head_sha`, cada deploy tem o seu smoke até o fim; só um
+  # re-deploy do MESMO commit cancela o anterior, que é o que se quer.
+  # ⚠️ `github.run_id` — chave ÚNICA por execução, de propósito: aqui a
+  # concorrência não deve cancelar NADA.
+  #
+  # Medido em 06-08/09: das NOVE execuções pós-deploy desde que o gatilho
+  # existe, nove foram CANCELADAS e nenhuma completou. A chave por `head_sha`
+  # (tentativa anterior) não resolveu — provavelmente porque
+  # `github.event.workflow_run.head_sha` não resolve no contexto de
+  # `concurrency`, e o grupo degradou para compartilhado sem avisar.
+  #
+  # `run_id` não depende dessa incerteza: existe em todo contexto e é único. Na
+  # prática desliga o cancelamento para este workflow — que é o certo, porque
+  # cada deploy merece a própria verificação e o job custa quatro `curl`.
+  #
+  # ⚠️ E MESMO ASSIM continuou cancelando: 16 de 16 execuções por `workflow_run`
+  # até 08/09/2026, contra 14 de 14 verdes pelo `cron`. A concorrência nunca foi
+  # a causa — a chave por `run_id` já a tinha descartado. A causa era aritmética
+  # e estava dentro do próprio job: `timeout-minutes: 5` com `sleep 420` (sete
+  # minutos) no primeiro passo. O job morria aos 5 min, sempre, no passo da
+  # espera, e as quatro asserções saíam `skipped`. O run `34246964010` mostra a
+  # conta inteira: começou 15:47:01Z, morreu 15:52:16Z.
+  #
+  # Duas lições, e as duas viraram guarda: (a) o teto do job agora é conferido
+  # contra o teto da espera por `scripts/check_workflow_budgets.py`; (b) a espera
+  # deixou de ser cega — ela PERGUNTA à DigitalOcean se o deployment terminou,
+  # em vez de apostar num número.
+  #
+  # E o custo do cancelamento não é desperdício, é CEGUEIRA: run cancelado não
+  # fica vermelho. A guarda deixava de rodar e ninguém ficava sabendo.
+  group: alpha-smoke-${{ github.run_id }}
   cancel-in-progress: true
+
+# ⚠️ A URL da loja é UMA variável, e é de propósito.
+#
+# Ela já esteve escrita à mão em três lugares deste arquivo, e isso transformava
+# uma troca de domínio (alpha.* → menu.*) numa edição de código no momento em que
+# ninguém tem tempo para editar código. Pior: o gate ficaria VERMELHO por apontar
+# para um host morto, ou — o modo de falhar que já aconteceu nesta casa — ficaria
+# VERDE sem testar nada.
+#
+# Para virar o domínio, defina a variável `STOREFRONT_URL` do repositório
+# (Settings → Secrets and variables → Actions → Variables). **Não há default.**
+#
+# ⚠️ Havia um: `https://alpha.nelsonboulangerie.com.br`, e ele apodreceu. O
+# domínio `alpha.` foi cortado em 01/09/2026 e não volta. Enquanto a variável
+# existiu, o fallback ficou invisível — mas ele é o modo de falhar que este
+# arquivo mais teme: apagada a variável, o smoke passaria a perguntar a um host
+# morto e o gate ficaria vermelho por motivo errado, ou (pior) alguém apontaria
+# o fallback para outro lugar e ele ficaria verde sem testar a loja. Sem
+# variável, o job agora **para na primeira linha e diz por quê**.
+#
+# ⚠️ E o PISO do cardápio também é uma variável, pela mesma razão.
+#
+# O número nasceu colado no seed (55 SKUs no cardápio web) com folga de cinco.
+# Em 01/09/2026, entre 09:32 e 09:54, o dono despublicou 11 produtos do alpha
+# pelo catálogo — sodas de torneira, o combo, os doces e a mercearia que a casa
+# não vende de verdade — e pausou outros oito. O cardápio caiu para 44 SKUs e 32
+# vendáveis, que é um cardápio saudável, e o gate ficou vermelho a cada 15 min
+# acusando "raso" um catálogo que só tinha sido CURADO. Um gate que grita por
+# decisão legítima da casa é um gate que se aprende a ignorar.
+#
+# O piso é PISO: existe para acusar catálogo que sumiu (listing errada, canal
+# errado, banco vazio → 0), não para vigiar a curadoria do dono. Ajuste pela
+# variável `MENU_MIN_SKUS` do repositório, sem editar código.
+env:
+  STOREFRONT_URL: ${{ vars.STOREFRONT_URL }}
+  MENU_MIN_SKUS: ${{ vars.MENU_MIN_SKUS || '30' }}
+  # ⚠️ Teto da espera pela DigitalOcean, em segundos. Está aqui em cima, e não
+  # enterrado no passo, porque `scripts/check_workflow_budgets.py` lê ESTE valor
+  # e o `timeout-minutes` do job e recusa a combinação em que um cabe dentro do
+  # outro. Foi a combinação que existiu de 06 a 08/09/2026.
+  DEPLOY_WAIT_MAX_SECONDS: "900"
 
 jobs:
   smoke:
+    # Deploy reprovado não publica imagem: rodar o smoke aí acusaria o alpha por
+    # algo que nunca chegou nele. Nos outros gatilhos (`schedule`,
+    # `workflow_dispatch`) não há `workflow_run`, e a condição passa.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     name: Alpha responde como loja
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # ⚠️ Tem que caber `DEPLOY_WAIT_MAX_SECONDS` (900s) MAIS as asserções e o
+    # setup. 25 min dá 10 de folga sobre o teto da espera.
+    # `scripts/check_workflow_budgets.py` recusa o dia em que isto encolher.
+    timeout-minutes: 25
     steps:
+      # ⚠️ O smoke vivia sem checkout — eram quatro `curl` e nada mais. Passou a
+      # precisar dele quando a espera virou script: Python dentro de shell dentro
+      # de YAML custou um `syntax error near unexpected token '('` que só apareceu
+      # no runner. Três níveis de citação é um a mais do que cabe numa cabeça.
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: A loja tem endereço
+        run: |
+          if [ -z "${STOREFRONT_URL}" ]; then
+            echo "::error::A variável STOREFRONT_URL do repositório não está" \
+                 "definida. Este smoke NÃO tem domínio default de propósito —" \
+                 "o antigo (alpha.nelsonboulangerie.com.br) foi cortado em" \
+                 "01/09/2026. Defina em Settings → Secrets and variables →" \
+                 "Actions → Variables."
+            exit 1
+          fi
+          echo "loja: ${STOREFRONT_URL}"
+
+      # ⚠️ "Deploy Images terminou" NÃO é "está no ar". O workflow empurra as
+      # imagens; a DigitalOcean só então puxa e troca os contêineres. Medido em
+      # 05/09/2026: imagens às 14:01Z, deployment ACTIVE às 14:06Z — cinco
+      # minutos. Perguntar ao vivo antes disso mede a versão ANTERIOR, e o
+      # resultado é pior que inútil: um verde que atesta o que não subiu.
+      #
+      # ⚠️ Aqui havia `sleep 420`, e o número era o defeito — nos dois sentidos.
+      # Curto demais (a DO demorou mais que 7 min) e o smoke atesta a versão
+      # anterior, verde. Longo demais e ele estoura o teto do job, que foi o que
+      # aconteceu de 06 a 08/09: 16 runs mortos aos 5 min, asserção nenhuma.
+      #
+      # Espera cega não tem número certo. Esta PERGUNTA: a DigitalOcean sabe
+      # quando o deployment ficou ACTIVE, e o `workflow_run` nos diz a que
+      # instante o deploy terminou. O passo só solta quando existe um deployment
+      # criado DEPOIS desse instante e ele está ACTIVE — ou grita, se ele deu
+      # ERROR/CANCELED, que é deploy que não chegou no alpha.
+      #
+      # Nos outros gatilhos não há o que esperar, e o passo é pulado (exceto
+      # pelo `probe_deploy_wait` do dispatch, que existe para provar o caminho).
+      # ⚠️ O manifesto é o que separa "nada foi publicado" de "o deployment
+      # sumiu". Sem ele os dois terminam iguais — e foi assim que a versão
+      # anterior deste passo devolvia verde depois de esperar 900s à toa.
+      - name: Baixar o manifesto do Deploy Images
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          gh run download "$RUN_ID" \
+            --repo "${{ github.repository }}" \
+            --name published-components --dir manifesto
+          cat manifesto/published.json
+
+      - name: Esperar a DigitalOcean trocar os contêineres
+        if: github.event_name == 'workflow_run'
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_APP_NAME: shopman-alpha
+        run: |
+          python3 scripts/wait_for_do_deployment.py \
+            --manifest manifesto/published.json
+
+      # O probe não afirma nada sobre deploy — exercita credencial, API e
+      # parsing antes do merge, que é o que pegou o `syntax error` da primeira
+      # tentativa. Um probe que fingisse verificar deployment seria o mesmo
+      # falso conforto que este arquivo existe para eliminar.
+      - name: Probe do caminho da espera
+        if: inputs.probe_deploy_wait
+        env:
+          DO_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+          DO_APP_NAME: shopman-alpha
+        run: python3 scripts/wait_for_do_deployment.py --probe
+
       - name: API pronta (/ready/)
         run: |
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
-            https://api.staging.nelsonboulangerie.com.br/ready/)
+            https://api.boulangerie.com.br/ready/)
           echo "/ready/ => $code"
           test "$code" = "200"
 
       - name: Cardápio tem produto e tem disponibilidade
         run: |
           curl -s --max-time 30 -H 'Accept: application/json' \
-            https://api.staging.nelsonboulangerie.com.br/api/v1/storefront/menu/ \
+            https://api.boulangerie.com.br/api/v1/storefront/menu/ \
             -o menu.json
           python3 - <<'EOF'
           import json
+          import os
 
           def walk(node):
               if isinstance(node, dict):
@@ -57,7 +244,8 @@ jobs:
           print(f"skus no cardápio: {len(skus)}; com disponibilidade: {len(sellable)}")
           # Cardápio raso ou tudo esgotado é exatamente o sintoma que este
           # smoke existe para acusar — antes do cliente.
-          assert len(skus) >= 50, f"cardápio raso: {len(skus)} skus"
+          minimo = int(os.environ.get("MENU_MIN_SKUS", "30"))
+          assert len(skus) >= minimo, f"cardápio raso: {len(skus)} skus (piso {minimo})"
           assert len(sellable) >= 10, f"quase tudo esgotado: {len(sellable)} vendáveis"
           EOF
 
@@ -68,15 +256,15 @@ jobs:
           # que deixou a loja 4 dias sem conseguir criar pedido.
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 \
             -X POST -H 'Content-Type: application/json' -d '{}' \
-            https://alpha.nelsonboulangerie.com.br/api/v1/checkout/)
+            $STOREFRONT_URL/api/v1/checkout/)
           echo "POST /api/v1/checkout/ => $code"
           test "$code" != "404"
 
       - name: A loja renderiza (SSR)
         run: |
-          curl -s --max-time 30 https://alpha.nelsonboulangerie.com.br/ -o home.html
+          curl -s --max-time 30 "$STOREFRONT_URL/" -o home.html
           code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 \
-            https://alpha.nelsonboulangerie.com.br/)
+            "$STOREFRONT_URL/")
           bytes=$(wc -c < home.html)
           echo "home => $code ($bytes bytes)"
           test "$code" = "200"

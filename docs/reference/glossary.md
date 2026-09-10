@@ -14,6 +14,8 @@ Termos de domínio usados no código e na documentação.
 | **Listing** | Tabela de preços por canal (ex: `balcao`, `ifood`, `web`). Tem `priority` e `is_active`. |
 | **ListingItem** | Produto numa listing com `price_q` específico e flags de publicação/comercialização. |
 | **ProductComponent** | Composição de bundles — relaciona produto pai com componentes e quantidades. |
+| **Ocultar / Exibir** | Par canônico da copy de operador para visibilidade no catálogo (`is_published`). Estado: "Oculto". Nunca "despublicar"/"publicar" em tela. |
+| **Pausar / Ativar** | Par canônico da copy de operador para estado ativo/pausado (`is_sellable`, listing/canal ativo). Estados: "Pausado"/"Ativo". |
 
 ## Stockman (Estoque)
 

@@ -1,6 +1,8 @@
 import tailwindcss from "@tailwindcss/vite";
+import { configuredDjangoBaseUrl } from "../operator-kit/server/utils/djangoBaseUrl";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 const isProduction = process.env.NODE_ENV === "production";
+const djangoBaseUrl = configuredDjangoBaseUrl();
 
 export default defineNuxtConfig({
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
@@ -10,11 +12,11 @@ export default defineNuxtConfig({
   devtools: { enabled: false },
 
   runtimeConfig: {
-    djangoBaseUrl: process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
-    public: {
-      djangoPublicBaseUrl:
-        process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
-    },
+    // Privado ao Nitro: browser fala somente com o BFF same-origin. Em build/boot
+    // de produção a resolução falha sem uma URL HTTPS remota explícita.
+    djangoBaseUrl,
+    operatorSecurityHeaders: true,
+    operatorUpstreamFailFast: true,
   },
 
   // 301 das rotas pt-br antigas → inglês (vocabulário das lentes da grade: plan/
@@ -27,13 +29,13 @@ export default defineNuxtConfig({
   },
 
   modules: [
-    '@nuxtjs/color-mode',
-    'motion-v/nuxt',
-    '@vueuse/nuxt',
-    '@nuxt/icon',
-    '@nuxt/fonts',
-    '@nuxt/eslint',
-    "vue-sonner/nuxt"
+    "@nuxtjs/color-mode",
+    "motion-v/nuxt",
+    "@vueuse/nuxt",
+    "@nuxt/icon",
+    "@nuxt/fonts",
+    "@nuxt/eslint",
+    "vue-sonner/nuxt",
   ],
 
   // Instrument Sans self-hospedada com os PESOS da escala do operador (body=500,
@@ -42,45 +44,54 @@ export default defineNuxtConfig({
   // bold). Mesma família da vitrine (design system unificado).
   fonts: {
     families: [
-      { name: 'Instrument Sans', provider: 'google', weights: [400, 500, 600, 700], styles: ['normal'] }
-    ]
+      {
+        name: "Instrument Sans",
+        provider: "google",
+        weights: [400, 500, 600, 700],
+        styles: ["normal"],
+      },
+    ],
   },
 
   imports: {
-    imports: [{
-      from: 'tailwind-variants',
-      name: 'tv'
-    }, {
-      from: 'tailwind-variants',
-      name: 'VariantProps',
-      type: true
-    }, {
-      from: "vue-sonner",
-      name: "toast",
-      as: "useSonner"
-    }]
+    imports: [
+      {
+        from: "tailwind-variants",
+        name: "tv",
+      },
+      {
+        from: "tailwind-variants",
+        name: "VariantProps",
+        type: true,
+      },
+      {
+        from: "vue-sonner",
+        name: "toast",
+        as: "useSonner",
+      },
+    ],
   },
 
   colorMode: {
     // LIGHT-first — the production app is touch-first but light (Pablo's call),
     // like the Gestor and unlike the KDS (dark, back-of-house). Dark stays
     // available via the toggle for the back-of-house bakery floor.
-    preference: 'light',
-    fallback: 'light',
-    storageKey: 'production-nuxt-color-mode',
-    classSuffix: ''
+    preference: "light",
+    fallback: "light",
+    storageKey: "production-nuxt-color-mode",
+    classSuffix: "",
   },
 
   icon: {
     clientBundle: {
       scan: true,
-      sizeLimitKb: 0
+      sizeLimitKb: 0,
     },
 
-    mode: 'svg',
-    class: 'shrink-0',
+    mode: "svg",
+    class: "shrink-0",
     fetchTimeout: 2000,
-    serverBundle: 'local'
+    serverBundle: "local",
   },
 
   css: ["~/assets/css/tailwind.css"],
@@ -93,7 +104,10 @@ export default defineNuxtConfig({
       htmlAttrs: { lang: "pt-BR" },
       title: "Produção",
       meta: [
-        { name: "viewport", content: "width=device-width, initial-scale=1, viewport-fit=cover" },
+        {
+          name: "viewport",
+          content: "width=device-width, initial-scale=1, viewport-fit=cover",
+        },
         { name: "theme-color", content: "#ffffff" },
         { name: "robots", content: "noindex, nofollow" },
       ],
@@ -108,5 +122,5 @@ export default defineNuxtConfig({
       // aqui (build Nitro, sem dev server).
       allowedHosts: isProduction ? [] : [".trycloudflare.com"],
     },
-  }
-})
+  },
+});

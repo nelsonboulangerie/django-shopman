@@ -149,12 +149,28 @@ class DiscountThresholdHasOneOwnerTests(PosGuardsBase):
 
     @override_settings(SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q=500)
     def test_reasons_name_the_trigger(self) -> None:
+        # Sobrou UM gatilho, e é o certo: o desconto acima do teto da loja. O
+        # segundo era `price_override` — o operador digitava o preço unitário à
+        # mão —, e ele saiu com o mecanismo: preço à mão não passava pela régua
+        # do desconto (limite, motivo, "maior desconto ganha") e tinha portão
+        # próprio. Uma régua com duas portas não é uma régua.
+        review = self._review(manual_discount={"type": "fixed", "value": "30,00"})
+
+        self.assertEqual(review.approval_reasons, ("discount_over_threshold",))
+
+    @override_settings(SHOPMAN_POS_DISCOUNT_APPROVAL_THRESHOLD_Q=500)
+    def test_desconto_de_LINHA_em_reais_tambem_passa_pela_regua(self) -> None:
+        # O limite mede o desconto SOMADO (linha + pedido). O de linha em R$ é
+        # novo, e precisa entrar na mesma conta — senão bastava dar a cortesia
+        # por item para escapar do gerente.
         review = self._review(items=[
-            {"sku": "GUARD-ITEM", "name": "Item", "qty": 1, "unit_price_q": 700,
-             "price_overridden": True},
+            {"sku": "GUARD-ITEM", "name": "Item", "qty": 1, "unit_price_q": 3000,
+             "list_price_q": 3000,
+             "discount": {"type": "fixed", "value": 20.0, "reason": "cortesia"}},
         ])
 
-        self.assertEqual(review.approval_reasons, ("price_override",))
+        self.assertTrue(review.requires_manager_approval)
+        self.assertEqual(review.approval_reasons, ("discount_over_threshold",))
 
 
 class CashRemovalNeedsAManagerTests(PosGuardsBase):

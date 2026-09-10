@@ -20,7 +20,7 @@ def action_payload(
     href: str = "",
     method: str = "",
     payload_schema: dict[str, Any] | None = None,
-    idempotency: str = "none",
+    idempotency: str = "required",
     confirmation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return projection_data(Action(
@@ -46,4 +46,5 @@ def retry_after_action(retry_after_seconds: int) -> dict[str, Any]:
         priority="secondary",
         enabled=False,
         reason=f"Aguarde {retry_after_seconds} segundos antes de tentar novamente.",
+        idempotency="none",
     )

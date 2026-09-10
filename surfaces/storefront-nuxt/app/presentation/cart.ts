@@ -31,6 +31,11 @@ function optimisticLine (meta: ProductMutationMeta, qty: number): CartItemProjec
     is_available: true,
     availability_warning: null,
     available_qty: null,
+    // Linha otimista nasce disponível; o sino é resposta do servidor.
+    is_notifiable: false,
+    is_notify_subscribed: false,
+    is_made_to_order: false,
+    made_to_order_label: '',
     is_awaiting_confirmation: false,
     is_ready_for_confirmation: false,
     confirmation_deadline_iso: null,
@@ -68,6 +73,15 @@ export type CartLineHold = {
 type HoldFields = Pick<CartItemProjection, 'is_awaiting_confirmation' | 'is_ready_for_confirmation' | 'confirmation_deadline_iso' | 'confirmation_deadline_display' | 'planned_for_notice'>
 
 export function lineHoldState (line: HoldFields): CartLineHold | null {
+  // ⚠️ Havia aqui um `if (line.is_made_to_order) return null`, e ele passou a
+  // ESCONDER FILA DE VERDADE quando os dois eixos foram separados.
+  //
+  // Enquanto o selo era deduzido de `demand_ok`, "preparado na hora" servia de
+  // atalho para "não há fornada envolvida" — e a guarda parecia inofensiva.
+  // Agora o selo é promessa declarada da casa (`Product.metadata.made_to_order`)
+  // e a fila é estado do hold: um croque que espera a fornada de amanhã é as
+  // duas coisas. Calar a espera porque o item é preparado na hora tiraria da
+  // tela justamente o "quando".
   if (line.is_ready_for_confirmation) {
     return { kind: 'ready', deadlineIso: line.confirmation_deadline_iso, deadlineDisplay: line.confirmation_deadline_display, plannedForNotice: null }
   }
@@ -87,6 +101,9 @@ export function reviewWaitlist (
   deliveryDate: string,
   today: string = new Date().toLocaleDateString('en-CA')
 ): { notice: string } | null {
+  // Sem guarda por `is_made_to_order`, pela mesma razão de `lineHoldState`: os
+  // dois eixos são independentes, e a espera é o dado que o cliente precisa
+  // para decidir. Quem manda calar aqui é a DATA, não a natureza do item.
   if (!line.is_awaiting_confirmation) return null
   const batchDate = line.planned_for_date || today
   if (deliveryDate && deliveryDate !== batchDate) return null

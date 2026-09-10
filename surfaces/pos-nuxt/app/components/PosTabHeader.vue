@@ -5,6 +5,7 @@
 // sheet, and "liberar comanda" (with confirmation). It renders
 // what the read-side hands it and emits intent; the shell resolves the commands.
 import type { POSCustomerLookupProjection, POSCustomerSearchResult } from "~/types/pos";
+import type { CustomerDecision, ServerConflictCandidate } from "~/presentation/customerDecision";
 
 const props = defineProps<{
   tabDisplay: string;
@@ -20,6 +21,10 @@ const props = defineProps<{
   searchBusy: boolean;
   /** O cliente associado foi criado agora (resolve just-in-time). */
   customerResolvedNew?: boolean;
+  /** A escolha pendente do operador (conflito/correção de contato). */
+  customerDecision?: CustomerDecision | null;
+  customerMergeBusy?: boolean;
+  customerReleaseBusy?: boolean;
   /** No checkout a barra vira só LEITURA dos fatos do pedido: liberar a comanda
    *  e renomeá-la no meio de um pagamento é ação que não pertence ali. */
   readOnly?: boolean;
@@ -27,6 +32,17 @@ const props = defineProps<{
   fulfillmentType: "pickup" | "delivery";
   /** O rótulo já resolvido ("Entrega · Centro"), que a página monta. */
   fulfillmentLabel: string;
+  /** Quando o cliente quer o pedido: "Para hoje", "qui, 10/09, 10:00 às 10:30". */
+  scheduleLabel: string;
+  /** O pedido é para outro dia — muda o ícone e o realce do botão. */
+  scheduled: boolean;
+  /** O horário escolhido virou impossível (item lançado depois da escolha). */
+  scheduleConflict?: boolean;
+  scheduleConflictReason?: string;
+  /** A encomenda exige um cliente e ainda não há nenhum. O chip PULSA em vez de
+   *  a tela abrir mais um aviso: o lugar de identificar o cliente já está na
+   *  barra, visível o tempo todo — o que faltava era ele CHAMAR. */
+  customerRequired?: boolean;
   loading: boolean;
 }>();
 
@@ -40,11 +56,18 @@ const emit = defineEmits<{
   clearCustomer: [];
   lookupCustomer: [];
   resolveCustomer: [];
+  decisionConfirm: [];
+  decisionCancel: [];
+  decisionMerge: [];
+  /** LIBERAR o contato preso num cadastro desativado. */
+  decisionRelease: [value: string];
+  decisionPick: [ServerConflictCandidate];
   search: [string];
   selectResult: [POSCustomerSearchResult];
   applyCustomerFavorite: [];
   repeatCustomerLastOrder: [];
   openFulfillment: [];
+  openSchedule: [];
   /** Só em `readOnly` (checkout): quem tem o modal do cliente ali é a tela de
    *  pagamento — a dela carrega a parte fiscal. Dois modais de Cliente na mesma
    *  tela seria a duplicação que esta barra veio justamente desfazer. */
@@ -126,17 +149,44 @@ function runClear() {
     <h1 v-else-if="hasOpenTab" class="truncate text-lg font-semibold leading-tight tabular-nums tracking-tight">#{{ tabDisplay || "..." }}</h1>
     <h1 v-else class="truncate text-lg font-semibold leading-tight tracking-tight">Venda rápida</h1>
 
-    <!-- customer chip -->
+    <!-- OS TRÊS CHIPS CARREGAM A PRÓPRIA TECLA — F6 · F7 · F8, na ordem em que
+         aparecem. O atalho existia e só vivia no dicionário (tecla `?`), que é
+         onde se aprende, não onde se lembra. No balcão quem ensina é a tela: a
+         tecla ao lado do botão é o que faz a mão largar o mouse.
+
+         `aria-hidden` nos três: quem usa leitor de tela navega por foco, e o
+         nome acessível do botão não deve virar "Identificar cliente F6". -->
+
+    <!-- customer chip — e, na encomenda anônima, o CHAMADO.
+         O checkout tinha um cartaz dizendo "identifique o cliente" a 400px de
+         distância do único botão que faz isso. Dois lugares para uma pendência:
+         um que fala e outro que resolve. Agora quem fala é o próprio botão —
+         ele pulsa, ganha a cor do alerta e diz o porquê no `title`.
+         `motion-safe:` porque pulso é enfeite para quem pediu para a tela parar
+         de se mexer; a cor e a borda seguram o recado sozinhas. -->
     <button
       ref="customerChipRef"
+      data-context-entry="customer"
       type="button"
-      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border border-border px-3 text-sm transition hover:bg-accent"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="customerRequired
+        ? 'border-warning bg-warning/10 font-medium text-amber-700 motion-safe:animate-pulse dark:text-amber-400'
+        : 'border-border'"
       aria-haspopup="dialog"
+      :title="customerRequired ? 'Encomenda precisa de cliente — é o contato se algo mudar até a data' : undefined"
       @click="readOnly ? $emit('openCustomer') : (customerSheetOpen = true)"
     >
-      <Icon name="lucide:user-round" class="size-4 shrink-0 text-muted-foreground" />
+      <Icon
+        :name="customerRequired ? 'lucide:user-round-plus' : 'lucide:user-round'"
+        class="size-4 shrink-0"
+        :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
+      />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
-      <span v-else class="shrink-0 text-muted-foreground">Adicionar cliente</span>
+      <span v-else class="shrink-0" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F6</kbd>
     </button>
 
     <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
@@ -153,6 +203,37 @@ function runClear() {
     >
       <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
       <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F7</kbd>
+    </button>
+
+    <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
+         ENTREGA, e por isso a retirada agendada não existia: a casa recebe
+         encomenda por telefone e o balcão não tinha onde escrever isso.
+         "Para hoje" é o padrão e é uma AFIRMAÇÃO, não um campo vazio. -->
+    <button
+      v-if="hasOpenTab"
+      type="button"
+      class="flex h-9 min-w-0 shrink items-center gap-1.5 rounded-full border px-3 text-sm transition hover:bg-accent"
+      :class="scheduleConflict
+        ? 'border-destructive bg-destructive/10 text-destructive'
+        : (scheduled ? 'border-primary bg-primary/5' : 'border-border')"
+      aria-haspopup="dialog"
+      :title="scheduleConflictReason || ''"
+      @click="$emit('openSchedule')"
+    >
+      <Icon
+        :name="scheduleConflict ? 'lucide:triangle-alert' : (scheduled ? 'lucide:calendar-clock' : 'lucide:clock')"
+        class="size-4 shrink-0"
+        :class="scheduleConflict ? '' : 'text-muted-foreground'"
+      />
+      <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
+      <kbd
+        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+        aria-hidden="true"
+      >F8</kbd>
     </button>
 
     <!-- release tab (pushed to the right of the context bar) -->
@@ -179,6 +260,9 @@ function runClear() {
       :search-busy="searchBusy"
       :lookup-busy="lookupBusy"
       :resolved-new="customerResolvedNew"
+      :customer-decision="readOnly ? null : customerDecision"
+      :customer-merge-busy="customerMergeBusy"
+      :customer-release-busy="customerReleaseBusy"
       @update:customer-name="$emit('update:customerName', $event)"
       @update:customer-phone="$emit('update:customerPhone', $event)"
       @update:customer-tax-id="$emit('update:customerTaxId', $event)"
@@ -187,6 +271,11 @@ function runClear() {
       @select-result="$emit('selectResult', $event)"
       @clear="$emit('clearCustomer')"
       @resolve-customer="$emit('resolveCustomer')"
+      @decision-confirm="$emit('decisionConfirm')"
+      @decision-cancel="$emit('decisionCancel')"
+      @decision-merge="$emit('decisionMerge')"
+      @decision-release="$emit('decisionRelease', $event)"
+      @decision-pick="$emit('decisionPick', $event)"
       @apply-customer-favorite="$emit('applyCustomerFavorite')"
       @repeat-customer-last-order="$emit('repeatCustomerLastOrder')"
     />

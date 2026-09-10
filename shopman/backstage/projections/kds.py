@@ -21,10 +21,11 @@ from django.utils import timezone
 from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
+from shopman.shop.services import operator_orders
 from shopman.shop.services.order_helpers import get_fulfillment_type
-from shopman.shop.services.pos import display_tab_ref
+from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
-from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS
+from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS, advance_block_label
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,13 @@ class KDSExpeditionCardProjection:
     # Discriminante explícito da união ticket|expedição (ver KDSTicketProjection).
     # Card de expedição é sempre True.
     is_expedition: bool = True
+    # A gêmea na tela do gate de pagamento (``payment_gate``): quando o servidor
+    # vai recusar a saída da mercadoria, o card diz isso ANTES do toque, com o
+    # mesmo rótulo curto e o mesmo motivo que o Gestor mostra. Régua de servidor
+    # mais apertada do que a da tela inventa recusa seca com o cliente esperando.
+    # "" quando a ação está liberada.
+    advance_block_label: str = ""
+    advance_block_reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -323,15 +331,25 @@ def _public_comanda_code(session) -> str:
     """A privacy-safe public code for a pre-commit POS comanda.
 
     The pickup board is a PUBLIC screen, so it must never leak a named tab
-    (``tab_display`` / ``tab_ref`` can be a customer name like "João"). A purely
-    numeric comanda shows its unpadded number ("1012"); anything else (a name)
-    falls back to a short, stable, non-identifying code derived from the session
-    key — deterministic so it stays put across the board's 10s refresh.
+    (``tab_display`` / ``tab_ref`` can be a customer name like "João"). A comanda
+    that has the shape of a NUMBER OF THIS HOUSE shows its unpadded number
+    ("1012"); anything else falls back to a short, stable, non-identifying code
+    derived from the session key — deterministic so it stays put across the
+    board's 10s refresh.
+
+    ⚠️ A pergunta é ``is_numeric_tab_ref``, e NÃO ``isdigit()``. Um telefone tem
+    onze dígitos e é ``isdigit()``; o balcão abre comanda com o telefone do cliente
+    o tempo todo (é o identificador que ele já pediu para o WhatsApp), e a
+    normalização só faz ``zfill`` em numéricos de até oito — acima disso guarda o
+    valor cru. Somando: o telefone ia inteiro para a TV do salão, em fonte de 7rem,
+    por uma função cujo docstring promete proteger contra exatamente isso.
+
+    O assert-negativo de PII que existia não pegava: ele testa nome, não dígito.
     """
     data = session.data or {}
     for candidate in (data.get("tab_ref"), session.handle_ref):
         text = str(candidate or "").strip()
-        if text.isdigit():
+        if is_numeric_tab_ref(text):
             return display_tab_ref(text)
     digest = hashlib.blake2s(str(session.session_key).encode("utf-8"), digest_size=2).hexdigest().upper()
     return f"#{digest}"
@@ -512,6 +530,8 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         for item in items
     )
 
+    bloqueio = operator_orders.advance_block(order)
+
     return KDSExpeditionCardProjection(
         pk=order.pk,
         order_ref=order.ref,
@@ -524,6 +544,8 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         line_count=len(items),
         total_display=_money(order.total_q),
         items=item_projections,
+        advance_block_label=advance_block_label(bloqueio),
+        advance_block_reason=operator_orders.advance_block_message(bloqueio),
     )
 
 

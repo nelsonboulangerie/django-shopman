@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 from django.utils import timezone
@@ -31,9 +31,18 @@ from shopman.shop.projections.interaction_context import InteractionContext
 from shopman.shop.projections.types import Action
 from shopman.shop.services import payment as payment_service
 from shopman.shop.services import payment_status
+
+#: Formas DIGITAIS do acompanhamento: o cliente paga por conta própria, e o
+#: pedido espera por isso. Pix (QR na tela) mais as sessões hospedadas
+#: (cartão da loja online e link do balcão — o cliente abre uma URL e paga lá).
+#: Era um literal `{"pix", "card"}` repetido em cinco pontos deste arquivo, e
+#: o `link` ficava fora de todos: quem abria o acompanhamento de um pedido de
+#: link não encontrava botão nenhum para pagar.
+_DIGITAL_PAYMENT_METHODS = frozenset({"pix"}) | payment_service.HOSTED_CHECKOUT_METHODS
 from shopman.shop.services.business_calendar import (
     BusinessCalendarState,
     current_business_state,
+    format_deadline,
     format_next_opening,
     store_review_deferred_state,
 )
@@ -144,12 +153,22 @@ class TrackingPromiseData:
     actions: tuple[Action, ...] = ()
     eta_at: str | None = None  # ISO; preparing ETA
     next_opening_phrase: str = ""  # store_closed; resolved against business calendar
+    # payment_card_ready do LINK: "hoje às 16h" — o `deadline_at` em copy de
+    # cliente, resolvido aqui pelo mesmo motivo do `next_opening_phrase` (o
+    # calendário é lado de escrita; a presentation só lê projections).
+    payment_deadline_phrase: str = ""
     # ── Payment block (só nos degraus em que há o que pagar) ──────────
-    payment_method: str = ""  # pix | card | "" — o resto do bloco só faz sentido com um método
+    payment_method: str = ""  # pix | card | link | "" — o resto do bloco só faz sentido com um método
     pix_qr_code: str | None = None  # data: URI já normalizada
     pix_copy_paste: str | None = None  # copia-e-cola
     pix_expires_at: str | None = None  # ISO; prazo do Pix
-    checkout_url: str | None = None  # cartão: ambiente seguro externo
+    checkout_url: str | None = None  # sessão hospedada (cartão/link): ambiente seguro externo
+    # Fulfillment wait context. Empty for ready-stock orders; "preorder" for
+    # future commitments, "planned_batch" for same-day planned holds not yet
+    # materialized. Presentation uses this to avoid stock-shelf copy for bakery
+    # reservations that are waiting on production.
+    fulfillment_wait_kind: str = ""
+    fulfillment_wait_until: str | None = None
 
 
 @dataclass(frozen=True)
@@ -195,6 +214,25 @@ class TrackingData:
     shop_name: str
     is_debug: bool
     last_updated_iso: str
+    # Cancelamento pelo estabelecimento: motivo escolhido no Gestor e estado
+    # do estorno (Pix/cartão) visíveis ao cliente — a página não depende da
+    # notificação para contar a história.
+    cancellation_note: str = ""
+    refund_status_key: str | None = None
+    # Fila de espera (WP-P2E): o acompanhamento é a superfície que SEMPRE
+    # existe. A notificação pode não chegar (janela do WhatsApp, número
+    # trocado); esta tela não depende dela para o cliente saber que a fornada
+    # saiu e que há um prazo correndo.
+    waitlist_state: str = "none"
+    waitlist_deadline: str | None = None
+    waitlist_planned_for: str | None = None
+    # Captura simulada (DEBUG/staging): a resposta completa — ambiente E método E
+    # estado do pedido. Vira campo, e não só action, porque a superfície precisa
+    # dela para decidir se DESENHA a caixa de teste. Enquanto era só action, o
+    # storefront recalculava por conta própria com a pergunta pobre ("estamos em
+    # ambiente de teste?"), e o botão aparecia em pedido de cartão no Stripe real
+    # — botão morto, porque o endpoint pergunta pelo método e devolve 404.
+    can_mock_confirm_payment: bool = False
     stale_after_seconds: int = 30  # sobrescrito no build com a config viva
 
 
@@ -237,6 +275,12 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     delivery_distance_km = float(delivery_distance_km) if delivery_distance_km is not None else None
 
     payment_pending, payment_confirmed, payment_status_key, payment_expires_at = _payment_info(order)
+    # ⚠️ `cancellation_reason` carrega CÓDIGO DE MÁQUINA (pix_timeout,
+    # customer_requested…) e é campo de auditoria — data-schemas.md diz "nunca
+    # exibir ao cliente". O que chega ao cliente é a nota do operador, a mesma
+    # que o lifecycle usa na notificação. Sem nota, a tela não inventa motivo.
+    cancellation_note = str(order_data.get("cancellation_note") or "")
+    refund_status_key = _refund_status_key(order)
     progress_steps = _build_progress_steps(
         order,
         is_delivery=is_delivery,
@@ -277,7 +321,10 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
     )
 
     return TrackingData(
+        can_mock_confirm_payment=can_mock_confirm_payment,
         stale_after_seconds=_stale_after_seconds(),
+        cancellation_note=cancellation_note,
+        refund_status_key=refund_status_key,
         order_ref=interaction.order_ref,
         status=order.status,
         display_status_key=_display_status_key(order),
@@ -316,6 +363,10 @@ def build_tracking(order, *, is_debug: bool = False) -> TrackingData:
         shop_name=shop_name,
         is_debug=is_debug,
         last_updated_iso=server_now.isoformat(),
+        **_waitlist_info(
+            order,
+            payment_unsettled=payment_pending or payment_status_key == "card_authorized",
+        ),
     )
 
 
@@ -354,13 +405,13 @@ def _display_status_key(order) -> str:
 
     if _is_payment_timeout_cancelled(order):
         return "payment_expired"
-    if order.status == "new" and method in {"pix", "card"}:
+    if order.status == "new" and method in _DIGITAL_PAYMENT_METHODS:
         if payment_captured or live_payment_status == "authorized" or not has_intent:
             return "waiting_store_confirmation"
         return "payment_pending"
-    if method == "card" and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
+    if method in payment_service.HOSTED_CHECKOUT_METHODS and live_payment_status == "authorized" and order.status in {"new", "accepted"}:
         return "card_authorized"
-    if order.status == "accepted" and method in {"pix", "card"} and not payment_captured and live_payment_status != "authorized":
+    if order.status == "accepted" and method in _DIGITAL_PAYMENT_METHODS and not payment_captured and live_payment_status != "authorized":
         return "payment_pending"
     if order.status == "new":
         return "waiting_store_confirmation"
@@ -386,7 +437,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"}:
+    if method not in _DIGITAL_PAYMENT_METHODS:
         return False, False, None, None
 
     if _is_payment_timeout_cancelled(order):
@@ -401,7 +452,7 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
     status = (payment_status.get_payment_status(order) or "").lower()
     if payment_status.has_sufficient_captured_payment(order):
         return False, True, "payment_confirmed", payment.get("expires_at") or None
-    if status == "authorized" and method == "card":
+    if status == "authorized" and method in payment_service.HOSTED_CHECKOUT_METHODS:
         return False, False, "card_authorized", payment.get("expires_at") or None
     if not (payment.get("intent_ref") or payment.get("status")) and order.status == "new":
         return False, False, None, None
@@ -409,6 +460,22 @@ def _payment_info(order) -> tuple[bool, bool, str | None, str | None]:
         return False, False, None, None
     return True, False, "payment_pending", payment.get("expires_at") or None
 
+
+def _refund_status_key(order) -> str | None:
+    """Estorno visível ao cliente: refunded | processing | None.
+
+    Só faz sentido para pedido cancelado com pagamento capturado: o dinheiro
+    precisa voltar, e o cliente precisa saber. payment_status é a fonte viva
+    (captured/refunded/…); o estorno do cartão/Pix passa por aqui.
+    """
+    if order.status != "cancelled":
+        return None
+    live = (payment_status.get_payment_status(order) or "").lower()
+    if live in {"refunded", "refund"}:
+        return "refunded"
+    if payment_status.has_sufficient_captured_payment(order) or live in {"captured", "paid"}:
+        return "processing"
+    return None
 
 def _can_mock_confirm_payment(order) -> bool:
     """Este pedido pode receber uma captura simulada AGORA?
@@ -423,7 +490,7 @@ def _can_mock_confirm_payment(order) -> bool:
         return False
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method not in {"pix", "card"} or not payment.get("intent_ref"):
+    if method not in _DIGITAL_PAYMENT_METHODS or not payment.get("intent_ref"):
         return False
     # O ambiente E o método: simular captura de um método cujo gateway é real
     # gravaria no Payman uma captura que o gateway não tem.
@@ -479,7 +546,7 @@ def _action(
     reason: str = "",
     method: str = "",
     payload_schema: dict | None = None,
-    idempotency: str = "none",
+    idempotency: str = "required",
     confirmation: dict | None = None,
 ) -> Action:
     return Action(
@@ -621,11 +688,14 @@ def _promise(
     actions: tuple[Action, ...] = (),
     eta_at: str | None = None,
     next_opening_phrase: str = "",
+    payment_deadline_phrase: str = "",
     payment_method: str = "",
     pix_qr_code: str | None = None,
     pix_copy_paste: str | None = None,
     pix_expires_at: str | None = None,
     checkout_url: str | None = None,
+    fulfillment_wait_kind: str = "",
+    fulfillment_wait_until: str | None = None,
 ) -> TrackingPromiseData:
     return TrackingPromiseData(
         state=state,
@@ -639,11 +709,14 @@ def _promise(
         actions=actions,
         eta_at=eta_at,
         next_opening_phrase=next_opening_phrase,
+        payment_deadline_phrase=payment_deadline_phrase,
         payment_method=payment_method,
         pix_qr_code=pix_qr_code,
         pix_copy_paste=pix_copy_paste,
         pix_expires_at=pix_expires_at,
         checkout_url=checkout_url,
+        fulfillment_wait_kind=fulfillment_wait_kind,
+        fulfillment_wait_until=fulfillment_wait_until,
     )
 
 
@@ -687,6 +760,61 @@ def _commitment_info(order):
     return commitment_date, is_preorder
 
 
+def _hold_pk(hold_id: object) -> int | None:
+    raw = str(hold_id or "")
+    if not raw.startswith("hold:"):
+        return None
+    try:
+        return int(raw.split(":", 1)[1])
+    except (TypeError, ValueError):
+        return None
+
+
+def _pending_planned_hold_date(order) -> date | None:
+    """Earliest active planned/demand hold still waiting for materialization."""
+    hold_entries = ((order.data or {}).get("hold_ids") or [])
+    hold_pks = [
+        pk
+        for pk in (_hold_pk(entry.get("hold_id")) for entry in hold_entries if isinstance(entry, dict))
+        if pk is not None
+    ]
+    if not hold_pks:
+        return None
+    try:
+        from shopman.stockman import Hold, HoldStatus
+    except Exception:
+        logger.debug("order_tracking.planned_hold_lookup degraded", exc_info=True)
+        return None
+
+    from shopman.shop.services import waitlist
+
+    holds = (
+        Hold.objects.filter(
+            pk__in=hold_pks,
+            status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            expires_at__isnull=True,
+            # Fila espera LOTE, e lote tem quant. Sem esta cláusula um hold de
+            # demanda (café) carimbado antes da separação de 29/08 devolve a
+            # data de hoje e o acompanhamento abre a narrativa de fornada.
+            **waitlist.WAITLIST_HOLD_FILTER,
+        )
+        .only("target_date")
+    )
+    planned_dates = [hold.target_date for hold in holds if hold.target_date]
+    return min(planned_dates) if planned_dates else None
+
+
+def _fulfillment_wait_context(order, *, is_preorder: bool) -> tuple[str, str | None]:
+    commitment_date, _ = _commitment_info(order)
+    if is_preorder:
+        return "preorder", commitment_date.isoformat() if commitment_date else None
+
+    planned_for = _pending_planned_hold_date(order)
+    if planned_for is not None:
+        return "planned_batch", planned_for.isoformat()
+    return "", None
+
+
 def _build_promise(
     order,
     *,
@@ -710,19 +838,27 @@ def _build_promise(
     """
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    is_digital = method in {"pix", "card"}
+    is_digital = method in _DIGITAL_PAYMENT_METHODS
     pix_qr, pix_copy = _pix_payload(payment)
     has_pix_code = bool(pix_qr or pix_copy)
     checkout_url = payment.get("checkout_url") or None
     error_message = payment.get("error") or None
     live_state = (payment_status.get_payment_status(order) or payment.get("status") or "").lower()
     is_captured = payment_status.has_sufficient_captured_payment(order)
+    wait_kind, wait_until = _fulfillment_wait_context(order, is_preorder=is_preorder)
+
+    def promise(**kwargs) -> TrackingPromiseData:
+        return _promise(
+            fulfillment_wait_kind=wait_kind,
+            fulfillment_wait_until=wait_until,
+            **kwargs,
+        )
 
     # ── 1. TERMINAL — o pedido acabou; nada mais importa ────────────
     if payment_expired:
         # Prazo do Pix vencido e pedido cancelado: expiração é mais específica
         # que "cancelado" genérico, então vem antes.
-        return _promise(
+        return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
@@ -739,7 +875,7 @@ def _build_promise(
         "returned": "neutral",
     }
     if order.status in terminal_tone:
-        return _promise(
+        return promise(
             state=order.status,
             tone=terminal_tone[order.status],
             requires_active_notification=order.status == "delivered",
@@ -748,7 +884,7 @@ def _build_promise(
 
     # ── 2. PRAZO ESTOURADO — o Pix venceu (lazy, antes do cancel) ───
     if is_digital and not is_captured and payment_status.payment_deadline_passed(order):
-        return _promise(
+        return promise(
             state="payment_expired",
             tone="danger",
             deadline_kind="payment",
@@ -760,14 +896,17 @@ def _build_promise(
     # O pagamento só é a bola de alguém enquanto não foi capturado e o pedido
     # ainda está aberto (o invariante ``payment_is_due ⇒ new|accepted``).
     payment_open = is_digital and not is_captured and order.status in {"new", "accepted"}
-    card_authorized = payment_open and method == "card" and live_state == "authorized"
+    # Sessão hospedada autorizada e ainda não capturada (cartão em `manual`;
+    # o link só cai aqui se o gateway segurar a captura por conta própria).
+    is_hosted = method in payment_service.HOSTED_CHECKOUT_METHODS
+    card_authorized = payment_open and is_hosted and live_state == "authorized"
 
     # ── 3. BOLA DO CLIENTE — precisa agir AGORA (pagar, tentar) ─────
     if payment_open and not card_authorized:
         if error_message:
             return _payment_retry_promise(order, method=method)
         if method == "pix" and has_pix_code:
-            return _promise(
+            return promise(
                 state="payment_pix_ready",
                 tone="info",
                 deadline_at=payment_expires_at,
@@ -780,7 +919,8 @@ def _build_promise(
                     _action(
                         ref="copy_pix",
                         kind="copy",
-                        label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código PIX"),
+                        label=_copy_title("TRACKING_PROMISE_PIX_ACTION", "Copiar código Pix"),
+                        idempotency="none",
                     ),
                 ),
                 payment_method="pix",
@@ -788,10 +928,27 @@ def _build_promise(
                 pix_copy_paste=pix_copy,
                 pix_expires_at=payment_expires_at,
             )
-        if method == "card" and checkout_url:
-            return _promise(
+        if is_hosted and checkout_url:
+            # `payment_card_ready` cobre o link também: é a mesma sessão
+            # hospedada, o mesmo botão que abre a URL do gateway. O que muda
+            # é o `payment_method`, e é ele que a tela rotula.
+            #
+            # O LINK tem prazo (o cartão da loja online não): o mesmo
+            # `expires_at` que arma o `payment.timeout` vira o prazo da
+            # promessa — "pague até hoje às 16h para garantir o pedido" — e a
+            # consequência (a reserva é liberada) entra na copy, como no Pix.
+            # Sem contagem regressiva: o relógio do link é de horas, e o mm:ss
+            # da tela é instrumento de dez minutos.
+            has_deadline = bool(payment_expires_at)
+            return promise(
                 state="payment_card_ready",
                 tone="info",
+                deadline_at=payment_expires_at,
+                deadline_kind="payment" if has_deadline else None,
+                deadline_action="cancel_order_on_timeout" if has_deadline else "none",
+                payment_deadline_phrase=(
+                    format_deadline(parse_datetime(payment_expires_at)) if has_deadline else ""
+                ),
                 requires_active_notification=True,
                 notification_topic="payment_requested" if order.status == "accepted" else None,
                 actions=(
@@ -800,20 +957,21 @@ def _build_promise(
                         kind="external",
                         label=_copy_title("TRACKING_PROMISE_CARD_ACTION", "Pagar com cartão"),
                         href=checkout_url,
+                        idempotency="none",
                     ),
                 ),
-                payment_method="card",
+                payment_method=method,
                 checkout_url=checkout_url,
             )
-        if method == "card":
-            # Cartão sem link ainda (o botão do Stripe está nascendo): a mesma
-            # ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
-            return _payment_retry_promise(order, method="card")
+        if is_hosted:
+            # Sessão hospedada sem URL ainda (o botão do Stripe está nascendo): a
+            # mesma ação "tentar de novo" reabre o acompanhamento, que regenera o intent.
+            return _payment_retry_promise(order, method=method)
         # Pix sem código ainda → não é a bola do cliente; cai para a loja.
 
     # ── 4. BOLA DO GATEWAY — cartão autorizado, capturando ──────────
     if card_authorized:
-        return _promise(state="payment_authorized", tone="info", payment_method="card")
+        return promise(state="payment_authorized", tone="info", payment_method=method)
 
     # ── 5. BOLA DA LOJA — o cliente só espera ───────────────────────
     # Chegamos aqui sem bola do cliente pendente; a loja é quem age.
@@ -822,7 +980,7 @@ def _build_promise(
             business_state.next_open_at,
             now=business_state.resolved_at,
         )
-        return _promise(
+        return promise(
             state="store_closed",
             tone="info",
             next_opening_phrase=next_opening_phrase or "",
@@ -830,10 +988,10 @@ def _build_promise(
 
     if payment_open and method == "pix" and not has_pix_code and order.status == "accepted":
         # Aceito, código nascendo (janela curta entre o aceite e o QR).
-        return _promise(state="payment_preparing", tone="info", requires_active_notification=True, payment_method="pix")
+        return promise(state="payment_preparing", tone="info", requires_active_notification=True, payment_method="pix")
 
     if confirmation_countdown:
-        return _promise(
+        return promise(
             state="store_checking",
             tone="info",
             deadline_at=confirmation_expires_at,
@@ -844,26 +1002,26 @@ def _build_promise(
 
     if payment_open and method == "pix" and not has_pix_code:
         # new, loja aberta, código ainda não nasceu → conferindo disponibilidade.
-        return _promise(state="store_checking", tone="info", requires_active_notification=True, payment_method="pix")
+        return promise(state="store_checking", tone="info", requires_active_notification=True, payment_method="pix")
 
     # Encomenda agendada (WP-D): entre a confirmação e a data combinada o pedido
     # está garantido para a data. A presentation compõe "pedido para sábado, a
     # partir das 09h" com ``commitment_date``/``commitment_slot_ref``.
     if is_preorder and order.status in {"new", "accepted"}:
-        return _promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
+        return promise(state="preorder_scheduled", tone="success" if payment_confirmed else "info")
 
     if payment_confirmed and order.status in {"new", "accepted"}:
-        return _promise(state="payment_confirmed", tone="success")
+        return promise(state="payment_confirmed", tone="success")
 
     if order.status == "preparing":
-        return _promise(state="preparing", tone="info", eta_at=eta_at)
+        return promise(state="preparing", tone="info", eta_at=eta_at)
 
     if order.status == "ready":
         if is_delivery:
-            return _promise(state="ready_delivery", tone="success", requires_active_notification=False)
+            return promise(state="ready_delivery", tone="success", requires_active_notification=False)
         # Sem ação no painel: "Retirar pedido" era rótulo decorativo com cara de
         # botão. O que resolve de verdade ("Como chegar") vive na aba de retirada.
-        return _promise(state="ready_pickup", tone="success")
+        return promise(state="ready_pickup", tone="success")
 
     if order.status == "dispatched":
         # Produto saiu, courier terceirizado, sem rastreio nem detecção de
@@ -887,7 +1045,7 @@ def _build_promise(
                     idempotency="required",
                 ),
             )
-        return _promise(
+        return promise(
             state="dispatched",
             tone="info",
             eta_at=eta_at,
@@ -897,11 +1055,11 @@ def _build_promise(
         )
 
     # ── 6. REPOUSO — recebido (fallback) ────────────────────────────
-    return _promise(state="received", tone="info")
+    return promise(state="received", tone="info")
 
 
 def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
-    """intent_error + card sem link: reabrir o acompanhamento regenera o intent."""
+    """intent_error + sessão hospedada sem URL: reabrir o acompanhamento regenera o intent."""
     return _promise(
         state="payment_retry",
         tone="warning",
@@ -912,6 +1070,7 @@ def _payment_retry_promise(order, *, method: str) -> TrackingPromiseData:
                 kind="link",
                 label=_copy_title("TRACKING_PROMISE_RETRY_ACTION", "Tentar novamente"),
                 href=f"/pedido/{order.ref}",
+                idempotency="none",
             ),
         ),
         payment_method=method,
@@ -1066,7 +1225,7 @@ def _active_progress_key(
 def _should_show_payment_step(order) -> bool:
     payment = (order.data or {}).get("payment") or {}
     method = str(payment.get("method") or "").lower()
-    if method in {"pix", "card", "external"}:
+    if method in _DIGITAL_PAYMENT_METHODS or method == "external":
         return True
     status = str(payment.get("status") or "").lower()
     return status in {"authorized", "captured", "paid"}
@@ -1450,6 +1609,65 @@ def _parse_datetime(value) -> datetime | None:
     if not timezone.is_aware(dt):
         return timezone.make_aware(dt)
     return dt
+
+
+_WAITLIST_NONE = {"waitlist_state": "none", "waitlist_deadline": None, "waitlist_planned_for": None}
+
+
+def _waitlist_info(order, *, payment_unsettled: bool) -> dict:
+    """Estado da fila para o acompanhamento (WP-P2E §5).
+
+    ``planned_for`` vem do HOLD, não do bloco gravado: enquanto a fornada não
+    sai, a data que interessa é a do lote, e é ela que o hold carrega.
+
+    ⚠️ **Uma bola de cada vez — mas só a bola que atrapalha.** Enquanto há
+    pagamento em aberto, a ESPERA da fila não entra em cena. Os dois eixos
+    derivam de sinais diferentes e apareciam JUNTOS na mesma tela: "Pague para
+    confirmar sua reserva" ao lado de "Você está na fila. Nada foi cobrado
+    ainda". Lidos juntos, o segundo desfaz o primeiro — a tela dizia ao cliente
+    que a vaga já era dele e que pagar podia ficar para depois.
+
+    Isto NÃO muda a política de 28/08 (fornada do dia não cobra para garantir
+    vaga): pedido sem pagamento em aberto continua vendo a fila normalmente. Muda
+    só a ordem de quem fala quando os dois têm o que dizer.
+
+    ``payment_unsettled`` inclui o cartão AUTORIZADO, e não só o pendente: com o
+    dinheiro já reservado no gateway, "Nada foi cobrado ainda" é meia-verdade — e
+    meia-verdade sobre dinheiro é a metade errada.
+
+    ⚠️⚠️ **E o silêncio para em ``fermata``.** Calar a fila inteira custava a
+    vaga do cliente, e custava calado. ``fermata`` é uma FRASE — passiva,
+    dispensável, e é ela que contradiz o pedido de pagamento. ``confirming`` não
+    é frase: é a loja CHAMANDO, com prazo (``waitlist.confirmation_minutes``) e
+    com o único botão que existe para aceitar. A tela do cliente só desenha o
+    botão quando lê ``confirming``; zerar o estado apagava o chamado, o relógio
+    seguia correndo e ``sweep_waitlist_windows`` entregava a vaga ao próximo da
+    fila — por uma decisão de diagramação.
+
+    E o buraco não era hipótese: com ``charge_at="confirmation"`` (o default) a
+    cobrança nasce NA confirmação, então pagamento em aberto é exatamente o
+    estado normal de quem está sendo chamado. O gate cobriria 100% dos casos que
+    ele existe para não atrapalhar.
+
+    ``confirmed`` e ``released`` também ficam: são desfecho, e desfecho de vaga
+    não se esconde de quem esperou por ela.
+    """
+    from shopman.shop.services import waitlist
+
+    state = waitlist.state_for(order)
+    if payment_unsettled and state == waitlist.FERMATA:
+        return dict(_WAITLIST_NONE)
+    if state == waitlist.NONE:
+        return dict(_WAITLIST_NONE)
+
+    block = (order.data or {}).get(waitlist.WAITLIST_KEY) or {}
+    batch_date = waitlist.planned_batch_date(order)
+    planned_for = batch_date.isoformat() if batch_date else None
+    return {
+        "waitlist_state": state,
+        "waitlist_deadline": block.get("deadline") if state == waitlist.CONFIRMING else None,
+        "waitlist_planned_for": planned_for,
+    }
 
 
 def _is_payment_timeout_cancelled(order) -> bool:

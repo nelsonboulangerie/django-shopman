@@ -12,6 +12,7 @@ import {
   autoAdvanceSeconds,
   changeDisplay as toChangeDisplay,
   enterAdvances,
+  paymentFailed,
   pixAwaiting,
   type PixPollStatus,
   type PosSaleResultSnapshot,
@@ -26,6 +27,8 @@ const props = defineProps<{
   danfeScreenUrl: string;
   printingReceipt: boolean;
   printingDanfe: boolean;
+  /** Reenvio do link de pagamento em voo (só o pedido de link usa). */
+  resendingLink?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -33,9 +36,11 @@ const emit = defineEmits<{
   printReceipt: [];
   printDanfe: [];
   cancelSale: [];
+  resendLink: [];
 }>();
 
-const title = computed(() => saleResultTitle(props.result.receipt.customerName));
+const title = computed(() => saleResultTitle(props.result.receipt.customerName, props.result.payment));
+const chargeFailed = computed(() => paymentFailed(props.result.payment));
 const changeDisplay = computed(() => toChangeDisplay(props.result.changeQ));
 const pixPending = computed(() => pixAwaiting(props.result.payment, props.pixStatus));
 const enterHint = computed(() => enterAdvances({
@@ -88,10 +93,18 @@ function onNewSale() {
     data-sale-result
     @pointerdown.capture="cancelCountdown"
   >
-    <!-- Confirmação + identidade do pedido -->
+    <!-- Confirmação + identidade do pedido. ⚠️ O selo verde é uma AFIRMAÇÃO
+         sobre o dinheiro: só aparece quando houve cobrança. Com o gateway
+         recusando, o mesmo check dizia "concluída" numa venda que ninguém
+         cobrou. -->
     <div class="grid justify-items-center gap-2">
-      <div class="grid size-12 place-items-center rounded-full border border-success/40 bg-success/10 text-success">
-        <Icon name="lucide:check" class="size-6" />
+      <div
+        class="grid size-12 place-items-center rounded-full border"
+        :class="chargeFailed
+          ? 'border-destructive/40 bg-destructive/10 text-destructive'
+          : 'border-success/40 bg-success/10 text-success'"
+      >
+        <Icon :name="chargeFailed ? 'lucide:alert-triangle' : 'lucide:check'" class="size-6" />
       </div>
       <h2 class="text-3xl font-semibold tracking-tight">{{ title }}</h2>
       <p class="text-sm text-muted-foreground">
@@ -108,14 +121,35 @@ function onNewSale() {
       <p class="text-sm text-muted-foreground">Confira o troco antes de seguir para a próxima venda.</p>
     </div>
 
+    <!-- COBRANÇA NÃO CRIADA. O caminho que não tinha tela: o pedido está de pé
+         e o dinheiro não foi cobrado. Ela diz o que aconteceu e o que fazer, e
+         segura a tela (o auto-avanço e o Enter estão desligados aqui). -->
+    <div
+      v-if="chargeFailed"
+      class="grid w-full max-w-md gap-2 rounded-md border border-destructive/40 bg-destructive/5 p-4 text-left"
+      role="alert"
+    >
+      <p class="text-sm font-semibold text-destructive">
+        O pagamento não foi criado no gateway.
+      </p>
+      <p class="text-sm text-muted-foreground">
+        {{ result.payment?.amountDisplay }} em
+        {{ result.payment?.method === 'pix' ? 'Pix' : result.payment?.method === 'link' ? 'link de pagamento' : 'cartão' }}
+        segue <strong class="text-foreground">em aberto</strong>. Receba de outra forma e acerte o
+        pedido no gestor — não trate esta venda como paga.
+      </p>
+    </div>
+
     <!-- Prova digital: QR PIX grande + status vivo do polling, ou o link do
          checkout do cartão (mesmo componente do fluxo de pagamento). -->
     <PosPaymentResult
       v-if="result.payment?.hasProof"
       :proof="result.payment"
       :status="pixStatus"
+      :resending="resendingLink"
       large
       class="w-full max-w-md text-left"
+      @resend-link="emit('resendLink')"
     />
 
     <!-- Hierarquia única de ações (mesma disciplina do checkout): UM CTA

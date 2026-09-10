@@ -2,7 +2,10 @@
 import {
   FILTERED_SECTION_VALUE,
   buildSectionsBySku,
+  collectionDisplayLabel,
+  dynamicCollectionPublicSlug,
   filteredSections,
+  resolveSectionRefFromParam,
   uniqueItemsBySku
 } from '~/presentation/menu'
 import { collectionJsonLd } from '~/presentation/seo'
@@ -11,6 +14,7 @@ import type { MenuResponse } from '~/types/shopman'
 const apiPath = useShopmanApiPath()
 const { setFromServer } = useCartState()
 const { openSearch } = useSearchOverlay()
+const router = useRouter()
 const { data, pending, error, refresh } = await useFetch<MenuResponse>(apiPath('/api/v1/storefront/menu/'), {
   credentials: 'include'
 })
@@ -57,7 +61,7 @@ const sectionOptions = computed(() => {
   const source = (hasAppliedFilters.value || dietaryFilterOn.value) ? activeSections.value : sections.value
   return source.map(section => ({
     ref: section.ref,
-    label: section.label,
+    label: collectionDisplayLabel(section),
     count: uniqueItemsBySku([...section.items]).length,
     isFavorite: !!favoriteRef.value && [section.ref, section.category?.ref, section.dynamic_ref].includes(favoriteRef.value)
   }))
@@ -76,7 +80,9 @@ const menuFocusLabel = computed(() => {
   const count = formatCount(activeSectionCount.value, 'item encontrado', 'itens encontrados')
   if (hasAppliedFilters.value) return `${count} no filtro ativo.`
   if (activeSection.value !== 'all') return `${count} em ${activeSectionLabel.value}.`
-  return `${formatCount(filteredCount.value, 'item disponível', 'itens disponíveis')}.`
+  // Neutro de propósito: a contagem é de cards na tela, e a seção mostra também
+  // o que está indisponível — dizer "disponíveis" afirmava o que não foi medido.
+  return `${formatCount(filteredCount.value, 'item no cardápio', 'itens no cardápio')}.`
 })
 
 function sectionDomId (ref: string) {
@@ -139,7 +145,7 @@ function scrollToSection (ref: string) {
 }
 
 function selectSection (value: string | number | undefined) {
-  const ref = String(value || 'all')
+  const ref = resolveSectionRefFromParam(String(value || 'all'), sections.value)
   if (ref === 'clear-filter') {
     clearMenuFilters()
     return
@@ -239,6 +245,20 @@ function queueActiveSectionSync () {
   })
 }
 
+function routeQueryText (raw: unknown): string {
+  return Array.isArray(raw) ? String(raw[0] || '').trim() : String(raw || '').trim()
+}
+
+function applyRouteSection (raw: unknown) {
+  const secao = routeQueryText(raw)
+  if (!secao) return
+  const publicSlug = dynamicCollectionPublicSlug(secao)
+  if (publicSlug && secao !== publicSlug) {
+    void router.replace({ query: { ...route.query, secao: publicSlug } })
+  }
+  void nextTick(() => selectSection(secao))
+}
+
 watch(sectionOptions, options => {
   if (
     activeSection.value !== 'all' &&
@@ -257,14 +277,15 @@ onMounted(() => {
     appliedFilterKeys.value = filtro
     activeSection.value = FILTERED_SECTION_VALUE
   }
-  const secao = String(route.query.secao || '')
-  if (secao) void nextTick(() => selectSection(secao))
+  applyRouteSection(route.query.secao)
   updatePillRailTailWidth()
   window.addEventListener('scroll', queueActiveSectionSync, { passive: true })
   window.addEventListener('resize', updatePillRailTailWidth, { passive: true })
   window.addEventListener('resize', queueActiveSectionSync, { passive: true })
   queueActiveSectionSync()
 })
+
+watch(() => route.query.secao, applyRouteSection)
 
 onBeforeUnmount(() => {
   window.removeEventListener('scroll', queueActiveSectionSync)
@@ -310,7 +331,7 @@ useHead({
             size="icon"
             icon="lucide:search"
             aria-label="Buscar no cardápio"
-            class="shrink-0 rounded-full"
+            class="min-h-11 min-w-11 shrink-0 rounded-full"
             @click="openSearch()"
           />
           <UiTabs v-model="activeSection" class="min-w-0 flex-1" @update:model-value="selectSection">
@@ -471,8 +492,8 @@ useHead({
                 <Icon name="lucide:search-x" />
               </UiEmptyMedia>
               <UiEmptyHeader>
-                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por esse filtro' }}</UiEmptyTitle>
-                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Limpe a busca ou escolha outra seção.' }}</UiEmptyDescription>
+                <UiEmptyTitle>{{ catalog.search_empty_state?.title || 'Nada por aqui' }}</UiEmptyTitle>
+                <UiEmptyDescription>{{ catalog.search_empty_state?.message || 'Não encontramos esse item. Tente outro termo ou veja o cardápio completo.' }}</UiEmptyDescription>
               </UiEmptyHeader>
               <div v-if="catalog.search_empty_state?.cta_href && catalog.search_empty_state?.cta_label" class="flex justify-center">
                 <UiButton :to="catalog.search_empty_state.cta_href" variant="outline">{{ catalog.search_empty_state.cta_label }}</UiButton>

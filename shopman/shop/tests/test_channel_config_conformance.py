@@ -302,12 +302,12 @@ class TestStockConformance:
                 with patch("shopman.shop.lifecycle.stock.hold"):
                     with patch("shopman.shop.lifecycle.loyalty.redeem"):
                         with patch("shopman.shop.lifecycle.notification.send"):
-                            with patch("shopman.shop.lifecycle.availability.decide", return_value=_avail_ok) as mock_decide:
+                            with patch(
+                                "shopman.shop.lifecycle.availability.decide", return_value=_avail_ok
+                            ) as mock_decide:
                                 dispatch(order, "on_commit")
 
-        mock_decide.assert_called_once_with(
-            "PAIN-AU-CHOCOLAT", 2, channel_ref="web", target_date=None
-        )
+        mock_decide.assert_called_once_with("PAIN-AU-CHOCOLAT", 2, channel_ref="web", target_date=None)
 
     def test_lot_gates_default_to_the_safe_side(self):
         """Sem declaração, canal NÃO vende não conforme e não tem margem extra."""
@@ -354,7 +354,29 @@ class TestStockConformance:
             scope = stock_adapter.get_channel_scope("pos")
 
         assert scope["sells_nonconforming"] is True
+        assert scope["allowed_quality_grade_refs"] is None
         assert scope["expiry_margin_days"] == 2
+
+        full_quality = ChannelConfig.from_dict({"stock": {"sells_nonconforming": False}})
+        with _patch.object(ChannelConfig, "for_channel", return_value=full_quality):
+            scope = stock_adapter.get_channel_scope("web")
+        assert scope["allowed_quality_grade_refs"] == ["excellent", "standard"]
+
+    def test_remote_lot_grade_gate_cannot_be_relaxed_by_channel_override(self):
+        """Remote never exposes markdown stock, even with stale/mistaken config."""
+        from unittest.mock import patch as _patch
+
+        from shopman.shop.adapters import stock as stock_adapter
+        from shopman.shop.config import ChannelConfig
+
+        unsafe_remote = ChannelConfig.from_dict(
+            {"stock": {"sells_nonconforming": True}},
+        )
+        with _patch.object(ChannelConfig, "for_channel", return_value=unsafe_remote):
+            scope = stock_adapter.get_channel_scope("web")
+
+        assert scope["sells_nonconforming"] is False
+        assert scope["allowed_quality_grade_refs"] == ["excellent", "standard"]
 
 
 # ── Aspect 5: Notifications ──
@@ -430,6 +452,59 @@ class TestEditingConformance:
         cfg = ChannelConfig()
         cfg.editing.policy = "unknown"
         with pytest.raises(ValueError, match="editing.policy"):
+            cfg.validate()
+
+
+# ── Aspect 9: Display (rotação de páginas do menuboard) ──
+
+
+class TestDisplayRotationConformance:
+    def test_defaults_are_off(self):
+        cfg = ChannelConfig()
+        assert cfg.display.rotate_seconds == 0
+        assert cfg.display.items_per_page == 0
+        cfg.validate()  # ambos 0 = rotação desligada, combinação válida
+
+    def test_rotation_on_validates(self):
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 10
+        cfg.display.items_per_page = 12
+        cfg.validate()
+
+    def test_rejects_negative_or_non_int(self):
+        for field, value in (
+            ("rotate_seconds", -1),
+            ("rotate_seconds", "10"),
+            ("rotate_seconds", True),
+            ("items_per_page", -1),
+            ("items_per_page", "12"),
+            ("items_per_page", True),
+        ):
+            cfg = ChannelConfig()
+            cfg.display.rotate_seconds = 10
+            cfg.display.items_per_page = 12
+            setattr(cfg.display, field, value)
+            with pytest.raises(ValueError, match=f"display.{field}"):
+                cfg.validate()
+
+    def test_rejects_strobe_cadence(self):
+        """Abaixo de 5s ninguém lê a página: a TV viraria estroboscópio."""
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 3
+        cfg.display.items_per_page = 12
+        with pytest.raises(ValueError, match="display.rotate_seconds deve ser >= 5"):
+            cfg.validate()
+
+    def test_rejects_one_without_the_other(self):
+        """Rotação sem teto não tem página para trocar; teto sem rotação esconde."""
+        cfg = ChannelConfig()
+        cfg.display.rotate_seconds = 10
+        with pytest.raises(ValueError, match="andam juntos"):
+            cfg.validate()
+
+        cfg = ChannelConfig()
+        cfg.display.items_per_page = 12
+        with pytest.raises(ValueError, match="andam juntos"):
             cfg.validate()
 
 

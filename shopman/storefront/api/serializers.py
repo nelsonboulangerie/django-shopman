@@ -92,6 +92,12 @@ class ProductListItemSerializer(serializers.Serializer):
     can_add_to_cart = serializers.BooleanField()
     available_qty = serializers.IntegerField(allow_null=True, required=False)
     is_featured = serializers.BooleanField()
+    # O card que sabe dizer "Indisponível" tem de saber oferecer a saída: sem estes
+    # dois, um cliente deste endpoint renderiza o selo e nunca o sino "Me avise"
+    # (`is_notifiable` chega `undefined` → falso). `is_paused` fica de fora de
+    # propósito — o motivo da indisponibilidade é do operador, nunca do cliente.
+    is_notifiable = serializers.BooleanField()
+    is_notify_subscribed = serializers.BooleanField()
 
 
 @extend_schema_serializer(component_name="StorefrontCollection")
@@ -189,10 +195,13 @@ class OrderTrackingPromiseSerializer(serializers.Serializer):
     # Bloco de pagamento inline (só nos degraus com o que pagar): a antiga tela
     # de pagamento virou dado dentro do próprio acompanhamento.
     payment_method = serializers.CharField(allow_blank=True, required=False)
+    payment_method_label = serializers.CharField(allow_blank=True, required=False)
     pix_qr_code = serializers.CharField(allow_null=True, required=False)
     pix_copy_paste = serializers.CharField(allow_null=True, required=False)
     pix_expires_at = serializers.CharField(allow_null=True, required=False)
     checkout_url = serializers.CharField(allow_null=True, required=False)
+    fulfillment_wait_kind = serializers.CharField(allow_blank=True, required=False)
+    fulfillment_wait_until = serializers.CharField(allow_null=True, required=False)
 
 
 class OrderProgressStepSerializer(serializers.Serializer):
@@ -235,6 +244,8 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     cancel_dialog_message = serializers.CharField()
     cancel_dialog_confirm = serializers.CharField()
     cancel_dialog_back = serializers.CharField()
+    cancelled_reason_title = serializers.CharField()
+    refund_title = serializers.CharField()
     mock_payment_success_title = serializers.CharField()
     mock_payment_success_message = serializers.CharField()
     mock_payment_failed_title = serializers.CharField()
@@ -255,8 +266,18 @@ class OrderTrackingCopySerializer(serializers.Serializer):
     pix_copy_btn = serializers.CharField()
     pix_copied = serializers.CharField()
     pix_expires_label = serializers.CharField()
+    pix_pending_note = serializers.CharField()
+    pix_auto_update_note = serializers.CharField()
     card_intro = serializers.CharField()
     card_security_note = serializers.CharField()
+    waitlist_waiting_title = serializers.CharField()
+    waitlist_waiting_message = serializers.CharField()
+    waitlist_confirm_title = serializers.CharField()
+    waitlist_confirm_message = serializers.CharField()
+    waitlist_confirm_cta = serializers.CharField()
+    waitlist_confirmed_title = serializers.CharField()
+    waitlist_released_title = serializers.CharField()
+    waitlist_released_message = serializers.CharField()
 
 
 class OrderTrackingSerializer(serializers.Serializer):
@@ -287,12 +308,20 @@ class OrderTrackingSerializer(serializers.Serializer):
     payment_expired = serializers.BooleanField()
     payment_confirmed = serializers.BooleanField()
     payment_status_label = serializers.CharField(allow_null=True, required=False)
+    # Cancelamento pelo estabelecimento: motivo + estorno visíveis ao cliente.
+    cancellation_note = serializers.CharField(allow_blank=True, required=False)
+    refund_status_label = serializers.CharField(allow_null=True, required=False)
     payment_expires_at = serializers.CharField(allow_null=True, required=False)
     # Fusão PAYMENT-TRACKING-MERGE: sem tela de pagamento à parte. O bloco é
     # inline; a captura simulada (DEBUG/staging) é sinalizada aqui.
     mock_payment_enabled = serializers.BooleanField(required=False)
     confirmation_countdown = serializers.BooleanField()
     confirmation_expires_at = serializers.CharField(allow_null=True, required=False)
+    # Fila de espera (WP-P2E): "none" | "fermata" | "confirming" | "confirmed"
+    # | "released". Em confirming o deadline é o relógio do cliente.
+    waitlist_state = serializers.CharField(required=False)
+    waitlist_deadline = serializers.CharField(allow_null=True, required=False)
+    waitlist_planned_for_display = serializers.CharField(allow_null=True, required=False)
     eta_display = serializers.CharField(allow_null=True, required=False)
     whatsapp_url = serializers.CharField(allow_blank=True, required=False)
     support_url = serializers.CharField(allow_blank=True, required=False)
@@ -348,6 +377,7 @@ class OrderHistoryItemSerializer(serializers.Serializer):
     status_label = serializers.CharField()
     status_color = serializers.CharField(required=False)
     status_tone = serializers.CharField(required=False)
+    is_active = serializers.BooleanField(required=False)
     item_count = serializers.IntegerField(required=False)
     actions = ActionSerializer(many=True, required=False)
 

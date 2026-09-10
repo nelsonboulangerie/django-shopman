@@ -182,7 +182,9 @@ def _operator_alerts() -> list[OperatorAlertProjection]:
 
         from shopman.backstage.models import OperatorAlert
 
-        qs = OperatorAlert.objects.filter(acknowledged=False).order_by("-created_at")[:20]
+        # "Visto" silencia o toque, não cura a causa. O painel só retira o
+        # alerta quando o lifecycle grava ``resolved_at``.
+        qs = OperatorAlert.objects.filter(resolved_at__isnull=True).order_by("-created_at")[:20]
         return [
             OperatorAlertProjection(
                 pk=a.id,

@@ -147,10 +147,10 @@ useSeoMeta({ title: 'Endereços' })
               <Icon name="lucide:map-pin" class="size-5" />
             </span>
             <div class="min-w-0 flex-1">
-              <p class="flex items-center gap-2 font-semibold">
+              <div class="flex items-center gap-2 font-semibold">
                 {{ address.label }}
                 <UiBadge v-if="address.is_default" variant="secondary">Padrão</UiBadge>
-              </p>
+              </div>
               <p class="mt-0.5 shop-muted">{{ address.formatted_address }}</p>
               <p v-if="address.complement" class="shop-muted">{{ address.complement }}</p>
             </div>

@@ -22,6 +22,13 @@ _FORMAT_META = {
 }
 
 
+def _nonneg_int(value) -> int:
+    """Config é JSONField editável: valor torto projeta como 0 (desligado)."""
+    if isinstance(value, bool) or not isinstance(value, int):
+        return 0
+    return max(value, 0)
+
+
 def _output_path(ref: str, fmt: str) -> str:
     """Caminho da saída (abrir/prever).
 
@@ -51,6 +58,8 @@ class FeedProjection:
     is_active: bool
     output_path: str
     collections: tuple[FeedCollectionRef, ...]  # coleções que ele exibe (em ordem global)
+    rotate_seconds: int  # menuboard: cadência da troca de páginas (0 = sem rotação)
+    items_per_page: int  # menuboard: teto de itens por tela (0 = tudo numa página)
 
 
 @dataclass(frozen=True)
@@ -105,6 +114,8 @@ def build_feed_board() -> FeedBoardProjection:
                 is_active=sc.is_active,
                 output_path=_output_path(sc.ref, fmt),
                 collections=tuple(resolved),
+                rotate_seconds=_nonneg_int(display.get("rotate_seconds")),
+                items_per_page=_nonneg_int(display.get("items_per_page")),
             )
         )
 

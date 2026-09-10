@@ -20,7 +20,13 @@ import { formatBRL } from "~/utils/posIntent";
 const PAYMENT_ICONS: Record<string, string> = {
   cash: "lucide:banknote",
   pix: "lucide:qr-code",
+  // Três leituras de cartão, dois ícones. `card` (a forma indistinta da loja
+  // online, que o balcão não oferece mais) e o CRÉDITO compartilham o cartão
+  // clássico; o DÉBITO ganha o ícone de conta, porque o dinheiro sai na hora e é
+  // essa a diferença que o operador precisa reconhecer de relance.
   card: "lucide:credit-card",
+  credit: "lucide:credit-card",
+  debit: "lucide:landmark",
   mixed: "lucide:layers",
   external: "lucide:ellipsis",
   account: "lucide:book-user",
@@ -54,6 +60,8 @@ const METHOD_LABEL_FALLBACKS: Record<string, string> = {
   cash: "Dinheiro",
   pix: "Pix",
   card: "Cartão",
+  credit: "Crédito",
+  debit: "Débito",
   mixed: "Misto",
   external: "Outro meio",
   account: "Em conta",
@@ -101,6 +109,74 @@ export function nonCashExcessQ(tenders: POSPaymentTenderDraft[], totalQ: number)
   return excess - Math.min(excess, cashTenderSumQ(tenders));
 }
 
+// ── DIVIDIR A CONTA ──────────────────────────────────────────────────
+//
+// "Somos três, cada um paga o seu." O trilho de tenders já dava conta disso — o
+// que faltava era o operador não ter que dividir 99,45 por 3 de cabeça, com os
+// três clientes olhando.
+//
+// A divisão NÃO cria três linhas de uma vez. Ela muda o tamanho da PRÓXIMA
+// linha: com "3 pessoas" ligado, tocar em Dinheiro lança um terço, tocar em
+// Cartão lança o segundo terço, e assim por diante. É o fluxo do Odoo (pagamento
+// parcial sucessivo), com a conta feita pela máquina — e ele compõe com tudo o
+// que já existe: cada pessoa escolhe a SUA forma, o teclado continua editando
+// qualquer linha, e "Exato" continua fechando o resto.
+
+/** Quantas pessoas a tela oferece com um toque. Acima disso é caso raro. */
+export const SPLIT_PRESETS = [2, 3, 4, 5, 6];
+
+/**
+ * Quanto vale a próxima linha numa conta dividida em ``count`` pessoas.
+ *
+ * A distribuição é por acumulação (``round(total·k/n) − round(total·(k−1)/n)``),
+ * que é o único jeito de os centavos fecharem SEMPRE: dividir 100,00 por 3 dá
+ * 33,34 + 33,33 + 33,33, e nunca 33,33 três vezes com um centavo órfão que o
+ * operador teria que caçar.
+ *
+ * A ÚLTIMA parcela leva o que restou, não a fração nominal. Isso é o que mantém
+ * a conta fechada mesmo depois de o operador editar uma linha no teclado — e
+ * editar acontece o tempo todo ("esse aqui vai pagar os R$ 50, o resto divide").
+ *
+ * ``paidCount`` é quantas linhas já existem; ``remainingQ`` é o que falta.
+ */
+export function splitShareQ(
+  totalQ: number,
+  count: number,
+  paidCount: number,
+  remainingQ: number,
+): number {
+  const restante = Math.max(0, remainingQ);
+  if (count <= 1 || restante <= 0) return restante;
+  // Última parcela (ou já passou do combinado): fecha a conta.
+  if (paidCount >= count - 1) return restante;
+  const share =
+    Math.round((totalQ * (paidCount + 1)) / count) - Math.round((totalQ * paidCount) / count);
+  return Math.min(Math.max(0, share), restante);
+}
+
+/**
+ * "R$ 33,34 · 1 de 3" — o estado da divisão em uma linha.
+ *
+ * O operador precisa saber quanto pedir à PESSOA À SUA FRENTE e quantas faltam,
+ * e essas duas coisas mudam a cada linha lançada.
+ */
+export function splitHint(
+  totalQ: number,
+  count: number,
+  paidCount: number,
+  remainingQ: number,
+): string {
+  if (count <= 1) return "";
+  const restante = Math.max(0, remainingQ);
+  if (restante <= 0) return `Dividido em ${count}. Total coberto.`;
+  const proxima = splitShareQ(totalQ, count, paidCount, restante);
+  const pessoa = Math.min(paidCount + 1, count);
+  // O verbo entra porque esta frase virou a INSTRUÇÃO do rodapé, lida de longe
+     // e dita em voz alta ao cliente que está na frente. "R$ 21,00 · pessoa 3 de
+     // 3" é etiqueta de mostrador; "Peça R$ 21,00" é o que fazer agora.
+  return `Peça ${formatBRL(proxima)} · pessoa ${pessoa} de ${count}`;
+}
+
 /** UX gate: at least one tender and the total fully covered. */
 export function isPaymentCovered(tenders: POSPaymentTenderDraft[], totalQ: number): boolean {
   return tenders.length > 0 && paymentRemainingQ(tenders, totalQ) <= 0;
@@ -136,6 +212,30 @@ export function tenderLineView(
     amountQ: tender.amount_q,
     amountDisplay: formatBRL(tender.amount_q),
   };
+}
+
+/**
+ * As formas que exigem A MAQUININHA — o cartão passa fora do sistema, e o valor
+ * é digitado à mão no terminal físico.
+ *
+ * ⚠️ Esta lista é o interruptor do passo de conferência: quando o TEF da Stone
+ * entrar, o terminal passa a receber o valor pela API e a confirmação some
+ * daqui, de um lugar só. Não espalhe o par `credit`/`debit` pela tela.
+ */
+export function machineTenderLines(lines: TenderLineView[]): TenderLineView[] {
+  return lines.filter((line) => line.method === "credit" || line.method === "debit");
+}
+
+/**
+ * A cédula como o operador a chama: "R$ 50", não "R$ 50,00".
+ *
+ * Centavo em nota é ruído — não existe cédula quebrada, e o `,00` repetido seis
+ * vezes num trilho estreito rouba a largura de que os rótulos precisam. Um
+ * preset quebrado (se o contrato da loja trouxer um) volta ao formato cheio: aí
+ * o centavo é informação.
+ */
+export function cashNoteLabel(q: number): string {
+  return q % 100 === 0 ? `R$ ${Math.trunc(q / 100)}` : formatBRL(q);
 }
 
 // The Brazilian cash notes, in cents — the fallback when the channel contract
@@ -184,8 +284,43 @@ export interface PaymentProofView {
   checkoutUrl: string;
   isPix: boolean;
   isCard: boolean;
+  /** Link de pagamento: a URL é para ENTREGAR ao cliente, não para abrir aqui. */
+  isLink: boolean;
   /** Has gateway data worth surfacing (QR / copy-paste / checkout link). */
   hasProof: boolean;
+  /** "amanhã às 9h" — até quando o LINK vale, dito como o operador diz ao
+   *  cliente. Só o link: o Pix tem o próprio relógio na tela (polling). */
+  expiresDisplay: string;
+}
+
+const DIAS_CURTOS = ["dom.", "seg.", "ter.", "qua.", "qui.", "sex.", "sáb."];
+
+/**
+ * "hoje às 18h" / "amanhã às 9h" / "sáb. 6/9 às 14h" — quando o link vence.
+ *
+ * Sem prazo dito, "o link parou de funcionar" vira ligação para o balcão. O
+ * prazo é o MESMO que o pedido e o gateway carregam (`payment.expires_at`);
+ * aqui só se traduz para a frase que o operador fala ao telefone: "hoje" e
+ * "amanhã" por nome, e do dia seguinte em diante o dia da semana, que é o que
+ * o cliente pergunta. Minuto só aparece quando não é cheio ("9h30").
+ *
+ * `now` entra por parâmetro para a função ser pura (e testável em qualquer dia).
+ */
+export function paymentDeadlineLabel(iso: string, now: Date = new Date()): string {
+  if (!iso) return "";
+  const deadline = new Date(iso);
+  if (Number.isNaN(deadline.getTime())) return "";
+  const minutes = deadline.getMinutes();
+  const hora = minutes === 0
+    ? `${deadline.getHours()}h`
+    : `${deadline.getHours()}h${String(minutes).padStart(2, "0")}`;
+  // Dias entre as MEIAS-NOITES locais: "amanhã" é o dia civil seguinte, não
+  // "daqui a 24 h" — às 23h, um link que vence às 0h30 já é "amanhã".
+  const startOfDay = (date: Date) => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const dias = Math.round((startOfDay(deadline) - startOfDay(now)) / 86_400_000);
+  if (dias === 0) return `hoje às ${hora}`;
+  if (dias === 1) return `amanhã às ${hora}`;
+  return `${DIAS_CURTOS[deadline.getDay()]} ${deadline.getDate()}/${deadline.getMonth() + 1} às ${hora}`;
 }
 
 /**
@@ -208,10 +343,15 @@ export function qrCodeSrc(qrCode: string): string {
  */
 export function paymentProofView(
   result: POSPaymentResultProjection | null | undefined,
+  now: Date = new Date(),
 ): PaymentProofView | null {
   if (!result || !result.method) return null;
   const method = result.method;
-  if (method !== "pix" && method !== "card") return null;
+  // Só quem gera PROVA REMOTA tem comprovante para mostrar: o Pix (QR + copia e
+  // cola), o `card` da loja online e o LINK do pedido remoto (URL hospedada).
+  // Crédito e débito do balcão não passam por gateway nenhum — a maquininha é
+  // física e o comprovante é o papel que ela imprime.
+  if (method !== "pix" && method !== "card" && method !== "link") return null;
   const qrSrc = qrCodeSrc(result.qr_code || "");
   const copyPaste = result.copy_paste || "";
   const checkoutUrl = result.checkout_url || "";
@@ -227,7 +367,16 @@ export function paymentProofView(
     checkoutUrl,
     isPix: method === "pix",
     isCard: method === "card",
+    // O LINK é para ENTREGAR, não para abrir aqui. O `card` da loja online abre
+    // o checkout numa aba — faz sentido lá, onde quem está na frente da tela é
+    // quem compra. No balcão quem está na frente é o OPERADOR: abrir a página de
+    // pagamento no PDV significaria ele digitando o cartão do cliente, que é
+    // exatamente o que a maquininha existe para não acontecer.
+    // O que ele precisa é passar a URL adiante — pelo QR que o cliente aponta o
+    // celular, ou copiada para o WhatsApp.
+    isLink: method === "link",
     hasProof: Boolean(qrSrc || copyPaste || checkoutUrl),
+    expiresDisplay: method === "link" ? paymentDeadlineLabel(result.expires_at || "", now) : "",
   };
 }
 
@@ -241,19 +390,63 @@ export function paymentProofView(
  *  linha errada com o cliente na frente). Acento é normalizado — "Cartão" começa
  *  com C, e o teclado do balcão não tem "Ç" fácil.
  */
+/**
+ * A TECLA DE CADA FORMA — mapa explícito, por `ref`.
+ *
+ * ⚠️ Ela era DERIVADA da inicial do rótulo, e a derivação morreu no dia em que o
+ * balcão passou a distinguir crédito de débito: "Dinheiro" e "Débito" disputam o
+ * D, "Cartão" e "Crédito" disputam o C. O desempate era a ordem da lista — quem
+ * chegasse depois ficava mudo, sem nada na tela dizendo por quê.
+ *
+ * As letras foram escolhidas para não colidirem e para caberem na cabeça:
+ *
+ *   R  Dinheiro   (de Reais — o D já é do débito)
+ *   P  Pix
+ *   C  Crédito
+ *   D  Débito
+ *   L  Link de pagamento
+ *
+ * Formas que o mapa não conhece caem na inicial, como antes: é o caso de "Em
+ * conta" (E), que só aparece para cliente com conta na casa. Colisão com uma
+ * letra já tomada deixa a forma sem atalho — o botão continua lá.
+ */
+const METHOD_KEYS: Record<string, string> = {
+  cash: "R",
+  pix: "P",
+  credit: "C",
+  debit: "D",
+  link: "L",
+  card: "C",
+};
+
+/**
+ * LETRAS COM DONO FORA DAS FORMAS DE PAGAMENTO — e por isso proibidas aqui.
+ *
+ * F (CPF na nota), I (nota impressa) e M (nota por e-mail) são as três perguntas
+ * da seção Nota fiscal, e o operador as digita no mesmo checkout. A inicial do
+ * rótulo é o caminho de quem não está no `METHOD_KEYS`, então bastaria a casa
+ * cadastrar uma forma "Fiado" para o F trocar de dono em silêncio: o operador
+ * apertaria a tecla do CPF e lançaria uma forma de pagamento, com o cliente na
+ * frente.
+ *
+ * Reservar deixa a forma SEM atalho — o mesmo destino de qualquer colisão, e o
+ * botão continua na tela.
+ */
+const RESERVED_KEYS = new Set(["F", "I", "M"]);
+
 export function methodShortcuts(
   methods: POSPaymentMethodProjection[],
 ): Record<string, string> {
   const taken = new Set<string>();
   const out: Record<string, string> = {};
   for (const method of methods) {
-    const letter = (method.label || method.ref)
+    const letter = METHOD_KEYS[method.ref] || (method.label || method.ref)
       .normalize("NFD")
       .replace(/[\u0300-\u036f]/g, "")
       .trim()
       .charAt(0)
       .toUpperCase();
-    if (!/^[A-Z]$/.test(letter) || taken.has(letter)) continue;
+    if (!/^[A-Z]$/.test(letter) || RESERVED_KEYS.has(letter) || taken.has(letter)) continue;
     taken.add(letter);
     out[method.ref] = letter;
   }

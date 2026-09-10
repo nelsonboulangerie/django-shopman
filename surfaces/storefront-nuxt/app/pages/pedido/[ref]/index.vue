@@ -5,6 +5,7 @@ import {
   pollIntervalMs,
   ratingThanksView,
   timelineActiveStep,
+  timelineStepStateLabel,
   trackingFreshness,
   trackingPanelClass,
   trackingPanelIcon,
@@ -187,10 +188,17 @@ const summaryRows = computed(() => {
   const rows: { icon: string, lines: string[], muted?: string }[] = [
     { icon: t.is_delivery ? 'lucide:bike' : 'lucide:store', lines: [t.is_delivery ? (t.copy.delivery_heading || 'Entrega') : (t.pickup_info?.heading || 'Retirada')] }
   ]
+  // O combinado que a pessoa escolheu no checkout ("sábado, 19/07 · A partir das
+  // 09h") e o horário previsto vinham prontos do servidor e não apareciam em
+  // lugar nenhum: o resumo listava tipo de entrega, taxa e pagamento, mas nunca
+  // QUANDO. `when_display` só vem preenchido em encomenda; `eta_display`, quando
+  // há previsão.
+  if (t.when_display) rows.push({ icon: 'lucide:calendar-clock', lines: [t.when_display] })
+  if (t.eta_display) rows.push({ icon: 'lucide:timer', lines: [`Previsto para ${t.eta_display}`] })
   if (t.delivery_fee_display) {
     rows.push({ icon: 'lucide:coins', lines: [`Taxa ${t.delivery_fee_display}${t.delivery_distance_display ? ` · ${t.delivery_distance_display}` : ''}`] })
   }
-  const paymentLabel = t.payment_status_label || t.payment_status
+  const paymentLabel = t.payment_status_label
   if (paymentLabel) rows.push({ icon: 'lucide:credit-card', lines: [paymentLabel] })
   return rows
 })
@@ -343,6 +351,40 @@ async function mockConfirmPayment () {
   }
 }
 
+// Fila de espera: a fornada saiu e a vaga é do cliente por um prazo. O
+// acompanhamento é a superfície que SEMPRE existe — a notificação pode não ter
+// chegado (janela do WhatsApp, número trocado), e mesmo assim o prazo corre.
+const waitlistPending = ref(false)
+const waitlistState = computed(() => tracking.value?.waitlist_state || 'none')
+const waitlistDeadlineLeft = computed(() => {
+  const deadline = tracking.value?.waitlist_deadline
+  if (!deadline || waitlistState.value !== 'confirming') return ''
+  const ms = new Date(deadline).getTime() - nowMs.value
+  if (!Number.isFinite(ms) || ms <= 0) return ''
+  const totalSeconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
+})
+
+async function confirmWaitlistSlot () {
+  if (waitlistPending.value) return
+  waitlistPending.value = true
+  try {
+    const headers = await csrfHeaders()
+    headers['x-idempotency-key'] = newRemoteMutationKey(`waitlist-confirm:${orderRef.value}`)
+    await $fetch(apiPath(`/api/v1/orders/${encodeURIComponent(orderRef.value)}/waitlist-confirm/`), {
+      method: 'POST', headers, credentials: 'include'
+    })
+    await refresh()
+  } catch (e) {
+    if (import.meta.client) useSonner.error(errorDetail(e, 'Não foi possível confirmar agora.'))
+    await refresh()
+  } finally {
+    waitlistPending.value = false
+  }
+}
+
 function dismissReorderConflict () {
   conflict.value = null
 }
@@ -373,9 +415,16 @@ async function compartilhar (event: MouseEvent) {
   await shareNatively(shareText.value)
 }
 
+// O cartão do link repete o que a mensagem já disse: o número do pedido. É o link
+// que a casa mais manda, e chegar como "Pedido NB-260903-A19" em vez do nome da
+// loja é o que faz o cliente reconhecer antes de tocar.
 useSeoMeta({
   title: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
-  description: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido'
+  description: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido',
+  ogTitle: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
+  ogDescription: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido',
+  twitterTitle: () => tracking.value ? `Pedido ${tracking.value.ref}` : 'Acompanhamento',
+  twitterDescription: () => tracking.value?.copy.page_meta_description || 'Acompanhe seu pedido'
 })
 </script>
 
@@ -461,6 +510,74 @@ useSeoMeta({
                 <!-- Nota de rodapé: complemento opcional, sem rótulo. Fica em tom
                      secundário para não competir com o aviso principal. -->
                 <p v-if="tracking.promise.footnote" class="shop-body">{{ tracking.promise.footnote }}</p>
+
+                <!-- Cancelamento pelo estabelecimento: motivo + estorno visíveis —
+                     o cliente não depende da notificação para saber o porquê. -->
+                <div
+                  v-if="tracking.status === 'cancelled' && (tracking.cancellation_note || tracking.refund_status_label)"
+                  class="mt-2 space-y-1 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+                  data-cancellation-info
+                >
+                  <p v-if="tracking.cancellation_note">
+                    <span class="font-semibold">{{ tracking.copy.cancelled_reason_title }}:</span>
+                    {{ tracking.cancellation_note }}
+                  </p>
+                  <p v-if="tracking.refund_status_label">
+                    <span class="font-semibold">{{ tracking.copy.refund_title }}:</span>
+                    {{ tracking.refund_status_label }}
+                  </p>
+                </div>
+
+                <!-- Fila de espera: a promessa em duas fases, dita na tela que
+                     sempre existe. Esperar não cobra nada; o chamado tem relógio;
+                     a saída é dita sem culpa e com a porta aberta. -->
+                <div
+                  v-if="waitlistState === 'fermata'"
+                  class="mt-2 space-y-1 rounded-md border bg-muted/40 p-3 text-sm"
+                  data-waitlist="fermata"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_waiting_title }}</p>
+                  <p>{{ tracking.copy.waitlist_waiting_message }}</p>
+                  <p v-if="tracking.waitlist_planned_for_display" class="shop-body">
+                    Fornada prevista para {{ tracking.waitlist_planned_for_display }}.
+                  </p>
+                </div>
+
+                <div
+                  v-else-if="waitlistState === 'confirming'"
+                  class="mt-2 space-y-2 rounded-md border border-primary/40 bg-primary/5 p-3 text-sm"
+                  data-waitlist="confirming"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_confirm_title }}</p>
+                  <p>{{ tracking.copy.waitlist_confirm_message }}</p>
+                  <p v-if="waitlistDeadlineLeft" class="tabular-nums font-semibold" aria-live="polite">
+                    Confirme em {{ waitlistDeadlineLeft }}
+                  </p>
+                  <UiButton
+                    :disabled="waitlistPending"
+                    :loading="waitlistPending"
+                    @click="confirmWaitlistSlot"
+                  >
+                    {{ tracking.copy.waitlist_confirm_cta }}
+                  </UiButton>
+                </div>
+
+                <p
+                  v-else-if="waitlistState === 'confirmed'"
+                  class="mt-2 rounded-md border bg-muted/40 p-3 text-sm font-semibold"
+                  data-waitlist="confirmed"
+                >
+                  {{ tracking.copy.waitlist_confirmed_title }}
+                </p>
+
+                <div
+                  v-else-if="waitlistState === 'released'"
+                  class="mt-2 space-y-1 rounded-md border bg-muted/40 p-3 text-sm"
+                  data-waitlist="released"
+                >
+                  <p class="font-semibold">{{ tracking.copy.waitlist_released_title }}</p>
+                  <p>{{ tracking.copy.waitlist_released_message }}</p>
+                </div>
 
                 <!-- Offline imediato: o cliente vê "sem conexão" na hora, sem esperar
                      o dado ficar velho pelo limiar de frescor. -->
@@ -596,7 +713,9 @@ useSeoMeta({
                           class="group-data-[orientation=vertical]/timeline:-left-7 group-data-[orientation=vertical]/timeline:h-[calc(100%-1.5rem-0.25rem)] group-data-[orientation=vertical]/timeline:translate-y-6.5"
                         />
                         <UiTimelineDate v-if="step.timestamp_display">{{ step.timestamp_display }}</UiTimelineDate>
-                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">{{ step.label }}</UiTimelineTitle>
+                        <UiTimelineTitle :class="step.state === 'cancelled' ? 'text-destructive' : ''">
+                          {{ step.label }}<span class="sr-only">, {{ timelineStepStateLabel(step.state) }}</span>
+                        </UiTimelineTitle>
                         <!-- Passo cancelado: indicador próprio (X destrutivo), nunca um
                              check verde de "concluído" — a timeline não pode contradizer
                              o painel de status em tom danger. -->
@@ -605,6 +724,15 @@ useSeoMeta({
                           class="flex size-6 items-center justify-center border-none bg-destructive text-destructive-foreground group-data-[orientation=vertical]/timeline:-left-7"
                         >
                           <Icon name="lucide:x" :size="16" />
+                        </UiTimelineIndicator>
+                        <!-- Passo ATUAL: o contrato separa `current` de `completed`, e
+                             carimbar o check no passo em andamento dizia "já foi" sobre
+                             o que está acontecendo agora. Ponto cheio, não ✓. -->
+                        <UiTimelineIndicator
+                          v-else-if="step.state === 'current'"
+                          class="flex size-6 items-center justify-center border-none bg-primary text-primary-foreground group-data-[orientation=vertical]/timeline:-left-7"
+                        >
+                          <span class="size-2 rounded-full bg-primary-foreground" />
                         </UiTimelineIndicator>
                         <UiTimelineIndicator
                           v-else

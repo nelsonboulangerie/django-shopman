@@ -16,15 +16,23 @@ def _get_ticket(ticket_pk: int):
 
 
 def set_ticket_item_checked(*, ticket_pk: int, index: int, checked: bool, actor: str):
+    """Marca ou desmarca o item — SEM ler o estado atual antes para decidir.
+
+    A leitura pré-lock era o bug: ela decidia "isto muda ou não" com dado sujo, e o
+    `select_for_update` do core protegia só a inversão. Ver
+    `shopman/shop/services/kds.py:set_ticket_item_checked` — o item desmarcava
+    sozinho com dois tablets na bancada.
+
+    Escrever sempre é mais barato que ler-comparar-escrever, e é correto sob
+    concorrência: a última escrita ganha, e as duas telas convergem para ela.
+    """
     ticket = _get_ticket(ticket_pk)
     if not 0 <= index < len(ticket.items):
         raise KDSError("Item não encontrado.")
 
-    current = bool(ticket.items[index].get("checked", False))
-    if current != checked:
-        if not kds_core.toggle_ticket_item(ticket, index=index, actor=actor):
-            raise KDSError("Ticket não está aberto.")
-        ticket.refresh_from_db()
+    if not kds_core.set_ticket_item_checked(ticket, index=index, checked=checked, actor=actor):
+        raise KDSError("Ticket não está aberto.")
+    ticket.refresh_from_db()
     return ticket
 
 

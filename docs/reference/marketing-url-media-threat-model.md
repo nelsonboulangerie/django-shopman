@@ -39,7 +39,7 @@ fetch, redirects e endereços finais do ManyChat/Meta.
 - Mídia relativa permanece same-origin; mídia absoluta exige HTTPS e hostname presente em
   `SHOPMAN_MARKETING_MEDIA_HOSTS` ou no origin da storefront.
 - A lista contém somente hostname exato. URL completa, wildcard, porta e IP privado fazem
-  o deploy check `SHOPMAN_E017` falhar.
+  o deploy check `SHOPMAN_E021` falhar.
 - O default é vazio. Assim, uma nova origem externa falha na prévia/aprovação com reparo
   no campo exato, em vez de ser confiada implicitamente.
 

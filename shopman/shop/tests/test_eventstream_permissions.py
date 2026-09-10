@@ -219,7 +219,21 @@ def test_channel_permissions_mirror_the_views_that_serve_the_same_data():
 
     assert OrderQueueView.required_permission in rules["orders"]
     assert KDSBoardView.required_permission in rules["kds"]
-    assert ProductionBoardView.required_permission in rules["production"]
+    assert ProductionBoardView.required_production_capability == "can_access_board"
+    assert set(rules["production"]) == {
+        "shop.manage_production",
+        "backstage.operate_production",
+        "shop.view_production_suggested",
+        "shop.edit_production_suggested",
+        "shop.view_production_planned",
+        "shop.edit_production_planned",
+        "shop.view_production_started",
+        "shop.edit_production_started",
+        "shop.view_production_finished",
+        "shop.edit_production_finished",
+        "shop.view_production_unsold",
+        "shop.edit_production_unsold",
+    }
     # `cash` alimenta a mesma tela que o `POSView` serve — mesma régua.
     assert rules["cash"] == (POSView.required_permission,)
     # `alerts` espelha a metade estática de `can_view_operator_alerts` (a régua

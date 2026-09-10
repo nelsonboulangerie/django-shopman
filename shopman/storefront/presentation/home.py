@@ -122,6 +122,7 @@ class AuthCopyProjection:
     phone_subtitle: CopyEntryProjection
     wa_cart_kept: CopyEntryProjection
     wa_glimpse: CopyEntryProjection
+    wa_glimpse_with_cart: CopyEntryProjection
     wa_manual_title: CopyEntryProjection
     wa_manual_intro: CopyEntryProjection
     phone_cta_wa: CopyEntryProjection
@@ -163,6 +164,39 @@ class PublicConfigProjection:
     # DDD padrão da loja (Shop.default_ddd, config admin): o client assume quando o
     # cliente digita um telefone sem DDD, espelhando o Doorman (intents/_phone.py).
     default_ddd: str
+    # AMBIENTE — o aviso de que esta loja não é a de verdade. Vazio em produção,
+    # e a tela não renderiza nada. Ver `_environment_notice`.
+    environment_notice: str = ""
+
+
+#: O que a tarja diz, por ambiente. Só isto: uma frase curta, sem instrução —
+#: quem está na loja não precisa saber o que é "staging".
+_ENVIRONMENT_NOTICES = {
+    "staging": "Ambiente de testes",
+    "development": "Ambiente de desenvolvimento",
+    "dev": "Ambiente de desenvolvimento",
+    "local": "Ambiente local",
+}
+
+
+def _environment_notice() -> str:
+    """A frase da tarja, ou "" quando esta é a loja de verdade.
+
+    Sai de ``SHOPMAN_ENVIRONMENT``, que é a MESMA variável que já decide o gate
+    de deploy, o mock de pagamento e o debug do OTP. Um segundo interruptor só
+    para a tarja seria uma segunda verdade sobre o mesmo fato — e no dia em que
+    alguém virasse um e esquecesse o outro, a loja de verdade estaria dizendo
+    "ambiente de testes" ou, pior, a de teste estaria calada.
+
+    Ambiente desconhecido devolve "" de propósito: uma tarja que aparece sozinha
+    numa loja em produção por causa de um valor digitado errado assusta cliente.
+    Falhar aqui é falhar para o lado silencioso — o oposto do que vale para
+    dinheiro e promessa, porque aqui o dano é o alarme falso.
+    """
+    from django.conf import settings
+
+    ambiente = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
+    return _ENVIRONMENT_NOTICES.get(ambiente, "")
 
 
 @dataclass(frozen=True)
@@ -239,6 +273,7 @@ def build_home(request: HttpRequest, *, cart_has_items: bool | None = None) -> H
         shop_latitude=shop_latitude,
         shop_longitude=shop_longitude,
         default_ddd=get_default_ddd(),
+        environment_notice=_environment_notice(),
     )
 
     notice_cart_has_items = (
@@ -306,6 +341,7 @@ def _home_notices(
                 label="Ver cardápio",
                 href="/menu",
                 priority="secondary",
+                idempotency="none",
             )
         ]
         if whatsapp_url:
@@ -315,6 +351,7 @@ def _home_notices(
                 label="Falar no WhatsApp",
                 href=whatsapp_url,
                 priority="quiet",
+                idempotency="none",
             ))
 
         notices.append(HomeNoticeProjection(
@@ -340,6 +377,7 @@ def _home_notices(
                     label="Finalizar pedido",
                     href="/finalizar",
                     priority="primary",
+                    idempotency="none",
                 ),
             ),
         ))
@@ -470,6 +508,7 @@ def _auth_copy(omotenashi: OmotenashiProjection) -> AuthCopyProjection:
         phone_subtitle=_copy_entry("LOGIN_PHONE_SUBTITLE", omotenashi=omotenashi),
         wa_cart_kept=_copy_entry("LOGIN_WA_CART_KEPT", omotenashi=omotenashi),
         wa_glimpse=_copy_entry("LOGIN_WA_GLIMPSE", omotenashi=omotenashi),
+        wa_glimpse_with_cart=_copy_entry("LOGIN_WA_GLIMPSE_WITH_CART", omotenashi=omotenashi),
         wa_manual_title=_copy_entry("LOGIN_WA_MANUAL_TITLE", omotenashi=omotenashi),
         wa_manual_intro=_copy_entry("LOGIN_WA_MANUAL_INTRO", omotenashi=omotenashi),
         phone_cta_wa=_copy_entry("LOGIN_PHONE_CTA_WA", omotenashi=omotenashi),

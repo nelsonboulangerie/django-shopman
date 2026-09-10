@@ -40,6 +40,26 @@ class CraftError(BaseError):
     }
 
 
+class RecipeBookError(CraftError):
+    """Erro do inventário de receitas (RecipeEntry / RecipeVersion).
+
+    ``FORMULA_INVALID`` carrega o caminho do campo ofensor em ``data["field"]``
+    (ex.: ``items[2].quantity``) para a tela apontar a linha certa.
+    """
+
+    _default_messages = {
+        **CraftError._default_messages,
+        "FORMULA_INVALID": "A fórmula não segue o schema esperado.",
+        "ENTRY_WITHOUT_SKU": "A receita precisa de um SKU de saída para ser publicada.",
+        "ITEM_WITHOUT_SKU": "Todo ingrediente precisa de um insumo associado para publicar.",
+        "VERSION_NOT_DRAFT": "Só um rascunho pode ser editado ou publicado.",
+        "PART_WITHOUT_FORMULA": "A parte não tem fórmula conhecida; publique a receita da parte antes.",
+        "PART_EXCEEDS_BASE": "A parte contém mais de um ingrediente do que a receita base declara.",
+        "ENTRY_ARCHIVED": "A receita está arquivada.",
+        "ANCHOR_EMPTY": "A âncora da fórmula soma zero; não há como padronizar.",
+    }
+
+
 class StaleRevision(CraftError):
     """Raised when expected_rev does not match the current rev."""
 

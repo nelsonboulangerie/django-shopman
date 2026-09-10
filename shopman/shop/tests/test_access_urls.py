@@ -172,7 +172,15 @@ class TestNotificationContextEnrichment:
         assert "reorder_url" in ctx
         assert ctx["reorder_url"] is not None
 
-    def test_no_urls_when_uuid_absent(self):
+    def test_tracking_url_falls_back_to_plain_link_when_uuid_absent(self, settings):
+        """Sem magic link, o acompanhamento vira o link COMUM — nunca some.
+
+        O pedido da loja não grava `customer.uuid`, então este é o caso NORMAL, não
+        a exceção. Quando a chave sumia do contexto, o texto do Admin entregava
+        `{tracking_url}` literal na tela do cliente (campo, 01/09). Mesmo critério do
+        `payment_url`, que já caía no link comum.
+        """
+        settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
         from shopman.shop.services.notification import _build_context
 
         order = MagicMock()
@@ -183,10 +191,13 @@ class TestNotificationContextEnrichment:
         order.snapshot = {"items": []}
 
         ctx = _build_context(order, {"order_ref": "ORD-002"}, "order_accepted")
-        assert "tracking_url" not in ctx
+        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-002"
+        # Não há link comum de "pedir de novo" (o histórico exige login); o template
+        # consome isso pelo `{reorder_suffix}`, que se auto-suprime.
         assert "reorder_url" not in ctx
 
-    def test_no_urls_when_customer_data_missing(self):
+    def test_tracking_url_falls_back_when_customer_data_missing(self, settings):
+        settings.SHOPMAN_STOREFRONT_BASE_URL = "https://shop.test"
         from shopman.shop.services.notification import _build_context
 
         order = MagicMock()
@@ -197,7 +208,7 @@ class TestNotificationContextEnrichment:
         order.snapshot = {"items": []}
 
         ctx = _build_context(order, {}, "order_accepted")
-        assert "tracking_url" not in ctx
+        assert ctx["tracking_url"] == "https://shop.test/pedido/ORD-003"
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -10,6 +10,7 @@ import {
   composedAddressLine,
   draftFromGooglePlace,
   draftFromSavedAddress,
+  draftFromSelection,
   draftFromViaCep,
   draftSummaryLine,
   emptyAddressDraft,
@@ -48,11 +49,18 @@ const props = withDefaults(defineProps<{
   preselectedId?: number | null
   editingAddress?: SavedAddressProjection | null
   initialIsDefault?: boolean
+  // Seleção já feita (v-model, checkout): no REMOUNT (voltar do cardápio com o
+  // rascunho restaurado, alternar entrega↔retirada) o picker nasce dela em vez
+  // de re-selecionar o preselected — endereço salvo re-marca o rádio, endereço
+  // novo reabre o form preenchido. Sem isso, o watcher immediate atropelava o
+  // que o cliente já tinha escolhido/digitado.
+  selection?: AddressSelection | null
 }>(), {
   savedAddresses: () => [],
   preselectedId: null,
   editingAddress: null,
-  initialIsDefault: false
+  initialIsDefault: false,
+  selection: null
 })
 
 const emit = defineEmits<{
@@ -79,7 +87,9 @@ const mode = ref<PickerMode>(initialMode())
 const draft = reactive<AddressDraft>(initialDraft())
 const fieldErrors = ref<Record<string, string>>({})
 const acceptedLine = ref(initialAcceptedLine())
-const selectedSavedId = ref<number | null>(null)
+// Nasce da seleção reidratada (rascunho): com o id já marcado, o watcher de
+// preseleção abaixo respeita a escolha restaurada em vez de re-selecionar.
+const selectedSavedId = ref<number | null>(props.context === 'checkout' ? (props.selection?.savedAddressId ?? null) : null)
 
 const query = ref('')
 const searching = ref(false)
@@ -125,18 +135,29 @@ const surfaceChrome = computed(() => (props.context === 'checkout' ? 'rounded-lg
 const canAdjustOnMap = computed(() => maps.enabled.value && draft.latitude != null && draft.longitude != null)
 const draftLine = computed(() => draftSummaryLine(draft as AddressDraft))
 
+// Seleção reidratada de endereço NOVO (sem id salvo): o form reabre preenchido.
+function rehydratedNewSelection (): AddressSelection | null {
+  if (props.context !== 'checkout' || !props.selection || props.selection.savedAddressId) return null
+  return props.selection
+}
+
 function initialMode (): PickerMode {
   if (props.editingAddress) return 'form'
+  if (rehydratedNewSelection()) return 'form'
   if (props.context === 'checkout' && props.savedAddresses.length) return 'saved'
   return 'search'
 }
 
 function initialDraft (): AddressDraft {
-  return props.editingAddress ? draftFromSavedAddress(props.editingAddress) : emptyAddressDraft()
+  if (props.editingAddress) return draftFromSavedAddress(props.editingAddress)
+  const restored = rehydratedNewSelection()
+  if (restored) return draftFromSelection(restored)
+  return emptyAddressDraft()
 }
 
 function initialAcceptedLine (): string {
-  return props.editingAddress ? (props.editingAddress.formatted_address || '') : ''
+  if (props.editingAddress) return props.editingAddress.formatted_address || ''
+  return rehydratedNewSelection()?.formattedAddress || ''
 }
 
 // ── Salvos (checkout) ──────────────────────────────────────────────────

@@ -97,7 +97,7 @@ def _nfe_xml(
 @pytest.fixture
 def supplier(db):
     return Supplier.objects.create(
-        ref="SUP-MOINHO-SP",
+        ref="moinho-sp",
         name="Moinho Sao Paulo",
         document="12.345.678/0001-90",
         metadata={

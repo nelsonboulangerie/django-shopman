@@ -38,6 +38,9 @@
     .row.out .name, .row.out .price { color: var(--dim); text-decoration: line-through; text-decoration-thickness: 1px; }
     .tag-out { color: var(--board); background: var(--dim); border-radius: 999px; font-size: 0.7em; padding: 0.05em 0.6em; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
     footer { text-align: center; color: var(--dim); font-size: 0.85rem; letter-spacing: 0.12em; margin-top: 2rem; }
+    .page-dots { text-align: center; margin-top: 1.8rem; }
+    .dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--rule); margin: 0 0.3rem; transition: background 0.4s; }
+    .dot.on { background: var(--gold); }
     .live-dot { display: inline-block; width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--gold); margin-right: 0.4rem; vertical-align: middle; }
     .live-dot.stale { background: var(--dim); }
     .empty { text-align: center; color: var(--dim); padding: 4rem 0; font-size: 1.2rem; }
@@ -95,7 +98,7 @@
       <div class="subtitle" x-text="board.subtitle"></div>
     </header>
     <div class="cols">
-      <template x-for="group in board.groups" :key="group.title">
+      <template x-for="group in currentGroups" :key="group.title">
         <section>
           <div class="section-title" x-text="group.title"></div>
           <template x-for="it in group.items" :key="it.sku">
@@ -113,6 +116,11 @@
       </template>
     </div>
     <div class="empty" x-show="totalItems === 0">Sem itens no momento.</div>
+    <div class="page-dots" x-show="pages.length > 1" aria-hidden="true">
+      <template x-for="(p, i) in pages" :key="i">
+        <span class="dot" :class="{ on: i === page }"></span>
+      </template>
+    </div>
     <footer>
       <span class="live-dot" :class="{ stale: !live }"></span>
       <span x-text="live ? 'ao vivo' : 'reconectando…'"></span>

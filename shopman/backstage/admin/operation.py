@@ -146,7 +146,12 @@ class OperationChecklistRunAdmin(ModelAdmin):
     def progress_display(self, obj):
         return unfold_badge_numeric(f"{obj.done_tasks}/{obj.total_tasks} ({obj.progress_percent}%)", "base")
 
-    @admin.action(description="Concluir checklists selecionados")
+    # ⚠️ `permissions=["change"]` não é zelo: ação sem `permissions=` NÃO é
+    # filtrada pelo Django, aparece no seletor e roda para quem só tem `view`.
+    # A Gerente tem `_ver("backstage")` e não tem `change_operationchecklistrun`
+    # — sem isto ela carimbava `completed_by`/`completed_at`, que é assinatura
+    # de conformidade, sem ter o direito de escrever no modelo.
+    @admin.action(description="Concluir checklists selecionados", permissions=["change"])
     def complete_selected(self, request, queryset):
         completed = 0
         for run in queryset:

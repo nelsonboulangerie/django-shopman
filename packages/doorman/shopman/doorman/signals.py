@@ -38,9 +38,17 @@ Kwargs:
     customer (AuthCustomerInfo): The target customer.
     audience (str): Token audience (web_checkout, web_account, etc.).
     source (str): Token source (manychat, internal, api).
+    url (str): The entry URL. Só existe aqui — o `token` guarda o HASH, então
+        quem quiser ENTREGAR o link depende deste kwarg.
 
 When emitted:
     After AccessLinkService.create_token() successfully creates a token.
+
+⚠️ Este signal dispara MUITO: todo `{tracking_url}` embutido numa notificação de
+pedido também cria um AccessLink com ``source="manychat"``. Quem escuta para
+mandar mensagem tem de filtrar por intenção explícita
+(``token.metadata["deliver"]``), nunca pela origem — senão cada aviso de pedido
+vira uma mensagem extra no WhatsApp do cliente.
 
 Example::
 

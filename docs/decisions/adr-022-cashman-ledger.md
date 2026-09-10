@@ -114,6 +114,59 @@ caixa é o terceiro domínio de quantidade e o único sem livro.
   "dinheiro na gaveta"; `Order.data.payment` a única de "como o pedido declarou".
 - Cada destrave da trava é uma linha `drawer_unlock` com `approved_by`.
 
+> ⚠️ **Revisto em 29/08 — a trava mudou de natureza.** Quando esta ADR foi
+> aceita, a trava era um pedágio: barrava a próxima venda e o gerente liberava
+> UMA venda com a gaveta ainda aberta. O dono trocou por **trava dura, liberada
+> pelo mundo físico**: o PDV não anda enquanto a gaveta estiver aberta, e o
+> bloqueio cai sozinho quando o sensor diz que ela fechou.
+>
+> O que muda no livro:
+>
+> - `drawer_unlock` deixa de ser o destrave e passa a ser a **exceção** (gaveta
+>   emperrada aberta, sensor morto). O payload ganha `outcome`
+>   (`manager_override` | `sensor_lost`) e `duration_ms`, porque emergência
+>   indistinguível de rotina some na média — e a anomalia que interessa é o
+>   gerente que libera 20× por dia.
+> - Nasce a linha `note` com `payload.event = "drawer_blocked"`
+>   (`outcome`, `duration_ms`): o fechamento normal, que antes não existia como
+>   registro. É ela que torna a **duração real** da gaveta aberta mensurável —
+>   o PIN cortava a medição no meio.
+> - Nasce a linha `note` com `payload.event = "drawer_left_open"` (`minutes`): a
+>   gaveta esquecida aberta na hora morta, que a trava não vê porque ninguém
+>   tenta vender.
+> - Nasce a linha `note` com `payload.event = "drawer_sensor_blind"`: a trava
+>   caiu numa estação que TINHA medição. Ela falha aberta de propósito, e por
+>   isso precisa gritar — sem isso, puxar o cabo da gaveta desligava a proteção
+>   para sempre, em silêncio.
+>
+> - Nasce a linha `note` com `payload.event = "drawer_unlock_attempt"`
+>   (`outcome`): alguém abriu a tela de PIN, **inclusive quem desistiu**. A
+>   saída de emergência é escondida (Esc, sem botão na tela) porque um botão
+>   ensina o bypass; e é por ser escondida que PROCURÁ-LA é informação.
+>
+> ⚠️ **Correção de 29/08, achada olhando a TELA e não pelos testes.** O botão de
+> fechar do diálogo encerrava o bloqueio sem gerar linha nenhuma. Não era brecha
+> de venda — largar a venda que esperava não libera nada, e a tentativa seguinte
+> trava de novo —, mas era brecha de RASTRO: dava para esbarrar na trava e
+> desistir a manhã inteira sem deixar registro. Nasceu o desfecho `dismissed`, e
+> **todo** fim de episódio passou a ter um dono só no código (`takeEpisode`),
+> incluindo sair da tela e recarregar a página. Desistência repetida no mesmo
+> turno virou a anomalia `gave_up_repeatedly`.
+>
+> O `bi_cash` lê tudo isso: `drawer_by_operator` (bloqueios, tempo somado de
+> gaveta aberta, pior episódio, destraves, buscas pelo PIN, sensor mudo,
+> esquecimentos) e `drawer_anomalies`, que aponta o turno quando o padrão não
+> fecha.
+>
+> ⚠️ **O limite honesto.** O agente do balcão roda NA máquina do caixa: quem tem
+> a máquina tem o canal. Derrubar o agente, puxar o cabo da gaveta ou pôr um
+> impostor na loopback respondendo `open: false` desliga a trava, e o navegador
+> não tem como distinguir — o token que autentica o agente é entregue a ele.
+> Isso é **indefensável no PDV, e a defesa é o reconhecimento**: cada manobra
+> dessas deixa assinatura no livro, quase sempre como AUSÊNCIA. Um turno com
+> dinheiro andando e zero `drawer_blocked` não é um balcão caprichoso; é um
+> sensor que não estava falando, e é a anomalia `drawer_never_blocked`.
+
 ## Alternativas consideradas
 
 - **Manter em `backstage` e o `shop` anunciar por signal**: consistente com a

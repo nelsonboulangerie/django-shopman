@@ -23,6 +23,8 @@ from .account import (
     FoodPreferenceToggleView,
     NotificationPreferenceToggleView,
     OrderHistoryView,
+    PhoneChangeConfirmView,
+    PhoneChangeRequestView,
     ProfileView,
 )
 from .auth import (
@@ -64,6 +66,7 @@ from .tracking import (
     OrderConfirmReceiptView,
     OrderRateView,
     OrderTrackingView,
+    OrderWaitlistConfirmView,
     order_events_view,
 )
 from .whatsapp_verify import WhatsAppVerifyStartView
@@ -126,6 +129,11 @@ urlpatterns = [
     # deste endpoint — sem depender de CORS.
     path("tracking/<str:ref>/events/", order_events_view, name="api-tracking-events"),
     path("orders/<str:ref>/cancel/", OrderCancelView.as_view(), name="api-order-cancel"),
+    path(
+        "orders/<str:ref>/waitlist-confirm/",
+        OrderWaitlistConfirmView.as_view(),
+        name="api-order-waitlist-confirm",
+    ),
     path("orders/<str:ref>/confirm-received/", OrderConfirmReceiptView.as_view(), name="api-order-confirm-received"),
     path("orders/<str:ref>/rate/", OrderRateView.as_view(), name="api-order-rate"),
     path("orders/<str:ref>/conversation/", OrderConversationView.as_view(), name="api-order-conversation"),
@@ -154,6 +162,8 @@ urlpatterns = [
     path("account/passkeys/<str:credential_id>/", AccountPasskeyDetailView.as_view(), name="api-account-passkey-detail"),
     path("account/devices/", AccountDeviceListView.as_view(), name="api-account-devices"),
     path("account/devices/<uuid:device_id>/", AccountDeviceDetailView.as_view(), name="api-account-device-detail"),
+    path("account/phone/request/", PhoneChangeRequestView.as_view(), name="api-account-phone-request"),
+    path("account/phone/confirm/", PhoneChangeConfirmView.as_view(), name="api-account-phone-confirm"),
     path("account/step-up/", AccountStepUpView.as_view(), name="api-account-step-up"),
     path("account/export/", AccountExportView.as_view(), name="api-account-export"),
     path("account/delete/", AccountDeleteView.as_view(), name="api-account-delete"),

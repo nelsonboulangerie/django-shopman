@@ -8,7 +8,6 @@ import {
   freezesPriceOnMove,
   type MoveMode,
   type MovePayload,
-  moveLineId,
   moveLineView,
   modeNeedsSelection,
   moveTargetOptions,
@@ -24,7 +23,7 @@ const props = defineProps<{
   /** `tab_manipulation` capability — drives the offered modes + price note. */
   capability: unknown;
   busy: boolean;
-  /** Fase de preparo (persist + reload dos line_ids): o diálogo já abriu. */
+  /** Fase de preparo (persist + reload da comanda): o diálogo já abriu. */
   preparing?: boolean;
 }>();
 
@@ -111,8 +110,8 @@ function submit() {
         Move todos os itens desta comanda para a comanda escolhida e libera esta.
       </p>
 
-      <!-- Preparo em curso: o diálogo abre na hora e o servidor renova os
-           line_ids por baixo — sem isto o botão 'Transferir' parecia morto. -->
+      <!-- Preparo em curso: o diálogo abre na hora e a comanda é persistida por
+           baixo — sem isto o botão 'Transferir' parecia morto. -->
       <p v-if="preparing" class="flex items-center gap-2 rounded-md border border-dashed p-3 text-sm text-muted-foreground">
         <Icon name="line-md:loading-loop" class="size-4 shrink-0" />
         Preparando a comanda…

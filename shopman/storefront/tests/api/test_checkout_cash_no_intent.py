@@ -1,10 +1,16 @@
 """Loja online em dinheiro NÃO cria intent no Payman (ADR-022, WP-2 do CASHMAN-PLAN).
 
-O PDV passou a liquidar ``cash``/``external`` no Payman quando a coleta é no
-terminal (``payment.collection == "terminal"``). A loja online nunca escreve
-``collection``: o cliente ainda não pagou nada, e o intent do dinheiro nasce no
-acerto (COD na entrega, balcão na retirada), não no checkout. Este teste é a
-prova de que a fronteira ficou onde estava.
+O PDV liquida ``cash``/``external`` no Payman quando a coleta é no TERMINAL
+(``payment.collection == "terminal"``). O dinheiro da loja online não é isso: o
+cliente ainda não pagou nada, e o intent nasce no acerto (COD na entrega, balcão
+na retirada), não no checkout. Este teste é a prova de que a fronteira ficou onde
+estava.
+
+⚠️ A entrega em dinheiro passou a carimbar ``collection: "on_delivery"`` — a
+mesma marca canônica que o PDV grava. Não é ``terminal``, então nada é liquidado
+aqui; a marca é o que faz o Gestor oferecer o acerto (``settle_delivery_cash``,
+que a recusava por falta dela) e o que o ``payment_gate`` lê para distinguir
+"combinado receber na porta" de "não pagou".
 """
 
 from __future__ import annotations
@@ -64,7 +70,8 @@ def test_delivery_cash_checkout_has_no_payment_intent(client, django_capture_on_
 
     payment = order.data["payment"]
     assert payment["method"] == "cash"
-    assert "collection" not in payment
+    # Recebido na PORTA — nunca "terminal", que é o que dispara liquidação.
+    assert payment["collection"] == "on_delivery"
     assert "intent_ref" not in payment
     assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()
 
@@ -85,5 +92,7 @@ def test_pickup_cash_checkout_has_no_payment_intent(client, django_capture_on_co
 
     payment = order.data.get("payment") or {}
     assert payment.get("method") == "cash"
+    # Retirada paga no balcão: sem marca de coleta, o dinheiro entra na venda.
+    assert "collection" not in payment
     assert "intent_ref" not in payment
     assert not PaymentIntent.objects.filter(order_ref=order.ref).exists()

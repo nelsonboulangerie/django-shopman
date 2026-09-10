@@ -207,6 +207,13 @@ class CanonicalCashEvent:
     day: date
     order_ref: str
     parent_key: int | None
+    #: O payload do lançamento, somente-leitura.
+    #:
+    #: Existe porque parte do sinal do caixa não cabe em ``kind`` + ``amount_q``:
+    #: um bloqueio por gaveta aberta é um ``note``, e o que interessa nele é
+    #: QUANTO tempo durou e COMO terminou. Sem isto, o B.I. veria "uma anotação"
+    #: onde há uma medição.
+    payload: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)

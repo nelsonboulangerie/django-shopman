@@ -477,10 +477,10 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             </label>
 
             <div class="space-y-2 rounded-lg border border-border p-3">
-              <p :class="sectionClass">Publicação</p>
+              <p :class="sectionClass">Visibilidade</p>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="draft.is_published" type="checkbox" class="size-4 rounded border-border" />
-                Publicado no catálogo
+                Exibido no catálogo
               </label>
               <label class="flex items-center gap-2 text-sm">
                 <input v-model="draft.is_sellable" type="checkbox" class="size-4 rounded border-border" />
@@ -509,7 +509,7 @@ const sectionClass = "text-xs font-medium uppercase tracking-wide text-muted-for
             <div class="space-y-3 rounded-lg border border-border p-3">
               <p :class="sectionClass">Rotulagem para compra remota</p>
               <p
-                v-if="detail.dietary_auto_filled && (detail.allergens.length || detail.dietary_info.length)"
+                v-if="detail.dietary_from_recipe && (detail.allergens.length || detail.dietary_info.length)"
                 class="rounded-md bg-muted/60 px-2.5 py-2 text-xs text-muted-foreground"
               >
                 Alérgenos e restrições vieram da receita. Ao editar aqui, o produto passa a

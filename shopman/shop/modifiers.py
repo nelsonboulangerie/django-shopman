@@ -49,12 +49,6 @@ def _is_non_merchandise_line(item: dict) -> bool:
     return item.get("sku") == "__DELIVERY_FEE__" or meta.get("type") in {"delivery_fee"}
 
 
-def _price_is_frozen(item: dict) -> bool:
-    """Operator fixed this line's unit price (numpad "Preço", manager-approved):
-    the price is FINAL — no auto discount (happy-hour, promo) applies on top."""
-    return bool((item.get("meta") or {}).get("price_overridden"))
-
-
 def _discount_label(copy_key: str, fallback: str) -> str:
     """Resolve a customer-facing discount label from OmotenashiCopy.
 
@@ -297,10 +291,29 @@ def _reverse_prior_pricing(pricing: dict, item: dict) -> None:
                 share_q=int(prior.get("line_amount_q") or 0),
             )
         else:
+            # ⚠️ POR LINHA, não por produto. O filtro casava `(sku, type)`, e com
+            # duas linhas do mesmo SKU — que o balcão agora produz o tempo todo,
+            # bastando o cliente pedir mais um depois de o primeiro ir à cozinha
+            # — reverter UMA apagava o registro das DUAS. A irmã seguia com a
+            # cortesia no preço e sem registro na transparência: o
+            # `original_price_q` sumia, a projection devolvia o preço JÁ
+            # descontado como preço de lista, e a gravação seguinte aplicava a
+            # cortesia de novo, por cima. Desconto composto a cada reprice.
+            #
+            # O `sku` continua atendendo o registro sem `line_id` (order-level e
+            # o que vier de outra origem).
+            line_id = str(item.get("line_id") or "")
             kept = [
                 d
                 for d in (disc.get("items") or [])
-                if not (d.get("sku") == sku and d.get("type") == t)
+                if not (
+                    d.get("type") == t
+                    and (
+                        d.get("line_id") == line_id
+                        if line_id and d.get("line_id")
+                        else d.get("sku") == sku
+                    )
+                )
             ]
         disc["items"] = kept
         disc["total_discount_q"] = sum(int(d.get("discount_q", 0)) * int(d.get("qty", 1)) for d in kept)
@@ -349,7 +362,7 @@ def _apply_flat_best_wins(session, *, percent, disc_type, label, pricing_key) ->
     won_total_q = 0
     modified = False
     for item in items:
-        if _is_non_merchandise_line(item) or _price_is_frozen(item):
+        if _is_non_merchandise_line(item):
             continue
         list_q = _list_price_q(item)
         if list_q <= 0:
@@ -415,7 +428,7 @@ class LotDiscountModifier:
         won_total_q = 0
         modified = False
         for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
+            if _is_non_merchandise_line(item):
                 continue
             batch_ref = (item.get("meta") or {}).get("batch_ref") or ""
             if not batch_ref:
@@ -544,7 +557,19 @@ class DiscountModifier:
                 coupon_code, now, channel_ref=channel_ref
             )
 
-        if not promotions and not coupon_promo:
+        # ⚠️ O DESCONTO DO OPERADOR NÃO DEPENDE DE HAVER PROMOÇÃO NO AR. Esta
+        # saída antecipada existe para limpar pricing velho quando não há nada
+        # automático a aplicar — e ela estava passando por cima do desconto
+        # manual de linha, que é avaliado no laço LOGO ABAIXO. Numa padaria sem
+        # campanha ativa (o caso comum), o operador dava 50% de cortesia num
+        # item, a linha guardava o desconto em `meta.manual_discount`, e o
+        # pedido cobrava o preço cheio. Cortesia prometida ao cliente, caixa
+        # cobrando integral, e nenhum erro em lugar nenhum.
+        manual_lines = any(
+            ((item.get("meta") or {}).get("manual_discount") or {}).get("value")
+            for item in (session.items or [])
+        )
+        if not promotions and not coupon_promo and not manual_lines:
             if not session.pricing:
                 session.pricing = {}
             session.pricing.pop("coupon", None)
@@ -555,7 +580,12 @@ class DiscountModifier:
         # Coleções por SKU — necessário para promoções por coleção. Usa o MESMO
         # helper canônico do menu (catalog_context) para os dois motores lerem a
         # mesma fonte (D4: evita o menu ver a coleção e o carrinho não).
-        if items and not ctx.get("sku_collections"):
+        # ⚠️ A ida ao banco é da PROMOÇÃO, não da cortesia. `sku_collections` só
+        # alimenta o `_matches`, que só roda para promoção e cupom — uma comanda
+        # que tem apenas desconto do operador (o caso que passou a chegar até
+        # aqui) pagaria uma consulta que não serve a ninguém, a cada reprice, e
+        # o reprice acontece a cada toque no carrinho.
+        if (promotions or coupon_promo) and items and not ctx.get("sku_collections"):
             line_skus = [i.get("sku") for i in items if i.get("sku") and not _is_non_merchandise_line(i)]
             try:
                 from shopman.shop.projections import catalog_context
@@ -584,7 +614,7 @@ class DiscountModifier:
         session.pricing = pricing
 
         for item in items:
-            if _is_non_merchandise_line(item) or _price_is_frozen(item):
+            if _is_non_merchandise_line(item):
                 continue
             sku = item.get("sku", "")
             # Percentuais competem sobre o preço de LISTA e vencem a linha em
@@ -656,6 +686,13 @@ class DiscountModifier:
 
                 qty = int(item.get("qty", 1))
                 discounts_applied.append({
+                    # A LINHA que ganhou o desconto, ao lado do SKU. O registro é
+                    # a única fonte que sobrevive ao save (a linha perde campos
+                    # extras no ``update_items``), e quem o relê é a comanda do
+                    # PDV para restaurar o preço PRÉ-desconto. Identificado só
+                    # pelo SKU, o registro de uma linha respondia pela outra do
+                    # mesmo produto — a cortesia dada num café aparecia nos dois.
+                    "line_id": item.get("line_id", ""),
                     "sku": sku,
                     "type": source_type,
                     "name": source_name,
@@ -678,7 +715,6 @@ class DiscountModifier:
                 item
                 for item in items
                 if not _is_non_merchandise_line(item)
-                and not _price_is_frozen(item)
                 # Linha sem desconto por-linha (durável em ``meta._disc``): um fixo
                 # de pedido não empilha sobre promo/cupom/manual já aplicados.
                 and not (item.get("meta") or {}).get("_disc")
@@ -702,9 +738,10 @@ class DiscountModifier:
             )
             if applied_q > 0:
                 modified = True
-                # sku="" — an order-level record: it aggregates into the cart's
-                # discount total/line but matches no per-line SKU (no strikethrough).
+                # sku=""/line_id="" — an order-level record: it aggregates into the
+                # cart's discount total/line but matches no line (no strikethrough).
                 discounts_applied.append({
+                    "line_id": "",
                     "sku": "",
                     "type": src_type,
                     "name": src_name,
@@ -892,13 +929,24 @@ class DiscountModifier:
 
     @staticmethod
     def _calc_manual(manual: dict, price_q: int) -> int:
-        """Per-unit discount from an operator manual line discount (percent only)."""
+        """Desconto POR UNIDADE do manual de linha — em % ou em R$.
+
+        O R$ é por unidade de propósito: é assim que ele compete com o automático
+        no "maior desconto ganha", que mede tudo por unidade contra o preço de
+        etiqueta. Rateio de um valor pela linha inteira existe para o desconto de
+        PEDIDO (``ManualDiscountModifier``), que não disputa linha com ninguém.
+
+        ``value`` segue a convenção do desconto do pedido: percentual em
+        ``percent``, REAIS em ``fixed``.
+        """
         try:
             value = float(manual.get("value") or 0)
         except (TypeError, ValueError):
             return 0
         if value <= 0:
             return 0
+        if str(manual.get("type") or "percent").strip().lower() == "fixed":
+            return min(int(round(value * 100)), price_q)
         return min(monetary_div(int(round(price_q * value)), 100), price_q)
 
 
@@ -1303,7 +1351,7 @@ class LoyaltyRedeemModifier:
         subtotal_q = sum(
             item.get("line_total_q", 0)
             for item in items
-            if not _is_non_merchandise_line(item) and not _price_is_frozen(item)
+            if not _is_non_merchandise_line(item)
         )
 
         # Clamp: never redeem more than the order total
@@ -1324,7 +1372,6 @@ class LoyaltyRedeemModifier:
         eligible = [
             item for item in items
             if not _is_non_merchandise_line(item)
-            and not _price_is_frozen(item)
             and item.get("line_total_q", 0) > 0
         ]
         touched = _spread_order_discount(eligible, redeem_q, at_least=False)
@@ -1396,7 +1443,7 @@ class ManualDiscountModifier:
         subtotal_q = sum(
             item.get("line_total_q", 0)
             for item in items
-            if not _is_non_merchandise_line(item) and not _price_is_frozen(item)
+            if not _is_non_merchandise_line(item)
         )
         discount_q = min(discount_q, subtotal_q)
         if discount_q <= 0:
@@ -1409,7 +1456,6 @@ class ManualDiscountModifier:
         eligible = [
             item for item in items
             if not _is_non_merchandise_line(item)
-            and not _price_is_frozen(item)
             and item.get("line_total_q", 0) > 0
         ]
         touched = _spread_order_discount(eligible, discount_q, at_least=False)

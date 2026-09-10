@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 #: Com que o cliente pode acertar a conta. Dinheiro entra na gaveta (livro);
 #: pix/cartão/external são atestados no balcão (o intent ``account`` não tem
 #: gateway; o método fica em ``gateway_data.settled_with``).
-SETTLE_METHODS = ("cash", "pix", "card", "external")
+SETTLE_METHODS = ("cash", "pix", "credit", "debit", "external")
 
 
 class HouseAccountError(ValueError):

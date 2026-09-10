@@ -108,7 +108,8 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
     if order is None:
         logger.warning(
             "pix_confirmation: intent %s pago mas pedido %s não encontrado",
-            db_intent.ref, db_intent.order_ref,
+            db_intent.ref,
+            db_intent.order_ref,
         )
         _alert(
             db_intent.order_ref,
@@ -124,12 +125,20 @@ def confirm_pix(*, txid: str, e2e_id: str = "", amount: str = "") -> None:
 
     if db_intent.status in _DEAD_CHARGE_STATUSES:
         _confirm_pix_on_dead_charge(
-            order, db_intent, txid=txid, e2e_id=e2e_id, reported_q=reported_q,
+            order,
+            db_intent,
+            txid=txid,
+            e2e_id=e2e_id,
+            reported_q=reported_q,
         )
         return
 
     _confirm_pix_on_live_charge(
-        order, db_intent, txid=txid, e2e_id=e2e_id, reported_q=reported_q,
+        order,
+        db_intent,
+        txid=txid,
+        e2e_id=e2e_id,
+        reported_q=reported_q,
     )
 
 
@@ -147,7 +156,9 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         # ``on_paid``: pedido entregue sem que ninguém conferisse um centavo.
         # Ausência de valor não é prova de pagamento, é indeterminação.
         logger.warning(
-            "pix_confirmation: Pix sem valor legível order=%s txid=%s", order.ref, txid,
+            "pix_confirmation: Pix sem valor legível order=%s txid=%s",
+            order.ref,
+            txid,
         )
         _alert(
             order.ref,
@@ -169,7 +180,9 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         # cobrança de pé, o Pix que completa o valor captura o total.
         logger.warning(
             "pix_confirmation: Pix abaixo do autorizado order=%s recebido_q=%s autorizado_q=%s",
-            order.ref, received_q, authorized_q,
+            order.ref,
+            received_q,
+            authorized_q,
         )
         _alert_insufficient(order, received_q=received_q, expected_q=authorized_q)
         return
@@ -180,7 +193,11 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         # paralelo, ou cobrança expirada). Mesmo desfecho do ramo de cobrança
         # morta: o dinheiro entrou e não pode sumir.
         _confirm_pix_on_dead_charge(
-            order, db_intent, txid=txid, e2e_id=e2e_id, reported_q=reported_q,
+            order,
+            db_intent,
+            txid=txid,
+            e2e_id=e2e_id,
+            reported_q=reported_q,
         )
         return
 
@@ -191,7 +208,8 @@ def _confirm_pix_on_live_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         # SEMPRE o Payman, nunca o valor que o webhook declarou.
         logger.warning(
             "pix_confirmation: captura insuficiente para o pedido order=%s capturado_q=%s",
-            order.ref, captured_q,
+            order.ref,
+            captured_q,
         )
         _alert_insufficient(
             order,
@@ -253,7 +271,8 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
     if reported_q is None:
         logger.warning(
             "pix_confirmation: Pix sem valor em cobrança encerrada order=%s txid=%s",
-            order.ref, txid,
+            order.ref,
+            txid,
         )
         _alert(
             order.ref,
@@ -269,12 +288,17 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
         return
 
     booked_ref, already_booked = _book_pix_outside_charge(
-        order, db_intent, txid=txid, e2e_id=e2e_id, amount_q=int(reported_q),
+        order,
+        db_intent,
+        txid=txid,
+        e2e_id=e2e_id,
+        amount_q=int(reported_q),
     )
     if already_booked:
         logger.info(
             "pix_confirmation: Pix em cobrança encerrada já registrado order=%s intent=%s",
-            order.ref, booked_ref,
+            order.ref,
+            booked_ref,
         )
         return
 
@@ -294,7 +318,9 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
     if order.status == Order.Status.CANCELLED:
         logger.warning(
             "pix_confirmation: Pix após cancelamento order=%s valor_q=%s intent=%s",
-            order.ref, reported_q, booked_ref,
+            order.ref,
+            reported_q,
+            booked_ref,
         )
         from shopman.shop.lifecycle import dispatch
 
@@ -322,7 +348,12 @@ def _confirm_pix_on_dead_charge(order, db_intent, *, txid, e2e_id, reported_q) -
 
 
 def _book_pix_outside_charge(
-    order, db_intent, *, txid: str, e2e_id: str, amount_q: int,
+    order,
+    db_intent,
+    *,
+    txid: str,
+    e2e_id: str,
+    amount_q: int,
 ) -> tuple[str | None, bool]:
     """Registrar no Payman dinheiro que a cobrança original não pode receber.
 
@@ -364,7 +395,9 @@ def _book_pix_outside_charge(
     except Exception:
         logger.warning(
             "pix_confirmation: registro do Pix com txid falhou, tentando sem gateway_id order=%s txid=%s",
-            order.ref, txid, exc_info=True,
+            order.ref,
+            txid,
+            exc_info=True,
         )
         try:
             intent = PaymentService.create_intent(
@@ -379,7 +412,8 @@ def _book_pix_outside_charge(
         except Exception:
             logger.exception(
                 "pix_confirmation: não foi possível registrar o Pix order=%s txid=%s",
-                order.ref, txid,
+                order.ref,
+                txid,
             )
             return None, False
 
@@ -393,13 +427,16 @@ def _book_pix_outside_charge(
     except PaymentError:
         logger.exception(
             "pix_confirmation: falha ao capturar o registro do Pix order=%s intent=%s",
-            order.ref, intent.ref,
+            order.ref,
+            intent.ref,
         )
         return None, False
 
     logger.info(
         "pix_confirmation: Pix fora da cobrança registrado order=%s intent=%s valor_q=%s",
-        order.ref, intent.ref, amount_q,
+        order.ref,
+        intent.ref,
+        amount_q,
     )
     return intent.ref, False
 
@@ -424,14 +461,17 @@ def _confirm_pix_without_charge(*, txid: str, e2e_id: str, reported_q) -> None:
     order = Order.objects.filter(data__payment__intent_ref=txid).first()
     if order is None:
         logger.warning(
-            "pix_confirmation: no payment intent or order for txid=%s", txid,
+            "pix_confirmation: no payment intent or order for txid=%s",
+            txid,
         )
         return
 
     received_q = _record_pix_receipt(order, txid=txid, e2e_id=e2e_id, amount_q=reported_q)
     logger.warning(
         "pix_confirmation: Pix sem cobrança no livro order=%s txid=%s valor_q=%s",
-        order.ref, txid, received_q,
+        order.ref,
+        txid,
+        received_q,
     )
     _alert(
         order.ref,
@@ -560,14 +600,13 @@ def _captured_balance_q(order, db_intent) -> int | None:
     try:
         from shopman.payman import PaymentService
 
-        return (
-            PaymentService.captured_total(db_intent.ref)
-            - PaymentService.refunded_total(db_intent.ref)
-        )
+        return PaymentService.captured_total(db_intent.ref) - PaymentService.refunded_total(db_intent.ref)
     except Exception:
         logger.warning(
             "pix_confirmation: saldo capturado ilegível order=%s intent=%s",
-            order.ref, db_intent.ref, exc_info=True,
+            order.ref,
+            db_intent.ref,
+            exc_info=True,
         )
         return None
 
@@ -593,8 +632,11 @@ def _cancel_stale_intents(order, *, keep_intent_ref: str) -> None:
         from shopman.shop.services import payment as payment_service
 
         payment_service.cancel_stale_intents(order, keep_intent_ref=keep_intent_ref)
+    # O Pix deste pedido já entrou. Se a faxina não roda, os QR antigos do MESMO
+    # pedido continuam pagáveis e o cliente pode pagar de novo — dinheiro a
+    # devolver, não a receber. O irmão logo abaixo (`_alert`) já gritava.
     except Exception:
-        logger.debug("pix_confirmation_cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
+        logger.warning("pix_confirmation_cancel_stale_intents_failed order=%s", order.ref, exc_info=True)
 
 
 def _captured_at_for_payment(order):
@@ -667,15 +709,11 @@ def _alert_insufficient(order, *, received_q, expected_q) -> None:
     missing_q = None
     if received_q is not None and expected_q is not None:
         missing_q = max(int(expected_q) - int(received_q), 0)
-    message = (
-        f"PIX do pedido {order.ref} recebido abaixo do total: "
-        f"{_money(received_q)} de {_money(expected_q)}."
-    )
+    message = f"PIX do pedido {order.ref} recebido abaixo do total: {_money(received_q)} de {_money(expected_q)}."
     if missing_q:
         message += f" Faltam {_money(missing_q)}."
     message += (
-        " A cobrança segue de pé e captura sozinha quando o restante cair; "
-        "o pedido continua aguardando pagamento."
+        " A cobrança segue de pé e captura sozinha quando o restante cair; o pedido continua aguardando pagamento."
     )
     _alert(
         order.ref,
@@ -710,7 +748,10 @@ def _alert(
         alert_adapter.create(alert_type, severity, message, order_ref=order_ref)
     except Exception:
         logger.warning(
-            "pix_confirmation_alert_failed type=%s order=%s", alert_type, order_ref, exc_info=True,
+            "pix_confirmation_alert_failed type=%s order=%s",
+            alert_type,
+            order_ref,
+            exc_info=True,
         )
 
 
@@ -724,10 +765,18 @@ def _ack_alerts(order) -> None:
     try:
         from shopman.shop.adapters import alert as alert_adapter
 
-        alert_adapter.acknowledge("payment_failed", order_ref=order.ref)
-        alert_adapter.acknowledge("payment_insufficient", order_ref=order.ref)
+        alert_adapter.resolve(
+            "payment_failed",
+            order_ref=order.ref,
+            actor="system:pix-confirmation",
+        )
+        alert_adapter.resolve(
+            "payment_insufficient",
+            order_ref=order.ref,
+            actor="system:pix-confirmation",
+        )
     except Exception:
-        logger.debug("pix_confirmation_alert_ack_failed order=%s", order.ref, exc_info=True)
+        logger.warning("pix_confirmation_alert_ack_failed order=%s", order.ref, exc_info=True)
 
 
 __all__ = ["confirm_pix"]

@@ -54,6 +54,15 @@ export function timelineActiveStep (steps: OrderProgressStepProjection[]): numbe
   return Math.max(steps.filter(step => step.state === 'completed').length, 1)
 }
 
+// Estado do passo, em palavras. O ✓ e o X são sinal visual; o contrato distingue
+// completed/current/pending/cancelled e o leitor de tela precisa ouvir a diferença.
+export function timelineStepStateLabel (state: string): string {
+  if (state === 'completed') return 'concluído'
+  if (state === 'current') return 'em andamento'
+  if (state === 'cancelled') return 'cancelado'
+  return 'ainda não'
+}
+
 // Cadência do polling: respeita stale_after_seconds, com piso de 15s.
 export function pollIntervalMs (staleAfterSeconds: number | null | undefined): number {
   return Math.max((staleAfterSeconds || 30) * 1000, 15000)

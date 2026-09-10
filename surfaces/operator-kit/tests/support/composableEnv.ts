@@ -1,12 +1,25 @@
 import { vi } from "vitest";
-import { computed, nextTick, reactive, readonly, ref, shallowRef, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  reactive,
+  readonly,
+  ref,
+  shallowRef,
+  watch,
+} from "vue";
 
 // Utilitários REAIS do kit (auto-imports em runtime) — implementação verdadeira (não
 // mock) para o teste exercitar o narrowing/mensagem de fato (os `catch` dos composables
 // dos apps usam httpError/httpErrorMessage do kit).
-import { httpError, httpErrorMessage } from "../../app/utils/httpError";
+import {
+  httpError,
+  httpErrorCode,
+  httpErrorMessage,
+} from "../../app/utils/httpError";
 import { retryWithBackoff } from "../../app/utils/retryBackoff";
 import { useStationLock } from "../../app/composables/useStationLock";
+import { useAlertSound } from "../../app/composables/useAlertSound";
 
 /**
  * Harness ÚNICO para testar composables de operador em env `node` — do próprio kit e
@@ -50,13 +63,18 @@ export interface ComposableEnv {
   /** `$fetch` (transporte de ação/escrita). */
   fetchMock: ReturnType<typeof vi.fn>;
   /** `useSonner` (toast). */
-  sonner: { error: ReturnType<typeof vi.fn>; success: ReturnType<typeof vi.fn> };
+  sonner: {
+    error: ReturnType<typeof vi.fn>;
+    success: ReturnType<typeof vi.fn>;
+  };
   /** `refreshNuxtData` (usado pelo unlock e pelo operatorSessionOnError). */
   refreshNuxtData: ReturnType<typeof vi.fn>;
   /** `reportClientError` (observabilidade — fronteira, mockada). */
   clientErrorReport: ReturnType<typeof vi.fn>;
   /** `useAdaptivePoll` — no-op observável (o poll de verdade é testado à parte). */
   adaptivePoll: ReturnType<typeof vi.fn>;
+  /** Conectividade controlável para guards de mutation dos apps consumidores. */
+  isOnline: ReturnType<typeof ref<boolean>>;
   /** `useRuntimeConfig()`. */
   runtimeConfig: Record<string, unknown>;
   /** Estado compartilhado do `useState` (por chave), para inspeção e limpeza. */
@@ -77,7 +95,8 @@ export function installNuxtGlobals(): ComposableEnv {
     refreshNuxtData: vi.fn(),
     clientErrorReport: vi.fn(),
     adaptivePoll: vi.fn(),
-    runtimeConfig: { app: { baseURL: "/" }, public: { djangoPublicBaseUrl: "" } },
+    isOnline: ref(true),
+    runtimeConfig: { app: { baseURL: "/" }, public: { djangoBaseUrl: "" } },
     states: new Map(),
     reset() {
       env.fetchData.value = null;
@@ -91,6 +110,7 @@ export function installNuxtGlobals(): ComposableEnv {
       env.refreshNuxtData.mockReset();
       env.clientErrorReport.mockReset().mockResolvedValue(true);
       env.adaptivePoll.mockReset();
+      env.isOnline.value = true;
       // Estado compartilhado é por-app em runtime; entre testes ele tem que morrer,
       // senão uma estação travada num teste vaza travada para o seguinte.
       env.states.clear();
@@ -115,17 +135,25 @@ export function installNuxtGlobals(): ComposableEnv {
   // `useState`: um ref REAL por chave, compartilhado entre chamadas — é o que o Nuxt
   // dá, e é o que faz dois composables enxergarem o mesmo cadeado.
   vi.stubGlobal("useState", (key: string, init?: () => unknown) => {
-    if (!env.states.has(key)) env.states.set(key, ref(init ? init() : undefined));
+    if (!env.states.has(key))
+      env.states.set(key, ref(init ? init() : undefined));
     return env.states.get(key)!;
   });
   vi.stubGlobal("useSonner", env.sonner);
   vi.stubGlobal("refreshNuxtData", env.refreshNuxtData);
   vi.stubGlobal("operatorSessionOnError", () => {});
   vi.stubGlobal("useAdaptivePoll", env.adaptivePoll);
+  vi.stubGlobal("useConnectivity", () => ({
+    isOnline: readonly(env.isOnline),
+  }));
   vi.stubGlobal("httpError", httpError); // implementação REAL do kit (narrowing tipado)
   vi.stubGlobal("httpErrorMessage", httpErrorMessage); // implementação REAL do kit
+  // O código TIPADO do erro — é por ele que a superfície distingue um desafio
+  // de gerente (`manager_approval_required`) de uma falha de verdade.
+  vi.stubGlobal("httpErrorCode", httpErrorCode); // implementação REAL do kit
   vi.stubGlobal("retryWithBackoff", retryWithBackoff); // implementação REAL do kit
   vi.stubGlobal("useStationLock", useStationLock); // implementação REAL do kit (sobre o useState mockado)
+  vi.stubGlobal("useAlertSound", useAlertSound); // implementação REAL do kit (AudioContext ausente em node → beep no-op)
   vi.stubGlobal("reportClientError", env.clientErrorReport);
   env.useFetchMock.mockImplementation(() => ({
     data: ref(env.fetchData.value),

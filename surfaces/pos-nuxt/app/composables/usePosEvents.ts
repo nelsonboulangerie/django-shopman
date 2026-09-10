@@ -1,4 +1,6 @@
-import { shouldPollTick, type PosRealtimeState } from "~/presentation/events";
+import { toValue } from "vue";
+
+import { shouldConnectSse, shouldPollTick, type PosRealtimeState } from "~/presentation/events";
 
 /**
  * Tempo real entre estações do PDV: SSE push + poll de fallback + wake.
@@ -16,7 +18,10 @@ import { shouldPollTick, type PosRealtimeState } from "~/presentation/events";
  * e tenta reconectar o stream (um 403 na conexão fecha o EventSource de vez;
  * sem esta retomada, a estação ficaria no poll para sempre).
  */
-export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
+export function usePosEvents(onPush: () => void, opts?: { pollMs?: number; enabled?: () => boolean }) {
+  /** O stream so conecta com a estacao identificada: no gate os canais sao
+   *  negados e o EventSource entraria no ciclo de reconexao com 400. */
+  const isEnabled = () => shouldConnectSse(opts?.enabled ? toValue(opts.enabled()) : undefined);
   const config = useRuntimeConfig();
   const realtime = ref<PosRealtimeState>("polling");
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -33,7 +38,7 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
   ];
 
   function connectSse() {
-    if (sources.length) return;
+    if (!isEnabled() || sources.length) return;
     realtime.value = "connecting";
     for (const channel of CHANNELS) {
       try {
@@ -55,9 +60,15 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
   function closeSse() {
     sources.forEach((source) => source.close());
     sources = [];
+    // Sem stream de pe, o tick de poll volta a ser o dono do refresh.
+    realtime.value = "polling";
   }
 
   const onVisible = () => {
+    if (!isEnabled()) {
+      closeSse();
+      return;
+    }
     if (document.visibilityState !== "visible") return;
     onPush();
     // Stream fechado de vez (ex.: conexão recusada antes do login)? Tenta de
@@ -81,6 +92,13 @@ export function usePosEvents(onPush: () => void, opts?: { pollMs?: number }) {
     closeSse();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
+  });
+
+  // Liga/desliga junto com a identificacao da estacao: destravar reconecta,
+  // travar derruba os streams (o ciclo de 400 do gate nao volta a ocorrer).
+  watch(isEnabled, (on) => {
+    if (on) connectSse();
+    else closeSse();
   });
 
   return { realtime };

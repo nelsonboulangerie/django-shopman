@@ -139,3 +139,49 @@ def test_hub_debug_falls_back_to_dev_urls(client, db):
     assert by_ref["bi"]["url"] == "http://127.0.0.1:3007/"
     assert by_ref["purchase"]["url"] == "http://127.0.0.1:3008/"
     assert by_ref["loja"]["url"] == "http://127.0.0.1:3000/"
+
+
+# ── O tile que a Central não mostrava ────────────────────────────────────────
+
+
+def _perm(app_label: str, codename: str) -> Permission:
+    return Permission.objects.get(content_type__app_label=app_label, codename=codename)
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_quem_opera_a_producao_ve_o_tile_da_producao(client, db):
+    """O tile tem de perguntar a MESMA coisa que o app pergunta na porta.
+
+    O gerente concede `operate_production` a um padeiro novo. Ele abre a Central e
+    a grade vinha VAZIA — "nenhum app liberado, fale com o gerente" — enquanto
+    `prod.boulangerie.com.br` abria normalmente. O tile perguntava por
+    `shop.manage_production` ou por permissão de coluna fina do console Admin, e o
+    grant não era nenhuma das duas.
+    """
+    padeiro = User.objects.create_user("padeiro-novo", password="pw", is_staff=True)
+    padeiro.user_permissions.add(_perm("backstage", "operate_production"))
+    client.force_login(User.objects.get(pk=padeiro.pk))
+
+    corpo = client.get(reverse("api-backstage-hub")).json()
+    refs = {tile["ref"] for tile in corpo["hub"]["tiles"]}
+
+    assert "production" in refs, "quem opera a produção continua vendo a Central vazia"
+
+
+@pytest.mark.django_db
+@override_settings(SHOPMAN_SURFACE_URLS=SURFACE_URLS)
+def test_quem_so_LE_o_planejamento_nao_ve_o_tile(client, db):
+    """A direção inversa, que também estava errada.
+
+    Quem tem `view_production_planned` e NÃO tem `operate_production` via o tile e
+    levava 403 ao clicar — link morto com outro nome.
+    """
+    leitor = User.objects.create_user("leitor-plano", password="pw", is_staff=True)
+    leitor.user_permissions.add(_perm("shop", "view_production_planned"))
+    client.force_login(User.objects.get(pk=leitor.pk))
+
+    corpo = client.get(reverse("api-backstage-hub")).json()
+    refs = {tile["ref"] for tile in corpo["hub"]["tiles"]}
+
+    assert "production" not in refs, "a Central oferecia um tile que responde 403"

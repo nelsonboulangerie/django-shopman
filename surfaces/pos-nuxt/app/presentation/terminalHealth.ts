@@ -18,6 +18,15 @@ import type { POSTerminalComponentProjection } from "~/types/pos";
 export interface AgentProbe {
   ok: boolean | null;
   message: string;
+  /**
+   * A trava da gaveta está ARMADA nesta estação? Só o agente sabe: a medição da
+   * polaridade vive no `agent.json` do balcão, e o Django nunca alcança a
+   * loopback. `undefined` = agente anterior ao recurso, ou sonda ainda no ar.
+   *
+   * Sem esta linha no card, um balcão SEM medição era visualmente idêntico a um
+   * protegido: a trava não agia, e nada dizia que ela não existia.
+   */
+  drawerLock?: { calibrated: boolean };
 }
 
 export interface TerminalHealthRow {
@@ -55,6 +64,20 @@ export function terminalHealthRows(
 
   for (const component of components) {
     rows.push(promoteProbe(component, probe));
+  }
+
+  // A trava é recurso da estação, não do terminal declarado no servidor: só
+  // aparece quando a sonda respondeu e o agente é novo o bastante para dizer.
+  if (probe?.drawerLock) {
+    const armed = probe.drawerLock.calibrated;
+    rows.push({
+      key: "drawer_lock",
+      label: "Trava da gaveta",
+      status: armed ? "ready" : "warning",
+      message: armed
+        ? "armada — a próxima venda não começa com a gaveta aberta"
+        : "sem medição: a trava não age neste balcão. Meça em Terminais do PDV, no gestor.",
+    });
   }
 
   rows.push({

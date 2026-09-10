@@ -49,8 +49,12 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   `unit` **explícito** na criação do `RecipeItem` em vez de cair no default, e o teste do
   seed prova que toda ficha de insumo pesado bate com a base (`full_clean()` em cada
   linha).
-- ✅ Os líquidos (`AGUA-FILTRADA`, `LEITE`, `AZEITE`) passam a falar `L` na ficha, na
-  mesma base `l` do insumo. Destravou porque o perfil ganhou `density_g_per_ml` — a
+- ✅ Os líquidos (`AGUA-FILTRADA`, `LEITE`, `AZEITE`) passaram a falar `L` na ficha, na
+  mesma base `l` do insumo. ⚠️ **Corrigido em 03/09** — eles são PESADOS na bancada, então
+  a base honesta é `kg` e não `l`; ver a Calibração no fim deste documento e o
+  [WP-BASE-UNIT-LIQUIDS-KG](WP-BASE-UNIT-LIQUIDS-KG.md). O que segue nesta linha é o
+  raciocínio da época, e continua valendo para qualquer insumo que a casa **meça em
+  volume** de verdade. Destravou porque o perfil ganhou `density_g_per_ml` — a
   ponte volume→massa que a nutrição precisa
   (`nutrition_from_recipe.py::_item_quantity_grams`). Sem a densidade o item continua
   ficando **de fora** da soma, que é o comportamento certo: melhor rótulo incompleto do
@@ -203,6 +207,19 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
   real do fermento, não contra as 5–10 notas da [ADR-024
   §Evidência 4](../decisions/adr-024-material-unit-base-and-purchase.md). Elas
   continuam valendo — o que muda com elas é o vocabulário inicial, não o mecanismo.
+
+## Calibração do cadastro (03/09/2026) — os líquidos pesados vão para kg
+
+O mecanismo ficou pronto; o **cadastro da Nelson** ainda tinha água, leite, azeite e
+creme de leite em `l`, enquanto a bancada os **pesa**. Pela R1 a base é a do momento da
+verdade, então a base estava no eixo errado, e a ponte de densidade caía na produção
+diária em vez de no recebimento. A correção é de dado, não de código:
+[WP-BASE-UNIT-LIQUIDS-KG](WP-BASE-UNIT-LIQUIDS-KG.md).
+
+Vale como precedente: **a base errada não aparece como erro**, aparece como uma tela que
+mostra dois números para a mesma coisa (`3,4 L (3502 g)`). Quando a anotação da Fase 4
+precisa existir para o operador entender a linha, a suspeita certa é a unidade-base, não
+a anotação.
 
 ## Ordem recomendada
 

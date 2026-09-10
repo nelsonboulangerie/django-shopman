@@ -237,6 +237,17 @@ useSeoMeta({
                   <p v-if="line.discount_label" class="mt-0.5 text-xs font-semibold text-primary">{{ line.discount_label }}</p>
                   <p v-if="line.availability_warning && !holdFor(line)" class="mt-0.5 text-xs text-destructive">{{ line.availability_warning }}</p>
 
+                  <!-- Preparado na hora: promessa DECLARADA da casa (finalizado no
+                       momento de servir). Eixo próprio — o croque da vitrine tem o
+                       selo, e o croque que espera a fornada de amanhã tem o selo E
+                       a espera logo abaixo: um diz o que É, a outra diz quando vem. -->
+                  <div v-if="line.is_made_to_order && line.made_to_order_label" class="mt-2" data-cart-line-made-to-order>
+                    <UiBadge variant="outline">
+                      <Icon name="lucide:chef-hat" class="mr-1 size-3.5" />
+                      {{ line.made_to_order_label }}
+                    </UiBadge>
+                  </div>
+
                   <template v-if="holdFor(line)">
                     <div v-if="holdFor(line)!.kind === 'awaiting'" class="mt-2" data-cart-line-awaiting>
                       <UiBadge variant="outline">
@@ -273,6 +284,16 @@ useSeoMeta({
                     >
                       Usar {{ line.available_qty }} disponíve{{ line.available_qty > 1 ? 'is' : 'l' }}
                     </UiButton>
+                    <!-- Sem sobra nenhuma, "Usar N" não existe e a linha ficava sem
+                         saída: aviso vermelho e a lixeira. O sino é o caminho de
+                         volta — e só aparece na falta honesta, nunca na pausa. -->
+                    <StockNotifyButton
+                      v-if="line.is_notifiable && !holdFor(line)"
+                      :sku="line.sku"
+                      :name="line.name"
+                      :subscribed="line.is_notify_subscribed"
+                      compact
+                    />
                     <p class="ml-auto shop-price" :class="cart.summary_pending ? 'opacity-60' : ''">{{ line.total_display }}</p>
                   </div>
                   <p

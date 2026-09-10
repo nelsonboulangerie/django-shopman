@@ -57,7 +57,7 @@ must match the canonical table above.
 
 - `products[]`: `sku`, `name`, `price_q`, `price_display`, `collection_ref`.
 - `collections[]`: `ref`, `name`.
-- `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `card`,
+- `payment_methods[]`: canonical refs and labels for `cash`, `pix`, `credit`, `debit`,
   `mixed`.
 - `fulfillment_options[]`: `pickup`/`delivery` options and address requirement.
 - `payment_collections[]`: terminal/on-delivery options and compatible methods.
@@ -153,6 +153,23 @@ Optional canonical keys:
   `order_notes`.
 - payment: `payment_collection`, `payment_tenders`, `tendered_q`.
 - fiscal/receipt: `issue_fiscal_document`, `receipt_channels` (multi: `print`/`email`; vazio = sem comprovante), `receipt_email`.
+- cadastro a partir do comprovante: `save_receipt_contact`, `save_receipt_tax_id`
+  (booleanos). São a ORDEM EXPLÍCITA do operador para que o e-mail do
+  comprovante / o CPF da nota virem contato do cliente. **Ausentes = não gravar**:
+  `receipt_email` e `fiscal_tax_id` são fatos DA VENDA (a nota pode ir para o
+  contador, no CPF da empresa) e nunca viram identidade sozinhos. Descartados
+  quando o campo correspondente está vazio. Quando o cadastro já tem OUTRO valor,
+  a ordem é de ATUALIZAR — e a tela precisa nomeá-la assim antes de enviar.
+- `save_receipt_tax_id_confirmed` (booleano) é a SEGUNDA PALAVRA sobre o CPF, e
+  **só o caso divergente a exige**: cadastro sem documento segue aprendendo o da
+  nota com a ordem simples; cadastro que já tem OUTRO documento não troca sem
+  ela. Sobrescrever é troca de identidade fiscal, e CPF não muda na vida real —
+  a hipótese provável é "esta nota é de outra pessoa". A recusa é 422
+  (`error.code = tax_id_overwrite_unconfirmed`, `field = customer_tax_id`), o
+  cadastro fica intacto e a nota vai para o CPF informado do mesmo jeito. O
+  e-mail NÃO paga esse pedágio: a assimetria é deliberada.
+  Quando o valor já é de outro cadastro, a resposta é o conflito rico
+  (`customer_conflict`, 422, com `field` e `candidates`), nunca 500.
 - approval: `manual_discount`, `manager_approval`. `manual_discount`
   carries type/value/reason; backend normalizes `discount_q`.
 - runtime: `cash_shift_id`, `pos_terminal_ref` injected by backend API.
@@ -166,7 +183,9 @@ operator enter checkout when payment is still incomplete; `close_sale` is the
 payment-completion enforcement action.
 
 `close_sale` response may include a `payment` object for terminal digital
-payments:
+payments — i.e. the ones that go through a **remote gateway**. Counter card
+(`credit`/`debit`) never does: the card machine is physical, the operator
+attests what happened, and there is no QR nor link to render.
 
 - `method`: `pix` or `card`;
 - `status`: `pending`, `error` or `unavailable`;
@@ -237,6 +256,10 @@ Backend must validate:
 - cash tendered amount cannot be lower than sale total when provided at
   `close_sale`; `review_sale` returns a warning;
 - receipt email required when `email` está em `receipt_channels`;
+- `save_receipt_contact` / `save_receipt_tax_id` só valem com o campo
+  correspondente preenchido (caso contrário são descartados);
+- `save_receipt_tax_id_confirmed` só vale acompanhando `save_receipt_tax_id`, e
+  é OBRIGATÓRIO quando a ordem sobrescreve um CPF já gravado no cadastro;
 - manager approval above discount threshold;
 - fiscal constraints currently unsupported by the POS fiscal pipeline;
 - staging provider readiness: Focus NFe must be homologação, Efí must be

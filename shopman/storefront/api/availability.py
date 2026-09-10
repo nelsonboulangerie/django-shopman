@@ -87,9 +87,14 @@ class StockAlertSubscribeView(APIView):
     """POST /api/v1/availability/<sku>/notify/ — "Me avise quando…".
 
     Aberto a cliente logado (usa o telefone da conta) ou anônimo (telefone no
-    corpo). Registra uma assinatura pendente. O corpo escolhe o gatilho via
-    ``alert_type``: ``stock_back`` (default, "quando voltar ao estoque") ou
-    ``production_ready`` ("quando sair do forno").
+    corpo). Registra uma assinatura pendente.
+
+    O corpo PODE escolher o gatilho via ``alert_type`` (``stock_back`` ou
+    ``production_ready``), mas a loja não escolhe: ela manda só o telefone, e
+    quem decide o eixo é o servidor, pela natureza do produto — ver
+    ``stock_alerts.default_alert_type``. A tela do cliente diz "avise-me sobre
+    este produto"; saber que pão sai do forno e refrigerante volta à prateleira
+    é trabalho da casa, não dele.
     """
 
     authentication_classes = [SessionAuthentication]

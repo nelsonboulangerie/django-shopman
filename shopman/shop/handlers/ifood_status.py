@@ -57,6 +57,10 @@ def on_order_status_changed(sender, order, event_type, actor, **kwargs) -> None:
         return
     if getattr(order, "channel_ref", "") != ifood_ingest.IFOOD_CHANNEL_REF:
         return
+    # Cancelamento que ORIGINOU no iFood (evento CAN refletido): não chamamos
+    # requestCancellation de volta para quem já cancelou.
+    if (order.data or {}).get("ifood_cancelled"):
+        return
     if ifood_callbacks.action_for_status(order.status) is None:
         return
 

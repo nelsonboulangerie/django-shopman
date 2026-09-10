@@ -153,7 +153,8 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
     // Total parcial R$ 8,10 na mesma tela. Segundos de defasagem custam menos
     // que um número que o servidor vai desmentir.
     const h = saleWithTotal1000();
-    h.sale.setLineDiscount("PAO", 10, "cortesia");
+    h.sale.setLineDiscount(h.sale.cart.items[0]!.line_id, 10, "cortesia");
+    expect(h.sale.cart.items[0]!.discount).toEqual({ value: 10, reason: "cortesia", type: "percent" });
     expect(h.sale.paymentTotalQ.value).toBe(1000);
     h.handles.dispose();
   });
@@ -178,6 +179,244 @@ describe("usePosSale — total interino do pagamento (nunca o bruto)", () => {
     h.sale.checkoutMode.value = false; // voltou à venda: itens podem mudar
     await nextTick();
     expect(h.sale.paymentTotalQ.value).toBe(1000); // estimativa local de novo
+    h.handles.dispose();
+  });
+});
+
+describe("usePosSale — dividir a conta", () => {
+  let h: ReturnType<typeof saleWithTotal1000>;
+
+  beforeEach(() => {
+    h = saleWithTotal1000();
+  });
+  afterEach(() => h.handles.dispose());
+
+  it("sem divisão, o primeiro toque continua levando o total inteiro", () => {
+    const { sale } = h;
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+  });
+
+  it("dividido em 2, cada toque lança metade", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(false);
+
+    sale.addTender("card");
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(500);
+    expect(sale.paymentCovered.value).toBe(true);
+    expect(sale.paymentRemainingQ.value).toBe(0);
+  });
+
+  it("cada pessoa escolhe a SUA forma — é o ponto todo da divisão", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    sale.addTender("pix");
+
+    expect(sale.cart.paymentTenders.map((t) => t.method)).toEqual(["cash", "pix"]);
+  });
+
+  it("dividido em 3 numa conta que não fecha redondo, os centavos FECHAM", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.addTender("cash");
+    sale.addTender("cash");
+
+    // Sem isto sobraria um centavo órfão para o operador caçar com os três
+    // clientes olhando.
+    expect(sale.cart.paymentTenders.reduce((sum, t) => sum + t.amount_q, 0)).toBe(1000);
+    expect(sale.paymentRemainingQ.value).toBe(0);
+    expect(sale.paymentCovered.value).toBe(true);
+  });
+
+  it("a última parcela fecha a conta mesmo depois de o operador editar uma linha", () => {
+    // "Esse aqui paga R$ 6,00, o resto divide" — acontece o tempo todo.
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.tenderDigit("6");           // primeira linha vira R$ 6,00
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(600);
+
+    sale.addTender("card");
+    sale.addTender("pix");
+    expect(sale.paymentRemainingQ.value).toBe(0);
+  });
+
+  it("tocar de novo no mesmo número DESLIGA a divisão", () => {
+    // Mudar de ideia sobre dividir é rotina; um botão que só liga obrigaria o
+    // operador a caçar um "cancelar".
+    const { sale } = h;
+    sale.setSplitCount(3);
+    expect(sale.splitCount.value).toBe(3);
+
+    sale.setSplitCount(3);
+    expect(sale.splitCount.value).toBe(0);
+
+    sale.addTender("cash");
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(1000);
+  });
+
+  it("trocar o número de pessoas vale para a PRÓXIMA parcela", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");          // R$ 5,00
+    sale.setSplitCount(4);           // "na verdade somos quatro"
+
+    sale.addTender("card");
+    // Restam R$ 5,00 e já há 1 linha: a parcela 2 de 4 vale R$ 2,50.
+    expect(sale.cart.paymentTenders[1]!.amount_q).toBe(250);
+  });
+
+  it("a frase diz quanto pedir e de quem é a vez", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    expect(sale.splitNote.value).toContain("pessoa 1 de 2");
+
+    sale.addTender("cash");
+    expect(sale.splitNote.value).toContain("pessoa 2 de 2");
+  });
+
+  it("com o total já coberto, tocar numa forma continua sendo no-op", () => {
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    sale.addTender("card");
+    vi.mocked(toast.info).mockClear();
+
+    sale.addTender("pix");
+    expect(sale.cart.paymentTenders).toHaveLength(2);
+    expect(vi.mocked(toast.info)).toHaveBeenCalled();
+  });
+});
+
+describe("usePosSale — a divisão conta PESSOAS, não linhas", () => {
+  let h: ReturnType<typeof saleWithTotal1000>;
+
+  beforeEach(() => {
+    h = saleWithTotal1000();
+  });
+  afterEach(() => h.handles.dispose());
+
+  it("uma pessoa pagando com DUAS formas não queima dois slots", () => {
+    // ⚠️ A variação mais comum do balcão: "R$ 2,00 em dinheiro e o resto no
+    // cartão". Contando LINHAS, a tela pulava para "pessoa 3 de 3", o operador
+    // lia o valor errado em voz alta e a terceira pessoa ficava sem ser
+    // cobrada. O caixa fechava (a última parcela absorve o resto); os três
+    // clientes não.
+    const { sale } = h;
+    sale.setSplitCount(3);
+
+    sale.addTender("cash");          // pessoa 1 começa
+    sale.tenderDigit("2");           // ...paga só R$ 2,00 em dinheiro
+    expect(sale.cart.paymentTenders[0]!.amount_q).toBe(200);
+
+    // A segunda forma da MESMA pessoa entra pelo teclado/cédula, não por
+    // addTender — então a fila não anda.
+    expect(sale.splitPaidCount.value).toBe(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("remover uma linha devolve a pessoa para a fila", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.addTender("card");
+    expect(sale.splitNote.value).toContain("pessoa 3 de 3");
+
+    sale.removeTender(1);
+    expect(sale.splitNote.value).toContain("pessoa 2 de 3");
+  });
+
+  it("trocar o número de pessoas recomeça a fila", () => {
+    // "Na verdade somos quatro" é dito ANTES de alguém pagar; herdar a contagem
+    // faria a próxima parcela sair do lugar errado da fila.
+    const { sale } = h;
+    sale.setSplitCount(2);
+    sale.addTender("cash");
+    expect(sale.splitPaidCount.value).toBe(1);
+
+    sale.setSplitCount(4);
+    expect(sale.splitPaidCount.value).toBe(0);
+    expect(sale.splitNote.value).toContain("pessoa 1 de 4");
+  });
+
+  it("e a conta continua fechando exatamente", () => {
+    const { sale } = h;
+    sale.setSplitCount(3);
+    sale.addTender("cash");
+    sale.tenderDigit("2");   // pessoa 1 paga R$ 2,00...
+    sale.addTender("card");  // ...e o resto no cartão dela
+    sale.addTender("pix");
+    sale.addTender("cash");
+
+    expect(sale.paymentRemainingQ.value).toBe(0);
+    expect(sale.cart.paymentTenders.reduce((s, t) => s + t.amount_q, 0)).toBe(1000);
+  });
+});
+
+describe("usePosSale — ONDE se recebe é da VENDA, não da linha que nasceu primeiro", () => {
+  // ⚠️ Regressão de LIVRO-CAIXA. A `collection` era congelada no instante em que
+  // a linha nascia. Numa entrega paga em misto: o operador lança Dinheiro R$ 40
+  // + Cartão R$ 26,30 com "No caixa" marcado, o cliente então diz que paga na
+  // porta, ele troca para "Na entrega" — e as duas linhas continuavam
+  // `terminal`. O servidor grava `status: "received"`, carimba `received_at` e
+  // soma os R$ 40 no livro-caixa: dinheiro que nunca entrou na gaveta, e sobra
+  // falsa no fechamento do turno.
+  /** Projeção que oferece as DUAS coletas na entrega (o balcão real oferece). */
+  function entregaComDuasColetas() {
+    const base = freeCartProjection();
+    return makeProjection({
+      checkout: base.checkout,
+      payment_collections: [
+        ...base.payment_collections,
+        {
+          ref: "on_delivery" as (typeof base.payment_collections)[number]["ref"],
+          label: "Na entrega",
+          description: "",
+          fulfillment_types: ["delivery"],
+          payment_method_refs: ["cash", "pix", "card"],
+        },
+      ],
+    });
+  }
+
+  it("trocar a coleta reescreve as linhas já lançadas", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    const pao = h.handles.posValue.value!.products[0]!;
+    h.sale.addProduct(pao);
+    h.sale.addProduct(pao);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    h.sale.cart.paymentTenders[0]!.amount_q = 400; // sobra para a segunda forma
+    h.sale.addTender("card");
+    expect(h.sale.cart.paymentTenders.map((t) => t.collection)).toEqual(["terminal", "terminal"]);
+
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    expect(h.sale.cart.paymentTenders.map((t) => t.collection)).toEqual(["on_delivery", "on_delivery"]);
+
+    // e volta junto quando o cliente muda de ideia de novo
+    h.sale.cart.paymentCollection = "terminal";
+    await nextTick();
+    expect(h.sale.cart.paymentTenders.every((t) => t.collection === "terminal")).toBe(true);
+    h.handles.dispose();
+  });
+
+  it("linha lançada DEPOIS da troca já nasce com a coleta certa", async () => {
+    const h = makeSale({ projection: entregaComDuasColetas() });
+    h.sale.addProduct(h.handles.posValue.value!.products[0]!);
+    h.sale.cart.fulfillmentType = "delivery";
+    await nextTick();
+    h.sale.cart.paymentCollection = "on_delivery";
+    await nextTick();
+    h.sale.addTender("cash");
+    expect(h.sale.cart.paymentTenders[0]!.collection).toBe("on_delivery");
     h.handles.dispose();
   });
 });

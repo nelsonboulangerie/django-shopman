@@ -8,11 +8,13 @@ import type {
   POSCloseSaleResponse,
   POSCustomerLookupProjection,
   POSCustomerLookupResponse,
+  POSCustomerMergeResponse,
   POSCustomerSearchResponse,
   POSCustomerSearchResult,
   POSProductProjection,
   POSProjection,
   POSSaleReviewProjection,
+  POSScheduleResponse,
   POSSaleReviewResponse,
   POSTabPayload,
   POSTabProjection,
@@ -26,14 +28,19 @@ import {
   concreteActionHref,
   formatBRL,
   moneyInputToQ,
+  newLineId,
   resolvePayment,
 } from "~/utils/posIntent";
+import { cartQtyForSku } from "~/presentation/catalog";
 import { sanitizeTabRef as sanitizeTabRefShape, sortTabs } from "~/presentation/tabBoard";
+import type { ScheduleWindow } from "~/presentation/schedule";
 import {
   isPaymentCovered,
   paymentChangeQ as computeChangeQ,
   paymentProofView,
   paymentRemainingQ as computeRemainingQ,
+  splitHint,
+  splitShareQ,
 } from "~/presentation/payment";
 import {
   draftAssociationTargetStates,
@@ -44,9 +51,23 @@ import {
   tabRefMaxLength,
   tabRefPlaceholder,
 } from "~/utils/posTabLifecycle";
-import { cartNetTotalQ, type PosReceiptSnapshot } from "~/presentation/receipt";
+import { cartNetTotalQ, cashLandedInDrawer, type PosReceiptSnapshot } from "~/presentation/receipt";
 import { manualDiscountWasOverridden, winningDiscountLabel } from "~/presentation/lineDiscounts";
 import type { PosSaleResultSnapshot } from "~/presentation/saleResult";
+import type {
+  CustomerDecision,
+  CustomerDecisionField,
+  ServerConflictCandidate,
+} from "~/presentation/customerDecision";
+import {
+  conflictDecision,
+  conflictTypedSource,
+  contactChangeDecision,
+  customerMergeDescription,
+  decisionFieldFromServer,
+  decisionFieldLabel,
+} from "~/presentation/customerDecision";
+import { receiptContactArmed, receiptSaveOffers } from "~/presentation/receiptContact";
 import { toast } from "vue-sonner";
 
 type FulfillmentType = "pickup" | "delivery";
@@ -91,8 +112,18 @@ export function usePosSale(deps: PosSaleDeps) {
   const drawer = useCounterAgent(pos);
   // A trava da gaveta: o PDV recusa INICIAR a próxima venda enquanto SABE que a
   // gaveta está aberta. Vive num composable próprio (regras + diálogo); aqui só
-  // se decide ONDE ela morde — em `openTab`, o único portão de entrada na venda.
+  // se decide ONDE ela morde — no `openTab` E no primeiro item de uma venda sem
+  // comanda, que neste balcão é a venda comum (ver `addProduct`).
   const drawerLock = useDrawerLock({ drawer, actions, action });
+  // O olho da hora morta: a trava só age quando alguém tenta vender, e gaveta
+  // aberta no balcão parado não seria vista por ninguém.
+  useDrawerIdleWatch({
+    drawer,
+    actions,
+    action,
+    minutes: computed(() => Number(pos.value?.cash_drawer?.idle_open_alert_minutes ?? 0)),
+    blocked: computed(() => drawerLock.open.value),
+  });
 
   const tabInput = ref("");
   const busy = ref(false);
@@ -123,6 +154,11 @@ export function usePosSale(deps: PosSaleDeps) {
   // — reabre o diálogo de autorização com a mensagem, senão o CTA vira "Validar" e
   // reenvia o mesmo PIN errado para sempre (beco sem saída).
   const managerApprovalError = ref("");
+  // O servidor recusou com `focus: "customer"` (ex.: agendado sem cliente):
+  // além do toast, a tela ABRE a identificação — motivo sem caminho de um
+  // toque é beco sem saída, mesma filosofia do diálogo do gerente. Nonce, não
+  // boolean: duas recusas seguidas precisam abrir duas vezes.
+  const customerFocusNonce = ref(0);
   // O resultado da venda fechada — a TELA DE RESULTADO fica de pé enquanto ele
   // existe. `changeQ` é o troco CONGELADO no instante do fechamento (o cart
   // reseta logo depois e o troco computado voltaria a zero): uma fonte só para
@@ -159,7 +195,9 @@ export function usePosSale(deps: PosSaleDeps) {
         );
         if (status?.is_paid) { pixStatus.value = "paid"; stopPixPolling(); }
         else if (status?.is_terminal) { pixStatus.value = "expired"; stopPixPolling(); } // cancelado/expirado
-      } catch { /* falha transiente de rede — segue tentando */ }
+      // A desistência é que fala alto: 240 tentativas → `pixStatus = "expired"`
+      // e o toast do watcher. A tentativa isolada, não.
+      } catch { /* silêncio-deliberado: falha transiente de rede — segue tentando */ }
     }, 2500);
   }
 
@@ -195,6 +233,28 @@ export function usePosSale(deps: PosSaleDeps) {
     result.value = null;
   }
 
+  // Reenvio do link de pagamento — "não chegou". O servidor enfileira UMA
+  // Directive nova (mesma URL, mesma cadeia WhatsApp → e-mail → SMS) e recusa
+  // com motivo quando não deve: link vencido, pedido pago/cancelado, envio
+  // ainda em andamento, clique cedo demais. A recusa é toast com o `detail`
+  // do servidor; o botão não some, porque o motivo muda com o tempo.
+  const resendingLink = ref(false);
+  async function resendPaymentLink(): Promise<boolean> {
+    const orderRef = result.value?.orderRef;
+    if (!orderRef || resendingLink.value) return false;
+    resendingLink.value = true;
+    try {
+      await action.call(`/api/v1/backstage/pos/orders/${encodeURIComponent(orderRef)}/resend-payment-link/`);
+      toast.success("Link reenviado ao cliente");
+      return true;
+    } catch (error) {
+      toast.error(httpErrorMessage(error, "Não foi possível reenviar o link. Copie e mande você."));
+      return false;
+    } finally {
+      resendingLink.value = false;
+    }
+  }
+
   /**
    * Uma venda cancelada FORA da tela de resultado (Últimas vendas): se era a
    * venda em cena — palco, chip ou polling — o vestígio dela sai junto.
@@ -215,12 +275,31 @@ export function usePosSale(deps: PosSaleDeps) {
   const showTabs = ref(true);
   const moveDialogOpen = ref(false);
   // O diálogo de mover abre imediatamente; isto marca a fase de preparo
-  // (persist + reload dos line_ids) para o spinner interno do diálogo.
+  // (persist + reload da comanda) para o spinner interno do diálogo.
   const movePreparing = ref(false);
   const review = ref<POSSaleReviewProjection | null>(null);
   const customerLookup = ref<POSCustomerLookupProjection | null>(null);
+  /** O cadastro como régua da oferta: falta o campo, é igual, ou diverge. */
+  const offerCustomer = () =>
+    customerLookup.value
+      ? {
+          name: customerLookup.value.name,
+          email: customerLookup.value.email,
+          tax_id: customerLookup.value.tax_id,
+        }
+      : null;
   const tabDialogOpen = ref(false);
   const tabDialogReason = ref<"start" | "save" | "cart">("start");
+  /** As ofertas do comprovante — a MESMA função que a tela lê para perguntar. */
+  const receiptOffers = () =>
+    receiptSaveOffers({
+      receiptEmail: cart.receiptEmail,
+      customerEmail: cart.customerEmail,
+      invoiceTaxId: cart.invoiceTaxId,
+      wantsCpfOnInvoice: cart.wantsCpfOnInvoice,
+      customerTaxId: cart.customerTaxId,
+      customer: offerCustomer(),
+    });
 
   const cart = reactive({
     tabRef: "",
@@ -258,6 +337,18 @@ export function usePosSale(deps: PosSaleDeps) {
     changeForInput: "",
     receiptChannels: [] as string[],
     receiptEmail: "",
+    // A ORDEM de guardar o contato do comprovante no cadastro. `null` = o
+    // operador ainda NÃO tocou, e vale o padrão da oferta (marcado só quando
+    // não há cliente identificado — decisão do dono). Sem esta distinção, o
+    // padrão seria reimposto a cada tecla e desfaria o desmarque de quem já
+    // tinha respondido.
+    saveReceiptContact: null as boolean | null,
+    saveReceiptTaxId: null as boolean | null,
+    // A SEGUNDA palavra sobre o CPF divergente. Marcar a caixa diz "quero"; isto
+    // diz "eu sei o que isso troca". Só o CPF a exige — e-mail muda, CPF não —,
+    // e sem ela a ordem não viaja: a fricção seria decorativa se o interruptor
+    // bastasse.
+    confirmReceiptTaxId: false,
     discountType: "percent" as "percent" | "fixed",
     discountValue: "",
     discountReason: "",
@@ -311,16 +402,105 @@ export function usePosSale(deps: PosSaleDeps) {
   const deliveryDateEffective = computed(
     () => cart.deliveryDate || review.value?.delivery_date || pos.value?.delivery_today || "",
   );
-  // As janelas do dia escolhido. Sem review (endereço em branco), as de HOJE
-  // servem enquanto a data for hoje — e nunca se diz "sem janela" só porque a
-  // resposta ainda não chegou: ausência de resposta não é fato.
-  const deliverySlots = computed(() => {
-    if (review.value) return review.value.delivery_slots ?? [];
+  // AGENDAMENTO — as datas que a casa opera e as janelas do dia escolhido, já
+  // anotadas com a prontidão DESTE carrinho.
+  //
+  // A review responde isso, mas só no checkout — e o agendamento acontece na
+  // ABERTURA do atendimento, com o operador no telefone e o carrinho ainda pela
+  // metade. Ficar sem resposta até a tela de pagamento é o que empurrava a data
+  // para o fim do fluxo, onde ela nunca deveria ter morado.
+  const schedule = ref<POSScheduleResponse | null>(null);
+  const scheduleBusy = ref(false);
+  /** A última busca falhou — a tela diz isso em vez de "carregando" para sempre. */
+  const scheduleFailed = ref(false);
+  let scheduleTimer: ReturnType<typeof setTimeout> | null = null;
+  let scheduleSeq = 0;
+
+  async function fetchSchedule() {
+    const seq = ++scheduleSeq;
+    scheduleBusy.value = true;
+    scheduleFailed.value = false;
+    try {
+      const skus = [...new Set(cart.items.map((item) => item.sku).filter(Boolean))].join(",");
+      const query = new URLSearchParams();
+      if (cart.deliveryDate) query.set("date", cart.deliveryDate);
+      if (skus) query.set("skus", skus);
+      const response = await $fetch<POSScheduleResponse>(
+        apiPath(`/api/v1/backstage/pos/schedule/?${query.toString()}`),
+        { method: "GET", credentials: "include", headers: requestHeaders },
+      );
+      // Resposta velha chegando depois da nova reescreveria as janelas do dia
+      // ERRADO — o operador troca de data mais rápido que a rede responde.
+      if (seq !== scheduleSeq) return;
+      schedule.value = response;
+    } catch {
+      // Falhar aqui não pode travar a venda — mas também não pode se disfarçar
+      // de "carregando" para sempre. A tela dizia "Carregando os horários…"
+      // eternamente quando o endpoint errava, e nada distinguia falha de
+      // pendência. O servidor recusa a janela impossível de qualquer jeito.
+      if (seq === scheduleSeq) {
+        schedule.value = null;
+        scheduleFailed.value = true;
+      }
+    } finally {
+      if (seq === scheduleSeq) scheduleBusy.value = false;
+    }
+  }
+
+  function scheduleRefreshSchedule() {
+    if (scheduleTimer) clearTimeout(scheduleTimer);
+    scheduleTimer = setTimeout(() => {
+      scheduleTimer = null;
+      void fetchSchedule();
+    }, 200);
+  }
+
+  // O carrinho entra na pergunta: lançar a baguete de tradição DEPOIS de marcar
+  // as 09:00 tem que apagar aquela janela na hora. Sem isto a escolha virava
+  // impossível em silêncio e o servidor só recusava no fim, com o cliente já
+  // tendo ouvido o horário.
+  //
+  // Mas só quando há agendamento em jogo. A venda dominante do balcão é para
+  // agora e sem hora marcada: buscar a grade a cada item lançado seria uma
+  // requisição por toque no produto para responder uma pergunta que ninguém fez.
+  // Abrir o diálogo também busca (`refreshSchedule`), então quem VAI agendar
+  // encontra a resposta pronta.
+  watch(
+    () => [cart.deliveryDate, cart.deliveryTimeSlot, cart.items.map((item) => item.sku).join(",")].join("|"),
+    () => {
+      if (!cart.deliveryDate && !cart.deliveryTimeSlot) return;
+      scheduleRefreshSchedule();
+    },
+  );
+
+  const scheduleToday = computed(() => schedule.value?.today || pos.value?.delivery_today || "");
+  const scheduleAvailableDates = computed(() => schedule.value?.available_dates ?? []);
+  const scheduleBottleneckName = computed(() => schedule.value?.bottleneck_name || "");
+  const scheduleReadyAt = computed(() => schedule.value?.ready_at || "");
+  /** A última data encomendável. O servidor sempre recusa além dela; isto só
+   *  evita que o operador chegue a digitá-la. */
+  const scheduleMaxDate = computed(() => {
+    const dates = schedule.value?.available_dates ?? [];
+    return dates.length ? dates[dates.length - 1]! : "";
+  });
+
+  // A data que vale: a escolhida, a que a review usou, ou o HOJE da loja. O
+  // último termo é o que faz o formulário abrir já respondendo.
+  // As janelas do dia escolhido. A review manda quando existe (ela conhece o
+  // endereço e a taxa); fora do checkout, o agendamento responde. Nunca se diz
+  // "sem janela" só porque a resposta ainda não chegou.
+  const deliverySlots = computed<ScheduleWindow[]>(() => {
+    if (review.value?.delivery_slots?.length) return review.value.delivery_slots;
+    if (schedule.value && schedule.value.date === deliveryDateEffective.value) {
+      return schedule.value.windows ?? [];
+    }
     const today = pos.value?.delivery_today || "";
     if (today && deliveryDateEffective.value === today) return pos.value?.delivery_slots_today ?? [];
     return [];
   });
-  const deliverySlotsPending = computed(() => !review.value && !deliverySlots.value.length);
+  const deliverySlotsPending = computed(
+    () => scheduleBusy.value || (!review.value && !schedule.value && !scheduleFailed.value),
+  );
 
   // Payment by injection (Odoo-style): the operator adds tender lines in any form;
   // the method is derived (no "mixed" selection). Finalize is gated until covered.
@@ -338,7 +518,13 @@ export function usePosSale(deps: PosSaleDeps) {
   watch(checkoutMode, (open) => {
     // Fora do checkout o carrinho volta a mudar (itens novos): o total retido
     // ficaria mentindo — zera e a próxima entrada recomeça do zero.
-    if (!open) lastReviewTotalQ.value = 0;
+    if (!open) {
+      lastReviewTotalQ.value = 0;
+      // A divisão é desta conta. Sair do checkout com "3 pessoas" ligado faria a
+      // PRÓXIMA venda lançar um terço no primeiro toque, sem ninguém ter pedido.
+      splitCount.value = 0;
+      splitPaidCount.value = 0;
+    }
   });
   const paymentTotalQ = computed(
     () => review.value?.total_q ?? (lastReviewTotalQ.value || cartNetTotalQ(cart.items)),
@@ -369,8 +555,73 @@ export function usePosSale(deps: PosSaleDeps) {
   // editing the amount does. (`_virgin` is internal; stripped before the intent.)
   const selectedTender = () => cart.paymentTenders[selectedTenderIndex.value];
 
+  // DIVIDIR A CONTA — "somos três, cada um paga o seu".
+  //
+  // A divisão não cria três linhas de uma vez: ela muda o tamanho da PRÓXIMA.
+  // Com "3 pessoas" ligado, tocar em Dinheiro lança um terço, tocar em Cartão
+  // lança o segundo, e o terceiro fecha a conta. É o fluxo do Odoo (parcial
+  // sucessivo) com a aritmética feita pela máquina — e compõe com tudo que já
+  // existe: cada pessoa escolhe a SUA forma, o teclado edita qualquer linha, e
+  // "Exato" continua fechando o resto.
+  //
+  // 0 = sem divisão (a próxima linha leva o restante inteiro, como sempre foi).
+  const splitCount = ref(0);
+  // ⚠️ PESSOAS, não linhas — e a diferença não é sutil.
+  //
+  // Isto já foi `cart.paymentTenders.length`, e quebrava na variação mais comum
+  // do balcão: uma pessoa que paga "R$ 20 em dinheiro e o resto no cartão"
+  // gastava DOIS slots. A tela pulava para "pessoa 3 de 3", o operador lia o
+  // valor errado em voz alta, e a terceira pessoa ficava sem ser cobrada. O
+  // caixa fechava (a última parcela absorve o resto); os três clientes não.
+  //
+  // Quem conta é o gesto de cobrar a próxima pessoa, então o contador é
+  // avançado só por `addTender` — a segunda forma da MESMA pessoa entra pelo
+  // teclado ou pelas cédulas, que não mexem aqui.
+  const splitPaidCount = ref(0);
+  const splitNextShareQ = computed(() => splitShareQ(
+    paymentTotalQ.value,
+    splitCount.value,
+    splitPaidCount.value,
+    paymentRemainingQ.value,
+  ));
+  const splitNote = computed(() => splitHint(
+    paymentTotalQ.value,
+    splitCount.value,
+    splitPaidCount.value,
+    paymentRemainingQ.value,
+  ));
+  function setSplitCount(count: number) {
+    // Tocar de novo no mesmo número DESLIGA. Um botão que só liga obriga o
+    // operador a caçar um "cancelar" quando o cliente muda de ideia — e mudar de
+    // ideia sobre dividir a conta é rotina.
+    splitCount.value = splitCount.value === count ? 0 : Math.max(0, count);
+    // Trocar o número de pessoas recomeça a contagem: "na verdade somos quatro"
+    // é dito ANTES de alguém pagar, e herdar a contagem antiga faria a próxima
+    // parcela sair do lugar errado da fila.
+    splitPaidCount.value = 0;
+  }
+  /** Uma pessoa a menos na fila — some junto com a linha que ela pagou. */
+  function splitUnwind() {
+    splitPaidCount.value = Math.max(0, splitPaidCount.value - 1);
+  }
+
+  // ⚠️ ONDE O DINHEIRO É RECEBIDO É DA VENDA, e as linhas TÊM que acompanhar.
+  //
+  // A `collection` era congelada no instante em que a linha nascia. Numa entrega
+  // paga em misto: o operador lança Dinheiro R$ 40 + Cartão R$ 26,30 com "No
+  // caixa" marcado, o cliente então diz que paga na porta, ele troca para "Na
+  // entrega" — e as duas linhas continuavam `terminal`. O servidor grava
+  // `status: "received"`, carimba `received_at` e soma os R$ 40 no LIVRO-CAIXA:
+  // dinheiro que nunca entrou na gaveta, e sobra falsa no fechamento do turno.
+  //
+  // A tela oferece UM seletor de coleta para a venda inteira, então nunca há
+  // motivo legítimo para uma linha discordar dele. Trocar reescreve todas.
+  watch(() => cart.paymentCollection, (collection) => {
+    for (const tender of cart.paymentTenders) tender.collection = collection;
+  });
+
   function addTender(method: string) {
-    const amountQ = Math.max(0, paymentRemainingQ.value);
+    const amountQ = Math.max(0, splitNextShareQ.value);
     if (amountQ <= 0) {
       // Tocar num método com o total já coberto era silêncio absoluto — o
       // operador tocava de novo achando que o botão quebrou. Diz o porquê e o
@@ -381,6 +632,8 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.paymentTenders.push({ method, amount_q: amountQ, collection: cart.paymentCollection, _virgin: true });
     selectedTenderIndex.value = cart.paymentTenders.length - 1;
     tenderEntry.value = null;
+    // Uma pessoa a mais atendida — só aqui, que é o gesto de cobrar a PRÓXIMA.
+    if (splitCount.value > 0) splitPaidCount.value += 1;
   }
 
   // A cash bill with no tender yet opens a cash line at that bill's value — the
@@ -394,6 +647,7 @@ export function usePosSale(deps: PosSaleDeps) {
 
   function removeTender(index: number) {
     cart.paymentTenders.splice(index, 1);
+    splitUnwind();
     if (selectedTenderIndex.value >= cart.paymentTenders.length) {
       selectedTenderIndex.value = cart.paymentTenders.length - 1;
     }
@@ -533,6 +787,7 @@ export function usePosSale(deps: PosSaleDeps) {
   function scheduleAutoReview() {
     if (!checkoutMode.value) return;
     review.value = null;
+    reviewFailed.value = false;
     if (autoReviewTimer) clearTimeout(autoReviewTimer);
     autoReviewTimer = setTimeout(() => {
       autoReviewTimer = null;
@@ -556,26 +811,71 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.discountReason,
   ], () => scheduleAutoReview());
 
+  /** Quanto deste produto está no carrinho, somando todas as linhas dele — a
+   *  mesma conta do selo no card do grid (`cartQtyForSku`). */
   function productQty(sku: string): number {
-    return cart.items.find((item) => item.sku === sku)?.qty || 0;
+    return cartQtyForSku(cart.items, sku);
   }
 
+  /** A quantidade DESTA linha — o que os steppers do carrinho incrementam. */
+  function lineQty(lineId: string): number {
+    return cart.items.find((item) => item.line_id === lineId)?.qty || 0;
+  }
+
+  /**
+   * ⚠️ A trava da gaveta morde AQUI, e não só no `openTab`.
+   *
+   * A trava nasceu presa ao `openTab` — "o único portão de entrada na venda".
+   * Isso era verdade quando a comanda era obrigatória, e deixou de ser: este
+   * balcão roda com `requires_open_tab_for_cart: false` e
+   * `allows_direct_checkout_without_tab: true`, ou seja, a venda comum de
+   * balcão (toca o produto, cobra, entrega) NUNCA passa por `openTab`. A trava
+   * existia e não agia na venda que mais acontece.
+   *
+   * O ponto certo é o PRIMEIRO item de uma venda nova sem comanda: é o
+   * equivalente exato do `openTab` neste fluxo. A regra decidida não muda —
+   * trava ao INICIAR, nunca no meio: `setQty`, `restoreItem` e os itens
+   * seguintes seguem livres, porque venda começada não vira refém.
+   */
   function addProduct(product: POSProductProjection) {
     if (!canUseCart.value) {
       requestTabAssociation("cart");
       return;
     }
+    // Balcão sem agente não tem trava nenhuma (gaveta de chave): pular o
+    // `guard` aqui não muda o resultado — `readState` responderia "não sei", que
+    // nunca trava — e evita atravessar um `await` no gesto mais quente do PDV.
+    const startsNewSale = drawer.canKick.value && !hasOpenTab.value && !cart.items.length;
+    if (startsNewSale) {
+      void drawerLock.guard(async () => pushProduct(product));
+      return;
+    }
+    pushProduct(product);
+  }
+
+  /**
+   * ⚠️ AGREGA ENQUANTO NÃO FOI PARA A COZINHA, e nunca depois.
+   *
+   * Tocar duas vezes antes de enviar continua fazendo uma linha com qty 2 — é o
+   * gesto do balcão e ele não muda. Mas quando a linha JÁ foi ao fogão, somar
+   * mais um nela era pedir um chá que ninguém ia fazer: o servidor deduplica por
+   * `line_id`, a linha já estava disparada, e o segundo chá ficava preso dentro
+   * de uma linha marcada "enviada". A partir daí o toque cria uma linha NOVA,
+   * com identidade nova — que é o que a cozinha precisa para receber um ticket.
+   */
+  function pushProduct(product: POSProductProjection) {
     // Lançar item é sair da tela de resultado: pelo mesmo caminho do CTA
     // (PIX aguardando vira chip, nunca é descartado calado).
     dismissResult();
     review.value = null;
     checkoutMode.value = false;
-    const existing = cart.items.find((item) => item.sku === product.sku);
-    if (existing) {
-      existing.qty += 1;
+    const openLine = cart.items.find((item) => item.sku === product.sku && !item.fired);
+    if (openLine) {
+      openLine.qty += 1;
       return;
     }
     cart.items.push({
+      line_id: newLineId(),
       sku: product.sku,
       name: product.name,
       price_q: product.price_q,
@@ -584,41 +884,44 @@ export function usePosSale(deps: PosSaleDeps) {
     });
   }
 
-  function setQty(sku: string, qty: number) {
+  function setQty(lineId: string, qty: number) {
     if (!canUseCart.value) return;
     review.value = null;
     checkoutMode.value = false;
-    const existing = cart.items.find((item) => item.sku === sku);
+    const existing = cart.items.find((item) => item.line_id === lineId);
     if (!existing) return;
     if (qty <= 0) {
-      cart.items = cart.items.filter((item) => item.sku !== sku);
+      cart.items = cart.items.filter((item) => item.line_id !== lineId);
       return;
     }
     existing.qty = qty;
   }
 
   // Observação da linha (Odoo Note): o autosave persiste e o fire leva ao KDS.
-  function setLineNotes(sku: string, notes: string) {
-    const item = cart.items.find((entry) => entry.sku === sku);
+  // Por LINHA, não por produto — "o segundo sem lactose" é exatamente o pedido
+  // que a chave por SKU não sabia escrever.
+  function setLineNotes(lineId: string, notes: string) {
+    const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
     item.notes = notes;
   }
 
   // "Desfazer" da remoção direta: devolve a linha como estava (qty, desconto,
-  // observação). Idempotente: se a linha voltou por outro caminho, não duplica.
+  // observação, identidade). Idempotente: se a linha voltou por outro caminho,
+  // não duplica.
   function restoreItem(item: POSCartItem) {
     if (!canUseCart.value) return;
-    if (cart.items.some((entry) => entry.sku === item.sku)) return;
+    if (cart.items.some((entry) => entry.line_id === item.line_id)) return;
     review.value = null;
     cart.items.push({ ...item });
   }
 
-  function setLineDiscount(sku: string, value: number, reason: string) {
-    const item = cart.items.find((entry) => entry.sku === sku);
+  function setLineDiscount(lineId: string, value: number, reason: string, type: "percent" | "fixed" = "percent") {
+    const item = cart.items.find((entry) => entry.line_id === lineId);
     if (!item) return;
     review.value = null;
     if (value > 0) {
-      item.discount = { value, reason };
+      item.discount = { value, reason, type };
       // "Maior desconto ganha, um por item": o servidor DESCARTA um manual menor
       // que o automático que já venceu a linha. Sem aviso, o operador digitava a
       // cortesia, o preço não mudava e ele não tinha como saber por quê. A linha
@@ -631,21 +934,6 @@ export function usePosSale(deps: PosSaleDeps) {
     } else {
       delete item.discount;
     }
-  }
-
-  // Operator unit-price override (numpad "Preço"): set the line's price and flag
-  // it when it differs from the catalog — the kernel then freezes it (the pricing
-  // modifier skips re-pricing) and the server review requires manager approval.
-  // Typing the catalog price back clears the override.
-  function setLinePrice(sku: string, priceQ: number) {
-    const item = cart.items.find((entry) => entry.sku === sku);
-    if (!item) return;
-    review.value = null;
-    checkoutMode.value = false;
-    const catalogQ = pos.value?.products.find((product) => product.sku === sku)?.price_q ?? item.price_q;
-    const next = Math.max(0, Math.min(99_999_999, Math.round(priceQ)));
-    item.price_q = next;
-    item.price_overridden = next !== catalogQ;
   }
 
   function resetCart() {
@@ -679,6 +967,9 @@ export function usePosSale(deps: PosSaleDeps) {
     cart.changeForInput = "";
     cart.receiptChannels = [];
     cart.receiptEmail = "";
+    cart.saveReceiptContact = null;
+    cart.saveReceiptTaxId = null;
+    cart.confirmReceiptTaxId = false;
     cart.discountType = "percent";
     cart.discountValue = "";
     cart.discountReason = "";
@@ -743,6 +1034,11 @@ export function usePosSale(deps: PosSaleDeps) {
       cart.invoiceTaxId = cart.invoiceTaxId || String(payload.fiscal_tax_id || "");
       cart.receiptChannels = [...(payload.receipt_channels || [])];
       cart.receiptEmail = payload.receipt_email || "";
+      // A ordem não volta da comanda reaberta: é decisão de QUEM está fechando
+      // agora, sobre o cadastro como ele está agora. A oferta se recalcula.
+      cart.saveReceiptContact = null;
+      cart.saveReceiptTaxId = null;
+      cart.confirmReceiptTaxId = false;
       cart.discountType = "percent";
       cart.discountValue = "";
       cart.discountReason = "";
@@ -895,6 +1191,20 @@ export function usePosSale(deps: PosSaleDeps) {
         : 0,
       receiptChannels: cart.receiptChannels,
       receiptEmail: cart.receiptEmail || cart.customerEmail,
+      // O padrão da oferta vale enquanto o operador não tocar — e a régua é o
+      // cadastro que o lookup trouxe, a mesma que a tela usou para perguntar.
+      saveReceiptContact: receiptContactArmed(receiptOffers().email, cart.saveReceiptContact, true),
+      // ⚠️ `receiptContactArmed` e não `receiptContactChecked`: no CPF divergente
+      // a caixa marcada sem a reconfirmação não grava NADA. É aqui que a
+      // fricção deixa de ser conversa de tela e vira consequência.
+      saveReceiptTaxId: receiptContactArmed(
+        receiptOffers().taxId, cart.saveReceiptTaxId, cart.confirmReceiptTaxId,
+      ),
+      // A segunda palavra viaja JUNTO, e não dissolvida na ordem: o servidor
+      // recusa sobrescrever o CPF do cadastro sem ela, e é ele quem decide se
+      // este caso é sobrescrita ou lacuna. A tela só passa adiante o que já
+      // sabe — que o operador confirmou.
+      saveReceiptTaxIdConfirmed: cart.confirmReceiptTaxId,
       manualDiscount,
       managerApproval,
       clientRequestId: cart.clientRequestId || newClientRequestId(),
@@ -987,19 +1297,91 @@ export function usePosSale(deps: PosSaleDeps) {
   // the record NOW — not deferred to order commit — so the customer (ref, memory,
   // address) exists and attaches to the cart/tab immediately. Idempotent: an
   // existing customer is found, a fresh one is created once.
-  async function resolveCustomer() {
+  // A escolha que é DO OPERADOR: conflito de contato (o WhatsApp digitado já é
+  // de outro cadastro) ou correção de contato (o do cliente associado vai
+  // mudar). Enquanto ela existe, o modal fica aberto esperando a resposta.
+  const customerDecision = ref<CustomerDecision | null>(null);
+  /**
+   * A recusa que abriu o painel interrompeu um FECHAMENTO (e não uma edição no
+   * modal do cliente)?
+   *
+   * É o que permite a venda seguir sozinha depois que o operador resolve o
+   * conflito: quem apertou "Concluir" já disse o que queria, e devolvê-lo a um
+   * botão para dizer de novo é cobrar duas vezes a mesma decisão com o cliente
+   * esperando.
+   */
+  const pendingSaleAfterDecision = ref(false);
+
+  /**
+   * Qual campo DA TELA brigou, e com que valor.
+   *
+   * O e-mail e o documento existem em DOIS lugares — o painel do cliente
+   * (identidade) e o comprovante (destino da nota) — e a recusa do servidor
+   * acusa só `customer_email`. Sem escolher pelo campo culpado, o painel
+   * anunciava o telefone numa briga de e-mail, e "Manter Ana" limpava o campo do
+   * painel enquanto o valor recusado seguia intacto no comprovante: o operador
+   * tentava de novo e batia na mesma parede, com o cliente na frente.
+   *
+   * A precedência é a do servidor, e o documento só conta quando o switch da
+   * nota está ligado — igual ao que o intent manda.
+   */
+  function conflictSource(field: CustomerDecisionField | "") {
+    return conflictTypedSource({
+      field,
+      customerPhone: cart.customerPhone,
+      customerEmail: cart.customerEmail,
+      customerTaxId: cart.customerTaxId,
+      receiptEmail: cart.receiptEmail,
+      invoiceTaxId: cart.wantsCpfOnInvoice ? cart.invoiceTaxId : "",
+    });
+  }
+
+  async function resolveCustomer(options: { contactCorrection?: boolean } = {}) {
+    const customerRef = cart.customerRef.trim();
     const name = cart.customerName.trim();
     const phone = cart.customerPhone.trim();
     const taxId = cart.customerTaxId.trim();
     const email = cart.customerEmail.trim();
-    if (!name && !phone && !taxId && !email) return;
+    if (!customerRef && !name && !phone && !taxId && !email) return;
+
+    // CORRIGIR o contato do cliente associado é mudar a identidade de contato
+    // de um cadastro — o número por onde ele recebe aviso de pronto. Isso é dito
+    // ANTES de acontecer, com os dois valores nomeados. Sem a palavra do
+    // operador, o servidor segue só preenchendo lacuna.
+    if (!options.contactCorrection) {
+      const change = contactChangeDecision({
+        customerRef,
+        customerName: name || customerLookup.value?.name || "",
+        registeredPhone: customerLookup.value?.phone || "",
+        typedPhone: phone,
+        registeredEmail: customerLookup.value?.email || "",
+        typedEmail: email,
+      });
+      if (change) {
+        customerDecision.value = change;
+        return;
+      }
+    }
+
     lookupBusy.value = true;
     serverError.value = "";
     try {
       const path = actionHref(actions.value, "customer_resolve", "/api/v1/backstage/pos/customer/resolve/");
       const response = await action.call<POSCustomerLookupResponse>(path, {
-        body: { customer_name: name, customer_phone: phone, customer_tax_id: taxId, customer_email: email },
+        body: {
+          // ⚠️ O cliente JÁ ASSOCIADO viaja. Sem ele o servidor achava um único
+          // candidato pelo telefone digitado e TROCAVA o dono do pedido em
+          // silêncio — com o ref, os dois candidatos aparecem e a recusa
+          // devolve a escolha para quem está no balcão.
+          customer_ref: customerRef,
+          customer_name: name,
+          customer_phone: phone,
+          customer_tax_id: taxId,
+          customer_email: email,
+          ...(options.contactCorrection ? { customer_contact_correction: true } : {}),
+        },
       });
+      customerDecision.value = null;
       if (!response.customer) return;
       // "Criei agora" ≠ "achei": a confirmação visual do modal distingue.
       customerResolvedNew.value = !!response.created;
@@ -1038,10 +1420,212 @@ export function usePosSale(deps: PosSaleDeps) {
         applySavedAddress(response.customer.default_address);
       }
     } catch (error) {
+      const data = (httpError(error).data || {}) as { error?: { field?: string; candidates?: ServerConflictCandidate[] } };
+      if (httpErrorCode(error) === "customer_conflict") {
+        const decision = conflictDecision({
+          field: data.error?.field,
+          candidates: data.error?.candidates,
+          typed: conflictSource(decisionFieldFromServer(data.error?.field)).typed,
+          typedField: conflictSource(decisionFieldFromServer(data.error?.field)).typedField,
+        });
+        if (decision) {
+          customerDecision.value = decision;
+          return;
+        }
+      }
       serverError.value = httpErrorMessage(error, "Falha ao salvar o cliente.");
     } finally {
       lookupBusy.value = false;
     }
+  }
+
+  /** Passar a atender OUTRO cadastro — sempre pelo caminho explícito. */
+  async function attendCustomer(ref: string, name: string) {
+    cart.customerRef = ref;
+    cart.customerName = name;
+    // Os campos do cliente ANTERIOR não podem sobrar: o CPF da nota era dele, e
+    // o `lookupCustomer` pelo ref repõe tudo que é do cadastro novo.
+    cart.customerPhone = "";
+    cart.customerEmail = "";
+    cart.customerTaxId = "";
+    cart.invoiceTaxId = "";
+    cart.wantsCpfOnInvoice = false;
+    cart.customerMemoryAction = "";
+    customerLookup.value = null;
+    customerSearchResults.value = [];
+    customerResolvedNew.value = false;
+    await lookupCustomer();
+  }
+
+  /** O operador assumiu a mudança. Trocar de cliente pelo caminho EXPLÍCITO —
+   *  o mesmo destino da busca, e nunca um efeito colateral de digitar. */
+  async function confirmCustomerDecision() {
+    const decision = customerDecision.value;
+    if (!decision) return;
+    // Trocar de cliente muda faixa de preço e restrições: a venda NÃO retoma
+    // sozinha, o operador revisa o que passou a valer.
+    pendingSaleAfterDecision.value = false;
+    if (decision.kind === "contact_change") {
+      customerDecision.value = null;
+      await resolveCustomer({ contactCorrection: true });
+      return;
+    }
+    // ⚠️ Dono DESATIVADO não passa por aqui: atender não dá (o cadastro não
+    // existe mais para o balcão) e unificar o Core recusa, então o painel não
+    // oferece confirmar — a saída é o botão de LIBERAR, uma vez só.
+    const other = decision.other;
+    if (!other) return;
+    customerDecision.value = null;
+    await attendCustomer(other.ref, other.name);
+  }
+
+  /** Da LISTA de candidatos: "Atender este". */
+  async function pickConflictCandidate(candidate: ServerConflictCandidate) {
+    customerDecision.value = null;
+    pendingSaleAfterDecision.value = false;
+    await attendCustomer(candidate.ref, candidate.name);
+  }
+
+  /** É a MESMA pessoa: os dois cadastros viram um, e a comanda segue no alvo. */
+  const customerMergeBusy = ref(false);
+  async function mergeConflictCustomers() {
+    const decision = customerDecision.value;
+    const other = decision?.other;
+    const current = decision?.current;
+    if (!other || !current) return;
+    customerMergeBusy.value = true;
+    try {
+      const path = actionHref(actions.value, "customer_merge", "/api/v1/backstage/pos/customer/merge/");
+      // Quem SOBREVIVE é o cadastro da comanda: é nele que a venda em curso
+      // está pendurada, e é dele que o operador acabou de falar com o cliente.
+      const response = await action.call<POSCustomerMergeResponse>(path, {
+        body: { source_ref: other.ref, target_ref: current.ref },
+      });
+      customerDecision.value = null;
+      // O prazo do desfazer é a metade da notícia que faltava: unificar é
+      // destrutivo, e quem fez precisa saber que dá para voltar atrás e até
+      // quando — a janela fecha sozinha em 24h.
+      const description = customerMergeDescription({
+        migrated: response.merge?.migrated,
+        undoDeadline: response.merge?.undo_deadline,
+      });
+      toast.success(`Cadastros unificados em ${response.customer?.name || current.name}.`, {
+        description: description || undefined,
+        // Mais tempo do que o toast comum: são duas frases, e a segunda tem
+        // prazo. Ler pela metade aqui é perder o desfazer.
+        duration: 12000,
+      });
+      // A comanda segue no ALVO — e o lookup repõe memória e endereço já
+      // unificados, sem o operador ter de buscar de novo.
+      await lookupCustomer();
+    } catch (error) {
+      serverError.value = httpErrorMessage(error, "Não foi possível unificar os cadastros.");
+    } finally {
+      customerMergeBusy.value = false;
+    }
+  }
+
+  /** O campo da tela traduzido de volta para o dialeto do servidor. */
+  const SERVER_FIELD: Record<string, string> = {
+    phone: "customer_phone",
+    email: "customer_email",
+    tax_id: "customer_tax_id",
+  };
+
+  /** Soltar o contato preso num cadastro DESATIVADO — e seguir a venda.
+   *
+   *  `value` chega preenchido quando a liberação parte de uma LINHA da lista de
+   *  candidatos; sem ele vale o valor que o painel nomeou.
+   *
+   *  ⚠️ `confirmed: true` é a segunda palavra do operador, e ela é obrigatória
+   *  do outro lado: o service recusa a liberação sem ela. A tela cobra a
+   *  reconfirmação ANTES de chamar aqui — a fricção mora no ato destrutivo. */
+  const customerReleaseBusy = ref(false);
+  async function releaseConflictContact(value = "") {
+    const decision = customerDecision.value;
+    if (!decision) return;
+    const field = SERVER_FIELD[decision.field];
+    const target = value.trim() || decision.typed || decision.other?.value || "";
+    if (!field || !target) return;
+    const { typedField } = conflictSource(decision.field);
+    customerReleaseBusy.value = true;
+    try {
+      const path = actionHref(
+        actions.value,
+        "customer_contact_release",
+        "/api/v1/backstage/pos/customer/contact/release/",
+      );
+      await action.call(path, { body: { field, value: target, confirmed: true } });
+      customerDecision.value = null;
+      toast.success(`O ${decisionFieldLabel(decision.field)} foi liberado. A venda segue.`);
+      // Liberado o contato, o mesmo gesto que falhou agora passa. Só o campo do
+      // PAINEL precisa do resolve — e com a correção assumida, senão a pergunta
+      // de troca de contato volta em cima do valor recém-liberado.
+      if (typedField === "customer_phone" || typedField === "customer_email" || typedField === "customer_tax_id") {
+        await resolveCustomer({ contactCorrection: true });
+        return;
+      }
+      // ⚠️ E do COMPROVANTE a venda segue SOZINHA. O operador já disse o que
+      // queria — liberou o contato e reconfirmou —, e obrigá-lo a apertar
+      // "Concluir" de novo é cobrar duas vezes a mesma decisão com o cliente na
+      // frente: exatamente o beco que esta tela nasceu para matar. O reenvio é
+      // seguro porque o `client_request_id` da venda é o mesmo, e o servidor
+      // trata o repetido pela idempotência em vez de abrir um segundo pedido.
+      if (pendingSaleAfterDecision.value) {
+        pendingSaleAfterDecision.value = false;
+        await submitSale();
+      }
+    } catch (error) {
+      serverError.value = httpErrorMessage(error, "Não foi possível liberar o contato.");
+    } finally {
+      customerReleaseBusy.value = false;
+    }
+  }
+
+  /** O operador ficou com o que estava.
+   *
+   *  ⚠️ Do campo CERTO. O valor recusado pode estar no comprovante, e limpar o
+   *  do painel do cliente deixava a parede de pé: o operador apertava "manter",
+   *  refazia a venda e batia na mesma recusa.
+   *
+   *  ⚠️ E no comprovante o que cai é a ORDEM DE SALVAR, não o valor. O conflito
+   *  era sobre GRAVAR, nunca sobre ENVIAR: o cliente pediu a nota naquele
+   *  e-mail (naquele CPF) e continua querendo. Esvaziar o campo junto respondia
+   *  a pergunta errada — tirava do cliente a nota que ele veio buscar para
+   *  resolver uma briga de cadastro que ele nem viu acontecer. Agora "Manter
+   *  Ana" cancela o salvamento, o valor fica onde estava, e a nota sai.
+   *
+   *  No PAINEL do cliente é diferente e continua como estava: ali o valor É
+   *  identidade, e descartá-lo significa voltar ao que o cadastro tem. */
+  async function cancelCustomerDecision() {
+    const decision = customerDecision.value;
+    customerDecision.value = null;
+    const pendia = pendingSaleAfterDecision.value;
+    pendingSaleAfterDecision.value = false;
+    if (!decision) return;
+    const restored = decision.current?.value || "";
+    let doComprovante = false;
+    switch (conflictSource(decision.field).typedField) {
+      case "customer_phone": cart.customerPhone = restored; break;
+      case "customer_email": cart.customerEmail = restored; break;
+      case "customer_tax_id": cart.customerTaxId = restored; break;
+      case "receipt_email": cart.saveReceiptContact = false; doComprovante = true; break;
+      case "invoice_tax_id":
+        cart.saveReceiptTaxId = false;
+        cart.confirmReceiptTaxId = false;
+        doComprovante = true;
+        break;
+    }
+    // ⚠️ "É só a nota" é UM TOQUE, do começo ao fim. No comprovante nada mudou
+    // do que o cliente vai receber — o valor continua no campo, a nota sai nele,
+    // e o que caiu foi só a ordem de gravar no cadastro. Devolver o operador a
+    // um segundo "Concluir" seria pôr atrito justo no caminho mais frequente do
+    // balcão (a nota no CPF do marido), e atrito no caminho comum é o que
+    // ensina a clicar no reflexo.
+    //
+    // No PAINEL não: ali um valor voltou ao do cadastro, e isso é mudança que o
+    // operador precisa ver antes de fechar.
+    if (pendia && doComprovante) await submitSale();
   }
 
   // Multi-key customer search (name/phone/CPF/email): the customer modal's search
@@ -1103,6 +1687,8 @@ export function usePosSale(deps: PosSaleDeps) {
     customerLookup.value = null;
     customerSearchResults.value = [];
     customerResolvedNew.value = false;
+    customerDecision.value = null;
+    pendingSaleAfterDecision.value = false;
   }
 
   function productFromMemoryItem(item: Record<string, unknown>): POSProductProjection | null {
@@ -1270,6 +1856,9 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
+  /** A última revisão FALHOU e não há total válido na tela. Ver `reviewCheckout`. */
+  const reviewFailed = ref(false);
+
   async function reviewCheckout() {
     if (busy.value) return; // guarda de reentrância
     if (!cart.items.length) return;
@@ -1278,7 +1867,16 @@ export function usePosSale(deps: PosSaleDeps) {
     busy.value = true;
     try {
       await reviewSale();
+      reviewFailed.value = false;
     } catch (error) {
+      // ⚠️ SEM ISTO O PDV TRAVAVA PARA SEMPRE. `scheduleAutoReview` zera a
+      // `review` e agenda o refetch; se ele lançasse (um piscar de Wi-Fi), o
+      // catch emitia um toast que some em segundos e a `review` ficava `null`
+      // sem ninguém reagendar. Resultado: botão desabilitado, com spinner,
+      // escrito "Atualizando…", e o motivo do bloqueio devolvia string vazia
+      // justo nesse ramo — zero explicação na tela, com o cliente na frente. A
+      // única saída era F4 (não documentado) ou Esc, que derruba o checkout.
+      reviewFailed.value = true;
       serverError.value = httpErrorMessage(error, "Falha ao revisar venda.");
     } finally {
       busy.value = false;
@@ -1322,7 +1920,13 @@ export function usePosSale(deps: PosSaleDeps) {
             discountPct: item.discount?.value || 0,
           })),
           totalDisplay: review.value?.total_display || "",
-          payments: cart.paymentTenders.map((tender) => ({ method: tender.method, amount_q: tender.amount_q })),
+          payments: cart.paymentTenders.map((tender) => ({
+            method: tender.method,
+            amount_q: tender.amount_q,
+            // ONDE foi recebido viaja com a linha: é o que separa dinheiro na
+            // gaveta de dinheiro que sai com o entregador.
+            collection: tender.collection,
+          })),
           fulfillmentLabel: pos.value?.fulfillment_options.find((option) => option.ref === cart.fulfillmentType)?.label || cart.fulfillmentType,
           printedAtMs: Date.now(),
         };
@@ -1361,20 +1965,57 @@ export function usePosSale(deps: PosSaleDeps) {
         // Entrou dinheiro na gaveta → ela precisa abrir para sair troco. Lido
         // do snapshot congelado, não do cart, que a linha abaixo já zerou.
         // Sem await: a venda terminou, e a tela não espera o spooler.
-        if (receipt.payments.some((tender) => tender.method === "cash") && drawer.opensOnCashSale.value) {
+        // SÓ o dinheiro que entrou NA GAVETA a faz abrir — ver `cashLandedInDrawer`.
+        if (cashLandedInDrawer(receipt.payments) && drawer.opensOnCashSale.value) {
           void drawer.kick("cash_sale");
         }
         resetCart();
         await refresh();
       }
     } catch (error) {
-      const failure = (httpError(error).data as { error?: { code?: string; message?: string; recovery?: string } } | null)?.error;
+      const failure = (httpError(error).data as {
+        error?: {
+          code?: string; message?: string; recovery?: string; focus?: string;
+          field?: string; candidates?: ServerConflictCandidate[];
+        };
+      } | null)?.error;
+      // ⚠️ O conflito de cliente também recusa no FECHAMENTO, e ali a saída
+      // nunca chegava: a view achatava a recusa rica num `except ValueError`, e
+      // aqui o catch nem procurava por ela. O operador lia um toast que sumia,
+      // com a venda travada e o cliente na frente. Agora o painel abre com os
+      // dois lados nomeados e as saídas de um toque.
+      //
+      // ⚠️ E o valor anunciado é o do campo CULPADO. Aqui a briga pode ser sobre
+      // o e-mail ou o CPF DO COMPROVANTE, e a frase pegava o telefone do
+      // carrinho antes do e-mail: numa recusa de e-mail o painel dizia
+      // "(43) 99999-0000 é de Bia" — um telefone numa briga de e-mail.
+      if (failure?.code === "customer_conflict") {
+        const decision = conflictDecision({
+          field: failure.field,
+          candidates: failure.candidates,
+          typed: conflictSource(decisionFieldFromServer(failure.field)).typed,
+          typedField: conflictSource(decisionFieldFromServer(failure.field)).typedField,
+        });
+        if (decision) {
+          customerDecision.value = decision;
+          // A venda ficou pendurada nesta recusa: resolvido o conflito, ela
+          // retoma sozinha em vez de esperar um segundo "Concluir".
+          pendingSaleAfterDecision.value = true;
+          customerFocusNonce.value += 1;
+          return;
+        }
+      }
       if (failure?.code === "manager_approval_invalid" || failure?.code === "manager_approval_required") {
         // Aprovação recusada: limpa o gerente/PIN e reabre o diálogo com a mensagem,
         // em vez de deixar o CTA reenviar as mesmas credenciais erradas.
         cart.managerUsername = "";
         cart.managerPin = "";
         managerApprovalError.value = failure.recovery || failure.message || "Aprovação gerencial inválida.";
+      } else if (failure?.focus === "customer") {
+        // Recusa que se resolve identificando o cliente (ex.: agendado sem
+        // cliente): o toast diz o porquê e a tela abre a identificação.
+        serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
+        customerFocusNonce.value += 1;
       } else {
         serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
       }
@@ -1415,8 +2056,9 @@ export function usePosSale(deps: PosSaleDeps) {
   async function openMoveDialog() {
     if (!hasOpenTab.value || !cart.items.length) return;
     // O diálogo abre JÁ, com spinner interno — os dois round-trips (persist +
-    // reload, que renovam os line_ids que o move exige) rodam por baixo. Antes
-    // eles vinham ANTES do diálogo e o botão parecia morto por um segundo.
+    // reload, para que o servidor conheça as linhas que o move vai endereçar)
+    // rodam por baixo. Antes eles vinham ANTES do diálogo e o botão parecia
+    // morto por um segundo.
     serverError.value = "";
     moveDialogOpen.value = true;
     movePreparing.value = true;
@@ -1469,28 +2111,29 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  // Resolve the live server line_ids for a set of cart skus after persisting:
-  // save_tab regenerates line_ids, so we persist + reload (same pattern as the
-  // move dialog) and read the fresh ids the kitchen endpoints expect.
-  async function freshLineIdsForSkus(skus: string[], firedState: "fired" | "unfired"): Promise<string[]> {
+  // Persiste a comanda e devolve, das linhas escolhidas, as que ESTÃO no estado
+  // pedido depois do round-trip. A identidade é do cliente e o servidor a
+  // preserva, então o persist+reload não existe mais para "renovar ids" — ele
+  // existe para que o servidor conheça a linha antes de despachá-la, e para que
+  // o `fired` que decide o filtro venha da Projection, nunca da tela.
+  async function lineIdsInState(lineIds: string[], firedState: "fired" | "unfired"): Promise<string[]> {
     await persistTab(true);
     await reloadCurrentTab();
     const wantFired = firedState === "fired";
     return cart.items
-      .filter((item) => skus.includes(item.sku) && item.line_id && Boolean(item.fired) === wantFired)
-      .map((item) => item.line_id as string);
+      .filter((item) => lineIds.includes(item.line_id) && Boolean(item.fired) === wantFired)
+      .map((item) => item.line_id);
   }
 
-  async function fireTab(selectedSkus?: string[]) {
+  async function fireTab(selectedLineIds?: string[]) {
     if (!cart.tabSessionKey) return;
     serverError.value = "";
     firing.value = true;
     try {
       const body: Record<string, unknown> = { client_request_id: newClientRequestId() };
-      if (selectedSkus && selectedSkus.length) {
-        // Multi-select (spec §2.2): fire exactly the chosen lines. Resolve their
-        // fresh line_ids (persist regenerates them) before targeting.
-        const lineIds = await freshLineIdsForSkus(selectedSkus, "unfired");
+      if (selectedLineIds && selectedLineIds.length) {
+        // Multi-select (spec §2.2): fire exactly the chosen lines.
+        const lineIds = await lineIdsInState(selectedLineIds, "unfired");
         if (!lineIds.length) return;
         body.line_ids = lineIds;
       } else {
@@ -1535,14 +2178,14 @@ export function usePosSale(deps: PosSaleDeps) {
     }
   }
 
-  // Multi-select unfire (spec §2.2): resolve the chosen lines' fresh, fired
-  // line_ids, then cancel their kitchen handoff in one call.
-  async function unfireSelected(selectedSkus: string[]) {
-    if (!cart.tabSessionKey || !selectedSkus.length) return;
+  // Multi-select unfire (spec §2.2): das linhas escolhidas, cancela o envio das
+  // que a Projection confirma como disparadas.
+  async function unfireSelected(selectedLineIds: string[]) {
+    if (!cart.tabSessionKey || !selectedLineIds.length) return;
     serverError.value = "";
     firing.value = true;
     try {
-      const ids = await freshLineIdsForSkus(selectedSkus, "fired");
+      const ids = await lineIdsInState(selectedLineIds, "fired");
       if (!ids.length) return;
       await unfireLineIds(ids);
     } catch (error) {
@@ -1650,6 +2293,7 @@ export function usePosSale(deps: PosSaleDeps) {
     lookupBusy,
     serverError,
     managerApprovalError,
+    customerFocusNonce,
     result,
     pendingPixOrderRef,
     checkoutMode,
@@ -1657,6 +2301,7 @@ export function usePosSale(deps: PosSaleDeps) {
     moveDialogOpen,
     movePreparing,
     review,
+    reviewFailed,
     customerLookup,
     tabDialogOpen,
     tabDialogReason,
@@ -1693,7 +2338,19 @@ export function usePosSale(deps: PosSaleDeps) {
     deliverySlots,
     deliverySlotsPending,
     deliveryDateEffective,
+    scheduleToday,
+    scheduleAvailableDates,
+    scheduleBottleneckName,
+    scheduleReadyAt,
+    scheduleFailed,
+    scheduleMaxDate,
+    refreshSchedule: fetchSchedule,
     selectedTenderMethod,
+    splitCount,
+    splitPaidCount,
+    splitNextShareQ,
+    splitNote,
+    setSplitCount,
     tabDialogTitle,
     tabDialogDescription,
     sortedTabs,
@@ -1711,12 +2368,12 @@ export function usePosSale(deps: PosSaleDeps) {
     tenderAdd,
     tenderExact,
     productQty,
+    lineQty,
     addProduct,
     setQty,
     restoreItem,
     setLineNotes,
     setLineDiscount,
-    setLinePrice,
     sanitizeTabRef,
     requestTabAssociation,
     openTab,
@@ -1724,6 +2381,16 @@ export function usePosSale(deps: PosSaleDeps) {
     applySavedAddress,
     lookupCustomer,
     resolveCustomer,
+    customerDecision,
+    confirmCustomerDecision,
+    cancelCustomerDecision,
+    // As saídas que faltavam: a lista de candidatos, unificar os dois
+    // cadastros, e liberar o contato preso num cadastro desativado.
+    pickConflictCandidate,
+    mergeConflictCustomers,
+    customerMergeBusy,
+    releaseConflictContact,
+    customerReleaseBusy,
     customerSearchResults,
     customerSearchBusy,
     customerResolvedNew,
@@ -1737,6 +2404,8 @@ export function usePosSale(deps: PosSaleDeps) {
     reviewCheckout,
     submitSale,
     dismissResult,
+    resendingLink,
+    resendPaymentLink,
     onExternalSaleCancelled,
     clearCurrentTab,
     openMoveDialog,

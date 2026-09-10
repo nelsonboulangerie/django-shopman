@@ -6,9 +6,58 @@
 // Writes go through the django proxy (CSRF handled there) and reconcile via refresh.
 // SSE/poll are client-only (EventSource is a browser API).
 import type { CancellationReason, OrderQueueResponse, TwoZoneQueueProjection } from "~/types/orders";
-import { preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
+import { newOrderPush, preorderGroups, zonesView, type PreorderGroup, type ZoneView } from "~/presentation/board";
 
 export type { CancellationReason };
+
+// ── pedido novo: som (mutável) + aviso mesmo com a aba oculta ─────────────
+// ⚠️ Este bloco é DECISÃO DO DONO, tomada ouvindo os candidatos lado a lado
+// por cima de um ruído de salão sintetizado. Não é achismo, e não se mexe
+// nele sem passar pelo mesmo teste — o que soa bem no fone não sobrevive ao
+// balcão. O escolhido foi o "Bing-bong": os dois tons que dizem "atenção,
+// vem informação", em quarta descendente (fá → dó).
+//
+// O que faz este som ser o que é:
+//   · as notas se SOBREPÕEM (1,5 s e 1,9 s, separadas por 0,28 s) — quando a
+//     segunda entra, a primeira ainda soa, e as duas viram acorde. Sem a
+//     sobreposição isto vira melodia e perde a identidade de aviso.
+//   · ataque de 22 ms: baqueta de feltro, não martelo. É o "macio".
+//   · parciais 1 · 2 · 2,76 · 4 — gongo, não barra de xilofone. A parcial
+//     quebrada em 2,76 é o que dá o corpo; é ela que faz soar como sino.
+//   · banda 300–5000 Hz: é a resposta de um alto-falante de saguão, e é ela,
+//     mais que qualquer nota, que o ouvido reconhece como "anúncio".
+//
+// O KDS NÃO usa isto: fica com a tríade padrão do kit, de propósito, para o
+// operador distinguir "pedido novo" de "ticket novo" só pelo ouvido.
+export const GESTOR_ALERT = {
+  volume: 0.6,
+  wave: "sine" as const,
+  shape: "ping" as const,
+  attack: 0.022,
+  partials: [
+    { r: 1, g: 1, d: 1 },
+    { r: 2, g: 0.5, d: 0.72 },
+    { r: 2.76, g: 0.34, d: 0.5 },
+    { r: 4, g: 0.15, d: 0.3 },
+  ],
+  filters: [
+    { type: "highpass" as const, freq: 300 },
+    { type: "lowpass" as const, freq: 5000 },
+  ],
+  space: { time: 0.09, feedback: 0.28, mix: 0.3 },
+  notes: [
+    { f: 698.46, t: 0, d: 1.5 },
+    { f: 523.25, t: 0.28, d: 1.9 },
+  ],
+};
+
+// O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor. O push
+// SSE de `kind === "created"` dispara o aviso; mudança de status não grita.
+//
+// Aqui o aviso INSISTE (`startAlert`), diferente do KDS: no KDS o operador
+// está de frente para a tela; no Gestor o pedido chega enquanto a loja toca
+// a vida dela, e um toque único já deixou passar pedido de cliente real.
+// O kit para de repetir no primeiro toque/tecla — presença cala o aviso.
 
 export function useOrdersBoard() {
   const config = useRuntimeConfig();
@@ -48,6 +97,75 @@ export function useOrdersBoard() {
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   let source: EventSource | null = null;
 
+  // O beep/mute é o do kit (mesmo do KDS), com chave própria do Gestor, mas a
+  // VOZ é do Gestor (ver GESTOR_ALERT acima). Aqui o aviso INSISTE
+  // (`startAlert`), diferente do KDS: no KDS o operador está de frente para a
+  // tela; no Gestor o pedido chega enquanto a loja toca a vida dela, e um
+  // toque único já deixou passar pedido de cliente real. O kit para de repetir
+  // no primeiro toque/tecla — presença cala o aviso.
+  const {
+    soundOn,
+    soundBlocked,
+    toggleSound: toggleAlertSound,
+    startAlert,
+  } = useAlertSound("gestor_sound", GESTOR_ALERT);
+
+  function toggleSound() {
+    toggleAlertSound();
+    // Mesmo gesto que destrava o autoplay pede a permissão de notificação: fora
+    // de um gesto do usuário o browser ignora (ou penaliza) o pedido.
+    if (
+      soundOn.value &&
+      import.meta.client &&
+      "Notification" in window &&
+      Notification.permission === "default"
+    ) {
+      Notification.requestPermission().catch(() => {});
+    }
+  }
+
+  // Título piscando enquanto a aba está oculta — restaurado ao voltar (o
+  // listener de visibilitychange abaixo chama stopTitleAlert).
+  let titleTimer: ReturnType<typeof setInterval> | null = null;
+  let baseTitle = "";
+  function stopTitleAlert() {
+    if (!titleTimer) return;
+    clearInterval(titleTimer);
+    titleTimer = null;
+    document.title = baseTitle;
+  }
+  function startTitleAlert(ref_: string) {
+    if (titleTimer) return;
+    baseTitle = document.title;
+    let flip = false;
+    titleTimer = setInterval(() => {
+      flip = !flip;
+      document.title = flip ? `● Pedido novo${ref_ ? ` ${ref_}` : ""}` : baseTitle;
+    }, 1_500);
+  }
+
+  function notifyNewOrder(ref_: string) {
+    // Silenciosamente degradável: sem API ou sem permissão, som e título cobrem.
+    try {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const n = new Notification(`Pedido novo${ref_ ? ` ${ref_}` : ""}`, {
+        body: "Chegou um pedido novo no quadro.",
+        tag: "gestor-new-order",
+      });
+      n.onclick = () => { window.focus(); n.close(); };
+    } catch {
+      // construtor pode lançar (ex.: Android sem service worker) — sem drama
+    }
+  }
+
+  function announceNewOrder(ref_: string) {
+    startAlert();
+    if (document.visibilityState !== "visible") {
+      notifyNewOrder(ref_);
+      startTitleAlert(ref_);
+    }
+  }
+
   function connectSse() {
     if (source) return;
     // Same-origin sempre: o BFF (server/routes/sse/orders.ts) faz streaming do
@@ -56,7 +174,12 @@ export function useOrdersBoard() {
     try {
       realtime.value = "connecting";
       source = new EventSource(url, { withCredentials: true });
-      const onPush = () => refresh();
+      // Todo push refaz o fetch canônico; só o de pedido NOVO também avisa.
+      const onPush = (ev: Event) => {
+        refresh();
+        const created = newOrderPush((ev as MessageEvent).data);
+        if (created !== null) announceNewOrder(created);
+      };
       ["message", "backstage-orders-update"].forEach((name) => source!.addEventListener(name, onPush));
       source.onopen = () => { realtime.value = "live"; };
       // Erro/desconexão → cai pro poll; o EventSource auto-reconecta e o onopen volta a "live".
@@ -67,10 +190,22 @@ export function useOrdersBoard() {
     }
   }
 
-  const onVisible = () => { if (document.visibilityState === "visible") refresh(); };
+  // SSE conecta só depois do primeiro fetch do board (sessão/canal prontos):
+  // conectar antes disparava um 400 no /sse/orders a cada load.
+  function connectWhenReady() {
+    if (source) return;
+    if (!pending.value && !error.value) { connectSse(); return; }
+    watch([pending, error], ([p, e]) => { if (!p && !e) connectSse(); }, { once: true });
+  }
+
+  const onVisible = () => {
+    if (document.visibilityState !== "visible") return;
+    stopTitleAlert(); // o operador voltou — o título para de gritar
+    refresh();
+  };
   onMounted(() => {
     pollTimer = setInterval(() => refresh(), 30_000);
-    connectSse();
+    connectWhenReady();
     // Voltou à aba / reconectou: refetch imediato (o poll de 30s é longo demais
     // para um pedido iFood novo esperar quando o tablet acabou de acordar).
     document.addEventListener("visibilitychange", onVisible);
@@ -79,6 +214,7 @@ export function useOrdersBoard() {
   onBeforeUnmount(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (source) { source.close(); source = null; }
+    stopTitleAlert();
     document.removeEventListener("visibilitychange", onVisible);
     window.removeEventListener("online", onVisible);
   });
@@ -208,5 +344,5 @@ export function useOrdersBoard() {
   const confirmMany = (refs: string[]) => actMany(refs, "confirm");
   const advanceMany = (refs: string[]) => actMany(refs, "advance");
 
-  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany };
+  return { queue, zones, totalCount, preorders, realtime, pending, error, refresh, isBusy, actionError, clearActionError, confirm, advance, reject, fetchCancellationReasons, settleCash, equipmentBack, equipmentOut, assign, unassign, confirmMany, advanceMany, soundOn, soundBlocked, toggleSound };
 }

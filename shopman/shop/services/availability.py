@@ -37,7 +37,7 @@ from decimal import Decimal
 from shopman.shop.adapters import get_adapter
 from shopman.shop.models import Channel
 
-from . import substitutes
+from . import substitutes, waitlist
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +119,16 @@ def classify_planned_hold_for_session_sku(
     """Classify the planned-hold state of the session's holds for a SKU.
 
     Planned holds (AVAILABILITY-PLAN §8) are the "reservation without a
-    running TTL" state that holds on planned production / demand-only
-    quants land on. The marker ``metadata.planned`` is stamped at hold
-    creation by the stock adapter and survives the transition to the
-    ready state — post-materialization the flag remains while
-    ``expires_at`` goes from ``None`` (awaiting confirmation) to a
-    concrete deadline set by ``StockPlanning.realize()``.
+    running TTL" state that holds on planned production land on. The marker
+    ``metadata.planned`` is stamped at hold creation by the stock adapter and
+    survives the transition to the ready state — post-materialization the flag
+    remains while ``expires_at`` goes from ``None`` (awaiting confirmation) to
+    a concrete deadline set by ``StockPlanning.realize()``.
+
+    ⚠️ O carimbo é condição necessária, não suficiente: reserva de DEMANDA
+    (``demand_ok``: café, Jambon-Beurre) também nasce sem prazo, e até 29/08
+    levava o mesmo carimbo. ``waitlist.WAITLIST_HOLD_FILTER`` acrescenta a
+    pergunta que separa as duas — fila espera um LOTE, e lote tem quant.
 
     Returns:
         {
@@ -159,9 +163,9 @@ def classify_planned_hold_for_session_sku(
     holds = list(
         Hold.objects.filter(
             metadata__reference=session_key,
-            metadata__planned=True,
             sku=sku,
             status__in=[HoldStatus.PENDING, HoldStatus.CONFIRMED],
+            **waitlist.WAITLIST_HOLD_FILTER,
         )
         .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
     )
@@ -227,6 +231,11 @@ def decide(
 ) -> dict:
     """Return a canonical promise decision for one SKU in context."""
     qty_d = Decimal(str(qty))
+    if target_date is None:
+        # Fila de espera (WP-P2E): sem data explícita, a pergunta é o HORIZONTE
+        # de promessa do canal, não "hoje". Com a fila desligada o horizonte É
+        # hoje, então nada muda; ligada, a fornada planejada passa a contar.
+        target_date = waitlist.promise_horizon(channel_ref)
 
     components = _expand_if_bundle(sku, qty_d)
     if components is not None:
@@ -291,6 +300,7 @@ def decide(
         excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
     )
     if not info.get("is_paused", False) and not info.get("is_tracked", bool(info.get("positions"))):
         return {
@@ -557,6 +567,11 @@ def reserve(
     qty_d = Decimal(str(qty))
     if ttl_minutes is None:
         ttl_minutes = _channel_hold_ttl_minutes(channel_ref)
+    if target_date is None:
+        # A pronta-entrega é servida primeiro; só quando ela não cobre o pedido
+        # a reserva ancora na fornada planejada — e ancora na data DELA, não no
+        # horizonte, senão a sacola prometeria um dia que não é o do lote.
+        target_date = waitlist.reserve_target_date(sku, qty_d, channel_ref=channel_ref)
 
     listing_error = _reserve_listing_gate_error(
         sku,

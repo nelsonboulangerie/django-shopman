@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { maskPhoneInput, normalizeAuthPhone } from '~/utils/authPhone'
+import { notifyConfirmationMessage, notifyPhoneTarget } from '~/presentation/stockNotify'
 
 // "Me avise quando disponível" (WP-3). Esgotado honesto (is_notifiable) ganha um
 // caminho acolhedor em vez de um "+" morto: logado assina com 1 clique (usa o
@@ -21,7 +22,7 @@ const props = defineProps<{
   subscribed?: boolean
 }>()
 
-const label = computed(() => props.name ? `Avise quando ${props.name} voltar` : 'Avise quando voltar')
+const label = computed(() => props.name ? `Me avise quando ${props.name} voltar` : 'Me avise quando voltar')
 const subscribedLabel = computed(() => props.name ? `Avisaremos você quando ${props.name} voltar` : 'Avisaremos você quando voltar')
 
 const apiPath = useShopmanApiPath()
@@ -40,6 +41,11 @@ const phone = computed({
   set: (value: string) => { phoneInput.value = maskPhoneInput(value, 'BR') }
 })
 
+// O número que a casa vai usar, de volta na tela antes do envio. A normalização
+// completa o DDD e repara celular antigo de 10 dígitos — quem digitou não vê
+// isso acontecer, e um palpite errado manda a mensagem para outra pessoa.
+const notifyTarget = computed(() => notifyPhoneTarget(phoneInput.value, defaultDdd.value))
+
 async function subscribe (phoneValue: string) {
   if (submitting.value) return
   submitting.value = true
@@ -53,7 +59,7 @@ async function subscribe (phoneValue: string) {
     })
     isSubscribed.value = true
     sheetOpen.value = false
-    if (import.meta.client) useSonner.success('Pronto! Avisaremos você quando voltar.')
+    if (import.meta.client) useSonner.success(notifyConfirmationMessage(phoneValue))
   } catch (e) {
     const { data } = httpError(e)
     const detail = errorDetail(e, 'Não foi possível registrar o aviso. Tente de novo.')
@@ -160,7 +166,7 @@ function onAnonymousSubmit () {
     <BottomSheet
       v-model:open="sheetOpen"
       max-width="sm"
-      title="Avisamos quando voltar"
+      title="Avisamos quando estiver disponível"
       description="Deixe seu WhatsApp e mandamos uma mensagem assim que estiver disponível."
       data-stock-notify-sheet
     >
@@ -175,6 +181,9 @@ function onAnonymousSubmit () {
           class="bg-background"
         />
         <p v-if="phoneError" class="shop-meta text-destructive">{{ phoneError }}</p>
+        <p v-else-if="notifyTarget" class="shop-meta text-muted-foreground">
+          Mandaremos a mensagem para <span class="font-semibold text-foreground">{{ notifyTarget }}</span>. Se não for esse o número, é só corrigir aqui.
+        </p>
         <UiButton type="submit" size="lg" class="w-full" :loading="submitting" icon="lucide:bell">
           Avise-me
         </UiButton>

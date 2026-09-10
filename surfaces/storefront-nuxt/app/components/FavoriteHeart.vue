@@ -3,9 +3,14 @@
 // useFavoritesState. Anônimo é convidado a logar (omotenashi: convida, não bloqueia).
 const props = defineProps<{
   sku: string
+  // Nome do produto: é ele que vai para o leitor de tela. O SKU é chave de
+  // sistema — "Remover CROISS-001 dos favoritos" não é uma frase para ninguém.
+  name?: string
   // Estado inicial vindo da projeção (is_favorite). O overlay tem precedência.
   initial?: boolean
 }>()
+
+const spoken = computed(() => props.name?.trim() || props.sku)
 
 const { isFavorite, toggle, isAuthenticated } = useFavoritesState()
 const route = useRoute()
@@ -38,7 +43,7 @@ async function onClick () {
     variant="ghost"
     size="icon"
     :aria-pressed="active"
-    :aria-label="active ? `Remover ${sku} dos favoritos` : `Salvar ${sku} nos favoritos`"
+    :aria-label="active ? `Remover ${spoken} dos favoritos` : `Salvar ${spoken} nos favoritos`"
     :disabled="submitting"
     class="rounded-full text-muted-foreground hover:text-primary"
     @click.stop.prevent="onClick"

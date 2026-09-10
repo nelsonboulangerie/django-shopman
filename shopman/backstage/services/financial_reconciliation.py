@@ -163,6 +163,16 @@ class FinancialReconciliationReport:
         }
 
 
+#: As formas cuja cobrança tem que DEIXAR RASTRO no Payman — é sobre elas que a
+#: auditoria pergunta "pago sem intent?" e "capturou menos que o total?".
+#:
+#: As três leituras de cartão entram: `card` é o histórico e a loja online,
+#: `credit`/`debit` são o balcão. Eram dois literais `{"pix", "card"}` em pontos
+#: distantes do arquivo — dois donos da mesma lista envelhecem separados, e o
+#: segundo a ser esquecido abre o buraco calado.
+_AUDITED_METHODS = frozenset({"pix", "card", "credit", "debit", "link"})
+
+
 def build_financial_reconciliation(
     *,
     reconciliation_date: date,
@@ -367,7 +377,7 @@ def _check_order_payment_link(
     referenced = _referenced_intent_refs(payment)
     order_intents = intents_by_order.get(order.ref, [])
 
-    if method in {"pix", "card"} and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED):
+    if method in _AUDITED_METHODS and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED):
         if not referenced and not order_intents:
             issues.append(
                 FinancialReconciliationIssue(
@@ -507,6 +517,35 @@ def _check_intent(
 
     payment = _payment_data(order)
     data_intent_ref = str(payment.get("intent_ref") or "").strip()
+
+    if (
+        intent.method == "link"
+        and intent.status in _OPEN_STATUSES
+        and intent.expires_at is not None
+        and intent.expires_at < timezone.now()
+        and captured_q <= 0
+        and order.status not in (Order.Status.CANCELLED, Order.Status.RETURNED)
+    ):
+        # O link venceu, ninguém pagou, e o pedido continua vivo. O caminho
+        # normal é a Directive `payment.timeout` cancelar sozinha (depois de
+        # perguntar ao gateway); este é o acusador do dia seguinte para o que
+        # escapou dela — worker parado, gateway mudo por horas, pedido que já
+        # estava além de ACCEPTED quando o prazo bateu.
+        issues.append(
+            FinancialReconciliationIssue(
+                code="expired_payment_link",
+                severity="warning",
+                message="Link de pagamento venceu sem pagamento e o pedido continua aberto.",
+                order_ref=order.ref,
+                intent_ref=intent.ref,
+                context={
+                    "expires_at": intent.expires_at.isoformat(),
+                    "status": order.status,
+                    "intent_status": intent.status,
+                },
+            )
+        )
+
     if (
         data_intent_ref
         and intent.order_ref == order.ref
@@ -633,7 +672,7 @@ def _check_intent(
         Order.Status.DELIVERED,
         Order.Status.COMPLETED,
     }
-    if order.status in strict_paid_statuses and _payment_method(order) in {"pix", "card"} and net_q < order.total_q:
+    if order.status in strict_paid_statuses and _payment_method(order) in _AUDITED_METHODS and net_q < order.total_q:
         issues.append(
             FinancialReconciliationIssue(
                 code="fulfilled_digital_order_underpaid",

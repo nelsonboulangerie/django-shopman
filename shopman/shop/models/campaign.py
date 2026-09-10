@@ -71,6 +71,10 @@ class AnnouncementStatus(models.TextChoices):
     REJECTED = "rejected", "recusado"
     EXPIRED = "expired", "expirado"
     CANCELLED = "cancelled", "cancelado"
+    #: Um fato operacional posterior invalidou a mensagem antes de ela sair.
+    #: Não é recusa humana nem vencimento: a origem foi substituída por uma
+    #: versão mais nova (por exemplo, a correção do QC de uma fornada).
+    SUPERSEDED = "superseded", "Substituído"
 
 
 class AnnouncementDeliveryState(models.TextChoices):

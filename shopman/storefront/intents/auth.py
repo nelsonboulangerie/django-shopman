@@ -272,7 +272,7 @@ def _interpret_login_name(request, next_url: str) -> AuthResult[LoginIntent]:
     if not name:
         return AuthResult(
             intent=None,
-            errors={"name": "Como podemos te chamar?"},
+            errors={"name": "Como quer ser chamado?"},
             form_data=form_data,
         )
 

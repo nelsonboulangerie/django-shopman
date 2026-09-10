@@ -29,8 +29,10 @@ def product():
 def rule():
     template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}} saiu do forno")
     return Campaign.objects.create(
-        name="Fornada", trigger="production_finished",
-        template=template, platforms=["instagram"],
+        name="Fornada",
+        trigger="production_finished",
+        template=template,
+        platforms=["instagram"],
     )
 
 
@@ -52,7 +54,10 @@ class TestProductionReceiver:
     def _fire(self, *, action="finished", work_order=None):
         with patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()):
             handlers.on_production_changed(
-                sender=None, product_ref=SKU, date=None, action=action,
+                sender=None,
+                product_ref=SKU,
+                date=None,
+                action=action,
                 work_order=work_order or _work_order(),
             )
 
@@ -87,17 +92,18 @@ class TestProductionReceiver:
 
     def test_evaluation_failure_never_breaks_the_bake(self, product, rule):
         """Marketing quebrado não pode impedir o operador de fechar a fornada."""
-        with patch(
-            "shopman.shop.services.campaign.evaluate", side_effect=RuntimeError("boom")
-        ):
+        with patch("shopman.shop.services.campaign.evaluate", side_effect=RuntimeError("boom")):
             self._fire()  # não levanta
 
     def test_evaluation_waits_for_commit(self, product, rule):
         """Avaliar dentro da transação leria estoque que ainda não existe."""
         with patch("django.db.transaction.on_commit") as on_commit:
             handlers.on_production_changed(
-                sender=None, product_ref=SKU, date=None,
-                action="finished", work_order=_work_order(),
+                sender=None,
+                product_ref=SKU,
+                date=None,
+                action="finished",
+                work_order=_work_order(),
             )
         on_commit.assert_called_once()
         assert Announcement.objects.count() == 0
@@ -116,9 +122,7 @@ class TestAvailabilityReceiver:
 
     def _rule(self, trigger: str):
         template = AnnouncementTemplate.objects.create(name=trigger, body="{{product_name}}")
-        return Campaign.objects.create(
-            name=trigger, trigger=trigger, template=template, platforms=["instagram"]
-        )
+        return Campaign.objects.create(name=trigger, trigger=trigger, template=template, platforms=["instagram"])
 
     def test_scarce_stock_triggers_low_stock(self, product):
         self._rule("low_stock")
@@ -153,8 +157,11 @@ class TestAvailabilityReceiver:
 class TestPostHandler:
     def _announcement(self, rule) -> Announcement:
         return Announcement.objects.create(
-            rule=rule, template=rule.template, status=AnnouncementStatus.PUBLISHING,
-            content={"body": "Croissant saiu do forno"}, platforms=["instagram"],
+            rule=rule,
+            template=rule.template,
+            status=AnnouncementStatus.PUBLISHING,
+            content={"body": "Croissant saiu do forno"},
+            platforms=["instagram"],
         )
 
     def _handle(self, announcement, platform="instagram"):
@@ -224,13 +231,19 @@ class TestNotifyHandler:
     def _announcement(self) -> Announcement:
         template = AnnouncementTemplate.objects.create(name="T", body="{{product_name}}")
         rule = Campaign.objects.create(
-            name="Audiência", trigger="production_finished", template=template,
-            platforms=["whatsapp"], audience_rules={"favorites": True},
+            name="Audiência",
+            trigger="production_finished",
+            template=template,
+            platforms=["whatsapp"],
+            audience_rules={"favorites": True},
         )
         return Announcement.objects.create(
-            rule=rule, template=template, status=AnnouncementStatus.PUBLISHING,
+            rule=rule,
+            template=template,
+            status=AnnouncementStatus.PUBLISHING,
             content={"body": "Saiu do forno", "link": "https://loja/p/x"},
-            platforms=["whatsapp"], trigger_context={"sku": SKU},
+            platforms=["whatsapp"],
+            trigger_context={"sku": SKU},
         )
 
     def _handle(self, announcement, wave="all"):
@@ -254,11 +267,14 @@ class TestNotifyHandler:
             SimpleNamespace(phone="+5543999990001"),
             SimpleNamespace(phone="+5543999990002"),
         )
+        # ⚠️ O mock agora é `select_wave`, e não `resolve`. Mockar `resolve` e montar
+        # a divisão de ondas à mão codificava exatamente o dicionário de três chaves
+        # que ERA o bug: `general@14` caía no vazio e o anúncio fechava como enviado.
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify") as notify,
         ):
-            resolve.return_value.all_recipients.return_value = recipients
+            select_wave.return_value = recipients
             notify.return_value = SimpleNamespace(success=True)
             self._handle(announcement)
         assert notify.call_count == 2
@@ -268,12 +284,10 @@ class TestNotifyHandler:
     def test_a_failed_send_is_counted_not_swallowed(self):
         announcement = self._announcement()
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify", side_effect=RuntimeError("wa off")),
         ):
-            resolve.return_value.all_recipients.return_value = (
-                SimpleNamespace(phone="+5543999990001"),
-            )
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990001"),)
             self._handle(announcement)
         announcement.refresh_from_db()
         assert announcement.platform_results["whatsapp"]["failed"] == 1
@@ -281,16 +295,37 @@ class TestNotifyHandler:
     def test_the_vip_wave_only_reaches_vips(self):
         announcement = self._announcement()
         with (
-            patch("shopman.shop.services.audience.resolve") as resolve,
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
             patch("shopman.shop.notifications.notify") as notify,
         ):
-            resolve.return_value.vip = (SimpleNamespace(phone="+5543999990010"),)
-            resolve.return_value.general = (
-                SimpleNamespace(phone="+5543999990011"),
-                SimpleNamespace(phone="+5543999990012"),
-            )
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990010"),)
             notify.return_value = SimpleNamespace(success=True)
             self._handle(announcement, wave="vip")
+        assert notify.call_count == 1
+        # E o handler PERGUNTOU pela onda pedida, em vez de traduzir por conta própria.
+        assert select_wave.call_args.args[1] == "vip"
+
+    def test_a_onda_de_hora_habitual_chega_em_alguem(self):
+        """`general@14` caía no default VAZIO do dicionário de três chaves.
+
+        Zero destinatários, onda gravada com "0 enviados, 0 falharam" e — como "onda
+        vazia não é falha" — status `sent`. O anúncio fechava como publicado, ninguém
+        daquela onda recebia, e NADA indicava isso.
+
+        Latente hoje (só o Admin escreve a janela de hora preferida), mas latente com o
+        mecanismo pronto, e com o pior modo de falha que esta superfície tem: relatório
+        de entrega mentindo.
+        """
+        announcement = self._announcement()
+        with (
+            patch("shopman.shop.services.audience.select_wave") as select_wave,
+            patch("shopman.shop.notifications.notify") as notify,
+        ):
+            select_wave.return_value = (SimpleNamespace(phone="+5543999990020"),)
+            notify.return_value = SimpleNamespace(success=True)
+            self._handle(announcement, wave="general@14")
+
+        assert select_wave.call_args.args[1] == "general@14"
         assert notify.call_count == 1
 
     def test_empty_audience_still_closes_the_post(self):
@@ -323,12 +358,23 @@ class TestAlertQueueSurvivesTheRealFinish:
         from shopman.craftsman.models import Recipe
         from shopman.stockman.models import Position
 
-        position = Position.objects.create(
-            ref="vitrine-e2e", name="Vitrine", is_saleable=True, is_default=True
+        from shopman.shop.models import QualityGrade
+
+        position = Position.objects.create(ref="vitrine-e2e", name="Vitrine", is_saleable=True, is_default=True)
+        QualityGrade.objects.all().delete()
+        QualityGrade.objects.create(
+            ref="standard",
+            label="Padrão",
+            rank=30,
+            markdown_percent=0,
+            is_default=True,
         )
         recipe = Recipe.objects.create(
-            ref="croissant-e2e", output_sku=SKU, batch_size=Decimal("10"),
-            is_active=True, name="Croissant",
+            ref="croissant-e2e",
+            output_sku=SKU,
+            batch_size=Decimal("10"),
+            is_active=True,
+            name="Croissant",
         )
         template = AnnouncementTemplate.objects.create(
             name="Fornada no ar", body="Saiu {{product_name}}!", is_active=True
@@ -360,6 +406,7 @@ class TestAlertQueueSurvivesTheRealFinish:
             position_id=position.pk,
             actor="test",
             partition=[{"quantity": "10", "quality_grade_ref": "standard"}],
+            idempotency_key="campaign-announcement-quick-finish",
         )
 
         announcement = Announcement.objects.get()

@@ -32,6 +32,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md`](DELIVERY-GEOCODING-AND-FEEDBACK-PLAN.md) | Cascata de geocoding entregue; pendente robustez multi-provedor + feedback omotenashi. |
 | [`VALIDITY-SHELFLIFE-REVIEW.md`](completed/VALIDITY-SHELFLIFE-REVIEW.md) | Arquivado (retrato de 2026-06): P0 ligado (WP-B5); o caminho de validade virou o modelo de lote (ADR-017, C1–C6). |
 | [`OPERATION-DOMAIN-PLAN.md`](OPERATION-DOMAIN-PLAN.md) | Baseline de modelos/Admin implementado; próxima camada (superfície de execução, BI) aberta. |
+| [`RECIPE-INVENTORY-PLAN.md`](RECIPE-INVENTORY-PLAN.md) | Inventário de receitas com versão, padrão da casa (1000 g de farinha) e lente de padaria ([ADR-027](../decisions/adr-027-recipe-book-authoring-vs-execution.md)). Entregue e no ar (PR #488); pendências: saldo de massa velha, cofre, Admin. |
 | [`OPERATION-RUNBOOKS-PLAN.md`](OPERATION-RUNBOOKS-PLAN.md) | Baseline de runbooks/diagnose concluído; snapshot/smoke real de gateway bloqueado por credenciais. |
 | [`OMOTENASHI-FIRST-FULLNESS-PLAN.md`](OMOTENASHI-FIRST-FULLNESS-PLAN.md) | Algumas rodadas entregues; maioria dos WP-OF-* não executados. |
 | [`EXCELLENCE-AUDIT-2026-07.md`](EXCELLENCE-AUDIT-2026-07.md) | Auditoria-mãe (16 lentes); Onda 0 executada; Ondas 1–3 abertas. |
@@ -43,6 +44,7 @@ fica em [`_quarantine/`](_quarantine/).
 | [`STOREFRONT-GAPS-ACTION-PLAN.md`](STOREFRONT-GAPS-ACTION-PLAN.md) | WP1–10 feitos; resta WP-11 slice 3 (auto-fill do teleporte) + Fase C. |
 | [`PROJECTION-UI-PLAN.md`](PROJECTION-UI-PLAN.md) | Camada de projections largamente realizada; mantido como spec de contratos/evolução de UI. |
 | [`SEO-PLAN.md`](SEO-PLAN.md) | SEO técnico entregue; capítulo permanente (conteúdo/keywords futuros). |
+| [`WP-P2E-WAITLIST-FERMATA.md`](WP-P2E-WAITLIST-FERMATA.md) | Fila de espera com confirmação ativa (fermata) — aprovado pelo dono; execução em sessão dedicada (F1→F3). |
 
 ## Backlog / futuro (📋)
 
@@ -51,7 +53,10 @@ fica em [`_quarantine/`](_quarantine/).
 | [`CROSS-CHANNEL-CATALOG-HUB-PLAN.md`](CROSS-CHANNEL-CATALOG-HUB-PLAN.md) | Visão: Gestor como hub cross-channel (superfície fed-by-coleção, menuboard SSE). |
 | [`CATALOG-FEEDS-GOOGLE-META.md`](CATALOG-FEEDS-GOOGLE-META.md) | Superfícies FEED do hub cross-channel (RSS/XML para Google/Meta). |
 | [`CATALOG-SYNC-EXTERNO-PLAN.md`](CATALOG-SYNC-EXTERNO-PLAN.md) | Adapters Google/Meta/WhatsApp Catalog; bloqueado em credenciais externas. |
-| [`MANYCHAT-CONVERSACIONAL-PLAN.md`](MANYCHAT-CONVERSACIONAL-PLAN.md) | Pedido conversacional inbound via ManyChat; proposto, bloqueado no Pablo. |
+| [`WHATSAPP-CONCIERGE-PLAN.md`](WHATSAPP-CONCIERGE-PLAN.md) | Concierge de WhatsApp: pedido por conversa com modelo de linguagem, ferramentas determinísticas, resposta assíncrona via ManyChat ([ADR-026](../decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md)); código da F1 escrito, aguarda palavra do dono. |
+| [`WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md`](WP-SUGESTAO-ADICIONAL-E-SUBSTITUTO.md) | Um motor de sugestão (adicional que combina, substituto à altura) para site e concierge; proposto, aguarda o dono. |
+| [`WP-ATRIBUTOS-DE-PRODUTO.md`](WP-ATRIBUTOS-DE-PRODUTO.md) | Atributos de produto com definição (registro no `shop`, valores no metadata, zero legado, Core intocado); proposto. |
+| [`MANYCHAT-CONVERSACIONAL-PLAN.md`](MANYCHAT-CONVERSACIONAL-PLAN.md) | **Superado** pelo WHATSAPP-CONCIERGE-PLAN (mesmas invariantes, mecanismo diferente); fica como registro. |
 | [`WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md`](WHATSAPP-TRANSACTIONAL-CHANNEL-PLAN.md) | Spike do canal WhatsApp transacional (notificação + OTP) Meta-direto. |
 | [`PRODUCTION-FORECAST-BOARD-PLAN.md`](PRODUCTION-FORECAST-BOARD-PLAN.md) | Painel estilo aeroporto para vendas/encomendas (o que dá para prometer por data). |
 | [`AVAILABILITY-ADMIN-PLAN.md`](AVAILABILITY-ADMIN-PLAN.md) | UI de calendário de funcionamento no Admin (WP-AV-1/2/3) — não iniciado. |

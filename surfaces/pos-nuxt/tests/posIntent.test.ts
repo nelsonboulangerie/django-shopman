@@ -9,6 +9,7 @@ import {
   buildPosSaleIntent,
   cartTotalQ,
   concreteActionHref,
+  newLineId,
   resolvePayment,
 } from "../app/utils/posIntent";
 import {
@@ -59,11 +60,14 @@ describe("POS sale intent", () => {
       changeForQ: 0,
       receiptChannels: ["email"],
       receiptEmail: "ana@example.com",
+      saveReceiptContact: false,
+      saveReceiptTaxId: false,
+      saveReceiptTaxIdConfirmed: false,
       manualDiscount: null,
       managerApproval: null,
       clientRequestId: "pos:test-1",
       items: [
-        { sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
+        { line_id: "L-abc12345", sku: "PAO", name: "Pao", price_q: 1200, qty: 2, notes: "" },
       ],
     });
 
@@ -100,10 +104,81 @@ describe("POS sale intent", () => {
       receipt_channels: ["email"],
       receipt_email: "ana@example.com",
     });
+    // A ORDEM de guardar o contato no cadastro NÃO viaja por omissão: sem ela o
+    // servidor deixa o cadastro intacto, que é o padrão desta casa.
+    expect(payload).not.toHaveProperty("save_receipt_contact");
+    expect(payload).not.toHaveProperty("save_receipt_tax_id");
+    // A IDENTIDADE da linha viaja com ela: sem `line_id` no payload o servidor
+    // gerava um id novo a cada save e perdia o vínculo com o ticket já disparado.
     expect(payload.items).toEqual([
-      { sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
+      { line_id: "L-abc12345", sku: "PAO", name: "Pao", qty: 2, unit_price_q: 1200, notes: "" },
     ]);
     expect(payload.items[0]).not.toHaveProperty("price_q");
+  });
+
+  it("a ORDEM de guardar o contato do comprovante viaja quando o operador marca", () => {
+    const base = {
+      tabRef: "", tabSessionKey: "", customerName: "", customerRef: "", customerPhone: "",
+      customerTaxId: "", invoiceTaxId: "52998224725", customerEmail: "", customerMemoryAction: "",
+      fulfillmentType: "pickup" as const, deliveryAddress: "",
+      deliveryAddressStructured: null as never, deliveryComplement: "", deliveryInstructions: "",
+      deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
+      paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
+      tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
+      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      saveReceiptTaxIdConfirmed: false,
+      clientRequestId: "pos:test-2",
+      items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
+    };
+
+    const marcado = buildPosSaleIntent({ ...base, saveReceiptContact: true, saveReceiptTaxId: true });
+    expect(marcado.save_receipt_contact).toBe(true);
+    expect(marcado.save_receipt_tax_id).toBe(true);
+
+    // Marcada sem campo preenchido é ruído: não viaja.
+    const semCampos = buildPosSaleIntent({
+      ...base, receiptEmail: "", invoiceTaxId: "",
+      saveReceiptContact: true, saveReceiptTaxId: true,
+    });
+    expect(semCampos).not.toHaveProperty("save_receipt_contact");
+    expect(semCampos).not.toHaveProperty("save_receipt_tax_id");
+  });
+
+  it("a SEGUNDA PALAVRA sobre o CPF viaja junto da ordem — e nunca sozinha", () => {
+    const base = {
+      tabRef: "", tabSessionKey: "", customerName: "", customerRef: "", customerPhone: "",
+      customerTaxId: "", invoiceTaxId: "52998224725", customerEmail: "", customerMemoryAction: "",
+      fulfillmentType: "pickup" as const, deliveryAddress: "",
+      deliveryAddressStructured: null as never, deliveryComplement: "", deliveryInstructions: "",
+      deliveryDate: "", deliveryTimeSlot: "", deliveryFeeOverrideQ: null, orderNotes: "",
+      paymentMethod: "cash", paymentCollection: "terminal" as const, paymentTenders: [],
+      tenderedQ: null, changeForQ: 0, receiptChannels: ["email"],
+      receiptEmail: "ana@example.com", manualDiscount: null, managerApproval: null,
+      saveReceiptContact: false, saveReceiptTaxId: false, saveReceiptTaxIdConfirmed: false,
+      clientRequestId: "pos:test-3",
+      items: [{ line_id: "L-1", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" }],
+    };
+
+    // O servidor recusa SOBRESCREVER o CPF do cadastro sem esta chave — por
+    // isso ela viaja quando o operador confirmou.
+    const confirmado = buildPosSaleIntent({
+      ...base, saveReceiptTaxId: true, saveReceiptTaxIdConfirmed: true,
+    });
+    expect(confirmado.save_receipt_tax_id).toBe(true);
+    expect(confirmado.save_receipt_tax_id_confirmed).toBe(true);
+
+    // Sem a segunda palavra a ordem ainda viaja (preencher lacuna não pede
+    // atrito) — o que não viaja é a confirmação.
+    const semConfirmar = buildPosSaleIntent({ ...base, saveReceiptTaxId: true });
+    expect(semConfirmar.save_receipt_tax_id).toBe(true);
+    expect(semConfirmar).not.toHaveProperty("save_receipt_tax_id_confirmed");
+
+    // Confirmação SEM a ordem que ela confirma é ruído: não viaja sozinha.
+    const soConfirmacao = buildPosSaleIntent({
+      ...base, saveReceiptTaxIdConfirmed: true,
+    });
+    expect(soConfirmacao).not.toHaveProperty("save_receipt_tax_id");
+    expect(soConfirmacao).not.toHaveProperty("save_receipt_tax_id_confirmed");
   });
 
   it("uses projection actions instead of hardcoding mutation paths in state builders", () => {
@@ -213,6 +288,21 @@ describe("POS sale intent", () => {
   });
 });
 
+describe("a identidade da linha nasce no cliente", () => {
+  it("o formato é estável: `L-` + 8 caracteres", () => {
+    // O formato é contrato com o servidor (que preserva o id que recebe) e com
+    // o log — mudá-lo é mudar o payload da comanda.
+    for (let i = 0; i < 50; i += 1) expect(newLineId()).toMatch(/^L-[0-9a-f]{8}$/);
+  });
+
+  it("duas linhas criadas em sequência nunca colidem", () => {
+    // É disto que depende "mais um chá vira uma linha nova": dois ids iguais
+    // fariam o servidor deduplicar as duas de volta numa só.
+    const ids = new Set(Array.from({ length: 200 }, () => newLineId()));
+    expect(ids.size).toBe(200);
+  });
+});
+
 describe("surface architecture guardrails", () => {
   it("drives POS tab association UX from the canonical tab lifecycle capability", () => {
     const capabilities = {
@@ -262,17 +352,17 @@ describe("operator access", () => {
 
   it("builds an admin login URL without taking ownership of credentials", () => {
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "https://shop.example.com/",
+      djangoBaseUrl: "https://shop.example.com/",
       nextPath: "/pos/",
     })).toBe("https://shop.example.com/admin/login/?next=%2Fpos%2F");
 
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "http://127.0.0.1:8000",
+      djangoBaseUrl: "http://127.0.0.1:8000",
       nextPath: "pos/",
     })).toBe("http://127.0.0.1:8000/admin/login/?next=%2Fpos%2F");
 
     expect(buildAdminLoginUrl({
-      djangoPublicBaseUrl: "http://127.0.0.1:8000",
+      djangoBaseUrl: "http://127.0.0.1:8000",
       nextPath: "/admin/",
     })).toBe("http://127.0.0.1:8000/admin/login/?next=%2Fadmin%2F");
   });
@@ -325,11 +415,50 @@ function baseIntentState(overrides: Record<string, unknown> = {}) {
     managerApproval: null,
     clientRequestId: "pos:test-base",
     items: [
-      { sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },
+      { line_id: "L-base0001", sku: "PAO", name: "Pao", price_q: 1200, qty: 1, notes: "" },
     ],
     ...overrides,
   };
 }
+
+describe("o QUANDO viaja na retirada também", () => {
+  it("retirada agendada leva data e janela no intent", () => {
+    // Estas duas linhas moravam dentro do bloco `if (fulfillmentType ===
+    // "delivery")`, e era o terceiro portão do mesmo mal-entendido (os outros
+    // dois eram do servidor). O operador combinava quinta às 10h para retirar, a
+    // barra mostrava "Amanhã, 10:00 às 10:30" — e o intent subia SEM data. O
+    // pedido nascia para hoje, calado, e nada na tela dizia isso.
+    const payload = buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "pickup",
+      deliveryDate: "2026-09-10",
+      deliveryTimeSlot: "10:00-10:30",
+    }) as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_date).toBe("2026-09-10");
+    expect(payload.delivery_time_slot).toBe("10:00-10:30");
+  });
+
+  it("mas a retirada continua sem ENDEREÇO e sem TAXA", () => {
+    // *Onde* e *quanto* seguem sendo fatos da entrega. Só *quando* mudou de lado.
+    const payload = buildPosSaleIntent(baseIntentState({
+      fulfillmentType: "pickup",
+      deliveryDate: "2026-09-10",
+      deliveryAddress: "Rua A, 10",
+      deliveryFeeOverrideQ: 500,
+    }) as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_address).toBeUndefined();
+    expect(payload.delivery_fee_override_q).toBeUndefined();
+    expect(payload.delivery_date).toBe("2026-09-10");
+  });
+
+  it("sem agendamento, nenhuma das duas chaves sobe", () => {
+    const payload = buildPosSaleIntent(baseIntentState() as Parameters<typeof buildPosSaleIntent>[0]);
+
+    expect(payload.delivery_date).toBeUndefined();
+    expect(payload.delivery_time_slot).toBeUndefined();
+  });
+});
 
 describe("resolvePayment (injeção de tenders → contrato)", () => {
   const t = (method: string, amount_q: number) => ({ method, amount_q, collection: "terminal" as const });

@@ -39,6 +39,8 @@ import logging
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import ProtectedError, Q
+from django.utils.decorators import method_decorator
+from django_ratelimit.decorators import ratelimit
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.exceptions import AuthenticationFailed, NotAuthenticated
 from rest_framework.response import Response
@@ -67,6 +69,7 @@ from shopman.backstage.api.throttles import (
     MarketingFireShopThrottle,
     MarketingFireUserThrottle,
 )
+from shopman.backstage.parsing import as_bool, as_int
 from shopman.backstage.projections import marketing as marketing_projection
 from shopman.backstage.projections import marketing_v2 as marketing_projection_v2
 from shopman.backstage.projections.marketing_actions import (
@@ -494,7 +497,7 @@ class AnnouncementDetailView(_CampaignBase):
         base_version = None
         if "base_version" in request.data:
             raw_base_version = request.data.get("base_version")
-            base_version = None if isinstance(raw_base_version, bool) else _as_int(raw_base_version)
+            base_version = _command_int(raw_base_version)
             if base_version is None or base_version <= 0:
                 return Response(
                     {
@@ -587,7 +590,7 @@ class AnnouncementApproveView(_CampaignBase):
             )
 
         raw_version = payload.get("base_version")
-        base_version = None if isinstance(raw_version, bool) else _as_int(raw_version)
+        base_version = _command_int(raw_version)
         if base_version is None or base_version <= 0:
             return Response(
                 {
@@ -720,6 +723,9 @@ class AnnouncementApproveView(_CampaignBase):
         )
 
 
+@method_decorator(
+    ratelimit(key="ip", rate="30/m", method="POST", block=False), name="dispatch"
+)
 class WhatsAppTestSendView(_CampaignBase):
     """POST campaign/whatsapp-template/test/ → teste sandbox unitário.
 
@@ -735,6 +741,15 @@ class WhatsAppTestSendView(_CampaignBase):
     throttle_classes = list(_DANGEROUS_THROTTLES)
 
     def post(self, request):
+        if getattr(request, "limited", False):
+            return Response(
+                {
+                    "detail": "Muitos testes seguidos. Espere um minuto — o teste manda "
+                    "mensagem de verdade, e o número do outro lado sente.",
+                },
+                status=429,
+                headers={"Retry-After": "60"},
+            )
         payload = request.data if isinstance(request.data, dict) else {}
         unexpected = sorted(set(payload) - {"target_ref", "sku", "body"})
         if unexpected:
@@ -1199,7 +1214,7 @@ class PreviewView(_CampaignBase):
             common = {
                 "sku": str(payload.get("sku") or ""),
                 "promotion_ref": str(payload.get("promotion_ref") or ""),
-                "use_ai": bool(payload.get("use_ai")),
+                "use_ai": as_bool(payload, "use_ai", default=False),
                 "platform_content": payload.get("platform_content"),
                 "content_version": payload.get("content_version", 1),
             }
@@ -1698,7 +1713,8 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["trigger"] = trigger
 
     if not partial or "template_id" in data:
-        template = AnnouncementTemplate.objects.filter(pk=_as_int(data.get("template_id"))).first()
+        template_id = as_int(data, "template_id", message="Modelo de announcement não encontrado.")
+        template = AnnouncementTemplate.objects.filter(pk=template_id).first()
         if template is None:
             return {}, {"detail": "Modelo de anúncio não encontrado.", "field": "template_id"}
         fields["template"] = template
@@ -1744,17 +1760,16 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         fields["notify_users"] = [int(uid) for uid in (data.get("notify_users") or []) if str(uid).isdigit()]
 
     if "requires_approval" in data:
-        fields["requires_approval"] = bool(data.get("requires_approval"))
+        fields["requires_approval"] = as_bool(data, "requires_approval")
     if "is_active" in data:
-        fields["is_active"] = bool(data.get("is_active"))
+        fields["is_active"] = as_bool(data, "is_active")
     if "expires_after_minutes" in data:
-        minutes = _as_int(data.get("expires_after_minutes"))
-        if minutes is None or minutes < 0:
-            return {}, {
-                "detail": "O prazo precisa ser um número de minutos (0 = não expira).",
-                "field": "expires_after_minutes",
-            }
-        fields["expires_after_minutes"] = minutes
+        fields["expires_after_minutes"] = as_int(
+            data,
+            "expires_after_minutes",
+            min_value=0,
+            message="O prazo precisa ser um número de minutos (0 = não expira).",
+        )
 
     return fields, None
 
@@ -1831,9 +1846,9 @@ def _template_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
         except MarketingAIError as exc:
             return {}, {"detail": exc.detail, "field": "ai_prompt", "code": exc.code}
     if "use_ai_generation" in data:
-        fields["use_ai_generation"] = bool(data.get("use_ai_generation"))
+        fields["use_ai_generation"] = as_bool(data, "use_ai_generation")
     if "is_active" in data:
-        fields["is_active"] = bool(data.get("is_active"))
+        fields["is_active"] = as_bool(data, "is_active")
 
     return fields, None
 
@@ -1902,7 +1917,7 @@ def _is_approval_command(request) -> bool:
 
 def _command_version(payload) -> tuple[int, Response | None]:
     raw = payload.get("base_version")
-    version = None if isinstance(raw, bool) else _as_int(raw)
+    version = _command_int(raw)
     if version is None or version <= 0:
         return 0, Response(
             {
@@ -1913,6 +1928,17 @@ def _command_version(payload) -> tuple[int, Response | None]:
             status=422,
         )
     return version, None
+
+
+def _command_int(value) -> int | None:
+    """Converte inteiro de comando sem aceitar bool nem deixar lixo seguir viagem."""
+
+    if isinstance(value, bool):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _unknown_command_fields(fields: list[str]) -> Response:
@@ -2093,6 +2119,16 @@ def _publish_at(raw, *, timezone_name: str = "") -> tuple[object | None, dict | 
                 "detail": "O offset não corresponde à data nesse timezone.",
                 "field": "publish_at",
             }
+
+    # ⚠️ A validação só conferia o FORMATO. Uma data no passado passava, o despacho
+    # saía IMEDIATAMENTE, e o toast dizia "Anúncio agendado." — o espelho exato do
+    # "Publicar agora" que agendava. Agendar para trás não é agendar: é publicar sem
+    # dizer, e o gestor descobre pelo cliente.
+    if parsed < timezone.now():
+        return None, {
+            "detail": "Essa data já passou. Escolha um horário à frente, ou publique agora.",
+            "field": "publish_at",
+        }
     return parsed, None
 
 
@@ -2123,20 +2159,6 @@ def _announcement_or_none(pk: int) -> Announcement | None:
 
 def _rule_or_none(pk: int) -> Campaign | None:
     return Campaign.objects.select_related("template").filter(pk=pk).first()
-
-
-def _as_bool(value) -> bool:
-    """JSON manda ``true``; form-data manda ``"true"``. Os dois valem."""
-    if isinstance(value, str):
-        return value.strip().lower() in ("true", "1", "yes", "on")
-    return bool(value)
-
-
-def _as_int(value) -> int | None:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return None
 
 
 def _limit(request) -> int:

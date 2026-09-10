@@ -31,12 +31,12 @@ def ovos():
 
 @pytest.fixture
 def moinho():
-    return Supplier.objects.create(ref="SUP-MOINHO", name="Moinho SP")
+    return Supplier.objects.create(ref="moinho", name="Moinho SP")
 
 
 @pytest.fixture
 def cooperativa():
-    return Supplier.objects.create(ref="SUP-COOP", name="Cooperativa")
+    return Supplier.objects.create(ref="coop", name="Cooperativa")
 
 
 @pytest.fixture

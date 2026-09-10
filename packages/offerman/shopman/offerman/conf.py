@@ -11,6 +11,11 @@ Usage in settings.py:
         "COST_BACKEND": None,
         "PRICING_BACKEND": None,  # e.g. "framework.shopman.adapters.pricing.StorefrontPricingBackend"
         "PROJECTION_BACKENDS": {},  # e.g. {"ifood": "myproj.offers.iFoodProjectionBackend"}
+        # Campos de rotulagem que o TENANT define (alérgenos, dieta, porções).
+        # O vocabulário é do orquestrador, não do catálogo: o Offerman só
+        # renderiza o que o provedor entrega. Sem provedor, sem campo — e o
+        # pacote segue funcionando sozinho, que é o ponto de ser Core.
+        "LABEL_ATTRIBUTES_PROVIDER": None,
     }
 """
 
@@ -31,6 +36,7 @@ class OffermanSettings:
     COST_BACKEND: str | None = None
     PRICING_BACKEND: str | None = None
     PROJECTION_BACKENDS: dict[str, str] | None = None
+    LABEL_ATTRIBUTES_PROVIDER: str | None = None
 
 
 def get_offerman_settings() -> OffermanSettings:

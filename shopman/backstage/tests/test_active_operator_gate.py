@@ -72,11 +72,16 @@ def test_quem_esta_logado_SEM_a_permissao_nao_passa(db):
 
     gate = HasBackstagePermission()
 
-    # Recusa por permissão, não por trava: devolve False (o DRF monta o 403
-    # comum) em vez de levantar a recusa com código, que é o que faz a tela
-    # pedir PIN. Pedir PIN aqui não resolveria nada — falta permissão, não
-    # identificação.
-    assert gate.has_permission(_req(sem_perm), _View()) is False
+    # Recusa por permissão, não por trava: 403 comum, SEM código. É a ausência
+    # de código que impede a tela de pedir PIN — pedir PIN aqui não resolveria
+    # nada, porque falta permissão e não identificação.
+    #
+    # A recusa LEVANTA em vez de devolver False: devolver entregava a escolha da
+    # exceção ao DRF, que decide pelo estado da autenticação — e o totem, que
+    # opera sem sessão, recebia esta recusa travestida de credencial ausente.
+    with pytest.raises(PermissionDenied) as recusa:
+        gate.has_permission(_req(sem_perm), _View())
+    assert recusa.value.detail.code != STATION_LOCKED_CODE
 
 
 @pytest.mark.django_db
@@ -93,7 +98,8 @@ def test_usuario_inativo_nao_passa(operador):
     operador.is_active = False
     operador.save(update_fields=["is_active"])
 
-    assert HasBackstagePermission().has_permission(_req(operador), _View()) is False
+    with pytest.raises(PermissionDenied):
+        HasBackstagePermission().has_permission(_req(operador), _View())
 
 
 @pytest.mark.django_db
@@ -155,4 +161,5 @@ def test_tupla_de_permissoes_exige_TODAS(operador):
     class _Duas:
         required_permission = (PERM, "cashman.audit_shift")
 
-    assert HasBackstagePermission().has_permission(_req(operador), _Duas()) is False
+    with pytest.raises(PermissionDenied):
+        HasBackstagePermission().has_permission(_req(operador), _Duas())

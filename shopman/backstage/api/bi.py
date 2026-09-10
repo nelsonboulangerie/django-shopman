@@ -14,6 +14,7 @@ from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from shopman.backstage.parsing import as_bool
 from shopman.backstage.permissions import CASH_AUDIT_PERMISSION, can_audit_cash
 from shopman.backstage.projections.bi_cash import build_bi_cash
 from shopman.backstage.projections.bi_change import build_bi_change
@@ -326,7 +327,10 @@ class BIViewDetailView(_BIBase):
         view = self._get(request, pk)
         if view is None:
             return Response({"detail": "Cenário não encontrado."}, status=404)
-        view.is_favorite = bool(request.data.get("is_favorite"))
+        # Exigido, e não `bool(...)` com default False: este PATCH existe SÓ para
+        # este campo, então a chave ausente era um pedido sem conteúdo que
+        # DESFAVORITAVA em silêncio.
+        view.is_favorite = as_bool(request.data, "is_favorite")
         view.save(update_fields=["is_favorite"])
         return Response({"ok": True, "view": _view_payload(view)})
 

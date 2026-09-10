@@ -18,8 +18,12 @@ Errors (block runserver/migrate --deploy in production):
   SHOPMAN_E013  Adapter fiscal + canal de venda ativo sem resolver de emissão que resolva
   SHOPMAN_E014  Operator subdomain zone configured without shared cookie scope
   SHOPMAN_E015  Captura simulada exposta fora de ambiente não produtivo
-  SHOPMAN_E016  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
-  SHOPMAN_E017  Allowlist de mídia Marketing contém host inseguro
+  SHOPMAN_E016  Catálogo de qualidade não tem exatamente um grau padrão ativo
+  SHOPMAN_E017  Catálogo de qualidade não tem grau ativo a preço cheio
+  SHOPMAN_E018  Catálogo de qualidade tem política ativa incoerente
+  SHOPMAN_E019  Configuração de produção da loja é inválida
+  SHOPMAN_E020  WhatsApp Marketing ativo sem isolamento ManyChat comprovado
+  SHOPMAN_E021  Allowlist de mídia Marketing contém host inseguro
 
 Warnings (non-blocking, logged at startup):
   SHOPMAN_W001  Database backend is SQLite in local/debug mode
@@ -38,6 +42,8 @@ Warnings (non-blocking, logged at startup):
   SHOPMAN_W014  Active WhatsApp campaign without an approved template (flow ns)
   SHOPMAN_W015  Mesmo SKU cadastrado como produto vendável e como insumo
   SHOPMAN_W016  Captura simulada exposta em staging técnico
+  SHOPMAN_W017  SHOPMAN_ENVIRONMENT com valor irreconhecível (tratado como produção)
+  SHOPMAN_W018  Botão "Simular pagamento" e auto-confirm do Pix mock ligados juntos
 """
 
 from __future__ import annotations
@@ -47,6 +53,13 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.core.checks import Error, Warning, register
+
+from shopman.shop.environment import (
+    NON_PRODUCTION_ENVIRONMENTS,
+    environment_name,
+    is_production,
+    is_recognized_environment,
+)
 
 _DEV_SECRET_KEY = "dev-secret-key-not-for-production"
 
@@ -302,8 +315,7 @@ def check_guestman_webhook_secret(app_configs, **kwargs):
         if not secret:
             messages.append(
                 Warning(
-                    "MANYCHAT_WEBHOOK_SECRET não configurado — webhook inbound do "
-                    "ManyChat inativo (rejeita tudo).",
+                    "MANYCHAT_WEBHOOK_SECRET não configurado — webhook inbound do ManyChat inativo (rejeita tudo).",
                     hint=(
                         "Sem a secret o endpoint falha fechado (seguro). Defina "
                         "MANYCHAT_WEBHOOK_SECRET (mesmo valor no webhook do ManyChat) "
@@ -346,8 +358,7 @@ def check_courier_credentials(app_configs, **kwargs):
     if missing:
         messages.append(
             Error(
-                "SHOPMAN_COURIER_ADAPTER aponta para courier_machine sem credenciais: "
-                f"faltam {', '.join(missing)}.",
+                f"SHOPMAN_COURIER_ADAPTER aponta para courier_machine sem credenciais: faltam {', '.join(missing)}.",
                 hint=(
                     "O despacho automático de entregadores falharia em toda corrida. "
                     "Defina as variáveis de ambiente da Machine ou remova "
@@ -470,8 +481,7 @@ def check_debug_otp_exposure(app_configs, **kwargs):
     if not getattr(settings, "SHOPMAN_EXPOSE_DEBUG_OTP", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_EXPOSE_DEBUG_OTP está habilitado fora de ambiente não produtivo.",
@@ -486,10 +496,7 @@ def check_debug_otp_exposure(app_configs, **kwargs):
         messages.append(
             Warning(
                 "OTP debug está exposto em ambiente não-DEBUG.",
-                hint=(
-                    "Permitido apenas para staging técnico. Remova "
-                    "SHOPMAN_EXPOSE_DEBUG_OTP antes de go-live."
-                ),
+                hint=("Permitido apenas para staging técnico. Remova SHOPMAN_EXPOSE_DEBUG_OTP antes de go-live."),
                 id="SHOPMAN_W007",
             )
         )
@@ -508,8 +515,7 @@ def check_staging_autopilot(app_configs, **kwargs):
     if not getattr(settings, "SHOPMAN_STAGING_AUTOPILOT", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_STAGING_AUTOPILOT está habilitado fora de ambiente não produtivo.",
@@ -548,8 +554,7 @@ def check_mock_capture_exposure(app_configs, **kwargs):
     if settings.DEBUG or not getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False):
         return messages
 
-    environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "production")).strip().lower()
-    if environment not in {"development", "dev", "local", "staging"}:
+    if is_production():
         messages.append(
             Error(
                 "SHOPMAN_EXPOSE_MOCK_CAPTURE está habilitado fora de ambiente não produtivo.",
@@ -571,6 +576,36 @@ def check_mock_capture_exposure(app_configs, **kwargs):
                     "antes de qualquer go-live."
                 ),
                 id="SHOPMAN_W016",
+            )
+        )
+    return messages
+
+
+@register(deploy=True)
+def check_mock_pix_confirm_conflict(app_configs, **kwargs):
+    """As duas confirmações do Pix mock juntas se contradizem — e o relógio ganha.
+
+    ``SHOPMAN_EXPOSE_MOCK_CAPTURE`` promete o botão "Simular pagamento";
+    ``SHOPMAN_MOCK_PIX_AUTO_CONFIRM`` confirma sozinho em segundos. Ligadas ao
+    mesmo tempo, o auto-confirm sempre vence a corrida e o botão nem chega a
+    aparecer. O código já resolve (com o botão exposto, o auto-confirm não é
+    injetado — ver ``_adapter_config`` em services/payment.py); este aviso
+    existe para a config parar de mentir.
+    """
+    messages = []
+    if getattr(settings, "SHOPMAN_EXPOSE_MOCK_CAPTURE", False) and getattr(
+        settings, "SHOPMAN_MOCK_PIX_AUTO_CONFIRM", False
+    ):
+        messages.append(
+            Warning(
+                "SHOPMAN_EXPOSE_MOCK_CAPTURE e SHOPMAN_MOCK_PIX_AUTO_CONFIRM estão ligados juntos; "
+                "o botão manual vence e o auto-confirm do Pix mock é ignorado.",
+                hint=(
+                    'Escolha um: botão "Simular pagamento" (SHOPMAN_EXPOSE_MOCK_CAPTURE) ou '
+                    "confirmação automática (SHOPMAN_MOCK_PIX_AUTO_CONFIRM). "
+                    "Desligue SHOPMAN_MOCK_PIX_AUTO_CONFIRM para silenciar este aviso."
+                ),
+                id="SHOPMAN_W018",
             )
         )
     return messages
@@ -690,9 +725,7 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
     from shopman.shop.models import Channel
 
     try:
-        selling = Channel.objects.filter(
-            is_active=True, commerce_policy=Channel.CommercePolicy.ORDER
-        ).exists()
+        selling = Channel.objects.filter(is_active=True, commerce_policy=Channel.CommercePolicy.ORDER).exists()
     except (OperationalError, ProgrammingError):
         return errors  # tabelas ainda não existem (migração inicial)
     if not selling:
@@ -703,8 +736,7 @@ def check_fiscal_emission_resolver(app_configs, **kwargs):
     if not paths:
         errors.append(
             Error(
-                "Adapter fiscal configurado e canal de venda ativo, mas "
-                "SHOPMAN_FISCAL_EMISSION_RESOLVER está vazio.",
+                "Adapter fiscal configurado e canal de venda ativo, mas SHOPMAN_FISCAL_EMISSION_RESOLVER está vazio.",
                 hint=(
                     "Sem resolver, a NFC-e só sai quando o operador marca 'emitir' no "
                     "pedido — em silêncio, venda após venda. Aponte a política fiscal "
@@ -810,9 +842,7 @@ def check_display_channel_price_source(app_configs, **kwargs):
 
     by_ref = {c.ref: c for c in channels}
     public_price_refs = {
-        c.ref
-        for c in channels
-        if c.commerce_policy == Channel.CommercePolicy.ORDER and c.ref != POS_CHANNEL_REF()
+        c.ref for c in channels if c.commerce_policy == Channel.CommercePolicy.ORDER and c.ref != POS_CHANNEL_REF()
     }
 
     for channel in channels:
@@ -889,9 +919,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
 
     try:
         targets_whatsapp = [
-            campaign
-            for campaign in Campaign.objects.filter(is_active=True)
-            if "whatsapp" in (campaign.platforms or [])
+            campaign for campaign in Campaign.objects.filter(is_active=True) if "whatsapp" in (campaign.platforms or [])
         ]
     except DatabaseError:
         # Check roda antes do migrate (deploy novo, banco vazio): sem tabela não há
@@ -917,7 +945,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
                     "WhatsApp Marketing permanece bloqueado: a isolação dos campos "
                     "persistentes do ManyChat ainda não foi comprovada.",
                     hint=safety.action,
-                    id="SHOPMAN_E016",
+                    id="SHOPMAN_E020",
                 )
             )
         return warnings
@@ -925,8 +953,7 @@ def check_whatsapp_flow_coverage(app_configs, **kwargs):
     names = ", ".join(sorted(campaign.name for campaign in targets_whatsapp)[:5])
     warnings.append(
         Warning(
-            f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem "
-            f"template aprovado: {names}.",
+            f"{len(targets_whatsapp)} campanha(s) ativa(s) enviam por WhatsApp sem template aprovado: {names}.",
             hint=(
                 "Escolha um flow aprovado e ativo no cockpit Marketing → Plataformas. "
                 "A configuração exige versão, lista fresca, TOTP e auditoria; o Admin "
@@ -957,7 +984,7 @@ def check_marketing_media_hosts(app_configs, **kwargs):
                 "Use somente hostnames exatos controlados, sem esquema, caminho, "
                 "porta, wildcard ou IP privado."
             ),
-            id="SHOPMAN_E017",
+            id="SHOPMAN_E021",
         )
     ]
 
@@ -987,8 +1014,7 @@ def check_sku_namespace_collision(app_configs, **kwargs):
     if collisions:
         warnings.append(
             Warning(
-                "SKU duplicado entre produto vendável (Offerman) e insumo (Buyman): "
-                f"{', '.join(collisions)}.",
+                f"SKU duplicado entre produto vendável (Offerman) e insumo (Buyman): {', '.join(collisions)}.",
                 hint=(
                     "Os caminhos compostos resolvem o produto primeiro e o insumo "
                     "homônimo é ignorado; o ledger de estoque mistura venda e consumo "
@@ -998,3 +1024,118 @@ def check_sku_namespace_collision(app_configs, **kwargs):
             )
         )
     return warnings
+
+
+@register(deploy=True)
+def check_environment_name_recognized(app_configs, **kwargs):
+    """Avisa quando ``SHOPMAN_ENVIRONMENT`` não é nenhum nome conhecido.
+
+    Não é Error porque o valor irreconhecível **já** é tratado como produção:
+    `is_production()` só abre a porta para os quatro nomes não-produtivos, então
+    um dedo escorregado falha do lado seguro. Mas falhar fechado em silêncio
+    esconde a causa — quem digitou `stagin` numa máquina de teste veria os
+    comandos de QA recusarem sem entender por quê. Este aviso é o grito.
+    """
+    if is_recognized_environment():
+        return []
+
+    nome = environment_name()
+    conhecidos = ", ".join(sorted(NON_PRODUCTION_ENVIRONMENTS)) + ", production"
+    return [
+        Warning(
+            f"SHOPMAN_ENVIRONMENT={nome!r} não é um ambiente conhecido — "
+            "esta instância está sendo tratada como PRODUÇÃO.",
+            hint=(
+                f"Valores conhecidos: {conhecidos}. Um valor fora dessa lista fecha "
+                "as travas destrutivas (seed --flush, import_backup, qa_scenarios, "
+                "refresh_seed_dates) de propósito. Se esta máquina é de teste, "
+                "corrija a variável; se é produção, escreva 'production'."
+            ),
+            id="SHOPMAN_W017",
+        )
+    ]
+
+
+@register(deploy=True)
+def check_production_quality_catalog(app_configs, **kwargs):
+    """Trava o release quando a classificação de uma fornada não é segura."""
+    from django.db import DatabaseError
+
+    from shopman.shop.models import QualityDefect, QualityGrade
+
+    try:
+        grades = list(QualityGrade.objects.values("ref", "is_active", "is_default", "markdown_percent"))
+        defects = list(QualityDefect.objects.values("ref", "is_active", "forces_discard"))
+    except DatabaseError:
+        return []  # tabelas ainda não existem durante o primeiro migrate
+
+    errors = []
+    active_defaults = [grade for grade in grades if grade["is_active"] and grade["is_default"]]
+    if len(active_defaults) != 1:
+        errors.append(
+            Error(
+                "O catálogo de qualidade precisa ter exatamente um grau padrão ativo.",
+                hint=("No Admin > Graus de qualidade, mantenha um único grau ativo marcado como padrão."),
+                id="SHOPMAN_E016",
+            )
+        )
+
+    if not any(grade["is_active"] and grade["markdown_percent"] == 0 for grade in grades):
+        errors.append(
+            Error(
+                "O catálogo de qualidade não tem grau ativo a preço cheio.",
+                hint=(
+                    "Ative ou cadastre ao menos um grau com desconto de 0%; o grau é o único eixo de preço da partição."
+                ),
+                id="SHOPMAN_E017",
+            )
+        )
+
+    incoherent_refs = [grade["ref"] for grade in grades if grade["is_default"] and not grade["is_active"]]
+    incoherent_refs.extend(defect["ref"] for defect in defects if defect["forces_discard"] and not defect["is_active"])
+    incoherent_refs.extend(
+        str(entry["ref"] or "<vazia>")
+        for entry in (*grades, *defects)
+        if entry["is_active"]
+        and (not isinstance(entry["ref"], str) or not entry["ref"].strip() or entry["ref"] != entry["ref"].strip())
+    )
+    if incoherent_refs:
+        errors.append(
+            Error(
+                "O catálogo de qualidade contém referências ou políticas incoerentes: "
+                f"{', '.join(sorted(incoherent_refs))}.",
+                hint=(
+                    "Use refs ativas, não vazias e sem espaços externos; reative a referência "
+                    "ou remova conscientemente o marcador padrão/veto antes do release."
+                ),
+                id="SHOPMAN_E018",
+            )
+        )
+
+    return errors
+
+
+@register(deploy=True)
+def check_production_configuration(app_configs, **kwargs):
+    """Valida a configuração resolvida que governará produção no release."""
+    from django.db import DatabaseError
+    from redis.exceptions import RedisError
+
+    from shopman.shop.production_config import ProductionConfig
+
+    try:
+        ProductionConfig.load()
+    except (DatabaseError, RedisError):
+        # O check de deploy é deliberadamente offline: nem o banco nem o cache
+        # precisam estar acessíveis para validar settings e contratos estáticos.
+        # A configuração persistida é validada novamente no readiness semeado.
+        return []
+    except (TypeError, ValueError) as exc:
+        return [
+            Error(
+                f"Configuração de produção inválida: {exc}",
+                hint=("Corrija os campos estruturados em Admin > Configuração > Produção antes do release."),
+                id="SHOPMAN_E019",
+            )
+        ]
+    return []

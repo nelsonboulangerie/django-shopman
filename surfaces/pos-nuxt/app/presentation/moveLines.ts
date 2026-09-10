@@ -63,12 +63,14 @@ export function freezesPriceOnMove(capability: unknown): boolean {
 }
 
 /**
- * Identity used to address a line in a move. Prefers the server `line_id` (the
- * move op needs it); falls back to the sku when a freshly added line has not
- * been persisted yet (the dialog reloads the tab first to populate `line_id`).
+ * Identity used to address a line in a move — o `line_id`, e só ele.
+ *
+ * Havia aqui um fallback para o SKU, de quando a linha só ganhava identidade ao
+ * ser persistida. Ela nasce com identidade agora, e o fallback endereçaria a
+ * linha ERRADA na comanda com dois chás.
  */
 export function moveLineId(item: POSCartItem): string {
-  return item.line_id || item.sku;
+  return item.line_id;
 }
 
 /** Split and transfer act on selected lines; merge moves the whole tab. */

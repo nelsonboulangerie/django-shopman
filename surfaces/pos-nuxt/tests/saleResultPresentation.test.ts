@@ -113,3 +113,49 @@ describe("enterAdvances — o Enter que validou não engole a tela do troco", ()
     expect(enterAdvances({ changeQ: 0, payment: pixProof(), pixStatus: "paid" })).toBe(true);
   });
 });
+
+describe("a tela do LINK não some sozinha", () => {
+  // ⚠️ Era este o defeito que fazia o fluxo do link "morrer": a venda fechava, a
+  // URL aparecia — e cinco segundos depois a tela se fechava sozinha, antes de o
+  // operador copiar. O pedido ficava aguardando um pagamento que ninguém pediu,
+  // e recuperar a URL exigia ir ao gestor.
+  const comLink = { isPix: false, isLink: true, hasProof: true } as never;
+
+  it("o auto-avanço não conta com um link na tela", () => {
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: comLink, pixStatus: "idle", reducedMotion: false })).toBe(0);
+  });
+
+  it("nem o Enter engole a tela do link", () => {
+    expect(enterAdvances({ changeQ: 0, payment: comLink, pixStatus: "idle" })).toBe(false);
+  });
+
+  it("sem prova para entregar, a venda comum continua avançando sozinha", () => {
+    const semProva = { isPix: false, isLink: false, hasProof: false } as never;
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: semProva, pixStatus: "idle", reducedMotion: false }))
+      .toBeGreaterThan(0);
+    expect(enterAdvances({ changeQ: 0, payment: semProva, pixStatus: "idle" })).toBe(true);
+  });
+});
+
+describe("cobrança que falhou não veste cara de venda concluída", () => {
+  // ⚠️ O defeito real, reproduzido no balcão: o Pix voltou `403 Forbidden` do
+  // gateway, a resposta trouxe `status: "error"` — e a tela mostrou o check
+  // verde de "Venda concluída" e se fechou sozinha em 5 s. O pedido existia, a
+  // linha do livro-caixa existia, e ninguém tinha cobrado R$ 12,00.
+  const falhou = { isPix: true, isLink: false, hasProof: false, status: "error" } as never;
+  const semDado = { isPix: true, isLink: false, hasProof: false, status: "unavailable" } as never;
+
+  it("a tela não se fecha sozinha em cima de uma venda sem cobrança", () => {
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: falhou, pixStatus: "idle", reducedMotion: false })).toBe(0);
+    expect(autoAdvanceSeconds({ changeQ: 0, payment: semDado, pixStatus: "idle", reducedMotion: false })).toBe(0);
+  });
+
+  it("nem o Enter que validou a venda passa por cima do aviso", () => {
+    expect(enterAdvances({ changeQ: 0, payment: falhou, pixStatus: "idle" })).toBe(false);
+  });
+
+  it("o título diz o que aconteceu, e não agradece", () => {
+    expect(saleResultTitle("Ana Maria", falhou)).toBe("Venda registrada, cobrança não criada");
+    expect(saleResultTitle("Ana Maria", null)).toBe("Venda concluída. Obrigado, Ana!");
+  });
+});

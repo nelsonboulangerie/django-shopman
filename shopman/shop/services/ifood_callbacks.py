@@ -45,6 +45,30 @@ STATUS_ACTION = {
     "cancelled": "requestCancellation",
 }
 
+#: Motivo escolhido no Gestor (diálogo de cancelamento) → cancellationCode do
+#: iFood. A lista oficial é descoberta em homologação via
+#: ``GET /order/v1.0/orders/{id}/cancellationReasons``; o mapeamento real é
+#: config-driven (``SHOPMAN_IFOOD["cancellation_reason_codes"]``). Este
+#: default fica VAZIO de propósito: sem código validado, cai no
+#: ``cancellation_default_code`` — código errado é pior que falhar alto.
+DEFAULT_REASON_CODES: dict[str, str] = {}
+
+
+def resolve_cancellation_code(reason: str, default: str = "") -> str:
+    """Cancellation code for a Gestor reason, falling back to default/config.
+
+    Os códigos oficiais só devem entrar depois da homologação; até lá o
+    fallback garante que o pedido de cancelamento não morre por falta de code
+    (o default configurado em ``SHOPMAN_IFOOD["cancellation_default_code"]``).
+    """
+    codes = dict(DEFAULT_REASON_CODES)
+    codes.update(_cfg().get("cancellation_reason_codes") or {})
+    return (
+        codes.get(str(reason or "").strip())
+        or default
+        or str(_cfg().get("cancellation_default_code") or "")
+    )
+
 
 def _cfg() -> dict:
     return getattr(settings, "SHOPMAN_IFOOD", {}) or {}
@@ -157,7 +181,8 @@ def send_for_status(
     if not action:
         return False
     if action == "requestCancellation":
-        request_cancellation(order_id, code=cancellation_code, description=cancellation_reason)
+        code = cancellation_code or resolve_cancellation_code(cancellation_reason)
+        request_cancellation(order_id, code=code, description=cancellation_reason)
     else:
         send_action(order_id, action)
     return True
@@ -172,6 +197,7 @@ __all__ = [
     "send_action",
     "send_for_status",
     "action_for_status",
+    "resolve_cancellation_code",
     "STATUS_ACTION",
     "IFoodCallbackError",
 ]

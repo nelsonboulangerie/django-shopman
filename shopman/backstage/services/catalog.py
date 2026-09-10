@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from shopman.backstage.services.exceptions import CatalogError
+from shopman.shop.services import attributes
 
 
 def _reconcile_if_projected(surface_ref: str) -> None:
@@ -89,7 +90,7 @@ def set_cell(
 ):
     """Edita uma célula (produto × superfície). save() dispara o auto-trigger.
 
-    Superfície de FEED (menuboard/plataforma) só aceita pausar/reativar: ``is_sellable``
+    Superfície de FEED (menuboard/plataforma) só aceita pausar/ativar: ``is_sellable``
     vira a pausa local do item (não há preço nem publicação — feed não transaciona).
     """
     if _is_display_surface(surface_ref):
@@ -98,7 +99,7 @@ def set_cell(
         from shopman.backstage.services import feeds as display_service
 
         if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         display_service.set_item_paused(surface_ref, sku, paused=not is_sellable)
         # Duck-type com o que a API lê: feed está sempre "publicado", sem preço.
         return SimpleNamespace(is_published=True, is_sellable=bool(is_sellable), price_q=None)
@@ -180,9 +181,9 @@ def bulk_set(
             for ref in _all_channel_refs()
         )
     if _is_display_surface(surface_ref):
-        # Feed: bulk só pausa/reativa (is_sellable). Sem preço/publicação.
+        # Feed: bulk só pausa/ativa (is_sellable). Sem preço/publicação.
         if is_sellable is None:
-            raise CatalogError("Feed aceita apenas pausar/reativar (is_sellable).")
+            raise CatalogError("Feed aceita apenas pausar/ativar (is_sellable).")
         from shopman.backstage.services import feeds as display_service
 
         return display_service.set_items_paused(surface_ref, skus, paused=not is_sellable)
@@ -345,8 +346,14 @@ _DETAIL_BOOL_FIELDS = ("is_published", "is_sellable", "is_batch_produced")
 
 # Rotulagem de compra remota: o cliente não pega o produto na mão, então alérgenos,
 # restrições, porção e medidas precisam estar escritos. Vivem em ``metadata``.
-_DETAIL_META_LIST_FIELDS = ("allergens", "dietary_info")
-_DETAIL_META_TEXT_FIELDS = ("serves", "approx_dimensions")
+# ⚠️ ``allergens``, ``dietary_info`` e ``serves`` NÃO moram mais no metadata
+# solto: são atributos do registro (``alergenos``, ``dieta``, ``porcoes``). Os
+# nomes de CAMPO da API seguem em inglês — é a convenção da casa para contrato
+# de projection —, mas a leitura e a escrita passam pelo service.
+_DETAIL_ATTR_LIST_FIELDS = {"allergens": "alergenos", "dietary_info": "dieta"}
+_DETAIL_ATTR_TEXT_FIELDS = {"serves": "porcoes"}
+_DETAIL_META_LIST_FIELDS = ()
+_DETAIL_META_TEXT_FIELDS = ("approx_dimensions",)
 
 
 def _get_product(sku: str):
@@ -416,20 +423,27 @@ def _detail_payload(product) -> dict:
         "is_sellable": product.is_sellable,
         "ingredients_text": product.ingredients_text,
         "image_url": product.image_url,
-        # rotulagem de compra remota (metadata)
-        "allergens": list(metadata.get("allergens") or []),
-        "dietary_info": list(metadata.get("dietary_info") or []),
-        "serves": str(metadata.get("serves") or ""),
+        # rotulagem de compra remota (registro de atributos)
+        "allergens": list(attributes.get(product, "alergenos") or []),
+        "dietary_info": list(attributes.get(product, "dieta") or []),
+        "serves": str(attributes.get(product, "porcoes") or ""),
         "approx_dimensions": str(metadata.get("approx_dimensions") or ""),
         "allows_next_day_sale": bool(metadata.get("allows_next_day_sale", False)),
+        # Promessa da casa sobre o produto ("Preparado na hora"), não política de
+        # estoque. Ver docs/reference/data-schemas.md → Product.metadata.
+        "made_to_order": bool(metadata.get("made_to_order", False)),
+        # Hora declarada de prontidão ("HH:MM", "" = deduzir do histórico). É o
+        # que impede prometer a baguete de tradição para as 9h.
+        "ready_from": str(metadata.get("ready_from") or ""),
         "nutrition_facts": _nutrition_payload(product),
         "social": _social_attrs_payload(product),
         "fiscal": _fiscal_payload(product),
         "primary_collection": primary.collection.ref if primary else "",
         "primary_collection_name": primary.collection.name if primary else "",
-        # somente-leitura: o painel avisa que o dado veio da receita e que editar
-        # à mão congela a derivação (ver ``dietary_from_recipe``).
-        "dietary_auto_filled": bool(metadata.get("dietary_auto_filled", True)),
+        # somente-leitura: o painel avisa que o dado veio da FICHA e que editar
+        # à mão congela a derivação (ver ``dietary_from_recipe``). Vem da
+        # proveniência do valor, não mais de um sentinela à parte.
+        "dietary_from_recipe": _from_recipe(product),
         "nutrition_auto_filled": bool((product.nutrition_facts or {}).get("auto_filled", False)),
         "fiscal_profiles": _fiscal_profile_choices(),
     }
@@ -447,6 +461,37 @@ def _as_nullable_int(value, label: str) -> int | None:
         return int(value)
     except (TypeError, ValueError) as exc:
         raise CatalogError(f"{label} deve ser um número inteiro.") from exc
+
+
+def _as_flag(value, label: str) -> bool:
+    """Booleano estrito de entrada de operador, no dialeto desta camada.
+
+    ``bool()`` cru mente: ``bool("false")`` é ``True``, então quem manda o texto
+    ``"false"`` LIGA a opção em vez de desligar, e nada avisa. Não é explorável
+    pela UI de hoje, que manda JSON de verdade; é explorável por quem fala com a
+    API direto, e vira bug no dia em que alguém trocar um ``fetch`` por
+    ``URLSearchParams``.
+
+    Mesma tabela de tokens do parser canônico (``backstage/parsing.py``), mas
+    levantando ``CatalogError`` — esta camada tem dialeto próprio de entrada, e
+    ``services/exceptions.py`` documenta que a camada HTTP mapeia por TIPO.
+    Importar o parser do DRF aqui quebraria esse mapeamento para consertar um
+    ``bool()``.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in {"true", "1", "yes", "on"}:
+            return True
+        if token in {"false", "0", "no", "off"}:
+            return False
+    elif isinstance(value, int) and value in (0, 1):
+        # `isinstance(True, int)` é verdade em Python — por isso o bool vem antes.
+        return bool(value)
+    elif value is None:
+        return False
+    raise CatalogError(f"{label} aceita apenas sim ou não.")
 
 
 def _as_str_list(value, label: str) -> list[str]:
@@ -490,7 +535,6 @@ def _apply_nutrition(product, raw) -> None:
 def _apply_labelling(product, data: dict) -> None:
     """Alérgenos, restrições, porção e medidas — tudo em ``metadata``."""
     metadata = dict(product.metadata or {})
-    original = dict(product.metadata or {})
 
     for field in _DETAIL_META_LIST_FIELDS:
         if field in data:
@@ -507,19 +551,52 @@ def _apply_labelling(product, data: dict) -> None:
             else:
                 metadata.pop(field, None)
     if "allows_next_day_sale" in data:
-        metadata["allows_next_day_sale"] = bool(data.get("allows_next_day_sale"))
+        metadata["allows_next_day_sale"] = _as_flag(data.get("allows_next_day_sale"), "allows_next_day_sale")
+    if "made_to_order" in data:
+        metadata["made_to_order"] = _as_flag(data.get("made_to_order"), "made_to_order")
+    if "ready_from" in data:
+        # Vazio APAGA a declaração; hora ilegível é recusada em vez de virar
+        # ausência silenciosa (o cadastro diria que a casa respondeu, e o sistema
+        # agiria como se ninguém tivesse respondido).
+        raw = str(data.get("ready_from") or "").strip()
+        if raw:
+            from shopman.shop.services.product_readiness import format_clock, parse_clock
 
-    # Mesmo sentinel do form do Admin: só congela a derivação quando a rotulagem
-    # dietética REALMENTE mudou, para um save qualquer não travar a receita.
-    touched_dietary = "allergens" in data or "dietary_info" in data
-    if touched_dietary:
-        changed = (metadata.get("allergens") or []) != (original.get("allergens") or []) or (
-            metadata.get("dietary_info") or []
-        ) != (original.get("dietary_info") or [])
-        if changed and (metadata.get("allergens") or metadata.get("dietary_info")):
-            metadata["dietary_auto_filled"] = False
+            parsed = parse_clock(raw)
+            if parsed is None:
+                raise CatalogError("Pronto a partir de: use o formato HH:MM. Ex.: 12:00.")
+            metadata["ready_from"] = format_clock(parsed)
+        else:
+            metadata.pop("ready_from", None)
 
     product.metadata = metadata
+
+    # A rotulagem dietética vai para o registro. Só marca como escrita pelo
+    # gestor quando ela REALMENTE mudou: um save qualquer não pode travar a
+    # derivação pela ficha técnica.
+    for field, ref in _DETAIL_ATTR_LIST_FIELDS.items():
+        if field not in data:
+            continue
+        novo = [str(v).strip() for v in (data.get(field) or []) if str(v).strip()]
+        if novo == (attributes.get(product, ref) or []):
+            continue
+        attributes.set(product, ref, novo or None, source="manual", save=False)
+
+    for field, ref in _DETAIL_ATTR_TEXT_FIELDS.items():
+        if field not in data:
+            continue
+        novo = str(data.get(field) or "").strip()
+        if novo != (attributes.get(product, ref) or ""):
+            attributes.set(product, ref, novo or None, source="manual", save=False)
+
+
+def _from_recipe(product) -> bool:
+    """Se a rotulagem dietética veio da ficha técnica (e é recalculável)."""
+    return any(
+        attributes.get(product, ref) is not None
+        and attributes.source(product, ref) == "recipe"
+        for ref in ("alergenos", "dieta")
+    )
 
 
 def _apply_social(product, raw) -> None:
@@ -610,7 +687,7 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
             setattr(product, field, _as_nullable_int(data.get(field), field))
     for field in _DETAIL_BOOL_FIELDS:
         if field in data:
-            setattr(product, field, bool(data.get(field)))
+            setattr(product, field, _as_flag(data.get(field), field))
 
     if "nutrition_facts" in data:
         _apply_nutrition(product, data.get("nutrition_facts"))

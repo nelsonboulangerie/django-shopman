@@ -30,7 +30,7 @@
     >(),
     {
       icon: "lucide:x",
-      srText: "Close",
+      srText: "Fechar",
     }
   );
   const forwarded = reactiveOmit(props, "class", "icon", "srText");

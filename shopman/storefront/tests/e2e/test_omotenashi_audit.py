@@ -164,6 +164,28 @@ def test_06b_soldout_offers_notify_cta(client):
     assert notify["href"] == f"/api/v1/availability/{SKU}/notify/"
     assert notify["method"] == "POST"
     assert "avise" in notify["label"].lower()
+    # O sino nasce em "Me avise" para quem ainda não pediu.
+    assert body["is_notify_subscribed"] is False
+
+
+def test_06c_soldout_409_remembers_who_already_asked(client):
+    """✅ Quem já pediu o aviso vê "Anotado" no 409, não "Me avise" de novo.
+
+    Sem este campo, a folha de substitutos reassinava a cada 409 enquanto o card
+    e a PDP mostravam "Anotado" para o mesmo SKU no mesmo instante.
+    """
+    _seed(stock_qty=2)
+    resp = client.post(
+        f"/api/v1/availability/{SKU}/notify/",
+        data=json.dumps({"phone": "43999997777"}),
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+
+    status, body = J.set_cart_qty(client, SKU, 5)
+    assert status == 409
+    assert body["is_notifiable"] is True
+    assert body["is_notify_subscribed"] is True
 
 
 def test_07_checkout_rejected_date_is_actionable(client):

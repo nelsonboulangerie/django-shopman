@@ -127,6 +127,110 @@ def classify_append_only(name_status_lines: list[str]) -> list[tuple[str, str]]:
     return violations
 
 
+def _event_payload() -> dict:
+    """The webhook payload the runner wrote to ``GITHUB_EVENT_PATH`` (or ``{}``)."""
+    event_path = os.environ.get("GITHUB_EVENT_PATH", "")
+    try:
+        payload = json.loads(Path(event_path).read_text())
+    except (OSError, ValueError, TypeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _commit_present(commit: str, repo_root: Path | None = None) -> bool:
+    return _git(["cat-file", "-e", f"{commit}^{{commit}}"], cwd=repo_root).returncode == 0
+
+
+def _ensure_commit(commit: str, repo_root: Path | None = None) -> bool:
+    """Guarantee the commit object exists locally, fetching it by SHA if not.
+
+    Fetching the exact SHA costs one commit and — unlike ``fetch --depth=N`` on
+    a complete checkout — introduces no shallow boundary into history that is
+    already there.
+    """
+    if _commit_present(commit, repo_root):
+        return True
+    _git(["fetch", "--depth=1", "origin", commit], cwd=repo_root)
+    return _commit_present(commit, repo_root)
+
+
+def _head_parents(repo_root: Path | None = None) -> list[str]:
+    """HEAD's parent SHAs, read from the raw commit object.
+
+    ``rev-list --parents`` and ``HEAD^1`` go through the revision walk, which
+    honours the shallow graft: on a ``fetch-depth: 1`` checkout the boundary
+    commit is presented as parentless and both come back empty. ``cat-file``
+    reads the object itself, so the parents survive a shallow checkout.
+    """
+    result = _git(["cat-file", "commit", "HEAD"], cwd=repo_root)
+    if result.returncode != 0:
+        return []
+    parents: list[str] = []
+    for line in result.stdout.splitlines():
+        if not line.strip():  # header ends at the first blank line
+            break
+        if line.startswith("parent "):
+            parents.append(line.split(" ", 1)[1].strip())
+    return parents
+
+
+def _pull_request_base(repo_root: Path | None = None) -> tuple[str | None, str]:
+    """The commit this PR branched from — never the moving tip of the base.
+
+    The tip is wrong and the failure is silent: GitHub builds
+    ``refs/pull/N/merge`` at push time and does NOT rebuild it when the base
+    branch moves. Diffing against the tip then shows a stranger's merged PR,
+    reversed, as if this PR had made it. Measured on PR #554: #549 landed
+    between push and job, and the gate blamed a file the PR never opened.
+    """
+    pull_request = _event_payload().get("pull_request") or {}
+    head_sha = str(((pull_request.get("head") or {}).get("sha")) or "")
+    base_sha = str(((pull_request.get("base") or {}).get("sha")) or "")
+    base_ref = os.environ.get("GITHUB_BASE_REF", "") or "main"
+    attempts: list[str] = []
+
+    # 1. Parent 1 of the merge ref IS the commit the merge was built on — exact,
+    #    immune to the base moving afterwards, and free of network in the normal
+    #    case. Parent 2 must be the PR head, otherwise HEAD is some other merge
+    #    (a checkout pinned to head.sha whose tip merged main, say) and parent 1
+    #    would be the PR's own branch: an empty diff, which is fail-OPEN.
+    parents = _head_parents(repo_root)
+    if len(parents) == 2 and head_sha and parents[1] == head_sha:
+        if _ensure_commit(parents[0], repo_root):
+            return parents[0], f"pull_request: pai 1 do merge ref ({parents[0][:12]})"
+        attempts.append(f"pai 1 do merge ref ({parents[0][:12]}) não pôde ser buscado")
+    else:
+        attempts.append("HEAD não é o merge ref do PR (pai 2 ≠ head.sha do evento)")
+
+    # 2. Without the merge ref (a checkout pinned to head.sha), the merge-base
+    #    against the EVENT's base.sha is the next best truth — that sha is
+    #    frozen at event time, unlike the tip.
+    if base_sha:
+        if _ensure_commit(base_sha, repo_root):
+            merge_base = _git(["merge-base", base_sha, "HEAD"], cwd=repo_root)
+            if merge_base.returncode == 0 and merge_base.stdout.strip():
+                resolved = merge_base.stdout.strip()
+                return resolved, f"pull_request: merge-base com base.sha {base_sha[:12]}"
+            attempts.append(f"merge-base com base.sha {base_sha[:12]} sem ancestral comum")
+        else:
+            attempts.append(f"base.sha {base_sha[:12]} indisponível mesmo após fetch")
+    else:
+        attempts.append("evento sem pull_request.base.sha legível")
+
+    # 3. Last resort: the MERGE-BASE against the fetched tip — never the tip
+    #    itself. Only works on a checkout that has history (fetch-depth: 0).
+    if _git(["fetch", "--no-tags", "origin", base_ref], cwd=repo_root).returncode == 0:
+        merge_base = _git(["merge-base", "FETCH_HEAD", "HEAD"], cwd=repo_root)
+        if merge_base.returncode == 0 and merge_base.stdout.strip():
+            resolved = merge_base.stdout.strip()
+            return resolved, f"pull_request: merge-base com origin/{base_ref} ({resolved[:12]})"
+        attempts.append(f"merge-base com origin/{base_ref} sem ancestral comum (checkout raso?)")
+    else:
+        attempts.append(f"fetch da base '{base_ref}' falhou")
+
+    return None, "base do PR não resolvida — " + "; ".join(attempts)
+
+
 def resolve_diff_base(repo_root: Path | None = None) -> tuple[str | None, str]:
     """Find the merge base for the append-only diff, per trigger.
 
@@ -135,26 +239,25 @@ def resolve_diff_base(repo_root: Path | None = None) -> tuple[str | None, str]:
 
     - ``merge_group``: the event payload carries ``merge_group.base_sha`` — the
       exact commit the queue is merging onto.
-    - ``pull_request``: HEAD is the synthetic merge commit of PR into base, so
-      a tree-diff against the fetched base tip isolates the PR's changes.
-    - local: merge-base against ``origin/main`` (fallback: the tip itself).
+    - ``pull_request``: the commit ``refs/pull/N/merge`` was built on — see
+      ``_pull_request_base``; never the (moving) tip of the base branch.
+    - local: merge-base against ``origin/main``.
+
+    ``None`` means "não sei o que este PR mudou", and every caller turns that
+    into a FAILURE. A base that cannot be resolved must never read as "nada
+    mudou": that is the silent green this gate exists to hunt.
     """
     event = os.environ.get("GITHUB_EVENT_NAME", "")
     if event == "merge_group":
-        event_path = os.environ.get("GITHUB_EVENT_PATH", "")
         try:
-            payload = json.loads(Path(event_path).read_text())
-            base_sha = payload["merge_group"]["base_sha"]
-        except (OSError, KeyError, ValueError, TypeError):
+            base_sha = str(_event_payload()["merge_group"]["base_sha"])
+        except (KeyError, TypeError):
             return None, "merge_group sem base_sha legível no GITHUB_EVENT_PATH"
-        _git(["fetch", "--depth=1", "origin", base_sha], cwd=repo_root)
+        if not _ensure_commit(base_sha, repo_root):
+            return None, f"merge_group base_sha {base_sha[:12]} indisponível mesmo após fetch"
         return base_sha, f"merge_group base_sha {base_sha[:12]}"
     if event == "pull_request":
-        base_ref = os.environ.get("GITHUB_BASE_REF", "") or "main"
-        fetched = _git(["fetch", "--depth=1", "origin", base_ref], cwd=repo_root)
-        if fetched.returncode != 0:
-            return None, f"fetch da base '{base_ref}' falhou: {fetched.stderr.strip()}"
-        return "FETCH_HEAD", f"pull_request base origin/{base_ref} (FETCH_HEAD)"
+        return _pull_request_base(repo_root)
     # Local / other triggers: best effort against origin/main.
     for candidate in ("origin/main", "main"):
         merge_base = _git(["merge-base", candidate, "HEAD"], cwd=repo_root)

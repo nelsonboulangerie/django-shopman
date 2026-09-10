@@ -75,9 +75,10 @@ useSeoMeta({
       <section class="space-y-2">
         <h2 class="shop-heading">Como o pedido é confirmado</h2>
         <p class="text-sm leading-6">
-          Ao enviar o pedido, ele fica aguardando a conferência da loja. O acompanhamento mostra o
-          prazo em que isso acontece, e o que acontece se o prazo estourar, na própria tela do
-          pedido. Enquanto o pedido não é confirmado, você pode cancelar sozinho ali.
+          Ao enviar o pedido, o acompanhamento mostra o estado real: pagamento pendente, confirmação
+          do estabelecimento, reserva em fila de espera, preparo, retirada ou entrega. Quando houver prazo,
+          a própria tela do pedido informa o tempo e a consequência. Enquanto o cancelamento estiver
+          disponível, ele aparece como ação no acompanhamento.
         </p>
       </section>
 

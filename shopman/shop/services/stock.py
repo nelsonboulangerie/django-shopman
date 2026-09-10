@@ -402,8 +402,24 @@ def _sku_known_to_catalog(sku: str) -> bool:
     try:
         return get_sku_validator().get_sku_info(sku) is not None
     except Exception:
-        logger.debug("stock._sku_known_to_catalog degraded sku=%s", sku, exc_info=True)
-        return True
+        # ⚠️ Isto devolvia `True`, e `True` aqui significa "o catálogo conhece
+        # este SKU" — o call site em `stock.py` faz
+        # `if not allow_untracked and not _sku_known_to_catalog(...): raise`,
+        # então o ramo de erro PULAVA a recusa. O portão `allow_untracked=False`
+        # parava de existir exatamente quando o validador falhava, que é quando
+        # ele mais importa. A docstring acima já prometia o contrário desde o
+        # primeiro dia; quem estava errado era o código.
+        #
+        # `False` = "não consigo confirmar que o catálogo conhece", e o call site
+        # então EXIGE a reserva (ou alerta o operador, no caminho brando). É a
+        # regra da casa: em caminho de dado/dinheiro, a omissão é restritiva.
+        logger.warning(
+            "stock._sku_known_to_catalog: validador de SKU indisponível para %s — "
+            "tratando como DESCONHECIDO (fail-closed).",
+            sku,
+            exc_info=True,
+        )
+        return False
 
 
 def _insufficient_stock_error(item: dict, comp_sku: str, qty, error_code):
@@ -598,13 +614,50 @@ def _retag_hold_for_order(hold_id: str, order_ref: str) -> None:
     Estende o TTL de carrinho para um backstop longo (não ``None``): o dono
     passa a ser o pedido e o ciclo normal termina por fulfill/release; mas se
     o pedido travar sem resolução, o hold ainda expira e devolve o estoque.
+
+    EXCEÇÃO — a fermata (WP-P2E): reserva de fila espera uma fornada que
+    ainda não saiu, e o relógio dela só começa na materialização
+    (``planning.realize`` preenche o ``expires_at``). Carimbar o backstop
+    aqui daria prazo a quem ainda não recebeu nada para confirmar: a fornada
+    de depois de amanhã morreria no meio do caminho, calada. O hold
+    planejado indefinido segue indefinido; o backstop dele é a própria
+    fornada, e quem libera vaga sem fornada é o sweep.
     """
     from datetime import timedelta
 
     adapter = get_adapter("stock")
     adapter.retag_hold_reference(hold_id, f"order:{order_ref}", priority=_ORDER_HOLD_PRIORITY)
+    if _is_fermata_hold(hold_id):
+        return
     backstop = timezone.now() + timedelta(hours=_ORDER_HOLD_BACKSTOP_HOURS)
     adapter.extend_hold(hold_id, expires_at=backstop)
+
+
+def _is_fermata_hold(hold_id: str) -> bool:
+    """O hold é reserva de fila ainda esperando a fornada?
+
+    Marcador durável: ``metadata.planned`` (carimbado em
+    ``adapters/stock.create_hold``) mais ``expires_at`` nulo — depois da
+    materialização a marca fica e o prazo aparece, e aí ele já não é fermata.
+
+    ⚠️ E o hold tem de apontar para o LOTE que espera. Reserva de demanda
+    (``demand_ok``) também nasce indefinida, e isentá-la do backstop a deixaria
+    presa para sempre: ela não tem fornada que a resolva.
+    """
+    try:
+        from shopman.stockman.models import Hold
+
+        from shopman.shop.services import waitlist
+
+        hold = Hold.objects.filter(pk=int(hold_id.split(":")[1])).only(
+            "expires_at", "metadata", "quant",
+        ).first()
+    except Exception:
+        logger.debug("stock._is_fermata_hold degraded hold=%s", hold_id, exc_info=True)
+        return False
+    if hold is None:
+        return False
+    return hold.expires_at is None and waitlist.is_waitlist_hold(hold)
 
 
 def _channel_allows_preorder(order) -> bool:

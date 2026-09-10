@@ -1,4 +1,4 @@
-"""Derive Product.metadata['allergens'] + ['dietary_info'] from a Recipe.
+"""Deriva os atributos ``alergenos`` e ``dieta`` do produto a partir da Recipe.
 
 Mirror of :mod:`shopman.shop.services.nutrition_from_recipe`, for the
 dietary axis that ADR-008 deliberately postponed (nutrients are an
@@ -7,7 +7,7 @@ arithmetic sum; allergens are a *union* and require per-insumo flags).
 Design
 ------
 - Product is the surface. The storefront reads
-  ``product.metadata['allergens']`` / ``['dietary_info']`` directly
+  os atributos ``alergenos`` / ``dieta`` do registro, pelo service
   (see :mod:`shopman.storefront.presentation.dietary`); it never imports
   Craftsman.
 - When a Recipe is active and its ``output_sku`` matches a Product SKU,
@@ -15,24 +15,28 @@ Design
   (:class:`shopman.craftsman.dietary.IngredientDietary`) and writes the
   result back onto the Product. Called from the same Recipe ``post_save``
   signal as the nutrition derivation (``shop.apps`` wires it).
-- Idempotent and **refuses to overwrite a manual override**. The sentinel
-  is ``metadata['dietary_auto_filled']``: explicit ``False`` blocks; absent
-  or ``True`` is fillable (so the recipe — the source of truth — wins).
+- Idempotente e **recusa sobrescrever o que o gestor escreveu**. Quem diz isso
+  é a PROVENIÊNCIA do valor (``source``), não mais um sentinela à parte:
+  ``manual`` bloqueia, ``recipe`` é recalculável, ausente é preenchível — a
+  ficha, que é a fonte da verdade, ganha.
+- Carimba a versão de origem em ``metadata['derived_from']['dietary']``
+  (:mod:`shopman.shop.services.derived_provenance`), pelo mesmo motivo da
+  nutrição: alérgeno que veio de uma versão antiga é promessa velha, e sem o
+  carimbo ninguém consegue perguntar de qual versão ele veio.
 - Bundles (``is_bundle=True``) are skipped, like nutrition.
 - **Safety:** allergen labelling is materialized only when *every* leaf
   insumo declares a dietary profile. A single undeclared insumo means we
   cannot guarantee what is absent, so we leave whatever is there untouched
   rather than risk an under-reported allergen or a false "sem X" claim.
 
-Derived ``dietary_info`` uses exactly the tokens the storefront preference
-filter understands: ``100% vegetal`` / ``vegetariano`` (strongest positive
-diet claim) plus the free-from claims ``sem glúten`` / ``sem lactose``.
+O ``dieta`` derivado tem UM termo: ``100% vegetal``. Os avisos de preferência
+da loja (contém glúten, contém lactose) vêm do campo de ALÉRGENOS, não daqui —
+e afirmação de ausência que a casa não pode honrar não é derivada de propósito.
 """
 
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from shopman.craftsman.dietary import (
     DIET_ANIMAL,
@@ -41,13 +45,26 @@ from shopman.craftsman.dietary import (
 )
 from shopman.offerman.models import Product
 
+from shopman.shop.services.derived_provenance import (
+    FACT_DIETARY,
+    build_recipe_stamp,
+    read_stamp,
+    stamp_moved,
+    with_stamp,
+)
+
 logger = logging.getLogger(__name__)
+
+#: O que, no vocabulário dos insumos, significa LEITE — e portanto lactose.
+#:
+#: ⚠️ Não há `GLUTEN_TOKENS` gêmeo, e a ausência é deliberada: a casa não afirma
+#: ausência de glúten em produto nenhum (sem linha segregada, e sem intenção de
+#: ter). Ver `shop/legal_parameters.py::declaracao_gluten`.
+LACTOSE_TOKENS = frozenset({"lactose", "leite", "laticínios", "laticinios", "manteiga"})
 
 # Allergen tokens that defeat a free-from claim. Matched case-insensitively
 # against the unioned allergen list. Kept aligned with the storefront
 # preference triggers in ``storefront.presentation.dietary``.
-GLUTEN_TOKENS = frozenset({"glúten", "gluten", "trigo", "cevada", "centeio", "malte"})
-LACTOSE_TOKENS = frozenset({"lactose", "leite", "laticínios", "laticinios", "manteiga"})
 
 
 def aggregate_dietary_from_recipe(product: Product) -> bool:
@@ -61,10 +78,10 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
         logger.debug("dietary_from_recipe: %s is a bundle; skipping.", product.sku)
         return False
 
-    if not _is_auto_filled(product.metadata):
+    if not _is_auto_filled(product):
         logger.info(
-            "dietary_from_recipe: %s has manual override "
-            "(dietary_auto_filled=False); skipping.", product.sku,
+            "dietary_from_recipe: %s tem valor escrito pelo gestor "
+            "(source=manual); não sobrescreve.", product.sku,
         )
         return False
 
@@ -100,16 +117,24 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
     allergens = _union_allergens(profiles)
     dietary_info = _derive_dietary_info(profiles, allergens)
 
-    current = product.metadata or {}
-    new_metadata = dict(current)
-    new_metadata["allergens"] = allergens
-    new_metadata["dietary_info"] = dietary_info
-    new_metadata["dietary_auto_filled"] = True
+    from shopman.shop.services import attributes
 
-    if new_metadata == current:
+    current = dict(product.metadata or {})
+    attributes.set(product, "alergenos", allergens, source="recipe", save=False)
+    attributes.set(product, "dieta", dietary_info, source="recipe", save=False)
+
+    # Carimbo da origem: mesmo quando alérgeno e dieta não mudam, publicar uma
+    # versão nova move a versão de origem, e é isso que a leitura compara.
+    # ⚠️ `attributes.set(save=False)` já mutou `product.metadata`; o carimbo
+    # entra por cima dela, e `with_stamp` devolve cópia (não muta), então a
+    # comparação com `current` continua valendo.
+    stamp = build_recipe_stamp(recipe)
+    if stamp_moved(read_stamp(product, FACT_DIETARY), stamp):
+        product.metadata = with_stamp(product.metadata, FACT_DIETARY, stamp)
+
+    if product.metadata == current:
         return False
 
-    product.metadata = new_metadata
     product.save(update_fields=["metadata"])
     logger.info(
         "dietary_from_recipe: %s updated (allergens=%s, dietary_info=%s).",
@@ -123,12 +148,21 @@ def aggregate_dietary_from_recipe(product: Product) -> bool:
 # ──────────────────────────────────────────────────────────────────────
 
 
-def _is_auto_filled(metadata: dict[str, Any] | None) -> bool:
-    """A missing sentinel counts as auto-fillable; explicit False blocks."""
-    if not metadata:
-        return True
-    if "dietary_auto_filled" in metadata:
-        return bool(metadata.get("dietary_auto_filled"))
+def _is_auto_filled(product) -> bool:
+    """Se a ficha técnica pode sobrescrever o que está gravado.
+
+    Era o sentinela `metadata["dietary_auto_filled"]`; agora é a **proveniência
+    do próprio valor**, que é onde essa informação sempre pertenceu: valor que o
+    gestor escreveu (`source="manual"`) manda; valor que veio da ficha
+    (`source="recipe"`) é recalculável. Sem valor nenhum, não há o que proteger.
+    """
+    from shopman.shop.services import attributes
+
+    for ref in ("alergenos", "dieta"):
+        if attributes.get(product, ref) is None:
+            continue
+        if attributes.source(product, ref) != "recipe":
+            return False
     return True
 
 
@@ -145,8 +179,30 @@ def _union_allergens(profiles: list[IngredientDietary]) -> list[str]:
 def _derive_dietary_info(
     profiles: list[IngredientDietary], allergens: list[str]
 ) -> list[str]:
-    """Strongest positive diet claim + free-from claims, storefront tokens."""
+    """O que a FÓRMULA permite afirmar — nunca o que o ambiente não garante.
+
+    ⚠️ A linha que separa o que entra do que não entra é
+    **composição × contaminação cruzada**, e confundi-las custou uma correção no
+    ar (08/09/2026):
+
+    - `100% vegetal` e `vegetariano` são fatos sobre a receita. Só eles sabem
+      dizer "não tem NADA de origem animal": mel, banha e gelatina não são
+      alergênicos e não aparecem no campo de alérgenos.
+    - `sem lactose` é fato sobre a receita **com limiar objetivo na norma**
+      (RDC 135/2017: < 100 mg/100 g). Pão de farinha, água, sal e levain está em
+      zero. E não conflita com o aviso de traços: intolerância à lactose é
+      dose-dependente; alergia à proteína do leite é outra coisa, e é dela que o
+      `food_safety_notice` cuida.
+    - `sem glúten` **NÃO é derivado, nunca**. Numa casa sem linha segregada — e a
+      Nelson não tem nem pretende ter — a afirmação seria sobre o ambiente, não
+      sobre a fórmula. É a única da família em que um celíaco pode se machucar,
+      e a casa declara o oposto em voz alta.
+
+    Ver `shop/legal_parameters.py`: os números que vêm da lei têm data de
+    conferência e catraca.
+    """
     diets = {profile.diet for profile in profiles}
+    lowered = {a.lower() for a in allergens}
     info: list[str] = []
 
     if diets <= {DIET_VEGAN}:
@@ -154,9 +210,6 @@ def _derive_dietary_info(
     elif DIET_ANIMAL not in diets:
         info.append("vegetariano")
 
-    lowered = {a.lower() for a in allergens}
-    if not (lowered & GLUTEN_TOKENS):
-        info.append("sem glúten")
     if not (lowered & LACTOSE_TOKENS):
         info.append("sem lactose")
 

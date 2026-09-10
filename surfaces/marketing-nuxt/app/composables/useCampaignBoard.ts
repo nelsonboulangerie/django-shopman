@@ -12,7 +12,7 @@ import type {
   PublishMode,
   ReachLimit,
 } from "~/types/campaign";
-import { NOTIFICATION_REVISION_STATE } from "~/composables/useUserNotifications";
+import { NOTIFICATION_REVISION_STATE } from "~/composables/useMarketingNotificationInbox";
 
 const POLL_MS = 60_000;
 

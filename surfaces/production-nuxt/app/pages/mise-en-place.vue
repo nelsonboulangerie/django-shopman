@@ -274,6 +274,16 @@ function refreshAll() {
             <Icon name="lucide:wifi-off" class="size-4 shrink-0" />
             <span>Sem atualizar — mostrando a última lista carregada.</span>
           </div>
+          <!-- A margem já está somada nas quantidades. Ela precisa de motivo à
+               vista: no modo explodido a linha do preparo some, e este
+               cabeçalho é o único lugar onde a explicação cabe. -->
+          <p
+            v-if="projection?.yield_margin_applied"
+            class="mb-3 flex items-start gap-2 rounded-md border border-dashed px-3 py-2 text-xs text-muted-foreground"
+          >
+            <Icon name="lucide:scale" class="mt-0.5 size-4 shrink-0" />
+            <span>{{ projection.yield_margin_note }}</span>
+          </p>
           <div class="overflow-hidden rounded-lg border">
             <table class="w-full text-sm">
               <thead
@@ -327,7 +337,9 @@ function refreshAll() {
                       <p
                         class="flex items-center gap-1.5 text-xs text-muted-foreground"
                       >
-                        {{ line.sku }}
+                        <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir
+                             embaixo seria a mesma linha duas vezes. -->
+                        <span v-if="line.name !== line.sku">{{ line.sku }}</span>
                         <UiBadge
                           v-if="line.is_subrecipe"
                           variant="outline"
@@ -345,6 +357,16 @@ function refreshAll() {
                         class="text-xs font-normal text-muted-foreground"
                       >
                         {{ line.annotation }}
+                      </p>
+                      <!-- Os gramas a mais são margem, e a linha diz por quê:
+                           número que cresceu sozinho não entra nesta lista. O
+                           texto do motivo vem pronto do servidor. -->
+                      <p
+                        v-if="line.margin_display"
+                        class="text-xs font-normal text-muted-foreground"
+                        :title="line.margin_reason"
+                      >
+                        {{ line.margin_display }}
                       </p>
                     </td>
                     <td
@@ -407,6 +429,15 @@ function refreshAll() {
                           <span class="tabular-nums">{{
                             row.quantity_display
                           }}</span>
+                        </li>
+                        <!-- A quebra por receita NÃO fecha com o total quando há
+                             margem, e é aqui que a diferença se explica por
+                             extenso, em vez de virar conta que não bate. -->
+                        <li
+                          v-if="line.margin_reason"
+                          class="border-t pt-1 italic"
+                        >
+                          {{ line.margin_reason }}
                         </li>
                       </ul>
                     </td>

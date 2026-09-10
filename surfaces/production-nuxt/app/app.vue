@@ -1,22 +1,20 @@
 <script setup lang="ts">
-// Production surface shell (prod.). Thin shell com roteamento MISTO, três classes de
+// Production surface shell (prod.). Thin shell com duas classes de
 // tela (verificadas endpoint a endpoint):
 //   · telas de OPERADOR (planejamento/preparação/produção/expedição) → rail canônico
 //     (kit) + conteúdo, atrás do gate de operador;
 //   · painel (Fornadas) → KIOSK de operador em tela cheia (a previsão exige
 //     backstage.operate_production) — FORA do rail, mas DENTRO do gate;
-//   · menuboard → cardápio Solari PÚBLICO da loja (GET /storefront/menu, sem auth) —
-//     FORA do rail E FORA do gate (como o /pickup do KDS).
+// O menuboard paralelo foi aposentado: a TV canônica pertence ao Django, por ref e
+// credencial. D4 definirá refs/cutover; este app não adivinha um destino.
 const OPERATOR_PERM = "backstage.operate_production";
 const { canIdentify, locked, mustChange, operator, lock } =
   useOperatorLock(OPERATOR_PERM);
 const { allowed: reportsAllowed } = useReportsAccess();
+const { canView: recipesAllowed } = useRecipeBookAccess();
 
 const route = useRoute();
-const isPublicBoard = computed(() => route.path.startsWith("/menuboard"));
-const isKiosk = computed(
-  () => isPublicBoard.value || route.path.startsWith("/board"),
-);
+const isKiosk = computed(() => route.path.startsWith("/board"));
 
 const hubUrl = useRuntimeConfig().public.operatorHubUrl as string;
 
@@ -29,6 +27,10 @@ async function goToBoard() {
 async function goToReports() {
   await navigateTo("/reports");
 }
+
+async function goToRecipes() {
+  await navigateTo("/recipes");
+}
 </script>
 
 <template>
@@ -36,7 +38,7 @@ async function goToReports() {
     <NuxtRouteAnnouncer />
     <!-- Aviso calmo e global de conexão (kit) — só aparece offline (paridade c/ POS/KDS/Gestor). -->
     <OfflineBanner />
-    <!-- Kiosks (menuboard público, painel operador): tela cheia, sem rail. -->
+    <!-- Painel de operador em modo kiosk: tela cheia, sem rail, ainda atrás do gate. -->
     <NuxtPage v-if="isKiosk" />
     <!-- Telas de operador: rail canônico (kit) + conteúdo. -->
     <div v-else class="flex min-h-screen">
@@ -52,14 +54,22 @@ async function goToReports() {
           @lock="lock"
         >
           <!-- O que não é etapa do fluxo sai das abas e mora aqui: o Letreiro
-               (kiosk de TV, tela cheia) e os Relatórios (persona gestor, só
-               aparece com a perm fina — a sonda pergunta ao backend). -->
+               (kiosk de TV, tela cheia), as Receitas (o inventário da casa, só
+               com o acesso de leitura — a sonda pergunta ao backend) e os
+               Relatórios (persona gestor, só com a perm fina). -->
           <template #nav>
             <RailItem
               icon="tower-control"
               label="Letreiro"
               :active="route.path.startsWith('/board')"
               @activate="goToBoard"
+            />
+            <RailItem
+              v-if="recipesAllowed"
+              icon="book-open"
+              label="Receitas"
+              :active="route.path.startsWith('/recipes')"
+              @activate="goToRecipes"
             />
             <RailItem
               v-if="reportsAllowed"
@@ -75,12 +85,8 @@ async function goToReports() {
         <NuxtPage />
       </div>
     </div>
-    <!-- Gate de login/lock: nunca no menuboard público (o painel de operador segue atrás dele). -->
-    <OperatorLogin v-if="!canIdentify && !isPublicBoard" />
-    <OperatorLock
-      v-else-if="(locked || mustChange) && !isPublicBoard"
-      :perm="OPERATOR_PERM"
-    />
+    <OperatorLogin v-if="!canIdentify" />
+    <OperatorLock v-else-if="locked || mustChange" :perm="OPERATOR_PERM" />
     <UiSonner />
   </div>
 </template>

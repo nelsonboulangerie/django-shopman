@@ -6,10 +6,13 @@ name: Runtime Gate
   # Sem este gatilho os checks obrigatórios nunca rodam no merge group
   # e a fila trava para sempre, esperando algo que não vai acontecer.
   merge_group:
-  push:
-    branches:
-      - main
-      - master
+  # Sem gatilho de `push` no main: a fila de merge já testou EXATAMENTE a árvore
+  # que pousa, e a proteção do branch não deixa nada chegar por fora (force-push
+  # bloqueado, enforce_admins ligado, checks obrigatórios exigidos). Rodar de novo
+  # depois do merge era a terceira passagem da mesma suíte no mesmo código:
+  # gastava runner e disputava fila com os PRs de verdade, sem provar nada.
+  # ⚠️ Vale para os GATES. O `deploy-images.yml` mantém `push: main` de propósito:
+  # lá o push É o deploy (publica a tag no DOCR).
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
@@ -53,6 +56,14 @@ jobs:
       - name: Marketing OpenAPI and TypeScript client have no drift
         run: .venv/bin/python manage.py export_marketing_client --check
 
+      # ⚠️ Barato e específico: recusa workflow cujo teto de job não cabe a
+      # própria espera. O `alpha-smoke.yml` viveu três dias com `timeout: 5` e
+      # `sleep 420` — dezesseis runs cancelados, asserção nenhuma, e nada
+      # vermelho, porque run cancelado não fica vermelho. Defeito aritmético,
+      # visível sem rodar nada; a CI lembra no lugar de alguém.
+      - name: Teto do job cabe a espera do job
+        run: .venv/bin/python scripts/check_workflow_budgets.py
+
       # A política ADR-015 arma pela EXISTÊNCIA da tag go-live-v1 — mas o
       # checkout do CI é raso e sem tags, então sem este fetch os checks
       # ficariam num "pré-go-live" eterno mesmo depois do go-live. Antes da
@@ -67,6 +78,12 @@ jobs:
       # no-op verde com uma linha de log. O terceiro check da política
       # (operação destrutiva exige marcador expand-contract) roda dentro do
       # `make test-migrations` logo abaixo.
+      #
+      # O checkout deste job é RASO de propósito e o gate aguenta: a base do
+      # diff sai do pai 1 do merge ref, lido do objeto do commit (o enxerto do
+      # shallow esconde os pais de `rev-parse HEAD^1`, não do objeto), e só o
+      # commit da base é buscado. Sem base resolvível o script REPROVA — nunca
+      # sai verde por ter analisado zero arquivo.
       - name: "ADR-015: migrations append-only + DEPRECATED com prazo"
         run: .venv/bin/python scripts/check_adr015.py
 
@@ -120,6 +137,71 @@ jobs:
       # E semeado — `omotenashi.seed` é bloqueante e exige os 11 cenários
       # canônicos. Ele vive no Omotenashi Gate, logo depois do seed.
 
+  # ── Gate da meia-correção (BLOQUEANTE desde 08/09/2026) ──────────────────
+  # Pega a contradição interna: um arquivo que o PR tocou e que, ao mesmo tempo,
+  # sabe RELATAR falha (create_operator_alert / record_*_failure / logger.error /
+  # raise de erro de domínio) e ENGOLE calado noutra linha (`except: pass`,
+  # `except → logger.debug`, `.catch(() => {})`, `catch {}`).
+  #
+  # A suíte inteira já roda em todo PR e não pega isto — não é o tipo de coisa
+  # que um teste ausente revela. É o remédio que não foi distribuído: cada
+  # sessão conserta o site reportado e o irmão idêntico sobrevive calado.
+  #
+  # Ele nasceu não-bloqueante em 05/09/2026, com 50 arquivos e 94 sites mudos
+  # medidos — um gate que reprova cinquenta arquivos no dia 1 é desligado no
+  # dia 2, e aí não guarda nem os arquivos novos. O portão de promoção estava
+  # escrito aqui: zerar as faixas `dinheiro` e `fiscal` do inventário.
+  #
+  # ✅ 08/09/2026 — zeradas (PR #554: 16 sites fechados, 16 testes travando a
+  # volta). O repositório saiu de 50/94 para 40/75; o que resta é faixa
+  # `cliente` e `interno`, e nenhuma toca dinheiro ou nota fiscal.
+  #
+  # A pré-condição que faltava era a base do diff: até o PR #559 ela era a ponta
+  # da `main`, que envelhece quando outro PR entra no meio — e o gate reprovava
+  # por arquivo alheio. Um check obrigatório que dá alarme falso ensina a
+  # ignorar o vermelho, que é exatamente o defeito que este gate existe para
+  # caçar. Por isso a promoção esperou o #559.
+  #
+  # ⚠️ Ao promover, os dois passos são UM só: apagar o `continue-on-error` e
+  # marcar o check como obrigatório na branch protection. Um sem o outro dá ou
+  # vermelho que não bloqueia (ruído), ou bloqueio que sempre passa.
+  # ⚠️ E o NOME do job é o identificador do check obrigatório: renomear aqui sem
+  # atualizar a branch protection deixa um check exigido que nunca chega — e o
+  # repositório trava para sempre.
+  silent-swallow-gate:
+    name: Gate da meia-correção
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        # `fetch-depth: 0` não é mais requisito de correção: `resolve_diff_base`
+        # tira a base do PAI 1 do merge ref, lido do objeto do commit, que
+        # sobrevive ao enxerto do shallow. O histórico completo continua aqui
+        # porque torna esse caminho gratuito (nenhum fetch extra) e mantém a
+        # merge-base disponível como último recurso.
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Sem `make install`: o gate é `ast` + `re` da biblioteca padrão, e não
+      # importa nada do Django. Instalar a suíte aqui custaria 3 min para provar
+      # o que 2 segundos provam.
+      - name: Gate da meia-correção
+        # `set -o pipefail` não é zelo: o shell default do runner é `bash -e`,
+        # SEM pipefail, então `gate | tee` devolveria o código do `tee` (sempre
+        # 0) e o gate passaria verde para sempre. Agora que o check é
+        # OBRIGATÓRIO, isso seria um gate que bloqueia sem guardar nada — o
+        # mesmo defeito que ele existe para caçar, dentro do próprio gate.
+        run: |
+          set -o pipefail
+          python scripts/check_silent_swallow.py | tee -a "$GITHUB_STEP_SUMMARY"
+
   # O gate canônico do Admin/Unfold (CLAUDE.md trata como lei) só existia como
   # alvo local — agente que não roda `make admin` mergeava dívida em silêncio.
   # Aqui ele passa a rodar em todo PR e na fila de merge.
@@ -158,14 +240,22 @@ jobs:
   tests:
     name: Testes
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # ⚠️ O relógio do step precisa de folga sobre a suíte mais lenta: em
+    # 27/08 o test-backstage passou VERDE em 20min04s e o timeout de 20 min
+    # derrubou o job — suíte verde virou check vermelho e a fila de merge
+    # expulsou PR inocente (#361). O job cobre install (~3 min) + step.
+    #
+    # O backstage saiu desta matriz e virou dois shards logo abaixo: ele era o
+    # caminho crítico do gate inteiro (12min26s a 12min55s, contra ~5 min do
+    # segundo colocado). Aqui ficaram as suítes que já respondem em minutos.
+    timeout-minutes: 35
     strategy:
       # `fail-fast: false` de propósito: quando duas frentes quebram, quero ver
       # as duas no mesmo relatório. Parar na primeira esconde a segunda e custa
       # mais um ciclo inteiro para descobri-la.
       fail-fast: false
       matrix:
-        suite: [test-cores, test-shop, test-storefront, test-backstage, test-counter-agent]
+        suite: [test-cores, test-shop, test-storefront, test-counter-agent]
 
     steps:
       - name: Checkout
@@ -184,8 +274,69 @@ jobs:
         run: make install
 
       - name: ${{ matrix.suite }}
-        timeout-minutes: 20
+        timeout-minutes: 30
         run: make ${{ matrix.suite }}
+
+  # ── O backstage roda em DOIS shards, sob um nome só ────────────────────
+  # `Testes (test-backstage)` é check OBRIGATÓRIO em `main`. Trocar as entradas
+  # da matriz por dois nomes novos faria esse nome nunca mais aparecer — e check
+  # obrigatório AUSENTE trava o PR para sempre, todos eles, inclusive o que faz
+  # a troca. Por isso os shards correm em jobs próprios (não obrigatórios) e um
+  # agregador com o NOME ANTIGO reprova por eles.
+  #
+  # ⚠️ `needs:` que falha PULA o dependente, e job pulado conta como SUCESSO
+  # para branch protection — o agregador viraria um gate que não guarda nada.
+  # Daí o `if: always()` e a conferência explícita de `needs.*.result`.
+  tests-backstage-shards:
+    name: Backstage ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [seed, rest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Create virtualenv
+        run: python -m venv .venv
+
+      - name: Install dependencies
+        run: make install
+
+      - name: test-backstage-${{ matrix.shard }}
+        timeout-minutes: 30
+        run: make test-backstage-${{ matrix.shard }}
+
+  # O nome deste job é o CONTRATO com a branch protection. Não renomeie sem
+  # trocar o contexto obrigatório antes — ver o comentário acima.
+  tests-backstage:
+    name: Testes (test-backstage)
+    runs-on: ubuntu-latest
+    needs: tests-backstage-shards
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Os dois shards do backstage passaram
+        run: |
+          resultado='${{ needs.tests-backstage-shards.result }}'
+          echo "shards: $resultado"
+          # `success` é o único resultado aceitável — a comparação é por
+          # igualdade, não uma lista de falhas conhecidas. `failure`,
+          # `cancelled` e `skipped` reprovam sem precisar ser enumerados, e um
+          # resultado novo que o GitHub venha a inventar reprova também. Este
+          # job existe porque o caminho contrário (deixar o `needs:` pular o
+          # dependente) faria a branch protection ler "skipped" como verde.
+          [ "$resultado" = "success" ] || exit 1
 
   docker-image:
     name: Docker deploy image
@@ -224,7 +375,10 @@ jobs:
     # ⚠️ SEM `needs: quality`. Não depende do resultado dos testes — é
     # checagem independente. Encadear empurrava ~5 min para o fim do caminho
     # crítico sem proteger nada: se os testes quebram, o PR reprova igual.
-    timeout-minutes: 20
+    #
+    # O timeout do JOB precisa exceder o do step (25 min abaixo) — com 20 o
+    # job matava antes e os 25 do step eram letra morta.
+    timeout-minutes: 30
 
     services:
       postgres:

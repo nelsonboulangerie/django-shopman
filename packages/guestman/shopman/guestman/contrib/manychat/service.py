@@ -9,6 +9,17 @@ from shopman.guestman.models import Customer
 logger = logging.getLogger("guestman.manychat")
 
 
+# Recusa de identificação. O texto sai no corpo do 409 e é lido por gente e pelo
+# fluxo do ManyChat, então ele não pode falar de `whatsapp_id`: quem cai aqui é,
+# tipicamente, alguém que chegou pela Instagram e cujo assinante não carrega
+# telefone nenhum. Dizer "faltou whatsapp_id" mandava procurar o campo errado.
+UNIDENTIFIED_SUBSCRIBER = (
+    "Nao foi possivel identificar este assinante: nenhum telefone conhecido. "
+    "Assinante sem telefone (ex.: contato que chegou pelo Instagram) precisa "
+    "entrar pelo site, com o proprio numero."
+)
+
+
 class ManychatService:
     """
     Service for Manychat integration.
@@ -52,7 +63,7 @@ class ManychatService:
 
             if customer:
                 if not customer.phone and not incoming_phone:
-                    raise ValueError("ManyChat subscriber requires a valid whatsapp_id.")
+                    raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Update existing customer
                 cls._update_customer(customer, subscriber_data)
                 cls.sync_consent(customer, subscriber_data)
@@ -63,7 +74,7 @@ class ManychatService:
 
             if customer:
                 if not customer.phone and not incoming_phone:
-                    raise ValueError("ManyChat subscriber requires a valid whatsapp_id.")
+                    raise ValueError(UNIDENTIFIED_SUBSCRIBER)
                 # Link Manychat ID to existing customer
                 cls._add_manychat_identifiers(customer, subscriber_data, source_system)
                 cls._update_customer(customer, subscriber_data)
@@ -71,7 +82,7 @@ class ManychatService:
                 return customer, False
 
             if not incoming_phone:
-                raise ValueError("ManyChat subscriber requires a valid whatsapp_id.")
+                raise ValueError(UNIDENTIFIED_SUBSCRIBER)
 
             # Create new customer
             customer = cls._create_customer(subscriber_data, source_system)

@@ -1,4 +1,4 @@
-"""Payment timeout handler — cancels unpaid digital orders at the payment deadline."""
+"""Payment timeout handler — cancels unpaid digital orders (PIX, card, link) at the payment deadline."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ _UNCERTAIN_STATUSES = {"unknown"}
 
 
 class PaymentTimeoutHandler:
-    """Resolve unpaid PIX/card orders once the displayed payment timer expires."""
+    """Resolve unpaid PIX/card/link orders once the displayed payment timer expires."""
 
     topic = PAYMENT_TIMEOUT
 
@@ -36,6 +36,21 @@ class PaymentTimeoutHandler:
         except (KeyError, Order.DoesNotExist):
             return
 
+        # ⚠️ A janela para em ACCEPTED DE PROPÓSITO, e isso foi decidido junto com
+        # o gate de expedição (``shop/services/payment_gate.py``), não esquecido:
+        #
+        # - com o gate fechado, um pedido de link/pix sem captura não CHEGA mais a
+        #   PREPARING/READY por ação de operador — as duas portas (Gestor e
+        #   expedição do KDS) consultam a mesma régua antes de avançar;
+        # - alargar a janela cancelaria automaticamente um pedido que a cozinha já
+        #   fez. Cancelar em READY não traz a farinha de volta: troca um problema
+        #   de dinheiro por um de desperdício, sem recuperar o dinheiro;
+        # - o formato certo para o pedido preso além de ACCEPTED não é "cancele
+        #   sozinho" e sim "chame o operador" (alerta + decisão humana: cobrar,
+        #   cancelar ou absorver) — WP próprio, porque toca pedido vivo;
+        # - e há directives de ``payment.timeout`` JÁ agendadas em produção com a
+        #   semântica atual: mudar o handler muda o que elas fazem com pedidos que
+        #   estão no ar agora.
         if order.status not in {Order.Status.NEW, Order.Status.ACCEPTED}:
             return
 
@@ -53,14 +68,19 @@ class PaymentTimeoutHandler:
             return
 
         # Última linha contra webhook perdido: perguntar ao gateway antes de
-        # cancelar um PIX possivelmente pago.
+        # cancelar um pedido digital possivelmente pago (PIX e cartão).
         from shopman.orderman.exceptions import DirectiveTransientError
 
-        gateway_state = payment_service.verify_gateway_before_timeout_cancel(order)
-        if gateway_state == "paid":
+        gateway_state = payment_service.settle_from_gateway(order)
+        if gateway_state in {"paid", "authorized"}:
+            # ``authorized`` é o cartão em ``requires_capture``: o dinheiro está
+            # reservado para a loja e a captura é do lifecycle. Cancelar aqui
+            # seria devolver "não deu certo" a quem pagou.
             return
         if gateway_state == "indeterminate":
-            raise DirectiveTransientError("gateway indisponível para verificar PIX antes do cancel")
+            raise DirectiveTransientError(
+                "gateway indisponível para verificar pagamento antes do cancel"
+            )
 
         payment_service.cancel(order, reason="payment_timeout")
         cancelled = cancel(

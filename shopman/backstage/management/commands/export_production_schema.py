@@ -21,7 +21,22 @@ from pathlib import Path
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from shopman.backstage.contracts import render_contract_module, run_contract_export
+from shopman.backstage.api._production_mutations import (
+    PRODUCTION_ACTION_SPECS,
+    PRODUCTION_MUTATION_DATACLASSES,
+    PRODUCTION_REQUEST_SERIALIZERS,
+)
+from shopman.backstage.contracts import (
+    render_action_client,
+    render_contract_module,
+    render_serializer_interfaces,
+    run_contract_export,
+)
+from shopman.backstage.projections.alerts import (
+    OperatorAlertCountsProjection,
+    OperatorAlertProjection,
+    OperatorAlertsProjection,
+)
 from shopman.backstage.projections.production import (
     BaseRecipeOptionProjection,
     BaseRecipeUsageProjection,
@@ -31,6 +46,10 @@ from shopman.backstage.projections.production import (
     OperatorProductivityRow,
     OrderCommitmentProjection,
     PositionOptionProjection,
+    ProductionActionApprovalRequirementProjection,
+    ProductionActionConfirmationProjection,
+    ProductionActionIdempotencyProjection,
+    ProductionActionProjection,
     ProductionBlindMapProjection,
     ProductionBlindMapRowProjection,
     ProductionBoardProjection,
@@ -50,11 +69,14 @@ from shopman.backstage.projections.production import (
     ProductionSurfaceAccess,
     ProductionWeighingIngredientProjection,
     ProductionWeighingProjection,
+    ProductionWeighingTableProjection,
+    ProductionWeighingTableRowProjection,
     ProductionWeighingTicketProjection,
     QCDefectProjection,
     QCGradeProjection,
     QCKioskProjection,
     QCOrderCardProjection,
+    QCPartitionGroupProjection,
     QualityReportRow,
     RecipeOptionProjection,
     RecipeWasteRow,
@@ -67,6 +89,13 @@ OUTPUT_RELATIVE_PATH = Path("surfaces/production-nuxt/app/generated/productionCo
 
 #: Every dataclass exported to the surface, dependencies first.
 CONTRACT_DATACLASSES = (
+    ProductionActionIdempotencyProjection,
+    ProductionActionConfirmationProjection,
+    ProductionActionApprovalRequirementProjection,
+    ProductionActionProjection,
+    OperatorAlertCountsProjection,
+    OperatorAlertProjection,
+    OperatorAlertsProjection,
     OrderCommitmentProjection,
     BaseRecipeUsageProjection,
     WorkOrderCardProjection,
@@ -88,6 +117,8 @@ CONTRACT_DATACLASSES = (
     MiseEnPlaceLineProjection,
     ProductionMiseEnPlaceProjection,
     ProductionWeighingIngredientProjection,
+    ProductionWeighingTableRowProjection,
+    ProductionWeighingTableProjection,
     ProductionWeighingTicketProjection,
     ProductionWeighingProjection,
     ProductionBlindMapRowProjection,
@@ -96,6 +127,7 @@ CONTRACT_DATACLASSES = (
     ProductionDashboardProjection,
     QCGradeProjection,
     QCDefectProjection,
+    QCPartitionGroupProjection,
     QCOrderCardProjection,
     QCKioskProjection,
     ProductionReportFilters,
@@ -104,6 +136,7 @@ CONTRACT_DATACLASSES = (
     RecipeWasteRow,
     QualityReportRow,
     ProductionReportsProjection,
+    *PRODUCTION_MUTATION_DATACLASSES,
 )
 
 
@@ -114,9 +147,13 @@ def output_path() -> Path:
 def render_production_contract_ts() -> str:
     """Render the generated TypeScript contract mirror (deterministic)."""
     return render_contract_module(
-        source="shopman/backstage/projections/production.py",
+        source=("shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py"),
         command="export_production_schema",
         dataclasses=CONTRACT_DATACLASSES,
+        extra_blocks=(
+            render_serializer_interfaces(PRODUCTION_REQUEST_SERIALIZERS),
+            render_action_client(PRODUCTION_ACTION_SPECS),
+        ),
     )
 
 

@@ -34,6 +34,7 @@ from .oven_run import OvenRun
 from .pos import POSTab
 from .seating import SeatingSpot, SpotKind
 from .shelf_outage import OutageReason, ShelfOutage
+from .sign_in import SignInEvent, SignInMethod, SignInOutcome
 
 __all__ = [
     "OperatorAlert",
@@ -75,6 +76,9 @@ __all__ = [
     "ProductConsumptionTag",
     "Reading",
     "SeatingSpot",
+    "SignInEvent",
+    "SignInMethod",
+    "SignInOutcome",
     "SpotKind",
     "OutageReason",
     "ShelfOutage",

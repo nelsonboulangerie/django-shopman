@@ -16,6 +16,7 @@ from django.contrib.auth.models import Permission
 from shopman.craftsman.models import Recipe, WorkOrder
 from shopman.offerman.models import Product
 from shopman.orderman.models import Directive
+from shopman.stockman.models import Position
 
 from shopman.backstage.services import production
 from shopman.shop.directives import ANNOUNCEMENT_PUBLISH
@@ -36,16 +37,26 @@ SKU = "croissant-e2e"
 @pytest.fixture
 def product():
     return Product.objects.create(
-        sku=SKU, name="Croissant", base_price_q=850, is_sellable=True,
+        sku=SKU,
+        name="Croissant",
+        base_price_q=850,
+        is_sellable=True,
         metadata={"social": {"hashtags": ["croissant", "fresquinho"]}},
     )
 
 
 @pytest.fixture
-def recipe(product):
-    return Recipe.objects.create(
-        ref="croissant-e2e-v1", name="Croissant", output_sku=SKU, batch_size=Decimal("20")
+def vitrine(db):
+    return Position.objects.create(
+        ref="vitrine-campaign",
+        name="Vitrine campanha",
+        is_saleable=True,
     )
+
+
+@pytest.fixture
+def recipe(product, vitrine):
+    return Recipe.objects.create(ref="croissant-e2e-v1", name="Croissant", output_sku=SKU, batch_size=Decimal("20"))
 
 
 @pytest.fixture
@@ -78,14 +89,28 @@ def gestor():
 
 def _bake(recipe, *, quality: str) -> WorkOrder:
     _, wo_ref, _, _ = production.apply_planned(
-        recipe_id=recipe.pk, quantity="20",
-        target_date_value=date.today().isoformat(), actor="production:op",
+        recipe_id=recipe.pk,
+        quantity="20",
+        target_date_value=date.today().isoformat(),
+        actor="production:op",
+        idempotency_key=f"campaign-plan-{quality}",
     )
     work_order = WorkOrder.objects.get(ref=wo_ref)
-    production.apply_start(work_order_id=work_order.pk, quantity="20", actor="production:op")
+    production.apply_start(
+        work_order_id=work_order.pk,
+        quantity="20",
+        actor="production:op",
+        expected_rev=work_order.rev,
+        idempotency_key=f"campaign-start-{quality}",
+    )
+    work_order.refresh_from_db()
     production.apply_finish(
-        work_order_id=work_order.pk, quantity="20",
-        actor="production:op", quality=quality,
+        work_order_id=work_order.pk,
+        quantity="20",
+        actor="production:op",
+        quality=quality,
+        expected_rev=work_order.rev,
+        idempotency_key=f"campaign-finish-{quality}",
     )
     work_order.refresh_from_db()
     return work_order
@@ -100,8 +125,7 @@ def test_excellent_bake_reaches_the_manager_as_an_approvable_post(
     announcement = Announcement.objects.get()
     assert announcement.status == AnnouncementStatus.PENDING_REVIEW
     assert announcement.body == (
-        "Croissant acabou de sair do forno! #croissant #fresquinho "
-        "Peça: " + announcement.content["link"]
+        "Croissant acabou de sair do forno! #croissant #fresquinho Peça: " + announcement.content["link"]
     )
     assert announcement.trigger_context["work_order_ref"] == work_order.ref
 
@@ -110,20 +134,16 @@ def test_excellent_bake_reaches_the_manager_as_an_approvable_post(
     assert notification.action_data["announcement_id"] == announcement.pk
 
 
-def test_a_regular_bake_never_becomes_a_post(
-    django_capture_on_commit_callbacks, recipe, rule, gestor
-):
+def test_a_regular_bake_never_becomes_a_post(django_capture_on_commit_callbacks, recipe, rule, gestor):
     """A régua de qualidade é do gestor: fornada comum não vira propaganda."""
     with django_capture_on_commit_callbacks(execute=True):
-        _bake(recipe, quality="regular")
+        _bake(recipe, quality="standard")
 
     assert Announcement.objects.count() == 0
     assert UserNotification.objects.count() == 0
 
 
-def test_approval_turns_the_post_into_a_platform_directive(
-    django_capture_on_commit_callbacks, recipe, rule, gestor
-):
+def test_approval_turns_the_post_into_a_platform_directive(django_capture_on_commit_callbacks, recipe, rule, gestor):
     with django_capture_on_commit_callbacks(execute=True):
         _bake(recipe, quality="excellent")
 
@@ -135,13 +155,9 @@ def test_approval_turns_the_post_into_a_platform_directive(
     assert directive.dedupe_key == f"announcement:{announcement.pk}:instagram"
 
 
-def test_the_bake_survives_a_broken_campaign(
-    django_capture_on_commit_callbacks, recipe, rule, gestor, monkeypatch
-):
+def test_the_bake_survives_a_broken_campaign(django_capture_on_commit_callbacks, recipe, rule, gestor, monkeypatch):
     """Marketing quebrado não pode impedir o operador de fechar a fornada."""
-    monkeypatch.setattr(
-        campaign, "evaluate", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom"))
-    )
+    monkeypatch.setattr(campaign, "evaluate", lambda *a, **kw: (_ for _ in ()).throw(RuntimeError("boom")))
     with django_capture_on_commit_callbacks(execute=True):
         work_order = _bake(recipe, quality="excellent")
 
@@ -149,9 +165,7 @@ def test_the_bake_survives_a_broken_campaign(
     assert Announcement.objects.count() == 0
 
 
-def test_no_active_rule_means_no_post(
-    django_capture_on_commit_callbacks, recipe, gestor
-):
+def test_no_active_rule_means_no_post(django_capture_on_commit_callbacks, recipe, gestor):
     with django_capture_on_commit_callbacks(execute=True):
         _bake(recipe, quality="excellent")
 

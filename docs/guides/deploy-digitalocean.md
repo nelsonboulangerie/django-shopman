@@ -45,15 +45,10 @@ API/Admin/backstage em `*.boulangerie.com.br`). Produção usa
   e `SHOPMAN_INSTANCE_MODIFIERS`;
 - health checks em `/ready/` e liveness em `/health/`.
 
-O blueprint usa `git.repo_clone_url` público. Enquanto isso estiver assim,
-redeploys devem ser acionados explicitamente com
-`doctl --context shopman-alpha-deploy apps create-deployment <APP_ID> --wait`
-ou pelo painel. ⚠️ **Nunca** use `.do/app.alpha-subdomains.yaml` com
-`doctl apps update --spec` só para subir código: esse comando sobrescreve o spec
-vivo e pode apagar variáveis encriptadas que existem apenas no painel. Para
-mudança futura de topologia, parta de `doctl apps spec get`, preserve os secrets
-e só então aplique o spec vivo editado. Para deploy automático por push,
-autorize a GitHub App da DigitalOcean e troque os blocos `git` por `github`.
+O deploy é por **imagens**: o workflow `.github/workflows/deploy-images.yml`
+builda no GitHub Actions e publica no DOCR (`registry.digitalocean.com/nelsonboulangerie/shopman`, tag por componente); o App Platform assina cada tag com `deploy_on_push` — **publicar a tag nova É o deploy** (merge em `main` = deploy no alpha; build seletivo por componente; `concurrency` sem cancel serializa merges seguidos).
+
+O `.do/app.alpha-subdomains.yaml` é o **spec de registro/espelho de referência**, NÃO a fonte aplicada. ⚠️ **Nunca** use `doctl apps update --spec` com esse arquivo para subir código: sobrescreve o spec vivo e pode apagar variáveis encriptadas que existem apenas no painel. Para mudança real de env/spec no App Platform, parta de `doctl apps spec get <APP_ID>`, edite preservando os secrets e só então aplique com `doctl apps update`. Atenção: envs `RUN_AND_BUILD_TIME` (ex.: `NUXT_PUBLIC_*`) são assadas no bundle client — mudá-las exige REBUILD da imagem do componente (redeploy), não basta env runtime.
 
 O `Dockerfile` já compila CSS e agora roda `collectstatic` no build. O runtime
 serve `/static/` por WhiteNoise, então App Platform não precisa de volume
@@ -126,9 +121,14 @@ explicitamente em mock:
 SHOPMAN_PIX_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_CARD_ADAPTER=shopman.shop.adapters.payment_mock
 SHOPMAN_ALLOW_MOCK_PAYMENT_ADAPTERS=true
-SHOPMAN_MOCK_PIX_AUTO_CONFIRM=true
-SHOPMAN_MOCK_PIX_CONFIRM_DELAY_SECONDS=8
+SHOPMAN_EXPOSE_MOCK_CAPTURE=true
+SHOPMAN_MOCK_PIX_AUTO_CONFIRM=false
 ```
+
+O caminho de conclusao do Pix mock no alpha e o MANUAL: o botao "Simular
+pagamento" (`SHOPMAN_EXPOSE_MOCK_CAPTURE`). `SHOPMAN_MOCK_PIX_AUTO_CONFIRM` e a
+alternativa automatica para ambientes sem gente clicando; com o botao exposto o
+auto-confirm nao e injetado (as duas envs juntas emitem `SHOPMAN_W018`).
 
 Isso permite testar checkout, criacao de pedido, tela de pagamento, fila de
 diretivas e transicao para pedido pago sem bloquear por credenciais externas.
@@ -229,12 +229,10 @@ O usuário `shopman` precisa ter permissão de criação no schema `public` do b
 `shopman`; sem isso o release job passa em `check --deploy`, mas falha em
 `migrate` com `permission denied for schema public`.
 
-Se o app já existir, **só para subir código novo** (não mexe no spec nem nos
-segredos):
-
-```bash
-doctl --context shopman-alpha-deploy apps create-deployment <app-id> --wait
-```
+Para subir código novo, **não use doctl**: o merge em `main` dispara o workflow
+`deploy-images.yml` (build → DOCR → tag → `deploy_on_push`) e o App Platform
+redeploya sozinho. O `doctl` aqui serve apenas para mudança de env/spec/topologia
+(ver abaixo), nunca para subir código.
 
 Aplicar o spec do repo por cima do app vivo é proibido. Para topologia futura,
 capture o spec vivo e edite esse arquivo capturado:

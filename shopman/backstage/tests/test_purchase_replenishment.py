@@ -28,7 +28,7 @@ def material(db):
 def supplier(db):
     Supplier = apps.get_model("buyman", "Supplier")
     return Supplier.objects.create(
-        ref="SUP-TAMURA",
+        ref="tamura",
         name="Tamura",
         document="84.290.690/0002-28",
         metadata={"purchase": {"lead_time_days": 6}},

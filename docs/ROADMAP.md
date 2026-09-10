@@ -36,7 +36,7 @@
 | P2 | Fiscalman S5 | NF-e mod. 55 / itens resale; e2e homolog Focus; contador valida NCM/CSC/IBPT. | [`plans/FISCALMAN-PLAN.md`](plans/FISCALMAN-PLAN.md) |
 | P2 | QA físico | Som/térmica da produção; QA visual em dispositivo real (staging). | [`plans/completed/PRODUCTION-EXCELLENCE-PLAN.md`](plans/completed/PRODUCTION-EXCELLENCE-PLAN.md) (resta só QA físico) |
 | P2 | Impressão DANFE NFC-e no PDV | Obrigação legal para venda presencial — incontornável antes de operação fiscal plena. | pós-alpha, ver [`plans/POS-FASE-C-REVISION.md`](plans/POS-FASE-C-REVISION.md) |
-| P3 | ManyChat conversacional | Pedido inbound por chat (ManyChat → session → confirmação). | [`plans/MANYCHAT-CONVERSACIONAL-PLAN.md`](plans/MANYCHAT-CONVERSACIONAL-PLAN.md) |
+| P3 | Concierge de WhatsApp | Pedido por conversa no WhatsApp com modelo de linguagem; ferramentas determinísticas, resposta assíncrona via ManyChat. F1 escrita; F2 (flow + teste com o número do Pablo) e F3 (piloto) aguardam o dono. | [`plans/WHATSAPP-CONCIERGE-PLAN.md`](plans/WHATSAPP-CONCIERGE-PLAN.md) · [ADR-026](decisions/adr-026-concierge-lingua-do-modelo-dinheiro-do-codigo.md) (supera o MANYCHAT-CONVERSACIONAL-PLAN) |
 | P3 | Buyman Fases 2–4 | PurchaseOrder, recebimento, reposição. | [`plans/BUYMAN-PROCUREMENT-PLAN.md`](plans/BUYMAN-PROCUREMENT-PLAN.md) — pós-go-live |
 | P3 | Tempo real de forno (BI da fornada) | Definição benzida (2026-08-13): start = armar o timer (enfornou), stop = Concluir declarado no timer (retirou); fim de timer sem resposta e Confirmar do QC NÃO medem tempo. Exige promover o timer (hoje localStorage) a fato do servidor. O QC segue dono do fato COMERCIAL (partição/lote). | frente separada, sem plano ainda — sem tabela de agregação (doutrina anti-BI) |
 | P3 | Pre-prod real | Executar playbook às vésperas do primeiro deploy com dado real. | [`plans/WP-GAP-07-pre-prod-migration-playbook.md`](plans/WP-GAP-07-pre-prod-migration-playbook.md) |
@@ -52,6 +52,7 @@
 | ManyChat webhook ainda pulado | Fluxo ManyChat → session → confirmação não reimplementado. | Retomar junto com canais externos. |
 | Playwright E2E opcional | A suite existe, mas só roda quando Playwright está instalado. | Decidir se vira gate antes de piloto público. |
 | Migração futura para CSP nativo do Django 6 | `django-csp` funciona, mas Django 6 tem CSP nativo a avaliar. | Avaliar isoladamente, sem misturar com features. |
+| **Identificador em pt-br nas superfícies** (35 declarações, 20 arquivos) | Quebra a convenção "identificador em inglês" do `CLAUDE.md`. As 3 do `operator-kit` são as caras: sete apps importam o layer, então a convenção quebrada é **herdada**. Não cresce: catraca em `surfaces/operator-kit/tests/guardrails.identifiers.test.ts` reprova acima de 35. | [`plans/WP-IDENT-PT-BR.md`](plans/WP-IDENT-PT-BR.md) — **primeira janela de faxina pós-go-live**; começar pelo `operator-kit`, um PR por superfície, gate é `nuxi typecheck`. |
 | Media persistente na App Platform | Static resolvido por WhiteNoise; uploads não devem depender de filesystem efêmero. | Decidir Spaces/S3-compatible antes de piloto público com uploads reais. |
 
 ## Visão de produto (registro de intenção — dono: Pablo)

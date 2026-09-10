@@ -39,6 +39,7 @@ GATE_FILES = [
     "shopman/backstage/admin/pos.py",
     "shopman/backstage/admin/kds.py",
     "shopman/backstage/admin/closing.py",
+    "shopman/backstage/admin/merges.py",
     "shopman/backstage/admin/terminal.py",
     "shopman/backstage/admin_console/cash_receipt.py",
     "shopman/backstage/admin/navigation.py",
@@ -71,13 +72,36 @@ PARITY_TABLE: list[tuple[str, set[str]]] = [
     ("backstage.operate_production", {"Cozinha", "Gerente"}),
     # permissions.can_operate_purchase (dedicated purchase/receipt app gate)
     ("backstage.operate_purchase", {"Gerente"}),
+    # api/purchase.py::PURCHASE_COUNT_PERMISSIONS (stock count = audit, same
+    # ruler as cashman.audit_shift: it belongs to Dono, never to Gerente)
+    ("backstage.audit_stock", {"Dono"}),
     # permissions.can_manage_orders (orders API + sidebar)
     ("shop.manage_orders", {"Caixa", "Gerente"}),
+    # api/operations.py::OrderCancelView.ADVANCED_PERMISSION — cancelar depois de
+    # PRONTO/FECHADO. Deliberadamente FORA do Caixa: ele cancela a esteira normal
+    # com `manage_orders`; o degrau de depois é do gerente.
+    ("shop.cancel_advanced_order", {"Gerente"}),
+    # admin/merges.py::MergeAuditAdmin.undo_merge_row — desfazer a unificação de
+    # dois cadastros. Fora do Caixa de propósito: ele UNIFICA no balcão (é a
+    # saída do conflito de contato no meio da venda), e desfazer é revisão.
+    ("shop.manage_customers", {"Gerente"}),
     # permissions.can_access_production / can_view_production_reports (full
     # access shortcut). Only Cozinha holds it: Gerente reaches the board through
     # its full set of fine-grained column perms (can_access_board), so it does
     # NOT need the coarse manage_production grant.
     ("shop.manage_production", {"Cozinha"}),
+    # permissions.can_view_production_reports (OR com shop.manage_production).
+    #
+    # ⚠️ Isto VIVIA na allowlist de "não concedida de propósito", com a justificativa
+    # de que `shop.manage_production` já cobria "Cozinha/Gerente". Só que essa
+    # permissão é da Cozinha apenas — a linha logo acima diz isso —, e a Gerente chega
+    # ao quadro pelas colunas finas, não por ela. Resultado: quem decide o que assar
+    # não conseguia ler o histórico do que foi assado, e o teste que existe para pegar
+    # esse buraco o escondia com uma frase.
+    #
+    # A lição não é sobre esta permissão: uma isenção que cita OUTRO grant precisa ser
+    # verificada contra a tabela, senão ela envelhece sozinha e vira álibi.
+    ("backstage.view_production_reports", {"Gerente"}),
     # resolve_production_access fine-grained columns (f-string perms, not
     # discoverable by the literal scan). Cozinha runs the floor
     # (planned/started/finished); Gerente also plans (suggested) and reconciles
@@ -106,15 +130,12 @@ UNGRANTED_BY_DESIGN: dict[str, str] = {
     "shop.manage_campaigns": (
         "Legacy audit fallback only; intentionally absent from deployment groups."
     ),
-    # can_view_production_reports() accepts this OR shop.manage_production. The
-    # OR-alternative (shop.manage_production) is what the operator groups hold
-    # (Cozinha/Gerente), so the reports gate is reachable without a dedicated
-    # backstage.view_production_reports grant. The perm is a superuser/optional
-    # fine-grained hook, deliberately off the default groups.
-    "backstage.view_production_reports": (
-        "OR-alternative in can_view_production_reports; covered by "
-        "shop.manage_production on Cozinha/Gerente."
-    ),
+    # High-risk production actions were split out before D1.  Their gates fail
+    # closed until the business chooses which role receives each grant.
+    "backstage.quick_finish_production": ("D1 pending: quick finish requires an explicit high-risk grant."),
+    "backstage.override_production_shortage": ("D1 pending: shortage override requires an explicit high-risk grant."),
+    "backstage.void_production": ("D1 pending: work-order reversal requires an explicit high-risk grant."),
+    "backstage.reveal_production_blind_map": ("D1 pending: revealing blind weighing codes requires an explicit grant."),
     # `cashman.audit_shift` VIVIA AQUI e saiu — vale dizer por quê, para ninguém
     # a trazer de volta achando que corrige algo.
     #
@@ -135,13 +156,8 @@ def _granted_by_group() -> dict[str, set[str]]:
     """group_name -> set of 'app_label.codename' after setup_groups runs."""
     call_command("setup_groups")
     result: dict[str, set[str]] = {}
-    for group in Group.objects.prefetch_related(
-        "permissions__content_type"
-    ):
-        result[group.name] = {
-            f"{p.content_type.app_label}.{p.codename}"
-            for p in group.permissions.all()
-        }
+    for group in Group.objects.prefetch_related("permissions__content_type"):
+        result[group.name] = {f"{p.content_type.app_label}.{p.codename}" for p in group.permissions.all()}
     return result
 
 
@@ -162,10 +178,7 @@ def test_parity_table_every_gate_perm_is_granted_to_expected_group():
 
     for perm, expected_groups in PARITY_TABLE:
         for group_name in expected_groups:
-            assert group_name in granted, (
-                f"expected group {group_name!r} does not exist "
-                f"(needed to grant {perm!r})"
-            )
+            assert group_name in granted, f"expected group {group_name!r} does not exist (needed to grant {perm!r})"
             assert perm in granted[group_name], (
                 f"RBAC parity broken: gate requires {perm!r} but group "
                 f"{group_name!r} does not grant it. A user in {group_name!r} "
@@ -186,16 +199,10 @@ def test_discovered_gate_perms_are_covered_by_some_group():
 
     discovered = _discover_gate_perms()
     # Sanity: the scan actually found the gates (not a silent no-op).
-    assert "cashman.adjust_shift" in discovered, (
-        "discovery regex found no adjust_shift gate — the scan is broken"
-    )
+    assert "cashman.adjust_shift" in discovered, "discovery regex found no adjust_shift gate — the scan is broken"
     assert "cashman.operate_pos" in discovered
 
-    dead_gates = {
-        perm
-        for perm in discovered
-        if perm not in all_granted and perm not in UNGRANTED_BY_DESIGN
-    }
+    dead_gates = {perm for perm in discovered if perm not in all_granted and perm not in UNGRANTED_BY_DESIGN}
     assert not dead_gates, (
         "Dead RBAC gate(s) found: these permissions are required by a runtime "
         f"gate but granted to NO group: {sorted(dead_gates)}. Either grant them "
@@ -206,10 +213,8 @@ def test_discovered_gate_perms_are_covered_by_some_group():
     # longer a real gate) should be removed so the list stays meaningful.
     for perm in UNGRANTED_BY_DESIGN:
         assert perm not in all_granted, (
-            f"{perm!r} is in UNGRANTED_BY_DESIGN but IS granted to a group — "
-            "remove the stale exception."
+            f"{perm!r} is in UNGRANTED_BY_DESIGN but IS granted to a group — remove the stale exception."
         )
         assert perm in discovered, (
-            f"{perm!r} is in UNGRANTED_BY_DESIGN but no gate references it — "
-            "remove the stale exception."
+            f"{perm!r} is in UNGRANTED_BY_DESIGN but no gate references it — remove the stale exception."
         )

@@ -339,6 +339,43 @@ def format_next_opening(value: datetime | None, *, now: datetime | None = None) 
     return f"{weekday} às {hour}"
 
 
+#: Abreviações de dia da semana para o prazo que cai depois de amanhã: com data,
+#: porque "sábado às 14h" sem o dia deixa dúvida de QUAL sábado num link de dias.
+_WEEKDAY_ABBR_PT = ("seg.", "ter.", "qua.", "qui.", "sex.", "sáb.", "dom.")
+
+
+def format_deadline(value: datetime | None, *, now: datetime | None = None) -> str:
+    """Prazo em copy compacta: "hoje às 18h", "amanhã às 9h", "sáb. 6/9 às 14h".
+
+    Vocabulário da `format_next_opening`, com uma diferença deliberada: depois de
+    amanhã a frase leva a DATA. Abertura da loja é semanal e "quinta" basta;
+    um prazo de pagamento é um instante único, e "quinta" sem dia é ambíguo.
+
+    Prazo já vencido devolve vazio: dizer "vale até hoje às 9h" às 10h é
+    promessa errada, e o aviso que não sabe o prazo cala a frase inteira
+    (chave auto-suprimível de quem consome).
+    """
+    if not value:
+        return ""
+    tz = timezone.get_current_timezone()
+    if not timezone.is_aware(value):
+        value = timezone.make_aware(value, timezone=tz)
+    reference = now or timezone.now()
+    if not timezone.is_aware(reference):
+        reference = timezone.make_aware(reference, timezone=tz)
+    if value <= reference:
+        return ""
+    local = timezone.localtime(value, timezone=tz)
+    today = timezone.localtime(reference, timezone=tz).date()
+    hour = _fmt_hour(local.time())
+    if local.date() == today:
+        return f"hoje às {hour}"
+    if local.date() == today + timedelta(days=1):
+        return f"amanhã às {hour}"
+    weekday = _WEEKDAY_ABBR_PT[local.weekday()]
+    return f"{weekday} {local.day}/{local.month} às {hour}"
+
+
 def _load_shop(shop):
     if shop is not None:
         return shop

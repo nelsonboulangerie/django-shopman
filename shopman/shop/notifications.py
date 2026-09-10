@@ -3,7 +3,7 @@ Notification dispatch — registry + send.
 
 Adapters are function-style modules in shopman.adapters.notification_*.
 Each adapter exposes:
-    send(recipient, template, context, **config) -> bool
+    send(recipient, template, context, **config) -> bool | dict | NotificationResult
     is_available(recipient, **config) -> bool
 
 The registry maps backend names to adapter modules. Registration happens in
@@ -63,21 +63,45 @@ def notify(
         return NotificationResult(success=False, error=f"Backend not found: {backend_name}")
 
     try:
-        success = adapter.send(recipient=recipient, template=event, context=context)
-        if success:
-            # Function-style adapters return only a bool.  Inventing a provider
-            # receipt from recipient identity is both false evidence and PII in logs.
-            logger.info("Notification sent: event=%s backend=%s", event, backend)
-            return NotificationResult(success=True)
+        raw_result = adapter.send(recipient=recipient, template=event, context=context)
+        result = _normalize_result(raw_result, backend=backend or "default")
+        if result.success:
+            # Nunca logar o destinatário nem fabricar um message_id a partir dele.
+            # Bool confirma apenas aceite; prova do provider só existe quando o
+            # próprio adapter devolve um identificador.
+            logger.info("Notification accepted: event=%s backend=%s", event, backend or "default")
         else:
-            error_msg = f"Adapter {backend} returned False"
-            logger.warning("Notification failed: event=%s backend=%s", event, backend)
-            return NotificationResult(success=False, error=error_msg)
+            logger.warning("Notification failed: event=%s backend=%s", event, backend or "default")
+        return result
     except Exception as exc:
         logger.warning(
             "Notification error: event=%s backend=%s exception_class=%s",
             event,
-            backend,
+            backend or "default",
             type(exc).__name__,
         )
         return NotificationResult(success=False, error="notification_adapter_error")
+
+
+def _normalize_result(raw_result: Any, *, backend: str) -> NotificationResult:
+    """Normalize legacy bool and richer provider results without inventing proof."""
+    if isinstance(raw_result, NotificationResult):
+        return raw_result
+    if isinstance(raw_result, bool):
+        if raw_result:
+            return NotificationResult(success=True)
+        return NotificationResult(success=False, error=f"Adapter {backend} returned False")
+    if isinstance(raw_result, dict):
+        success = raw_result.get("success") is True
+        message_id = str(raw_result.get("message_id") or "").strip() or None
+        error = str(raw_result.get("error") or "").strip() or None
+        if success:
+            return NotificationResult(success=True, message_id=message_id)
+        return NotificationResult(
+            success=False,
+            error=error or f"Adapter {backend} returned an unsuccessful result",
+        )
+    return NotificationResult(
+        success=False,
+        error=f"Adapter {backend} returned an invalid result",
+    )

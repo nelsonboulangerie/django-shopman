@@ -11,14 +11,53 @@ Validates filtering by:
 - Combinations of the above
 """
 
-from datetime import timedelta
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from shopman.stockman.models import Batch, Position, PositionKind, Quant
+from shopman.stockman.services.availability import (
+    _build_availability_dict,
+    availability_for_sku,
+    availability_for_skus,
+)
 from shopman.stockman.services.scope import quants_eligible_for
+from shopman.stockman.shelflife import is_valid_for_date
 
 pytestmark = pytest.mark.django_db
+
+
+def test_python_shelflife_uses_the_local_production_day_at_utc_midnight():
+    quant = SimpleNamespace(
+        target_date=None,
+        # 00:10 UTC ainda é 21:10 do dia anterior em America/Sao_Paulo.
+        created_at=datetime(2026, 9, 10, 0, 10, tzinfo=UTC),
+    )
+    product = SimpleNamespace(shelf_life_days=0)
+
+    assert is_valid_for_date(quant, product, date(2026, 9, 9)) is True
+    assert is_valid_for_date(quant, product, date(2026, 9, 10)) is False
+
+
+def test_planned_breakdown_subtracts_active_holds_once():
+    info = _build_availability_dict(
+        sku="PLANNED-NET",
+        availability_policy="planned_ok",
+        ready=Decimal("0"),
+        in_production=Decimal("0"),
+        planned=Decimal("10"),
+        held_ready=Decimal("0"),
+        held_production=Decimal("0"),
+        held_planned=Decimal("3"),
+        safety_margin=0,
+        is_planned=True,
+        positions_data=[],
+    )
+
+    assert info["planned"] == Decimal("7")
+    assert info["breakdown"]["planned"] == Decimal("7")
+    assert info["total_promisable"] == Decimal("7")
 
 
 @pytest.fixture
@@ -62,14 +101,20 @@ def deposito_position(db):
 class TestBaseFilter:
     def test_returns_only_positive_quantities_for_sku(self, product, vitrine, today):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("10"),
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("10"),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, target_date=today,
+            sku=product.sku,
+            position=vitrine,
+            target_date=today,
             _quantity=Decimal("0"),
         )
         Quant.objects.create(
-            sku="OTHER-SKU", position=vitrine, _quantity=Decimal("99"),
+            sku="OTHER-SKU",
+            position=vitrine,
+            _quantity=Decimal("99"),
         )
 
         qs = quants_eligible_for(product.sku, target_date=today)
@@ -80,13 +125,21 @@ class TestBaseFilter:
 
 class TestTargetDateGate:
     def test_excludes_future_quants_beyond_target(
-        self, product, vitrine, today, tomorrow,
+        self,
+        product,
+        vitrine,
+        today,
+        tomorrow,
     ):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, target_date=tomorrow,
+            sku=product.sku,
+            position=vitrine,
+            target_date=tomorrow,
             _quantity=Decimal("7"),
         )
 
@@ -96,10 +149,16 @@ class TestTargetDateGate:
         assert qs.first()._quantity == Decimal("5")
 
     def test_includes_future_quants_within_target(
-        self, product, vitrine, today, tomorrow,
+        self,
+        product,
+        vitrine,
+        today,
+        tomorrow,
     ):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, target_date=tomorrow,
+            sku=product.sku,
+            position=vitrine,
+            target_date=tomorrow,
             _quantity=Decimal("7"),
         )
 
@@ -110,7 +169,11 @@ class TestTargetDateGate:
 
 class TestShelflife:
     def test_perishable_excludes_stale_physical_quants(
-        self, perishable_product, vitrine, today, perishable_validator,
+        self,
+        perishable_product,
+        vitrine,
+        today,
+        perishable_validator,
     ):
         """shelf_life_days=0 means only same-day physical stock is valid."""
         quant = Quant.objects.create(
@@ -127,7 +190,11 @@ class TestShelflife:
         assert qs.count() == 0
 
     def test_perishable_keeps_same_day_physical_quants(
-        self, perishable_product, vitrine, today, perishable_validator,
+        self,
+        perishable_product,
+        vitrine,
+        today,
+        perishable_validator,
     ):
         Quant.objects.create(
             sku=perishable_product.sku,
@@ -140,7 +207,10 @@ class TestShelflife:
         assert qs.count() == 1
 
     def test_non_perishable_keeps_old_physical_quants(
-        self, product, vitrine, today,
+        self,
+        product,
+        vitrine,
+        today,
     ):
         """shelf_life_days=None disables the shelflife window."""
         quant = Quant.objects.create(
@@ -159,70 +229,112 @@ class TestShelflife:
 
 class TestPositionScope:
     def test_allowed_positions_limits_to_listed_refs(
-        self, product, vitrine, reserva_position, today,
+        self,
+        product,
+        vitrine,
+        reserva_position,
+        today,
     ):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
+            sku=product.sku,
+            position=reserva_position,
+            _quantity=Decimal("7"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, allowed_positions=["vitrine"],
+            product.sku,
+            target_date=today,
+            allowed_positions=["vitrine"],
         )
 
         assert qs.count() == 1
         assert qs.first().position.ref == "vitrine"
 
     def test_excluded_positions_removes_listed_refs(
-        self, product, vitrine, reserva_position, today,
+        self,
+        product,
+        vitrine,
+        reserva_position,
+        today,
     ):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
+            sku=product.sku,
+            position=reserva_position,
+            _quantity=Decimal("7"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, excluded_positions=["reserva"],
+            product.sku,
+            target_date=today,
+            excluded_positions=["reserva"],
         )
 
         assert qs.count() == 1
         assert qs.first().position.ref == "vitrine"
 
     def test_excluded_positions_keeps_quants_without_position(
-        self, product, vitrine, reserva_position, today, tomorrow,
+        self,
+        product,
+        vitrine,
+        reserva_position,
+        today,
+        tomorrow,
     ):
         """Planned quants typically have position=None and must survive a
         denylist check — the denylist only removes quants sitting at the
         listed refs."""
         Quant.objects.create(
-            sku=product.sku, position=reserva_position, _quantity=Decimal("5"),
+            sku=product.sku,
+            position=reserva_position,
+            _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, target_date=tomorrow, _quantity=Decimal("8"),
+            sku=product.sku,
+            target_date=tomorrow,
+            _quantity=Decimal("8"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=tomorrow, excluded_positions=["reserva"],
+            product.sku,
+            target_date=tomorrow,
+            excluded_positions=["reserva"],
         )
 
         assert qs.count() == 1
         assert qs.first().position is None
 
     def test_allowed_and_excluded_combine(
-        self, product, vitrine, reserva_position, deposito_position, today,
+        self,
+        product,
+        vitrine,
+        reserva_position,
+        deposito_position,
+        today,
     ):
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("5"),
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("5"),
         )
         Quant.objects.create(
-            sku=product.sku, position=reserva_position, _quantity=Decimal("7"),
+            sku=product.sku,
+            position=reserva_position,
+            _quantity=Decimal("7"),
         )
         Quant.objects.create(
-            sku=product.sku, position=deposito_position, _quantity=Decimal("9"),
+            sku=product.sku,
+            position=deposito_position,
+            _quantity=Decimal("9"),
         )
 
         qs = quants_eligible_for(
@@ -238,18 +350,27 @@ class TestPositionScope:
 
 class TestBatchExpiry:
     def test_expired_batch_is_filtered_out(
-        self, product, vitrine, today,
+        self,
+        product,
+        vitrine,
+        today,
     ):
         yesterday = today - timedelta(days=1)
         Batch.objects.create(
-            sku=product.sku, ref="OLD", expiry_date=yesterday,
+            sku=product.sku,
+            ref="OLD",
+            expiry_date=yesterday,
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="OLD",
+            sku=product.sku,
+            position=vitrine,
+            batch="OLD",
             _quantity=Decimal("3"),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="FRESH",
+            sku=product.sku,
+            position=vitrine,
+            batch="FRESH",
             _quantity=Decimal("4"),
         )
 
@@ -269,14 +390,20 @@ class TestShelflifeBatchPrecedence:
     """
 
     def test_expired_batch_excludes_shelflife_valid_quant(
-        self, perishable_product, vitrine, today, perishable_validator,
+        self,
+        perishable_product,
+        vitrine,
+        today,
+        perishable_validator,
     ):
         # Same-day quant passes the shelf_life_days=0 window, but its batch is
         # expired → excluded. Batch expiry is the more restrictive signal here.
         yesterday = today - timedelta(days=1)
         Batch.objects.create(sku=perishable_product.sku, ref="OLD", expiry_date=yesterday)
         Quant.objects.create(
-            sku=perishable_product.sku, position=vitrine, batch="OLD",
+            sku=perishable_product.sku,
+            position=vitrine,
+            batch="OLD",
             _quantity=Decimal("5"),
         )
 
@@ -285,7 +412,11 @@ class TestShelflifeBatchPrecedence:
         assert qs.count() == 0
 
     def test_stale_shelflife_excludes_unexpired_batch_quant(
-        self, perishable_product, vitrine, today, perishable_validator,
+        self,
+        perishable_product,
+        vitrine,
+        today,
+        perishable_validator,
     ):
         # Fresh (non-expired) batch, but the quant is older than the
         # shelf_life_days=0 window → excluded. shelf_life is the more
@@ -293,7 +424,9 @@ class TestShelflifeBatchPrecedence:
         next_week = today + timedelta(days=7)
         Batch.objects.create(sku=perishable_product.sku, ref="FRESH", expiry_date=next_week)
         quant = Quant.objects.create(
-            sku=perishable_product.sku, position=vitrine, batch="FRESH",
+            sku=perishable_product.sku,
+            position=vitrine,
+            batch="FRESH",
             _quantity=Decimal("5"),
         )
         Quant.objects.filter(pk=quant.pk).update(
@@ -305,12 +438,18 @@ class TestShelflifeBatchPrecedence:
         assert qs.count() == 0
 
     def test_both_valid_keeps_quant(
-        self, perishable_product, vitrine, today, perishable_validator,
+        self,
+        perishable_product,
+        vitrine,
+        today,
+        perishable_validator,
     ):
         next_week = today + timedelta(days=7)
         Batch.objects.create(sku=perishable_product.sku, ref="FRESH", expiry_date=next_week)
         Quant.objects.create(
-            sku=perishable_product.sku, position=vitrine, batch="FRESH",
+            sku=perishable_product.sku,
+            position=vitrine,
+            batch="FRESH",
             _quantity=Decimal("5"),
         )
 
@@ -321,7 +460,12 @@ class TestShelflifeBatchPrecedence:
 
 class TestCombinations:
     def test_denylist_plus_shelflife_plus_target(
-        self, perishable_product, vitrine, reserva_position, today, tomorrow,
+        self,
+        perishable_product,
+        vitrine,
+        reserva_position,
+        today,
+        tomorrow,
         perishable_validator,
     ):
         """Realistic remote-channel scenario for a daily bread:
@@ -330,15 +474,18 @@ class TestCombinations:
         - tomorrow's planned stock: excluded by target gate (target=today)
         """
         Quant.objects.create(
-            sku=perishable_product.sku, position=vitrine,
+            sku=perishable_product.sku,
+            position=vitrine,
             _quantity=Decimal("25"),
         )
         Quant.objects.create(
-            sku=perishable_product.sku, position=reserva_position,
+            sku=perishable_product.sku,
+            position=reserva_position,
             _quantity=Decimal("27"),
         )
         Quant.objects.create(
-            sku=perishable_product.sku, target_date=tomorrow,
+            sku=perishable_product.sku,
+            target_date=tomorrow,
             _quantity=Decimal("30"),
         )
 
@@ -348,9 +495,7 @@ class TestCombinations:
             excluded_positions=["reserva"],
         )
 
-        positions = sorted(
-            (q.position.ref if q.position else None) for q in qs
-        )
+        positions = sorted((q.position.ref if q.position else None) for q in qs)
         assert positions == ["vitrine"]
 
 
@@ -359,10 +504,14 @@ class TestExpiryMargin:
 
     def test_margin_zero_keeps_historical_gate(self, product, vitrine, today):
         Batch.objects.create(
-            sku=product.sku, ref="AMANHA", expiry_date=today + timedelta(days=1),
+            sku=product.sku,
+            ref="AMANHA",
+            expiry_date=today + timedelta(days=1),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="AMANHA",
+            sku=product.sku,
+            position=vitrine,
+            batch="AMANHA",
             _quantity=Decimal("5"),
         )
 
@@ -371,26 +520,39 @@ class TestExpiryMargin:
         assert [q.batch for q in qs] == ["AMANHA"]
 
     def test_margin_excludes_lot_expiring_within_window(
-        self, product, vitrine, today,
+        self,
+        product,
+        vitrine,
+        today,
     ):
         """Queijo que vence em 2 dias some com margem de 3; o de 10 dias fica."""
         Batch.objects.create(
-            sku=product.sku, ref="VENCE-2D", expiry_date=today + timedelta(days=2),
+            sku=product.sku,
+            ref="VENCE-2D",
+            expiry_date=today + timedelta(days=2),
         )
         Batch.objects.create(
-            sku=product.sku, ref="VENCE-10D", expiry_date=today + timedelta(days=10),
+            sku=product.sku,
+            ref="VENCE-10D",
+            expiry_date=today + timedelta(days=10),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="VENCE-2D",
+            sku=product.sku,
+            position=vitrine,
+            batch="VENCE-2D",
             _quantity=Decimal("3"),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="VENCE-10D",
+            sku=product.sku,
+            position=vitrine,
+            batch="VENCE-10D",
             _quantity=Decimal("4"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, expiry_margin_days=3,
+            product.sku,
+            target_date=today,
+            expiry_margin_days=3,
         )
 
         assert [q.batch for q in qs] == ["VENCE-10D"]
@@ -398,15 +560,21 @@ class TestExpiryMargin:
     def test_lot_expiring_exactly_on_cutoff_stays(self, product, vitrine, today):
         """A margem é 'a MENOS de N dias': vencer NO corte ainda vende."""
         Batch.objects.create(
-            sku=product.sku, ref="NO-CORTE", expiry_date=today + timedelta(days=3),
+            sku=product.sku,
+            ref="NO-CORTE",
+            expiry_date=today + timedelta(days=3),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="NO-CORTE",
+            sku=product.sku,
+            position=vitrine,
+            batch="NO-CORTE",
             _quantity=Decimal("2"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, expiry_margin_days=3,
+            product.sku,
+            target_date=today,
+            expiry_margin_days=3,
         )
 
         assert [q.batch for q in qs] == ["NO-CORTE"]
@@ -415,27 +583,32 @@ class TestExpiryMargin:
 class TestNonconformingGate:
     """``include_nonconforming=False``: o LOTE decide o que o canal oferece.
 
-    Ter motivo é ser (Batch.nonconformity_reason != "") — o core não sabe o
-    que o motivo significa nem quem pode vender; só filtra quando mandam.
+    O percentual congelado é o fallback comercial; motivo continua ortogonal.
     """
 
     def _lots(self, product, vitrine, today):
         Batch.objects.create(
-            sku=product.sku, ref="CONFORME",
+            sku=product.sku,
+            ref="CONFORME",
             expiry_date=today + timedelta(days=1),
         )
         Batch.objects.create(
-            sku=product.sku, ref="MARCADO",
+            sku=product.sku,
+            ref="MARCADO",
             expiry_date=today + timedelta(days=1),
             nonconformity_reason="Assou demais",
             nonconformity_percent=20,
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="CONFORME",
+            sku=product.sku,
+            position=vitrine,
+            batch="CONFORME",
             _quantity=Decimal("10"),
         )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, batch="MARCADO",
+            sku=product.sku,
+            position=vitrine,
+            batch="MARCADO",
             _quantity=Decimal("4"),
         )
 
@@ -446,25 +619,153 @@ class TestNonconformingGate:
 
         assert sorted(q.batch for q in qs) == ["CONFORME", "MARCADO"]
 
-    def test_gate_excludes_lots_with_reason(self, product, vitrine, today):
+    def test_gate_excludes_lots_with_markdown(self, product, vitrine, today):
         self._lots(product, vitrine, today)
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, include_nonconforming=False,
+            product.sku,
+            target_date=today,
+            include_nonconforming=False,
         )
 
         assert [q.batch for q in qs] == ["CONFORME"]
 
-    def test_batchless_quants_are_untouched_by_the_gate(
-        self, product, vitrine, today,
-    ):
-        """Quant sem lote não tem motivo — o gate é sobre LOTES marcados."""
+    def test_reason_without_markdown_remains_eligible(self, product, vitrine, today):
+        Batch.objects.create(
+            sku=product.sku,
+            ref="OK-COM-OBSERVACAO",
+            expiry_date=today + timedelta(days=1),
+            quality_grade_ref="excellent",
+            nonconformity_reason="Casca irregular",
+            nonconformity_percent=0,
+        )
         Quant.objects.create(
-            sku=product.sku, position=vitrine, _quantity=Decimal("7"),
+            sku=product.sku,
+            position=vitrine,
+            batch="OK-COM-OBSERVACAO",
+            _quantity=Decimal("4"),
         )
 
         qs = quants_eligible_for(
-            product.sku, target_date=today, include_nonconforming=False,
+            product.sku,
+            target_date=today,
+            include_nonconforming=False,
+        )
+
+        assert list(qs.values_list("batch", flat=True)) == ["OK-COM-OBSERVACAO"]
+
+    def test_batchless_quants_are_untouched_by_the_gate(
+        self,
+        product,
+        vitrine,
+        today,
+    ):
+        """Quant sem lote não tem motivo — o gate é sobre LOTES marcados."""
+        Quant.objects.create(
+            sku=product.sku,
+            position=vitrine,
+            _quantity=Decimal("7"),
+        )
+
+        qs = quants_eligible_for(
+            product.sku,
+            target_date=today,
+            include_nonconforming=False,
         )
 
         assert qs.count() == 1
+
+
+class TestChannelQualityGradeGate:
+    def test_allowlist_distinguishes_batchless_from_unclassified_named_lots(
+        self,
+        product,
+        vitrine,
+        today,
+    ):
+        Batch.objects.create(
+            sku=product.sku,
+            ref="STANDARD",
+            quality_grade_ref="standard",
+        )
+        Batch.objects.create(
+            sku=product.sku,
+            ref="NAMED-WITHOUT-GRADE",
+            quality_grade_ref="",
+        )
+        for ref in ("", "STANDARD", "NAMED-WITHOUT-GRADE", "ORPHAN-BATCH"):
+            Quant.objects.create(
+                sku=product.sku,
+                position=vitrine,
+                batch=ref,
+                _quantity=Decimal("1"),
+            )
+
+        qs = quants_eligible_for(
+            product.sku,
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+
+        assert set(qs.values_list("batch", flat=True)) == {"", "STANDARD"}
+        assert availability_for_sku(
+            product.sku,
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )["total_available"] == Decimal("2")
+        assert availability_for_skus(
+            [product.sku],
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )[product.sku]["total_available"] == Decimal("2")
+
+    def test_remote_scope_filters_by_grade_without_interpreting_reason(
+        self,
+        product,
+        vitrine,
+        today,
+    ):
+        """Remote eligibility is grade policy; a reason is an orthogonal fact.
+
+        RED until the grade frozen on the production output line is persisted
+        on the saleable lot. Reading ``WorkOrderItem`` from this Stockman query
+        would invert the package dependency and add a query to the availability
+        hotspot, so the contract deliberately requires the lot-owned fact.
+        """
+        batch_fields = {field.name for field in Batch._meta.get_fields()}
+        assert "quality_grade_ref" in batch_fields, (
+            "Batch does not persist quality_grade_ref; remote availability "
+            "cannot distinguish excellent/standard from fair/minimal safely"
+        )
+
+        lots = (
+            ("EXCELLENT-WITH-REASON", "excellent", "Casca irregular"),
+            ("STANDARD", "standard", ""),
+            ("FAIR-WITHOUT-REASON", "fair", ""),
+            ("MINIMAL", "minimal", "Assou demais"),
+        )
+        for ref, grade, reason in lots:
+            Batch.objects.create(
+                sku=product.sku,
+                ref=ref,
+                expiry_date=today + timedelta(days=1),
+                quality_grade_ref=grade,
+                nonconformity_reason=reason,
+            )
+            Quant.objects.create(
+                sku=product.sku,
+                position=vitrine,
+                batch=ref,
+                _quantity=Decimal("1"),
+            )
+
+        qs = quants_eligible_for(
+            product.sku,
+            target_date=today,
+            allowed_quality_grade_refs=("excellent", "standard"),
+        )
+
+        assert set(qs.values_list("batch", flat=True)) == {
+            "EXCELLENT-WITH-REASON",
+            "STANDARD",
+        }

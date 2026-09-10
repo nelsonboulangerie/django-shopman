@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { crossSellItems, detailDescription, nutritionTable } from '~/presentation/product'
+import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import type { CatalogItemProjection, ProductNutritionProjection } from '~/types/shopman'
 
 function nutrition (overrides: Partial<ProductNutritionProjection> = {}): ProductNutritionProjection {
@@ -41,5 +41,21 @@ describe('product presentation', () => {
     const product = { sku: 'A', cross_sell: [item('A'), item('B'), item('C'), item('D'), item('E'), item('F')] }
     const result = crossSellItems(product)
     expect(result.map(i => i.sku)).toEqual(['B', 'C', 'D', 'E'])
+  })
+
+  it('builds gallery thumbs with the main photo first, deduplicated', () => {
+    expect(galleryImages({ image_url: '/img/products/ct.webp', gallery: ['/img/products/ct2.webp', '/img/products/ct.webp'] }))
+      .toEqual(['/img/products/ct.webp', '/img/products/ct2.webp'])
+  })
+
+  it('hides the gallery for single-photo products', () => {
+    expect(galleryImages({ image_url: '/img/products/ct.webp', gallery: [] })).toEqual([])
+    expect(galleryImages({ image_url: null, gallery: [] })).toEqual([])
+    // Só a principal repetida na galeria = ainda foto única.
+    expect(galleryImages({ image_url: '/a.webp', gallery: ['/a.webp'] })).toEqual([])
+  })
+
+  it('shows extras even when the product has no main photo', () => {
+    expect(galleryImages({ image_url: null, gallery: ['/a.webp', '/b.webp'] })).toEqual(['/a.webp', '/b.webp'])
   })
 })

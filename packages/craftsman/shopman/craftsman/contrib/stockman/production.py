@@ -4,17 +4,23 @@ Production Backend Adapter (vNext).
 Implements Stockman's ProductionBackend protocol for Craftsman.
 This allows Stockman to request production when stock reaches reorder point.
 
-Uses craft.plan() and craft.void() instead of direct WorkOrder manipulation.
+All writes cross the canonical backstage production facade.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+from django.core.serializers.json import DjangoJSONEncoder
+from django.utils import timezone
+from django.utils.module_loading import import_string
+from shopman.craftsman.conf import get_setting
 from shopman.craftsman.exceptions import CraftError
 
 if TYPE_CHECKING:
@@ -53,34 +59,38 @@ class CraftsmanProductionBackend:
         sku = request.sku
         qty = request.quantity
         target_date = request.target_date
-        metadata = dict(request.metadata) if request.metadata else {}
-
+        priority = ""
         if hasattr(request, "priority") and request.priority:
-            metadata["priority"] = (
-                request.priority.value
-                if hasattr(request.priority, "value")
-                else str(request.priority)
-            )
-
-        if request.reference:
-            metadata["reference"] = request.reference
-
-        return self._create_work_order(sku, qty, target_date, metadata)
+            priority = request.priority.value if hasattr(request.priority, "value") else str(request.priority)
+        return self._create_work_order(
+            sku,
+            qty,
+            target_date,
+            metadata=dict(request.metadata or {}),
+            priority=priority,
+            reference=request.reference,
+        )
 
     def request_production_simple(
         self,
         sku: str,
         qty: Decimal,
+        *,
+        reference: str,
         needed_by: datetime | None = None,
         priority: int = 50,
         metadata: dict | None = None,
     ) -> ProductionResult:
         """Request production — simplified API."""
-        combined_metadata = metadata or {}
-        combined_metadata["priority"] = priority
-
         target_date = needed_by.date() if needed_by else None
-        return self._create_work_order(sku, qty, target_date, combined_metadata)
+        return self._create_work_order(
+            sku,
+            qty,
+            target_date,
+            metadata=dict(metadata or {}),
+            priority=priority,
+            reference=reference,
+        )
 
     def _create_work_order(
         self,
@@ -88,9 +98,11 @@ class CraftsmanProductionBackend:
         qty: Decimal,
         target_date: date | None,
         metadata: dict | None,
+        priority="",
+        reference: str | None = None,
     ) -> ProductionResult:
-        """Internal: create WorkOrder via craft.plan()."""
-        from shopman.craftsman.service import craft
+        """Create or replay a request through the authoritative facade."""
+        from shopman.craftsman.models import WorkOrder
         from shopman.craftsman.services.recipes import get_active_recipe_for_output_sku
         from shopman.stockman.protocols.production import ProductionResult, ProductionStatusEnum
 
@@ -103,17 +115,36 @@ class CraftsmanProductionBackend:
                     message=f"No active recipe found for SKU {sku}",
                 )
 
-            wo = craft.plan(
-                recipe,
-                qty,
-                date=target_date,
-                source_ref="stocking:reorder",
-                meta=metadata or {},
+            effective_date = target_date or timezone.localdate()
+            stocking_request = {
+                "sku": str(sku),
+                "quantity": str(qty),
+                "target_date": effective_date.isoformat(),
+                "priority": (priority.value if hasattr(priority, "value") else str(priority or "")),
+                "reference": str(reference or ""),
+                "metadata": dict(metadata or {}),
+            }
+            request_key = _stocking_request_key(
+                reference=reference,
+                payload=stocking_request,
             )
+            _, work_order_ref, _, _ = _production_commands().plan(
+                recipe_id=recipe.pk,
+                quantity=qty,
+                target_date_value=effective_date,
+                reason=f"stocking_request:{reference or sku}",
+                actor="stocking:reorder",
+                source_ref="stocking:reorder",
+                idempotency_key=request_key,
+                planning_meta={"stocking_request": stocking_request},
+                create_new=True,
+            )
+            wo = WorkOrder.objects.get(ref=work_order_ref)
 
             logger.info(
                 "Production requested for SKU %s: WorkOrder %s created",
-                sku, wo.ref,
+                sku,
+                wo.ref,
             )
 
             return ProductionResult(
@@ -123,8 +154,8 @@ class CraftsmanProductionBackend:
                 request_id=f"production:{wo.pk}",
             )
 
-        except CraftError as e:
-            logger.warning("Production request denied for SKU %s: [%s] %s", sku, e.code, e)
+        except (CraftError, ValueError) as e:
+            logger.warning("Production request denied for SKU %s: %s", sku, e)
             return ProductionResult(success=False, message=str(e))
         except Exception as e:
             logger.error("Failed to request production for SKU %s: %s", sku, e, exc_info=True)
@@ -163,12 +194,9 @@ class CraftsmanProductionBackend:
         except WorkOrder.DoesNotExist:
             return None
 
-    def cancel_request(
-        self, request_id: str, reason: str = "cancelled"
-    ) -> ProductionResult:
-        """Cancel a production request via craft.void()."""
+    def cancel_request(self, request_id: str, reason: str = "cancelled") -> ProductionResult:
+        """Cancel a production request through the authoritative facade."""
         from shopman.craftsman.models import WorkOrder
-        from shopman.craftsman.service import craft
         from shopman.stockman.protocols.production import ProductionResult, ProductionStatusEnum
 
         try:
@@ -183,8 +211,15 @@ class CraftsmanProductionBackend:
                         message=f"WorkOrder {request_id} not found",
                     )
 
-            craft.void(wo, reason=reason, actor="stocking:cancel")
-            logger.info("Production request %s cancelled: %s", wo.ref, reason)
+            normalized_reason = str(reason or "cancelled").strip() or "cancelled"
+            _production_commands().void(
+                wo.pk,
+                actor="stocking:cancel",
+                expected_rev=wo.rev,
+                idempotency_key=_stocking_cancel_key(request_id),
+                reason=normalized_reason,
+            )
+            logger.info("Production request %s cancelled: %s", wo.ref, normalized_reason)
 
             return ProductionResult(
                 success=True,
@@ -197,8 +232,8 @@ class CraftsmanProductionBackend:
                 success=False,
                 message=f"WorkOrder {request_id} not found",
             )
-        except CraftError as e:
-            logger.warning("Cannot cancel WorkOrder %s: [%s] %s", request_id, e.code, e)
+        except (CraftError, ValueError) as e:
+            logger.warning("Cannot cancel WorkOrder %s: %s", request_id, e)
             return ProductionResult(success=False, message=str(e))
         except Exception as e:
             logger.error("Failed to cancel WorkOrder %s: %s", request_id, e, exc_info=True)
@@ -231,7 +266,9 @@ class CraftsmanProductionBackend:
                     request_id=f"production:{wo.pk}",
                     sku=wo.output_sku,
                     quantity=wo.quantity,
-                    status=ProductionStatusEnum.PLANNED if wo.status == WorkOrder.Status.PLANNED else ProductionStatusEnum.STARTED,
+                    status=ProductionStatusEnum.PLANNED
+                    if wo.status == WorkOrder.Status.PLANNED
+                    else ProductionStatusEnum.STARTED,
                     target_date=wo.target_date,
                     estimated_completion=None,
                     work_order_id=str(wo.pk),
@@ -255,3 +292,38 @@ def reset_production_backend():
     """Reset the singleton (useful for testing)."""
     global _production_backend
     _production_backend = None
+
+
+def _production_commands():
+    backend_path = get_setting("PRODUCTION_COMMAND_BACKEND")
+    if not backend_path:
+        raise CraftError(
+            "PRODUCTION_COMMAND_BACKEND_REQUIRED",
+            message="O host deve configurar o adaptador canônico de comandos de produção.",
+        )
+    return import_string(backend_path)()
+
+
+def _canonical_digest(payload: dict) -> str:
+    canonical = json.dumps(
+        payload,
+        cls=DjangoJSONEncoder,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _stocking_request_key(*, reference: str | None, payload: dict) -> str:
+    normalized_reference = str(reference or "").strip()
+    if normalized_reference:
+        return f"stocking:request:ref:{_canonical_digest({'reference': normalized_reference})}"
+    raise CraftError(
+        "STOCKING_REFERENCE_REQUIRED",
+        message="A solicitação de reposição exige uma referência única da tentativa.",
+    )
+
+
+def _stocking_cancel_key(request_id: str) -> str:
+    return f"stocking:cancel:{_canonical_digest({'request_id': str(request_id)})}"

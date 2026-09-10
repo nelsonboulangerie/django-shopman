@@ -44,15 +44,15 @@ class ProductionStatusEnum(StrEnum):
 # ══════════════════════════════════════════════════════════════
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class ProductionRequest:
     """Solicitação de produção."""
 
     sku: str
     quantity: Decimal
     target_date: date
+    reference: str  # ID único da tentativa/origem (Hold, reorder etc.)
     priority: ProductionPriority = ProductionPriority.NORMAL
-    reference: str | None = None  # Hold ID que originou a demanda
     metadata: dict[str, Any] = field(default_factory=dict)
 
 

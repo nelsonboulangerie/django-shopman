@@ -20,7 +20,13 @@ from shopman.craftsman.contrib.admin_unfold.admin import (
     WORK_ORDER_DATE_FROM_PARAM,
     WORK_ORDER_DATE_TO_PARAM,
 )
-from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder
+from shopman.craftsman.models import (
+    Recipe,
+    RecipeItem,
+    WorkOrder,
+    WorkOrderEvent,
+    WorkOrderItem,
+)
 from shopman.offerman.models import Product
 from shopman.orderman.admin import OrderAdmin
 from shopman.orderman.models import Order, OrderItem
@@ -69,10 +75,9 @@ class AdminNavigationTests(TestCase):
         self.assertEqual(producao_item["link"], "https://prod.example.com")
 
         with override_settings(SHOPMAN_PRODUCTION_BASE_URL="https://prod.example.com"):
-            raw_live = next(
-                g for g in navigation.get_sidebar_navigation(request)
-                if g["title"] == "Aplicativos"
-            )["items"]
+            raw_live = next(g for g in navigation.get_sidebar_navigation(request) if g["title"] == "Aplicativos")[
+                "items"
+            ]
         raw_producao = next(item for item in raw_live if item["title"] == "Produção ao vivo")
         self.assertEqual(
             raw_producao["badge"],
@@ -139,9 +144,7 @@ class AdminNavigationTests(TestCase):
         request.user = User.objects.create_superuser("opsnav", "opsnav@example.com", "pw")
 
         with override_settings(SHOPMAN_ORDERS_BASE_URL="", SHOPMAN_KDS_BASE_URL=""):
-            apps = next(
-                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
-            )
+            apps = next(g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos")
             live = {item["title"]: item for item in apps["items"]}
             self.assertNotIn("Pedidos", live)
             self.assertNotIn("KDS", live)
@@ -150,9 +153,7 @@ class AdminNavigationTests(TestCase):
             SHOPMAN_ORDERS_BASE_URL="https://gestor.example.com",
             SHOPMAN_KDS_BASE_URL="https://kds.example.com",
         ):
-            apps = next(
-                g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos"
-            )
+            apps = next(g for g in admin.site.get_sidebar_list(request) if g["title"] == "Aplicativos")
             live = {item["title"]: item for item in apps["items"]}
             self.assertEqual(live["Pedidos"]["link"], "https://gestor.example.com")
             self.assertEqual(live["KDS"]["link"], "https://kds.example.com")
@@ -176,9 +177,7 @@ class AdminNavigationTests(TestCase):
 
         groups = admin.site.get_sidebar_list(request)
         titles = {group["title"] for group in groups}
-        all_items_by_title = {
-            item["title"]: item for group in groups for item in group["items"]
-        }
+        all_items_by_title = {item["title"]: item for group in groups for item in group["items"]}
         all_items = set(all_items_by_title)
 
         # Configuração expande como os outros grupos: o menu tem UM comportamento.
@@ -191,27 +190,50 @@ class AdminNavigationTests(TestCase):
 
         self.assertEqual(config_items[0], "Todos os ajustes")
         self.assertEqual(config_group["items"][0]["link"], hub_url)
-        self.assertEqual(
-            config_items[1:],
-            [
-                "A loja", "Como vendemos", "Como entregamos", "O que dizemos",
-                "Produção e estoque", "Equipamentos", "Quem entra",
-            ],
-        )
+        escopos = [
+            "A loja",
+            "Como vendemos",
+            "Como entregamos",
+            "O que dizemos",
+            "Produção e estoque",
+            "Equipamentos",
+            "Quem entra",
+        ]
+        self.assertEqual(config_items[1 : 1 + len(escopos)], escopos)
         # Cada escopo é uma TELA própria, não âncora: âncora fazia os oito subitens
         # compartilharem caminho, o Unfold acendia todos e clicar não parecia navegar.
-        for item in config_group["items"][1:]:
+        for item in config_group["items"][1 : 1 + len(escopos)]:
             self.assertNotIn("#", item["link"], item["link"])
             self.assertTrue(item["link"].startswith(hub_url), item["link"])
-            self.assertNotEqual(item["link"], hub_url)
+
+        # "Diagnóstico" fecha o grupo e é o ÚNICO item fora de /admin/settings/.
+        # Os escopos acima ajustam a loja; este pergunta se as integrações estão
+        # de pé — pergunta, não ajuste, e por isso não mora sob a configuração.
+        self.assertEqual(config_items[-1], "Diagnóstico")
+        self.assertEqual(config_group["items"][-1]["link"], reverse("admin_console_diagnostics"))
 
         # E nenhuma tela de ajuste sobrou solta no menu de operação.
         for gone in (
-            "Loja e contato", "Marca e aparência", "Horários e operação", "Cardápio",
-            "Pedidos e entrega", "Fidelidade", "PDV e alertas", "Integrações",
-            "Canais", "Regras de preço", "Promoções", "Cupons", "Faixas de preço",
-            "Zonas de entrega", "Faixas de distância", "Textos da interface",
-            "Modelos de mensagem", "Estações KDS", "Terminais do PDV", "Usuários",
+            "Loja e contato",
+            "Marca e aparência",
+            "Horários e operação",
+            "Cardápio",
+            "Pedidos e entrega",
+            "Fidelidade",
+            "PDV e alertas",
+            "Integrações",
+            "Canais",
+            "Regras de preço",
+            "Promoções",
+            "Cupons",
+            "Faixas de preço",
+            "Zonas de entrega",
+            "Faixas de distância",
+            "Textos da interface",
+            "Modelos de mensagem",
+            "Estações KDS",
+            "Terminais do PDV",
+            "Usuários",
         ):
             self.assertNotIn(gone, all_items, f"{gone} deveria morar na Configuração")
 
@@ -249,11 +271,7 @@ class AdminNavigationTests(TestCase):
         """Busca por assunto, sem acento e sem saber o nome exato da tela."""
         from shopman.backstage.projections.settings_hub import build_settings_hub
 
-        found = {
-            card["label"]
-            for group in build_settings_hub(q="producao")["groups"]
-            for card in group["cards"]
-        }
+        found = {card["label"] for group in build_settings_hub(q="producao")["groups"] for card in group["cards"]}
 
         self.assertIn("Produção", found)
         self.assertIn("Defeitos de fornada", found)
@@ -285,9 +303,7 @@ class AdminNavigationTests(TestCase):
         request = RequestFactory().get("/admin/")
         request.user = User.objects.create_superuser("tabs", "tabs@example.com", "pw")
         menu_paths = {
-            item["link"].split("?")[0]
-            for group in admin.site.get_sidebar_list(request)
-            for item in group["items"]
+            item["link"].split("?")[0] for group in admin.site.get_sidebar_list(request) for item in group["items"]
         }
 
         for tab in settings.UNFOLD["TABS"]:
@@ -300,9 +316,7 @@ class AdminNavigationTests(TestCase):
 
     def test_production_operation_never_returns_to_tabs(self) -> None:
         """WP-ADM-7d: painel/planejamento/relatório de produção vivem no Produção."""
-        tab_titles = [
-            item["title"] for tab in settings.UNFOLD["TABS"] for item in tab["items"]
-        ]
+        tab_titles = [item["title"] for tab in settings.UNFOLD["TABS"] for item in tab["items"]]
         for operational in ("Painel", "Planejamento", "Relatórios", "Pesagem"):
             self.assertNotIn(operational, tab_titles)
         self.assertEqual(str(WorkOrder._meta.verbose_name_plural), "ordens de produção")
@@ -386,6 +400,9 @@ class WorkOrderAdminSemanticsTests(TestCase):
         model_admin = admin.site._registry[WorkOrder]
 
         self.assertNotIn("operation_link_display", model_admin.list_display)
+        # Totais comprometidos exigiriam consulta cross-domain por linha; o detalhe
+        # mantém links auditáveis e a operação ao vivo fica no Produção.
+        self.assertNotIn("commitments_display", model_admin.list_display)
         self.assertIn("production_board_row", model_admin.actions_row)
         # WP-ADM-7d: a visão de compromissos saiu com o console de produção;
         # os pedidos vinculados aparecem no board do Produção.
@@ -395,13 +412,193 @@ class WorkOrderAdminSemanticsTests(TestCase):
         self.assertNotIn("void_wo_row", model_admin.actions_row)
         self.assertFalse(model_admin.actions)
 
+    def test_work_order_admin_is_audit_only(self) -> None:
+        model_admin = admin.site._registry[WorkOrder]
+        request = RequestFactory().get("/admin/craftsman/workorder/")
+        request.user = self.user
+
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_change_permission(request))
+        self.assertFalse(model_admin.has_delete_permission(request))
+        self.assertTrue(
+            {
+                "recipe",
+                "quantity",
+                "target_date",
+                "source_ref",
+                "position_ref",
+                "operator_ref",
+                "meta",
+            }.issubset(model_admin.readonly_fields)
+        )
+
+    def test_work_order_admin_rejects_add_post_without_creating_events(self) -> None:
+        recipe = Recipe.objects.create(
+            ref="wo-admin-add",
+            name="Admin Add",
+            output_sku="ADMIN-ADD",
+            batch_size=10,
+        )
+
+        response = self.client.post(
+            reverse("admin:craftsman_workorder_add"),
+            {
+                "recipe": recipe.pk,
+                "quantity": "99",
+                "target_date": date.today().isoformat(),
+                "source_ref": "admin:bypass",
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(WorkOrder.objects.filter(recipe=recipe).exists())
+
+    def test_work_order_admin_detail_renders_passport_without_save_controls(self) -> None:
+        recipe = Recipe.objects.create(
+            ref="wo-admin-view",
+            name="Admin View",
+            output_sku="ADMIN-VIEW",
+            batch_size=10,
+        )
+        work_order = craft.plan(recipe, Decimal("14"), date=date.today())
+
+        response = self.client.get(reverse("admin:craftsman_workorder_change", args=[work_order.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Passaporte da fornada")
+        self.assertContains(response, "Snapshot da ficha técnica")
+        self.assertNotContains(response, 'name="_save"')
+
+    def test_work_order_admin_rejects_change_post_without_mutating_projection(self) -> None:
+        recipe = Recipe.objects.create(
+            ref="wo-admin-change",
+            name="Admin Change",
+            output_sku="ADMIN-CHANGE",
+            batch_size=10,
+        )
+        work_order = craft.plan(
+            recipe,
+            Decimal("14"),
+            date=date.today(),
+            source_ref="order:original",
+        )
+        before_updated_at = work_order.updated_at
+        before_event_count = work_order.events.count()
+
+        response = self.client.post(
+            reverse("admin:craftsman_workorder_change", args=[work_order.pk]),
+            {
+                "recipe": recipe.pk,
+                "quantity": "999",
+                "target_date": "2030-01-01",
+                "source_ref": "admin:bypass",
+                "position_ref": "position:bypass",
+                "operator_ref": "user:bypass",
+                "meta": '{"bypass": true}',
+            },
+        )
+
+        self.assertEqual(response.status_code, 403)
+        work_order.refresh_from_db()
+        self.assertEqual(work_order.quantity, Decimal("14"))
+        self.assertEqual(work_order.target_date, date.today())
+        self.assertEqual(work_order.source_ref, "order:original")
+        self.assertEqual(work_order.position_ref, "")
+        self.assertEqual(work_order.operator_ref, "")
+        self.assertNotIn("bypass", work_order.meta)
+        self.assertEqual(work_order.updated_at, before_updated_at)
+        self.assertEqual(work_order.events.count(), before_event_count)
+
     def test_work_order_admin_expandable_row_shows_event_history(self) -> None:
         model_admin = admin.site._registry[WorkOrder]
         section = model_admin.list_sections[0]
 
         self.assertEqual(section.related_name, "events")
         self.assertEqual(str(section.verbose_name), "Histórico operacional")
+        self.assertEqual(section.revision.short_description, "Revisão")
         self.assertEqual(section.created_at.short_description, "Registrado em")
+
+    def test_work_order_admin_passport_surfaces_snapshot_qc_batches_orders_and_actors(self) -> None:
+        recipe = Recipe.objects.create(
+            ref="wo-passport",
+            name="Passaporte",
+            output_sku="PASSPORT",
+            batch_size=10,
+        )
+        work_order = craft.plan(
+            recipe,
+            Decimal("14"),
+            date=date.today(),
+            meta={"committed_order_refs": ["ORDER-1", "ORDER-2"]},
+        )
+        craft.start(
+            work_order,
+            quantity=Decimal("13"),
+            expected_rev=0,
+            actor="maria",
+            operator_ref="user:maria",
+        )
+        WorkOrderItem.objects.create(
+            work_order=work_order,
+            kind=WorkOrderItem.Kind.OUTPUT,
+            item_ref="PASSPORT",
+            quantity=Decimal("11"),
+            unit="un",
+            quality_grade_ref="standard",
+            batch_ref="BATCH-1",
+            recorded_at=timezone.now(),
+            recorded_by="user:maria",
+        )
+        WorkOrderItem.objects.create(
+            work_order=work_order,
+            kind=WorkOrderItem.Kind.WASTE,
+            item_ref="PASSPORT",
+            quantity=Decimal("2"),
+            unit="un",
+            quality_defect_ref="contaminated",
+            recorded_at=timezone.now(),
+            recorded_by="user:joao",
+        )
+        WorkOrderEvent.objects.create(
+            work_order=work_order,
+            seq=2,
+            kind=WorkOrderEvent.Kind.OVEN_ARMED,
+            payload={"oven_ref": "oven:deck-1", "run_id": 7},
+            actor="maria",
+        )
+        work_order.status = WorkOrder.Status.FINISHED
+        work_order.meta = {
+            **work_order.meta,
+            "stock_consumed_at": timezone.now().isoformat(),
+            "stock_realized_at": timezone.now().isoformat(),
+        }
+        WorkOrder.objects.filter(pk=work_order.pk).update(
+            status=work_order.status,
+            meta=work_order.meta,
+        )
+        model_admin = admin.site._registry[WorkOrder]
+        request = RequestFactory().get("/admin/craftsman/workorder/")
+        request.user = self.user
+        work_order = model_admin.get_queryset(request).get(pk=work_order.pk)
+
+        self.assertIn("13 un.", str(model_admin.started_quantity_display(work_order)))
+        self.assertIn("Rendimento base: 10 un.", str(model_admin.recipe_snapshot_display(work_order)))
+        quality = str(model_admin.quality_result_display(work_order))
+        self.assertIn("grau standard", quality)
+        self.assertIn("defeito contaminated", quality)
+        self.assertEqual(model_admin.output_batches_display(work_order), "BATCH-1")
+        order_links = str(model_admin.order_refs_display(work_order))
+        self.assertIn("ORDER-1", order_links)
+        self.assertIn("ORDER-2", order_links)
+        self.assertIn("orderman/order/?q=ORDER-1", order_links)
+        self.assertIn("Enfornado · oven:deck-1", str(model_admin.oven_facts_display(work_order)))
+        self.assertIn("Conciliada", str(model_admin.reconciliation_state_display(work_order)))
+        self.assertEqual(model_admin.actors_display(work_order), "user:maria, user:joao, maria")
+        self.assertTrue(
+            {"quality_grade_ref", "quality_defect_ref", "batch_ref"}.issubset(
+                craftsman_admin.WorkOrderItemInline.fields
+            )
+        )
 
     def test_work_order_admin_displays_operator_quantities_without_decimal_noise(self) -> None:
         recipe = Recipe.objects.create(
@@ -503,18 +700,20 @@ class RecipeAdminSemanticsTests(TestCase):
     def test_recipe_admin_maps_operational_fields_to_structured_recipe_data(self) -> None:
         Product.objects.create(sku="CIABATTA", name="Ciabatta", unit="un")
 
-        form = craftsman_admin.RecipeAdminForm(data={
-            "ref": "ciabatta-v1",
-            "name": "Ciabatta",
-            "is_active": "on",
-            "output_sku": "CIABATTA",
-            "batch_size": "12",
-            "steps_text": "Mistura\nModelagem\nForno",
-            "max_started_minutes": "90",
-            "capacity_per_day": "120",
-            "requires_batch_tracking": "on",
-            "shelf_life_days": "1",
-        })
+        form = craftsman_admin.RecipeAdminForm(
+            data={
+                "ref": "ciabatta-v1",
+                "name": "Ciabatta",
+                "is_active": "on",
+                "output_sku": "CIABATTA",
+                "batch_size": "12",
+                "steps_text": "Mistura\nModelagem\nForno",
+                "max_started_minutes": "90",
+                "capacity_per_day": "120",
+                "requires_batch_tracking": "on",
+                "shelf_life_days": "1",
+            }
+        )
 
         self.assertTrue(form.is_valid(), form.errors)
         recipe = form.save()
@@ -574,9 +773,13 @@ class CustomerBulkTaggingTests(TestCase):
         made = []
         for ref in refs:
             self._phone_seq += 1
-            made.append(Customer.objects.create(
-                ref=ref, first_name=ref, phone=f"+554398{self._phone_seq:07d}",
-            ))
+            made.append(
+                Customer.objects.create(
+                    ref=ref,
+                    first_name=ref,
+                    phone=f"+554398{self._phone_seq:07d}",
+                )
+            )
         return made
 
     def _act(self, customers, **extra):

@@ -22,9 +22,14 @@ from datetime import date, datetime, time, timedelta
 from decimal import ROUND_CEILING, Decimal
 
 from django.conf import settings
+
+# Ref do canal da loja online — espelha a env do deploy (ver config/settings.py).
+STOREFRONT_REF = getattr(settings, "SHOPMAN_STOREFRONT_CHANNEL_REF", "web")
 from django.contrib.auth.models import User
 from django.core.management import call_command
 from django.core.management.base import BaseCommand, CommandError
+from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 from shopman.craftsman import STOCK_CONSUMED_KEY, STOCK_REALIZED_KEY
 from shopman.craftsman.models import Recipe, RecipeItem, WorkOrder, WorkOrderItem
@@ -82,6 +87,7 @@ from shopman.backstage.services.operations import (
     start_checklist_run,
     supervise_task_run,
 )
+from shopman.shop.attribute_defaults import ensure_definitions
 from shopman.shop.management.commands import setup_operators
 from shopman.shop.models import (
     Announcement,
@@ -91,15 +97,43 @@ from shopman.shop.models import (
     Coupon,
     OmotenashiCopy,
     Promotion,
+    QualityDefect,
+    QualityGrade,
     RuleConfig,
     Shop,
 )
+from shopman.shop.rules.suggestion import (
+    DEFAULT_COMPLEMENT_PARAMS,
+    DEFAULT_SUBSTITUTE_PARAMS,
+)
+from shopman.shop.services import attributes
 from shopman.shop.services.dietary_from_recipe import aggregate_dietary_from_recipe
 from shopman.shop.services.nutrition_from_recipe import fill_nutrition_from_recipe
 
 # Prefixos que marcam pré-preparo (saída em kg): fonte única — _is_preparation
 # do seed e as funções de alvo abaixo leem daqui.
 PREP_PREFIXES = ("massa-", "recheio-", "creme-", "molho-", "salada-", "vinagrete-")
+
+# O catálogo nasce por data migration em qualquer deployment, mas ``seed
+# --flush`` também precisa reconstruí-lo: testes transacionais e bancos já
+# truncados não reaplicam RunPython. Estes são os quatro botões e os sete
+# motivos do QC aprovados; grau governa markdown, motivo permanece ortogonal.
+QUALITY_GRADES = (
+    ("excellent", "Ótimo", 40, 0, False),
+    ("standard", "Normal", 30, 0, True),
+    ("fair", "Razoável", 20, 20, False),
+    ("minimal", "Mínimo", 10, 50, False),
+)
+
+QUALITY_DEFECTS = (
+    ("underproofed", "Fermentou pouco", "Pequeno, denso, rasgou", False, 10),
+    ("overproofed", "Fermentou demais", "Esparramado, ácido, colapsou", False, 20),
+    ("underbaked", "Assou pouco", "Pálido, miolo cru", False, 30),
+    ("overbaked", "Assou demais", "Escuro, casca amarga", False, 40),
+    ("misshapen", "Deformado", "Torto, colado, fora do padrão", False, 50),
+    ("scorch_marks", "Marcas de forno", "Fuligem, sujeira de lastro", False, 60),
+    ("contaminated", "Contaminado", "Matéria estranha — não vende", True, 70),
+)
 
 # O plano de produção do dia — calibrado com as médias diárias REAIS dos XMLs
 # de NFC-e (jun/2019 + jun/2021; sex/sáb ×1,25 aplicado na criação das WOs).
@@ -125,6 +159,123 @@ PRODUCTION_PLAN = [
 ]
 
 PREP_DAYS_OF_COVER = Decimal("3")
+
+# Capacidade diária de cada ficha — PROVISÓRIA, preservada em valor ABSOLUTO.
+#
+# Até aqui o número nascia de `int(batch_size × 3)`, que nunca foi política: era
+# uma multiplicação com cara de política. Com a ficha de produto passando a
+# falar por unidade (`batch_size = 1`), a mesma conta daria 3 — e o painel de
+# produção passaria a achar que a casa faz três baguetes por dia. Os números
+# abaixo são EXATAMENTE os que o seed já gravava, escritos um a um: o que mudou
+# é eles deixarem de ser derivados de um rendimento que não os explica.
+#
+# ⚠️ A política que falta são dois números hoje conflados, e a decisão é do dono
+# (WP-FICHA-DE-PRODUTO-E-PROMESSA §B):
+#   • teto físico — o que o forno permite. Fato de equipamento (a casa tem UM
+#     forno), e não existe cadastro disso hoje;
+#   • capacidade praticada — o que a casa entrega. O B.I. mede, mas só enxerga o
+#     que foi TENTADO: se nunca se fez 200 baguetes, ele não sabe se cabem.
+# Enquanto os dois não existirem, nenhum destes números é limite real da casa.
+#
+# Ficha nova sem linha aqui quebra o seed de propósito: capacidade sem autor é
+# exatamente o que esta tabela veio desfazer.
+PROVISIONAL_CAPACITY_PER_DAY = {
+    # Fórmulas (saída em kg): a capacidade fala em quilos de massa por dia.
+    "creme-levain":                       15,
+    "massa-pasta-autolizada":             25,
+    "massa-yudane":                       5,
+    "massa-tradicao":                     30,
+    "massa-campagne":                     30,
+    "massa-ciabatta":                     30,
+    "massa-forma":                        24,
+    "massa-croissant":                    27,
+    "massa-brioche":                      24,
+    "massa-kuropan":                      24,
+    "massa-folhado":                      28,
+    "massa-madeleine":                    14,
+    "recheio-maca":                       15,
+    "creme-baunilha":                     15,
+    "creme-limao":                        9,
+    "massa-butter":                       25,
+    "massa-pita":                         24,
+    "recheio-frango":                     9,
+    "recheio-cebola-bacon-tomilho":       8,
+    "recheio-cebola-azapas":              8,
+    "molho-bechamel":                     8,
+    "creme-chocolate":                    8,
+    "creme-leite-ovos":                   6,
+    "salada-da-casa":                     5,
+    "vinagrete-frances":                  2,
+
+    # Peças (saída em unidade): a capacidade fala em peças por dia.
+    "baguete":                            75,
+    "campagne":                           30,
+    "ciabatta":                           60,
+    "focaccia-dia":                       24,
+    "shokupan":                           36,
+    "kuro-pan":                           24,
+    "croissant":                          144,
+    "pain-chocolat":                      108,
+    "animalzinho":                        48,
+    "folhado-dia":                        36,
+    "bichon":                             36,
+    "madeleine":                          72,
+    "baguete-lanche":                     36,
+    "batard":                             30,
+    "baguete-gergelim-pequena":           36,
+    "italiano-rustico":                   24,
+    "baguette-campagne":                  36,
+    "campagne-redondo":                   30,
+    "pita":                               72,
+    "focaccia-cebola-bacon-tomilho":      18,
+    "focaccia-cebola-roxa":               18,
+    "mini-focaccia-alecrim":              36,
+    "mini-focaccia-cebola-bacon-tomilho": 36,
+    "mini-focaccia-cebola-roxa":          36,
+    "croissant-mini":                     72,
+    "pain-aux-raisins":                   36,
+    "maca":                               36,
+    "croissant-presunto-queijo":          36,
+    "folhado-frango":                     36,
+    "mini-folhado-frango":                36,
+    "caranguejo":                         48,
+    "kuro-pan-burger":                    36,
+    "brioche-nanterre":                   24,
+    "brioche-chocolat":                   72,
+    "mini-brioche-bun-gergelim":          72,
+    "ursinho":                            36,
+    "porquinho":                          36,
+    "challah":                            24,
+    "hot-dog-vienna":                     36,
+    "mini-hot-dog-vienna":                36,
+    "deli-milho-bacon":                   36,
+    "cornet-chocolate":                   36,
+
+    # Montagem e bebida: ficha inativa (não é fornada), mas o número existia.
+    "queijo-quente":                      3,
+    "croque-monsieur":                    3,
+    "croque-madame":                      3,
+    "croque-complet":                     3,
+    "jambon-beurre":                      3,
+    "pain-grille":                        3,
+    "pain-perdu":                         3,
+    "espresso":                           3,
+    "espresso-macchiato":                 3,
+    "cafe-coado":                         3,
+    "cappuccino":                         3,
+    "mochaccino":                         3,
+    "mocha":                              3,
+    "caffe-latte":                        3,
+    "chocolate-quente":                   3,
+    "cha-camille":                        3,
+    "cha-rouge":                          3,
+    "cha-sophie":                         3,
+    "cha-bleu":                           3,
+    "cha-hibisco":                        3,
+    "soft-chai-citrico":                  3,
+    "vienna-gelado":                      3,
+    "cha-tonica-frutas-vermelhas":        3,
+}
 
 # Cobertura de compra da casa (dono, 26/08): embalagem que entra pela porta e
 # teto de um pedido de farinha; fresco é ritmo de compra, não só validade.
@@ -237,6 +388,386 @@ PESO_MASSA_CRUA_G = {
 }
 
 
+# Estoque de abertura da VITRINE, por SKU. Calibrado com as médias diárias REAIS
+# auferidas dos XMLs de NFC-e (acervo _MASTER: jun/2019 pré-pandemia ~816 un/dia;
+# jun/2021 ~601 un/dia; sábado +24% — coberto pelo multiplicador 1.25 de sex/sáb).
+# Madeleine é ~11% do volume da casa; viennoiserie doce ~25%.
+# Ver docs/reports/seed_calibration_2026-07-24.md.
+#
+# Módulo, e não local do `_seed_stock`, porque TRÊS leitores precisam do mesmo
+# alvo: o seed que abre o dia, o `refresh_seed_dates` que repõe um banco
+# envelhecido e o `qa_scenarios` que devolve um SKU ao normal depois de armar um
+# cenário. O `refresh_seed_dates` já carregava uma cópia à mão desta tabela —
+# duas fontes para o mesmo número é drift à espera de acontecer.
+STOCK_VITRINE = {
+    # Rústicos — volumes herdam a calibração dos antecessores
+    "BF": 22,
+    "BE": 12,
+    "CGO": 16,
+    "CPX": 8,
+    "CI": 24,
+    "FE": 20,
+    "TB": 24,
+    "MIB": 18,
+    "PH": 20,
+    # Finos
+    "CT": 42,
+    "PC": 36,
+    "FA": 18,
+    "KP": 8,
+    "ME": 11,
+    "ANC": 16,
+    "CO": 20,
+    "BBB": 24,
+    "PHO": 48,
+    # Salgados de vitrine
+    "CMO": 10,
+    "CMA": 8,
+    "CCOM": 6,
+    "QQ": 10,
+    "JB": 10,
+    "PG": 10,
+    "TI": 4,
+    # Doces
+    "MD": 68,
+    "PPU": 8,
+    "MS": 8,
+    "PU": 10,
+    "TJ": 8,
+    "COMBO-PETIT-DEJ": 8,
+    # Bebidas com estoque físico (água engarrafada)
+    "AG": 48,
+    # Mercearia
+    "MT": 8,
+    "BK": 6,
+    "TP": 8,
+    "PT": 8,
+    "CX": 6,
+    "GL": 24,
+    "QC": 6,
+    "QP": 6,
+    "GR": 12,
+    "THL": 10,
+    "LN": 8,
+}
+
+# Sobras de ontem no cenário novo: LOTES datados de ontem, na própria vitrine
+# (~5-8% da produção do dia). Quem decide o destino é a validade: shelf_life 1
+# vence HOJE (o fechamento baixa como perda_vencido), e o canal remoto respeita
+# os gates de lote (C2).
+LEFTOVER_ITEMS = [
+    ("BF", 2),
+    ("FE", 2),
+    ("TB", 3),
+    ("CI", 2),
+    ("PH", 3),
+    ("MD", 5),
+    ("CT", 3),
+    ("PC", 2),
+]
+
+
+# ── Cenários de disponibilidade da VITRINE (a loja como o cliente vê) ─────────
+# Um estado da vitrine não se descreve, se ARMA: é estoque pronto, estoque
+# planejado e estado comercial em combinação. As funções abaixo são a fonte
+# única desse gesto — o perfil `qa` do seed as usa para nascer com os cenários
+# prontos, e o comando `qa_scenarios` as usa para armar o mesmo cenário num
+# banco JÁ semeado, sem reseed. Duas implementações divergiriam no dia em que
+# um estado ganhasse uma condição a mais.
+
+#: SKU canônico de cada estado no perfil `qa` do seed.
+#: Contrato de docs/reference/qa-seed-scenarios.md.
+STOREFRONT_STATES = {
+    # Fendu não tem uma WorkOrder ativa hoje. Kuro Pan era usado aqui, mas ao
+    # mesmo tempo nascia STARTED no quadro: fazer o estoque dessa fornada sumir
+    # para simular "esgotado" tornava a própria confirmação inexequível.
+    "sold_out": "FE",      # esgotado + "me avise" (vendável, sem plano hoje)
+    "low_stock": "ME",     # últimas unidades (≤ limiar)
+    "planned": "PU",       # lista de espera / previsto (sem pronto, com plano)
+    "paused": "TJ",        # pausado pelo operador (is_sellable=False)
+}
+
+#: Pronto que caracteriza "últimas unidades" (limiar padrão do canal = 5).
+STOREFRONT_LOW_STOCK_QTY = 2
+#: Planejado de amanhã que caracteriza "lista de espera / previsto".
+STOREFRONT_PLANNED_QTY = 10
+
+
+def clear_vitrine_stock(sku: str, vitrine, *, reason: str) -> None:
+    """Zera toda oferta do SKU que contaminaria o cenário da vitrine.
+
+    Com a fermata ligada, produção iniciada e fornada futura em qualquer posição
+    também são promessa do canal. Limpar só a posição ``vitrine`` deixava os
+    cenários ``sold_out``/``low_stock`` disponíveis pela produção e somava o
+    plano geral ao cenário ``planned``. Este helper é exclusivo de QA/seed e
+    dirige deliberadamente a oferta inteira dos SKUs escolhidos.
+    """
+    from shopman.stockman.models import Quant
+
+    for q in Quant.objects.filter(sku=sku):
+        if (q._quantity or 0) > 0:
+            stock.adjust(q, Decimal("0"), reason=reason)
+
+
+@transaction.atomic
+def apply_storefront_state(
+    state: str,
+    sku: str,
+    *,
+    vitrine,
+    listing_ref: str = STOREFRONT_REF,
+    reason_prefix: str = "QA vitrine",
+) -> None:
+    """Deixa ``sku`` no estado de vitrine ``state``. Idempotente.
+
+    Estados: ``sold_out`` (esgotado honesto → oferece "me avise"), ``low_stock``
+    (últimas unidades), ``planned`` (sem pronto hoje, fornada amanhã → lista de
+    espera/encomenda), ``paused`` (o operador pausou o produto em TODO canal) e
+    ``paused_channel`` (o operador pausou só esta vitrine; o card continua
+    visível no PDV).
+    """
+    from shopman.offerman.models import ListingItem, Product
+
+    if state not in {"sold_out", "low_stock", "planned", "paused", "paused_channel"}:
+        raise ValueError(f"Estado de vitrine desconhecido: {state}")
+
+    # Todo preflight que pode recusar o cenário acontece antes do primeiro
+    # ajuste de estoque. O bloco atômico também impede estado parcial se um
+    # writer falhar depois da validação.
+    batch_ref = ""
+    if state == "low_stock":
+        from shopman.stockman.shelflife import shelf_life_days_for
+
+        shelf_life_days = shelf_life_days_for(sku)
+        if shelf_life_days is not None:
+            received_on = timezone.localdate()
+            batch_ref = _ensure_seed_standard_batch(
+                ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                sku=sku,
+                production_date=received_on,
+                expiry_date=received_on + timedelta(days=shelf_life_days),
+            )
+
+    if state == "paused":
+        # Publicado (aparece no cardápio) mas não vendável. É decisão do
+        # operador e se distingue do esgotado honesto: não oferece "me avise".
+        Product.objects.filter(sku=sku).update(is_sellable=False)
+        return
+    if state == "paused_channel":
+        # Pausa de SUPERFÍCIE: o produto segue vendável no balcão e some do
+        # "pode pedir" só na vitrine deste canal.
+        ListingItem.objects.filter(
+            listing__ref=listing_ref, product__sku=sku
+        ).update(is_sellable=False)
+        return
+
+    clear_vitrine_stock(sku, vitrine, reason=f"{reason_prefix} {sku}")
+    if state == "sold_out":
+        return  # sem pronto e sem plano: é o esgotado que habilita "me avise"
+    if state == "low_stock":
+        stock.receive(
+            Decimal(STOREFRONT_LOW_STOCK_QTY), sku=sku, position=vitrine,
+            batch=batch_ref,
+            reason=f"{reason_prefix} {sku}: últimas unidades",
+        )
+        return
+    if state == "planned":
+        stock.receive(
+            Decimal(STOREFRONT_PLANNED_QTY), sku=sku, position=vitrine,
+            target_date=timezone.localdate() + timedelta(days=1),
+            reason=f"{reason_prefix} {sku}: planejado",
+        )
+        return
+    raise AssertionError("estado validado sem implementação")
+
+
+def _ensure_seed_standard_batch(*, ref: str, sku: str, production_date, expiry_date) -> str:
+    """Cria lote Normal do cenário sem reescrever um fato de QC já existente.
+
+    O ``ref`` determinístico identifica lote que pertence ao seed. Campo vazio é
+    legado ainda não classificado e pode ser completado; qualquer outro grau é
+    uma divergência histórica e faz o seed falhar de modo explícito.
+    """
+    from shopman.stockman.models import Batch
+
+    batch, _ = Batch.objects.get_or_create(
+        ref=ref,
+        defaults={
+            "sku": sku,
+            "production_date": production_date,
+            "expiry_date": expiry_date,
+            "quality_grade_ref": "standard",
+        },
+    )
+    _validate_seed_standard_batch(batch=batch, ref=ref, sku=sku)
+    if not batch.quality_grade_ref:
+        Batch.objects.filter(pk=batch.pk, quality_grade_ref="").update(
+            quality_grade_ref="standard"
+        )
+    return batch.ref
+
+
+def _validate_seed_standard_batch(*, batch, ref: str, sku: str) -> None:
+    """Recusa colisão de lote antes de qualquer mutação do cenário."""
+    if batch.sku != sku:
+        raise CommandError(
+            f"Lote de seed {ref} pertence a {batch.sku}, não a {sku}; fato preservado."
+        )
+    if batch.quality_grade_ref not in ("", "standard"):
+        raise CommandError(
+            f"Lote de seed {ref} já foi classificado como {batch.quality_grade_ref}; "
+            "o seed não reescreve QC congelado."
+        )
+
+
+def _discard_owned_seed_output_batch(*, ref: str, sku: str, work_order_ref: str) -> None:
+    """Remove versão anterior de um lote de OUTPUT somente quando a origem é o seed.
+
+    O seed histórico já usou duas assinaturas de ``notes``. Ambas carregam a
+    WorkOrder de cenário; qualquer outra origem é tratada como fato real e não
+    pode ser reclassificada por uma carga demonstrativa.
+    """
+    from shopman.stockman.models import Batch
+
+    batch = Batch.objects.filter(ref=ref).first()
+    if batch is None:
+        return
+    seed_signatures = {
+        f"Seed Nelson producao {work_order_ref}",
+        f"Produção {work_order_ref}",
+    }
+    if batch.sku != sku or batch.notes not in seed_signatures:
+        raise CommandError(
+            f"Lote {ref} já existe fora do domínio do seed; fato de QC preservado."
+        )
+    batch.delete()
+
+
+def _ensure_seed_active_production_supply() -> int:
+    """Make every active seed WorkOrder executable against the stock ledger.
+
+    The production board is not a mock: a seeded ``planned``/``started`` row
+    must be able to cross the same Stockman gates as an operator-created row.
+    Seed WorkOrders are written directly (to preserve their deterministic
+    narrative and timestamps), so their normal lifecycle signals do not run.
+
+    Reconcile the aggregate of every active WorkOrder at each seed-owned
+    coordinate instead of replaying the signals on every seed run. That makes
+    the operation idempotent, removes stale seed supply after status/quantity
+    changes, and preserves real WorkOrders sharing the same coordinate.
+    """
+    from collections import defaultdict
+
+    from shopman.stockman.models import Quant
+
+    active_statuses = (WorkOrder.Status.PLANNED, WorkOrder.Status.STARTED)
+    seed_orders = list(
+        WorkOrder.objects.filter(
+            source_ref__startswith="seed:production:",
+            status__in=active_statuses,
+            target_date__isnull=False,
+        ).prefetch_related("events")
+    )
+    positions = {position.ref: position for position in Position.objects.all()}
+
+    def base_coordinate(work_order):
+        position = positions.get(work_order.position_ref) if work_order.position_ref else None
+        return work_order.output_sku, work_order.target_date, position
+
+    contract = "active_work_order_supply_v1"
+    tagged_quants = list(
+        Quant.objects.filter(
+            metadata__seed_contract=contract,
+            target_date__isnull=False,
+            batch__in=("", "started"),
+        ).select_related("position")
+    )
+    if not seed_orders and not tagged_quants:
+        return 0
+    managed_coordinates = {base_coordinate(work_order) for work_order in seed_orders}
+    managed_coordinates.update(
+        (quant.sku, quant.target_date, quant.position) for quant in tagged_quants
+    )
+    target_dates = {coordinate[1] for coordinate in managed_coordinates}
+    output_skus = {coordinate[0] for coordinate in managed_coordinates}
+    required = defaultdict(lambda: Decimal("0"))
+
+    # Include every active WorkOrder at a managed coordinate. The exact target
+    # therefore retains the contribution of operator-created WOs while stale
+    # synthetic supply can be removed safely.
+    active_orders = (
+        WorkOrder.objects.filter(
+            status__in=active_statuses,
+            target_date__in=target_dates,
+            output_sku__in=output_skus,
+        )
+        .prefetch_related("events")
+        .order_by("pk")
+    )
+    for work_order in active_orders:
+        sku, target_date, position = base_coordinate(work_order)
+        if (sku, target_date, position) not in managed_coordinates:
+            continue
+        if work_order.status == WorkOrder.Status.PLANNED:
+            required[(sku, target_date, position, "")] += work_order.quantity
+            continue
+
+        started_qty = work_order.started_qty or work_order.quantity
+        required[(sku, target_date, position, "started")] += started_qty
+        unstarted_qty = max(work_order.quantity - started_qty, Decimal("0"))
+        if unstarted_qty:
+            required[(sku, target_date, position, "")] += unstarted_qty
+
+    repaired = 0
+    supply_coordinates = {
+        (sku, target_date, position, batch)
+        for sku, target_date, position in managed_coordinates
+        for batch in ("", "started")
+    }
+    for sku, target_date, position, batch in supply_coordinates:
+        expected = required[(sku, target_date, position, batch)]
+        quant = Quant.objects.filter(
+            sku=sku,
+            target_date=target_date,
+            position=position,
+            batch=batch,
+        ).first()
+        current = quant.quantity if quant is not None else Decimal("0")
+        # Never make a valid reservation impossible merely because a seed
+        # contract was reduced. The surplus remains visible until the hold is
+        # resolved; a later seed pass then closes the coordinate to the WO sum.
+        target = max(expected, quant.held if quant is not None else Decimal("0"))
+        if quant is None and target <= 0:
+            continue
+        reason = (
+            "Reconciliação do seed: produção iniciada"
+            if batch == "started"
+            else "Reconciliação do seed: produção planejada"
+        )
+        if quant is None:
+            quant = stock.receive(
+                quantity=target,
+                sku=sku,
+                position=position,
+                target_date=target_date,
+                batch=batch,
+                reason=reason,
+                kind="make",
+                seed="nelson",
+                seed_contract=contract,
+            )
+            repaired += 1
+        elif current != target:
+            stock.adjust(quant, target, reason=reason)
+            repaired += 1
+
+        metadata = dict(quant.metadata or {})
+        if metadata.get("seed_contract") != contract or metadata.get("seed") != "nelson":
+            metadata.update({"seed": "nelson", "seed_contract": contract})
+            Quant.objects.filter(pk=quant.pk).update(metadata=metadata)
+    return repaired
+
+
 class Command(BaseCommand):
     help = "Popula o banco com dados de produção da Nelson Boulangerie"
 
@@ -265,16 +796,21 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        from django.conf import settings
         from django.core.management.base import CommandError
+
+        from shopman.shop.environment import environment_name, is_production
 
         # Guard destrutivo: --flush apaga TUDO. Em produção, exige --force explícito
         # para não zerar a loja num comando distraído. Staging/dev seguem livres.
+        #
+        # `is_production()` e não `== "production"`: só os quatro nomes conhecidos
+        # de ambiente não-produtivo abrem esta porta. Antes, `prod` ou um valor
+        # digitado errado passava reto e o flush corria sem pedir --force.
         if options["flush"] and not options["force"]:
-            environment = str(getattr(settings, "SHOPMAN_ENVIRONMENT", "") or "").lower()
-            if environment == "production":
+            if is_production():
                 raise CommandError(
-                    "Recusando `seed --flush` em produção (SHOPMAN_ENVIRONMENT=production): "
+                    f"Recusando `seed --flush` em produção "
+                    f"(SHOPMAN_ENVIRONMENT={environment_name()!r}): "
                     "isto apagaria TODOS os dados da loja. Se é mesmo o que você quer, "
                     "repita com --force."
                 )
@@ -306,6 +842,14 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.MIGRATE_HEADING("\n🥐 Populando Nelson Boulangerie...\n"))
 
+        # PRIMEIRO de tudo: o registro de atributos precisa existir antes do
+        # catálogo, porque `_seed_catalog` já grava rotulagem por ele. A
+        # migração o cria em deployment; aqui é para o banco que foi truncado
+        # (teste com `transaction=True`, que NÃO repõe dado de migração) ou
+        # flushado.
+        ensure_definitions()
+        self._seed_quality_catalog()
+
         self._create_superuser(admin_password)
         self._seed_operators()
         self._seed_shop()
@@ -336,6 +880,14 @@ class Command(BaseCommand):
         # `pdv-main` (via `Terminal.default()`) e declara o hardware da casa. A loja
         # tem a última palavra sobre a própria config — o seed só preenche lacuna.
         self._restore_terminal_config()
+
+        # DEPOIS do catálogo e das coleções, que é de onde a proposta sai. Sem
+        # isto o registro de atributos nasce vazio num banco seedado, e o motor
+        # de sugestão fica só com a co-ocorrência — que numa base sem histórico
+        # de cestas é nada. Tudo entra como PROPOSTA (source=derived,
+        # reviewed=False): o gestor revisa no Admin, e o que ele escreveu à mão
+        # nunca é sobrescrito.
+        call_command("propose_product_attributes", verbosity=0)
 
         self.stdout.write(self.style.SUCCESS("\n✅ Seed Nelson completo!\n"))
 
@@ -398,6 +950,11 @@ class Command(BaseCommand):
         self._seed_qa_orders(products, customers, channels)
         self._seed_production_demand_history(products, channels, timezone.now())
         self._seed_qa_production_stuck_batch()
+        # A fornada presa nasce depois de ``_seed_recipes``; reconcilie-a antes
+        # de a matriz QA deliberadamente dirigir SKUs a estados de vitrine.
+        # Rodar isto depois de ``_seed_qa_storefront_availability`` reabriria o
+        # SKU que o cenário acabou de marcar como indisponível.
+        _ensure_seed_active_production_supply()
         self._seed_qa_pos_tabs()
 
         # Caixa/fechamento já são determinísticos e datados por localdate() — reuso.
@@ -470,45 +1027,17 @@ class Command(BaseCommand):
             "'QA Marketing E2E'"
         )
 
-    # SKUs canônicos de cada estado de vitrine no perfil qa (datas relativas).
-    QA_STOREFRONT_STATES = {
-        "sold_out": "KP",      # esgotado + "me avise" (vendável, sem plano)
-        "low_stock": "ME",    # últimas unidades (≤ limiar)
-        "planned": "PU",          # lista de espera / previsto (sem pronto, com plano)
-        "paused": "TJ",       # pausado pelo operador (is_sellable=False)
-    }
+    #: SKU canônico de cada estado de vitrine no perfil qa (datas relativas).
+    #: Fonte única no módulo — o `qa_scenarios` arma os mesmos estados sem reseed.
+    QA_STOREFRONT_STATES = STOREFRONT_STATES
 
     def _seed_qa_storefront_availability(self, positions):
         """Deixa 4 SKUs reais em cada estado de disponibilidade da LOJA, para QA/
         testes da vitrine do cliente (o resto continua ``available``). Determinístico.
         """
-        from shopman.offerman.models import Product
-        from shopman.stockman.models import Quant
-
         vitrine = positions["vitrine"]
-        today = timezone.localdate()
-
-        def _zero_all(sku: str) -> None:
-            # Zera TODO estoque de vitrine do SKU (pronto e planejado) — para o
-            # estado nascer limpo, sem quant residual da produção de hoje/futura.
-            for q in Quant.objects.filter(sku=sku, position=vitrine):
-                if (q._quantity or 0) > 0:
-                    stock.adjust(q, Decimal("0"), reason=f"QA vitrine {sku}")
-
-        s = self.QA_STOREFRONT_STATES
-        # 1) Esgotado → "me avise": sem pronto, sem plano.
-        _zero_all(s["sold_out"])
-        # 2) Últimas unidades: pronto = 2 (limiar padrão = 5).
-        _zero_all(s["low_stock"])
-        stock.receive(Decimal("2"), sku=s["low_stock"], position=vitrine,
-                      reason=f"QA vitrine {s['low_stock']}: últimas unidades")
-        # 3) Lista de espera / previsto: sem pronto, mas produção planejada amanhã.
-        _zero_all(s["planned"])
-        stock.receive(Decimal("10"), sku=s["planned"], position=vitrine,
-                      target_date=today + timedelta(days=1),
-                      reason=f"QA vitrine {s['planned']}: planejado")
-        # 4) Pausado pelo operador: publicado, aparece, mas não vendável.
-        Product.objects.filter(sku=s["paused"]).update(is_sellable=False)
+        for state, sku in self.QA_STOREFRONT_STATES.items():
+            apply_storefront_state(state, sku, vitrine=vitrine)
 
         self.stdout.write("  ✅ Vitrine QA: esgotado/últimas/lista-de-espera/pausado")
 
@@ -548,6 +1077,56 @@ class Command(BaseCommand):
     # ────────────────────────────────────────────────────────────────
     # Shop
     # ────────────────────────────────────────────────────────────────
+
+    @transaction.atomic
+    def _seed_quality_catalog(self):
+        """Reinstala o contrato canônico do QC em dados demonstrativos.
+
+        O seed é dono destes refs fixos e pode atualizá-los; lotes históricos
+        continuam imutáveis porque já congelaram grau e percentual próprios.
+        O preflight recusa uma política alheia que ocupe o default ou um rank
+        canônico. A transação garante que o seed nunca deixe meia escala nova
+        misturada com meia escala antiga se encontrar esse conflito.
+        """
+        canonical_refs = [ref for ref, *_ in QUALITY_GRADES]
+        canonical_ranks = [rank for _ref, _label, rank, _markdown, _default in QUALITY_GRADES]
+        conflicts = list(
+            QualityGrade.objects.exclude(ref__in=canonical_refs)
+            .filter(Q(is_default=True) | Q(rank__in=canonical_ranks))
+            .order_by("ref")
+            .values_list("ref", flat=True)
+        )
+        if conflicts:
+            joined = ", ".join(conflicts)
+            raise CommandError(
+                "Catálogo de QC não canônico conflita com default/ranks reservados: "
+                f"{joined}. Use `seed --flush` para reconstruir o catálogo canônico."
+            )
+
+        # Recriar o bloco inteiro, dentro do savepoint, evita a janela em que
+        # ranks trocados entre dois refs canônicos violariam ``rank UNIQUE``.
+        # Não há FK para estes models: os fatos históricos guardam refs opacas.
+        QualityDefect.objects.filter(ref__in=[ref for ref, *_ in QUALITY_DEFECTS]).delete()
+        QualityGrade.objects.filter(ref__in=canonical_refs).delete()
+        for ref, label, rank, markdown, is_default in QUALITY_GRADES:
+            QualityGrade.objects.create(
+                ref=ref,
+                label=label,
+                rank=rank,
+                markdown_percent=markdown,
+                is_default=is_default,
+                is_active=True,
+            )
+        for ref, label, hint, forces_discard, position in QUALITY_DEFECTS:
+            QualityDefect.objects.create(
+                ref=ref,
+                label=label,
+                hint=hint,
+                forces_discard=forces_discard,
+                position=position,
+                is_active=True,
+            )
+        self.stdout.write("  ✓ Catálogo de QC: 4 graus e 7 motivos canônicos")
 
     def _seed_shop(self):
         # Feriados de fechamento SEMPRE à frente da data de hoje (próxima ocorrência do
@@ -617,9 +1196,22 @@ class Command(BaseCommand):
                     "superlativo vazio, sem emoji e sem travessão (—). Responda APENAS "
                     "com o texto pedido, sem aspas, sem rótulo e sem comentário."
                 ),
+                # ⚠️ O GLÚTEN vem primeiro e é dito no POSITIVO, não como
+                # ressalva. A casa é uma padaria: trabalha com farinha de trigo
+                # todos os dias, não tem linha segregada e não pretende ter
+                # (decisão do dono, 08/09/2026). Por isso nenhum produto afirma
+                # "sem glúten" — e o cliente celíaco precisa ler isso na primeira
+                # linha, não deduzir do silêncio.
+                #
+                # O resto é contaminação cruzada de cozinha compartilhada, no
+                # formato que a RDC 727/2022 pede ("pode conter"). Ver
+                # `shop/legal_parameters.py`.
                 "food_safety_notice": (
-                    "Produzido em cozinha compartilhada. Pode conter traços de leite, ovos, "
-                    "castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
+                    "Somos uma padaria: trabalhamos com farinha de trigo todos os dias. "
+                    "Todos os nossos produtos contêm ou podem conter glúten, e não temos "
+                    "como assegurar a ausência dele em nenhum item. "
+                    "Produzido em cozinha compartilhada, pode conter ainda traços de leite, "
+                    "ovos, castanha-do-brasil, castanha de caju, gergelim e pimenta-do-reino."
                 ),
                 "heading_font": "Instrument Sans",
                 "body_font": "Instrument Sans",
@@ -643,11 +1235,18 @@ class Command(BaseCommand):
                 "phone": "554333231997",
                 "email": "nelson@boulangerie.com.br",
                 "default_ddd": "43",
+                # Só o que é VERDADE. As três linhas de `example` que moravam
+                # aqui não eram inertes: `build_shop_projection` as entrega ao
+                # `ShopHeader.vue`, que as renderiza como ícones clicáveis no
+                # rodapé, e `presentation/seo.ts` as declara em `sameAs` do
+                # JSON-LD — ou seja, a loja dizia ao Google que `example.com` é
+                # o perfil oficial da Nelson. Link errado é pior que link
+                # nenhum: com a lista vazia o rodapé não desenha a seção
+                # (`v-if="socialLinks.length"`) e o `sameAs` some.
+                # O dono acrescenta os perfis reais no Admin (Loja → Redes
+                # sociais), que é um ArrayWidget feito para isso.
                 "social_links": [
                     "https://wa.me/554333231997",
-                    "https://instagram.com/example",
-                    "https://www.facebook.com/example",
-                    "http://www.example.com.br",
                 ],
                 "cancellation_presets": [
                     "Item indisponível no momento",
@@ -814,7 +1413,9 @@ class Command(BaseCommand):
         if not User.objects.filter(username="admin").exists():
             User.objects.create_superuser(
                 username="admin",
-                email="admin@example.com",
+                # O e-mail da casa, não `example.com`: é o endereço que um fluxo
+                # de recuperação de senha do Admin usaria.
+                email="nelson@boulangerie.com.br",
                 password=password,
             )
             self.stdout.write("  ✅ Superuser 'admin' criado")
@@ -863,6 +1464,14 @@ class Command(BaseCommand):
         from shopman.craftsman.models.sequence import RefSequence as CraftRefSequence
 
         CraftRefSequence.objects.all().delete()
+
+        # OvenRun guarda apenas a ref textual da WorkOrder. ``--flush`` apaga
+        # TODAS as WOs logo abaixo; deixar uma medição sobreviver criaria fato
+        # órfão e colisão quando a sequência recomeçasse. No seed SEM flush, em
+        # contraste, apenas medições marcadas como sintéticas são renovadas.
+        from shopman.backstage.models import OvenRun
+
+        OvenRun.objects.all().delete()
 
         # Payments
         hard_delete(PaymentTransaction)
@@ -973,6 +1582,11 @@ class Command(BaseCommand):
         AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
+        # O catálogo de QC é parte do cenário canônico, não configuração que o
+        # ``--flush`` preserva. Os fatos históricos usam refs textuais e as WOs
+        # já foram removidas acima; o seed o recria inteiro logo no início.
+        QualityDefect.objects.all().delete()
+        QualityGrade.objects.all().delete()
         # Regras são config como qualquer outra (Shop, Channel, Promotion, Coupon): o
         # `--flush` apaga e o `_seed_rule_configs` recria o conjunto canônico. Sem
         # apagar, uma regra que saiu do RULE_CONFIGS sobrevive a todo re-seed — foi o
@@ -1004,16 +1618,19 @@ class Command(BaseCommand):
         self.stdout.write("  📦 Catálogo...")
 
         # Catálogo real Nelson Boulangerie
-        # Fonte: https://github.com/pablondrina/nb-catalog — os MESMOS arquivos,
-        # servidos pelo static site `nb-catalog-app` da DO (deploy_on_push) atrás
-        # da Cloudflare, em vez do `raw.githubusercontent.com`. O raw não é CDN: o
-        # GitHub limita hotlink, e se estrangular a loja fica sem foto nenhuma.
-        # Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md (o peso dos arquivos —
-        # 12,38 MB em 19 fotos — é o outro problema, resolvido na origem).
-        IMG = "https://menu.nelsonboulangerie.com.br/img/products/loja"
-        # Acervo completo de fotos da casa (mesmo site, diretório pai do loja/):
-        # cobre as restaurações do Yooga que o conjunto otimizado ainda não tem.
-        ACERVO = "https://menu.nelsonboulangerie.com.br/img/products"
+        # As fotos moram no próprio storefront (surfaces/storefront-nuxt/public/
+        # img/products/): 41 webp otimizados (1200px quadrado, q80, sem EXIF),
+        # servidos pela própria loja — deploy atômico com o app, nenhum serviço
+        # externo no caminho da foto. Ver docs/plans/CATALOG-IMAGES-OFF-GITHUB-PLAN.md.
+        #
+        # Ponteiro de domínio NÃO mora no código (lição cobrada em 01/09: o host
+        # estava fixo em menu.*, o corte de domínios moveu menu.* para a loja, e
+        # toda foto de produto virou 404). O host é env com default na loja viva.
+        image_base = os.environ.get(
+            "SHOPMAN_PRODUCT_IMAGE_BASE",
+            "https://menu.nelsonboulangerie.com.br/img/products",
+        ).rstrip("/")
+        IMG = image_base
         UNSPLASH = "https://images.unsplash.com"
 
         def unsplash(photo_id: str) -> str:
@@ -1078,13 +1695,13 @@ class Command(BaseCommand):
             ("PC", "Pain au Chocolat", "Croissant recheado com chocolate!", 1500, "un", 0, True,
              f"{IMG}/pc.webp", 90, "Reaqueça no forno a 180°C por 5min. Evite micro-ondas"),
             ("FA", "Shokupan", "Pão de forma japonês super macio, fatias grossas interfolhadas", 2800, "un", 1, True,
-             f"{ACERVO}/fa.jpg", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
+             f"{IMG}/fa.webp", 350, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("KP", "Kuro Pan", "Pão japonês escuro, macio e levemente adocicado", 2200, "un", 1, True,
              unsplash("photo-1778472438579-91875c22ae79"), 250, "Mantenha em saco plástico fechado. Congela bem por até 30 dias"),
             ("ME", "Melonpan", "Clássico japonês amanteigado com cobertura crocante e levemente doce", 1200, "un", 0, True,
              f"{IMG}/me.webp", 100, "Melhor consumido no dia"),
             ("ANC", "Animalzinho", "O bichinho do dia: pão doce em formato de bicho", 1000, "un", 0, True,
-             f"{ACERVO}/anc.jpg", 90, "Melhor consumido no dia"),
+             f"{IMG}/anc.webp", 90, "Melhor consumido no dia"),
             ("CO", "Cornet", "Pão amanteigado em formato de cone, recheio do dia", 1200, "un", 0, True,
              f"{IMG}/co.webp", 120, "Melhor consumido no dia. Reaqueça a 180°C por 5min"),
             # ⚠️ O que a fornada produz é a UNIDADE. O pacote é apresentação de
@@ -1193,10 +1810,10 @@ class Command(BaseCommand):
             # Nome e preço são dado real do Yooga (preço mais praticado nos 12
             # meses até 20/07/2026). Coleção, descrição, validade, peso e
             # conservação são proposta — o padrão da coleção, para revisão.
-            # Foto (26/08): primeiro a foto da casa — o conjunto otimizado
-            # (loja/) e o ACERVO completo em img/products/, que cobre quase
-            # todas as restaurações; irmão direto reaproveita a foto da família
-            # (mini folhado → ff.jpg, mini hot dog → ho.webp). Onde a casa não
+            # Foto (26/08): primeiro a foto da casa — o conjunto único e
+            # otimizado em img/products/, que cobre quase todas as
+            # restaurações; irmão direto reaproveita a foto da família
+            # (mini folhado → ff.webp, mini hot dog → ho.webp). Onde a casa não
             # tem foto (bebidas, Kãnfa, alguns pães), Unsplash conferido a olho
             # como placeholder. Só o Porquinho fica sem foto — não há registro
             # dele no acervo e foto errada é pior que sem foto — e cai no card
@@ -1214,25 +1831,25 @@ class Command(BaseCommand):
             ("CTV", "Chá Tônica Frutas Vermelhas", "Chá gelado de frutas vermelhas com tônica", 2900, "un", None, True,
              unsplash("photo-1594579629306-07af17998d4a"), 300, ""),
             ("BH", "Bichon au Citron", "Folhado com creme de limão", 1800, "un", 0, True,
-             f"{ACERVO}/bh.jpg", 90, "Conservar refrigerado. Consumir no dia"),
+             f"{IMG}/bh.webp", 90, "Conservar refrigerado. Consumir no dia"),
             ("MA", "Maçã", "Doce de maçã da casa", 1300, "un", 0, True,
-             f"{ACERVO}/ma.jpg", 95, "Conservar refrigerado. Consumir no dia"),
+             f"{IMG}/ma.webp", 95, "Conservar refrigerado. Consumir no dia"),
             ("CM", "Croissant Mini", "Croissant menor, a mesma massa folhada", 800, "un", 0, True,
-             f"{ACERVO}/cm.jpg", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/cm.webp", 32, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("BCH", "Brioche Chocolat", "Brioche recheado com chocolate", 1000, "un", 0, True,
-             f"{ACERVO}/bch.jpg", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/bch.webp", 37, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CN", "Chausson", "Folhado recheado, dobrado em meia-lua", 1800, "un", 0, True,
              f"{IMG}/cn.webp", 72, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("PR", "Pain aux Raisins", "Folhado em espiral com creme e passas", 1100, "un", 0, True,
-             f"{ACERVO}/pr.jpg", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
+             f"{IMG}/pr.webp", 60, "Reaqueça no forno a 180°C por 5min para recuperar a crocância"),
             ("COC", "Cornet de Chocolate", "Cornet recheado com chocolate", 1100, "un", 0, True,
              f"{IMG}/co.webp", 53, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("CH", "Challah", "Pão trançado de massa enriquecida", 1800, "un", 1, True,
-             f"{ACERVO}/ch.jpg", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/ch.webp", 265, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("BN", "Brioche Nanterre", "Brioche em forma, massa amanteigada", 2200, "un", 1, True,
-             f"{ACERVO}/bn.jpg", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/bn.webp", 210, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             ("ANU", "Ursinho", "Doce moldado em ursinho, recheio de creme", 1400, "un", 0, True,
-             f"{ACERVO}/an.jpg", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
+             f"{IMG}/an.webp", 95, "Mantenha em saco plástico fechado. Congele por até 30 dias"),
             # Não está sendo feito no momento (dono, 18/08). Nasce fora de venda:
             # o produto existe, guarda a história, e volta com uma flag.
             ("ANP", "Porquinho", "Doce moldado em porquinho, recheio de creme", 1400, "un", 0, False,
@@ -1244,11 +1861,11 @@ class Command(BaseCommand):
             ("BAP", "Baguete Lanche", "Baguete no tamanho de lanche", 900, "un", 0, True,
              f"{IMG}/bap.webp", 230, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BAX", "Italiano Rústico", "Pão italiano de casca grossa", 2200, "un", 0, True,
-             f"{ACERVO}/bax.jpg", 420, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/bax.webp", 420, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CF", "Baguette Campagne", "Baguete de massa campagne", 1700, "un", 0, True,
-             f"{ACERVO}/cf.jpg", 265, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cf.webp", 265, "Melhor consumido no dia. Congele por até 30 dias"),
             ("BA", "Bâtard", "Pão rústico curto, casca crocante", 1300, "un", 0, True,
-             f"{ACERVO}/ba.jpg", 280, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/ba.webp", 280, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CGR", "Pain de Campagne Redondo", "Campagne em formato redondo", 1800, "un", 0, True,
              f"{IMG}/cgr.webp", 300, "Melhor consumido no dia. Congele por até 30 dias"),
             # Vienna é CAFÉ GELADO (dono, 26/08) — a curadoria histórica já o
@@ -1263,29 +1880,29 @@ class Command(BaseCommand):
             ("FOA", "Focaccia Alecrim", "Focaccia com alecrim e azeite", 3100, "un", 0, True,
              f"{IMG}/foa.webp", 370, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CBT", "Focaccia Cebola, Bacon e Tomilho", "Focaccia com cebola, bacon e tomilho", 4000, "un", 0, True,
-             f"{ACERVO}/cbt.jpg", 600, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/cbt.webp", 600, "Melhor consumido no dia. Congele por até 30 dias"),
             ("FOC", "Focaccia Cebola Roxa", "Focaccia com cebola roxa", 4000, "un", 0, True,
-             f"{ACERVO}/foc.jpg", 475, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/foc.webp", 475, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIF", "Mini Focaccia Alecrim", "Focaccia menor, com alecrim", 1300, "un", 0, True,
-             f"{ACERVO}/mif.jpg", 95, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mif.webp", 95, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MICBT", "Mini Focaccia Cebola, Bacon e Tomilho", "Focaccia menor, com cebola, bacon e tomilho", 1800, "un", 0, True,
-             f"{ACERVO}/micbt.jpg", 160, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/micbt.webp", 160, "Melhor consumido no dia. Congele por até 30 dias"),
             ("MIFOC", "Mini Focaccia Cebola Roxa", "Focaccia menor, com cebola roxa", 1800, "un", 0, True,
-             f"{ACERVO}/mifoc.jpg", 140, "Melhor consumido no dia. Congele por até 30 dias"),
+             f"{IMG}/mifoc.webp", 140, "Melhor consumido no dia. Congele por até 30 dias"),
             ("CPQ", "Croissant Presunto e Queijo", "Croissant recheado com presunto e queijo", 1500, "un", 0, True,
-             f"{ACERVO}/cpq.jpg", 80, "Servir quente, imediatamente"),
+             f"{IMG}/cpq.webp", 80, "Servir quente, imediatamente"),
             ("FF", "Folhado de Frango", "Folhado recheado com frango", 2000, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 115, "Servir quente, imediatamente"),
+             f"{IMG}/ff.webp", 115, "Servir quente, imediatamente"),
             ("MFF", "Mini Folhado de Frango", "Folhado de frango menor", 900, "un", 0, True,
-             f"{ACERVO}/ff.jpg", 70, "Servir quente, imediatamente"),
+             f"{IMG}/ff.webp", 70, "Servir quente, imediatamente"),
             ("HO", "Hot Dog Vienna", "Cachorro-quente no pão vienense", 1500, "un", 0, True,
              f"{IMG}/ho.webp", 100, "Servir quente, imediatamente"),
             ("MIHO", "Mini Hot Dog Vienna", "Cachorro-quente menor", 700, "un", 0, True,
              f"{IMG}/ho.webp", 55, "Servir quente, imediatamente"),
             ("DL", "Deli Milho & Bacon", "Pão recheado com milho e bacon", 1900, "un", 0, True,
-             f"{ACERVO}/dl.jpg", 90, "Servir quente, imediatamente"),
+             f"{IMG}/dl.webp", 90, "Servir quente, imediatamente"),
             ("JO", "Caranguejo", "Salgado moldado em caranguejo", 1800, "un", 0, True,
-             f"{ACERVO}/jo.jpg", 35, "Servir quente, imediatamente"),
+             f"{IMG}/jo.webp", 35, "Servir quente, imediatamente"),
         ]
 
         # Keywords by product (for find_alternatives and search)
@@ -1361,97 +1978,97 @@ class Command(BaseCommand):
         PDP_METADATA = {
             "BF": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "BE": {
                 "allergens": ["glúten", "gergelim"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 pessoas",
                 "approx_dimensions": "aprox. 55 x 6 x 5 cm",
             },
             "MIB": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 26 x 5 x 4 cm",
             },
             "FE": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "TB": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "CGO": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "2 a 3 pessoas",
                 "approx_dimensions": "aprox. 15 cm de diâmetro x 10 cm de altura",
             },
             "CPX": {
                 "allergens": ["glúten", "castanhas"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 15 x 15 x 10 cm",
             },
             "CI": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 a 2 pessoas",
                 "approx_dimensions": "aprox. 20 x 10 x 4 cm",
             },
             "PH": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "BBB": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "PHO": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 16 x 5 x 4 cm",
             },
             "CT": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 8 x 5 cm",
             },
             "PC": {
                 "allergens": ["glúten", "leite", "ovos", "soja"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 11 x 7 x 4 cm",
             },
             "CO": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 13 x 6 x 6 cm",
             },
             "ME": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 cm de diâmetro",
             },
             "MD": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 unidade",
                 "approx_dimensions": "aprox. 8 x 5 x 3 cm",
             },
@@ -1469,13 +2086,13 @@ class Command(BaseCommand):
             },
             "SS": {
                 "allergens": [],
-                "dietary_info": ["100% vegetal", "sem glúten", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "1 xícara de 40 ml",
                 "approx_dimensions": "xícara 40 ml",
             },
             "PS": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 xícara de 180 ml",
                 "approx_dimensions": "xícara 180 ml",
             },
@@ -1487,7 +2104,7 @@ class Command(BaseCommand):
             },
             "MC": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "xícara 180 ml",
             },
@@ -1529,13 +2146,13 @@ class Command(BaseCommand):
             },
             "CE": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
             "FP": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "copo 300 ml",
             },
@@ -1559,43 +2176,43 @@ class Command(BaseCommand):
             },
             "FOA": {
                 "allergens": ["glúten"],
-                "dietary_info": ["100% vegetal", "sem lactose"],
+                "dietary_info": ["100% vegetal"],
                 "serves": "4 a 6 pessoas",
                 "approx_dimensions": "aprox. 24 x 18 x 4 cm",
             },
             "FA": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "6 fatias grossas",
                 "approx_dimensions": "aprox. 18 x 10 x 10 cm",
             },
             "KP": {
                 "allergens": ["glúten"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "2 a 3 pessoas",
                 "approx_dimensions": "aprox. 18 x 10 x 8 cm",
             },
             "CN": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "BH": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "PR": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "ANC": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 10 x 8 cm",
             },
@@ -1607,7 +2224,7 @@ class Command(BaseCommand):
             },
             "QQ": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 14 x 12 cm",
             },
@@ -1631,7 +2248,7 @@ class Command(BaseCommand):
             },
             "PG": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias grossas",
             },
@@ -1643,25 +2260,25 @@ class Command(BaseCommand):
             },
             "PPU": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "2 fatias",
             },
             "MS": {
                 "allergens": ["glúten", "leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "aprox. 12 x 10 cm",
             },
             "PU": {
                 "allergens": ["leite", "ovos"],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "taça individual",
             },
             "TJ": {
                 "allergens": [],
-                "dietary_info": ["vegetariano", "sem glúten"],
+                "dietary_info": [],
                 "serves": "1 pessoa",
                 "approx_dimensions": "taça individual",
             },
@@ -1703,13 +2320,13 @@ class Command(BaseCommand):
             },
             "QC": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "aprox. 250 g",
                 "approx_dimensions": "caixa redonda",
             },
             "QP": {
                 "allergens": ["leite"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "aprox. 300 g",
                 "approx_dimensions": "peça embalada",
             },
@@ -1727,7 +2344,7 @@ class Command(BaseCommand):
             },
             "LN": {
                 "allergens": ["glúten", "leite", "ovos"],
-                "dietary_info": ["vegetariano"],
+                "dietary_info": [],
                 "serves": "lata sortida",
                 "approx_dimensions": "lata de presente",
             },
@@ -1827,6 +2444,23 @@ class Command(BaseCommand):
             "MIF", "MICBT", "MIFOC", "CPQ", "FF", "MFF", "MIHO", "JO",
         }
 
+        # Galeria da PDP: fotos adicionais da casa em metadata["gallery"] (lidas
+        # por storefront/presentation/product_detail._gallery). A foto principal
+        # continua sendo image_url — promover uma foto = copiar a URL para lá.
+        # São os retratos alternativos do acervo (sufixo 2), na mesma receita webp.
+        gallery_by_sku = {
+            "CBT": [f"{IMG}/cbt2.webp"],
+            "CF": [f"{IMG}/cf2.webp"],
+            "CGO": [f"{IMG}/cgo2.webp"],
+            "CGR": [f"{IMG}/cgr2.webp"],
+            "CN": [f"{IMG}/cn2.webp"],
+            "CT": [f"{IMG}/ct2.webp"],
+            "FA": [f"{IMG}/fa2.webp"],
+            "MA": [f"{IMG}/ma2.webp"],
+            "PH": [f"{IMG}/ph2.webp"],
+            "PHO": [f"{IMG}/pho2.webp"],
+        }
+
         products = {}
         for sku, name, desc, price_q, unit, shelf_life, sellable, image, weight_g, storage in products_data:
             p, _ = Product.objects.update_or_create(
@@ -1849,14 +2483,31 @@ class Command(BaseCommand):
                 p.keywords.add(*keywords_map[sku])
             metadata = p.metadata if isinstance(p.metadata, dict) else {}
             existing_fiscal = metadata.get("fiscal") if isinstance(metadata.get("fiscal"), dict) else {}
+            rotulo = dict(PDP_METADATA.get(sku, {}))
+            # `approx_dimensions` segue chave solta do metadata; alérgenos, dieta
+            # e porções são ATRIBUTOS do registro e entram pelo service, que
+            # valida contra as opções cadastradas.
+            atributos = {
+                ref: rotulo.pop(legacy, None)
+                for ref, legacy in (
+                    ("alergenos", "allergens"), ("dieta", "dietary_info"), ("porcoes", "serves")
+                )
+            }
             p.metadata = {
                 **metadata,
-                **PDP_METADATA.get(sku, {}),
+                **rotulo,
+                **({"gallery": gallery_by_sku[sku]} if sku in gallery_by_sku else {}),
                 "fiscal": {
                     **fiscal_metadata_for_sku(sku),
                     **existing_fiscal,
                 },
             }
+            for ref, valor in atributos.items():
+                # `is not None` e não `if valor`: lista VAZIA é declaração —
+                # "conferi e não tem alérgeno" — e é diferente de não declarar.
+                # O guarda de rotulagem abaixo distingue as duas.
+                if valor is not None:
+                    attributes.set(p, ref, valor, source="manual", save=False)
             p.save(update_fields=["metadata"])
             products[sku] = p
 
@@ -1877,9 +2528,6 @@ class Command(BaseCommand):
         combo.keywords.add("combo", "cafe-da-manha", "promocao")
         combo.metadata = {
             **(combo.metadata if isinstance(combo.metadata, dict) else {}),
-            "allergens": ["glúten", "leite", "ovos"],
-            "dietary_info": ["vegetariano"],
-            "serves": "1 pessoa",
             "approx_dimensions": "1 croissant + 1 mini baguete",
             "fiscal": {
                 **fiscal_metadata_for_sku("COMBO-PETIT-DEJ"),
@@ -1890,25 +2538,74 @@ class Command(BaseCommand):
                 ),
             },
         }
+        # O bundle declara a própria rotulagem: ele não a herda dos componentes,
+        # e o cliente que compra de longe precisa dela na tela do combo.
+        attributes.set(combo, "alergenos", ["glúten", "leite", "ovos"], save=False)
+        # ⚠️ `dieta` VAZIA, não ausente. O combo leva croissant e café com leite,
+        # então não é `100% vegetal` — e `vegetariano` saiu do vocabulário (a casa
+        # parou de afirmar ausência que não consegue honrar). Lista vazia é a casa
+        # dizendo "conferi e não há o que declarar"; ausente seria "ninguém olhou",
+        # e é essa diferença que a guarda de catálogo completo cobra.
+        attributes.set(combo, "dieta", [], save=False)
+        attributes.set(combo, "porcoes", "1 pessoa", save=False)
         combo.save(update_fields=["metadata"])
         products["COMBO-PETIT-DEJ"] = combo
 
-        made_to_order_skus = [
-            # bebidas preparadas na hora
+        # ── DUAS listas, porque são DUAS perguntas ──────────────────────────
+        #
+        # Elas quase coincidem, e a quase-coincidência é a armadilha: enquanto
+        # havia uma lista só, quem lesse o código concluiria que política de
+        # estoque e promessa ao cliente são a mesma coisa. Não são, e o item que
+        # prova isso está logo abaixo.
+
+        # 1) Conferência de ESTOQUE: a venda não é recusada por saldo. Se a
+        #    vitrine acabar, a casa resolve (monta na hora, ou pega outra
+        #    garrafa na geladeira).
+        sells_without_stock_skus = [
             "SS", "CD", "PS", "MC",
             "THC", "THR", "THS", "THB",
             "CE", "FP", "SE",
             "CV", "SO", "AG",
-            # montados na hora
             "CMO", "CMA", "CCOM",
             "QQ", "JB", "PG",
             "PPU", "TI",
         ]
-        for sku in made_to_order_skus:
+
+        # 2) PROMESSA da casa ao cliente: finalizado no momento de servir
+        #    (extraído, montado, gratinado). É sobre o ACABAMENTO, então vale
+        #    mesmo quando o item sai da vitrine — e é este campo, e só ele, que
+        #    acende o selo "Preparado na hora" na sacola.
+        #
+        #    ⚠️ ``AG`` (Água) está na lista de cima e NÃO está nesta. Água
+        #    mineral tem estoque físico (48 un. no mapa de vitrine) e é
+        #    ``demand_ok`` só porque sempre há outra garrafa na geladeira —
+        #    ninguém prepara uma água na hora. Enquanto a lista era uma só, ela
+        #    saía da sacola anunciada como preparada na hora: a mesma confusão
+        #    entre política e promessa, agora na camada do dado.
+        made_to_order_skus = [
+            "SS", "CD", "PS", "MC",
+            "THC", "THR", "THS", "THB",
+            "CE", "FP", "SE",
+            "CV", "SO",
+            "CMO", "CMA", "CCOM",
+            "QQ", "JB", "PG",
+            "PPU", "TI",
+        ]
+
+        for sku in sells_without_stock_skus:
             product = products.get(sku)
             if product:
                 product.availability_policy = AvailabilityPolicy.DEMAND_OK
                 product.save(update_fields=["availability_policy"])
+
+        for sku in made_to_order_skus:
+            product = products.get(sku)
+            if product:
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "made_to_order": True,
+                }
+                product.save(update_fields=["metadata"])
 
         # Direct-override ingredients + nutrition (products without Recipe).
         # Exercises the "manual override" path of the PDP data schema:
@@ -2381,9 +3078,9 @@ class Command(BaseCommand):
         collection_refs = [
             "bebidas-quentes",
             "bebidas-geladas",
-            "torneira",
             "rusticos",
-            "finos",
+            "macios",
+            "folhados",
             "salgados",
             "doces",
             "combos",
@@ -2391,9 +3088,9 @@ class Command(BaseCommand):
         ]
         # Limpa também as coleções da taxonomia anterior (refs que saíram).
         CollectionItem.objects.filter(
-            collection__ref__in=collection_refs + ["macios", "folhados", "balcao", "despensa"]
+            collection__ref__in=collection_refs + ["finos", "torneira", "folhado-do-dia", "focaccia-do-dia", "salgado-do-dia", "cha-gelado-do-dia", "balcao", "despensa"]
         ).delete()
-        Collection.objects.filter(ref__in=["macios", "folhados", "balcao", "despensa"]).delete()
+        Collection.objects.filter(ref__in=["finos", "torneira", "folhado-do-dia", "focaccia-do-dia", "salgado-do-dia", "cha-gelado-do-dia", "balcao", "despensa"]).delete()
 
         # Cor e ícone padrão da categoria (metadata): a cor vem da paleta NB do
         # brand sheet (hex = leitura do swatch, afinável com o guia oficial); o
@@ -2403,15 +3100,15 @@ class Command(BaseCommand):
         collections_by_ref = {}
         for order, (ref, name, color, icon) in enumerate(
             [
-                ("bebidas-quentes", "Bebidas quentes", "#6B4A2E", "coffee"),       # NB WOOD
-                ("bebidas-geladas", "Bebidas geladas", "#93A98D", "cup-soda"),     # NB CELADON
-                ("torneira", "Sodas artesanais", "#C49A3C", "glass-water"),        # NB MUSTARD
                 ("rusticos", "Rústicos", "#B49B7F", "wheat"),                      # NB KRAFT
-                ("finos", "Finos", "#8B6B2E", "croissant"),                        # NB BRASS
+                ("macios", "Macios", "#C49A3C", "donut"),                          # NB MUSTARD
+                ("folhados", "Folhados", "#8B6B2E", "croissant"),                  # NB BRASS
                 ("salgados", "Salgados", "#42522A", "sandwich"),                   # NB MOSS
                 ("doces", "Doces", "#C48A90", "cake-slice"),                       # NB BOUGAINVILLEA
-                ("combos", "Combos", "#A9743F", "gift"),                           # NB LEATHER
+                ("bebidas-quentes", "Bebidas quentes", "#6B4A2E", "coffee"),       # NB WOOD
+                ("bebidas-geladas", "Bebidas geladas", "#93A98D", "cup-soda"),     # NB CELADON
                 ("mercearia", "Mercearia", "#7C3A40", "shopping-basket"),          # NB BURGUNDY
+                ("combos", "Combos", "#A9743F", "gift"),                           # NB LEATHER
             ],
             start=1,
         ):
@@ -2434,14 +3131,13 @@ class Command(BaseCommand):
             ],
             "bebidas-geladas": ["CE", "FP", "AG",
                 # voltaram do Yooga (18/08)
-                "HI", "CTV", "SE",
+                "HI", "CTV", "SE", "CV", "SO",
                 # ⚠️ Chai tem duas naturezas, e o mapa as confundia: a BEBIDA é
                 # preparo nosso e mora aqui; a FOLHA embalada é revenda e mora
                 # na mercearia. "Vendemos os pouches e latinhas com o chá seco
                 # para preparar em casa" — dono, 19/08.
                 "CHAI_A",
             ],
-            "torneira": ["CV", "SO"],
             "rusticos": [
                 # Vindos da extinta "balcao" (17/08): três pães de casca e o pão
                 # de hambúrguer, que o dono classificou aqui apesar da massa macia.
@@ -2451,24 +3147,38 @@ class Command(BaseCommand):
                 # voltaram do Yooga (18/08)
                 "BAP", "BAX", "CF", "BA", "CGR", "PI", "PI4", "BEP", "FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC",
             ],
-            "finos": [
+            "macios": [
                 # Vindos da extinta "balcao" (17/08): buns em pacote, massa
                 # enriquecida, na mesma família dos pães japoneses daqui.
                 "BBB", "PHO", "PHO4", "BBB2",
-                "CT", "PC", "FA",
+                "FA",
                 "KP", "ME", "ANC", "CO",
                 # voltaram do Yooga (18/08)
-                "CM", "BCH", "CN", "PR", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                "BCH", "COC", "CH", "BN", "ANU", "ANP", "KBB", "MBBBG",
+                # PR é BRIOCHE nesta casa, não massa folhada — o nome francês engana
+                # (decisão do dono, 02/09). Por isso mora aqui e não em Folhados.
+                "PR",
             ],
+            # FOLHADOS é a família da massa laminada, e a massa manda — não o
+            # recheo nem o sabor (dono, 02/09). Por isso o Folhado de Frango sai
+            # de Salgados e o Bichon au Citron sai de Doces: os dois são folhado
+            # antes de serem salgado ou doce. E o Pain aux Raisins faz o caminho
+            # inverso, para Macios: o nome é francês, mas o nosso é de brioche.
+            "folhados": ["CT", "PC", "CM", "CN", "FF", "BH", "CPQ"],
             "salgados": [
                 "CMO", "CMA", "CCOM",
                 "QQ", "JB", "PG", "TI",
                 # voltaram do Yooga (18/08)
-                "CPQ", "FF", "MFF", "HO", "MIHO", "DL", "JO",
+                "MFF", "HO", "MIHO", "DL", "JO",
+                # Também folhados (a massa é a categoria principal deles).
+                "FF", "CPQ",
             ],
             "doces": ["PPU", "MS", "MD", "PU", "TJ",
                 # voltaram do Yooga (18/08)
-                "BH", "MA",
+                "MA",
+                # Recheados: doces de sabor, folhados/brioche de massa — e a massa
+                # é a categoria principal deles.
+                "PC", "CM", "CN", "BH", "PR",
             ],
             # Bundle não é categoria de produto: o combo tem coleção própria
             # para não inflar Rústicos nem Finos com um item que é os dois.
@@ -2484,45 +3194,72 @@ class Command(BaseCommand):
                 "NAMAS_P50", "SOFIA_P50", "VITAL_P50",
             ],
         }
-        # ── As coleções "do dia" ──
-        # O cardápio 2027 tinha "Folhado do dia" como PRODUTO, e isso custava
-        # caro: a fornada precisa de output_sku real, o estoque precisa separar
-        # sobra de falta por item, e os preços divergem (focaccia de alecrim
-        # R$ 28, a de cebola/bacon/tomilho R$ 36). Aqui o rotativo é o que
-        # sempre foi — uma curadoria —, e o produto por baixo é o de verdade.
-        #
-        # ⚠️ Vínculo SECUNDÁRIO: o produto continua morando na sua categoria.
-        # "Chausson" é Finos e aparece em "Folhado do dia"; não é uma coisa ou
-        # outra.
-        colecoes_do_dia = [
-            ("folhado-do-dia", "Folhado do dia", "#A9743F", "croissant", ["CN", "BH", "PR"]),
-            ("focaccia-do-dia", "Focaccia do dia", "#C49A3C", "pizza", ["FOA", "CBT", "FOC", "MIF", "MICBT", "MIFOC"]),
-            ("salgado-do-dia", "Salgado do dia", "#42522A", "sandwich", ["DL", "HO", "MIHO", "FF", "MFF"]),
-            ("cha-gelado-do-dia", "Chá gelado do dia", "#93A98D", "leaf", ["HI", "CTV"]),
-        ]
-        for ordem, (ref, nome, cor, icone, skus) in enumerate(colecoes_do_dia, start=len(collections_by_ref)):
-            colecao, _ = Collection.objects.update_or_create(
-                ref=ref,
-                defaults={
-                    "name": nome,
-                    "is_active": True,
-                    "sort_order": ordem,
-                    "metadata": {"color": cor, "icon": icone},
-                },
-            )
-            collections_by_ref[ref] = colecao
-            for i, sku in enumerate(skus):
-                CollectionItem.objects.update_or_create(
-                    collection=colecao, product=products[sku],
-                    defaults={"sort_order": i, "is_primary": False},
-                )
+        # As coleções rotativas "*-do-dia" morreram em 01/09 (decisão do dono):
+        # rotativo é história de VITRINE/fornada (disponibilidade em tempo real),
+        # não taxonomia. Os itens foram absorvidos pelas categorias estáveis.
 
+        # Um produto pode aparecer em mais de uma lista: o croissant recheado é
+        # Folhados e também é Doces. A PRIMEIRA aparição é a principal — é onde
+        # ele mora; as outras são as outras. Sem estrutura paralela, sem conceito
+        # novo: a ordem das listas já diz tudo (regra do dono, 02/09).
+        has_primary: set[str] = set()
         for ref, skus in collection_skus.items():
             for i, sku in enumerate(skus):
                 CollectionItem.objects.create(
                     collection=collections_by_ref[ref], product=products[sku],
-                    sort_order=i, is_primary=True,
+                    sort_order=i, is_primary=sku not in has_primary,
                 )
+                has_primary.add(sku)
+
+        # PRONTIDÃO DECLARADA — em que TURNO cada produto entra na encomenda.
+        #
+        # A encomenda da casa tem três slots (``Shop.defaults["pickup_slots"]``,
+        # editáveis no Admin): *a partir das 09h / 12h / 15h*. O que se declara
+        # aqui é em qual deles o produto cabe num dia normal — a regra do dono:
+        #
+        #   09h → folhados, croissants, madeleines, brioches e a ciabatta
+        #   12h → o restante dos pães doces/macios (a coleção Finos)
+        #   15h → o restante dos rústicos (a coleção Rústicos)
+        #
+        # Sai das COLEÇÕES em vez de uma lista de SKU escrita à mão porque é a
+        # coleção que a casa curou e é ela que vai mudar. Uma lista literal
+        # nasceria certa e envelheceria calada no primeiro produto novo.
+        #
+        # ⚠️ Isto é PISO, não resposta final. A mediana das WorkOrders é mais
+        # precisa e tem preferência: ela EMPURRA o produto para um slot mais
+        # tarde quando a fornada real vem saindo depois (um croissant declarado
+        # 09h que há um mês sai 11h40 é ofertado às 12h). O que ela não faz é
+        # puxar para mais cedo que o declarado — quem pagaria por uma mediana
+        # enviesada seria o cliente na porta. Ver `shop/services/product_readiness`.
+        PRONTOS_AS_09H = [
+            # folhados e croissants
+            "CT", "CM", "PC", "PR", "CN", "CO", "COC", "CPQ", "BH",
+            # brioches
+            "BBB", "BBB2", "BCH", "BN", "MBBBG",
+            # madeleines
+            "MD",
+            # a ciabatta, que é rústica mas sai cedo
+            "CI",
+        ]
+        ready_from_by_sku: dict[str, str] = {}
+        for sku in PRONTOS_AS_09H:
+            if sku in products:
+                ready_from_by_sku[sku] = "09:00"
+        for colecao_ref, hora in (("macios", "12:00"), ("rusticos", "15:00")):
+            colecao = collections_by_ref.get(colecao_ref)
+            if not colecao:
+                continue
+            for item in CollectionItem.objects.filter(collection=colecao).select_related("product"):
+                ready_from_by_sku.setdefault(item.product.sku, hora)
+
+        for sku, ready_from in ready_from_by_sku.items():
+            product = products.get(sku)
+            if product:
+                product.metadata = {
+                    **(product.metadata if isinstance(product.metadata, dict) else {}),
+                    "ready_from": ready_from,
+                }
+                product.save(update_fields=["metadata"])
 
         # Listings
         pdv, _ = Listing.objects.update_or_create(
@@ -2534,14 +3271,20 @@ class Command(BaseCommand):
             defaults={"name": "iFood", "is_active": True, "priority": 3},
         )
         web, _ = Listing.objects.update_or_create(
-            ref="web",
+            ref=STOREFRONT_REF,
             defaults={"name": "Loja online", "is_active": True, "priority": 7},
+        )
+        # WhatsApp: a vitrine do concierge. Espelha a loja online (mesmo recorte,
+        # mesmo preço) porque é o mesmo cliente remoto, só que conversando.
+        whatsapp, _ = Listing.objects.update_or_create(
+            ref="whatsapp",
+            defaults={"name": "WhatsApp", "is_active": True, "priority": 5},
         )
 
         # Listing items (all products in all listings)
         # iFood uses pricing.policy="external": the marketplace controls final prices,
         # so listing prices are reference-only — no markup stored on our side.
-        markup_map = {"pdv": 0, "ifood": 0, "web": 0}
+        markup_map = {"pdv": 0, "ifood": 0, STOREFRONT_REF: 0, "whatsapp": 0}
 
         # "O produto produzido é a unidade, mas são vendidos em packs" (dono,
         # 19/08). A alavanca disso é o CARDÁPIO, não o estoque: `is_sellable`
@@ -2551,7 +3294,7 @@ class Command(BaseCommand):
         # cliente; no PDV ela fica, porque no balcão alguém pede um pão só.
         so_no_balcao = {"PHO", "BBB", "PI"}
 
-        for listing_obj in [pdv, ifood, web]:
+        for listing_obj in [pdv, ifood, web, whatsapp]:
             ListingItem.objects.filter(listing=listing_obj).delete()
             markup = Decimal(markup_map[listing_obj.ref]) / 100
             for _sku, product in products.items():
@@ -2608,104 +3351,43 @@ class Command(BaseCommand):
     def _seed_stock(self, products, positions):
         self.stdout.write("  📊 Estoque inicial...")
 
-        vitrine = positions["vitrine"]
-        # Quantidades calibradas com as médias diárias REAIS auferidas dos XMLs de
-        # NFC-e (acervo _MASTER: jun/2019 pré-pandemia ~816 un/dia; jun/2021 ~601
-        # un/dia; sábado +24% — coberto pelo multiplicador 1.25 de sex/sáb).
-        # Madeleine é ~11% do volume da casa; viennoiserie doce ~25%.
-        # Ver docs/reports/seed_calibration_2026-07-24.md.
-        stock_data = {
-            # Rústicos — volumes herdam a calibração dos antecessores
-            "BF": 22,
-            "BE": 12,
-            "CGO": 16,
-            "CPX": 8,
-            "CI": 24,
-            "FE": 20,
-            "TB": 24,
-            "MIB": 18,
-            "PH": 20,
-            # Finos
-            "CT": 42,
-            "PC": 36,
-            "FA": 18,
-            "KP": 8,
-            "ME": 11,
-            "ANC": 16,
-            "CO": 20,
-            "BBB": 24,
-            "PHO": 48,
-            # Salgados de vitrine
-            "CMO": 10,
-            "CMA": 8,
-            "CCOM": 6,
-            "QQ": 10,
-            "JB": 10,
-            "PG": 10,
-            "TI": 4,
-            # Doces
-            "MD": 68,
-            "PPU": 8,
-            "MS": 8,
-            "PU": 10,
-            "TJ": 8,
-            "COMBO-PETIT-DEJ": 8,
-            # Bebidas com estoque físico (água engarrafada)
-            "AG": 48,
-            # Mercearia
-            "MT": 8,
-            "BK": 6,
-            "TP": 8,
-            "PT": 8,
-            "CX": 6,
-            "GL": 24,
-            "QC": 6,
-            "QP": 6,
-            "GR": 12,
-            "THL": 10,
-            "LN": 8,
-        }
+        from shopman.stockman.shelflife import shelf_life_days_for
 
-        for sku, qty in stock_data.items():
+        vitrine = positions["vitrine"]
+
+        for sku, qty in STOCK_VITRINE.items():
             if sku in products:
+                batch_ref = ""
+                shelf_life_days = shelf_life_days_for(sku)
+                if shelf_life_days is not None:
+                    received_on = timezone.localdate()
+                    batch_ref = _ensure_seed_standard_batch(
+                        ref=f"{sku}-{received_on:%Y%m%d}-SEED",
+                        sku=sku,
+                        production_date=received_on,
+                        expiry_date=received_on + timedelta(days=shelf_life_days),
+                    )
                 stock.receive(
                     quantity=Decimal(str(qty)),
                     sku=sku,
                     position=vitrine,
+                    batch=batch_ref,
                     reason=f"Estoque inicial seed Nelson: {sku}",
                 )
 
-        # Sobras de ontem no cenário novo: LOTES datados de ontem, na própria
-        # vitrine (~5-8% da produção do dia). Quem decide o destino é a
-        # validade: shelf_life 1 vence HOJE (o fechamento baixa como
-        # perda_vencido), e o canal remoto respeita os gates de lote (C2).
         from datetime import timedelta as _td
 
-        from shopman.stockman.models import Batch as _Batch
-
         yesterday = date.today() - _td(days=1)
-        leftover_items = [
-            ("BF", 2),
-            ("FE", 2),
-            ("TB", 3),
-            ("CI", 2),
-            ("PH", 3),
-            ("MD", 5),
-            ("CT", 3),
-            ("PC", 2),
-        ]
-        for sku, qty in leftover_items:
+        for sku, qty in LEFTOVER_ITEMS:
             if sku not in products:
                 continue
             shelf = products[sku].shelf_life_days or 0
             lot_ref = f"{sku}-{yesterday:%Y%m%d}-SOBRA"
-            _Batch.objects.update_or_create(
+            _ensure_seed_standard_batch(
                 ref=lot_ref,
-                defaults={
-                    "sku": sku,
-                    "production_date": yesterday,
-                    "expiry_date": yesterday + _td(days=shelf),
-                },
+                sku=sku,
+                production_date=yesterday,
+                expiry_date=yesterday + _td(days=shelf),
             )
             stock.receive(
                 quantity=Decimal(str(qty)),
@@ -2716,7 +3398,7 @@ class Command(BaseCommand):
             )
 
         self.stdout.write(
-            f"  ✅ Estoque para {len(stock_data)} produtos + {len(leftover_items)} sobras de ontem (lotes datados)"
+            f"  ✅ Estoque para {len(STOCK_VITRINE)} produtos + {len(LEFTOVER_ITEMS)} sobras de ontem (lotes datados)"
         )
 
     # ────────────────────────────────────────────────────────────────
@@ -2797,7 +3479,7 @@ class Command(BaseCommand):
                     ("FARINHA-T55", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("4.000")),
                     ("LEVAIN", Decimal("1.500")),
-                    ("AZEITE", Decimal("0.250")),
+                    ("AZEITE", Decimal("0.228")),
                     ("SAL", Decimal("0.100")),
                 ],
             },
@@ -2813,7 +3495,7 @@ class Command(BaseCommand):
                     # Com yudane (dono, 26/08) — proposta de bancada.
                     ("FARINHA-T55", Decimal("4.400")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.800")),
+                    ("LEITE", Decimal("1.854")),
                     ("MANTEIGA-FR", Decimal("0.700")),
                     ("ACUCAR", Decimal("0.350")),
                     ("FERMENTO-BIO", Decimal("0.150")),
@@ -2829,7 +3511,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T45", Decimal("4.800")),
                     ("MANTEIGA-FR", Decimal("2.400")),
-                    ("LEITE", Decimal("1.200")),
+                    ("LEITE", Decimal("1.236")),
                     ("ACUCAR", Decimal("0.450")),
                     ("FERMENTO-BIO", Decimal("0.180")),
                     ("SAL", Decimal("0.090")),
@@ -2862,7 +3544,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T55", Decimal("4.200")),
                     ("YUDANE", Decimal("1.000")),
-                    ("LEITE", Decimal("1.800")),
+                    ("LEITE", Decimal("1.854")),
                     ("MANTEIGA-FR", Decimal("0.600")),
                     ("ACUCAR", Decimal("0.400")),
                     ("CHOCOLATE-70", Decimal("0.400")),
@@ -2927,7 +3609,7 @@ class Command(BaseCommand):
                 "output_sku": "CREME-BAUNILHA",
                 "batch_size": Decimal("5"),
                 "items": [
-                    ("LEITE", Decimal("3.400")),
+                    ("LEITE", Decimal("3.502")),
                     ("ACUCAR", Decimal("0.800")),
                     ("OVOS", Decimal("0.500")),
                     ("FARINHA-T45", Decimal("0.300")),
@@ -2952,112 +3634,112 @@ class Command(BaseCommand):
                 "ref": "baguete",
                 "name": "Baguette de Tradition",
                 "output_sku": "BF",
-                "batch_size": Decimal("25"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de massa por baguete, para 250 g assados.
-                    ("MASSA-TRADICAO", Decimal("7.000")),
+                    ("MASSA-TRADICAO", Decimal("0.280")),
                 ],
             },
             {
                 "ref": "campagne",
                 "name": "Pain de Campagne",
                 "output_sku": "CGO",
-                "batch_size": Decimal("10"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 340 g de massa por campagne, para 300 g assados.
                     # A rodada anterior manteve 820 g supondo pão de campanha
                     # grande; o pão da casa é bem menor que isso.
-                    ("MASSA-CAMPAGNE", Decimal("3.400")),
+                    ("MASSA-CAMPAGNE", Decimal("0.340")),
                 ],
             },
             {
                 "ref": "ciabatta",
                 "name": "Ciabatta",
                 "output_sku": "CI",
-                "batch_size": Decimal("20"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 205 g de massa por ciabatta, para 180 g assados.
-                    ("MASSA-CIABATTA", Decimal("4.100")),
+                    ("MASSA-CIABATTA", Decimal("0.205")),
                 ],
             },
             {
                 "ref": "focaccia-dia",
                 "name": "Focaccia do dia",
                 "output_sku": "FOA",
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 414 g de massa + 4 g de alecrim + 2 g de sal grosso =
                     # 420 g crus por focaccia (dono, 26/08), ~370 g assados.
-                    ("MASSA-CIABATTA", Decimal("3.312")),
-                    ("ALECRIM", Decimal("0.032")),
-                    ("SAL-GROSSO", Decimal("0.016")),
+                    ("MASSA-CIABATTA", Decimal("0.414")),
+                    ("ALECRIM", Decimal("0.004")),
+                    ("SAL-GROSSO", Decimal("0.002")),
                 ],
             },
             {
                 "ref": "shokupan",
                 "name": "Shokupan",
                 "output_sku": "FA",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 400 g de massa crua por pão (dono, 26/08), ~350 g assados.
-                    ("MASSA-FORMA", Decimal("4.800")),
+                    ("MASSA-FORMA", Decimal("0.400")),
                 ],
             },
             {
                 "ref": "kuro-pan",
                 "name": "Kuro Pan",
                 "output_sku": "KP",
-                "batch_size": Decimal("8"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 280 g de Massa Kuropan crus (o chocolate mora na massa),
                     # para 250 g assados.
-                    ("MASSA-KUROPAN", Decimal("2.240")),
+                    ("MASSA-KUROPAN", Decimal("0.280")),
                 ],
             },
             {
                 "ref": "croissant",
                 "name": "Croissant Manteiga",
                 "output_sku": "CT",
-                "batch_size": Decimal("48"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de massa por croissant, para 70 g assados.
-                    ("MASSA-CROISSANT", Decimal("3.840")),
+                    ("MASSA-CROISSANT", Decimal("0.080")),
                 ],
             },
             {
                 "ref": "pain-chocolat",
                 "name": "Pain au Chocolat",
                 "output_sku": "PC",
-                "batch_size": Decimal("36"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de bâton (os dois bâtons
                     # clássicos) = 100 g crus, para 90 g assados.
-                    ("MASSA-CROISSANT", Decimal("2.880")),
-                    ("BATON-CHOCOLATE", Decimal("0.720")),
+                    ("MASSA-CROISSANT", Decimal("0.080")),
+                    ("BATON-CHOCOLATE", Decimal("0.020")),
                 ],
             },
             {
                 "ref": "animalzinho",
                 "name": "Animalzinho",
                 "output_sku": "ANC",
-                "batch_size": Decimal("16"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 60 g de massa amanteigada + 40 g de creme = 100 g
                     # crus, para 90 g assados.
-                    ("MASSA-BRIOCHE", Decimal("0.960")),
-                    ("CREME-BAUNILHA", Decimal("0.640")),
+                    ("MASSA-BRIOCHE", Decimal("0.060")),
+                    ("CREME-BAUNILHA", Decimal("0.040")),
                 ],
             },
             {
                 "ref": "folhado-dia",
                 "name": "Folhado do dia",
                 "output_sku": "CN",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 62 g de folhada + 20 g de maçã caramelizada = 82 g
                     # crus (dono, 26/08), para ~72 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.744")),
-                    ("RECHEIO-MACA", Decimal("0.240")),
+                    ("MASSA-FOLHADO", Decimal("0.062")),
+                    ("RECHEIO-MACA", Decimal("0.020")),
                 ],
             },
             {
@@ -3068,23 +3750,23 @@ class Command(BaseCommand):
                 "ref": "bichon",
                 "name": "Bichon au Citron",
                 "output_sku": "BH",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 80 g de folhada + 20 g de creme de limão = 100 g crus
                     # (dono, 26/08), para ~90 g assados.
-                    ("MASSA-FOLHADO", Decimal("0.960")),
-                    ("CREME-LIMAO", Decimal("0.240")),
+                    ("MASSA-FOLHADO", Decimal("0.080")),
+                    ("CREME-LIMAO", Decimal("0.020")),
                 ],
             },
             {
                 "ref": "madeleine",
                 "name": "Madeleine",
                 "output_sku": "MD",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
                     # 28 g de Massa Madeleine por peça, para 25 g assados —
                     # a massa virou pré-preparo nomeado (dono, 26/08).
-                    ("MASSA-MADELEINE", Decimal("0.672")),
+                    ("MASSA-MADELEINE", Decimal("0.028")),
                 ],
             },
             # ══ Seção 2b (dono, 26/08) — pré-preparos novos ══════════════════
@@ -3100,7 +3782,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("8.5"),
                 "items": [
                     ("FARINHA-T55", Decimal("5.000")),
-                    ("LEITE", Decimal("1.600")),
+                    ("LEITE", Decimal("1.648")),
                     ("MANTEIGA-FR", Decimal("1.200")),
                     ("OVOS", Decimal("0.400")),
                     ("ACUCAR", Decimal("0.400")),
@@ -3117,7 +3799,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FARINHA-T65", Decimal("5.000")),
                     ("AGUA-FILTRADA", Decimal("3.000")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                     ("FERMENTO-BIO", Decimal("0.100")),
                     ("SAL", Decimal("0.100")),
                     ("ACUCAR", Decimal("0.050")),
@@ -3132,7 +3814,7 @@ class Command(BaseCommand):
                 "items": [
                     ("FRANGO", Decimal("3.600")),
                     ("CEBOLA-ROXA", Decimal("0.300")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                     ("SAL", Decimal("0.040")),
                 ],
             },
@@ -3145,7 +3827,7 @@ class Command(BaseCommand):
                     ("CEBOLA-ROXA", Decimal("1.800")),
                     ("BACON", Decimal("1.000")),
                     ("TOMILHO", Decimal("0.060")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                 ],
             },
             {
@@ -3156,7 +3838,7 @@ class Command(BaseCommand):
                 "items": [
                     ("CEBOLA-ROXA", Decimal("2.200")),
                     ("AZEITONA", Decimal("0.700")),
-                    ("AZEITE", Decimal("0.150")),
+                    ("AZEITE", Decimal("0.137")),
                 ],
             },
             {
@@ -3165,7 +3847,7 @@ class Command(BaseCommand):
                 "output_sku": "MOLHO-BECHAMEL",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("2.600")),
+                    ("LEITE", Decimal("2.678")),
                     ("MANTEIGA-FR", Decimal("0.200")),
                     ("FARINHA-T55", Decimal("0.200")),
                     ("SAL", Decimal("0.020")),
@@ -3177,7 +3859,7 @@ class Command(BaseCommand):
                 "output_sku": "CREME-CHOCOLATE",
                 "batch_size": Decimal("2.9"),
                 "items": [
-                    ("LEITE", Decimal("1.500")),
+                    ("LEITE", Decimal("1.545")),
                     ("CHOCOLATE-70", Decimal("1.200")),
                     ("ACUCAR", Decimal("0.200")),
                     ("MANTEIGA-FR", Decimal("0.150")),
@@ -3190,8 +3872,8 @@ class Command(BaseCommand):
                 "output_sku": "CREME-LEITE-OVOS",
                 "batch_size": Decimal("2"),
                 "items": [
-                    ("CREME-DE-LEITE", Decimal("0.800")),
-                    ("LEITE", Decimal("0.600")),
+                    ("CREME-DE-LEITE", Decimal("0.808")),
+                    ("LEITE", Decimal("0.618")),
                     ("OVOS", Decimal("0.500")),
                     ("ACUCAR", Decimal("0.150")),
                 ],
@@ -3215,7 +3897,7 @@ class Command(BaseCommand):
                 "output_sku": "VINAGRETE-FRANCES",
                 "batch_size": Decimal("0.9"),
                 "items": [
-                    ("AZEITE", Decimal("0.700")),
+                    ("AZEITE", Decimal("0.637")),
                     ("MT", Decimal("0.100")),
                     ("LIMAO", Decimal("0.150")),
                     ("SAL", Decimal("0.010")),
@@ -3227,24 +3909,24 @@ class Command(BaseCommand):
                 "ref": "baguete-lanche",
                 "name": "Baguete Lanche",
                 "output_sku": "BAP",
-                "batch_size": Decimal("12"),
-                "items": [("MASSA-TRADICAO", Decimal("3.120"))],  # 260 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.260"))],  # 260 g/un
             },
             {
                 "ref": "batard",
                 "name": "Bâtard",
                 "output_sku": "BA",
-                "batch_size": Decimal("10"),
-                "items": [("MASSA-TRADICAO", Decimal("3.200"))],  # 320 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.320"))],  # 320 g/un
             },
             {
                 "ref": "baguete-gergelim-pequena",
                 "name": "Baguete Gergelim Pequena",
                 "output_sku": "BEP",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-TRADICAO", Decimal("1.980")),  # 165 g/un
-                    ("GERGELIM", Decimal("0.060")),        # 5 g/un
+                    ("MASSA-TRADICAO", Decimal("0.165")),  # 165 g/un
+                    ("GERGELIM", Decimal("0.005")),        # 5 g/un
                 ],
             },
             {
@@ -3252,107 +3934,107 @@ class Command(BaseCommand):
                 "ref": "italiano-rustico",
                 "name": "Italiano Rústico",
                 "output_sku": "BAX",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-TRADICAO", Decimal("3.840"))],  # 480 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-TRADICAO", Decimal("0.480"))],  # 480 g/un
             },
             {
                 "ref": "baguette-campagne",
                 "name": "Baguette Campagne",
                 "output_sku": "CF",
-                "batch_size": Decimal("12"),
-                "items": [("MASSA-CAMPAGNE", Decimal("3.600"))],  # 300 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CAMPAGNE", Decimal("0.300"))],  # 300 g/un
             },
             {
                 "ref": "campagne-redondo",
                 "name": "Pain de Campagne Redondo",
                 "output_sku": "CGR",
-                "batch_size": Decimal("10"),
-                "items": [("MASSA-CAMPAGNE", Decimal("3.400"))],  # 340 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CAMPAGNE", Decimal("0.340"))],  # 340 g/un
             },
             {
                 "ref": "pita",
                 "name": "Pita",
                 "output_sku": "PI",
-                "batch_size": Decimal("24"),
-                "items": [("MASSA-PITA", Decimal("0.720"))],  # 30 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-PITA", Decimal("0.030"))],  # 30 g/un
             },
             {
                 "ref": "focaccia-cebola-bacon-tomilho",
                 "name": "Focaccia Cebola, Bacon e Tomilho",
                 "output_sku": "CBT",
-                "batch_size": Decimal("6"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("3.600")),                  # 600 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.480")),   # 80 g/un
+                    ("MASSA-CIABATTA", Decimal("0.600")),                  # 600 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.080")),   # 80 g/un
                 ],
             },
             {
                 "ref": "focaccia-cebola-roxa",
                 "name": "Focaccia Cebola Roxa",
                 "output_sku": "FOC",
-                "batch_size": Decimal("6"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("2.970")),          # 495 g/un
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.270")),   # 45 g/un
+                    ("MASSA-CIABATTA", Decimal("0.495")),          # 495 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.045")),   # 45 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-alecrim",
                 "name": "Mini Focaccia Alecrim",
                 "output_sku": "MIF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.260")),  # 105 g/un
-                    ("ALECRIM", Decimal("0.048")),         # 4 g/un
-                    ("SAL-GROSSO", Decimal("0.012")),      # 1 g/un
+                    ("MASSA-CIABATTA", Decimal("0.105")),  # 105 g/un
+                    ("ALECRIM", Decimal("0.004")),         # 4 g/un
+                    ("SAL-GROSSO", Decimal("0.001")),      # 1 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-cebola-bacon-tomilho",
                 "name": "Mini Focaccia Cebola, Bacon e Tomilho",
                 "output_sku": "MICBT",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.896")),                 # 158 g/un
-                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.264")),   # 22 g/un
+                    ("MASSA-CIABATTA", Decimal("0.158")),                 # 158 g/un
+                    ("RECHEIO-CEBOLA-BACON-TOMILHO", Decimal("0.022")),   # 22 g/un
                 ],
             },
             {
                 "ref": "mini-focaccia-cebola-roxa",
                 "name": "Mini Focaccia Cebola Roxa",
                 "output_sku": "MIFOC",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CIABATTA", Decimal("1.752")),          # 146 g/un
-                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.168")),   # 14 g/un
+                    ("MASSA-CIABATTA", Decimal("0.146")),          # 146 g/un
+                    ("RECHEIO-CEBOLA-AZAPAS", Decimal("0.014")),   # 14 g/un
                 ],
             },
             {
                 "ref": "croissant-mini",
                 "name": "Croissant Mini",
                 "output_sku": "CM",
-                "batch_size": Decimal("24"),
-                "items": [("MASSA-CROISSANT", Decimal("0.864"))],  # 36 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-CROISSANT", Decimal("0.036"))],  # 36 g/un
             },
             {
                 "ref": "pain-aux-raisins",
                 "name": "Pain aux Raisins",
                 "output_sku": "PR",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.480")),   # 40 g/un
-                    ("CREME-BAUNILHA", Decimal("0.216")),    # 18 g/un
-                    ("PASSAS", Decimal("0.120")),            # 10 g/un
+                    ("MASSA-CROISSANT", Decimal("0.040")),   # 40 g/un
+                    ("CREME-BAUNILHA", Decimal("0.018")),    # 18 g/un
+                    ("PASSAS", Decimal("0.010")),            # 10 g/un
                 ],
             },
             {
                 "ref": "maca",
                 "name": "Maçã",
                 "output_sku": "MA",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.960")),  # 80 g/un
-                    ("RECHEIO-MACA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-FOLHADO", Decimal("0.080")),  # 80 g/un
+                    ("RECHEIO-MACA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
@@ -3360,41 +4042,41 @@ class Command(BaseCommand):
                 "ref": "croissant-presunto-queijo",
                 "name": "Croissant Presunto e Queijo",
                 "output_sku": "CPQ",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-CROISSANT", Decimal("0.720")),        # 60 g/un
-                    ("PRESUNTO-DEFUMADO", Decimal("0.180")),      # 15 g/un
-                    ("QUEIJO-MINAS-PADRAO", Decimal("0.180")),    # 15 g/un
+                    ("MASSA-CROISSANT", Decimal("0.060")),        # 60 g/un
+                    ("PRESUNTO-DEFUMADO", Decimal("0.015")),      # 15 g/un
+                    ("QUEIJO-MINAS-PADRAO", Decimal("0.015")),    # 15 g/un
                 ],
             },
             {
                 "ref": "folhado-frango",
                 "name": "Folhado de Frango",
                 "output_sku": "FF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("1.140")),   # 95 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.420")),    # 35 g/un
+                    ("MASSA-FOLHADO", Decimal("0.095")),   # 95 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.035")),    # 35 g/un
                 ],
             },
             {
                 "ref": "mini-folhado-frango",
                 "name": "Mini Folhado de Frango",
                 "output_sku": "MFF",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FOLHADO", Decimal("0.696")),   # 58 g/un
-                    ("RECHEIO-FRANGO", Decimal("0.264")),    # 22 g/un
+                    ("MASSA-FOLHADO", Decimal("0.058")),   # 58 g/un
+                    ("RECHEIO-FRANGO", Decimal("0.022")),    # 22 g/un
                 ],
             },
             {
                 "ref": "caranguejo",
                 "name": "Caranguejo",
                 "output_sku": "JO",
-                "batch_size": Decimal("16"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-FORMA", Decimal("0.608")),  # 38 g/un
-                    ("GERGELIM", Decimal("0.032")),     # 2 g/un
+                    ("MASSA-FORMA", Decimal("0.038")),  # 38 g/un
+                    ("GERGELIM", Decimal("0.002")),     # 2 g/un
                 ],
             },
             {
@@ -3404,56 +4086,56 @@ class Command(BaseCommand):
                 "ref": "kuro-pan-burger",
                 "name": "Kuro Pan Burger",
                 "output_sku": "KBB",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-KUROPAN", Decimal("1.080")),  # 90 g/un
+                    ("MASSA-KUROPAN", Decimal("0.090")),  # 90 g/un
                 ],
             },
             {
                 "ref": "brioche-nanterre",
                 "name": "Brioche Nanterre",
                 "output_sku": "BN",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-BRIOCHE", Decimal("1.920"))],  # 240 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BRIOCHE", Decimal("0.240"))],  # 240 g/un
             },
             {
                 "ref": "brioche-chocolat",
                 "name": "Brioche Chocolat",
                 "output_sku": "BCH",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.816")),      # 34 g/un
-                    ("GOTAS-CHOCOLATE", Decimal("0.192")),    # 8 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.034")),      # 34 g/un
+                    ("GOTAS-CHOCOLATE", Decimal("0.008")),    # 8 g/un
                 ],
             },
             {
                 "ref": "mini-brioche-bun-gergelim",
                 "name": "Mini Brioche Burger Bun com gergelim",
                 "output_sku": "MBBBG",
-                "batch_size": Decimal("24"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.720")),  # 30 g/un
-                    ("GERGELIM", Decimal("0.048")),       # 2 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.030")),  # 30 g/un
+                    ("GERGELIM", Decimal("0.002")),       # 2 g/un
                 ],
             },
             {
                 "ref": "ursinho",
                 "name": "Ursinho",
                 "output_sku": "ANU",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
                 "ref": "porquinho",
                 "name": "Porquinho",
                 "output_sku": "ANP",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BRIOCHE", Decimal("0.960")),    # 80 g/un
-                    ("CREME-BAUNILHA", Decimal("0.360")),   # 30 g/un
+                    ("MASSA-BRIOCHE", Decimal("0.080")),    # 80 g/un
+                    ("CREME-BAUNILHA", Decimal("0.030")),   # 30 g/un
                 ],
             },
             {
@@ -3461,18 +4143,18 @@ class Command(BaseCommand):
                 "ref": "challah",
                 "name": "Challah",
                 "output_sku": "CH",
-                "batch_size": Decimal("8"),
-                "items": [("MASSA-BUTTER", Decimal("2.400"))],  # 300 g/un
+                "batch_size": Decimal("1"),
+                "items": [("MASSA-BUTTER", Decimal("0.300"))],  # 300 g/un
             },
             {
                 # 60 g de butter + 50 g de salsicha Vienna (Strass) — dono.
                 "ref": "hot-dog-vienna",
                 "name": "Hot Dog Vienna",
                 "output_sku": "HO",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.720")),       # 60 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.600")),    # 50 g/un
+                    ("MASSA-BUTTER", Decimal("0.060")),       # 60 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.050")),    # 50 g/un
                 ],
             },
             {
@@ -3480,32 +4162,32 @@ class Command(BaseCommand):
                 "ref": "mini-hot-dog-vienna",
                 "name": "Mini Hot Dog Vienna",
                 "output_sku": "MIHO",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.480")),       # 40 g/un
-                    ("SALSICHA-VIENNA", Decimal("0.300")),    # 25 g/un
+                    ("MASSA-BUTTER", Decimal("0.040")),       # 40 g/un
+                    ("SALSICHA-VIENNA", Decimal("0.025")),    # 25 g/un
                 ],
             },
             {
                 "ref": "deli-milho-bacon",
                 "name": "Deli Milho & Bacon",
                 "output_sku": "DL",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.840")),      # 70 g/un
-                    ("MILHO-VERDE", Decimal("0.240")),       # 20 g/un
-                    ("BACON", Decimal("0.120")),             # 10 g/un
-                    ("SALSINHA-DESID", Decimal("0.012")),    # 1 g/un
+                    ("MASSA-BUTTER", Decimal("0.070")),      # 70 g/un
+                    ("MILHO-VERDE", Decimal("0.020")),       # 20 g/un
+                    ("BACON", Decimal("0.010")),             # 10 g/un
+                    ("SALSINHA-DESID", Decimal("0.001")),    # 1 g/un
                 ],
             },
             {
                 "ref": "cornet-chocolate",
                 "name": "Cornet de Chocolate",
                 "output_sku": "COC",
-                "batch_size": Decimal("12"),
+                "batch_size": Decimal("1"),
                 "items": [
-                    ("MASSA-BUTTER", Decimal("0.576")),      # 48 g/un
-                    ("CREME-CHOCOLATE", Decimal("0.144")),   # 12 g/un
+                    ("MASSA-BUTTER", Decimal("0.048")),      # 48 g/un
+                    ("CREME-CHOCOLATE", Decimal("0.012")),   # 12 g/un
                 ],
             },
             # ══ Seção 2b — fichas de MONTAGEM (is_active=False) ══════════════
@@ -3630,7 +4312,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.020")),
+                    ("LEITE", Decimal("0.021")),
                 ],
             },
             {
@@ -3652,7 +4334,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.150")),
+                    ("LEITE", Decimal("0.155")),
                 ],
             },
             {
@@ -3663,7 +4345,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.150")),
+                    ("LEITE", Decimal("0.155")),
                     ("CHOCOLATE-70", Decimal("0.020")),
                 ],
             },
@@ -3675,7 +4357,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.180")),
+                    ("LEITE", Decimal("0.185")),
                     ("CHOCOLATE-70", Decimal("0.025")),
                 ],
             },
@@ -3687,7 +4369,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.220")),
+                    ("LEITE", Decimal("0.227")),
                 ],
             },
             {
@@ -3697,7 +4379,7 @@ class Command(BaseCommand):
                 "batch_size": Decimal("1"),
                 "is_active": False,
                 "items": [
-                    ("LEITE", Decimal("0.220")),
+                    ("LEITE", Decimal("0.227")),
                     ("CHOCOLATE-70", Decimal("0.030")),
                 ],
             },
@@ -3780,7 +4462,7 @@ class Command(BaseCommand):
                 "is_active": False,
                 "items": [
                     ("CAFE-GRAO", Decimal("0.018")),
-                    ("LEITE", Decimal("0.050")),
+                    ("LEITE", Decimal("0.052")),
                     ("AGUA-FILTRADA", Decimal("0.200")),
                 ],
             },
@@ -3931,12 +4613,17 @@ class Command(BaseCommand):
         # anotação "≈ 6 ovos" é derivada na tela de mise-en-place, nunca gravada.
         # Canela e alecrim também são pesados: base kg, e a precisão de custo é
         # problema do eixo de compra, não da unidade-base.
+        #
+        # Os líquidos da casa (água, leite, azeite, creme de leite) também contam
+        # em kg desde o WP-BASE-UNIT-LIQUIDS-KG: a bancada os PESA, e é isso que a
+        # R1 pergunta. A ponte da densidade saiu da produção diária e foi para o
+        # recebimento, como uma MaterialConversion "litros" declarada abaixo.
         material_attrs = {
             "FARINHA-T65": ("kg", 180), "FARINHA-T55": ("kg", 180),
             "FARINHA-T45": ("kg", 180), "FARINHA-INT": ("kg", 120),
             "CENTEIO": ("kg", 120), "MALTE": ("kg", 365),
             "ACUCAR": ("kg", None), "SAL": ("kg", None), "GERGELIM": ("kg", 180),
-            "AGUA-FILTRADA": ("l", None), "LEITE": ("l", 7), "AZEITE": ("l", 540),
+            "AGUA-FILTRADA": ("kg", None), "LEITE": ("kg", 7), "AZEITE": ("kg", 540),
             "FERMENTO-NAT": ("kg", 7), "FERMENTO-BIO": ("kg", 14),
             "MANTEIGA-FR": ("kg", 60), "OVOS": ("kg", 28),
             "CHOCOLATE-70": ("kg", 365), "AZEITONA": ("kg", 180),
@@ -3952,7 +4639,7 @@ class Command(BaseCommand):
             "SALSINHA-DESID": ("kg", 365), "TOMILHO": ("kg", 14),
             "PASSAS": ("kg", 365), "GOTAS-CHOCOLATE": ("kg", 365),
             "BATON-CHOCOLATE": ("kg", 365), "BAUNILHA": ("kg", 365),
-            "CREME-DE-LEITE": ("l", 10), "CAFE-GRAO": ("kg", 90),
+            "CREME-DE-LEITE": ("kg", 10), "CAFE-GRAO": ("kg", 90),
             "CHA-CAMILLE": ("kg", 365), "CHA-ROUGE": ("kg", 365),
             "CHA-SOPHIE": ("kg", 365), "CHA-BLEU": ("kg", 365),
             "CHA-HIBISCO": ("kg", 365), "CHA-CHAI": ("kg", 365),
@@ -4014,6 +4701,47 @@ class Command(BaseCommand):
             )
         self.stdout.write(f"  ✅ {len(counting_conversions)} conversões de contagem")
 
+        # Equivalências APROXIMADAS de volume: os líquidos contam em kg porque a
+        # bancada os pesa, mas a NOTA fala em litro. Sem o fator declarado a
+        # primeira nota em litro trava, e travar é o comportamento certo — a R4 da
+        # ADR-024 manda recusar em vez de adivinhar. Então declaramos aqui o que a
+        # casa já sabe: o fator é a densidade do próprio perfil do insumo.
+        #
+        # É APPROXIMATE, e não CONVENTIONAL, porque densidade é equivalência
+        # física com incerteza (leite mais gordo pesa diferente), e a R3 manda o
+        # número carregar o "≈" até a tela. Efeito visível e desejado: a linha de
+        # mise en place do leite passa a anotar "≈ 3,4 litros" ao lado do peso,
+        # que é como o padeiro despeja da caixa.
+        #
+        # AGUA-FILTRADA fica de FORA de propósito: ela é da torneira, não tem
+        # fornecedor (ver SUPPLIER_BY_MATERIAL) e nunca entra por nota. Fator que
+        # ninguém usa é configuração morta; se um dia a água vier numa nota, a R4
+        # trava e alguém declara o fator no gesto.
+        # O rótulo sai TAL COMO ESCRITO na anotação da separação, ao lado de
+        # "≈ 17 ovos" e "≈ 1,5 limões" — daí o plural, que é como o padeiro fala.
+        volume_conversions = {
+            sku: (
+                "litros",
+                Decimal(str(INGREDIENT_PROFILES[sku]["density_g_per_ml"])),
+            )
+            for sku in ("LEITE", "AZEITE", "CREME-DE-LEITE")
+        }
+        for sku, (label, factor) in volume_conversions.items():
+            material = Material.objects.filter(sku=sku).first()
+            if material is None:
+                continue
+            MaterialConversion.objects.update_or_create(
+                material=material,
+                supplier=None,
+                label=label,
+                defaults={
+                    "to_base_factor": factor,
+                    "kind": MaterialConversion.Kind.APPROXIMATE,
+                    "is_active": True,
+                },
+            )
+        self.stdout.write(f"  ✅ {len(volume_conversions)} conversões de volume (litro → kg)")
+
         # O saldo de abertura de insumo entra DEPOIS do mise en place (abaixo):
         # ele deriva do plano do dia expandido pelas fichas, que ainda não
         # existem neste ponto do método.
@@ -4026,13 +4754,15 @@ class Command(BaseCommand):
         def _recipe_item_unit(input_sku: str) -> str:
             """A ficha fala na unidade-base do insumo — explícito, não por default.
 
-            Insumo pesado responde `kg`; líquido responde `l`, que a ficha grafa
-            `L` (`normalize_recipe_item_unit`). Entrada que não é Material
-            (pré-preparo, produto) fica em kg, que é como a massa é medida.
+            Insumo pesado responde `kg`, e desde o WP-BASE-UNIT-LIQUIDS-KG isso
+            inclui os líquidos da casa: a bancada os pesa. Entrada que não é
+            Material (pré-preparo, produto) fica em kg, que é como a massa é
+            medida.
 
-            Os líquidos só puderam falar em litro porque o perfil ganhou
-            `density_g_per_ml`: é ela que leva o item até a nutrição, que conta
-            em grama.
+            A função continua respeitando o cadastro em vez de assumir peso: um
+            insumo que um dia nasça com base de volume responde `l`, que a ficha
+            grafa `L` (`normalize_recipe_item_unit`), e a `density_g_per_ml` do
+            perfil o leva até a nutrição, que conta em grama.
             """
             unit = material_attrs.get(input_sku, ("kg", None))[0]
             return normalize_recipe_item_unit(unit)
@@ -4052,7 +4782,7 @@ class Command(BaseCommand):
                     # toda ficha ativa, e croque não entra em plano de forno.
                     "is_active": rd.get("is_active", True),
                     "meta": {
-                        "capacity_per_day": int(rd["batch_size"] * Decimal("3")),
+                        "capacity_per_day": PROVISIONAL_CAPACITY_PER_DAY[rd["ref"]],
                         "max_started_minutes": self._max_started_minutes_for_recipe(rd["ref"]),
                         "requires_batch_tracking": shelf_life_days is not None,
                         "shelf_life_days": shelf_life_days,
@@ -4078,6 +4808,22 @@ class Command(BaseCommand):
             if product:
                 fill_nutrition_from_recipe(product)
                 aggregate_dietary_from_recipe(product)
+
+        # Inventário de receitas (RECIPE-INVENTORY-PLAN §2): uma entry por ficha,
+        # com a versão 1 publicada e a fórmula na forma base (partes dissolvidas).
+        # Idempotente: ficha que já tem entry é pulada, então o reseed não duplica.
+        # As fichas de produto sem unidade declarada no catálogo ficam de fora, e
+        # o bootstrap diz quais.
+        from io import StringIO
+
+        from shopman.craftsman.models import RecipeEntry
+
+        entries_before = RecipeEntry.objects.count()
+        call_command("bootstrap_recipe_book", stdout=StringIO())
+        self.stdout.write(
+            f"  ✅ Inventário de receitas: {RecipeEntry.objects.count() - entries_before} entries criadas"
+            f" ({RecipeEntry.objects.count()} no total)"
+        )
 
         # Production data is intentionally time-relative. Re-running the seed on
         # another day creates the same operational story around that new date:
@@ -4199,34 +4945,6 @@ class Command(BaseCommand):
             work_order.events.all().delete()
             work_order.items.all().delete()
 
-        def ensure_batch_traceability(work_order: WorkOrder, finished_qty: Decimal) -> None:
-            if not (work_order.recipe.meta or {}).get("requires_batch_tracking"):
-                return
-            from shopman.stockman.models import Batch
-
-            production_date = work_order.target_date or today
-            shelf_life_days = (work_order.recipe.meta or {}).get("shelf_life_days")
-            expiry_date = None
-            if shelf_life_days not in (None, ""):
-                expiry_date = production_date + timedelta(days=int(shelf_life_days))
-            batch_ref = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}"
-            Batch.objects.update_or_create(
-                ref=batch_ref,
-                defaults={
-                    "sku": work_order.output_sku,
-                    "production_date": production_date,
-                    "expiry_date": expiry_date,
-                    "notes": f"Seed Nelson producao {work_order.ref}",
-                },
-            )
-            work_order.meta = {
-                **(work_order.meta or {}),
-                "batch_ref": batch_ref,
-                "batch_quantity": str(finished_qty),
-                "expiry_date": expiry_date.isoformat() if expiry_date else "",
-            }
-            work_order.save(update_fields=["meta", "updated_at"])
-
         def add_event(work_order: WorkOrder, seq: int, kind: str, payload: dict, actor: str, created_at: datetime) -> None:
             event = WorkOrderEvent.objects.create(
                 work_order=work_order,
@@ -4237,7 +4955,75 @@ class Command(BaseCommand):
             )
             WorkOrderEvent.objects.filter(pk=event.pk).update(created_at=created_at)
 
-        def add_finished_items(work_order: WorkOrder, started_qty: Decimal, finished_qty: Decimal, recorded_at: datetime) -> None:
+        def seed_qc_partition(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+        ) -> list[dict]:
+            """Dados demo obedecem ao mesmo contrato KISS do QC real."""
+            partition: list[dict] = []
+            scope = str((work_order.meta or {}).get("scope") or "")
+            grade_ref = "standard"
+            defect_ref = ""
+
+            # Um histórico variado alimenta BI e garante que o seed exercite
+            # os quatro botões reais. A fornada de croissant de hoje demonstra
+            # o caso importante: dois graus na mesma fornada, uma linha por
+            # grau, com motivo apenas no grau Razoável/Mínimo.
+            if scope == "today" and work_order.recipe.ref == "croissant":
+                grade_ref, defect_ref = "fair", "overbaked"
+            elif scope.startswith("history-"):
+                selector = (work_order.target_date.toordinal() + work_order.recipe_id) % 4
+                grade_ref, defect_ref = (
+                    ("excellent", ""),
+                    ("standard", ""),
+                    ("fair", "overbaked"),
+                    ("minimal", "misshapen"),
+                )[selector]
+
+            if finished_qty > 0:
+                if grade_ref in {"fair", "minimal"}:
+                    marked_qty = min(Decimal("1"), finished_qty)
+                    normal_qty = finished_qty - marked_qty
+                    if normal_qty > 0:
+                        partition.append(
+                            {
+                                "quantity": str(normal_qty),
+                                "quality_grade_ref": "standard",
+                            }
+                        )
+                    partition.append(
+                        {
+                            "quantity": str(marked_qty),
+                            "quality_grade_ref": grade_ref,
+                            "quality_defect_ref": defect_ref,
+                        }
+                    )
+                else:
+                    partition.append(
+                        {
+                            "quantity": str(finished_qty),
+                            "quality_grade_ref": grade_ref,
+                        }
+                    )
+
+            loss_qty = max(started_qty - finished_qty, Decimal("0"))
+            if loss_qty > 0:
+                partition.append(
+                    {
+                        "quantity": str(loss_qty),
+                        "quality_defect_ref": "overbaked",
+                        "loss": True,
+                    }
+                )
+            return partition
+
+        def add_finished_items(
+            work_order: WorkOrder,
+            started_qty: Decimal,
+            finished_qty: Decimal,
+            recorded_at: datetime,
+        ) -> list[dict]:
             coefficient = started_qty / work_order.recipe.batch_size
             for item in work_order.recipe.items.filter(is_optional=False).order_by("sort_order"):
                 required = (item.quantity * coefficient).quantize(Decimal("0.001"))
@@ -4259,27 +5045,95 @@ class Command(BaseCommand):
                     recorded_at=recorded_at,
                     recorded_by="seed",
                 )
-            WorkOrderItem.objects.create(
-                work_order=work_order,
-                kind=WorkOrderItem.Kind.OUTPUT,
-                item_ref=work_order.output_sku,
-                quantity=finished_qty,
-                unit="un",
-                recorded_at=recorded_at,
-                recorded_by="seed",
+
+            # O resolver canônico valida unicidade por grau, motivo obrigatório
+            # em Razoável/Mínimo/perda e conservação exata da entrada.
+            from shopman.backstage.services.production import (
+                _record_batch_traceability,
+                resolve_partition,
             )
-            waste_qty = max(started_qty - finished_qty, Decimal("0"))
-            if waste_qty > 0:
+
+            finished_items, wasted_items = resolve_partition(
+                work_order,
+                quantity=started_qty,
+                partition=seed_qc_partition(work_order, started_qty, finished_qty),
+            )
+            for outcome in finished_items:
                 WorkOrderItem.objects.create(
                     work_order=work_order,
-                    kind=WorkOrderItem.Kind.WASTE,
-                    item_ref=work_order.output_sku,
-                    quantity=waste_qty,
+                    kind=WorkOrderItem.Kind.OUTPUT,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
                     unit="un",
                     recorded_at=recorded_at,
                     recorded_by="seed",
-                    meta={"reason": "perda natural / não vendido"},
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref=outcome.get("quality_grade_ref", ""),
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref=outcome.get("batch_ref", ""),
                 )
+            for outcome in wasted_items:
+                WorkOrderItem.objects.create(
+                    work_order=work_order,
+                    kind=WorkOrderItem.Kind.WASTE,
+                    item_ref=outcome["item_ref"],
+                    quantity=outcome["quantity"],
+                    unit="un",
+                    recorded_at=recorded_at,
+                    recorded_by="seed",
+                    meta=outcome.get("meta", {}),
+                    quality_grade_ref="",
+                    quality_defect_ref=outcome.get("quality_defect_ref", ""),
+                    batch_ref="",
+                )
+
+            # O seed pode atualizar seus próprios fatos conforme o contrato
+            # evolui. Lote sem assinatura de seed é produção real: preserva e
+            # interrompe a carga em vez de reclassificar silenciosamente.
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                _discard_owned_seed_output_batch(
+                    ref=line.batch_ref,
+                    sku=line.item_ref,
+                    work_order_ref=work_order.ref,
+                )
+            _record_batch_traceability(work_order_id=work_order.pk, replay=True)
+            for line in WorkOrderItem.objects.filter(
+                work_order=work_order,
+                kind=WorkOrderItem.Kind.OUTPUT,
+            ).exclude(batch_ref=""):
+                from shopman.stockman.models import Batch
+
+                batch = Batch.objects.get(ref=line.batch_ref)
+                expected_meta = line.meta or {}
+                if (
+                    batch.sku != line.item_ref
+                    or batch.quality_grade_ref != line.quality_grade_ref
+                    or batch.nonconformity_percent
+                    != int(expected_meta.get("quality_markdown_percent") or 0)
+                    or batch.nonconformity_reason
+                    != str(expected_meta.get("quality_reason") or "")
+                ):
+                    raise CommandError(
+                        f"Lote {batch.ref} já contém outro fato de QC; "
+                        "o seed preservou o histórico e interrompeu a carga."
+                    )
+            return [
+                {
+                    "item_ref": item.item_ref,
+                    "quantity": str(item.quantity),
+                    "quality_grade_ref": item.quality_grade_ref,
+                    "quality_defect_ref": item.quality_defect_ref,
+                    "batch_ref": item.batch_ref,
+                    **({"meta": item.meta} if item.meta else {}),
+                }
+                for item in WorkOrderItem.objects.filter(
+                    work_order=work_order,
+                    kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
+                ).order_by("pk")
+            ]
 
         def upsert_work_order(
             *,
@@ -4359,13 +5213,23 @@ class Command(BaseCommand):
                         "quantity": str(effective_started),
                         "operator_ref": operator_ref,
                         "position_ref": position_ref,
-                        "note": "seed operacional",
+                        "note": (
+                            "Quantidade ajustada na bancada (seed)"
+                            if effective_started != planned_qty
+                            else "seed operacional"
+                        ),
                     },
                     "seed",
                     start_at or at(target_date, (5, 0)),
                 )
             if status == WorkOrder.Status.FINISHED and finished_qty is not None:
                 effective_started = started_qty or planned_qty
+                partition_payload = add_finished_items(
+                    work_order,
+                    effective_started,
+                    finished_qty,
+                    finish_at or at(target_date, (8, 0)),
+                )
                 add_event(
                     work_order,
                     2,
@@ -4380,12 +5244,16 @@ class Command(BaseCommand):
                         "source_ref": source_ref,
                         "position_ref": position_ref,
                         "operator_ref": operator_ref,
+                        "partition": partition_payload,
+                        **(
+                            {"context": {"production_outcome": {"kind": "total_loss"}}}
+                            if finished_qty == 0
+                            else {}
+                        ),
                     },
                     "seed",
                     finish_at or at(target_date, (8, 0)),
                 )
-                add_finished_items(work_order, effective_started, finished_qty, finish_at or at(target_date, (8, 0)))
-                ensure_batch_traceability(work_order, finished_qty)
             return work_order
 
         # Remove old seed rows outside the moving operational window. The active window
@@ -4500,19 +5368,11 @@ class Command(BaseCommand):
             )
             wo_count += 1
 
-        # Future horizon: planned production for one week ahead.
-        #
-        # As WOs futuras precisam VIRAR estoque planejado no ledger do Stockman —
-        # senão a loja oferece encomenda para os próximos dias úteis mas o gate de
-        # estoque reprova 100%: não existe Quant com aquele ``target_date`` e o físico
-        # de hoje é inválido para datas futuras (shelflife). O caminho canônico
-        # craftsman→stockman é o signal ``production_changed(action="planned")``, que o
-        # handler de contrib/stockman materializa como Quant planejado datado. O seed
-        # constrói as WOs à mão (narrativa/matriz determinística, idempotente por
-        # ``source_ref``), então emitimos o signal explicitamente. SÓ para o futuro: o
-        # estoque vendável de hoje já vem de ``_seed_stock`` (vitrine) — emitir para
-        # hoje/histórico dobraria o saldo.
-        from shopman.craftsman.signals import production_changed
+        # Future horizon: planned production for one week ahead. Today and the
+        # future are reconciled together below: the old implementation emitted
+        # ``production_changed`` only here, which made future supply cumulative
+        # on every seed run and left today's operator cards without a source
+        # Quant. A board row that cannot be acted on is invalid seed data.
 
         for offset in range(1, 8):
             target = today + timedelta(days=offset)
@@ -4524,20 +5384,13 @@ class Command(BaseCommand):
                     continue
                 recipe = recipes_by_ref[ref]
                 planned = (qty * day_multiplier).quantize(Decimal("1"))
-                work_order = upsert_work_order(
+                upsert_work_order(
                     scope=f"future-{offset}",
                     recipe=recipe,
                     target_date=target,
                     planned_qty=planned,
                     status=WorkOrder.Status.PLANNED,
                     operator_ref="chef:planejamento",
-                )
-                production_changed.send(
-                    sender=WorkOrder,
-                    product_ref=work_order.output_sku,
-                    date=target,
-                    action="planned",
-                    work_order=work_order,
                 )
                 future_count += 1
 
@@ -4586,6 +5439,7 @@ class Command(BaseCommand):
 
         # Historical production: 35 relative days behind today for BI,
         # pickup slots and waste patterns.
+        total_loss_seeded = False
         for days_ago in range(1, 36):
             target = today - timedelta(days=days_ago)
             if not self._shop_operates_on(target):
@@ -4599,7 +5453,9 @@ class Command(BaseCommand):
                 planned = (qty * weekday_multiplier).quantize(Decimal("1"))
                 started = planned
                 loss = Decimal(str((index + days_ago) % 4))
-                finished = max(started - loss, Decimal("1"))
+                is_total_loss_example = not total_loss_seeded and ref == "croissant"
+                finished = Decimal("0") if is_total_loss_example else max(started - loss, Decimal("1"))
+                total_loss_seeded = total_loss_seeded or is_total_loss_example
                 upsert_work_order(
                     scope=f"history-{days_ago}",
                     recipe=recipe,
@@ -4614,9 +5470,12 @@ class Command(BaseCommand):
                 )
                 history_count += 1
 
+        repaired_supply = _ensure_seed_active_production_supply()
+
         self.stdout.write(
             f"  ✅ {len(recipes_data)} receitas, {wo_count} ordens de hoje,"
-            f" {future_count} futuras e {history_count} historico movel"
+            f" {future_count} futuras e {history_count} historico movel;"
+            f" {repaired_supply} coordenadas de produção reconciliadas"
         )
 
     def _production_steps_for_recipe(self, ref: str) -> list[str]:
@@ -4647,9 +5506,15 @@ class Command(BaseCommand):
         from shopman.fiscalman.classification import from_metadata
 
         missing = []
-        required_metadata = ("allergens", "dietary_info", "serves")
+        # Rotulagem de compra remota: hoje são ATRIBUTOS do registro, não mais
+        # chaves soltas do metadata. O guarda continua o mesmo — quem vende de
+        # longe declara alergênico, dieta e porção —, só mudou onde ele olha.
+        required_attributes = ("alergenos", "dieta", "porcoes")
+        # Todo produto publicado num canal onde o cliente compra de longe precisa
+        # dos dados de compra remota (alergênicos, porções, fiscal). O WhatsApp
+        # entra na lista porque o concierge vende sem o cliente ver a vitrine.
         listed_skus = ListingItem.objects.filter(
-            listing__ref__in=("pdv", "ifood", "web"),
+            listing__ref__in=("pdv", "ifood", STOREFRONT_REF, "whatsapp"),
             listing__is_active=True,
             is_published=True,
         ).values_list("product__sku", flat=True).distinct()
@@ -4661,9 +5526,11 @@ class Command(BaseCommand):
         for product in products:
             gaps = []
             metadata = product.metadata if isinstance(product.metadata, dict) else {}
-            for key in required_metadata:
-                if key not in metadata:
-                    gaps.append(f"metadata.{key}")
+            for ref in required_attributes:
+                # `is None` = não declarado. Lista vazia passa: é a casa
+                # dizendo que conferiu e não há o que declarar.
+                if attributes.get(product, ref) is None:
+                    gaps.append(f"atributo.{ref}")
             fiscal = metadata.get("fiscal") if isinstance(metadata.get("fiscal"), dict) else {}
             if not fiscal:
                 gaps.append("metadata.fiscal")
@@ -4699,7 +5566,7 @@ class Command(BaseCommand):
 
         blocked = []
         web_skus = ListingItem.objects.filter(
-            listing__ref="web",
+            listing__ref=STOREFRONT_REF,
             listing__is_active=True,
             is_published=True,
             is_sellable=True,
@@ -4712,7 +5579,7 @@ class Command(BaseCommand):
             is_sellable=True,
         ).order_by("sku")
         for product in products:
-            raw_availability = catalog_context.availability_for_sku(product.sku, channel_ref="web")
+            raw_availability = catalog_context.availability_for_sku(product.sku, channel_ref=STOREFRONT_REF)
             availability = catalog_context.storefront_availability(
                 raw_availability,
                 is_sellable=product.is_sellable,
@@ -4852,7 +5719,13 @@ class Command(BaseCommand):
         channels = {}
         _pos_config = {
             "confirmation": {"mode": "immediate"},
-            "payment": {"method": "cash", "timing": "external"},
+            # `link_timeout_minutes`: quanto o LINK de pagamento do pedido remoto
+            # vale, contado da venda — e é só o teto, porque o link vence antes
+            # se o compromisso do pedido chegar antes (início da janela
+            # combinada, ou o fechamento da loja no dia). Duas horas: o pão é
+            # para hoje ou para amanhã, e a encomenda remota só é liberada
+            # contra o pagamento.
+            "payment": {"method": "cash", "timing": "external", "link_timeout_minutes": 120},
             # No balcão o item já saiu fisicamente da vitrine: a venda NUNCA é
             # auto-rejeitada por estoque (o kernel reserva o que der, best-effort,
             # e o estoque reconcilia). A review avisa; não bloqueia. Mesma semântica
@@ -4868,6 +5741,14 @@ class Command(BaseCommand):
             },
             "handle_label": "Comanda",
             "handle_placeholder": "Ex: 42",
+            # Por onde o aviso do pedido de balcão SAI da casa. Sem esta chave o
+            # canal herdava o `console` da loja — que sempre "dá certo" e
+            # curto-circuita a cadeia: nenhum aviso de PDV alcançava o cliente,
+            # inclusive o link de pagamento do pedido remoto. WhatsApp e e-mail
+            # entregam a URL clicável e de graça; o SMS custa e trunca, então é
+            # a última rede. Cliente só com e-mail cai no e-mail sozinho: o
+            # backend sem destinatário é pulado pelo mecanismo.
+            "notifications": {"backend": "manychat", "fallback_chain": ["email", "sms"]},
             # Entrega da casa (pedido por telefone no PDV): o entregador pode sair
             # com a maquininha; o despacho pergunta e a custódia fica no pedido.
             "fulfillment": {"equipment": ["card_machine"]},
@@ -4883,7 +5764,16 @@ class Command(BaseCommand):
                     "new": ["accepted", "cancelled"],
                     "accepted": ["preparing", "ready", "completed", "cancelled"],
                     "preparing": ["ready", "cancelled"],
-                    "ready": ["preparing", "dispatched", "completed"],
+                    # `cancelled` aqui não é exceção: sem ele a régua não
+                    # fechava. Dava para cancelar ANTES (na fila, na cozinha) e
+                    # DEPOIS (venda fechada, o desfazer da janela), mas não no
+                    # meio — justamente quando o pão está pronto no balcão e o
+                    # cliente liga desistindo. Quem pode é outra pergunta, e
+                    # quem responde é `OrderCancelView` com
+                    # `shop.cancel_advanced_order`. `dispatched`/`delivered`
+                    # seguem fora: depois que o motoboy saiu o fato é DEVOLUÇÃO
+                    # (`returned`), e misturar os dois estraga a leitura do B.I.
+                    "ready": ["preparing", "dispatched", "completed", "cancelled"],
                     "dispatched": ["delivered", "returned"],
                     "delivered": ["completed", "returned"],
                     "completed": ["returned", "cancelled"],
@@ -4899,8 +5789,29 @@ class Command(BaseCommand):
             "allow_untracked": False,
             # C2 (D1-RETIREMENT): o LOTE decide o que o canal remoto oferece.
             # Não conforme não sai no remoto (default explícito aqui por
-            # legibilidade); afrouxar é decisão consciente por canal.
+            # legibilidade). O runtime não permite afrouxar esse limite por
+            # override: somente o PDV local pode vender grau com markdown.
             "sells_nonconforming": False,
+        }
+        # Fila de fornada (fermata): o cliente pode reservar a produção futura
+        # conhecida por até dois dias. O relógio de 15 min só começa quando o
+        # Stockman materializa a unidade; até lá a intenção não expira nem cobra.
+        #
+        # Isto precisa ser explícito no seed. Herdar o default desligado fazia o
+        # catálogo demonstrar uma fornada planejada que nenhum cliente conseguia
+        # reservar — e obrigava qualquer QA da notificação a fabricar Hold à mão,
+        # pulando justamente os invariantes que o ensaio deveria provar.
+        _remote_waitlist = {
+            "enabled": True,
+            "horizon_days": 2,
+            "confirmation_minutes": 15,
+            "release_policy": "serve_next",
+            "charge_at": "confirmation",
+            "price_frozen": True,
+        }
+        _remote_notifications = {
+            "backend": "manychat",
+            "fallback_chain": ["sms", "email"],
         }
         _remote_config = {
             # Aceite otimista em 1 min (alpha/staging): com estoque fantasma do
@@ -4910,6 +5821,11 @@ class Command(BaseCommand):
             "confirmation": {"mode": "auto_confirm", "timeout_minutes": 1, "stale_new_alert_minutes": 10},
             "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
+            # Canal remoto nunca herda ``console``: console aceita qualquer
+            # mensagem localmente e interrompe a cadeia antes de alcançar a
+            # pessoa. WhatsApp é o primário; SMS e e-mail são redes reais.
+            "notifications": _remote_notifications,
         }
         _marketplace_config = {
             # stale_new_alert < hold_ttl_minutes (20 < 30): o operador é cutucado
@@ -4925,9 +5841,14 @@ class Command(BaseCommand):
         }
         _whatsapp_config = {
             "confirmation": {"mode": "auto_confirm", "timeout_minutes": 5, "stale_new_alert_minutes": 10},
-            "payment": {"method": ["pix", "card"], "timing": "post_commit", "timeout_minutes": 10},
-            "notifications": {"backend": "manychat"},
+            # O link de Pix/cartão aparece no chat logo depois do pedido, como o
+            # link de pagamento do PDV. `at_commit` também faz a confirmação
+            # esperar a captura (`lifecycle._requires_captured_payment_before_confirmation`):
+            # o concierge não promete fornada a pedido que ainda não pagou.
+            "payment": {"method": ["pix", "card"], "timing": "at_commit", "timeout_minutes": 10},
+            "notifications": _remote_notifications,
             "stock": _remote_stock,
+            "waitlist": _remote_waitlist,
         }
         channels_data = [
             # (ref, name, display_order, is_active, config_overrides)
@@ -4942,9 +5863,10 @@ class Command(BaseCommand):
             # sozinho ao pagar — o operador dá "Iniciar preparo" no gestor (a tela
             # do cliente só diz "Em preparo" quando alguém de fato encosta). PDV e
             # iFood ficam no default "auto" (operador presente / marketplace).
-            ("web", "Loja online", 2, True, {
+            (STOREFRONT_REF, "Loja online", 2, True, {
                 **_remote_config,
                 "short_name": "Site",
+                "order_ref_prefix": "NB",
                 "fulfillment": {"prep_start": "operator", "equipment": ["card_machine"]},
             }),
             ("ifood", "iFood", 3, True, {
@@ -4952,10 +5874,11 @@ class Command(BaseCommand):
                 "pricing": {"policy": "external"},
                 "editing": {"policy": "locked"},
             }),
-            # WhatsApp fica INATIVO: não há nada implementado para ele ainda (nem entrada
-            # de pedido, nem sync). Canal inativo some da matriz do Catálogo — ligar aqui
-            # é o gesto único para trazê-lo de volta quando existir implementação.
-            ("whatsapp", "WhatsApp", 4, False, _whatsapp_config),
+            # WhatsApp: os pedidos entram pelo concierge (conversa por IA no ManyChat,
+            # `shopman/storefront/concierge/`). Canal ATIVO porque existe implementação;
+            # desligar é `is_active=False` aqui ou no Admin, e ele some da matriz do
+            # Catálogo. A chave da IA em si é `SHOPMAN_CONCIERGE["enabled"]`.
+            ("whatsapp", "WhatsApp", 4, True, _whatsapp_config),
         ]
 
         for ref, name, display_order, is_active, config_data in channels_data:
@@ -5000,7 +5923,7 @@ class Command(BaseCommand):
         self.stdout.write("  📺 Canais de exibição...")
 
         pos_ref = getattr(settings, "SHOPMAN_POS_CHANNEL_REF", "pdv")
-        web_ref = "web"
+        web_ref = STOREFRONT_REF
 
         # `short_name` = rótulo da coluna estreita na matriz do Catálogo. O nome
         # completo continua valendo no Admin, onde ele diz QUAL TV é ("TV do Café" vs
@@ -5011,14 +5934,14 @@ class Command(BaseCommand):
         # formato nomeia.
         channels_data = [
             # (ref, name, short_name, format, prices_from, [collection_refs])
-            ("tv-salao", "TV do Salão", "TV2", "", pos_ref,
-             ["rusticos", "finos", "salgados"]),
-            ("tv-cafe", "TV do Café", "TV1", "", pos_ref,
-             ["bebidas-quentes", "bebidas-geladas", "torneira", "doces"]),
+            ("tv-1", "TV do Café", "TV1", "", pos_ref,
+             ["bebidas-quentes", "bebidas-geladas", "doces"]),
+            ("tv-2", "TV do Salão", "TV2", "", pos_ref,
+             ["rusticos", "macios", "folhados", "salgados"]),
             ("google-shopping", "Google Shopping", "Google", "google_merchant", web_ref,
-             ["rusticos", "finos", "salgados", "doces"]),
+             ["rusticos", "macios", "folhados", "salgados", "doces"]),
             ("meta-catalog", "Catálogo Meta", "Meta", "meta_catalog", web_ref,
-             ["rusticos", "finos", "salgados", "doces"]),
+             ["rusticos", "macios", "folhados", "salgados", "doces"]),
         ]
 
         for ref, name, short_name, fmt, prices_from, collections in channels_data:
@@ -5053,7 +5976,7 @@ class Command(BaseCommand):
         order_count = 0
         customer_list = list(customers.values())
         product_list = list(products.values())
-        channel_list = [channels["pdv"], channels["web"], channels["whatsapp"]]
+        channel_list = [channels["pdv"], channels[STOREFRONT_REF], channels["whatsapp"]]
 
         # Seasonal demand multiplier based on current month
         current_month = now.month
@@ -5501,7 +6424,7 @@ class Command(BaseCommand):
         self.stdout.write("  🧪 Cenários de segurança/confiabilidade...")
 
         now = timezone.now()
-        web = channels.get("web")
+        web = channels.get(STOREFRONT_REF)
         product = products.get("CT") or next(iter(products.values()), None)
         if web is None or product is None:
             self.stdout.write("  ⏭️  Sem canal web/produto para cenários de borda")
@@ -6439,7 +7362,7 @@ class Command(BaseCommand):
                 error="sementes de validação: manteiga francesa abaixo do ponto de reposição",
             )
 
-        active_count = OperatorAlert.objects.filter(acknowledged=False).count()
+        active_count = OperatorAlert.objects.filter(resolved_at__isnull=True).count()
         self.stdout.write(
             f"  ✅ Alertas operacionais ativos: {active_count}"
             f" ({created_late} atraso, {created_yield} rendimento)"
@@ -7127,16 +8050,43 @@ class Command(BaseCommand):
             "order_preparing": {"subject": "Pedido {order_ref} em preparo", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está sendo preparado.\n\nAvisaremos quando estiver pronto!"},
             "order_ready_pickup": {"subject": "Pedido {order_ref} pronto para retirada", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto para retirada! \U0001f389\n\nVenha buscar. Obrigado!"},
             "order_ready_delivery": {"subject": "Pedido {order_ref} pronto para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está pronto e aguardando entregador. Assim que sair para entrega avisamos. \U0001f4e6"},
-            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!\n\nEm breve estará com você!"},
+            "order_dispatched": {"subject": "Pedido {order_ref} saiu para entrega", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* saiu para entrega!{courier_tracking_suffix}\n\nQuando receber, é só confirmar por aqui: {tracking_url}"},
             "order_delivered": {"subject": "Pedido {order_ref} entregue", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi entregue.\n\nEsperamos que tenha gostado! Obrigado pela preferência."},
-            "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nEm caso de dúvidas, entre em contato."},
-            "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.\n\nMotivo: {reason}\n\nEm caso de dúvidas, estamos aqui."},
+            "order_cancelled": {"subject": "Pedido {order_ref} cancelado", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* foi cancelado.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
+            "order_rejected": {"subject": "Pedido {order_ref} não confirmado", "body": "Olá{customer_name_greeting}! O estabelecimento não conseguiu confirmar o pedido *{order_ref}*.{reason_note}\n\nVeja os detalhes do pedido por aqui: {tracking_url}"},
             "payment_requested": {"subject": "Pedido {order_ref}: pagamento liberado", "body": "Olá{customer_name_greeting}! Confirmamos a disponibilidade do pedido *{order_ref}*.\n\nPara continuar, conclua o pagamento dentro do prazo: {payment_url}"},
-            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nSeu pedido seguirá para preparo. Obrigado!"},
-            "payment_expired": {"subject": "Pagamento do pedido {order_ref} expirado", "body": "Olá{customer_name_greeting}! O prazo de pagamento do pedido *{order_ref}* expirou.\n\nO pedido foi cancelado automaticamente."},
+            "payment_confirmed": {"subject": "Pagamento do pedido {order_ref} confirmado", "body": "Olá{customer_name_greeting}! O pagamento do pedido *{order_ref}* foi recebido.\n\nValor: *{total}*\n\nAvisamos a cada passo. Acompanhe por aqui: {tracking_url}"},
+            # Pedido remoto anotado no PDV: a venda fechou e o cliente paga pelo link.
+            # Evento próprio, não o `payment_requested` — a copy é outra ("anotamos",
+            # não "conferimos a disponibilidade") e o dedupe por (pedido, template)
+            # colidiria com o aviso da loja online. `{payment_deadline_note}` some
+            # sozinho quando não há prazo gravado.
+            "payment_link_sent": {"subject": "Pedido {order_ref}: link de pagamento", "body": "Olá{customer_name_greeting}! Anotamos seu pedido *{order_ref}* — total *{total}*.\n\nPara confirmar, é só pagar por aqui: {checkout_url}{payment_deadline_note}\n\nQualquer coisa, é só responder esta mensagem. 🥖"},
+            # Prazo vencido sem pagamento (Pix da loja ou link do balcão): a casa
+            # LIBEROU a reserva — é o que acontece e é o que o cliente entende.
+            # "Expirou / cancelado automaticamente" era vocabulário de sistema.
+            "payment_expired": {"subject": "Pedido {order_ref}: reserva liberada", "body": "Olá{customer_name_greeting}! Não recebemos o pagamento do pedido *{order_ref}* dentro do prazo, então liberamos a reserva. Se ainda quiser, é só falar com a gente que refazemos o pedido. 🥖"},
             "payment_failed": {"subject": "Falha ao preparar pagamento do pedido {order_ref}", "body": "Olá{customer_name_greeting}! Não conseguimos preparar o pagamento do pedido *{order_ref}*.\n\nAcesse {payment_url} para tentar novamente."},
             "payment_refunded": {"subject": "Reembolso do pedido {order_ref} processado", "body": "Olá{customer_name_greeting}! O reembolso do pedido *{order_ref}* foi processado.\n\nValor: *{total}*"},
-            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*!"},
+            "loyalty_earned": {"subject": "Você ganhou pontos de fidelidade!", "body": "Olá{customer_name_greeting}! Você ganhou pontos de fidelidade com o pedido *{order_ref}*.\n\nSeu saldo fica aqui: {account_url}"},
+            # Quatro eventos que viviam só no fallback do código: sem linha aqui, o
+            # lojista não os enxerga no Admin, não reescreve o texto e não tem onde
+            # colar o flow do ManyChat. Mesmo motivo pelo qual announcement_published
+            # e stock_arrived já estavam na lista.
+            # A mensagem de ENTRADA na loja. Morava dentro do ManyChat e por isso
+            # não tinha log, teste nem quem revisasse; agora é copy da casa.
+            "access_link": {"subject": "Seu acesso à loja", "body": "Olá{customer_name_greeting}! Aqui está seu acesso à loja:\n{access_url}{cart_note}\n\nO link é só seu e vale por poucos minutos."},
+            "waitlist_available": {"subject": "Sua fornada saiu — confirme o pedido {order_ref}", "body": "Olá{customer_name_greeting}! Sua fornada saiu 🥐\n\nConfirme o pedido *{order_ref}* para garantir o seu: {tracking_url}"},
+            "waitlist_released": {"subject": "Pedido {order_ref}: a vaga passou a vez", "body": "Olá{customer_name_greeting}! O prazo de confirmação do pedido *{order_ref}* passou e liberamos a sua vaga.\n\nNada foi cobrado, e é só entrar na fila da próxima fornada: {tracking_url}"},
+            "preorder_reminder": {"subject": "Lembrete: pedido {order_ref} agendado para amanhã", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* está agendado para amanhã. Já estamos preparando tudo!\n\nAcompanhe por aqui: {tracking_url}"},
+            "payment_reminder": {"subject": "Pedido {order_ref} aguarda pagamento", "body": "Olá{customer_name_greeting}! Seu pedido *{order_ref}* aguarda o pagamento.\n\nConclua por aqui: {payment_url}{pix_suffix}"},
+            # Pedido de compra ao fornecedor (WhatsApp/SMS/e-mail via
+            # `purchase._supplier_dispatch_route`). Único evento de audiência
+            # FORNECEDOR, e o único do mapa de templates da Meta que não tinha
+            # linha aqui: `event` é readonly no Admin, então sem esta linha o
+            # template aprovado não teria onde gravar o `whatsapp_flow_ns` —
+            # sobrava o `MANYCHAT_FLOW_MAP` do settings, que custa deploy.
+            "purchase_request": {"subject": "Pedido de compra {purchase_ref}", "body": "Olá, {supplier_greeting}! Aqui é da {shop_name}. Precisamos repor {material_name}: {purchase_qty_display}. Pode confirmar disponibilidade, prazo e valor final? (pedido {purchase_ref})"},
             # Produção → operador (notification.send de sistema, WP-PE2).
             # Opt-in via Shop.defaults["production"]["notifications"].
             "production_late": {"subject": "Produção {work_order_ref} atrasada", "body": "A produção *{work_order_ref}* ({output_sku}) está há {elapsed_minutes} min em andamento (janela: {target_minutes} min).\n\nConfira o chão de produção."},
@@ -7188,6 +8138,26 @@ class Command(BaseCommand):
             # Mínimo de entrega, mínimo geral e frete grátis são políticas da loja
             # em Shop.defaults["rules"] (ver _seed_shop), fonte única consumida
             # pelo aviso ao vivo e pelos validators de commit.
+            #
+            # Sugestão: os defaults do dono também entram aqui, e não só na
+            # migração 0030, porque `_flush` apaga TODA RuleConfig — sem estas
+            # duas linhas, um `seed --flush` deixaria a casa sem regra de
+            # adicional e sem ninguém perceber (o motor cairia só em
+            # co-ocorrência, que num banco recém-flushado é nada).
+            {
+                "ref": "suggestion.complement",
+                "rule_path": "shopman.shop.rules.suggestion.ComplementRule",
+                "label": "Sugestão de adicional",
+                "params": DEFAULT_COMPLEMENT_PARAMS,
+                "priority": 100,
+            },
+            {
+                "ref": "suggestion.substitute",
+                "rule_path": "shopman.shop.rules.suggestion.SubstituteRule",
+                "label": "Sugestão de substituto",
+                "params": DEFAULT_SUBSTITUTE_PARAMS,
+                "priority": 101,
+            },
         ]
 
         count = 0
@@ -7200,7 +8170,9 @@ class Command(BaseCommand):
                     "label": rc["label"],
                     "params": rc["params"],
                     "priority": rc["priority"],
-                    "enabled": True,
+                    # Regra pode nascer desligada (a de substituto nasce): o
+                    # default continua ligado para todas as outras.
+                    "enabled": rc.get("enabled", True),
                 },
             )
             rules_by_ref[rc["ref"]] = obj
@@ -7538,7 +8510,7 @@ class Command(BaseCommand):
 
         settled = self._make_qa_order(
             ref="DLV-ACERTADA",
-            channel_ref="web",
+            channel_ref=STOREFRONT_REF,
             status=Order.Status.READY,
             items=[self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 5000}},
@@ -7558,7 +8530,7 @@ class Command(BaseCommand):
 
         on_the_road = self._make_qa_order(
             ref="DLV-NARUA",
-            channel_ref="web",
+            channel_ref=STOREFRONT_REF,
             status=Order.Status.READY,
             items=[self._qa_line(baguete, 3), self._qa_line(croissant, 2)],
             data={**base_data, "payment": {"method": "cash", "collection": "on_delivery", "change_for_q": 10000}},
@@ -8467,7 +9439,7 @@ class Command(BaseCommand):
                 if weekend_only and day.weekday() not in weekend_only:
                     continue
                 ShelfOutage.objects.get_or_create(
-                    sku=sku, channel_ref="web",
+                    sku=sku, channel_ref=STOREFRONT_REF,
                     started_at=self._at(day, soldout_hour),
                     defaults={
                         "reason": OutageReason.SOLD_OUT,
@@ -8478,7 +9450,7 @@ class Command(BaseCommand):
         pausado = "KP"
         if pausado in products:
             ShelfOutage.objects.get_or_create(
-                sku=pausado, channel_ref="web",
+                sku=pausado, channel_ref=STOREFRONT_REF,
                 started_at=self._at(today - timedelta(days=9), 9),
                 defaults={
                     "reason": OutageReason.PAUSED,
@@ -8487,10 +9459,11 @@ class Command(BaseCommand):
             )
 
     def _seed_oven_runs(self, *, days: int) -> None:
-        """Tempo de forno com cobertura PARCIAL — o KPI de adoção precisa disso.
+        """Fatos sintéticos de forno com cobertura PARCIAL para BI.
 
         Cobertura 100% esconderia o indicador que mostra se a equipe está mesmo
-        usando o timer; aqui ~70% das fornadas têm medição.
+        usando o timer; aqui ~70% das fornadas têm medição. Não são timers locais
+        persistidos: são medições concluídas, marcadas inequivocamente como seed.
         """
         from shopman.craftsman.models import WorkOrder
 
@@ -8498,23 +9471,32 @@ class Command(BaseCommand):
 
         rng = random.Random(20260816)
         finished = WorkOrder.objects.filter(
-            status=WorkOrder.Status.FINISHED, finished_at__isnull=False
+            source_ref__startswith="seed:production:",
+            status=WorkOrder.Status.FINISHED,
+            finished_at__isnull=False,
         ).order_by("-target_date")[: days * 4]
+        OvenRun.objects.filter(metadata__seed="nelson").delete()
         for index, wo in enumerate(finished):
             if index % 10 < 3:  # 30% sem medição: fornada em que ninguém armou
+                continue
+            # Um operador pode ter usado o timer real sobre uma WO de cenário.
+            # Esse fato sem marcador de seed vence e jamais é substituído.
+            if OvenRun.objects.filter(work_order_ref=wo.ref).exists():
                 continue
             planned = rng.choice((18, 22, 25, 30)) * 60
             real = planned + rng.randint(-180, 420)  # às vezes passa do ponto
             armed = wo.finished_at - timedelta(seconds=real)
-            OvenRun.objects.get_or_create(
+            OvenRun.objects.create(
                 work_order_ref=wo.ref,
-                defaults={
-                    "oven_ref": wo.position_ref or "",
-                    "operator_ref": wo.operator_ref or "",
-                    "planned_seconds": planned,
-                    "armed_at": armed,
-                    "concluded_at": wo.finished_at,
-                    "status": "concluded",
+                oven_ref=wo.position_ref or "",
+                operator_ref=wo.operator_ref or "",
+                planned_seconds=planned,
+                armed_at=armed,
+                concluded_at=wo.finished_at,
+                status="concluded",
+                metadata={
+                    "seed": "nelson",
+                    "source": "synthetic_bi_history",
                 },
             )
 

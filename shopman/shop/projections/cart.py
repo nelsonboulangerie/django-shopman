@@ -61,17 +61,23 @@ class FreeDeliveryProgressProjection:
 
 @dataclass(frozen=True)
 class UpsellSuggestionProjection:
-    """One popular SKU not yet in the cart, offered as an upsell.
+    """Um SKU oferecido junto do que já está na sacola.
 
-    Carries the resolved listed price (``unit_price_q``) the checkout would
-    charge plus the name/image the surface needs to render — no Django model
-    instance, no formatted price.
+    Escolhido pelo motor de sugestão (``projections.suggestions``) — não mais
+    "o mais popular que falta", que foi a regra que ofereceu Água a quem levava
+    pão. Carrega o preço listado que o checkout cobraria (``unit_price_q``) e o
+    nome/imagem que a superfície renderiza: sem instância de model, sem preço
+    formatado.
     """
 
     sku: str
     name: str
     unit_price_q: int
     image_url: str | None
+    #: Por que ESTE item foi oferecido — os códigos que o motor de sugestão
+    #: produziu ("affinity:BAG", "pairing:natureza=comida→bebida"). Não vai
+    #: para a tela do cliente; existe para o Admin explicar e o B.I. medir.
+    reasons: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -101,6 +107,18 @@ class CartLineProjection:
     original_price_q: int | None
     discount_name: str | None  # raw promo/coupon name (presentation prefixes "Cupom")
     discount_is_coupon: bool
+
+    # Preparado na hora: promessa DECLARADA da casa
+    # (``Product.metadata["made_to_order"]``) — finalizado no momento de servir.
+    # Eixo próprio, independente da fila: o croque que espera a fornada de amanhã
+    # carrega os dois (o selo diz o que É, a fila diz quando vem).
+    is_made_to_order: bool = False
+
+    # Esgotado honesto: a linha caiu por FALTA — não por pausa (decisão do
+    # operador) nem por disponibilidade parcial, que tem o "Usar N" como saída.
+    # Mesma régua do card e da PDP; sem ela a sacola dizia "Indisponível" e a
+    # única saída era a lixeira.
+    is_notifiable: bool = False
 
 
 @dataclass(frozen=True)
@@ -229,6 +247,8 @@ def build_cart(
 
     skus = [item.get("sku", "") for item in raw_items]
     names_by_sku = _names_by_sku(skus)
+    made_to_order = _made_to_order_skus(skus)
+    sellable = _sellable_skus(skus)
     avail_map, own_holds = _availability(skus, session_key, channel_ref)
 
     pricing = session.pricing or {}
@@ -236,7 +256,11 @@ def build_cart(
     discount_items = {d["sku"]: d for d in discount_data.get("items", [])}
 
     lines = tuple(
-        _build_line(item, names_by_sku, avail_map, own_holds, discount_items, session_key)
+        _build_line(
+            item, names_by_sku, avail_map, own_holds, discount_items, session_key,
+            made_to_order_skus=made_to_order,
+            sellable_skus=sellable,
+        )
         for item in raw_items
     )
 
@@ -281,7 +305,7 @@ def build_cart(
     minimum_order = build_minimum_order_progress(threshold_base_q, channel_ref)
     delivery_minimum = build_delivery_minimum_progress(threshold_base_q, channel_ref)
     free_delivery = build_free_delivery_progress(threshold_base_q, channel_ref)
-    upsell = build_upsell_suggestion({line.sku for line in lines}, channel_ref=channel_ref)
+    upsell = _upsell({line.sku for line in lines}, channel_ref=channel_ref)
 
     can_checkout, block_reason = _checkout_eligibility(
         is_empty=False,
@@ -331,6 +355,51 @@ def _names_by_sku(skus: list[str]) -> dict[str, str]:
     }
 
 
+def _sellable_skus(skus: list[str]) -> frozenset[str]:
+    """Quais destes SKUs a casa ainda vende (``Product.is_sellable``).
+
+    O mapa de disponibilidade vem do Stockman e só conhece pausa de ESTOQUE; a
+    pausa comercial mora no produto. Sem esta leitura, um item despublicado pela
+    operação ganharia o sino "Me avise" — e o cliente sairia esperando a volta de
+    algo que foi decisão, não falta.
+    """
+    if not skus:
+        return frozenset()
+    try:
+        from shopman.offerman.models import Product
+
+        return frozenset(
+            p.sku
+            for p in Product.objects.filter(sku__in=skus, is_sellable=True).only("sku")
+        )
+    except Exception:
+        logger.warning("cart.sellable lookup failed skus=%s", skus, exc_info=True)
+        return frozenset()
+
+
+def _made_to_order_skus(skus: list[str]) -> frozenset[str]:
+    """Quais destes SKUs a casa declara como "Preparado na hora".
+
+    Uma consulta para a sacola inteira (o mesmo padrão de ``_names_by_sku``):
+    perguntar por linha faria N+1 numa leitura que roda a cada mexida na
+    sacola. Degrada para vazio — selo é promessa, e promessa que não se pode
+    confirmar não se faz.
+    """
+    if not skus:
+        return frozenset()
+    try:
+        from shopman.offerman.models import Product
+
+        return frozenset(
+            p.sku
+            for p in Product.objects.filter(sku__in=skus).only("sku", "metadata")
+            if (p.metadata or {}).get("made_to_order")
+        )
+    except Exception:
+        logger.warning("cart.made_to_order lookup failed skus=%s", skus, exc_info=True)
+        return frozenset()
+
+
 def _availability(
     skus: list[str], session_key: str, channel_ref: str,
 ) -> tuple[dict[str, dict | None], dict[str, Decimal]]:
@@ -341,15 +410,20 @@ def _availability(
 
         from shopman.shop.adapters import stock as stock_adapter
         from shopman.shop.services import availability as availability_service
+        from shopman.shop.services import waitlist
 
         scope = stock_adapter.get_channel_scope(channel_ref)
         avail_map = availability_for_skus(
             skus,
+            # Fila de espera (WP-P2E): a sacola lê no HORIZONTE de promessa do
+            # canal. Desligada, o horizonte é hoje — a leitura é a de sempre.
+            target_date=waitlist.promise_horizon(channel_ref),
             safety_margin=scope["safety_margin"],
             allowed_positions=scope["allowed_positions"],
             excluded_positions=scope.get("excluded_positions"),
             expiry_margin_days=scope.get("expiry_margin_days", 0),
             include_nonconforming=scope.get("sells_nonconforming", True),
+            allowed_quality_grade_refs=scope.get("allowed_quality_grade_refs"),
         )
         own_holds = availability_service.own_holds_by_sku(session_key, skus)
         return avail_map, own_holds
@@ -365,14 +439,47 @@ def _build_line(
     own_holds: dict[str, Decimal],
     discount_items: dict[str, dict],
     session_key: str,
+    made_to_order_skus: frozenset[str] = frozenset(),
+    sellable_skus: frozenset[str] = frozenset(),
 ) -> CartLineProjection:
     sku = item.get("sku", "")
     qty = int(Decimal(str(item.get("qty", 0) or 0)))
     name = item.get("name") or names_by_sku.get(sku) or sku
 
+    raw_avail = avail_map.get(sku)
+    # ── Dois eixos, duas fontes. Eles não competem mais. ──
+    #
+    # "Preparado na hora" é PROMESSA DA CASA sobre o produto (finalizado no
+    # momento de servir: gratinado, montado, extraído). Quem declara é o
+    # catálogo — ``Product.metadata["made_to_order"]``.
+    #
+    # "Fila de espera" é ESTADO DA RESERVA desta linha (o hold espera uma
+    # fornada que ainda não saiu). Quem responde é o hold.
+    #
+    # ⚠️ Isto saiu de cima de ``availability_policy == "demand_ok"``, e a troca
+    # não é cosmética. ``demand_ok`` é política de CONFERÊNCIA DE ESTOQUE
+    # ("aprova a venda mesmo sem saldo"). No catálogo da casa ela cai sobre
+    # café e salgados de vitrine, que de fato são finalizados na hora — mas a
+    # coincidência não é contrato, e o acoplamento quebrava nos dois sentidos:
+    # marcar um PÃO como ``demand_ok`` por razão de estoque dava a ele o selo,
+    # e apertar o croque para ``stock_only`` (o natural quando se passa a
+    # controlar o estoque dele) tirava o selo, calado.
+    #
+    # Separados, some a regra de "quem ganha": um croque que espera a fornada
+    # de amanhã é as duas coisas ao mesmo tempo, e a sacola pode dizer as duas
+    # — o que ele É, e quando ele vem.
+    is_made_to_order = sku in made_to_order_skus
     is_awaiting, is_ready, deadline_iso, planned_for_date = _planned_hold(session_key, sku)
     is_available, available_qty = _line_availability(
-        sku, qty, avail_map.get(sku), own_holds,
+        sku, qty, raw_avail, own_holds,
+    )
+    # "Me avise" só para escassez de verdade: pausa é decisão (e nem o hold
+    # próprio reabre a linha), e sobra parcial já tem o "Usar N" como avanço.
+    is_notifiable = (
+        not is_available
+        and not (raw_avail or {}).get("is_paused", False)
+        and not available_qty
+        and sku in sellable_skus
     )
 
     disc = discount_items.get(sku)
@@ -389,6 +496,8 @@ def _build_line(
         line_total_q=int(item.get("line_total_q", 0) or 0),
         is_available=is_available,
         available_qty=available_qty,
+        is_made_to_order=is_made_to_order,
+        is_notifiable=is_notifiable,
         is_awaiting_confirmation=is_awaiting,
         is_ready_for_confirmation=is_ready,
         confirmation_deadline_iso=deadline_iso,
@@ -448,12 +557,23 @@ def _line_availability(
     if avail.get("availability_policy") == "demand_ok" and not avail.get("is_paused", False):
         return True, None
 
+    if avail.get("is_paused", False):
+        # Pausado é decisão do operador, não escassez: nem o próprio hold da
+        # sessão reabre a linha.
+        return False, 0
+
     own_hold = int(own_holds.get(sku, Decimal("0")))
-    ready_physical = int(avail.get("ready_physical", 0) or 0)
-    held_ready = int(avail.get("held_ready", 0) or 0)
-    margin = int(avail.get("safety_margin", 0) or 0)
-    other_holds = max(0, held_ready - own_hold)
-    max_orderable = max(0, ready_physical - other_holds - margin)
+    promisable = avail.get("total_promisable")
+    if promisable is None:
+        return True, None
+    # ``total_promisable`` já é a promessa da POLÍTICA (``stock_only`` →
+    # só o pronto; ``planned_ok`` → pronto + em produção + fornada
+    # planejada dentro do horizonte) e já desconta margem e holds — o da
+    # própria sessão inclusive, por isso ele volta somado. Ler
+    # ``ready_physical`` aqui era contar só a prateleira, e a linha em fila
+    # nascia com máximo 0: o stepper travava no "+" e o checkout bloqueava
+    # junto do selo que prometia a fornada (WP-P2E F1).
+    max_orderable = max(0, int(Decimal(str(promisable))) + own_hold)
     return max_orderable >= qty, max_orderable
 
 
@@ -603,49 +723,42 @@ def build_free_delivery_progress(
     )
 
 
-def build_upsell_suggestion(
+def _upsell(
     cart_skus: set[str],
     *,
     channel_ref: str = DEFAULT_STOREFRONT_CHANNEL_REF,
 ) -> UpsellSuggestionProjection | None:
-    """Return one popular SKU not already in ``cart_skus`` (or ``None``).
+    """Uma sugestão de adicional para esta sacola, ou ``None``.
 
-    Resolves the listed price via ``ListingItem`` so the suggestion carries
-    the same price the checkout would charge.
+    Quem escolhe é o motor de sugestão (``projections.suggestions``): a mesma
+    regra que o concierge usa, e não mais uma por superfície. A regra anterior
+    daqui era "o item mais popular que não está na sacola", e foi ela que
+    ofereceu Água a quem levava pão — popularidade não é afinidade.
+
+    Os portões (visível no canal, vendável, disponível agora, fora da sacola)
+    são do motor. Degrada para ``None``: sacola sem sugestão é uma sacola sem
+    trilho, não uma sacola quebrada.
     """
-    from shopman.offerman.models import ListingItem, Product
+    from shopman.shop.projections.suggestions import COMPLEMENT, suggest
 
-    from shopman.shop.projections.storefront_context import popular_skus
-
-    popular = popular_skus(limit=10)
-    candidates = [sku for sku in popular if sku not in cart_skus]
-    if not candidates:
+    try:
+        found = suggest(
+            COMPLEMENT, cart_skus=cart_skus, channel_ref=channel_ref, surface="web",
+        )
+    except Exception:
+        logger.warning("cart: motor de sugestão falhou; sacola segue sem trilho.", exc_info=True)
         return None
 
-    for sku in candidates:
-        product = Product.objects.filter(
-            sku=sku, is_published=True, is_sellable=True,
-        ).first()
-        if product is None:
-            continue
-        item = (
-            ListingItem.objects.filter(
-                listing__ref=channel_ref,
-                listing__is_active=True,
-                product=product,
-                is_published=True,
-            )
-            .order_by("-min_qty")
-            .first()
-        )
-        price_q = item.price_q if item else product.base_price_q
-        return UpsellSuggestionProjection(
-            sku=product.sku,
-            name=getattr(product, "name", "") or "",
-            unit_price_q=int(price_q or 0),
-            image_url=getattr(product, "image_url", None) or None,
-        )
-    return None
+    if not found:
+        return None
+    top = found[0]
+    return UpsellSuggestionProjection(
+        sku=top.sku,
+        name=top.name,
+        unit_price_q=top.unit_price_q,
+        image_url=top.image_url,
+        reasons=top.reasons,
+    )
 
 
 __all__ = [
@@ -660,6 +773,5 @@ __all__ = [
     "build_delivery_minimum_progress",
     "build_free_delivery_progress",
     "build_minimum_order_progress",
-    "build_upsell_suggestion",
     "shop_rule_q",
 ]

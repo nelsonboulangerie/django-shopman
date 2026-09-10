@@ -1,0 +1,65 @@
+{
+  "fixture_version": 1,
+  "anonymization": "Synthetic refs and names only; no production data or personal identifiers.",
+  "scenarios": {
+    "product_without_recipe": {
+      "sku": "FIX-NO-RECIPE",
+      "expected": "visible_missing_recipe_recovery"
+    },
+    "single_work_order": {
+      "sku": "FIX-BREAD",
+      "work_orders": [{"ref": "WO-FIX-001", "status": "planned", "quantity": "12"}]
+    },
+    "multiple_work_orders": {
+      "sku": "FIX-BREAD",
+      "work_orders": [
+        {"ref": "WO-FIX-002", "status": "planned", "quantity": "12"},
+        {"ref": "WO-FIX-003", "status": "started", "quantity": "8"}
+      ],
+      "expected": "explicit_batch_selection"
+    },
+    "linked_order": {
+      "work_order_ref": "WO-FIX-004",
+      "order_refs": ["ORDER-FIX-001"],
+      "committed_quantity": "6"
+    },
+    "stock_states": [
+      {"sku": "FIX-FLOUR", "needed": "5", "available": "7", "state": "sufficient"},
+      {"sku": "FIX-SALT", "needed": "1", "available": "0.5", "state": "insufficient"},
+      {"sku": "FIX-YEAST", "needed": "0.2", "available": "0", "state": "known_zero"}
+    ],
+    "late_work_order": {
+      "ref": "WO-FIX-005",
+      "status": "started",
+      "elapsed_minutes": 42,
+      "target_minutes": 30
+    },
+    "partially_completed_steps": {
+      "ref": "WO-FIX-006",
+      "steps": ["Mistura", "Fermentacao", "Forno"],
+      "completed": 1,
+      "revision": 2
+    },
+    "mixed_quality": {
+      "ref": "WO-FIX-007",
+      "started_quantity": "40",
+      "partition": [
+        {"quantity": "32", "quality_grade_ref": "standard", "destination": "sellable"},
+        {"quantity": "5", "quality_grade_ref": "minimal", "quality_defect_ref": "overbaked", "destination": "markdown"},
+        {"quantity": "3", "quality_defect_ref": "underproofed", "destination": "waste"}
+      ]
+    },
+    "total_loss": {
+      "ref": "WO-FIX-008",
+      "started_quantity": "10",
+      "partition": [{"quantity": "10", "quality_defect_ref": "contaminated", "destination": "waste"}],
+      "baseline_support": false
+    },
+    "tablet_race": {
+      "ref": "WO-FIX-009",
+      "tablet_a": {"expected_rev": 1, "idempotency_key": "attempt-a"},
+      "tablet_b": {"expected_rev": 1, "idempotency_key": "attempt-b"},
+      "expected": "one_commit_one_conflict"
+    }
+  }
+}

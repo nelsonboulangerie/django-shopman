@@ -1,150 +1,349 @@
 <script setup lang="ts">
-// Tela 2 do quiosque de QC (QC-FORNADA §5). Regras de layout medidas no
-// protótipo e honradas aqui:
-//   · o numpad é ÂNCORA: da barra do topo até o ⌫ nada muda de altura em
-//     nenhum estado (os cartões de motivo têm altura fixa e o sheet cobre por
-//     cima, não empurra);
-//   · dois campos lado a lado, o da direita apagado até um grau com desconto;
-//   · a escala é coluna à direita do numpad, faixa de cor contínua na borda
-//     esquerda, vão maior entre numpad e coluna do que entre teclas;
-//   · Confirmar sempre ativo: se falta motivo, pergunta um de cada vez no
-//     bottom sheet e fecha na resposta.
+// Fechamento de uma única fornada. Os quatro botões são buckets de qualidade
+// disjuntos; o grau padrão recebe automaticamente o saldo que não foi lançado
+// nos demais graus nem em Perda.
 import type { QCDefectProjection, QCGradeProjection } from "~/types/production";
 import {
-  applyDiscountGrade,
-  buildPartition,
-  canSubmit,
-  discountGrades,
-  finishedTotal,
-  fullPriceGrades,
+  defaultGradeRef,
   gradeBandClass,
-  initialState,
-  lossQty,
+  isLowerQualityGrade,
   ovenAnchor,
-  pendingQuestions,
   typeBackspace,
   typeDigit,
-  defaultGradeRef,
-  type QcEntryState,
   type QcPartitionGroup,
-  type QcQuestion,
 } from "~/presentation/qc";
 
-const props = defineProps<{
-  title: string;
-  subtitle: string;
-  planned: number | null;
-  /** A fornada real que entrou no forno (declarada no start); null sem start. */
-  started: number | null;
-  grades: QCGradeProjection[];
-  defects: QCDefectProjection[];
-  submitting: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    title: string;
+    subtitle: string;
+    planned: number | null;
+    /** A fornada real que entrou no forno (declarada no start); null sem start. */
+    started: number | null;
+    grades: QCGradeProjection[];
+    defects: QCDefectProjection[];
+    submitting: boolean;
+    mode?: "close" | "correct";
+    initialPartition?: QcPartitionGroup[];
+  }>(),
+  {
+    mode: "close",
+    initialPartition: () => [],
+  },
+);
 
 const emit = defineEmits<{
   back: [];
-  confirm: [payload: { quantity: string; partition: QcPartitionGroup[] }];
+  confirm: [
+    payload: {
+      quantity: string;
+      partition: QcPartitionGroup[];
+      yield_deviation_confirmed: boolean;
+      yield_deviation_reason: string;
+      reason: string;
+    },
+  ];
 }>();
 
-// A âncora da aritmética É o previsto DESTA tela: o que entrou no forno é o
-// que se espera que saia dele, salvo ocorrência (o plano da produção já
-// cumpriu seu papel lá atrás). Ver `ovenAnchor` (QC-FORNADA §1/§4).
-const anchor = ovenAnchor(props.planned, props.started);
+type QuantityTarget = { kind: "grade"; gradeRef: string } | { kind: "loss" };
+type SheetQuestion =
+  | { kind: "overshoot" }
+  | { kind: "grade_reason"; gradeRef: string }
+  | { kind: "loss_reason" };
 
-const state = ref<QcEntryState>(initialState(anchor.anchor, defaultGradeRef(props.grades)));
+function quantityOf(group: QcPartitionGroup): number {
+  const quantity = Number(group.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+}
 
-const topGrades = computed(() => fullPriceGrades(props.grades));
-const lowGrades = computed(() => discountGrades(props.grades));
-const activeDefects = computed(() => props.defects);
+const correctionTotal = props.initialPartition.reduce(
+  (total, group) => total + quantityOf(group),
+  0,
+);
+const correctionLoss = props.initialPartition
+  .filter((group) => group.loss)
+  .reduce((total, group) => total + quantityOf(group), 0);
+const anchor =
+  props.mode === "correct"
+    ? { anchor: correctionTotal }
+    : ovenAnchor(props.planned, props.started);
+const orderedGrades = computed(() =>
+  [...props.grades].sort((left, right) => right.rank - left.rank),
+);
+const defaultRef = computed(() => defaultGradeRef(props.grades));
 
-// ── Campo ativo e entrada tipo calculadora ──────────────────────────────────
-const activeField = ref<"full" | "discount">("full");
+// Chaves por ref tornam impossível repetir um grau no payload.
+const gradeQuantities = ref<Record<string, number>>(
+  Object.fromEntries(
+    props.initialPartition
+      .filter((group) => !group.loss && group.quality_grade_ref)
+      .map((group) => [group.quality_grade_ref!, quantityOf(group)]),
+  ),
+);
+const gradeDefectRefs = ref<Record<string, string>>(
+  Object.fromEntries(
+    props.initialPartition
+      .filter(
+        (group) =>
+          !group.loss && group.quality_grade_ref && group.quality_defect_ref,
+      )
+      .map((group) => [group.quality_grade_ref!, group.quality_defect_ref!]),
+  ),
+);
+const lossQuantity = ref(props.mode === "correct" ? correctionLoss : 0);
+const lossDefectRef = ref(
+  props.initialPartition.find((group) => group.loss)?.quality_defect_ref ?? "",
+);
+const overshootConfirmed = ref(false);
+const overshootReason = ref("");
+// O diff estruturado + ator + horário já é a auditoria. Não cobramos do
+// operador um segundo motivo livre que apenas repetiria o defeito escolhido.
+const auditReason = "Revisão do QC registrada no quiosque.";
+const submitLatched = ref(false);
+
+watch(
+  () => props.submitting,
+  (value, previous) => {
+    if (previous && !value) submitLatched.value = false;
+  },
+);
+
+// Com âncora, Normal é saldo e não exige digitação. Sem âncora, o padrão é um
+// bucket editável como os demais para que uma fornada avulsa possa ser fechada.
+const activeTarget = ref<QuantityTarget | null>(
+  anchor.anchor === null && defaultRef.value
+    ? { kind: "grade", gradeRef: defaultRef.value }
+    : null,
+);
 const fresh = ref(true);
-const discountEnabled = computed(() => state.value.discountGradeRef !== "");
 
-function focusField(field: "full" | "discount") {
-  if (field === "discount" && !discountEnabled.value) return;
-  activeField.value = field;
-  fresh.value = true;
+function explicitGradeQuantity(gradeRef: string): number {
+  return gradeQuantities.value[gradeRef] ?? 0;
+}
+
+const explicitTotal = computed(() =>
+  orderedGrades.value
+    .filter((grade) => grade.ref !== defaultRef.value)
+    .reduce((total, grade) => total + explicitGradeQuantity(grade.ref), 0),
+);
+
+const defaultQuantity = computed(() => {
+  if (!defaultRef.value) return 0;
+  if (anchor.anchor === null) return explicitGradeQuantity(defaultRef.value);
+  return Math.max(0, anchor.anchor - explicitTotal.value - lossQuantity.value);
+});
+
+function gradeQuantity(gradeRef: string): number {
+  return gradeRef === defaultRef.value
+    ? defaultQuantity.value
+    : explicitGradeQuantity(gradeRef);
+}
+
+const finishedTotal = computed(() =>
+  orderedGrades.value.reduce(
+    (total, grade) => total + gradeQuantity(grade.ref),
+    0,
+  ),
+);
+const total = computed(() => finishedTotal.value + lossQuantity.value);
+const overshootQuantity = computed(() =>
+  anchor.anchor === null ? 0 : Math.max(0, total.value - anchor.anchor),
+);
+
+const activeGrade = computed(() => {
+  const target = activeTarget.value;
+  if (target?.kind !== "grade") return null;
+  return props.grades.find((grade) => grade.ref === target.gradeRef) ?? null;
+});
+const activeLabel = computed(() => {
+  if (activeTarget.value?.kind === "loss") return "Perda";
+  if (activeGrade.value) return activeGrade.value.label;
+  const grade = props.grades.find((item) => item.ref === defaultRef.value);
+  return grade ? `${grade.label} · Saldo automático` : "Escolha um grau";
+});
+const activeQuantity = computed(() => {
+  if (activeTarget.value?.kind === "loss") return lossQuantity.value;
+  if (activeGrade.value) return gradeQuantity(activeGrade.value.ref);
+  return defaultQuantity.value;
+});
+
+function isActiveGrade(gradeRef: string): boolean {
+  return (
+    activeTarget.value?.kind === "grade" &&
+    activeTarget.value.gradeRef === gradeRef
+  );
+}
+
+function resetOvershootConfirmation() {
+  overshootConfirmed.value = false;
+  overshootReason.value = "";
+}
+
+function setTargetQuantity(quantity: number) {
+  const target = activeTarget.value;
+  if (!target) return;
+  if (target.kind === "loss") {
+    let nextQuantity = quantity;
+    if (props.mode === "correct") {
+      const maximum = Math.max(0, correctionTotal - explicitTotal.value);
+      nextQuantity = Math.min(quantity, maximum);
+      if (quantity > maximum) {
+        useSonner.warning(
+          `Máximo ${maximum}; os outros graus já ocupam o restante.`,
+        );
+      }
+    }
+    lossQuantity.value = nextQuantity;
+    if (nextQuantity === 0) lossDefectRef.value = "";
+  } else {
+    let nextQuantity = quantity;
+    if (props.mode === "correct" && target.gradeRef !== defaultRef.value) {
+      const otherExplicit = orderedGrades.value
+        .filter(
+          (grade) =>
+            grade.ref !== defaultRef.value && grade.ref !== target.gradeRef,
+        )
+        .reduce((total, grade) => total + explicitGradeQuantity(grade.ref), 0);
+      nextQuantity = Math.min(
+        quantity,
+        Math.max(0, correctionTotal - lossQuantity.value - otherExplicit),
+      );
+      if (quantity > nextQuantity) {
+        useSonner.warning(
+          `Máximo ${nextQuantity}; Perda e os outros graus já ocupam o restante.`,
+        );
+      }
+    }
+    gradeQuantities.value = {
+      ...gradeQuantities.value,
+      [target.gradeRef]: nextQuantity,
+    };
+    if (nextQuantity === 0) {
+      gradeDefectRefs.value = {
+        ...gradeDefectRefs.value,
+        [target.gradeRef]: "",
+      };
+    }
+  }
+  resetOvershootConfirmation();
 }
 
 function onDigit(digit: string) {
-  const s = { ...state.value };
-  if (activeField.value === "full") {
-    s.fullQty = typeDigit(s.fullQty, digit, fresh.value);
-    s.fullTouched = true;
-  } else {
-    s.discountQty = typeDigit(s.discountQty, digit, fresh.value);
-  }
-  // Editou quantidade: a confirmação de "saiu mais que o previsto" caduca.
-  s.overshootConfirmed = false;
+  if (!activeTarget.value) return;
+  setTargetQuantity(typeDigit(activeQuantity.value, digit, fresh.value));
   fresh.value = false;
-  state.value = s;
 }
 
 function onBackspace() {
-  const s = { ...state.value };
-  if (activeField.value === "full") {
-    s.fullQty = typeBackspace(s.fullQty);
-    s.fullTouched = true;
-  } else {
-    s.discountQty = typeBackspace(s.discountQty);
-  }
-  s.overshootConfirmed = false;
-  state.value = s;
+  if (!activeTarget.value) return;
+  setTargetQuantity(typeBackspace(activeQuantity.value));
 }
 
 function onClear() {
-  const s = { ...state.value };
-  if (activeField.value === "full") {
-    s.fullQty = 0;
-    s.fullTouched = true;
-  } else {
-    s.discountQty = 0;
-  }
-  s.overshootConfirmed = false;
+  if (!activeTarget.value) return;
+  setTargetQuantity(0);
   fresh.value = true;
-  state.value = s;
 }
 
-// ── Escala ──────────────────────────────────────────────────────────────────
 function pickGrade(grade: QCGradeProjection) {
-  if (grade.markdown_percent === 0) {
-    state.value = { ...state.value, fullGradeRef: grade.ref };
-    return;
+  if (grade.ref === defaultRef.value && anchor.anchor !== null) {
+    // Normal continua sendo o próprio botão/grau, mas sua quantidade é o
+    // saldo: não há um segundo input capaz de duplicá-la.
+    activeTarget.value = null;
+  } else {
+    activeTarget.value = { kind: "grade", gradeRef: grade.ref };
   }
-  state.value = applyDiscountGrade(state.value, grade.ref);
-  activeField.value = "discount";
   fresh.value = true;
 }
 
-const loss = computed(() => lossQty(state.value));
-const total = computed(() => finishedTotal(state.value));
+function pickLoss() {
+  activeTarget.value = { kind: "loss" };
+  fresh.value = true;
+}
 
-const defectLabel = (ref: string) => props.defects.find((d) => d.ref === ref)?.label ?? "";
-const discountIsVetoed = computed(
-  () => !!props.defects.find((d) => d.ref === state.value.discountDefectRef)?.forces_discard,
-);
+function defectLabel(ref: string): string {
+  return props.defects.find((defect) => defect.ref === ref)?.label ?? "";
+}
 
-// ── Confirmar sempre ativo + sheet de motivos ───────────────────────────────
-const sheetQuestion = ref<QcQuestion | null>(null);
+function gradeNeedsReason(grade: QCGradeProjection): boolean {
+  return isLowerQualityGrade(grade.ref) && gradeQuantity(grade.ref) > 0;
+}
+
+function pendingQuestions(): SheetQuestion[] {
+  const questions: SheetQuestion[] = [];
+  if (
+    overshootQuantity.value > 0 &&
+    (!overshootConfirmed.value || !overshootReason.value.trim())
+  ) {
+    questions.push({ kind: "overshoot" });
+  }
+  for (const grade of orderedGrades.value) {
+    if (gradeNeedsReason(grade) && !gradeDefectRefs.value[grade.ref]) {
+      questions.push({ kind: "grade_reason", gradeRef: grade.ref });
+    }
+  }
+  if (lossQuantity.value > 0 && !lossDefectRef.value) {
+    questions.push({ kind: "loss_reason" });
+  }
+  return questions;
+}
+
+function buildPartition(): QcPartitionGroup[] {
+  const groups: QcPartitionGroup[] = [];
+  for (const grade of orderedGrades.value) {
+    const quantity = gradeQuantity(grade.ref);
+    if (quantity <= 0) continue;
+    const group: QcPartitionGroup = {
+      quantity: String(quantity),
+      quality_grade_ref: grade.ref,
+    };
+    if (isLowerQualityGrade(grade.ref)) {
+      group.quality_defect_ref = gradeDefectRefs.value[grade.ref];
+    }
+    groups.push(group);
+  }
+  if (lossQuantity.value > 0) {
+    groups.push({
+      quantity: String(lossQuantity.value),
+      quality_defect_ref: lossDefectRef.value,
+      loss: true,
+    });
+  }
+  return groups;
+}
+
+// Confirmar pergunta apenas o que falta, uma resposta principal por bucket.
+const sheetQuestion = ref<SheetQuestion | null>(null);
 const submitAfterAnswer = ref(false);
-
-const sheetTitle = computed(() =>
-  sheetQuestion.value === "overshoot"
-    ? `Saíram ${total.value} de ${state.value.planned} previstas?`
-    : sheetQuestion.value === "loss_reason"
-      ? `O que houve com as ${loss.value} que não saíram?`
-      : `O que houve com as ${state.value.discountQty} do sublote?`,
+const questionGrade = computed(() => {
+  const question = sheetQuestion.value;
+  if (question?.kind !== "grade_reason") return null;
+  return props.grades.find((grade) => grade.ref === question.gradeRef) ?? null;
+});
+const activeDefects = computed(() =>
+  sheetQuestion.value?.kind === "grade_reason"
+    ? props.defects.filter((defect) => !defect.forces_discard)
+    : props.defects,
 );
+const sheetTitle = computed(() => {
+  if (sheetQuestion.value?.kind === "overshoot") {
+    return `Foram contabilizadas ${total.value} de ${anchor.anchor} unidades?`;
+  }
+  if (sheetQuestion.value?.kind === "loss_reason") {
+    return `Qual o motivo principal da perda de ${lossQuantity.value}?`;
+  }
+  return questionGrade.value
+    ? `Qual o motivo principal de ${gradeQuantity(questionGrade.value.ref)} em ${questionGrade.value.label}?`
+    : "Motivo principal";
+});
 
-function openQuestion(question: QcQuestion, thenSubmit: boolean) {
+function openQuestion(question: SheetQuestion, thenSubmit: boolean) {
   sheetQuestion.value = question;
   submitAfterAnswer.value = thenSubmit;
 }
 
-function _advanceQuestions() {
-  const remaining = pendingQuestions(state.value);
+function advanceQuestions() {
+  const remaining = pendingQuestions();
   if (submitAfterAnswer.value && remaining.length) {
     sheetQuestion.value = remaining[0] ?? null;
     return;
@@ -156,35 +355,40 @@ function _advanceQuestions() {
 }
 
 function answerDefect(defect: QCDefectProjection) {
-  const s = { ...state.value };
-  if (sheetQuestion.value === "loss_reason") s.lossDefectRef = defect.ref;
-  else s.discountDefectRef = defect.ref;
-  state.value = s;
-  _advanceQuestions();
+  const question = sheetQuestion.value;
+  if (question?.kind === "loss_reason") {
+    lossDefectRef.value = defect.ref;
+  } else if (question?.kind === "grade_reason") {
+    // Atribuição substitutiva: cada bucket tem exatamente um motivo principal.
+    gradeDefectRefs.value = {
+      ...gradeDefectRefs.value,
+      [question.gradeRef]: defect.ref,
+    };
+  }
+  advanceQuestions();
 }
 
-/** "Sim, saíram N": o operador assume o acima-do-previsto conscientemente. */
 function confirmOvershoot() {
-  state.value = { ...state.value, overshootConfirmed: true };
-  _advanceQuestions();
+  const reason = overshootReason.value.trim();
+  if (!reason) return;
+  overshootConfirmed.value = true;
+  overshootReason.value = reason;
+  advanceQuestions();
 }
 
-/** "Corrigir": volta para o campo com entrada fresca — era typo. */
 function fixOvershoot() {
   sheetQuestion.value = null;
   submitAfterAnswer.value = false;
-  activeField.value = "full";
   fresh.value = true;
 }
 
 function onConfirm() {
-  if (!canSubmit(state.value)) {
-    useSonner.warning(
-      "A fornada não tem grupo vendável. Perda total se registra como estorno, com o gestor.",
-    );
+  if (props.submitting || submitLatched.value) return;
+  if (total.value <= 0) {
+    useSonner.warning("Informe a quantidade produzida ou a perda da fornada.");
     return;
   }
-  const questions = pendingQuestions(state.value);
+  const questions = pendingQuestions();
   if (questions.length) {
     openQuestion(questions[0]!, true);
     return;
@@ -193,34 +397,85 @@ function onConfirm() {
 }
 
 function submit() {
+  if (props.submitting || submitLatched.value) return;
+  submitLatched.value = true;
   emit("confirm", {
     quantity: String(total.value),
-    partition: buildPartition(state.value),
+    partition: buildPartition(),
+    yield_deviation_confirmed: overshootConfirmed.value,
+    yield_deviation_reason: overshootReason.value.trim(),
+    reason: auditReason,
   });
 }
 
-// ── Teclado físico (numpad USB funciona sem mudança) ────────────────────────
+const isDirty = computed(() =>
+  props.mode === "correct"
+    ? partitionKey(buildPartition()) !== partitionKey(props.initialPartition)
+    : Object.values(gradeQuantities.value).some((quantity) => quantity > 0) ||
+      lossQuantity.value > 0 ||
+      Object.values(gradeDefectRefs.value).some(Boolean) ||
+      Boolean(lossDefectRef.value || overshootReason.value.trim()),
+);
+
+function partitionKey(partition: QcPartitionGroup[]): string {
+  return JSON.stringify(
+    partition
+      .filter((group) => quantityOf(group) > 0)
+      .map((group) => ({
+        quantity: String(quantityOf(group)),
+        quality_grade_ref: group.quality_grade_ref ?? "",
+        quality_defect_ref: group.quality_defect_ref ?? "",
+        loss: Boolean(group.loss),
+      }))
+      .sort((left, right) =>
+        `${left.loss}:${left.quality_grade_ref}`.localeCompare(
+          `${right.loss}:${right.quality_grade_ref}`,
+        ),
+      ),
+  );
+}
+
+function requestBack() {
+  if (
+    isDirty.value &&
+    !window.confirm(
+      props.mode === "correct"
+        ? "Descartar a correção de qualidade?"
+        : "Descartar as quantidades e os motivos informados?",
+    )
+  ) {
+    return;
+  }
+  emit("back");
+}
+
+// Teclado físico: os mesmos alvos do numpad, sem criar campos paralelos.
 function onKeydown(event: KeyboardEvent) {
-  // Digitação num input real (ex.: busca do cabeçalho) não é entrada do numpad.
   const target = event.target as HTMLElement | null;
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
   if (event.key === "Escape") {
     sheetQuestion.value = null;
     submitAfterAnswer.value = false;
+    return;
+  }
+  if (
+    target?.closest(
+      "button, a, input, textarea, select, [role='button'], [contenteditable='true']",
+    )
+  ) {
     return;
   }
   if (sheetQuestion.value) return;
   if (/^[0-9]$/.test(event.key)) {
     onDigit(event.key);
   } else if (event.key === "Backspace") {
-    onBackspace();
-  } else if (event.key === "Tab") {
     event.preventDefault();
-    focusField(activeField.value === "full" ? "discount" : "full");
+    onBackspace();
   } else if (event.key === "Enter") {
+    event.preventDefault();
     onConfirm();
   }
 }
+
 onMounted(() => window.addEventListener("keydown", onKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onKeydown));
 
@@ -230,153 +485,268 @@ const fieldCard =
 
 <template>
   <div class="mx-auto flex w-full max-w-2xl flex-col px-4 pb-6">
-    <!-- Barra do topo: âncora superior, altura fixa. -->
     <header class="flex h-14 shrink-0 items-center justify-between gap-3">
       <button
         type="button"
         class="flex items-center gap-1 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent"
-        @click="emit('back')"
+        @click="requestBack"
       >
         <Icon name="lucide:chevron-left" class="size-4" />
         Voltar
       </button>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
-        <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
+        <p class="truncate text-xs text-muted-foreground">
+          <template v-if="mode === 'correct'"
+            >Correção de qualidade ·
+          </template>
+          {{ subtitle }}
+        </p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
-        <template v-if="anchor.anchor !== null">{{ anchor.anchor }} previstos</template>
-        <template v-else>Sem previsto</template>
+        <template v-if="anchor.anchor !== null">
+          {{ anchor.anchor }} produzidos
+        </template>
+        <template v-else>Sem quantidade produzida</template>
       </div>
     </header>
 
-    <!-- Dois campos lado a lado, sempre visíveis. -->
-    <div class="mt-2 grid shrink-0 grid-cols-2 gap-3">
-      <button
-        type="button"
-        :class="[fieldCard, activeField === 'full' ? 'border-primary ring-2 ring-primary/30' : 'hover:bg-accent']"
-        @click="focusField('full')"
-      >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Qualidade OK</span>
-        <span class="text-4xl font-semibold tabular-nums">{{ state.fullQty }}</span>
-      </button>
-      <button
-        type="button"
-        :disabled="!discountEnabled"
+    <div class="mt-2 shrink-0">
+      <div
         :class="[
           fieldCard,
-          !discountEnabled
-            ? 'opacity-40'
-            : activeField === 'discount'
-              ? 'border-primary ring-2 ring-primary/30'
-              : 'hover:bg-accent',
+          activeTarget
+            ? 'border-primary ring-2 ring-primary/30'
+            : 'border-dashed',
         ]"
-        @click="focusField('discount')"
+        aria-live="polite"
       >
-        <span class="text-xs font-medium uppercase tracking-wide text-muted-foreground">Quantas divergentes</span>
-        <span class="text-4xl font-semibold tabular-nums">{{ discountEnabled ? state.discountQty : "" }}</span>
-      </button>
-    </div>
-
-    <!-- Legenda do numpad: diz em qual campo se está. Altura fixa. -->
-    <p class="flex h-8 shrink-0 items-center text-sm text-muted-foreground">
-      Digitando em: {{ activeField === "full" ? "qualidade OK" : "quantas divergentes" }}
-    </p>
-
-    <!-- Numpad âncora + escala em coluna, vão maior entre os dois blocos. -->
-    <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_11rem] gap-8">
-      <OperatorNumpad subject="quantidade" @digit="onDigit" @backspace="onBackspace" @clear="onClear" />
-      <div class="flex flex-col gap-2" role="group" aria-label="Escala de qualidade">
-        <button
-          v-for="grade in [...topGrades, ...lowGrades]"
-          :key="grade.ref"
-          type="button"
-          class="relative flex flex-1 items-center justify-between overflow-hidden rounded-md border py-2 pl-4 pr-3 text-left transition hover:bg-accent"
-          :class="{
-            'border-primary bg-accent ring-2 ring-primary/30':
-              grade.ref === state.fullGradeRef || grade.ref === state.discountGradeRef,
-          }"
-          @click="pickGrade(grade)"
+        <span
+          class="text-xs font-medium uppercase tracking-wide text-muted-foreground"
         >
-          <span class="absolute inset-y-0 left-0 w-1.5" :class="gradeBandClass(grade, grades)" />
-          <span class="font-medium">{{ grade.label }}</span>
-          <span v-if="grade.markdown_percent" class="text-xs tabular-nums text-muted-foreground">
-            &minus;{{ grade.markdown_percent }}%
-          </span>
-        </button>
+          {{ activeLabel }}
+        </span>
+        <span class="text-4xl font-semibold tabular-nums">
+          {{ activeQuantity }}
+        </span>
       </div>
     </div>
 
-    <!-- Cartões de motivo: uma linha cada, ABAIXO do numpad (nada o empurra).
-         Esquerda: a fornada e o que se perdeu dela. Direita: o sublote.
-         Fornada limpa não paga a linha: o Confirmar encosta no numpad. -->
-    <div
-      v-if="loss > 0 || (discountEnabled && state.discountQty > 0)"
-      class="mt-4 grid h-14 shrink-0 grid-cols-2 gap-3"
-    >
-      <button
-        v-if="loss > 0"
-        type="button"
-        class="flex items-center justify-between rounded-md border border-dashed px-3 text-sm transition hover:bg-accent"
-        @click="openQuestion('loss_reason', false)"
-      >
-        <span class="text-muted-foreground">Perda: <b class="tabular-nums text-foreground">{{ loss }}</b></span>
-        <span :class="state.lossDefectRef ? 'font-medium' : 'text-muted-foreground'">
-          {{ state.lossDefectRef ? defectLabel(state.lossDefectRef) : "Toque para o motivo" }}
-        </span>
-      </button>
-      <span v-else aria-hidden="true" />
-      <button
-        v-if="discountEnabled && state.discountQty > 0"
-        type="button"
-        class="flex items-center justify-between rounded-md border border-dashed px-3 text-sm transition hover:bg-accent"
-        @click="openQuestion('discount_reason', false)"
-      >
-        <span class="text-muted-foreground">Sublote: <b class="tabular-nums text-foreground">{{ state.discountQty }}</b></span>
-        <span :class="state.discountDefectRef ? 'font-medium' : 'text-muted-foreground'">
-          <template v-if="state.discountDefectRef">
-            {{ defectLabel(state.discountDefectRef) }}<template v-if="discountIsVetoed"> · vira descarte</template>
-          </template>
-          <template v-else>Toque para o motivo</template>
-        </span>
-      </button>
-      <span v-else aria-hidden="true" />
-    </div>
+    <p class="flex h-9 shrink-0 items-center text-sm text-muted-foreground">
+      <template v-if="activeTarget">Digitando em: {{ activeLabel }}</template>
+      <template v-else>
+        Escolha um grau ou Perda; Normal recebe o saldo.
+      </template>
+    </p>
 
-    <!-- Confirmar sempre ativo: significa "fechar a fornada". -->
-    <button
-      type="button"
-      class="mt-4 h-14 shrink-0 rounded-lg bg-primary text-lg font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-      :disabled="submitting"
-      @click="onConfirm"
-    >
-      {{ submitting ? "Fechando a fornada…" : "Confirmar" }}
-    </button>
+    <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] gap-8">
+      <OperatorNumpad
+        subject="quantidade"
+        :disabled="!activeTarget"
+        @digit="onDigit"
+        @backspace="onBackspace"
+        @clear="onClear"
+      />
 
-    <!-- Motivos em bottom sheet: custam zero espaço até serem necessários. -->
-    <UiSheet :open="sheetQuestion !== null" @update:open="(v: boolean) => { if (!v) { sheetQuestion = null; submitAfterAnswer = false; } }">
-      <UiSheetContent side="bottom" :title="sheetTitle">
-        <template #content>
-          <!-- Plausibilidade: acima do previsto pede confirmação consciente —
-               o typo (222 no lugar de 22) morre num toque de Corrigir. -->
+      <div class="flex flex-col">
+        <div
+          class="flex flex-col gap-2"
+          role="group"
+          aria-label="Graus de qualidade"
+        >
           <div
-            v-if="sheetQuestion === 'overshoot'"
-            class="grid grid-cols-2 gap-2 px-4 pb-6"
+            v-for="grade in orderedGrades"
+            :key="grade.ref"
+            class="flex flex-col rounded-md border bg-card"
+            :data-grade-card="grade.ref"
           >
             <button
               type="button"
-              class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
-              @click="fixOvershoot()"
+              :data-grade-ref="grade.ref"
+              class="relative flex min-h-14 items-center justify-between gap-2 overflow-hidden rounded-md py-2 pl-4 pr-3 text-left transition hover:bg-accent"
+              :class="{
+                'bg-accent ring-2 ring-inset ring-primary/30': isActiveGrade(
+                  grade.ref,
+                ),
+              }"
+              :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
+              :aria-pressed="gradeQuantity(grade.ref) > 0"
+              @click="pickGrade(grade)"
             >
-              Corrigir
+              <span
+                class="absolute inset-y-0 left-0 w-1.5"
+                :class="gradeBandClass(grade, grades)"
+              />
+              <span class="min-w-0">
+                <span class="block font-medium">{{ grade.label }}</span>
+                <span
+                  v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                  class="block text-xs text-muted-foreground"
+                >
+                  Saldo automático
+                </span>
+                <span
+                  v-else-if="mode !== 'correct' && gradeDefectRefs[grade.ref]"
+                  class="block truncate text-xs text-muted-foreground"
+                >
+                  {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                </span>
+              </span>
+              <span class="text-sm font-semibold tabular-nums">
+                {{ gradeQuantity(grade.ref) }}
+              </span>
             </button>
             <button
+              v-if="mode === 'correct' && gradeNeedsReason(grade)"
               type="button"
-              class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
-              @click="confirmOvershoot()"
+              class="mx-3 mb-3 flex min-h-11 w-[calc(100%-1.5rem)] items-center justify-between gap-2 rounded-full border bg-background px-3 py-2 text-left text-xs font-medium leading-tight text-foreground shadow-sm transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              :aria-label="`Editar motivo de ${grade.label}: ${
+                defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
+              }`"
+              @click="
+                openQuestion(
+                  { kind: 'grade_reason', gradeRef: grade.ref },
+                  false,
+                )
+              "
             >
-              Sim, saíram {{ total }}
+              <span class="min-w-0 whitespace-normal break-words">
+                {{
+                  defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
+                  "Informar motivo"
+                }}
+              </span>
+              <Icon
+                name="lucide:pencil"
+                class="size-3.5 shrink-0"
+                aria-hidden="true"
+              />
             </button>
+          </div>
+        </div>
+
+        <div
+          class="mt-4 flex flex-col overflow-hidden rounded-md border border-destructive/50"
+        >
+          <button
+            type="button"
+            class="flex min-h-16 items-center justify-between gap-2 px-3 text-left transition hover:bg-destructive/10"
+            :class="{
+              'ring-2 ring-inset ring-destructive/30':
+                activeTarget?.kind === 'loss',
+            }"
+            :aria-label="`Perda: ${lossQuantity} unidades`"
+            @click="pickLoss"
+          >
+            <span class="min-w-0">
+              <span class="block font-medium">Perda</span>
+              <span
+                v-if="mode !== 'correct' && lossDefectRef"
+                class="block truncate text-xs text-muted-foreground"
+              >
+                {{ defectLabel(lossDefectRef) }}
+              </span>
+              <span
+                v-else-if="mode !== 'correct' || lossQuantity === 0"
+                class="block text-xs text-muted-foreground"
+              >
+                {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
+              </span>
+            </span>
+            <span class="text-sm font-semibold tabular-nums">
+              {{ lossQuantity }}
+            </span>
+          </button>
+          <button
+            v-if="mode === 'correct' && lossQuantity > 0"
+            type="button"
+            class="mx-3 mb-3 flex min-h-11 w-[calc(100%-1.5rem)] items-center justify-between gap-2 rounded-full border bg-background px-3 py-2 text-left text-xs font-medium leading-tight text-foreground shadow-sm transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-2"
+            :aria-label="`Editar motivo da perda: ${
+              defectLabel(lossDefectRef) || 'não informado'
+            }`"
+            @click="openQuestion({ kind: 'loss_reason' }, false)"
+          >
+            <span class="min-w-0 whitespace-normal break-words">
+              {{ defectLabel(lossDefectRef) || "Informar motivo" }}
+            </span>
+            <Icon
+              name="lucide:pencil"
+              class="size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <button
+      type="button"
+      class="mt-4 h-14 shrink-0 rounded-lg bg-primary text-lg font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
+      :disabled="
+        submitting || submitLatched || (mode === 'correct' && !isDirty)
+      "
+      :aria-busy="submitting || submitLatched"
+      @click="onConfirm"
+    >
+      {{
+        submitting || submitLatched
+          ? mode === "correct"
+            ? "Salvando correção…"
+            : "Fechando a fornada…"
+          : mode === "correct"
+            ? "Salvar correção"
+            : "Confirmar"
+      }}
+    </button>
+
+    <UiSheet
+      :open="sheetQuestion !== null"
+      @update:open="
+        (open: boolean) => {
+          if (!open) {
+            sheetQuestion = null;
+            submitAfterAnswer = false;
+          }
+        }
+      "
+    >
+      <UiSheetContent side="bottom" :title="sheetTitle">
+        <template #content>
+          <div
+            v-if="sheetQuestion?.kind === 'overshoot'"
+            class="grid gap-3 px-4 pb-6"
+          >
+            <label class="grid gap-1.5 text-sm">
+              <span class="font-medium">
+                Por que a contagem ficou acima da fornada iniciada?
+              </span>
+              <textarea
+                v-model="overshootReason"
+                rows="3"
+                maxlength="500"
+                required
+                class="rounded-md border bg-background px-3 py-2"
+                aria-label="Motivo da quantidade acima da fornada produzida"
+                placeholder="Ex.: contagem conferida e unidades menores que o padrão"
+              />
+            </label>
+            <div class="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                class="rounded-md border px-3 py-4 text-base font-medium transition hover:bg-accent active:translate-y-px"
+                @click="fixOvershoot"
+              >
+                Corrigir
+              </button>
+              <button
+                type="button"
+                class="rounded-md border border-transparent bg-primary px-3 py-4 text-base font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50"
+                :disabled="!overshootReason.trim()"
+                @click="confirmOvershoot"
+              >
+                Confirmar {{ total }} unidades
+              </button>
+            </div>
           </div>
           <div v-else class="grid grid-cols-2 gap-2 px-4 pb-6 sm:grid-cols-3">
             <button
@@ -387,7 +757,9 @@ const fieldCard =
               @click="answerDefect(defect)"
             >
               <span class="font-medium">{{ defect.label }}</span>
-              <span class="text-xs text-muted-foreground">{{ defect.hint }}</span>
+              <span class="text-xs text-muted-foreground">
+                {{ defect.hint }}
+              </span>
             </button>
           </div>
         </template>

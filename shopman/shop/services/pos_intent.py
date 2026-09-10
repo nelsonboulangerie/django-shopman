@@ -40,6 +40,16 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "change_for_q",
     "receipt_channels",
     "receipt_email",
+    # A ORDEM do operador para que o contato do comprovante vire cadastro. O
+    # e-mail e o CPF pedidos na nota são fatos DA VENDA (o cliente pode pedir no
+    # endereço do contador, no CPF da empresa) e por isso nunca viram identidade
+    # sozinhos. Recusar sempre também era errado: quem dita o endereço no balcão
+    # quase sempre quer que ele fique. A tela pergunta, e a resposta viaja aqui.
+    "save_receipt_contact",
+    "save_receipt_tax_id",
+    # A SEGUNDA PALAVRA sobre o CPF — só o caso divergente a exige, e sem ela o
+    # service recusa sobrescrever o documento do cadastro.
+    "save_receipt_tax_id_confirmed",
     "client_request_id",
     "tab_ref",
     "tab_session_key",
@@ -48,7 +58,15 @@ _ALLOWED_TOP_LEVEL_KEYS = {
     "cash_shift_id",
     "pos_terminal_ref",
 }
-_ALLOWED_PAYMENT_METHODS = {"cash", "pix", "card", "external", "account", "mixed"}
+# ⚠️ `card` continua aceito e NÃO é resíduo: é o vocabulário da loja online
+# (onde o gateway sabe a bandeira e a distinção não muda nada para quem compra) e
+# é o que está gravado no histórico. O que o BALCÃO passa a oferecer são
+# `credit`/`debit` — lá a diferença importa, porque prazo de recebimento e taxa
+# da adquirente são outros. Quem decide o que o PDV OFERECE é
+# `_POS_PAYMENT_METHOD_REFS` na projection; aqui é só o que o intent ACEITA.
+_ALLOWED_PAYMENT_METHODS = {
+    "cash", "pix", "card", "credit", "debit", "link", "external", "account", "mixed",
+}
 _ALLOWED_PAYMENT_COLLECTIONS = {"terminal", "on_delivery"}
 _ALLOWED_RECEIPT_CHANNELS = {"print", "email"}
 
@@ -238,6 +256,16 @@ def parse_pos_sale_intent(raw: dict, *, for_commit: bool = True) -> PosSaleInten
             recovery="Preencha o e-mail ou altere o comprovante para não emitir.",
         )
 
+    # Sem valor não há o que salvar: a ordem sem o campo preenchido é ruído, e
+    # deixá-la passar faria o balcão mandar "grave" sobre string vazia.
+    payload["save_receipt_contact"] = _flag(payload.get("save_receipt_contact")) and bool(payload["receipt_email"])
+    payload["save_receipt_tax_id"] = _flag(payload.get("save_receipt_tax_id")) and bool(payload["fiscal_tax_id"])
+    # Confirmação sem a ordem que ela confirma é ruído — e ruído que autorizaria
+    # uma troca de identidade fiscal se algum dia viajasse sozinha.
+    payload["save_receipt_tax_id_confirmed"] = (
+        _flag(payload.get("save_receipt_tax_id_confirmed")) and payload["save_receipt_tax_id"]
+    )
+
     payload["client_request_id"] = _client_request_id(payload.get("client_request_id"))
     payload["tab_ref"] = _text(payload.get("tab_ref"), limit=64)
     payload["tab_session_key"] = _text(payload.get("tab_session_key"), limit=120)
@@ -262,6 +290,7 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             )
         return []
     items = []
+    seen_line_ids: set[str] = set()
     for idx, item in enumerate(raw):
         if not isinstance(item, dict):
             raise PosIntentError("invalid_item", "Item inválido no carrinho.", field=f"items.{idx}", focus="search")
@@ -277,6 +306,27 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
             "unit_price_q": unit_price_q,
             "notes": _text(item.get("notes"), limit=280),
         }
+        # A IDENTIDADE da linha, gerada pelo cliente. Este parser copia campo a
+        # campo, então o que ele não nomeia não existe daqui para dentro: sem esta
+        # linha o `line_id` morria na porta e o servidor regerava a identidade a
+        # cada save. Com duas linhas do mesmo SKU (o segundo chá, pedido depois do
+        # primeiro ir para a cozinha) isso significava desconto e observação
+        # trocando de dono, e a comanda re-disparando no fechamento.
+        #
+        # Ausente é legítimo: o kernel gera (``Session._normalize_items``). O que
+        # não é legítimo é REPETIDO — duas linhas com o mesmo id colapsam numa só
+        # no `_persist_items`, e a linha comida some sem erro.
+        line_id = _text(item.get("line_id"), limit=64)
+        if line_id:
+            if line_id in seen_line_ids:
+                raise PosIntentError(
+                    code="duplicate_line_id",
+                    message="Duas linhas do carrinho têm a mesma identidade.",
+                    field=f"items.{idx}.line_id",
+                    focus="cart",
+                )
+            seen_line_ids.add(line_id)
+            entry["line_id"] = line_id
         # Preço de ETIQUETA da linha. A review precisa dele para medir o desconto
         # manual como o kernel mede — contra a tabela, e só valendo se ganhar do
         # automático. É ADVISORY: quando há comanda, o servidor sobrescreve pelo
@@ -285,12 +335,6 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
         list_price_q = _optional_nonnegative_int(item.get("list_price_q"), f"items.{idx}.list_price_q")
         if list_price_q:
             entry["list_price_q"] = list_price_q
-        if item.get("price_overridden"):
-            # Advisory UI hint that the operator fixed this line's price. It is
-            # NOT trusted: the POS service re-derives ``price_overridden`` from the
-            # canonical catalog price (``derive_price_overrides``) before the
-            # manager gate, so a crafted price without this flag is still caught.
-            entry["price_overridden"] = True
         line_discount = _line_discount(item.get("discount"))
         if line_discount:
             entry["discount"] = line_discount
@@ -299,7 +343,13 @@ def _items(raw, *, for_commit: bool) -> list[dict]:
 
 
 def _line_discount(raw) -> dict | None:
-    """Operator per-line manual discount (percent only), clamped to 0–100%."""
+    """Desconto manual de LINHA: ``percent`` (0–100) ou ``fixed`` (reais/unidade).
+
+    ⚠️ O teto de 100 vale SÓ para percentual. Aplicado sem olhar o tipo, ele
+    destruía um desconto em reais silenciosamente — R$ 150,00 numa linha cara
+    virava R$ 100,00, e nada na tela dizia por quê. O ``fixed`` é clampado onde
+    ele tem significado: contra o preço da própria linha, no kernel.
+    """
     if not isinstance(raw, dict):
         return None
     try:
@@ -308,9 +358,12 @@ def _line_discount(raw) -> dict | None:
         return None
     if value <= 0:
         return None
+    kind = str(raw.get("type") or "percent").strip().lower()
+    if kind not in {"percent", "fixed"}:
+        kind = "percent"
     return {
-        "type": "percent",
-        "value": min(100.0, value),
+        "type": kind,
+        "value": value if kind == "fixed" else min(100.0, value),
         "reason": _text(raw.get("reason"), limit=120) or "cortesia",
     }
 
@@ -390,13 +443,21 @@ def _manual_discount(raw) -> dict | None:
 
 
 def _manager_approval(raw) -> dict | None:
+    """As DUAS portas do desafio gerencial — crachá e usuário+PIN.
+
+    ⚠️ O parser copiava só ``username``/``pin``, então o crachá morria aqui: mesmo que
+    a tela o mandasse, ele nunca chegava ao validador. O gerente com o crachá no
+    pescoço liberava uma sangria encostando o crachá e precisava digitar usuário e PIN
+    para liberar um desconto — e atrito é o que faz o time deixar de chamar o gerente.
+    """
     if not isinstance(raw, dict):
         return None
     username = _text(raw.get("username"), limit=150)
     pin = str(raw.get("pin") or "")
-    if not username and not pin:
+    badge = _text(raw.get("badge"), limit=150)
+    if not username and not pin and not badge:
         return None
-    return {"username": username, "pin": pin}
+    return {"username": username, "pin": pin, "badge": badge}
 
 
 def _fulfillment_type(value) -> str:
@@ -454,6 +515,13 @@ def _emailish(value, *, field: str) -> str:
     if "@" not in text or text.startswith("@") or text.endswith("@"):
         raise PosIntentError("invalid_email", "E-mail inválido.", field=field, focus="receipt_email")
     return text
+
+
+def _flag(value) -> bool:
+    """Um booleano do balcão — o JSON do navegador manda ``true``, ``"true"`` ou ``1``."""
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "on", "yes"}
+    return bool(value)
 
 
 def _text(value, *, limit: int) -> str:

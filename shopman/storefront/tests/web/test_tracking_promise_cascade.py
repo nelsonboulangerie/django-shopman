@@ -153,6 +153,125 @@ def test_state_payment_retry_card_without_link(make_order, patch_payment):
     assert _promise_state(order) == "payment_retry"
 
 
+# ── O link de pagamento do balcão: a mesma sessão hospedada do cartão ───
+#
+# Pedido remoto anotado no PDV; o cliente paga do celular pela URL do gateway.
+# A cascata testava `method == "card"` cravado em cinco pontos, e quem abria o
+# acompanhamento de um pedido de link não encontrava botão nenhum para pagar.
+
+
+def test_state_payment_card_ready_for_link(make_order, patch_payment):
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link", "checkout_url": "https://pay"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_card_ready"
+    # O método próprio viaja: é ele que a tela rotula ("Link de pagamento").
+    assert promise.payment_method == "link"
+    assert promise.checkout_url == "https://pay"
+    assert any(action.href == "https://pay" for action in promise.actions)
+
+
+def test_link_deadline_travels_on_the_promise(make_order, patch_payment):
+    """O link tem prazo (o mesmo que arma o `payment.timeout`) e a consequência
+    é a mesma do Pix: o pedido cancela e a reserva é liberada. A tela lê as
+    mesmas chaves — `deadline_at`/`deadline_kind`/`deadline_action` — sem a
+    contagem regressiva, que é instrumento de dez minutos, não de horas."""
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(hours=2)).isoformat()
+    order = make_order(
+        status="accepted",
+        payment={"method": "link", "checkout_url": "https://pay", "expires_at": expires_at},
+    )
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_card_ready"
+    assert promise.deadline_at == expires_at
+    assert promise.deadline_kind == "payment"
+    assert promise.deadline_action == "cancel_order_on_timeout"
+    assert promise.timer_mode == "none"
+
+
+def test_card_without_deadline_carries_no_consequence(make_order, patch_payment):
+    """O cartão da loja online não tem prazo: nada a prometer sobre vencimento."""
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "card", "checkout_url": "https://pay"})
+    promise = build_tracking(order).promise
+    assert promise.deadline_at is None
+    assert promise.deadline_kind is None
+    assert promise.deadline_action == "none"
+
+
+def test_link_copy_says_until_when_and_what_happens_after(make_order, patch_payment):
+    """"Pague até hoje às 16h para garantir" + a nota da consequência: é o que o
+    cliente lê no acompanhamento, com o MESMO prazo do aviso e da tela do PDV."""
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    expires_at = (timezone.now() + timedelta(hours=2)).isoformat()
+    order = make_order(
+        status="accepted",
+        payment={"method": "link", "checkout_url": "https://pay", "expires_at": expires_at},
+    )
+    promise = build_order_tracking(order).promise
+    assert promise.title == "Pague pelo link"
+    assert promise.message.startswith("Anotamos seu pedido. Pague até ")
+    assert promise.message.endswith(" para garantir.")
+    assert "{deadline}" not in promise.message
+    assert promise.footnote == "Se o prazo passar, liberamos a reserva e avisamos você."
+
+
+def test_link_copy_without_deadline_promises_no_consequence(make_order, patch_payment):
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link", "checkout_url": "https://pay"})
+    promise = build_order_tracking(order).promise
+    assert promise.title == "Pague pelo link"
+    assert "Pague até" not in promise.message
+    assert promise.footnote == ""
+
+
+def test_card_copy_keeps_its_own_words_and_no_footnote(make_order, patch_payment):
+    from shopman.storefront.presentation.order_tracking import build_order_tracking
+
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "card", "checkout_url": "https://pay"})
+    promise = build_order_tracking(order).promise
+    assert promise.title == "Pague com cartão"
+    assert promise.footnote == ""
+
+
+def test_state_payment_retry_link_without_url(make_order, patch_payment):
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_retry"
+    assert promise.payment_method == "link"
+
+
+def test_state_payment_authorized_for_link(make_order, patch_payment):
+    patch_payment(live_status="authorized")
+    order = make_order(status="accepted", payment={"method": "link", "status": "authorized"})
+    promise = build_tracking(order).promise
+    assert promise.state == "payment_authorized"
+    assert promise.payment_method == "link"
+
+
+def test_state_payment_expired_for_link(make_order, patch_payment):
+    """O link é digital: prazo vencido sem captura é `payment_expired`, não "recebemos"."""
+    patch_payment(deadline_passed=True)
+    order = make_order(status="accepted", payment={"method": "link", "checkout_url": "https://pay"})
+    assert _promise_state(order) == "payment_expired"
+
+
+def test_link_pending_shows_payment_as_pending(make_order, patch_payment):
+    """`_payment_info` também alcança o link: o passo de pagamento aparece e fica pendente."""
+    patch_payment()
+    order = make_order(status="accepted", payment={"method": "link", "intent_ref": "PAY-LINK", "checkout_url": "https://pay"})
+    tracking = build_tracking(order)
+    assert tracking.payment_pending is True
+    assert tracking.payment_status_key == "payment_pending"
+
+
 def test_state_payment_authorized(make_order, patch_payment):
     patch_payment(live_status="authorized")
     order = make_order(status="accepted", payment={"method": "card", "status": "authorized"})

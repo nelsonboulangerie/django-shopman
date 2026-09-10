@@ -1,6 +1,6 @@
 // Presentation — production grid shaping. Pure transforms over the production
 // projections (served by shopman/backstage/projections/production.py). The
-// projections are already screen-ready (status_label, timer_class, step state,
+// projections are already screen-ready (status_label, timer status, step state,
 // can_* flags pre-resolved); this layer only derives the view shape and the
 // functional-color tone. No lifecycle arithmetic (the backend owns the
 // WorkOrder lifecycle).
@@ -8,7 +8,7 @@ import type {
   OrderCommitmentProjection,
   ProductionMatrixRowProjection,
   ProductionShortageError,
-  ProductionTimerClass,
+  ProductionTimerStatusCode,
   WorkOrderCardProjection,
 } from "~/types/production";
 
@@ -16,9 +16,9 @@ import type {
 
 export type TimerTone = "ok" | "warning" | "late";
 
-export function timerTone(timerClass: ProductionTimerClass): TimerTone {
-  if (timerClass === "timer-late") return "late";
-  if (timerClass === "timer-warning") return "warning";
+export function timerTone(status: ProductionTimerStatusCode): TimerTone {
+  if (status === "late") return "late";
+  if (status === "warning") return "warning";
   return "ok";
 }
 
@@ -75,6 +75,38 @@ const MONTHS_PT = [
   "dez",
 ];
 
+// A superfície é renderizada duas vezes: primeiro no contêiner Nitro (UTC) e
+// depois no navegador da loja (BRT). "Horário local" do processo produziria
+// duas datas diferentes entre 21h e meia-noite; a data operacional precisa ser
+// a da padaria em ambos os lados.
+export const STORE_TIME_ZONE = "America/Sao_Paulo";
+
+const STORE_DATE_TIME = new Intl.DateTimeFormat("en-US", {
+  timeZone: STORE_TIME_ZONE,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+function storeDateTimeParts(now: Date): {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+} {
+  const parts = Object.fromEntries(
+    STORE_DATE_TIME.formatToParts(now).map((part) => [part.type, part.value]),
+  );
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+  };
+}
+
 function parseISODate(iso: string): Date | null {
   const [y, m, d] = iso.split("-").map(Number);
   if (!y || !m || !d) return null;
@@ -94,18 +126,20 @@ export function fullDateLabel(iso: string): string {
   return `${String(date.getDate()).padStart(2, "0")} ${MONTHS_PT[date.getMonth()]} ${date.getFullYear()}`;
 }
 
-/** ISO local (YYYY-MM-DD) para hoje + offsetDays, sem UTC (a padaria é local). */
+/** ISO operacional (YYYY-MM-DD) da padaria para hoje + offsetDays. */
 export function isoForOffset(
   offsetDays: number,
   now: Date = new Date(),
 ): string {
-  const d = new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() + offsetDays,
-  );
+  const local = storeDateTimeParts(now);
+  const d = new Date(Date.UTC(local.year, local.month - 1, local.day + offsetDays));
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/** Hora corrente no fuso operacional, idêntica no SSR e no navegador. */
+export function storeHour(now: Date = new Date()): number {
+  return storeDateTimeParts(now).hour;
 }
 
 /**
@@ -149,6 +183,16 @@ export function rowHasActivity(row: ProductionMatrixRowProjection): boolean {
   );
 }
 
+/** O texto que a bancada lê primeiro: o nome da ficha.
+ *  Cai no SKU quando a ficha não tem nome — a linha continua legível, e o
+ *  padeiro vê o código em vez de uma linha em branco. */
+export function rowLabel(row: {
+  recipe_name?: string;
+  output_sku: string;
+}): string {
+  return row.recipe_name?.trim() || row.output_sku;
+}
+
 /** Filter matrix rows by a free-text query over SKU + recipe name + WO refs.
  *  Refs matter for alert deep-links ("WO-2026-00042" lands on its row). */
 export function matchesRowQuery(
@@ -168,31 +212,24 @@ export function matchesRowQuery(
     .includes(q);
 }
 
-// ── Alert deep-links ───────────────────────────────────────────────────────
-
-/** Where an operator alert resolves, if anywhere in this app.
- *  - late → Produção (o lote vivo está lá);
- *  - stock_short → Expedição (a falha aconteceu ao expedir);
- *  - forgotten → Planejamento (a WO nunca saiu do planejado);
- *  - low_yield/others → sem destino (a WO já saiu das grades). */
-export function alertTarget(alert: {
-  type: string;
-  order_ref: string;
-}): { to: string; q: string } | null {
-  if (!alert.order_ref) return null;
-  if (alert.type === "production_late") return { to: "/", q: alert.order_ref };
-  if (alert.type === "production_stock_short")
-    return { to: "/expedite", q: alert.order_ref };
-  if (alert.type === "production_forgotten")
-    return { to: "/plan", q: alert.order_ref };
-  return null;
-}
-
 /** Whether a planning row can be started (has a planned order and no started yet). */
 export function startableWorkOrder(
   row: ProductionMatrixRowProjection,
 ): WorkOrderCardProjection | null {
-  return row.planned_orders[0] ?? null;
+  return plannedWorkOrder(row);
+}
+
+/**
+ * A fornada planejada que esta linha AJUSTARIA — a mesma confirmada como produzida.
+ *
+ * Mesmo objeto, nome diferente: quem planeja não está pensando em iniciar, e é dela
+ * que sai o `rev` que o ajuste devolve ao servidor. Duas leituras do mesmo fato pedem
+ * dois nomes; uma implementação só evita que elas divirjam.
+ */
+export function plannedWorkOrder(
+  row: ProductionMatrixRowProjection,
+): WorkOrderCardProjection | null {
+  return row.planned_orders.length === 1 ? row.planned_orders[0]! : null;
 }
 
 /** Order commitments across a row's open WOs, deduped by order ref.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { tileBadge } from '~/presentation/menu'
-import { crossSellItems, detailDescription, nutritionTable } from '~/presentation/product'
+import { crossSellItems, detailDescription, galleryImages, nutritionTable } from '~/presentation/product'
 import { absoluteImage, breadcrumbJsonLd, metaDescription, priceFromQ, productJsonLd } from '~/presentation/seo'
 import type { ProductMutationMeta, ProductResponse } from '~/types/shopman'
 import { compactUnitWeightLabel } from '~/utils/display'
@@ -39,13 +39,35 @@ const meta = computed<ProductMutationMeta | null>(() => product.value
   : null)
 const currentQty = computed(() => product.value ? qtyForSku(product.value.sku) : 0)
 const badge = computed(() => product.value ? tileBadge(product.value) : null)
-const unavailableCtaLabel = computed(() => product.value?.is_paused ? 'Pausado' : 'Indisponível')
+// O cliente lê o ESTADO, nunca o motivo: esgotado, pausado pela casa ou fora do
+// canal chegam à tela como o mesmo "Indisponível". O porquê é assunto da casa
+// (AVAILABILITY-PLAN §2) e vive nas superfícies de operador.
 const unavailableReason = computed(() => {
   if (!product.value || product.value.can_add_to_cart) return ''
-  if (product.value.is_paused) return 'A loja pausou este item temporariamente.'
   return product.value.availability_label || 'Este item não está disponível agora.'
 })
 const longDescription = computed(() => product.value ? detailDescription(product.value) : '')
+// Carrossel: lista vazia = foto única (moldura estática de sempre). A principal
+// (image_url) abre o carrossel; o índice segue o scroll real do slider.
+const carouselImages = computed(() => product.value ? galleryImages(product.value) : [])
+const sliderEl = ref<HTMLElement | null>(null)
+const slideIndex = ref(0)
+watch(sku, () => {
+  slideIndex.value = 0
+  sliderEl.value?.scrollTo({ left: 0, behavior: 'instant' })
+})
+function onSliderScroll () {
+  const el = sliderEl.value
+  if (!el || !el.clientWidth) return
+  slideIndex.value = Math.min(carouselImages.value.length - 1, Math.max(0, Math.round(el.scrollLeft / el.clientWidth)))
+}
+function goToSlide (index: number) {
+  // Otimista: o ponto acende já no clique; o evento de scroll (a verdade do
+  // gesto) corrige se a animação parar no meio. O scroll-smooth do container
+  // anima — smooth é pedido, não garantia.
+  slideIndex.value = Math.min(carouselImages.value.length - 1, Math.max(0, index))
+  sliderEl.value?.scrollTo({ left: slideIndex.value * (sliderEl.value?.clientWidth || 0) })
+}
 const nutrition = computed(() => nutritionTable(product.value?.nutrition || null))
 const crossSell = computed(() => product.value ? crossSellItems(product.value) : [])
 
@@ -91,6 +113,12 @@ useHead({
           innerHTML: JSON.stringify(breadcrumbJsonLd([
             { name: 'Início', url: `${requestUrl.origin}/` },
             { name: 'Cardápio', url: `${requestUrl.origin}/menu` },
+            ...(product.value.breadcrumb_category
+              ? [{
+                  name: product.value.breadcrumb_category.name,
+                  url: `${requestUrl.origin}${product.value.breadcrumb_category.url}`
+                }]
+              : []),
             { name: product.value.name, url: canonicalUrl.value }
           ]))
         }
@@ -106,10 +134,16 @@ useHead({
          antes do card contido, no mesmo ritmo da tela de conta. -->
     <div v-if="product" class="shop-breadcrumb-bar lg:mb-6">
       <div class="shop-container py-2">
+        <!-- A coleção do produto vem pronta em `breadcrumb_category`; a trilha
+             fixa Início/Cardápio/nome descartava esse nível e tirava do cliente
+             o caminho de volta para a categoria. -->
         <UiBreadcrumbs
           :items="[
             { label: 'Início', link: '/' },
             { label: 'Cardápio', link: '/menu' },
+            ...(product.breadcrumb_category
+              ? [{ label: product.breadcrumb_category.name, link: product.breadcrumb_category.url }]
+              : []),
             { label: product.name }
           ]"
         />
@@ -136,13 +170,33 @@ useHead({
       <template v-else-if="product && meta">
         <!-- Imagem emoldurada + informações num único card claro. -->
         <article class="-mx-4 overflow-hidden border-b bg-card sm:-mx-6 lg:mx-0 lg:grid lg:grid-cols-[minmax(0,1fr)_420px] lg:items-stretch lg:rounded-lg lg:border">
-          <section class="min-w-0 p-4 sm:p-6">
+          <section class="shop-pdp-media-panel min-w-0 p-4 sm:p-6">
             <div class="drop-shadow-md transition-transform duration-200 hover:-rotate-1 motion-reduce:hover:rotate-0">
               <div class="shop-photo-frame">
                 <div class="shop-photo-mat relative block bg-white">
                   <UiAspectRatio :ratio="4 / 3" class="overflow-hidden bg-muted">
+                    <!-- Mais de uma foto: carrossel com swipe (scroll-snap); o
+                         estado segue o scroll REAL, então gesto e setas nunca
+                         divergem do que está na tela. -->
+                    <div
+                      v-if="carouselImages.length"
+                      ref="sliderEl"
+                      class="flex size-full snap-x snap-mandatory overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                      @scroll.passive="onSliderScroll"
+                    >
+                      <img
+                        v-for="(image, index) in carouselImages"
+                        :key="image"
+                        :src="image"
+                        :alt="`${product.name} — foto ${index + 1} de ${carouselImages.length}`"
+                        class="size-full shrink-0 snap-center object-cover"
+                        :class="product.availability === 'unavailable' ? 'shop-photo-unavailable' : ''"
+                        :fetchpriority="index === 0 ? 'high' : undefined"
+                        :loading="index === 0 ? undefined : 'lazy'"
+                      >
+                    </div>
                     <img
-                      v-if="product.image_url"
+                      v-else-if="product.image_url"
                       :src="product.image_url"
                       :alt="product.name"
                       class="size-full object-cover"
@@ -163,20 +217,45 @@ useHead({
                       <UiBadge class="border-transparent bg-background/75 font-normal text-foreground shadow-sm backdrop-blur-sm">Indisponível</UiBadge>
                     </div>
                   </UiAspectRatio>
+                  <template v-if="carouselImages.length">
+                    <!-- Pontos SOBRE a foto, sem fundo (pedido do dono): brancos
+                         com sombra para ler em qualquer foto. Zero altura no
+                         fluxo — o vão foto→nome é o da PDP sem carrossel. -->
+                    <div class="absolute inset-x-0 bottom-3 z-10 flex items-center justify-center gap-2">
+                      <UiButton
+                        v-for="(image, index) in carouselImages"
+                        :key="image"
+                        variant="ghost"
+                        class="h-2 w-2 min-w-0 rounded-full p-0 shadow-[0_0_2px_rgba(0,0,0,0.6)]"
+                        :class="index === slideIndex ? 'bg-white hover:bg-white' : 'bg-white/50 hover:bg-white/75'"
+                        :aria-label="`Ir para a foto ${index + 1}`"
+                        :aria-current="index === slideIndex"
+                        @click="goToSlide(index)"
+                      />
+                    </div>
+                    <UiButton
+                      variant="ghost"
+                      size="icon-sm"
+                      icon="lucide:chevron-left"
+                      class="absolute top-1/2 left-2 z-10 hidden -translate-y-1/2 rounded-full bg-background/75 shadow-sm backdrop-blur-sm hover:bg-background/90 lg:inline-flex"
+                      :disabled="slideIndex === 0"
+                      aria-label="Foto anterior"
+                      @click="goToSlide(slideIndex - 1)"
+                    />
+                    <UiButton
+                      variant="ghost"
+                      size="icon-sm"
+                      icon="lucide:chevron-right"
+                      class="absolute top-1/2 right-2 z-10 hidden -translate-y-1/2 rounded-full bg-background/75 shadow-sm backdrop-blur-sm hover:bg-background/90 lg:inline-flex"
+                      :disabled="slideIndex === carouselImages.length - 1"
+                      aria-label="Próxima foto"
+                      @click="goToSlide(slideIndex + 1)"
+                    />
+                  </template>
                 </div>
               </div>
             </div>
 
-            <div v-if="product.gallery.length" class="grid grid-cols-3 gap-3 pt-4">
-              <img
-                v-for="image in product.gallery.slice(0, 3)"
-                :key="image"
-                :src="image"
-                :alt="product.name"
-                class="aspect-[4/3] rounded-lg border object-cover"
-                loading="lazy"
-              >
-            </div>
           </section>
 
           <div class="min-w-0 p-4 sm:p-6">
@@ -188,7 +267,7 @@ useHead({
 
             <div class="flex items-start justify-between gap-3">
               <h1 class="shop-title line-clamp-2">{{ product.name }}</h1>
-              <FavoriteHeart :sku="product.sku" :initial="product.is_favorite" class="-mr-1 shrink-0" />
+              <FavoriteHeart :sku="product.sku" :name="product.name" :initial="product.is_favorite" class="-mr-1 shrink-0" />
             </div>
             <p class="mt-2 line-clamp-2 shop-muted">{{ product.short_description }}</p>
             <p v-if="longDescription" class="mt-2 shop-muted">{{ longDescription }}</p>
@@ -214,13 +293,13 @@ useHead({
                   :qty="currentQty"
                   :disabled="!product.can_add_to_cart"
                   :max-qty="product.available_qty ?? product.max_qty"
-                  :add-label="product.can_add_to_cart ? 'Adicionar' : unavailableCtaLabel"
+                  :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
                 />
                 <p v-if="unavailableReason" class="mt-2 max-w-48 text-right shop-meta">{{ unavailableReason }}</p>
               </div>
             </div>
 
-            <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-0 [&_[data-slot=accordion-content]>div]:px-8 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4">
+            <UiAccordion type="multiple" class="-mx-4 mt-6 border-t sm:-mx-6 lg:mx-0 [&_[data-slot=accordion-trigger]]:font-semibold sm:[&_[data-slot=accordion-trigger]]:px-6 lg:[&_[data-slot=accordion-trigger]]:px-4 [&_[data-slot=accordion-content]>div]:px-8 [&_[data-slot=accordion-content]>div]:pt-3 [&_[data-slot=accordion-content]>div]:pb-6 sm:[&_[data-slot=accordion-content]>div]:px-10 lg:[&_[data-slot=accordion-content]>div]:px-4 lg:[&_[data-slot=accordion-content]>div]:pt-2 lg:[&_[data-slot=accordion-content]>div]:pb-4">
               <UiAccordionItem v-if="product.components.length" value="components">
                 <UiAccordionTrigger>Itens do combo</UiAccordionTrigger>
                 <UiAccordionContent>
@@ -307,7 +386,7 @@ useHead({
               :qty="currentQty"
               :disabled="!product.can_add_to_cart"
               :max-qty="product.available_qty ?? product.max_qty"
-              :add-label="product.can_add_to_cart ? 'Adicionar' : unavailableCtaLabel"
+              :add-label="product.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
               tone="inverted"
             />
           </div>

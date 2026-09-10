@@ -29,8 +29,9 @@ export interface CatalogItemProjection {
   qty_in_cart: number
   available_qty: number | null
   allergens: string[]
-  // Disponibilidade fina (WP-2): distingue, dentro de unavailable, "pausado pelo
-  // operador" de "esgotado honesto". is_notifiable habilita o CTA "Me avise" (WP-3).
+  // Flag técnico, nunca rótulo: a decisão da casa de suspender o item não aparece
+  // para o cliente (ele lê só "Indisponível"). Serve para separar o esgotado
+  // honesto — é `is_notifiable` que habilita o CTA "Me avise" (WP-3).
   is_paused: boolean
   is_notifiable: boolean
   // "Me avise" já assinado por este viewer — persiste o estado do sino entre reloads.
@@ -200,6 +201,18 @@ export interface CartItemProjection {
   is_available: boolean
   availability_warning: string | null
   available_qty: number | null
+  // Esgotado honesto na sacola: caiu por FALTA, não por pausa, e não sobrou
+  // nenhuma unidade para o "Usar N" — é o único caso em que a linha oferece o
+  // sino. Pausado continua vendo só "Indisponível", sem promessa de volta.
+  is_notifiable: boolean
+  is_notify_subscribed: boolean
+  // Preparado na hora: PROMESSA da casa sobre o produto (finalizado no momento
+  // de servir), declarada em `Product.metadata.made_to_order`. Eixo próprio,
+  // independente de is_awaiting_confirmation: um croque que espera a fornada de
+  // amanhã é as duas coisas — o selo diz o que ele É, a fila diz quando vem.
+  // ⚠️ NÃO deduzir de availability_policy: `demand_ok` é conferência de estoque.
+  is_made_to_order: boolean
+  made_to_order_label: string
   is_awaiting_confirmation: boolean
   is_ready_for_confirmation: boolean
   confirmation_deadline_iso: string | null
@@ -416,6 +429,7 @@ export interface AuthCopyProjection {
   phone_subtitle: CopyEntryProjection
   wa_cart_kept: CopyEntryProjection
   wa_glimpse: CopyEntryProjection
+  wa_glimpse_with_cart: CopyEntryProjection
   wa_manual_title: CopyEntryProjection
   wa_manual_intro: CopyEntryProjection
   phone_cta_wa: CopyEntryProjection
@@ -456,6 +470,8 @@ export interface PublicConfigProjection {
   shop_latitude: number | null
   shop_longitude: number | null
   default_ddd: string
+  /** "Ambiente de testes" e afins. Vazio em produção — a tarja não renderiza. */
+  environment_notice: string
 }
 
 export interface HomeProjection {
@@ -679,9 +695,18 @@ export interface CheckoutProjection {
   pickup_hint: string
   delivery_hint: string
   card_provider: string
+  // Cartões de teste do Stripe. Vem VAZIO fora do modo de teste — o backend
+  // deriva isso da chave (`pk_test_`), então chave live não manda os números.
+  stripe_test_cards: StripeTestCard[]
   default_ddd: string
   available_dates: string[]
   closed_weekdays: number[]
+}
+
+export interface StripeTestCard {
+  label: string
+  number: string
+  hint: string
 }
 
 export interface CheckoutResponse {
@@ -710,10 +735,15 @@ export interface TrackingPromiseProjection {
   // Bloco de pagamento inline (PAYMENT-TRACKING-MERGE): a tela de pagamento
   // deixou de existir. Preenchido só nos degraus com o que pagar.
   payment_method: string
+  // Rótulo humano do método, resolvido pelo registro omotenashi (editável no
+  // Admin) — dono único do nome, o mesmo que o checkout mostra.
+  payment_method_label: string
   pix_qr_code: string | null
   pix_copy_paste: string | null
   pix_expires_at: string | null
   checkout_url: string | null
+  fulfillment_wait_kind: string
+  fulfillment_wait_until: string | null
 }
 
 export interface OrderProgressStepProjection {
@@ -802,8 +832,22 @@ export interface TrackingCopyProjection {
   pix_copy_btn: string
   pix_copied: string
   pix_expires_label: string
+  pix_pending_note: string
+  pix_auto_update_note: string
   card_intro: string
   card_security_note: string
+  // Cancelamento pelo estabelecimento: rótulos do motivo e do estorno.
+  cancelled_reason_title: string
+  refund_title: string
+  // Fila de espera: cada fase tem a sua voz — esperar, confirmar, sair.
+  waitlist_waiting_title: string
+  waitlist_waiting_message: string
+  waitlist_confirm_title: string
+  waitlist_confirm_message: string
+  waitlist_confirm_cta: string
+  waitlist_confirmed_title: string
+  waitlist_released_title: string
+  waitlist_released_message: string
 }
 
 export interface TrackingResponse {
@@ -833,12 +877,23 @@ export interface TrackingResponse {
   payment_pending: boolean
   payment_expired: boolean
   payment_confirmed: boolean
+  // `payment_status` NÃO viaja neste payload: o rótulo humano já carrega o estado,
+  // e o nome cru colide com o `payment_status` (enum) do 409 de cancelamento —
+  // o mesmo nome com dois significados (ver api/tracking.py::_tracking_payload).
   payment_status_label: string | null
-  payment_status: string | null
   payment_expires_at: string | null
   // Captura simulada (DEBUG/staging) disponível — mostra a caixa "Simular
   // pagamento" dentro do bloco inline.
   mock_payment_enabled: boolean
+  // Cancelamento pelo estabelecimento: o cliente lê o porquê e o estado do
+  // estorno na própria tela, sem depender da notificação.
+  cancellation_note: string
+  refund_status_label: string | null
+  // Fila de espera: 'none' | 'fermata' | 'confirming' | 'confirmed' |
+  // 'released'. Em confirming o deadline é o relógio do cliente.
+  waitlist_state: string
+  waitlist_deadline: string | null
+  waitlist_planned_for_display: string | null
   confirmation_countdown: boolean
   confirmation_expires_at: string | null
   eta_display: string | null
@@ -927,6 +982,8 @@ export interface AccountSummary {
   customer_first_name: string
   recent_order_count: number
   active_order_count: number
+  total_order_count: number
+  active_orders: OrderHistoryItem[]
   last_order: AccountOrderRef | null
   loyalty: AccountLoyalty | null
   food_preferences: AccountFoodPreference[]
@@ -963,6 +1020,7 @@ export interface OrderHistoryItem {
   status_label: string
   status_color?: string
   status_tone?: 'info' | 'warning' | 'success' | 'danger' | 'neutral' | string
+  is_active?: boolean
   total_display: string
   item_count?: number
   created_at_display?: string
@@ -976,6 +1034,7 @@ export interface EmptyStateCopy {
 
 export interface OrderHistoryResponse {
   orders: OrderHistoryItem[]
+  counts?: { total: number, active: number }
   copy: { empty: EmptyStateCopy }
 }
 

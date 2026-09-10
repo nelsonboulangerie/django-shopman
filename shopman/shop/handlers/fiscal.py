@@ -58,6 +58,12 @@ class NFCeEmitHandler:
             raise DirectiveTerminalError("Order not found") from exc
 
         if order.data.get("nfce_access_key"):
+            # A nota já existe (emitida por outro caminho, adotada num retry, ou
+            # por uma directive irmã). Sair daqui ANTES do e-mail fazia a
+            # promessa do balcão morrer junto com a guarda de idempotência: nota
+            # autorizada, cliente esperando o anexo, ninguém enviando. O envio
+            # tem a própria idempotência (``nfce_email_sent_at``).
+            self._send_receipt_email(order)
             return
 
         if order.status in (Order.Status.CANCELLED, Order.Status.RETURNED):
@@ -135,11 +141,13 @@ class NFCeEmitHandler:
             return
         try:
             ok, message = send(reference=order.ref, emails=[email])
-        except Exception:
+        except Exception as exc:
             logger.warning("fiscal.email: envio falhou order=%s", order.ref, exc_info=True)
+            self._alert_email_failed(order, email, str(exc) or exc.__class__.__name__)
             return
         if not ok:
             logger.warning("fiscal.email: Focus recusou order=%s: %s", order.ref, message)
+            self._alert_email_failed(order, email, message)
             return
         from django.db import transaction
         from django.utils import timezone
@@ -153,6 +161,28 @@ class NFCeEmitHandler:
             locked.save(update_fields=["data", "updated_at"])
         order.data = fresh
         logger.info("fiscal.email: enviado via Focus order=%s", order.ref)
+
+    @staticmethod
+    def _alert_email_failed(order, email: str, reason: str) -> None:
+        """O cliente pediu a nota por e-mail e o envio não saiu — o balcão precisa saber.
+
+        A nota está autorizada e o retry não pode ser automático (re-POSTar o ref
+        traria 422), então o único caminho é humano: reenviar pelas "Últimas
+        vendas" do PDV. Um ``logger.warning`` não chega a ninguém no balcão.
+        """
+        from shopman.shop.services.observability import create_operator_alert
+
+        create_operator_alert(
+            type="fiscal_email_failed",
+            severity="warning",
+            message=(
+                f"A NFC-e do pedido {order.ref} foi autorizada, mas o envio para "
+                f"{email} FALHOU ({reason}). O cliente pediu a nota por e-mail e não "
+                "recebeu — reenviar pelas Últimas vendas do PDV."
+            ),
+            order_ref=order.ref,
+            dedupe_key=f"fiscal_email_failed:{order.ref}",
+        )
 
     @staticmethod
     def _record(order, result: FiscalDocumentResult) -> None:

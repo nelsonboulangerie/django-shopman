@@ -18,10 +18,10 @@ Filters applied, in order:
    :func:`availability_scope_for_channel`.
 4. Batch expiry: quants whose batch expires before ``target`` plus the
    caller's ``expiry_margin_days`` are excluded (0 = only already-expired).
-5. Batch conformity: with ``include_nonconforming=False``, quants from
-   batches carrying a ``nonconformity_reason`` are excluded. The core does
-   not decide WHO may sell nonconforming stock — the caller (channel policy)
-   does; the default ``True`` keeps this filter opt-in.
+5. Batch quality: ``allowed_quality_grade_refs`` is an opaque allowlist
+   resolved by channel policy. Motivo remains orthogonal and is never used
+   to infer a grade. ``include_nonconforming`` remains a compatibility gate
+   for callers not yet carrying the explicit policy.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 from types import SimpleNamespace
 
-from django.db.models import QuerySet
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 from shopman.stockman.models.quant import Quant
 from shopman.stockman.services.queries import _resolve_stock_profile
@@ -45,6 +45,7 @@ def quants_eligible_for(
     excluded_positions: list[str] | None = None,
     expiry_margin_days: int = 0,
     include_nonconforming: bool = True,
+    allowed_quality_grade_refs: list[str] | tuple[str, ...] | None = None,
 ) -> QuerySet[Quant]:
     """Return the canonical queryset of quants eligible for this SKU/scope.
 
@@ -63,9 +64,13 @@ def quants_eligible_for(
         expiry_margin_days: Also exclude lots expiring within this many days
             AFTER ``target_date`` (near-expiry). 0 keeps the historical gate
             (only lots already expired at ``target_date`` are out).
-        include_nonconforming: When ``False``, lots with a
-            ``nonconformity_reason`` are excluded — having a reason IS being
-            nonconforming. Opaque policy: the caller decides, the core filters.
+        include_nonconforming: Compatibility gate. When ``False`` and no
+            explicit grade allowlist is supplied, lots with a frozen markdown
+            percentage are excluded. A reason alone is informational and
+            never becomes commercial policy.
+        allowed_quality_grade_refs: Opaque grade refs accepted by the caller.
+            ``None`` means no grade restriction. Known batches with a blank or
+            different grade are excluded; batchless planned supply is kept.
 
     Returns:
         QuerySet[Quant] filtered and ``select_related("position")``. Callers
@@ -88,6 +93,7 @@ def quants_eligible_for(
         excluded_positions = scope.get("excluded_positions")
         expiry_margin_days = int(scope.get("expiry_margin_days") or 0)
         include_nonconforming = bool(scope.get("sells_nonconforming", True))
+        allowed_quality_grade_refs = scope.get("allowed_quality_grade_refs")
 
     qs = Quant.objects.filter(sku=sku, _quantity__gt=0)
     # Validity precedence: shelf_life_days (relative window) and Batch.expiry_date
@@ -103,16 +109,27 @@ def quants_eligible_for(
     expiry_cutoff = target + timedelta(days=max(0, expiry_margin_days))
     expired_refs = list(
         Batch.objects.filter(sku=sku, expiry_date__lt=expiry_cutoff).values_list(
-            "ref", flat=True,
+            "ref",
+            flat=True,
         )
     )
     if expired_refs:
         qs = qs.exclude(batch__in=expired_refs)
 
-    if not include_nonconforming:
-        nonconforming_refs = list(
-            Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True)
+    if allowed_quality_grade_refs is not None:
+        allowed_batch_refs = list(
+            Batch.objects.for_sku(sku)
+            .filter(quality_grade_ref__in=tuple(allowed_quality_grade_refs))
+            .values_list("ref", flat=True)
         )
+        # ``Quant.batch`` is deliberately a loose textual reference, not an FK.
+        # Under an explicit quality policy, a named lot is therefore eligible
+        # only when its Batch fact exists for this SKU and carries an allowed
+        # grade.  The empty coordinate remains distinct: it is genuinely
+        # batchless stock and must not acquire a made-up QC classification.
+        qs = qs.filter(Q(batch="") | Q(batch__in=allowed_batch_refs))
+    elif not include_nonconforming:
+        nonconforming_refs = list(Batch.objects.for_sku(sku).nonconforming().values_list("ref", flat=True))
         if nonconforming_refs:
             qs = qs.exclude(batch__in=nonconforming_refs)
 

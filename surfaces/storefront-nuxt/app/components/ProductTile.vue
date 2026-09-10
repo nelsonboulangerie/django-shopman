@@ -101,12 +101,16 @@ function productRoute (sku: string) {
 
           <div class="ml-auto shrink-0">
             <StockNotifyButton v-if="item.is_notifiable" :sku="item.sku" :name="item.name" :subscribed="item.is_notify_subscribed" compact />
+            <!-- O rótulo segue o contrato: `can_add_to_cart` falso só acontece com
+                 `availability === 'unavailable'`, e aí o botão cinza não pode
+                 continuar convidando a "Adicionar". Mesma régua da PDP. -->
             <CartQuantityAction
               v-else
               :meta="meta"
               :qty="currentQty"
               :disabled="!item.can_add_to_cart"
               :max-qty="item.available_qty"
+              :add-label="item.can_add_to_cart ? 'Adicionar' : 'Indisponível'"
               compact
             />
           </div>

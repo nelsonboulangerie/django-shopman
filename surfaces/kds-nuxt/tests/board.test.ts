@@ -65,6 +65,8 @@ const expedition = (): KDSExpeditionCardProjection => ({
   line_count: 2,
   total_display: "R$ 30,00",
   is_expedition: true,
+  advance_block_label: "",
+  advance_block_reason: "",
 });
 
 describe("kds board presentation", () => {

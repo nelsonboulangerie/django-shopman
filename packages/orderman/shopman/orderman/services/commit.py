@@ -359,8 +359,13 @@ class CommitService:
         for _attempt in range(_ORDER_CREATE_MAX_TRIES):
             try:
                 with transaction.atomic():
+                    # Prefixo do ref vem da config resolvida (canal←loja←defaults);
+                    # sem a chave, o prefixo é o próprio canal — comportamento de sempre.
                     order = Order.objects.create(
-                        ref=generate_order_ref(channel_ref=channel_ref), **order_fields
+                        ref=generate_order_ref(
+                            channel_ref=effective_config.get("order_ref_prefix") or channel_ref
+                        ),
+                        **order_fields,
                     )
                 break
             except IntegrityError as exc:

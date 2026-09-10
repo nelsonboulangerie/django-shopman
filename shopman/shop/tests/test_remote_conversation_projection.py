@@ -85,7 +85,7 @@ def test_conversation_marks_payment_when_promise_carries_customer_payment_action
             actions=(Action(
                 ref="copy_pix",
                 kind="copy",
-                label="Copiar código PIX",
+                label="Copiar código Pix",
                 href="",
                 priority="primary",
             ),),

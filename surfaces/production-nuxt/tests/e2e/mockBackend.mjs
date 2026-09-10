@@ -4,7 +4,8 @@
 //     passa dos gates e as telas de operador renderizam o estado vazio acolhedor);
 //   · sem o cookie → 403 nos endpoints de operador (device não autenticado → o gate de
 //     login aparece), espelhando o Django real ("quando não autenticado, o endpoint 403a").
-// O cardápio público (/storefront/menu/) responde 200 SEMPRE (o menuboard é público).
+// Não há fixture de storefront: o menuboard paralelo foi aposentado e qualquer
+// consulta a /storefront/ deve ficar evidente como 404 do mock.
 // Login efetivo, lock (Opção C) e ações reais rodam contra o Django real (reviewer local).
 import { createServer } from "node:http";
 
@@ -47,19 +48,6 @@ const KDS = { kds: { cards: [], total_count: 0, late_count: 0 } };
 const MISE = { mise_en_place: { selected_date: "2026-07-06", lines: [] } };
 const ALERTS = { alerts: [], counts: { active: 0, critical: 0 } };
 
-// Cardápio público (storefront) — o menuboard renderiza sem sessão de operador.
-const MENU = {
-  catalog: {
-    sections: [
-      {
-        label: "Pães",
-        category: { name: "Pães" },
-        items: [{ sku: "PAO-001", name: "Pão na Chapa", price_display: "R$ 8,00", availability: "available" }],
-      },
-    ],
-  },
-};
-
 function json(res, status, body) {
   res.statusCode = status;
   res.end(JSON.stringify(body));
@@ -68,11 +56,13 @@ function json(res, status, body) {
 const server = createServer((req, res) => {
   res.setHeader("content-type", "application/json");
   res.setHeader("set-cookie", "csrftoken=e2e-mock; Path=/");
+  // O BFF deve preservar Vary e substituir qualquer cache público por private/no-store.
+  res.setHeader("vary", "Accept-Language");
+  res.setHeader("cache-control", "public, max-age=3600");
   const url = req.url || "";
   const authed = (req.headers.cookie || "").includes("e2e_session=authed");
 
-  // Público — sempre 200, com ou sem sessão de operador.
-  if (/\/storefront\/menu\/?(\?|$)/.test(url)) return json(res, 200, MENU);
+  if (/\/storefront\//.test(url)) return json(res, 404, { detail: "Storefront fora do Produção." });
 
   // Sessão do dispositivo: 403 = device não autenticado → o gate de login aparece.
   if (/\/operator\/session\/?(\?|$)/.test(url)) {

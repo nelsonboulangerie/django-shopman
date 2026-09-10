@@ -4,7 +4,7 @@ import type { ActionAffordance } from "~/presentation/actions";
 import { formatBRL } from "~/utils/posIntent";
 import { globalKeysBlocked } from "~/utils/keyboardGuard";
 import { clampPercent, clampQty, popDigit, pushDigit } from "~/presentation/numpad";
-import { fireBarView, kitchenBadge, kitchenLineState } from "~/presentation/kitchen";
+import { fireBarView, kitchenBadge, type KitchenBadgeView, kitchenLineState } from "~/presentation/kitchen";
 import { pruneSelection, selectionView, toggleSelected } from "~/presentation/selection";
 import { lineDiscountBadge, lineListTotalDisplay, lineTotalQ, unitChargedQ } from "~/presentation/lineDiscounts";
 import { cartNetTotalQ } from "~/presentation/receipt";
@@ -23,6 +23,10 @@ const props = defineProps<{
   discountReasons?: Array<{ ref: string; label?: string } | string>;
 }>();
 
+// ⚠️ Cada evento de linha carrega o `line_id`, nunca o sku. Com duas linhas do
+// mesmo produto na comanda — que é o que este WP passou a permitir — o sku
+// endereça as duas ao mesmo tempo: o desconto do segundo chá caía no primeiro e
+// a observação aparecia nos dois.
 const emit = defineEmits<{
   increment: [string];
   decrement: [string];
@@ -32,55 +36,55 @@ const emit = defineEmits<{
   setQty: [string, number];
   /** Observação da linha (padrão Odoo Note): viaja no intent e chega ao KDS. */
   setNotes: [string, string];
-  setDiscount: [string, number, string];
+  /** line_id, valor (% ou reais, conforme o formato), motivo, formato. */
+  setDiscount: [string, number, string, "percent" | "fixed"];
   /** Operator unit-price override (numpad "Preço"); gated by manager approval. */
-  setPrice: [string, number];
   prepare: [];
   move: [];
   fire: [];
   unfire: [string];
-  /** Multi-select batch (spec §2.2): fire/unfire exactly these cart skus. The
-   *  shell resolves their fresh server line_ids (regenerated on save). */
+  /** Multi-select batch (spec §2.2): fire/unfire exatamente estas linhas. */
   fireLines: [string[]];
   unfireLines: [string[]];
   requestTab: [];
 }>();
 
-// Multi-select (spec §2.2): selection is screen state (a set of cart skus); the
-// batch toolbar is shaped purely (presentation/selection). Tapping a line's
-// checkbox toggles it without arming the numpad; the toolbar acts on all chosen.
+// Multi-select (spec §2.2): selection is screen state (um conjunto de
+// `line_id`s); the batch toolbar is shaped purely (presentation/selection).
+// Tapping a line's checkbox toggles it without arming the numpad; the toolbar
+// acts on all chosen.
 const selected = ref<Set<string>>(new Set());
 const selection = computed(() => selectionView(props.items, selected.value));
 const selectMode = computed(() => selection.value.count > 0);
-function isSelected(sku: string) {
-  return selected.value.has(sku);
+function isSelected(lineId: string) {
+  return selected.value.has(lineId);
 }
-function toggleSelect(sku: string) {
-  selected.value = toggleSelected(selected.value, sku);
+function toggleSelect(lineId: string) {
+  selected.value = toggleSelected(selected.value, lineId);
 }
 function clearSelection() {
   selected.value = new Set();
 }
 // Keep the selection consistent when the cart changes (removed lines drop out).
 watch(
-  () => props.items.map((item) => item.sku).join("|"),
+  () => props.items.map((item) => item.line_id).join("|"),
   () => { selected.value = pruneSelection(selected.value, props.items); },
 );
 function batchFire() {
-  if (selection.value.canFire) emit("fireLines", selection.value.skus);
+  if (selection.value.canFire) emit("fireLines", selection.value.lineIds);
   clearSelection();
 }
 function batchUnfire() {
-  if (selection.value.canUnfire) emit("unfireLines", selection.value.skus);
+  if (selection.value.canUnfire) emit("unfireLines", selection.value.lineIds);
   clearSelection();
 }
 // Remover o LOTE é gesto largo: confirma antes (a seleção pode ter linha já
 // enviada à cozinha e o operador pode ter marcado a mais).
 function batchRemove() {
-  const skus = selection.value.skus;
-  if (!skus.length) return;
-  const hasFired = skus.some((sku) => props.items.find((item) => item.sku === sku)?.fired);
-  confirmAction.value = { kind: "batch", skus, hasFired };
+  const lineIds = selection.value.lineIds;
+  if (!lineIds.length) return;
+  const hasFired = lineIds.some((lineId) => props.items.find((item) => item.line_id === lineId)?.fired);
+  confirmAction.value = { kind: "batch", lineIds, hasFired };
 }
 
 // Kitchen handoff (spec §2.5): the fire bar and per-line state are shaped from
@@ -97,14 +101,18 @@ function lineKitchenState(item: POSCartItem) {
 
 // Cor só onde tem significado (PDV neutro): pronto é verde, cancelado é
 // vermelho, o resto é cinza como toda a tela.
-function badgeTone(tone: "neutral" | "success" | "destructive"): string {
+function badgeTone(tone: KitchenBadgeView["tone"]): string {
   if (tone === "success") return "bg-success/10 text-success";
   if (tone === "destructive") return "bg-destructive/10 text-destructive";
+  // Divergência não é erro da cozinha nem cancelamento: é uma conta que não
+  // fecha, e pede o âmbar de "olhe para isto", não o vermelho de "deu errado".
+  if (tone === "warning") return "bg-warning/10 text-amber-800 dark:text-amber-300";
   return "bg-muted text-muted-foreground";
 }
-function badgeIcon(tone: "neutral" | "success" | "destructive"): string {
+function badgeIcon(tone: KitchenBadgeView["tone"]): string {
   if (tone === "success") return "lucide:check";
   if (tone === "destructive") return "lucide:x";
+  if (tone === "warning") return "lucide:triangle-alert";
   return "lucide:flame";
 }
 
@@ -122,14 +130,30 @@ const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
 function discountBadge(item: POSCartItem) {
   return lineDiscountBadge(item, reasonOptions.value);
 }
-// Numpad targets the selected line. Three modes (Odoo's Qty/%/Price): "qty"
-// (integer, first digit replaces), "disc" (percent), "price" (unit-price override
-// — decimal entry, reais first, comma → centavos; flips manager approval on).
+// O teclado age sobre a linha selecionada, em três modos: "qty" (inteiro, o
+// primeiro dígito substitui), "disc" (desconto em %) e "disc_brl" (desconto em
+// R$ — entrada decimal, reais primeiro, vírgula → centavos).
+//
+// ⚠️ O terceiro modo era PREÇO: o operador digitava o preço unitário à mão. Ele
+// saiu inteiro. Preço à mão não passava pela régua do desconto — não tinha
+// limite da loja, não tinha motivo, não competia no "maior desconto ganha", não
+// aparecia como desconto em lugar nenhum, e ainda CONGELAVA a linha contra
+// reprecificação, com um portão de gerente só dele. Eram dois modelos
+// concorrentes para a mesma pergunta ("quanto o cliente paga a menos"), e o
+// segundo furava a régua do primeiro.
+//
+// O que ficou é o MESMO mecanismo em dois formatos: % ou R$, com motivo, com
+// limite, e com o gerente sendo chamado pela mesma régua. A entrada decimal com
+// vírgula é herança direta do modo preço — ela some do preço e reaparece aqui.
 const MAX_QTY = 999;
-const selectedSku = ref("");
+const selectedLineId = ref("");
 const numpadBuffer = ref("");
 const numpadFresh = ref(true);
-const numpadMode = ref<"qty" | "disc" | "price">("qty");
+const numpadMode = ref<"qty" | "disc" | "disc_brl">("qty");
+/** O formato que o teclado está digitando agora. */
+const discountKind = computed<"percent" | "fixed">(() => (numpadMode.value === "disc_brl" ? "fixed" : "percent"));
+/** Os dois modos de desconto, para os guardas que não se importam com o formato. */
+const inDiscountMode = computed(() => numpadMode.value !== "qty");
 
 const defaultReasons = [
   { ref: "cortesia", label: "Cortesia" },
@@ -148,57 +172,62 @@ const discountReason = ref("");
 // The numpad always targets a line: the explicitly selected one, or — when none
 // is selected — the last added/edited line. So a single-item ticket is editable
 // without tapping it first.
-const activeSku = computed(() => {
-  if (selectedSku.value && props.items.some((item) => item.sku === selectedSku.value)) {
-    return selectedSku.value;
+const activeLineId = computed(() => {
+  if (selectedLineId.value && props.items.some((item) => item.line_id === selectedLineId.value)) {
+    return selectedLineId.value;
   }
-  return props.items[props.items.length - 1]?.sku ?? "";
+  return props.items[props.items.length - 1]?.line_id ?? "";
 });
-const activeItem = computed(() => props.items.find((item) => item.sku === activeSku.value) || null);
+const activeItem = computed(() => props.items.find((item) => item.line_id === activeLineId.value) || null);
 
-function qtyOf(sku: string): number {
-  return props.items.find((item) => item.sku === sku)?.qty || 0;
+function qtyOf(lineId: string): number {
+  return props.items.find((item) => item.line_id === lineId)?.qty || 0;
 }
 
 function syncBufferToMode() {
   numpadFresh.value = true;
   if (numpadMode.value === "qty") {
-    numpadBuffer.value = String(qtyOf(activeSku.value));
-  } else if (numpadMode.value === "price") {
-    const item = activeItem.value;
-    numpadBuffer.value = item ? (item.price_q / 100).toFixed(2).replace(".", ",") : "";
-  } else {
-    const item = activeItem.value;
-    numpadBuffer.value = item?.discount?.value ? String(item.discount.value) : "";
-    discountReason.value = item?.discount?.reason || reasonOptions.value[0]?.ref || "cortesia";
+    numpadBuffer.value = String(qtyOf(activeLineId.value));
+    return;
   }
+  const item = activeItem.value;
+  discountReason.value = item?.discount?.reason || reasonOptions.value[0]?.ref || "cortesia";
+  // Só semeia o campo com o desconto que já existe se ele for do MESMO formato:
+  // um "10" de dez por cento aparecendo como dez reais ao trocar de aba é o
+  // operador dando um desconto que ele não pediu.
+  const vigente = item?.discount?.value && (item.discount.type || "percent") === discountKind.value
+    ? item.discount.value
+    : 0;
+  numpadBuffer.value = vigente
+    ? (discountKind.value === "fixed" ? vigente.toFixed(2).replace(".", ",") : String(vigente))
+    : "";
 }
 
-watch(activeSku, () => syncBufferToMode());
+watch(activeLineId, () => syncBufferToMode());
 watch(numpadMode, () => syncBufferToMode());
 
-function selectLine(sku: string) {
-  selectedSku.value = sku;
+function selectLine(lineId: string) {
+  selectedLineId.value = lineId;
   syncBufferToMode();
 }
 
-function setMode(mode: "qty" | "disc" | "price") {
+function setMode(mode: "qty" | "disc" | "disc_brl") {
   numpadMode.value = mode;
 }
 
 // Observação da linha (Odoo Note): diálogo simples de texto para a linha ativa.
 // O dado já existia (POSCartItem.notes, intent, KDS) — só faltava quem editasse.
-const noteDialog = ref<{ sku: string; name: string; text: string } | null>(null);
+const noteDialog = ref<{ lineId: string; name: string; text: string } | null>(null);
 function openNoteDialog() {
   const item = activeItem.value;
   if (!item) return;
-  noteDialog.value = { sku: item.sku, name: item.name, text: item.notes || "" };
+  noteDialog.value = { lineId: item.line_id, name: item.name, text: item.notes || "" };
 }
 function saveNote() {
   const dialog = noteDialog.value;
   noteDialog.value = null;
   if (!dialog) return;
-  emit("setNotes", dialog.sku, dialog.text.trim());
+  emit("setNotes", dialog.lineId, dialog.text.trim());
 }
 
 // Remover item PERGUNTA, sempre. Já foi "direto com Desfazer", e o balcão
@@ -207,28 +236,28 @@ function saveNote() {
 // procurando um toast que já tinha passado. Um modal custa um toque; recontar o
 // pedido do cliente custa a venda.
 const confirmAction = ref<
-  | { kind: "line"; sku: string; name: string; fired: boolean }
-  | { kind: "batch"; skus: string[]; hasFired: boolean }
+  | { kind: "line"; lineId: string; name: string; fired: boolean }
+  | { kind: "batch"; lineIds: string[]; hasFired: boolean }
   | null
 >(null);
 const confirmTitle = computed(() => {
   const action = confirmAction.value;
   if (!action) return "";
   if (action.kind === "batch") {
-    return action.skus.length === 1 ? "Remover o item selecionado?" : `Remover ${action.skus.length} itens selecionados?`;
+    return action.lineIds.length === 1 ? "Remover o item selecionado?" : `Remover ${action.lineIds.length} itens selecionados?`;
   }
   // Item já na cozinha é outra conversa: sair da tela não o tira do fogão.
   return action.fired ? "Remover item enviado à cozinha?" : `Remover ${action.name}?`;
 });
 const confirmCta = computed(() =>
-  confirmAction.value?.kind === "batch" && confirmAction.value.skus.length > 1 ? "Remover itens" : "Remover item",
+  confirmAction.value?.kind === "batch" && confirmAction.value.lineIds.length > 1 ? "Remover itens" : "Remover item",
 );
-function askRemove(sku: string) {
-  const item = props.items.find((entry) => entry.sku === sku);
+function askRemove(lineId: string) {
+  const item = props.items.find((entry) => entry.line_id === lineId);
   if (!item) return;
   confirmAction.value = {
     kind: "line",
-    sku,
+    lineId,
     name: item.name || "item",
     fired: Boolean(item.fired),
   };
@@ -237,8 +266,8 @@ function askRemove(sku: string) {
  *  impossível, só deliberado. */
 function removeWithUndo(item: POSCartItem) {
   const snapshot: POSCartItem = { ...item };
-  if (selectedSku.value === item.sku) selectedSku.value = "";
-  emit("remove", item.sku);
+  if (selectedLineId.value === item.line_id) selectedLineId.value = "";
+  emit("remove", item.line_id);
   toast(`${snapshot.name} removido.`, {
     action: { label: "Desfazer", onClick: () => emit("restore", snapshot) },
   });
@@ -251,54 +280,52 @@ function runConfirm() {
   confirmAction.value = null;
   if (!action) return;
   if (action.kind === "batch") {
-    action.skus.forEach((sku) => emit("remove", sku));
+    action.lineIds.forEach((lineId) => emit("remove", lineId));
     clearSelection();
     return;
   }
-  const item = props.items.find((entry) => entry.sku === action.sku);
+  const item = props.items.find((entry) => entry.line_id === action.lineId);
   if (item) removeWithUndo(item);
 }
 
 function commitQty() {
-  const sku = activeSku.value;
-  if (!sku) return;
+  const lineId = activeLineId.value;
+  if (!lineId) return;
   const next = clampQty(numpadBuffer.value, MAX_QTY);
   if (next <= 0) {
-    askRemove(sku);
+    askRemove(lineId);
     return;
   }
-  emit("setQty", sku, next);
+  emit("setQty", lineId, next);
 }
 
 // Discount targets: the whole selection in multi-select, else the active line.
-const discountTargets = computed(() => (selectMode.value ? selection.value.skus : (activeSku.value ? [activeSku.value] : [])));
+const discountTargets = computed(() => (selectMode.value ? selection.value.lineIds : (activeLineId.value ? [activeLineId.value] : [])));
+
+// O valor em REAIS que o operador digitou (vírgula → centavos, no máximo duas
+// casas). O contrato do desconto fixo fala em reais, igual ao do pedido.
+function moneyEntryToReais(entry: string): number {
+  const n = Number.parseFloat((entry || "0").replace(",", "."));
+  return Number.isFinite(n) && n >= 0 ? Math.min(999_999, Math.round(n * 100) / 100) : 0;
+}
 
 function commitDiscount() {
   const targets = discountTargets.value;
   if (!targets.length) return;
-  const value = clampPercent(numpadBuffer.value);
-  targets.forEach((sku) => emit("setDiscount", sku, value, discountReason.value || "cortesia"));
+  const value = discountKind.value === "fixed"
+    ? moneyEntryToReais(numpadBuffer.value)
+    : clampPercent(numpadBuffer.value);
+  targets.forEach((lineId) => emit("setDiscount", lineId, value, discountReason.value || "cortesia", discountKind.value));
 }
 
 // In multi-select the numpad is discount-only (batch quantity is meaningless).
-const numpadCanType = computed(() => (numpadMode.value === "disc" ? discountTargets.value.length > 0 : !!activeSku.value));
+const numpadCanType = computed(() => (inDiscountMode.value ? discountTargets.value.length > 0 : !!activeLineId.value));
 // O que o pad está editando, para os rótulos de leitor de tela acompanharem o modo.
-const numpadSubject = computed(() =>
-  numpadMode.value === "disc" ? "desconto" : numpadMode.value === "price" ? "preço" : "quantidade",
-);
-
-// Price mode = decimal money entry (reais first, comma → centavos, ≤2 places).
-function priceEntryToQ(entry: string): number {
-  const n = Number.parseFloat((entry || "0").replace(",", "."));
-  return Number.isFinite(n) && n >= 0 ? Math.min(99_999_999, Math.round(n * 100)) : 0;
-}
-function commitPrice() {
-  if (activeSku.value) emit("setPrice", activeSku.value, priceEntryToQ(numpadBuffer.value));
-}
+const numpadSubject = computed(() => (inDiscountMode.value ? "desconto" : "quantidade"));
 
 function onDigit(digit: string) {
   if (!numpadCanType.value) return;
-  if (numpadMode.value === "price") {
+  if (numpadMode.value === "disc_brl") {
     const entry = numpadFresh.value ? "" : numpadBuffer.value;
     if (entry.includes(",")) {
       if ((entry.split(",")[1] ?? "").length >= 2) return;
@@ -307,7 +334,7 @@ function onDigit(digit: string) {
     }
     numpadBuffer.value = entry + digit;
     numpadFresh.value = false;
-    commitPrice();
+    commitDiscount();
     return;
   }
   numpadBuffer.value = pushDigit(numpadBuffer.value, digit, { fresh: numpadFresh.value, maxLength: 3 });
@@ -316,22 +343,23 @@ function onDigit(digit: string) {
   else commitDiscount();
 }
 
-// The comma key (price mode only): switch to centavos.
+// A tecla de vírgula existe só no desconto em R$: o teclado compartilhado é
+// inteiro, e centavos precisam de separador.
 function onComma() {
-  if (numpadMode.value !== "price" || !numpadCanType.value) return;
+  if (numpadMode.value !== "disc_brl" || !numpadCanType.value) return;
   let entry = numpadFresh.value ? "0" : (numpadBuffer.value || "0");
   if (!entry.includes(",")) entry += ",";
   numpadBuffer.value = entry;
   numpadFresh.value = false;
-  commitPrice();
+  commitDiscount();
 }
 
 function onBackspace() {
   if (!numpadCanType.value) return;
-  if (numpadMode.value === "price") {
+  if (numpadMode.value === "disc_brl") {
     numpadBuffer.value = (numpadFresh.value ? "" : numpadBuffer.value).slice(0, -1);
     numpadFresh.value = false;
-    commitPrice();
+    commitDiscount();
     return;
   }
   numpadBuffer.value = popDigit(numpadBuffer.value);
@@ -342,25 +370,19 @@ function onBackspace() {
 
 function onClear() {
   if (numpadMode.value === "qty") {
-    if (activeSku.value) askRemove(activeSku.value);
-    return;
-  }
-  if (numpadMode.value === "price") {
-    numpadBuffer.value = "";
-    numpadFresh.value = true;
-    commitPrice();
+    if (activeLineId.value) askRemove(activeLineId.value);
     return;
   }
   const targets = discountTargets.value;
   if (!targets.length) return;
   numpadBuffer.value = "";
   numpadFresh.value = true;
-  targets.forEach((sku) => emit("setDiscount", sku, 0, discountReason.value || "cortesia"));
+  targets.forEach((lineId) => emit("setDiscount", lineId, 0, discountReason.value || "cortesia", discountKind.value));
 }
 
 function pickReason(reason: string) {
   discountReason.value = reason;
-  if (numpadMode.value === "disc" && discountTargets.value.length) commitDiscount();
+  if (inDiscountMode.value && discountTargets.value.length) commitDiscount();
 }
 
 // Entering multi-select switches the numpad to its discount (batch) mode, since
@@ -371,17 +393,17 @@ watch(selectMode, (on) => {
   numpadFresh.value = true;
 });
 
-function bump(sku: string, emitName: "increment" | "decrement") {
-  selectedSku.value = sku;
+function bump(lineId: string, emitName: "increment" | "decrement") {
+  selectedLineId.value = lineId;
   if (emitName === "decrement") {
-    if (qtyOf(sku) <= 1) {
-      askRemove(sku);
+    if (qtyOf(lineId) <= 1) {
+      askRemove(lineId);
       return;
     }
-    emit("decrement", sku);
+    emit("decrement", lineId);
     return;
   }
-  emit("increment", sku);
+  emit("increment", lineId);
 }
 
 // Physical keyboard feeds the active line (Odoo-style): select/add a product,
@@ -394,7 +416,7 @@ function onWindowKeydown(event: KeyboardEvent) {
   const target = event.target as HTMLElement | null;
   const editing = !!target
     && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-  if (editing || !props.items.length || !activeSku.value) return;
+  if (editing || !props.items.length || !activeLineId.value) return;
   if (event.key >= "0" && event.key <= "9") {
     event.preventDefault();
     onDigit(event.key);
@@ -448,19 +470,19 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
              "R$ 15,00" é a mesma frase duas vezes). -->
         <li
           v-for="item in items"
-          :key="item.sku"
+          :key="item.line_id"
           class="grid cursor-pointer grid-cols-[auto_1fr] items-start gap-x-2 rounded-md border border-transparent px-2 py-0.5 transition"
-          :class="isSelected(item.sku) ? 'border-primary bg-primary/10' : (activeSku === item.sku ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
-          :aria-current="activeSku === item.sku ? 'true' : undefined"
-          @click="selectLine(item.sku)"
+          :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
+          :aria-current="activeLineId === item.line_id ? 'true' : undefined"
+          @click="selectLine(item.line_id)"
         >
           <button
             type="button"
             class="mt-1 grid size-6 shrink-0 place-items-center rounded-md border transition"
-            :class="isSelected(item.sku) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
+            :class="isSelected(item.line_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-transparent hover:border-primary/60'"
             :aria-label="`Selecionar ${item.name}`"
-            :aria-pressed="isSelected(item.sku)"
-            @click.stop="toggleSelect(item.sku)"
+            :aria-pressed="isSelected(item.line_id)"
+            @click.stop="toggleSelect(item.line_id)"
           >
             <Icon name="lucide:check" class="size-4" />
           </button>
@@ -491,25 +513,24 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             <!-- faixa 2 — unitário à esquerda, controles à direita -->
             <div class="flex items-center gap-2">
               <span
-                v-if="item.qty > 1 || item.price_overridden"
-                class="min-w-0 flex-1 truncate text-xs tabular-nums"
-                :class="item.price_overridden ? 'text-primary' : 'text-muted-foreground'"
+                v-if="item.qty > 1"
+                class="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground"
               >
-                <Icon v-if="item.price_overridden" name="lucide:pencil" class="mr-0.5 inline size-3 align-[-1px]" />{{ formatBRL(unitChargedQ(item)) }} cada
+                {{ formatBRL(unitChargedQ(item)) }} cada
               </span>
               <span v-else class="flex-1" />
 
               <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
                    APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
               <div class="flex shrink-0 items-center gap-1" @click.stop>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.sku, 'decrement')">
+                <UiButton variant="ghost" size="icon-sm" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')">
                   <Icon name="lucide:minus" class="size-4" />
                 </UiButton>
                 <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.sku, 'increment')">
+                <UiButton variant="ghost" size="icon-sm" aria-label="Aumentar" @click="bump(item.line_id, 'increment')">
                   <Icon name="lucide:plus" class="size-4" />
                 </UiButton>
-                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.sku)">
+                <UiButton variant="ghost" size="icon-sm" class="ml-2" aria-label="Remover" @click="askRemove(item.line_id)">
                   <Icon name="lucide:trash-2" class="size-4 text-destructive" />
                 </UiButton>
               </div>
@@ -532,7 +553,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                 class="group inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
                 :disabled="firing"
                 :aria-label="`${unfireAction.label}: ${item.name}`"
-                @click.stop="$emit('unfire', item.line_id || '')"
+                @click.stop="$emit('unfire', item.line_id)"
               >
                 <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
                 <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
@@ -594,10 +615,10 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         <button
           type="button"
           class="flex-1 rounded-md border py-1.5 text-sm font-medium transition"
-          :class="numpadMode === 'price' ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
-          @click="setMode('price')"
+          :class="numpadMode === 'disc_brl' ? 'border-primary bg-primary/5' : 'hover:bg-accent'"
+          @click="setMode('disc_brl')"
         >
-          Preço
+          Desc R$
         </button>
         <button
           type="button"
@@ -610,9 +631,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         </button>
       </div>
       <p v-else class="px-1 text-xs font-medium text-muted-foreground">
-        Desconto em {{ selection.count }} {{ selection.count === 1 ? "item selecionado" : "itens selecionados" }} — digite o %
+        Desconto em {{ selection.count }} {{ selection.count === 1 ? "item selecionado" : "itens selecionados" }} — digite o valor
       </p>
-      <div v-if="numpadMode === 'disc' && discountTargets.length" class="flex flex-wrap gap-1">
+      <div v-if="inDiscountMode && discountTargets.length" class="flex flex-wrap gap-1">
         <button
           v-for="reason in reasonOptions"
           :key="reason.ref"
@@ -624,9 +645,9 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           {{ reason.label }}
         </button>
       </div>
-      <!-- price mode: a comma key for centavos (the shared numpad is integer-only) -->
-      <div v-if="numpadMode === 'price' && !selectMode" class="flex items-center gap-1">
-        <span class="flex-1 px-1 text-xs text-muted-foreground">Preço unitário — vírgula p/ centavos · gerente aprova</span>
+      <!-- desconto em R$: a tecla de vírgula (o teclado compartilhado é inteiro) -->
+      <div v-if="numpadMode === 'disc_brl'" class="flex items-center gap-1">
+        <span class="flex-1 px-1 text-xs text-muted-foreground">Desconto por unidade — vírgula p/ centavos</span>
         <button
           type="button"
           class="rounded-md border bg-card px-4 py-1.5 text-base font-semibold transition hover:bg-accent active:translate-y-px disabled:opacity-40"
@@ -656,16 +677,29 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
            spanning their full height — saves a vertical row. -->
       <div v-if="fireBar.visible || (hasOpenTab && items.length)" class="grid grid-cols-2 gap-2">
         <div class="flex flex-col gap-2">
+          <!-- ENVIAR ganha calor quando HÁ o que enviar: item lançado e não
+               enviado é trabalho parado, e o botão neutro dizia isso com a
+               mesma voz de um botão desligado. Emprestamos o idioma de ênfase
+               da casa (borda + fundo primário) em vez de um segundo botão
+               sólido: o sólido é do "Pagamento", e dois blocos cheios lado a
+               lado brigam pela mesma atenção em vez de dirigi-la. A contagem
+               virou badge — o número é o dado, o resto é rótulo. -->
           <UiButton
             v-if="fireBar.visible"
             variant="outline"
             class="justify-center gap-2"
+            :class="fireBar.unfired && !fireBar.disabled ? 'border-primary bg-primary/5 text-primary hover:bg-primary/10' : ''"
             :disabled="fireBar.disabled"
             :loading="firing"
             @click="$emit('fire')"
           >
             <Icon name="lucide:utensils" class="size-4" />
             {{ fireBar.label }}
+            <span
+              v-if="fireBar.unfired"
+              class="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-primary px-1.5 text-xs font-semibold tabular-nums text-primary-foreground"
+              :aria-label="`${fireBar.unfired} item(ns) a enviar`"
+            >{{ fireBar.unfired }}</span>
           </UiButton>
           <UiButton
             v-if="hasOpenTab && items.length"

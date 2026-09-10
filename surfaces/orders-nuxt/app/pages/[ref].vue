@@ -5,6 +5,7 @@
 import {
   appendTag,
   changeBackSuggestionQ,
+  joinFacts,
   lucideIcon,
   moneyInput,
   splitRef,
@@ -16,7 +17,7 @@ import type { CancellationReason } from "~/types/orders";
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, saveNotes, addComment, courierDispatch, courierCancel, courierQuote } =
+const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -32,6 +33,27 @@ async function submitComment() {
 }
 
 const code = computed(() => splitRef(orderRef.value));
+
+// Cadastro do cliente: hoje o CRUD de cliente mora no Admin, e o Gestor precisa
+// pelo menos APONTAR para lá — quem está atendendo quer saber quem é a pessoa,
+// e descobrir isso não pode custar caçar a URL do Admin de cabeça. O dia em que
+// o Gestor tiver a própria tela de clientes, este link some.
+const adminBaseUrl = useRuntimeConfig().public.adminBaseUrl as string;
+const customerAdminUrl = computed(() => {
+  const ref_ = order.value?.customer_ref;
+  if (!ref_ || !adminBaseUrl) return "";
+  return `${adminBaseUrl}/admin/guestman/customer/?q=${encodeURIComponent(ref_)}`;
+});
+// Há alguma forma de alcançar a pessoa? Sem nenhuma, o bloco não aparece — vale
+// mais uma tela honesta do que uma fileira de botões que não fazem nada.
+const hasCustomerContact = computed(() =>
+  Boolean(
+    order.value?.customer_phone_uri ||
+      order.value?.customer_whatsapp_url ||
+      order.value?.customer_email ||
+      customerAdminUrl.value,
+  ),
+);
 
 // kitchen-note editor (seeded from the projection; saved explicitly). The note —
 // preset tags one-tap-appended + free text — is shown on the KDS ticket.
@@ -105,6 +127,24 @@ async function submitReason(payload: { reason: string; cancellationCode: string 
   if (ok) dialog.value = "";
 }
 
+// Cancelar pedido PAGO pede segunda assinatura. O diálogo é o MESMO do PDV
+// (`OperatorManagerAuth`, no operator-kit): mesma lista, mesmo teclado, mesmo
+// crachá. Antes disto o gerente lia "Falha na ação" e não tinha onde assinar.
+//
+// ⚠️ Fecha o diálogo do MOTIVO também. `submitReason` só fecha `if (ok)`, e o
+// desafio devolve `false` de propósito — o motivo precisa sobreviver por baixo
+// da assinatura. Só que, com o cancelamento já feito, ninguém o fechava: o
+// gerente assinava, o pedido cancelava, e a tela voltava a mostrar "Cancelar
+// pedido" com o Confirmar aceso sobre um pedido JÁ cancelado. Achado na prova
+// de navegador — nenhum teste de componente ou de composable alcança este
+// estado, porque `dialog` é estado da PÁGINA.
+async function signWithPin(username: string, pin: string) {
+  if (await authorize({ username, pin })) dialog.value = "";
+}
+async function signWithBadge(badge: string) {
+  if (await authorize({ badge })) dialog.value = "";
+}
+
 async function submitSettle() {
   const back = asksChangeBack.value ? changeBack.value.trim() || "0" : undefined;
   const ok = await settleCash(amount.value.trim(), back, asksEquipmentBack.value && settleEquipmentBack.value);
@@ -121,6 +161,23 @@ async function submitDispatch(value: string | null) {
   const ok = await advance(changeOut, dispatchEquipment.value);
   if (ok) dialog.value = "";
 }
+
+// Quem é este cliente (WP-360). O servidor manda os fatos já em português e só
+// os que sabe; aqui montamos as duas linhas, deixando de fora o que faltou —
+// nunca "R$ 0,00" ou "0 pedidos" no lugar de "ainda não sabemos".
+const profile = computed(() => order.value?.customer_profile ?? null);
+const profileHistory = computed(() =>
+  joinFacts(
+    profile.value?.orders_label,
+    profile.value?.last_order_display ? `última compra ${profile.value.last_order_display}` : "",
+  ),
+);
+const profileHabits = computed(() =>
+  joinFacts(
+    profile.value?.average_ticket_display ? `ticket médio ${profile.value.average_ticket_display}` : "",
+    profile.value?.favorite_product ? `costuma levar ${profile.value.favorite_product}` : "",
+  ),
+);
 
 // Estação travada pelo servidor: não é "pedido não encontrado".
 const { denied: stationLocked } = useStationLock();
@@ -168,7 +225,12 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           <span class="ml-auto text-xl font-bold tabular-nums">{{ order.total_display }}</span>
         </div>
         <div class="grid gap-1 text-sm">
-          <p class="flex items-center gap-2"><Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}</p>
+          <p class="flex items-center gap-2">
+            <Icon name="lucide:user" class="size-4 text-muted-foreground" /> {{ order.customer_name || "Sem cliente" }}
+            <span v-if="order.customer_phone && order.customer_phone !== order.customer_name" class="text-muted-foreground tabular-nums" data-customer-phone>
+              · {{ order.customer_phone }}
+            </span>
+          </p>
           <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:package" class="size-4" /> {{ order.fulfillment_label }}</p>
           <!-- Para onde vai. Quem despacha não tinha o endereço em tela nenhuma
                do Gestor, embora o pedido sempre o carregasse. -->
@@ -179,13 +241,79 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
               <span v-if="order.delivery_instructions" class="block text-muted-foreground">{{ order.delivery_instructions }}</span>
             </span>
           </p>
-          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status || "—" }}</p>
+          <p class="flex items-center gap-2 text-muted-foreground"><Icon name="lucide:wallet" class="size-4" /> {{ order.payment_method_label || "—" }} · {{ order.payment_status_label || "—" }}</p>
+          <!-- Prova de envio do link de pagamento: "Enviando…", "Link enviado
+               às 14h32" ou "falhou — reenvie". Lida da última Directive do
+               aviso; sem aviso nenhum, a linha não existe. -->
+          <p v-if="order.payment_link_notice" class="flex items-center gap-2 text-muted-foreground" data-payment-link-notice>
+            <Icon name="lucide:send" class="size-4" /> {{ order.payment_link_notice }}
+          </p>
         </div>
 
-        <!-- gift -->
-        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm">
-          <p class="flex items-center gap-1.5 font-medium"><Icon name="lucide:gift" class="size-4" /> Presente para {{ order.gift_recipient_name }}</p>
+        <!-- Falar com o cliente. Um pedido é um combinado com uma pessoa, e
+             quem abre o detalhe abre justamente quando algo precisa ser dito:
+             o item acabou, o endereço não fecha, a entrega vai atrasar. Cada
+             botão só existe quando tem para onde levar. -->
+        <div v-if="hasCustomerContact" class="flex flex-wrap gap-2 border-t pt-3" data-customer-contact>
+          <a
+            v-if="order.customer_whatsapp_url"
+            :href="order.customer_whatsapp_url"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-whatsapp
+          >
+            <Icon name="lucide:message-circle" class="size-4" /> WhatsApp
+          </a>
+          <a
+            v-if="order.customer_phone_uri"
+            :href="order.customer_phone_uri"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-phone
+          >
+            <Icon name="lucide:phone" class="size-4" /> Ligar
+          </a>
+          <a
+            v-if="order.customer_email"
+            :href="`mailto:${order.customer_email}`"
+            class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            data-contact-email
+          >
+            <Icon name="lucide:mail" class="size-4" /> E-mail
+          </a>
+          <a
+            v-if="customerAdminUrl"
+            :href="customerAdminUrl"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+            data-contact-cadastro
+          >
+            <Icon name="lucide:id-card" class="size-4" /> Abrir cadastro
+          </a>
+        </div>
+
+        <!-- gift: destinatário é OPCIONAL na retirada (gift.py) — sem nome o
+             pedido continua presente, e a instrução vira "embalar", não
+             "entregar a alguém" com o nome pendurado no vazio. -->
+        <div v-if="order.is_gift" class="rounded-md bg-muted/60 p-2.5 text-sm" data-gift-block>
+          <p class="flex items-center gap-1.5 font-medium">
+            <Icon name="lucide:gift" class="size-4" />
+            {{ order.gift_recipient_name ? `Presente para ${order.gift_recipient_name}` : "Embalar para presente" }}
+          </p>
+          <p v-if="order.gift_recipient_phone" class="mt-1 flex items-center gap-1.5 text-muted-foreground" data-gift-phone>
+            <Icon name="lucide:phone" class="size-3.5" /> {{ order.gift_recipient_phone }}
+          </p>
           <p v-if="order.gift_message" class="mt-1 text-muted-foreground">“{{ order.gift_message }}”</p>
+          <!-- instrução operacional: nada de valores junto do presente (sem
+               cupom/valor na sacola) — hoje essa vontade do cliente sumia. -->
+          <p
+            v-if="order.gift_hide_values"
+            class="mt-1.5 inline-flex items-center gap-1 rounded-md border border-warning/50 px-1.5 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
+            data-gift-hide-values
+          >
+            <Icon name="lucide:eye-off" class="size-3" /> Não mostrar valores
+          </p>
         </div>
       </section>
 
@@ -214,14 +342,69 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         <button v-if="order.fiscal_status === 'failed'" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" @click="requeueFiscal">
           <Icon name="lucide:file-text" class="size-4" /> Reprocessar fiscal
         </button>
+        <!-- Só para o pedido de LINK ainda cobrável (forma link com URL, vivo,
+             não pago, não vencido) — o servidor decide, a tela obedece. A
+             cadência (cedo demais, envio em andamento) é recusa da hora do
+             clique, com o motivo no toast. -->
+        <button v-if="order.can_resend_payment_link" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-semibold transition hover:bg-accent disabled:opacity-50" data-action="resend-payment-link" @click="resendPaymentLink">
+          <Icon name="lucide:send" class="size-4" /> Reenviar link de pagamento
+        </button>
         <!-- Recusar é a resposta ao pedido que ACABOU de chegar; depois de
-             aceito o gesto certo é Cancelar, que segue sempre disponível. -->
+             aceito o gesto certo é Cancelar. -->
         <button v-if="order.can_confirm" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border border-destructive/40 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive/10 disabled:opacity-50 dark:text-orange-300" data-action="reject" @click="openDialog('reject')">
           <Icon name="lucide:x" class="size-4" /> Recusar
         </button>
-        <button type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" @click="openDialog('cancel')">
-          <Icon name="lucide:ban" class="size-4" /> Cancelar
+        <!-- `can_cancel` já é régua + política + permissão, resolvidas no
+             servidor. O botão ficava sempre visível e o servidor respondia
+             "ok" sem cancelar; agora, quando não dá, a tela diz por quê em vez
+             de oferecer um gesto que não acontece. -->
+        <button v-if="order.can_cancel" type="button" :disabled="busy" class="inline-flex items-center gap-1.5 rounded-md border px-3.5 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent disabled:opacity-50" data-action="cancel" @click="openDialog('cancel')">
+          <Icon name="lucide:ban" class="size-4" />
+          {{ order.cancel_requires_approval ? "Cancelar (gerente)" : "Cancelar" }}
         </button>
+        <p v-else-if="order.cancel_block_label" class="self-center text-sm text-muted-foreground">
+          {{ order.cancel_block_label }}
+        </p>
+      </section>
+
+      <!-- quem é este cliente (WP-360) — o operador abria o detalhe sem saber se
+           quem está do outro lado é da casa ou comprou pela primeira vez. O
+           bloco só existe com cliente identificado, e cada linha só aparece com
+           o dado que o servidor de fato tem. -->
+      <section v-if="profile" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4 text-sm" data-customer-profile>
+        <div class="flex flex-wrap items-center gap-2">
+          <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
+            <Icon name="lucide:user-round" class="size-4 text-muted-foreground" /> Cliente
+          </h2>
+          <!-- Selo só nos segmentos que mudam o atendimento (fiel/campeão, em
+               risco/perdido). Regular e recente não ganham selo: badge que
+               aparece sempre deixa de ser lido. -->
+          <span
+            v-if="profile.segment_tone"
+            class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium"
+            :class="toneBadge(profile.segment_tone)"
+            data-customer-segment
+          >
+            {{ profile.segment_label }}
+          </span>
+        </div>
+        <p v-if="profileHistory" data-customer-history>{{ profileHistory }}</p>
+        <p v-if="profileHabits" class="text-muted-foreground" data-customer-habits>{{ profileHabits }}</p>
+        <!-- Aniversário: no dia, é gesto de casa; fora dele, é só cadastro. -->
+        <p v-if="profile.birthday_display" class="flex items-center gap-1.5" :class="profile.is_birthday_today ? 'font-medium' : 'text-muted-foreground'" data-customer-birthday>
+          <Icon name="lucide:cake" class="size-3.5 shrink-0" />
+          {{ profile.is_birthday_today ? "Faz aniversário hoje" : `Aniversário em ${profile.birthday_display}` }}
+        </p>
+        <!-- Restrição alimentar é a única linha deste bloco que pode virar
+             incidente se passar batido — por isso tom de atenção, não cinza. -->
+        <p v-if="profile.dietary_restrictions" class="flex items-start gap-1.5 font-medium text-amber-700 dark:text-amber-400" data-customer-restrictions>
+          <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
+          <span>{{ profile.dietary_restrictions }}</span>
+        </p>
+        <p v-if="profile.notes" class="flex items-start gap-1.5 text-muted-foreground" data-customer-notes>
+          <Icon name="lucide:sticky-note" class="mt-0.5 size-3.5 shrink-0" />
+          <span>{{ profile.notes }}</span>
+        </p>
       </section>
 
       <!-- corrida de entrega (logística externa) -->
@@ -255,6 +438,16 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
             </tr>
           </tbody>
         </table>
+      </section>
+
+      <!-- observação do CLIENTE (order_notes, escrita no checkout): somente
+           leitura, dona diferente da nota da cozinha logo abaixo — o operador
+           edita a dele, nunca a do cliente. -->
+      <section v-if="order.customer_note" class="flex flex-col gap-1.5 rounded-lg border bg-card p-4" data-customer-note>
+        <h2 class="flex items-center gap-1.5 text-sm font-bold uppercase tracking-wide">
+          <Icon name="lucide:message-square" class="size-4 text-muted-foreground" /> Observação do cliente
+        </h2>
+        <p class="whitespace-pre-line text-sm">{{ order.customer_note }}</p>
       </section>
 
       <!-- kitchen note -->
@@ -423,5 +616,19 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
         </UiDialogFooter>
       </UiDialogContent>
     </UiDialog>
+
+    <!-- Segunda assinatura: o mesmo diálogo canônico do PDV. A lista de gerentes
+         vem vazia aqui (o Gestor não carrega a projeção do PDV), e o componente
+         cai no campo livre de propósito — esconder a única porta deixaria o
+         gerente sem saída no meio de um cancelamento. -->
+    <OperatorManagerAuth
+      :open="!!managerChallenge"
+      action="cancel_sale"
+      :busy="busy"
+      :error="managerChallenge?.code === 'manager_approval_invalid' ? managerChallenge.message : ''"
+      @update:open="(aberto: boolean) => { if (!aberto) dismissManagerChallenge(); }"
+      @authorize="signWithPin"
+      @authorize-badge="signWithBadge"
+    />
   </main>
 </template>

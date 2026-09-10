@@ -215,8 +215,11 @@ se autoconfirmar de graça. **Recomendação:** default `false` no template de p
 - P2 Telefone do cliente logado em INFO (`verification.py:217`). LGPD.
 - P3 Guards de boot por `assert` (removidos sob `python -O`) — duplicados pelos
   deploy checks, então valem no pipeline.
-- P3 `SHOPMAN_ENVIRONMENT` inferido por substring "staging" pode expor debug OTP
-  se um domínio de prod contiver "staging". Fixar sempre explícito.
+- ✅ P3 `SHOPMAN_ENVIRONMENT` inferido por substring "staging" pode expor debug
+  OTP se um domínio de prod contiver "staging". **Corrigido:** a inferência por
+  substring foi removida — env explícita nos specs `.do/*.yaml`, ausência fora
+  de DEBUG falha fechado para `production` (regressão em
+  `shopman/shop/tests/test_shopman_environment.py`).
 
 **Auth/doorman — sem P0/P1, bem construído**
 - P2 Minting de access-link sem auth quando `DEBUG=True` (`views/access_link.py:

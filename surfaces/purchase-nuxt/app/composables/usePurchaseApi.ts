@@ -1,7 +1,12 @@
 import type {
   PurchaseActionResponse,
   PurchaseConversionDeclarePayload,
+  PurchaseCostBatchPayload,
   PurchaseCostUpsertPayload,
+  PurchaseMinStockPayload,
+  PurchaseCountActionResponse,
+  PurchaseCountConfirmPayload,
+  PurchaseCountResponse,
   PurchaseReceiptConfirmPayload,
   PurchaseReceiptRejectPayload,
   PurchaseRequestActionPayload,
@@ -17,7 +22,11 @@ export const PURCHASE_API_ENDPOINTS = {
   confirmReceipt: `${PURCHASE_API_BASE}receipts/confirm/`,
   rejectReceipt: `${PURCHASE_API_BASE}receipts/reject/`,
   upsertCost: `${PURCHASE_API_BASE}costs/`,
+  upsertCostBatch: `${PURCHASE_API_BASE}costs/batch/`,
+  setMinStock: `${PURCHASE_API_BASE}materials/min-stock/`,
   declareConversion: `${PURCHASE_API_BASE}conversions/`,
+  count: `${PURCHASE_API_BASE}count/`,
+  countConfirm: `${PURCHASE_API_BASE}count/confirm/`,
   requestApprove: (materialSku: string) =>
     `${PURCHASE_API_BASE}requests/${encodeURIComponent(materialSku)}/approve/`,
   requestSend: (materialSku: string) =>
@@ -95,6 +104,34 @@ export function usePurchaseApi() {
     });
   }
 
+  async function upsertCostBatch(payload: PurchaseCostBatchPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.upsertCostBatch, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function setMinStock(payload: PurchaseMinStockPayload) {
+    return $fetch<PurchaseActionResponse>(PURCHASE_API_ENDPOINTS.setMinStock, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
+  async function fetchCount() {
+    return $fetch<PurchaseCountResponse>(PURCHASE_API_ENDPOINTS.count, fetchOptions());
+  }
+
+  async function confirmCount(payload: PurchaseCountConfirmPayload) {
+    return $fetch<PurchaseCountActionResponse>(PURCHASE_API_ENDPOINTS.countConfirm, {
+      ...fetchOptions(),
+      method: "POST",
+      body: payload,
+    });
+  }
+
   return {
     endpoints: PURCHASE_API_ENDPOINTS,
     fetchProjection,
@@ -104,6 +141,10 @@ export function usePurchaseApi() {
     approveRequest,
     sendRequest,
     upsertCost,
+    upsertCostBatch,
+    setMinStock,
     declareConversion,
+    fetchCount,
+    confirmCount,
   };
 }
