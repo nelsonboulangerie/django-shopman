@@ -2398,3 +2398,25 @@ As invariantes técnicas e de segurança permanecem obrigatórias e serão cober
 regressão local. A dispensa não autoriza push, PR, deploy, staging, produção, credenciais
 ou providers externos, envio real nem rollout; G-H09 e G-H10 continuam fechados até uma
 autorização contextual específica.
+
+## MKT-048 — ownership Admin/Nuxt e implementação Unfold mínima
+
+Concluído em 2026-09-10 com o corte já aprovado no G-H07: Marketing Nuxt é o único
+cockpit e o único caminho para commands; Django Admin/Unfold oferece somente auditoria
+agregada a quem possui `shop.audit_marketing`. Campaign/template continuam curados do
+Admin e também foram travados contra add/change/delete como defesa em profundidade.
+
+Foram registrados read-only: anúncios, comprovantes, públicos selados sem membership,
+eventos de decisão, configuração de plataforma e segurança. Membership, outbox,
+delivery target/attempt/reconciliation permanecem fora do Admin comum. O menu separa
+claramente aplicativo e auditoria, os rótulos operacionais estão em pt-BR e o detalhe
+leva de comprovante a anúncio sem oferecer qualquer comando duplicado.
+
+Provas: **60 testes focados** passaram; `make admin` passou o checker de maturidade e
+**257 testes**; Ruff, migration drift e `git diff --check` passaram. A inspeção no
+browser real confirmou os seis destinos, títulos/campos em português e apenas a ação
+**Fechar** no detalhe read-only. Relatório completo:
+[`marketing-MKT-048-admin-ownership-20260910-codex.md`](marketing-MKT-048-admin-ownership-20260910-codex.md).
+
+Nenhum template custom, provider, credencial externa, push, PR, deploy, produção ou
+envio real foi acionado.

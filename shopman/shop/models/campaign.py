@@ -567,6 +567,8 @@ class AudienceSnapshot(models.Model):
 
     class Meta:
         ordering = ["-sealed_at"]
+        verbose_name = "público selado"
+        verbose_name_plural = "públicos selados"
         constraints = [
             models.UniqueConstraint(
                 fields=["announcement", "version"],
@@ -574,6 +576,9 @@ class AudienceSnapshot(models.Model):
                 name="shop_audience_snapshot_announcement_version_uq",
             ),
         ]
+
+    def __str__(self) -> str:  # pragma: no cover - Admin/debug only
+        return f"Público selado {self.ref}"
 
 
 class AudienceSnapshotMember(models.Model):
@@ -647,6 +652,8 @@ class MarketingTestReceipt(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        verbose_name = "comprovante de teste de Marketing"
+        verbose_name_plural = "comprovantes de teste de Marketing"
         constraints = [
             models.UniqueConstraint(
                 fields=["actor", "idempotency_key_hash"],
@@ -728,6 +735,8 @@ class MarketingCommandReceipt(models.Model):
 
     class Meta:
         ordering = ["-created_at"]
+        verbose_name = "comprovante de comando de Marketing"
+        verbose_name_plural = "comprovantes de comando de Marketing"
         constraints = [
             models.UniqueConstraint(
                 fields=["actor", "idempotency_key_hash"],
@@ -743,6 +752,9 @@ class MarketingCommandReceipt(models.Model):
             models.Index(fields=["announcement", "created_at"]),
             models.Index(fields=["state", "created_at"]),
         ]
+
+    def __str__(self) -> str:  # pragma: no cover - Admin/debug only
+        return f"{self.get_kind_display()} · {self.get_state_display()} · {self.ref}"
 
 
 class MarketingContentArtifact(models.Model):
@@ -853,7 +865,12 @@ class MarketingAuditEvent(models.Model):
 
     class Meta:
         ordering = ["-occurred_at", "-pk"]
+        verbose_name = "evento de decisão de Marketing"
+        verbose_name_plural = "eventos de decisão de Marketing"
         indexes = [models.Index(fields=["announcement", "occurred_at"])]
+
+    def __str__(self) -> str:  # pragma: no cover - Admin/debug only
+        return f"{self.get_event_type_display()} · anúncio #{self.announcement_id}"
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -1010,7 +1027,12 @@ class MarketingPlatformAuditEvent(models.Model):
 
     class Meta:
         ordering = ["-occurred_at", "-pk"]
+        verbose_name = "evento de configuração de plataforma"
+        verbose_name_plural = "eventos de configuração de plataforma"
         indexes = [models.Index(fields=["platform", "occurred_at"])]
+
+    def __str__(self) -> str:  # pragma: no cover - Admin/debug only
+        return f"{self.get_event_type_display()} · {self.platform}"
 
     def save(self, *args, **kwargs):
         if self.pk:
@@ -1255,10 +1277,15 @@ class MarketingSecurityEvent(models.Model):
 
     class Meta:
         ordering = ["-occurred_at"]
+        verbose_name = "evento de segurança de Marketing"
+        verbose_name_plural = "eventos de segurança de Marketing"
         indexes = [
             models.Index(fields=["event_type", "occurred_at"]),
             models.Index(fields=["resource_ref", "occurred_at"]),
         ]
+
+    def __str__(self) -> str:  # pragma: no cover - Admin/debug only
+        return f"Evento de segurança {self.ref}"
 
     def save(self, *args, **kwargs):
         if self.pk:
