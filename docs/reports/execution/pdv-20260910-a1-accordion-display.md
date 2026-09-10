@@ -117,3 +117,7 @@ Refinamento solicitado: modo explícito de seleção oculta apenas os botões ge
 Alt+I/botão de entrada e navegação por setas ativam estado explícito de navegação. Nesse estado e no modo seleção, botões gerais ficam ocultos; o total permanece. Mudar foco para o numpad não restaura os botões. Concluir encerra o modo; Esc na lista fecha detalhes ou encerra o modo quando recolhido. Qtd/Obs. desabilitados na seleção múltipla recebem opacidade reduzida, dessaturação e cursor de indisponibilidade.
 
 39 testes do componente e lint passam. Chromium mediu ganho de 104 px na área da lista em 320×720, conferiu persistência do modo ao focar numpad, restauração em Concluir e Qtd desabilitado/esmaecido. Capturas `navigation-footer.png`, `selection-disabled.png`. O numpad acompanha a nova posição do rodapé na entrada/saída do modo; não se desloca a cada mudança de foco. Sem publicação.
+
+### Ajuda central de atalhos
+
+Obs. continua desabilitado na seleção múltipla, sem edição em lote. Removida a legenda permanente da lista. O PDV já possuía `PosShortcutsHelp`, botão de teclado no cabeçalho da página e atalho `?`; a ajuda agora inclui navegação/seleção dos itens. A prévia expõe a mesma janela pelo botão de teclado e `?`, respeitando a guarda de diálogo. 39 testes do componente e lint passaram; Chromium conferiu remoção da legenda, abertura por tecla/botão e fechamento por Esc. Captura `shortcuts-help.png`. Sem publicação.

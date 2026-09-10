@@ -744,12 +744,6 @@ defineExpose({ focusItem, onDigit, onBackspace });
         {{ batchMode ? "Concluir seleção" : "Selecionar" }}
       </button>
     </header>
-    <p
-      class="border-b px-3 py-1 text-[10px] text-muted-foreground"
-    >
-      ↑↓ item · Espaço selecionar · Enter
-      {{ batchMode ? "selecionar" : "detalhes" }}
-    </p>
     <div
       ref="receiptList"
       class="min-h-0 flex-1 overflow-y-auto"
