@@ -89,6 +89,22 @@ def _operator_error(exc: Exception) -> Exception:
     return ProductionError(str(exc) or "Falha na produção.")
 
 
+def _positive_quantity(value, *, allow_zero: bool = False) -> Decimal:
+    """Normalize an operator quantity before fingerprints or domain arithmetic.
+
+    Planning alone accepts zero because that is the explicit gesture that clears
+    an existing matrix cell. Starting, finishing and every QC group remain
+    strictly positive.
+    """
+    try:
+        quantity = Decimal(str(value))
+    except (ArithmeticError, TypeError, ValueError) as exc:
+        raise ProductionError("Quantidade inválida.") from exc
+    if not quantity.is_finite() or quantity < 0 or (quantity == 0 and not allow_zero):
+        raise ProductionError("Quantidade inválida.")
+    return quantity
+
+
 @dataclass(frozen=True)
 class MissingMaterial:
     sku: str
@@ -845,6 +861,7 @@ def apply_quick_finish(
     from shopman.craftsman.models import Recipe
 
     _require_creation_attempt(actor=actor, idempotency_key=idempotency_key)
+    quantity = _positive_quantity(quantity)
     if force and not str(override_reason or "").strip():
         raise ProductionError("Justificativa obrigatória para confirmar a falta.")
     quick_key = f"production.quick-plan:{str(idempotency_key).strip()}" if idempotency_key else None
@@ -1043,6 +1060,7 @@ def apply_planned(
     from shopman.craftsman.models import Recipe
 
     _require_creation_attempt(actor=actor, idempotency_key=idempotency_key)
+    quantity = _positive_quantity(quantity, allow_zero=True)
     attempt_key = f"production.plan:{str(idempotency_key).strip()}" if idempotency_key else None
     attempt_payload = {"force": bool(force)}
     try:
@@ -1188,6 +1206,7 @@ def apply_start(
         expected_rev=expected_rev,
         idempotency_key=idempotency_key,
     )
+    quantity = _positive_quantity(quantity)
     try:
         with transaction.atomic():
             attempt_key = _mutation_idempotency_key("start", work_order_id, idempotency_key)
@@ -1543,6 +1562,8 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
     """
     from shopman.shop.models import QualityDefect, QualityGrade
 
+    quantity = _positive_quantity(quantity)
+
     grade_states = dict(QualityGrade.objects.values_list("ref", "is_active"))
     grades = {
         ref: {"label": label, "markdown_percent": markdown}
@@ -1566,14 +1587,17 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
         if not partition:
             raise ProductionError("A partição da fornada não pode ser vazia.")
         try:
-            partition_total = sum(
-                (Decimal(str(group.get("quantity"))) for group in partition),
-                Decimal("0"),
-            )
-            declared_total = Decimal(str(quantity))
-        except (AttributeError, TypeError, ValueError, ArithmeticError) as exc:
+            partition = [
+                {
+                    **group,
+                    "quantity": _positive_quantity(group.get("quantity")),
+                }
+                for group in partition
+            ]
+            partition_total = sum((group["quantity"] for group in partition), Decimal("0"))
+        except (AttributeError, TypeError, ValueError, ArithmeticError, ProductionError) as exc:
             raise ProductionError("Partição da fornada inválida.") from exc
-        if partition_total != declared_total:
+        if partition_total != quantity:
             raise ProductionError("A soma dos grupos deve ser exatamente igual à quantidade total informada.")
     else:
         grade = (quality or "").strip().lower() or default_ref
@@ -1719,6 +1743,7 @@ def apply_finish(
         expected_rev=expected_rev,
         idempotency_key=idempotency_key,
     )
+    quantity = _positive_quantity(quantity)
     try:
         with transaction.atomic():
             work_order, locked_output_work_orders = _lock_output_work_orders(work_order_id)
