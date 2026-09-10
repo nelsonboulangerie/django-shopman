@@ -23,3 +23,14 @@ Os ensaios usam HTTP real via Nitro, Django, PostgreSQL e Redis/SSE. A interrup�
 controlada descarta a resposta HTTP depois do commit. Não há worker separado nem
 provedores externos neste ensaio. Não demonstra homologação, restart de worker,
 resultado financeiro/fiscal, equipamentos físicos ou esforço em campo.
+
+## Recuperação em outro processo
+
+Após seed normal, executar `manage_lab.py shell < .orders-lab/phase_crash_seed.py`
+com os mesmos ambientes. O **exit 17 é esperado**: o processo termina abruptamente
+após commit da transição e da Directive, sem callback. Em processo novo, executar
+`manage_lab.py process_directives --topic order.lifecycle_phase --limit 10`, depois
+`manage_lab.py shell < .orders-lab/phase_verify.py`. Repetir worker e verificador:
+deve permanecer um ticket com qty `0.5`, fase done e uma tentativa. O seed cria
+estação picking sintética sem som, Session e itens de laboratório. Não representa
+confirmação de trabalho físico executado, nem despacho, emissão ou mensagem real.

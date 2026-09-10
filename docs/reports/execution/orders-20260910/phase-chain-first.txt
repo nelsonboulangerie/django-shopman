@@ -1,0 +1,66 @@
+................................................................................................................................... [ 20%]
+................................................................... [ 30%]
+........................................................................ [ 41%]
+........................................................................ [ 52%]
+........................................................................ [ 63%]
+........................................................................ [ 74%]
+........................................................................ [ 85%]
+.........F.............................................................. [ 96%]
+....................                                                     [100%]
+=================================== FAILURES ===================================
+_____________________ test_save_notes_and_history_delegate _____________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d581a60>
+
+    def test_save_notes_and_history_delegate(monkeypatch):
+        save_notes = Mock()
+        recent = Mock(return_value=["order"])
+        monkeypatch.setattr(orders.operator_orders, "save_kitchen_note", save_notes)
+        monkeypatch.setattr(orders.operator_orders, "recent_history", recent)
+    
+        orders.save_kitchen_note("order", notes="obs")
+        assert orders.recent_history(limit=5) == ["order"]
+    
+>       save_notes.assert_called_once_with("order", notes="obs")
+
+shopman/backstage/tests/test_orders_service.py:69: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:959: in assert_called_once_with
+    return self.assert_called_with(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <Mock id='4518848336'>, args = ('order',), kwargs = {'notes': 'obs'}
+expected = call('order', notes='obs')
+actual = call('order', notes='obs', expected_revision=None, actor='system')
+_error_message = <function NonCallableMock.assert_called_with.<locals>._error_message at 0x10d5a27a0>
+cause = None
+
+    def assert_called_with(self, /, *args, **kwargs):
+        """assert that the last call was made with the specified arguments.
+    
+        Raises an AssertionError if the args and keyword args passed in are
+        different to the last call to the mock."""
+        if self.call_args is None:
+            expected = self._format_mock_call_signature(args, kwargs)
+            actual = 'not called.'
+            error_message = ('expected call not found.\nExpected: %s\n  Actual: %s'
+                    % (expected, actual))
+            raise AssertionError(error_message)
+    
+        def _error_message():
+            msg = self._format_mock_failure_message(args, kwargs)
+            return msg
+        expected = self._call_matcher(_Call((args, kwargs), two=True))
+        actual = self._call_matcher(self.call_args)
+        if actual != expected:
+            cause = expected if isinstance(expected, Exception) else None
+>           raise AssertionError(_error_message()) from cause
+E           AssertionError: expected call not found.
+E           Expected: mock('order', notes='obs')
+E             Actual: mock('order', notes='obs', expected_revision=None, actor='system')
+
+/opt/homebrew/Cellar/python@3.12/3.12.5/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:947: AssertionError
+=========================== short test summary info ============================
+FAILED shopman/backstage/tests/test_orders_service.py::test_save_notes_and_history_delegate
+1 failed, 649 passed, 18 subtests passed in 44.11s

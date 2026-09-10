@@ -15,6 +15,10 @@ logger = logging.getLogger(__name__)
 
 # ── Topic constants ──
 
+# Lifecycle: missing post-commit phases, dispatched by the existing worker.
+ORDER_LIFECYCLE_PHASE = "order.lifecycle_phase"
+LIFECYCLE_PHASE_RECEIPT_SCOPE = "lifecycle:phase"
+
 # Notification
 NOTIFICATION_SEND = "notification.send"
 

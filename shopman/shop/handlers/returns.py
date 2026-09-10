@@ -12,7 +12,7 @@ from decimal import Decimal
 
 from django.db import transaction
 from django.utils import timezone
-from shopman.orderman.exceptions import DirectiveTerminalError
+from shopman.orderman.exceptions import DirectiveTerminalError, DirectiveTransientError
 from shopman.orderman.models import Directive, Order
 
 from shopman.shop.directives import RETURN_PROCESS
@@ -79,7 +79,7 @@ class ReturnService:
         return_record = {
             "timestamp": timezone.now().isoformat(), "actor": actor, "reason": reason,
             "type": return_type, "items": items_detail, "refund_total_q": refund_total_q,
-            "refund_processed": False,
+            "refund_processed": False, "stock_receipt_version": 1, "stock_processed": False,
         }
 
         if "returns" not in order.data:
@@ -151,6 +151,23 @@ class ReturnHandler:
     topic = RETURN_PROCESS
 
     def handle(self, *, message: Directive, ctx: dict) -> None:
+        try:
+            self._handle(message=message, ctx=ctx)
+        except Exception as exc:
+            from shopman.orderman.dispatch import MAX_ATTEMPTS
+
+            if isinstance(exc, DirectiveTerminalError) or message.attempts >= MAX_ATTEMPTS:
+                from shopman.shop.services.observability import create_operator_alert
+
+                ref = (message.payload or {}).get("order_ref", "")
+                create_operator_alert(
+                    type="lifecycle_phase_stuck", severity="critical", order_ref=ref,
+                    message=f"Devolução {ref} pendente. Confira estoque e estorno antes de retomar. {exc}",
+                    dedupe_key=f"return_processing:{message.pk}",
+                )
+            raise
+
+    def _handle(self, *, message: Directive, ctx: dict) -> None:
         from shopman.shop.adapters import get_adapter
 
         payload = message.payload
@@ -164,36 +181,48 @@ class ReturnHandler:
         except Order.DoesNotExist as exc:
             raise DirectiveTerminalError(f"Order not found: {order_ref}") from exc
 
-        returns = order.data.get("returns", [])
-        if return_index < len(returns) and returns[return_index].get("refund_processed"):
-            return
-
-        stock_adapter = get_adapter("stock")
-        if stock_adapter:
-            for item in items:
-                try:
+        # Stock and its receipt are one local commit. Refund/provider I/O starts
+        # only after releasing this lock; failure must not receive goods twice.
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            returns = order.data.get("returns", [])
+            if not isinstance(return_index, int) or isinstance(return_index, bool) or not 0 <= return_index < len(returns):
+                raise DirectiveTerminalError("Return record missing")
+            record = returns[return_index]
+            if record.get("refund_processed"):
+                return
+            if record.get("stock_receipt_version") != 1:
+                raise DirectiveTerminalError("Legacy return has no reliable stock receipt; reconcile before retry")
+            if record.get("items") != items or record.get("refund_total_q") != refund_total_q:
+                raise DirectiveTerminalError("Return payload does not match the authorized record")
+            if not record.get("stock_processed"):
+                stock_adapter = get_adapter("stock")
+                if stock_adapter is None:
+                    raise DirectiveTransientError("Stock adapter unavailable")
+                for item in items:
                     stock_adapter.receive_return(
-                        sku=item["sku"],
-                        qty=Decimal(str(item["qty"])),
-                        reference=order_ref,
-                        reason=f"Devolução pedido {order_ref}",
+                        sku=item["sku"], qty=Decimal(str(item["qty"])),
+                        reference=order_ref, reason=f"Devolução pedido {order_ref}",
                     )
-                except Exception:
-                    logger.exception("ReturnHandler: Failed to reverse stock for sku=%s order=%s", item["sku"], order_ref)
+                record["stock_processed"] = True
+                order.data["returns"] = returns
+                order.save(update_fields=["data", "updated_at"])
 
         try:
-            ReturnService.process_refund(
+            result = ReturnService.process_refund(
                 order=order,
                 amount_q=refund_total_q,
                 actor="return.process",
                 refund_reference=f"return:{order_ref}:{return_index}",
             )
+            if result.get("refund", {}) is not None and result.get("refund", {}).get("success") is False:
+                raise DirectiveTransientError("Refund not confirmed; stock receipt retained")
         except Exception as exc:
-            raise DirectiveTerminalError(f"Refund processing failed: {exc}") from exc
+            raise DirectiveTransientError(f"Refund processing failed: {exc}") from exc
 
-        order.refresh_from_db()
-        returns = order.data.get("returns", [])
-        if return_index < len(returns):
+        with transaction.atomic():
+            order = Order.objects.select_for_update().get(pk=order.pk)
+            returns = order.data.get("returns", [])
             returns[return_index]["refund_processed"] = True
             order.data["returns"] = returns
             order.save(update_fields=["data", "updated_at"])

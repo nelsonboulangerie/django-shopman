@@ -1,0 +1,27 @@
+DEBUG 2026-09-10 20:33:29,886 shopman.shop.notifications Notification backend registered: email
+DEBUG 2026-09-10 20:33:29,886 shopman.shop.notifications Notification backend registered: manychat
+DEBUG 2026-09-10 20:33:29,886 shopman.shop.notifications Notification backend registered: console
+DEBUG 2026-09-10 20:33:29,888 shopman.shop.notifications Notification backend registered: sms
+INFO 2026-09-10 20:33:29,985 shopman.shop.handlers shopman.handlers: connected holds_materialized receiver.
+INFO 2026-09-10 20:33:29,987 shopman.shop.handlers shopman.handlers: connected production alert receivers.
+INFO 2026-09-10 20:33:29,991 shopman.shop.handlers.production_order_sync shopman.handlers: connected production/order sync receivers.
+INFO 2026-09-10 20:33:29,996 shopman.shop.handlers._sse_emitters shopman.handlers: SSE emitters connected.
+INFO 2026-09-10 20:33:30,003 shopman.shop.handlers shopman.handlers: connected offerman catalog projection signals.
+INFO 2026-09-10 20:33:30,006 shopman.shop.handlers shopman.handlers: connected campaign receivers.
+INFO 2026-09-10 20:33:30,006 shopman.shop.apps ShopmanConfig: handlers registered.
+INFO 2026-09-10 20:33:30,008 shopman.shop.apps ShopmanConfig: rules engine wired.
+INFO 2026-09-10 20:33:30,008 shopman.shop.apps ShopmanConfig: lifecycle signal connected.
+INFO 2026-09-10 20:33:30,013 shopman.shop.apps ShopmanConfig: production lifecycle signal connected.
+INFO 2026-09-10 20:33:30,015 shopman.shop.apps ShopmanConfig: recipe derivation signal connected.
+INFO 2026-09-10 20:33:30,016 shopman.shop.apps ShopmanConfig: loyalty resolvers registered.
+INFO 2026-09-10 20:33:30,016 shopman.shop.apps ShopmanConfig: stock alert resolvers registered.
+INFO 2026-09-10 20:33:30,016 shopman.shop.apps ShopmanConfig: SKU namespace guard connected.
+INFO 2026-09-10 20:33:30,022 shopman.shop.apps ShopmanConfig: backup resources registered.
+INFO 2026-09-10 20:33:30,023 shopman.shop.apps ShopmanConfig: unhandled exception alert connected.
+INFO 2026-09-10 20:33:30,698 shopman.shop.services.kds kds.dispatch: 1 tickets for order LAB-PHASE-86eeae43
+INFO 2026-09-10 20:33:30,700 shopman.shop.services.notification notification.send: queued order_preparing for order LAB-PHASE-86eeae43
+DEBUG 2026-09-10 20:33:30,736 shopman.shop.services.notification notification.deliver: no recipient for backend=manychat order=LAB-PHASE-86eeae43, skipping
+DEBUG 2026-09-10 20:33:30,736 shopman.shop.services.notification notification.deliver: no recipient for backend=sms order=LAB-PHASE-86eeae43, skipping
+DEBUG 2026-09-10 20:33:30,736 shopman.shop.services.notification notification.deliver: no recipient for backend=email order=LAB-PHASE-86eeae43, skipping
+INFO 2026-09-10 20:33:30,736 shopman.shop.services.notification notification.deliver: no recipient for any backend, skipping order=LAB-PHASE-86eeae43 template=order_preparing
+Diretivas concluídas: 1

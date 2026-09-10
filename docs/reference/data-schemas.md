@@ -185,7 +185,7 @@ for key in (
 | `cancelled_by` | `string` | `services/cancellation.py` | `hooks._on_cancelled` | Identificador de quem cancelou: `"customer"` ou `"operator:<username>"` |
 | `session_key` | `string` | hooks._on_cancelled | hooks._on_cancelled | Chave de sessão original (referência para release holds) |
 | `hold_ids` | `list[dict]` | `StockService.hold(order)` | `StockService.fulfill(order)`, `StockService.release(order)` | Holds do Stockman adotados no commit. Cada entry: `{sku, hold_id, qty}` |
-| `lifecycle` | `dict` | `lifecycle.dispatch()` (via `_mark_phase_complete`, fases em `DURABLE_PHASES`) | `sweep_stuck_orders`, `reconcile_payments`, `lifecycle.phase_complete()` | Marcador durável de conclusão de fase: `{on_commit: "done", on_confirmed: "done", on_paid: "done", on_cancelled: "done"}` (só as chaves das fases já completas). O dispatch roda pós-commit (não durável); um crash entre o COMMIT da transição e o fim do handler perde a fase (hold, fulfill, ticket KDS, notificação, estorno). O `dispatch()` grava o marcador APÓS o handler retornar; o sweeper re-despacha, idempotente, as fases sem marcador (NEW→`on_commit`, CONFIRMED→`on_confirmed`, pagos→`on_paid`, CANCELLED→`on_cancelled`) |
+| `lifecycle` | `dict` | `lifecycle.dispatch()` via `_mark_phase_complete` | `sweep_stuck_orders`, `LifecyclePhaseHandler`, `phase_complete()` | Conclusão do handler de fase, `{on_commit: "done", on_accepted: "done", on_paid: "done", on_preparing: "done", on_ready: "done", on_dispatched: "done", on_delivered: "done", on_completed: "done", on_cancelled: "done", on_returned: "done"}`; apenas fases efetivamente retornadas com sucesso. Não prova conclusão remota dos filhos. Chaves históricas desconhecidas são preservadas. preparing/ready/dispatched/delivered/completed/returned ganham Directive no commit da transição; falha do marcador mantém a tarefa recuperável. Estado avançado não cria marcador por inferência. |
 | `loyalty` | `dict` | `LoyaltyRedeemModifier` (via `CommitService`) | `services/loyalty.py` (redeem), `LoyaltyRedeemHandler` | Resgate de pontos: `{redeem_points_q: int, applied_discount_q: int}`. `redeem_points_q` = pedido pelo cliente; `applied_discount_q` = desconto efetivamente aplicado (clampado ao subtotal) — é o valor DEBITADO. Propagada Session→Order na lista do `_do_commit()` |
 | `awaiting_wo_refs` | `list[string]` | `shop.handlers.production_order_sync` | Backstage pedidos/producao projections | Refs de WorkOrders que cobrem itens produzidos do pedido. Contextual, derivável e limpável em void. |
 | `pos_committed_at` | `string` | `shop/services/pos.py` (`_mark_tab_committed`) | — | Timestamp ISO de quando a comanda foi finalizada no POS |
@@ -358,10 +358,22 @@ todo canal novo (ManyChat, iFood direto) herda a mesma disciplina. Guarda:
       {"line_id": "L1", "sku": "CROIS-01", "qty": 2, "refund_q": 1500}
     ],
     "refund_total_q": 1500,
+    "stock_receipt_version": 1,
+    "stock_processed": true,
     "refund_processed": true
   }
 ]
 ```
+
+`stock_receipt_version=1` identifica devoluções criadas pelo protocolo com recibo local
+atômico. `stock_processed` é gravado pelo ReturnHandler na mesma transação dos Moves,
+sob lock do Order, para todos os itens exatos daquele índice. `refund_processed` continua
+indicando conclusão do processamento automatizado; não comprova devolução de dinheiro
+físico (fonte: cashman/Payman). Falha explícita de estorno não marca processamento concluído.
+Registro legado já `refund_processed=true` é preservado, sem novo recebimento. Registro
+legado incompleto sem versão fica pendente de inventário/autorização: um Move antigo pode
+já existir, e não é seguro receber outra vez. A fase returned delega estoque/estorno ao
+ReturnHandler quando existe registro de devolução; não recebe todos os itens novamente.
 
 ### Exemplo completo (Order.data)
 
@@ -1764,3 +1776,29 @@ commit. Payload do recibo: outcome/applied, count, células aplicadas e sync_pen
 SKU/canal; não armazena texto de cliente. Replay devolve o resultado local original;
 sincronização continua governada por Directive/CatalogSyncState. GET do resultado não
 reexecuta preço nem consulta fornecedor. Sem nova tabela ou alteração de retenção.
+
+
+### Directive `order.lifecycle_phase`
+
+Extensão da fila existente para as fases preparing/ready/dispatched/delivered/completed/returned.
+Payload: `order_ref` (string), `channel_ref` (string), `phase` (string em
+`lifecycle.QUEUED_PHASES`). Writer: `lifecycle.enqueue_phase`, no commit da transição;
+consumer: `LifecyclePhaseHandler`, pelo claim/backoff/lease do orderman.
+Chave `lifecycle.phase:{order_ref}:{phase}`, scope `lifecycle:phase` em IdempotencyKey,
+mesma forma de recibo permanente de `create_persistently_deduped` (`topic`, `directive_pk`).
+G08 decide retenção antes de piloto; nenhum expurgo novo. `done` significa que o handler
+da fase foi concluído, não que fiscal/aviso/courier filho teve aceite externo. Erro de
+enqueue reverte a transição; erro depois do commit conserva tarefa. Fase incompatível
+com estado atual fica failed/alerta canônico, sem executar trabalho antigo ou marcar done.
+`on_delivered` pode retomar em completed: só conclui aviso idempotente/fechamento já feito.
+Rollback deve drenar ou manter este handler disponível enquanto houver tarefas deste topic.
+
+
+### KDSTicket.items[].qty — quantidade fracionária
+
+Writer `shop.services.kds` mantém inteiros históricos como números JSON e escreve frações
+como strings decimais exatas, sem expoente. `KDSItemProjection.qty` aceita int|string;
+a projeção normaliza ambos com `order_helpers.json_quantity`. Expansão de bundle multiplica
+Decimal antes de serializar. Nenhum backfill/truncamento é permitido. Frontend KDS mostra
+a quantidade e soma apenas para resumo visual; ledger continua sendo Order/stockman.
+Unidade histórica não é inferida de Product atual; inventário/unidade continua H08/G06.

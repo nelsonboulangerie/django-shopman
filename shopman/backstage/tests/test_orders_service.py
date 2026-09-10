@@ -66,7 +66,7 @@ def test_save_notes_and_history_delegate(monkeypatch):
     orders.save_kitchen_note("order", notes="obs")
     assert orders.recent_history(limit=5) == ["order"]
 
-    save_notes.assert_called_once_with("order", notes="obs")
+    save_notes.assert_called_once_with("order", notes="obs", expected_revision=None, actor="system")
     recent.assert_called_once_with(limit=5)
 
 

@@ -22,7 +22,7 @@ from shopman.orderman.models import Order
 from shopman.utils.monetary import format_money
 
 from shopman.shop.services import operator_orders
-from shopman.shop.services.order_helpers import get_fulfillment_type
+from shopman.shop.services.order_helpers import get_fulfillment_type, json_quantity
 from shopman.shop.services.pos import display_tab_ref, is_numeric_tab_ref
 
 from .order_queue import _DEFAULT_CHANNEL_ICON, CHANNEL_ICONS, advance_block_label
@@ -45,7 +45,7 @@ class KDSItemProjection:
 
     sku: str
     name: str
-    qty: int
+    qty: int | str
     notes: str
     checked: bool
     stock_warning: str  # "" = no warning
@@ -468,7 +468,7 @@ def _build_ticket(ticket, instance) -> KDSTicketProjection:
         KDSItemProjection(
             sku=it.get("sku", ""),
             name=it.get("name", it.get("sku", "")),
-            qty=int(it.get("qty", 1)),
+            qty=json_quantity(it.get("qty", 1)),
             notes=it.get("notes", ""),
             checked=bool(it.get("checked", False)),
             stock_warning=it.get("stock_warning", ""),
@@ -522,7 +522,7 @@ def _build_expedition_card(order: Order) -> KDSExpeditionCardProjection:
         KDSItemProjection(
             sku=getattr(item, "sku", "") or "",
             name=getattr(item, "name", "") or getattr(item, "sku", "") or "",
-            qty=int(Decimal(str(item.qty))),
+            qty=json_quantity(item.qty),
             notes=str(getattr(item, "notes", "") or ""),
             checked=False,
             stock_warning="",

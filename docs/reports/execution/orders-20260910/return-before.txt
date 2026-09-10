@@ -1,0 +1,34 @@
+F                                                                        [100%]
+=================================== FAILURES ===================================
+_______ test_total_return_has_one_stock_receipt_across_phase_and_handler _______
+
+    def test_total_return_has_one_stock_receipt_across_phase_and_handler():
+        order = Order.objects.create(ref="RETURN-OWNER", status="completed", total_q=1000)
+        OrderItem.objects.create(order=order, line_id="RETURN-LINE", sku="LAB-RETURN", name="Lab", qty=Decimal("1"), unit_price_q=1000, line_total_q=1000)
+        result = ReturnService.initiate_return(order, [{"line_id": "RETURN-LINE", "qty": "1"}], "Devolução sintética", "lab")
+        order.refresh_from_db()
+        with patch.object(lifecycle.payment, "refund"), patch.object(lifecycle.fiscal, "cancel"), patch.object(lifecycle.loyalty, "revoke"), patch.object(lifecycle.loyalty, "restore"), patch.object(lifecycle.notification, "send"):
+            lifecycle.dispatch(order, "on_returned")
+        from shopman.orderman.models import Directive
+        ReturnHandler().handle(message=Directive.objects.get(pk=result.directive_id), ctx={})
+        moves = Move.objects.filter(quant__sku="LAB-RETURN", kind=Move.Kind.RETURN)
+>       assert list(moves.values_list("delta", flat=True)) == [Decimal("1")]
+E       AssertionError: assert [Decimal('1.0...imal('1.000')] == [Decimal('1')]
+E         
+E         Left contains one more item: Decimal('1.000')
+E         Use -v to get more diff
+
+shopman/shop/tests/test_return_phase_single_owner.py:25: AssertionError
+---------------------------- Captured stderr setup -----------------------------
+DEBUG 2026-09-10 20:24:17,874 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+DEBUG 2026-09-10 20:24:18,177 shopman.shop.rules.engine rules.engine: rules table not ready yet; bootstrap deferred.
+INFO 2026-09-10 20:24:19,470 shopman.backstage.migrations.cashman_backfill cashman backfill: {'terminals': 0, 'shifts': 0, 'entries': 0, 'open_shifts_closed': 0, 'divergent': 0}
+----------------------------- Captured stderr call -----------------------------
+DEBUG 2026-09-10 20:24:22,875 shopman.stockman.adapters.sku_validation Loaded SKU validator: shopman.shop.adapters.sku_validator.ComposedSkuValidator
+INFO 2026-09-10 20:24:22,889 shopman.stockman stock.receive
+INFO 2026-09-10 20:24:22,962 shopman.stockman stock.receive
+--------------------------- Captured stderr teardown ---------------------------
+DEBUG 2026-09-10 20:24:23,051 shopman.shop.apps ShopmanConfig: skipping rules bootstrap for database alias=__no_db__.
+=========================== short test summary info ============================
+FAILED shopman/shop/tests/test_return_phase_single_owner.py::test_total_return_has_one_stock_receipt_across_phase_and_handler
+1 failed in 5.34s

@@ -38,11 +38,11 @@ def test_dispatch_marks_on_accepted():
     assert order.data["lifecycle"]["on_accepted"] == "done"
 
 
-def test_non_durable_phase_is_not_marked():
+def test_preparing_phase_is_now_durable():
     order = _order("ORD-MARK-PREP", status=Order.Status.PREPARING)
     lifecycle.dispatch(order, "on_preparing")
     order.refresh_from_db()
-    assert "on_preparing" not in (order.data.get("lifecycle") or {})
+    assert lifecycle.phase_complete(order, "on_preparing")
 
 
 def test_handler_crash_leaves_phase_unmarked():

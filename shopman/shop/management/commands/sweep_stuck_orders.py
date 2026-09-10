@@ -87,6 +87,15 @@ class Command(BaseCommand):
             phase="on_cancelled",
         )
 
+        # Late operational phases previously had no durable recovery at all.
+        from shopman.shop.lifecycle import QUEUED_PHASES
+
+        for phase in sorted(QUEUED_PHASES):
+            self._sweep_phase(
+                Order.objects.filter(status=phase.removeprefix("on_"), updated_at__lt=cutoff),
+                phase=phase,
+            )
+
         if self._recovered:
             self.stdout.write(
                 self.style.WARNING(
@@ -96,7 +105,7 @@ class Command(BaseCommand):
             )
 
     def _sweep_phase(self, queryset, *, phase: str, extra_guard=None) -> None:
-        from shopman.shop.lifecycle import dispatch, phase_complete
+        from shopman.shop.lifecycle import QUEUED_PHASES, dispatch, enqueue_phase, phase_complete
 
         for order in queryset.iterator():
             if order.ref in self._swept_refs:
@@ -118,7 +127,16 @@ class Command(BaseCommand):
                 continue
 
             try:
-                dispatch(order, phase)
+                if phase in QUEUED_PHASES:
+                    enqueue_phase(order, phase)
+                    from shopman.orderman.models import Directive
+
+                    from shopman.shop.directives import ORDER_LIFECYCLE_PHASE
+
+                    if Directive.objects.filter(topic=ORDER_LIFECYCLE_PHASE, dedupe_key=f"lifecycle.phase:{order.ref}:{phase}", status="failed").exists():
+                        self._alert(order, phase)
+                else:
+                    dispatch(order, phase)
                 self._recovered += 1
             except Exception:
                 logger.exception(

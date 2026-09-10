@@ -465,3 +465,62 @@ painel real. J12: uma reidentificação e R=0 para a mesma pessoa, no escopo da 
 Sem migração; rollback de UI pode reintroduzir perda de draft e deve manter proteção de
 saída/isolar pessoa. Ainda faltam contexto completo da fila/scroll, drafts de catálogo
 protegidos na saída, carga/teclado/touch e retomada de todas as mutações; WP06 não T.
+
+## WP04/WP02 — fases tardias duráveis e devolução com um dono
+
+D18 revalidado: preparing/ready/dispatched/delivered/completed/returned não tinham marcador
+nem recuperação. Essas transições agora criam `order.lifecycle_phase` no mesmo commit,
+usando Directive + receipt permanente existentes. Claim/backoff/lease continuam no orderman.
+Handler relê/bloqueia Order, grava efeitos locais/enqueues/marcador atomicamente. Child
+handlers executam fora desse lock. Erro do marcador e enqueue não é silenciado. Fase
+incompatível fica failed + alerta existente; não marca done por status avançado. Delivered
+pode concluir em completed sem repetir a transição. Sweeper inclui fases tardias e dry-run;
+tarefa failed conserva limite/alerta, sem reset automático. Fases iniciais existentes
+commit/accepted/paid/cancelled conservam seus recuperadores, ainda sujeitos à matriz restante.
+
+Mapa de efeitos desta fatia:
+
+| Fase | Efeito/dono e evidência | Identidade/retomada |
+| --- | --- | --- |
+| preparing | KDS: ticket por session_key/line_id; aviso: notification_delivery | Phase receipt; ledger de fire + recibo original de aviso |
+| ready | Fulfillment + flag atômicos; aviso; enqueue courier canônico | Order lock + phase receipt; courier ainda depende de H01/G03 |
+| dispatched/delivered | Aviso; fechamento canônico após handoff | Recibo original de aviso; estado relido; completed tem tarefa própria |
+| completed | Enqueue loyalty/fiscal, nunca prova de crédito/NFC-e externa | Phase receipt; ledger loyalty/adopção fiscal mantidos |
+| returned | Fiscal/loyalty/aviso; estoque e estorno do registro exato de ReturnHandler | return_index + recibo de estoque; referência canônica de refund |
+
+Prova nova necessária antes de retentar returned: uma unidade devolvida gerou **dois
+Moves RETURN**, por lifecycle e ReturnHandler. Agora registro de devolução tem um dono
+para itens/estorno. StockMovements + stock_processed ficam no mesmo commit sob lock.
+Falha explícita de estorno preserva recibo de estoque e não marca refund_processed; retry
+não recebe de novo. Registro legado incompleto sem versão/itens confiáveis exige inventário
+humano, com alerta. Não inferimos que mercadoria/dinheiro físico voltou só pelo status.
+
+Validações: **88 testes fase/lifecycle/refund passaram**, **15 testes focados passaram**,
+incluindo dois workers e perda da gravação do resultado depois do commit da fase. Primeira
+rodada teve 58 falhas: faltava registrar handler em register_all além do inventário; testes
+de coordenação com MagicMock dependiam do antigo swallow do marcador. Registro corrigido;
+marcador isolado nesses testes de routing, durabilidade testada com Orders reais.
+
+Processos separados: seed terminou com **exit 17 intencional após commit**; worker novo
+processou tarefa. Repetir worker manteve uma tentativa e um ticket KDS. Primeira verificação
+revelou truncamento adicional D08 no KDS: `0.500 → 0`. Corrigido caminho Order/bundle/ticket/
+projeção com decimal exato, mantendo inteiros históricos. Schema KDS exportado pelo comando
+canônico. **63 testes Django KDS**, **44 testes KDS Nuxt**, typecheck passaram; nova prova
+separada confirmou ticket único de **0.5**. Sem prova de trabalho físico executado.
+
+Cadeia ampliada: **649 passed, 1 failed, 18 subtests**. Falha era spy antigo da fachada de
+notas, que ainda esperava chamada sem actor/revision; ajustado ao contrato já implementado.
+KDS npm ci isolado informou 4 vulnerabilidades (2 moderate/2 high) no lockfile existente;
+nenhum audit fix automático nem atualização de dependências. Unidade histórica e quadro
+com carga rica continuam pendentes; teste local não comprova redução de esforço em campo.
+
+Migração expand: sem DDL; novos payloads documentados antes das escritas. Nenhum backfill
+real. Retornos novos usam stock_receipt_version=1; incompletos antigos não são automaticamente
+reexecutados. Rollback deve manter leitores/handler enquanto houver tarefas e suspender
+writers incompatíveis; não voltar ao duplo recebimento nem apagar receipts/Movimentos.
+G08 decide retenção antes de piloto. WP04 continua em execução: unknown remoto, demais
+writers, histórico/concorrência e recuperação completa precisam das provas restantes.
+
+Reteste do módulo da fachada após corrigir a expectativa: **6 passed**. Uma primeira
+substituição textual usou nome singular do mock e não alterou a linha; o reteste capturou
+isso, corrigido antes do resultado acima. A cadeia completa será repetida na validação final.

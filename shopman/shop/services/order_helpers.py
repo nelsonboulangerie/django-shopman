@@ -133,3 +133,15 @@ def merge_order_data(order, values: dict, *, block: str | None = None, remove: t
         locked.data = data
         locked.save(update_fields=["data", "updated_at"])
         order.data = data
+
+
+def json_quantity(value) -> int | str:
+    """Keep integral JSON compatibility without truncating exact fractional goods."""
+    from decimal import Decimal
+
+    quantity = Decimal(str(value))
+    if not quantity.is_finite():
+        raise ValueError("Quantidade inválida")
+    if quantity == quantity.to_integral_value():
+        return int(quantity)
+    return format(quantity.normalize(), "f")

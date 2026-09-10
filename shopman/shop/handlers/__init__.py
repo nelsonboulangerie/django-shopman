@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 ALL_HANDLERS = [
     # Lifecycle
+    "shopman.shop.handlers.lifecycle_phase.LifecyclePhaseHandler",
     "shopman.shop.handlers.confirmation.ConfirmationTimeoutHandler",
     "shopman.shop.handlers.confirmation.StaleNewOrderAlertHandler",
     "shopman.shop.handlers.payment_timeout.PaymentTimeoutHandler",
@@ -85,6 +86,9 @@ def register_all() -> None:
     """Register all directive handlers, modifiers, validators, and signals."""
     _register_notification_handlers()
     _register_confirmation_handler()
+    from shopman.shop.handlers.lifecycle_phase import LifecyclePhaseHandler
+
+    registry.register_directive_handler(LifecyclePhaseHandler())
     _register_payment_timeout_handler()
     _register_payment_refund_handler()
     _register_mock_pix_handler()
