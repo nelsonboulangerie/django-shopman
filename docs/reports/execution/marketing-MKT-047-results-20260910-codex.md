@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T4 original preservado como falha e repetição humana concluída funcionalmente
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d` e `92b4de2ea`
+**Estado:** coleta P01 em andamento; T6 funcional, mas repetição humana da certeza por plataforma pendente
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea` e `d9e54c5c5`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -39,7 +39,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 4 | não | não concluída | houve redigitação aparente | 1 | 207 s até a interrupção | 0 | não | não | Reautenticação fechou o editor. O rascunho existia, mas só reapareceu após abrir manualmente “Nova campanha”; tarefa invalidada. |
 | P01 | 4R1 | sim | não instrumentadas | somente o nome solicitado | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | N/A; sessão não expirou | sim, no escopo de T4 | Repetição concluída sem pedido de ajuda. Regra 6 voltou do servidor ativa, versão 1, com gatilho manual, modelo “Saiu do forno”, Instagram + WhatsApp e tag `qa-marketing-e2e`; lista mostrou público de 12 pessoas. Budgets de clique/latência não são reivindicados sem telemetria. |
 | P01 | 5 | sim | 3 inferidas + senha/frase de segurança | nenhuma editorial | 0 | ≈13 min de relógio; tempo ativo não observável | 0 | N/A | sim, no escopo de T5 | Antes da confirmação viu 12 pessoas e que nasceria para revisão. Criou somente o anúncio 42 pendente, comprovante `c8a62cef-2e47-4b1d-88f1-196c060e33a8`; zero outbox e zero destino. |
-| P01 | 6 | — | — | — | — | — | — | — | — | pendente |
+| P01 | 6 | sim | 1 ação + senha/frase de segurança após preparação | nenhuma | 0 | ≈4 min de relógio; tempo ativo não observável | 0 | N/A | não | Repetiu somente 1 falha: 13/13 confirmados ao final, comprovante `d34a7a52-51ed-4fa0-9d0f-ff985c474daa`. A confirmação dizia “Instagram, WhatsApp” embora o alvo fosse só WhatsApp; P01 identificou a ambiguidade. |
 | P01 | 7 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 8 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 9 | — | — | — | — | — | — | — | — | pendente |
@@ -141,8 +141,40 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   provider pôde começar.
 - Classificação: estado de sucesso de T5 atendido e certeza da consequência confirmada.
   As três ações são inferidas do caminho preparado (produto, disparo e confirmação);
-  os cerca de 13 minutos são relógio de conversa, não tempo ativo, logo não aprovam nem reprovam
-  os budgets agregados de contagem/ack sem telemetria.
+  os cerca de 13 minutos são relógio de conversa, não tempo ativo, logo não aprovam nem
+  reprovam os budgets agregados de contagem/ack sem telemetria.
+
+### P01/T6 — repetição seletiva correta, escopo exibido incorretamente
+
+- O cenário começou com 1 publicação de Instagram confirmada e, no WhatsApp, 11
+  mensagens confirmadas + 1 falha repetível. A tela explicou que aceitos, confirmados e
+  incertos não seriam reenviados.
+- P01 autorizou a recuperação sem pedir ajuda. O comprovante
+  `d34a7a52-51ed-4fa0-9d0f-ff985c474daa` registrou uma única falha na fila e versão 3;
+  depois do worker hermético, o ledger terminou com 1/1 Instagram e 12/12 WhatsApp
+  confirmados. O histórico contém 13 confirmações finais e exatamente uma tentativa
+  anterior `failed_retryable`.
+- A confirmação anterior ao comando, porém, dizia **“Plataformas: Instagram,
+  WhatsApp”** para **1 destino elegível**. P01 questionou corretamente a diferença entre
+  postagem pública e mensagem direta; não havia certeza de qual efeito seria repetido.
+- Causa confirmada: quando o request não restringia plataforma, o serviço selecionava
+  corretamente apenas targets `failed_retryable`, mas passava todas as plataformas do
+  anúncio para autorização, auditoria e comprovante.
+- Correção `d9e54c5c5`: autorização, auditoria e receipt agora recebem somente as lanes
+  dos targets efetivamente afetados. A UI diz **“Plataformas realmente afetadas”**,
+  corrige o singular e explica: Instagram/Facebook/Google são publicações públicas;
+  WhatsApp é mensagem direta por pessoa com consentimento revalidado. O formulário
+  também declara que DM do Instagram não faz parte deste app.
+- O contrato ficou documentado no README da superfície: eventual DM do Instagram deve
+  nascer como lane/capability separada, com identidade, consentimento, limite,
+  readiness e comprovante próprios; nunca misturada ao `instagram` público.
+- Validação: 186 testes focados de backend, 240 testes da interface, typecheck, lint
+  focado, `ruff` e `git diff --check` passaram. Uma regressão no navegador real mostrou
+  **“1 destino elegível”** e **“Plataformas realmente afetadas: WhatsApp”**; o cenário
+  técnico foi restaurado para 13/13 depois da inspeção.
+- Classificação: efeito seletivo aprovado, mas T6 permanece com certeza incompleta pela
+  tela que P01 efetivamente recebeu. Repetir somente a confirmação/certeza de T6 após a
+  correção; não reexecutar as partes já aprovadas para esconder o achado.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
