@@ -1179,3 +1179,48 @@ def test_product_detail_clears_the_declared_ready_time(client, operator, catalog
     assert resp.json()["product"]["ready_from"] == ""
     catalog["pao"].refresh_from_db()
     assert "ready_from" not in (catalog["pao"].metadata or {})
+
+
+@pytest.mark.parametrize("invalid", ["not-a-list", [123], None])
+def test_invalid_last_keywords_field_never_saves_product(client, operator, catalog, invalid):
+    client.force_login(operator)
+    product = Product.objects.get(sku="PAO")
+    before = (product.name, product.metadata, list(product.keywords.names()))
+    response = client.patch(DETAIL_URL.format(sku="PAO"), {"name": "Changed", "keywords": invalid}, content_type="application/json")
+    assert response.status_code == 400
+    product.refresh_from_db()
+    assert (product.name, product.metadata, list(product.keywords.names())) == before
+
+
+def test_manual_matrix_reads_saved_order_not_alphabetic(client, operator, catalog):
+    from shopman.backstage.projections.catalog import build_catalog_matrix
+    from shopman.backstage.services.catalog import reorder_collection_items
+    coll = Collection.objects.get(ref="doces")
+    CollectionItem.objects.create(collection=coll, product=Product.objects.get(sku="PAO"))
+    reorder_collection_items("doces", ["PAO", "BOLO"])
+    assert [row.sku for row in build_catalog_matrix("doces").rows] == ["PAO", "BOLO"]
+
+
+def test_bulk_fiscal_refusal_matches_cell_and_leaves_all_items_unchanged(client, operator, catalog, settings):
+    settings.SHOPMAN_FISCAL_REQUIRE_CLASSIFICATION_ON_PUBLISH = True
+    ListingItem.objects.filter(listing__ref="web").update(is_published=False)
+    client.force_login(operator)
+    for path, body in [
+        (CELL_URL, {"sku": "PAO", "surface_ref": "web", "is_published": True}),
+        (BULK_URL, {"skus": ["PAO", "BOLO"], "surface_ref": "web", "is_published": True}),
+    ]:
+        response = client.post(path, body, content_type="application/json")
+        assert response.status_code == 400
+        assert "fiscal" in response.json()["detail"].lower()
+        assert not ListingItem.objects.filter(listing__ref="web", is_published=True).exists()
+
+
+@pytest.mark.parametrize("path,body", [
+    (CELL_URL, {"sku": "PAO", "surface_ref": "web"}),
+    (BULK_URL, {"skus": ["PAO"], "surface_ref": "web"}),
+])
+def test_invalid_boolean_does_not_toggle_catalog(client, operator, catalog, path, body):
+    client.force_login(operator)
+    response = client.post(path, {**body, "is_sellable": "not-a-boolean"}, content_type="application/json")
+    assert response.status_code == 400
+    assert ListingItem.objects.get(listing__ref="web", product__sku="PAO").is_sellable

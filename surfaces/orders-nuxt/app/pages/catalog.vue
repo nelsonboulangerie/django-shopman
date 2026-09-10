@@ -155,8 +155,8 @@ const channelSurfaces = computed(() => surfaces.value.filter((s) => s.transactio
 const feedSurfaces = computed(() => surfaces.value.filter((s) => !s.transactional));
 async function bulk(patch: { is_sellable?: boolean; is_published?: boolean }) {
   if (!bulkSurface.value || selected.value.size === 0) return;
-  await bulkSet(bulkSurface.value, { skus: [...selected.value] }, patch);
-  clearSelection();
+  const ok = await bulkSet(bulkSurface.value, { skus: [...selected.value] }, patch);
+  if (ok !== null) clearSelection();
 }
 
 // ── reprecificação em lote (popover) ───────────────────────────────────────────
@@ -184,7 +184,8 @@ const priceValid = computed(() => {
 async function applyBulkPrice() {
   const value = parsedPriceValue();
   if (value === null || !bulkSurface.value || selected.value.size === 0) return;
-  await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+  const ok = await bulkPrice(bulkSurface.value, { skus: [...selected.value] }, { op: priceOp.value, value });
+  if (ok === null) return;
   priceOpen.value = false;
   priceInputBulk.value = "";
   clearSelection();
@@ -230,9 +231,11 @@ function parseBrl(text: string): number | null {
 }
 async function commitPrice(row: CatalogRowProjection, cell: SurfaceCellProjection) {
   const price_q = parseBrl(priceInput.value);
-  editing.value = null;
-  if (price_q === null || price_q === cell.price_q) return;
-  await setCell(row.sku, cell.surface_ref, { price_q });
+  if (price_q === null) return;
+  if (price_q === cell.price_q) { editing.value = null; return; }
+  const originalEditor = editing.value;
+  const ok = await setCell(row.sku, cell.surface_ref, { price_q });
+  if (ok && editing.value === originalEditor) editing.value = null;
 }
 
 // nome do canal (para o rótulo do popover de preço) + tooltip do valor no ícone $.

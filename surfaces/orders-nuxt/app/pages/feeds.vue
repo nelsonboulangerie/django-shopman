@@ -7,7 +7,7 @@
 // (reordenável no Catálogo).
 import type { CollectionOptionProjection, FeedProjection } from "~/types/feeds";
 
-const { board, pending, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
+const { board, pending, error, errorMsg, refresh, isBusy, setActive, setCollections, setRotation } = useFeedBoard();
 const feeds = computed<FeedProjection[]>(() => board.value?.feeds ?? []);
 const allCollections = computed<CollectionOptionProjection[]>(() => board.value?.all_collections ?? []);
 const loading = computed(() => pending.value && !board.value);
@@ -37,8 +37,8 @@ function toggleDraft(ref_: string) {
   draft.value = next;
 }
 async function applyEdit(sc: FeedProjection) {
-  await setCollections(sc.ref, [...draft.value]);
-  editRef.value = null;
+  const ok = await setCollections(sc.ref, [...draft.value]);
+  if (ok && editRef.value === sc.ref) editRef.value = null;
 }
 
 // rotação de páginas (só menuboard): rascunho local, aplica de uma vez.
@@ -85,6 +85,11 @@ useHead({ title: "Feeds · Gestor" });
     </UiToolbar>
 
     <section class="min-h-0 flex-1 overflow-auto p-4">
+      <p v-if="errorMsg" role="alert" class="mb-3 text-sm text-destructive">{{ errorMsg }}</p>
+      <div v-if="error" role="alert" class="mb-3 rounded-md border border-destructive p-3 text-sm">
+        Não foi possível atualizar os feeds. {{ board ? "Exibindo a última leitura disponível." : "Tente atualizar para consultar os feeds." }}
+        <button type="button" class="ml-2 min-h-11 underline" @click="refresh()">Tentar novamente</button>
+      </div>
       <!-- skeleton -->
       <div v-if="loading" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <div v-for="i in 3" :key="i" class="h-40 animate-pulse rounded-xl border border-border bg-muted/40"></div>
@@ -212,7 +217,7 @@ useHead({ title: "Feeds · Gestor" });
         </article>
       </div>
 
-      <div v-else class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
+      <div v-else-if="!error" class="grid place-items-center rounded-xl border border-dashed border-border py-16 text-center">
         <Icon name="lucide:monitor-off" class="mb-2 size-8 text-muted-foreground/40" />
         <p class="text-sm text-muted-foreground">Nenhum feed. Crie um no Admin (menuboard, Google ou Meta).</p>
       </div>

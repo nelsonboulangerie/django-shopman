@@ -9,6 +9,7 @@ Gate: ``shop.manage_catalog``. Mutações delegam ao facade
 
 from __future__ import annotations
 
+from django.core.exceptions import ValidationError
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -72,7 +73,7 @@ class CatalogCellView(_CatalogBase):
                 price_q=as_int(request.data, "price_q", default=None),
                 actor=_actor(request),
             )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response(
@@ -107,7 +108,7 @@ class CatalogProductView(_CatalogBase):
                 is_sellable=is_sellable,
                 actor=_actor(request),
             )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response(
@@ -131,7 +132,7 @@ class CatalogProductDetailView(_CatalogBase):
     def get(self, request, sku: str):
         try:
             return Response({"product": catalog_service.get_product_detail(sku)})
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=404)
 
     def patch(self, request, sku: str):
@@ -139,7 +140,7 @@ class CatalogProductDetailView(_CatalogBase):
             product = catalog_service.update_product_detail(
                 sku, request.data, actor=_actor(request)
             )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "product": product})
 
@@ -169,7 +170,7 @@ class CatalogAiAssistView(_CatalogBase):
             return Response({"detail": str(exc)}, status=503)
         except AiAssistError as exc:
             return Response({"detail": str(exc)}, status=502)
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response({"suggestion": suggestion})
@@ -214,7 +215,7 @@ class CatalogBulkView(_CatalogBase):
                 return Response(
                     {"detail": "Informe collection_ref ou uma lista skus."}, status=400
                 )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response({"ok": True, "surface_ref": surface_ref, "count": count})
@@ -254,7 +255,7 @@ class CatalogBulkPriceView(_CatalogBase):
                 return Response(
                     {"detail": "Informe collection_ref ou uma lista skus."}, status=400
                 )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
 
         return Response({"ok": True, "surface_ref": surface_ref, "count": count})
@@ -287,7 +288,7 @@ class CatalogReorderItemsView(_CatalogBase):
             count = catalog_service.reorder_collection_items(
                 collection_ref, [str(s).strip() for s in ordered], actor=_actor(request)
             )
-        except CatalogError as exc:
+        except (CatalogError, ValidationError) as exc:
             return Response({"detail": str(exc)}, status=400)
         return Response({"ok": True, "count": count})
 

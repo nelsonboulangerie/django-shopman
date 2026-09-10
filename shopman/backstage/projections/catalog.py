@@ -380,7 +380,11 @@ def build_catalog_matrix(collection_ref: str = "") -> CatalogMatrixProjection:
     )
     if collection_ref:
         coll = Collection.objects.filter(ref=collection_ref).first()
-        products = products.filter(pk__in=coll.product_queryset().values("pk")) if coll else products.none()
+        if coll is None:
+            products = products.none()
+        else:
+            products = coll.product_queryset().prefetch_related("keywords", "collection_items__collection")
+            products = products.order_by("name", "sku") if coll.is_smart else products.order_by("collection_items__sort_order", "sku")
 
     products = list(products)
     skus = [p.sku for p in products]

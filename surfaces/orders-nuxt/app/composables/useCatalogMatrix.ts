@@ -110,8 +110,8 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     surface: string,
     scope: { collection_ref?: string; skus?: string[] },
     patch: Pick<CellPatch, "is_published" | "is_sellable">,
-  ): Promise<number> {
-    if (bulkBusy.value) return 0;
+  ): Promise<number | null> {
+    if (bulkBusy.value) return null;
     clearError();
     bulkBusy.value = true;
     try {
@@ -126,7 +126,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha na ação em lote.");
       useSonner.error(errorMsg.value);
-      return 0;
+      return null;
     } finally {
       bulkBusy.value = false;
     }
@@ -138,8 +138,8 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     surface: string,
     scope: { collection_ref?: string; skus?: string[] },
     patch: { op: "set" | "pct" | "delta"; value: number },
-  ): Promise<number> {
-    if (bulkBusy.value) return 0;
+  ): Promise<number | null> {
+    if (bulkBusy.value) return null;
     clearError();
     bulkBusy.value = true;
     try {
@@ -154,7 +154,7 @@ export function useCatalogMatrix(collectionRef?: Ref<string>) {
     } catch (error) {
       errorMsg.value = httpErrorMessage(error, "Falha ao reprecificar.");
       useSonner.error(errorMsg.value);
-      return 0;
+      return null;
     } finally {
       bulkBusy.value = false;
     }

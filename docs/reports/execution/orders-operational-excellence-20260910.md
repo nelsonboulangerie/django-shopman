@@ -331,3 +331,26 @@ não equivalem a HTTP/produção ou tempo humano. Payload aumentou com Actions/r
 Sem migração. Rollback pode reverter otimização mantendo predicados; custa consultas, não
 altera reservas. Relógio/refresh são leitura apenas. WP07 não T: faltam payload rico,
 estações, frescor E2E e budgets sob carga/controlados. O ganho em campo permanece não medido.
+
+## Retomada — WP05/WP06: patch integral, publicação e editor
+
+D05: keywords inteiras validadas antes do save; Product relido sob lock e patch/tags na
+mesma transação. D06: matriz manual usa CollectionItem.sort_order; smart mantém seu resolver.
+D07: validador fiscal extraído intacto do receiver para fiscal_catalog, consumido por save
+e bulk; recusa do último item reverte o lote daquela superfície. Booleanos de todas essas
+portas usam parser estrito existente. API traduz ValidationError em recusa 400.
+
+D13/D14: editor/seleção de catálogo e feed só fecham com sucesso conhecido; lote distingue
+count zero de falha (null). Feed expõe erro de leitura/escrita em vez de sugerir inexistência.
+Essas proteções não tornam seguro repetir preço após resultado desconhecido: D12 é próxima fatia.
+
+PG catálogo + gate fiscal **102 passed (27,66s)**; Gestor **233 passed (4,55s)**; typecheck e
+Ruff passaram. Primeira edição introduziu IndentationError de import local (48 falhas comuns,
+28 pass); corrigido. Nova fixture usou rota plural inexistente (1 fail/76 pass), corrigida.
+Harness feed teve erro de sintaxe antes de coletar; corrigido antes do resultado final.
+J10 sintético conserva seleção no erro sem redigitação; não medido em campo.
+
+Sem DDL/novos campos JSON. Rollback preserva validação integral/fiscal ou suspende mutação;
+reverter apenas ordem/editor não altera preços/dados. Limites: fan-out entre superfícies,
+intenção/revisão de catálogo/feed, sync parcial, drafts entre SKUs e carga ainda pendentes.
+WP05/WP06 continuam em execução, sem T.

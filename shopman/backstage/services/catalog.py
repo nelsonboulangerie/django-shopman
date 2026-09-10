@@ -18,6 +18,8 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from django.db import transaction
+
 from shopman.backstage.services.exceptions import CatalogError
 from shopman.shop.services import attributes
 
@@ -93,6 +95,11 @@ def set_cell(
     Superfície de FEED (menuboard/plataforma) só aceita pausar/ativar: ``is_sellable``
     vira a pausa local do item (não há preço nem publicação — feed não transaciona).
     """
+    if is_published is not None:
+        is_published = _as_flag(is_published, "is_published")
+    if is_sellable is not None:
+        is_sellable = _as_flag(is_sellable, "is_sellable")
+
     if _is_display_surface(surface_ref):
         from types import SimpleNamespace
 
@@ -142,6 +149,11 @@ def set_product(
     re-projeta o produto em cada listing alvo (retract-aware). Um único ponto de
     verdade; não itera célula por célula.
     """
+    if is_published is not None:
+        is_published = _as_flag(is_published, "is_published")
+    if is_sellable is not None:
+        is_sellable = _as_flag(is_sellable, "is_sellable")
+
     from shopman.offerman.models import Product
 
     product = Product.objects.filter(sku=sku).first()
@@ -171,6 +183,11 @@ def bulk_set(
 
     Retorna o número de células afetadas.
     """
+    if is_published is not None:
+        is_published = _as_flag(is_published, "is_published")
+    if is_sellable is not None:
+        is_sellable = _as_flag(is_sellable, "is_sellable")
+
     from shopman.offerman.models import ListingItem
 
     if not skus:
@@ -195,9 +212,17 @@ def bulk_set(
     if not updates:
         raise CatalogError("Nada a atualizar (informe is_published e/ou is_sellable).")
 
-    count = (
-        ListingItem.objects.filter(listing__ref=surface_ref, product__sku__in=skus).update(**updates)
-    )
+    from shopman.shop.services.fiscal_catalog import validate_listing_item_publication
+
+    with transaction.atomic():
+        items = list(ListingItem.objects.select_for_update().filter(
+            listing__ref=surface_ref, product__sku__in=skus,
+        ).select_related("product", "listing").order_by("pk"))
+        for item in items:
+            for field, value in updates.items():
+                setattr(item, field, value)
+            validate_listing_item_publication(item)
+        count = ListingItem.objects.filter(pk__in=[item.pk for item in items]).update(**updates)
     if count:
         _reconcile_if_projected(surface_ref)
         _notify_surface(surface_ref)
@@ -661,6 +686,7 @@ def _apply_fiscal(product, raw) -> None:
     product.metadata = metadata
 
 
+@transaction.atomic
 def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
     """Merge parcial dos campos do produto (chave ausente = sem mudança).
 
@@ -670,8 +696,17 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
     (nutricional, social, fiscal) são validados pelo dono do schema antes disso.
     """
     from django.core.exceptions import ValidationError
+    from shopman.offerman.models import Product
 
-    product = _get_product(sku)
+    product = Product.objects.select_for_update().filter(sku=sku).first()
+    if product is None:
+        raise CatalogError(f"Produto '{sku}' não encontrado.")
+    keywords = None
+    if "keywords" in data:
+        raw = data["keywords"]
+        if not isinstance(raw, list) or any(not isinstance(value, str) for value in raw):
+            raise CatalogError("keywords deve ser uma lista de textos.")
+        keywords = [value.strip() for value in raw if value.strip()]
 
     for field in _DETAIL_TEXT_FIELDS:
         if field in data:
@@ -706,11 +741,8 @@ def update_product_detail(sku: str, data: dict, *, actor: str = "") -> dict:
 
     product.save()
 
-    if "keywords" in data:
-        raw = data.get("keywords") or []
-        if not isinstance(raw, list):
-            raise CatalogError("keywords deve ser uma lista.")
-        product.keywords.set([str(k).strip() for k in raw if str(k).strip()])
+    if keywords is not None:
+        product.keywords.set(keywords)
 
     product.refresh_from_db()
     return _detail_payload(product)

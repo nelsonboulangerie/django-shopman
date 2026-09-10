@@ -82,7 +82,7 @@ describe("useCatalogMatrix — lote + reordenação", () => {
     const m = useCatalogMatrix();
     const first = m.bulkSet("web", {}, { is_published: true });
     expect(m.bulkBusy.value).toBe(true);
-    expect(await m.bulkSet("web", {}, { is_published: false })).toBe(0);
+    expect(await m.bulkSet("web", {}, { is_published: false })).toBeNull();
     expect(env.fetchMock).toHaveBeenCalledTimes(1);
     release();
     await first;
