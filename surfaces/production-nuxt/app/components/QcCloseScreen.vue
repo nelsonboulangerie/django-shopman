@@ -539,8 +539,12 @@ const fieldCard =
       </template>
     </p>
 
-    <div class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] gap-8">
+    <div
+      class="grid shrink-0 grid-cols-[minmax(0,1fr)_12rem] items-start gap-8"
+      data-qc-layout
+    >
       <OperatorNumpad
+        class="h-76 self-start"
         subject="quantidade"
         :disabled="!activeTarget"
         @digit="onDigit"
@@ -557,55 +561,51 @@ const fieldCard =
           <div
             v-for="grade in orderedGrades"
             :key="grade.ref"
-            class="relative flex min-h-16 overflow-hidden rounded-md border bg-card"
+            class="relative min-h-14 overflow-hidden rounded-md border bg-card"
             :class="{
-              'bg-accent ring-2 ring-inset ring-primary/30': isActiveGrade(
-                grade.ref,
-              ),
+              'bg-accent': isActiveGrade(grade.ref),
             }"
             :data-grade-card="grade.ref"
           >
             <span
-              class="absolute inset-y-0 left-0 z-10 w-1.5"
+              class="pointer-events-none absolute inset-y-0 left-0 z-30 w-1.5"
               :class="gradeBandClass(grade, grades)"
             />
             <button
               type="button"
               :data-grade-ref="grade.ref"
-              class="flex min-w-0 flex-1 items-center justify-between gap-2 py-2 pl-4 pr-3 text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+              class="absolute inset-0 z-0 w-full text-left transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               :aria-label="`${grade.label}: ${gradeQuantity(grade.ref)} unidades${grade.ref === defaultRef && anchor.anchor !== null ? ', saldo' : ''}`"
               :aria-pressed="gradeQuantity(grade.ref) > 0"
               @click="pickGrade(grade)"
             >
-              <span class="min-w-0">
-                <span class="block font-medium">{{ grade.label }}</span>
-                <span
-                  v-if="grade.ref === defaultRef && anchor.anchor !== null"
-                  class="block text-xs text-muted-foreground"
-                >
-                  Saldo automático
+              <span
+                class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 pl-4 pr-3"
+              >
+                <span class="min-w-0">
+                  <span class="block font-medium">{{ grade.label }}</span>
+                  <span
+                    v-if="grade.ref === defaultRef && anchor.anchor !== null"
+                    class="block text-xs leading-tight text-muted-foreground"
+                  >
+                    Saldo automático
+                  </span>
+                  <span
+                    v-else-if="mode !== 'correct' && gradeDefectRefs[grade.ref]"
+                    class="block truncate text-xs leading-tight text-muted-foreground"
+                  >
+                    {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                  </span>
                 </span>
-                <span
-                  v-else-if="gradeDefectRefs[grade.ref]"
-                  class="block truncate text-xs text-muted-foreground"
-                >
-                  {{ defectLabel(gradeDefectRefs[grade.ref]!) }}
+                <span class="text-sm font-semibold tabular-nums">
+                  {{ gradeQuantity(grade.ref) }}
                 </span>
-                <span
-                  v-else-if="mode === 'correct' && gradeNeedsReason(grade)"
-                  class="block text-xs text-muted-foreground"
-                >
-                  Motivo pendente
-                </span>
-              </span>
-              <span class="text-sm font-semibold tabular-nums">
-                {{ gradeQuantity(grade.ref) }}
               </span>
             </button>
             <button
               v-if="mode === 'correct' && gradeNeedsReason(grade)"
               type="button"
-              class="m-1.5 ml-0 flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              class="relative z-20 mb-2 ml-3 mr-2 mt-14 flex h-11 w-[calc(100%-1.25rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
               :aria-label="`Editar motivo de ${grade.label}: ${
                 defectLabel(gradeDefectRefs[grade.ref] ?? '') || 'não informado'
               }`"
@@ -616,52 +616,64 @@ const fieldCard =
                 )
               "
             >
+              <span class="min-w-0 truncate">
+                {{
+                  defectLabel(gradeDefectRefs[grade.ref] ?? "") ||
+                  "Informar motivo"
+                }}
+              </span>
               <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
             </button>
           </div>
         </div>
 
         <div
-          class="mt-4 flex min-h-16 overflow-hidden rounded-md border border-destructive/50 bg-card"
+          class="relative mt-4 min-h-14 overflow-hidden rounded-md border border-destructive/50 bg-card"
           :class="{
-            'ring-2 ring-inset ring-destructive/30':
-              activeTarget?.kind === 'loss',
+            'bg-destructive/10': activeTarget?.kind === 'loss',
           }"
         >
           <button
             type="button"
-            class="flex min-w-0 flex-1 items-center justify-between gap-2 px-3 text-left transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-destructive"
+            class="absolute inset-0 z-0 w-full text-left transition hover:bg-destructive/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-destructive"
             :aria-label="`Perda: ${lossQuantity} unidades`"
             @click="pickLoss"
           >
-            <span class="min-w-0">
-              <span class="block font-medium">Perda</span>
-              <span
-                v-if="lossDefectRef"
-                class="block truncate text-xs text-muted-foreground"
-              >
-                {{ defectLabel(lossDefectRef) }}
+            <span
+              class="absolute inset-x-0 top-0 flex h-14 items-center justify-between gap-2 px-3"
+            >
+              <span class="min-w-0">
+                <span class="block font-medium">Perda</span>
+                <span
+                  v-if="mode !== 'correct' && lossDefectRef"
+                  class="block truncate text-xs leading-tight text-muted-foreground"
+                >
+                  {{ defectLabel(lossDefectRef) }}
+                </span>
+                <span
+                  v-else-if="mode !== 'correct' || lossQuantity === 0"
+                  class="block text-xs leading-tight text-muted-foreground"
+                >
+                  {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
+                </span>
               </span>
-              <span
-                v-else-if="mode !== 'correct' || lossQuantity === 0"
-                class="block text-xs text-muted-foreground"
-              >
-                {{ lossQuantity ? "Motivo pendente" : "Sem perda" }}
+              <span class="text-sm font-semibold tabular-nums">
+                {{ lossQuantity }}
               </span>
-            </span>
-            <span class="text-sm font-semibold tabular-nums">
-              {{ lossQuantity }}
             </span>
           </button>
           <button
             v-if="mode === 'correct' && lossQuantity > 0"
             type="button"
-            class="m-1.5 ml-0 flex size-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-1"
+            class="relative z-20 mx-2 mb-2 mt-14 flex h-11 w-[calc(100%-1rem)] items-center justify-between gap-2 rounded-md border bg-background px-3 text-left text-xs font-medium text-muted-foreground transition hover:bg-destructive/10 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive focus-visible:ring-offset-1"
             :aria-label="`Editar motivo da perda: ${
               defectLabel(lossDefectRef) || 'não informado'
             }`"
             @click="openQuestion({ kind: 'loss_reason' }, false)"
           >
+            <span class="min-w-0 truncate">
+              {{ defectLabel(lossDefectRef) || "Informar motivo" }}
+            </span>
             <Icon name="lucide:pencil" class="size-4" aria-hidden="true" />
           </button>
         </div>
