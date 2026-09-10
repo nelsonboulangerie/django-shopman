@@ -418,6 +418,9 @@ useHead({ title: "Anúncio · Marketing" });
         :receipt="displayedReceipt"
         :shop-timezone="shopTimezone"
         :approved-text="announcement.body"
+        :quiet-hours-suspended-for-local-simulation="
+          quietHoursSuspendedForLocalSimulation
+        "
         @receipt="rememberReceipt"
         @refresh="refreshAll"
       />

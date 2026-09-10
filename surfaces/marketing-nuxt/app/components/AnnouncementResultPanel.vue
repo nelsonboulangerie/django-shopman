@@ -30,6 +30,7 @@ const props = defineProps<{
   receipt?: MarketingCommandReceipt | null;
   shopTimezone: string;
   approvedText?: string;
+  quietHoursSuspendedForLocalSimulation?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -91,13 +92,14 @@ const approvalEvidence = computed(() => {
       ? rawAudience
       : props.announcement.audience.eligible_count;
   const rawPlatforms = receipt.outcome.platforms;
-  const platforms = (
+  const platformRefs = (
     Array.isArray(rawPlatforms)
       ? rawPlatforms.filter(
           (platform): platform is string => typeof platform === "string",
         )
       : props.announcement.platform_refs
-  ).map(platformResultLabel);
+  );
+  const platforms = platformRefs.map(platformResultLabel);
   const mode = receipt.outcome.publish_mode;
   const scheduledFor =
     mode === "scheduled"
@@ -118,6 +120,18 @@ const approvalEvidence = computed(() => {
         : scheduledFor
           ? `Imediata — ${scheduleSummary(scheduledFor, props.shopTimezone)}`
           : "Imediata",
+    timezone:
+      props.shopTimezone === "America/Sao_Paulo"
+        ? "Horário de São Paulo"
+        : props.shopTimezone,
+    deliveryWindow: platformRefs.includes("whatsapp")
+      ? props.quietHoursSuspendedForLocalSimulation
+        ? "Ensaio local: silêncio 20:00–08:00 suspenso, sem efeito externo."
+        : "WhatsApp respeita o silêncio 20:00–08:00; o horário escolhido já foi validado."
+      : "Sem janela de silêncio adicional.",
+    validity: props.announcement.expires_at
+      ? `Expira em ${scheduleSummary(props.announcement.expires_at, props.shopTimezone)}.`
+      : "Este anúncio não expira antes do envio.",
   };
 });
 
@@ -421,6 +435,18 @@ function closeDialog(open: boolean) {
                 Próxima ação
               </dt>
               <dd class="mt-1 font-semibold">{{ decisionNextStep }}</dd>
+            </div>
+            <div class="border-t border-sky-500/20 p-3 sm:col-span-2">
+              <dt class="text-xs font-medium text-muted-foreground">
+                Fuso e horário permitido
+              </dt>
+              <dd class="mt-1 font-semibold">
+                {{ approvalEvidence.timezone }} · {{ approvalEvidence.deliveryWindow }}
+              </dd>
+              <dt class="mt-2 text-xs font-medium text-muted-foreground">
+                Validade
+              </dt>
+              <dd class="mt-1 font-semibold">{{ approvalEvidence.validity }}</dd>
             </div>
           </dl>
           <dl v-else class="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">

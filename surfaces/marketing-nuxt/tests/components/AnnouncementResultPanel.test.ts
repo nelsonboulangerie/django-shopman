@@ -279,9 +279,50 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("Estado da entrega");
     expect(wrapper.text()).toContain("Próxima ação");
     expect(wrapper.text()).toContain("Tentar novamente 1 falha");
+    expect(wrapper.text()).toContain("Fuso e horário permitido");
+    expect(wrapper.text()).toContain("Horário de São Paulo");
+    expect(wrapper.text()).toContain("WhatsApp respeita o silêncio 20:00–08:00");
+    expect(wrapper.text()).toContain("Validade");
+    expect(wrapper.text()).toContain("Este anúncio não expira antes do envio");
     expect(wrapper.text()).toContain("concluído");
     expect(wrapper.text()).not.toContain("Receipt:");
     expect(wrapper.text()).not.toContain("succeeded");
+  });
+
+  it("declara quando o ensaio local suspende o silêncio sem efeito externo", () => {
+    const wrapper = mount(AnnouncementResultPanel, {
+      props: {
+        announcement: announcement(),
+        actions: [],
+        shopTimezone: "America/Sao_Paulo",
+        quietHoursSuspendedForLocalSimulation: true,
+        receipt: {
+          ...response().receipt,
+          kind: "approve",
+          outcome: {
+            audience_count: 3,
+            publish_at: "2026-09-11T09:15:00-03:00",
+            platforms: ["whatsapp"],
+            publish_mode: "scheduled",
+          },
+        },
+      },
+      global: {
+        components: { UiVerificationCodeInput: VerificationCodeInput },
+        stubs: {
+          Icon: true,
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Ensaio local: silêncio 20:00–08:00 suspenso");
+    expect(wrapper.text()).toContain("sem efeito externo");
   });
 
   it("explains a rejected decision without suggesting a delivery or cancellation", () => {

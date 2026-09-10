@@ -560,9 +560,10 @@ function askToReject() {
     <!-- Decisão -->
     <footer class="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 px-4 py-3">
       <div class="w-full">
-        <p class="text-sm font-semibold">Próxima ação recomendada</p>
+        <p class="text-sm font-semibold">Como aprovar este anúncio</p>
         <p class="text-xs text-muted-foreground">
-          Agende o próximo horário seguro. Publicar agora continua disponível como uma decisão separada.
+          Aprovar confirma esta versão e define quando ela fica pronta para entrega.
+          Agende o próximo horário seguro; publicar agora é uma decisão separada.
         </p>
       </div>
 
