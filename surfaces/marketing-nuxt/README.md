@@ -11,6 +11,19 @@ audiência, despacho e expiração é o orquestrador
 > marketing operacional unidirecional: evento da padaria → conteúdo → plataformas.
 > Ver [FOMO-MARKETING-SPECS §6.1](../../docs/plans/FOMO-MARKETING-SPECS.md).
 
+## Publicação pública não é mensagem direta
+
+- `instagram`, `facebook` e `google_business` significam **uma publicação pública**
+  por plataforma. O ledger cria um único destino sem membro de audiência.
+- `whatsapp` significa **uma mensagem direta por pessoa elegível**. O ledger cria um
+  destino por membro e revalida consentimento antes do envio.
+- DM do Instagram não é suportada por este app. Se vier a existir, deve nascer como
+  lane/capability separada, com identidade, consentimento, limites, readiness e
+  comprovante próprios; nunca pode ser inferida ou misturada ao `instagram` público.
+
+Assim, “12 pessoas + Instagram, WhatsApp” quer dizer uma postagem pública no Instagram
+e até 12 mensagens diretas no WhatsApp — não 12 DMs no Instagram.
+
 - **Nome estável:** `marketing-nuxt` (por função, como `pos-`/`kds-`/`orders-`/
   `production-nuxt`). `mkt.` é só o host público; nunca hardcodar (vive na
   spec de deploy).

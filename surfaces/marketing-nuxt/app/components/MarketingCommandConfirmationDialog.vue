@@ -59,6 +59,14 @@ const title = computed(() => {
 });
 
 const isFire = computed(() => props.command?.action === "fire");
+const publicPlatforms = computed(() =>
+  (challenge.value?.platforms ?? []).filter(
+    (platform) => platform !== "whatsapp",
+  ),
+);
+const includesDirectMessages = computed(() =>
+  (challenge.value?.platforms ?? []).includes("whatsapp"),
+);
 
 function submit() {
   if (!ready.value) return;
@@ -101,11 +109,18 @@ function submit() {
             <dt class="text-xs text-muted-foreground">Versão</dt>
             <dd class="font-semibold">{{ challenge.base_version }}</dd>
           </div>
-          <div>
-            <dt class="text-xs text-muted-foreground">Público elegível</dt>
+          <div v-if="includesDirectMessages">
+            <dt class="text-xs text-muted-foreground">
+              Pessoas para mensagem direta
+            </dt>
             <dd class="font-semibold">
-              {{ formatCount(challenge.audience_count) }} destinos
+              {{ formatCount(challenge.audience_count) }}
+              {{ challenge.audience_count === 1 ? "pessoa" : "pessoas" }}
             </dd>
+          </div>
+          <div v-else>
+            <dt class="text-xs text-muted-foreground">Público da publicação</dt>
+            <dd class="font-semibold">Público geral da plataforma</dd>
           </div>
           <div class="sm:col-span-2">
             <dt class="text-xs text-muted-foreground">Plataformas</dt>
@@ -131,6 +146,23 @@ function submit() {
             </dd>
           </div>
         </dl>
+
+        <ul
+          class="space-y-1 rounded-lg border border-sky-500/30 bg-sky-500/5 p-3 text-sm"
+          aria-label="Forma de entrega por plataforma"
+        >
+          <li v-if="publicPlatforms.length">
+            <strong>{{
+              publicPlatforms.map(platformResultLabel).join(", ")
+            }}:</strong>
+            uma publicação pública por plataforma; não envia DM por pessoa.
+          </li>
+          <li v-if="includesDirectMessages">
+            <strong>WhatsApp:</strong>
+            mensagem direta para as pessoas elegíveis, com consentimento revalidado
+            no envio.
+          </li>
+        </ul>
 
         <div
           v-if="challenge.dual_control"

@@ -73,10 +73,16 @@ def _actor(suffix: str, *permissions: str):
     return actor
 
 
-def _targets(*, suffix: str, states: tuple[str, ...]):
+def _targets(
+    *,
+    suffix: str,
+    states: tuple[str, ...],
+    approved_platforms: tuple[str, ...] | None = None,
+):
     outbox, members = _graph(
         suffix=suffix,
         target_keys=tuple(f"member-{index}" for index in range(len(states))),
+        approved_platforms=approved_platforms,
     )
     fanout_in_chunks(outbox.ref, member_ids=[member.pk for member in members])
     targets = list(DeliveryTarget.objects.filter(outbox=outbox).order_by("pk"))
@@ -193,6 +199,30 @@ def test_retry_queues_only_retryable_and_replay_changes_nothing_twice():
     assert "target" not in json.dumps(audit.facts)
 
 
+def test_retry_confirmation_names_only_the_platform_with_safe_failures():
+    announcement, _targets_list = _targets(
+        suffix="retry-exact-platform",
+        states=(DeliveryTarget.State.FAILED_RETRYABLE,),
+        approved_platforms=("instagram", "whatsapp"),
+    )
+    actor = _actor("retry-exact-platform")
+    contexts = []
+
+    result = retry_failed_command(
+        announcement.pk,
+        actor=actor,
+        idempotency_key="retry-exact-platform-key",
+        base_version=announcement.version,
+        authorization=lambda context, _receipt: contexts.append(context),
+    )
+
+    assert contexts[0].platforms == ("whatsapp",)
+    assert result.receipt.outcome["platforms"] == ["whatsapp"]
+    assert MarketingAuditEvent.objects.get(command=result.receipt).facts[
+        "platforms"
+    ] == ["whatsapp"]
+
+
 def test_retry_rejects_when_selection_has_no_safe_failure():
     announcement, targets = _targets(
         suffix="retry-none",
@@ -241,6 +271,30 @@ def test_reconcile_command_persists_lookup_work_without_provider_call():
     assert MarketingAuditEvent.objects.get(
         command=result.receipt
     ).event_type == MarketingAuditEvent.EventType.RECONCILIATION_REQUESTED
+
+
+def test_reconciliation_confirmation_names_only_the_platform_being_looked_up():
+    announcement, _targets_list = _targets(
+        suffix="reconcile-exact-platform",
+        states=(DeliveryTarget.State.UNKNOWN,),
+        approved_platforms=("instagram", "whatsapp"),
+    )
+    actor = _actor("reconcile-exact-platform")
+    contexts = []
+
+    result = request_reconciliation_command(
+        announcement.pk,
+        actor=actor,
+        idempotency_key="reconcile-exact-platform-key",
+        base_version=announcement.version,
+        authorization=lambda context, _receipt: contexts.append(context),
+    )
+
+    assert contexts[0].platforms == ("whatsapp",)
+    assert result.receipt.outcome["platforms"] == ["whatsapp"]
+    assert MarketingAuditEvent.objects.get(command=result.receipt).facts[
+        "platforms"
+    ] == ["whatsapp"]
 
 
 @pytest.mark.parametrize(

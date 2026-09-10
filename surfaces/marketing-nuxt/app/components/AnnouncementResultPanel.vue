@@ -515,13 +515,18 @@ function closeDialog(open: boolean) {
           <div class="rounded-lg border border-border bg-muted/50 p-3 text-sm">
             <p>
               <strong>{{ formatCount(challenge.audience_count) }}</strong>
-              destinos elegíveis nesta consequência.
+              {{
+                challenge.audience_count === 1
+                  ? "destino elegível"
+                  : "destinos elegíveis"
+              }}
+              nesta consequência.
             </p>
             <p
               v-if="challenge.platforms.length"
               class="mt-1 text-muted-foreground"
             >
-              Plataformas:
+              Plataformas realmente afetadas:
               {{ challenge.platforms.map(platformResultLabel).join(", ") }}.
             </p>
           </div>

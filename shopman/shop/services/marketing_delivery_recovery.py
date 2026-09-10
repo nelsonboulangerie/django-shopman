@@ -106,19 +106,19 @@ def retry_failed_command(
     requested = _platforms(platforms)
 
     def operation(announcement, receipt):
-        selected_platforms = _selected_platforms(announcement, requested)
+        platform_scope = _selected_platforms(announcement, requested)
         query = DeliveryTarget.objects.select_for_update().filter(
             announcement=announcement,
             state=DeliveryTarget.State.FAILED_RETRYABLE,
         )
-        if selected_platforms:
-            query = query.filter(platform__in=selected_platforms)
+        if platform_scope:
+            query = query.filter(platform__in=platform_scope)
         targets = list(query.order_by("platform", "pk"))
         if not targets:
             raise RejectCommand(
                 code="nothing_retryable",
                 detail="Não há falha segura para tentar novamente nesta seleção.",
-                outcome={"platforms": list(selected_platforms)},
+                outcome={"platforms": list(platform_scope)},
             )
         if DeliveryAttempt.objects.filter(
             target_id__in=[target.pk for target in targets],
@@ -130,6 +130,7 @@ def retry_failed_command(
             )
 
         selection_hash = _selection_hash(targets)
+        affected_platforms = _target_platforms(targets)
         artifact, _snapshot = _latest_graph(announcement)
         if authorization is not None:
             from shopman.shop.services.marketing_security import (
@@ -145,7 +146,7 @@ def retry_failed_command(
                     artifact_hash=artifact.artifact_hash if artifact else "",
                     audience_hash=selection_hash,
                     audience_count=len(targets),
-                    platforms=selected_platforms,
+                    platforms=affected_platforms,
                     consequence="retries_only_proven_safe_failures_now",
                 ),
                 receipt,
@@ -180,7 +181,7 @@ def retry_failed_command(
             reason_code="operator_retry_failed",
             facts={
                 "queued_count": len(targets),
-                "platforms": list(selected_platforms),
+                "platforms": list(affected_platforms),
                 "selection_hash": selection_hash,
             },
             now=clock,
@@ -188,7 +189,7 @@ def retry_failed_command(
         _schedule_aggregate(announcement.pk)
         return {
             "queued_count": len(targets),
-            "platforms": list(selected_platforms),
+            "platforms": list(affected_platforms),
             "selection_hash": selection_hash,
         }
 
@@ -222,19 +223,19 @@ def request_reconciliation_command(
     requested = _platforms(platforms)
 
     def operation(announcement, receipt):
-        selected_platforms = _selected_platforms(announcement, requested)
+        platform_scope = _selected_platforms(announcement, requested)
         query = DeliveryTarget.objects.select_for_update().filter(
             announcement=announcement,
             state=DeliveryTarget.State.UNKNOWN,
         )
-        if selected_platforms:
-            query = query.filter(platform__in=selected_platforms)
+        if platform_scope:
+            query = query.filter(platform__in=platform_scope)
         unknown_targets = list(query.order_by("platform", "pk"))
         if not unknown_targets:
             raise RejectCommand(
                 code="nothing_reconcilable",
                 detail="Não há resultado desconhecido nesta seleção.",
-                outcome={"platforms": list(selected_platforms)},
+                outcome={"platforms": list(platform_scope)},
             )
 
         target_ids = [target.pk for target in unknown_targets]
@@ -280,6 +281,7 @@ def request_reconciliation_command(
             raise RejectCommand(code=code, detail=detail)
 
         selection_hash = _selection_hash(eligible)
+        affected_platforms = _target_platforms(eligible)
         artifact, _snapshot = _latest_graph(announcement)
         if authorization is not None:
             from shopman.shop.services.marketing_security import (
@@ -295,7 +297,7 @@ def request_reconciliation_command(
                     artifact_hash=artifact.artifact_hash if artifact else "",
                     audience_hash=selection_hash,
                     audience_count=len(eligible),
-                    platforms=selected_platforms,
+                    platforms=affected_platforms,
                     consequence="lookup_only_unknown_provider_outcomes",
                 ),
                 receipt,
@@ -318,7 +320,7 @@ def request_reconciliation_command(
             facts={
                 "already_pending_count": len(active_target_ids),
                 "lookup_count": len(eligible),
-                "platforms": list(selected_platforms),
+                "platforms": list(affected_platforms),
                 "selection_hash": selection_hash,
                 "without_attempt_count": len(unknown_targets)
                 - len(active_target_ids)
@@ -329,7 +331,7 @@ def request_reconciliation_command(
         return {
             "already_pending_count": len(active_target_ids),
             "lookup_count": len(eligible),
-            "platforms": list(selected_platforms),
+            "platforms": list(affected_platforms),
             "selection_hash": selection_hash,
             "without_attempt_count": len(unknown_targets)
             - len(active_target_ids)
@@ -630,6 +632,12 @@ def _selected_platforms(
             field_errors={"platforms": ("Use somente plataformas deste anúncio.",)},
         )
     return requested
+
+
+def _target_platforms(targets: list[DeliveryTarget]) -> tuple[str, ...]:
+    """Return the exact lanes affected, never every lane on the announcement."""
+
+    return tuple(dict.fromkeys(target.platform for target in targets))
 
 
 def _platforms(values) -> tuple[str, ...]:

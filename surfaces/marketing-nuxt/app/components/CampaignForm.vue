@@ -838,7 +838,7 @@ function submit() {
     </p>
 
     <fieldset>
-      <legend class="mb-1 text-sm font-medium">Publicar em</legend>
+      <legend class="mb-1 text-sm font-medium">Entregar por</legend>
       <div class="flex flex-wrap gap-1.5">
         <label
           v-for="option in platformOptions"
@@ -860,6 +860,11 @@ function submit() {
           {{ option.label }}
         </label>
       </div>
+      <p class="mt-1.5 text-xs text-muted-foreground">
+        Instagram, Facebook e Google criam uma publicação pública por plataforma.
+        WhatsApp envia uma mensagem por pessoa elegível. Mensagens diretas do
+        Instagram ainda não fazem parte deste app.
+      </p>
     </fieldset>
 
     <fieldset class="rounded-lg border border-border p-3">

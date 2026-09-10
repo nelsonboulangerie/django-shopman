@@ -107,6 +107,19 @@ describe("CampaignForm — a oferta anunciada", () => {
   });
 });
 
+describe("CampaignForm — natureza de cada saída", () => {
+  it("não confunde postagem pública com mensagem direta", () => {
+    const text = form(makeRule()).text();
+
+    expect(text).toContain("Entregar por");
+    expect(text).toContain("uma publicação pública por plataforma");
+    expect(text).toContain("WhatsApp envia uma mensagem por pessoa elegível");
+    expect(text).toContain(
+      "Mensagens diretas do Instagram ainda não fazem parte deste app",
+    );
+  });
+});
+
 describe("CampaignForm — quando disparar", () => {
   it("esconde o agendamento nos gatilhos de evento", () => {
     // Nesses, a causa é o evento: perguntar a hora aqui não teria resposta.

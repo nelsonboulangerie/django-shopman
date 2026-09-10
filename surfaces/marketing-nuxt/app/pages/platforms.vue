@@ -98,7 +98,7 @@ function summaryFor(platform: Platform): string {
 function kindLabel(kind: string): string {
   return kind === "direct_message"
     ? "Uma mensagem por pessoa, com consentimento."
-    : "Uma peça publicada na plataforma.";
+    : "Uma publicação pública na plataforma; não envia mensagem direta.";
 }
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
