@@ -39,3 +39,9 @@ Logs locais `accordion-{all-tests,tests,types,lint,e2e,geometry}.log`. Sem alter
 O usuário apontou falta de padding e organização. O resumo ganhou inset de 12 px, espaçamento consistente e borda discreta por linha. Os detalhes agora ocupam toda a largura, com inset de 16 px e blocos separados para valor/quantidade, desconto e autoria. Controles de quantidade formam um único grupo; remoção fica apartada no rodapé. Observação perde ícone repetido e itálico, passando a uma nota com margem e régua lateral. Indicadores fixos, ações, seleção e preços preservados.
 
 Validado com 30 testes existentes do componente, typecheck, ESLint e diff check. Inspeção de resumo/expansão em 320/390/768/1024/1366 px sem overflow horizontal, cenário completo com desconto, observação, cozinha e dois operadores. Capturas: `spacing-compact.png`, `spacing-expanded.png` e `spacing-line.png` em `.artifacts/pdv-20260910-a1/`. Nenhuma publicação nesta revisão.
+
+## Estudo com quantidade sempre acessível
+
+Após nova solicitação de prévia, −/quantidade/+ ficam visíveis na linha recolhida. O número central seleciona a linha e o modo quantidade no teclado, sem expandir. Remove-se a quantidade duplicada antes do produto; preço unitário acompanha o controle. Desconto ganha rótulo numérico compacto e autoria usa lápis+nome em uma faixa conjunta, sem espaços vazios entre indicadores. Cozinha mantém selo separado. A mudança substitui o estudo anterior de slots fixos, seguindo a discussão posterior.
+
+31 testes do componente, typecheck, ESLint e diff check passam. Browser com componente real e parent sintético confirmou incremento de 2 para 3 com zero regiões de detalhes abertas; geometria em 320/390/768/1366 px sem overflow. Captura `quantity-line.png` em `.artifacts/pdv-20260910-a1/`. Prévia local, não publicada.

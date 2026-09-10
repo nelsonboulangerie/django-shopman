@@ -65,7 +65,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     // CAFE é a 2ª linha, qty 2 → decrementa direto.
     await wrapper.find('[aria-label="Editar Café"]').trigger("click");
-    await wrapper.find('[aria-label="Diminuir"]').trigger("click");
+    await wrapper.find('[aria-label="Quantidade de Café"] [aria-label="Diminuir"]').trigger("click");
     expect(wrapper.emitted("decrement")?.[0]).toEqual(["L-CAFE"]);
     expect(wrapper.emitted("remove")).toBeUndefined();
   });
@@ -200,7 +200,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
   it("o stepper age na linha tocada, não na primeira do sku", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
     await wrapper.findAll('[aria-label="Editar Chá"]')[1]!.trigger("click");
-    await wrapper.find('[aria-label="Aumentar"]').trigger("click");
+    await wrapper.findAll('[aria-label="Aumentar"]')[1]!.trigger("click");
     expect(wrapper.emitted("increment")?.[0]).toEqual(["L-cha-2"]);
   });
 
@@ -219,7 +219,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
     await wrapper.findAll('[aria-label="Editar Chá"]')[0]!.trigger("click");
     const desc = wrapper.findAll("button").find((b) => b.text().trim() === "Desc %");
     await desc!.trigger("click");
-    const um = wrapper.findAll("button").find((b) => b.text().trim() === "1");
+    const um = wrapper.find('[aria-label="Dígito 1"]');
     await um!.trigger("click");
     const emitted = wrapper.emitted("setDiscount") as unknown[][] | undefined;
     expect(emitted?.length).toBe(1);
@@ -253,11 +253,11 @@ describe("PosCartPanel — a linha do carrinho", () => {
     expect(text).not.toContain(`2× ${formatBRL(300)}`);
   });
 
-  it("com uma unidade, a linha compacta mostra só o total", async () => {
+  it("a linha compacta informa total e unitário ao lado da quantidade", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })] }),
     });
-    expect(wrapper.text()).not.toContain("cada");
+    expect(wrapper.text()).toContain("R$ 5,00 cada");
     expect(wrapper.findAll("strong").map((el) => el.text())).toContain(formatBRL(500));
   });
 
@@ -370,10 +370,10 @@ describe("PosCartPanel — autoria discreta", () => {
     ] }) });
     expect(wrapper.text()).toContain("Operador: Bruno");
     expect(wrapper.text()).not.toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(0);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
     await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
     expect(wrapper.text()).toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
   });
 });
 
@@ -403,5 +403,18 @@ describe("PosCartPanel — acordeão", () => {
     expect(wrapper.find('[role="region"]').exists()).toBe(false);
     expect(wrapper.find('[title="Operador: ana"]').exists()).toBe(true);
     expect(wrapper.find('[title="Cortesia −10%"]').exists()).toBe(true);
+  });
+});
+
+
+describe("PosCartPanel — quantidade acessível sem expandir", () => {
+  it("permite incrementar e selecionar quantidade para o teclado com a linha recolhida", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    await wrapper.find('[aria-label="Quantidade de Café"] [aria-label="Aumentar"]').trigger("click");
+    expect(wrapper.emitted("increment")?.[0]).toEqual(["L-CAFE"]);
+    await wrapper.find('[aria-label="Editar quantidade de Pão"]').trigger("click");
+    expect(wrapper.text()).toContain("Teclado: Pão");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
   });
 });

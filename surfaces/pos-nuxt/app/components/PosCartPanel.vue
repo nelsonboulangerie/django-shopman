@@ -125,6 +125,10 @@ const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
 function discountBadge(item: POSCartItem) {
   return lineDiscountBadge(item, reasonOptions.value) || (lineListTotalDisplay(item) ? "Desconto aplicado" : "");
 }
+function compactDiscount(item: POSCartItem) {
+  const label = discountBadge(item);
+  return (label.match(/−.+$/)?.[0] || label).replace(/(\d)\.(\d)/g, "$1,$2");
+}
 // O teclado age sobre a linha selecionada, em três modos: "qty" (inteiro, o
 // primeiro dígito substitui), "disc" (desconto em %) e "disc_brl" (desconto em
 // R$ — entrada decimal, reais primeiro, vírgula → centavos).
@@ -475,41 +479,36 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           <div class="min-w-0 pb-3">
             <button type="button" class="grid min-h-11 w-full gap-2 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="toggleDetails(item.line_id)">
               <span class="flex items-baseline gap-2">
-                <span class="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ item.qty }}×</span>
                 <span class="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{{ item.name }}</span>
                 <span class="shrink-0 text-right">
                   <strong class="text-sm font-semibold tabular-nums">{{ formatBRL(lineTotalQ(item)) }}</strong>
                 </span>
               </span>
-              <!-- Posições fixas: observação, desconto, autoria, cozinha e expansão.
-                   Ausência conserva o espaço, sem parecer um botão desabilitado. -->
-              <span :id="`${detailsId(item.line_id)}-summary`" class="grid grid-cols-[1.5rem_1.5rem_1.5rem_minmax(0,1fr)_1rem] items-center gap-1 text-muted-foreground">
-                <span class="grid size-6 place-items-center" :class="item.notes ? '' : 'invisible'" :aria-hidden="!item.notes" title="Observação na linha"><Icon name="lucide:sticky-note" class="size-3.5" /><span class="sr-only">Com observação.</span></span>
-                <span class="grid size-6 place-items-center" :class="discountBadge(item) ? 'text-primary' : 'invisible'" :aria-hidden="!discountBadge(item)" :title="discountBadge(item)"><Icon name="lucide:badge-percent" class="size-3.5" /><span class="sr-only">{{ discountBadge(item) }}</span></span>
-                <span class="grid size-6 place-items-center" :class="item.authorship?.updated_by ? '' : 'invisible'" :aria-hidden="!item.authorship?.updated_by" :title="`Operador: ${item.authorship?.updated_label || item.authorship?.updated_by || ''}`"><Icon name="lucide:user-round" class="size-3.5" /><span class="sr-only">Operador: {{ item.authorship?.updated_label || item.authorship?.updated_by }}.</span></span>
-                <span v-if="lineKitchenState(item) !== 'unfired'" class="justify-self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="badgeTone(kitchenBadge(item).tone)">{{ kitchenBadge(item).label }}</span><span v-else />
-                <Icon name="lucide:chevron-down" class="size-4" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" />
+              <span :id="`${detailsId(item.line_id)}-summary`" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                <span v-if="discountBadge(item) || item.authorship?.updated_by" class="inline-flex max-w-full items-center gap-2 rounded-full bg-muted px-2.5 py-1">
+                  <span v-if="discountBadge(item)" class="shrink-0 font-medium text-primary" :title="discountBadge(item)">{{ compactDiscount(item) }}</span>
+                  <span v-if="discountBadge(item) && item.authorship?.updated_by" class="h-3 border-l border-border" aria-hidden="true" />
+                  <span v-if="item.authorship?.updated_by" class="inline-flex min-w-0 items-center gap-1" :title="`Operador: ${item.authorship.updated_label || item.authorship.updated_by}`"><Icon name="lucide:pencil" class="size-3 shrink-0" /><span class="sr-only">Operador: </span><span class="truncate">{{ item.authorship.updated_label || item.authorship.updated_by }}</span></span>
+                </span>
+                <span v-if="lineKitchenState(item) !== 'unfired'" class="rounded-full px-2 py-1 font-medium" :class="badgeTone(kitchenBadge(item).tone)">{{ kitchenBadge(item).label }}</span>
+                <Icon name="lucide:chevron-down" class="ml-auto size-4 shrink-0" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" />
               </span>
               <span v-if="item.notes" class="border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground">
                 {{ item.notes }}
               </span>
             </button>
-
+            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <div class="inline-flex items-center rounded-md border border-border bg-card" role="group" :aria-label="`Quantidade de ${item.name}`">
+                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-r-none" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')"><Icon name="lucide:minus" class="size-4" /></UiButton>
+                  <button type="button" class="grid size-11 place-items-center border-x border-border text-sm font-semibold tabular-nums focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar quantidade de ${item.name}`" title="Ajustar pelo teclado" @click="selectLine(item.line_id); setMode('qty')">{{ item.qty }}</button>
+                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-l-none" aria-label="Aumentar" @click="bump(item.line_id, 'increment')"><Icon name="lucide:plus" class="size-4" /></UiButton>
+                </div>
+              <span class="text-xs tabular-nums text-muted-foreground">{{ formatBRL(unitChargedQ(item)) }} cada</span>
+            </div>
           </div>
           <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="col-span-2 -mx-3 border-t border-border/70 bg-muted/30 px-4 py-4">
             <div class="grid gap-4">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="grid gap-1">
-                  <span class="text-xs text-muted-foreground">Valor unitário</span>
-                  <span class="text-sm font-medium tabular-nums">{{ formatBRL(unitChargedQ(item)) }} cada</span>
-                </div>
-                <div class="inline-flex items-center rounded-md border border-border bg-card" role="group" aria-label="Quantidade">
-                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-r-none" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')"><Icon name="lucide:minus" class="size-4" /></UiButton>
-                  <span class="grid h-8 min-w-9 place-items-center border-x border-border px-2 text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-l-none" aria-label="Aumentar" @click="bump(item.line_id, 'increment')"><Icon name="lucide:plus" class="size-4" /></UiButton>
-                </div>
-              </div>
-              <div v-if="discountBadge(item)" class="grid gap-1 border-t border-border/60 pt-3 text-xs leading-relaxed">
+              <div v-if="discountBadge(item)" class="grid gap-1 text-xs leading-relaxed">
                 <span class="text-muted-foreground">Desconto</span>
                 <span class="font-medium text-primary">{{ discountBadge(item) }}</span>
                 <span v-if="lineListTotalDisplay(item)" class="tabular-nums text-muted-foreground">De <span class="line-through" :title="discountBadge(item)">{{ lineListTotalDisplay(item) }}</span> por {{ formatBRL(lineTotalQ(item)) }}</span>
