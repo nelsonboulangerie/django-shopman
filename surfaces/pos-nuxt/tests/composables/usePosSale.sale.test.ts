@@ -115,6 +115,65 @@ describe("usePosSale — submitSale (fluxo em etapas)", () => {
     h.handles.dispose();
   });
 
+  it.each([new TypeError("Failed to fetch"), { status: 504 }, { status: 500, data: { detail: "Tente novamente" } }])(
+    "resposta perdida ou 5xx não nega a venda nem recomenda repetir: %j",
+    async (error) => {
+      const actionCall = saleRouter();
+      const h = saleReadyForCheckout(actionCall);
+      await h.sale.submitSale();
+      const key = h.sale.cart.clientRequestId;
+      actionCall.mockRejectedValueOnce(error);
+
+      await h.sale.submitSale();
+
+      expect(h.sale.result.value).toBeNull();
+      expect(h.sale.cart.clientRequestId).toBe(key);
+      expect(h.sale.cart.items[0]!.qty).toBe(2);
+      expect(h.sale.busy.value).toBe(false);
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de cobrar ou finalizar novamente.",
+      );
+      expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/sale/close/"))).toHaveLength(1);
+      h.handles.dispose();
+    },
+  );
+
+  it("falha de refresh mantém pedido e recibo confirmados sem mensagem de recusa", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    h.handles.refresh.mockRejectedValueOnce({ status: 503, data: { detail: "O pedido não foi fechado" } });
+
+    await h.sale.submitSale();
+
+    expect(h.sale.result.value?.orderRef).toBe("PED-1");
+    expect(h.sale.result.value?.receipt.items[0]!.qty).toBe(2);
+    expect(h.sale.cart.items).toHaveLength(0);
+    expect(h.sale.busy.value).toBe(false);
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.warning)).toHaveBeenCalledWith(
+      "Pedido PED-1 registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.",
+    );
+    expect(actionCall.mock.calls.filter((c) => String(c[0]).includes("/sale/close/"))).toHaveLength(1);
+    h.handles.dispose();
+  });
+
+  it("resposta sem referência não é confirmação nem silêncio", async () => {
+    const actionCall = saleRouter();
+    const h = saleReadyForCheckout(actionCall);
+    await h.sale.submitSale();
+    actionCall.mockResolvedValueOnce({ ok: true });
+
+    await h.sale.submitSale();
+
+    expect(h.sale.result.value).toBeNull();
+    expect(h.sale.cart.items[0]!.qty).toBe(2);
+    expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de cobrar ou finalizar novamente.",
+    );
+    h.handles.dispose();
+  });
+
   it("recusa com focus=customer (agendado sem cliente) pede a identificação na tela", async () => {
     // O servidor recusou com o erro tipado `customer_required_for_scheduled`:
     // além do toast com a recovery, o nonce sobe — é ele que faz a página abrir

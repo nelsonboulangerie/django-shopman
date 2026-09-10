@@ -1900,6 +1900,7 @@ export function usePosSale(deps: PosSaleDeps) {
     managerApprovalError.value = "";
     result.value = null;
     busy.value = true;
+    const unknownMessage = "Não foi possível confirmar o resultado desta venda. Confira o pedido e o pagamento antes de cobrar ou finalizar novamente.";
     try {
       const response = await action.call<POSCloseSaleResponse>(
         actionHref(actions.value, "close_sale", "/api/v1/backstage/pos/sale/close/"),
@@ -1970,9 +1971,24 @@ export function usePosSale(deps: PosSaleDeps) {
           void drawer.kick("cash_sale");
         }
         resetCart();
-        await refresh();
+        try {
+          await refresh();
+        } catch {
+          // A resposta do close já provou o pedido. Falhar ao atualizar a
+          // projection não desfaz esse fato nem invalida o recibo congelado.
+          toast.warning(`Pedido ${orderRef} registrado. A atualização do balcão falhou; os dados podem estar desatualizados. Não repita esta venda.`);
+        }
+      } else {
+        // Resposta incompleta não prova ausência de efeito no servidor.
+        serverError.value = unknownMessage;
       }
     } catch (error) {
+      // 5xx pode ocorrer depois do commit (inclusive no proxy). Não seguir
+      // uma recomendação genérica de retry nem afirmar ausência de venda.
+      if (httpError(error).status >= 500) {
+        serverError.value = unknownMessage;
+        return;
+      }
       const failure = (httpError(error).data as {
         error?: {
           code?: string; message?: string; recovery?: string; focus?: string;
@@ -2017,7 +2033,7 @@ export function usePosSale(deps: PosSaleDeps) {
         serverError.value = failure.recovery || failure.message || "Identifique o cliente para finalizar a venda.";
         customerFocusNonce.value += 1;
       } else {
-        serverError.value = httpErrorMessage(error, "Não foi possível finalizar a venda. O pedido não foi fechado; revise o pagamento e valide de novo.");
+        serverError.value = httpErrorMessage(error, unknownMessage);
       }
     } finally {
       busy.value = false;
