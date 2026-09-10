@@ -202,7 +202,7 @@ class OrderItemProjection:
 
     sku: str
     name: str
-    qty: int
+    qty: str  # Exact decimal, without insignificant trailing zeros.
     unit_price_display: str
     total_display: str
 

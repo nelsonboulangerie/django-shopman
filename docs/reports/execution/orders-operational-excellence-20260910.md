@@ -97,3 +97,21 @@ WP00: baseline executado; inventário e ensaios adicionais continuam ao longo da
 WP01–WP09: pendentes; nenhum marcado T. WP10–WP12: pendentes de pré-requisitos e gates.
 J01–J15: baseline estrutural do plano preservado; nenhuma melhora de campo alegada.
 G06 ainda precisa aprovar budgets/personas/aparelhos/amostra. Sem medidas humanas de T/clareza.
+
+## WP01 — fatia D08, quantidade decimal
+
+Anterior: regressão permanente falhou para 0.500, 1.125 e limite 999999999.999;
+quantidade inteira também verificou a alteração explícita de contrato. Implementação:
+`OrderItemProjection.qty` passa a string decimal exata, sem zeros insignificantes;
+resumo do card usa a mesma representação. Contrato TypeScript regenerado pelo comando.
+Preço e total permanecem intactos. Nenhuma unidade foi inferida: OrderItem não possui
+coluna de unidade e snapshot documentado não a garante. Resolução de unidade continua
+pendente no WP01, assim como Actions/autoridade; pacote não concluído.
+
+Testes: backend 73 passed, 13 subtests passed (11,42s), incluindo API/projeções/exportação;
+Vitest final 222 passed (1,91s), incluindo renderização da fração, e nuxi typecheck passaram.
+Ruff nos três arquivos Python passou. Sem ensaio de campo.
+Migração: sem DDL ou backfill; consumidor deve aceitar qty textual, backend e artefato
+gerado devem ser entregues juntos. Rollback técnico reverte a fatia, mas reintroduziria
+D08: manter rollout suspenso até corrigir, nunca converter fração em inteiro para compatibilidade.
+Esforço: zero gestos adicionais para ler a fração; tempo/clareza humanos não medidos.

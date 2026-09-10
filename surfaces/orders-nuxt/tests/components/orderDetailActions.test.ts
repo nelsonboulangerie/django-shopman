@@ -69,7 +69,7 @@ function order(over: Partial<OperatorOrderProjection> = {}): OperatorOrderProjec
     delivery_address: "",
     delivery_instructions: "",
     total_display: "R$ 15,00",
-    items: [{ sku: "PAO", name: "Pão francês", qty: 2, unit_price_display: "R$ 1,00", total_display: "R$ 2,00" }],
+    items: [{ sku: "PAO", name: "Pão francês", qty: "2", unit_price_display: "R$ 1,00", total_display: "R$ 2,00" }],
     timeline: [],
     kitchen_note: "",
     customer_note: "",
@@ -145,6 +145,12 @@ function abrir(projection: OperatorOrderProjection) {
 }
 
 describe("detalhe do pedido — só oferece o que o servidor aceita", () => {
+  it("preserva a quantidade fracionária projetada sem arredondar", () => {
+    const fractional = order();
+    fractional.items[0]!.qty = "0.5";
+    const w = abrir(fractional);
+    expect(w.text()).toContain("0.5×");
+  });
   it("pedido novo: oferece Aceitar e Recusar, nunca Avançar", () => {
     const w = abrir(order({ status: "new", can_confirm: true, can_advance: false }));
 

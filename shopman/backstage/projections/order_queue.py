@@ -487,7 +487,7 @@ def build_operator_order(order: Order, *, user=None) -> OperatorOrderProjection:
         OrderItemProjection(
             sku=it.sku,
             name=it.name or it.sku,
-            qty=int(it.qty),
+            qty=format(it.qty.normalize(), "f"),
             unit_price_display=_money(it.unit_price_q),
             total_display=_money(it.line_total_q),
         )
@@ -1038,7 +1038,7 @@ def _build_card(
 
     items_qs = list(order.items.all()[:4])
     items_summary = ", ".join(
-        f"{int(it.qty)}x {it.name or it.sku}" for it in items_qs[:3]
+        f"{format(it.qty.normalize(), "f")}x {it.name or it.sku}" for it in items_qs[:3]
     )
     if len(items_qs) > 3:
         items_summary += "..."

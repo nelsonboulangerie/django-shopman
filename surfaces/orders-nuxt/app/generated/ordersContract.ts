@@ -6,7 +6,7 @@
 export interface OrderItemProjection {
   sku: string;
   name: string;
-  qty: number;
+  qty: string;
   unit_price_display: string;
   total_display: string;
 }
