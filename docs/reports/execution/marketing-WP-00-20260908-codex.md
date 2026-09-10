@@ -2056,7 +2056,7 @@ canary, pessoas nominais ou paging: esses itens permanecem bloqueadores explíci
 G-H08 antes do piloto. A sequência pode avançar ao MKT-044, que materializa health,
 runbooks e drills sem fechar esse gate humano por procuração.
 
-## MKT-044 — Health live/ready e oito runbooks/drills (gate humano pendente)
+## MKT-044 — Health live/ready e oito runbooks/drills (gate humano aprovado)
 
 Estado: **implementação técnica local verde; aguardando a decisão do operador não autor**.
 
@@ -2231,3 +2231,63 @@ Em 2026-09-10, o proprietário confirmou como operador não autor a execução e
 drills (**19 backend + 4 BFF**) e validou os oito runbooks como claros, acionáveis e
 seguros. O gate humano específico de MKT-044 está, portanto, **aprovado**. A confirmação
 não autoriza deploy, produção, provider externo ou rollout e não antecipa gates futuros.
+
+## MKT-045 — Cursor, filtros, histórico e métricas sem verdade falsa
+
+Implementado depois da aprovação explícita do MKT-044. O achado manual foi reproduzido
+antes da alteração: o anúncio 9 estava `settled`, com 13/13 destinos confirmados no
+ledger, mas `/history` ainda mostrava “Na fila” e uma chamada genérica para resolver.
+
+Correções locais:
+
+- `/history` migrou da projeção v1/`platform_results` para a projeção v2 derivada do
+  ledger. Corpo, telefone, membro, erro bruto e identidade do ator não voltaram ao
+  payload; a autoria é apenas a política `operator|automation`;
+- filtros estritos de situação, plataforma, período de criação e origem da decisão são
+  aplicados no backend antes da paginação. Combinações diferentes recebem coleções de
+  cursor assinadas diferentes, impedindo reutilização ambígua;
+- a consulta mantém compatibilidade com registros antigos no SQLite e PostgreSQL sem
+  inferir entrega. Erro de campo/valor e cursor inválido retornam 422, não um vazio
+  enganoso;
+- a tela persiste filtros na URL, diferencia vazio real de vazio filtrado, preserva as
+  páginas já carregadas quando a próxima falha e oferece limpeza em um gesto;
+- “Abrir e resolver” só aparece quando o Action resolver fornece retry, reconciliação ou
+  cancelamento habilitado para aquele objeto. Resultado encerrado usa “Ver resultado”;
+- o painel deixou de exibir `published_today` e `audience_reached_today`. Agora separa
+  decisão pendente, confirmação real, aceite ainda não confirmado, falha final do dia e
+  resultado incerto aberto;
+- o corte diário usa sempre `America/Sao_Paulo` configurado pela loja, mesmo se outro
+  timezone estiver ativo na requisição.
+
+Budget de omotenashi comprovado:
+
+| Tarefa | Antes | Depois |
+|---|---:|---:|
+| Entender o anúncio 9 concluído | histórico contraditório + abrir detalhe | estado e 13/13 no histórico |
+| Resolver resultado encerrado | CTA falsa em todos os itens | zero ação falsa; “Ver resultado” |
+| Restringir por plataforma | sem filtro | 1 seleção; URL persistida |
+| Recuperar busca vazia | redefinir mentalmente/navegar | 1 toque em “Limpar filtros” |
+| Ver mais de 25 resultados | corte implícito | cursor estável + 1 toque por página |
+| Falha na próxima página | lista/contexto perdidos | itens e filtros preservados |
+| Interpretar “alcance” | aceite contado como cliente alcançado | aceite e confirmação separados |
+
+Provas:
+
+- backend focado: **26 testes**; projeção/HTTP/Actions/export: **36 testes**;
+- paginação automatizada percorreu **121 registros** em páginas de 25, sem repetição ou
+  corte; cursor reutilizado com outro filtro foi recusado;
+- teste de timezone provou que 02:30 UTC ainda pertence ao dia anterior da loja e 03:30
+  UTC ao dia atual, mesmo com `Asia/Tokyo` ativo na requisição;
+- frontend: **32 arquivos / 217 testes**, typecheck, lint e build de produção verdes;
+- ensaio no navegador: 5 resultados gerais → 3 WhatsApp, reload preservou filtro;
+  Facebook vazio mostrou explicação + limpeza em um toque;
+- fixture local descartável comprovou 25 itens na primeira página e 27 após “Carregar
+  mais resultados”; o botão desapareceu ao fim. Os 27 registros sintéticos foram
+  removidos em seguida e a base local voltou ao conjunto anterior;
+- o anúncio 9 passou a mostrar “Entrega concluída”, Instagram 1/1 + WhatsApp 12/12 e
+  “Ver resultado”, sem reabrir uma tarefa inexistente;
+- geração OpenAPI→TypeScript, Ruff e `git diff --check` verdes.
+
+Nenhum provider, destinatário real, staging, deploy, produção, push, merge ou PR foi
+acionado. O MKT-045 está tecnicamente concluído; MKT-046 pode iniciar a matriz visual e
+de estados sem antecipar a revisão humana exigida por ela.

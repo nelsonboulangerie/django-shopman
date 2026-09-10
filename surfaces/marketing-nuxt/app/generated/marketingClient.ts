@@ -28,6 +28,7 @@ export interface AnnouncementProjectionV2 {
   version: number;
   state: "draft" | "pending_review" | "approved" | "publishing" | "settled" | "published" | "failed" | "rejected" | "expired" | "cancelled";
   reason_code: "" | "review_required" | "review_window_expired";
+  decision_actor_policy: "operator" | "automation";
   facts: AnnouncementFactsProjectionV2;
   platform_refs: Array<string>;
   created_at: string;
@@ -217,9 +218,18 @@ export interface MarketingV2ReadOptions {
   requestId?: string;
 }
 
+export type MarketingHistoryOutcome = "not_started" | "fanout_pending" | "delivering" | "succeeded" | "completed_with_failures" | "unknown" | "cancelled" | "expired" | "legacy_untracked";
+export type MarketingHistoryPlatform = "instagram" | "facebook" | "google_business" | "whatsapp";
+export type MarketingHistoryActor = "operator" | "automation";
+export type MarketingHistoryPeriod = "today" | "7d" | "30d" | "all";
+
 export interface MarketingV2HistoryOptions extends MarketingV2ReadOptions {
   cursor?: string;
   limit?: number;
+  outcome?: MarketingHistoryOutcome;
+  platform?: MarketingHistoryPlatform;
+  actor?: MarketingHistoryActor;
+  period?: MarketingHistoryPeriod;
 }
 
 export type MarketingV2Transport = <T>(
@@ -247,6 +257,21 @@ function marketingReadOptions(options: MarketingV2ReadOptions = {}): MarketingV2
   };
 }
 
+export function marketingHistoryHref(options: MarketingV2HistoryOptions = {}): string {
+  if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {
+    throw new RangeError("limit must be an integer between 1 and 100");
+  }
+  const query = new URLSearchParams();
+  if (options.cursor) query.set("cursor", options.cursor);
+  if (options.limit != null) query.set("limit", String(options.limit));
+  if (options.outcome) query.set("outcome", options.outcome);
+  if (options.platform) query.set("platform", options.platform);
+  if (options.actor) query.set("actor", options.actor);
+  if (options.period && options.period !== "all") query.set("period", options.period);
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return `${MARKETING_V2_HISTORY_PATH}${suffix}`;
+}
+
 export function createMarketingV2Client(
   transport: MarketingV2Transport,
 ): MarketingV2Client {
@@ -263,15 +288,8 @@ export function createMarketingV2Client(
       );
     },
     getMarketingHistory: (options = {}) => {
-      if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {
-        throw new RangeError("limit must be an integer between 1 and 100");
-      }
-      const query = new URLSearchParams();
-      if (options.cursor) query.set("cursor", options.cursor);
-      if (options.limit != null) query.set("limit", String(options.limit));
-      const suffix = query.size ? `?${query.toString()}` : "";
       return transport<MarketingEnvelopeV2>(
-        `${MARKETING_V2_HISTORY_PATH}${suffix}`,
+        marketingHistoryHref(options),
         marketingReadOptions(options),
       );
     },

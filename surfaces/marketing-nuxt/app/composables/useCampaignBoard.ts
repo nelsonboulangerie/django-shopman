@@ -8,6 +8,7 @@ import type {
   Announcement,
   AnnouncementEdits,
   MarketingCommandResponse,
+  MarketingEnvelopeV2,
   PublishMode,
   ReachLimit,
 } from "~/types/campaign";
@@ -58,21 +59,40 @@ export function buildApprovalCommand(
 export function useCampaignBoard() {
   const decisionCommand = useMarketingDecisionCommand();
   const decisionError = ref("");
-  const { data, refresh, pending, error } = useFetch<BoardResponse>(
-    "/api/v1/backstage/marketing/",
-    {
-      key: "marketing-board",
-      server: true,
-      onResponseError: operatorSessionOnError,
-    },
-  );
+  const {
+    data,
+    refresh: refreshLegacy,
+    pending: legacyPending,
+    error: legacyError,
+  } = useFetch<BoardResponse>("/api/v1/backstage/marketing/", {
+    key: "marketing-board",
+    server: true,
+    onResponseError: operatorSessionOnError,
+  });
+  const {
+    data: canonicalData,
+    refresh: refreshCanonical,
+    pending: canonicalPending,
+    error: canonicalError,
+  } = useFetch<MarketingEnvelopeV2>("/api/v1/backstage/marketing/v2/", {
+    key: "marketing-board-v2",
+    server: true,
+    onResponseError: operatorSessionOnError,
+  });
 
   const board = computed(() => data.value?.board);
+  const canonicalBoard = computed(() =>
+    canonicalData.value?.data.kind === "board"
+      ? canonicalData.value.data
+      : null,
+  );
   const pendingPosts = computed<Announcement[]>(
     () => board.value?.pending ?? [],
   );
   const recentPosts = computed<Announcement[]>(() => board.value?.recent ?? []);
-  const stats = computed(() => board.value?.stats);
+  const stats = computed(() => canonicalBoard.value?.counters);
+  const loading = computed(() => legacyPending.value || canonicalPending.value);
+  const error = computed(() => legacyError.value || canonicalError.value);
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
   const reachLimits = computed<ReachLimit[]>(
     () => board.value?.reach_limits ?? [],
@@ -88,6 +108,10 @@ export function useCampaignBoard() {
   // lost and the operator taps again, the backend returns the original receipt
   // instead of creating a second command.
   const approvalKeys = new Map<string, string>();
+
+  async function refresh() {
+    await Promise.all([refreshLegacy(), refreshCanonical()]);
+  }
 
   let pollTimer: ReturnType<typeof setInterval> | null = null;
   onMounted(() => {
@@ -298,7 +322,7 @@ export function useCampaignBoard() {
     pendingPosts,
     recentPosts,
     stats,
-    loading: pending,
+    loading,
     error,
     refresh,
     approve,

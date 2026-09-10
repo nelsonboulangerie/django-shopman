@@ -42,7 +42,7 @@ autoriza produção, deploy, provider externo ou rollout.
 | Estados parcial/incerto/reconciliação | passou após correção | fixture: 11 confirmados + 1 falha repetível + 1 incerto; retry chamou só 1; lookup resolveu só 1 | worker bloqueava retry de anúncio encerrado; simulador não processava lookup |
 | Alerta, assunção, deep-link e resolução | passou | visto → assumido sem sumir → `/announcements/1#review` → recusa resolveu badge 1→0 | ação e contexto permaneceram na mesma superfície |
 | Repetição E2E após revisão pt-BR | passou | anúncio 9 → confirmação de 12 destinos/2 plataformas → Instagram 1/1 + WhatsApp 12/12; comprovante `c976843d-3e4a-494b-a55b-65e9fc8b002f` | 3 ações significativas; uma recarga local por ausência de Redis; zero navegação externa ou identificador copiado |
-| Histórico após conclusão | achado aberto para MKT-045 | anúncio 9 estava `settled` e 13/13 confirmado na rota de resultado, mas `/history` mostrou “Na fila” e “Abrir resultado e resolver” | projeção v1 lê `platform_results` legado em vez do ledger canônico; gera falsa pendência e conferência desnecessária |
+| Histórico após conclusão | passou no MKT-045 | anúncio 9 aparece “Entrega concluída”, Instagram 1/1 + WhatsApp 12/12 e “Ver resultado”; filtro WhatsApp reduz 5→3 e persiste no reload | v2/ledger é a fonte; CTA de resolução só existe com Action contextual habilitada |
 
 ## Achado transversal de omotenashi
 
@@ -274,6 +274,25 @@ resultado usa o agregado v2 do ledger, mas o histórico v1 ainda deriva estado d
 legado `platform_results`. Corrigir cursor, filtros, estados e métricas do histórico é a
 entrega MKT-045. O achado está registrado, mas não foi implementado antes do gate humano
 de MKT-044.
+
+## Repetição do histórico no MKT-045
+
+Depois da aprovação do gate MKT-044, `/history` foi migrado para o contrato v2. O anúncio
+9 passou a apresentar o mesmo fato do detalhe: execução encerrada com Instagram 1/1 e
+WhatsApp 12/12 confirmados. Como não havia recuperação pendente, a chamada mudou de
+“Abrir resultado e resolver” para “Ver resultado”.
+
+O ensaio manual confirmou filtros na URL e no backend: 5 itens gerais, 3 contendo
+WhatsApp, persistência após reload e vazio filtrado honesto para Facebook, recuperável em
+um toque. Em seguida, 27 registros locais sintéticos e identificados provaram paginação:
+25 apareceram inicialmente, “Carregar mais resultados” trouxe os dois restantes sem
+duplicar linha e desapareceu ao fim. As fixtures foram removidas imediatamente e nenhum
+provider ou pessoa real foi envolvido.
+
+O painel também foi conferido no navegador: “Entregas confirmadas hoje” e “Aceitas,
+ainda sem confirmação” são números separados; “Clientes alcançados” não é mais inferido
+a partir de aceite. O custo comum do filtro é uma seleção, nenhuma digitação, nenhuma
+mudança de tela e zero conferência externa.
 
 ## Provas finais desta rodada
 

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from dataclasses import fields, is_dataclass
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
+from django.test import override_settings
 from django.utils import timezone
 from pydantic import TypeAdapter
 
@@ -105,6 +107,7 @@ def test_projection_excludes_presentation_copy_pii_membership_and_legacy_results
     assert members[0].target_key not in serialized
     assert "Fornada pronta" not in serialized
     assert payload["data"]["announcement"]["facts"]["product_ref"] == "product:SKU-SAFE-01"
+    assert payload["data"]["announcement"]["decision_actor_policy"] == "operator"
     assert payload["data"]["announcement"]["artifact"]["artifact_hash"]
     assert "payload" not in payload["data"]["announcement"]["artifact"]
 
@@ -189,6 +192,41 @@ def test_board_uses_ledger_counters_and_keeps_accepted_distinct_from_confirmed()
     assert sum(delivery["counts"].values()) == delivery["target_count"] == 4
     assert "audience_reached_today" not in json.dumps(payload)
     assert "published_today" not in json.dumps(payload)
+
+
+@override_settings(TIME_ZONE="America/Sao_Paulo")
+def test_board_daily_counters_always_use_the_canonical_shop_day():
+    before_midnight, before_members = _graph(
+        suffix="counter-before-shop-midnight",
+        target_keys=("before",),
+    )
+    after_midnight, after_members = _graph(
+        suffix="counter-after-shop-midnight",
+        target_keys=("after",),
+    )
+    fanout_in_chunks(
+        before_midnight.ref,
+        member_ids=[member.pk for member in before_members],
+    )
+    fanout_in_chunks(
+        after_midnight.ref,
+        member_ids=[member.pk for member in after_members],
+    )
+    DeliveryTarget.objects.filter(outbox=before_midnight).update(
+        state=DeliveryTarget.State.CONFIRMED,
+        settled_at=datetime(2026, 9, 10, 2, 30, tzinfo=UTC),
+    )
+    DeliveryTarget.objects.filter(outbox=after_midnight).update(
+        state=DeliveryTarget.State.CONFIRMED,
+        settled_at=datetime(2026, 9, 10, 3, 30, tzinfo=UTC),
+    )
+
+    with timezone.override(ZoneInfo("Asia/Tokyo")):
+        payload = projection_data(
+            build_board(now=datetime(2026, 9, 10, 12, tzinfo=UTC))
+        )
+
+    assert payload["data"]["counters"]["confirmed_targets_today"] == 1
 
 
 def test_board_query_budget_does_not_grow_with_announcement_count(

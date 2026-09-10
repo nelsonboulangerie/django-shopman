@@ -7,6 +7,12 @@ import re
 from copy import deepcopy
 from typing import Any
 
+from shopman.backstage.marketing_history import (
+    HISTORY_ACTORS,
+    HISTORY_OUTCOMES,
+    HISTORY_PERIODS,
+    HISTORY_PLATFORMS,
+)
 from shopman.backstage.projections.marketing_v2 import error_schema, schema
 
 OPENAPI_VERSION = "3.1.0"
@@ -152,6 +158,43 @@ def marketing_openapi() -> dict[str, Any]:
                                 "default": 50,
                             },
                         },
+                        {
+                            "name": "outcome",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "string",
+                                "enum": HISTORY_OUTCOMES,
+                            },
+                        },
+                        {
+                            "name": "platform",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "string",
+                                "enum": HISTORY_PLATFORMS,
+                            },
+                        },
+                        {
+                            "name": "actor",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "string",
+                                "enum": HISTORY_ACTORS,
+                            },
+                        },
+                        {
+                            "name": "period",
+                            "in": "query",
+                            "required": False,
+                            "schema": {
+                                "type": "string",
+                                "enum": HISTORY_PERIODS,
+                                "default": "all",
+                            },
+                        },
                         conditional_parameter,
                     ],
                     "responses": {
@@ -216,9 +259,18 @@ def render_marketing_client_ts() -> str:
         "  requestId?: string;",
         "}",
         "",
+        _typescript_union("MarketingHistoryOutcome", HISTORY_OUTCOMES),
+        _typescript_union("MarketingHistoryPlatform", HISTORY_PLATFORMS),
+        _typescript_union("MarketingHistoryActor", HISTORY_ACTORS),
+        _typescript_union("MarketingHistoryPeriod", HISTORY_PERIODS),
+        "",
         "export interface MarketingV2HistoryOptions extends MarketingV2ReadOptions {",
         "  cursor?: string;",
         "  limit?: number;",
+        "  outcome?: MarketingHistoryOutcome;",
+        "  platform?: MarketingHistoryPlatform;",
+        "  actor?: MarketingHistoryActor;",
+        "  period?: MarketingHistoryPeriod;",
         "}",
         "",
         "export type MarketingV2Transport = <T>(",
@@ -246,6 +298,21 @@ def render_marketing_client_ts() -> str:
         "  };",
         "}",
         "",
+        "export function marketingHistoryHref(options: MarketingV2HistoryOptions = {}): string {",
+        "  if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {",
+        '    throw new RangeError("limit must be an integer between 1 and 100");',
+        "  }",
+        "  const query = new URLSearchParams();",
+        '  if (options.cursor) query.set("cursor", options.cursor);',
+        '  if (options.limit != null) query.set("limit", String(options.limit));',
+        '  if (options.outcome) query.set("outcome", options.outcome);',
+        '  if (options.platform) query.set("platform", options.platform);',
+        '  if (options.actor) query.set("actor", options.actor);',
+        '  if (options.period && options.period !== "all") query.set("period", options.period);',
+        "  const suffix = query.size ? `?${query.toString()}` : \"\";",
+        "  return `${MARKETING_V2_HISTORY_PATH}${suffix}`;",
+        "}",
+        "",
         "export function createMarketingV2Client(",
         "  transport: MarketingV2Transport,",
         "): MarketingV2Client {",
@@ -262,15 +329,8 @@ def render_marketing_client_ts() -> str:
         "      );",
         "    },",
         "    getMarketingHistory: (options = {}) => {",
-        "      if (options.limit != null && (!Number.isSafeInteger(options.limit) || options.limit < 1 || options.limit > 100)) {",
-        '        throw new RangeError("limit must be an integer between 1 and 100");',
-        "      }",
-        "      const query = new URLSearchParams();",
-        '      if (options.cursor) query.set("cursor", options.cursor);',
-        '      if (options.limit != null) query.set("limit", String(options.limit));',
-        "      const suffix = query.size ? `?${query.toString()}` : \"\";",
         "      return transport<MarketingEnvelopeV2>(",
-        '        `${MARKETING_V2_HISTORY_PATH}${suffix}`,',
+        "        marketingHistoryHref(options),",
         "        marketingReadOptions(options),",
         "      );",
         "    },",
@@ -279,6 +339,11 @@ def render_marketing_client_ts() -> str:
         "",
     ])
     return "\n".join(blocks).rstrip() + "\n"
+
+
+def _typescript_union(name: str, values: tuple[str, ...]) -> str:
+    options = " | ".join(json.dumps(value) for value in values)
+    return f"export type {name} = {options};"
 
 
 def _rewrite_refs(value: Any) -> Any:

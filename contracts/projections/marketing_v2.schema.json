@@ -169,6 +169,14 @@
           "title": "Created At",
           "type": "string"
         },
+        "decision_actor_policy": {
+          "enum": [
+            "operator",
+            "automation"
+          ],
+          "title": "Decision Actor Policy",
+          "type": "string"
+        },
         "delivery": {
           "$ref": "#/$defs/DeliveryAggregateProjectionV2"
         },
@@ -295,6 +303,7 @@
         "version",
         "state",
         "reason_code",
+        "decision_actor_policy",
         "facts",
         "platform_refs",
         "created_at",

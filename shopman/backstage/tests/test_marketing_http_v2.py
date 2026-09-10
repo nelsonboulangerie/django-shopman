@@ -13,7 +13,17 @@ from rest_framework.test import APIRequestFactory
 
 from shopman.backstage.api.marketing import _CampaignV2Base
 from shopman.backstage.api.marketing_v2_http import MarketingV2Problem
-from shopman.shop.models import Announcement, AnnouncementStatus
+from shopman.shop.models import (
+    Announcement,
+    AnnouncementDeliveryState,
+    AnnouncementStatus,
+    DeliveryTarget,
+)
+from shopman.shop.services.marketing_delivery_aggregate import (
+    refresh_announcement_delivery,
+)
+from shopman.shop.services.marketing_delivery_worker import fanout_in_chunks
+from shopman.shop.tests.test_marketing_delivery_ledger import _graph
 
 pytestmark = pytest.mark.django_db
 
@@ -148,6 +158,164 @@ def test_history_keeps_settled_scheduled_cancelled_and_expired_results_reachable
         int(item["ref"].split(":", 1)[1])
         for item in response.json()["data"]["items"]
     } == expected
+
+
+def _ledger_history_item(*, suffix: str, platform: str, state: str, actor: bool):
+    outbox, members = _graph(
+        suffix=suffix,
+        platform=platform,
+        target_keys=() if platform != "whatsapp" else (f"{suffix}-member",),
+    )
+    fanout_in_chunks(outbox.ref, member_ids=[member.pk for member in members])
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    target.state = state
+    target.settled_at = timezone.now()
+    target.save(update_fields=["state", "settled_at", "updated_at"])
+    refresh_announcement_delivery(outbox.announcement_id)
+    announcement = Announcement.objects.get(pk=outbox.announcement_id)
+    if actor:
+        announcement.approved_by = outbox.command.actor
+        announcement.approved_at = timezone.now()
+        announcement.save(update_fields=["approved_by", "approved_at"])
+    return announcement
+
+
+def test_history_filters_use_ledger_platform_actor_outcome_and_shop_period(client):
+    operator_item = _ledger_history_item(
+        suffix="history-filter-operator",
+        platform="whatsapp",
+        state=DeliveryTarget.State.CONFIRMED,
+        actor=True,
+    )
+    automation_item = _ledger_history_item(
+        suffix="history-filter-automation",
+        platform="instagram",
+        state=DeliveryTarget.State.FAILED_FINAL,
+        actor=False,
+    )
+    legacy_item = Announcement.objects.create(
+        status=AnnouncementStatus.PUBLISHED,
+        delivery_state=AnnouncementDeliveryState.LEGACY_UNTRACKED,
+        delivery_settled_at=timezone.now(),
+        platforms=["facebook"],
+        content={"body": "legacy body must not reach v2"},
+    )
+    client.force_login(_reader(username="history-filter-reader"))
+
+    operator_response = client.get(
+        HISTORY_PATH,
+        {
+            "actor": "operator",
+            "outcome": AnnouncementDeliveryState.SUCCEEDED,
+            "period": "today",
+            "platform": "whatsapp",
+        },
+    )
+    automation_response = client.get(
+        HISTORY_PATH,
+        {
+            "actor": "automation",
+            "outcome": AnnouncementDeliveryState.COMPLETED_WITH_FAILURES,
+            "platform": "instagram",
+        },
+    )
+    legacy_response = client.get(HISTORY_PATH, {"platform": "facebook"})
+
+    assert operator_response.status_code == 200
+    assert [item["ref"] for item in operator_response.json()["data"]["items"]] == [
+        f"announcement:{operator_item.pk}"
+    ]
+    assert [item["ref"] for item in automation_response.json()["data"]["items"]] == [
+        f"announcement:{automation_item.pk}"
+    ]
+    assert [item["ref"] for item in legacy_response.json()["data"]["items"]] == [
+        f"announcement:{legacy_item.pk}"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("query", "field"),
+    [
+        ({"outcome": "published"}, "outcome"),
+        ({"platform": "email"}, "platform"),
+        ({"actor": "admin"}, "actor"),
+        ({"period": "week"}, "period"),
+        ({"platfrom": "whatsapp"}, "platfrom"),
+    ],
+)
+def test_history_rejects_invalid_or_misspelled_filters(client, query, field):
+    client.force_login(_reader(username=f"invalid-filter-{field}"))
+
+    response = client.get(HISTORY_PATH, query)
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == f"invalid_{field}"
+    assert field in response.json()["error"]["field_errors"]
+
+
+def test_history_cursor_cannot_be_reused_with_different_filters(client):
+    settled_at = timezone.now()
+    Announcement.objects.bulk_create(
+        Announcement(
+            status=AnnouncementStatus.PUBLISHED,
+            delivery_state=AnnouncementDeliveryState.LEGACY_UNTRACKED,
+            delivery_settled_at=settled_at,
+            platforms=["facebook"],
+        )
+        for _ in range(3)
+    )
+    client.force_login(_reader(username="history-filter-bound-cursor"))
+    first = client.get(
+        HISTORY_PATH,
+        {"limit": 1, "outcome": AnnouncementDeliveryState.LEGACY_UNTRACKED},
+    )
+
+    response = client.get(
+        HISTORY_PATH,
+        {
+            "cursor": first.json()["data"]["page"]["next_cursor"],
+            "limit": 1,
+            "outcome": AnnouncementDeliveryState.LEGACY_UNTRACKED,
+            "platform": "facebook",
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "invalid_cursor"
+
+
+def test_history_cursor_pages_do_not_silently_cut_large_result_sets(client):
+    settled_at = timezone.now()
+    announcements = Announcement.objects.bulk_create(
+        Announcement(
+            status=AnnouncementStatus.PUBLISHED,
+            delivery_state=AnnouncementDeliveryState.LEGACY_UNTRACKED,
+            delivery_settled_at=settled_at,
+        )
+        for _ in range(121)
+    )
+    client.force_login(_reader(username="history-no-silent-cut"))
+
+    cursor = ""
+    refs: list[str] = []
+    while True:
+        response = client.get(
+            HISTORY_PATH,
+            {
+                "limit": 25,
+                "outcome": AnnouncementDeliveryState.LEGACY_UNTRACKED,
+                **({"cursor": cursor} if cursor else {}),
+            },
+        )
+        assert response.status_code == 200
+        body = response.json()
+        refs.extend(item["ref"] for item in body["data"]["items"])
+        cursor = body["data"]["page"]["next_cursor"]
+        if not body["data"]["page"]["has_more"]:
+            break
+
+    assert set(refs) == {f"announcement:{item.pk}" for item in announcements}
+    assert len(refs) == len(set(refs)) == 121
 
 
 @pytest.mark.parametrize(

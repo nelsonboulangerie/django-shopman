@@ -3,6 +3,7 @@ import {
   MARKETING_V2_BOARD_PATH,
   MARKETING_V2_HISTORY_PATH,
   createMarketingV2Client,
+  marketingHistoryHref,
   type MarketingActionKind,
   type MarketingV2Transport,
 } from "~/generated/marketingClient";
@@ -10,7 +11,10 @@ import {
 describe("generated Marketing v2 client", () => {
   it("uses only the OpenAPI paths and same-origin session transport", async () => {
     const calls: Array<{ href: string; options: unknown }> = [];
-    const transport: MarketingV2Transport = async <T>(href: string, options: unknown) => {
+    const transport: MarketingV2Transport = async <T>(
+      href: string,
+      options: unknown,
+    ) => {
       calls.push({ href, options });
       return {} as T;
     };
@@ -21,7 +25,14 @@ describe("generated Marketing v2 client", () => {
       etag: 'W/"known"',
       requestId: "req_ui_42",
     });
-    await client.getMarketingHistory({ cursor: "opaque+signed", limit: 25 });
+    await client.getMarketingHistory({
+      cursor: "opaque+signed",
+      limit: 25,
+      outcome: "completed_with_failures",
+      platform: "whatsapp",
+      actor: "operator",
+      period: "7d",
+    });
 
     expect(calls).toEqual([
       {
@@ -40,17 +51,35 @@ describe("generated Marketing v2 client", () => {
         },
       },
       {
-        href: `${MARKETING_V2_HISTORY_PATH}?cursor=opaque%2Bsigned&limit=25`,
+        href: `${MARKETING_V2_HISTORY_PATH}?cursor=opaque%2Bsigned&limit=25&outcome=completed_with_failures&platform=whatsapp&actor=operator&period=7d`,
         options: { method: "GET", credentials: "same-origin" },
       },
     ]);
+  });
+
+  it("serializes stable history filters and omits the all-period default", () => {
+    expect(
+      marketingHistoryHref({
+        outcome: "unknown",
+        platform: "instagram",
+        actor: "automation",
+        period: "today",
+      }),
+    ).toBe(
+      `${MARKETING_V2_HISTORY_PATH}?outcome=unknown&platform=instagram&actor=automation&period=today`,
+    );
+    expect(marketingHistoryHref({ period: "all" })).toBe(
+      MARKETING_V2_HISTORY_PATH,
+    );
   });
 
   it("rejects an invalid cursor page size before touching the transport", () => {
     const transport = vi.fn() as MarketingV2Transport;
     const client = createMarketingV2Client(transport);
 
-    expect(() => client.getMarketingHistory({ limit: 101 })).toThrow(RangeError);
+    expect(() => client.getMarketingHistory({ limit: 101 })).toThrow(
+      RangeError,
+    );
     expect(transport).not.toHaveBeenCalled();
   });
 

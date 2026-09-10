@@ -333,13 +333,30 @@ class CampaignHistoryV2View(_CampaignV2Base):
     """A stable, opaque-cursor history page pinned to its first ``as_of``."""
 
     def get(self, request):
+        from shopman.backstage.marketing_history import (
+            InvalidHistoryFilter,
+            apply_history_filters,
+            cursor_collection,
+            parse_history_filters,
+        )
+
         limit = _history_v2_limit(request)
+        try:
+            filters = parse_history_filters(request.query_params)
+        except InvalidHistoryFilter as exc:
+            raise MarketingV2Problem(
+                status_code=422,
+                code=f"invalid_{exc.field}",
+                detail="presentation.invalid_filter",
+                field_errors={exc.field: ("presentation.invalid_filter",)},
+            ) from exc
+        collection = cursor_collection(_HISTORY_V2_COLLECTION, filters)
         raw_cursor = str(request.query_params.get("cursor") or "").strip()
         try:
             cursor = (
-                decode_cursor(raw_cursor, collection=_HISTORY_V2_COLLECTION)
+                decode_cursor(raw_cursor, collection=collection)
                 if raw_cursor
-                else first_cursor(collection=_HISTORY_V2_COLLECTION)
+                else first_cursor(collection=collection)
             )
         except InvalidMarketingCursor as exc:
             raise MarketingV2Problem(
@@ -357,6 +374,7 @@ class CampaignHistoryV2View(_CampaignV2Base):
             .select_related("rule", "template")
             .order_by("-created_at", "-pk")
         )
+        queryset = apply_history_filters(queryset, filters, as_of=cursor.as_of)
         if cursor.created_at is not None and cursor.pk is not None:
             queryset = queryset.filter(
                 Q(created_at__lt=cursor.created_at) | Q(created_at=cursor.created_at, pk__lt=cursor.pk)
@@ -371,7 +389,7 @@ class CampaignHistoryV2View(_CampaignV2Base):
                 last = page_rows[-1]
                 next_cursor = encode_cursor(
                     MarketingCursor(
-                        collection=_HISTORY_V2_COLLECTION,
+                        collection=collection,
                         as_of=cursor.as_of,
                         created_at=last.created_at,
                         pk=last.pk,

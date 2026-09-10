@@ -154,7 +154,11 @@ useHead({ title: "Painel · Marketing" });
           Agora não
         </button>
       </div>
-      <p v-if="decisionError" class="mt-2 text-sm text-destructive" role="alert">
+      <p
+        v-if="decisionError"
+        class="mt-2 text-sm text-destructive"
+        role="alert"
+      >
         {{ decisionError }}
       </p>
     </section>
@@ -224,36 +228,58 @@ useHead({ title: "Painel · Marketing" });
     <!-- Números do dia -->
     <section
       v-if="stats"
-      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4"
-      aria-label="Números de hoje"
+      class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5"
+      aria-label="Situação operacional"
     >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ stats.pending_count }}</p>
-        <p class="text-xs text-muted-foreground">Aguardando você</p>
+        <p class="text-2xl font-bold">{{ stats.pending_decision_count }}</p>
+        <p class="text-xs text-muted-foreground">Aguardando decisão</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ stats.published_today }}</p>
-        <p class="text-xs text-muted-foreground">Publicados hoje</p>
+        <p class="text-2xl font-bold">{{ stats.confirmed_targets_today }}</p>
+        <p class="text-xs text-muted-foreground">Entregas confirmadas hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ stats.audience_reached_today }}</p>
-        <p class="text-xs text-muted-foreground">Clientes alcançados</p>
+        <p class="text-2xl font-bold">
+          {{ stats.accepted_unconfirmed_targets_today }}
+        </p>
+        <p class="text-xs text-muted-foreground">
+          Aceitas, ainda sem confirmação
+        </p>
       </div>
       <div
         class="rounded-lg border px-3 py-2.5"
         :class="
-          stats.failed_today > 0
+          stats.failed_final_targets_today > 0
             ? 'border-destructive/40 bg-destructive/5'
             : 'border-border bg-card'
         "
       >
         <p
           class="text-2xl font-bold"
-          :class="stats.failed_today > 0 ? 'text-destructive' : ''"
+          :class="
+            stats.failed_final_targets_today > 0 ? 'text-destructive' : ''
+          "
         >
-          {{ stats.failed_today }}
+          {{ stats.failed_final_targets_today }}
         </p>
-        <p class="text-xs text-muted-foreground">Falharam</p>
+        <p class="text-xs text-muted-foreground">Falhas finais hoje</p>
+      </div>
+      <div
+        class="rounded-lg border px-3 py-2.5"
+        :class="
+          stats.unknown_targets_open > 0
+            ? 'border-amber-500/40 bg-amber-500/5'
+            : 'border-border bg-card'
+        "
+      >
+        <p
+          class="text-2xl font-bold"
+          :class="stats.unknown_targets_open > 0 ? 'text-amber-700' : ''"
+        >
+          {{ stats.unknown_targets_open }}
+        </p>
+        <p class="text-xs text-muted-foreground">Resultados incertos</p>
       </div>
     </section>
 
@@ -330,7 +356,9 @@ useHead({ title: "Painel · Marketing" });
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"
-          :quiet-hours-suspended-for-local-simulation="quietHoursSuspendedForLocalSimulation"
+          :quiet-hours-suspended-for-local-simulation="
+            quietHoursSuspendedForLocalSimulation
+          "
           @approve="onApprove"
           @reject="
             (pk) => {

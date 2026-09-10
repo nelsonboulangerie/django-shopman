@@ -170,6 +170,14 @@
             "title": "Created At",
             "type": "string"
           },
+          "decision_actor_policy": {
+            "enum": [
+              "operator",
+              "automation"
+            ],
+            "title": "Decision Actor Policy",
+            "type": "string"
+          },
           "delivery": {
             "$ref": "#/components/schemas/DeliveryAggregateProjectionV2"
           },
@@ -296,6 +304,7 @@
           "version",
           "state",
           "reason_code",
+          "decision_actor_policy",
           "facts",
           "platform_refs",
           "created_at",
@@ -1582,6 +1591,66 @@
               "maximum": 100,
               "minimum": 1,
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "outcome",
+            "required": false,
+            "schema": {
+              "enum": [
+                "not_started",
+                "fanout_pending",
+                "delivering",
+                "succeeded",
+                "completed_with_failures",
+                "unknown",
+                "cancelled",
+                "expired",
+                "legacy_untracked"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "platform",
+            "required": false,
+            "schema": {
+              "enum": [
+                "instagram",
+                "facebook",
+                "google_business",
+                "whatsapp"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "actor",
+            "required": false,
+            "schema": {
+              "enum": [
+                "operator",
+                "automation"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "period",
+            "required": false,
+            "schema": {
+              "default": "all",
+              "enum": [
+                "today",
+                "7d",
+                "30d",
+                "all"
+              ],
+              "type": "string"
             }
           },
           {

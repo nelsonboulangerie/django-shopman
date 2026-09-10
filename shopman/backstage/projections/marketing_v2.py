@@ -14,6 +14,7 @@ import re
 from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -50,6 +51,7 @@ AnnouncementState = Literal[
     "expired",
     "cancelled",
 ]
+DecisionActorPolicy = Literal["operator", "automation"]
 DeliveryState = Literal[
     "not_started",
     "fanout_pending",
@@ -256,6 +258,7 @@ class AnnouncementProjectionV2:
     version: int
     state: AnnouncementState
     reason_code: ReasonCode
+    decision_actor_policy: DecisionActorPolicy
     facts: AnnouncementFactsProjectionV2
     platform_refs: tuple[str, ...]
     created_at: datetime
@@ -554,6 +557,11 @@ def _project_announcement(
         version=announcement.version,
         state=effective_state,
         reason_code=_reason_code(effective_state),
+        decision_actor_policy=(
+            "operator"
+            if announcement.approved_by_id or announcement.rejected_by_id
+            else "automation"
+        ),
         facts=AnnouncementFactsProjectionV2(
             trigger=trigger,
             campaign_ref=(f"campaign:{announcement.rule_id}" if announcement.rule_id else ""),
@@ -817,12 +825,13 @@ def _operational_counters(
     pending_count: int,
     now: datetime,
 ) -> OperationalCountersProjectionV2:
-    local_now = timezone.localtime(now)
-    local_zone = timezone.get_current_timezone()
-    day_start = timezone.make_aware(datetime.combine(local_now.date(), time.min), local_zone)
-    next_day = timezone.make_aware(
-        datetime.combine(local_now.date() + timedelta(days=1), time.min),
-        local_zone,
+    shop_zone = ZoneInfo(configured_timezone_name())
+    local_now = timezone.localtime(now, shop_zone)
+    day_start = datetime.combine(local_now.date(), time.min, tzinfo=shop_zone)
+    next_day = datetime.combine(
+        local_now.date() + timedelta(days=1),
+        time.min,
+        tzinfo=shop_zone,
     )
     values = DeliveryTarget.objects.aggregate(
         accepted_today=Count(
