@@ -29,7 +29,7 @@ from shopman.shop.adapters.courier_machine import (
     TERMINAL_STATUSES,
     CourierError,
 )
-from shopman.shop.services.order_helpers import get_fulfillment_type
+from shopman.shop.services.order_helpers import get_fulfillment_type, merge_order_data
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +53,7 @@ def get_block(order) -> dict:
 
 
 def _save_block(order, block: dict, *, emit: dict | None = None) -> None:
-    data = dict(order.data or {})
-    data["courier"] = block
-    order.data = data
-    order.save(update_fields=["data", "updated_at"])
+    merge_order_data(order, {"courier": block})
     _emit_sse(order, emit or {"status": block.get("status", "")})
 
 

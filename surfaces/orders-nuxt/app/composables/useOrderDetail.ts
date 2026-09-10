@@ -1,11 +1,11 @@
-import { useOrderAdvanceIntention } from "./useOrderAdvanceIntention";
+import { useOrderIntention } from "./useOrderIntention";
 // Order detail read-side. Reads the expanded operator projection (items, timeline,
 // notes, fiscal links) and exposes the full action set. Writes go through the django
 // proxy and reconcile via refresh. Mirrors useOrdersBoard's in-flight guard.
 import type { CancellationReason, OperatorOrderProjection, OrderDetailResponse } from "~/types/orders";
 
 export function useOrderDetail(orderRef: string) {
-  const intentions = useOrderAdvanceIntention();
+  const intentions = useOrderIntention();
   const path = `/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/`;
   // Estação travada: a leitura volta 403 `station_locked` e a tela dizia "Pedido
   // não encontrado ou falha ao carregar" — o pedido existe, quem não se
@@ -23,6 +23,7 @@ export function useOrderDetail(orderRef: string) {
   const order = computed<OperatorOrderProjection | null>(() => data.value?.order ?? null);
 
   const busy = ref(false);
+  const mutationError = ref("");
 
   // ── Desafio de gerente ─────────────────────────────────────────────────────
   //
@@ -44,9 +45,10 @@ export function useOrderDetail(orderRef: string) {
   ): Promise<boolean> {
     if (busy.value) return false;
     busy.value = true;
+    mutationError.value = "";
     try {
-      if (action === "advance") {
-        await intentions.advance(orderRef, order.value?.actions?.find((item) => item.ref === "advance"), body ?? {});
+      if (["advance", "notes", "assign", "unassign"].includes(action)) {
+        await intentions.execute(orderRef, action, order.value?.actions?.find((item) => item.ref === action), body ?? {});
       } else {
         await $fetch(`/api/v1/backstage/orders/${encodeURIComponent(orderRef)}/${action}/`, {
           method: "POST", body: { ...(body ?? {}), ...(approval ? { manager_approval: approval } : {}) },
@@ -68,7 +70,13 @@ export function useOrderDetail(orderRef: string) {
         };
         return false;
       }
-      useSonner.error(httpErrorMessage(error, "Falha na ação. Tente de novo."));
+      mutationError.value = httpErrorMessage(error, error instanceof Error ? error.message : "Não foi possível confirmar o resultado da ação.");
+      useSonner.error(mutationError.value);
+      try {
+        await refresh();
+      } catch {
+        mutationError.value += " A leitura atualizada também falhou. Preserve o rascunho e tente atualizar.";
+      }
       return false;
     } finally {
       busy.value = false;
@@ -128,8 +136,8 @@ export function useOrderDetail(orderRef: string) {
     }
   }
 
-  async function saveNotes(notes: string): Promise<boolean> {
-    const ok = await act("notes", { notes });
+  async function saveNotes(notes: string, baseRevision?: string): Promise<boolean> {
+    const ok = await act("notes", { notes, ...(baseRevision ? { base_revision: baseRevision } : {}) });
     if (ok) useSonner.success("Notas salvas.");
     return ok;
   }
@@ -160,5 +168,5 @@ export function useOrderDetail(orderRef: string) {
     return ok;
   }
 
-  return { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
+  return { order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge };
 }

@@ -17,7 +17,7 @@ import type { CancellationReason } from "~/types/orders";
 const route = useRoute();
 const orderRef = computed(() => String(route.params.ref || ""));
 
-const { order, pending, error, refresh, busy, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
+const { order, pending, error, refresh, busy, mutationError, confirm, advance, reject, cancel, fetchCancellationReasons, settleCash, equipmentBack, requeueFiscal, resendPaymentLink, saveNotes, addComment, courierDispatch, courierCancel, courierQuote, managerChallenge, authorize, dismissManagerChallenge } =
   useOrderDetail(orderRef.value);
 
 // Realtime: SSE push (filtrado a este pedido) + poll de 30s + wake-on-visibility.
@@ -60,8 +60,36 @@ const hasCustomerContact = computed(() =>
 const projectedAction = (ref_: string) => order.value?.actions?.find((action) => action.ref === ref_);
 
 const notes = ref("");
-watch(order, (o) => { if (o) notes.value = o.kitchen_note || ""; }, { immediate: true });
-const notesDirty = computed(() => order.value != null && notes.value !== (order.value.kitchen_note || ""));
+const notesBase = ref("");
+const notesRevision = ref("");
+const notesDirty = computed(() => notes.value !== notesBase.value);
+const notesConflict = computed(() => notesDirty.value && (order.value?.kitchen_note || "") !== notesBase.value);
+function acceptLatestNotesBase() {
+  notesBase.value = order.value?.kitchen_note || "";
+  notesRevision.value = order.value?.revisions?.kitchen_note || "";
+}
+function useLatestNotes() {
+  acceptLatestNotesBase();
+  notes.value = notesBase.value;
+}
+watch(order, (o) => {
+  if (o && !notesDirty.value) {
+    notes.value = o.kitchen_note || "";
+    notesBase.value = notes.value;
+    notesRevision.value = o.revisions?.kitchen_note || "";
+  }
+}, { immediate: true });
+async function saveKitchenNote() {
+  const submitted = notes.value;
+  if (await saveNotes(submitted, notesRevision.value)) {
+    notesBase.value = submitted;
+    if (notes.value === submitted) {
+      notes.value = order.value?.kitchen_note || "";
+      notesBase.value = notes.value;
+    }
+    notesRevision.value = order.value?.revisions?.kitchen_note || "";
+  }
+}
 // Store-configured kitchen-note tags (Admin/Unfold). One tap appends the tag to the
 // note, preserving the free text; already-present tags aren't duplicated.
 const noteTags = computed(() => order.value?.kitchen_note_tags ?? []);
@@ -475,11 +503,20 @@ const fiscalHref = (link: { href?: string; url?: string }) => link.href || link.
           class="w-full rounded-md border bg-background p-2.5 text-sm outline-none focus:ring-1 focus:ring-ring"
         />
         <p class="text-xs text-muted-foreground">Aparece no ticket da cozinha (KDS).</p>
+        <div v-if="notesConflict" role="alert" class="rounded-md border p-3 text-sm">
+          <p>A nota mudou enquanto você escrevia. Seu texto está preservado acima.</p>
+          <p class="my-2 whitespace-pre-wrap">No servidor: {{ order.kitchen_note || "(vazia)" }}</p>
+          <div class="flex gap-2">
+            <button type="button" class="rounded border px-2 py-1" @click="acceptLatestNotesBase">Manter meu texto</button>
+            <button type="button" class="rounded border px-2 py-1" @click="useLatestNotes">Usar texto do servidor</button>
+          </div>
+        </div>
+        <p v-if="mutationError" role="alert" class="text-sm text-destructive">{{ mutationError }}</p>
         <button
           type="button"
-          :disabled="busy || !notesDirty"
+          :disabled="busy || !notesDirty || notesConflict"
           class="self-end rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-40"
-          @click="saveNotes(notes)"
+          @click="saveKitchenNote"
         >
           Salvar nota
         </button>

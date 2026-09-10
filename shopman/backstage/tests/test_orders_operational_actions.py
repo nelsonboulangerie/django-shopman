@@ -12,7 +12,7 @@ pytestmark = pytest.mark.django_db
 
 
 def actor(allowed=True):
-    return SimpleNamespace(is_active=True, is_staff=True, has_perm=lambda _: allowed)
+    return SimpleNamespace(pk=1, is_active=True, is_staff=True, has_perm=lambda _: allowed)
 
 
 @pytest.mark.parametrize("allowed", [True, False])
@@ -27,7 +27,7 @@ def test_confirmation_uses_domain_availability_and_actor_on_both_surfaces(allowe
     card = build_order_card(order, user=user)
     detail = build_operator_order(order, user=user)
     assert card.actions == detail.actions
-    confirm, reject = card.actions
+    confirm, reject = [action for action in card.actions if action.ref in {"confirm", "reject"}]
     assert confirm.enabled is (allowed and approved)
     assert bool(confirm.reason) is not confirm.enabled
     # Payment/availability blocking acceptance cannot hide the independent refusal.

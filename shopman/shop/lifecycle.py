@@ -316,13 +316,9 @@ def _mark_phase_complete(order, phase: str) -> None:
     meio-tempo, e um save cego do instance em memória perderia esse marcador.
     """
     try:
-        fresh = type(order).objects.filter(pk=order.pk).values_list("data", flat=True).first()
-        data = dict(fresh) if fresh else dict(order.data or {})
-        marks = dict(data.get(LIFECYCLE_DATA_KEY) or {})
-        marks[phase] = PHASE_DONE
-        data[LIFECYCLE_DATA_KEY] = marks
-        order.data = data
-        order.save(update_fields=["data", "updated_at"])
+        from shopman.shop.services.order_helpers import merge_order_data
+
+        merge_order_data(order, {phase: PHASE_DONE}, block=LIFECYCLE_DATA_KEY)
     except Exception:
         logger.warning(
             "lifecycle.mark_phase_complete falhou order=%s phase=%s", order.ref, phase, exc_info=True

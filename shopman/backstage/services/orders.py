@@ -232,18 +232,18 @@ def requeue_fiscal_emission(order, *, actor: str):
     order.emit_event(event_type="fiscal_requeued", actor=actor, payload={"topic": FISCAL_EMIT_NFCE})
 
 
-def save_kitchen_note(order, *, notes: str):
-    return operator_orders.save_kitchen_note(order, notes=notes)
+def save_kitchen_note(order, *, notes: str, expected_revision=None):
+    return operator_orders.save_kitchen_note(order, notes=notes, expected_revision=expected_revision)
 
 
-def assign_order(order, *, operator_id: int, operator_name: str, actor: str):
+def assign_order(order, *, operator_id: int, operator_name: str, actor: str, expected_revision=None):
     return operator_orders.assign_order(
-        order, operator_id=operator_id, operator_name=operator_name, actor=actor
+        order, operator_id=operator_id, operator_name=operator_name, actor=actor, expected_revision=expected_revision
     )
 
 
-def unassign_order(order, *, actor: str):
-    return operator_orders.unassign_order(order, actor=actor)
+def unassign_order(order, *, actor: str, expected_revision=None):
+    return operator_orders.unassign_order(order, actor=actor, expected_revision=expected_revision)
 
 
 def add_comment(order, *, note: str, actor: str):

@@ -462,3 +462,21 @@ describe("detalhe do pedido — falar com o cliente", () => {
     expect(tela.find("[data-contact-whatsapp]").exists()).toBe(true);
   });
 });
+
+
+describe("nota da cozinha — atualização concorrente", () => {
+  it("SSE preserva texto digitado e exige comparação antes de sobrescrever", async () => {
+    const w = abrir(order({ kitchen_note: "Base", revisions: { kitchen_note: "v1" } }));
+    await w.get("#order-notes").setValue("Meu rascunho");
+    detalhe.value = order({ kitchen_note: "Outra pessoa", revisions: { kitchen_note: "v2" } });
+    await w.vm.$nextTick();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
+    expect(w.text()).toContain("No servidor: Outra pessoa");
+    const save = w.findAll("button").find((button) => button.text() === "Salvar nota")!;
+    expect(save.attributes("disabled")).toBeDefined();
+    await w.findAll("button").find((button) => button.text() === "Manter meu texto")!.trigger("click");
+    expect(save.attributes("disabled")).toBeUndefined();
+    expect((w.get("#order-notes").element as HTMLTextAreaElement).value).toBe("Meu rascunho");
+    w.unmount();
+  });
+});

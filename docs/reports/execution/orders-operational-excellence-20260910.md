@@ -258,3 +258,24 @@ O recibo informa lifecycle pendente; não prova conclusão dos efeitos posterior
 WP02 seguem em andamento, sem T. Migração coordenada servidor/cliente: cliente antigo sem
 precondição recebe 400; rollback deve suspender avanço, preservar recibos e manter consulta,
 nunca reinstalar o advance inseguro para recuperar compatibilidade.
+
+## Retomada — WP02/WP06: contexto concorrente e rascunho
+
+D02 nota/atribuição agora releem Order sob lock, com revisões independentes. Recibo local
+cobre notas/atribuição e vincula a intenção à pessoa esperada além da permissão corrente.
+Três interleavings comprovados (courier, stamp de gateway, marcador lifecycle) passam a
+mesclar somente seu bloco/campo em JSON fresco. Demais writers continuam sob auditoria;
+não atribuir a eles o diagnóstico de perda sem prova.
+
+D09/D17: atualização SSE conserva texto/base; conflito no mesmo campo mostra versão do
+servidor e permite escolher explicitamente a base antes de salvar. Erro mantém explicação
+no recurso e tenta reconciliar a leitura. Recibo de nota antiga não anuncia texto novo como
+salvo; a consulta confirma a gravação anterior e preserva o novo rascunho.
+
+PostgreSQL: **31 passed (14,96s)**, incluindo conexões independentes para notas/atribuição,
+base de avanço concorrente e preservação de blocos pelos três writers. Gestor: **227 passed
+(3,19s)**; typecheck passou (anterior à última alteração de mensagem de falha de refresh).
+J02 sintético mantém texto durante SSE, J03 resolve conflito sem redigitação; sem medição
+humana. Migração sem DDL; ações exigem expected_actor_id/base/chave em cliente coordenado.
+Rollback conserva leitores/recibos e suspende mutações incompatíveis, sem reativar RMW antigo.
+WP02/WP06 seguem em andamento; troca de recurso/pessoa com draft e demais comandos pendentes.

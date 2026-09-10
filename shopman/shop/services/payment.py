@@ -1234,12 +1234,9 @@ def _stamp_gateway_check(order) -> None:
     é perguntar de novo cedo demais.
     """
     try:
-        data = dict(order.data or {})
-        payment = dict(data.get("payment") or {})
-        payment["gateway_checked_at"] = timezone.now().isoformat()
-        data["payment"] = payment
-        order.data = data
-        order.save(update_fields=["data", "updated_at"])
+        from shopman.shop.services.order_helpers import merge_order_data
+
+        merge_order_data(order, {"gateway_checked_at": timezone.now().isoformat()}, block="payment")
     # O carimbo é só o throttle da pergunta ao gateway, e a liquidação não pode
     # parar por causa dele.
     # silêncio-deliberado: sem o carimbo, o pior que acontece é perguntar cedo demais.

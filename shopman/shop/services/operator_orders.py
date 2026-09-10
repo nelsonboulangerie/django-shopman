@@ -8,7 +8,7 @@ the HTTP layer.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 
 from django.db import transaction
@@ -719,20 +719,26 @@ def settle_delivery_cash(
     return amount
 
 
-def save_kitchen_note(order: Order, *, notes: str) -> None:
+@transaction.atomic
+def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None = None) -> None:
     """Persist the operator's kitchen note on the order data payload.
 
     The note (preset tags + free text) is written by the operator in the gestor
     and surfaced on the KDS ticket for the kitchen. Distinct from the customer's
     ``order_notes`` (from checkout) and from timeline ``operator_comment`` entries.
     """
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order, field="kitchen_note"):
+        raise OrderStateConflict("Este campo mudou. Seu rascunho foi preservado; compare com o valor atual.")
     data = dict(order.data or {})
     data["kitchen_note"] = notes
     order.data = data
     order.save(update_fields=["data", "updated_at"])
 
 
-def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: str) -> None:
+@transaction.atomic
+def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: str, expected_revision: str | None = None) -> None:
     """Claim an order for an operator ("estou atendendo"), stored in Order.data.
 
     Contextual, not structural → lives in the JSONField (no migration), per the
@@ -740,6 +746,10 @@ def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: s
     """
     from django.utils import timezone
 
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order, field="assignment"):
+        raise OrderStateConflict("Este campo mudou. Seu rascunho foi preservado; compare com o valor atual.")
     data = dict(order.data or {})
     data["assignment"] = {
         "operator_id": operator_id,
@@ -755,8 +765,13 @@ def assign_order(order: Order, *, operator_id: int, operator_name: str, actor: s
     )
 
 
-def unassign_order(order: Order, *, actor: str) -> None:
+@transaction.atomic
+def unassign_order(order: Order, *, actor: str, expected_revision: str | None = None) -> None:
     """Release an order's operator claim. No-op if it was not claimed."""
+    Order.objects.select_for_update().get(pk=order.pk)
+    order.refresh_from_db()
+    if expected_revision is not None and expected_revision != operational_revision(order, field="assignment"):
+        raise OrderStateConflict("Este campo mudou. Seu rascunho foi preservado; compare com o valor atual.")
     data = dict(order.data or {})
     if data.pop("assignment", None) is None:
         return
@@ -939,4 +954,13 @@ def operational_actions(order: Order, *, user=None):
             enabled=not reason, reason=reason, method="POST", idempotency="required",
             payload_schema={"target_status": target, "base_revision": operational_revision(order)},
         ))
-    return tuple(actions)
+    for ref, label, field in (
+        ("notes", "Salvar nota", "kitchen_note"),
+        ("unassign", "Liberar atendimento", "assignment") if (order.data or {}).get("assignment") else ("assign", "Atender", "assignment"),
+    ):
+        actions.append(Action(
+            ref=ref, kind="mutation", label=label, enabled=authorized,
+            reason="" if authorized else permission_reason, method="POST", idempotency="required",
+            payload_schema={"base_revision": operational_revision(order, field=field)},
+        ))
+    return tuple(replace(action, payload_schema={**action.payload_schema, "expected_actor_id": getattr(user, "pk", None)}) for action in actions)

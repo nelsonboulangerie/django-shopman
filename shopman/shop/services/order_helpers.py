@@ -109,3 +109,27 @@ def customer_holds_the_goods(order) -> bool:
         return False
     commitment = get_commitment_date(order)
     return not (commitment and commitment > timezone.localdate())
+
+
+def merge_order_data(order, values: dict, *, block: str | None = None, remove: tuple[str, ...] = ()) -> None:
+    """Atualiza somente campos do writer sobre JSON fresco, sob lock de Order.
+
+    Utilitário local: sem rede, eventos ou inferência de status. Callers continuam
+    responsáveis por causalidade/idempotência de seus efeitos e por revalidar o
+    próprio bloco quando a alteração depende de uma versão anterior.
+    """
+    from django.db import transaction
+    from shopman.orderman.models import Order
+
+    with transaction.atomic():
+        locked = Order.objects.select_for_update().get(pk=order.pk)
+        data = dict(locked.data or {})
+        target = dict(data.get(block) or {}) if block else data
+        target.update(values)
+        for key in remove:
+            target.pop(key, None)
+        if block:
+            data[block] = target
+        locked.data = data
+        locked.save(update_fields=["data", "updated_at"])
+        order.data = data

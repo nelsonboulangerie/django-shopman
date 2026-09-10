@@ -1554,6 +1554,63 @@ class _OrderActionBase(APIView):
     permission_classes = [HasBackstagePermission]
     required_permission = "shop.manage_orders"
 
+    def _context_response(self, request, order, operation, inputs, execute):
+        from shopman.shop.services.operator_orders import OrderStateConflict
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationConflict,
+            RemoteMutationInProgress,
+            mutation_fingerprint,
+            run_idempotent_mutation,
+        )
+
+        if request.data.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Atualize o pedido antes de gravar.", "code": "actor_changed"}, status=409)
+        key = str(request.headers.get("Idempotency-Key") or request.data.get("idempotency_key") or "").strip()
+        base = str(request.data.get("base_revision") or "")
+        if not key or len(key) > 128 or not base:
+            return Response({"detail": "Atualize o pedido: a gravação exige intenção e revisão.", "code": "intention_required"}, status=400)
+        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": order.ref})
+        fingerprint = mutation_fingerprint({"scope": scope, "base": base, "inputs": inputs})
+
+        def apply():
+            try:
+                extra = execute(base) or {}
+            except OrderStateConflict as exc:
+                return {"detail": str(exc), "outcome": "not_applied", "intention": key}, 409
+            return {"ok": True, "ref": order.ref, "outcome": "applied", "intention": key, **extra}, 200
+
+        try:
+            result = run_idempotent_mutation(scope=scope, key=key, fingerprint=fingerprint, execute=apply)
+        except RemoteMutationConflict as exc:
+            return Response({"detail": str(exc), "code": "intention_conflict"}, status=409)
+        except RemoteMutationInProgress:
+            return Response({"outcome": "in_progress", "intention": key}, status=202)
+        order.refresh_from_db()
+        return Response({**result.response_body, "replayed": result.replayed, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+
+    def get(self, request, ref: str):
+        from shopman.shop.services.remote_mutations import (
+            RemoteMutationInProgress,
+            lookup_local_mutation,
+            mutation_fingerprint,
+        )
+
+        order, err = self._get_order(ref)
+        if err:
+            return err
+        operation = getattr(self, "intention_operation", "")
+        key = str(request.query_params.get("idempotency_key") or "")
+        if not operation or not key or len(key) > 128:
+            return Response({"detail": "Intenção indisponível."}, status=400)
+        scope = mutation_fingerprint({"version": 1, "actor": request.user.pk, "operation": f"orders.{operation}", "ref": ref})
+        try:
+            result = lookup_local_mutation(scope=scope, key=key)
+        except RemoteMutationInProgress:
+            result = None
+        if result is None:
+            return Response({"outcome": "unknown", "intention": key}, status=202)
+        return Response({**result.response_body, "replayed": True, "order": projection_data(build_operator_order(order, user=request.user))}, status=result.response_code)
+
     def _get_order(self, ref: str):
         order = orders_service.find_order(ref)
         if order is None:
@@ -1603,10 +1660,12 @@ class OrderAdvanceView(_OrderActionBase):
         if err:
             return err
         body = request.data or {}
+        if body.get("expected_actor_id") is not None and body.get("expected_actor_id") != request.user.pk:
+            return Response({"detail": "A identificação mudou. Atualize o pedido antes de continuar.", "code": "actor_changed"}, status=409)
         key = str(request.headers.get("Idempotency-Key") or body.get("idempotency_key") or "").strip()
         base = str(body.get("base_revision") or request.headers.get("If-Match") or "").strip('"')
         target = body.get("target_status")
-        if not key or len(key) > 128 or not base or not isinstance(target, str) or not target:
+        if not key or len(key) > 128 or not base or not isinstance(target, str) or not target or body.get("expected_actor_id") != request.user.pk:
             return Response({"detail": "Atualize o pedido: esta ação exige intenção, revisão e etapa de destino.", "code": "intention_required"}, status=400)
         equipment = body.get("equipment") or []
         if not isinstance(equipment, list) or any(not isinstance(value, str) for value in equipment):
@@ -2416,13 +2475,16 @@ class OrderCourierQuoteView(_OrderActionBase):
     ),
 )
 class OrderNotesView(_OrderActionBase):
+    intention_operation = "notes"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        notes = str(request.data.get("notes", "") or "")
-        orders_service.save_kitchen_note(order, notes=notes)
-        return Response({"ok": True, "ref": ref})
+        notes = request.data.get("notes", "")
+        if not isinstance(notes, str):
+            return Response({"detail": "Nota deve ser texto."}, status=400)
+        return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base))
 
 
 def _operator_identity(request) -> tuple[int, str]:
@@ -2439,22 +2501,28 @@ def _operator_identity(request) -> tuple[int, str]:
 
 
 class OrderAssignView(_OrderActionBase):
+    intention_operation = "assign"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
         operator_id, operator_name = _operator_identity(request)
-        orders_service.assign_order(order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request))
-        return Response({"ok": True, "ref": ref, "assigned_operator": operator_name})
+        def execute(base):
+            orders_service.assign_order(order, operator_id=operator_id, operator_name=operator_name, actor=_actor(request), expected_revision=base)
+            return {"assigned_operator": operator_name}
+
+        return self._context_response(request, order, "assign", {}, execute)
 
 
 class OrderUnassignView(_OrderActionBase):
+    intention_operation = "unassign"
+
     def post(self, request, ref: str):
         order, err = self._get_order(ref)
         if err:
             return err
-        orders_service.unassign_order(order, actor=_actor(request))
-        return Response({"ok": True, "ref": ref})
+        return self._context_response(request, order, "unassign", {}, lambda base: orders_service.unassign_order(order, actor=_actor(request), expected_revision=base))
 
 
 class OrderCommentView(_OrderActionBase):

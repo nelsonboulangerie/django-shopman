@@ -15,7 +15,7 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from shopman.orderman.models import Directive, Order, OrderItem
 
-from shopman.backstage.tests._order_intent import advance_payload
+from shopman.backstage.tests._order_intent import advance_payload, context_payload
 from shopman.shop.models import Shop
 
 
@@ -134,7 +134,7 @@ def test_assign_then_unassign_roundtrip(client, operator, order):
     client.force_login(operator)
     ref = order.ref
 
-    assign = client.post(reverse("api-backstage-order-assign", args=[ref]))
+    assign = client.post(reverse("api-backstage-order-assign", args=[ref]), context_payload(client, ref, "assign"), content_type="application/json")
     assert assign.status_code == 200
     order.refresh_from_db()
     assert order.data["assignment"]["operator_id"] == operator.pk
@@ -145,7 +145,7 @@ def test_assign_then_unassign_roundtrip(client, operator, order):
     assigned = next(c for c in cards if c["ref"] == ref)
     assert assigned["assigned_operator"] == (operator.get_full_name().strip() or operator.get_username())
 
-    unassign = client.post(reverse("api-backstage-order-unassign", args=[ref]))
+    unassign = client.post(reverse("api-backstage-order-unassign", args=[ref]), context_payload(client, ref, "unassign"), content_type="application/json")
     assert unassign.status_code == 200
     order.refresh_from_db()
     assert "assignment" not in order.data
@@ -223,7 +223,7 @@ def test_reject_conflicts_when_order_was_auto_confirmed(client, operator, order)
 @pytest.mark.django_db
 def test_save_notes_persists(client, operator, order):
     client.force_login(operator)
-    response = client.post(reverse("api-backstage-order-notes", args=[order.ref]), {"notes": "Separar"})
+    response = client.post(reverse("api-backstage-order-notes", args=[order.ref]), context_payload(client, order.ref, "notes", notes="Separar"), content_type="application/json")
     assert response.status_code == 200
     order.refresh_from_db()
     assert order.data["kitchen_note"] == "Separar"
@@ -346,3 +346,20 @@ def test_advance_receipt_is_private_and_lookup_does_not_create_it(client, operat
     assert IdempotencyKey.objects.count() == before
     client.force_login(plain_staff)
     assert client.get(url, {"idempotency_key": "missing"}).status_code == 403
+
+
+@pytest.mark.django_db
+def test_context_mutations_merge_independent_fields_and_refuse_stale_note(client, operator, order):
+    client.force_login(operator)
+    note = context_payload(client, order.ref, "notes", notes="Sem cebola")
+    claim = context_payload(client, order.ref, "assign")
+    note_url = reverse("api-backstage-order-notes", args=[order.ref])
+    assert client.post(note_url, note, content_type="application/json").status_code == 200
+    assert client.post(reverse("api-backstage-order-assign", args=[order.ref]), claim, content_type="application/json").status_code == 200
+    response = client.post(note_url, {**note, "idempotency_key": "other-intention", "notes": "Sem alho"}, content_type="application/json")
+    assert response.status_code == 409
+    assert response.json()["order"]["kitchen_note"] == "Sem cebola"
+    order.refresh_from_db()
+    assert order.data["assignment"]["operator_id"] == operator.pk
+    assert order.data["kitchen_note"] == "Sem cebola"
+    assert client.post(note_url, note, content_type="application/json").json()["replayed"] is True
