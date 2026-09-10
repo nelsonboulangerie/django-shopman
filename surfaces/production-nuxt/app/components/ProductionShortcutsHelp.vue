@@ -69,13 +69,11 @@ const groups: Array<{
             >
               <span class="min-w-0">{{ item.label }}</span>
               <span class="flex shrink-0 items-center gap-1">
-                <kbd
+                <OperatorKbd
                   v-for="key in item.keys"
                   :key="key"
-                  class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
                   aria-hidden="true"
-                  >{{ key }}</kbd
-                >
+                  >{{ key }}</OperatorKbd>
               </span>
             </li>
           </ul>

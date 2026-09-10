@@ -94,7 +94,7 @@ function onSearchEscape() {
       <div class="relative flex-1">
         <Icon name="lucide:search" class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
         <UiInput ref="searchInputRef" v-model="search" class="h-11 pl-9 pr-12 text-base" type="search" placeholder="Buscar produto por nome ou código" autofocus @keydown.enter.prevent="onSearchEnter" @keydown.esc.prevent="onSearchEscape" />
-        <kbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground" aria-hidden="true">F3</kbd>
+        <OperatorKbd class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2" aria-hidden="true">F3</OperatorKbd>
       </div>
       <UiPopover>
         <UiPopoverTrigger as-child>

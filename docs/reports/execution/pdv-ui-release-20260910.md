@@ -53,3 +53,13 @@ Desconto pelo numpad mantém seleção enquanto o operador digita o valor.
 Ensaio completo atualizado: falha HTTP 503 simulada preservou seleção; nova
  tentativa com Django real concluiu a seleção e devolveu Pagamento. Fechamento
 confirmado no banco em R$ 24,75, pedido PDV-260910-P32 (35,65s).
+
+## Ajuste visual de cabeçalho e atalhos
+
+Cabeçalho agora mostra apenas X itens com tipografia do título anterior; Selecionar
+ e Concluir usam pills. A altura acompanha o cabeçalho de contexto por ResizeObserver,
+com divisórias confirmadas em y=97px no tablet. A folga acima das ações da linha
+ativa diminuiu 6px. OperatorKbd centraliza as indicações dos apps operacionais,
+com variante inversa para botões sólidos; atalhos e semântica preservados.
+847 testes e typecheck do PDV, 220 testes do kit e typecheck/8 testes de Produção
+passaram. Ensaio completo passou com pedido sintético PDV-260910-R58 (38,32s).

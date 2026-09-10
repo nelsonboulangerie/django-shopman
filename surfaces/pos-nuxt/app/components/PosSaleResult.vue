@@ -160,7 +160,7 @@ function onNewSale() {
       <!-- CTA dominante -->
       <UiButton size="lg" class="h-14 min-w-64 gap-2 text-base" @click="onNewSale">
         {{ pixPending ? "Nova venda mesmo assim" : "Nova venda" }}
-        <kbd class="rounded border border-primary-foreground/30 bg-transparent px-1.5 py-0.5 font-mono text-xs font-medium opacity-80" aria-hidden="true">F2</kbd>
+        <OperatorKbd variant="inverse" aria-hidden="true">F2</OperatorKbd>
       </UiButton>
       <p v-if="countdown > 0" class="text-xs text-muted-foreground" role="status">
         Nova venda em {{ countdown }}s · toque em qualquer lugar para ficar
