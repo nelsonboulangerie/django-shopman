@@ -121,7 +121,9 @@ class TestProductionChainE2E:
         # 3. MISE EN PLACE — a lista do dia escala o insumo pelo coeficiente.
         mise = build_production_mise_en_place(selected_date=today)
         farinha = next(line for line in mise.lines if line.sku == "FARINHA")
-        assert farinha.quantity_display == "6 kg"  # 12/10 × 5kg
+        # O chão de fábrica pesa em gramas; o alvo operacional preserva a
+        # precisão configurada da balança mesmo quando a ficha nasceu em kg.
+        assert farinha.quantity_display == "6000 g"  # 12/10 × 5 kg
 
         # 4. START
         wo = WorkOrder.objects.get(ref=wo_ref)
