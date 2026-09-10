@@ -1477,6 +1477,62 @@ class Command(BaseCommand):
         hard_delete(PaymentTransaction)
         PaymentIntent.objects.all().delete()
 
+        # Marketing é um ledger protegido e precisa sair antes de cliente, catálogo e
+        # usuário. Não basta apagar ``Announcement`` no fim: snapshots ainda ligados a
+        # clientes usam SET_NULL, mas a própria constraint exige customer OU
+        # subscription_ref. O SET_NULL intermediário portanto falha antes de o anúncio
+        # ser alcançado. A ordem abaixo percorre o grafo do filho para a raiz; raw delete
+        # é deliberado porque os eventos/artefatos são imutáveis durante a operação do
+        # app, mas ``seed --flush`` é justamente o boundary destrutivo já protegido pelo
+        # guard de ambiente acima.
+        from shopman.shop.models import (
+            AudienceSnapshot,
+            AudienceSnapshotMember,
+            DeliveryAttempt,
+            DeliveryReconciliation,
+            DeliveryTarget,
+            MarketingAISuggestion,
+            MarketingAISuggestionEvent,
+            MarketingAuditEvent,
+            MarketingCommandReceipt,
+            MarketingConfirmation,
+            MarketingContentArtifact,
+            MarketingOutbox,
+            MarketingPlatformAuditEvent,
+            MarketingQuotaUsage,
+            MarketingSafetyState,
+            MarketingSecurityEvent,
+            MarketingTestReceipt,
+            UserNotification,
+            UserNotificationEvent,
+        )
+
+        for model in [
+            DeliveryReconciliation,
+            DeliveryAttempt,
+            DeliveryTarget,
+            MarketingOutbox,
+            MarketingAISuggestionEvent,
+            MarketingSecurityEvent,
+            MarketingPlatformAuditEvent,
+            MarketingAuditEvent,
+            UserNotificationEvent,
+            MarketingConfirmation,
+            MarketingAISuggestion,
+            MarketingContentArtifact,
+            AudienceSnapshotMember,
+            AudienceSnapshot,
+            MarketingCommandReceipt,
+            MarketingTestReceipt,
+            MarketingQuotaUsage,
+            MarketingSafetyState,
+            UserNotification,
+            Announcement,
+            Campaign,
+            AnnouncementTemplate,
+        ]:
+            hard_delete(model)
+
         # Orderman
         for model in [
             FulfillmentItem,
@@ -1577,9 +1633,6 @@ class Command(BaseCommand):
         DayClosing.objects.all().delete()
 
         # Shop
-        Announcement.objects.all().delete()
-        Campaign.objects.all().delete()
-        AnnouncementTemplate.objects.all().delete()
         Coupon.objects.all().delete()
         Promotion.objects.all().delete()
         # O catálogo de QC é parte do cenário canônico, não configuração que o
