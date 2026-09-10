@@ -132,3 +132,51 @@
   --sidebar-border: #463528;
   --sidebar-ring: #d4a53f;
 }
+
+/* ============================================================================
+   <select> NATIVO — chevron próprio com respiro (pedido Pablo 2026-09-10)
+
+   Os apps de operador usam ~46 `<select>` nativos com classe ad hoc
+   (`h-9 rounded-md border bg-background px-2 text-sm`). Sem `appearance: none`
+   o navegador desenha a seta dele, colada na borda direita, e cada plataforma
+   desenha uma seta diferente. O `@tailwindcss/forms` roda em `strategy: "class"`
+   em todos os apps, então NADA estiliza o select nativo hoje — esta é a única
+   regra, num lugar só, sem tocar call site.
+
+   Chevron: SVG inline em `background-image` (o `chevron-down` do Lucide, o mesmo
+   do UiSelect do storefront — os apps de operador não têm UiSelect), 1rem, a
+   0.625rem da borda direita. A cor é a de
+   `--muted-foreground` de cada tema, embutida no SVG — data URI não lê
+   `currentColor` nem custom property, por isso são DOIS SVGs (claro e `.dark`).
+   Alternativa descartada: `mask-image` + `background-color: currentColor` seguiria
+   a cor do texto, mas a máscara recorta o elemento INTEIRO (texto e borda
+   incluídos) e `<select>` não aceita pseudo-elemento para isolar o desenho.
+
+   `padding-inline-end: 2.25rem !important` reserva 1rem de ícone + 0.625rem de
+   margem + ~0.625rem de folga. O `!important` é necessário: `px-2`/`px-3` dos
+   call sites vivem na layer `utilities`, que vence a `base` por ordem de layer,
+   não por especificidade — sem ele o call site engoliria o espaço e o texto
+   passaria por baixo do chevron. Quem precisar de exceção usa `!pr-…`; quem
+   não quiser o chevron (ex.: select em barra invertida) usa `bg-none`.
+
+   Fora do escopo, de propósito: `background-color`, borda, altura e raio
+   continuam do call site (`bg-background`/`bg-transparent`, `border`, `h-9`…).
+   `[multiple]`/`[size]` ficam de fora (listbox, sem seta). `option`/`optgroup`
+   não são tocados: no dark o popup segue `color-scheme: dark` do app.
+   ============================================================================ */
+@layer base {
+  select:not([multiple]):not([size]) {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%236e5a48' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 0.625rem center;
+    background-size: 1rem;
+    padding-inline-end: 2.25rem !important;
+  }
+
+  .dark select:not([multiple]):not([size]) {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23c2ae96' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+}

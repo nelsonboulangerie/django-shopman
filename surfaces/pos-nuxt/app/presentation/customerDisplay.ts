@@ -78,6 +78,51 @@ export function displayPhase(inputs: {
   return inputs.checkoutMode ? "payment" : "sale";
 }
 
+/**
+ * Total do carrinho ANTES do desconto manual, em centavos: o preço de
+ * RESTAURAÇÃO da linha (`price_q`, que já é pós-desconto automático e
+ * pré-desconto manual — ver `lineTotalQ`) × a quantidade da tela. É a mesma
+ * régua do review do orquestrador, onde `total_q + discount_q` é o total antes
+ * do desconto manual — as duas fontes riscam o MESMO número na parede.
+ */
+export function cartGrossTotalQ(items: POSCartItem[]): number {
+  return items.reduce((sum, item) => sum + item.price_q * item.qty, 0);
+}
+
+/** Os três números do rodapé da venda: total, desconto e o total riscado. */
+export interface SaleTotalsView {
+  totalDisplay: string;
+  /** "" quando não há desconto. */
+  discountDisplay: string;
+  /** "" quando não há desconto — riscar um número igual ao cobrado é ruído. */
+  grossTotalDisplay: string;
+}
+
+/**
+ * O review do orquestrador, quando existe, prevalece (é a autoridade final e
+ * já vem formatado). Sem ele, a MESMA estimativa da tela de venda
+ * (`cartNetTotalQ`), com o desconto medido pela mesma régua — assim o rodapé
+ * não muda de história quando o review chega no "Cobrar".
+ */
+export function saleTotalsView(items: POSCartItem[], review: POSSaleReviewProjection | null): SaleTotalsView {
+  const view: SaleTotalsView = { totalDisplay: "", discountDisplay: "", grossTotalDisplay: "" };
+  view.totalDisplay = review?.total_display || formatBRL(cartNetTotalQ(items));
+  if (review) {
+    if (review.discount_q > 0) {
+      view.discountDisplay = review.discount_display;
+      view.grossTotalDisplay = formatBRL(review.total_q + review.discount_q);
+    }
+    return view;
+  }
+  const netQ = cartNetTotalQ(items);
+  const grossQ = cartGrossTotalQ(items);
+  if (grossQ > netQ) {
+    view.discountDisplay = formatBRL(grossQ - netQ);
+    view.grossTotalDisplay = formatBRL(grossQ);
+  }
+  return view;
+}
+
 /** Monta o snapshot plano que viaja pelo BroadcastChannel. */
 export function buildCustomerDisplaySnapshot(
   inputs: CustomerDisplayInputs,
@@ -91,6 +136,7 @@ export function buildCustomerDisplaySnapshot(
     itemCount: 0,
     totalDisplay: "",
     discountDisplay: "",
+    grossTotalDisplay: "",
     pix: null,
     changeDisplay: "",
     customerFirstName: "",
@@ -102,12 +148,8 @@ export function buildCustomerDisplaySnapshot(
     snapshot.items = inputs.items.map((item) => displayItemView(item, inputs.discountReasons));
     snapshot.itemCount = inputs.items.reduce((sum, item) => sum + item.qty, 0);
     // A MESMA soma da tela de venda (`cartNetTotalQ`). O review, quando existe,
-    // prevalece.
-    snapshot.totalDisplay = inputs.review?.total_display
-      || formatBRL(cartNetTotalQ(inputs.items));
-    snapshot.discountDisplay = inputs.review && inputs.review.discount_q > 0
-      ? inputs.review.discount_display
-      : "";
+    // prevalece. Com desconto, o total ANTES dele viaja junto, para ser riscado.
+    Object.assign(snapshot, saleTotalsView(inputs.items, inputs.review));
     return snapshot;
   }
 

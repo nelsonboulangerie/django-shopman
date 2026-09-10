@@ -35,6 +35,24 @@ describe("receiptContactOffer — a matriz, igual para e-mail e para CPF", () =>
     expect(offer.title).toContain("CPF");
   });
 
+  // A dúvida do balcão (10/09): cliente já na comanda, CPF pedido na nota, e a
+  // pergunta "salvar?" deixava no ar se desmarcar tirava o CPF da nota ou se
+  // marcar trocava o cliente. Toda oferta abre dizendo que a nota já está
+  // decidida, e a de "salvar" diz que o cliente da comanda é quem ganha o dado.
+  it("toda oferta diz primeiro que a nota já está decidida", () => {
+    const save = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: { name: "Ana Prado" } });
+    expect(save.hint.startsWith("Este CPF sai na nota de qualquer jeito.")).toBe(true);
+    expect(save.hint).toContain("fica também no cadastro de Ana");
+    expect(save.hint).toContain("Desmarcado, vale só nesta venda");
+
+    const update = receiptContactOffer({ field: "email", typed: "contador@example.org", customer: ANA });
+    expect(update.hint.startsWith("Este e-mail recebe a nota de qualquer jeito.")).toBe(true);
+    expect(update.hint).toContain("só muda se você mandar");
+
+    const create = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
+    expect(create.hint.startsWith("Este CPF sai na nota de qualquer jeito.")).toBe(true);
+  });
+
   it("e-mail IGUAL ao do cadastro: nada a perguntar", () => {
     const offer = receiptContactOffer({ field: "email", typed: "ANA@example.org", customer: ANA });
     expect(offer.kind).toBe("none");
@@ -92,7 +110,7 @@ describe("receiptContactOffer — a matriz, igual para e-mail e para CPF", () =>
     expect(email.hint).toContain("Desmarque para vender sem cadastrar");
 
     const taxId = receiptContactOffer({ field: "tax_id", typed: CPF_A, customer: null });
-    expect(taxId.hint).toContain("Este CPF fica salvo como cliente");
+    expect(taxId.hint).toContain("Marcado, fica salvo como cliente");
     expect(taxId.summaryLine).toContain("ou vai para o cadastro que já o tem");
   });
 
