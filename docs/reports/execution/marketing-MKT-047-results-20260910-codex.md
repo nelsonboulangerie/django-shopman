@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T4 interrompida por falha crítica e em rechecagem
-**Commit sob avaliação:** `9fd2b6a5d` + correção factual `bcc00fc48`  
+**Estado:** coleta P01 em andamento; T4 original falhou, regressão técnica aprovada e repetição humana pendente
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d` e `92b4de2ea`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -109,3 +109,27 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
 - Evidência inicial: 25 testes focados e o typecheck passaram; no navegador real o
   rascunho P01 foi restaurado sem redigitação. T4 original permanece **falha** e será
   repetida integralmente depois da validação da suíte, sem reclassificar o incidente.
+
+### Regressão técnica facilitada — não conta como participante MKT047
+
+- O facilitador retomou o rascunho preservado, concluiu a campanha e percorreu o fluxo
+  real do app local: disparo manual → contagem de 12 pessoas → confirmação → revisão →
+  publicação pelo simulador → resultado assentado.
+- A execução criou 1 destino de Instagram e 12 de WhatsApp; os 13 attempts terminaram
+  `confirmed` com receipts `sim_…` e `external_effect=false`. Nenhum provider externo foi
+  chamado.
+- O ensaio encontrou três lacunas adicionais antes do novo gate humano: o modelo exigia
+  produto sem oferecer um seletor; a prévia de revisão voltava ao produto de amostra; e
+  uma contagem anterior podia habilitar o botão durante o debounce da nova escolha.
+- A correção `92b4de2ea` oferece produtos como **Nome (SKU)** antes da senha, sela o SKU e
+  o hash factual na confirmação, reaproveita exatamente o conteúdo autorizado na criação,
+  invalida contagens antigas e usa o SKU da ocorrência na prévia fiel.
+- O comprovante de aprovação passou a sobreviver à recarga pelo contrato persistente do
+  servidor. Duas recargas manuais do anúncio 41 mantiveram visíveis público de 12 pessoas,
+  Instagram + WhatsApp, modo imediato, instante, versão e receipt
+  `5c668017-35f9-48d2-bb4c-3791c4e3af0d`.
+- Validação do diff final: 172 testes de backend e 239 de interface passaram, junto de
+  typecheck, lint, `ruff`, contrato gerado e `git diff --check`.
+- Esta evidência aprova a regressão técnica, mas **não** transforma o facilitador em P01
+  nem reclassifica T4. O próximo passo do gate é P01 repetir T4 sem ajuda e confirmar que
+  não houve redigitação, tela perdida ou consulta externa.
