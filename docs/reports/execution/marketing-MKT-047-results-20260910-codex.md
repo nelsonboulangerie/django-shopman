@@ -1,6 +1,6 @@
 # MKT-047 — resultados das sessões de gestores
 
-**Estado:** coleta P01 em andamento; T1–T8 executadas, T9 pendente
+**Estado:** sessão P01 concluída; T1–T9 executadas; P02–P03 pendentes
 **Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8` e `6c4bbc3f2`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
@@ -21,7 +21,7 @@ Em 2026-09-10, antes da sessão P01:
 
 | Código | Perfil operacional resumido, sem identificação | Data | Estado |
 |---|---|---|---|
-| P01 | proprietário/gestor | 2026-09-10 | em andamento |
+| P01 | proprietário/gestor | 2026-09-10 | concluída |
 | P02 | gestor real | — | pendente |
 | P03 | gestor real | — | pendente |
 | P04 | participante cumulativo do piloto | — | futuro |
@@ -44,7 +44,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 7 | não | 1 confirmação + TOTP; inscrição assistida | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | não | A consulta funcionou, mas P01 precisou perguntar de qual autenticador viria o código: o device local não havia sido inscrito no aparelho. Comprovante `b5ecbefe-a1eb-40ff-876a-829118671d09`, versão 4, uma consulta e zero reenvios. |
 | P01 | 7R1 | sim | 1 confirmação + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | sim, no escopo de T7 | Repetição após enrollment concluída sem pedido de ajuda. Comprovante `7cdb3a33-2ccb-4759-9949-cc6c4372b893`, versão 5, somente WhatsApp, uma consulta e zero reenvios; ledger final 13/13. P01 apontou desalinhamento visual das casas do código depois de concluir. |
 | P01 | 8 | sim | 2 inferidas + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada; sem espera relatada | 1 autenticador, exigido pela segurança | rollback não acionado; gravação concluída | sim, no escopo da configuração | Substituiu a referência indisponível pelo fluxo local aprovado. Comprovante `1e81fb34-29f6-4f58-9d9b-b6773be51db2`, versão 3→4; teste externo permaneceu bloqueado por não existir aparelho verificado e nenhum envio foi criado. |
-| P01 | 9 | — | — | — | — | — | — | — | — | pendente |
+| P01 | 9 | sim | login + 1 retomada após a expiração | somente credenciais de login | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | sim | sim, no escopo da retomada | Após a expiração controlada, voltou a `/announcements/42`, retomou e recebeu uma confirmação nova e vazia para a versão 1, público 12 e Instagram + WhatsApp. O anúncio permaneceu pendente, sem aprovação, outbox ou destinos. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -244,6 +244,28 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   resumo compacto, botões de largura integral e todo o gate visível sem rolagem na
   viewport do ensaio. Validação: 243 testes da interface, typecheck, lint focado e
   `git diff --check` passaram.
+
+### P01/T9 — sessão expirada sem perder nem executar a decisão
+
+- O facilitador abriu a confirmação de publicação do anúncio local 42, preencheu a
+  frase e a credencial de ensaio sem confirmar, identificou exatamente a sessão ativa
+  do perfil descartável e a expirou no servidor. Nenhuma sessão de outro app foi
+  alterada.
+- Ao tentar confirmar, P01 recebeu o login de sessão encerrada. Depois de entrar, o app
+  voltou à mesma URL `/announcements/42`, declarou que a decisão não havia sido enviada
+  e ofereceu **“Retomar e reconfirmar”**. Não houve troca de rota ou busca manual do
+  anúncio.
+- P01 acionou a retomada sem pedir ajuda adicional e recebeu uma confirmação nova, com
+  os campos sensíveis novamente vazios. O servidor reapresentou versão 1, público de 12
+  pessoas, Instagram e WhatsApp, além das diferenças entre publicação pública e
+  mensagem direta. A segunda confirmação não foi autorizada, conforme o roteiro.
+- A leitura posterior comprovou `pending_review`, versão 1,
+  `delivery_state=not_started` e `published_at=null`. Não existe receipt de aprovação:
+  o único receipt ligado ao anúncio é o `fire` que o criou em T5. Também permanecem
+  zero `MarketingOutbox` e zero `DeliveryTarget`.
+- Classificação: retomada funcional aprovada, com intenção preservada, challenge antigo
+  descartado, contexto revalidado e efeito externo inexistente. O retorno visual foi
+  percebido como imediato, mas o limite de 1 segundo não é reivindicado sem telemetria.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
