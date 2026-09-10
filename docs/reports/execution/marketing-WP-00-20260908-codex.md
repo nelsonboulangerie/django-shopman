@@ -2472,9 +2472,11 @@ migration de merge vazia preserva as folhas independentes do Backstage. A integr
 também revelou e fechou 2 vulnerabilidades moderadas + 1 alta no lock do operator-kit;
 o CI passou a auditar kit e Marketing separadamente.
 
-No fechamento, mais nove commits de `origin/main` foram incorporados sem conflito. O
+No fechamento, mais treze commits de `origin/main` foram incorporados sem conflito. O
 novo chevron compartilhado dos `select` foi conferido nas sete capturas afetadas; as
 referências foram atualizadas de modo dirigido e a matriz completa passou novamente.
+Os dois commits finais de impressão compartilhada de Produção passaram 48 testes
+dirigidos; o `operator-kit` integrado fechou 26 arquivos / 237 testes.
 
 O preflight hermético passou 19 drills backend + 4 probes, 56 testes de runtime,
 diagnóstico `OK` sem provider, carga de 200 mil candidatos/20 mil destinos, 245 testes

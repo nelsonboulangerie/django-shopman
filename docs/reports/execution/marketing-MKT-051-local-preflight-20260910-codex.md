@@ -14,12 +14,15 @@ automaticamente sem descartar nenhum deles. As duas folhas legítimas de migrati
 Backstage foram preservadas por uma migration de merge vazia; nenhum histórico foi
 renumerado ou reescrito.
 
-Antes do fechamento, outros nove commits já presentes em `origin/main` também foram
-incorporados. Eles trouxeram ajustes de PDV/display e um chevron canônico para os
-`select` nativos do `operator-kit`; o merge permaneceu limpo e a branch terminou sem
-commits pendentes de `origin/main`. As sete referências visuais que contêm esses
-controles foram revistas e atualizadas somente depois de confirmar que a diferença se
-limitava ao novo ícone e ao espaço reservado para ele.
+Antes do fechamento, outros treze commits já presentes em `origin/main` também foram
+incorporados. Nove trouxeram ajustes de PDV/display e um chevron canônico para os
+`select` nativos do `operator-kit`; os dois finais trouxeram a impressão compartilhada
+de etiquetas de Produção, seguidos por dois commits isolados de reconhecimento da rota
+do display do PDV. Os merges permaneceram limpos e a branch terminou sem
+commits pendentes de `origin/main`. As sete referências visuais que contêm `select`
+foram revistas e atualizadas somente depois de confirmar que a diferença se limitava
+ao novo ícone e ao espaço reservado para ele. A integração final passou ainda 48 testes
+de seed/release/impressão e o kit compartilhado subiu para 26 arquivos / 237 testes.
 
 O merge também trouxe um componente novo do `operator-kit`. A instalação limpa revelou
 um lock ainda em Vitest 4.1.9 e SVGO 4.0.2, com duas vulnerabilidades moderadas e uma
@@ -62,7 +65,7 @@ que o processo concorrente terminou, o mesmo teste, sem alteração de código, 
 - Marketing Nuxt: 34 arquivos / 245 testes, lint, typecheck e build verdes.
 - Browser: 1 E2E, 2 fluxos de acessibilidade e 69/69 estados visuais verdes, incluindo
   uma segunda passagem integral após a atualização dirigida dos sete `select`.
-- Segurança: 4 contratos Marketing, audit Marketing zero; 25 arquivos / 234 testes do
+- Segurança: 4 contratos Marketing, audit Marketing zero; 26 arquivos / 237 testes do
   operator-kit e audit do kit zero.
 - Migration drift, Ruff, YAML e `git diff --check`: verdes.
 
