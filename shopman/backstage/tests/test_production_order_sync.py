@@ -80,6 +80,18 @@ def apply_quick_finish(**kwargs):
     return _raw_apply_quick_finish(**body)
 
 
+def _five_saleable_and_five_lost() -> list[dict[str, object]]:
+    """QC KISS: total da fornada, uma saída vendável e um único déficit explicado."""
+    return [
+        {"quantity": "5", "quality_grade_ref": "standard"},
+        {
+            "quantity": "5",
+            "quality_defect_ref": "overbaked",
+            "loss": True,
+        },
+    ]
+
+
 @pytest.fixture
 def recipe(db):
     return Recipe.objects.create(
@@ -299,7 +311,8 @@ def test_finish_fails_closed_when_saleable_output_does_not_cover_orders(recipe):
     with pytest.raises(ProductionOrderShortError) as exc_info:
         apply_finish(
             work_order_id=work_order.pk,
-            quantity="5",
+            quantity="10",
+            partition=_five_saleable_and_five_lost(),
             actor="production:test",
             force=True,
             override_reason="quebra acima do esperado",
@@ -331,7 +344,8 @@ def test_finish_guard_recovers_when_order_link_callback_was_lost(recipe):
     with pytest.raises(ProductionOrderShortError) as exc_info:
         apply_finish(
             work_order_id=work_order.pk,
-            quantity="5",
+            quantity="10",
+            partition=_five_saleable_and_five_lost(),
             actor="production:test",
             expected_rev=work_order.rev,
             idempotency_key="finish-lost-order-link",
@@ -354,7 +368,8 @@ def test_finish_guard_accepts_order_side_only_link(recipe):
     with pytest.raises(ProductionOrderShortError) as exc_info:
         apply_finish(
             work_order_id=work_order.pk,
-            quantity="5",
+            quantity="10",
+            partition=_five_saleable_and_five_lost(),
             actor="production:test",
             expected_rev=work_order.rev,
             idempotency_key="finish-order-side-link",
@@ -508,7 +523,8 @@ def test_finish_persists_lineage_when_post_commit_callback_fails(
     work_order.refresh_from_db()
     order.refresh_from_db()
     assert work_order.meta[WORK_ORDER_COMMITTED_ORDER_REFS_KEY] == [order.ref]
-    assert order.data["awaiting_wo_refs"] == [work_order.ref]
+    assert "awaiting_wo_refs" not in order.data
+    assert order.data[ORDER_PRODUCTION_WO_REFS_KEY] == [work_order.ref]
     finished = WorkOrderEvent.objects.get(
         work_order=work_order,
         kind=WorkOrderEvent.Kind.FINISHED,
