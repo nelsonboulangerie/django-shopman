@@ -38,7 +38,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 3 | sim | 3 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | 1.045 s de relógio; tempo ativo não observável | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT; comprovante `7d79ef88-beae-4bd2-8f3d-b919010febc5`; sem dúvida relatada. |
 | P01 | 4 | não | não concluída | houve redigitação aparente | 1 | 207 s até a interrupção | 0 | não | não | Reautenticação fechou o editor. O rascunho existia, mas só reapareceu após abrir manualmente “Nova campanha”; tarefa invalidada. |
 | P01 | 4R1 | sim | não instrumentadas | somente o nome solicitado | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | N/A; sessão não expirou | sim, no escopo de T4 | Repetição concluída sem pedido de ajuda. Regra 6 voltou do servidor ativa, versão 1, com gatilho manual, modelo “Saiu do forno”, Instagram + WhatsApp e tag `qa-marketing-e2e`; lista mostrou público de 12 pessoas. Budgets de clique/latência não são reivindicados sem telemetria. |
-| P01 | 5 | — | — | — | — | — | — | — | — | pendente |
+| P01 | 5 | sim | 3 inferidas + senha/frase de segurança | nenhuma editorial | 0 | ≈13 min de relógio; tempo ativo não observável | 0 | N/A | sim, no escopo de T5 | Antes da confirmação viu 12 pessoas e que nasceria para revisão. Criou somente o anúncio 42 pendente, comprovante `c8a62cef-2e47-4b1d-88f1-196c060e33a8`; zero outbox e zero destino. |
 | P01 | 6 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 7 | — | — | — | — | — | — | — | — | pendente |
 | P01 | 8 | — | — | — | — | — | — | — | — | pendente |
@@ -127,6 +127,22 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
   agregado do gate.
 - O incidente original continua na linha T4 como falha e permanece parte da evidência;
   esta linha registra somente o resultado posterior à correção.
+
+### P01/T5 — disparo manual sem envio
+
+- P01 concluiu sem pedir ajuda depois de receber o objetivo e os dados da ficha. A tela
+  mostrou antes da confirmação o público salvo de 12 pessoas e explicou que a ação
+  criaria um anúncio para revisão, sem publicar.
+- O comprovante `c8a62cef-2e47-4b1d-88f1-196c060e33a8` registra `fire` concluído sobre
+  a campanha 6, produto `MD`, público 12 e anúncio 42 em `pending_review`.
+- O anúncio 42 voltou do servidor com Instagram + WhatsApp, versão 1,
+  `delivery_state=not_started`, sem horário de publicação e sem publicação realizada.
+  Havia zero `MarketingOutbox` e zero `DeliveryTarget`: nenhuma chamada ao simulador ou
+  provider pôde começar.
+- Classificação: estado de sucesso de T5 atendido e certeza da consequência confirmada.
+  As três ações são inferidas do caminho preparado (produto, disparo e confirmação);
+  os cerca de 13 minutos são relógio de conversa, não tempo ativo, logo não aprovam nem reprovam
+  os budgets agregados de contagem/ack sem telemetria.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
