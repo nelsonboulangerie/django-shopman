@@ -60,9 +60,7 @@ class TestBlindPrepCode:
             by_digit.setdefault(code[1], []).append(code[0])
         for digit, letters in by_digit.items():
             families = [_BLIND_LETTER_FAMILIES.get(letter, letter) for letter in letters]
-            assert len(set(families)) == len(families), (
-                f"número {digit} repetiu família sonora: {letters}"
-            )
+            assert len(set(families)) == len(families), f"número {digit} repetiu família sonora: {letters}"
 
     def test_ninth_onward_may_repeat_digit_never_letter(self):
         """Antes de estourar, repete NÚMERO — a letra continua única no dia."""
@@ -97,12 +95,8 @@ class TestBlindPrepCode:
         """Etiqueta de ontem na câmara nunca colide com a de hoje ou amanhã."""
         today = date.today()
         codes_today = {blind_prep_code(f"hoje-{i}", today) for i in range(8)}
-        codes_tomorrow = {
-            blind_prep_code(f"amanha-{i}", today + timedelta(days=1)) for i in range(8)
-        }
-        codes_yesterday = {
-            blind_prep_code(f"ontem-{i}", today - timedelta(days=1)) for i in range(8)
-        }
+        codes_tomorrow = {blind_prep_code(f"amanha-{i}", today + timedelta(days=1)) for i in range(8)}
+        codes_yesterday = {blind_prep_code(f"ontem-{i}", today - timedelta(days=1)) for i in range(8)}
         assert not (codes_today & codes_tomorrow)
         assert not (codes_today & codes_yesterday)
 
@@ -183,17 +177,13 @@ class TestWeighingAPI:
             ref="massa-pao", name="Massa Pão", output_sku="MASSA-PAO", batch_size=Decimal("1")
         )
         RecipeItem.objects.create(recipe=massa, input_sku="FARINHA", quantity="0.6", unit="kg")
-        pao = Recipe.objects.create(
-            ref="pao", name="Pão", output_sku="PAO", batch_size=Decimal("10")
-        )
+        pao = Recipe.objects.create(ref="pao", name="Pão", output_sku="PAO", batch_size=Decimal("10"))
         RecipeItem.objects.create(recipe=pao, input_sku="MASSA-PAO", quantity="7", unit="kg")
         craft.plan(pao, Decimal("10"), date=date.today())
 
         user = get_user_model().objects.create_user(username="scale", password="x", is_staff=True)
         ct = ContentType.objects.get_for_model(DayClosing)
-        user.user_permissions.add(
-            Permission.objects.get(content_type=ct, codename="operate_production")
-        )
+        user.user_permissions.add(Permission.objects.get(content_type=ct, codename="operate_production"))
         client = APIClient()
         client.force_authenticate(user)
 
@@ -203,7 +193,9 @@ class TestWeighingAPI:
         ticket = next(t for t in tickets if t["recipe_ref"] == "massa-pao")
         assert re.fullmatch(r"[A-HJ-NP-Z][2-9]", ticket["blind_code"])
         assert ticket["ingredients"][0]["sku"] == "FARINHA"
-        assert ticket["ingredients"][0]["quantity_display"] == "4,2 kg"
+        assert ticket["ingredients"][0]["quantity_display"] == "4200 g"
+        assert resp.json()["weighing"]["scale_precision_g"] == "2"
+        assert ticket["ingredients"][0]["target_g"] == "4200"
 
     def test_endpoint_requires_permission(self):
         from django.contrib.auth import get_user_model
@@ -250,8 +242,11 @@ class TestWeighingTicketConventions:
     def _plan_direct_recipe(self, *, meta=None):
         """Receita SEM sub-preparo (rendimento em un.) — caso Madeleine."""
         madeleine = Recipe.objects.create(
-            ref="madeleine", name="Madeleine", output_sku="MADELEINE",
-            batch_size=Decimal("30"), meta=meta or {},
+            ref="madeleine",
+            name="Madeleine",
+            output_sku="MADELEINE",
+            batch_size=Decimal("30"),
+            meta=meta or {},
         )
         RecipeItem.objects.create(recipe=madeleine, input_sku="FARINHA", quantity="0.625", unit="kg")
         RecipeItem.objects.create(recipe=madeleine, input_sku="MANTEIGA", quantity="625", unit="g")
@@ -263,24 +258,26 @@ class TestWeighingTicketConventions:
     def test_unit_ticket_shows_total_dough_weight(self):
         """Rendimento em unidades ganha o peso total da massa (convenção)."""
         ticket = self._plan_direct_recipe()
-        # 0,625 kg + 625 g + 0,5 kg = 1,75 kg
+        # Cada alvo é arredondado para cima à divisão de 2 g: 626+626+500.
         assert ticket.output_quantity_display == "30 un."
-        assert ticket.dough_weight_display == "≈ 1,75 kg de massa"
+        assert ticket.dough_weight_display == "≈ 1752 g de massa"
+        assert ticket.total_weight_display == "1752 g"
+        assert ticket.theoretical_total_g == "1750"
+        assert ticket.target_total_g == "1752"
+        assert ticket.rounding_delta_total_g == "2"
 
     def test_mass_ticket_has_no_dough_echo(self):
         massa = Recipe.objects.create(
             ref="massa-eco", name="Massa Eco", output_sku="MASSA-ECO", batch_size=Decimal("1")
         )
         RecipeItem.objects.create(recipe=massa, input_sku="FARINHA", quantity="0.6", unit="kg")
-        final = Recipe.objects.create(
-            ref="pao-eco", name="Pão Eco", output_sku="PAO-ECO", batch_size=Decimal("10")
-        )
+        final = Recipe.objects.create(ref="pao-eco", name="Pão Eco", output_sku="PAO-ECO", batch_size=Decimal("10"))
         RecipeItem.objects.create(recipe=final, input_sku="MASSA-ECO", quantity="7", unit="kg")
         craft.plan(final, Decimal("10"), date=date.today())
 
         weighing = build_production_weighing(selected_date=date.today())
         ticket = next(t for t in weighing.tickets if t.recipe_ref == "massa-eco")
-        assert ticket.output_quantity_display == "7 kg"
+        assert ticket.output_quantity_display == "7000 g"
         assert ticket.dough_weight_display == ""  # rendimento já é massa
 
     def test_started_quantity_and_frozen_recipe_drive_existing_ticket(self):
@@ -308,33 +305,46 @@ class TestWeighingTicketConventions:
         ticket = next(t for t in weighing.tickets if t.recipe_ref == recipe.ref)
 
         assert ticket.output_quantity_display == "5 un."
-        assert ticket.ingredients[0].quantity_display == "2,5 kg"
+        assert ticket.ingredients[0].quantity_display == "2500 g"
 
-    def test_expiry_defaults_to_next_day(self):
-        """Sem validade configurada, D+1 (padrão de massas)."""
+    def test_expiry_is_never_invented_without_a_responsible_rule(self, monkeypatch):
+        """Sem ficha/catálogo, a projeção não ensina D+1 como se fosse fato."""
+        monkeypatch.setattr(
+            "shopman.stockman.shelflife.shelf_life_days_for",
+            lambda _sku: None,
+        )
         ticket = self._plan_direct_recipe()
         assert ticket.made_display == date.today().strftime("%d/%m")
-        assert ticket.expiry_display == (date.today() + timedelta(days=1)).strftime("%d/%m")
+        assert ticket.expiry_display == ""
+        assert ticket.validity_configured is False
 
     def test_expiry_respects_recipe_shelf_life(self):
         """Validade configurável por preparação (Recipe.meta shelf_life_days)."""
         ticket = self._plan_direct_recipe(meta={"shelf_life_days": 3})
         assert ticket.expiry_display == (date.today() + timedelta(days=3)).strftime("%d/%m")
+        assert ticket.validity_configured is True
+        assert ticket.validity_source == "recipe"
+
+    def test_zero_shelf_life_means_same_day(self):
+        """Zero é dado legítimo e não pode voltar a cair em fallback D+1."""
+        ticket = self._plan_direct_recipe(meta={"shelf_life_days": 0})
+        assert ticket.expiry_display == date.today().strftime("%d/%m")
+        assert ticket.validity_configured is True
 
 
 class TestWeighingTicketsCarryBlindCode:
     def test_tickets_expose_blind_code(self):
         massa = Recipe.objects.create(
-            ref="massa-croissant", name="Massa Croissant", output_sku="MASSA-CROISSANT",
+            ref="massa-croissant",
+            name="Massa Croissant",
+            output_sku="MASSA-CROISSANT",
             batch_size=Decimal("1"),
         )
         RecipeItem.objects.create(recipe=massa, input_sku="FARINHA", quantity="0.5", unit="kg")
         croissant = Recipe.objects.create(
             ref="croissant", name="Croissant", output_sku="CROISSANT", batch_size=Decimal("10")
         )
-        RecipeItem.objects.create(
-            recipe=croissant, input_sku="MASSA-CROISSANT", quantity="2", unit="kg"
-        )
+        RecipeItem.objects.create(recipe=croissant, input_sku="MASSA-CROISSANT", quantity="2", unit="kg")
         craft.plan(croissant, Decimal("10"), date=date.today())
 
         weighing = build_production_weighing(selected_date=date.today())

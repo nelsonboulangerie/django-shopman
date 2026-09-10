@@ -54,8 +54,8 @@ class TestMiseEnPlaceAggregation:
 
         assert projection.has_lines
         assert projection.work_order_count == 2
-        assert by_sku["FARINHA"].quantity_display == "14 kg"
-        assert by_sku["SAL"].quantity_display == "0,2 kg"
+        assert by_sku["FARINHA"].quantity_display == "14000 g"
+        assert by_sku["SAL"].quantity_display == "200 g"
         assert by_sku["OVOS"].quantity_display == "20 un"
 
     def test_breakdown_per_recipe(self, pao, brioche):
@@ -65,7 +65,7 @@ class TestMiseEnPlaceAggregation:
         projection = build_production_mise_en_place(selected_date=date.today())
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
         breakdown = {row.recipe_name: row.quantity_display for row in farinha.breakdown}
-        assert breakdown == {"Pão Francês": "10 kg", "Brioche": "4 kg"}
+        assert breakdown == {"Pão Francês": "10000 g", "Brioche": "4000 g"}
 
     def test_started_wos_count_and_other_dates_do_not(self, pao):
         started = craft.plan(pao, 10, date=date.today())
@@ -74,7 +74,7 @@ class TestMiseEnPlaceAggregation:
 
         projection = build_production_mise_en_place(selected_date=date.today())
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
-        assert farinha.quantity_display == "5 kg"
+        assert farinha.quantity_display == "5000 g"
 
     def test_finished_and_voided_excluded(self, pao):
         done = craft.plan(pao, 10, date=date.today())
@@ -103,8 +103,8 @@ class TestMiseEnPlaceAggregation:
         projection = build_production_mise_en_place(selected_date=date.today())
         by_sku = {line.sku: line for line in projection.lines}
 
-        assert by_sku["FARINHA"].quantity_display == "2,5 kg"
-        assert by_sku["SAL"].quantity_display == "0,05 kg"
+        assert by_sku["FARINHA"].quantity_display == "2500 g"
+        assert by_sku["SAL"].quantity_display == "50 g"
 
     def test_yield_margin_uses_started_quantity_over_the_frozen_bom(self):
         """A margem da massa preserva a verdade do start e da ficha congelada."""
@@ -113,7 +113,7 @@ class TestMiseEnPlaceAggregation:
             mixer_loss_g_for,
         )
 
-        from shopman.backstage.projections.production import _measure
+        from shopman.backstage.projections.production import _preparation_measure
 
         massa = Recipe.objects.create(
             ref="massa",
@@ -158,8 +158,8 @@ class TestMiseEnPlaceAggregation:
 
         assert margin is not None
         assert projection.yield_margin_applied
-        assert line.quantity_display == _measure(Decimal("1") + margin.total, "kg")
-        assert line.margin_display == f"+ {_measure(margin.total, 'kg')} de margem"
+        assert line.quantity_display == _preparation_measure(Decimal("1") + margin.total, "kg")
+        assert line.margin_display == f"+ {_preparation_measure(margin.total, 'kg')} de margem"
         assert "5 peças" in line.margin_reason
 
 
@@ -184,7 +184,7 @@ class TestMiseEnPlaceExpand:
 
         expanded = build_production_mise_en_place(selected_date=date.today(), expand=True)
         assert [line.sku for line in expanded.lines] == ["FARINHA"]
-        assert expanded.lines[0].quantity_display == "1 kg"  # 2kg massa × 0.5kg/1kg
+        assert expanded.lines[0].quantity_display == "1000 g"  # 2kg massa × 0.5kg/1kg
         assert expanded.expanded
 
 
@@ -230,10 +230,10 @@ class TestMiseEnPlaceAvailability:
 
         assert projection.has_stock_readings
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
-        assert farinha.available_display == "3 kg"
+        assert farinha.available_display == "3000 g"
         assert farinha.is_short
         sal = next(line for line in projection.lines if line.sku == "SAL")
-        assert not sal.available_display or sal.available_display == "0 kg"
+        assert not sal.available_display or sal.available_display == "0 g"
 
     def test_known_zero_is_a_reading_and_remains_visible(self, pao):
         from shopman.stockman.models import Quant
@@ -245,7 +245,7 @@ class TestMiseEnPlaceAvailability:
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
 
         assert projection.has_stock_readings
-        assert farinha.available_display == "0 kg"
+        assert farinha.available_display == "0 g"
         assert farinha.is_short
 
 
@@ -279,7 +279,7 @@ class TestMiseEnPlaceAnnotation:
     def test_without_a_declared_conversion_there_is_no_annotation(self, ovos, madeleine):
         craft.plan(madeleine, 24, date=date.today())
         line = self._line()
-        assert line.quantity_display == "0,3 kg"
+        assert line.quantity_display == "300 g"
         assert line.annotation == ""
 
     def test_approximate_factor_annotates_with_the_tilde(self, ovos, madeleine):
@@ -292,7 +292,7 @@ class TestMiseEnPlaceAnnotation:
         craft.plan(madeleine, 24, date=date.today())
 
         line = self._line()
-        assert line.quantity_display == "0,3 kg"
+        assert line.quantity_display == "300 g"
         assert line.annotation == "≈ 6 ovos"
 
     def test_conventional_factor_does_not_get_the_tilde(self, ovos, madeleine):

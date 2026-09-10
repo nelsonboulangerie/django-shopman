@@ -2694,13 +2694,13 @@ class Command(BaseCommand):
                 "nutrition_facts": nutrition(200, 1, 610.0, 74.0, 8.0, 14.0, 27.0, 16.0, 3.2, 620.0),
             },
             "SS": {
-                "ingredients_text": "Café espresso. NÃO CONTÉM GLÚTEN.",
+                "ingredients_text": "Café espresso. PODE CONTER GLÚTEN.",
                 "nutrition_facts": nutrition(40, 1, 2.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
             },
             "PS": {
                 "ingredients_text": (
                     "Café espresso e leite integral vaporizado. "
-                    "CONTÉM: leite. NÃO CONTÉM GLÚTEN."
+                    "CONTÉM: leite. PODE CONTER GLÚTEN."
                 ),
                 "nutrition_facts": nutrition(180, 1, 105.0, 9.0, 9.0, 6.0, 5.5, 3.4, 0.0, 85.0),
             },
@@ -8260,7 +8260,19 @@ class Command(BaseCommand):
         # print CSS, então a declaração não muda o desenho: ela torna explícito
         # o que hoje é sorte, e é o gancho para um balcão com rolo diferente.
         hardware = dict(terminal.metadata.get("hardware") or {})
-        hardware["printer"] = {"adapter": "driver", "model": "epson-tm-t20", "roll_width_mm": 80}
+        # A geometria e o papel operacional fazem parte do cenário canônico de
+        # impressão. Preenchemos somente lacunas: `seed` sem `--flush` também é
+        # usado para refrescar datas em ambientes vivos e jamais pode apagar a
+        # configuração aferida no Admin (adapter/modelo/rolo/corte).
+        printer = dict(hardware.get("printer") or {})
+        printer.setdefault("enabled", True)
+        printer.setdefault("adapter", "driver")
+        printer.setdefault("model", "epson-tm-t20")
+        printer.setdefault("roll_width_mm", 80)
+        printer.setdefault("columns", 48)
+        printer.setdefault("cut_mode", "partial")
+        printer.setdefault("role", "preparation")
+        hardware["printer"] = printer
 
         # A gaveta do balcão pendura no RJ11 dessa mesma TM-T20 e abre pelo
         # agente local. Declarar aqui, SEM token, é deliberado: o token nasce no
@@ -9113,7 +9125,17 @@ class Command(BaseCommand):
             recreated += created
             fresh = terminal.metadata or {}
             metadata = {**fresh, **saved["metadata"]}
-            hardware = {**(fresh.get("hardware") or {}), **(saved["metadata"].get("hardware") or {})}
+            fresh_hardware = fresh.get("hardware") or {}
+            saved_hardware = saved["metadata"].get("hardware") or {}
+            hardware = {**fresh_hardware, **saved_hardware}
+            # A loja vence campo a campo dentro do periférico. Assim uma aferição
+            # de rolo de 58 mm continua intacta, mas uma versão nova do seed pode
+            # acrescentar `columns`, `cut_mode` e `role` sem exigir que alguém
+            # apague e recadastre a impressora inteira.
+            for peripheral, saved_config in saved_hardware.items():
+                fresh_config = fresh_hardware.get(peripheral)
+                if isinstance(fresh_config, dict) and isinstance(saved_config, dict):
+                    hardware[peripheral] = {**fresh_config, **saved_config}
             if hardware:
                 metadata["hardware"] = hardware
             terminal.label = saved["label"]

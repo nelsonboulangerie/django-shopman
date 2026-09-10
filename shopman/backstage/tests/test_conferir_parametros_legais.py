@@ -36,6 +36,10 @@ def test_mostra_a_norma_o_valor_e_onde_ler():
         "limiar_sem_lactose",
         "declaracao_gluten",
         "pode_conter_contaminacao_cruzada",
+        "etiqueta_interna_preparo_armazenado",
+        "rotulo_embalado_para_venda",
+        "rotulagem_nutricional_proprio_estabelecimento",
+        "conteudo_liquido_produto_pre_medido",
     ):
         assert chave in saida
     assert "RDC 135/2017" in saida, "a norma tem de aparecer, não só a chave"

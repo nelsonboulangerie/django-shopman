@@ -47,7 +47,7 @@ exatamente a perda que aqui está declarada. Ver a nota de aprendizado no plano.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_CEILING, Decimal, InvalidOperation
 
 from shopman.utils import units
 
@@ -89,6 +89,58 @@ class YieldMargin:
             f"+ perda da masseira ({_plain(self.mixer_loss)} {self.unit}) "
             f"+ folga de variação ({_plain(self.variance)} {self.unit})"
         )
+
+
+@dataclass(frozen=True)
+class ScaleTarget:
+    """Alvo operacional de uma pesagem numa balança de divisão finita.
+
+    ``theoretical_g`` preserva a conta da ficha. ``target_g`` é o número que o
+    operador deve enxergar: o primeiro múltiplo da divisão da balança que não
+    fica abaixo daquela conta. A faixa aceita fica registrada para a futura
+    captura da balança, mas não transforma a ficha numa sessão de pesagem.
+    """
+
+    theoretical_g: Decimal
+    precision_g: Decimal
+    target_g: Decimal
+    accepted_min_g: Decimal
+    accepted_max_g: Decimal
+
+    @property
+    def rounding_delta_g(self) -> Decimal:
+        return self.target_g - self.theoretical_g
+
+
+def compute_scale_target(quantity_g, *, scale_precision=None) -> ScaleTarget:
+    """Arredonda uma quantidade em gramas para cima segundo a balança.
+
+    A precisão vem da mesma configuração que já governa a margem de rendimento
+    (``CRAFTSMAN["SCALE_PRECISION_G"]``). Assim planejamento e etiqueta não
+    podem contar histórias diferentes sobre o mesmo equipamento.
+
+    Com a balança padrão de 2 g, 101 g vira 102 g e 102 g permanece 102 g.
+    Nunca se arredonda para baixo. Quantidade ou precisão inválida falham cedo:
+    um alvo silenciosamente incorreto no chão de fábrica é pior que não emitir
+    a etiqueta.
+    """
+
+    theoretical_g = _decimal(quantity_g)
+    precision_g = _decimal(scale_precision) if scale_precision is not None else scale_precision_g()
+    if not theoretical_g.is_finite() or theoretical_g < 0:
+        raise ValueError("quantity_g deve ser um decimal finito e >= 0")
+    if not precision_g.is_finite() or precision_g <= 0:
+        raise ValueError("scale_precision deve ser um decimal finito e > 0")
+
+    steps = (theoretical_g / precision_g).to_integral_value(rounding=ROUND_CEILING)
+    target_g = steps * precision_g
+    return ScaleTarget(
+        theoretical_g=theoretical_g,
+        precision_g=precision_g,
+        target_g=target_g,
+        accepted_min_g=target_g,
+        accepted_max_g=target_g + precision_g,
+    )
 
 
 def scale_precision_g() -> Decimal:

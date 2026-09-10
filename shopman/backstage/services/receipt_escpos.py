@@ -90,14 +90,29 @@ def cash_movement_receipt(entry, *, verify_code: str, verify_url: str, reprint: 
 #: Caracteres que o operador digita (ou que o teclado/celular põem sozinhos) e
 #: que a CP860 não tem. Sem esta tradução eles viram "?" no papel — o motivo da
 #: sangria sairia corrompido e pareceria defeito da impressora.
-_TRANSLITERACAO = str.maketrans({
-    "—": "-", "–": "-", "―": "-",
-    "“": '"', "”": '"', "„": '"',
-    "‘": "'", "’": "'", "‚": "'",
-    "…": "...", "•": "*", "·": "-",
-    "€": "EUR", "™": "TM", "→": "->", "≠": "!=", "≤": "<=", "≥": ">=",
-    "\u00a0": " ",  # espaço não separável, comum em texto colado
-})
+_TRANSLITERACAO = str.maketrans(
+    {
+        "—": "-",
+        "–": "-",
+        "―": "-",
+        "“": '"',
+        "”": '"',
+        "„": '"',
+        "‘": "'",
+        "’": "'",
+        "‚": "'",
+        "…": "...",
+        "•": "*",
+        "·": "-",
+        "€": "EUR",
+        "™": "TM",
+        "→": "->",
+        "≠": "!=",
+        "≤": "<=",
+        "≥": ">=",
+        "\u00a0": " ",  # espaço não separável, comum em texto colado
+    }
+)
 
 
 def _line(text: str) -> bytes:
@@ -113,11 +128,7 @@ def _double(text: str) -> bytes:
     """
     recorte = text[: COLUMNS // 2]
     margem = max(0, (COLUMNS // 2 - len(recorte)) // 2)
-    return (
-        bytes([GS, ord("!"), 0x11])
-        + _line(" " * margem + recorte)
-        + bytes([GS, ord("!"), 0x00])
-    )
+    return bytes([GS, ord("!"), 0x11]) + _line(" " * margem + recorte) + bytes([GS, ord("!"), 0x00])
 
 
 def _centered(text: str) -> bytes:
@@ -174,12 +185,91 @@ def _qr(data: str, *, module: int = 6) -> bytes:
     tamanho = len(payload) + 3
     # `ESC a 1` centraliza, `ESC a 0` devolve à esquerda. É modo de ESTADO: sem
     # o retorno, tudo abaixo do QR sairia centralizado também.
-    return bytes([ESC, ord("a"), 1]) + bytes(
-        [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]
-        + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]
-        + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]
-        + [GS, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
-    ) + payload + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30]) + bytes([ESC, ord("a"), 0])
+    return (
+        bytes([ESC, ord("a"), 1])
+        + bytes(
+            [GS, 0x28, 0x6B, 0x04, 0x00, 0x31, 0x41, 0x32, 0x00]
+            + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x43, module]
+            + [GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x45, 0x31]
+            + [GS, 0x28, 0x6B, tamanho % 256, tamanho // 256, 0x31, 0x50, 0x30]
+        )
+        + payload
+        + bytes([GS, 0x28, 0x6B, 0x03, 0x00, 0x31, 0x51, 0x30])
+        + bytes([ESC, ord("a"), 0])
+    )
+
+
+def production_label_run(
+    document: dict,
+    *,
+    copy_number: int = 1,
+    columns: int = COLUMNS,
+    cut_mode: str = "partial",
+) -> bytes:
+    """Render one frozen preparation-label document to ESC/POS.
+
+    Blind documents deliberately have no recipe/preparation name, ref, output
+    SKU or source-order text.  Ingredient name + SKU are safe and operationally
+    necessary: blindness is about the formula being weighed, not about asking
+    the operator to identify anonymous ingredient codes.
+    """
+    if columns != COLUMNS:
+        raise ValueError("O primeiro contrato de etiquetas exige exatamente 48 colunas.")
+    mode = str(document.get("mode") or "")
+    if mode not in {"blind", "explicit"}:
+        raise ValueError("Modo de etiqueta inválido.")
+    tickets = document.get("tickets")
+    if not isinstance(tickets, list) or not tickets:
+        raise ValueError("Documento de etiquetas vazio.")
+
+    out = bytearray()
+    for index, ticket in enumerate(tickets):
+        if index:
+            out += _rule()
+        out += bytes([ESC, ord("@")])
+        out += bytes([ESC, ord("t"), CODE_PAGE])
+        out += _centered("PESAGEM INTERNA" if mode == "blind" else "PREPARO INTERNO")
+        out += _centered("NAO E ROTULO DE VENDA")
+        if copy_number > 1:
+            out += _centered(f"*** {copy_number}ª VIA ***")
+        if mode == "blind":
+            out += _double(str(ticket["blind_code"]))
+        else:
+            for part in _wrap(str(ticket["name"]), columns):
+                out += _centered(part)
+            out += _centered(str(ticket["output_sku"]))
+            total_weight = str(ticket.get("total_weight_display") or "")
+            if total_weight:
+                out += _centered(f"Alvo total: {total_weight}")
+            output = str(ticket.get("output_quantity_display") or "")
+            if output:
+                out += _centered(f"Rendimento previsto: {output}")
+        if mode == "blind":
+            out += _line(f"Data {ticket['made_display']}")
+        else:
+            out += _pair(
+                f"Preparo {ticket['made_display']}",
+                f"Validade {ticket['expiry_display']}",
+            )
+        out += _rule()
+        for ingredient in ticket.get("ingredients", ()):
+            # Identification hierarchy: human name first, SKU second.  Never
+            # emit a bare SKU as the only identity on the paper.
+            for part in _wrap(str(ingredient["name"]), columns):
+                out += _line(part)
+            out += _pair(
+                f"  {ingredient['sku']}",
+                str(ingredient.get("target_display") or ingredient["quantity_display"]),
+            )
+            annotation = str(ingredient.get("annotation") or "")
+            if annotation:
+                out += _line(f"  Referencia: {annotation}")
+        out += bytes([ESC, ord("d"), 3])
+        if cut_mode == "partial":
+            out += bytes([GS, ord("V"), 1])
+        elif cut_mode != "none":
+            raise ValueError("Modo de corte inválido.")
+    return bytes(out)
 
 
 def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
@@ -234,9 +324,7 @@ def sale_receipt(order, *, shop_name: str = "", reprint: bool = False) -> bytes:
 
     payment = data.get("payment") or {}
     tenders = [
-        tender
-        for tender in (payment.get("tenders") or [])
-        if isinstance(tender, dict) and tender.get("amount_q")
+        tender for tender in (payment.get("tenders") or []) if isinstance(tender, dict) and tender.get("amount_q")
     ]
     if tenders:
         for tender in tenders:

@@ -20,18 +20,29 @@ sem ninguém olhando. ``pip install`` é uma coisa a mais para quebrar às 6h.
 
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
 import hmac
 import json
 import logging
 import os
 import shutil
+import socket
+import sqlite3
 import subprocess
 import sys
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+import uuid
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 
 def build_id() -> str:
@@ -109,6 +120,17 @@ DEFAULT_CONFIG_PATH = Path(os.environ.get("COUNTER_AGENT_CONFIG") or "") if os.e
 ) else config_path_for(Path.home(), windows=IS_WINDOWS, localappdata=os.environ.get("LOCALAPPDATA", ""))
 
 LOG_PATH = INSTALL_DIR / "counter-agent.log"
+JOURNAL_PATH = INSTALL_DIR / "print-relay.sqlite3"
+
+MAX_PRINT_PAYLOAD_BYTES = 512 * 1024
+MAX_HTTP_BODY_BYTES = 768 * 1024
+MAX_RELAY_RESPONSE_BYTES = 768 * 1024
+RELAY_CLAIM_PATH = "/api/v1/backstage/print-agent/jobs/claim/"
+RELAY_ACK_PATH = "/api/v1/backstage/print-agent/jobs/{job_ref}/ack/"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
+_IDENTITY_CHARS = frozenset(
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.:"
+)
 
 logger = logging.getLogger("counter-agent")
 
@@ -297,6 +319,11 @@ class AgentConfig:
     port: int = 47811
     host: str = "127.0.0.1"
     allowed_origins: tuple[str, ...] = field(default_factory=tuple)
+    server_url: str = ""
+    station_ref: str = ""
+    agent_id: str = ""
+    relay_token: str = ""
+    relay_poll_seconds: float = 2.0
     #: Como ESTA gaveta reporta o estado. `None` = ainda não medido, e aí o
     #: agente responde "não sei" em vez de chutar.
     #:
@@ -333,14 +360,77 @@ class AgentConfig:
         origins = raw.get("allowed_origins") or []
         if not isinstance(origins, list):
             raise SystemExit("'allowed_origins' deve ser uma lista de origens.")
+        normalized_origins = []
+        for candidate in origins:
+            origin = str(candidate).strip().rstrip("/")
+            parsed_origin = urllib.parse.urlparse(origin)
+            if (
+                not origin
+                or parsed_origin.scheme not in {"http", "https"}
+                or not parsed_origin.netloc
+                or parsed_origin.username
+                or parsed_origin.password
+                or parsed_origin.path
+                or parsed_origin.query
+                or parsed_origin.fragment
+            ):
+                raise SystemExit(f"origem inválida em 'allowed_origins': {origin!r}.")
+            normalized_origins.append(origin)
+        host = str(raw.get("host") or "127.0.0.1").strip().lower()
+        if host not in _LOOPBACK_HOSTS:
+            raise SystemExit(
+                "config 'host' deve ser loopback: 127.0.0.1, ::1 ou localhost."
+            )
+
+        server_url = str(raw.get("server_url") or "").strip().rstrip("/")
+        station_ref = str(raw.get("station_ref") or "").strip()
+        agent_id = str(raw.get("agent_id") or "").strip()
+        relay_token = str(raw.get("relay_token") or "").strip()
+        relay_values = (server_url, station_ref, agent_id, relay_token)
+        if any(relay_values) and not all(relay_values):
+            raise SystemExit(
+                "relay incompleto: informe server_url, station_ref, agent_id e relay_token."
+            )
+        if server_url:
+            parsed = urllib.parse.urlparse(server_url)
+            if (
+                parsed.scheme != "https"
+                or not parsed.netloc
+                or parsed.username
+                or parsed.password
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise SystemExit("'server_url' do relay deve ser uma URL HTTPS sem credenciais.")
+            if len(relay_token) < 16:
+                raise SystemExit("'relay_token' deve ter no mínimo 16 caracteres.")
+            if len(station_ref) > 80 or len(agent_id) > 120:
+                raise SystemExit("station_ref/agent_id longos demais.")
+            if any(c not in _IDENTITY_CHARS for c in station_ref + agent_id):
+                raise SystemExit("station_ref/agent_id contêm caracteres inválidos.")
+        try:
+            relay_poll_seconds = float(raw.get("relay_poll_seconds") or 2.0)
+        except (TypeError, ValueError) as exc:
+            raise SystemExit("'relay_poll_seconds' deve ser numérico.") from exc
+        if not 0.25 <= relay_poll_seconds <= 60:
+            raise SystemExit("'relay_poll_seconds' deve estar entre 0.25 e 60 segundos.")
         return cls(
             queue=queue,
             token=token,
             port=int(raw.get("port") or 47811),
-            host=str(raw.get("host") or "127.0.0.1"),
-            allowed_origins=tuple(str(o).rstrip("/") for o in origins if str(o).strip()),
+            host=host,
+            allowed_origins=tuple(normalized_origins),
+            server_url=server_url,
+            station_ref=station_ref,
+            agent_id=agent_id,
+            relay_token=relay_token,
+            relay_poll_seconds=relay_poll_seconds,
             drawer_status=raw.get("drawer_status") or None,
         )
+
+    @property
+    def relay_enabled(self) -> bool:
+        return bool(self.server_url)
 
     def estado_da_gaveta(self, byte: int) -> bool | None:
         """True = aberta. `None` = esta maquina nunca mediu, entao nao sabemos.
@@ -356,8 +446,14 @@ class AgentConfig:
         return (byte & int(mascara)) != int(fechada)
 
     def allows(self, origin: str) -> bool:
-        if not self.allowed_origins:
+        # Processos locais sem cabeçalho Origin continuam podendo usar a API
+        # com o token. Já uma aba do navegador só ganha efeitos se sua origem
+        # estiver explicitamente cadastrada: lista vazia nunca significa
+        # "qualquer site".
+        if not origin:
             return True
+        if not self.allowed_origins:
+            return False
         return (origin or "").rstrip("/") in self.allowed_origins
 
 
@@ -375,6 +471,10 @@ class AgentConfig:
 
 class SpoolerError(RuntimeError):
     pass
+
+
+class SpoolerUncertainError(SpoolerError):
+    """O agente não sabe se o spooler aceitou antes de a chamada falhar."""
 
 
 def send_raw(payload: bytes, *, queue: str, title: str = "cash-drawer") -> str:
@@ -401,7 +501,9 @@ def _send_raw_cups(payload: bytes, *, queue: str, title: str) -> str:
             timeout=10,
         )
     except subprocess.TimeoutExpired as exc:
-        raise SpoolerError(f"fila '{queue}' não respondeu em 10s") from exc
+        # O processo pode ter sido aceito pelo CUPS antes do timeout. Repetir
+        # automaticamente aqui pode imprimir duas etiquetas.
+        raise SpoolerUncertainError(f"fila '{queue}' não respondeu em 10s") from exc
     if completed.returncode != 0:
         detail = (completed.stderr or b"").decode("utf-8", "replace").strip()
         raise SpoolerError(detail or f"lp saiu com código {completed.returncode}")
@@ -446,8 +548,9 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
         wintypes.HANDLE, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD)
     ]
 
-    def _fail(step: str) -> SpoolerError:
-        return SpoolerError(f"{step} falhou (erro {ctypes.get_last_error()}) na fila '{queue}'")
+    def _fail(step: str, *, uncertain: bool = False) -> SpoolerError:
+        error = SpoolerUncertainError if uncertain else SpoolerError
+        return error(f"{step} falhou (erro {ctypes.get_last_error()}) na fila '{queue}'")
 
     handle = wintypes.HANDLE()
     if not winspool.OpenPrinterW(queue, ctypes.byref(handle), None):
@@ -456,21 +559,32 @@ def _send_raw_windows(payload: bytes, *, queue: str, title: str) -> str:
         job = winspool.StartDocPrinterW(handle, 1, ctypes.byref(DOC_INFO_1(title, None, "RAW")))
         if not job:
             raise _fail("iniciar o trabalho")
+        page_started = False
         try:
             if not winspool.StartPagePrinter(handle):
-                raise _fail("iniciar a página")
+                raise _fail("iniciar a página", uncertain=True)
+            page_started = True
             written = wintypes.DWORD(0)
             # Comprimento explícito: `create_string_buffer(payload)` sozinho
             # acrescenta um NUL no fim, e um sexto byte indo para a impressora
             # não é o que o manual manda.
             buffer = ctypes.create_string_buffer(payload, len(payload))
             if not winspool.WritePrinter(handle, buffer, len(payload), ctypes.byref(written)):
-                raise _fail("escrever na impressora")
+                raise _fail("escrever na impressora", uncertain=True)
             if written.value != len(payload):
-                raise SpoolerError(f"spooler aceitou {written.value} de {len(payload)} bytes")
-            winspool.EndPagePrinter(handle)
-        finally:
+                raise SpoolerUncertainError(
+                    f"spooler aceitou {written.value} de {len(payload)} bytes"
+                )
+            if not winspool.EndPagePrinter(handle):
+                raise _fail("encerrar a página", uncertain=True)
+            page_started = False
+        except BaseException:
+            if page_started:
+                winspool.EndPagePrinter(handle)
             winspool.EndDocPrinter(handle)
+            raise
+        if not winspool.EndDocPrinter(handle):
+            raise _fail("encerrar o trabalho", uncertain=True)
     finally:
         winspool.ClosePrinter(handle)
     return str(job)
@@ -546,6 +660,750 @@ def _probe_queue_cups(queue: str) -> dict:
     }
 
 
+# ── Relay HTTPS de saída ──────────────────────────────────────────────────
+
+
+class RelayError(RuntimeError):
+    """Falha segura do protocolo do relay (nunca inclui token nem payload)."""
+
+
+class RelayTransportError(RelayError):
+    pass
+
+
+class _NoRelayRedirect(urllib.request.HTTPRedirectHandler):
+    """Não deixa um 30x encaminhar o Bearer para outro host."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class RelayInvalidJob(RelayError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        job_ref: str = "",
+        payload_sha256: str = "",
+        lease_token: str = "",
+        attempt: int = 0,
+    ) -> None:
+        super().__init__(message)
+        self.job_ref = job_ref
+        self.payload_sha256 = payload_sha256
+        self.lease_token = lease_token
+        self.attempt = attempt
+
+
+@dataclass(frozen=True)
+class RelayJob:
+    job_ref: str
+    attempt: int
+    title: str
+    payload: bytes
+    payload_sha256: str
+    lease_token: str
+    content_sha256: str = ""
+
+    @classmethod
+    def from_claim(cls, raw: dict) -> RelayJob:
+        if not isinstance(raw, dict):
+            raise RelayInvalidJob("claim não devolveu um objeto JSON")
+        job_ref = str(raw.get("job_ref") or "").strip()
+        payload_sha256 = str(raw.get("payload_sha256") or "").strip().lower()
+        lease_token = str(raw.get("lease_token") or "").strip()
+        if (
+            not job_ref
+            or len(job_ref) > 200
+            or any(c not in _IDENTITY_CHARS for c in job_ref)
+        ):
+            raise RelayInvalidJob("job_ref ausente ou inválido")
+        if not 20 <= len(lease_token) <= 128:
+            raise RelayInvalidJob("lease_token ausente ou inválido", job_ref=job_ref)
+        if len(payload_sha256) != 64 or any(c not in "0123456789abcdef" for c in payload_sha256):
+            raise RelayInvalidJob(
+                "payload_sha256 ausente ou inválido",
+                job_ref=job_ref,
+                lease_token=lease_token,
+            )
+        try:
+            attempt = int(raw.get("attempt"))
+        except (TypeError, ValueError) as exc:
+            raise RelayInvalidJob(
+                "attempt ausente ou inválido",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+            ) from exc
+        if attempt < 1:
+            raise RelayInvalidJob(
+                "attempt ausente ou inválido",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+            )
+        # `payload_b64` é o contrato canônico. `content_base64` é aceito só
+        # para uma implantação gradual de servidores que usaram esse nome na
+        # primeira revisão do endpoint.
+        encoded = raw.get("payload_b64")
+        if encoded is None:
+            encoded = raw.get("content_base64")
+        if not isinstance(encoded, str) or not encoded:
+            raise RelayInvalidJob(
+                "payload_b64 ausente",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        # Recusa antes de decodificar uma representação que jamais caberia no
+        # teto RAW. O pequeno excesso cobre padding e quebras rejeitadas pelo
+        # validate=True.
+        max_b64 = ((MAX_PRINT_PAYLOAD_BYTES + 2) // 3) * 4
+        if len(encoded) > max_b64:
+            raise RelayInvalidJob(
+                "payload excede 512 KiB",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        try:
+            payload = base64.b64decode(encoded, validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise RelayInvalidJob(
+                "payload_b64 inválido",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            ) from exc
+        if not payload:
+            raise RelayInvalidJob(
+                "payload vazio",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        if len(payload) > MAX_PRINT_PAYLOAD_BYTES:
+            raise RelayInvalidJob(
+                "payload excede 512 KiB",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        declared_size = raw.get("payload_size")
+        if declared_size is not None:
+            try:
+                declared_size = int(declared_size)
+            except (TypeError, ValueError) as exc:
+                raise RelayInvalidJob(
+                    "payload_size inválido",
+                    job_ref=job_ref,
+                    payload_sha256=payload_sha256,
+                    lease_token=lease_token,
+                    attempt=attempt,
+                ) from exc
+            if declared_size != len(payload):
+                raise RelayInvalidJob(
+                    "payload_size não confere",
+                    job_ref=job_ref,
+                    payload_sha256=payload_sha256,
+                    lease_token=lease_token,
+                    attempt=attempt,
+                )
+        actual = hashlib.sha256(payload).hexdigest()
+        if not hmac.compare_digest(actual, payload_sha256):
+            raise RelayInvalidJob(
+                "payload_sha256 não confere",
+                job_ref=job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        return cls(
+            job_ref=job_ref,
+            attempt=attempt,
+            title=" ".join(
+                str(raw.get("title") or raw.get("kind") or "documento").split()
+            )[:60],
+            payload=payload,
+            payload_sha256=payload_sha256,
+            lease_token=lease_token,
+            content_sha256=str(raw.get("content_sha256") or "")[:128],
+        )
+
+
+@dataclass(frozen=True)
+class RelayJournalEntry:
+    job_ref: str
+    payload_sha256: str
+    lease_token: str
+    attempt: int
+    state: str
+    spooler_job_id: str
+    detail: str
+    acknowledged: int
+
+
+class RelayJournal:
+    """Journal mínimo: sem payload/credencial permanente; lease local em 0600."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._setup()
+        self.recover_incomplete()
+
+    def _connect(self) -> sqlite3.Connection:
+        connection = sqlite3.connect(str(self.path), timeout=5)
+        connection.row_factory = sqlite3.Row
+        return connection
+
+    def _setup(self) -> None:
+        with self._connect() as db:
+            # O journal contém o lease bruto necessário para refazer ACK depois
+            # de restart. DELETE evita um arquivo `-wal` lateral com permissão
+            # própria; o banco principal é 0600.
+            db.execute("PRAGMA journal_mode=DELETE")
+            db.execute("PRAGMA secure_delete=ON")
+            db.execute(
+                """
+                CREATE TABLE IF NOT EXISTS print_jobs (
+                    job_ref TEXT PRIMARY KEY,
+                    payload_sha256 TEXT NOT NULL,
+                    lease_token TEXT NOT NULL,
+                    attempt INTEGER NOT NULL,
+                    state TEXT NOT NULL,
+                    spooler_job_id TEXT NOT NULL DEFAULT '',
+                    detail TEXT NOT NULL DEFAULT '',
+                    acknowledged INTEGER NOT NULL DEFAULT 0,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                )
+                """
+            )
+            # Upgrade defensivo para qualquer banco criado por uma revisão de
+            # desenvolvimento anterior a ACK persistente.
+            columns = {
+                str(row[1]) for row in db.execute("PRAGMA table_info(print_jobs)").fetchall()
+            }
+            if "lease_token" not in columns:
+                db.execute(
+                    "ALTER TABLE print_jobs ADD COLUMN lease_token TEXT NOT NULL DEFAULT ''"
+                )
+            if "acknowledged" not in columns:
+                db.execute(
+                    "ALTER TABLE print_jobs ADD COLUMN acknowledged INTEGER NOT NULL DEFAULT 0"
+                )
+            if "attempt" not in columns:
+                db.execute(
+                    "ALTER TABLE print_jobs ADD COLUMN attempt INTEGER NOT NULL DEFAULT 0"
+                )
+        try:
+            self.path.chmod(0o600)
+        except OSError:
+            logger.warning("não foi possível restringir permissões de %s", self.path, exc_info=True)
+
+    def recover_incomplete(self) -> int:
+        """Converte resíduos de processo morto em ACKs terminais seguros."""
+        now = time.time()
+        with self._connect() as db:
+            spooling = db.execute(
+                """
+                UPDATE print_jobs
+                   SET state = 'uncertain',
+                       detail = 'agente reiniciou durante envio ao spooler',
+                       acknowledged = 0,
+                       updated_at = ?
+                 WHERE state = 'spooling'
+                """,
+                (now,),
+            )
+            # `claimed` foi persistido antes de `spooling`: aqui temos certeza
+            # de que o spooler ainda não foi chamado, portanto é falha (não
+            # incerteza) e o servidor pode propor nova tentativa auditada.
+            claimed = db.execute(
+                """
+                UPDATE print_jobs
+                   SET state = 'failed',
+                       detail = 'agente reiniciou antes de chamar o spooler',
+                       acknowledged = 0,
+                       updated_at = ?
+                 WHERE state = 'claimed'
+                """,
+                (now,),
+            )
+            return spooling.rowcount + claimed.rowcount
+
+    def get(self, job_ref: str) -> RelayJournalEntry | None:
+        with self._connect() as db:
+            row = db.execute(
+                """
+                SELECT job_ref, payload_sha256, lease_token, attempt, state,
+                       spooler_job_id, detail, acknowledged
+                  FROM print_jobs WHERE job_ref = ?
+                """,
+                (job_ref,),
+            ).fetchone()
+        if row is None:
+            return None
+        return RelayJournalEntry(**dict(row))
+
+    def _same_or_rotate_attempt(
+        self,
+        entry: RelayJournalEntry,
+        *,
+        payload_sha256: str,
+        lease_token: str,
+        attempt: int,
+        target_state: str,
+        detail: str = "",
+    ) -> RelayJournalEntry:
+        """Aceita redelivery igual ou retry seguro depois de falha ACKed."""
+        if not hmac.compare_digest(entry.payload_sha256, payload_sha256):
+            raise RelayInvalidJob(
+                "job_ref reapareceu com outro payload_sha256",
+                job_ref=entry.job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        if hmac.compare_digest(entry.lease_token, lease_token):
+            if entry.attempt != attempt:
+                raise RelayInvalidJob(
+                    "mesmo lease reapareceu com outro attempt",
+                    job_ref=entry.job_ref,
+                    payload_sha256=payload_sha256,
+                    lease_token=lease_token,
+                    attempt=attempt,
+                )
+            return entry
+
+        # O backend reutiliza o PrintJob/ref em retry de falha comprovada. Só
+        # essa combinação prova que o papel anterior NÃO foi aceito e que o ACK
+        # respectivo chegou. Submitted/uncertain/ACK pendente ficam fechados.
+        if not (
+            entry.state == "failed"
+            and entry.acknowledged == 1
+            and attempt > entry.attempt
+        ):
+            raise RelayInvalidJob(
+                "novo lease recusado: ocorrência anterior não é failed ACKed",
+                job_ref=entry.job_ref,
+                payload_sha256=payload_sha256,
+                lease_token=lease_token,
+                attempt=attempt,
+            )
+        safe_detail = " ".join(str(detail).split())[:240]
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE print_jobs
+                   SET lease_token = ?, attempt = ?, state = ?,
+                       spooler_job_id = '', detail = ?, acknowledged = 0,
+                       updated_at = ?
+                 WHERE job_ref = ? AND payload_sha256 = ?
+                   AND lease_token = ? AND attempt = ?
+                   AND state = 'failed' AND acknowledged = 1
+                """,
+                (
+                    lease_token,
+                    attempt,
+                    target_state,
+                    safe_detail,
+                    time.time(),
+                    entry.job_ref,
+                    payload_sha256,
+                    entry.lease_token,
+                    entry.attempt,
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise RelayError("retry concorreu com outra transição do journal")
+        rotated = self.get(entry.job_ref)
+        assert rotated is not None
+        return rotated
+
+    def record_claimed(self, job: RelayJob) -> RelayJournalEntry:
+        now = time.time()
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT OR IGNORE INTO print_jobs
+                    (job_ref, payload_sha256, lease_token, attempt, state,
+                     created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'claimed', ?, ?)
+                """,
+                (
+                    job.job_ref,
+                    job.payload_sha256,
+                    job.lease_token,
+                    job.attempt,
+                    now,
+                    now,
+                ),
+            )
+        entry = self.get(job.job_ref)
+        assert entry is not None
+        return self._same_or_rotate_attempt(
+            entry,
+            payload_sha256=job.payload_sha256,
+            lease_token=job.lease_token,
+            attempt=job.attempt,
+            target_state="claimed",
+        )
+
+    def record_rejected(
+        self,
+        *,
+        job_ref: str,
+        payload_sha256: str,
+        lease_token: str,
+        attempt: int,
+        detail: str,
+    ) -> RelayJournalEntry:
+        now = time.time()
+        safe_detail = " ".join(str(detail).split())[:240]
+        with self._connect() as db:
+            db.execute(
+                """
+                INSERT OR IGNORE INTO print_jobs
+                    (job_ref, payload_sha256, lease_token, attempt, state, detail,
+                     acknowledged, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'failed', ?, 0, ?, ?)
+                """,
+                (
+                    job_ref,
+                    payload_sha256,
+                    lease_token,
+                    attempt,
+                    safe_detail,
+                    now,
+                    now,
+                ),
+            )
+        entry = self.get(job_ref)
+        assert entry is not None
+        return self._same_or_rotate_attempt(
+            entry,
+            payload_sha256=payload_sha256,
+            lease_token=lease_token,
+            attempt=attempt,
+            target_state="failed",
+            detail=safe_detail,
+        )
+
+    def begin_spooling(self, job_ref: str) -> bool:
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE print_jobs SET state = 'spooling', updated_at = ?
+                 WHERE job_ref = ? AND state = 'claimed'
+                """,
+                (time.time(), job_ref),
+            )
+            return cursor.rowcount == 1
+
+    def set_result(
+        self,
+        job_ref: str,
+        state: str,
+        *,
+        spooler_job_id: str = "",
+        detail: str = "",
+    ) -> None:
+        if state not in {"submitted_to_spooler", "failed", "uncertain"}:
+            raise ValueError(f"estado inválido do journal: {state}")
+        safe_detail = " ".join(str(detail).split())[:240]
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE print_jobs
+                 SET state = ?, spooler_job_id = ?, detail = ?,
+                       acknowledged = 0, updated_at = ?
+                 WHERE job_ref = ? AND state = 'spooling'
+                """,
+                (state, str(spooler_job_id)[:160], safe_detail, time.time(), job_ref),
+            )
+            if cursor.rowcount != 1:
+                raise RelayError("resultado perdeu a posse do estado spooling")
+
+    def pending_acknowledgements(self) -> list[RelayJournalEntry]:
+        with self._connect() as db:
+            rows = db.execute(
+                """
+                SELECT job_ref, payload_sha256, lease_token, attempt, state,
+                       spooler_job_id, detail, acknowledged
+                  FROM print_jobs
+                 WHERE acknowledged = 0
+                   AND lease_token != ''
+                   AND state IN ('submitted_to_spooler', 'failed', 'uncertain')
+                 ORDER BY updated_at, job_ref
+                """
+            ).fetchall()
+        return [RelayJournalEntry(**dict(row)) for row in rows]
+
+    def mark_acknowledged(self, job_ref: str) -> None:
+        with self._connect() as db:
+            cursor = db.execute(
+                """
+                UPDATE print_jobs SET acknowledged = 1, updated_at = ?
+                 WHERE job_ref = ?
+                """,
+                (time.time(), job_ref),
+            )
+            if cursor.rowcount != 1:
+                raise RelayError("ACK refere job ausente do journal")
+
+    def counts(self) -> dict[str, int]:
+        with self._connect() as db:
+            rows = db.execute(
+                "SELECT state, COUNT(*) AS amount FROM print_jobs GROUP BY state"
+            ).fetchall()
+        return {str(row["state"]): int(row["amount"]) for row in rows}
+
+
+def _relay_http_post(
+    config: AgentConfig,
+    path: str,
+    payload: dict,
+    *,
+    timeout: float = 10.0,
+) -> tuple[int, dict | None]:
+    """POST autenticado; mensagens de erro nunca ecoam corpo ou credencial."""
+    body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+    request = urllib.request.Request(
+        config.server_url + path,
+        data=body,
+        headers={
+            "Authorization": f"Bearer {config.relay_token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": f"nelson-counter-agent/{VERSION} ({build_id()})",
+        },
+        method="POST",
+    )
+    try:
+        opener = urllib.request.build_opener(_NoRelayRedirect())
+        with opener.open(request, timeout=timeout) as response:
+            response_status = getattr(response, "status", None)
+            status = int(response_status if response_status is not None else response.getcode())
+            if status == 204:
+                return status, None
+            raw = response.read(MAX_RELAY_RESPONSE_BYTES + 1)
+    except urllib.error.HTTPError as exc:
+        raise RelayTransportError(f"servidor respondeu HTTP {exc.code}") from exc
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        raise RelayTransportError("não foi possível alcançar o servidor do relay") from exc
+    if len(raw) > MAX_RELAY_RESPONSE_BYTES:
+        raise RelayTransportError("resposta do relay grande demais")
+    try:
+        decoded = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise RelayTransportError("resposta do relay não é JSON") from exc
+    if not isinstance(decoded, dict):
+        raise RelayTransportError("resposta do relay não é um objeto")
+    return status, decoded
+
+
+class RelayWorker:
+    def __init__(
+        self,
+        config: AgentConfig,
+        *,
+        journal: RelayJournal,
+        post=_relay_http_post,
+        spool=send_raw,
+    ) -> None:
+        if not config.relay_enabled:
+            raise ValueError("relay não configurado")
+        self.config = config
+        self.journal = journal
+        self.post = post
+        self.spool = spool
+        self.health = "unknown"
+        self._next_health_probe = 0.0
+
+    def _metadata(self) -> dict:
+        return {
+            # O servidor autentica/deriva a identidade da credencial. Estes
+            # campos são apenas diagnóstico e nunca fonte de autorização.
+            "station_ref": self.config.station_ref,
+            "agent_id": self.config.agent_id,
+            "version": VERSION,
+            "build": build_id(),
+            "queue": self.config.queue[:160],
+            "health": self.health,
+        }
+
+    def _ack(
+        self,
+        *,
+        job_ref: str,
+        lease_token: str,
+        payload_sha256: str,
+        status: str,
+        spooler_job_id: str = "",
+        detail: str = "",
+    ) -> None:
+        if status not in {"spooled", "failed", "uncertain"}:
+            raise ValueError(f"status inválido: {status}")
+        ack = {
+            **self._metadata(),
+            "lease_token": lease_token,
+            "payload_sha256": payload_sha256,
+            "status": status,
+            "spooler_job_id": str(spooler_job_id)[:160],
+            "detail": " ".join(str(detail).split())[:240],
+        }
+        path = RELAY_ACK_PATH.format(job_ref=urllib.parse.quote(job_ref, safe=""))
+        status, _ = self.post(self.config, path, ack)
+        if status < 200 or status >= 300:
+            raise RelayTransportError(f"ACK recebeu HTTP {status}")
+
+    @staticmethod
+    def _ack_status(entry: RelayJournalEntry) -> str:
+        return "spooled" if entry.state == "submitted_to_spooler" else entry.state
+
+    def _ack_entry(self, entry: RelayJournalEntry) -> None:
+        self._ack(
+            job_ref=entry.job_ref,
+            lease_token=entry.lease_token,
+            payload_sha256=entry.payload_sha256,
+            status=self._ack_status(entry),
+            spooler_job_id=entry.spooler_job_id,
+            detail=entry.detail,
+        )
+        # Se cair depois de o servidor aceitar e antes desta escrita, o próximo
+        # boot manda o mesmo ACK; o digest do backend torna isso idempotente.
+        self.journal.mark_acknowledged(entry.job_ref)
+
+    def poll_once(self) -> bool:
+        pending = self.journal.pending_acknowledgements()
+        if pending:
+            # Confirmações duráveis vêm antes de trabalho novo. Assim ACK
+            # perdido/restart não dependem de o servidor reemitir o lease bruto.
+            for entry in pending:
+                self._ack_entry(entry)
+            return True
+
+        now = time.monotonic()
+        if now >= self._next_health_probe:
+            probe = probe_queue(self.config.queue)
+            self.health = "ready" if probe.get("ok") else "unavailable"
+            self._next_health_probe = now + 30.0
+        claim = self._metadata()
+        status, response = self.post(self.config, RELAY_CLAIM_PATH, claim)
+        if status == 204 or response is None:
+            return False
+        if status != 200:
+            raise RelayTransportError(f"claim recebeu HTTP {status}")
+        if "job" in response:
+            if response["job"] is None:
+                return False
+            raw_job = response["job"]
+        else:
+            raw_job = response
+        try:
+            job = RelayJob.from_claim(raw_job)
+        except RelayInvalidJob as exc:
+            # Só é possível encerrar um poison job quando há os três vínculos
+            # íntegros exigidos pelo ACK; sem eles, não inventamos identidade.
+            if exc.job_ref and exc.payload_sha256 and exc.lease_token and exc.attempt:
+                rejected = self.journal.record_rejected(
+                    job_ref=exc.job_ref,
+                    payload_sha256=exc.payload_sha256,
+                    lease_token=exc.lease_token,
+                    attempt=exc.attempt,
+                    detail=str(exc),
+                )
+                self._ack_entry(rejected)
+                return True
+            raise
+
+        entry = self.journal.record_claimed(job)
+        if entry.state in {"submitted_to_spooler", "failed", "uncertain"}:
+            # ACK perdido/redelivery: repete somente o ACK, nunca o papel.
+            self._ack_entry(entry)
+            return True
+        if entry.state == "spooling":
+            self.journal.set_result(
+                job.job_ref,
+                "uncertain",
+                detail="entrega anterior ficou interrompida durante o spool",
+            )
+            uncertain = self.journal.get(job.job_ref)
+            assert uncertain is not None
+            self._ack_entry(uncertain)
+            return True
+        if entry.state != "claimed" or not self.journal.begin_spooling(job.job_ref):
+            latest = self.journal.get(job.job_ref)
+            if latest and latest.state in {"submitted_to_spooler", "failed", "uncertain"}:
+                self._ack_entry(latest)
+                return True
+            raise RelayError("transição concorrente inesperada no journal")
+
+        # O estado `spooling` está em disco ANTES de tocar no spooler. Se o
+        # processo morrer daqui em diante, o próximo boot converte para
+        # `uncertain` e jamais reimprime automaticamente.
+        try:
+            spooler_job_id = self.spool(job.payload, queue=self.config.queue, title=job.title)
+        except SpoolerUncertainError as exc:
+            self.journal.set_result(job.job_ref, "uncertain", detail=str(exc))
+        except SpoolerError as exc:
+            self.journal.set_result(job.job_ref, "failed", detail=str(exc))
+        else:
+            self.journal.set_result(
+                job.job_ref,
+                "submitted_to_spooler",
+                # CUPS/Windows confirmaram aceitação mesmo se sua saída não
+                # trouxe um identificador analisável. O backend exige um valor
+                # para distinguir ACK spooled de confirmação vazia.
+                spooler_job_id=spooler_job_id or "accepted-no-id",
+            )
+        final = self.journal.get(job.job_ref)
+        assert final is not None
+        self._ack_entry(final)
+        return True
+
+    def run(self, stop: threading.Event) -> None:
+        backoff = 1.0
+        while not stop.is_set():
+            try:
+                processed = self.poll_once()
+            except (RelayError, OSError, sqlite3.Error, ValueError) as exc:
+                logger.warning("relay indisponível: %s", exc)
+                stop.wait(backoff)
+                backoff = min(backoff * 2, 60.0)
+                continue
+            backoff = 1.0
+            stop.wait(0.25 if processed else self.config.relay_poll_seconds)
+
+
+def _relay_thread_main(
+    config: AgentConfig,
+    stop: threading.Event,
+    *,
+    journal_path: Path | None = None,
+) -> None:
+    """Inicializa/reabre o journal sem deixar uma falha derrubar a loopback."""
+    backoff = 1.0
+    path = JOURNAL_PATH if journal_path is None else journal_path
+    while not stop.is_set():
+        try:
+            journal = RelayJournal(path)
+        except (OSError, sqlite3.Error) as exc:
+            logger.error("relay sem journal disponível: %s", exc)
+            stop.wait(backoff)
+            backoff = min(backoff * 2, 60.0)
+            continue
+        RelayWorker(config, journal=journal).run(stop)
+        return
+
+
 # ── HTTP ──────────────────────────────────────────────────────────────────
 
 
@@ -583,7 +1441,7 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
             return {}
         # Um comprovante em base64 já passa de 8 KB, e a DANFE passa mais. O
         # teto continua existindo para o agente não virar despejo de memória.
-        if length > 512 * 1024:
+        if length > MAX_HTTP_BODY_BYTES:
             raise ValueError("corpo grande demais")
         raw = self.rfile.read(length)
         try:
@@ -650,6 +1508,7 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
                     "calibrated": bool(self.config.drawer_status),
                     "query": int((self.config.drawer_status or {}).get("query") or 0),
                 },
+                "relay": {"enabled": self.config.relay_enabled},
             },
         )
 
@@ -741,10 +1600,7 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
         balcão compusesse, dois imprimiriam diferente e a DANFE (leiaute exigido
         por lei) teria de ser reimplementada em cada máquina.
         """
-        import base64
-        import binascii
-
-        titulo = str(data.get("title") or "documento")[:60]
+        titulo = " ".join(str(data.get("title") or "documento").split())[:60]
         try:
             payload = base64.b64decode(str(data.get("payload_b64") or ""), validate=True)
         except (binascii.Error, ValueError) as exc:
@@ -753,6 +1609,9 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
             return
         if not payload:
             self._reply(400, {"ok": False, "error": "payload vazio"})
+            return
+        if len(payload) > MAX_PRINT_PAYLOAD_BYTES:
+            self._reply(400, {"ok": False, "error": "payload excede 512 KiB"})
             return
         try:
             job = send_raw(payload, queue=self.config.queue, title=titulo)
@@ -769,19 +1628,45 @@ class CounterAgentHandler(BaseHTTPRequestHandler):
 
 def serve(config: AgentConfig) -> None:
     handler = type("BoundCounterAgentHandler", (CounterAgentHandler,), {"config": config})
-    httpd = ThreadingHTTPServer((config.host, config.port), handler)
+    server_class = ThreadingHTTPServer
+    if config.host == "::1":
+        server_class = type(
+            "IPv6ThreadingHTTPServer",
+            (ThreadingHTTPServer,),
+            {"address_family": socket.AF_INET6},
+        )
+    httpd = server_class((config.host, config.port), handler)
+    relay_stop = threading.Event()
+    relay_thread: threading.Thread | None = None
+    if config.relay_enabled:
+        relay_thread = threading.Thread(
+            target=_relay_thread_main,
+            args=(config, relay_stop),
+            name="print-relay",
+            daemon=True,
+        )
+        relay_thread.start()
+        logger.info(
+            "relay de impressão ativo (servidor=%s estação=%s agente=%s)",
+            config.server_url,
+            config.station_ref,
+            config.agent_id,
+        )
     logger.info(
         "agente do balcão ouvindo em http://%s:%s (fila=%s, origens=%s)",
         config.host,
         config.port,
         config.queue,
-        ", ".join(config.allowed_origins) or "qualquer",
+        ", ".join(config.allowed_origins) or "nenhuma origem web",
     )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         logger.info("encerrando")
     finally:
+        relay_stop.set()
+        if relay_thread is not None:
+            relay_thread.join(timeout=2)
         httpd.server_close()
 
 
@@ -920,7 +1805,38 @@ def _list_queues_windows() -> list[str]:
     return [entries[i].pPrinterName for i in range(returned.value) if entries[i].pPrinterName]
 
 
-def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tuple[dict, bool]:
+def _write_private_json(path: Path, payload: dict) -> None:
+    """Grava credenciais sem janela 0644 e substitui o arquivo atomicamente."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    fd = os.open(str(temporary), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(payload, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except BaseException:
+        try:
+            temporary.unlink()
+        except OSError:
+            logger.warning("não foi possível remover o arquivo temporário %s", temporary, exc_info=True)
+        raise
+
+
+def write_config(
+    path: Path,
+    *,
+    queue: str,
+    origin: str,
+    token: str = "",
+    server_url: str = "",
+    station_ref: str = "",
+    agent_id: str = "",
+    relay_token: str = "",
+) -> tuple[dict, bool]:
     """Escreve a config, ou preserva a que já existe.
 
     ``token`` vem do Admin, que é quem tem o par. Sem ele o agente gera um e
@@ -931,15 +1847,38 @@ def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tup
     PDV ficaria batendo com o velho e levando 401 até alguém acertar os dois
     lados — e ninguém quer descobrir isso no meio de um sábado.
     """
+    relay_requested = any((server_url, station_ref, agent_id, relay_token))
     if path.exists():
         config = json.loads(path.read_text(encoding="utf-8"))
+        changed = False
         if token and token != config.get("token"):
-            # Token novo veio do Admin (rotação): é a única razão para mexer.
             config["token"] = token
-            path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+            changed = True
+        # Configs antigas vazias deixam de ser abertas a qualquer aba. Quando
+        # o instalador novo já conhece a origem, aproveita para fechar a lacuna
+        # sem substituir allowlists existentes.
+        if origin and not config.get("allowed_origins"):
+            config["allowed_origins"] = [origin.rstrip("/")]
+            changed = True
+        if relay_requested:
+            relay_values = {
+                "server_url": server_url,
+                "station_ref": station_ref,
+                "agent_id": agent_id or str(config.get("agent_id") or uuid.uuid4()),
+                "relay_token": relay_token,
+            }
+            for key, value in relay_values.items():
+                if value and value != config.get(key):
+                    config[key] = value
+                    changed = True
+        # Valida antes de substituir. Config insegura (`0.0.0.0`) ou relay
+        # parcial não entra em serviço por acidente.
+        AgentConfig.from_dict(config)
+        if changed:
+            _write_private_json(path, config)
+        else:
             path.chmod(0o600)
-            return config, True
-        return config, False
+        return config, changed
     import secrets
 
     config = {
@@ -947,14 +1886,21 @@ def write_config(path: Path, *, queue: str, origin: str, token: str = "") -> tup
         "token": token or secrets.token_urlsafe(32),
         "port": 47811,
         "host": "127.0.0.1",
-        # Sem origem declarada a lista fica VAZIA, que o agente lê como
-        # "qualquer origem". É mais frouxo, e o instalador avisa em voz alta —
-        # melhor do que cravar um domínio chutado, que vira 403 calado.
+        # Sem origem declarada a lista fica vazia e pedidos COM Origin são
+        # recusados. CLI local e relay não enviam Origin e seguem funcionando.
         "allowed_origins": [origin.rstrip("/")] if origin else [],
     }
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
-    path.chmod(0o600)
+    if relay_requested:
+        config.update(
+            {
+                "server_url": server_url,
+                "station_ref": station_ref,
+                "agent_id": agent_id or str(uuid.uuid4()),
+                "relay_token": relay_token,
+            }
+        )
+    AgentConfig.from_dict(config)
+    _write_private_json(path, config)
     return config, True
 
 
@@ -1001,7 +1947,7 @@ def _run_quiet(cmd: list[str]) -> None:
     """
     try:
         subprocess.run(cmd, capture_output=True, check=False)
-    except OSError:
+    except OSError:  # silêncio-deliberado: faxina aceita serviço/comando legado ausente
         pass
 
 
@@ -1199,6 +2145,24 @@ def doctor() -> int:
     # revelar a credencial — a mesma máscara que a folha do crachá e a tela do
     # terminal usam (`mask_badge`), para os três serem comparáveis entre si.
     print(f"  token no arquivo ......... {_mascarar(config.token)}")
+    if config.relay_enabled:
+        print(f"  relay .................... ativo → {config.server_url}")
+        print(f"  estação/agente ........... {config.station_ref} / {config.agent_id}")
+        print("  credencial do relay ...... configurada (não exibida)")
+        if JOURNAL_PATH.exists():
+            journal = RelayJournal(JOURNAL_PATH)
+            resumo = ", ".join(
+                f"{state}={amount}" for state, amount in sorted(journal.counts().items())
+            ) or "vazio"
+            print(f"  journal do relay ......... {resumo}")
+            print(
+                "  ACKs pendentes ............ "
+                f"{len(journal.pending_acknowledgements())}"
+            )
+        else:
+            print("  journal do relay ......... ainda sem trabalhos")
+    else:
+        print("  relay .................... desativado (modo local)")
 
     saude = _wait_until_listening({"port": config.port}, seconds=3)
     if saude is None:
@@ -1753,6 +2717,39 @@ def install(argv: list[str]) -> int:
         print(f"erro: '{queue}' não está entre as {rotulo} deste computador.", file=sys.stderr)
         return 1
 
+    server_url = _arg_value(argv, "--server-url")
+    station_ref = _arg_value(argv, "--station") or _arg_value(argv, "--station-ref")
+    agent_id = _arg_value(argv, "--agent-id")
+    relay_token = _arg_value(argv, "--relay-token")
+    if any((server_url, station_ref, agent_id, relay_token)) and not all(
+        (server_url, station_ref, relay_token)
+    ):
+        print(
+            "erro: relay requer --server-url, --station e --relay-token "
+            "(--agent-id é opcional e será gerado).",
+            file=sys.stderr,
+        )
+        return 1
+    if server_url:
+        parsed_relay = urllib.parse.urlparse(server_url)
+        if (
+            parsed_relay.scheme != "https"
+            or not parsed_relay.netloc
+            or parsed_relay.username
+            or parsed_relay.password
+            or parsed_relay.query
+            or parsed_relay.fragment
+            or len(relay_token) < 16
+            or len(station_ref) > 80
+            or len(agent_id) > 120
+            or any(c not in _IDENTITY_CHARS for c in station_ref + agent_id)
+        ):
+            print(
+                "erro: relay requer URL HTTPS sem credenciais e token com ao menos 16 caracteres.",
+                file=sys.stderr,
+            )
+            return 1
+
     INSTALL_DIR.mkdir(parents=True, exist_ok=True)
     migrate_legacy_config()
 
@@ -1766,7 +2763,14 @@ def install(argv: list[str]) -> int:
     token = _arg_value(argv, "--token")
     origin = _arg_value(argv, "--origin")
     config, written = write_config(
-        DEFAULT_CONFIG_PATH, queue=queue, origin=origin, token=token
+        DEFAULT_CONFIG_PATH,
+        queue=queue,
+        origin=origin,
+        token=token,
+        server_url=server_url,
+        station_ref=station_ref,
+        agent_id=agent_id,
+        relay_token=relay_token,
     )
 
     # Primeiro derruba o antigo, depois sobe o novo. Invertido, o novo tenta
@@ -1785,10 +2789,15 @@ def install(argv: list[str]) -> int:
     print(f"Versao {VERSION} (build {build_id()}) — confira na tela do Admin se é a atual.")
     if not config.get("allowed_origins"):
         print(
-            "\naviso: sem --origin, este agente aceita pedido de QUALQUER página\n"
-            "       aberta neste navegador (o token continua obrigatório).\n"
+            "\naviso: sem --origin, pedidos de páginas do navegador serão recusados.\n"
+            "       A linha de comando e o relay continuam disponíveis.\n"
             "       Pegue o comando completo no Admin: Terminais do PDV → este\n"
             "       terminal → Baixar o agente e ver como instalar."
+        )
+    if config.get("server_url"):
+        print(
+            "Relay HTTPS ativo para a estação "
+            f"{config.get('station_ref')} (agente {config.get('agent_id')})."
         )
     if token:
         # Veio do Admin: o par já existe dos dois lados, nada a transcrever.
@@ -1898,7 +2907,7 @@ def _wait_until_listening(config: dict, *, seconds: int = 10) -> dict | None:
             with urllib.request.urlopen(url, timeout=2) as response:
                 if response.status == 200:
                     return json.loads(response.read().decode("utf-8"))
-        except (urllib.error.URLError, OSError, ValueError):
+        except (urllib.error.URLError, OSError, ValueError):  # silêncio-deliberado: probe repete até o prazo
             pass
         time.sleep(0.5)
     return None

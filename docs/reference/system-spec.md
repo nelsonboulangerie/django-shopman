@@ -113,7 +113,10 @@ Cada pacote abaixo é pip-instalável (`shopman-<nome>`), vive em `packages/<nom
 - Vendabilidade = `Product.is_sellable ∧ ListingItem.is_sellable`.
 - Preço: cascata por `min_qty` — `filter(min_qty__lte=qty).order_by('-min_qty').first()`; fallback em `Product.base_price_q`.
 - Bundle expansion escala por qty (2 croissants por combo × 5 combos = 10 croissants).
-- Nutrição: validação ANVISA RDC 360/2003 — se qualquer nutriente, `serving_size_g>0`; `trans_fat_g ≤ total_fat_g`; `sugars_g ≤ carbohydrates_g`.
+- Nutrição: validação estrutural do schema legado — se qualquer nutriente,
+  `serving_size_g>0`; `trans_fat_g ≤ total_fat_g`; `sugars_g ≤ carbohydrates_g`.
+  Não equivale a rótulo comercial completo sob RDC 429/2020 + IN 75/2020; ver
+  ADR-028.
 
 **Nuance pro**
 - Acoplamento frouxo via `ref` (Listing.ref = Channel.ref por convenção, sem FK) — permite evolução independente.

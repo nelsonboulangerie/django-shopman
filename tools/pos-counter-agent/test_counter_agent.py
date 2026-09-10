@@ -7,6 +7,8 @@ vez de executá-lo, e a recusa de quem não tem token.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import sys
 import threading
@@ -123,9 +125,21 @@ def test_config_recusa_sem_fila():
         AgentConfig.from_dict({"token": TOKEN})
 
 
-def test_config_sem_allowlist_aceita_qualquer_origem():
+def test_config_sem_allowlist_recusa_qualquer_origem_do_browser():
     config = AgentConfig.from_dict({"queue": "q", "token": TOKEN})
-    assert config.allows("https://qualquer.coisa")
+    assert not config.allows("https://qualquer.coisa")
+    assert config.allows(""), "CLI local sem Origin continua compatível"
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "192.168.1.10", "example.com"])
+def test_config_recusa_host_fora_da_loopback(host):
+    with pytest.raises(SystemExit, match="loopback"):
+        AgentConfig.from_dict({"queue": "q", "token": TOKEN, "host": host})
+
+
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1", "localhost"])
+def test_config_aceita_apenas_os_hosts_loopback_conhecidos(host):
+    assert AgentConfig.from_dict({"queue": "q", "token": TOKEN, "host": host}).host == host
 
 
 def test_config_com_allowlist_ignora_barra_final():
@@ -365,14 +379,16 @@ def test_sem_origem_a_allowlist_fica_vazia_em_vez_de_chutar_um_dominio(tmp_path)
     """A primeira versão cravava um domínio inventado aqui.
 
     Ele não correspondia a nada no deployment (o PDV é `pdv.boulangerie.com.br`),
-    então instalar sem `--origin` daria 403 calado na gaveta. Vazio é mais
-    frouxo, mas é honesto e o instalador avisa.
+    então instalar sem `--origin` daria 403 calado na gaveta. Agora vazio é
+    fail-closed para navegador, e o instalador explica como informar a origem.
     """
     path = tmp_path / "agent.json"
     config, _ = counter_agent.write_config(path, queue="TM-T20", origin="", token=TOKEN)
 
     assert config["allowed_origins"] == []
-    assert AgentConfig.from_dict(config).allows("https://pdv.boulangerie.com.br")
+    parsed = AgentConfig.from_dict(config)
+    assert not parsed.allows("https://pdv.boulangerie.com.br")
+    assert parsed.allows("")
 
 
 def test_nenhum_dominio_de_deployment_cravado_no_agente():
@@ -718,6 +734,22 @@ def test_print_aceita_documento_grande(agent):
     })
     assert status == 200
     assert sent[0]["payload"] == grande
+
+
+def test_print_recusa_payload_raw_acima_de_512_kib(agent):
+    base, sent = agent
+    grande = b"X" * (counter_agent.MAX_PRINT_PAYLOAD_BYTES + 1)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        _print_req(
+            base,
+            {
+                "token": TOKEN,
+                "title": "grande-demais",
+                "payload_b64": base64.b64encode(grande).decode(),
+            },
+        )
+    assert exc.value.code == 400
+    assert sent == []
 
 
 def test_falha_do_spooler_na_impressao_vira_502(agent, monkeypatch):
@@ -1365,3 +1397,512 @@ def test_doctor_confirma_a_trava_armada(monkeypatch, capsys, tmp_path):
     counter_agent.doctor()
 
     assert "ARMADA" in capsys.readouterr().out
+
+
+# ── Relay HTTPS / journal idempotente ────────────────────────────────────
+
+
+RELAY_TOKEN = "relay-token-de-teste-com-tamanho-suficiente"
+
+
+def _relay_config(**overrides):
+    raw = {
+        "queue": "TM-T20",
+        "token": TOKEN,
+        "server_url": "https://gestor.example",
+        "station_ref": "preparo-01",
+        "agent_id": "agente-01",
+        "relay_token": RELAY_TOKEN,
+    }
+    raw.update(overrides)
+    return AgentConfig.from_dict(raw)
+
+
+def _claimed_job(
+    payload=b"\x1b@ETIQUETA\n",
+    *,
+    job_ref="job-1",
+    lease_token="lease-token-de-teste-123456",
+    attempt=1,
+):
+    return {
+        "job_ref": job_ref,
+        "attempt": attempt,
+        "title": "etiqueta-preparo",
+        "payload_b64": base64.b64encode(payload).decode("ascii"),
+        "payload_sha256": hashlib.sha256(payload).hexdigest(),
+        "payload_size": len(payload),
+        "content_sha256": "hash-logico-opcional",
+        "lease_token": lease_token,
+    }
+
+
+def test_relay_config_exige_https_identidade_token_e_lease_independente():
+    assert _relay_config().relay_enabled is True
+    with pytest.raises(SystemExit, match="HTTPS"):
+        _relay_config(server_url="http://gestor.example")
+    with pytest.raises(SystemExit, match="incompleto"):
+        AgentConfig.from_dict(
+            {
+                "queue": "q",
+                "token": TOKEN,
+                "server_url": "https://gestor.example",
+                "station_ref": "preparo-01",
+            }
+        )
+
+
+def test_instalacao_relay_gera_agent_id_e_guarda_tokens_em_0600(tmp_path):
+    path = tmp_path / "agent.json"
+    config, written = counter_agent.write_config(
+        path,
+        queue="TM-T20",
+        origin=ORIGIN,
+        token=TOKEN,
+        server_url="https://gestor.example/",
+        station_ref="preparo-01",
+        relay_token=RELAY_TOKEN,
+    )
+
+    assert written is True
+    assert config["server_url"] == "https://gestor.example/"
+    assert config["agent_id"]
+    assert AgentConfig.from_dict(config).server_url == "https://gestor.example"
+    assert oct(path.stat().st_mode)[-3:] == "600"
+    assert RELAY_TOKEN in path.read_text()
+
+
+def test_reinstalacao_reaperta_permissao_da_config_sem_reescrever(tmp_path):
+    path = tmp_path / "agent.json"
+    counter_agent.write_config(path, queue="TM-T20", origin=ORIGIN, token=TOKEN)
+    path.chmod(0o644)
+
+    _, written = counter_agent.write_config(
+        path, queue="TM-T20", origin=ORIGIN, token=TOKEN
+    )
+
+    assert written is False
+    assert oct(path.stat().st_mode)[-3:] == "600"
+
+
+@pytest.mark.parametrize(
+    "change,match",
+    [
+        ({"lease_token": ""}, "lease_token"),
+        ({"payload_sha256": ""}, "payload_sha256"),
+        ({"payload_sha256": "0" * 64}, "não confere"),
+        ({"payload_b64": "%%%"}, "payload_b64"),
+    ],
+)
+def test_claim_invalido_nunca_vira_bytes_no_spooler(change, match):
+    raw = _claimed_job()
+    raw.update(change)
+    with pytest.raises(counter_agent.RelayInvalidJob, match=match):
+        counter_agent.RelayJob.from_claim(raw)
+
+
+def test_claim_recusa_payload_raw_acima_de_512_kib():
+    payload = b"x" * (counter_agent.MAX_PRINT_PAYLOAD_BYTES + 1)
+    with pytest.raises(counter_agent.RelayInvalidJob, match="512 KiB"):
+        counter_agent.RelayJob.from_claim(_claimed_job(payload))
+
+
+def test_claim_aceita_content_base64_so_como_alias_defensivo():
+    raw = _claimed_job()
+    raw["content_base64"] = raw.pop("payload_b64")
+    assert counter_agent.RelayJob.from_claim(raw).payload == b"\x1b@ETIQUETA\n"
+
+
+def test_claim_confere_tamanho_declarado_quando_presente():
+    raw = _claimed_job()
+    raw["payload_size"] += 1
+    with pytest.raises(counter_agent.RelayInvalidJob, match="payload_size não confere"):
+        counter_agent.RelayJob.from_claim(raw)
+
+
+def test_payload_invalido_com_lease_valido_persiste_ack_failed(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    raw = _claimed_job()
+    raw["payload_b64"] = "%%%"
+    calls = []
+
+    def post(config, endpoint, body):
+        calls.append((endpoint, body))
+        if endpoint == counter_agent.RELAY_CLAIM_PATH:
+            return 200, raw
+        raise counter_agent.RelayTransportError("ACK offline")
+
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    worker = counter_agent.RelayWorker(
+        _relay_config(), journal=journal, post=post, spool=lambda *a, **k: None
+    )
+    with pytest.raises(counter_agent.RelayTransportError, match="ACK offline"):
+        worker.poll_once()
+
+    entry = journal.get("job-1")
+    assert entry is not None and entry.state == "failed" and entry.acknowledged == 0
+    assert entry.lease_token == "lease-token-de-teste-123456"
+
+
+def test_relay_feliz_journaliza_e_ack_nao_promete_papel_impresso(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        counter_agent,
+        "probe_queue",
+        lambda queue: {"ok": True, "accepting": True, "reason": ""},
+    )
+    calls = []
+    spooled = []
+    claimed = _claimed_job()
+
+    def post(config, path, body):
+        calls.append((path, body))
+        if path == counter_agent.RELAY_CLAIM_PATH:
+            return 200, claimed
+        return 204, None
+
+    def spool(payload, *, queue, title):
+        spooled.append((payload, queue, title))
+        return "TM-T20-42"
+
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    worker = counter_agent.RelayWorker(_relay_config(), journal=journal, post=post, spool=spool)
+
+    assert worker.poll_once() is True
+    entry = journal.get("job-1")
+    assert entry is not None and entry.state == "submitted_to_spooler"
+    assert spooled == [(b"\x1b@ETIQUETA\n", "TM-T20", "etiqueta-preparo")]
+    ack = calls[-1][1]
+    assert ack["status"] == "spooled"
+    assert ack["payload_sha256"] == claimed["payload_sha256"]
+    assert ack["lease_token"] == "lease-token-de-teste-123456"
+    assert ack["spooler_job_id"] == "TM-T20-42"
+    assert "printed" not in json.dumps(ack).lower()
+
+
+def test_transporte_relay_usa_bearer_https_timeout_e_bloqueia_redirect(monkeypatch):
+    captured = {}
+
+    class Response:
+        status = 204
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+    class Opener:
+        def open(self, request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return Response()
+
+    def build_opener(*handlers):
+        captured["handlers"] = handlers
+        return Opener()
+
+    monkeypatch.setattr(counter_agent.urllib.request, "build_opener", build_opener)
+
+    status, body = counter_agent._relay_http_post(
+        _relay_config(), counter_agent.RELAY_CLAIM_PATH, {"health": "ready"}, timeout=3.5
+    )
+
+    request = captured["request"]
+    assert status == 204 and body is None
+    assert request.full_url == "https://gestor.example/api/v1/backstage/print-agent/jobs/claim/"
+    assert request.get_header("Authorization") == f"Bearer {RELAY_TOKEN}"
+    assert captured["timeout"] == 3.5
+    assert isinstance(captured["handlers"][0], counter_agent._NoRelayRedirect)
+
+
+def test_ack_perdido_redelivery_repete_so_ack(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    claimed = _claimed_job()
+    spool_count = 0
+    ack_count = 0
+    claim_count = 0
+
+    def post(config, path, body):
+        nonlocal ack_count, claim_count
+        if path == counter_agent.RELAY_CLAIM_PATH:
+            claim_count += 1
+            return 200, claimed
+        ack_count += 1
+        if ack_count == 1:
+            raise counter_agent.RelayTransportError("ACK caiu")
+        return 204, None
+
+    def spool(payload, *, queue, title):
+        nonlocal spool_count
+        spool_count += 1
+        return "TM-T20-7"
+
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    worker = counter_agent.RelayWorker(_relay_config(), journal=journal, post=post, spool=spool)
+
+    with pytest.raises(counter_agent.RelayTransportError, match="ACK caiu"):
+        worker.poll_once()
+    assert journal.get("job-1").state == "submitted_to_spooler"
+    # Simula restart real: o lease existe apenas no SQLite local; o backend
+    # conserva só o digest e não precisa reemitir o segredo.
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    worker = counter_agent.RelayWorker(
+        _relay_config(), journal=journal, post=post, spool=spool
+    )
+    assert worker.poll_once() is True
+    assert spool_count == 1
+    assert ack_count == 2
+    assert claim_count == 1, "ACK pendente precisa sair antes de novo claim"
+
+
+def test_failed_acked_retry_novo_lease_spoola_exatamente_uma_nova_vez(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    first = _claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1)
+    retry = _claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2)
+    claims = [first, retry]
+    spool_calls = 0
+    submitted = []
+    acks = []
+
+    def post(config, endpoint, body):
+        if endpoint == counter_agent.RELAY_CLAIM_PATH:
+            return (200, claims.pop(0)) if claims else (204, None)
+        acks.append(body)
+        return 200, {"ok": True}
+
+    def spool(payload, *, queue, title):
+        nonlocal spool_calls
+        spool_calls += 1
+        if spool_calls == 1:
+            raise counter_agent.SpoolerError("recusado antes de aceitar")
+        submitted.append(payload)
+        return "TM-T20-99"
+
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    worker = counter_agent.RelayWorker(
+        _relay_config(), journal=journal, post=post, spool=spool
+    )
+
+    worker.poll_once()
+    failed = journal.get("job-1")
+    assert failed.state == "failed" and failed.acknowledged == 1 and failed.attempt == 1
+
+    worker.poll_once()
+    final = journal.get("job-1")
+    assert final.state == "submitted_to_spooler" and final.acknowledged == 1
+    assert final.attempt == 2 and final.lease_token == "lease-segunda-tentativa-456"
+    assert submitted == [b"\x1b@ETIQUETA\n"]
+    assert [ack["status"] for ack in acks] == ["failed", "spooled"]
+
+    worker.poll_once()
+    assert spool_calls == 2, "poll posterior não pode repetir a impressão do retry"
+
+
+@pytest.mark.parametrize("previous", ["submitted_to_spooler", "uncertain"])
+def test_novo_lease_nunca_reabre_submitted_ou_uncertain(tmp_path, previous):
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    first = counter_agent.RelayJob.from_claim(
+        _claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1)
+    )
+    journal.record_claimed(first)
+    journal.begin_spooling(first.job_ref)
+    journal.set_result(first.job_ref, previous, spooler_job_id="TM-T20-1")
+    journal.mark_acknowledged(first.job_ref)
+
+    retry = counter_agent.RelayJob.from_claim(
+        _claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2)
+    )
+    with pytest.raises(counter_agent.RelayInvalidJob, match="novo lease recusado"):
+        journal.record_claimed(retry)
+
+
+def test_novo_lease_nao_fura_ack_failed_ainda_pendente(tmp_path):
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    first = counter_agent.RelayJob.from_claim(
+        _claimed_job(lease_token="lease-primeira-tentativa-123", attempt=1)
+    )
+    journal.record_claimed(first)
+    journal.begin_spooling(first.job_ref)
+    journal.set_result(first.job_ref, "failed", detail="fila recusou")
+
+    retry = counter_agent.RelayJob.from_claim(
+        _claimed_job(lease_token="lease-segunda-tentativa-456", attempt=2)
+    )
+    with pytest.raises(counter_agent.RelayInvalidJob, match="novo lease recusado"):
+        journal.record_claimed(retry)
+
+
+def test_poison_retry_rotaciona_lease_e_detalhe_so_depois_do_ack(tmp_path):
+    journal = counter_agent.RelayJournal(tmp_path / "relay.sqlite3")
+    payload_sha256 = _claimed_job()["payload_sha256"]
+    journal.record_rejected(
+        job_ref="job-1",
+        payload_sha256=payload_sha256,
+        lease_token="lease-primeira-tentativa-123",
+        attempt=1,
+        detail="base64 inválido",
+    )
+    journal.mark_acknowledged("job-1")
+
+    retry = journal.record_rejected(
+        job_ref="job-1",
+        payload_sha256=payload_sha256,
+        lease_token="lease-segunda-tentativa-456",
+        attempt=2,
+        detail="tamanho inválido",
+    )
+
+    assert retry.state == "failed" and retry.acknowledged == 0
+    assert retry.attempt == 2 and retry.lease_token == "lease-segunda-tentativa-456"
+    assert retry.detail == "tamanho inválido"
+
+
+def test_crash_em_spooling_vira_uncertain_e_nunca_reimprime(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    claimed = _claimed_job()
+    path = tmp_path / "relay.sqlite3"
+
+    class CrashSimulado(BaseException):
+        pass
+
+    def claim_only(config, endpoint, body):
+        assert endpoint == counter_agent.RELAY_CLAIM_PATH
+        return 200, claimed
+
+    journal = counter_agent.RelayJournal(path)
+    worker = counter_agent.RelayWorker(
+        _relay_config(),
+        journal=journal,
+        post=claim_only,
+        spool=lambda *a, **k: (_ for _ in ()).throw(CrashSimulado()),
+    )
+    with pytest.raises(CrashSimulado):
+        worker.poll_once()
+    assert journal.get("job-1").state == "spooling"
+
+    recovered = counter_agent.RelayJournal(path)
+    assert recovered.get("job-1").state == "uncertain"
+    calls = []
+
+    def redelivery(config, endpoint, body):
+        calls.append((endpoint, body))
+        return (200, claimed) if endpoint == counter_agent.RELAY_CLAIM_PATH else (204, None)
+
+    worker = counter_agent.RelayWorker(
+        _relay_config(),
+        journal=recovered,
+        post=redelivery,
+        spool=lambda *a, **k: pytest.fail("redelivery incerta não pode reimprimir"),
+    )
+    assert worker.poll_once() is True
+    assert calls[0][0] != counter_agent.RELAY_CLAIM_PATH
+    assert calls[-1][1]["status"] == "uncertain"
+
+
+def test_restart_depois_do_claim_mas_antes_do_spool_acka_failed_primeiro(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    path = tmp_path / "relay.sqlite3"
+    journal = counter_agent.RelayJournal(path)
+    journal.record_claimed(counter_agent.RelayJob.from_claim(_claimed_job()))
+
+    recovered = counter_agent.RelayJournal(path)
+    assert recovered.get("job-1").state == "failed"
+    calls = []
+
+    def only_ack(config, endpoint, body):
+        calls.append((endpoint, body))
+        assert endpoint != counter_agent.RELAY_CLAIM_PATH
+        return 204, None
+
+    worker = counter_agent.RelayWorker(
+        _relay_config(),
+        journal=recovered,
+        post=only_ack,
+        spool=lambda *a, **k: pytest.fail("claimed recuperado não imprime sem payload"),
+    )
+    worker.poll_once()
+
+    assert calls[0][1]["status"] == "failed"
+    assert recovered.get("job-1").acknowledged == 1
+
+
+@pytest.mark.parametrize(
+    "error,expected",
+    [
+        (counter_agent.SpoolerError("fila recusou"), "failed"),
+        (counter_agent.SpoolerUncertainError("timeout"), "uncertain"),
+    ],
+)
+def test_falhas_do_spooler_tem_outcome_honesto(monkeypatch, tmp_path, error, expected):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    calls = []
+
+    def post(config, endpoint, body):
+        calls.append((endpoint, body))
+        return (200, _claimed_job()) if endpoint == counter_agent.RELAY_CLAIM_PATH else (204, None)
+
+    def fail(*args, **kwargs):
+        raise error
+
+    worker = counter_agent.RelayWorker(
+        _relay_config(),
+        journal=counter_agent.RelayJournal(tmp_path / "relay.sqlite3"),
+        post=post,
+        spool=fail,
+    )
+    worker.poll_once()
+
+    assert calls[-1][1]["status"] == expected
+    assert worker.journal.get("job-1").state == expected
+
+
+def test_backoff_do_relay_e_exponencial_e_limitado(monkeypatch, tmp_path):
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+
+    def unavailable(*args, **kwargs):
+        raise counter_agent.RelayTransportError("offline")
+
+    class StopDeterministico:
+        def __init__(self):
+            self.waits = []
+
+        def is_set(self):
+            return len(self.waits) >= 7
+
+        def wait(self, seconds):
+            self.waits.append(seconds)
+
+    stop = StopDeterministico()
+    worker = counter_agent.RelayWorker(
+        _relay_config(),
+        journal=counter_agent.RelayJournal(tmp_path / "relay.sqlite3"),
+        post=unavailable,
+    )
+    worker.run(stop)  # type: ignore[arg-type]
+
+    assert stop.waits == [1, 2, 4, 8, 16, 32, 60]
+
+
+def test_doctor_mostra_relay_sem_exibir_a_credencial(monkeypatch, capsys, tmp_path):
+    config_path = tmp_path / "agent.json"
+    counter_agent.write_config(
+        config_path,
+        queue="TM-T20",
+        origin=ORIGIN,
+        token=TOKEN,
+        server_url="https://gestor.example",
+        station_ref="preparo-01",
+        agent_id="agente-01",
+        relay_token=RELAY_TOKEN,
+    )
+    monkeypatch.setattr(counter_agent, "DEFAULT_CONFIG_PATH", config_path)
+    monkeypatch.setattr(counter_agent, "JOURNAL_PATH", tmp_path / "ausente.sqlite3")
+    monkeypatch.setattr(counter_agent, "_wait_until_listening", lambda *a, **k: None)
+    monkeypatch.setattr(counter_agent, "probe_queue", lambda queue: {"ok": True})
+    monkeypatch.setattr(counter_agent, "_servico_ativo", lambda name: False)
+
+    counter_agent.doctor()
+
+    output = capsys.readouterr().out
+    assert "relay" in output and "preparo-01 / agente-01" in output
+    assert RELAY_TOKEN not in output
