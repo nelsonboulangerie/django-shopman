@@ -47,7 +47,13 @@ Preencher ao fechar a rodada:
 - [x] superfície Production: 31 arquivos/225 testes; ESLint, Ruff, `git diff --check` e typecheck com Node 22 aprovados;
 - [x] revisão adversarial de permissão, retry concorrente, conservação, uma perda, lote imutável, reserva remota/local, anúncio pendente/fila/em execução/publicado e handler tardio;
 - [x] `manage.py check --deploy` concluiu com sucesso; os avisos de adapter mock/Redis local e do schema são preexistentes ao diff;
+- [x] gate da meia-correção aprovado para os 23 arquivos Python tocados; o import opcional de OfferMan recebeu justificativa explícita de silêncio deliberado;
 - [ ] publicação autorizada e smoke test online.
+
+Commits locais:
+
+- `e5f20ff14` — slice vertical de correção pós-fechamento, interface, integrações, migrações e provas;
+- `f5b7f2430` — declaração explícita do único silêncio opcional apontado pelo gate adversarial.
 
 ## Rollback
 
