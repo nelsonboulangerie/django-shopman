@@ -2342,3 +2342,31 @@ artefato/confirmation challenge, enquanto qualquer drift continua falhando fecha
 guarda pré-provider permanece. O mesmo anúncio concluiu 1/1 Instagram + 12/12 WhatsApp
 no simulador, receipt `8b0f402a-6a3d-4556-b9fe-e1dafea361b1`, `provider_calls=0` e
 `pii=false`.
+
+## Integração com `origin/main` e entrada do MKT-047
+
+Em 2026-09-10, o HEAD corrente de `origin/main` (`090c95d24`) foi integrado na branch
+isolada. Conflitos foram resolvidos preservando tanto os contratos Marketing quanto as
+correções posteriores das demais superfícies; migrations paralelas receberam folhas de
+merge e migrations de reconciliação de estado, sem reescrever histórico de terceiros.
+
+Provas pós-integração no commit merge `9fd2b6a5d`:
+
+- migration drift: nenhum;
+- backend focado integrado: **265 passed**;
+- Marketing Nuxt: **33 arquivos / 234 testes**, typecheck verde;
+- operator-kit: **25 arquivos / 234 testes**;
+- Ruff nos arquivos Python afetados: verde;
+- branch: 0 commits atrás de `origin/main`; worktree limpa após o merge.
+
+Nenhum push, PR, deploy, alteração de configuração viva, sandbox/provider ou envio real
+foi executado. A inspeção read-only confirmou que `mkt.boulangerie.com.br` ainda serve a
+imagem anterior (os novos `/health/live` e `/health/ready` retornam 404) e que as novas
+flags e a allowlist de alvo de teste não estão configuradas no ambiente vivo.
+
+O próximo item obrigatório é MKT-047/G-H05. O protocolo completo, com as nove tarefas,
+budgets, planilha sem PII e decisão objetiva, está em
+[`marketing-MKT-047-discovery-protocol-20260910-codex.md`](marketing-MKT-047-discovery-protocol-20260910-codex.md).
+O gate continua **aberto** até 5–8 gestores reais executarem as tarefas; uma única sessão
+do proprietário e testes automatizados não podem ser contados como esse grupo. Por isso
+MKT-048–051, deploy e canário externo não foram antecipados.
