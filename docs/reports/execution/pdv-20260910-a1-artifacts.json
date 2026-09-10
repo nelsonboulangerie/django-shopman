@@ -1,0 +1,83 @@
+{
+  "base": "696f541055f396a16fb1c080c7bea69243df720d",
+  "code_head": "b2face8a2db2a8a514adf2382aa45ce29645f2c6",
+  "local_artifact_directory": "/Users/pablovalentini/Dev/Claude/.codex-worktrees/django-shopman-pdv-execution-20260910-a1/.artifacts/pdv-20260910-a1",
+  "files": {
+    "npm-pos-install.log": {
+      "sha256": "9d7688eadabee34e91d92ebb4e0b65a261b6c75ee7235ee43bd214980f1c5f55",
+      "bytes": 793
+    },
+    "npm-kit-install.log": {
+      "sha256": "8bfaa2a06780d6ce8eb95aac74fe1d5b8fdaa71d3bff5f3c232490aa22b48751",
+      "bytes": 303
+    },
+    "python-install.log": {
+      "sha256": "3492b702761f7b6d62bcb1aea59423d2a69f31a654bc659465c86353ca01a510",
+      "bytes": 223336
+    },
+    "frontend-before.log": {
+      "sha256": "3b041a6892cb1351558fe03c20a7a296a0b1dd4644b361e87e0ab090a741d1c7",
+      "bytes": 1205787
+    },
+    "frontend-final.log": {
+      "sha256": "3416e7b8199ef1cd9c3e37e61f2ff49f547176df2aa32429feb7271448e46c6d",
+      "bytes": 5752
+    },
+    "lint-before.log": {
+      "sha256": "0092e8b77ecbcc11a87c5ec321b89d9b39183138f2dc6e2fe919c01928485641",
+      "bytes": 4593
+    },
+    "lint-final.log": {
+      "sha256": "6ba41d3386946f3480608c0bcb80bb893d785c187db4178012a840ea9081d89b",
+      "bytes": 20
+    },
+    "typecheck-final.log": {
+      "sha256": "a7a66bcd500832edc8b94ec1d868d20e805c3c629c4118b6c3898165d77fc25a",
+      "bytes": 177
+    },
+    "build.log": {
+      "sha256": "7a4043390ad8750ce0bde2d4329d3119bc93a93228db10a146f44e68c5e7611a",
+      "bytes": 16071
+    },
+    "backend-baseline.log": {
+      "sha256": "7f18c2f35a0ecc1a0df56105fe54dbd947e0fe43f7da4637d4df4e1ab41ffd42",
+      "bytes": 47813
+    },
+    "backend-final.log": {
+      "sha256": "1f2a4d5447b6fb51884ed47874c24d0b9e6e2f38c6921eb1587d02d0710a25a1",
+      "bytes": 352
+    },
+    "merge-after.log": {
+      "sha256": "eca5d09aedd082157cc70b8905604f527117e34c8f50d3b5501c1ad7ab154279",
+      "bytes": 179
+    },
+    "f09-before.log": {
+      "sha256": "817ab890e1832a786d52b37f56f64883ee75c974a866a57eb210bc4fb365d095",
+      "bytes": 4395
+    },
+    "f09-after.log": {
+      "sha256": "2821d9715610502e62a65299e6574aca535554e201a75b8f7dfdd7bff971180c",
+      "bytes": 750
+    },
+    "browser-mock.log": {
+      "sha256": "3f9385cc79d0d9faf59a069e5efff20eda1977474a8eb4b0d65d34da2609121a",
+      "bytes": 9196
+    },
+    "browser-mock-final.log": {
+      "sha256": "5e059e2bc0a92b704bde9010c6841ed9369084cb6546e48d36bec2b151fbf7e3",
+      "bytes": 2754
+    },
+    "schema.log": {
+      "sha256": "f5700fba8b9d7a159cccf0c630c84a1615b260136db8d7ee09d2075b2265a088",
+      "bytes": 7182
+    },
+    "probes-final.log": {
+      "sha256": "628061f389486eaea2365fb4c6bac829ac3de5af774ad6019e86fc3ca862a8f4",
+      "bytes": 2905
+    },
+    "intent-probes.log": {
+      "sha256": "d6036d842c55d267d5afe6c9055326ae8f01bb90f192833cb9f6064bf24dc779",
+      "bytes": 263
+    }
+  }
+}
