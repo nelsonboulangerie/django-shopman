@@ -87,6 +87,15 @@ def derive_context(context: dict | None) -> dict:
     supplier_contact = str(ctx.get("supplier_contact") or "").strip()
     ctx["supplier_contact_note"] = f"\n\nFalar com: {supplier_contact}" if supplier_contact else ""
 
+    # Alertas operacionais precisam ser reconhecidos sem decorar SKU. Quando o
+    # catálogo está disponível, a composição entrega `product_name`; chamadas
+    # diretas ao adapter ainda degradam honestamente para o SKU.
+    sku = str(ctx.get("sku") or "").strip()
+    product_name = str(ctx.get("product_name") or "").strip()
+    ctx["product_label"] = (
+        f"{product_name} ({sku})" if product_name and sku else product_name or sku
+    )
+
     total_q = ctx.get("total_q")
     if total_q and not ctx.get("total"):
         from shopman.utils.monetary import format_money

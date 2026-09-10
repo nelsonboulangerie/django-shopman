@@ -177,6 +177,14 @@ def test_derive_context_suprime_sufixo_sem_dado():
     assert ctx["reason_note"] == ""
 
 
+def test_derive_context_names_stock_product_and_keeps_sku_visible():
+    named = derive_context({"sku": "FOA", "product_name": "Focaccia Alecrim"})
+    sku_only = derive_context({"sku": "FOA"})
+
+    assert named["product_label"] == "Focaccia Alecrim (FOA)"
+    assert sku_only["product_label"] == "FOA"
+
+
 # ══════════════════════════════════════════════════════════════════════
 # 2. Guardrail: toda chave usada num texto de PEDIDO tem que ser produzida
 # ══════════════════════════════════════════════════════════════════════

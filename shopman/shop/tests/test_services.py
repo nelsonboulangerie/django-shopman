@@ -1171,6 +1171,37 @@ class TestNotificationSendHandler:
         assert without_reason["reason_note"] == ""
 
     @pytest.mark.django_db
+    def test_stock_alert_context_resolves_name_without_hiding_sku(self):
+        from shopman.offerman.models import Product
+
+        from shopman.shop.adapters import notification_email
+        from shopman.shop.adapters._notification_templates import (
+            derive_context,
+            render_template,
+        )
+        from shopman.shop.handlers.notification import _enrich_system_context
+
+        Product.objects.create(
+            sku="FOA",
+            name="Focaccia Alecrim",
+            base_price_q=3100,
+        )
+
+        context = _enrich_system_context(
+            "stock_alert",
+            {"sku": "FOA", "available": "0", "min_quantity": "4.000"},
+        )
+        rendered = derive_context(context)
+
+        assert rendered["product_label"] == "Focaccia Alecrim (FOA)"
+        assert render_template(notification_email.SUBJECT_TEMPLATES["stock_alert"], rendered) == (
+            "Alerta de estoque: Focaccia Alecrim (FOA)"
+        )
+        assert "Produto: Focaccia Alecrim (FOA)" in render_template(
+            notification_email.BODY_TEMPLATES["stock_alert"], rendered,
+        )
+
+    @pytest.mark.django_db
     def test_active_no_recipient_failure_retries_instead_of_becoming_done(self):
         """Ausência operacional de destinatário é falha, não sucesso silencioso."""
         from unittest.mock import patch
