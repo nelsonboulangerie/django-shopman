@@ -1,14 +1,20 @@
 # MKT-047 — protocolo de discovery e budgets do operador
 
-**Estado:** pronto para execução; gate humano ainda aberto  
-**Ambiente permitido:** local ou staging seeded, sem destinatário/provider real  
-**Participantes:** 5–8 gestores reais; usar apenas códigos `P01`…`P08`, sem nome ou PII  
-**Duração prevista:** 45–60 minutos por participante  
+**Estado:** pronto para execução; amostra pré-piloto alterada e aprovada pelo proprietário
+**Ambiente permitido:** local ou staging seeded, sem destinatário/provider real
+**Participantes:** 3 gestores reais no pré-piloto; 5 cumulativos antes do rollout de 25%; usar apenas códigos `P01`…`P05`, sem nome ou PII
+**Duração prevista:** três blocos de 10–15 minutos por participante
 **Owner da decisão:** Product owner
 
 Este protocolo transforma G-H05/MKT-047 em uma sessão repetível. Ele não autoriza
 deploy, produção, sandbox externo, credencial externa ou envio real. O facilitador
 configura e reinicia o cenário; o participante só opera o cockpit.
+
+Em 2026-09-10, o proprietário aprovou explicitamente a alteração da amostra: três
+gestores no pré-piloto e cinco participantes cumulativos antes do rollout de 25%. A
+mudança reduz somente a amostra inicial de discovery. Contratos, critérios por tarefa,
+gates de segurança, release, produção e envio permanecem inalterados. Com três pessoas,
+o limiar inteiro equivalente a 80% é **3/3** em cada caso comum.
 
 ## Decisões provisórias submetidas à validação
 
@@ -40,6 +46,9 @@ configura e reinicia o cenário; o participante só opera o cockpit.
 O facilitador lê apenas o objetivo. Não ensina o caminho, salvo se o participante
 pedir ajuda; toda ajuda é registrada e torna aquele caso “com ajuda”.
 
+Para reduzir fadiga, executar tarefas 1–3, 4–6 e 7–9 em três blocos independentes. O
+participante pode interromper entre blocos sem perder a validade das tarefas concluídas.
+
 | # | Objetivo dado ao participante | Estado de sucesso | Budget do caso comum |
 |---:|---|---|---|
 | 1 | Aprovar um anúncio pronto para a próxima janela segura. | Comprovante no mesmo contexto, com versão, público, horário, plataformas e estado por canal. | ≤3 ações; 0 digitação; 0 telas; preview/ack ≤1 s |
@@ -65,15 +74,20 @@ horário, plataformas e próxima ação, e diferencie aceito, confirmado, parcia
 
 ## Regra de decisão, sem interpretação oportunista
 
-MKT-047 só passa quando:
+MKT-047 pré-piloto só passa quando:
 
-- 5–8 gestores reais concluíram as nove tarefas;
-- pelo menos 80% concluíram **cada** caso comum sem ajuda;
+- 3 gestores reais concluíram as nove tarefas;
+- os 3 concluíram **cada** caso comum sem ajuda;
 - a mediana de cada métrica está dentro do budget correspondente;
 - houve zero perda de rascunho, zero ação perigosa acidental e zero leitura de
   aceito/parcial/incerto como entrega total;
 - 100% localizaram versão, público, horário, plataformas e próxima ação ao concluir;
 - toda exceção de budget tem motivo de segurança e aprovação explícita de Produto.
+
+Além disso, o rollout de 25% permanece bloqueado até que pelo menos cinco gestores
+distintos tenham participado cumulativamente sob os mesmos critérios. As duas pessoas
+adicionais podem participar durante o piloto limitado, mas não substituem nenhum gate de
+segurança, SLO, release ou produção.
 
 Qualquer falha produz achado e nova rodada somente das tarefas afetadas depois da
 correção. Não se reduz confirmação, consentimento, autorização ou fail-closed para
@@ -85,11 +99,12 @@ Após anexar a tabela preenchida e o resumo agregado, o Product owner decide:
 
 ```text
 APROVO G-H05 / MKT-047
-participantes: <5–8 códigos, sem nomes>
+participantes: <3 códigos no pré-piloto, sem nomes>
 execução: <data/ambiente/commit>
 resultado: <taxa por tarefa + medianas>
 exceções de segurança: <nenhuma ou lista aprovada>
 achados remanescentes: <nenhum bloqueante ou lista>
 ```
 
-Sem essa declaração, a UI permanece provisória/flagged e MKT-048 não começa.
+Sem essa declaração para os três participantes iniciais, MKT-048 não começa.
+Sem evidência cumulativa de cinco participantes, o rollout de 25% não começa.

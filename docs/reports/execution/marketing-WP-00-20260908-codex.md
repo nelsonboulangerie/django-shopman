@@ -2370,3 +2370,17 @@ budgets, planilha sem PII e decisão objetiva, está em
 O gate continua **aberto** até 5–8 gestores reais executarem as tarefas; uma única sessão
 do proprietário e testes automatizados não podem ser contados como esse grupo. Por isso
 MKT-048–051, deploy e canário externo não foram antecipados.
+
+### Emenda humana da amostra MKT-047
+
+Em 2026-09-10, depois de declarar que a amostra original não estaria disponível, o
+proprietário confirmou a proposta objetiva de três gestores no pré-piloto e cinco
+participantes cumulativos antes do rollout de 25%. O aceite pré-piloto agora exige 3/3
+sem ajuda em cada caso comum, todos os budgets e todas as invariantes originais; o
+rollout de 25% permanece bloqueado até alcançar cinco pessoas distintas. Nenhum gate de
+segurança, SLO, release, produção ou envio foi reduzido por essa emenda.
+
+O protocolo foi atualizado e a planilha sem PII foi criada em
+[`marketing-MKT-047-results-20260910-codex.md`](marketing-MKT-047-results-20260910-codex.md).
+O proprietário será P01; P02 e P03 continuam sendo pessoas reais necessárias antes de
+fechar MKT-047 e iniciar MKT-048.
