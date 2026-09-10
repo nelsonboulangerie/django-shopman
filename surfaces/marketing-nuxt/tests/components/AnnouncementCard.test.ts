@@ -113,7 +113,7 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("Texto revisado");
     await wrapper.find("input[type=text]").setValue("#paes #fornada");
-    await wrapper.findAll("button")[0]!.trigger("click");
+    await wrapper.get("[data-testid=publish-now]").trigger("click");
 
     expect(wrapper.emitted("approve")).toBeTruthy();
     const [pk, edits] = wrapper.emitted("approve")![0] as [number, Record<string, unknown>];
@@ -127,7 +127,7 @@ describe("AnnouncementCard", () => {
   it("refuses to publish an empty announcement", async () => {
     const wrapper = mountCard(makeAnnouncement());
     await wrapper.find("textarea").setValue("   ");
-    const publish = wrapper.findAll("button")[0]!;
+    const publish = wrapper.get("[data-testid=publish-now]");
 
     expect((publish.element as HTMLButtonElement).disabled).toBe(true);
     await publish.trigger("click");
@@ -136,21 +136,34 @@ describe("AnnouncementCard", () => {
 
   it("refuses to publish with no platform selected", async () => {
     const wrapper = mountCard(makeAnnouncement({ platforms: [] }));
-    expect((wrapper.findAll("button")[0]!.element as HTMLButtonElement).disabled).toBe(true);
+    expect((wrapper.get("[data-testid=publish-now]").element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("Escolha ao menos uma plataforma");
+  });
+
+  it("presents scheduling as the safe default and now as a separate choice", () => {
+    const wrapper = mountCard(makeAnnouncement());
+    const schedule = wrapper.get("[data-testid=schedule-recommended]");
+    const publishNow = wrapper.get("[data-testid=publish-now]");
+
+    expect(wrapper.text()).toContain("Próxima ação recomendada");
+    expect(schedule.text()).toContain("Agendar — recomendado");
+    expect(schedule.classes()).toContain("bg-primary");
+    expect(publishNow.text()).toContain("Publicar agora");
+    expect(publishNow.classes()).toContain("border");
+    expect(wrapper.text()).toContain("uma decisão separada");
   });
 
   it("only asks for a date after the gestor chooses to schedule", async () => {
     const wrapper = mountCard(makeAnnouncement());
     expect(wrapper.find("input[type=datetime-local]").exists()).toBe(false);
 
-    await wrapper.findAll("button")[1]!.trigger("click");
+    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
     expect(wrapper.find("input[type=datetime-local]").exists()).toBe(true);
   });
 
   it("carries publish_at when scheduling", async () => {
     const wrapper = mountCard(makeAnnouncement());
-    await wrapper.findAll("button")[1]!.trigger("click");
+    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
     await wrapper.find("input[type=datetime-local]").setValue("2026-07-19T07:00");
     await wrapper.find("input[type=datetime-local]").trigger("change");
 
@@ -170,7 +183,7 @@ describe("AnnouncementCard", () => {
     expect((publishNow.element as HTMLButtonElement).disabled).toBe(true);
     expect(wrapper.text()).toContain("WhatsApp em silêncio das 20:00 às 08:00");
 
-    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
 
     expect((wrapper.find("input[type=datetime-local]").element as HTMLInputElement).value)
       .toBe("2026-07-18T08:00");
@@ -199,7 +212,7 @@ describe("AnnouncementCard", () => {
     const wrapper = mountCard(makeAnnouncement({
       expires_at: "2026-07-19T07:00:00-03:00",
     }));
-    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
     await wrapper.find("input[type=datetime-local]").setValue("2026-07-19T07:00");
 
     expect(wrapper.text()).toContain("expiraria antes desse horário");
@@ -210,7 +223,7 @@ describe("AnnouncementCard", () => {
   it("waits for the operator to choose one of two DST occurrences", async () => {
     vi.setSystemTime(new Date("2026-10-31T12:00:00Z"));
     const wrapper = mountCard(makeAnnouncement(), "", "America/New_York");
-    await wrapper.findAll("button").find(button => button.text() === "Agendar")!.trigger("click");
+    await wrapper.get("[data-testid=schedule-recommended]").trigger("click");
     await wrapper.find("input[type=datetime-local]").setValue("2026-11-01T01:30");
 
     expect(wrapper.text()).toContain("acontece duas vezes");
@@ -357,7 +370,7 @@ describe("AnnouncementCard", () => {
   it("restores a draft after refresh or a failed authenticated command", async () => {
     const first = mountCard(makeAnnouncement(), "operator:7");
     await first.find("textarea").setValue("rascunho que não pode sumir");
-    await first.findAll("button")[0]!.trigger("click");
+    await first.get("[data-testid=publish-now]").trigger("click");
     first.unmount();
 
     const restored = mountCard(makeAnnouncement(), "operator:7");

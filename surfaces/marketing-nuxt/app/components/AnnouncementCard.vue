@@ -559,24 +559,33 @@ function askToReject() {
 
     <!-- Decisão -->
     <footer class="flex flex-wrap items-center gap-2 border-t border-border bg-muted/30 px-4 py-3">
-      <button
-        type="button"
-        :disabled="!canPublishNow"
-        class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
-        @click="publishNow"
-      >
-        <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:send'" class="size-4" />
-        Publicar agora
-      </button>
+      <div class="w-full">
+        <p class="text-sm font-semibold">Próxima ação recomendada</p>
+        <p class="text-xs text-muted-foreground">
+          Agende o próximo horário seguro. Publicar agora continua disponível como uma decisão separada.
+        </p>
+      </div>
 
       <button
         type="button"
-        class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted"
+        data-testid="schedule-recommended"
+        class="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
         :aria-expanded="scheduling"
         @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
-        Agendar
+        {{ scheduling ? "Fechar agendamento" : "Agendar — recomendado" }}
+      </button>
+
+      <button
+        type="button"
+        data-testid="publish-now"
+        :disabled="!canPublishNow"
+        class="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm font-medium transition hover:bg-muted disabled:opacity-50"
+        @click="publishNow"
+      >
+        <Icon :name="busy ? 'line-md:loading-loop' : 'lucide:send'" class="size-4" />
+        Publicar agora
       </button>
 
       <button
