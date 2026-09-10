@@ -1,7 +1,7 @@
 # MKT-047 — resultados das sessões de gestores
 
 **Estado:** sessão P01 e repetições afetadas concluídas; P02 em andamento; P03 pendente
-**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0`, `c6f6de469` e `6bdb3a37d`
+**Commit sob avaliação:** `9fd2b6a5d` + correções `bcc00fc48`, `6fd632b1d`, `92b4de2ea`, `d9e54c5c5`, `42b2eb7ed`, `a88b550c8`, `057f307e8`, `d86e0dce8`, `6c4bbc3f2`, `31b0128e8`, `f74d966e0`, `c6f6de469`, `6bdb3a37d` e `bd34b3750`
 **Perfil:** `config.settings_marketing_demo`, adapter `SIMULATION_ONLY`  
 **Política de dados:** somente códigos P01–P05 e métricas; sem nomes, conteúdo ou PII
 
@@ -67,6 +67,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 9 | sim | login + 1 retomada após a expiração | somente credenciais de login | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | sim | sim, no escopo da retomada | Após a expiração controlada, voltou a `/announcements/42`, retomou e recebeu uma confirmação nova e vazia para a versão 1, público 12 e Instagram + WhatsApp. O anúncio permaneceu pendente, sem aprovação, outbox ou destinos. |
 | P02 | 1 | sim | 3 inferidas | somente senha/frase de segurança | 0 | preview ≤60 ms e ack ≤100 ms no backend | 0 | N/A | sim | Agendou para a próxima janela segura sem ajuda. Comprovante `2bce1b10-340f-49fc-8a20-b52d5e93ae64`, versão 2, público 12 e WhatsApp; confirmou na própria tela que localizou todos os fatos e a próxima ação. |
 | P02 | 2 | não | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤30 ms e ack ≤40 ms no backend | 0 | N/A | sim | Texto preservado exatamente e agendamento concluído, mas P02 perguntou se “aprovar” significava “agendar”. Comprovante `9dd35568-05a6-4a7b-a38f-ef2f1b2eb0e2`; requer correção e repetição mínima. |
+| P02 | 3 | sim | até 4 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | preview ≤20 ms e ack ≤50 ms no backend | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT e comprovante `3620c55b-ffe5-4591-a8dd-952fe606bb7e`, mas P02 classificou como parcial a clareza de fuso, expiração e efeito do horário permitido. Requer correção e repetição mínima. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -345,6 +346,33 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
 - Classificação: persistência, prévia, certeza e budgets observáveis aprovados; critério
   **sem ajuda** reprovado. Preservar o incidente, corrigir a ambiguidade e repetir apenas
   T2.
+- `bd34b3750` liga o verbo da tarefa à consequência na própria tela: o bloco agora se
+  chama **“Como aprovar este anúncio”** e explica que aprovar confirma a versão e define
+  quando ela fica pronta para entrega, mantendo agendamento seguro e publicação imediata
+  como decisões distintas.
+
+### P02/T3 — instante correto, política temporal só parcialmente compreendida
+
+- P02 recebeu o instante exato e concluiu sem pedir ajuda. O comprovante
+  `3620c55b-ffe5-4591-a8dd-952fe606bb7e` e o artefato selado registram versão 2, público
+  12, WhatsApp e `2026-09-11T09:15:00-03:00` em `America/Sao_Paulo`; nenhum destino
+  começou.
+- A prévia respondeu em até 20 ms e o comando em 50 ms no backend. As até quatro ações
+  são inferidas do caminho canônico; somente data/hora e o gate de segurança foram
+  digitados.
+- Na checagem de certeza, P02 respondeu **“+/−”** para fuso, expiração e efeito do
+  horário permitido. O horário aparecia no resumo, mas fuso, validade e política de
+  silêncio não estavam reunidos ali.
+- Classificação: persistência e budgets observáveis aprovados; certeza final reprovada.
+  Preservar o incidente, reunir esses fatos no comprovante e repetir apenas a leitura
+  afetada de T3.
+- `bd34b3750` acrescenta ao resumo da decisão dois fatos rotulados: **Fuso e horário
+  permitido** e **Validade**. No perfil de ensaio, a própria tela declara a suspensão do
+  silêncio 20:00–08:00 e a ausência de efeito externo; fora dele, declara que o WhatsApp
+  respeita a janela e que o horário escolhido já foi validado.
+- Validação da correção: 245 testes da interface, typecheck, lint focado e
+  `git diff --check` passaram. A árvore acessível do navegador real confirmou todos os
+  novos rótulos e valores no comprovante de T3.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
