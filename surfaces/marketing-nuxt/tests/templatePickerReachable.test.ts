@@ -21,7 +21,7 @@ describe("a configuração de plataforma tem casa", () => {
     expect(page).not.toContain("test-recipient");
     expect(page).toContain("testTargets");
     expect(page).toContain("Verificado em");
-    expect(page).toContain("Código de 6 dígitos do autenticador");
+    expect(page).toContain("UiVerificationCodeInput");
     expect(page).toContain("waTemplate.commandAvailable");
     expect(page).not.toContain("{{ option.ns }}");
   });

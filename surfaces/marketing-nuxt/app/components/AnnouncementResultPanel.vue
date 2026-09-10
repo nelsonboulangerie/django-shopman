@@ -581,28 +581,28 @@ function closeDialog(open: boolean) {
                 class="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-muted-foreground"
               />
             </div>
-            <label for="recovery-credential" class="block text-sm font-medium">
-              {{
-                challenge.step_up === "totp"
-                  ? "Código de 6 dígitos"
-                  : "Sua senha"
-              }}
-            </label>
-            <input
+            <UiVerificationCodeInput
+              v-if="challenge.step_up === 'totp'"
               id="recovery-credential"
               v-model="credential"
-              name="current_password"
-              :type="challenge.step_up === 'password' ? 'password' : 'text'"
-              :inputmode="challenge.step_up === 'totp' ? 'numeric' : 'text'"
-              :autocomplete="
-                challenge.step_up === 'totp'
-                  ? 'one-time-code'
-                  : 'current-password'
-              "
-              :maxlength="challenge.step_up === 'totp' ? 6 : 200"
-              class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-              @keyup.enter="confirmRecovery"
+              :disabled="pending"
+              @keydown.enter="confirmRecovery"
             />
+            <template v-else>
+              <label for="recovery-credential" class="block text-sm font-medium">
+                Sua senha
+              </label>
+              <input
+                id="recovery-credential"
+                v-model="credential"
+                name="current_password"
+                type="password"
+                autocomplete="current-password"
+                maxlength="200"
+                class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                @keyup.enter="confirmRecovery"
+              />
+            </template>
           </div>
         </div>
 

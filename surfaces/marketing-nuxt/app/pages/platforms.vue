@@ -595,26 +595,12 @@ useHead({ title: "Plataformas · Marketing" });
           </div>
         </dl>
 
-        <div>
-          <label for="platform-totp" class="mb-1 block text-sm font-medium">
-            Código de 6 dígitos do autenticador
-          </label>
-          <input
-            id="platform-totp"
-            v-model="totp"
-            type="text"
-            inputmode="numeric"
-            autocomplete="one-time-code"
-            maxlength="6"
-            pattern="[0-9]{6}"
-            class="h-11 w-full rounded-md border border-border bg-background px-3 text-base tracking-[0.3em] outline-none focus:ring-2 focus:ring-ring"
-            @input="totp = totp.replace(/\D/g, '').slice(0, 6)"
-          />
-          <p class="mt-1 text-xs text-muted-foreground">
-            O sistema revalida sua permissão, a versão e a lista ativa antes de
-            salvar.
-          </p>
-        </div>
+        <UiVerificationCodeInput
+          id="platform-totp"
+          v-model="totp"
+          :disabled="savingTemplate"
+          help="Abra o autenticador cadastrado para sua conta. O sistema também revalida sua permissão, a versão e a lista ativa antes de salvar."
+        />
 
         <UiDialogFooter>
           <button
