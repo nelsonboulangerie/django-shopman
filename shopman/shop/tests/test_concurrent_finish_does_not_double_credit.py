@@ -33,6 +33,7 @@ from shopman.stockman import stock
 from shopman.stockman.models import Position, PositionKind, Quant
 
 from shopman.backstage.services.production import apply_finish
+from shopman.shop.models import QualityGrade
 
 pytestmark = [
     pytest.mark.django_db(transaction=True),
@@ -48,7 +49,30 @@ ROUNDS = 20
 
 
 @pytest.fixture
-def vitrine(db):
+def quality_catalog(db):
+    """TransactionTestCase flushes do not replay the quality data migration.
+
+    This runtime file runs after other transactional suites in the same pytest
+    process.  Django's flush correctly removes their rows, but data migrations
+    are not rerun between tests; seed the one policy fact this scenario needs
+    instead of depending on execution order.
+    """
+    QualityGrade.objects.filter(is_default=True).update(is_default=False)
+    grade, _ = QualityGrade.objects.update_or_create(
+        ref="standard",
+        defaults={
+            "label": "Normal",
+            "rank": 30,
+            "markdown_percent": 0,
+            "is_default": True,
+            "is_active": True,
+        },
+    )
+    return grade
+
+
+@pytest.fixture
+def vitrine(db, quality_catalog):
     pos, _ = Position.objects.get_or_create(
         ref="vitrine",
         defaults={"name": "Vitrine", "kind": PositionKind.PHYSICAL, "is_saleable": True},

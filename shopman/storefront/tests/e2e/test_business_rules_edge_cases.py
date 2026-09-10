@@ -89,14 +89,23 @@ def _product(sku, price_q=1000, *, stock=None, **kwargs):
 
 def _receive(sku, qty, *, target_date=None, position=None):
     from shopman.stockman import stock as stock_mod
-    from shopman.stockman.models import Move
+    from shopman.stockman.models import Batch, Move
 
     pos = position or _position()
     kwargs = {"reason": "edge-case test setup"}
     if target_date is not None:
         kwargs["target_date"] = target_date
         kwargs["kind"] = Move.Kind.MAKE
-    stock_mod.receive(Decimal(str(qty)), sku, pos, **kwargs)
+    quant = stock_mod.receive(Decimal(str(qty)), sku, pos, **kwargs)
+    if quant.batch:
+        # The remote-channel contract is fail-closed: a named lot without a QC
+        # grade must never be offered.  Physical stock built by this E2E helper
+        # represents accepted bakery output, so make the safely-derived Normal
+        # grade explicit instead of accidentally testing an unclassified lot.
+        Batch.objects.filter(sku=sku, ref=quant.batch).update(
+            quality_grade_ref="standard"
+        )
+    return quant
 
 
 def _promotion(name, *, ptype, value, skus=None, min_order_q=0, coupon_code=None, **kwargs):
