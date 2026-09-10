@@ -1740,3 +1740,15 @@ o [WP-ATRIBUTOS-RENAME](../plans/WP-ATRIBUTOS-RENAME-CHAVES-LEGADAS.md).
 `dietary_from_recipe`, e o service de atributos não o toca. Duas fontes
 escrevendo a mesma verdade é exatamente como ela diverge; unificá-lo com
 `source`/`reviewed` é do WP de rename.
+
+## IdempotencyKey.response_body — intenções locais versionadas
+
+`remote_mutations.run_idempotent_mutation(..., fingerprint=...)` usa, somente em escopos
+novos de intenção local, envelope `{contract: "local-mutation-v1", fingerprint: string,
+result: dict}`. O fingerprint é SHA-256 de JSON canônico incluindo versão, ator,
+operação, recurso, base e inputs. `result` é a resposta original ao cliente; o envelope
+não é projetado. Escopos antigos conservam seu corpo sem envelope e não podem ser
+reaproveitados como escopos locais. Efeito local, eventos, enqueue e recibo compartilham
+transação; respostas >=400 revertem as escritas do executor antes de registrar a recusa.
+Nenhuma chamada de rede é permitida no executor local. TTL global de 24h e recibos
+permanentes existentes não mudam; G08 continua pendente para qualquer nova retenção.

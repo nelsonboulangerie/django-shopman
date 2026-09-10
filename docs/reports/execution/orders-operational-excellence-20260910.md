@@ -208,3 +208,20 @@ Não executados: runtime-gate integral, E2E contra Django, Redis isolado, ensaio
 matriz completa de crash/concorrência, medições humanas J01–J15, piloto e rollout. Números de
 suítes acima se sobrepõem: não somar como testes únicos. A implementação atual não é candidata
 à ativação: P0s D01/D02/D04/D05/D07/D12 continuam sem correção integral.
+
+## Retomada autônoma — WP02, fundação do recibo local
+
+O executor existente agora aceita fingerprint em escopos locais novos. Savepoint reverte
+qualquer escrita do executor em recusa; efeito/evento/enqueue/recibo compartilham commit.
+Fingerprint divergente recusa replay; lookup não cria/resetta chave nem consulta gateway.
+Consumidores antigos conservam seu contrato. BFF encaminha somente Idempotency-Key,
+If-Match e X-Correlation-ID; resposta preserva ETag/correlação/retry-after. TTL não alterado.
+
+PostgreSQL: **11 passed (5,99s)**, incluindo duas conexões concorrentes, replay após resposta
+perdida, falha no save de recibo, rollback de evento/enqueue e recusas 400/409/500.
+Primeiro ensaio passou mas teardown alertou duas conexões abertas: harness corrigido para
+connections.close_all no finally; banco efêmero removido e ensaio repetido sem warning.
+Kit: **221 passed em 22 arquivos (2,57s)**, incluindo allowlist e não encaminhamento de
+identidade arbitrária. Integração dos endpoints/clientes e todos os writers ainda em andamento;
+isto não conclui WP02. Migração: envelope JSON apenas em escopos novos, sem DDL. Rollback:
+manter leitores dos recibos e suspender capacidades locais antes de reverter executor.
