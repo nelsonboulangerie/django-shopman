@@ -8,6 +8,7 @@
 //     data; nunca o nome da receita — o mapa código↔preparo é visão de gestor
 //     no Admin). Impressão via print CSS: só as etiquetas saem no papel.
 // Tablet/touch-first.
+import { nextTick } from "vue";
 import type { MiseEnPlaceLineProjection } from "~/types/production";
 import { isStale, isoForOffset } from "~/presentation/production";
 
@@ -89,9 +90,17 @@ function toggleBreakdown(line: MiseEnPlaceLineProjection) {
 //     feita ganha nome, data, rendimento e objetivo (o sigilo é da pesagem,
 //     não do produto).
 const printMode = ref<"pesagem" | "preparo">("pesagem");
+const printTicketRef = ref<string | null>(null);
+
+const printableTickets = computed(() => {
+  if (!printTicketRef.value) return weighing.tickets.value;
+  return weighing.tickets.value.filter(
+    (ticket) => ticket.recipe_ref === printTicketRef.value,
+  );
+});
 
 const labels = computed(() =>
-  weighing.tickets.value.flatMap((ticket) =>
+  printableTickets.value.flatMap((ticket) =>
     ticket.ingredients.map((ing) => ({
       code: ticket.blind_code,
       ingredient: ing.name,
@@ -102,10 +111,14 @@ const labels = computed(() =>
   ),
 );
 
-function printLabels(kind: "pesagem" | "preparo") {
+function printLabels(
+  kind: "pesagem" | "preparo",
+  ticketRef: string | null = null,
+) {
   printMode.value = kind;
+  printTicketRef.value = ticketRef;
   mode.value = "preparos";
-  nextTick(() => window.print());
+  void nextTick(() => window.print());
 }
 
 const isPending = computed(() =>
@@ -339,7 +352,9 @@ function refreshAll() {
                       >
                         <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir
                              embaixo seria a mesma linha duas vezes. -->
-                        <span v-if="line.name !== line.sku">{{ line.sku }}</span>
+                        <span v-if="line.name !== line.sku">{{
+                          line.sku
+                        }}</span>
                         <UiBadge
                           v-if="line.is_subrecipe"
                           variant="outline"
@@ -527,11 +542,22 @@ function refreshAll() {
                     · {{ ticket.output_sku }}
                   </p>
                 </div>
-                <span
-                  class="shrink-0 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
-                  title="Código cego do dia — vai nas etiquetas no lugar do nome"
-                  >{{ ticket.blind_code }}</span
-                >
+                <div class="flex shrink-0 items-center gap-2">
+                  <span
+                    class="rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
+                    title="Código cego do dia — vai nas etiquetas no lugar do nome"
+                    >{{ ticket.blind_code }}</span
+                  >
+                  <button
+                    type="button"
+                    class="grid size-11 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                    :aria-label="`Imprimir etiquetas de pesagem de ${ticket.name}`"
+                    :title="`Imprimir somente ${ticket.name} · 80 mm`"
+                    @click="printLabels('pesagem', ticket.recipe_ref)"
+                  >
+                    <Icon name="lucide:printer" class="size-4" />
+                  </button>
+                </div>
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li
@@ -570,7 +596,7 @@ function refreshAll() {
     <WeighingLabels
       :print-mode="printMode"
       :labels="labels"
-      :tickets="weighing.tickets.value"
+      :tickets="printableTickets"
     />
   </main>
 </template>
