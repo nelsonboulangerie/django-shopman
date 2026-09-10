@@ -112,6 +112,10 @@ const stubs = {
   UiDialogDescription: { template: "<p><slot /></p>" },
   UiDialogFooter: { template: "<footer><slot /></footer>" },
   UiBadge: { template: "<span><slot /></span>" },
+  UiAlert: {
+    props: ["description"],
+    template: '<div role="note">{{ description }}</div>',
+  },
   UiButton: {
     props: ["disabled", "loading"],
     emits: ["click"],
@@ -197,7 +201,11 @@ describe("ProductionLabelPrintDialog", () => {
   it("mostra preview lógico, contagem, Nome + SKU, destino e CTAs explícitas", () => {
     const view = wrapper();
 
-    expect(view.text()).toContain("Prévia lógica · bobina 80 mm");
+    expect(view.text()).toContain("Prévia · etiqueta 60 × 40 mm");
+    expect(view.text()).toContain("52 mm úteis");
+    expect(view.text()).toContain(
+      "Estas etiquetas apoiam a preparação interna e não substituem o rótulo de venda.",
+    );
     expect(view.text()).toContain("1 etiqueta · 10 set 2026");
     expect(view.text()).toContain("Farinha T65");
     expect(view.text()).toContain("FARINHA-T65");
@@ -207,7 +215,7 @@ describe("ProductionLabelPrintDialog", () => {
       "EPSON · Preparação",
     );
     expect(view.text()).toContain("Imprimir 1 etiqueta");
-    expect(view.text()).toContain("Imprimir neste dispositivo");
+    expect(view.text()).toContain("Abrir impressão do navegador");
   });
 
   it("conta ingredientes na pesagem e preparos na etiqueta explícita", () => {
@@ -253,7 +261,7 @@ describe("ProductionLabelPrintDialog", () => {
     const printButtons = explicit
       .findAll("button")
       .filter((button) => button.text().includes("Imprimir"));
-    expect(printButtons).toHaveLength(2);
+    expect(printButtons).toHaveLength(1);
     expect(
       printButtons.every(
         (button) => button.attributes("disabled") !== undefined,
@@ -267,6 +275,91 @@ describe("ProductionLabelPrintDialog", () => {
       .findAll("button")
       .find((button) => button.text().includes("Imprimir 1 etiqueta"))!
       .trigger("click");
+
+    expect(printing.create).toHaveBeenCalledWith(
+      { mode: "blind", ticketRefs: ["ticket-1"] },
+      "relay",
+    );
+    expect(window.print).not.toHaveBeenCalled();
+  });
+
+  it("reaproveita o agente local já configurado no PC do PDV", async () => {
+    const localFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({ ok: true, queue: "EPSON", job_id: "42" }),
+    });
+    vi.stubGlobal("fetch", localFetch);
+    printing.create.mockImplementationOnce(async () => {
+      printing.job.value = job("prepared", {
+        payload_b64: "ZXNjcG9z",
+        payload_sha256: "payload-sha",
+        print_title: "Etiquetas de preparação · 1",
+      });
+      return true;
+    });
+    const view = wrapper({
+      projection: {
+        ...baseProps.projection,
+        print_destination: {
+          label: "EPSON · Preparação",
+          status_label: "Pronta",
+          available: true,
+          label_width_mm: 60,
+          label_height_mm: 40,
+          printable_width_mm: 52,
+          local_agent_available: true,
+          local_agent_url: "http://127.0.0.1:47811",
+          local_agent_token: "token-local",
+        },
+      },
+    });
+
+    await view
+      .findAll("button")
+      .find((button) => button.text().includes("Imprimir 1 etiqueta"))!
+      .trigger("click");
+    await flushPromises();
+
+    expect(printing.create).toHaveBeenCalledWith(
+      { mode: "blind", ticketRefs: ["ticket-1"] },
+      "browser",
+    );
+    expect(localFetch).toHaveBeenCalledWith(
+      "http://127.0.0.1:47811/print",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(printing.recordBrowserResult).toHaveBeenCalledWith(
+      "agent_spooled",
+      "Fila EPSON · job 42",
+    );
+    expect(window.print).not.toHaveBeenCalled();
+  });
+
+  it("usa o relay no tablet quando o agente existe na estação, mas não neste dispositivo", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("connection refused")));
+    const view = wrapper({
+      projection: {
+        ...baseProps.projection,
+        print_destination: {
+          label: "EPSON · Preparação",
+          status_label: "Pronta",
+          available: true,
+          label_width_mm: 60,
+          label_height_mm: 40,
+          printable_width_mm: 52,
+          local_agent_available: true,
+          local_agent_url: "http://127.0.0.1:47811",
+          local_agent_token: "token-local",
+        },
+      },
+    });
+
+    await view
+      .findAll("button")
+      .find((button) => button.text().includes("Imprimir 1 etiqueta"))!
+      .trigger("click");
+    await flushPromises();
 
     expect(printing.create).toHaveBeenCalledWith(
       { mode: "blind", ticketRefs: ["ticket-1"] },
@@ -325,7 +418,7 @@ describe("ProductionLabelPrintDialog", () => {
 
     await view
       .findAll("button")
-      .find((button) => button.text().includes("neste dispositivo"))!
+      .find((button) => button.text().includes("navegador"))!
       .trigger("click");
     await flushPromises();
     await vi.advanceTimersByTimeAsync(220);
@@ -340,6 +433,46 @@ describe("ProductionLabelPrintDialog", () => {
     expect(printing.confirm).not.toHaveBeenCalled();
   });
 
+  it("aplica a mídia física configurada somente durante o diálogo nativo", async () => {
+    vi.useFakeTimers();
+    let pageRuleDuringPrint = "";
+    vi.stubGlobal(
+      "print",
+      vi.fn(() => {
+        pageRuleDuringPrint =
+          document.getElementById("production-label-page-size")?.textContent || "";
+        window.dispatchEvent(new Event("beforeprint"));
+      }),
+    );
+    const view = wrapper({
+      projection: {
+        ...baseProps.projection,
+        print_destination: {
+          label: "Navegador",
+          status_label: "Fallback",
+          available: false,
+          label_width_mm: 60,
+          label_height_mm: 40,
+          printable_width_mm: 52,
+          local_agent_available: false,
+          local_agent_url: "",
+          local_agent_token: "",
+        },
+      },
+    });
+
+    await view
+      .findAll("button")
+      .find((button) => button.text().includes("Imprimir 1 etiqueta"))!
+      .trigger("click");
+    await flushPromises();
+    await vi.advanceTimersByTimeAsync(220);
+    await flushPromises();
+
+    expect(pageRuleDuringPrint).toContain("size: 60mm 40mm");
+    expect(document.getElementById("production-label-page-size")).toBeNull();
+  });
+
   it("registra função window.print inerte como indisponível", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("print", vi.fn());
@@ -347,7 +480,7 @@ describe("ProductionLabelPrintDialog", () => {
 
     await view
       .findAll("button")
-      .find((button) => button.text().includes("neste dispositivo"))!
+      .find((button) => button.text().includes("navegador"))!
       .trigger("click");
     await flushPromises();
     await vi.advanceTimersByTimeAsync(220);
@@ -370,7 +503,7 @@ describe("ProductionLabelPrintDialog", () => {
 
     await view
       .findAll("button")
-      .find((button) => button.text().includes("neste dispositivo"))!
+      .find((button) => button.text().includes("navegador"))!
       .trigger("click");
     await flushPromises();
 
@@ -447,7 +580,7 @@ describe("ProductionLabelPrintDialog", () => {
     expect(action?.attributes("disabled")).toBeDefined();
   });
 
-  it("bloqueia só o relay quando o destino está indisponível", () => {
+  it("cai para a impressão deste dispositivo quando o relay está indisponível", () => {
     const view = wrapper({
       projection: {
         ...baseProps.projection,
@@ -466,7 +599,7 @@ describe("ProductionLabelPrintDialog", () => {
       .find((button) => button.text().includes("neste dispositivo"));
 
     expect(view.text()).toContain("Relay offline");
-    expect(relay?.attributes("disabled")).toBeDefined();
-    expect(browser?.attributes("disabled")).toBeUndefined();
+    expect(relay?.attributes("disabled")).toBeUndefined();
+    expect(browser).toBeUndefined();
   });
 });

@@ -15,7 +15,11 @@ import {
   isProvenPrintFailure,
   isReprintState,
 } from "~/composables/useProductionLabelPrinting";
-
+import {
+  callLocalDeviceAgent,
+  localDeviceAgentErrorMessage,
+  printWithLocalDeviceAgent,
+} from "../../../operator-kit/app/utils/localDeviceAgent";
 const props = defineProps<{
   open: boolean;
   printMode: "pesagem" | "preparo";
@@ -150,9 +154,31 @@ const relayUnavailableReason = computed(() => {
     destination.status_label || "A estação de impressão não está disponível."
   );
 });
+const printDestination = computed(() => props.projection?.print_destination);
+const labelWidthMm = computed(
+  () => printDestination.value?.label_width_mm || 60,
+);
+const labelHeightMm = computed(
+  () => printDestination.value?.label_height_mm || 40,
+);
+const printableWidthMm = computed(
+  () => printDestination.value?.printable_width_mm || labelWidthMm.value - 8,
+);
+const previewStyle = computed(() => ({
+  width: `${labelWidthMm.value}mm`,
+  minHeight: `${labelHeightMm.value}mm`,
+}));
+const localAgentAvailable = computed(
+  () => printDestination.value?.local_agent_available === true,
+);
 const activeTransport = ref<"relay" | "browser" | null>(null);
+const usedLocalAgent = ref(false);
+const localPrintNote = ref("");
+const deviceProbeBusy = ref(false);
 const browserBusy = ref(false);
-const actionBusy = computed(() => printing.busy.value || browserBusy.value);
+const actionBusy = computed(
+  () => printing.busy.value || browserBusy.value || deviceProbeBusy.value,
+);
 let wasOpen = false;
 
 watch(
@@ -162,6 +188,8 @@ watch(
     // substituem; uma nova seleção só começa ao reabrir o fluxo.
     if (open && !wasOpen) {
       activeTransport.value = null;
+      usedLocalAgent.value = false;
+      localPrintNote.value = "";
       printing.reset();
     }
     wasOpen = open;
@@ -179,7 +207,55 @@ async function createRelay() {
   await printing.create(selection(), "relay");
 }
 
+async function sendPreparedJobToLocalAgent(): Promise<boolean> {
+  const destination = printDestination.value;
+  const job = printing.job.value;
+  if (
+    !destination?.local_agent_available ||
+    !destination.local_agent_url ||
+    !destination.local_agent_token ||
+    !job?.payload_b64
+  )
+    return false;
+  try {
+    const payload = await printWithLocalDeviceAgent(
+      {
+        agent_url: destination.local_agent_url,
+        token: destination.local_agent_token,
+      },
+      job.payload_b64,
+      job.print_title || "Etiquetas de preparação",
+    );
+    usedLocalAgent.value = true;
+    localPrintNote.value = "Enviado à impressora configurada neste PC.";
+    await printing.recordBrowserResult(
+      "agent_spooled",
+      `Fila ${String(payload?.queue || "local")} · job ${String(payload?.job_id || "aceito")}`,
+    );
+    return true;
+  } catch (error) {
+    const reason = localDeviceAgentErrorMessage(error);
+    usedLocalAgent.value = false;
+    localPrintNote.value = `${reason} Abrimos a impressão do navegador como alternativa.`;
+    await printing.recordBrowserResult("agent_failed", reason);
+    return false;
+  }
+}
+
 const PRINT_EVENT_PROBE_MS = 220;
+const NATIVE_PAGE_STYLE_ID = "production-label-page-size";
+
+function installNativePageStyle(): HTMLStyleElement | null {
+  if (typeof document === "undefined") return null;
+  document.getElementById(NATIVE_PAGE_STYLE_ID)?.remove();
+  const style = document.createElement("style");
+  style.id = NATIVE_PAGE_STYLE_ID;
+  // Valores vêm da projeção validada pelo backend. O driver ainda precisa usar
+  // o mesmo papel, mas o navegador deixa de presumir A4 no fallback.
+  style.textContent = `@media print { @page { size: ${labelWidthMm.value}mm ${labelHeightMm.value}mm; margin: 0; } }`;
+  document.head.appendChild(style);
+  return style;
+}
 
 async function openNativePrintDialog(): Promise<void> {
   if (browserBusy.value) return;
@@ -191,12 +267,14 @@ async function openNativePrintDialog(): Promise<void> {
   }
   browserBusy.value = true;
   await nextTick();
+  const pageStyle = installNativePageStyle();
   let dialogOpened = false;
   const markDialog = () => {
     dialogOpened = true;
   };
   if (typeof window === "undefined" || typeof window.print !== "function") {
     await printing.recordBrowserResult("dialog_unavailable");
+    pageStyle?.remove();
     browserBusy.value = false;
     return;
   }
@@ -208,6 +286,7 @@ async function openNativePrintDialog(): Promise<void> {
     window.removeEventListener("beforeprint", markDialog);
     window.removeEventListener("afterprint", markDialog);
     await printing.recordBrowserResult("dialog_unavailable");
+    pageStyle?.remove();
     browserBusy.value = false;
     return;
   }
@@ -219,6 +298,7 @@ async function openNativePrintDialog(): Promise<void> {
   await printing.recordBrowserResult(
     dialogOpened ? "dialog_opened" : "dialog_unavailable",
   );
+  pageStyle?.remove();
   browserBusy.value = false;
 }
 
@@ -227,6 +307,56 @@ async function createBrowserPrint() {
   activeTransport.value = "browser";
   const created = await printing.create(selection(), "browser");
   if (created) await openNativePrintDialog();
+}
+
+async function createLocalAgentPrint() {
+  if (actionBusy.value) return;
+  activeTransport.value = "browser";
+  const created = await printing.create(selection(), "browser");
+  if (!created) return;
+  if (!(await sendPreparedJobToLocalAgent())) await openNativePrintDialog();
+}
+
+async function localAgentIsReachable(): Promise<boolean> {
+  const destination = printDestination.value;
+  if (
+    !destination?.local_agent_available ||
+    !destination.local_agent_url ||
+    !destination.local_agent_token
+  )
+    return false;
+  try {
+    const health = await callLocalDeviceAgent(
+      {
+        agent_url: destination.local_agent_url,
+        token: destination.local_agent_token,
+      },
+      "/health",
+      undefined,
+      1_200,
+    );
+    return health.ok !== false;
+  } catch {
+    // Em tablet, a loopback naturalmente não contém o agente do PC. Isso não
+    // é erro para o operador: a próxima rota é o relay já projetado.
+    return false;
+  }
+}
+
+async function printBestAvailable() {
+  if (actionBusy.value) return;
+  deviceProbeBusy.value = true;
+  const localReachable = await localAgentIsReachable();
+  deviceProbeBusy.value = false;
+  if (localReachable) {
+    await createLocalAgentPrint();
+    return;
+  }
+  if (!relayUnavailableReason.value) {
+    await createRelay();
+    return;
+  }
+  await createBrowserPrint();
 }
 
 async function retry() {
@@ -240,7 +370,10 @@ async function reprint() {
   if (actionBusy.value) return;
   const transport = activeTransport.value ?? "relay";
   const registered = await printing.reprint(transport);
-  if (registered && transport === "browser") await openNativePrintDialog();
+  if (registered && transport === "browser") {
+    if (usedLocalAgent.value && (await sendPreparedJobToLocalAgent())) return;
+    await openNativePrintDialog();
+  }
 }
 
 async function reconcileCreate() {
@@ -268,12 +401,18 @@ function close() {
         </UiDialogDescription>
       </UiDialogHeader>
 
+      <UiAlert
+        variant="info"
+        icon="lucide:info"
+        description="Estas etiquetas apoiam a preparação interna e não substituem o rótulo de venda."
+      />
+
       <div class="grid min-h-0 gap-4 md:grid-cols-[minmax(0,1fr)_18rem]">
         <section aria-labelledby="label-preview-title" class="min-w-0">
           <div class="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div>
               <h3 id="label-preview-title" class="text-sm font-semibold">
-                Prévia lógica · bobina 80 mm
+                Prévia · etiqueta {{ labelWidthMm }} × {{ labelHeightMm }} mm
               </h3>
               <p class="text-xs text-muted-foreground">{{ summary }}</p>
               <p
@@ -283,7 +422,7 @@ function close() {
                 {{ scaleRoundingNote }}
               </p>
             </div>
-            <UiBadge variant="outline">72 mm úteis</UiBadge>
+            <UiBadge variant="outline">{{ printableWidthMm }} mm úteis</UiBadge>
           </div>
 
           <div
@@ -291,6 +430,7 @@ function close() {
           >
             <div
               class="label-roll-preview mx-auto flex max-w-full flex-col gap-2 bg-white p-[4mm] text-black shadow-sm"
+              :style="previewStyle"
               aria-label="Conteúdo das etiquetas"
             >
               <template v-if="effectivePrintMode === 'pesagem'">
@@ -299,9 +439,7 @@ function close() {
                   :key="label.key"
                   class="rounded border border-black p-2"
                 >
-                  <p class="text-xs font-bold uppercase">
-                    Pesagem interna · não é rótulo de venda
-                  </p>
+                  <p class="text-xs font-bold uppercase">Pesagem interna</p>
                   <div class="flex items-baseline justify-between gap-2">
                     <strong class="font-mono text-xl tracking-widest">{{
                       label.code
@@ -327,9 +465,7 @@ function close() {
                   :key="ticket.ticket_ref || ticket.output_sku"
                   class="rounded border border-black p-2"
                 >
-                  <span class="block text-xs font-bold uppercase">
-                    Uso interno · não é rótulo de venda
-                  </span>
+                  <span class="block text-xs font-bold uppercase">Preparo interno</span>
                   <strong class="block uppercase leading-tight">{{
                     ticket.name
                   }}</strong>
@@ -427,6 +563,15 @@ function close() {
             {{ printing.pollingMessage.value }}
           </p>
 
+          <p
+            v-if="localPrintNote"
+            role="status"
+            aria-live="polite"
+            class="text-sm text-muted-foreground"
+          >
+            {{ localPrintNote }}
+          </p>
+
           <div
             v-if="printing.errorMessage.value"
             role="alert"
@@ -513,16 +658,15 @@ function close() {
                 activeTransport === 'relay'
               "
               :disabled="
-                !!preflightBlockReason ||
-                !!relayUnavailableReason ||
-                browserBusy
+                !!preflightBlockReason || browserBusy
               "
-              @click="createRelay"
+              @click="printBestAvailable"
             >
               Imprimir {{ labelCount }}
               {{ labelCount === 1 ? "etiqueta" : "etiquetas" }}
             </UiButton>
             <UiButton
+              v-if="localAgentAvailable || !relayUnavailableReason"
               type="button"
               variant="outline"
               class="min-h-11 whitespace-normal"
@@ -530,7 +674,7 @@ function close() {
               :disabled="!!preflightBlockReason || printing.busy.value"
               @click="createBrowserPrint"
             >
-              Imprimir neste dispositivo
+              Abrir impressão do navegador
             </UiButton>
           </div>
 
@@ -581,15 +725,14 @@ function close() {
       :labels="effectiveLabels"
       :tickets="effectiveTickets"
       :copy-number="copyNumber || 1"
+      :label-width-mm="labelWidthMm"
+      :label-height-mm="labelHeightMm"
     />
   </div>
 </template>
 
 <style scoped>
-.label-roll-preview {
-  box-sizing: border-box;
-  width: 80mm;
-}
+.label-roll-preview { box-sizing: border-box; }
 
 @media (prefers-reduced-motion: reduce) {
   .label-roll-preview {

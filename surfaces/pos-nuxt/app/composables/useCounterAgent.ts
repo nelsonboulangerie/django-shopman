@@ -2,7 +2,11 @@ import type { ComputedRef } from "vue";
 import { toast } from "vue-sonner";
 
 import type { POSCashDrawerProjection, POSProjection } from "~/types/pos";
-
+import {
+  callLocalDeviceAgent,
+  localDeviceAgentErrorMessage,
+  printWithLocalDeviceAgent,
+} from "../../../operator-kit/app/utils/localDeviceAgent";
 /**
  * O caminho físico que abre a gaveta de dinheiro.
  *
@@ -62,16 +66,6 @@ export type DrawerState =
  * conserto é uma frase — reinstalar. Sem isto, a tela repetia "rota
  * desconhecida" e mandava o operador procurar defeito na impressora.
  */
-class AgentTooOldError extends Error {
-  constructor(readonly route: string) {
-    super(
-      "O agente desta estação está desatualizado e não conhece esta função. "
-      + "Baixe e reinstale pelo gestor, em Terminais do PDV.",
-    );
-    this.name = "AgentTooOldError";
-  }
-}
-
 export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
   const config = computed<POSCashDrawerProjection | null>(() => pos.value?.cash_drawer ?? null);
 
@@ -94,27 +88,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
 
   async function callAgent(path: string, body?: Record<string, unknown>, timeoutMs = AGENT_TIMEOUT_MS) {
     const drawer = config.value;
-    if (!drawer?.agent_url) throw new Error("Terminal sem agente do balcão configurado.");
-    const response = await fetch(`${drawer.agent_url}${path}`, {
-      method: body ? "POST" : "GET",
-      headers: body ? { "content-type": "application/json" } : undefined,
-      body: body ? JSON.stringify({ token: drawer.token, ...body }) : undefined,
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    const payload = await response.json().catch(() => ({}));
-    // Só o status HTTP é falha de transporte. `ok: false` no corpo é uma
-    // RESPOSTA — no `/health` é o motivo do CUPS ("fila pausada"), que o
-    // operador precisa ler. Tratar isso como exceção apagava justamente a
-    // informação que a sonda existe para trazer.
-    if (!response.ok) {
-      // 404 do agente quer dizer uma coisa só: ele não conhece esta rota, ou
-      // seja, está rodando uma versão anterior à que criou o endpoint. O agente
-      // responde "rota desconhecida", que é exato e não ajuda ninguém — o
-      // operador do balcão não tem como saber que aquilo significa "reinstale".
-      if (response.status === 404) throw new AgentTooOldError(path);
-      throw new Error(payload?.error || `Agente respondeu ${response.status}.`);
-    }
-    return payload;
+    return await callLocalDeviceAgent(drawer, path, body, timeoutMs);
   }
 
   /**
@@ -180,8 +154,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
     if (!import.meta.client) return { status: "skipped", detail: "Impressão fora do navegador." };
     if (!canKick.value) return { status: "skipped", detail: unavailableReason.value };
     try {
-      const payload = await callAgent("/print", { payload_b64: payloadB64, title });
-      if (payload?.ok === false) throw new Error(payload?.error || "O agente recusou a impressão.");
+      await printWithLocalDeviceAgent(config.value || {}, payloadB64, title);
       return { status: "printed", detail: "" };
     } catch (error) {
       return { status: "failed", detail: messageOf(error) };
@@ -227,11 +200,7 @@ export function useCounterAgent(pos: ComputedRef<POSProjection | null>) {
 }
 
 function messageOf(error: unknown): string {
-  if (error instanceof DOMException && error.name === "TimeoutError") {
-    return "O agente não respondeu.";
-  }
-  // `fetch` para porta fechada vira TypeError sem detalhe útil — o operador
-  // precisa de um próximo passo, não do nome da exceção.
-  if (error instanceof TypeError) return "O agente da estação não está rodando.";
-  return error instanceof Error ? error.message : String(error);
+  return localDeviceAgentErrorMessage(error)
+    .replace("O agente local não respondeu.", "O agente não respondeu.")
+    .replace("O agente local desta estação não está rodando.", "O agente da estação não está rodando.");
 }

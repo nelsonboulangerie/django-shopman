@@ -370,15 +370,18 @@ export function useProductionLabelPrinting(
     );
   }
 
-  function recordBrowserResult(result: ProductionBrowserPrintResult) {
+  function recordBrowserResult(
+    result: ProductionBrowserPrintResult,
+    detail = "",
+  ) {
     if (!job.value) return Promise.resolve(false);
     return postAction(
       "browser_result",
       "browser-result",
-      { result, idempotency_key: newProductionMutationKey() },
-      result === "dialog_opened"
+      { result, detail, idempotency_key: newProductionMutationKey() },
+      result === "dialog_opened" || result === "agent_spooled"
         ? "O diálogo abriu, mas não foi possível registrar o resultado. Confirme antes de reimprimir."
-        : "A impressão deste dispositivo não respondeu. Use Chrome, Safari ou envie à estação.",
+        : "A impressão deste dispositivo não respondeu. Tente pelo diálogo do navegador.",
     );
   }
 

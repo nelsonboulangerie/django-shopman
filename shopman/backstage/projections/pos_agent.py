@@ -88,15 +88,15 @@ class AgentInstallGuide:
 
 
 def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS) -> AgentInstallGuide:
-    from shopman.backstage.services.pos_hardware import ADAPTER_AGENT, CashDrawerConfig
+    from shopman.backstage.services.pos_hardware import DeviceAgentConfig
 
-    config = CashDrawerConfig.from_terminal(terminal)
+    config = DeviceAgentConfig.from_terminal(terminal)
     available = AGENT_SOURCE.is_file()
     os_key = normalize_os(os_key)
 
     blocker = ""
-    if not config.declared or config.adapter != ADAPTER_AGENT:
-        blocker = "Este terminal está como gaveta de chave. Mude para “Pelo agente local” e salve."
+    if not config.declared:
+        blocker = "Ative a impressora de preparação ou a gaveta pelo agente local e salve o terminal."
     elif config.misconfigured_reason:
         blocker = config.misconfigured_reason
     elif not available:
@@ -107,8 +107,8 @@ def build_agent_install(terminal, *, download_url: str, os_key: str = DEFAULT_OS
     return AgentInstallGuide(
         terminal_ref=terminal.ref,
         terminal_label=terminal.label or terminal.ref,
-        adapter=config.adapter if config.declared else "",
-        configured=config.kicks_by_software and not config.misconfigured_reason,
+        adapter="agent" if config.declared else "",
+        configured=config.available,
         blocker=blocker,
         source_available=available,
         source_bytes=AGENT_SOURCE.stat().st_size if available else 0,
@@ -223,9 +223,9 @@ def _commands(os_key: str) -> tuple[AgentStep, ...]:
 
 def _steps(config, os_key: str) -> tuple[AgentStep, ...]:
     runtime = _OS_RUNTIME[os_key]
-    origin = _pos_origin()
+    origins = _operator_origins()
     install = f"{runtime['python']} {AGENT_FILENAME} --install --token {config.token}"
-    if origin:
+    for origin in origins:
         install += f" --origin {origin}"
 
     prereq = (
@@ -275,11 +275,33 @@ def _source_build() -> str:
     return hashlib.sha256(AGENT_SOURCE.read_bytes()).hexdigest()[:8]
 
 
-def _pos_origin() -> str:
-    """Origem que o agente vai aceitar — a do PDV, não um chute.
+_OPERATOR_BASE_URL_SETTINGS = (
+    "SHOPMAN_POS_BASE_URL",
+    "SHOPMAN_ORDERS_BASE_URL",
+    "SHOPMAN_KDS_BASE_URL",
+    "SHOPMAN_PRODUCTION_BASE_URL",
+    "SHOPMAN_MARKETING_BASE_URL",
+    "SHOPMAN_BI_BASE_URL",
+    "SHOPMAN_PURCHASE_BASE_URL",
+)
 
-    Vazio quando o deployment não declarou `SHOPMAN_POS_BASE_URL`: aí o
-    instalador usa o default dele, e é melhor não escrever um endereço errado
-    no comando do que fingir que sabemos.
+
+def _operator_origins() -> tuple[str, ...]:
+    """Origem exata de cada app operacional autorizado a falar com o agente.
+
+    O agente continua preso à loopback. Esta lista não o publica: apenas evita
+    que o CORS transforme ``/print`` numa exclusividade acidental do PDV quando
+    Produção, Gestor ou outro app autorizado roda no mesmo dispositivo.
     """
-    return str(getattr(settings, "SHOPMAN_POS_BASE_URL", "") or "").rstrip("/")
+    from urllib.parse import urlsplit
+
+    origins: list[str] = []
+    for setting_name in _OPERATOR_BASE_URL_SETTINGS:
+        value = str(getattr(settings, setting_name, "") or "").strip()
+        parsed = urlsplit(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            continue
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        if origin not in origins:
+            origins.append(origin)
+    return tuple(origins)

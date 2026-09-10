@@ -56,6 +56,12 @@ function projection(overrides: Record<string, unknown> = {}) {
       label: "EPSON · Preparação",
       status_label: "Pronta",
       available: true,
+      label_width_mm: 60,
+      label_height_mm: 40,
+      printable_width_mm: 52,
+      local_agent_available: false,
+      local_agent_url: "",
+      local_agent_token: "",
     },
     ...overrides,
   } as unknown as ProductionPrintingSourceProjection);

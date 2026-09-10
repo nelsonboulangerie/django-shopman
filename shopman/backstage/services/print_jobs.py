@@ -24,6 +24,13 @@ LEASE_SECONDS = 45
 JOB_LIFETIME = timedelta(hours=2)
 RENDERER_VERSION = 1
 
+DEFAULT_LABEL_WIDTH_MM = 60
+DEFAULT_LABEL_HEIGHT_MM = 40
+DEFAULT_LABEL_SIDE_MARGIN_MM = 4
+_LABEL_WIDTH_BOUNDS = (40, 120)
+_LABEL_HEIGHT_BOUNDS = (20, 200)
+_ESC_POS_FONT_A_MM = 1.5
+
 
 class PrintJobError(Exception):
     def __init__(self, message: str, *, code: str = "print_job_error", status_code: int = 400):
@@ -36,7 +43,9 @@ class PrintJobError(Exception):
 @dataclass(frozen=True)
 class PrinterConfig:
     enabled: bool
-    roll_width_mm: int
+    label_width_mm: int
+    label_height_mm: int
+    printable_width_mm: int
     columns: int
     cut_mode: str
     role: str
@@ -52,22 +61,46 @@ class PrinterConfig:
         hardware = metadata.get("hardware") if isinstance(metadata.get("hardware"), dict) else {}
         raw = hardware.get("printer") if isinstance(hardware.get("printer"), dict) else {}
         if not raw or raw.get("enabled") is False:
-            return cls(False, 0, 0, "", "")
+            return cls(False, 0, 0, 0, 0, "", "")
         try:
-            roll = int(raw.get("roll_width_mm"))
-            columns = int(raw.get("columns"))
+            width = int(raw.get("label_width_mm") or DEFAULT_LABEL_WIDTH_MM)
+            height = int(raw.get("label_height_mm") or DEFAULT_LABEL_HEIGHT_MM)
+            printable = int(
+                raw.get("label_print_width_mm")
+                or width - (2 * DEFAULT_LABEL_SIDE_MARGIN_MM)
+            )
         except (TypeError, ValueError):
-            return cls(True, 0, 0, "", "", "Informe rolo e colunas da impressora.")
-        cut_mode = str(raw.get("cut_mode") or "").strip()
+            return cls(True, 0, 0, 0, 0, "", "", "Informe largura e altura válidas para a etiqueta.")
+        columns = int(printable // _ESC_POS_FONT_A_MM)
+        cut_mode = str(raw.get("label_cut_mode") or "none").strip()
         role = str(raw.get("role") or "").strip()
         problem = ""
-        if roll != 80 or columns != 48:
-            problem = "Etiquetas de preparação exigem rolo de 80 mm e 48 colunas."
+        if not _LABEL_WIDTH_BOUNDS[0] <= width <= _LABEL_WIDTH_BOUNDS[1]:
+            problem = "A largura da etiqueta deve ficar entre 40 e 120 mm."
+        elif not _LABEL_HEIGHT_BOUNDS[0] <= height <= _LABEL_HEIGHT_BOUNDS[1]:
+            problem = "A altura da etiqueta deve ficar entre 20 e 200 mm."
+        elif printable <= 0 or printable >= width:
+            problem = "A área imprimível deve ser menor que a largura da etiqueta."
+        elif columns < 24:
+            problem = "A etiqueta é estreita demais para a identificação operacional."
         elif cut_mode not in {"partial", "none"}:
             problem = "Escolha corte parcial ou sem corte."
         elif role != "preparation":
             problem = "A impressora não está marcada para preparação."
-        return cls(True, roll, columns, cut_mode, role, problem)
+        return cls(True, width, height, printable, columns, cut_mode, role, problem)
+
+    @classmethod
+    def browser_default(cls) -> PrinterConfig:
+        printable = DEFAULT_LABEL_WIDTH_MM - (2 * DEFAULT_LABEL_SIDE_MARGIN_MM)
+        return cls(
+            True,
+            DEFAULT_LABEL_WIDTH_MM,
+            DEFAULT_LABEL_HEIGHT_MM,
+            printable,
+            int(printable // _ESC_POS_FONT_A_MM),
+            "none",
+            "preparation",
+        )
 
 
 @dataclass(frozen=True)
@@ -77,6 +110,7 @@ class PrintDestination:
     status_label: str
     available: bool
     problem: str = ""
+    config: PrinterConfig | None = None
 
 
 def _terminal_label(terminal) -> str:
@@ -99,13 +133,13 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
             config = PrinterConfig.from_terminal(target)
             if not config.accepts_preparation:
                 return PrintDestination(
-                    target, _terminal_label(target), "Configuração incompleta", False, config.problem
+                    target, _terminal_label(target), "Configuração incompleta", False, config.problem, config
                 )
-            return _destination_health(target)
+            return _destination_health(target, config=config)
 
         own_config = PrinterConfig.from_terminal(station)
         if own_config.accepts_preparation:
-            return _destination_health(station)
+            return _destination_health(station, config=own_config)
 
     candidates = []
     invalid = []
@@ -127,11 +161,18 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
         )
     if invalid:
         terminal, problem = invalid[0]
-        return PrintDestination(terminal, _terminal_label(terminal), "Configuração incompleta", False, problem)
+        return PrintDestination(
+            terminal,
+            _terminal_label(terminal),
+            "Configuração incompleta",
+            False,
+            problem,
+            PrinterConfig.from_terminal(terminal),
+        )
     return PrintDestination(None, "", "Impressora não configurada", False, "Configure uma impressora de preparação.")
 
 
-def _destination_health(terminal) -> PrintDestination:
+def _destination_health(terminal, *, config: PrinterConfig | None = None) -> PrintDestination:
     credential = (
         PrintAgentCredential.objects.filter(terminal=terminal, is_active=True).order_by("-last_seen_at", "-pk").first()
     )
@@ -147,6 +188,7 @@ def _destination_health(terminal) -> PrintDestination:
         "Pronta" if recently_seen else ("Aguardando estação" if paired else "Relay não pareado"),
         paired,
         "" if paired else "Emita uma credencial para o relay deste terminal.",
+        config or PrinterConfig.from_terminal(terminal),
     )
 
 
@@ -330,7 +372,7 @@ def create_job(
         # null; requested_station_ref already preserves the trusted origin for
         # authorization/audit without pretending a server-side destination.
         target_terminal = None
-        config = PrinterConfig(True, 80, 48, "partial", "preparation")
+        config = destination.config or PrinterConfig.browser_default()
     document = compose_document(projection, mode=mode, ticket_refs=ticket_refs)
     payload, document_hash, payload_hash = _render(document, config=config, copy_number=1)
     attempt = {
@@ -487,8 +529,8 @@ def reprint_job(*, job: PrintJob, actor, station_ref: str, transport: str, idemp
             )
         series_jobs = PrintJob.objects.select_for_update().filter(series_ref=locked.series_ref)
         copy_number = int(series_jobs.aggregate(value=Max("copy_number"))["value"] or 0) + 1
+        destination = resolve_destination(station_ref=station_ref)
         if transport == PrintJob.Transport.RELAY:
-            destination = resolve_destination(station_ref=station_ref)
             if not destination.available or destination.terminal is None:
                 raise PrintJobError(
                     destination.problem or destination.status_label, code="printer_unavailable", status_code=409
@@ -497,7 +539,7 @@ def reprint_job(*, job: PrintJob, actor, station_ref: str, transport: str, idemp
             config = PrinterConfig.from_terminal(target_terminal)
         else:
             target_terminal = None
-            config = PrinterConfig(True, 80, 48, "partial", "preparation")
+            config = destination.config or PrinterConfig.browser_default()
         payload, document_hash, payload_hash = _render(locked.document, config=config, copy_number=copy_number)
         return PrintJob.objects.create(
             kind=locked.kind,
@@ -578,7 +620,14 @@ def confirm_job(*, job: PrintJob, actor, result: str, detail: str, idempotency_k
     )
 
 
-def record_browser_result(*, job: PrintJob, actor, result: str, idempotency_key: str) -> PrintJob:
+def record_browser_result(
+    *,
+    job: PrintJob,
+    actor,
+    result: str,
+    idempotency_key: str,
+    detail: str = "",
+) -> PrintJob:
     def mutate(locked):
         if (
             locked.confirmation
@@ -590,18 +639,38 @@ def record_browser_result(*, job: PrintJob, actor, result: str, idempotency_key:
             }
         ):
             raise PrintJobError(
-                "O trabalho já foi assumido pelo relay.", code="browser_fallback_not_allowed", status_code=409
+                "Este trabalho já não aceita outro resultado do dispositivo.",
+                code="device_result_not_allowed",
+                status_code=409,
             )
         sequence = int(locked.attempts.aggregate(value=Max("sequence"))["value"] or 0) + 1
-        opened = result == "dialog_opened"
+        attempt_status = {
+            "dialog_opened": PrintAttempt.Status.BROWSER_OPENED,
+            "dialog_unavailable": PrintAttempt.Status.BROWSER_UNAVAILABLE,
+            "agent_spooled": PrintAttempt.Status.SPOOLED,
+            "agent_failed": PrintAttempt.Status.FAILED,
+        }[result]
+        job_status = {
+            "dialog_opened": PrintJob.Status.AWAITING_CONFIRMATION,
+            "dialog_unavailable": PrintJob.Status.FAILED,
+            "agent_spooled": PrintJob.Status.SPOOLED,
+            "agent_failed": PrintJob.Status.FAILED,
+        }[result]
         PrintAttempt.objects.create(
             job=locked,
             sequence=sequence,
-            status=PrintAttempt.Status.BROWSER_OPENED if opened else PrintAttempt.Status.BROWSER_UNAVAILABLE,
+            status=attempt_status,
             acknowledged_at=timezone.now(),
-            detail="Fallback confirmado pelo navegador; o diálogo não prova papel impresso.",
+            detail=(
+                str(detail or "")[:500]
+                or (
+                    "Agente local aceitou os bytes; a confirmação do operador ainda prova o papel."
+                    if result == "agent_spooled"
+                    else "O navegador registrou a tentativa local de impressão."
+                )
+            ),
         )
-        locked.status = PrintJob.Status.AWAITING_CONFIRMATION if opened else PrintJob.Status.FAILED
+        locked.status = job_status
         locked.save(update_fields=("status", "updated_at"))
         return locked
 
@@ -609,7 +678,12 @@ def record_browser_result(*, job: PrintJob, actor, result: str, idempotency_key:
         job=job,
         action="browser",
         key=idempotency_key,
-        request_body={"actor_id": actor.pk, "job_ref": str(job.ref), "result": result},
+        request_body={
+            "actor_id": actor.pk,
+            "job_ref": str(job.ref),
+            "result": result,
+            "detail": str(detail or "")[:500],
+        },
         mutate=mutate,
     )
 
@@ -864,4 +938,10 @@ def job_data(job: PrintJob, *, include_document: bool = False) -> dict:
             print_document=job.document,
             document_sha256=job.document_sha256,
         )
+        if job.transport == PrintJob.Transport.BROWSER:
+            data.update(
+                payload_b64=base64.b64encode(bytes(job.payload)).decode("ascii"),
+                payload_sha256=job.payload_sha256,
+                print_title=f"Etiquetas de preparação · {job.label_count}",
+            )
     return data

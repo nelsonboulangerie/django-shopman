@@ -682,6 +682,11 @@ class RecipeAdminSemanticsTests(TestCase):
         self.assertIn("max_started_minutes", flattened_fieldsets)
         self.assertIn("capacity_per_day", flattened_fieldsets)
         self.assertIn("requires_batch_tracking", flattened_fieldsets)
+        self.assertIn("shelf_life_reviewed", flattened_fieldsets)
+        self.assertIsInstance(
+            recipe_form.fields["shelf_life_reviewed"].widget,
+            craftsman_admin.UnfoldBooleanSwitchWidget,
+        )
         self.assertNotIn("steps", flattened_fieldsets)
         self.assertNotIn("meta", flattened_fieldsets)
         self.assertIn("FARINHA-T65", sku_choices)
@@ -723,6 +728,43 @@ class RecipeAdminSemanticsTests(TestCase):
         self.assertEqual(recipe.meta["capacity_per_day"], "120")
         self.assertEqual(recipe.meta["requires_batch_tracking"], True)
         self.assertEqual(recipe.meta["shelf_life_days"], 1)
+
+    def test_recipe_admin_assina_a_validade_e_invalida_a_assinatura_quando_muda(self) -> None:
+        Product.objects.create(sku="CREME-TESTE", name="Creme teste", unit="kg")
+        data = {
+            "ref": "creme-teste",
+            "name": "Creme teste",
+            "is_active": "on",
+            "output_sku": "CREME-TESTE",
+            "batch_size": "2",
+            "steps_text": "Misturar",
+            "shelf_life_days": "2",
+            "shelf_life_reviewed": "on",
+        }
+        form = craftsman_admin.RecipeAdminForm(data=data)
+        self.assertTrue(form.is_valid(), form.errors)
+        recipe = form.save(commit=False)
+        request = RequestFactory().post("/admin/craftsman/recipe/add/")
+        request.user = User.objects.create_user("responsavel-validade")
+        model_admin = admin.site._registry[Recipe]
+
+        model_admin.save_model(request, recipe, form, False)
+        recipe.refresh_from_db()
+
+        self.assertEqual(recipe.meta["shelf_life_reviewed_days"], 2)
+        self.assertEqual(recipe.meta["shelf_life_reviewed_by"], "responsavel-validade")
+        self.assertTrue(recipe.meta["shelf_life_reviewed_at"])
+        self.assertEqual(recipe.meta["shelf_life_source"], "manager_review")
+
+        changed = {**data, "shelf_life_days": "3"}
+        changed.pop("shelf_life_reviewed")
+        changed_form = craftsman_admin.RecipeAdminForm(data=changed, instance=recipe)
+        self.assertTrue(changed_form.is_valid(), changed_form.errors)
+        changed_recipe = changed_form.save()
+
+        self.assertNotIn("shelf_life_reviewed_days", changed_recipe.meta)
+        self.assertNotIn("shelf_life_reviewed_by", changed_recipe.meta)
+        self.assertNotIn("shelf_life_reviewed_at", changed_recipe.meta)
 
 
 def test_legacy_admin_operational_templates_removed():

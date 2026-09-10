@@ -119,31 +119,31 @@ def _line(text: str) -> bytes:
     return text.translate(_TRANSLITERACAO).encode(ENCODING, "replace") + b"\n"
 
 
-def _double(text: str) -> bytes:
+def _double(text: str, columns: int = COLUMNS) -> bytes:
     """Uma linha em corpo duplo (largura e altura), centrada.
 
     `GS ! n`: o nibble alto é a largura, o baixo a altura — `0x11` dobra as
     duas. Volta a `0x00` na mesma função, senão o resto do papel sai gigante:
     o modo é de estado, não de escopo.
     """
-    recorte = text[: COLUMNS // 2]
-    margem = max(0, (COLUMNS // 2 - len(recorte)) // 2)
+    recorte = text[: columns // 2]
+    margem = max(0, (columns // 2 - len(recorte)) // 2)
     return bytes([GS, ord("!"), 0x11]) + _line(" " * margem + recorte) + bytes([GS, ord("!"), 0x00])
 
 
-def _centered(text: str) -> bytes:
-    recorte = text[:COLUMNS]
-    margem = max(0, (COLUMNS - len(recorte)) // 2)
+def _centered(text: str, columns: int = COLUMNS) -> bytes:
+    recorte = text[:columns]
+    margem = max(0, (columns - len(recorte)) // 2)
     return _line(" " * margem + recorte)
 
 
-def _rule() -> bytes:
-    return _line("-" * COLUMNS)
+def _rule(columns: int = COLUMNS) -> bytes:
+    return _line("-" * columns)
 
 
-def _pair(left: str, right: str) -> bytes:
-    espaco = max(1, COLUMNS - len(left) - len(right))
-    return _line(f"{left}{' ' * espaco}{right}"[:COLUMNS])
+def _pair(left: str, right: str, columns: int = COLUMNS) -> bytes:
+    espaco = max(1, columns - len(left) - len(right))
+    return _line(f"{left}{' ' * espaco}{right}"[:columns])
 
 
 def _wrap(text: str, width: int) -> list[str]:
@@ -213,8 +213,8 @@ def production_label_run(
     necessary: blindness is about the formula being weighed, not about asking
     the operator to identify anonymous ingredient codes.
     """
-    if columns != COLUMNS:
-        raise ValueError("O primeiro contrato de etiquetas exige exatamente 48 colunas.")
+    if not 24 <= columns <= 72:
+        raise ValueError("A etiqueta exige entre 24 e 72 colunas imprimíveis.")
     mode = str(document.get("mode") or "")
     if mode not in {"blind", "explicit"}:
         raise ValueError("Modo de etiqueta inválido.")
@@ -225,33 +225,33 @@ def production_label_run(
     out = bytearray()
     for index, ticket in enumerate(tickets):
         if index:
-            out += _rule()
+            out += _rule(columns)
         out += bytes([ESC, ord("@")])
         out += bytes([ESC, ord("t"), CODE_PAGE])
-        out += _centered("PESAGEM INTERNA" if mode == "blind" else "PREPARO INTERNO")
-        out += _centered("NAO E ROTULO DE VENDA")
+        out += _centered("PESAGEM INTERNA" if mode == "blind" else "PREPARO INTERNO", columns)
         if copy_number > 1:
-            out += _centered(f"*** {copy_number}ª VIA ***")
+            out += _centered(f"*** {copy_number}ª VIA ***", columns)
         if mode == "blind":
-            out += _double(str(ticket["blind_code"]))
+            out += _double(str(ticket["blind_code"]), columns)
         else:
             for part in _wrap(str(ticket["name"]), columns):
-                out += _centered(part)
-            out += _centered(str(ticket["output_sku"]))
+                out += _centered(part, columns)
+            out += _centered(str(ticket["output_sku"]), columns)
             total_weight = str(ticket.get("total_weight_display") or "")
             if total_weight:
-                out += _centered(f"Alvo total: {total_weight}")
+                out += _centered(f"Alvo total: {total_weight}", columns)
             output = str(ticket.get("output_quantity_display") or "")
             if output:
-                out += _centered(f"Rendimento previsto: {output}")
+                out += _centered(f"Rendimento previsto: {output}", columns)
         if mode == "blind":
             out += _line(f"Data {ticket['made_display']}")
         else:
             out += _pair(
                 f"Preparo {ticket['made_display']}",
                 f"Validade {ticket['expiry_display']}",
+                columns,
             )
-        out += _rule()
+        out += _rule(columns)
         for ingredient in ticket.get("ingredients", ()):
             # Identification hierarchy: human name first, SKU second.  Never
             # emit a bare SKU as the only identity on the paper.
@@ -260,6 +260,7 @@ def production_label_run(
             out += _pair(
                 f"  {ingredient['sku']}",
                 str(ingredient.get("target_display") or ingredient["quantity_display"]),
+                columns,
             )
             annotation = str(ingredient.get("annotation") or "")
             if annotation:

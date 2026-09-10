@@ -313,7 +313,7 @@ class ProductionWeighingTableProjection:
 
 @dataclass(frozen=True)
 class ProductionWeighingTicketProjection:
-    """A printable 80mm-oriented ticket for one recipe/base recipe."""
+    """A printable weighing ticket for one recipe/base recipe."""
 
     ticket_ref: str
     recipe_ref: str
@@ -344,11 +344,17 @@ class ProductionWeighingTicketProjection:
 
 @dataclass(frozen=True)
 class ProductionPrintDestinationProjection:
-    """Safe preflight for the station's preparation printer (never a secret)."""
+    """Print route, media geometry and this device's optional local agent."""
 
     label: str
     status_label: str
     available: bool
+    label_width_mm: int
+    label_height_mm: int
+    printable_width_mm: int
+    local_agent_available: bool
+    local_agent_url: str
+    local_agent_token: str
 
 
 @dataclass(frozen=True)

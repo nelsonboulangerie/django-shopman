@@ -29,6 +29,7 @@ from shopman.backstage.services.pos_hardware import (
     DEFAULT_PULSE_OFF_MS,
     DEFAULT_PULSE_ON_MS,
     CashDrawerConfig,
+    DeviceAgentConfig,
 )
 
 
@@ -57,7 +58,7 @@ class TerminalForm(forms.ModelForm):
         help_text="O agente é um processo na máquina do balcão. Instale com <code>python3 counter_agent.py --install</code>.",
     )
     counter_agent_url = forms.URLField(
-        label="Endereço do agente",
+        label="Endereço do agente do dispositivo",
         required=False,
         widget=UnfoldAdminURLInputWidget,
         assume_scheme="http",
@@ -116,25 +117,36 @@ class TerminalForm(forms.ModelForm):
         initial="preparation",
     )
     printer_roll_width_mm = forms.ChoiceField(
-        label="Largura do rolo",
+        label="Largura da bobina de recibos",
         required=False,
         widget=UnfoldAdminSelectWidget,
-        choices=(("80", "80 mm"),),
+        choices=(("80", "80 mm"), ("58", "58 mm")),
         initial="80",
     )
-    printer_columns = forms.ChoiceField(
-        label="Colunas",
+    printer_label_width_mm = forms.IntegerField(
+        label="Largura da etiqueta (mm)",
         required=False,
-        widget=UnfoldAdminSelectWidget,
-        choices=(("48", "48 colunas"),),
-        initial="48",
+        min_value=40,
+        max_value=120,
+        widget=UnfoldAdminIntegerFieldWidget,
+        initial=60,
+        help_text="Padrão atual da preparação: etiqueta adesiva de 60 mm.",
+    )
+    printer_label_height_mm = forms.IntegerField(
+        label="Altura da etiqueta (mm)",
+        required=False,
+        min_value=20,
+        max_value=200,
+        widget=UnfoldAdminIntegerFieldWidget,
+        initial=40,
+        help_text="Padrão atual da preparação: etiqueta adesiva de 40 mm.",
     )
     printer_cut_mode = forms.ChoiceField(
-        label="Corte",
+        label="Separação das etiquetas",
         required=False,
         widget=UnfoldAdminSelectWidget,
-        choices=(("partial", "Corte parcial"), ("none", "Sem corte")),
-        initial="partial",
+        choices=(("none", "Sem corte (adesiva)"), ("partial", "Corte parcial")),
+        initial="none",
     )
     class Meta:
         model = Terminal
@@ -145,6 +157,7 @@ class TerminalForm(forms.ModelForm):
         if not (self.instance and self.instance.pk):
             return
         config = CashDrawerConfig.from_terminal(self.instance)
+        device_agent = DeviceAgentConfig.from_terminal(self.instance)
         self.fields["drawer_adapter"].initial = config.adapter if config.declared else ""
         # ⚠️ As PONTAS do token, ao lado do botão de rotacionar. É o único lugar
         # do Admin onde dá para comparar com o `--doctor` do balcão — e "token
@@ -155,7 +168,7 @@ class TerminalForm(forms.ModelForm):
                 f" Token atual: {mask_badge(config.token)} "
                 "— confira com `counter-agent --doctor` no balcão."
             )
-        self.fields["counter_agent_url"].initial = config.agent_url
+        self.fields["counter_agent_url"].initial = device_agent.agent_url
         self.fields["drawer_pulse_pin"].initial = str(config.pulse_pin)
         self.fields["drawer_pulse_on_ms"].initial = config.pulse_on_ms
         self.fields["drawer_pulse_off_ms"].initial = config.pulse_off_ms
@@ -166,19 +179,20 @@ class TerminalForm(forms.ModelForm):
         self.fields["printer_enabled"].initial = bool(printer and printer.get("enabled") is not False)
         self.fields["printer_role"].initial = str(printer.get("role") or "preparation")
         self.fields["printer_roll_width_mm"].initial = str(printer.get("roll_width_mm") or "80")
-        self.fields["printer_columns"].initial = str(printer.get("columns") or "48")
-        self.fields["printer_cut_mode"].initial = str(printer.get("cut_mode") or "partial")
+        self.fields["printer_label_width_mm"].initial = int(printer.get("label_width_mm") or 60)
+        self.fields["printer_label_height_mm"].initial = int(printer.get("label_height_mm") or 40)
+        self.fields["printer_cut_mode"].initial = str(printer.get("label_cut_mode") or "none")
 
     def clean(self):
         cleaned = super().clean()
-        if cleaned.get("drawer_adapter") == ADAPTER_AGENT:
+        if cleaned.get("drawer_adapter") == ADAPTER_AGENT or cleaned.get("printer_enabled"):
             if not (cleaned.get("counter_agent_url") or "").strip():
                 self.add_error("counter_agent_url", "Informe o endereço do agente.")
         if cleaned.get("printer_enabled"):
             if cleaned.get("printer_role") != "preparation":
                 self.add_error("printer_role", "Neste incremento, use Preparação e pesagem.")
-            if cleaned.get("printer_roll_width_mm") != "80" or cleaned.get("printer_columns") != "48":
-                self.add_error("printer_roll_width_mm", "Etiquetas exigem rolo de 80 mm e 48 colunas.")
+            if not cleaned.get("printer_label_width_mm") or not cleaned.get("printer_label_height_mm"):
+                self.add_error("printer_label_width_mm", "Informe as duas dimensões da etiqueta.")
         return cleaned
 
     def _resolved_token(self) -> str:
@@ -191,7 +205,7 @@ class TerminalForm(forms.ModelForm):
         """
         import secrets
 
-        current = CashDrawerConfig.from_terminal(self.instance).token
+        current = DeviceAgentConfig.from_terminal(self.instance).token
         if current and not self.cleaned_data.get("drawer_rotate_token"):
             return current
         return secrets.token_urlsafe(32)
@@ -201,12 +215,23 @@ class TerminalForm(forms.ModelForm):
         metadata = dict(instance.metadata or {})
         hardware = dict(metadata.get("hardware") or {})
         adapter = self.cleaned_data.get("drawer_adapter") or ""
+        needs_device_agent = bool(
+            adapter == ADAPTER_AGENT or self.cleaned_data.get("printer_enabled")
+        )
+        agent_url = (self.cleaned_data.get("counter_agent_url") or "").strip()
+        token = self._resolved_token() if needs_device_agent else ""
+        if needs_device_agent:
+            hardware["device_agent"] = {
+                "enabled": True,
+                "agent_url": agent_url,
+                "token": token,
+            }
+        else:
+            hardware.pop("device_agent", None)
         if adapter:
             hardware["cash_drawer"] = {
                 "enabled": True,
                 "adapter": adapter,
-                "agent_url": (self.cleaned_data.get("counter_agent_url") or "").strip(),
-                "token": self._resolved_token(),
                 "pulse_pin": int(self.cleaned_data.get("drawer_pulse_pin") or 0),
                 "pulse_on_ms": self.cleaned_data.get("drawer_pulse_on_ms") or DEFAULT_PULSE_ON_MS,
                 "pulse_off_ms": self.cleaned_data.get("drawer_pulse_off_ms") or DEFAULT_PULSE_OFF_MS,
@@ -216,14 +241,26 @@ class TerminalForm(forms.ModelForm):
             # Sem adapter escolhido = a loja não declarou gaveta neste balcão.
             hardware.pop("cash_drawer", None)
         if self.cleaned_data.get("printer_enabled"):
-            hardware["printer"] = {
+            label_width = int(self.cleaned_data.get("printer_label_width_mm") or 60)
+            label_height = int(self.cleaned_data.get("printer_label_height_mm") or 40)
+            # A fila/modelo/adaptador são fatos já aferidos na estação. Editar
+            # o tamanho da etiqueta não pode apagá-los — foi exatamente assim
+            # que uma impressora funcional do PDV voltava a parecer um relay
+            # ainda não pareado.
+            printer = dict(hardware.get("printer") or {})
+            printer.update({
                 "enabled": True,
-                "adapter": "relay",
+                "adapter": str(printer.get("adapter") or "relay"),
                 "role": "preparation",
-                "roll_width_mm": 80,
+                "roll_width_mm": int(self.cleaned_data.get("printer_roll_width_mm") or 80),
                 "columns": 48,
-                "cut_mode": self.cleaned_data.get("printer_cut_mode") or "partial",
-            }
+                "cut_mode": "partial",
+                "label_width_mm": label_width,
+                "label_height_mm": label_height,
+                "label_print_width_mm": label_width - 8,
+                "label_cut_mode": self.cleaned_data.get("printer_cut_mode") or "none",
+            })
+            hardware["printer"] = printer
         else:
             hardware.pop("printer", None)
         if hardware:
@@ -251,16 +288,26 @@ class TerminalAdmin(_CashmanTerminalAdmin):
     fieldsets = (
         (None, {"fields": ("ref", "label", "channel_ref", "location_ref", "is_active", "health_display")}),
         (
+            "Agente local do dispositivo",
+            {
+                "fields": (
+                    "counter_agent_url",
+                    "drawer_rotate_token",
+                    "drawer_install_display",
+                ),
+                "description": "Ponte privada deste computador com impressora e gaveta. Produção, PDV e os demais apps autorizados reutilizam o mesmo agente.",
+            },
+        ),
+        (
             "Gaveta de dinheiro",
             {
                 "fields": (
-                    "drawer_adapter", "counter_agent_url", "drawer_pulse_pin",
+                    "drawer_adapter", "drawer_pulse_pin",
                     "drawer_pulse_on_ms", "drawer_pulse_off_ms", "drawer_open_on_cash_sale",
-                    "drawer_install_display",
                 ),
                 # Quem testa é a estação: só o navegador do balcão alcança a
                 # loopback do agente. Este Admin não tem como chutar a gaveta.
-                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa) — só o navegador do balcão alcança o agente.",
+                "description": "O teste da gaveta fica no próprio PDV (antesala do caixa) — só o navegador do balcão alcança o agente local.",
             },
         ),
         (
@@ -270,10 +317,10 @@ class TerminalAdmin(_CashmanTerminalAdmin):
                     "printer_enabled",
                     "printer_role",
                     "printer_roll_width_mm",
-                    "printer_columns",
+                    ("printer_label_width_mm", "printer_label_height_mm"),
                     "printer_cut_mode",
                 ),
-                "description": "Configuração separada da gaveta. Os bytes da etiqueta são compostos no servidor; o relay apenas entrega.",
+                "description": "A bobina do PDV e a etiqueta de preparação são perfis distintos. O servidor deriva automaticamente margens e colunas; o agente apenas entrega os bytes.",
             },
         ),
     )
