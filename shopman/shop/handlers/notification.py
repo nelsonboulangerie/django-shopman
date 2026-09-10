@@ -207,7 +207,7 @@ def _stock_alert_context(context: dict) -> dict:
 
             product = catalog_context.get_product(sku)
             product_name = str(getattr(product, "name", "") or "").strip()
-        except Exception:
+        except Exception:  # silêncio-deliberado: o alerta degrada para o SKU já presente
             logger.debug(
                 "notification.system: product lookup failed for stock alert sku=%s",
                 sku,

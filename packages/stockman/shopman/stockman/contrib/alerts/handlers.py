@@ -132,7 +132,7 @@ def _dispatch_notification(alert, available) -> None:
             available,
         )
 
-    except ImportError:
+    except ImportError:  # silêncio-deliberado: Orderman é integração opcional do pacote
         logger.debug("Orderman not available, skipping alert dispatch for alert_id=%s", alert.pk)
     except Exception:
         logger.warning(
