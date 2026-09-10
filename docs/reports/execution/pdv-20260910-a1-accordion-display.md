@@ -111,3 +111,9 @@ Resultado final desta incorporação: 853 testes frontend em 49 arquivos passara
 ### Rodapé durante seleção
 
 Refinamento solicitado: modo explícito de seleção oculta apenas os botões gerais de Enviar/Transferir/Pagamento, preservando Total parcial e sua linha fina de separação. Ações sobre o lote permanecem na barra da seleção. Mesmo sem marcações, o modo continua sem botões gerais até Concluir seleção; navegação normal não os oculta. Trata-se de visibilidade, sem alteração do atalho F4 da página. Validado por 38 testes do componente, lint e Chromium (entrada, marcação e saída), captura `footer-selection.png`. Sem publicação.
+
+### Rodapé compacto também na navegação
+
+Alt+I/botão de entrada e navegação por setas ativam estado explícito de navegação. Nesse estado e no modo seleção, botões gerais ficam ocultos; o total permanece. Mudar foco para o numpad não restaura os botões. Concluir encerra o modo; Esc na lista fecha detalhes ou encerra o modo quando recolhido. Qtd/Obs. desabilitados na seleção múltipla recebem opacidade reduzida, dessaturação e cursor de indisponibilidade.
+
+39 testes do componente e lint passam. Chromium mediu ganho de 104 px na área da lista em 320×720, conferiu persistência do modo ao focar numpad, restauração em Concluir e Qtd desabilitado/esmaecido. Capturas `navigation-footer.png`, `selection-disabled.png`. O numpad acompanha a nova posição do rodapé na entrada/saída do modo; não se desloca a cada mudança de foco. Sem publicação.

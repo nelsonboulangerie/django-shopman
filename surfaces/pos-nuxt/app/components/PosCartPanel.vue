@@ -544,8 +544,17 @@ function onWindowKeydown(event: KeyboardEvent) {
 onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
 const batchMode = ref(false);
+const itemNavigation = ref(false);
+function finishItemMode() {
+  itemNavigation.value = false;
+  batchMode.value = false;
+  expandedLineId.value = "";
+  clearSelection();
+  listEntry.value?.focus();
+}
 function toggleBatchMode() {
-  batchMode.value = !batchMode.value;
+  if (batchMode.value) { finishItemMode(); return; }
+  batchMode.value = true;
   expandedLineId.value = "";
   clearSelection();
 }
@@ -577,6 +586,7 @@ async function focusItem(lineId = activeLineId.value) {
   const button =
     buttons.find((el) => el.dataset.itemSelect === lineId) || buttons[0];
   if (!button) return;
+  itemNavigation.value = true;
   selectLine(button.dataset.itemSelect!);
   await nextTick();
   button.focus({ preventScroll: true });
@@ -674,7 +684,7 @@ async function navigateItems(event: KeyboardEvent) {
     event.preventDefault();
     event.stopPropagation();
     if (expandedLineId.value) expandedLineId.value = "";
-    else listEntry.value?.focus();
+    else finishItemMode();
   }
 }
 defineExpose({ focusItem, onDigit, onBackspace });
@@ -725,6 +735,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <kbd class="rounded border px-1 py-0.5">Alt I</kbd>
         </button>
       </div>
+      <button v-if="itemNavigation && !batchMode" class="min-h-9 rounded-md px-2 text-xs font-medium text-primary" @click="finishItemMode">Concluir</button>
       <button
         class="min-h-9 rounded-md px-2 text-xs font-medium text-primary"
         :aria-label="batchMode ? 'Concluir seleção' : 'Iniciar seleção'"
@@ -1058,7 +1069,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           <button
             v-for="mode in modes"
             :key="mode.ref"
-            class="h-11 rounded-md border text-xs font-semibold"
+            class="h-11 rounded-md border text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-35 disabled:saturate-0"
             :class="
               numpadMode === mode.ref
                 ? 'border-primary bg-primary text-primary-foreground'
@@ -1119,7 +1130,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <!-- Secondary actions stack on the left; Pagamento is the highlight column
            spanning their full height — saves a vertical row. -->
       <div
-        v-if="!batchMode && (fireBar.visible || (hasOpenTab && items.length))"
+        v-if="!batchMode && !itemNavigation && (fireBar.visible || (hasOpenTab && items.length))"
         class="grid grid-cols-2 gap-2"
       >
         <div class="flex flex-col gap-2">
@@ -1180,7 +1191,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </UiButton>
       </div>
       <UiButton
-        v-else-if="!batchMode"
+        v-else-if="!batchMode && !itemNavigation"
         size="lg"
         class="w-full gap-2"
         :disabled="!items.length || loading || saving"

@@ -736,3 +736,14 @@ describe("PosCartPanel — rodapé no modo seleção", () => {
     expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(true);
   });
 });
+
+it("mantém o rodapé compacto durante navegação até Concluir, sem depender do foco", async () => {
+  const wrapper = await mountSuspended(PosCartPanel, { props: props(), attachTo: document.body });
+  await wrapper.find('[aria-label="Navegar nos itens"]').trigger('click');
+  await wrapper.vm.$nextTick();
+  expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
+  await wrapper.find('[aria-label="Dígito 5"]').trigger('focus');
+  expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(false);
+  await wrapper.findAll('button').find(b => b.text()==='Concluir')!.trigger('click');
+  expect(wrapper.findAll('button').some(b => b.text().includes('Pagamento'))).toBe(true);
+});
