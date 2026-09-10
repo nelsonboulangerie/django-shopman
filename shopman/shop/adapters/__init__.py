@@ -32,7 +32,12 @@ _SETTINGS_MAP = {
     "production": "SHOPMAN_PRODUCTION_ADAPTER",
     "customer": "SHOPMAN_CUSTOMER_ADAPTER",
     "courier": "SHOPMAN_COURIER_ADAPTER",
+    "marketing_delivery": "SHOPMAN_MARKETING_DELIVERY_ADAPTERS",
 }
+
+# Delivery lanes are safety identities, not preferences.  If Facebook has no
+# adapter, it must never borrow Instagram's first configured value.
+_STRICT_METHOD_TYPES = {"marketing_delivery"}
 
 # Defaults when settings are absent
 _DEFAULTS = {
@@ -51,6 +56,7 @@ _DEFAULTS = {
     "production": "shopman.shop.adapters.production",
     "customer": "shopman.shop.adapters.customer",
     "courier": None,
+    "marketing_delivery": {},
 }
 
 
@@ -79,6 +85,8 @@ def _from_shop_integrations(adapter_type: str, method=None):
             # "default" key as fallback
             if "default" in value:
                 return _resolve_module(value["default"]), True
+            if method and adapter_type in _STRICT_METHOD_TYPES:
+                return None, True
             for path in value.values():
                 if path is not None:
                     return _resolve_module(path), True
@@ -114,6 +122,8 @@ def get_adapter(adapter_type, method=None, channel=None):
         if isinstance(setting_value, dict):
             if method and method in setting_value:
                 return _resolve_module(setting_value[method])
+            if method and adapter_type in _STRICT_METHOD_TYPES:
+                return None
             for path in setting_value.values():
                 if path is not None:
                     return _resolve_module(path)

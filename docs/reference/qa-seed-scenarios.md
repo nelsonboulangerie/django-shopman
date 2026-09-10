@@ -89,6 +89,18 @@ dirige 4 SKUs reais (o resto fica `available`). Datas relativas; determinístico
 | `POSTab 00001007` (via `_seed_sessions`) | comanda **aberta com itens** | Croissant + Pain au Chocolat | Comanda POS aberta |
 | `POSTab 00002001` | comanda com **item já disparado à cozinha** | `Session seed-qa-postab-00002001` + `KDSTicket` criado via `fire_lines` | Item disparado ao KDS |
 
+## Cenário — Marketing ponta a ponta
+
+O perfil `qa` inclui a coorte `QA-MKT-001`…`QA-MKT-012`, toda sintética,
+ativa, com consentimento WhatsApp verificável e etiqueta **QA Marketing E2E**
+(`qa-marketing-e2e`). As 12 pessoas existem para atravessar, sem reduzir, o piso
+real de 10 elegíveis de uma campanha geral. No perfil local de simulação, a
+identidade chega ao ledger apenas como HMAC e o adapter final não faz rede.
+
+O procedimento completo, inclusive flow sintético selado, TOTP, bypass noturno
+hermético e diagnóstico read-only, está em
+[`marketing-local-simulator.md`](../operations/marketing-local-simulator.md).
+
 ## Higiene de reseed (Fase 3)
 
 - **`make seed --flush` (perfil demo) e `seed --flush --profile qa` são o estado

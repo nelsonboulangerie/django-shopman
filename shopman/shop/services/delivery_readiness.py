@@ -71,6 +71,8 @@ def readiness_for(
                     action="Revisar as plataformas da campanha",
                 )
             )
+        elif simulated := _local_simulation_readiness(platform, kind=kind, now=clock):
+            out.append(simulated)
         elif kind == PUBLICATION:
             out.append(_publication_readiness(platform, now=clock))
         else:
@@ -80,6 +82,41 @@ def readiness_for(
 
     record_readiness(result, now=clock)
     return result
+
+
+def _local_simulation_readiness(
+    platform: str,
+    *,
+    kind: str,
+    now: datetime,
+) -> PlatformReadiness | None:
+    """Expose a truthful local rehearsal state without claiming provider health."""
+
+    from shopman.shop.services.marketing_delivery_runtime import delivery_provider
+
+    try:
+        provider = delivery_provider(platform, require_available=False)
+        if provider is None or not getattr(provider, "SIMULATION_ONLY", False):
+            return None
+        probe = getattr(provider, "is_available", None)
+        if probe is None or not bool(probe()):
+            return None
+    except Exception:
+        return None
+    return PlatformReadiness(
+        platform=platform,
+        kind=kind,
+        state="ready",
+        reason_code="local_simulation",
+        checked_at=now,
+        facts_as_of=now,
+        source_status="simulated",
+        reason="Simulação local ativa; nenhum conteúdo sai deste computador.",
+        limitation=(
+            "Exercita aprovação, fila, registro de entrega e comprovante local — não comprova a "
+            "credencial nem a entrega da plataforma real."
+        ),
+    )
 
 
 def _publication_readiness(platform: str, *, now: datetime) -> PlatformReadiness:
@@ -210,7 +247,7 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
                 "Só alcança quem conversou com a loja nas últimas 24 horas. Quem não "
                 "conversou não recebe — é regra da plataforma, não falha do envio."
             ),
-            action="Escolher um flow aprovado e ativo para o anúncio",
+            action="Escolher um fluxo aprovado e ativo para o anúncio",
         )
     if not template.is_active:
         return PlatformReadiness(
@@ -222,8 +259,8 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             facts_as_of=now,
             source_status="fresh",
             version=version,
-            reason="O modelo que referencia o flow está inativo.",
-            action="Escolher novamente um flow aprovado para ativar esta configuração",
+            reason="O modelo que referencia o fluxo está inativo.",
+            action="Escolher novamente um fluxo aprovado para ativar esta configuração",
         )
 
     catalog = manychat_flows.flow_catalog(now=now)
@@ -258,14 +295,14 @@ def _direct_message_readiness(platform: str, *, now: datetime) -> PlatformReadin
             **common,
             state="blocked",
             reason_code="whatsapp_flow_not_active",
-            reason="O flow escolhido não aparece entre os flows ativos da plataforma.",
-            action="Escolher um flow ativo da lista atual",
+            reason="O fluxo escolhido não aparece entre os fluxos ativos da plataforma.",
+            action="Escolher um fluxo ativo da lista atual",
         )
     return PlatformReadiness(
         **common,
         state="unknown",
         reason_code=(catalog.reason_code or "whatsapp_flow_verification_unavailable"),
-        reason="Não foi possível confirmar se o flow escolhido continua ativo.",
+        reason="Não foi possível confirmar se o fluxo escolhido continua ativo.",
         action="Atualizar a verificação da plataforma; nenhuma configuração foi alterada",
     )
 

@@ -8,6 +8,7 @@
 //
 // Plataforma ≠ canal: canal é por onde se VENDE, plataforma é por onde o anúncio SAI.
 import { platformIcon } from "~/presentation/campaign";
+import { receiptStateLabel } from "~/presentation/marketingResult";
 
 const { platforms, loading, load: loadPlatforms } = usePlatforms();
 const waTemplate = useWhatsAppTemplate();
@@ -96,20 +97,26 @@ function kindLabel(kind: string): string {
 }
 
 /** Bloqueio, limitação e saúde não podem parecer iguais. */
-function tone(state: Platform["state"]) {
-  if (state === "blocked")
+function tone(platform: Pick<Platform, "state" | "source_status">) {
+  if (platform.source_status === "simulated")
+    return {
+      chip: "bg-sky-500/10 text-sky-700 dark:text-sky-300",
+      icon: "lucide:flask-conical",
+      label: "Simulação local",
+    };
+  if (platform.state === "blocked")
     return {
       chip: "bg-destructive/10 text-destructive",
       icon: "lucide:circle-slash",
       label: "Não publica",
     };
-  if (state === "unknown")
+  if (platform.state === "unknown")
     return {
       chip: "bg-slate-500/10 text-slate-700 dark:text-slate-300",
       icon: "lucide:circle-help",
       label: "Não verificada",
     };
-  if (state === "degraded")
+  if (platform.state === "degraded")
     return {
       chip: "bg-amber-500/10 text-amber-700 dark:text-amber-400",
       icon: "lucide:triangle-alert",
@@ -131,10 +138,10 @@ function checkedAt(value: string): string {
 }
 
 const pendingFlowName = computed(() => {
-  if (pendingFlow.value === "") return "Sem flow (janela de 24 horas)";
+  if (pendingFlow.value === "") return "Sem fluxo (janela de 24 horas)";
   return (
     waTemplate.available.value.find((item) => item.ns === pendingFlow.value)
-      ?.name ?? "Flow selecionado"
+      ?.name ?? "Fluxo selecionado"
   );
 });
 
@@ -175,10 +182,10 @@ useHead({ title: "Plataformas · Marketing" });
               <span class="font-semibold">{{ platform.label }}</span>
               <span
                 class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="tone(platform.state).chip"
+                :class="tone(platform).chip"
               >
-                <Icon :name="tone(platform.state).icon" class="size-3" />
-                {{ tone(platform.state).label }}
+                <Icon :name="tone(platform).icon" class="size-3" />
+                {{ tone(platform).label }}
               </span>
               <!-- Plataforma que nenhuma campanha ativa usa não é problema: ligar
                    credencial de algo sem uso é trabalho jogado fora. -->
@@ -220,15 +227,12 @@ useHead({ title: "Plataformas · Marketing" });
         <div v-if="opened" class="flex-1 overflow-y-auto p-4">
           <div
             class="flex items-start gap-2 rounded-lg px-3 py-2.5 text-sm"
-            :class="tone(opened.state).chip"
+            :class="tone(opened).chip"
           >
-            <Icon
-              :name="tone(opened.state).icon"
-              class="mt-0.5 size-4 shrink-0"
-            />
+            <Icon :name="tone(opened).icon" class="mt-0.5 size-4 shrink-0" />
             <div class="min-w-0">
               <p class="font-semibold">
-                {{ tone(opened.state).label }}
+                {{ tone(opened).label }}
               </p>
               <p class="mt-0.5">
                 {{
@@ -249,10 +253,10 @@ useHead({ title: "Plataformas · Marketing" });
                plataforma, que não se digita numa tela de operação. -->
           <template v-if="opened.platform === 'whatsapp'">
             <section class="mt-5 border-t border-border pt-4">
-              <h2 class="text-sm font-semibold">Template aprovado</h2>
+              <h2 class="text-sm font-semibold">Modelo aprovado</h2>
               <p class="mt-0.5 text-xs text-muted-foreground">
-                Com um template aprovado, o anúncio alcança quem não conversou
-                nas últimas 24 horas. Sem ele, só a janela.
+                Com um modelo aprovado, o anúncio alcança quem não conversou nas
+                últimas 24 horas. Sem ele, só a janela.
               </p>
 
               <div
@@ -267,13 +271,13 @@ useHead({ title: "Plataformas · Marketing" });
                 ></div>
               </div>
 
-              <!-- Não conseguir perguntar à plataforma NÃO é "não há template". -->
+              <!-- Não conseguir perguntar à plataforma NÃO é "não há modelo". -->
               <div
                 v-else-if="!waTemplate.canList.value"
                 class="mt-3 rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm"
               >
                 <p class="font-semibold">
-                  Não foi possível consultar os templates agora
+                  Não foi possível consultar os modelos agora
                 </p>
                 <p class="mt-1 text-muted-foreground">
                   A última lista conhecida não autoriza mudança. Nada foi
@@ -317,7 +321,7 @@ useHead({ title: "Plataformas · Marketing" });
                     class="mt-0.5 size-4 shrink-0 text-muted-foreground"
                   />
                   <span>
-                    <span class="block text-sm font-medium">Sem template</span>
+                    <span class="block text-sm font-medium">Sem modelo</span>
                     <span class="block text-xs text-muted-foreground">
                       Texto livre — alcança só quem conversou nas últimas 24
                       horas.
@@ -356,19 +360,19 @@ useHead({ title: "Plataformas · Marketing" });
                   v-if="waTemplate.available.value.length === 0"
                   class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
                 >
-                  A consulta respondeu, mas não há flow ativo disponível. “Sem
-                  flow” continua sendo a configuração segura.
+                  A consulta respondeu, mas não há fluxo ativo disponível. “Sem
+                  fluxo” continua sendo a configuração segura.
                 </p>
               </div>
 
-              <!-- ⚠️ O que mais confunde, dito onde a decisão acontece: com template
+              <!-- ⚠️ O que mais confunde, dito onde a decisão acontece: com modelo
                    escolhido, o texto que o cliente lê é o DA META, não o do Modelo. -->
               <p
                 v-if="waTemplate.current.value"
                 class="mt-3 rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
               >
-                Com template escolhido, o texto que sai no WhatsApp é o aprovado
-                na Meta — o Modelo entra só com as variáveis. O texto do Modelo
+                Com o modelo escolhido, o texto que sai no WhatsApp é o aprovado
+                na Meta — o modelo entra só com as variáveis. O texto do modelo
                 continua valendo para Instagram, Facebook e para a sua revisão.
               </p>
             </section>
@@ -389,8 +393,8 @@ useHead({ title: "Plataformas · Marketing" });
                   Teste não disponível para este papel
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Um Editor habilitado ou Platform Owner pode fazer o teste
-                  sandbox.
+                  Um Editor habilitado ou responsável pelas plataformas pode
+                  fazer o teste no ambiente seguro.
                 </p>
               </div>
 
@@ -402,9 +406,9 @@ useHead({ title: "Plataformas · Marketing" });
                   Teste externo bloqueado com segurança
                 </p>
                 <p class="mt-1 text-muted-foreground">
-                  Nenhum aparelho sandbox verificado foi configurado. Peça ao
-                  Platform Owner; não é necessário copiar ou informar um
-                  telefone aqui.
+                  Nenhum aparelho de teste verificado foi configurado. Peça ao
+                  responsável pelas plataformas; não é necessário copiar ou
+                  informar um telefone aqui.
                 </p>
               </div>
 
@@ -466,8 +470,8 @@ useHead({ title: "Plataformas · Marketing" });
                 v-if="waTemplate.testReceipt.value"
                 class="mt-3 break-all rounded-lg bg-muted/40 p-3 font-mono text-xs"
               >
-                Receipt {{ waTemplate.testReceipt.value.receipt_ref }} ·
-                {{ waTemplate.testReceipt.value.state }}
+                Comprovante {{ waTemplate.testReceipt.value.receipt_ref }} ·
+                {{ receiptStateLabel(waTemplate.testReceipt.value.state) }}
               </p>
 
               <dl
@@ -483,7 +487,7 @@ useHead({ title: "Plataformas · Marketing" });
                     {{ key }}
                   </dt>
                   <dd class="min-w-0 flex-1 truncate">
-                    {{ value || "— vazio, o template renderiza sem" }}
+                    {{ value || "— vazio, o modelo renderiza sem" }}
                   </dd>
                 </div>
               </dl>
@@ -521,8 +525,8 @@ useHead({ title: "Plataformas · Marketing" });
               {{
                 waTemplate.currentName.value ||
                 (waTemplate.current.value
-                  ? "Flow configurado, mas não ativo na lista atual"
-                  : "Sem flow (janela de 24 horas)")
+                  ? "Fluxo configurado, mas não ativo na lista atual"
+                  : "Sem fluxo (janela de 24 horas)")
               }}
             </dd>
           </div>

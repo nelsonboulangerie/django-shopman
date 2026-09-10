@@ -16,6 +16,7 @@ import {
   deliveryCountItems,
   deliveryStatePresentation,
   platformResultLabel,
+  receiptStateLabel,
   recoveryActionExplanation,
   recoveryActionLabel,
   recoveryDisabledReason,
@@ -50,7 +51,16 @@ const COUNT_TONE_CLASS = {
 } as const;
 
 const result = computed(() =>
-  deliveryStatePresentation(props.announcement.delivery.state),
+  deliveryStatePresentation(
+    props.announcement.delivery.state,
+    props.announcement.state,
+  ),
+);
+const showsPlatformResults = computed(
+  () =>
+    props.announcement.delivery.target_count > 0 ||
+    props.announcement.delivery.fanout_expected > 0 ||
+    !["rejected", "expired"].includes(props.announcement.state),
 );
 const recoveryActions = computed(() => props.actions.filter(isRecoveryAction));
 const receiptSummary = computed(() =>
@@ -60,11 +70,18 @@ const receiptSummary = computed(() =>
 const dialogOpen = ref(false);
 const activeAction = ref<MarketingActionProjectionV2 | null>(null);
 const challenge = ref<MarketingConfirmationChallenge | null>(null);
+const reason = ref("");
 const credential = ref("");
 const typedConfirmation = ref("");
 const pending = ref(false);
 const commandError = ref("");
 const idempotencyKeys = new Map<string, string>();
+const { data: operatorSession } = useNuxtData<{
+  operator: { username?: string; name?: string } | null;
+}>("operator-session");
+const operatorUsername = computed(
+  () => operatorSession.value?.operator?.username?.trim() || "",
+);
 
 const confirmationReady = computed(() => {
   const current = challenge.value;
@@ -80,8 +97,19 @@ const confirmationReady = computed(() => {
   return true;
 });
 
-function commandKey(action: MarketingActionProjectionV2): string {
-  const fingerprint = `${action.ref}:${props.announcement.version}`;
+function recoveryBody(
+  action: MarketingActionProjectionV2,
+): Record<string, unknown> {
+  return action.kind === "cancel_announcement"
+    ? { reason: reason.value.trim() }
+    : {};
+}
+
+function commandKey(
+  action: MarketingActionProjectionV2,
+  body: Record<string, unknown>,
+): string {
+  const fingerprint = `${action.ref}:${props.announcement.version}:${JSON.stringify(body)}`;
   let key = idempotencyKeys.get(fingerprint);
   if (!key) {
     key = globalThis.crypto.randomUUID();
@@ -94,16 +122,28 @@ async function startRecovery(action: MarketingActionProjectionV2) {
   if (pending.value || !action.enabled) return;
   activeAction.value = action;
   challenge.value = null;
+  reason.value = "";
   credential.value = "";
   typedConfirmation.value = "";
   commandError.value = "";
   dialogOpen.value = true;
+  if (action.kind === "cancel_announcement") return;
+  await requestRecovery();
+}
+
+async function requestRecovery() {
+  const action = activeAction.value;
+  if (!action || pending.value || !action.enabled) return;
+  const body = recoveryBody(action);
+  if (action.kind === "cancel_announcement" && !reason.value.trim()) return;
   pending.value = true;
+  commandError.value = "";
   try {
     const started = await beginMarketingRecovery($fetch, action, {
       announcementId: announcementId(),
       baseVersion: props.announcement.version,
-      idempotencyKey: commandKey(action),
+      idempotencyKey: commandKey(action, body),
+      body,
     });
     if (started.kind === "receipt") {
       finish(started.response);
@@ -128,6 +168,7 @@ async function confirmRecovery() {
   pending.value = true;
   commandError.value = "";
   try {
+    const body = recoveryBody(action);
     const response = await confirmMarketingRecovery(
       $fetch,
       action,
@@ -139,7 +180,8 @@ async function confirmRecovery() {
       {
         announcementId: announcementId(),
         baseVersion: props.announcement.version,
-        idempotencyKey: commandKey(action),
+        idempotencyKey: commandKey(action, body),
+        body,
       },
     );
     finish(response);
@@ -168,6 +210,7 @@ async function confirmRecovery() {
 function finish(response: MarketingCommandResponse) {
   dialogOpen.value = false;
   challenge.value = null;
+  reason.value = "";
   credential.value = "";
   typedConfirmation.value = "";
   emit("receipt", response);
@@ -192,6 +235,7 @@ function closeDialog(open: boolean) {
   if (!open) {
     activeAction.value = null;
     challenge.value = null;
+    reason.value = "";
     commandError.value = "";
   }
 }
@@ -247,7 +291,7 @@ function closeDialog(open: boolean) {
           </p>
           <dl class="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
             <div>
-              <dt class="inline text-muted-foreground">Receipt:</dt>
+              <dt class="inline text-muted-foreground">Comprovante:</dt>
               <dd class="inline break-all font-mono">{{ receipt.ref }}</dd>
             </div>
             <div>
@@ -266,14 +310,17 @@ function closeDialog(open: boolean) {
               )
             }}
             ({{ shopTimezone }})<template v-if="receipt.state">
-              · {{ receipt.state }}</template
+              · {{ receiptStateLabel(receipt.state) }}</template
             >
           </p>
         </div>
       </div>
     </section>
 
-    <section aria-labelledby="platform-results-heading">
+    <section
+      v-if="showsPlatformResults"
+      aria-labelledby="platform-results-heading"
+    >
       <h2
         id="platform-results-heading"
         class="text-sm font-semibold uppercase tracking-wide text-muted-foreground"
@@ -372,6 +419,24 @@ function closeDialog(open: boolean) {
           </UiDialogDescription>
         </UiDialogHeader>
 
+        <div v-if="activeAction?.kind === 'cancel_announcement' && !challenge">
+          <label for="recovery-cancel-reason" class="block text-sm font-medium">
+            Motivo do cancelamento
+          </label>
+          <textarea
+            id="recovery-cancel-reason"
+            v-model="reason"
+            rows="3"
+            maxlength="500"
+            autofocus
+            class="mt-1 w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+            placeholder="Ex.: horário alterado ou conteúdo precisa de revisão"
+          />
+          <p class="mt-1 text-xs text-muted-foreground">
+            Este motivo fica registrado para a equipe entender o que aconteceu.
+          </p>
+        </div>
+
         <div
           v-if="pending && !challenge"
           class="flex items-center gap-2 text-sm"
@@ -420,17 +485,32 @@ function closeDialog(open: boolean) {
                 challenge.typed_phrase
               }}</code>
             </label>
-            <input
+            <textarea
               id="recovery-typed-confirmation"
               v-model="typedConfirmation"
-              type="text"
+              name="typed_confirmation"
+              rows="1"
               autocomplete="off"
               spellcheck="false"
-              class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
+              class="mt-1 min-h-11 w-full resize-none rounded-md border border-border bg-background px-3 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
             />
           </div>
 
           <div v-if="challenge.step_up !== 'none'">
+            <div v-if="challenge.step_up === 'password'" class="mb-3">
+              <label for="recovery-username" class="block text-sm font-medium">
+                Usuário
+              </label>
+              <input
+                id="recovery-username"
+                name="username"
+                :value="operatorUsername"
+                type="text"
+                autocomplete="username"
+                readonly
+                class="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-muted-foreground"
+              />
+            </div>
             <label for="recovery-credential" class="block text-sm font-medium">
               {{
                 challenge.step_up === "totp"
@@ -441,6 +521,7 @@ function closeDialog(open: boolean) {
             <input
               id="recovery-credential"
               v-model="credential"
+              name="current_password"
               :type="challenge.step_up === 'password' ? 'password' : 'text'"
               :inputmode="challenge.step_up === 'totp' ? 'numeric' : 'text'"
               :autocomplete="
@@ -469,6 +550,15 @@ function closeDialog(open: boolean) {
             Voltar sem alterar
           </button>
           <button
+            v-if="activeAction?.kind === 'cancel_announcement' && !challenge"
+            type="button"
+            class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
+            :disabled="pending || !reason.trim()"
+            @click="requestRecovery"
+          >
+            {{ pending ? "Conferindo…" : "Conferir cancelamento" }}
+          </button>
+          <button
             v-if="challenge"
             type="button"
             class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
@@ -478,11 +568,13 @@ function closeDialog(open: boolean) {
             {{ pending ? "Registrando…" : "Confirmar consequência" }}
           </button>
           <button
-            v-else-if="commandError"
+            v-else-if="
+              commandError && activeAction?.kind !== 'cancel_announcement'
+            "
             type="button"
             class="min-h-11 rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
             :disabled="pending || !activeAction"
-            @click="activeAction && startRecovery(activeAction)"
+            @click="requestRecovery"
           >
             Tentar de novo
           </button>

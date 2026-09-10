@@ -35,6 +35,7 @@ from shopman.shop.models import (
     Campaign,
     Trigger,
 )
+from shopman.shop.services import marketing_time
 
 #: Plataformas que uma regra pode alvejar, na ordem em que aparecem no formulário.
 PLATFORM_CHOICES: tuple[tuple[str, str], ...] = (
@@ -179,6 +180,7 @@ class CampaignBoardProjection:
     #: reescrever: oferecer e falhar depois ensina o gestor a não confiar no recurso.
     ai_assist_available: bool = False
     shop_timezone: str = "UTC"
+    quiet_hours_suspended_for_local_simulation: bool = False
 
 
 @dataclass(frozen=True)
@@ -234,6 +236,8 @@ class AnnouncementTemplateProjection:
     is_active: bool
     #: Versão de leitura para detectar conteúdo concorrente antes de restaurar draft.
     updated_at: datetime
+    #: Dependências nomeadas permitem explicar o bloqueio antes do gesto destrutivo.
+    used_by_campaigns: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -515,6 +519,9 @@ def build_board(*, now=None) -> CampaignBoardProjection:
         reach_limits=_reach_limits(),
         ai_assist_available=_ai_assist_available(),
         shop_timezone=_marketing_timezone_name(),
+        quiet_hours_suspended_for_local_simulation=(
+            marketing_time.quiet_hours_suspended_for_local_simulation()
+        ),
     )
 
 
@@ -703,7 +710,11 @@ def build_rules() -> tuple[CampaignProjection, ...]:
     return tuple(build_rule(rule, performance=performance[rule.pk]) for rule in rules)
 
 
-def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjection:
+def build_template(
+    template: AnnouncementTemplate,
+    *,
+    used_by_campaigns: tuple[str, ...] = (),
+) -> AnnouncementTemplateProjection:
     return AnnouncementTemplateProjection(
         pk=template.pk,
         name=template.name,
@@ -715,11 +726,24 @@ def build_template(template: AnnouncementTemplate) -> AnnouncementTemplateProjec
         image_source=template.image_source,
         is_active=template.is_active,
         updated_at=template.updated_at,
+        used_by_campaigns=used_by_campaigns,
     )
 
 
 def build_templates() -> tuple[AnnouncementTemplateProjection, ...]:
-    return tuple(build_template(template) for template in AnnouncementTemplate.objects.all())
+    templates = list(AnnouncementTemplate.objects.all())
+    names_by_template: dict[int, list[str]] = {template.pk: [] for template in templates}
+    for template_id, name in Campaign.objects.filter(
+        template_id__in=names_by_template,
+    ).order_by("name").values_list("template_id", "name"):
+        names_by_template[template_id].append(name)
+    return tuple(
+        build_template(
+            template,
+            used_by_campaigns=tuple(names_by_template[template.pk]),
+        )
+        for template in templates
+    )
 
 
 def build_options() -> CampaignOptionsProjection:

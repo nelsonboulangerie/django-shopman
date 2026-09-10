@@ -27,13 +27,14 @@ const route = useRoute();
 const pk = computed(() => Number(route.params.id));
 
 const [legacyRequest, resultRequest] = await Promise.all([
-  useFetch<{ announcement: Announcement; shop_timezone: string }>(
-    () => `/api/v1/backstage/marketing/announcements/${pk.value}/`,
-    {
-      key: () => `announcement-${pk.value}`,
-      onResponseError: operatorSessionOnError,
-    },
-  ),
+  useFetch<{
+    announcement: Announcement;
+    shop_timezone: string;
+    quiet_hours_suspended_for_local_simulation: boolean;
+  }>(() => `/api/v1/backstage/marketing/announcements/${pk.value}/`, {
+    key: () => `announcement-${pk.value}`,
+    onResponseError: operatorSessionOnError,
+  }),
   useFetch<MarketingEnvelopeV2>(
     () => `/api/v1/backstage/marketing/v2/announcements/${pk.value}/`,
     {
@@ -54,6 +55,9 @@ const { platforms, shopTimezone: optionsTimezone } = useCampaigns();
 const announcement = computed(() => data.value?.announcement);
 const shopTimezone = computed(
   () => data.value?.shop_timezone || optionsTimezone.value,
+);
+const quietHoursSuspendedForLocalSimulation = computed(
+  () => data.value?.quiet_hours_suspended_for_local_simulation ?? false,
 );
 const resultAnnouncement = computed(() =>
   resultEnvelope.value?.data.kind === "announcement_detail"
@@ -239,7 +243,11 @@ useHead({ title: "Anúncio · Marketing" });
           Agora não
         </button>
       </div>
-      <p v-if="decisionError" class="mt-2 text-sm text-destructive" role="alert">
+      <p
+        v-if="decisionError"
+        class="mt-2 text-sm text-destructive"
+        role="alert"
+      >
         {{ decisionError }}
       </p>
     </section>
@@ -292,7 +300,7 @@ useHead({ title: "Anúncio · Marketing" });
         v-if="announcement.status !== 'pending_review'"
         class="mb-4 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm"
       >
-        <p class="font-semibold">Este announcement já foi decidido.</p>
+        <p class="font-semibold">Este anúncio já foi decidido.</p>
         <p class="mt-0.5 text-muted-foreground">
           Situação: {{ announcement.status_label
           }}<template v-if="announcement.approved_by">
@@ -313,6 +321,9 @@ useHead({ title: "Anúncio · Marketing" });
           :busy="busy"
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"
+          :quiet-hours-suspended-for-local-simulation="
+            quietHoursSuspendedForLocalSimulation
+          "
           @approve="
             (_, edits, publishMode) => decide('approve', edits, publishMode)
           "
@@ -365,8 +376,8 @@ useHead({ title: "Anúncio · Marketing" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Não vamos inferir sucesso enquanto o ledger não responder. O receipt
-          preservado continua abaixo quando existir.
+          Não vamos inferir sucesso enquanto o registro de entrega não responder.
+          O comprovante preservado continua abaixo quando existir.
         </p>
         <button
           type="button"

@@ -132,13 +132,13 @@ def resolve_dispatch_artifact(
     if has_flow_binding and normalized_platform != "whatsapp":
         raise MarketingContractError(
             code="flow_binding_platform_mismatch",
-            detail="Somente o artefato WhatsApp pode carregar um flow verificado.",
+            detail="Somente o artefato do WhatsApp pode carregar um fluxo verificado.",
         )
     if has_flow_binding:
         if not _FLOW_REF.fullmatch(normalized_flow_ref):
             raise MarketingContractError(
                 code="invalid_flow_ref",
-                detail="A referência verificada do flow é inválida.",
+                detail="A referência verificada do fluxo é inválida.",
             )
         if (
             isinstance(flow_version, bool)
@@ -147,12 +147,12 @@ def resolve_dispatch_artifact(
         ):
             raise MarketingContractError(
                 code="invalid_flow_version",
-                detail="A versão verificada do flow é inválida.",
+                detail="A versão verificada do fluxo é inválida.",
             )
         if not _HASH.fullmatch(normalized_catalog_hash):
             raise MarketingContractError(
                 code="invalid_flow_catalog_hash",
-                detail="O hash do catálogo de flows é inválido.",
+                detail="O hash do catálogo de fluxos é inválido.",
             )
     return ResolvedDispatchArtifact(
         platform=normalized_platform,

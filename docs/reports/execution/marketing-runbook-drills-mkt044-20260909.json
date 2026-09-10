@@ -1,0 +1,71 @@
+{
+  "schema": "shopman.marketing.runbook-drill-evidence.v1",
+  "work_item": "MKT-044",
+  "recorded_at": "2026-09-09T21:42:43Z",
+  "status": "technical_green_human_gate_pending",
+  "source_commit": "a79d039d09b3",
+  "branch": "codex/marketing-irrepressible-excellence-20260908",
+  "scope": "isolated_local_worktree",
+  "production_write_performed": false,
+  "provider_calls_performed": 0,
+  "deploy_performed": false,
+  "technical_evidence": {
+    "single_command": "make marketing-drills",
+    "synthetic_backend_tests": {"passed": 19, "failed": 0},
+    "bff_probe_tests": {"passed": 4, "failed": 0},
+    "focused_backend_regression": {"passed": 99, "failed": 0},
+    "expanded_marketing_health_queue_regression": {
+      "passed": 550,
+      "skipped": 3,
+      "failed": 0
+    },
+    "marketing_frontend": {
+      "unit_passed": 111,
+      "component_passed": 89,
+      "typecheck": "passed",
+      "lint": "passed",
+      "production_build": "passed"
+    },
+    "health_live": {
+      "http_status": 200,
+      "response_bytes": 55,
+      "sample_seconds": 0.002862,
+      "max_queries": 0,
+      "p95_test_budget_seconds": 0.5
+    },
+    "health_ready": {
+      "http_status": 200,
+      "response_bytes": 72,
+      "sample_seconds": 0.017422,
+      "max_queries_test_budget": 10,
+      "chain": ["bff", "django", "database", "cache_session", "queue"]
+    }
+  },
+  "omotenashi_budget": {
+    "diagnostic_commands_per_incident": 1,
+    "manual_database_queries": 0,
+    "provider_consoles_required_for_first_diagnosis": 0,
+    "maximum_first_response_steps_per_runbook": 4,
+    "runbook_navigation_from_alert": 1,
+    "recipient_or_content_retyping": 0,
+    "external_confirmation_required_before_local_drill": 0
+  },
+  "independent_operator_gate": {
+    "required": true,
+    "operator": null,
+    "authorization_reference": null,
+    "completed_at": null,
+    "decision_status": "pending",
+    "decisions": [
+      "stuck: diagnose and reconcile before selective retry",
+      "partial: retry only failed_retryable",
+      "unknown: reconcile and refuse blind retry",
+      "readiness: keep channel blocked until a fresh safe check",
+      "privacy: freeze, preserve evidence and escalate to DPO/Security",
+      "bad content/link: cancel reversible work and require a new artifact",
+      "cancel: reconcile uncertainty and never promise retract",
+      "rollout: hold/freeze and refuse deploy/rollback without G-H09/G-H10"
+    ]
+  },
+  "remaining_gate": "Explicit confirmation by a non-author operator; named owner/on-call and authorized 7-14 day baseline remain G-H08 pilot blockers."
+}

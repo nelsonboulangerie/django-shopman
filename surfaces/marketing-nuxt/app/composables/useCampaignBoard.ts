@@ -15,6 +15,13 @@ import { NOTIFICATION_REVISION_STATE } from "~/composables/useUserNotifications"
 
 const POLL_MS = 60_000;
 
+function marketingCommandErrorCode(error: unknown): string {
+  if (typeof error !== "object" || error === null || !("data" in error))
+    return "";
+  const code = (error as { data?: { code?: unknown } }).data?.code;
+  return typeof code === "string" ? code : "";
+}
+
 export function buildApprovalCommand(
   edits: AnnouncementEdits,
   baseVersion: number,
@@ -74,6 +81,9 @@ export function useCampaignBoard() {
     () => board.value?.ai_assist_available ?? false,
   );
   const shopTimezone = computed(() => board.value?.shop_timezone ?? "UTC");
+  const quietHoursSuspendedForLocalSimulation = computed(
+    () => board.value?.quiet_hours_suspended_for_local_simulation ?? false,
+  );
   // Keep one key for the same visible version + consequence. If the response is
   // lost and the operator taps again, the backend returns the original receipt
   // instead of creating a second command.
@@ -210,6 +220,16 @@ export function useCampaignBoard() {
       await refresh();
       return response;
     } catch (err) {
+      if (marketingCommandErrorCode(err) === "version_conflict") {
+        decisionError.value = "";
+        decisionCommand.cancel();
+        await refresh();
+        useSonner.error(
+          "Outra pessoa já decidiu este anúncio. Abrimos o resultado atual; sua confirmação antiga não teve efeito.",
+        );
+        await navigateTo(`/announcements/${command.announcementId}`);
+        return null;
+      }
       decisionError.value = httpErrorMessage(
         err,
         "Não foi possível confirmar. O anúncio continua sem nova decisão.",
@@ -274,6 +294,7 @@ export function useCampaignBoard() {
     reachLimits,
     aiAssistAvailable,
     shopTimezone,
+    quietHoursSuspendedForLocalSimulation,
     pendingPosts,
     recentPosts,
     stats,

@@ -101,7 +101,7 @@ useHead({ title: "Histórico · Marketing" });
       />
       <p class="mt-2 font-semibold">Nada publicado ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Os announcements aprovados aparecem aqui com o resultado de cada
+        Os anúncios aprovados aparecem aqui com o resultado de cada
         plataforma.
       </p>
     </div>

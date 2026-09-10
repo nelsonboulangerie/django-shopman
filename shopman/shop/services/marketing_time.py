@@ -120,6 +120,8 @@ def delivery_window(value: datetime, *, timezone_name: str) -> DeliveryWindow:
     """Apply the approved 20:00–08:00 direct-message quiet-hours policy."""
 
     localized = local(value, timezone_name=timezone_name)
+    if quiet_hours_suspended_for_local_simulation():
+        return DeliveryWindow(True, localized, None)
     wall = localized.timetz().replace(tzinfo=None)
     if QUIET_HOURS_END <= wall < QUIET_HOURS_START:
         return DeliveryWindow(True, localized, None)
@@ -135,6 +137,20 @@ def delivery_window(value: datetime, *, timezone_name: str) -> DeliveryWindow:
         fold="earlier",
     )
     return DeliveryWindow(False, localized, opening)
+
+
+def quiet_hours_suspended_for_local_simulation() -> bool:
+    """Allow an after-hours rehearsal only when the WhatsApp exit is hermetic."""
+
+    if not bool(
+        getattr(settings, "SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS", False)
+    ):
+        return False
+    from shopman.shop.services.marketing_delivery_runtime import (
+        is_hermetic_simulation,
+    )
+
+    return is_hermetic_simulation("whatsapp")
 
 
 def schedule_timezone(schedule: dict | None) -> str:

@@ -4,7 +4,11 @@
 // O gesto mais comum é ligar/desligar, então ele fica a um toque na própria
 // linha. Editar abre um painel lateral: a lista continua visível, e o gestor
 // não perde o contexto de quais outras campanhas já existem.
-import { audienceRulesSummary, choiceLabels, platformsSummary } from "~/presentation/campaign";
+import {
+  audienceRulesSummary,
+  choiceLabels,
+  platformsSummary,
+} from "~/presentation/campaign";
 import type { Campaign, ChosenAudience } from "~/types/campaign";
 import {
   clearBrowserMarketingDraft,
@@ -12,14 +16,31 @@ import {
 } from "~/composables/useMarketingDraft";
 
 const {
-  rules, templates, triggers, platforms, platformLabels, priceTiers, tags, rfmSegments, offers,
+  rules,
+  actions,
+  templates,
+  triggers,
+  platforms,
+  platformLabels,
+  priceTiers,
+  tags,
+  rfmSegments,
+  offers,
   shopTimezone,
-  loading, error, refresh, toggle, patch, create, fire,
+  loading,
+  error,
+  refresh,
+  toggle,
+  patch,
+  create,
+  fire,
 } = useCampaigns();
 // A prévia precisa saber se há template aprovado: com ele, o texto que sai no WhatsApp é o
 // da Meta, e prometer o do modelo seria mentira.
 const waTemplate = useWhatsAppTemplate();
-onMounted(() => { waTemplate.load(); });
+onMounted(() => {
+  waTemplate.load();
+});
 
 // Rótulo de faixa e de segmento tem dono no servidor (`PriceTier.name`,
 // `RFM_SEGMENTS`); a tela só consulta o mapa que a projection entrega.
@@ -36,6 +57,28 @@ const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
 
 const panelOpen = computed(() => creating.value || editing.value !== null);
+
+function fireAction(rule: Campaign) {
+  return actions.value.find(
+    (action) =>
+      action.resource_ref === `campaign:${rule.pk}` &&
+      action.kind === "fire_campaign",
+  );
+}
+
+function fireUnavailableReason(rule: Campaign): string {
+  const action = fireAction(rule);
+  if (!rule.is_active || action?.reason === "campaign_inactive") {
+    return "Ligue a campanha antes de preparar um disparo.";
+  }
+  if (!action || action.reason === "command_not_available") {
+    return "O disparo direto está indisponível até concluir a atualização de segurança.";
+  }
+  if (action.reason === "missing_capability") {
+    return "Seu perfil não autoriza disparos manuais.";
+  }
+  return "O disparo manual não está disponível agora.";
+}
 
 function openNew() {
   editing.value = null;
@@ -68,7 +111,9 @@ async function onFire(request: { body: string; audience: ChosenAudience }) {
 async function onSubmit(payload: Record<string, unknown>) {
   const resource = `campaign:${editing.value?.pk ?? "new"}`;
   busy.value = true;
-  const ok = editing.value ? await patch(editing.value.pk, payload) : await create(payload);
+  const ok = editing.value
+    ? await patch(editing.value.pk, payload)
+    : await create(payload);
   busy.value = false;
   if (ok) {
     close();
@@ -109,24 +154,42 @@ useHead({ title: "Campanhas · Marketing" });
       class="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm"
       role="alert"
     >
-      <p class="font-semibold text-destructive">Não conseguimos carregar as campanhas.</p>
-      <button type="button" class="mt-1 underline underline-offset-2" @click="refresh()">
+      <p class="font-semibold text-destructive">
+        Não conseguimos carregar as campanhas.
+      </p>
+      <button
+        type="button"
+        class="mt-1 underline underline-offset-2"
+        @click="refresh()"
+      >
         Tentar de novo
       </button>
     </div>
 
-    <div v-else-if="loading && rules.length === 0" class="space-y-3" aria-busy="true">
-      <div v-for="n in 3" :key="n" class="h-20 animate-pulse rounded-xl bg-muted"></div>
+    <div
+      v-else-if="loading && rules.length === 0"
+      class="space-y-3"
+      aria-busy="true"
+    >
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="h-20 animate-pulse rounded-xl bg-muted"
+      ></div>
     </div>
 
     <div
       v-else-if="rules.length === 0"
       class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
     >
-      <Icon name="lucide:sliders-horizontal" class="mx-auto size-8 text-muted-foreground" />
+      <Icon
+        name="lucide:sliders-horizontal"
+        class="mx-auto size-8 text-muted-foreground"
+      />
       <p class="mt-2 font-semibold">Nenhuma campanha ainda</p>
       <p class="mt-1 text-sm text-muted-foreground">
-        Uma campanha liga um evento da padaria a um anúncio. Comece pela fornada.
+        Uma campanha liga um evento da padaria a um anúncio. Comece pela
+        fornada.
       </p>
       <button
         type="button"
@@ -138,22 +201,34 @@ useHead({ title: "Campanhas · Marketing" });
       </button>
     </div>
 
-    <ul v-else class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card">
-      <li v-for="rule in rules" :key="rule.pk" class="flex items-start gap-3 px-4 py-3">
+    <ul
+      v-else
+      class="divide-y divide-border overflow-hidden rounded-xl border border-border bg-card"
+    >
+      <li
+        v-for="rule in rules"
+        :key="rule.pk"
+        class="flex items-start gap-3 px-4 py-3"
+      >
         <!-- Liga/desliga: o gesto mais comum, a um toque -->
         <button
           type="button"
           role="switch"
           :aria-checked="rule.is_active"
           :aria-label="`${rule.is_active ? 'Desligar' : 'Ligar'} a campanha ${rule.name}`"
-          class="mt-0.5 inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors"
-          :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
+          class="-ml-2 grid size-11 shrink-0 place-items-center rounded-md"
           @click="toggle(rule)"
         >
           <span
-            class="size-4 rounded-full bg-white shadow transition-transform"
-            :class="rule.is_active ? 'translate-x-4' : 'translate-x-0.5'"
-          ></span>
+            aria-hidden="true"
+            class="flex h-5 w-9 items-center rounded-full transition-colors"
+            :class="rule.is_active ? 'bg-primary' : 'bg-muted-foreground/30'"
+          >
+            <span
+              class="size-4 rounded-full bg-white shadow transition-transform"
+              :class="rule.is_active ? 'translate-x-4' : 'translate-x-0.5'"
+            ></span>
+          </span>
         </button>
 
         <button
@@ -161,11 +236,15 @@ useHead({ title: "Campanhas · Marketing" });
           class="min-w-0 flex-1 text-left"
           @click="openEdit(rule)"
         >
-          <p class="font-semibold" :class="rule.is_active ? '' : 'text-muted-foreground'">
+          <p
+            class="font-semibold"
+            :class="rule.is_active ? '' : 'text-muted-foreground'"
+          >
             {{ rule.name }}
           </p>
           <p class="mt-0.5 text-sm text-muted-foreground">
-            {{ rule.trigger_label }} → {{ platformsSummary(rule.platforms, platformLabels) }}
+            {{ rule.trigger_label }} →
+            {{ platformsSummary(rule.platforms, platformLabels) }}
           </p>
           <p class="mt-0.5 text-xs text-muted-foreground">
             {{ audienceRulesSummary(rule.audience_rules, audienceLabels) }}
@@ -182,7 +261,10 @@ useHead({ title: "Campanhas · Marketing" });
             </span>
             <span v-if="rule.failed_count" class="text-destructive">
               {{ rule.failed_count }}
-              {{ rule.failed_count === 1 ? "falha" : "falhas" }}<template v-if="rule.last_failure">, a última por {{ rule.last_failure }}</template>
+              {{ rule.failed_count === 1 ? "falha" : "falhas"
+              }}<template v-if="rule.last_failure"
+                >, a última por {{ rule.last_failure }}</template
+              >
             </span>
           </p>
           <!-- Uma campanha agendada que nunca mais dispara é indistinguível de uma
@@ -190,13 +272,17 @@ useHead({ title: "Campanhas · Marketing" });
           <p
             v-if="rule.fires_on_its_own"
             class="mt-1 inline-flex items-center gap-1 text-xs"
-            :class="rule.exhausted ? 'text-destructive' : 'text-muted-foreground'"
+            :class="
+              rule.exhausted ? 'text-destructive' : 'text-muted-foreground'
+            "
           >
             <Icon
-              :name="rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'"
+              :name="
+                rule.exhausted ? 'lucide:calendar-x' : 'lucide:calendar-clock'
+              "
               class="size-3.5"
             />
-            {{ rule.exhausted ? 'Não dispara mais' : rule.schedule_label }}
+            {{ rule.exhausted ? "Não dispara mais" : rule.schedule_label }}
           </p>
         </button>
 
@@ -212,28 +298,47 @@ useHead({ title: "Campanhas · Marketing" });
                quando ela está ligada — disparar campanha desligada é engano. -->
           <button
             type="button"
-            :disabled="!rule.is_active"
-            :aria-label="`Disparar a campanha ${rule.name} agora`"
+            :disabled="!fireAction(rule)?.enabled"
+            :aria-label="
+              fireAction(rule)?.enabled
+                ? `Disparar a campanha ${rule.name} agora`
+                : `${fireUnavailableReason(rule)} Campanha ${rule.name}`
+            "
+            :title="
+              fireAction(rule)?.enabled ? '' : fireUnavailableReason(rule)
+            "
             class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold transition hover:bg-muted disabled:opacity-40"
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />
-            Disparar
+            {{ fireAction(rule)?.enabled ? "Disparar" : "Indisponível" }}
           </button>
-          <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
+          <Icon
+            name="lucide:chevron-right"
+            class="size-4 text-muted-foreground"
+          />
         </div>
       </li>
     </ul>
 
     <!-- Painel lateral: edita sem tirar a lista da vista -->
-    <UiSheet :open="panelOpen" @update:open="(v) => { if (!v) close() }">
+    <UiSheet
+      :open="panelOpen"
+      @update:open="
+        (v) => {
+          if (!v) close();
+        }
+      "
+    >
       <!-- Casca sem padding + regiões com o seu: o cabeçalho fica parado e só o corpo
            rola. Mesmo desenho do slide-over de produto do gestor de pedidos. -->
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>{{ editing ? "Editar campanha" : "Nova campanha" }}</UiSheetTitle>
+          <UiSheetTitle>{{
+            editing ? "Editar campanha" : "Nova campanha"
+          }}</UiSheetTitle>
           <UiSheetDescription>
-            Um evento da padaria vira um announcement, para as pessoas certas.
+            Um evento da padaria vira um anúncio para as pessoas certas.
           </UiSheetDescription>
         </UiSheetHeader>
         <div class="flex-1 overflow-y-auto p-4">
@@ -259,13 +364,20 @@ useHead({ title: "Campanhas · Marketing" });
     </UiSheet>
 
     <!-- Disparo manual: painel próprio, para não se confundir com editar a campanha -->
-    <UiSheet :open="firing !== null" @update:open="(v) => { if (!v) firing = null }">
+    <UiSheet
+      :open="firing !== null"
+      @update:open="
+        (v) => {
+          if (!v) firing = null;
+        }
+      "
+    >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
           <UiSheetTitle>Disparar agora</UiSheetTitle>
           <UiSheetDescription>
-            {{ firing?.name }} — escreva o texto e ele publica direto; em branco, nasce
-            para você revisar.
+            {{ firing?.name }} — escreva o texto e ele publica direto; em
+            branco, nasce para você revisar.
           </UiSheetDescription>
         </UiSheetHeader>
         <div class="flex-1 overflow-y-auto p-4">

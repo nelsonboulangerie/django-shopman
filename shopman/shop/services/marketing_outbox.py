@@ -471,24 +471,38 @@ def _existing_directive(dedupe_key: str):
     return Directive.objects.filter(dedupe_key=dedupe_key).order_by("pk").first()
 
 
-def _directive_matches(row: MarketingOutbox, directive) -> bool:
-    payload = directive.payload if isinstance(directive.payload, dict) else {}
-    matches = (
-        directive.topic == _directive_topic(row)
-        and payload.get("outbox_ref") == str(row.ref)
-        and payload.get("artifact_ref") == str(row.artifact.ref)
-        and payload.get("snapshot_ref") == str(row.snapshot.ref)
-        and payload.get("artifact_hash") == row.artifact.artifact_hash
-        and payload.get("content_version") == row.artifact.version
-        and payload.get("platform") == row.platform
+def directive_payload_matches(
+    row: MarketingOutbox,
+    *,
+    payload: dict,
+    topic: str,
+) -> bool:
+    """Verify every server-owned binding before the ledger trusts a Directive."""
+
+    if not isinstance(payload, dict) or topic != _directive_topic(row):
+        return False
+    expected = _directive_payload(row)
+    keys = (
+        "announcement_id",
+        "outbox_ref",
+        "artifact_ref",
+        "snapshot_ref",
+        "artifact_hash",
+        "content_version",
+        "platform",
     )
     if row.platform == "whatsapp":
-        expected = _directive_payload(row)
-        matches = matches and all(
-            payload.get(key) == expected[key]
-            for key in ("wave", "wave_keys", "waves_expected")
-        )
-    return matches
+        keys += ("wave", "wave_keys", "waves_expected")
+    return all(payload.get(key) == expected[key] for key in keys)
+
+
+def _directive_matches(row: MarketingOutbox, directive) -> bool:
+    payload = directive.payload if isinstance(directive.payload, dict) else {}
+    return directive_payload_matches(
+        row,
+        payload=payload,
+        topic=directive.topic,
+    )
 
 
 def _quarantine_mismatched_directive(directive, *, now: datetime) -> None:

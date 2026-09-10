@@ -208,6 +208,7 @@ describe("Marketing recovery commands", () => {
       announcementId: 42,
       baseVersion: 3,
       idempotencyKey: "cancel-key",
+      body: { reason: "Horário alterado pelo operador" },
     };
 
     const started = await beginMarketingRecovery(
@@ -228,6 +229,19 @@ describe("Marketing recovery commands", () => {
     expect(fetcher.mock.calls[1]?.[0]).toBe(
       "/api/v1/backstage/marketing/announcements/42/cancel/",
     );
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        base_version: 3,
+        reason: "Horário alterado pelo operador",
+      },
+    });
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      body: {
+        base_version: 3,
+        reason: "Horário alterado pelo operador",
+        confirmation_token: "server-token",
+      },
+    });
   });
 
   it("reconciles unknown through TOTP and a lookup-only Action", async () => {

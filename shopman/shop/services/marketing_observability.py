@@ -109,13 +109,13 @@ METRIC_SPECS: dict[str, MetricSpec] = {
 }
 
 _ALERT_POLICY = {
-    "consent_violation": ("marketing_consent_violation", "critical", "docs/runbooks/marketing-privacy-incident.md"),
-    "duplicate_confirmed": ("marketing_duplicate_confirmed", "critical", "docs/runbooks/marketing-duplicate-effect.md"),
-    "outbox_stuck": ("marketing_outbox_stuck", "error", "docs/runbooks/marketing-outbox-stuck.md"),
-    "reconciliation_mismatch": ("marketing_reconciliation_mismatch", "error", "docs/runbooks/marketing-reconciliation-mismatch.md"),
+    "consent_violation": ("marketing_consent_violation", "critical", "docs/runbooks/marketing-consent-or-privacy-incident.md"),
+    "duplicate_confirmed": ("marketing_duplicate_confirmed", "critical", "docs/runbooks/marketing-cancel-and-reconcile.md"),
+    "outbox_stuck": ("marketing_outbox_stuck", "error", "docs/runbooks/marketing-stuck-command.md"),
+    "reconciliation_mismatch": ("marketing_reconciliation_mismatch", "error", "docs/runbooks/marketing-cancel-and-reconcile.md"),
     "unknown_stale": ("marketing_unknown_stale", "error", "docs/runbooks/marketing-unknown-provider-effect.md"),
-    "partial_without_action": ("marketing_partial_without_action", "error", "docs/runbooks/marketing-partial-delivery.md"),
-    "readiness_stale": ("marketing_readiness_stale", "error", "docs/runbooks/marketing-provider-outage.md"),
+    "partial_without_action": ("marketing_partial_without_action", "error", "docs/runbooks/marketing-partial-retry.md"),
+    "readiness_stale": ("marketing_readiness_stale", "error", "docs/runbooks/marketing-channel-readiness-outage.md"),
 }
 
 

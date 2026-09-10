@@ -92,6 +92,7 @@ export async function beginMarketingRecovery(
     announcementId: number;
     baseVersion: number;
     idempotencyKey: string;
+    body?: Record<string, unknown>;
   },
 ): Promise<RecoveryChallengeResult> {
   assertRecoveryAction(action, options.announcementId);
@@ -99,7 +100,12 @@ export async function beginMarketingRecovery(
   try {
     const response = await fetcher<MarketingCommandResponse>(
       action.href,
-      commandOptions(action, options.baseVersion, options.idempotencyKey),
+      commandOptions(
+        action,
+        options.baseVersion,
+        options.idempotencyKey,
+        options.body,
+      ),
     );
     return { kind: "receipt", response };
   } catch (error) {
@@ -127,6 +133,7 @@ export async function confirmMarketingRecovery(
     announcementId: number;
     baseVersion: number;
     idempotencyKey: string;
+    body?: Record<string, unknown>;
   },
 ): Promise<MarketingCommandResponse> {
   assertRecoveryAction(action, options.announcementId);
@@ -151,6 +158,7 @@ export async function confirmMarketingRecovery(
   return await fetcher<MarketingCommandResponse>(
     action.href,
     commandOptions(action, options.baseVersion, options.idempotencyKey, {
+      ...options.body,
       confirmation_token: challenge.token,
       typed_confirmation: String(confirmation.typedConfirmation || "").trim(),
     }),

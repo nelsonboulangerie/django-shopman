@@ -955,6 +955,20 @@ class TestRules:
 
 
 class TestTemplates:
+    def test_dependency_projection_has_constant_query_cost(
+        self, rule, django_assert_num_queries
+    ):
+        """A ajuda prévia à exclusão não pode virar N+1 ao crescer o catálogo."""
+        spare = AnnouncementTemplate.objects.create(name="Livre", body="x")
+        from shopman.backstage.projections import marketing as marketing_projection
+
+        with django_assert_num_queries(2):
+            projected = marketing_projection.build_templates()
+
+        dependencies = {item.pk: item.used_by_campaigns for item in projected}
+        assert dependencies[rule.template_id] == (rule.name,)
+        assert dependencies[spare.pk] == ()
+
     def test_create_template(self, client, gestor):
         client.force_login(gestor)
 
@@ -971,6 +985,10 @@ class TestTemplates:
         """PROTECT no model: apagar deixaria a regra disparando no vazio."""
         client.force_login(gestor)
 
+        listed = client.get(TEMPLATES_URL).json()["templates"]
+        projected = next(item for item in listed if item["pk"] == template.pk)
+        assert projected["used_by_campaigns"] == [rule.name]
+
         response = client.delete(f"{TEMPLATES_URL}{template.pk}/")
 
         assert response.status_code == 400
@@ -979,6 +997,10 @@ class TestTemplates:
     def test_unused_template_can_be_deleted(self, client, gestor):
         template = AnnouncementTemplate.objects.create(name="Órfão", body="x")
         client.force_login(gestor)
+
+        listed = client.get(TEMPLATES_URL).json()["templates"]
+        projected = next(item for item in listed if item["pk"] == template.pk)
+        assert projected["used_by_campaigns"] == []
 
         assert client.delete(f"{TEMPLATES_URL}{template.pk}/").status_code == 200
         assert not AnnouncementTemplate.objects.filter(pk=template.pk).exists()

@@ -73,6 +73,7 @@ function mountCard(
   draftOwner = "",
   shopTimezone = "America/Sao_Paulo",
   aiAssistAvailable = false,
+  quietHoursSuspendedForLocalSimulation = false,
 ) {
   return mount(AnnouncementCard, {
     props: {
@@ -81,6 +82,7 @@ function mountCard(
       draftOwner,
       shopTimezone,
       aiAssistAvailable,
+      quietHoursSuspendedForLocalSimulation,
     },
     global: {
       components: { DraftRecoveryNotice },
@@ -172,6 +174,25 @@ describe("AnnouncementCard", () => {
 
     expect((wrapper.find("input[type=datetime-local]").element as HTMLInputElement).value)
       .toBe("2026-07-18T08:00");
+  });
+
+  it("allows an after-hours send only when the server marks the hermetic rehearsal", async () => {
+    vi.setSystemTime(new Date("2026-07-18T00:30:00Z")); // 21:30 on the shop clock.
+    const wrapper = mountCard(
+      makeAnnouncement({ platforms: ["whatsapp"] }),
+      "",
+      "America/Sao_Paulo",
+      false,
+      true,
+    );
+    const publishNow = wrapper.findAll("button")
+      .find(button => button.text().includes("Publicar agora"))!;
+
+    expect((publishNow.element as HTMLButtonElement).disabled).toBe(false);
+    expect(wrapper.text()).toContain("Ensaio local");
+    expect(wrapper.text()).toContain("nenhuma mensagem sai deste computador");
+    await publishNow.trigger("click");
+    expect(wrapper.emitted("approve")![0]![2]).toBe("now");
   });
 
   it("does not allow a schedule at the exact expiry boundary", async () => {

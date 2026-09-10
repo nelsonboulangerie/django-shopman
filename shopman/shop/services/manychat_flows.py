@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import re
 import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -28,6 +29,7 @@ _LAST_GOOD_KEY = "shopman.manychat.flows.last-good.v2"
 _CACHE_TTL = 300
 _FAILURE_CACHE_TTL = 30
 _LAST_GOOD_TTL = 86_400
+_FLOW_REF_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,120}$")
 
 CatalogState = Literal["fresh", "stale", "unavailable", "not_configured"]
 
@@ -138,6 +140,25 @@ def flow_name(ns: str) -> str:
 
 def _fetch() -> _FetchResult:
     from django.conf import settings
+
+    simulation_rows = getattr(settings, "SHOPMAN_MARKETING_SIMULATION_FLOWS", ())
+    if simulation_rows:
+        from shopman.shop.services.marketing_delivery_runtime import (
+            is_hermetic_simulation,
+        )
+
+        if is_hermetic_simulation("whatsapp"):
+            pairs = tuple(
+                (str(pair[0]), str(pair[1]))
+                for pair in simulation_rows
+                if isinstance(pair, (list, tuple))
+                and len(pair) == 2
+                and _FLOW_REF_RE.fullmatch(str(pair[0]))
+            )
+            return _FetchResult(
+                state="fresh",
+                flows=tuple(sorted(set(pairs), key=lambda pair: pair[1].lower())),
+            )
 
     config = getattr(settings, "SHOPMAN_MANYCHAT", {}) or {}
     token = str(

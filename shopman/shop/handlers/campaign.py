@@ -186,6 +186,35 @@ def _iso(value) -> str:
 # ── Directive handlers ───────────────────────────────────────────────
 
 
+def _stage_durable_delivery(*, message, topic: str) -> bool:
+    """Route v2 outbox payloads through fan-out/ledger, preserving legacy input."""
+
+    payload = message.payload if isinstance(message.payload, dict) else {}
+    if not payload.get("outbox_ref"):
+        return False
+    from shopman.orderman.exceptions import (
+        DirectiveTerminalError,
+        DirectiveTransientError,
+    )
+    from shopman.shop.services.marketing_contracts import MarketingContractError
+    from shopman.shop.services.marketing_delivery_runtime import stage_outbox_directive
+
+    try:
+        report = stage_outbox_directive(payload=payload, topic=topic)
+    except MarketingContractError as exc:
+        error_class = DirectiveTransientError if exc.retryable else DirectiveTerminalError
+        raise error_class(exc.code) from None
+    logger.info(
+        "marketing.delivery_staged outbox=%s platform=%s targets=%d queued=%d replayed=%s",
+        report.outbox_ref,
+        report.platform,
+        report.targets,
+        report.queued,
+        str(report.replayed).lower(),
+    )
+    return True
+
+
 class AnnouncementHandler:
     """Publica o announcement numa plataforma externa. Topic: announcement.publish
 
@@ -198,6 +227,8 @@ class AnnouncementHandler:
     topic = "announcement.publish"
 
     def handle(self, *, message, ctx: dict) -> None:
+        if _stage_durable_delivery(message=message, topic=self.topic):
+            return
         from shopman.shop.models import Announcement
 
         payload = message.payload or {}
@@ -301,6 +332,8 @@ class AnnouncementNotifyHandler:
     topic = "announcement.notify"
 
     def handle(self, *, message, ctx: dict) -> None:
+        if _stage_durable_delivery(message=message, topic=self.topic):
+            return
         from shopman.shop.models import Announcement
         from shopman.shop.services import audience as audience_service
 

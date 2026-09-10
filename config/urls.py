@@ -39,6 +39,9 @@ def _include_optional(route: str, module: str):
 
 urlpatterns = [
     # Health / readiness probes — público, sem auth, no topo para precedência.
+    path("health/live/", HealthCheckView.as_view(), name="health-live"),
+    path("health/ready/", ReadyCheckView.as_view(), name="health-ready"),
+    # Compatibility aliases while external monitors move to the explicit paths.
     path("health/", HealthCheckView.as_view(), name="health"),
     path("ready/", ReadyCheckView.as_view(), name="ready"),
     # Pedidos migraram p/ o app Nuxt dedicado (Gestor — surfaces/orders-nuxt)

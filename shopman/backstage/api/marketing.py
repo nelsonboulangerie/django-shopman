@@ -442,12 +442,18 @@ class AnnouncementDetailView(_CampaignBase):
         announcement = _announcement_or_none(pk)
         if announcement is None:
             return Response({"detail": "Anúncio não encontrado."}, status=404)
-        from shopman.shop.services.marketing_time import configured_timezone_name
+        from shopman.shop.services.marketing_time import (
+            configured_timezone_name,
+            quiet_hours_suspended_for_local_simulation,
+        )
 
         return Response(
             {
                 "announcement": projection_data(marketing_projection.build_announcement(announcement)),
                 "shop_timezone": configured_timezone_name(),
+                "quiet_hours_suspended_for_local_simulation": (
+                    quiet_hours_suspended_for_local_simulation()
+                ),
             }
         )
 
@@ -457,7 +463,7 @@ class AnnouncementDetailView(_CampaignBase):
             return Response({"detail": "Anúncio não encontrado."}, status=404)
         if announcement.status not in (AnnouncementStatus.DRAFT, AnnouncementStatus.PENDING_REVIEW):
             return Response(
-                {"detail": "Este announcement já saiu. Não dá para reescrever o que já foi lido."},
+                {"detail": "Este anúncio já saiu. Não dá para reescrever o que já foi lido."},
                 status=400,
             )
 
@@ -1630,7 +1636,7 @@ def _rule_fields(data, *, partial: bool) -> tuple[dict, dict | None]:
     if not partial or "template_id" in data:
         template = AnnouncementTemplate.objects.filter(pk=_as_int(data.get("template_id"))).first()
         if template is None:
-            return {}, {"detail": "Modelo de announcement não encontrado.", "field": "template_id"}
+            return {}, {"detail": "Modelo de anúncio não encontrado.", "field": "template_id"}
         fields["template"] = template
 
     if not partial or "platforms" in data:
@@ -1806,7 +1812,7 @@ def _announcement_edits(data) -> tuple[dict, dict | None]:
     if "body" in data:
         body = str(data.get("body") or "").strip()
         if not body:
-            return {}, {"detail": "O texto do announcement não pode ficar vazio.", "field": "body"}
+            return {}, {"detail": "O texto do anúncio não pode ficar vazio.", "field": "body"}
         edits["body"] = body
     if "hashtags" in data:
         edits["hashtags"] = _string_list(data.get("hashtags"))

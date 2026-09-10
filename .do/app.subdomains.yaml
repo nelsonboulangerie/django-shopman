@@ -217,14 +217,14 @@ services:
     instance_count: 1
     instance_size_slug: apps-s-1vcpu-1gb
     health_check:
-      http_path: /ready/
+      http_path: /health/ready/
       initial_delay_seconds: 30
       period_seconds: 10
       timeout_seconds: 5
       success_threshold: 1
       failure_threshold: 5
     liveness_health_check:
-      http_path: /health/
+      http_path: /health/live/
       initial_delay_seconds: 30
       period_seconds: 30
       timeout_seconds: 5

@@ -270,4 +270,38 @@ describe("Marketing decision confirmation", () => {
     expect(command.pendingReauthentication.value).toBeNull();
     expect(fetcher).toHaveBeenCalledOnce();
   });
+
+  it("discards a confirmation that can never succeed after a version conflict", async () => {
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: { code: "confirmation_required", confirmation: challenge },
+      })
+      .mockResolvedValueOnce({ ok: true, step_up: {} })
+      .mockRejectedValueOnce({
+        status: 409,
+        data: {
+          code: "version_conflict",
+          detail: "O anúncio mudou enquanto você revisava.",
+        },
+      });
+    Object.assign(globalThis, { $fetch: fetcher });
+    const command = useMarketingDecisionCommand();
+    await command.begin({
+      announcementId: 42,
+      action: "approve",
+      body: { base_version: 7, publish_mode: "now" },
+      idempotencyKey: "stale-version-key",
+    });
+
+    await expect(
+      command.confirm({
+        credential: "senha",
+        typedConfirmation: "PUBLICAR 12",
+      }),
+    ).rejects.toMatchObject({ data: { code: "version_conflict" } });
+
+    expect(command.pendingDecision.value).toBeNull();
+    expect(command.pendingReauthentication.value).toBeNull();
+  });
 });

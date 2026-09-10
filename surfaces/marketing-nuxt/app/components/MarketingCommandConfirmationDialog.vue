@@ -17,6 +17,12 @@ const emit = defineEmits<{
 
 const credential = ref("");
 const typedConfirmation = ref("");
+const { data: operatorSession } = useNuxtData<{
+  operator: { username?: string; name?: string } | null;
+}>("operator-session");
+const operatorUsername = computed(
+  () => operatorSession.value?.operator?.username?.trim() || "",
+);
 
 watch(
   () => props.command?.challenge.ref,
@@ -130,17 +136,32 @@ function submit() {
               challenge.typed_phrase
             }}</code>
           </label>
-          <input
+          <textarea
             id="decision-typed-confirmation"
             v-model="typedConfirmation"
-            type="text"
+            name="typed_confirmation"
+            rows="1"
             autocomplete="off"
             spellcheck="false"
-            class="mt-1 h-11 w-full rounded-md border border-border bg-background px-3 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
+            class="mt-1 min-h-11 w-full resize-none rounded-md border border-border bg-background px-3 py-2.5 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
           />
         </div>
 
         <div v-if="challenge.step_up !== 'none'">
+          <div v-if="challenge.step_up === 'password'" class="mb-3">
+            <label for="decision-username" class="block text-sm font-medium">
+              Usuário
+            </label>
+            <input
+              id="decision-username"
+              name="username"
+              :value="operatorUsername"
+              type="text"
+              autocomplete="username"
+              readonly
+              class="mt-1 h-11 w-full rounded-md border border-border bg-muted px-3 text-sm text-muted-foreground"
+            />
+          </div>
           <label for="decision-credential" class="block text-sm font-medium">
             {{
               challenge.step_up === "totp" ? "Código de 6 dígitos" : "Sua senha"
@@ -149,6 +170,7 @@ function submit() {
           <input
             id="decision-credential"
             v-model="credential"
+            name="current_password"
             :type="challenge.step_up === 'password' ? 'password' : 'text'"
             :inputmode="challenge.step_up === 'totp' ? 'numeric' : 'text'"
             :autocomplete="

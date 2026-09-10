@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from unittest.mock import patch
+from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import IntegrityError, connection, transaction
@@ -83,6 +84,26 @@ def _artifact(platform: str) -> ResolvedDispatchArtifact:
         platform=platform,
         body="Fornada pronta",
         content_version=2,
+    )
+
+
+def _next_quiet_time() -> datetime:
+    local = timezone.now().astimezone(ZoneInfo("America/Sao_Paulo"))
+    return (local + timedelta(days=1)).replace(
+        hour=21,
+        minute=0,
+        second=0,
+        microsecond=0,
+    )
+
+
+def _next_allowed_time() -> datetime:
+    local = timezone.now().astimezone(ZoneInfo("America/Sao_Paulo"))
+    return (local + timedelta(days=1)).replace(
+        hour=9,
+        minute=0,
+        second=0,
+        microsecond=0,
     )
 
 
@@ -229,7 +250,10 @@ def test_revocation_after_fanout_suppresses_before_claim_and_provider():
     ConsentService.revoke_consent(members[0].customer.ref, "whatsapp")
     provider = CountingAcceptedProvider()
 
-    claimed = claim_due_targets(worker_id="worker-revoked")
+    claimed = claim_due_targets(
+        worker_id="worker-revoked",
+        now=_next_quiet_time(),
+    )
 
     target.refresh_from_db()
     assert claimed.targets == ()
@@ -307,7 +331,7 @@ def test_delayed_whatsapp_worker_waits_until_the_next_allowed_shop_time():
         opted_in=True,
     )
     _queue_all(outbox)
-    quiet_now = datetime.fromisoformat("2026-09-09T21:00:00-03:00")
+    quiet_now = _next_quiet_time()
 
     deferred = claim_due_targets(
         worker_id="worker-quiet-hours",
@@ -318,9 +342,7 @@ def test_delayed_whatsapp_worker_waits_until_the_next_allowed_shop_time():
     assert (deferred.examined, deferred.deferred) == (1, 1)
     assert deferred.targets == ()
     assert target.last_error_code == "quiet_hours_active"
-    assert target.next_attempt_at == datetime.fromisoformat(
-        "2026-09-10T08:00:00-03:00"
-    )
+    assert target.next_attempt_at == quiet_now + timedelta(hours=11)
 
     opened = claim_due_targets(
         worker_id="worker-opening-hours",
@@ -348,7 +370,10 @@ def test_revoked_specific_subscription_is_suppressed_before_claim():
     )
     _queue_all(outbox)
 
-    report = claim_due_targets(worker_id="worker-subscription")
+    report = claim_due_targets(
+        worker_id="worker-subscription",
+        now=_next_quiet_time(),
+    )
 
     target = DeliveryTarget.objects.get(outbox=outbox)
     assert report.suppressed == 1
@@ -375,6 +400,32 @@ def test_expired_announcement_expires_public_target_before_claim():
     assert report.targets == ()
     assert target.state == DeliveryTarget.State.EXPIRED
     assert target.last_error_code == "announcement_expired_before_send"
+
+
+def test_settled_announcement_claims_only_a_previously_attempted_retry():
+    outbox, _members = _graph(
+        platform="instagram",
+        suffix="claim-settled-selective-retry",
+        target_keys=(),
+    )
+    fanout_in_chunks(outbox.ref)
+    _queue_all(outbox)
+    target = DeliveryTarget.objects.get(outbox=outbox)
+    outbox.announcement.status = "settled"
+    outbox.announcement.save(update_fields=["status"])
+
+    initial = claim_due_targets(worker_id="worker-settled-initial")
+    target.refresh_from_db()
+    assert initial.targets == ()
+    assert initial.deferred == 1
+    assert target.last_error_code == "announcement_not_dispatchable"
+
+    target.attempt_count = 1
+    target.next_attempt_at = timezone.now()
+    target.save(update_fields=["attempt_count", "next_attempt_at"])
+
+    retry = claim_due_targets(worker_id="worker-settled-retry")
+    assert [item.pk for item in retry.targets] == [target.pk]
 
 
 def test_active_lease_fences_other_worker_and_is_cleared_at_call_boundary():
@@ -524,10 +575,11 @@ def test_claim_limit_applies_backpressure_across_workers():
         opted_in=True,
     )
     _queue_all(outbox)
+    allowed_now = _next_allowed_time()
 
-    first = claim_due_targets(worker_id="worker-limit-one", limit=5)
-    second = claim_due_targets(worker_id="worker-limit-two", limit=5)
-    third = claim_due_targets(worker_id="worker-limit-three", limit=5)
+    first = claim_due_targets(worker_id="worker-limit-one", limit=5, now=allowed_now)
+    second = claim_due_targets(worker_id="worker-limit-two", limit=5, now=allowed_now)
+    third = claim_due_targets(worker_id="worker-limit-three", limit=5, now=allowed_now)
 
     assert [len(report.targets) for report in (first, second, third)] == [5, 5, 2]
     assert DeliveryTarget.objects.filter(lease_owner="worker-limit-one").count() == 5
@@ -544,7 +596,11 @@ def test_claim_of_100_recipients_stays_within_query_budget(django_assert_max_num
     _queue_all(outbox)
 
     with django_assert_max_num_queries(10):
-        report = claim_due_targets(worker_id="worker-query-budget", limit=100)
+        report = claim_due_targets(
+            worker_id="worker-query-budget",
+            limit=100,
+            now=_next_allowed_time(),
+        )
 
     assert len(report.targets) == 100
     assert report.deferred == report.suppressed == 0

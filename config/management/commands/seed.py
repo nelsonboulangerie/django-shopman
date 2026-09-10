@@ -390,6 +390,7 @@ class Command(BaseCommand):
         self._seed_notification_templates()
         self._seed_rule_configs()
         self._seed_omotenashi_copy()
+        self._seed_qa_marketing_audience(customers)
         self._seed_loyalty(customers)
         self._seed_operation_checklists()
 
@@ -422,6 +423,52 @@ class Command(BaseCommand):
         # B.I.: sem movimento de prateleira o painel de abastecimento nasce
         # vazio. Vai depois da vitrine para não disputar os quants dela.
         self._seed_bi_history(products, positions)
+
+    def _seed_qa_marketing_audience(self, customers: dict) -> None:
+        """Named consented cohort large enough to cross the real send guardrail.
+
+        The generic seed intentionally has only five marketing consents, while a
+        normal WhatsApp campaign requires ten eligible people.  That makes the
+        guardrail impossible to exercise.  QA gets twelve obviously synthetic,
+        tagged customers; demo/production-shaped data stays untouched.
+        """
+
+        from shopman.guestman import ConsentService
+
+        tier = PriceTier.objects.get(ref="varejo")
+        tag = CustomerTag.resolve(["QA Marketing E2E"])[0]
+        for index in range(1, 13):
+            ref = f"QA-MKT-{index:03d}"
+            phone = f"+554390000{index:04d}"
+            customer, _created = Customer.objects.update_or_create(
+                ref=ref,
+                defaults={
+                    "first_name": "Teste",
+                    "last_name": f"Marketing {index:02d}",
+                    "customer_type": "individual",
+                    "price_tier": tier,
+                    "phone": phone,
+                    "birthday": timezone.localdate(),
+                    "is_active": True,
+                },
+            )
+            ContactPoint.objects.update_or_create(
+                customer=customer,
+                type="whatsapp",
+                value_normalized=phone,
+                defaults={"is_primary": True, "value_display": phone},
+            )
+            customer.tags.add(tag)
+            ConsentService.grant_consent(
+                customer.ref,
+                "whatsapp",
+                source="seed:qa:marketing-e2e",
+            )
+            customers[ref] = customer
+        self.stdout.write(
+            "  ✅ 12 clientes sintéticos QA-MKT-* com consentimento e tag "
+            "'QA Marketing E2E'"
+        )
 
     # SKUs canônicos de cada estado de vitrine no perfil qa (datas relativas).
     QA_STOREFRONT_STATES = {

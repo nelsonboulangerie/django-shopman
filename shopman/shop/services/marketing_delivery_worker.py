@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.db import connection, transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from shopman.shop.models import (
@@ -36,6 +36,7 @@ DEFAULT_CLAIM_LIMIT = 100
 DEFAULT_TARGET_LEASE_SECONDS = 60
 CONSENT_RETRY_SECONDS = 30
 _WORKER_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,100}$")
+_ERROR_CODE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 logger = logging.getLogger(__name__)
 
 
@@ -194,12 +195,50 @@ def fanout_in_chunks(
     )
 
 
+def queue_materialized_targets(
+    outbox_ref,
+    *,
+    now: datetime | None = None,
+) -> int:
+    """Atomically expose a completed fan-out to target workers.
+
+    A partial fan-out stays entirely non-runnable.  Replay is a no-op because
+    only ``planned`` rows transition here.
+    """
+
+    clock = _aware_now(now)
+    with transaction.atomic():
+        outbox = MarketingOutbox.objects.select_for_update().get(ref=outbox_ref)
+        if outbox.fanout_completed_at is None:
+            raise MarketingContractError(
+                code="delivery_fanout_incomplete",
+                detail="O fan-out precisa terminar antes de enfileirar targets.",
+                retryable=True,
+            )
+        targets = DeliveryTarget.objects.select_for_update().filter(
+            outbox=outbox,
+            state=DeliveryTarget.State.PLANNED,
+        )
+        queued = targets.update(
+            state=DeliveryTarget.State.QUEUED,
+            next_attempt_at=clock,
+            lease_owner="",
+            lease_until=None,
+            version=F("version") + 1,
+            updated_at=clock,
+        )
+        if queued:
+            _schedule_aggregate(outbox.announcement_id)
+        return queued
+
+
 def claim_due_targets(
     *,
     worker_id: str,
     now: datetime | None = None,
     limit: int = DEFAULT_CLAIM_LIMIT,
     lease_seconds: int = DEFAULT_TARGET_LEASE_SECONDS,
+    platforms: Iterable[str] | None = None,
 ) -> TargetClaimReport:
     """Lease eligible targets after one batched consent/expiry recheck."""
 
@@ -213,12 +252,19 @@ def claim_due_targets(
     safe_worker_id = _worker_id(worker_id)
     safe_limit = max(1, min(int(limit), 1_000))
     safe_lease = max(10, min(int(lease_seconds), 15 * 60))
+    platform_filter = None
+    if platforms is not None:
+        platform_filter = tuple(dict.fromkeys(str(value or "") for value in platforms))
+        if not platform_filter:
+            return TargetClaimReport((), 0, 0, 0, 0, 0, 0)
     with transaction.atomic():
         query = DeliveryTarget.objects.filter(
             state=DeliveryTarget.State.QUEUED,
             next_attempt_at__lte=clock,
             outbox__fanout_completed_at__isnull=False,
         ).filter(Q(lease_owner="") | Q(lease_until__lte=clock))
+        if platform_filter is not None:
+            query = query.filter(platform__in=platform_filter)
         query = query.select_related(
             "announcement",
             "artifact",
@@ -299,6 +345,47 @@ def claim_due_targets(
         )
 
 
+def release_target_claim(
+    target_ref,
+    *,
+    worker_id: str,
+    code: str,
+    now: datetime | None = None,
+    delay_seconds: int = CONSENT_RETRY_SECONDS,
+) -> bool:
+    """Release an unexpected pre-boundary failure without leaking raw detail."""
+
+    clock = _aware_now(now)
+    safe_worker_id = _worker_id(worker_id)
+    safe_code = str(code or "")
+    if not _ERROR_CODE_RE.fullmatch(safe_code):
+        safe_code = "delivery_worker_failed_before_call"
+    delay = max(1, min(int(delay_seconds), 15 * 60))
+    with transaction.atomic():
+        target = DeliveryTarget.objects.select_for_update().get(ref=target_ref)
+        if (
+            target.state != DeliveryTarget.State.QUEUED
+            or target.lease_owner != safe_worker_id
+        ):
+            return False
+        target.lease_owner = ""
+        target.lease_until = None
+        target.last_error_code = safe_code
+        target.next_attempt_at = clock + timedelta(seconds=delay)
+        target.version += 1
+        target.updated_at = clock
+        target.save(update_fields=[
+            "lease_owner",
+            "lease_until",
+            "last_error_code",
+            "next_attempt_at",
+            "version",
+            "updated_at",
+        ])
+        _schedule_aggregate(target.announcement_id)
+        return True
+
+
 def _pre_send_outcome(
     target: DeliveryTarget,
     *,
@@ -324,19 +411,21 @@ def _pre_send_outcome(
         AnnouncementStatus.APPROVED,
         AnnouncementStatus.PUBLISHING,
     }:
-        return "defer", "announcement_not_dispatchable"
+        # A recuperação seletiva nasce depois que o agregado já encerrou o
+        # anúncio. Nesse único caso, ``attempt_count > 0`` prova que não é um
+        # target inicial escapando da aprovação: ele já cruzou a fronteira uma
+        # vez e só pode ter voltado de FAILED_RETRYABLE para QUEUED pela máquina
+        # de estados. Confirmed/accepted/unknown não aceitam essa transição.
+        if not (
+            announcement.status == AnnouncementStatus.SETTLED
+            and target.attempt_count > 0
+        ):
+            return "defer", "announcement_not_dispatchable"
     facts_outcome = facts_outcomes.get(target.artifact_id)
     if facts_outcome is not None:
         return facts_outcome
     if target.platform != "whatsapp":
         return "claim", ""
-
-    timing = marketing_time.delivery_window(
-        now,
-        timezone_name=_artifact_timezone(target),
-    )
-    if not timing.allowed:
-        return "defer", "quiet_hours_active"
 
     member = target.member
     if member is None:
@@ -357,11 +446,23 @@ def _pre_send_outcome(
             return "defer", "subscription_unavailable"
         if member.subscription_ref not in subscriptions:
             return DeliveryState.SUPPRESSED.value, "subscription_inactive"
-    if "alerts" in reasons and member.subscription_ref:
-        return "claim", ""
-    if customer_ref and status == "opted_in":
-        return "claim", ""
-    return DeliveryState.SUPPRESSED.value, "missing_consent"
+    has_consent = bool(
+        ("alerts" in reasons and member.subscription_ref)
+        or (customer_ref and status == "opted_in")
+    )
+    if not has_consent:
+        return DeliveryState.SUPPRESSED.value, "missing_consent"
+
+    # Consent and identity are checked before the delivery window. A revoked or
+    # inactive target is terminal now; deferring it until morning would retain
+    # invalid work and delay the operator's evidence that suppression won.
+    timing = marketing_time.delivery_window(
+        now,
+        timezone_name=_artifact_timezone(target),
+    )
+    if not timing.allowed:
+        return "defer", "quiet_hours_active"
+    return "claim", ""
 
 
 def _artifact_timezone(target: DeliveryTarget) -> str:

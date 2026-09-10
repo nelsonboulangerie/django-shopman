@@ -1,4 +1,5 @@
 import type {
+  AnnouncementProjectionV2,
   DeliveryAggregateProjectionV2,
   DeliveryCountsProjectionV2,
   MarketingActionProjectionV2,
@@ -40,7 +41,25 @@ export function platformResultLabel(platformRef: string): string {
 
 export function deliveryStatePresentation(
   state: DeliveryAggregateProjectionV2["state"],
+  announcementState?: AnnouncementProjectionV2["state"],
 ): { label: string; detail: string; tone: ResultTone; icon: string } {
+  if (announcementState === "rejected") {
+    return {
+      label: "Anúncio recusado",
+      detail:
+        "A decisão foi encerrada sem criar entregas para nenhuma plataforma.",
+      tone: "quiet",
+      icon: "lucide:circle-x",
+    };
+  }
+  if (announcementState === "expired" && state === "not_started") {
+    return {
+      label: "Prazo de revisão encerrado",
+      detail: "O anúncio expirou sem aprovação e não foi enviado.",
+      tone: "attention",
+      icon: "lucide:timer-off",
+    };
+  }
   const values: Record<
     DeliveryAggregateProjectionV2["state"],
     {
@@ -73,7 +92,7 @@ export function deliveryStatePresentation(
     succeeded: {
       label: "Entrega concluída",
       detail:
-        "Confira abaixo o que foi confirmado e o que só foi aceito pelo provedor.",
+        "Confira abaixo o que foi confirmado e o que só foi aceito pela plataforma.",
       tone: "ok",
       icon: "lucide:check-circle-2",
     },
@@ -87,7 +106,7 @@ export function deliveryStatePresentation(
     unknown: {
       label: "Há resultados incertos — não reenvie",
       detail:
-        "O provedor pode ter produzido efeito sem devolver resposta. Reconciliar só consulta; não envia outra vez.",
+        "A plataforma pode ter produzido efeito sem devolver resposta. Reconciliar só consulta; não envia outra vez.",
       tone: "attention",
       icon: "lucide:circle-help",
     },
@@ -221,7 +240,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
     return {
       title: "Decisão registrada",
       detail:
-        "A versão aprovada e seu horário ficaram guardados neste receipt.",
+        "A versão aprovada e seu horário ficaram guardados neste comprovante.",
     };
   }
   if (receipt.kind === "reject") {
@@ -234,13 +253,29 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
     return {
       title: "Novo horário registrado",
       detail:
-        "As faixas ainda não iniciadas usam o instante guardado neste receipt.",
+        "As faixas ainda não iniciadas usam o instante guardado neste comprovante.",
     };
   }
   return {
     title: "Comando registrado",
-    detail: "O receipt abaixo é a prova persistida desta operação.",
+    detail: "O comprovante abaixo é a prova persistida desta operação.",
   };
+}
+
+export function receiptStateLabel(state: string): string {
+  const labels: Record<string, string> = {
+    accepted: "aceito",
+    cancelled: "cancelado",
+    completed: "concluído",
+    conflict: "conflito",
+    expired: "expirado",
+    failed: "falhou",
+    pending: "pendente",
+    rejected: "recusado",
+    succeeded: "concluído",
+    unknown: "resultado incerto",
+  };
+  return labels[state] ?? "registrado";
 }
 
 function receiptOutcomeCount(receipt: MarketingCommandReceipt): number {
@@ -268,7 +303,7 @@ export function marketingLoadError(error: unknown): {
     return {
       title: "Sua sessão terminou",
       detail:
-        "Entre novamente; o rascunho e o receipt desta rota continuam preservados.",
+        "Entre novamente; o rascunho e o comprovante desta rota continuam preservados.",
       canRetry: false,
     };
   }

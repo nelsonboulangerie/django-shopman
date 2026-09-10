@@ -100,12 +100,12 @@ def verified_whatsapp_flow_binding(
         raise MarketingContractError(
             code="whatsapp_flow_not_selected",
             detail=(
-                "O WhatsApp ainda não tem um flow aprovado. Escolha-o em "
+                "O WhatsApp ainda não tem um fluxo aprovado. Escolha-o em "
                 "Marketing → Plataformas antes de revisar este envio."
             ),
             field_errors={
                 "platforms.whatsapp": (
-                    "Escolha um flow aprovado e ativo em Marketing → Plataformas.",
+                    "Escolha um fluxo aprovado e ativo em Marketing → Plataformas.",
                 )
             },
         )
@@ -114,11 +114,11 @@ def verified_whatsapp_flow_binding(
             code="whatsapp_template_inactive",
             detail=(
                 "A configuração do WhatsApp está inativa. Escolha novamente um "
-                "flow em Marketing → Plataformas."
+                "fluxo em Marketing → Plataformas."
             ),
             field_errors={
                 "platforms.whatsapp": (
-                    "Reative a configuração escolhendo um flow aprovado.",
+                    "Reative a configuração escolhendo um fluxo aprovado.",
                 )
             },
         )
@@ -128,7 +128,7 @@ def verified_whatsapp_flow_binding(
         raise MarketingPlatformUnavailable(
             code="whatsapp_flow_verification_unavailable",
             detail=(
-                "Não foi possível confirmar o flow ativo agora. O conteúdo não foi "
+                "Não foi possível confirmar o fluxo ativo agora. O conteúdo não foi "
                 "aprovado; tente a verificação em Marketing → Plataformas."
             ),
         )
@@ -138,12 +138,12 @@ def verified_whatsapp_flow_binding(
         raise MarketingContractError(
             code="whatsapp_flow_not_active",
             detail=(
-                "O flow configurado não aparece na lista ativa. Escolha um flow "
+                "O fluxo configurado não aparece na lista ativa. Escolha um fluxo "
                 "atual em Marketing → Plataformas."
             ),
             field_errors={
                 "platforms.whatsapp": (
-                    "Escolha um flow que esteja ativo na lista atual.",
+                    "Escolha um fluxo que esteja ativo na lista atual.",
                 )
             },
         )
@@ -173,8 +173,8 @@ def configure_whatsapp_flow(
     if safe_flow and not _FLOW_REF_RE.fullmatch(safe_flow):
         raise MarketingCommandRejected(
             code="invalid_flow_ref",
-            detail="A referência do flow é inválida.",
-            field_errors={"flow_ns": ("Escolha um flow da lista atual.",)},
+            detail="A referência do fluxo é inválida.",
+            field_errors={"flow_ns": ("Escolha um fluxo da lista atual.",)},
         )
     safe_request_id = str(request_id or "")
     if safe_request_id and not _REQUEST_ID_RE.fullmatch(safe_request_id):
@@ -218,8 +218,8 @@ def configure_whatsapp_flow(
     if safe_flow and not catalog.contains(safe_flow):
         raise MarketingCommandRejected(
             code="flow_not_active",
-            detail="O flow escolhido não está na lista ativa atual.",
-            field_errors={"flow_ns": ("Escolha um flow da lista atual.",)},
+            detail="O fluxo escolhido não está na lista ativa atual.",
+            field_errors={"flow_ns": ("Escolha um fluxo da lista atual.",)},
         )
 
     deferred_error: MarketingCommandConflict | MarketingCommandRejected | None = None

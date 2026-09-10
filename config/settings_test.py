@@ -43,6 +43,9 @@ from config.settings import *  # noqa: E402,F403 — base primeiro, pinos depois
 SHOPMAN_ENVIRONMENT = "development"
 SHOPMAN_EXPOSE_DEBUG_OTP = True
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = False
+SHOPMAN_MARKETING_SIMULATION_ENABLED = False
+SHOPMAN_MARKETING_DELIVERY_ADAPTERS = {}
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = "test-only-marketing-target-hmac-key"
 SHOPMAN_MARKETING_TARGET_HMAC_KEY_VERSION = 1
 # ⚠️ TRUE, que é o valor do STAGING (.do/app.staging-subdomains.yaml).
@@ -99,6 +102,8 @@ SHOPMAN_MANYCHAT.update(  # noqa: F405
     resolver="shopman.guestman.contrib.manychat.resolver.ManychatSubscriberResolver.resolve",
 )
 SHOPMAN_MARKETING_TEST_TARGETS = {}
+SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
+SHOPMAN_MARKETING_SIMULATION_FLOWS = ()
 SHOPMAN_WHATSAPP.update(  # noqa: F405
     VERIFY_TOKEN="",
     STOREFRONT_URL="",

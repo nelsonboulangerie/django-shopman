@@ -1,5 +1,6 @@
 // Tipos v1 permanecem abaixo durante o cutover. O contrato v2 é reexportado do
 // cliente gerado a partir do OpenAPI; não o redescrever manualmente neste arquivo.
+import type { MarketingActionProjectionV2 } from "~/generated/marketingClient";
 
 export type {
   ActionConfirmationProjectionV2,
@@ -96,6 +97,8 @@ export interface CampaignBoard {
   ai_assist_available: boolean;
   /** IANA timezone owned by the backend; browser timezone never overrides it. */
   shop_timezone: string;
+  /** True only when the hermetic local simulator suspends quiet hours for a rehearsal. */
+  quiet_hours_suspended_for_local_simulation: boolean;
 }
 
 export interface Campaign {
@@ -184,6 +187,8 @@ export interface AnnouncementTemplate {
   is_active: boolean;
   /** Read version used only to isolate/reconcile local drafts. */
   updated_at: string;
+  /** Nomes das campanhas que impedem exclusão segura. */
+  used_by_campaigns?: string[];
 }
 
 export interface Choice {
@@ -294,6 +299,7 @@ export interface BoardResponse {
 
 export interface RulesResponse {
   rules: Campaign[];
+  actions: MarketingActionProjectionV2[];
 }
 
 export interface OptionsResponse {

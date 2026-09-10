@@ -41,6 +41,8 @@ const props = defineProps<{
   draftOwner?: string;
   /** Named backend-owned timezone. The browser's local zone is never inferred. */
   shopTimezone?: string;
+  /** Explicit server proof that this lane ends at the hermetic local simulator. */
+  quietHoursSuspendedForLocalSimulation?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -240,7 +242,9 @@ const canPublish = computed(
 );
 const hasDirectMessage = computed(() => platforms.value.includes("whatsapp"));
 const nowFallsInQuietHours = computed(() =>
-  hasDirectMessage.value && isQuietHoursNow(timezoneName.value, clockMs.value),
+  hasDirectMessage.value
+  && !props.quietHoursSuspendedForLocalSimulation
+  && isQuietHoursNow(timezoneName.value, clockMs.value),
 );
 const canPublishNow = computed(() => canPublish.value && !nowFallsInQuietHours.value);
 const scheduleResolution = computed(() => resolveScheduleInput({
@@ -249,7 +253,7 @@ const scheduleResolution = computed(() => resolveScheduleInput({
   fold: publishFold.value,
   nowMs: clockMs.value,
   expiresAt: props.announcement.expires_at,
-  directMessage: hasDirectMessage.value,
+  directMessage: hasDirectMessage.value && !props.quietHoursSuspendedForLocalSimulation,
 }));
 const canSchedule = computed(() => canPublish.value && scheduleResolution.value.ok);
 const schedulePreview = computed(() =>
@@ -389,7 +393,9 @@ function askToReject() {
           <textarea
             :id="`body-${announcement.pk}`"
             v-model="body"
+            name="announcement_body"
             rows="4"
+            autocomplete="off"
             class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
           ></textarea>
           <p v-if="!body.trim()" class="mt-1 text-xs text-destructive" role="alert">
@@ -486,7 +492,9 @@ function askToReject() {
           <input
             :id="`tags-${announcement.pk}`"
             v-model="hashtagsText"
+            name="announcement_hashtags"
             type="text"
+            autocomplete="off"
             placeholder="#padaria #fornada"
             class="h-9 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
           >
@@ -567,7 +575,14 @@ function askToReject() {
       </button>
 
       <p
-        v-if="nowFallsInQuietHours"
+        v-if="hasDirectMessage && quietHoursSuspendedForLocalSimulation"
+        class="w-full text-xs font-medium text-sky-700 dark:text-sky-300"
+        role="status"
+      >
+        Ensaio local: o silêncio 20:00–08:00 está suspenso e nenhuma mensagem sai deste computador.
+      </p>
+      <p
+        v-else-if="nowFallsInQuietHours"
         class="w-full text-xs font-medium text-amber-700 dark:text-amber-400"
         role="status"
       >
@@ -639,7 +654,9 @@ function askToReject() {
         </fieldset>
         <p v-if="schedulePreview && scheduleResolution.ok" class="text-xs text-muted-foreground">
           Será entregue em {{ schedulePreview }} · UTC{{ scheduleResolution.candidate?.offset }}.
-          WhatsApp respeita 20:00–08:00.
+          {{ quietHoursSuspendedForLocalSimulation
+            ? "Ensaio local sem efeito externo."
+            : "WhatsApp respeita 20:00–08:00." }}
         </p>
       </div>
     </footer>

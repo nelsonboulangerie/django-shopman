@@ -38,6 +38,11 @@ function confirmationChallenge(
   return challenge as MarketingConfirmationChallenge;
 }
 
+function commandErrorCode(error: unknown): string {
+  const payload = errorPayload(error) as { code?: unknown };
+  return typeof payload.code === "string" ? payload.code : "";
+}
+
 export function useMarketingDecisionCommand() {
   const { data: operatorSession } = useNuxtData<{
     operator: { id: number } | null;
@@ -134,6 +139,16 @@ export function useMarketingDecisionCommand() {
         // intenção, para pedir um challenge novo após reautenticar.
         pendingDecision.value = null;
         pendingReauthentication.value = decisionResumeIntent(command);
+      } else if (
+        [
+          "version_conflict",
+          "confirmation_context_changed",
+          "confirmation_expired",
+        ].includes(commandErrorCode(error))
+      ) {
+        // A confirmação ficou objetivamente inutilizável. Mantê-la na tela
+        // ofereceria uma repetição que o servidor deve recusar para sempre.
+        pendingDecision.value = null;
       }
       throw error;
     }

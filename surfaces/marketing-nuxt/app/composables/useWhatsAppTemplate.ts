@@ -135,8 +135,8 @@ export function useWhatsAppTemplate() {
       });
       useSonner.success(
         flowNs
-          ? "Flow escolhido e auditado. O alcance ampliado está pronto para nova verificação."
-          : "Flow removido e auditado. O WhatsApp fica limitado à janela de 24 horas.",
+          ? "Fluxo escolhido e auditado. O alcance ampliado está pronto para nova verificação."
+          : "Fluxo removido e auditado. O WhatsApp fica limitado à janela de 24 horas.",
       );
       await verify();
       return true;
@@ -148,7 +148,7 @@ export function useWhatsAppTemplate() {
       lastCommandCode.value = code;
       if (code === "version_conflict") await verify();
       useSonner.error(
-        httpErrorMessage(error, "Não foi possível alterar o flow."),
+        httpErrorMessage(error, "Não foi possível alterar o fluxo."),
       );
       return false;
     }
@@ -180,11 +180,11 @@ export function useWhatsAppTemplate() {
       testReceipt.value = response;
       if (response.ok) {
         useSonner.success(
-          "Sandbox aceitou. Confira o aparelho; aceite ainda não é entrega.",
+          "O ambiente de teste aceitou. Confira o aparelho; aceite ainda não é entrega.",
         );
       } else {
         useSonner.error(
-          "O sandbox não confirmou aceite. O receipt ficou guardado.",
+          "O ambiente de teste não confirmou o aceite. O comprovante ficou guardado.",
         );
       }
       return response.ok;

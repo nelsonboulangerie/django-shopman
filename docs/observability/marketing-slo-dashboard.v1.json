@@ -97,14 +97,14 @@
     }
   ],
   "alerts": [
-    {"id": "consent-violation", "severity": "critical", "condition": "marketing_consent_violation_total > 0", "filter": "stage=delivery", "owner": "DPO/Security", "runbook": "docs/runbooks/marketing-privacy-incident.md", "automatic_effect": "freeze_marketing"},
-    {"id": "duplicate-confirmed", "severity": "critical", "condition": "confirmed duplicate > 0", "filter": "stage=provider_effect", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-duplicate-effect.md", "automatic_effect": "freeze_marketing"},
+    {"id": "consent-violation", "severity": "critical", "condition": "marketing_consent_violation_total > 0", "filter": "stage=delivery", "owner": "DPO/Security", "runbook": "docs/runbooks/marketing-consent-or-privacy-incident.md", "automatic_effect": "freeze_marketing"},
+    {"id": "duplicate-confirmed", "severity": "critical", "condition": "confirmed duplicate > 0", "filter": "stage=provider_effect", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-cancel-and-reconcile.md", "automatic_effect": "freeze_marketing"},
     {"id": "unknown-stale", "severity": "high", "condition": "marketing_unknown_age_seconds > 900", "filter": "platform,stage=provider_reconciliation", "owner": "Platform Owner", "runbook": "docs/runbooks/marketing-unknown-provider-effect.md", "automatic_effect": "none"},
-    {"id": "outbox-stuck", "severity": "high", "condition": "marketing_outbox_age_seconds > 30 or marketing_stuck_total > 0", "filter": "stage", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-outbox-stuck.md", "automatic_effect": "none"},
-    {"id": "reconciliation-mismatch", "severity": "high", "condition": "mismatch count > 0", "filter": "stage=outbox_directive", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-reconciliation-mismatch.md", "automatic_effect": "none"},
-    {"id": "partial-without-action", "severity": "high", "condition": "partial without recovery action > 0", "filter": "platform,stage=projection", "owner": "Marketing Ops", "runbook": "docs/runbooks/marketing-partial-delivery.md", "automatic_effect": "none"},
-    {"id": "readiness-stale", "severity": "high", "condition": "readiness_age_seconds >= 300 before blast", "filter": "platform,stage=readiness", "owner": "Platform Owner", "runbook": "docs/runbooks/marketing-provider-outage.md", "automatic_effect": "block_action"},
-    {"id": "board-burn", "severity": "medium", "condition": "board latency burn rate breaches 5m/1h", "filter": "projection=board", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-performance-degraded.md", "automatic_effect": "none"}
+    {"id": "outbox-stuck", "severity": "high", "condition": "marketing_outbox_age_seconds > 30 or marketing_stuck_total > 0", "filter": "stage", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-stuck-command.md", "automatic_effect": "none"},
+    {"id": "reconciliation-mismatch", "severity": "high", "condition": "mismatch count > 0", "filter": "stage=outbox_directive", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-cancel-and-reconcile.md", "automatic_effect": "none"},
+    {"id": "partial-without-action", "severity": "high", "condition": "partial without recovery action > 0", "filter": "platform,stage=projection", "owner": "Marketing Ops", "runbook": "docs/runbooks/marketing-partial-retry.md", "automatic_effect": "none"},
+    {"id": "readiness-stale", "severity": "high", "condition": "readiness_age_seconds >= 300 before blast", "filter": "platform,stage=readiness", "owner": "Platform Owner", "runbook": "docs/runbooks/marketing-channel-readiness-outage.md", "automatic_effect": "block_action"},
+    {"id": "board-burn", "severity": "medium", "condition": "board latency burn rate breaches 5m/1h", "filter": "projection=board", "owner": "SRE/Platform", "runbook": "docs/runbooks/marketing-rollout-rollback.md", "automatic_effect": "none"}
   ],
   "activation_requirements": [
     "Name the primary and backup human for every owner role.",

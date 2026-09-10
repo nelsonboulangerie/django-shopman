@@ -2055,3 +2055,179 @@ teste local não substitui o baseline autorizado de 7–14 dias, capacity da ins
 canary, pessoas nominais ou paging: esses itens permanecem bloqueadores explícitos do
 G-H08 antes do piloto. A sequência pode avançar ao MKT-044, que materializa health,
 runbooks e drills sem fechar esse gate humano por procuração.
+
+## MKT-044 — Health live/ready e oito runbooks/drills (gate humano pendente)
+
+Estado: **implementação técnica local verde; aguardando a decisão do operador não autor**.
+
+Achados confirmados no HEAD antes da alteração:
+
+- `/health/` executava DB, cache e migrations e retornava 503 para dependência, podendo
+  converter outage externo em restart loop do processo saudável;
+- `/ready/` não verificava a fila e ambos os endpoints publicavam nomes de exceptions e
+  quantidade de migrations pendentes;
+- o `marketing-nuxt` era sondado em `/`, que provava renderização do BFF mas não o
+  caminho BFF→Django→DB/cache/fila;
+- os paths de alerta produzidos no MKT-042 apontavam para oito arquivos ainda
+  inexistentes e não coincidiam com os nomes normativos da seção 17.5;
+- não havia diagnóstico único de Marketing: o operador teria de montar queries e cruzar
+  outbox, targets, attempts, reconciliation e alertas manualmente.
+
+Implementação local:
+
+- Django ganhou `/health/live/`, process-only e com zero queries, e
+  `/health/ready/`, que checa DB, cache/session, migrations e atraso da fila/outbox sem
+  chamar fornecedor. `/health/` e `/ready/` permanecem aliases compatíveis;
+- respostas públicas agora contêm somente `ok|fail|skipped`, têm `no-store`, limite
+  process-local com memória limitada e nunca expõem exception, hostname, contagem de
+  migrations, PII ou provider body;
+- o BFF ganhou `/health/live` e `/health/ready`; a readiness chama o Django com timeout
+  de 1,5 s, não lê/repassa o body upstream e reduz qualquer falha a `api: fail`;
+- specs locais do App Platform apontam web e Marketing para os endpoints explícitos,
+  separando liveness de readiness. Nenhum deploy foi executado;
+- `diagnose_marketing` agrega receipt/outbox/target/attempt/reconciliation/alertas em um
+  JSON read-only, limitado a oito queries, sem member/copy/telefone e com zero provider;
+  `make marketing-diagnose` elimina settings/PYTHONPATH e aceita filtros opcionais;
+- os oito runbooks exatos da seção 17.5 foram criados e conectados ao dashboard/alertas.
+  Cada um traz sintomas, até quatro passos iniciais, diagnóstico read-only, freeze,
+  decisões proibidas, comunicação segura, recuperação idempotente, fechamento e drill;
+- `make marketing-drills` executa os oito cenários adversariais locais e o health do BFF
+  sem exigir que o operador encontre testes, copie node IDs ou configure PYTHONPATH.
+
+Budget de omotenashi comprovado:
+
+| Trabalho do operador | Antes | Depois |
+|---|---:|---:|
+| Diagnosticar ledger/fila | 5 fontes/queries manuais | 1 comando/JSON |
+| Queries manuais | ≥5 e interpretação cruzada | 0; ≤8 automatizadas |
+| Primeira resposta | não definida | ≤4 passos em cada runbook |
+| Encontrar recuperação | dashboard/alerta genérico | 1 runbook e Action exata |
+| Redigitar recipient/copy | risco presente | 0; saída agregada sem PII |
+| Ensaiar oito falhas | 8 comandos/harnesses | `make marketing-drills` |
+| Liveness Django | DB/cache/migrations por probe | 0 queries; 55 bytes |
+| Readiness BFF | `/` não provava API | cadeia explícita; 72 bytes local |
+
+Provas técnicas:
+
+- `make marketing-drills`: **19 passed** backend + **4 passed** BFF;
+- regressão focada health/diagnóstico/runbooks/observability/dashboard/deploy/worker:
+  **99 passed**;
+- regressão ampliada Marketing/health/directive: **550 passed, 3 skipped**;
+- surface Marketing: **111 unit + 89 component passed**, typecheck, lint e build de
+  produção verdes;
+- health local isolado: live `200` em 0,002862 s/55 bytes e ready BFF→API `200` em
+  0,017422 s/72 bytes; testes exigem live com 0 queries/≤128 bytes e ready com
+  ≤10 queries/≤512 bytes;
+- Ruff, JSON parse e `git diff --check` verdes;
+- evidência estruturada em
+  `docs/reports/execution/marketing-runbook-drills-mkt044-20260909.json`.
+
+Os drills automatizados não fecham por procuração o aceite “operador não autor executa”.
+Falta a confirmação consolidada das oito decisões pelo proprietário/operador. Mesmo
+depois dela, pessoas nominais/on-call/paging e baseline autorizado de 7–14 dias seguem
+como bloqueadores de G-H08 antes do piloto. Nenhuma produção, provider, deploy, push,
+merge, PR ou escrita externa foi tocada.
+
+### Follow-up transversal de segurança das surfaces
+
+A investigação do CSS em desenvolvimento confirmou uma assimetria anterior: somente o
+Marketing aplica o envelope CSP/security ao HTML SSR, embora oito surfaces internas
+consumam o `operator-kit`; BFF e SSE já compartilham o envelope. A correção local
+`0d39cac5f` preserva o CSS/HMR sem liberar scripts e mantém produção estrita.
+
+O rollout seguro para os demais apps foi registrado como dívida viva P1 em
+[`SEC-SURF-001`](operator-surface-security-followup-20260909.md), com inventário de
+consumers, dependências externas, sequência MKT-049/MKT-050 + ondas por surface, quatro
+gates humanos, critérios executáveis e Definition of Done. O registro não autoriza
+rollout, staging, deploy ou produção e não reduz a política já aplicada ao Marketing.
+
+### Follow-up MKT-044 — ensaio local completo e toggle de campanhas
+
+Depois de o proprietário autorizar explicitamente testes ponta a ponta locais, foi
+adicionado um perfil `config.settings_marketing_demo` hermético. Ele mantém toda saída
+externa desligada e troca apenas o boundary final por um adapter `SIMULATION_ONLY`, com
+receipt determinístico e log `external_effect=false`.
+
+O primeiro ensaio real do pipeline encontrou e corrigiu três lacunas que os testes
+isolados não revelavam:
+
+- os handlers runtime ainda não levavam directives com `outbox_ref` ao fan-out/ledger;
+- o worker de target não tinha entrypoint operacional nem resolução estrita de adapter
+  por plataforma;
+- o seed QA tinha só cinco consentidos e não conseguia atravessar o piso real de dez
+  pessoas do WhatsApp. Agora existe uma coorte sintética fixa de doze.
+
+O perfil local também oferece um único flow sintético, mas sua seleção continua passando
+por catálogo fresco, CAS, confirmação, TOTP e audit event. A política de silêncio pode ser
+suspensa só quando o próprio boundary de WhatsApp prova `SIMULATION_ONLY` e todas as flags
+externas estão fechadas; testes negativos confirmam que as flags isoladas não suspendem
+nem horário nem o gate de segurança ManyChat.
+
+Ensaio operado pela UI em 2026-09-09, receipt de decisão
+`a5757871-f951-4cea-a7e9-b414f0c40f90`:
+
+- consequência confirmada: 12 elegíveis, Instagram + WhatsApp;
+- outbox: 2 `dispatched`, sem pending stale;
+- fan-out: Instagram 1/1 e WhatsApp 12/12;
+- attempts/targets: 13/13 `confirmed`, cada receipt com prefixo `sim_`;
+- aggregate final: `succeeded` / announcement `settled`;
+- `diagnose_marketing --receipt … --json`: `result=OK`, `provider_calls=0`,
+  `pii=false`, nenhuma ação de mutação indicada;
+- artifact WhatsApp selou `flow_ref`, `flow_version=2` e catalog hash de 64 hex chars.
+
+A UI mostrou o resultado final `1/1` + `12/12`. No stack local sem Redis, SSE entre o
+worker e a API não cruza processos por usar channel layer em memória; a recarga/poll lê o
+ledger correto. Isso permanece uma limitação declarada do ensaio, não prova do runtime
+Redis real.
+
+O toggle de campanhas também foi corrigido: a regra global de alvo mínimo 44×44 estava
+esticando o pill visual. O botão conserva o hit target acessível e agora contém um pill
+interno 36×20, coberto por teste de estrutura/estado.
+
+Provas adicionais:
+
+- segurança do simulador, flow e bypass noturno: **19 testes backend passaram**;
+- card/bypass visível e toggle: **25 testes frontend passaram**;
+- procedimento reproduzível em
+  `docs/operations/marketing-local-simulator.md`;
+- nenhum provider, telefone real, deploy, staging, produção, push, merge ou PR foi
+  acionado.
+
+O gate humano de MKT-044 continua pendente: o ensaio do proprietário valida o happy path,
+mas não substitui a execução/decisão dos oito runbooks por operador não autor. A rodada
+manual segue em `marketing-manual-e2e-20260909.md`, inclusive a dívida de tradução pt-BR e
+os budgets de omotenashi pedidos pelo proprietário.
+
+Na continuação manual, a revisão pt-BR/omotenashi corrigiu apresentação terminal de
+recusa, comprovantes e estados, fluxo/modelo/ambiente de teste, risco de não voltar e
+rótulos de variáveis. A exclusão de modelo agora projeta e mostra as campanhas dependentes
+antes da confirmação, suprime a ação impossível e oferece atalho de correção. Também foi
+removida uma promessa falsa: Campanhas passou a respeitar a Action `fire_campaign`
+desabilitada pelo backend, em vez de abrir um formulário que sempre terminava no 409
+`fire_command_upgrade_required`. O disparo manual permanece bloqueio técnico explícito
+até fechar versão/CAS, idempotência, confirmação, quota, snapshot e comprovante; nenhuma
+trava foi contornada. Provas adicionais: `npm ci`, typecheck e lint verdes, 25 testes
+frontend focados, 138 testes backend ampliados e 8 testes de projeção/modelos passaram.
+
+A repetição E2E posterior criou o anúncio sintético 9 somente pelo gatilho local e fez
+revisão/confirmação pela UI: 12 destinos, Instagram 1/1, WhatsApp 12/12, receipt
+`c976843d-3e4a-494b-a55b-65e9fc8b002f`, 13/13 confirmados, `provider_calls=0` e
+`pii=false`. A rodada final fechou **211 testes frontend**, typecheck, lint e build;
+**5 testes** de modelos cobrem inclusive duas queries constantes; `svgo` foi elevado a
+4.1.0 e o audit de produção caiu a zero vulnerabilidades.
+
+O ensaio também encontrou a primeira dívida concreta de MKT-045: `/history` continuou
+exibindo “Na fila” e CTA de resolução para o anúncio já `settled`, porque a projeção v1
+consulta `platform_results` legado enquanto o detalhe usa o ledger v2. O achado foi
+registrado com evidência e não foi implementado antes do gate humano de MKT-044.
+
+O rerun às 21h encontrou ainda uma falha temporal no próprio drill: o horário silencioso
+era avaliado antes da revogação de consentimento, adiando até a manhã um destino já
+inválido. A precedência foi corrigida para identidade/consentimento/assinatura vencerem
+a janela de entrega, sem provider call. Três testes focados passaram e
+`make marketing-drills` voltou a fechar **19 backend + 4 BFF**.
+
+Em 2026-09-10, o proprietário confirmou como operador não autor a execução e leitura dos
+drills (**19 backend + 4 BFF**) e validou os oito runbooks como claros, acionáveis e
+seguros. O gate humano específico de MKT-044 está, portanto, **aprovado**. A confirmação
+não autoriza deploy, produção, provider externo ou rollout e não antecipa gates futuros.

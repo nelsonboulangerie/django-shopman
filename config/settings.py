@@ -103,6 +103,23 @@ SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = _env_bool(
     "SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED",
     False,
 )
+# The per-target worker is independent from the outbox hand-off so each boundary
+# can be expanded/paused without silently changing the other.  Local simulation
+# has its own explicit switch and is additionally guarded inside the adapter.
+SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED",
+    False,
+)
+SHOPMAN_MARKETING_SIMULATION_ENABLED = _env_bool(
+    "SHOPMAN_MARKETING_SIMULATION_ENABLED",
+    False,
+)
+# Local rehearsal affordances remain inert unless the final delivery adapter is
+# itself a hermetic simulator.  Production must never gain either capability by
+# setting one flag in isolation.
+SHOPMAN_MARKETING_SIMULATION_IGNORE_QUIET_HOURS = False
+SHOPMAN_MARKETING_SIMULATION_FLOWS: tuple[tuple[str, str], ...] = ()
+SHOPMAN_MARKETING_DELIVERY_ADAPTERS: dict[str, str | None] = {}
 SHOPMAN_MARKETING_TARGET_HMAC_KEY = os.environ.get(
     "SHOPMAN_MARKETING_TARGET_HMAC_KEY",
     "",
@@ -1510,6 +1527,8 @@ SECURE_SSL_REDIRECT = os.environ.get(
     "true" if not DEBUG else "false",
 ).lower() in ("true", "1", "yes")
 SECURE_REDIRECT_EXEMPT = [
+    r"^health/live/$",
+    r"^health/ready/$",
     r"^health/$",
     r"^ready/$",
 ]

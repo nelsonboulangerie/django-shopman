@@ -36,6 +36,7 @@ const {
   reject,
   aiAssistAvailable,
   shopTimezone,
+  quietHoursSuspendedForLocalSimulation,
   pendingDecision,
   pendingReauthentication,
   decisionError,
@@ -329,6 +330,7 @@ useHead({ title: "Painel · Marketing" });
           :ai-assist-available="aiAssistAvailable"
           :draft-owner="draftOwner"
           :shop-timezone="shopTimezone"
+          :quiet-hours-suspended-for-local-simulation="quietHoursSuspendedForLocalSimulation"
           @approve="onApprove"
           @reject="
             (pk) => {

@@ -20,6 +20,9 @@ beforeAll(() => {
     ref,
     httpErrorMessage: (_error: unknown, fallback: string) => fallback,
     useSonner: { success: vi.fn(), error: vi.fn() },
+    useNuxtData: () => ({
+      data: ref({ operator: { username: "admin", name: "Admin" } }),
+    }),
   });
 });
 
@@ -162,6 +165,24 @@ function retryAction(): MarketingActionProjectionV2 {
   };
 }
 
+function cancelAction(): MarketingActionProjectionV2 {
+  return {
+    ...retryAction(),
+    ref: "announcement:42:cancel_announcement:v3",
+    kind: "cancel_announcement",
+    href: "/api/v1/backstage/marketing/announcements/42/cancel/",
+    payload_schema: "marketing.command.cancel.v2",
+    creates_external_effect: false,
+    confirmation: {
+      mode: "summary",
+      token_required: true,
+      consequence_code: "cancels_only_reversible_delivery_lanes",
+      step_up: "none",
+      dual_control: false,
+    },
+  };
+}
+
 function response(): MarketingCommandResponse {
   return {
     ok: true,
@@ -217,6 +238,47 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("1 falha que pode ser tentada novamente");
     expect(wrapper.text()).toContain("1 resultado incerto");
     expect(wrapper.text()).toContain("não são reenviados");
+    expect(wrapper.text()).toContain("Comprovante:");
+    expect(wrapper.text()).toContain("concluído");
+    expect(wrapper.text()).not.toContain("Receipt:");
+    expect(wrapper.text()).not.toContain("succeeded");
+  });
+
+  it("explains a rejected decision without suggesting a delivery or cancellation", () => {
+    const wrapper = mount(AnnouncementResultPanel, {
+      props: {
+        announcement: announcement({
+          state: "rejected",
+          delivery: {
+            ...announcement().delivery,
+            state: "not_started",
+            counts: counts(),
+            target_count: 0,
+            fanout_expected: 0,
+            fanout_materialized: 0,
+            platforms: [],
+          },
+        }),
+        actions: [],
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: {
+          Icon: true,
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Anúncio recusado");
+    expect(wrapper.text()).toContain("sem criar entregas");
+    expect(wrapper.text()).not.toContain("A entrega ainda não começou");
+    expect(wrapper.text()).not.toContain("Resultado por plataforma");
   });
 
   it("deduplicates double click and consumes the exact challenge", async () => {
@@ -255,6 +317,12 @@ describe("AnnouncementResultPanel", () => {
     await flushPromises();
     expect(fetcher).toHaveBeenCalledTimes(1);
     expect(wrapper.text()).toContain("PUBLICAR 1");
+    expect(
+      (wrapper.find("#recovery-username").element as HTMLInputElement).value,
+    ).toBe("admin");
+    expect(wrapper.find("#recovery-username").attributes("autocomplete")).toBe(
+      "username",
+    );
 
     await wrapper.find("#recovery-typed-confirmation").setValue("PUBLICAR 1");
     await wrapper.find("#recovery-credential").setValue("senha-segura");
@@ -267,5 +335,73 @@ describe("AnnouncementResultPanel", () => {
     expect(fetcher).toHaveBeenCalledTimes(3);
     expect(wrapper.emitted("receipt")?.[0]?.[0]).toEqual(response());
     expect(wrapper.emitted("refresh")).toHaveLength(1);
+  });
+
+  it("collects and preserves a cancellation reason before requesting confirmation", async () => {
+    const confirmation = {
+      token: "cancel-token",
+      ref: "cancel-confirmation-ref",
+      expires_at: "2026-09-09T09:10:00-03:00",
+      mode: "summary",
+      step_up: "none",
+      dual_control: false,
+      typed_phrase: "",
+      consequence: "cancels_only_reversible_delivery_lanes",
+      resource_ref: "announcement:42",
+      base_version: 3,
+      audience_count: 1,
+      platforms: ["whatsapp"],
+      scheduled_for: "2026-09-09T20:40:00-03:00",
+    };
+    const fetcher = vi
+      .fn()
+      .mockRejectedValueOnce({
+        data: { code: "confirmation_required", confirmation },
+      })
+      .mockResolvedValueOnce(response());
+    Object.assign(globalThis, { $fetch: fetcher });
+    const wrapper = panel({ actions: [cancelAction()] });
+    const actionButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Cancelar"))!;
+
+    await actionButton.trigger("click");
+    await flushPromises();
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Motivo do cancelamento");
+
+    const reviewButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Conferir cancelamento"))!;
+    expect(reviewButton.attributes("disabled")).toBeDefined();
+
+    await wrapper
+      .find("#recovery-cancel-reason")
+      .setValue("Horário alterado pelo operador");
+    await reviewButton.trigger("click");
+    await flushPromises();
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({
+      body: {
+        base_version: 3,
+        reason: "Horário alterado pelo operador",
+      },
+    });
+
+    const confirmButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Confirmar consequência"))!;
+    await confirmButton.trigger("click");
+    await flushPromises();
+
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher.mock.calls[1]?.[1]).toMatchObject({
+      body: {
+        base_version: 3,
+        reason: "Horário alterado pelo operador",
+        confirmation_token: "cancel-token",
+      },
+    });
   });
 });

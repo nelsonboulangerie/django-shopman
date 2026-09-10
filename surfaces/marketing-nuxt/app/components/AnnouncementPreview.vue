@@ -56,11 +56,14 @@ type PreviewBatch = {
     promotion: Record<string, Scalar>;
     link: Record<string, Scalar>;
   };
-  previews: Record<string, {
-    artifact: ResolvedArtifact;
-    artifact_hash: string;
-    flow?: FlowPreview;
-  }>;
+  previews: Record<
+    string,
+    {
+      artifact: ResolvedArtifact;
+      artifact_hash: string;
+      flow?: FlowPreview;
+    }
+  >;
 };
 
 type PreviewProblem = {
@@ -111,7 +114,8 @@ function scheduleLoad() {
     activePlatform.value = selected[0] || "";
     return;
   }
-  if (!selected.includes(activePlatform.value)) activePlatform.value = selected[0] || "";
+  if (!selected.includes(activePlatform.value))
+    activePlatform.value = selected[0] || "";
   pending.value = true;
   timer = setTimeout(() => void load(requestEpoch), 400);
 }
@@ -131,21 +135,25 @@ async function load(requestEpoch: number) {
   const requestController = new AbortController();
   controller = requestController;
   try {
-    const result = await $fetch<PreviewBatch>("/api/v1/backstage/marketing/preview/", {
-      method: "POST",
-      signal: requestController.signal,
-      body: {
-        body: props.body,
-        platforms: normalizedPlatforms(),
-        platform_content: props.platformContent || {},
-        promotion_ref: props.promotionRef || "",
-        use_ai: props.useAi,
+    const result = await $fetch<PreviewBatch>(
+      "/api/v1/backstage/marketing/preview/",
+      {
+        method: "POST",
+        signal: requestController.signal,
+        body: {
+          body: props.body,
+          platforms: normalizedPlatforms(),
+          platform_content: props.platformContent || {},
+          promotion_ref: props.promotionRef || "",
+          use_ai: props.useAi,
+        },
       },
-    });
+    );
     if (requestEpoch !== epoch) return;
     preview.value = result;
     const available = Object.keys(result.previews || {});
-    if (!available.includes(activePlatform.value)) activePlatform.value = available[0] || "";
+    if (!available.includes(activePlatform.value))
+      activePlatform.value = available[0] || "";
   } catch (error: unknown) {
     if (requestEpoch !== epoch || requestController.signal.aborted) return;
     flagMarketingSessionError(error);
@@ -157,7 +165,9 @@ async function load(requestEpoch: number) {
 }
 
 function normalizedPlatforms() {
-  return [...new Set(props.platforms.map((value) => value.trim()).filter(Boolean))];
+  return [
+    ...new Set(props.platforms.map((value) => value.trim()).filter(Boolean)),
+  ];
 }
 
 function previewProblem(error: unknown): PreviewProblem {
@@ -174,27 +184,32 @@ function previewProblem(error: unknown): PreviewProblem {
     else if (first) fieldDetail = String(first);
   }
   return {
-    detail: typeof data.detail === "string"
-      ? data.detail
-      : "Não foi possível atualizar a prévia agora.",
+    detail:
+      typeof data.detail === "string"
+        ? data.detail
+        : "Não foi possível atualizar a prévia agora.",
     fieldDetail,
     retryable: data.retryable === true,
   };
 }
 
-const selected = computed(() => preview.value?.previews[activePlatform.value] || null);
+const selected = computed(
+  () => preview.value?.previews[activePlatform.value] || null,
+);
 const artifact = computed(() => selected.value?.artifact || null);
 const platformLabel = computed(
   () => props.platformLabels[activePlatform.value] || activePlatform.value,
 );
 const isWhatsapp = computed(() => activePlatform.value === "whatsapp");
 const linkIsInBody = computed(
-  () => !!artifact.value?.link && artifact.value.body.includes(artifact.value.link),
+  () =>
+    !!artifact.value?.link && artifact.value.body.includes(artifact.value.link),
 );
 const emptyFields = computed(() =>
   Object.entries(preview.value?.fields || {})
-    .filter(([key, value]) =>
-      preview.value?.facts.referenced_variables.includes(key) && !value,
+    .filter(
+      ([key, value]) =>
+        preview.value?.facts.referenced_variables.includes(key) && !value,
     )
     .map(([key]) => key),
 );
@@ -208,7 +223,9 @@ const factTime = computed(() => {
     minute: "2-digit",
   }).format(parsed);
 });
-const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || "");
+const shortHash = computed(
+  () => selected.value?.artifact_hash.slice(0, 8) || "",
+);
 </script>
 
 <template>
@@ -251,7 +268,11 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
       v-else-if="!body.trim() || platforms.length === 0"
       class="mt-2 text-xs text-muted-foreground"
     >
-      {{ body.trim() ? "Escolha uma plataforma para gerar a prévia." : "Escreva o texto para ver como fica." }}
+      {{
+        body.trim()
+          ? "Escolha uma plataforma para gerar a prévia."
+          : "Escreva o texto para ver como fica."
+      }}
     </p>
 
     <div
@@ -276,9 +297,15 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
     </div>
 
     <template v-else-if="preview && artifact">
-      <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span v-if="factTime" :title="preview.facts.as_of">Dados conferidos às {{ factTime }}</span>
-        <span v-if="shortHash" :title="selected?.artifact_hash">Versão {{ shortHash }}</span>
+      <div
+        class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground"
+      >
+        <span v-if="factTime" :title="preview.facts.as_of"
+          >Dados conferidos às {{ factTime }}</span
+        >
+        <span v-if="shortHash" :title="selected?.artifact_hash"
+          >Versão {{ shortHash }}</span
+        >
       </div>
 
       <div
@@ -293,9 +320,11 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
           type="button"
           role="tab"
           class="min-h-11 rounded-md border px-3 text-sm font-medium"
-          :class="platform === activePlatform
-            ? 'border-primary bg-primary/10 text-foreground'
-            : 'border-border bg-background text-muted-foreground'"
+          :class="
+            platform === activePlatform
+              ? 'border-primary bg-primary/10 text-foreground'
+              : 'border-border bg-background text-muted-foreground'
+          "
           :aria-selected="platform === activePlatform"
           :data-platform="platform"
           @click="activePlatform = platform"
@@ -309,50 +338,69 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
         class="mt-3 flex items-start gap-1.5 rounded-md bg-background px-2 py-1.5 text-xs text-muted-foreground"
       >
         <Icon name="lucide:sparkles" class="mt-0.5 size-3.5 shrink-0" />
-        A IA ainda pode sugerir outro texto; qualquer sugestão precisa de nova prévia e revisão.
+        A IA ainda pode sugerir outro texto; qualquer sugestão precisa de nova
+        prévia e revisão.
       </p>
 
       <div v-if="isWhatsapp" class="mt-3" role="tabpanel">
-        <p class="mb-1 text-xs font-medium text-muted-foreground">{{ platformLabel }}</p>
-        <div class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-background shadow-sm">
+        <p class="mb-1 text-xs font-medium text-muted-foreground">
+          {{ platformLabel }}
+        </p>
+        <div
+          class="max-w-[18rem] overflow-hidden rounded-lg rounded-tl-none bg-background shadow-sm"
+        >
           <img
             v-if="artifact.image_url"
             :src="artifact.image_url"
             :alt="preview.product_name"
             class="h-32 w-full object-cover"
-          >
+          />
           <div class="px-3 py-2">
             <p class="whitespace-pre-line text-sm">{{ artifact.body }}</p>
-            <p v-if="artifact.link && !linkIsInBody" class="mt-1 break-all text-xs text-primary">
+            <p
+              v-if="artifact.link && !linkIsInBody"
+              class="mt-1 break-all text-xs text-primary"
+            >
               {{ artifact.link }}
             </p>
           </div>
         </div>
         <p v-if="whatsappTemplate" class="mt-1.5 text-xs text-muted-foreground">
-          Template aprovado: {{ whatsappTemplate }}. Os campos técnicos exibidos pertencem
-          à mesma versão do artefato.
+          Modelo aprovado: {{ whatsappTemplate }}. Os campos técnicos exibidos
+          pertencem à mesma versão do artefato.
         </p>
         <p v-if="selected?.flow" class="mt-1.5 text-xs text-muted-foreground">
-          Flow conferido: {{ selected.flow.name }} · configuração v{{ selected.flow.version }}.
-          Esta é a versão selada para aprovação e envio.
+          Fluxo conferido: {{ selected.flow.name }} · configuração v{{
+            selected.flow.version
+          }}. Esta é a versão selada para aprovação e envio.
         </p>
       </div>
 
       <div v-else class="mt-3" role="tabpanel">
-        <p class="mb-1 text-xs font-medium text-muted-foreground">{{ platformLabel }}</p>
-        <div class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background">
+        <p class="mb-1 text-xs font-medium text-muted-foreground">
+          {{ platformLabel }}
+        </p>
+        <div
+          class="max-w-[18rem] overflow-hidden rounded-lg border border-border bg-background"
+        >
           <img
             v-if="artifact.image_url"
             :src="artifact.image_url"
             :alt="preview.product_name"
             class="aspect-square w-full object-cover"
-          >
+          />
           <div class="px-3 py-2">
             <p class="whitespace-pre-line text-sm">{{ artifact.body }}</p>
-            <p v-if="artifact.hashtags.length" class="mt-1 break-words text-xs text-primary">
+            <p
+              v-if="artifact.hashtags.length"
+              class="mt-1 break-words text-xs text-primary"
+            >
               {{ artifact.hashtags.map((tag) => `#${tag}`).join(" ") }}
             </p>
-            <p v-if="artifact.link && !linkIsInBody" class="mt-1 break-all text-xs text-primary">
+            <p
+              v-if="artifact.link && !linkIsInBody"
+              class="mt-1 break-all text-xs text-primary"
+            >
               {{ artifact.link }}
             </p>
           </div>
@@ -365,8 +413,10 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
       >
         <Icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0" />
         <span>
-          Sem valor nesta amostra: <span class="font-mono">{{ emptyFields.join(", ") }}</span>.
-          Campos por destinatário serão resolvidos apenas no boundary protegido.
+          Sem valor nesta amostra:
+          <span class="font-mono">{{ emptyFields.join(", ") }}</span
+          >. Campos por destinatário serão resolvidos apenas no boundary
+          protegido.
         </span>
       </p>
 
@@ -381,7 +431,9 @@ const shortHash = computed(() => selected.value?.artifact_hash.slice(0, 8) || ""
       role="alert"
     >
       A resposta não trouxe a plataforma escolhida.
-      <button type="button" class="ml-1 min-h-11 underline" @click="retry">Revalidar</button>
+      <button type="button" class="ml-1 min-h-11 underline" @click="retry">
+        Revalidar
+      </button>
     </div>
   </aside>
 </template>

@@ -51,6 +51,15 @@ def safety_state() -> ManyChatMarketingSafety:
 
 
 def require_safe_delivery() -> None:
+    # A local rehearsal never calls ManyChat and therefore cannot exhibit the
+    # persistent-custom-field race guarded below.  This exception is derived
+    # from the adapter boundary, not from a production-facing toggle alone.
+    from shopman.shop.services.marketing_delivery_runtime import (
+        is_hermetic_simulation,
+    )
+
+    if is_hermetic_simulation("whatsapp"):
+        return
     state = safety_state()
     if not state.safe:
         raise MarketingContractError(

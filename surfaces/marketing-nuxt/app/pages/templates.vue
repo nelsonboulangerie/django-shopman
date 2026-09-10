@@ -10,8 +10,10 @@ import {
   clearBrowserMarketingDraft,
   useMarketingDraftOwner,
 } from "~/composables/useMarketingDraft";
+import { marketingTemplateSummary } from "~/presentation/marketingVariables";
 
-const { templates, loading, create, patch, remove } = useAnnouncementTemplates();
+const { templates, loading, create, patch, remove } =
+  useAnnouncementTemplates();
 const { variables } = useCampaigns();
 const { aiAssistAvailable } = useCampaignBoard();
 
@@ -79,7 +81,11 @@ useHead({ title: "Modelos · Marketing" });
     </div>
 
     <div v-if="loading && !templates.length" class="space-y-2" aria-busy="true">
-      <div v-for="n in 3" :key="n" class="h-16 animate-pulse rounded-xl bg-muted"></div>
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="h-16 animate-pulse rounded-xl bg-muted"
+      ></div>
     </div>
 
     <!-- Vazio é o estado que mais importa aqui: era exatamente ele que travava tudo. -->
@@ -87,11 +93,14 @@ useHead({ title: "Modelos · Marketing" });
       v-else-if="!templates.length"
       class="rounded-xl border border-border bg-card px-4 py-8 text-center"
     >
-      <Icon name="lucide:file-text" class="mx-auto size-8 text-muted-foreground" />
+      <Icon
+        name="lucide:file-text"
+        class="mx-auto size-8 text-muted-foreground"
+      />
       <p class="mt-3 font-semibold">Nenhum modelo ainda</p>
       <p class="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-        O modelo é o texto que sai para o cliente. Sem pelo menos um, não há como criar
-        campanha.
+        O modelo é o texto que sai para o cliente. Sem pelo menos um, não há
+        como criar campanha.
       </p>
       <button
         type="button"
@@ -103,14 +112,33 @@ useHead({ title: "Modelos · Marketing" });
       </button>
     </div>
 
-    <ul v-else class="divide-y divide-border rounded-xl border border-border bg-card">
-      <li v-for="template in templates" :key="template.pk" class="flex items-start gap-3 px-4 py-3">
-        <button type="button" class="min-w-0 flex-1 text-left" @click="openEdit(template)">
-          <p class="font-semibold" :class="template.is_active ? '' : 'text-muted-foreground'">
+    <ul
+      v-else
+      class="divide-y divide-border rounded-xl border border-border bg-card"
+    >
+      <li
+        v-for="template in templates"
+        :key="template.pk"
+        class="flex items-start gap-3 px-4 py-3"
+      >
+        <button
+          type="button"
+          class="min-w-0 flex-1 text-left"
+          @click="openEdit(template)"
+        >
+          <p
+            class="font-semibold"
+            :class="template.is_active ? '' : 'text-muted-foreground'"
+          >
             {{ template.name }}
           </p>
-          <p class="mt-0.5 truncate text-sm text-muted-foreground">{{ template.body }}</p>
-          <p v-if="template.use_ai_generation" class="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+          <p class="mt-0.5 truncate text-sm text-muted-foreground">
+            {{ marketingTemplateSummary(template.body) }}
+          </p>
+          <p
+            v-if="template.use_ai_generation"
+            class="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground"
+          >
             <Icon name="lucide:sparkles" class="size-3.5" />
             Sugestão disponível na revisão
           </p>
@@ -130,17 +158,30 @@ useHead({ title: "Modelos · Marketing" });
           >
             <Icon name="lucide:trash-2" class="size-4" />
           </button>
-          <Icon name="lucide:chevron-right" class="size-4 text-muted-foreground" />
+          <Icon
+            name="lucide:chevron-right"
+            class="size-4 text-muted-foreground"
+          />
         </div>
       </li>
     </ul>
 
-    <UiSheet :open="panelOpen" @update:open="(v) => { if (!v) close() }">
+    <UiSheet
+      :open="panelOpen"
+      @update:open="
+        (v) => {
+          if (!v) close();
+        }
+      "
+    >
       <UiSheetContent side="right" class="w-full gap-0 p-0 sm:max-w-lg">
         <UiSheetHeader class="border-b border-border">
-          <UiSheetTitle>{{ editing ? "Editar modelo" : "Novo modelo" }}</UiSheetTitle>
+          <UiSheetTitle>{{
+            editing ? "Editar modelo" : "Novo modelo"
+          }}</UiSheetTitle>
           <UiSheetDescription>
-            O texto que sai para o cliente. As variáveis são substituídas no envio.
+            O texto que sai para o cliente. As variáveis são substituídas no
+            envio.
           </UiSheetDescription>
         </UiSheetHeader>
         <div class="flex-1 overflow-y-auto p-4">
@@ -157,16 +198,48 @@ useHead({ title: "Modelos · Marketing" });
       </UiSheetContent>
     </UiSheet>
 
-    <!-- Apagar é destrutivo: confirma antes. O backend recusa modelo EM USO e explica. -->
-    <UiDialog :open="removing !== null" @update:open="(v) => { if (!v) removing = null }">
+    <!-- Apagar é destrutivo: dependências aparecem antes da confirmação. -->
+    <UiDialog
+      :open="removing !== null"
+      @update:open="
+        (v) => {
+          if (!v) removing = null;
+        }
+      "
+    >
       <UiDialogContent class="sm:max-w-md">
         <UiDialogHeader>
-          <UiDialogTitle>Apagar "{{ removing?.name }}"?</UiDialogTitle>
-          <UiDialogDescription>
-            Modelo usado por alguma campanha não pode ser apagado, e nós avisamos se for o
-            caso. Nada do que já saiu muda.
+          <UiDialogTitle>
+            {{
+              removing?.used_by_campaigns?.length
+                ? `“${removing.name}” está em uso`
+                : `Apagar “${removing?.name}”?`
+            }}
+          </UiDialogTitle>
+          <UiDialogDescription v-if="removing?.used_by_campaigns?.length">
+            Troque o modelo nas campanhas abaixo antes de apagá-lo. Nenhuma
+            alteração foi feita.
+          </UiDialogDescription>
+          <UiDialogDescription v-else>
+            O modelo será removido. Nada do que já saiu muda.
           </UiDialogDescription>
         </UiDialogHeader>
+        <ul
+          v-if="removing?.used_by_campaigns?.length"
+          class="space-y-1 rounded-lg bg-muted/40 p-3 text-sm"
+        >
+          <li
+            v-for="campaign in removing.used_by_campaigns"
+            :key="campaign"
+            class="flex items-center gap-2"
+          >
+            <Icon
+              name="lucide:megaphone"
+              class="size-4 text-muted-foreground"
+            />
+            {{ campaign }}
+          </li>
+        </ul>
         <UiDialogFooter>
           <button
             type="button"
@@ -175,7 +248,16 @@ useHead({ title: "Modelos · Marketing" });
           >
             Manter
           </button>
+          <NuxtLink
+            v-if="removing?.used_by_campaigns?.length"
+            to="/campaigns"
+            class="inline-flex min-h-11 items-center justify-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+            @click="removing = null"
+          >
+            Ver campanhas
+          </NuxtLink>
           <button
+            v-else
             type="button"
             class="rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition hover:bg-destructive/90"
             @click="confirmRemove"

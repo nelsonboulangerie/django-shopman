@@ -87,3 +87,19 @@ def test_alpha_app_platform_spec_routes_all_nuxt_apps():
     source = (ROOT / ".do" / "app.alpha-subdomains.yaml").read_text()
     assert "compras.boulangerie.com.br" in source
     assert "SHOPMAN_PURCHASE_BASE_URL" in source
+
+
+def test_alpha_probes_separate_liveness_from_dependency_readiness():
+    import yaml
+
+    spec = yaml.safe_load((ROOT / ".do" / "app.alpha-subdomains.yaml").read_text())
+    services = {service["name"]: service for service in spec["services"]}
+
+    assert services["web"]["liveness_health_check"]["http_path"] == "/health/live/"
+    assert services["web"]["health_check"]["http_path"] == "/health/ready/"
+    assert services["marketing-nuxt"]["liveness_health_check"]["http_path"] == "/health/live"
+    assert services["marketing-nuxt"]["health_check"]["http_path"] == "/health/ready"
+
+    marketing = ROOT / "surfaces" / "marketing-nuxt" / "server" / "routes" / "health"
+    assert (marketing / "live.get.ts").is_file()
+    assert (marketing / "ready.get.ts").is_file()
