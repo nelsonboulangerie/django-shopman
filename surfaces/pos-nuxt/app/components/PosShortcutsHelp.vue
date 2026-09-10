@@ -34,6 +34,19 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
     ],
   },
   {
+    title: "Na lista de itens",
+    items: [
+      { keys: ["Alt+I"], label: "Entrar na navegação dos itens" },
+      { keys: ["↑", "↓"], label: "Mover o foco entre itens, sem mudar as marcações" },
+      { keys: ["Espaço"], label: "Marcar/desmarcar o item e iniciar seleção múltipla" },
+      { keys: ["Enter"], label: "Abrir/fechar detalhes; no modo seleção, marcar/desmarcar" },
+      { keys: ["→", "←"], label: "Abrir/fechar detalhes fora do modo seleção" },
+      { keys: ["+", "−"], label: "Ajustar quantidade fora da seleção múltipla" },
+      { keys: ["Delete"], label: "Pedir remoção do item, com confirmação" },
+      { keys: ["Esc"], label: "Fechar detalhes; depois, concluir navegação/seleção" },
+    ],
+  },
+  {
     title: "No pagamento",
     items: [
       { keys: ["0–9", ","], label: "Valor da forma selecionada (vírgula = centavos)" },
