@@ -45,7 +45,7 @@ def connect() -> None:
             dispatch_uid="shopman.shop.handlers.campaign.on_product_created",
             weak=False,
         )
-    except ImportError:
+    except ImportError:  # silêncio-deliberado: OfferMan é integração opcional deste app
         pass
 
 
