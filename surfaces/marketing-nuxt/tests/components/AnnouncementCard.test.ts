@@ -146,7 +146,7 @@ describe("AnnouncementCard", () => {
     const publishNow = wrapper.get("[data-testid=publish-now]");
 
     expect(wrapper.text()).toContain("Próxima ação recomendada");
-    expect(schedule.text()).toContain("Agendar — recomendado");
+    expect(schedule.text()).toContain("Agendar (recomendado)");
     expect(schedule.classes()).toContain("bg-primary");
     expect(publishNow.text()).toContain("Publicar agora");
     expect(publishNow.classes()).toContain("border");

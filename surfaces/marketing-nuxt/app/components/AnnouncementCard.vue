@@ -574,7 +574,7 @@ function askToReject() {
         @click="toggleScheduling"
       >
         <Icon name="lucide:clock" class="size-4" />
-        {{ scheduling ? "Fechar agendamento" : "Agendar — recomendado" }}
+        {{ scheduling ? "Fechar agendamento" : "Agendar (recomendado)" }}
       </button>
 
       <button
