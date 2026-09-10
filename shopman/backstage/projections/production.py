@@ -3146,6 +3146,17 @@ def _build_weighing_ticket(
                 recipe.ref,
                 raw_shelf_life,
             )
+        else:
+            # Decimal aceita sentinelas como "NaN" e "Infinity", mas elas
+            # não representam dias e nem sequer podem ser ordenadas com zero.
+            # Trate-as como configuração inválida antes da comparação abaixo.
+            if not shelf_life.is_finite():
+                logger.warning(
+                    "production.weighing_invalid_shelf_life recipe=%s value=%r",
+                    recipe.ref,
+                    raw_shelf_life,
+                )
+                shelf_life = None
     validity_source = "recipe"
     if not has_recipe_shelf_life:
         # Mesma precedência já usada ao concluir a produção: ficha técnica e,
