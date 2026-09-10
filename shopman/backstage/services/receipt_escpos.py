@@ -263,7 +263,7 @@ def production_label_run(
             )
             annotation = str(ingredient.get("annotation") or "")
             if annotation:
-                out += _line(f"  Referencia: {annotation}")
+                out += _line(f"  {annotation}")
         out += bytes([ESC, ord("d"), 3])
         if cut_mode == "partial":
             out += bytes([GS, ord("V"), 1])

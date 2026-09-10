@@ -22,8 +22,9 @@ documento incompleto.
 - O papel mostra de forma visível **USO INTERNO — NÃO É RÓTULO DE VENDA**.
 - A pesagem mantém o alvo operacional em gramas como informação dominante.
   Quando há `MaterialConversion` canônica, ativa e sem fornecedor, a contagem
-  aproximada aparece apenas como referência (`102 g`; abaixo, `≈ 2 ovos`). O
-  cliente não calcula nem persiste essa equivalência.
+  aproximada aparece apenas como ajuda de separação em unidades físicas inteiras
+  (`168 g`; abaixo, `(≈ 4 un.)`). A contagem é arredondada para cima, enquanto o
+  peso permanece autoritativo. O cliente não calcula nem persiste essa equivalência.
 - `target_g` e `total_weight_display` são alvos de produção. Nunca recebem o
   nome “peso líquido”; conteúdo líquido comercial exige medição real com tara
   descontada.
@@ -70,4 +71,3 @@ dispensa.
   futuro fluxo de recipiente/lote factual deverá nascer do gesto “preparo
   pronto”, usar horário real do servidor e emitir uma etiqueta por recipiente;
   ele não pode ser inferido apenas de uma ordem planejada.
-

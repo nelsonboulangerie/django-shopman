@@ -56,9 +56,7 @@ withDefaults(
         <span class="text-sm font-semibold">{{ label.ingredient }}</span>
         <span class="font-mono text-[0.65rem]">{{ label.sku }}</span>
         <span class="text-lg font-bold tabular-nums">{{ label.weight }}</span>
-        <span v-if="label.annotation" class="text-xs"
-          >Referência: {{ label.annotation }}</span
-        >
+        <span v-if="label.annotation" class="text-xs">{{ label.annotation }}</span>
       </div>
     </div>
   </section>

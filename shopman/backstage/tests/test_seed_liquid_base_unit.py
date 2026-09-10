@@ -209,8 +209,9 @@ def test_o_cadastro_semeado_conta_os_liquidos_em_quilo(monkeypatch):
     # Sem fator declarado a nota em litro TRAVA — e travar é o desenho (R4). A
     # ponte é APPROXIMATE porque densidade é equivalência física com incerteza, e
     # é isso que faz o número chegar carimbado à tela (R3).
-    # O rótulo é plural porque sai tal como escrito na anotação da separação,
-    # ao lado de "≈ 17 ovos" e "≈ 1,5 limões".
+    # O rótulo contínuo é plural porque sai tal como escrito na ajuda de
+    # separação, por exemplo ``(≈ 3,4 litros)``. Contagens discretas, como ovos
+    # e limões, aparecem em unidades inteiras: ``(≈ 17 un.)`` e ``(≈ 2 un.)``.
     for sku in COMPRADOS_EM_LITRO:
         conversao = MaterialConversion.objects.get(material__sku=sku, label="litros")
         assert conversao.to_base_factor == DENSIDADES[sku], sku

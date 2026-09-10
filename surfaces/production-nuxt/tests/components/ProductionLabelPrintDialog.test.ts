@@ -70,7 +70,7 @@ function frozenDocument(
             sku: "FARINHA-FROZEN",
             quantity_display: "102 g",
             target_display: "102 g",
-            annotation: "≈ 2 porções",
+            annotation: "(≈ 2 un.)",
           },
         ],
       },
@@ -290,7 +290,8 @@ describe("ProductionLabelPrintDialog", () => {
     expect(physical.text()).toContain("Farinha congelada");
     expect(physical.text()).toContain("FARINHA-FROZEN");
     expect(physical.text()).toContain("102 g");
-    expect(physical.text()).toContain("Referência: ≈ 2 porções");
+    expect(physical.text()).toContain("(≈ 2 un.)");
+    expect(physical.text()).not.toContain("Referência:");
 
     await view.setProps({
       labels: [

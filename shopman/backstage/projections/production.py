@@ -15,7 +15,7 @@ import json
 import logging
 from dataclasses import dataclass
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
 from django.conf import settings
@@ -1737,12 +1737,14 @@ def _counting_conversions(skus: set[str]) -> dict[str, _CountingConversion]:
 
 
 def _preparation_annotation(quantity: Decimal, unit: str, conversion: _CountingConversion | None) -> str:
-    """O mesmo número dito na contagem da bancada — "≈ 6 ovos".
+    """Ajuda curta para separar recipientes ou unidades antes da pesagem.
 
-    O ``≈`` só entra quando o fator é aproximado; número exato não ganha
-    enfeite (ADR-024, R3). Sem conversão declarada, ou quando a unidade da ficha
-    não alcança a base do insumo, devolve ``""``: a lista de separação nunca
-    trava por causa de uma anotação.
+    Uma equivalência aproximada nunca ensina ao operador uma unidade física
+    fracionária (``3,36 ovos``): arredonda para cima e mostra ``(≈ 4 un.)``.
+    O peso continua sendo o alvo autoritativo. Grandezas contínuas reconhecidas
+    (como litros) mantêm a fração e o rótulo; conversões convencionais exatas
+    também preservam o rótulo declarado (``(3 potes de 100 g)``). Sem conversão
+    segura, devolve ``""``: a lista nunca trava por causa da ajuda secundária.
     """
     if conversion is None or conversion.factor <= 0:
         return ""
@@ -1750,8 +1752,15 @@ def _preparation_annotation(quantity: Decimal, unit: str, conversion: _CountingC
         quantity_in_base = units.convert(quantity, unit, conversion.base_unit)
     except UnitError:
         return ""
+    converted = quantity_in_base / conversion.factor
+    if conversion.is_approximate and units.dimension(conversion.label) not in {
+        units.MASS,
+        units.VOLUME,
+    }:
+        whole_units = converted.to_integral_value(rounding=ROUND_CEILING)
+        return f"(≈ {_measure(whole_units, 'un.')})"
     prefix = "≈ " if conversion.is_approximate else ""
-    return f"{prefix}{_measure(quantity_in_base / conversion.factor, conversion.label)}"
+    return f"({prefix}{_measure(converted, conversion.label)})"
 
 
 def _ingredient_availability(skus: set[str]) -> dict[str, Decimal]:

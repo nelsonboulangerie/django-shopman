@@ -109,7 +109,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     assert not Material.objects.filter(sku="AGUA").exists()
     assert Material.objects.get(sku="FERMENTO-NAT").shelf_life_days == 7
     # Insumo PESADO tem base de peso, e a ficha fala na mesma unidade — ADR-024:
-    # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A anotação "≈ 6 ovos" é
+    # "0,300 de OVOS" é 300 g de ovo, não 0,3 ovo. A ajuda "(≈ 6 un.)" é
     # derivada na tela de preparo, nunca gravada como verdade.
     for sku in ("OVOS", "LIMAO", "CANELA", "ALECRIM"):
         assert Material.objects.get(sku=sku).unit == "kg", sku
@@ -133,7 +133,7 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
             assert item.unit == "kg", f"{sku}: {item.unit}"
             item.full_clean()
     # A equivalência aproximada do que se pesa e se conta: é ela que faz a lista
-    # de separação dizer "≈ 6 ovos" ao lado de "0,3 kg" (ADR-024 §4).
+    # de separação dizer "(≈ 6 un.)" abaixo de "300 g" (ADR-024 §4).
     from shopman.buyman.models import MaterialConversion
 
     ovo = MaterialConversion.objects.get(material__sku="OVOS", label="ovos")

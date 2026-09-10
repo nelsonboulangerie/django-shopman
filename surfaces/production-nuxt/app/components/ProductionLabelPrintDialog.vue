@@ -317,7 +317,7 @@ function close() {
                     v-if="label.annotation"
                     class="text-sm text-muted-foreground"
                   >
-                    Referência: {{ label.annotation }}
+                    {{ label.annotation }}
                   </p>
                 </article>
               </template>
