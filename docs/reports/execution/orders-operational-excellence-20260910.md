@@ -138,7 +138,7 @@ Antes: Playwright reproduziu card disabled versus tabela enabled para pagamento 
 Implementação: tabela respeita `a.disabled` e apresenta `a.reason` como o card; nenhuma
 confirmação/autoridade suprimida. Fixture corrigida de `confirmed` histórico para `accepted`.
 Primeira edição atingiu também botão de atribuição: E2E detectou tela vazia; corrigido antes
- do commit. Resultado final: **4 E2E Chromium passed (19,2s)**, Nuxt build e typecheck passaram.
+do commit. Resultado final: **4 E2E Chromium passed (19,2s)**, Nuxt build e typecheck passaram.
 Backend desses E2E é mock; não prova integração Django, autorização ou efeitos reais.
 Build emitiu warnings de sourcemap Tailwind e FORCE_COLOR; não foram ocultados.
 
@@ -156,7 +156,7 @@ mas o ensaio com duas conexões inseriu nota entre leitura e save e demonstrou p
 
 O diagnóstico direto de `_write_state` (waitlist) também reproduz perda com instância
 obsoleta, **mas não prova defeito no caminho canônico**: releitura dos callers
-`open_materialized_windows`/`confirm`/`release` mostrou Order sob lock e instância fresca.
+`open_window`/`confirm`/`release` mostrou Order sob lock e instância fresca.
 Não substituir esse caminho maduro com base no teste artificial do helper. Fiscal
 `_record` e `settle_from_gateway` também já mesclam sob lock: preservar e testar regressão.
 O inventário AST não basta para concluir que uma função está desprotegida.
@@ -167,3 +167,44 @@ concorrência/PII no contrato, preservando autorização de exclusão e G08 para
 
 Gate da meia-correção nos três arquivos de produto alterados: exit 0 (log anexado).
 Não equivale ao runtime-gate completo nem valida código ainda não implementado.
+
+## Estado consolidado deste registro
+
+**Execução integral não concluída.** Não há pacote aceito integralmente como T/P/R.
+
+| Pacote | Estado | Trabalho restante |
+|---|---|---|
+| WP00 | parcial | fechar inventário integral de writers/rotas/consumidores e política/fixture/rollback de cada escrita; completar matriz de evidências |
+| WP01 | parcial | D08 decimal e D10 tabela corrigidos; unidade, Actions, D11 e personas completos pendentes |
+| WP02 | não implementado | intenção/recibo atômico, revisão/fingerprint, todos os writers, BFF e matriz concorrente |
+| WP03 | não implementado | cancelamento/motivos externos/caixa e corridas H02/H03; D03 saudável preservado |
+| WP04 | não implementado | recuperação courier/fases duráveis/resultado honesto de comunicação |
+| WP05 | não implementado | integridade catálogo/feeds, lote e retomada por destino |
+| WP06 | não implementado | drafts/conflitos/identidade/contexto |
+| WP07 | não implementado | batch waitlist/relógio/refetch/HTTP e carga |
+| WP08 | não implementado | retomada e observabilidade integrada |
+| WP09 | não iniciado | gates completos, migração/rollback integrado e preparação completa do piloto |
+| WP10 | não iniciado | piloto depende WP09 e gates humanos aplicáveis |
+| WP11 | não iniciado | rollout depende piloto e G07 por expansão |
+| WP12 | não iniciado | janela de retorno e aprovação G08 de remoção |
+
+Commits locais revisáveis (nenhum push/PR/deploy):
+- `02ff6149b`: proveniência e baseline.
+- `4bb040d0a`: quantidade decimal e regressões.
+- `a8f8e0eac`: disabled/motivo na tabela e E2E.
+- `acffa3968`: interleavings PostgreSQL e fontes dos ensaios.
+
+Nenhum gate humano foi aprovado ou presumido. G01 autoridade, G02 custódia/terminal,
+G03 política externa, G04 urgência/som, G05 publicação/draft, G06 piloto/budgets,
+G07 ambiente/efeitos reais e G08 retenção/remoção permanecem pendentes. Esses gates não
+são a causa da incompletude técnica: há trabalho autorizado ainda por executar.
+
+Sem migration de domínio. Rollback por fatia e riscos de reintroduzir D08/D10 descritos
+acima; não executar rollback operacional nem reconciliar dados reais. Cluster PostgreSQL
+próprio foi parado com pg_ctl; dados sintéticos permanecem somente em `.orders-lab/` ignorado.
+Checkout original continua com seus arquivos não rastreados; não recebeu alterações desta execução.
+
+Não executados: runtime-gate integral, E2E contra Django, Redis isolado, ensaios 2/10 estações,
+matriz completa de crash/concorrência, medições humanas J01–J15, piloto e rollout. Números de
+suítes acima se sobrepõem: não somar como testes únicos. A implementação atual não é candidata
+à ativação: P0s D01/D02/D04/D05/D07/D12 continuam sem correção integral.
