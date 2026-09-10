@@ -283,6 +283,10 @@ class ProductionWeighingIngredientProjection:
     name: str
     quantity_display: str
     target_display: str
+    # Ajuda de contagem derivada do cadastro canônico (ex.: ``≈ 7 ovos``).
+    # O alvo operacional continua sendo o peso; vazio significa "não há uma
+    # equivalência segura", nunca erro a ser resolvido pelo operador.
+    annotation: str
     is_subrecipe: bool
     theoretical_g: str | None
     target_g: str | None
@@ -332,8 +336,10 @@ class ProductionWeighingTicketProjection:
     blind_code: str
     # Código cego do dia: etiquetas de pesagem circulam só com ele — o
     # colaborador pesa sem saber a receita. Mapa = visão de gestor.
-    made_display: str  # F (fabricação): dd/mm
-    expiry_display: str  # V (validade): dd/mm — shelf_life_days da ficha (default D+1)
+    made_display: str  # Data prevista do preparo: dd/mm
+    expiry_display: str  # Validade: dd/mm; vazio quando não há regra responsável.
+    validity_configured: bool
+    validity_source: str
 
 
 @dataclass(frozen=True)
@@ -1342,12 +1348,14 @@ def build_production_weighing(
 
     ingredient_skus = {item.input_sku for entry in tickets.values() for item in entry["items"]}
     product_names = _product_names(ingredient_skus)
+    counting_conversions = _counting_conversions(ingredient_skus)
 
     projected_tickets = tuple(
         _build_weighing_ticket(
             entry,
             active_recipes=active_recipes,
             product_names=product_names,
+            counting_conversions=counting_conversions,
             selected_date=selected_date,
         )
         for entry in sorted(tickets.values(), key=lambda item: item["recipe"].name)
@@ -1363,9 +1371,7 @@ def build_production_weighing(
         selected_base_recipe=base_recipe,
         scale_precision_g=_decimal_fact_string(precision_g),
         scale_precision_display=f"{_plain_decimal(precision_g)} g",
-        scale_rounding_note=(
-            f"Alvos arredondados para cima · balança {_plain_decimal(precision_g)} g"
-        ),
+        scale_rounding_note=(f"Alvos arredondados para cima · balança {_plain_decimal(precision_g)} g"),
         tickets=projected_tickets,
         print_destination=None,
         access=access,
@@ -1511,7 +1517,9 @@ def build_production_mise_en_place(
                 breakdown=tuple(breakdown_by_sku.get(need.item_ref, ())),
                 annotation=_preparation_annotation(need.quantity, need.unit, conversions.get(need.item_ref)),
                 margin_display=(
-                    f"+ {_preparation_measure(need.margin.total, need.unit)} de margem" if need.margin is not None else ""
+                    f"+ {_preparation_measure(need.margin.total, need.unit)} de margem"
+                    if need.margin is not None
+                    else ""
                 ),
                 margin_reason=need.margin.reason() if need.margin is not None else "",
             )
@@ -2076,9 +2084,7 @@ def _qc_closed_partitions(
             for group in rows[-1][0].get("after_partition", [])
             if group.get("batch_ref")
         )
-    lot_percent = dict(
-        Batch.objects.filter(ref__in=batch_refs).values_list("ref", "nonconformity_percent")
-    )
+    lot_percent = dict(Batch.objects.filter(ref__in=batch_refs).values_list("ref", "nonconformity_percent"))
 
     for wo_id, kind, grade_ref, defect_ref, quantity, batch_ref in lines:
         grouped_lines.setdefault(wo_id, []).append(
@@ -2095,9 +2101,7 @@ def _qc_closed_partitions(
     for wo_id in finished_pks:
         correction_rows = corrections.get(wo_id, [])
         groups = (
-            list(correction_rows[-1][0].get("after_partition", []))
-            if correction_rows
-            else grouped_lines.get(wo_id, [])
+            list(correction_rows[-1][0].get("after_partition", [])) if correction_rows else grouped_lines.get(wo_id, [])
         )
         full = discounted = loss = Decimal("0")
         projected: list[QCPartitionGroupProjection] = []
@@ -3063,6 +3067,7 @@ def _build_weighing_ticket(
     *,
     active_recipes: dict[str, Recipe],
     product_names: dict[str, str],
+    counting_conversions: dict[str, _CountingConversion],
     selected_date: date,
 ) -> ProductionWeighingTicketProjection:
     recipe = entry["recipe"]
@@ -3074,12 +3079,22 @@ def _build_weighing_ticket(
     for item in items:
         quantity = Decimal(str(item.quantity)) * coefficient
         display, facts = _weighing_measure(quantity, item.unit)
+        # A referência de contagem parte do MESMO alvo já arredondado para a
+        # balança. Assim papel, tela e tolerância nunca ensinam números
+        # diferentes. O frontend só apresenta a frase pronta.
+        annotation_quantity = facts[1] if facts[1] is not None else quantity
+        annotation_unit = "g" if facts[1] is not None else item.unit
         ingredients.append(
             ProductionWeighingIngredientProjection(
                 sku=item.input_sku,
                 name=_ingredient_name(item.input_sku, active_recipes=active_recipes, product_names=product_names),
                 quantity_display=display,
                 target_display=display,
+                annotation=_preparation_annotation(
+                    annotation_quantity,
+                    annotation_unit,
+                    counting_conversions.get(item.input_sku),
+                ),
                 is_subrecipe=item.input_sku in active_recipes,
                 theoretical_g=_decimal_fact_string(facts[0]) if facts[0] is not None else None,
                 target_g=_decimal_fact_string(facts[1]) if facts[1] is not None else None,
@@ -3112,24 +3127,51 @@ def _build_weighing_ticket(
         else None
     )
     rounding_delta_total_g = (
-        target_total_g - theoretical_total_g
-        if target_total_g is not None and theoretical_total_g is not None
-        else None
+        target_total_g - theoretical_total_g if target_total_g is not None and theoretical_total_g is not None else None
     )
-    total_weight_display = (
-        _preparation_measure(target_total_g, "g") if target_total_g is not None else ""
-    )
+    total_weight_display = _preparation_measure(target_total_g, "g") if target_total_g is not None else ""
     dough_weight_display = (
         f"≈ {total_weight_display} de massa" if output_unit not in mass_factors and dough_weight > 0 else ""
     )
 
-    shelf_life = _decimal_meta(recipe.meta, "shelf_life_days")
-    try:
-        expiry = selected_date + timedelta(days=int(shelf_life) if shelf_life else 1)
-    except (OverflowError, ValueError):
-        # shelf_life_days absurdo (erro de digitação no Admin) não derruba a
-        # pesagem inteira — cai na validade padrão de 1 dia.
-        expiry = selected_date + timedelta(days=1)
+    raw_shelf_life = (recipe.meta or {}).get("shelf_life_days")
+    has_recipe_shelf_life = raw_shelf_life not in (None, "")
+    shelf_life = None
+    if has_recipe_shelf_life:
+        try:
+            shelf_life = Decimal(str(raw_shelf_life))
+        except Exception:
+            logger.warning(
+                "production.weighing_invalid_shelf_life recipe=%s value=%r",
+                recipe.ref,
+                raw_shelf_life,
+            )
+    validity_source = "recipe"
+    if not has_recipe_shelf_life:
+        # Mesma precedência já usada ao concluir a produção: ficha técnica e,
+        # só na ausência, validade canônica do SKU de saída. Jamais inventar
+        # D+1 em uma etiqueta que será tratada como dado sanitário.
+        try:
+            from shopman.stockman.shelflife import shelf_life_days_for
+
+            catalog_shelf_life = shelf_life_days_for(recipe.output_sku)
+        except Exception:
+            logger.debug("production.weighing_shelf_life_failed", exc_info=True)
+            catalog_shelf_life = None
+        if catalog_shelf_life is not None:
+            shelf_life = Decimal(str(catalog_shelf_life))
+            validity_source = "catalog"
+
+    expiry = None
+    if shelf_life is not None and shelf_life >= 0 and shelf_life == shelf_life.to_integral_value():
+        try:
+            expiry = selected_date + timedelta(days=int(shelf_life))
+        except (OverflowError, ValueError):
+            logger.warning(
+                "production.weighing_invalid_shelf_life recipe=%s value=%s",
+                recipe.ref,
+                shelf_life,
+            )
     table = ProductionWeighingTableProjection(
         contract_version=PRODUCTION_CONTRACT_VERSION,
         headers=("Insumo", "Quantidade"),
@@ -3151,10 +3193,7 @@ def _build_weighing_ticket(
         "output_unit": output_unit,
         "batch_size": str(entry["batch_size"]),
         "sources": sorted(str(source) for source in entry["sources"]),
-        "items": [
-            (item.input_sku, str(item.quantity), item.unit, item.sort_order)
-            for item in items
-        ],
+        "items": [(item.input_sku, str(item.quantity), item.unit, item.sort_order) for item in items],
     }
     ticket_digest = hashlib.sha256(
         json.dumps(snapshot_identity, sort_keys=True, separators=(",", ":")).encode("utf-8")
@@ -3167,9 +3206,7 @@ def _build_weighing_ticket(
         output_quantity_display=_preparation_measure(output_quantity, output_unit),
         dough_weight_display=dough_weight_display,
         total_weight_display=total_weight_display,
-        theoretical_total_g=(
-            _decimal_fact_string(theoretical_total_g) if theoretical_total_g is not None else None
-        ),
+        theoretical_total_g=(_decimal_fact_string(theoretical_total_g) if theoretical_total_g is not None else None),
         target_total_g=_decimal_fact_string(target_total_g) if target_total_g is not None else None,
         rounding_delta_total_g=(
             _decimal_fact_string(rounding_delta_total_g) if rounding_delta_total_g is not None else None
@@ -3179,7 +3216,9 @@ def _build_weighing_ticket(
         table=table,
         blind_code=blind_prep_code(recipe.ref, selected_date),
         made_display=selected_date.strftime("%d/%m"),
-        expiry_display=expiry.strftime("%d/%m"),
+        expiry_display=expiry.strftime("%d/%m") if expiry is not None else "",
+        validity_configured=expiry is not None,
+        validity_source=validity_source if expiry is not None else "",
     )
 
 

@@ -14,7 +14,7 @@ from django.test import override_settings
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework.test import APIClient
-from shopman.buyman.models import Material
+from shopman.buyman.models import Material, MaterialConversion
 from shopman.cashman.models import Terminal
 from shopman.craftsman import craft
 from shopman.craftsman.models import Recipe, RecipeItem
@@ -41,6 +41,7 @@ def preparation():
         name="Creme de teste",
         output_sku="CREME-TESTE",
         batch_size=D("1"),
+        meta={"shelf_life_days": 1},
     )
     RecipeItem.objects.create(
         recipe=recipe,
@@ -192,8 +193,10 @@ def test_blind_document_is_one_label_per_ingredient_and_never_leaks_recipe(weigh
     assert "CREME-TESTE" not in paper
     assert "Farinha Fina" in paper
     assert "FARINHA-FINA" in paper
-    assert "Feito" in paper
-    assert "Validade" in paper
+    assert "PESAGEM INTERNA" in paper
+    assert "NAO E ROTULO DE VENDA" in paper
+    assert "Data" in paper
+    assert "Validade" not in paper
 
 
 def test_explicit_document_is_one_label_per_prep_with_name_sku_and_totals(weighing, actor):
@@ -206,10 +209,59 @@ def test_explicit_document_is_one_label_per_prep_with_name_sku_and_totals(weighi
     assert label["theoretical_total_g"] == "203"
     assert label["target_total_g"] == "204"
     assert label["rounding_delta_total_g"] == "1"
+    assert "ingredients" not in label
+    assert job.document["purpose"] == "internal_preparation"
+    assert job.document["legal_scope"] == "internal_only_not_for_sale"
     paper = bytes(job.payload).decode("cp860", "replace")
     assert "Creme de teste" in paper
     assert "CREME-TESTE" in paper
-    assert "Peso total: 204 g" in paper
+    assert "Alvo total: 204 g" in paper
+    assert "PREPARO INTERNO" in paper
+    assert "NAO E ROTULO DE VENDA" in paper
+    assert "Preparo" in paper
+    assert "Validade" in paper
+    assert "Farinha Fina" not in paper
+
+
+def test_explicit_document_fails_closed_without_validity(weighing):
+    ticket = _ticket(weighing)
+    projection = replace(
+        weighing,
+        tickets=(replace(ticket, expiry_display="", validity_configured=False),),
+    )
+
+    with pytest.raises(print_jobs.PrintJobError, match="não pode presumir validade") as error:
+        print_jobs.compose_document(
+            projection,
+            mode="explicit",
+            ticket_refs=[ticket.ticket_ref],
+        )
+    assert error.value.code == "preparation_validity_missing"
+
+
+@override_settings(CRAFTSMAN={"SCALE_PRECISION_G": D("2")})
+def test_counting_equivalence_is_frozen_and_printed_as_secondary_reference(
+    preparation,
+    actor,
+):
+    material = Material.objects.get(sku="FARINHA-FINA")
+    MaterialConversion.objects.create(
+        material=material,
+        label="porções",
+        to_base_factor=D("0.050"),
+        kind=MaterialConversion.Kind.APPROXIMATE,
+    )
+    projection = build_production_weighing(selected_date=date.today())
+    ticket = _ticket(projection)
+    assert ticket.ingredients[0].target_display == "102 g"
+    assert ticket.ingredients[0].annotation == "≈ 2,04 porções"
+
+    job = _create(projection, actor)
+    frozen = next(label for label in job.document["tickets"] if label["ingredients"][0]["sku"] == "FARINHA-FINA")
+    assert frozen["ingredients"][0]["annotation"] == "≈ 2,04 porções"
+    paper = bytes(job.payload).decode("cp860", "replace")
+    assert "102 g" in paper
+    assert "Referencia: ≈ 2,04 porções" in paper
 
 
 def test_browser_create_is_independent_of_a_relay_and_records_only_honest_outcomes(

@@ -214,7 +214,7 @@ describe("Preparação — preview e identificação", () => {
 
     await wrapper
       .findAll("button")
-      .find((button) => button.text().includes("Etiquetas do preparo"))!
+      .find((button) => button.text().includes("Identificação interna"))!
       .trigger("click");
     preview = wrapper.get('[data-testid="print-preview"]');
     expect(preview.attributes("data-mode")).toBe("preparo");

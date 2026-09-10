@@ -90,9 +90,9 @@ function toggleBreakdown(line: MiseEnPlaceLineProjection) {
 // Dois artefatos de impressão, papéis distintos:
 //   · etiquetas CEGAS de pesagem (uma por preparo × ingrediente) — só o
 //     código do dia, para qualquer colaborador pesar sem correlacionar;
-//   · etiquetas EXPLÍCITAS do preparo pronto (uma por preparo) — a massa
-//     feita ganha nome, data, rendimento e objetivo (o sigilo é da pesagem,
-//     não do produto).
+//   · identificação INTERNA do preparo (uma por preparo) — nunca se apresenta
+//     como rótulo de venda. Data e validade vêm do servidor; sem validade
+//     responsável, o servidor recusa a emissão.
 const printMode = ref<"pesagem" | "preparo">("pesagem");
 const printTicketRef = ref<string | null>(null);
 const printDialogOpen = ref(false);
@@ -118,6 +118,7 @@ const labels = computed(() =>
         ing.target_display,
         ing.quantity_display,
       ),
+      annotation: ing.annotation,
       date: weighing.dateDisplay.value,
       key: `${ticketIdentity(ticket)}-${ing.sku}-${index}`,
     })),
@@ -250,10 +251,10 @@ function refreshAll() {
             <button
               type="button"
               class="inline-flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              title="Adesivo explícito da massa pronta: nome, data, rendimento e objetivo"
+              title="Identificação interna: nome, data prevista e validade configurada"
               @click="openLabelsPreview('preparo')"
             >
-              <Icon name="lucide:tag" class="size-4" /> Etiquetas do preparo
+              <Icon name="lucide:tag" class="size-4" /> Identificação interna
             </button>
           </template>
         </div>
@@ -615,12 +616,19 @@ function refreshAll() {
                       >{{ ing.sku }}</span
                     >
                   </span>
-                  <span class="shrink-0 font-semibold tabular-nums">{{
-                    operationalTargetDisplay(
-                      ing.target_display,
-                      ing.quantity_display,
-                    )
-                  }}</span>
+                  <span class="shrink-0 text-right">
+                    <span class="block font-semibold tabular-nums">{{
+                      operationalTargetDisplay(
+                        ing.target_display,
+                        ing.quantity_display,
+                      )
+                    }}</span>
+                    <span
+                      v-if="ing.annotation"
+                      class="block text-xs text-muted-foreground"
+                      >{{ ing.annotation }}</span
+                    >
+                  </span>
                 </li>
               </ul>
               <footer

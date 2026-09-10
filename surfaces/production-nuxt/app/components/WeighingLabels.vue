@@ -2,7 +2,8 @@
 // Etiquetas de pesagem — SÓ IMPRESSÃO (papel físico, medium ≠ tela). Dois papéis:
 //   · CEGAS: código do dia + ingrediente + peso + data, SEM o nome da receita (o
 //     colaborador pesa sem correlacionar; o mapa código↔preparo é visão de gestor);
-//   · EXPLÍCITAS: a massa pronta se identifica (nome, validade, rendimento, objetivo).
+//   · INTERNAS: identificação planejada do preparo, inequivocamente separada
+//     de qualquer rótulo de venda.
 // Os tamanhos aqui são fixos para a etiquetadora, não os papéis tipográficos de tela —
 // por isso este componente é allowlistado no guardrail de tipografia (como o PosReceipt).
 import type {
@@ -38,6 +39,9 @@ withDefaults(
         :key="label.key"
         class="flex break-inside-avoid flex-col gap-0.5 rounded border border-black p-2"
       >
+        <span class="text-center text-[0.6rem] font-bold uppercase"
+          >Pesagem interna · não é rótulo de venda</span
+        >
         <span
           v-if="copyNumber > 1"
           class="text-center text-[0.65rem] font-bold uppercase"
@@ -52,11 +56,14 @@ withDefaults(
         <span class="text-sm font-semibold">{{ label.ingredient }}</span>
         <span class="font-mono text-[0.65rem]">{{ label.sku }}</span>
         <span class="text-lg font-bold tabular-nums">{{ label.weight }}</span>
+        <span v-if="label.annotation" class="text-xs"
+          >Referência: {{ label.annotation }}</span
+        >
       </div>
     </div>
   </section>
 
-  <!-- Etiquetas EXPLÍCITAS do preparo pronto: uma por preparo. -->
+  <!-- Identificação interna do preparo: uma por preparo. -->
   <section
     v-else
     class="weighing-label-sheet hidden print:block"
@@ -68,6 +75,9 @@ withDefaults(
         :key="ticket.ticket_ref || ticket.output_sku"
         class="flex break-inside-avoid flex-col gap-0.5 rounded border border-black p-2"
       >
+        <span class="text-center text-[0.6rem] font-bold uppercase"
+          >Uso interno · não é rótulo de venda</span
+        >
         <span
           v-if="copyNumber > 1"
           class="text-center text-[0.65rem] font-bold uppercase"
@@ -78,7 +88,7 @@ withDefaults(
             ticket.name
           }}</span>
           <span class="text-xs font-semibold tabular-nums"
-            >Feito {{ ticket.made_display }} · Validade
+            >Preparo {{ ticket.made_display }} · Validade
             {{ ticket.expiry_display }}</span
           >
         </div>
@@ -87,7 +97,7 @@ withDefaults(
           v-if="ticket.total_weight_display || ticket.dough_weight_display"
           class="text-base font-bold tabular-nums"
         >
-          Peso total:
+          Alvo total:
           {{
             operationalTargetDisplay(
               ticket.total_weight_display,
@@ -96,7 +106,7 @@ withDefaults(
           }}
         </span>
         <span v-if="ticket.output_quantity_display" class="text-xs"
-          >Rendimento:
+          >Rendimento previsto:
           {{ projectedQuantityDisplay(ticket.output_quantity_display) }}</span
         >
         <span v-if="ticket.sources_display" class="text-xs"

@@ -374,6 +374,7 @@ export interface ProductionWeighingIngredientProjection {
   name: string;
   quantity_display: string;
   target_display: string;
+  annotation: string;
   is_subrecipe: boolean;
   theoretical_g: string | null;
   target_g: string | null;
@@ -419,6 +420,8 @@ export interface ProductionWeighingTicketProjection {
   blind_code: string;
   made_display: string;
   expiry_display: string;
+  validity_configured: boolean;
+  validity_source: string;
 }
 
 /** Printable weighing tickets for saved production planning. */

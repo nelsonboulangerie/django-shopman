@@ -45,7 +45,7 @@ export function blindLabelsFromPrintDocument(
 ): ProductionBlindLabel[] {
   if (document.mode !== "blind") return [];
   return document.tickets.flatMap((ticket, ticketIndex) =>
-    ticket.ingredients.map((ingredient, ingredientIndex) => ({
+    (ticket.ingredients ?? []).map((ingredient, ingredientIndex) => ({
       code: ticket.blind_code,
       ingredient: ingredient.name,
       sku: ingredient.sku,
@@ -53,6 +53,7 @@ export function blindLabelsFromPrintDocument(
         ingredient.target_display,
         ingredient.quantity_display,
       ),
+      annotation: ingredient.annotation || "",
       date: ticket.made_display || document.selected_date,
       key: `${ticket.ticket_ref}-${ingredient.sku}-${ticketIndex}-${ingredientIndex}`,
     })),
@@ -72,6 +73,6 @@ export function preparationLabelsFromPrintDocument(
     sources_display: ticket.sources_display ?? "",
     blind_code: ticket.blind_code,
     made_display: ticket.made_display,
-    expiry_display: ticket.expiry_display,
+    expiry_display: ticket.expiry_display ?? "",
   }));
 }

@@ -98,7 +98,9 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
                 return PrintDestination(None, "", "Destino não encontrado", False, "Destino de impressão inativo.")
             config = PrinterConfig.from_terminal(target)
             if not config.accepts_preparation:
-                return PrintDestination(target, _terminal_label(target), "Configuração incompleta", False, config.problem)
+                return PrintDestination(
+                    target, _terminal_label(target), "Configuração incompleta", False, config.problem
+                )
             return _destination_health(target)
 
         own_config = PrinterConfig.from_terminal(station)
@@ -131,9 +133,7 @@ def resolve_destination(*, station_ref: str = "") -> PrintDestination:
 
 def _destination_health(terminal) -> PrintDestination:
     credential = (
-        PrintAgentCredential.objects.filter(terminal=terminal, is_active=True)
-        .order_by("-last_seen_at", "-pk")
-        .first()
+        PrintAgentCredential.objects.filter(terminal=terminal, is_active=True).order_by("-last_seen_at", "-pk").first()
     )
     paired = credential is not None
     recently_seen = bool(
@@ -181,6 +181,7 @@ def _ticket_document(ticket, *, mode: str) -> dict:
             "sku": str(ingredient.sku),
             "quantity_display": str(ingredient.quantity_display),
             "target_display": str(ingredient.target_display),
+            "annotation": str(ingredient.annotation),
             "theoretical_g": _decimal_fact(ingredient.theoretical_g),
             "target_g": _decimal_fact(ingredient.target_g),
             "rounding_delta_g": _decimal_fact(ingredient.rounding_delta_g),
@@ -193,15 +194,14 @@ def _ticket_document(ticket, *, mode: str) -> dict:
         "ticket_ref": ticket.ticket_ref,
         "blind_code": ticket.blind_code,
         "made_display": ticket.made_display,
-        "expiry_display": ticket.expiry_display,
-        "ingredients": ingredients,
     }
     if mode == "blind":
         # Keep this allow-list deliberately small.  Adding a field here can
         # pierce blind weighing even when the renderer itself looks harmless.
-        return common
+        return {**common, "ingredients": ingredients}
     return {
         **common,
+        "expiry_display": ticket.expiry_display,
         "name": ticket.name,
         "recipe_ref": ticket.recipe_ref,
         "output_sku": ticket.output_sku,
@@ -211,6 +211,8 @@ def _ticket_document(ticket, *, mode: str) -> dict:
         "target_total_g": _decimal_fact(ticket.target_total_g),
         "rounding_delta_total_g": _decimal_fact(ticket.rounding_delta_total_g),
         "sources_display": ticket.sources_display,
+        "validity_configured": bool(ticket.validity_configured),
+        "validity_source": ticket.validity_source,
     }
 
 
@@ -225,7 +227,9 @@ def compose_document(projection, *, mode: str, ticket_refs: list[str]) -> dict:
         )
     by_ref = {ticket.ticket_ref: ticket for ticket in projection.tickets}
     if any(ref not in by_ref for ref in refs):
-        raise PrintJobError("Uma etiqueta não pertence mais a esta pesagem. Atualize a tela.", code="stale_projection", status_code=409)
+        raise PrintJobError(
+            "Uma etiqueta não pertence mais a esta pesagem. Atualize a tela.", code="stale_projection", status_code=409
+        )
 
     if mode == "blind":
         by_code: dict[str, set[str]] = {}
@@ -249,6 +253,20 @@ def compose_document(projection, *, mode: str, ticket_refs: list[str]) -> dict:
             for ingredient in ticket["ingredients"]
         ]
     else:
+        missing_validity = [
+            ticket["name"]
+            for ticket in selected_documents
+            if not ticket["validity_configured"] or not ticket["expiry_display"]
+        ]
+        if missing_validity:
+            names = ", ".join(missing_validity[:3])
+            suffix = "…" if len(missing_validity) > 3 else ""
+            raise PrintJobError(
+                "A etiqueta interna não pode presumir validade. "
+                f"Defina a validade na ficha técnica de: {names}{suffix}.",
+                code="preparation_validity_missing",
+                status_code=409,
+            )
         labels = selected_documents
     if not labels or len(labels) > MAX_LABELS_PER_JOB:
         raise PrintJobError(
@@ -256,8 +274,11 @@ def compose_document(projection, *, mode: str, ticket_refs: list[str]) -> dict:
             code="label_limit_exceeded",
         )
     return {
-        "contract_version": 1,
+        "contract_version": 2,
         "mode": mode,
+        "purpose": "internal_weighing" if mode == "blind" else "internal_preparation",
+        "legal_scope": "internal_only_not_for_sale",
+        "date_basis": "planned_production_date",
         "selected_date": projection.selected_date,
         "scale_precision_g": str(projection.scale_precision_g),
         "scale_precision_display": projection.scale_precision_display,
@@ -299,7 +320,9 @@ def create_job(
     destination = resolve_destination(station_ref=station_ref)
     if transport == PrintJob.Transport.RELAY:
         if not destination.available or destination.terminal is None:
-            raise PrintJobError(destination.problem or destination.status_label, code="printer_unavailable", status_code=409)
+            raise PrintJobError(
+                destination.problem or destination.status_label, code="printer_unavailable", status_code=409
+            )
         target_terminal = destination.terminal
         config = PrinterConfig.from_terminal(target_terminal)
     else:
@@ -333,16 +356,24 @@ def create_job(
                 if receipt is not None:
                     body = dict(receipt.response_body or {})
                     if body.get("request_digest") != digest:
-                        raise PrintJobError("Esta chave pertence a outra impressão.", code="idempotency_conflict", status_code=409)
+                        raise PrintJobError(
+                            "Esta chave pertence a outra impressão.", code="idempotency_conflict", status_code=409
+                        )
                     job = PrintJob.objects.filter(ref=body.get("job_ref")).first()
                     if job is None:
-                        raise PrintJobError("Recibo idempotente sem trabalho de impressão.", code="idempotency_broken", status_code=409)
+                        raise PrintJobError(
+                            "Recibo idempotente sem trabalho de impressão.", code="idempotency_broken", status_code=409
+                        )
                     return job
                 receipt = IdempotencyKey.objects.create(scope=scope, key=key, status="in_progress")
                 job = PrintJob.objects.create(
-                    kind=(PrintJob.Kind.PRODUCTION_WEIGHING if mode == "blind" else PrintJob.Kind.PRODUCTION_PREPARATION),
+                    kind=(
+                        PrintJob.Kind.PRODUCTION_WEIGHING if mode == "blind" else PrintJob.Kind.PRODUCTION_PREPARATION
+                    ),
                     transport=transport,
-                    status=PrintJob.Status.QUEUED if transport == PrintJob.Transport.RELAY else PrintJob.Status.PREPARED,
+                    status=PrintJob.Status.QUEUED
+                    if transport == PrintJob.Transport.RELAY
+                    else PrintJob.Status.PREPARED,
                     target_terminal=target_terminal,
                     requested_by=actor,
                     requested_by_ref=actor.get_username(),
@@ -380,10 +411,14 @@ def _idempotent_job_action(*, job: PrintJob, action: str, key: str, request_body
                 if receipt is not None:
                     body = dict(receipt.response_body or {})
                     if body.get("request_digest") != digest:
-                        raise PrintJobError("Esta chave pertence a outra ação.", code="idempotency_conflict", status_code=409)
+                        raise PrintJobError(
+                            "Esta chave pertence a outra ação.", code="idempotency_conflict", status_code=409
+                        )
                     result = PrintJob.objects.filter(ref=body.get("job_ref")).first()
                     if result is None:
-                        raise PrintJobError("Recibo idempotente inconsistente.", code="idempotency_broken", status_code=409)
+                        raise PrintJobError(
+                            "Recibo idempotente inconsistente.", code="idempotency_broken", status_code=409
+                        )
                     return result
                 receipt = IdempotencyKey.objects.create(scope=scope, key=key, status="in_progress")
                 result = mutate(locked)
@@ -400,11 +435,11 @@ def _idempotent_job_action(*, job: PrintJob, action: str, key: str, request_body
 def retry_job(*, job: PrintJob, actor, idempotency_key: str) -> PrintJob:
     def mutate(locked):
         if locked.confirmation or locked.status not in {PrintJob.Status.FAILED, PrintJob.Status.EXPIRED}:
-            raise PrintJobError("Somente uma falha comprovada pode voltar à fila.", code="retry_not_allowed", status_code=409)
+            raise PrintJobError(
+                "Somente uma falha comprovada pode voltar à fila.", code="retry_not_allowed", status_code=409
+            )
         locked.status = (
-            PrintJob.Status.QUEUED
-            if locked.transport == PrintJob.Transport.RELAY
-            else PrintJob.Status.PREPARED
+            PrintJob.Status.QUEUED if locked.transport == PrintJob.Transport.RELAY else PrintJob.Status.PREPARED
         )
         locked.confirmation = ""
         locked.confirmation_detail = ""
@@ -412,7 +447,18 @@ def retry_job(*, job: PrintJob, actor, idempotency_key: str) -> PrintJob:
         locked.confirmed_by_ref = ""
         locked.confirmed_at = None
         locked.expires_at = timezone.now() + JOB_LIFETIME
-        locked.save(update_fields=("status", "confirmation", "confirmation_detail", "confirmed_by", "confirmed_by_ref", "confirmed_at", "expires_at", "updated_at"))
+        locked.save(
+            update_fields=(
+                "status",
+                "confirmation",
+                "confirmation_detail",
+                "confirmed_by",
+                "confirmed_by_ref",
+                "confirmed_at",
+                "expires_at",
+                "updated_at",
+            )
+        )
         return locked
 
     return _idempotent_job_action(
@@ -436,13 +482,17 @@ def reprint_job(*, job: PrintJob, actor, station_ref: str, transport: str, idemp
             PrintJob.Status.UNCERTAIN,
             PrintJob.Status.FAILED,
         }:
-            raise PrintJobError("Esta impressão ainda não admite nova via.", code="reprint_not_allowed", status_code=409)
+            raise PrintJobError(
+                "Esta impressão ainda não admite nova via.", code="reprint_not_allowed", status_code=409
+            )
         series_jobs = PrintJob.objects.select_for_update().filter(series_ref=locked.series_ref)
         copy_number = int(series_jobs.aggregate(value=Max("copy_number"))["value"] or 0) + 1
         if transport == PrintJob.Transport.RELAY:
             destination = resolve_destination(station_ref=station_ref)
             if not destination.available or destination.terminal is None:
-                raise PrintJobError(destination.problem or destination.status_label, code="printer_unavailable", status_code=409)
+                raise PrintJobError(
+                    destination.problem or destination.status_label, code="printer_unavailable", status_code=409
+                )
             target_terminal = destination.terminal
             config = PrinterConfig.from_terminal(target_terminal)
         else:
@@ -497,14 +547,26 @@ def confirm_job(*, job: PrintJob, actor, result: str, detail: str, idempotency_k
             PrintJob.Status.AWAITING_CONFIRMATION,
             PrintJob.Status.UNCERTAIN,
         }:
-            raise PrintJobError("Esta impressão não aguarda confirmação.", code="confirmation_not_allowed", status_code=409)
+            raise PrintJobError(
+                "Esta impressão não aguarda confirmação.", code="confirmation_not_allowed", status_code=409
+            )
         locked.confirmation = normalized
         locked.confirmation_detail = detail
         locked.confirmed_by = actor
         locked.confirmed_by_ref = actor.get_username()
         locked.confirmed_at = timezone.now()
         locked.status = PrintJob.Status.CONFIRMED if normalized == "confirmed" else PrintJob.Status.FAILED
-        locked.save(update_fields=("confirmation", "confirmation_detail", "confirmed_by", "confirmed_by_ref", "confirmed_at", "status", "updated_at"))
+        locked.save(
+            update_fields=(
+                "confirmation",
+                "confirmation_detail",
+                "confirmed_by",
+                "confirmed_by_ref",
+                "confirmed_at",
+                "status",
+                "updated_at",
+            )
+        )
         return locked
 
     return _idempotent_job_action(
@@ -518,11 +580,18 @@ def confirm_job(*, job: PrintJob, actor, result: str, detail: str, idempotency_k
 
 def record_browser_result(*, job: PrintJob, actor, result: str, idempotency_key: str) -> PrintJob:
     def mutate(locked):
-        if locked.confirmation or locked.transport != PrintJob.Transport.BROWSER or locked.status not in {
-            PrintJob.Status.PREPARED,
-            PrintJob.Status.FAILED,
-        }:
-            raise PrintJobError("O trabalho já foi assumido pelo relay.", code="browser_fallback_not_allowed", status_code=409)
+        if (
+            locked.confirmation
+            or locked.transport != PrintJob.Transport.BROWSER
+            or locked.status
+            not in {
+                PrintJob.Status.PREPARED,
+                PrintJob.Status.FAILED,
+            }
+        ):
+            raise PrintJobError(
+                "O trabalho já foi assumido pelo relay.", code="browser_fallback_not_allowed", status_code=409
+            )
         sequence = int(locked.attempts.aggregate(value=Max("sequence"))["value"] or 0) + 1
         opened = result == "dialog_opened"
         PrintAttempt.objects.create(
@@ -649,21 +718,31 @@ def acknowledge_job(
     )
     digest = _lease_digest(lease_token)
     with transaction.atomic():
-        job = PrintJob.objects.select_for_update().filter(
-            ref=job_ref,
-            target_terminal=credential.terminal,
-        ).first()
+        job = (
+            PrintJob.objects.select_for_update()
+            .filter(
+                ref=job_ref,
+                target_terminal=credential.terminal,
+            )
+            .first()
+        )
         if job is None:
             raise PrintJobError("Trabalho não encontrado para este agente.", code="job_not_found", status_code=404)
-        attempt = PrintAttempt.objects.select_for_update().filter(
-            job=job,
-            credential=credential,
-            lease_token_digest=digest,
-        ).first()
+        attempt = (
+            PrintAttempt.objects.select_for_update()
+            .filter(
+                job=job,
+                credential=credential,
+                lease_token_digest=digest,
+            )
+            .first()
+        )
         if attempt is None:
             raise PrintJobError("Lease inválido para este agente.", code="invalid_lease", status_code=409)
         if payload_sha256 != job.payload_sha256:
-            raise PrintJobError("Hash do payload diverge; nada foi confirmado.", code="payload_hash_mismatch", status_code=409)
+            raise PrintJobError(
+                "Hash do payload diverge; nada foi confirmado.", code="payload_hash_mismatch", status_code=409
+            )
         if attempt.ack_digest:
             if attempt.ack_digest == request_digest:
                 return job
@@ -761,14 +840,16 @@ def job_data(job: PrintJob, *, include_document: bool = False) -> dict:
         "label_count": job.label_count,
         "copy_number": job.copy_number,
         "can_retry": not job.confirmation and job.status in {PrintJob.Status.FAILED, PrintJob.Status.EXPIRED},
-        "can_reprint": job.status in {
+        "can_reprint": job.status
+        in {
             PrintJob.Status.SPOOLED,
             PrintJob.Status.AWAITING_CONFIRMATION,
             PrintJob.Status.CONFIRMED,
             PrintJob.Status.UNCERTAIN,
             PrintJob.Status.FAILED,
         },
-        "can_confirm": job.status in {
+        "can_confirm": job.status
+        in {
             PrintJob.Status.SPOOLED,
             PrintJob.Status.AWAITING_CONFIRMATION,
             PrintJob.Status.UNCERTAIN,

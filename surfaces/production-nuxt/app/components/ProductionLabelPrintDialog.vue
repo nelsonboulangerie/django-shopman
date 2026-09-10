@@ -73,7 +73,7 @@ const labelCount = computed(() =>
 const title = computed(() =>
   effectivePrintMode.value === "pesagem"
     ? "Etiquetas de pesagem"
-    : "Etiquetas do preparo",
+    : "Identificação interna do preparo",
 );
 const effectiveDateDisplay = computed(
   () =>
@@ -127,6 +127,22 @@ const isConfirmed = computed(
 );
 const copyNumber = computed(() => printing.job.value?.copy_number ?? 0);
 const blockedReason = computed(() => printing.block.value?.detail ?? "");
+const validityBlockReason = computed(() => {
+  if (effectivePrintMode.value !== "preparo" || frozenDocument.value) return "";
+  const missing = effectiveTickets.value
+    .filter(
+      (ticket) =>
+        ticket.validity_configured === false || !ticket.expiry_display,
+    )
+    .map((ticket) => ticket.name)
+    .filter(Boolean);
+  if (!missing.length) return "";
+  const names = missing.slice(0, 3).join(", ");
+  return `Validade não configurada na ficha técnica de: ${names}${missing.length > 3 ? "…" : ""}. O gestor define uma vez; o sistema não presume D+1.`;
+});
+const preflightBlockReason = computed(
+  () => blockedReason.value || validityBlockReason.value,
+);
 const relayUnavailableReason = computed(() => {
   const destination = props.projection?.print_destination;
   if (!destination || destination.available !== false) return "";
@@ -283,6 +299,9 @@ function close() {
                   :key="label.key"
                   class="rounded border border-black p-2"
                 >
+                  <p class="text-[0.65rem] font-bold uppercase">
+                    Pesagem interna · não é rótulo de venda
+                  </p>
                   <div class="flex items-baseline justify-between gap-2">
                     <strong class="font-mono text-xl tracking-widest">{{
                       label.code
@@ -294,6 +313,12 @@ function close() {
                   <p class="text-lg font-bold tabular-nums">
                     {{ label.weight }}
                   </p>
+                  <p
+                    v-if="label.annotation"
+                    class="text-sm text-muted-foreground"
+                  >
+                    Referência: {{ label.annotation }}
+                  </p>
                 </article>
               </template>
               <template v-else>
@@ -302,6 +327,9 @@ function close() {
                   :key="ticket.ticket_ref || ticket.output_sku"
                   class="rounded border border-black p-2"
                 >
+                  <span class="block text-[0.65rem] font-bold uppercase">
+                    Uso interno · não é rótulo de venda
+                  </span>
                   <strong class="block uppercase leading-tight">{{
                     ticket.name
                   }}</strong>
@@ -314,7 +342,7 @@ function close() {
                     "
                     class="block font-bold tabular-nums"
                   >
-                    Peso total:
+                    Alvo total:
                     {{
                       operationalTargetDisplay(
                         ticket.total_weight_display,
@@ -323,8 +351,8 @@ function close() {
                     }}
                   </span>
                   <span class="block text-xs">
-                    Feito {{ ticket.made_display }} · Validade
-                    {{ ticket.expiry_display }}
+                    Preparo {{ ticket.made_display }} · Validade
+                    {{ ticket.expiry_display || "não configurada" }}
                   </span>
                 </article>
               </template>
@@ -428,14 +456,17 @@ function close() {
           </div>
 
           <p
-            v-if="!printing.job.value && blockedReason"
-            class="text-sm text-muted-foreground"
+            v-if="!printing.job.value && preflightBlockReason"
+            role="alert"
+            class="rounded-lg border border-amber-500/40 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-200"
           >
-            {{ blockedReason }}
+            {{ preflightBlockReason }}
           </p>
           <p
             v-if="
-              !printing.job.value && !blockedReason && relayUnavailableReason
+              !printing.job.value &&
+              !preflightBlockReason &&
+              relayUnavailableReason
             "
             class="text-sm text-muted-foreground"
           >
@@ -482,7 +513,9 @@ function close() {
                 activeTransport === 'relay'
               "
               :disabled="
-                !!blockedReason || !!relayUnavailableReason || browserBusy
+                !!preflightBlockReason ||
+                !!relayUnavailableReason ||
+                browserBusy
               "
               @click="createRelay"
             >
@@ -494,7 +527,7 @@ function close() {
               variant="outline"
               class="min-h-11 whitespace-normal"
               :loading="browserBusy"
-              :disabled="!!blockedReason || printing.busy.value"
+              :disabled="!!preflightBlockReason || printing.busy.value"
               @click="createBrowserPrint"
             >
               Imprimir neste dispositivo

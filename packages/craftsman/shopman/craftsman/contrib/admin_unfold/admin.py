@@ -182,7 +182,10 @@ class RecipeAdminForm(forms.ModelForm):
         required=False,
         min_value=0,
         widget=UnfoldAdminIntegerFieldWidget(),
-        help_text=_("Usado para calcular a validade do lote produzido."),
+        help_text=_(
+            "Usado no lote e na identificação interna do preparo. "
+            "0 = mesmo dia; vazio = não emitir validade nem presumir D+1."
+        ),
     )
 
     class Meta:

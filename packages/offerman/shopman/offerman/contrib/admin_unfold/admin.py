@@ -403,8 +403,9 @@ class ProductAdmin(_ProductImportExportBase):
                 "classes": ("tab",),
                 "description": (
                     "Lista humana em pt-BR, ordem decrescente de peso "
-                    "(ANVISA RDC 360/2003). Pode ser preenchido automaticamente "
-                    "a partir da Recipe ativa."
+                    "(RDC 727/2022). Pode ser preenchida automaticamente a "
+                    "partir da ficha ativa; rótulo comercial exige revisão dos "
+                    "demais campos aplicáveis."
                 ),
             },
         ),

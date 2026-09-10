@@ -25,7 +25,7 @@ Há também um terceiro sujeito silencioso: **bundles**. Um combo não tem recei
 **Híbrido, com Product como superfície e derivação materializada opcional.**
 
 1. `Offerman.Product` ganha dois campos de **dado final, já pronto para exibir**:
-   - `ingredients_text` (`TextField`, blank=True) — lista humana pt-BR, ordem decrescente de peso (exigência ANVISA RDC 360/2003).
+   - `ingredients_text` (`TextField`, blank=True) — lista humana pt-BR, ordem decrescente de peso (hoje coberta pela RDC 727/2022).
    - `nutrition_facts` (`JSONField`, blank=True, default=dict) — dict serializado de um `dataclass NutritionFacts` frozen.
 
 2. A projeção `ProductDetailProjection` consome **só esses dois campos**. Ingrediente e nutricional nunca são computados em tempo de request. O PDP é uma leitura fria.
@@ -159,4 +159,7 @@ o PDP seguia mostrando o número velho com cara de atual.
 - [`packages/offerman/shopman/offerman/nutrition.py`](../../packages/offerman/shopman/offerman/nutrition.py) — dataclass `NutritionFacts`
 - [`shopman/shop/services/nutrition_from_recipe.py`](../../shopman/shop/services/nutrition_from_recipe.py) — derivação
 - [`shopman/shop/projections/product_detail.py`](../../shopman/shop/projections/product_detail.py) — leitura
-- ANVISA RDC 360/2003 — rotulagem nutricional obrigatória no Brasil
+- **Nota de atualização (2026-09-10):** a RDC 360/2003 foi substituída. O
+  schema desta ADR continua sendo uma projeção legada de PDP, não um contrato
+  completo de rótulo comercial. A norma vigente de informação nutricional é a
+  RDC 429/2020 com a IN 75/2020; ver ADR-028.

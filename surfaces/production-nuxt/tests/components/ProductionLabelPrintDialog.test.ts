@@ -70,6 +70,7 @@ function frozenDocument(
             sku: "FARINHA-FROZEN",
             quantity_display: "102 g",
             target_display: "102 g",
+            annotation: "≈ 2 porções",
           },
         ],
       },
@@ -235,6 +236,31 @@ describe("ProductionLabelPrintDialog", () => {
     expect(explicit.text()).not.toContain("3 etiquetas · 10 set 2026");
   });
 
+  it("não deixa a identificação interna inventar validade", () => {
+    const explicit = wrapper({
+      printMode: "preparo",
+      tickets: [
+        {
+          ...ticket(),
+          expiry_display: "",
+          validity_configured: false,
+        },
+      ],
+    });
+
+    expect(explicit.text()).toContain("Validade não configurada");
+    expect(explicit.text()).toContain("não presume D+1");
+    const printButtons = explicit
+      .findAll("button")
+      .filter((button) => button.text().includes("Imprimir"));
+    expect(printButtons).toHaveLength(2);
+    expect(
+      printButtons.every(
+        (button) => button.attributes("disabled") !== undefined,
+      ),
+    ).toBe(true);
+  });
+
   it("envia o ticket_ref pela ação principal sem chamar window.print", async () => {
     const view = wrapper();
     await view
@@ -264,6 +290,7 @@ describe("ProductionLabelPrintDialog", () => {
     expect(physical.text()).toContain("Farinha congelada");
     expect(physical.text()).toContain("FARINHA-FROZEN");
     expect(physical.text()).toContain("102 g");
+    expect(physical.text()).toContain("Referência: ≈ 2 porções");
 
     await view.setProps({
       labels: [

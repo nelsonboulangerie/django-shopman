@@ -2694,13 +2694,13 @@ class Command(BaseCommand):
                 "nutrition_facts": nutrition(200, 1, 610.0, 74.0, 8.0, 14.0, 27.0, 16.0, 3.2, 620.0),
             },
             "SS": {
-                "ingredients_text": "Café espresso. NÃO CONTÉM GLÚTEN.",
+                "ingredients_text": "Café espresso. PODE CONTER GLÚTEN.",
                 "nutrition_facts": nutrition(40, 1, 2.0, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0, 0.0),
             },
             "PS": {
                 "ingredients_text": (
                     "Café espresso e leite integral vaporizado. "
-                    "CONTÉM: leite. NÃO CONTÉM GLÚTEN."
+                    "CONTÉM: leite. PODE CONTER GLÚTEN."
                 ),
                 "nutrition_facts": nutrition(180, 1, 105.0, 9.0, 9.0, 6.0, 5.5, 3.4, 0.0, 85.0),
             },

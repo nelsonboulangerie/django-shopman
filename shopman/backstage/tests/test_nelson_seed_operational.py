@@ -47,6 +47,9 @@ def test_nelson_seed_populates_production_history_alerts_and_batches(monkeypatch
     from shopman.fiscalman.classification import from_metadata, resolve_fiscal_item
 
     assert not Product.objects.filter(sku__startswith="DEMO-").exists()
+    assert not Product.objects.filter(ingredients_text__icontains="não contém glúten").exists(), (
+        "o seed não pode contradizer a política da casa: sem segregação, nenhum item afirma ausência de glúten"
+    )
     for sku in ("BF", "SS", "COMBO-PETIT-DEJ"):
         metadata = Product.objects.get(sku=sku).metadata
         fiscal = metadata["fiscal"]

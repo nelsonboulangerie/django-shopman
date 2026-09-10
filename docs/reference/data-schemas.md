@@ -1326,6 +1326,31 @@ guarda é o "de onde veio" e o "o que está em curso".
 
 ---
 
+## backstage.PrintJob.document — etiquetas internas de produção
+
+Documento congelado antes de qualquer transporte. O hash, a reimpressão e a
+prévia do navegador usam exatamente este snapshot; cadastro vivo nunca altera
+uma via já emitida.
+
+| Chave | Tipo | Descrição |
+|-------|------|-----------|
+| `contract_version` | `int` | `2` para o contrato que separa finalidade e escopo legal. |
+| `mode` | `blind\|explicit` | Adapter legado: pesagem por ingrediente ou identificação do preparo. |
+| `purpose` | `internal_weighing\|internal_preparation` | Finalidade de negócio explícita; nunca consumidor. |
+| `legal_scope` | `internal_only_not_for_sale` | Impede reutilização silenciosa como rótulo de venda. |
+| `date_basis` | `planned_production_date` | A data vem do dia selecionado; mudança de dia exige descartar/reemitir. |
+| `tickets[].ingredients[].target_display` | `str` | Alvo operacional já arredondado pelo servidor para a precisão da balança. |
+| `tickets[].ingredients[].annotation` | `str` | Referência canônica pronta (`≈ 7 ovos`); vazio quando não há conversão segura. |
+| `tickets[].expiry_display` | `str` | Só na identificação interna; calculada por ficha → cadastro do SKU. Nunca D+1 implícito. |
+| `tickets[].validity_source` | `recipe\|catalog` | Proveniência congelada da validade. |
+
+No modo `blind`, cada ticket físico contém exatamente um ingrediente e não
+serializa receita/SKU de saída. No modo `explicit`, o documento não serializa
+ingredientes nem alvos individuais; ele declara **uso interno**. Um rótulo
+comercial futuro é outro contrato (ADR-028).
+
+---
+
 ## cashman.Terminal.metadata
 
 Configuração por terminal do PDV (`packages/cashman`, `Terminal.metadata`). Escrita pelo
