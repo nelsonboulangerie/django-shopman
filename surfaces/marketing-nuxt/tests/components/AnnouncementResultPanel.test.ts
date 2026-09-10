@@ -227,6 +227,7 @@ function panel(options: { actions?: MarketingActionProjectionV2[] } = {}) {
       announcement: announcement(),
       actions: options.actions ?? [retryAction()],
       shopTimezone: "America/Sao_Paulo",
+      approvedText: "A fornada especial de hoje está pronta.",
       receipt: {
         ...response().receipt,
         ref: "receipt-before",
@@ -266,12 +267,18 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("1 falha que pode ser tentada novamente");
     expect(wrapper.text()).toContain("1 resultado incerto");
     expect(wrapper.text()).toContain("não são reenviados");
+    expect(wrapper.text()).toContain("Resumo da decisão");
+    expect(wrapper.text()).toContain("Texto aprovado");
+    expect(wrapper.text()).toContain("A fornada especial de hoje está pronta.");
     expect(wrapper.text()).toContain("Comprovante:");
-    expect(wrapper.text()).toContain("Público autorizado:");
+    expect(wrapper.text()).toContain("Público");
     expect(wrapper.text()).toContain("3 pessoas");
     expect(wrapper.text()).toContain("WhatsApp, Instagram");
-    expect(wrapper.text()).toContain("Execução:");
+    expect(wrapper.text()).toContain("Horário");
     expect(wrapper.text()).toContain("Imediata");
+    expect(wrapper.text()).toContain("Estado da entrega");
+    expect(wrapper.text()).toContain("Próxima ação");
+    expect(wrapper.text()).toContain("Tentar novamente 1 falha");
     expect(wrapper.text()).toContain("concluído");
     expect(wrapper.text()).not.toContain("Receipt:");
     expect(wrapper.text()).not.toContain("succeeded");

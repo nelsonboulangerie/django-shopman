@@ -349,7 +349,13 @@ useHead({ title: "Anúncio · Marketing" });
         />
       </section>
 
-      <article v-else class="rounded-xl border border-border bg-card p-4">
+      <article
+        v-else-if="announcement.status === 'rejected'"
+        class="rounded-xl border border-border bg-card p-4"
+      >
+        <h2 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Texto recusado
+        </h2>
         <p class="whitespace-pre-line text-sm">{{ announcement.body }}</p>
         <!-- Recusa é decisão de alguém, e a decisão precisa ser legível depois. Sem
              isto, o motivo ficaria só no banco. -->
@@ -411,6 +417,7 @@ useHead({ title: "Anúncio · Marketing" });
         :actions="resultActions"
         :receipt="displayedReceipt"
         :shop-timezone="shopTimezone"
+        :approved-text="announcement.body"
         @receipt="rememberReceipt"
         @refresh="refreshAll"
       />

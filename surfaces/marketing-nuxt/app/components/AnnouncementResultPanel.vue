@@ -29,6 +29,7 @@ const props = defineProps<{
   actions: MarketingActionProjectionV2[];
   receipt?: MarketingCommandReceipt | null;
   shopTimezone: string;
+  approvedText?: string;
 }>();
 
 const emit = defineEmits<{
@@ -64,6 +65,18 @@ const showsPlatformResults = computed(
     !["rejected", "expired"].includes(props.announcement.state),
 );
 const recoveryActions = computed(() => props.actions.filter(isRecoveryAction));
+const decisionNextStep = computed(() => {
+  if (
+    props.announcement.delivery.state === "not_started" &&
+    props.announcement.scheduled_for
+  ) {
+    return "Aguardar o horário agendado ou cancelar antes do início.";
+  }
+  const available = recoveryActions.value.find((action) => action.enabled);
+  if (available) return recoveryActionLabel(available);
+  if (result.value.tone === "ok") return "Nenhuma ação necessária.";
+  return "Acompanhar o resultado antes de tomar outra decisão.";
+});
 const receiptSummary = computed(() =>
   props.receipt ? commandReceiptPresentation(props.receipt) : null,
 );
@@ -358,47 +371,70 @@ function closeDialog(open: boolean) {
         />
         <div class="min-w-0">
           <h2 id="command-receipt-heading" class="font-semibold">
-            {{ receiptSummary.title }}
+            {{ approvalEvidence ? "Resumo da decisão" : receiptSummary.title }}
           </h2>
           <p class="mt-1 text-sm text-muted-foreground">
-            {{ receiptSummary.detail }}
+            {{
+              approvalEvidence
+                ? "Tudo o que foi autorizado e o estado atual estão reunidos aqui."
+                : receiptSummary.detail
+            }}
           </p>
-          <dl class="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-            <div>
-              <dt class="inline text-muted-foreground">Comprovante:</dt>
-              <dd class="inline break-all font-mono">{{ receipt.ref }}</dd>
+          <dl
+            v-if="approvalEvidence"
+            class="mt-3 grid overflow-hidden rounded-xl border border-sky-500/20 bg-background/60 text-sm sm:grid-cols-2"
+          >
+            <div class="border-b border-sky-500/20 p-3 sm:col-span-2">
+              <dt class="text-xs font-medium text-muted-foreground">
+                Texto aprovado
+              </dt>
+              <dd class="mt-1 whitespace-pre-line font-medium">
+                {{ approvedText || "Texto aprovado preservado no anúncio." }}
+              </dd>
             </div>
+            <div class="border-b border-sky-500/20 p-3 sm:border-r">
+              <dt class="text-xs font-medium text-muted-foreground">Versão</dt>
+              <dd class="mt-1 font-semibold">
+                {{ receipt.resulting_version ?? "—" }}
+              </dd>
+            </div>
+            <div class="border-b border-sky-500/20 p-3">
+              <dt class="text-xs font-medium text-muted-foreground">Público</dt>
+              <dd class="mt-1 font-semibold">{{ approvalEvidence.audience }}</dd>
+            </div>
+            <div class="border-b border-sky-500/20 p-3 sm:border-r">
+              <dt class="text-xs font-medium text-muted-foreground">Plataformas</dt>
+              <dd class="mt-1 font-semibold">{{ approvalEvidence.platforms }}</dd>
+            </div>
+            <div class="border-b border-sky-500/20 p-3">
+              <dt class="text-xs font-medium text-muted-foreground">Horário</dt>
+              <dd class="mt-1 font-semibold">{{ approvalEvidence.execution }}</dd>
+            </div>
+            <div class="border-b border-sky-500/20 p-3 sm:border-b-0 sm:border-r">
+              <dt class="text-xs font-medium text-muted-foreground">
+                Estado da entrega
+              </dt>
+              <dd class="mt-1 font-semibold">{{ result.label }}</dd>
+            </div>
+            <div class="p-3">
+              <dt class="text-xs font-medium text-muted-foreground">
+                Próxima ação
+              </dt>
+              <dd class="mt-1 font-semibold">{{ decisionNextStep }}</dd>
+            </div>
+          </dl>
+          <dl v-else class="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
             <div>
               <dt class="inline text-muted-foreground">Versão resultante:</dt>
               <dd class="inline font-semibold">
                 {{ receipt.resulting_version ?? "—" }}
               </dd>
             </div>
-            <template v-if="approvalEvidence">
-              <div>
-                <dt class="inline text-muted-foreground">
-                  Público autorizado:
-                </dt>
-                <dd class="inline font-semibold">
-                  {{ approvalEvidence.audience }}
-                </dd>
-              </div>
-              <div>
-                <dt class="inline text-muted-foreground">Plataformas:</dt>
-                <dd class="inline font-semibold">
-                  {{ approvalEvidence.platforms }}
-                </dd>
-              </div>
-              <div class="sm:col-span-2">
-                <dt class="inline text-muted-foreground">Execução:</dt>
-                <dd class="inline font-semibold">
-                  {{ approvalEvidence.execution }}
-                </dd>
-              </div>
-            </template>
           </dl>
           <p class="mt-1 text-xs text-muted-foreground">
-            Registrado em
+            Comprovante:
+            <span class="break-all font-mono">{{ receipt.ref }}</span>
+            · registrado em
             {{
               scheduleSummary(
                 receipt.completed_at || receipt.created_at,
