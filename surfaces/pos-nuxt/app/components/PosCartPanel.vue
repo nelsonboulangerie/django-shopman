@@ -109,12 +109,7 @@ function badgeTone(tone: KitchenBadgeView["tone"]): string {
   if (tone === "warning") return "bg-warning/10 text-amber-800 dark:text-amber-300";
   return "bg-muted text-muted-foreground";
 }
-function badgeIcon(tone: KitchenBadgeView["tone"]): string {
-  if (tone === "success") return "lucide:check";
-  if (tone === "destructive") return "lucide:x";
-  if (tone === "warning") return "lucide:triangle-alert";
-  return "lucide:flame";
-}
+
 
 
 // O "Total parcial" — a MESMA soma da tela do cliente e do total interino do
@@ -128,7 +123,7 @@ const totalDisplay = computed(() => formatBRL(cartNetTotalQ(props.items)));
 /** O selo do desconto que venceu a linha. Usa `reasonOptions`, que normaliza a
  *  lista do servidor e cai nos motivos padrão: o selo diz "Cortesia", não o ref. */
 function discountBadge(item: POSCartItem) {
-  return lineDiscountBadge(item, reasonOptions.value);
+  return lineDiscountBadge(item, reasonOptions.value) || (lineListTotalDisplay(item) ? "Desconto aplicado" : "");
 }
 // O teclado age sobre a linha selecionada, em três modos: "qty" (inteiro, o
 // primeiro dígito substitui), "disc" (desconto em %) e "disc_brl" (desconto em
@@ -147,6 +142,16 @@ function discountBadge(item: POSCartItem) {
 // vírgula é herança direta do modo preço — ela some do preço e reaparece aqui.
 const MAX_QTY = 999;
 const selectedLineId = ref("");
+const expandedLineId = ref("");
+const detailsPrefix = useId();
+function detailsId(lineId: string) { return `${detailsPrefix}-${encodeURIComponent(lineId)}`; }
+function toggleDetails(lineId: string) {
+  selectLine(lineId);
+  expandedLineId.value = expandedLineId.value === lineId ? "" : lineId;
+}
+watch(() => props.items.map((item) => item.line_id), (ids) => {
+  if (!ids.includes(expandedLineId.value)) expandedLineId.value = "";
+});
 const numpadBuffer = ref("");
 const numpadFresh = ref(true);
 const numpadMode = ref<"qty" | "disc" | "disc_brl">("qty");
@@ -453,14 +458,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
         Carrinho vazio
       </p>
       <ul v-else class="grid gap-0.5">
-        <!-- Leitura primeiro. Só a linha ativa abre controles e autoria completa. -->
+        <!-- Leitura primeiro. Expansão explícita; o teclado mantém seu alvo independente. -->
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-1 rounded-lg border border-transparent px-1 py-2 transition"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-1 rounded-md border border-transparent px-1 py-2 transition-colors"
           :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
-          @click="selectLine(item.line_id)"
         >
           <button type="button" class="grid size-11 shrink-0 place-items-center rounded-md focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Selecionar ${item.name}`" :aria-pressed="isSelected(item.line_id)" @click.stop="toggleSelect(item.line_id)">
             <span class="grid size-4 place-items-center rounded border" :class="isSelected(item.line_id) ? 'border-primary bg-primary text-primary-foreground' : 'border-muted-foreground/40'">
@@ -469,29 +473,37 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
           </button>
 
           <div class="min-w-0">
-            <button type="button" class="grid min-h-11 w-full gap-1 py-1 text-left" :aria-label="`Editar ${item.name}`" :aria-expanded="activeLineId === item.line_id" @click.stop="selectLine(item.line_id)">
+            <button type="button" class="grid min-h-11 w-full gap-1 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="toggleDetails(item.line_id)">
               <span class="flex items-baseline gap-2">
                 <span class="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ item.qty }}×</span>
                 <span class="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{{ item.name }}</span>
                 <span class="shrink-0 text-right">
-                  <span v-if="lineListTotalDisplay(item)" class="block text-xs tabular-nums text-muted-foreground line-through" :title="discountBadge(item) || 'Preço de tabela'">{{ lineListTotalDisplay(item) }}</span>
                   <strong class="text-sm font-semibold tabular-nums">{{ formatBRL(lineTotalQ(item)) }}</strong>
                 </span>
+              </span>
+              <!-- Posições fixas: observação, desconto, autoria, cozinha e expansão.
+                   Ausência conserva o espaço, sem parecer um botão desabilitado. -->
+              <span :id="`${detailsId(item.line_id)}-summary`" class="grid grid-cols-[1.5rem_1.5rem_1.5rem_minmax(0,1fr)_1rem] items-center gap-1 text-muted-foreground">
+                <span class="grid size-6 place-items-center" :class="item.notes ? '' : 'invisible'" :aria-hidden="!item.notes" title="Observação na linha"><Icon name="lucide:sticky-note" class="size-3.5" /><span class="sr-only">Com observação.</span></span>
+                <span class="grid size-6 place-items-center" :class="discountBadge(item) ? 'text-primary' : 'invisible'" :aria-hidden="!discountBadge(item)" :title="discountBadge(item)"><Icon name="lucide:badge-percent" class="size-3.5" /><span class="sr-only">{{ discountBadge(item) }}</span></span>
+                <span class="grid size-6 place-items-center" :class="item.authorship?.updated_by ? '' : 'invisible'" :aria-hidden="!item.authorship?.updated_by" :title="`Operador: ${item.authorship?.updated_label || item.authorship?.updated_by || ''}`"><Icon name="lucide:user-round" class="size-3.5" /><span class="sr-only">Operador: {{ item.authorship?.updated_label || item.authorship?.updated_by }}.</span></span>
+                <span v-if="lineKitchenState(item) !== 'unfired'" class="justify-self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="badgeTone(kitchenBadge(item).tone)">{{ kitchenBadge(item).label }}</span><span v-else />
+                <Icon name="lucide:chevron-down" class="size-4" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" />
               </span>
               <span v-if="item.notes" class="flex items-start gap-1 text-xs italic leading-snug text-muted-foreground">
                 <Icon name="lucide:sticky-note" class="mt-0.5 size-3 shrink-0" /><span>{{ item.notes }}</span>
               </span>
             </button>
 
+            <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="mt-1 border-t border-border/60 pt-2">
+            <p v-if="discountBadge(item)" class="mb-2 text-xs leading-relaxed text-primary"><span class="font-medium">{{ discountBadge(item) }}</span><span v-if="lineListTotalDisplay(item)" class="text-muted-foreground"> · De <span class="line-through" :title="discountBadge(item)">{{ lineListTotalDisplay(item) }}</span> por {{ formatBRL(lineTotalQ(item)) }}</span></p>
             <!-- faixa 2 — unitário à esquerda, controles à direita -->
-            <div v-if="activeLineId === item.line_id" class="flex items-center gap-2 border-t border-border/60 pt-1">
+            <div class="flex flex-wrap items-center gap-2">
               <span
-                v-if="item.qty > 1"
                 class="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground"
               >
                 {{ formatBRL(unitChargedQ(item)) }} cada
               </span>
-              <span v-else class="flex-1" />
 
               <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
                    APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
@@ -509,7 +521,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               </div>
             </div>
 
-            <div v-if="activeLineId === item.line_id && item.authorship" class="pb-1 text-xs leading-relaxed text-muted-foreground">
+            <div v-if="item.authorship" class="pb-1 text-xs leading-relaxed text-muted-foreground">
               <p v-if="item.authorship.created_by && item.authorship.created_by !== item.authorship.updated_by">Lançado por {{ item.authorship.created_label || item.authorship.created_by }}</p>
               <ClientOnly><p v-if="item.authorship.updated_at">Última alteração: {{ new Date(item.authorship.updated_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</p></ClientOnly>
             </div>
@@ -534,15 +546,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                 <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
                 {{ kitchenBadge(item).label }}
               </button>
-              <span
-                v-else-if="lineKitchenState(item) === 'fired'"
-                class="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="badgeTone(kitchenBadge(item).tone)"
-                aria-live="polite"
-              >
-                <Icon :name="badgeIcon(kitchenBadge(item).tone)" class="size-3 shrink-0" />
-                {{ kitchenBadge(item).label }}
-              </span>
+            </div>
             </div>
           </div>
         </li>
@@ -551,6 +555,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
 
     <div v-if="items.length" class="grid shrink-0 gap-1.5">
       <!-- Batch toolbar (multi-select §2.2): acts on every checked line via Actions. -->
+      <p v-if="activeItem" class="truncate px-1 text-xs text-muted-foreground">Teclado: <span class="font-medium text-foreground">{{ activeItem.name }}</span></p>
       <div v-if="selectMode" class="flex flex-wrap items-center gap-1.5 rounded-md border border-primary/30 bg-primary/5 p-1.5">
         <span class="px-1 text-xs font-semibold tabular-nums">{{ selection.count }} selec.</span>
         <UiButton v-if="selection.canFire" size="xs" variant="outline" class="gap-1" :disabled="firing" @click="batchFire">

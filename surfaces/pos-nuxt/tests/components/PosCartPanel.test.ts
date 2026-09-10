@@ -91,6 +91,7 @@ describe("PosCartPanel — interações emitem os comandos certos", () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ items: [item({ sku: "PAO", name: "Pão", fired: true, line_id: "l1" })] }),
     });
+    if (!wrapper.find('[aria-label="Remover"]').exists()) await wrapper.find('button[aria-expanded]').trigger("click");
     await wrapper.find('[aria-label="Remover"]').trigger("click");
     expect(wrapper.emitted("remove")).toBeUndefined();
     const confirm = Array.from(document.querySelectorAll("button")).find((b) => b.textContent?.includes("Remover item"));
@@ -215,7 +216,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
   it("o desconto do teclado vai para a linha ativa, e só para ela", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
     // Seleciona a PRIMEIRA linha (a que já foi à cozinha) e digita 10% nela.
-    await wrapper.findAll("li")[0]!.trigger("click");
+    await wrapper.findAll('[aria-label="Editar Chá"]')[0]!.trigger("click");
     const desc = wrapper.findAll("button").find((b) => b.text().trim() === "Desc %");
     await desc!.trigger("click");
     const um = wrapper.findAll("button").find((b) => b.text().trim() === "1");
@@ -239,19 +240,20 @@ describe("PosCartPanel — a linha do carrinho", () => {
     expect(totals).toContain(formatBRL(600));
   });
 
-  it("a quantidade aparece UMA vez — no stepper, não repetida no preço", async () => {
+  it("o unitário aparece na expansão, separado da quantidade", async () => {
     // Era "2× R$ 13,00" debaixo do nome E "2" entre o menos e o mais: dois
     // lugares para um número só, lado a lado. O unitário agora se apresenta
     // como "cada", e só quando há mais de um.
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ items: [item({ sku: "CAFE", name: "Café", price_q: 300, qty: 2 })] }),
     });
+    await wrapper.find('[aria-label="Editar Café"]').trigger("click");
     const text = wrapper.text();
     expect(text).toContain(`${formatBRL(300)} cada`);
     expect(text).not.toContain(`2× ${formatBRL(300)}`);
   });
 
-  it("com uma unidade, o unitário some — ele seria o total dito duas vezes", async () => {
+  it("com uma unidade, a linha compacta mostra só o total", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({ items: [item({ sku: "PAO", name: "Pão", price_q: 500, qty: 1 })] }),
     });
@@ -290,12 +292,13 @@ describe("PosCartPanel — a linha do carrinho", () => {
 });
 
 describe("PosCartPanel — transparência de desconto na linha", () => {
-  it("risca a etiqueta ao lado do que se cobra", async () => {
+  it("mostra preço anterior e atual ao expandir", async () => {
     const wrapper = await mountSuspended(PosCartPanel, {
       props: props({
         items: [item({ sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600 })],
       }),
     });
+    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("click");
     const struck = wrapper.find("span.line-through");
     expect(struck.exists()).toBe(true);
     expect(struck.text()).toBe(formatBRL(1200));
@@ -311,7 +314,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
     expect(wrapper.find("span.line-through").exists()).toBe(false);
   });
 
-  it("o desconto se anuncia pelo preço RISCADO, não por um selo", async () => {
+  it("o indicador revela o motivo e o preço anterior na expansão", async () => {
     // O selo com o nome da promoção e a etiqueta riscada diziam a mesma coisa —
     // "estava mais caro" — e o selo custava uma faixa inteira da linha. Nesta
     // lista o operador confere o que lançou; o POR QUÊ é pergunta de cliente, e
@@ -325,6 +328,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
       }),
     });
     expect(wrapper.findAll("span[title^='Desconto aplicado']")).toHaveLength(0);
+    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("click");
     const struck = wrapper.find("span.line-through");
     expect(struck.text()).toBe(formatBRL(1200));
     expect(struck.attributes("title")).toContain("Semana do Pão −15%");
@@ -339,6 +343,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         })],
       }),
     });
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
     expect(wrapper.find("span.line-through").attributes("title")).toContain("Cortesia −10%");
   });
 
@@ -363,11 +368,40 @@ describe("PosCartPanel — autoria discreta", () => {
       item({ sku: "PAO", name: "Pão", authorship: { created_by: "ana", created_label: "Ana", updated_by: "bruno", updated_label: "Bruno" } }),
       item({ sku: "CAFE", name: "Café" }),
     ] }) });
-    expect(wrapper.text()).toContain("Editado por Bruno");
+    expect(wrapper.text()).toContain("Operador: Bruno");
     expect(wrapper.text()).not.toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(0);
     await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
     expect(wrapper.text()).toContain("Lançado por Ana");
     expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+  });
+});
+
+
+describe("PosCartPanel — acordeão", () => {
+  it("abre só uma linha e recolhe sem perder o alvo do teclado", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    const bread = wrapper.find('[aria-label="Editar Pão"]');
+    const coffee = wrapper.find('[aria-label="Editar Café"]');
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
+    await bread.trigger("click");
+    expect(bread.attributes("aria-expanded")).toBe("true");
+    await coffee.trigger("click");
+    expect(bread.attributes("aria-expanded")).toBe("false");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(1);
+    await coffee.trigger("click");
+    expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
+    expect(wrapper.text()).toContain("Teclado: Café");
+  });
+  it("mantém instrução e cozinha visíveis com todos os tópicos presentes", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: [item({
+      sku: "PAO", name: "Pão", notes: "Sem leite", fired: true, kitchen_status: "done",
+      discount: { value: 10, reason: "cortesia" }, authorship: { updated_by: "ana" },
+    })] }) });
+    expect(wrapper.text()).toContain("Sem leite");
+    expect(wrapper.text()).toContain("Pronto");
+    expect(wrapper.find('[role="region"]').exists()).toBe(false);
+    expect(wrapper.find('[title="Operador: ana"]').exists()).toBe(true);
+    expect(wrapper.find('[title="Cortesia −10%"]').exists()).toBe(true);
   });
 });
