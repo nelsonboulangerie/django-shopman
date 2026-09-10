@@ -174,13 +174,39 @@ def estimate_for_order(order, *, store: bool = False) -> dict | None:
         cache.set(cache_key, estimate, ESTIMATE_CACHE_SECONDS)
 
     if store:
-        block = get_block(order)
-        block["estimate"] = estimate
-        _save_block(order, block, emit={"kind": "estimate"})
+        with transaction.atomic():
+            Order.objects.select_for_update().get(pk=order.pk)
+            order.refresh_from_db()
+            block = dict(get_block(order))
+            block["estimate"] = estimate
+            _save_block(order, block, emit={"kind": "estimate"})
     return estimate
 
 
 # ── Despacho ────────────────────────────────────────────────────────
+
+
+def unresolved_dispatch(order, *, exclude_pk=None):
+    """Pure receipt read. Unknown/start never authorizes another provider POST."""
+    from shopman.shop.directives import COURIER_DISPATCH
+
+    tasks = Directive.objects.filter(topic=COURIER_DISPATCH, payload__order_ref=order.ref,
+        payload__dispatch_attempt__state__in=["started", "unknown", "accepted"])
+    if exclude_pk is not None:
+        tasks = tasks.exclude(pk=exclude_pk)
+    block = get_block(order)
+    known = {block.get("id_mch"), *[attempt.get("id_mch") for attempt in block.get("attempts", [])]}
+    for task in tasks.order_by("-pk"):
+        receipt = (task.payload or {}).get("dispatch_attempt", {})
+        if receipt.get("state") == "accepted" and receipt.get("courier_ref") in known:
+            continue
+        return task
+    return None
+
+
+def ensure_dispatch_resolved(order) -> None:
+    if unresolved_dispatch(order) is not None:
+        raise ValueError("Há um despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.")
 
 
 def request_dispatch(order, *, actor: str) -> Directive | None:
@@ -191,6 +217,7 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
     """
     from shopman.shop.directives import COURIER_DISPATCH
 
+    ensure_dispatch_resolved(order)
     if not is_enabled_for(order):
         return None
     if order.status not in (Order.Status.READY, Order.Status.DISPATCHED):
@@ -223,6 +250,7 @@ def request_dispatch(order, *, actor: str) -> Directive | None:
 
 def redispatch(order, *, actor: str) -> Directive:
     """Re-despacho manual pelo operador após corrida N/C ou erro terminal."""
+    ensure_dispatch_resolved(order)
     if get_adapter("courier") is None:
         raise ValueError("Nenhum adapter de courier configurado.")
     if get_fulfillment_type(order) != "delivery":

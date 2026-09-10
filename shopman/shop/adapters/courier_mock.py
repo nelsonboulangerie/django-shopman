@@ -62,6 +62,8 @@ def dispatch(payload: dict) -> CourierDispatchResult:
         if external:
             break
     courier_ref = f"MOCK-{external or _counter}"
+    if courier_ref in _rides:
+        courier_ref = f"{courier_ref}-{_counter}"
     _rides[courier_ref] = {"status": "D", "payload": payload, "driver": None}
     return CourierDispatchResult(courier_ref=courier_ref)
 

@@ -630,12 +630,17 @@ def _courier_block(order: Order) -> dict | None:
         if active and block.get("id_mch"):
             position = cache.get(f"courier:pos:{block['id_mch']}")
 
+        from shopman.shop.services.courier import unresolved_dispatch
+
+        unresolved = unresolved_dispatch(order)
         error = block.get("error") if isinstance(block.get("error"), dict) else None
 
+        if unresolved is not None:
+            error = {"message": "Despacho sem resultado confirmado. Confira a solicitação na central antes de abrir outra corrida.", "at": unresolved.updated_at.isoformat()}
         return {
             "provider": str(block.get("provider") or ("machine" if adapter_on else "")),
             "status": ride_status,
-            "status_label": COURIER_STATUS_LABELS.get(ride_status, ""),
+            "status_label": "Despacho sem resultado confirmado" if unresolved is not None else COURIER_STATUS_LABELS.get(ride_status, ""),
             "active": active,
             "driver": block.get("driver") if isinstance(block.get("driver"), dict) else None,
             "tracking_url": str(block.get("tracking_url") or ""),
@@ -653,7 +658,7 @@ def _courier_block(order: Order) -> dict | None:
             "position": position,
             "error": error,
             "can_quote": adapter_on and not active and order.status not in ("cancelled", "completed"),
-            "can_dispatch": adapter_on and not active and order_can_ride,
+            "can_dispatch": adapter_on and not active and order_can_ride and unresolved is None,
             "can_cancel": active and ride_status in CANCELLABLE_STATUSES,
         }
     except Exception:

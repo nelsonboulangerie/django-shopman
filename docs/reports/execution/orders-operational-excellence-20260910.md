@@ -524,3 +524,30 @@ writers, histórico/concorrência e recuperação completa precisam das provas r
 Reteste do módulo da fachada após corrigir a expectativa: **6 passed**. Uma primeira
 substituição textual usou nome singular do mock e não alterou a linha; o reteste capturou
 isso, corrigido antes do resultado acima. A cadeia completa será repetida na validação final.
+
+### WP04 — H01: tentativa courier de resultado desconhecido
+
+Evidência anterior nova: provider sintético aceitou a primeira chamada e perdeu a resposta;
+retry abriu segunda solicitação (1 failed, 32 deselected). Agora Directive.payload conserva
+started antes da rede, unknown sem repetição, accepted antes de vincular Order. Aceite
+conhecido recupera somente vínculo local; perda ao persistir aceite deixa started e exige
+verificação. Dois workers distintos serializam a intenção no Order e apenas um chama o
+adapter. A tarefa concorrente recusada registra not_applied + blocked_by, não inventa uma
+segunda chamada desconhecida. Projeção e redispatch bloqueiam enquanto há recibo irresoluto.
+Estimativa grava apenas sobre courier recém-relido sob lock; payload usa Order relido.
+Mock agora devolve referência distinta em nova solicitação do mesmo pedido, sem supor
+id_externo idempotente. Histórico de corrida já adotada continua reconhecido.
+
+Validação PostgreSQL: **49 passed in 6.82s** (courier_service + machine_webhook), incluindo
+falha ao adotar aceite, falha ao salvar recibo, tentativa legada sem recibo e dois workers.
+Primeira rodada: 2 failed/31 passed (expectativa antiga de retry e mock reutilizava referência);
+segunda: 1 failed/48 passed (callback automático consumia tarefa antes do ensaio concorrente).
+O teste agora isola callback e executa explicitamente dois workers/conexões reais. Ruff passou.
+Não houve consulta, despacho ou cancelamento externo real. G03 permanece pendente para
+verificação homologada por referência: nenhum endpoint ou garantia do fornecedor inventado.
+
+Migração: expand JSON, sem DDL/backfill. Retry legado attempts>1 sem recibo exige verificação.
+Rollback não pode reativar worker antigo sobre started/unknown/accepted nem apagar receipts;
+conservar handler/leitor e suspender somente dispatcher incompatível. Zero repetição automática
+após resposta perdida; esforço humano e p95 da verificação externa ainda não demonstrados.
+WP04 continua em execução pelas demais fronteiras/matriz; isto não declara piloto ou rollout.

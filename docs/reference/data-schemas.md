@@ -1802,3 +1802,19 @@ a projeção normaliza ambos com `order_helpers.json_quantity`. Expansão de bun
 Decimal antes de serializar. Nenhum backfill/truncamento é permitido. Frontend KDS mostra
 a quantidade e soma apenas para resumo visual; ledger continua sendo Order/stockman.
 Unidade histórica não é inferida de Product atual; inventário/unidade continua H08/G06.
+
+
+### courier.dispatch — recibo da tentativa externa
+
+`Directive.payload.dispatch_attempt` é escrito pelo CourierDispatchHandler: `state`
+(`started`, `unknown`, `not_applied`, `accepted`, `inert`), `started_at`, `updated_at`,
+`fingerprint` do payload exato e, quando recebido, `courier_ref`. Não duplica endereço/
+telefone. A tentativa started é persistida antes do POST; accepted com referência é
+persistido antes da adoção local. Retry de accepted só adota o fato; started/unknown
+não repete POST sem consulta confiável homologada. Sem essa consulta, alerta e detalhe do
+pedido informam verificação pendente, e redispatch fica bloqueado. Não há expiração que
+libere uma nova tentativa. Tentativa antiga já executada sem recibo não é reexecutada.
+Recusa comprovada not_applied pode receber nova intenção após correção; Machine 2xx sem
+id ou resposta ilegível é unknown. Não muda o significado do status de Order/courier.
+G03 decide verificação/adopção humana; G08 retenção antes de piloto. Rollback conserva
+os guards ou suspende despacho; nunca remove recibos de resultado desconhecido.
