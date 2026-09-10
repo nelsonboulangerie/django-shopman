@@ -234,6 +234,7 @@ def has_committed_mutation_attempt(
 
     event_specs = {
         "start": ("start", WorkOrderEvent.Kind.STARTED),
+        "correct_qc": ("quality-correction", WorkOrderEvent.Kind.QUALITY_CORRECTED),
         "advance_step": ("advance-step", WorkOrderEvent.Kind.STEP_ADVANCED),
         "void": ("void", WorkOrderEvent.Kind.VOIDED),
         "oven_arm": ("oven-arm", WorkOrderEvent.Kind.OVEN_ARMED),
@@ -1642,6 +1643,9 @@ def resolve_partition(work_order, *, quantity, quality: str = "", partition=None
         if defect in vetoes:
             # Veto é segurança alimentar: as unidades nunca viram lote com
             # desconto — viram perda, carregando o motivo.
+            if loss_seen:
+                raise ProductionError("A perda deve ser informada em um único grupo.")
+            loss_seen = True
             wasted_items.append(
                 {
                     "item_ref": work_order.output_sku,
@@ -1704,6 +1708,511 @@ def _production_batch_ref(work_order, *, production_date, ordinal: int) -> str:
     digest = hashlib.sha256(natural.encode("utf-8")).hexdigest()[:12]
     prefix = str(work_order.output_sku)[:28].rstrip("-") or "batch"
     return f"{prefix}-{production_date:%Y%m%d}-{digest}"
+
+
+def _quality_correction_batch_ref(work_order, *, event_seq: int, ordinal: int) -> str:
+    """Versioned lot ref for an immutable post-close QC correction."""
+    production_date = work_order.target_date or timezone.localdate()
+    base = f"{work_order.output_sku}-{production_date:%Y%m%d}-{work_order.pk}-qc{event_seq}-{ordinal}"
+    if len(base) <= 50:
+        return base
+    digest = hashlib.sha256(base.encode("utf-8")).hexdigest()[:12]
+    prefix = str(work_order.output_sku)[:24].rstrip("-") or "batch"
+    return f"{prefix}-{production_date:%Y%m%d}-qc{event_seq}-{digest}"
+
+
+def _quality_correction_attempt(partition, reason: str) -> dict:
+    """Canonical client intent stored in the event for exact replay checks."""
+    groups = []
+    for raw in partition or ():
+        groups.append(
+            {
+                "quantity": _qty(_positive_quantity(raw.get("quantity"))),
+                "quality_grade_ref": str(raw.get("quality_grade_ref") or "").strip().lower(),
+                "quality_defect_ref": str(raw.get("quality_defect_ref") or "").strip().lower(),
+                "loss": bool(raw.get("loss")),
+            }
+        )
+    return {"partition": groups, "reason": str(reason or "").strip()}
+
+
+def _quality_partition_quantity(groups, *, loss: bool) -> Decimal:
+    return sum(
+        (
+            Decimal(str(group.get("quantity") or "0"))
+            for group in groups
+            if bool(group.get("loss")) is loss
+        ),
+        Decimal("0"),
+    )
+
+
+def _saleable_quality_signature(groups) -> tuple:
+    """Commercial + explanatory QC fact, excluding versioned batch identity."""
+    return tuple(
+        sorted(
+            (
+                str(group.get("quality_grade_ref") or ""),
+                str(group.get("quality_defect_ref") or ""),
+                _qty(Decimal(str(group.get("quantity") or "0"))),
+            )
+            for group in groups
+            if not bool(group.get("loss"))
+        )
+    )
+
+
+def _loss_quality_signature(groups) -> tuple:
+    return tuple(
+        sorted(
+            (
+                str(group.get("quality_defect_ref") or ""),
+                _qty(Decimal(str(group.get("quantity") or "0"))),
+            )
+            for group in groups
+            if bool(group.get("loss"))
+        )
+    )
+
+
+def _quality_group_from_item(item: dict, *, loss: bool, batch_ref: str = "") -> dict:
+    meta = dict(item.get("meta") or {})
+    return {
+        "quantity": _qty(Decimal(str(item.get("quantity") or "0"))),
+        "quality_grade_ref": "" if loss else str(item.get("quality_grade_ref") or ""),
+        "quality_defect_ref": str(item.get("quality_defect_ref") or ""),
+        "loss": loss,
+        "batch_ref": "" if loss else batch_ref,
+        "markdown_percent": 0 if loss else int(meta.get("quality_markdown_percent") or 0),
+        "quality_reason": str(meta.get("quality_reason") or ""),
+    }
+
+
+def _locked_quality_source_stock(work_order, before_partition):
+    """Lock and prove that the whole effective saleable output is still present."""
+    from shopman.stockman.models import Move, Quant
+
+    batch_refs = [
+        str(group.get("batch_ref") or "")
+        for group in before_partition
+        if not bool(group.get("loss"))
+    ]
+    if not batch_refs or any(not ref for ref in batch_refs):
+        raise ProductionConflict(
+            "Esta fornada não possui lotes identificáveis para uma correção segura.",
+            code="quality_correction_blocked",
+            data={"work_order": work_order.ref, "cause": "missing_batch_traceability"},
+        )
+    quants = list(
+        Quant.objects.select_for_update()
+        .filter(sku=work_order.output_sku, target_date__isnull=True, batch__in=batch_refs)
+        .order_by("pk")
+    )
+    expected = _quality_partition_quantity(before_partition, loss=False)
+    present = sum((Decimal(str(quant.quantity)) for quant in quants), Decimal("0"))
+    if present != expected:
+        raise ProductionConflict(
+            "A qualidade não pode ser corrigida porque parte desta fornada já saiu do estoque.",
+            code="quality_correction_blocked",
+            data={
+                "work_order": work_order.ref,
+                "cause": "stock_already_changed",
+                "expected_quantity": _qty(expected),
+                "present_quantity": _qty(present),
+            },
+        )
+    disallowed_negative = Move.objects.filter(quant__in=quants, delta__lt=0).exclude(
+        kind=Move.Kind.TRANSFER
+    )
+    if disallowed_negative.exists():
+        raise ProductionConflict(
+            "A qualidade não pode ser corrigida porque este lote já teve venda, perda ou ajuste.",
+            code="quality_correction_blocked",
+            data={"work_order": work_order.ref, "cause": "stock_history_changed"},
+        )
+    position_ids = {quant.position_id for quant in quants if quant.quantity > 0}
+    if len(position_ids) != 1:
+        raise ProductionConflict(
+            "Esta fornada está distribuída em mais de uma posição. Resolva o estoque antes de corrigir o QC.",
+            code="quality_correction_blocked",
+            data={"work_order": work_order.ref, "cause": "multiple_stock_positions"},
+        )
+    return quants, next(iter(position_ids))
+
+
+def _plan_quality_hold_reassignment(holds, after_partition):
+    """Assign each 1:1 active hold to one compatible corrected grade bucket."""
+    from shopman.stockman.services.holds import (
+        QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
+        QUALITY_GRADE_POLICY_VERSION,
+        QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    )
+
+    from shopman.shop.models import QualityGrade
+
+    capacities = {
+        str(group.get("quality_grade_ref") or ""): Decimal(str(group.get("quantity") or "0"))
+        for group in after_partition
+        if not bool(group.get("loss"))
+    }
+    ranks = dict(QualityGrade.objects.filter(ref__in=capacities).values_list("ref", "rank"))
+    planned = []
+    ordered = sorted(
+        holds,
+        key=lambda hold: (
+            len((hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY) or capacities),
+            -Decimal(str(hold.quantity)),
+            hold.pk,
+        ),
+    )
+    blocked = []
+    for hold in ordered:
+        metadata = hold.metadata or {}
+        if metadata.get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
+            blocked.append(hold)
+            continue
+        allowlist = metadata.get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+        accepted = set(capacities) if allowlist is None else set(allowlist)
+        fits = [
+            (remaining, grade_ref)
+            for grade_ref, remaining in capacities.items()
+            if grade_ref in accepted and remaining >= hold.quantity
+        ]
+        if not fits:
+            blocked.append(hold)
+            continue
+        # Preserve the strongest customer promise first.  A permissive local
+        # hold may accept every grade, but that must not make it absorb the
+        # discounted bucket while full-price stock is still available.
+        _remaining, grade_ref = max(
+            fits,
+            key=lambda candidate: (
+                ranks.get(candidate[1], 0),
+                -candidate[0],
+                candidate[1],
+            ),
+        )
+        capacities[grade_ref] -= hold.quantity
+        planned.append((hold, grade_ref))
+    if blocked:
+        order_refs = sorted(
+            {
+                str((hold.metadata or {}).get("order_ref") or (hold.metadata or {}).get("reference") or hold.hold_id)
+                for hold in blocked
+            }
+        )
+        raise ProductionConflict(
+            "A correção deixaria reservas incompatíveis. Resolva os pedidos no Gestor antes de continuar: "
+            + ", ".join(order_refs),
+            code="quality_correction_blocked",
+            data={"cause": "ineligible_holds", "order_refs": order_refs},
+        )
+    return planned
+
+
+def _apply_quality_stock_reclassification(work_order, before_partition, after_items, *, event_seq: int):
+    """Create versioned lots and paired ledger legs; never rewrite old facts."""
+    from django.db.models import Q
+    from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Quant
+
+    source_quants, position_id = _locked_quality_source_stock(work_order, before_partition)
+    active_holds = list(
+        Hold.objects.select_for_update()
+        .filter(quant__in=source_quants, status__in=(HoldStatus.PENDING, HoldStatus.CONFIRMED))
+        .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+        .order_by("pk")
+    )
+    provisional = [
+        _quality_group_from_item(item, loss=False, batch_ref="")
+        for item in after_items
+    ]
+    hold_plan = _plan_quality_hold_reassignment(active_holds, provisional)
+
+    source_batch = (
+        Batch.objects.filter(
+            ref__in=[group.get("batch_ref") for group in before_partition if group.get("batch_ref")]
+        )
+        .order_by("pk")
+        .first()
+    )
+    destination_quants = {}
+    after_groups = []
+    reason = f"Correção de qualidade: {work_order.ref}"
+    for ordinal, item in enumerate(after_items, start=1):
+        batch_ref = _quality_correction_batch_ref(work_order, event_seq=event_seq, ordinal=ordinal)
+        meta = dict(item.get("meta") or {})
+        batch, created = Batch.objects.get_or_create(
+            ref=batch_ref,
+            defaults={
+                "sku": work_order.output_sku,
+                "production_date": getattr(source_batch, "production_date", None) or work_order.target_date,
+                "expiry_date": getattr(source_batch, "expiry_date", None),
+                "quality_grade_ref": item.get("quality_grade_ref", ""),
+                "nonconformity_reason": str(meta.get("quality_reason") or ""),
+                "nonconformity_percent": int(meta.get("quality_markdown_percent") or 0),
+                "notes": f"Reclassificação QC da fornada {work_order.ref}",
+            },
+        )
+        if not created:
+            expected = (
+                work_order.output_sku,
+                str(item.get("quality_grade_ref") or ""),
+                int(meta.get("quality_markdown_percent") or 0),
+                str(meta.get("quality_reason") or ""),
+            )
+            actual = (
+                batch.sku,
+                batch.quality_grade_ref,
+                batch.nonconformity_percent,
+                batch.nonconformity_reason,
+            )
+            if actual != expected:
+                raise ProductionConflict(
+                    "O lote versionado da correção já existe com outro conteúdo.",
+                    data={"work_order": work_order.ref, "cause": "correction_batch_conflict"},
+                )
+        quant, _ = Quant.objects.get_or_create(
+            sku=work_order.output_sku,
+            position_id=position_id,
+            target_date=None,
+            batch=batch_ref,
+            defaults={"metadata": {"production_qc_correction": work_order.ref}},
+        )
+        quant = Quant.objects.select_for_update().get(pk=quant.pk)
+        if quant.quantity != 0:
+            raise ProductionConflict(
+                "O saldo do lote versionado da correção não está vazio.",
+                data={"work_order": work_order.ref, "cause": "correction_quant_conflict"},
+            )
+        quantity = Decimal(str(item.get("quantity") or "0"))
+        Move.objects.create(
+            quant=quant,
+            delta=quantity,
+            reason=reason,
+            kind=Move.Kind.TRANSFER,
+            metadata={
+                "operation": "production_qc_correction",
+                "work_order_ref": work_order.ref,
+                "event_seq": event_seq,
+                "direction": "in",
+            },
+        )
+        destination_quants[str(item.get("quality_grade_ref") or "")] = quant
+        after_groups.append(_quality_group_from_item(item, loss=False, batch_ref=batch_ref))
+
+    for hold, grade_ref in hold_plan:
+        hold.quant = destination_quants[grade_ref]
+        hold.save(update_fields=["quant"])
+
+    for quant in source_quants:
+        quantity = Decimal(str(quant.quantity))
+        if quantity <= 0:
+            continue
+        Move.objects.create(
+            quant=quant,
+            delta=-quantity,
+            reason=reason,
+            kind=Move.Kind.TRANSFER,
+            metadata={
+                "operation": "production_qc_correction",
+                "work_order_ref": work_order.ref,
+                "event_seq": event_seq,
+                "direction": "out",
+            },
+        )
+    return after_groups, {
+        "stock_reclassified": True,
+        "from_batch_refs": sorted({quant.batch for quant in source_quants}),
+        "to_batch_refs": [group["batch_ref"] for group in after_groups],
+        "holds_reassigned": len(hold_plan),
+    }
+
+
+def _quality_correction_replay(*, event_key: str, work_order_id, actor: str, attempt: dict):
+    """Resolve an exact retry, including one that waited on the WO lock."""
+    from shopman.craftsman.models import WorkOrderEvent
+
+    replay = WorkOrderEvent.objects.select_related("work_order").filter(idempotency_key=event_key).first()
+    if replay is None:
+        return None
+    if (
+        replay.kind != WorkOrderEvent.Kind.QUALITY_CORRECTED
+        or replay.work_order_id != work_order_id
+        or replay.actor != str(actor or "")
+        or (replay.payload or {}).get("attempt") != attempt
+    ):
+        raise ProductionConflict(
+            "Esta chave de tentativa já foi usada em outra correção.",
+            data={"work_order": replay.work_order.ref, "cause": "idempotency_conflict"},
+        )
+    return replay.work_order
+
+
+def apply_quality_correction(
+    *,
+    work_order_id,
+    partition,
+    reason: str,
+    actor: str,
+    expected_rev: int | None,
+    idempotency_key: str | None,
+):
+    """Correct post-close QC as a versioned, audited stock reclassification.
+
+    Produced and loss quantities are deliberately immutable here.  Correcting
+    yield is a different physical-stock operation; this endpoint only changes
+    the orthogonal grade/reason fact the manager reviewed.
+    """
+    from django.db import transaction
+    from shopman.craftsman.models import WorkOrder, WorkOrderEvent
+    from shopman.craftsman.services.scheduling import _check_rev, _next_seq
+
+    from shopman.shop.services import campaign as campaign_service
+    from shopman.shop.services import quality as quality_service
+
+    _require_irreversible_attempt(
+        actor=actor,
+        expected_rev=expected_rev,
+        idempotency_key=idempotency_key,
+    )
+    audit_reason = str(reason or "").strip()
+    if not audit_reason:
+        raise ProductionError("Informe por que a qualidade está sendo corrigida.")
+    attempt = _quality_correction_attempt(partition, audit_reason)
+    event_key = _mutation_idempotency_key("quality-correction", work_order_id, idempotency_key)
+    try:
+        with transaction.atomic():
+            replay = _quality_correction_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                attempt=attempt,
+            )
+            if replay is not None:
+                return replay
+
+            work_order = WorkOrder.objects.select_for_update().filter(pk=work_order_id).first()
+            if work_order is None:
+                raise ProductionNotFound(
+                    "Ordem de produção não encontrada.",
+                    resource="work_order",
+                    identifier=str(work_order_id),
+                )
+            # Two identical requests can both miss the optimistic lookup; the
+            # loser then waits here while the winner commits.  Re-read after
+            # acquiring the aggregate lock so a lost response is replayed
+            # instead of being misreported as a stale revision.
+            replay = _quality_correction_replay(
+                event_key=event_key,
+                work_order_id=work_order_id,
+                actor=actor,
+                attempt=attempt,
+            )
+            if replay is not None:
+                return replay
+            if work_order.status != WorkOrder.Status.FINISHED:
+                raise ProductionConflict(
+                    "Somente uma fornada concluída pode ter a qualidade corrigida.",
+                    data={"work_order": work_order.ref, "cause": "quality_correction_requires_finished"},
+                )
+            if work_order.rev != expected_rev:
+                from shopman.craftsman.exceptions import StaleRevision
+
+                raise StaleRevision(work_order, expected_rev)
+
+            before = quality_service.effective_partition(work_order)
+            if not before:
+                raise ProductionConflict(
+                    "A partição original desta fornada não pôde ser identificada.",
+                    code="quality_correction_blocked",
+                    data={"work_order": work_order.ref, "cause": "missing_quality_partition"},
+                )
+            total = _quality_partition_quantity(before, loss=False) + _quality_partition_quantity(before, loss=True)
+            finished_items, wasted_items = resolve_partition(
+                work_order,
+                quantity=total,
+                partition=partition,
+            )
+            provisional = [
+                *(_quality_group_from_item(item, loss=False) for item in finished_items),
+                *(_quality_group_from_item(item, loss=True) for item in wasted_items),
+            ]
+            if _quality_partition_quantity(provisional, loss=False) != _quality_partition_quantity(before, loss=False):
+                raise ProductionError("A correção de QC não pode alterar a quantidade produzida.")
+            if _quality_partition_quantity(provisional, loss=True) != _quality_partition_quantity(before, loss=True):
+                raise ProductionError("A correção de QC não pode alterar a quantidade de perda.")
+            saleable_changed = _saleable_quality_signature(before) != _saleable_quality_signature(provisional)
+            loss_changed = _loss_quality_signature(before) != _loss_quality_signature(provisional)
+            if not saleable_changed and not loss_changed:
+                raise ProductionError("Nenhuma alteração de qualidade foi informada.")
+
+            _check_rev(work_order, expected_rev)
+            event_seq = _next_seq(work_order)
+            if saleable_changed:
+                saleable_groups, stock_impact = _apply_quality_stock_reclassification(
+                    work_order,
+                    before,
+                    finished_items,
+                    event_seq=event_seq,
+                )
+            else:
+                saleable_groups = [dict(group) for group in before if not bool(group.get("loss"))]
+                stock_impact = {"stock_reclassified": False, "holds_reassigned": 0}
+            after = [
+                *saleable_groups,
+                *(_quality_group_from_item(item, loss=True) for item in wasted_items),
+            ]
+            communication_impact = campaign_service.reconcile_quality_correction(
+                work_order,
+                after,
+            )
+            impact = {
+                **stock_impact,
+                "communications": communication_impact,
+            }
+            irreversible = communication_impact["irreversible_announcements"]
+            if irreversible:
+                from shopman.shop.adapters import alert as alert_adapter
+
+                alert_adapter.create(
+                    "production_quality_communication",
+                    "warning",
+                    (
+                        f"A qualidade de {work_order.ref} foi corrigida depois que "
+                        f"{len(irreversible)} comunicação(ões) já havia(m) saído ou iniciado. "
+                        "Confira a fornada e o histórico de Marketing."
+                    ),
+                    order_ref=work_order.ref,
+                )
+            event = WorkOrderEvent.objects.create(
+                work_order=work_order,
+                seq=event_seq,
+                kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+                payload={
+                    "schema_version": 1,
+                    "reason": audit_reason,
+                    "before_partition": before,
+                    "after_partition": after,
+                    "impact": impact,
+                    "attempt": attempt,
+                },
+                actor=actor,
+                idempotency_key=event_key,
+            )
+            work_order.refresh_from_db(fields=["rev"])
+            logger.info(
+                "production.quality_corrected wo=%s event=%s actor=%s stock=%s",
+                work_order.ref,
+                event.pk,
+                actor,
+                saleable_changed,
+            )
+            return work_order
+    except (ProductionError, ProductionConflict, ProductionNotFound):
+        raise
+    except Exception as exc:
+        translated = _operator_error(exc)
+        raise translated from (None if translated is exc else exc)
 
 
 def apply_finish(

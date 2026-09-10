@@ -13,16 +13,24 @@ import {
   type QcPartitionGroup,
 } from "~/presentation/qc";
 
-const props = defineProps<{
-  title: string;
-  subtitle: string;
-  planned: number | null;
-  /** A fornada real que entrou no forno (declarada no start); null sem start. */
-  started: number | null;
-  grades: QCGradeProjection[];
-  defects: QCDefectProjection[];
-  submitting: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    title: string;
+    subtitle: string;
+    planned: number | null;
+    /** A fornada real que entrou no forno (declarada no start); null sem start. */
+    started: number | null;
+    grades: QCGradeProjection[];
+    defects: QCDefectProjection[];
+    submitting: boolean;
+    mode?: "close" | "correct";
+    initialPartition?: QcPartitionGroup[];
+  }>(),
+  {
+    mode: "close",
+    initialPartition: () => [],
+  },
+);
 
 const emit = defineEmits<{
   back: [];
@@ -32,6 +40,7 @@ const emit = defineEmits<{
       partition: QcPartitionGroup[];
       yield_deviation_confirmed: boolean;
       yield_deviation_reason: string;
+      reason: string;
     },
   ];
 }>();
@@ -42,19 +51,52 @@ type SheetQuestion =
   | { kind: "grade_reason"; gradeRef: string }
   | { kind: "loss_reason" };
 
-const anchor = ovenAnchor(props.planned, props.started);
+function quantityOf(group: QcPartitionGroup): number {
+  const quantity = Number(group.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 0;
+}
+
+const correctionTotal = props.initialPartition.reduce(
+  (total, group) => total + quantityOf(group),
+  0,
+);
+const correctionLoss = props.initialPartition
+  .filter((group) => group.loss)
+  .reduce((total, group) => total + quantityOf(group), 0);
+const anchor =
+  props.mode === "correct"
+    ? { anchor: correctionTotal }
+    : ovenAnchor(props.planned, props.started);
 const orderedGrades = computed(() =>
   [...props.grades].sort((left, right) => right.rank - left.rank),
 );
 const defaultRef = computed(() => defaultGradeRef(props.grades));
 
 // Chaves por ref tornam impossível repetir um grau no payload.
-const gradeQuantities = ref<Record<string, number>>({});
-const gradeDefectRefs = ref<Record<string, string>>({});
-const lossQuantity = ref(0);
-const lossDefectRef = ref("");
+const gradeQuantities = ref<Record<string, number>>(
+  Object.fromEntries(
+    props.initialPartition
+      .filter((group) => !group.loss && group.quality_grade_ref)
+      .map((group) => [group.quality_grade_ref!, quantityOf(group)]),
+  ),
+);
+const gradeDefectRefs = ref<Record<string, string>>(
+  Object.fromEntries(
+    props.initialPartition
+      .filter(
+        (group) =>
+          !group.loss && group.quality_grade_ref && group.quality_defect_ref,
+      )
+      .map((group) => [group.quality_grade_ref!, group.quality_defect_ref!]),
+  ),
+);
+const lossQuantity = ref(props.mode === "correct" ? correctionLoss : 0);
+const lossDefectRef = ref(
+  props.initialPartition.find((group) => group.loss)?.quality_defect_ref ?? "",
+);
 const overshootConfirmed = ref(false);
 const overshootReason = ref("");
+const auditReason = ref("");
 
 // Com âncora, Normal é saldo e não exige digitação. Sem âncora, o padrão é um
 // bucket editável como os demais para que uma fornada avulsa possa ser fechada.
@@ -134,11 +176,24 @@ function setTargetQuantity(quantity: number) {
     lossQuantity.value = quantity;
     if (quantity === 0) lossDefectRef.value = "";
   } else {
+    let nextQuantity = quantity;
+    if (props.mode === "correct" && target.gradeRef !== defaultRef.value) {
+      const otherExplicit = orderedGrades.value
+        .filter(
+          (grade) =>
+            grade.ref !== defaultRef.value && grade.ref !== target.gradeRef,
+        )
+        .reduce((total, grade) => total + explicitGradeQuantity(grade.ref), 0);
+      nextQuantity = Math.min(
+        quantity,
+        Math.max(0, correctionTotal - correctionLoss - otherExplicit),
+      );
+    }
     gradeQuantities.value = {
       ...gradeQuantities.value,
-      [target.gradeRef]: quantity,
+      [target.gradeRef]: nextQuantity,
     };
-    if (quantity === 0) {
+    if (nextQuantity === 0) {
       gradeDefectRefs.value = {
         ...gradeDefectRefs.value,
         [target.gradeRef]: "",
@@ -177,6 +232,12 @@ function pickGrade(grade: QCGradeProjection) {
 }
 
 function pickLoss() {
+  if (props.mode === "correct") {
+    if (lossQuantity.value > 0) {
+      openQuestion({ kind: "loss_reason" }, false);
+    }
+    return;
+  }
   activeTarget.value = { kind: "loss" };
   fresh.value = true;
 }
@@ -245,6 +306,11 @@ const activeDefects = computed(() =>
     ? props.defects.filter((defect) => !defect.forces_discard)
     : props.defects,
 );
+const correctionReasonGrades = computed(() =>
+  props.mode === "correct"
+    ? orderedGrades.value.filter((grade) => gradeNeedsReason(grade))
+    : [],
+);
 const sheetTitle = computed(() => {
   if (sheetQuestion.value?.kind === "overshoot") {
     return `Foram contabilizadas ${total.value} de ${anchor.anchor} unidades?`;
@@ -304,6 +370,10 @@ function fixOvershoot() {
 
 function onConfirm() {
   if (props.submitting) return;
+  if (props.mode === "correct" && !auditReason.value.trim()) {
+    useSonner.warning("Informe o motivo da correção.");
+    return;
+  }
   if (total.value <= 0) {
     useSonner.warning("Informe a quantidade produzida ou a perda da fornada.");
     return;
@@ -322,21 +392,46 @@ function submit() {
     partition: buildPartition(),
     yield_deviation_confirmed: overshootConfirmed.value,
     yield_deviation_reason: overshootReason.value.trim(),
+    reason: auditReason.value.trim(),
   });
 }
 
-const isDirty = computed(
-  () =>
-    Object.values(gradeQuantities.value).some((quantity) => quantity > 0) ||
-    lossQuantity.value > 0 ||
-    Object.values(gradeDefectRefs.value).some(Boolean) ||
-    Boolean(lossDefectRef.value || overshootReason.value.trim()),
+const isDirty = computed(() =>
+  props.mode === "correct"
+    ? partitionKey(buildPartition()) !== partitionKey(props.initialPartition) ||
+      Boolean(auditReason.value.trim())
+    : Object.values(gradeQuantities.value).some((quantity) => quantity > 0) ||
+      lossQuantity.value > 0 ||
+      Object.values(gradeDefectRefs.value).some(Boolean) ||
+      Boolean(lossDefectRef.value || overshootReason.value.trim()),
 );
+
+function partitionKey(partition: QcPartitionGroup[]): string {
+  return JSON.stringify(
+    partition
+      .filter((group) => quantityOf(group) > 0)
+      .map((group) => ({
+        quantity: String(quantityOf(group)),
+        quality_grade_ref: group.quality_grade_ref ?? "",
+        quality_defect_ref: group.quality_defect_ref ?? "",
+        loss: Boolean(group.loss),
+      }))
+      .sort((left, right) =>
+        `${left.loss}:${left.quality_grade_ref}`.localeCompare(
+          `${right.loss}:${right.quality_grade_ref}`,
+        ),
+      ),
+  );
+}
 
 function requestBack() {
   if (
     isDirty.value &&
-    !window.confirm("Descartar as quantidades e os motivos informados?")
+    !window.confirm(
+      props.mode === "correct"
+        ? "Descartar a correção de qualidade?"
+        : "Descartar as quantidades e os motivos informados?",
+    )
   ) {
     return;
   }
@@ -390,7 +485,12 @@ const fieldCard =
       </button>
       <div class="min-w-0 text-center">
         <p class="truncate text-base font-semibold">{{ title }}</p>
-        <p class="truncate text-xs text-muted-foreground">{{ subtitle }}</p>
+        <p class="truncate text-xs text-muted-foreground">
+          <template v-if="mode === 'correct'"
+            >Correção de qualidade ·
+          </template>
+          {{ subtitle }}
+        </p>
       </div>
       <div class="rounded-md border bg-muted/40 px-3 py-2 text-sm tabular-nums">
         <template v-if="anchor.anchor !== null">
@@ -481,6 +581,24 @@ const fieldCard =
               {{ gradeQuantity(grade.ref) }}
             </span>
           </button>
+          <button
+            v-for="grade in correctionReasonGrades"
+            :key="`reason-${grade.ref}`"
+            type="button"
+            class="flex min-h-10 items-center justify-between gap-2 rounded-md border border-dashed px-3 text-left text-xs text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            :aria-label="`Alterar motivo de ${grade.label}`"
+            @click="
+              openQuestion({ kind: 'grade_reason', gradeRef: grade.ref }, false)
+            "
+          >
+            <span
+              >{{ grade.label }} ·
+              {{
+                defectLabel(gradeDefectRefs[grade.ref] ?? "") || "sem motivo"
+              }}</span
+            >
+            <span class="font-medium">Alterar motivo</span>
+          </button>
         </div>
 
         <button
@@ -488,7 +606,10 @@ const fieldCard =
           class="mt-4 flex min-h-16 items-center justify-between gap-2 rounded-md border border-destructive/50 px-3 text-left transition hover:bg-destructive/10"
           :class="{
             'ring-2 ring-destructive/30': activeTarget?.kind === 'loss',
+            'cursor-default opacity-70':
+              mode === 'correct' && lossQuantity === 0,
           }"
+          :disabled="mode === 'correct' && lossQuantity === 0"
           :aria-label="`Perda: ${lossQuantity} unidades`"
           @click="pickLoss"
         >
@@ -501,7 +622,7 @@ const fieldCard =
               {{ defectLabel(lossDefectRef) }}
             </span>
             <span v-else class="block text-xs text-muted-foreground">
-              quantidade + motivo
+              {{ mode === "correct" ? "sem perda" : "quantidade + motivo" }}
             </span>
           </span>
           <span class="text-sm font-semibold tabular-nums">
@@ -511,13 +632,34 @@ const fieldCard =
       </div>
     </div>
 
+    <label v-if="mode === 'correct'" class="mt-4 grid gap-1.5 text-sm">
+      <span class="font-medium">Motivo da correção</span>
+      <textarea
+        v-model="auditReason"
+        rows="2"
+        maxlength="500"
+        required
+        class="rounded-md border bg-background px-3 py-2 outline-none focus:ring-1 focus:ring-ring"
+        aria-label="Motivo da correção de qualidade"
+        placeholder="Ex.: reavaliação feita pelo responsável"
+      />
+    </label>
+
     <button
       type="button"
       class="mt-4 h-14 shrink-0 rounded-lg bg-primary text-lg font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-60"
-      :disabled="submitting"
+      :disabled="submitting || (mode === 'correct' && !auditReason.trim())"
       @click="onConfirm"
     >
-      {{ submitting ? "Fechando a fornada…" : "Confirmar" }}
+      {{
+        submitting
+          ? mode === "correct"
+            ? "Salvando correção…"
+            : "Fechando a fornada…"
+          : mode === "correct"
+            ? "Salvar correção"
+            : "Confirmar"
+      }}
     </button>
 
     <UiSheet

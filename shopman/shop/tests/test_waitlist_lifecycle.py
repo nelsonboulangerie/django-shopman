@@ -22,6 +22,7 @@ from shopman.offerman.models import Listing, ListingItem, Product
 from shopman.orderman.models import Order
 from shopman.stockman.models import Batch, Hold, HoldStatus, Position, PositionKind, Quant
 from shopman.stockman.services.holds import (
+    QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
     QUALITY_GRADE_POLICY_VERSION,
     QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
 )
@@ -313,6 +314,42 @@ class TestWaitlistReservationIntegrity:
         assert waitlist.open_window(SKU, qty_available=Decimal("1")) == []
         order.refresh_from_db()
         assert "waitlist" not in order.data
+
+    def test_materialized_hold_outside_frozen_qc_allowlist_does_not_open(self):
+        order = _order_in_fermata("W-QC-BLOCKED", "1")
+        hold = Hold.objects.get(metadata__reference="order:W-QC-BLOCKED")
+        hold.metadata[QUALITY_GRADE_ALLOWLIST_METADATA_KEY] = ["excellent", "standard"]
+        hold.save(update_fields=["metadata"])
+        physical = _materialize(order, qty=Decimal("1"))
+        hold.refresh_from_db()
+        Batch.objects.create(
+            ref=physical.batch,
+            sku=SKU,
+            quality_grade_ref="fair",
+            nonconformity_percent=15,
+        )
+
+        assert waitlist._quant_reservation_is_sound(hold) is False
+        assert waitlist.open_window(SKU, qty_available=Decimal("1")) == []
+        order.refresh_from_db()
+        assert "waitlist" not in order.data
+
+    def test_materialized_hold_inside_frozen_qc_allowlist_opens(self):
+        order = _order_in_fermata("W-QC-ALLOWED", "1")
+        hold = Hold.objects.get(metadata__reference="order:W-QC-ALLOWED")
+        hold.metadata[QUALITY_GRADE_ALLOWLIST_METADATA_KEY] = ["excellent", "standard"]
+        hold.save(update_fields=["metadata"])
+        physical = _materialize(order, qty=Decimal("1"))
+        hold.refresh_from_db()
+        Batch.objects.create(
+            ref=physical.batch,
+            sku=SKU,
+            quality_grade_ref="standard",
+            nonconformity_percent=0,
+        )
+
+        assert waitlist._quant_reservation_is_sound(hold) is True
+        assert waitlist.open_window(SKU, qty_available=Decimal("1")) == [order.ref]
 
     def test_partial_materialization_does_not_promise_the_whole_order(self):
         order = _order_in_fermata("W-PARTIAL", "1")

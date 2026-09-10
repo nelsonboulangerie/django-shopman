@@ -21,8 +21,10 @@ Duas escolhas estruturais:
 from __future__ import annotations
 
 import logging
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import timedelta
+from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
 from django.utils import timezone
@@ -42,6 +44,14 @@ logger = logging.getLogger(__name__)
 
 #: Plataformas que publicam conteúdo (vs. notificar audiência direta).
 POSTING_PLATFORMS = ("instagram", "facebook", "google_business")
+
+_REVERSIBLE_ANNOUNCEMENT_STATUSES = frozenset(
+    {
+        AnnouncementStatus.DRAFT,
+        AnnouncementStatus.PENDING_REVIEW,
+        AnnouncementStatus.APPROVED,
+    }
+)
 
 
 class CampaignError(Exception):
@@ -222,6 +232,208 @@ def matches_filter(rule: Campaign, context: dict) -> bool:
             return False
 
     return True
+
+
+def reconcile_quality_correction(work_order, after_partition) -> dict:
+    """Close production announcements invalidated by a later QC correction.
+
+    The production correction and this reconciliation are one database fact:
+    callers invoke this service inside their mutation transaction.  Rows are
+    locked so a queued directive either becomes ``running`` first (and is
+    reported as irreversible) or sees the announcement as ``superseded`` when
+    its handler eventually runs.
+
+    Only quality-filtered announcements born from this exact work order are in
+    scope.  Messages that still satisfy their campaign remain untouched.
+    ``published`` announcements and any announcement whose directive is already
+    ``running``/``done`` cannot honestly be recalled, so their immutable impact
+    is returned to the correction event instead of changing their status.
+    """
+    from shopman.orderman.models import Directive
+
+    from shopman.shop.models import UserNotification
+
+    work_order_ref = str(getattr(work_order, "ref", "") or "").strip()
+    if not work_order_ref:
+        raise CampaignError("A correção de qualidade precisa identificar a fornada.")
+
+    corrected_quality, output_partition = _corrected_campaign_quality(after_partition)
+    result = {
+        "superseded_announcement_ids": [],
+        "irreversible_announcements": [],
+        "closed_review_notification_ids": [],
+    }
+
+    with transaction.atomic():
+        announcements = list(
+            Announcement.objects.select_for_update()
+            .select_related("rule")
+            .filter(trigger_context__work_order_ref=work_order_ref)
+            .order_by("pk")
+        )
+        announcements = [
+            announcement
+            for announcement in announcements
+            if (announcement.trigger_context or {}).get("trigger")
+            == Trigger.PRODUCTION_FINISHED
+        ]
+        if not announcements:
+            return result
+
+        announcement_ids = [announcement.pk for announcement in announcements]
+        directives = list(
+            Directive.objects.select_for_update()
+            .filter(
+                topic__in=(ANNOUNCEMENT_PUBLISH, ANNOUNCEMENT_NOTIFY),
+                payload__announcement_id__in=announcement_ids,
+            )
+            .order_by("pk")
+        )
+        directives_by_announcement = defaultdict(list)
+        for directive in directives:
+            announcement_id = (directive.payload or {}).get("announcement_id")
+            try:
+                announcement_id = int(announcement_id)
+            except (TypeError, ValueError):
+                continue
+            directives_by_announcement[announcement_id].append(directive)
+
+        now = timezone.now()
+        for announcement in announcements:
+            rule = announcement.rule
+            if rule is None or not (rule.trigger_filter or {}).get("quality_min"):
+                continue
+
+            corrected_context = {
+                **(announcement.trigger_context or {}),
+                "quality": corrected_quality,
+                "output_partition": output_partition,
+            }
+            if _matches_corrected_quality(rule, corrected_context):
+                continue
+
+            related = directives_by_announcement.get(announcement.pk, [])
+            directive_states = [
+                {"id": directive.pk, "topic": directive.topic, "status": directive.status}
+                for directive in related
+            ]
+            has_irreversible_directive = any(
+                directive.status in (Directive.Status.RUNNING, Directive.Status.DONE)
+                for directive in related
+            )
+
+            if announcement.status == AnnouncementStatus.PUBLISHED or has_irreversible_directive:
+                result["irreversible_announcements"].append(
+                    {
+                        "announcement_id": announcement.pk,
+                        "status": announcement.status,
+                        "published_at": (
+                            announcement.published_at.isoformat()
+                            if announcement.published_at
+                            else ""
+                        ),
+                        "directives": directive_states,
+                    }
+                )
+                continue
+
+            publishing_is_reversible = (
+                announcement.status == AnnouncementStatus.PUBLISHING
+                and all(directive.status == Directive.Status.QUEUED for directive in related)
+            )
+            if not (
+                announcement.status in _REVERSIBLE_ANNOUNCEMENT_STATUSES
+                or publishing_is_reversible
+            ):
+                # A partially failed/unknown delivery state is not safe to
+                # describe as recalled.  Preserve it and make the uncertainty
+                # part of the correction's audit impact.
+                if announcement.status == AnnouncementStatus.PUBLISHING:
+                    result["irreversible_announcements"].append(
+                        {
+                            "announcement_id": announcement.pk,
+                            "status": announcement.status,
+                            "published_at": "",
+                            "directives": directive_states,
+                        }
+                    )
+                continue
+
+            announcement.status = AnnouncementStatus.SUPERSEDED
+            announcement.publish_at = None
+            announcement.save(update_fields=["status", "publish_at"])
+            result["superseded_announcement_ids"].append(announcement.pk)
+
+            review_notifications = list(
+                UserNotification.objects.select_for_update()
+                .filter(action_url=f"/campaign/announcements/{announcement.pk}/")
+                .order_by("pk")
+            )
+            for notification in review_notifications:
+                update_fields = []
+                if notification.is_actionable:
+                    notification.is_actionable = False
+                    update_fields.append("is_actionable")
+                if not notification.is_read:
+                    notification.is_read = True
+                    notification.read_at = now
+                    update_fields.extend(("is_read", "read_at"))
+                if update_fields:
+                    notification.save(update_fields=update_fields)
+                result["closed_review_notification_ids"].append(notification.pk)
+
+    return result
+
+
+def _corrected_campaign_quality(after_partition) -> tuple[str, list[dict]]:
+    """Translate the correction contract into campaign's compact QC context."""
+    if not isinstance(after_partition, (list, tuple)):
+        raise CampaignError("A partição corrigida de qualidade é inválida.")
+
+    output_partition = []
+    totals: dict[str, Decimal] = {}
+    for group in after_partition:
+        if not isinstance(group, dict):
+            raise CampaignError("A partição corrigida de qualidade é inválida.")
+        if bool(group.get("loss")):
+            continue
+        grade_ref = str(
+            group.get("quality_grade_ref") or group.get("grade_ref") or ""
+        ).strip()
+        try:
+            quantity = Decimal(str(group.get("quantity") or "0"))
+        except InvalidOperation as exc:
+            raise CampaignError("A partição corrigida de qualidade é inválida.") from exc
+        if quantity <= 0:
+            continue
+        output_partition.append({"grade_ref": grade_ref, "quantity": str(quantity)})
+        totals[grade_ref] = totals.get(grade_ref, Decimal("0")) + quantity
+
+    if not totals:
+        return "", output_partition
+
+    from shopman.shop.models import QualityGrade
+
+    ranks = dict(QualityGrade.objects.values_list("ref", "rank"))
+    dominant = max(totals, key=lambda ref: (totals[ref], ranks.get(ref, 0)))
+    return dominant, output_partition
+
+
+def _matches_corrected_quality(rule: Campaign, context: dict) -> bool:
+    """Re-evaluate only the quality gate that the correction can change."""
+    rule_filter = rule.trigger_filter or {}
+    quality_min = rule_filter.get("quality_min")
+    if not quality_min:
+        return True
+    partition = context.get("output_partition") or []
+    if not partition:
+        return False
+    min_share = rule_filter.get("quality_min_share")
+    try:
+        required = int(min_share) if min_share is not None else 100
+    except (TypeError, ValueError):
+        return False
+    return _quality_share(partition, quality_min, context.get("planned_qty")) >= required
 
 
 def _quality_share(partition, minimum, planned_qty) -> int:
@@ -829,38 +1041,43 @@ def approve(announcement_id: int, user, *, publish_at=None, respect_schedule: bo
     ``respect_schedule=False`` é o "Publicar agora" do gestor, que vence a
     janela.
     """
-    try:
-        announcement = Announcement.objects.get(pk=announcement_id)
-    except Announcement.DoesNotExist as exc:
-        raise CampaignError("Anúncio não encontrado.") from exc
+    with transaction.atomic():
+        try:
+            announcement = Announcement.objects.select_for_update().get(pk=announcement_id)
+        except Announcement.DoesNotExist as exc:
+            raise CampaignError("Anúncio não encontrado.") from exc
 
-    now = timezone.now()
-    if publish_at is None and respect_schedule:
-        publish_at = announcement.publish_at
-    scheduled = publish_at is not None and publish_at > now
+        now = timezone.now()
+        if publish_at is None and respect_schedule:
+            publish_at = announcement.publish_at
+        scheduled = publish_at is not None and publish_at > now
 
-    if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+        if announcement.status in (AnnouncementStatus.PUBLISHED, AnnouncementStatus.PUBLISHING):
+            return announcement
+        if announcement.status == AnnouncementStatus.APPROVED and not announcement.publish_at:
+            # Já despachado (aprovação imediata anterior) — nada a refazer.
+            return announcement
+        if announcement.status == AnnouncementStatus.EXPIRED or announcement.is_expired(now=now):
+            raise CampaignError("Este announcement expirou. O momento dele já passou.")
+        # ⚠️ Recusado não é publicável. Antes de a recusa existir como estado, ela virava
+        # `expired` e caía na guarda acima por acidente; agora precisa da sua própria, ou
+        # um anúncio recusado com prazo em aberto voltaria ao ar por uma segunda aprovação.
+        if announcement.status == AnnouncementStatus.REJECTED:
+            raise CampaignError("Este anúncio foi recusado. Crie outro em vez de reaproveitar.")
+        if announcement.status == AnnouncementStatus.SUPERSEDED:
+            raise CampaignError(
+                "Este anúncio foi substituído por uma correção da fornada e não pode ser publicado."
+            )
+
+        announcement.status = AnnouncementStatus.APPROVED
+        announcement.approved_by = user if getattr(user, "pk", None) else None
+        announcement.approved_at = now
+        announcement.publish_at = publish_at if scheduled else None
+        announcement.save(update_fields=["status", "approved_by", "approved_at", "publish_at"])
+
+        if not scheduled:
+            dispatch(announcement)
         return announcement
-    if announcement.status == AnnouncementStatus.APPROVED and not announcement.publish_at:
-        # Já despachado (aprovação imediata anterior) — nada a refazer.
-        return announcement
-    if announcement.status == AnnouncementStatus.EXPIRED or announcement.is_expired(now=now):
-        raise CampaignError("Este announcement expirou. O momento dele já passou.")
-    # ⚠️ Recusado não é publicável. Antes de a recusa existir como estado, ela virava
-    # `expired` e caía na guarda acima por acidente; agora precisa da sua própria, ou
-    # um anúncio recusado com prazo em aberto voltaria ao ar por uma segunda aprovação.
-    if announcement.status == AnnouncementStatus.REJECTED:
-        raise CampaignError("Este anúncio foi recusado. Crie outro em vez de reaproveitar.")
-
-    announcement.status = AnnouncementStatus.APPROVED
-    announcement.approved_by = user if getattr(user, "pk", None) else None
-    announcement.approved_at = now
-    announcement.publish_at = publish_at if scheduled else None
-    announcement.save(update_fields=["status", "approved_by", "approved_at", "publish_at"])
-
-    if not scheduled:
-        dispatch(announcement)
-    return announcement
 
 
 def update_content(
@@ -928,22 +1145,43 @@ def reject(announcement_id: int, by=None, *, reason: str = "") -> Announcement:
 
 
 def dispatch(announcement: Announcement) -> int:
-    """Enfileirar uma Directive por plataforma. Retorna quantas foram criadas."""
-    announcement.status = AnnouncementStatus.PUBLISHING
-    announcement.save(update_fields=["status"])
+    """Enfileirar uma Directive por plataforma. Retorna quantas foram criadas.
 
-    created = 0
-    for platform in announcement.platforms or []:
-        if platform in POSTING_PLATFORMS:
-            created += _queue_announcement(announcement, platform)
-        elif platform == "whatsapp":
-            created += _queue_notify(announcement)
-        else:
-            logger.warning("campaign.unknown_platform announcement=%s platform=%s", announcement.pk, platform)
+    A releitura travada é deliberada: um caller pode carregar o anúncio antes
+    de uma correção de QC supersedê-lo.  Confiar na instância stale faria o
+    ``dispatch`` ressuscitar a mensagem já retirada.
+    """
+    with transaction.atomic():
+        current = (
+            Announcement.objects.select_for_update()
+            .select_related("rule")
+            .get(pk=announcement.pk)
+        )
+        if current.status == AnnouncementStatus.SUPERSEDED:
+            announcement.status = current.status
+            logger.info("campaign.dispatch_superseded announcement=%s", current.pk)
+            return 0
 
-    if not created:
-        logger.info("campaign.nothing_dispatched announcement=%s", announcement.pk)
-    return created
+        current.status = AnnouncementStatus.PUBLISHING
+        current.save(update_fields=["status"])
+        announcement.status = current.status
+
+        created = 0
+        for platform in current.platforms or []:
+            if platform in POSTING_PLATFORMS:
+                created += _queue_announcement(current, platform)
+            elif platform == "whatsapp":
+                created += _queue_notify(current)
+            else:
+                logger.warning(
+                    "campaign.unknown_platform announcement=%s platform=%s",
+                    current.pk,
+                    platform,
+                )
+
+        if not created:
+            logger.info("campaign.nothing_dispatched announcement=%s", current.pk)
+        return created
 
 
 def _queue_announcement(announcement: Announcement, platform: str) -> int:
@@ -1174,19 +1412,31 @@ def dispatch_due(*, now=None) -> int:
     zerá-la impede que um ciclo seguinte despache o mesmo announcement de novo.
     """
     now = now or timezone.now()
-    due = Announcement.objects.filter(
+    due_ids = list(Announcement.objects.filter(
         status=AnnouncementStatus.APPROVED, publish_at__isnull=False, publish_at__lte=now
-    )
+    ).order_by("pk").values_list("pk", flat=True))
 
     dispatched = 0
-    for announcement in due:
+    for announcement_id in due_ids:
         try:
-            announcement.publish_at = None
-            announcement.save(update_fields=["publish_at"])
-            dispatch(announcement)
-            dispatched += 1
+            with transaction.atomic():
+                announcement = Announcement.objects.select_for_update().get(pk=announcement_id)
+                if (
+                    announcement.status != AnnouncementStatus.APPROVED
+                    or announcement.publish_at is None
+                    or announcement.publish_at > now
+                ):
+                    continue
+                announcement.publish_at = None
+                announcement.save(update_fields=["publish_at"])
+                dispatch(announcement)
+                dispatched += 1
         except Exception:
-            logger.warning("campaign.scheduled_dispatch_failed announcement=%s", announcement.pk, exc_info=True)
+            logger.warning(
+                "campaign.scheduled_dispatch_failed announcement=%s",
+                announcement_id,
+                exc_info=True,
+            )
     return dispatched
 
 

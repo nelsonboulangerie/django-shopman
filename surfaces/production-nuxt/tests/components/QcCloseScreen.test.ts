@@ -291,3 +291,99 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.find('[data-digit="1"]').attributes("disabled")).toBe("");
   });
 });
+
+describe("QcCloseScreen — correção auditável", () => {
+  const initialPartition = [
+    { quantity: "30", quality_grade_ref: "standard" },
+    {
+      quantity: "6",
+      quality_grade_ref: "fair",
+      quality_defect_ref: "shape",
+    },
+    { quantity: "4", quality_defect_ref: "burned", loss: true },
+  ];
+
+  it("abre preenchido, preserva total e perda e permite corrigir os motivos", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition,
+    });
+
+    expect(wrapper.text()).toContain("Correção de qualidade");
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("30 unidades");
+    expect(wrapper.text()).toContain("Razoável · Formato");
+    expect(wrapper.text()).toContain("Queimado");
+
+    await buttonByText(wrapper, "Ótimo")!.trigger("click");
+    await enter(wrapper, "99");
+    expect(
+      wrapper.find('[data-grade-ref="excellent"]').attributes("aria-label"),
+    ).toContain("30 unidades");
+
+    await wrapper
+      .find('button[aria-label="Alterar motivo de Razoável"]')
+      .trigger("click");
+    await buttonByText(wrapper, "Cor")!.trigger("click");
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await buttonByText(wrapper, "Formato")!.trigger("click");
+
+    const submit = buttonByText(wrapper, "Salvar correção")!;
+    expect(submit.attributes("disabled")).toBeDefined();
+    await wrapper
+      .find('textarea[aria-label="Motivo da correção de qualidade"]')
+      .setValue("Reavaliação do responsável");
+    await submit.trigger("click");
+
+    const payload = wrapper.emitted("confirm")?.[0]?.[0] as {
+      quantity: string;
+      reason: string;
+      partition: Array<{
+        quantity: string;
+        quality_grade_ref?: string;
+        quality_defect_ref?: string;
+        loss?: boolean;
+      }>;
+    };
+    expect(payload).toEqual({
+      quantity: "40",
+      partition: [
+        { quantity: "30", quality_grade_ref: "excellent" },
+        {
+          quantity: "6",
+          quality_grade_ref: "fair",
+          quality_defect_ref: "color",
+        },
+        {
+          quantity: "4",
+          quality_defect_ref: "shape",
+          loss: true,
+        },
+      ],
+      yield_deviation_confirmed: false,
+      yield_deviation_reason: "",
+      reason: "Reavaliação do responsável",
+    });
+    expect(payload.partition.filter((group) => group.loss)).toEqual([
+      { quantity: "4", quality_defect_ref: "shape", loss: true },
+    ]);
+  });
+
+  it("não trata o preenchimento inicial como alteração e mostra o estado de envio", async () => {
+    const confirm = vi.fn(() => false);
+    vi.stubGlobal("confirm", confirm);
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition,
+    });
+
+    await buttonByText(wrapper, "Voltar")!.trigger("click");
+    expect(confirm).not.toHaveBeenCalled();
+    expect(wrapper.emitted("back")).toHaveLength(1);
+
+    await wrapper.setProps({ submitting: true });
+    const submit = buttonByText(wrapper, "Salvando correção…")!;
+    expect(submit.attributes("disabled")).toBeDefined();
+  });
+});

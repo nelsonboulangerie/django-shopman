@@ -39,8 +39,7 @@ const props = defineProps<{
 }>();
 
 const route = useRoute();
-const routeDate =
-  typeof route.query.date === "string" ? route.query.date : "";
+const routeDate = typeof route.query.date === "string" ? route.query.date : "";
 
 // A Produção abre em HOJE (a fornada é do dia); só o Planejamento abre no dia
 // seguinte à tarde, quando o padeiro planeja a próxima leva. Sem isto, a grade
@@ -172,6 +171,7 @@ const emptyCopy = computed(() =>
 const explaining = ref<ProductionSuggestionProjection | null>(null);
 const planRow = ref<ProductionMatrixRowProjection | null>(null);
 const planQty = ref("");
+const planSubmitting = ref(false);
 const planSource = ref<"manual" | "suggested">("manual");
 const selectedPlannedPk = ref<number | null>(null);
 
@@ -202,6 +202,7 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 };
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
+const startSubmitting = ref(false);
 const selectedStartPk = ref<number | null>(null);
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
 const selectedStartedPk = ref<number | null>(null);
@@ -299,6 +300,7 @@ function planFromExplanation() {
 }
 
 async function confirmPlan() {
+  if (planSubmitting.value) return;
   const row = planRow.value;
   if (!row || row.recipe_pk == null || !board.value || !planQty.value.trim())
     return;
@@ -327,15 +329,20 @@ async function confirmPlan() {
     planMode.value === "new-batch" ? "Novo lote planejado" : "Planejado";
   const successMessage = `${label}: ${rowLabel(row)} × ${planQty.value.trim()}`;
   lastPlanAttempt.value = { key: row.output_sku, payload, successMessage };
-  const res = await plan(row.output_sku, payload);
-  if (res.ok) {
-    planRow.value = null;
-    selectedPlannedPk.value = null;
-    lastPlanAttempt.value = null;
-    useSonner.success(successMessage);
-  } else if (res.shortage) {
-    planRow.value = null;
-    shortage.value = res.shortage;
+  planSubmitting.value = true;
+  try {
+    const res = await plan(row.output_sku, payload);
+    if (res.ok) {
+      planRow.value = null;
+      selectedPlannedPk.value = null;
+      lastPlanAttempt.value = null;
+      useSonner.success(successMessage);
+    } else if (res.shortage) {
+      planRow.value = null;
+      shortage.value = res.shortage;
+    }
+  } finally {
+    planSubmitting.value = false;
   }
 }
 
@@ -370,15 +377,28 @@ function selectStartWorkOrder(workOrder: WorkOrderCardProjection) {
 }
 
 async function confirmStart() {
+  if (startSubmitting.value) return;
   const row = startRow.value;
   const wo = selectedStartOrder.value;
   if (!row || !wo || !startQty.value.trim()) return;
-  const res = await start(row.output_sku, wo.pk, wo.rev, startQty.value.trim());
-  if (res.ok) {
-    startRow.value = null;
-    selectedStartPk.value = null;
-    kds.refresh();
-    useSonner.success(`Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`);
+  startSubmitting.value = true;
+  try {
+    const res = await start(
+      row.output_sku,
+      wo.pk,
+      wo.rev,
+      startQty.value.trim(),
+    );
+    if (res.ok) {
+      startRow.value = null;
+      selectedStartPk.value = null;
+      kds.refresh();
+      useSonner.success(
+        `Produzido: ${rowLabel(row)} × ${startQty.value.trim()}`,
+      );
+    }
+  } finally {
+    startSubmitting.value = false;
   }
 }
 
@@ -897,12 +917,19 @@ const headerCount = computed(() => {
               !planQty.trim() ||
               !planQtyValid ||
               !planActionAllowed ||
+              planSubmitting ||
               (!!planRow?.planned_orders.length && !selectedPlannedOrder)
             "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="confirmPlan()"
           >
-            {{ planMode === "new-batch" ? "Confirmar novo lote" : "Confirmar" }}
+            {{
+              planSubmitting
+                ? "Confirmando…"
+                : planMode === "new-batch"
+                  ? "Confirmar novo lote"
+                  : "Confirmar"
+            }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>
@@ -994,11 +1021,13 @@ const headerCount = computed(() => {
           </button>
           <button
             type="button"
-            :disabled="!startQty.trim() || !selectedStartOrder"
+            :disabled="
+              startSubmitting || !startQty.trim() || !selectedStartOrder
+            "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
             @click="confirmStart()"
           >
-            Confirmar
+            {{ startSubmitting ? "Confirmando…" : "Confirmar" }}
           </button>
         </UiDialogFooter>
       </UiDialogContent>

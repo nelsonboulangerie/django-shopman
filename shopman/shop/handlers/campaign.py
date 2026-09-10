@@ -45,7 +45,7 @@ def connect() -> None:
             dispatch_uid="shopman.shop.handlers.campaign.on_product_created",
             weak=False,
         )
-    except ImportError:
+    except ImportError:  # silêncio-deliberado: OfferMan é integração opcional deste app
         pass
 
 
@@ -201,13 +201,20 @@ class AnnouncementHandler:
     topic = "announcement.publish"
 
     def handle(self, *, message, ctx: dict) -> None:
-        from shopman.shop.models import Announcement
+        from shopman.shop.models import Announcement, AnnouncementStatus
 
         payload = message.payload or {}
         platform = payload.get("platform", "")
         announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
         if announcement is None:
             logger.warning("campaign.announcement_missing directive=%s", message.pk)
+            return
+        if announcement.status == AnnouncementStatus.SUPERSEDED:
+            logger.info(
+                "campaign.announcement_superseded directive=%s announcement=%s",
+                message.pk,
+                announcement.pk,
+            )
             return
 
         adapter = _posting_adapter(platform)
@@ -274,7 +281,7 @@ class AnnouncementNotifyHandler:
     topic = "announcement.notify"
 
     def handle(self, *, message, ctx: dict) -> None:
-        from shopman.shop.models import Announcement
+        from shopman.shop.models import Announcement, AnnouncementStatus
         from shopman.shop.services import audience as audience_service
 
         payload = message.payload or {}
@@ -282,6 +289,13 @@ class AnnouncementNotifyHandler:
         announcement = Announcement.objects.filter(pk=payload.get("announcement_id")).first()
         if announcement is None:
             logger.warning("campaign.notify_announcement_missing directive=%s", message.pk)
+            return
+        if announcement.status == AnnouncementStatus.SUPERSEDED:
+            logger.info(
+                "campaign.notify_announcement_superseded directive=%s announcement=%s",
+                message.pk,
+                announcement.pk,
+            )
             return
 
         context = announcement.trigger_context or {}
@@ -543,6 +557,15 @@ def _settle(announcement) -> None:
     from django.utils import timezone
 
     from shopman.shop.models import AnnouncementStatus
+
+    current_status = (
+        announcement.__class__.objects.filter(pk=announcement.pk)
+        .values_list("status", flat=True)
+        .first()
+    )
+    if current_status == AnnouncementStatus.SUPERSEDED:
+        announcement.status = current_status
+        return
 
     results = announcement.platform_results or {}
     if not all(_platform_settled(name, results.get(name)) for name in announcement.platforms or []):

@@ -55,6 +55,10 @@ class AnnouncementStatus(models.TextChoices):
     #: quê" — e é essa a pergunta que revela modelo de campanha errado.
     REJECTED = "rejected", "recusado"
     EXPIRED = "expired", "expirado"
+    #: Um fato operacional posterior invalidou a mensagem antes de ela sair.
+    #: Não é recusa humana nem vencimento: a origem foi substituída por uma
+    #: versão mais nova (por exemplo, a correção do QC de uma fornada).
+    SUPERSEDED = "superseded", "Substituído"
 
 
 # A hierarquia de qualidade não vive mais aqui: era o literal QUALITY_LEVELS,

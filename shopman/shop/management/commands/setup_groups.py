@@ -177,6 +177,9 @@ class Command(BaseCommand):
                 # portão aceita as duas, e ela não tinha nenhuma — quem decide o que
                 # assar não conseguia ler o histórico do que foi assado.
                 shop_dclo("view_production_reports"),
+                # Corrigir QC depois do fechamento reclassifica lote e pode
+                # afetar promessa/campanha; é exceção de gestão, não gesto do chão.
+                shop_dclo("correct_production_qc"),
                 # B.I. (ADR-021): leitura analítica cross-suite é persona de gestão.
                 shop_dclo("view_bi"),
                 # …e o que alimenta o B.I. (lotes de importação, vendas históricas)

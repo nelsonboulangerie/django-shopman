@@ -117,7 +117,12 @@ class ProductionConflictRecovery:
 
 @dataclass(frozen=True)
 class ProductionConflictErrorBody:
-    code: Literal["conflict", "oven_run_missing", "quick_finish_incomplete"]
+    code: Literal[
+        "conflict",
+        "oven_run_missing",
+        "quick_finish_incomplete",
+        "quality_correction_blocked",
+    ]
     sent_rev: int | None
     current_rev: int | None
     current: ProductionMutationCurrent | None
@@ -429,6 +434,11 @@ class ProductionFinishMutationSerializer(ExistingWorkOrderMutationSerializer):
         return attrs
 
 
+class ProductionQualityCorrectionMutationSerializer(ExistingWorkOrderMutationSerializer):
+    partition = ProductionPartitionGroupSerializer(many=True, allow_empty=False)
+    reason = serializers.CharField(allow_blank=False, trim_whitespace=True, max_length=500)
+
+
 class ProductionAdvanceStepMutationSerializer(ExistingWorkOrderMutationSerializer):
     pass
 
@@ -521,6 +531,14 @@ PRODUCTION_ACTION_SPECS = (
         "/api/v1/backstage/production/{workOrderId}/finish/",
         "ProductionFinishMutationRequest",
         ProductionFinishMutationSerializer,
+        ProductionWorkOrderMutationSuccess,
+        "workOrderId",
+    ),
+    ProductionActionSpec(
+        "correctProductionQuality",
+        "/api/v1/backstage/production/{workOrderId}/quality-correction/",
+        "ProductionQualityCorrectionMutationRequest",
+        ProductionQualityCorrectionMutationSerializer,
         ProductionWorkOrderMutationSuccess,
         "workOrderId",
     ),

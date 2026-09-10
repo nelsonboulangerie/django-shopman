@@ -76,7 +76,7 @@ METRICS: dict[str, MetricSpec] = {
                    ("time", "sku", "hour", "weekday", "month_of_year",
                     "week_of_year", "source", "consumption_mode"), "sales_items"),
         MetricSpec("qty_produced", "Quantidade produzida", "qty",
-                   ("time", "recipe", "oven", "operator", "weekday", "grade"), "production"),
+                   ("time", "recipe", "oven", "operator", "weekday", "grade", "defect"), "production"),
         MetricSpec("loss", "Perda de produção", "qty",
                    ("time", "recipe", "oven", "operator", "weekday", "defect"), "production"),
         # Proporção: somar sete dias passaria de 100%.
@@ -724,17 +724,17 @@ def _payment_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
 
 
 def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
-    from shopman.craftsman.models import WorkOrder, WorkOrderItem
+    from shopman.craftsman.models import WorkOrder
+
+    from shopman.shop.services import quality as quality_service
 
     wos = list(
         WorkOrder.objects.filter(
             target_date__range=(date_from, date_to), status=WorkOrder.Status.FINISHED
         ).select_related("recipe")
     )
-    wo_by_pk = {wo.pk: wo for wo in wos}
-
-    needs_items = "grade" in (by, by2) or "defect" in (by, by2)
-    catalog_labels = _quality_labels() if needs_items else {}
+    needs_quality_partition = "grade" in (by, by2) or "defect" in (by, by2)
+    catalog_labels = _quality_labels() if needs_quality_partition else {}
 
     def wo_part(dim: str, wo) -> tuple[str, str]:
         if dim == "time":
@@ -755,29 +755,29 @@ def _production_rows(spec, by, by2, date_from, date_to) -> list[BIExploreRow]:
     finished: dict[tuple, Decimal] = defaultdict(Decimal)
     labels: dict[tuple, tuple[str, str]] = {}
 
-    if needs_items:
-        item_dim = "grade" if "grade" in (by, by2) else "defect"
-        kind = WorkOrderItem.Kind.OUTPUT if item_dim == "grade" else WorkOrderItem.Kind.WASTE
-        ref_field = "quality_grade_ref" if item_dim == "grade" else "quality_defect_ref"
-        rows = WorkOrderItem.objects.filter(
-            work_order_id__in=wo_by_pk, kind=kind
-        ).values_list("work_order_id", ref_field, "quantity")
+    if needs_quality_partition:
+        partitions = quality_service.effective_partitions(wos)
         qty: dict[tuple, Decimal] = defaultdict(Decimal)
-        for wo_pk, ref, quantity in rows:
-            wo = wo_by_pk[wo_pk]
-            ref = ref or "(sem motivo)" if item_dim == "defect" else ref or "(sem grau)"
-            item_part = (ref, catalog_labels.get(ref, ref))
-            parts = []
-            for dim in (by, by2):
-                if not dim:
-                    parts.append(("", ""))
-                elif dim == item_dim:
-                    parts.append(item_part)
-                else:
-                    parts.append(wo_part(dim, wo))
-            key = (parts[0][0], parts[1][0])
-            qty[key] += quantity
-            labels[key] = (parts[0][1], parts[1][1])
+        for wo in wos:
+            for group in partitions.get(wo.pk, []):
+                is_loss = bool(group.get("loss"))
+                if is_loss != (spec.key == "loss"):
+                    continue
+                parts = []
+                for dim in (by, by2):
+                    if not dim:
+                        parts.append(("", ""))
+                    elif dim == "grade":
+                        ref = str(group.get("quality_grade_ref") or "(sem grau)")
+                        parts.append((ref, catalog_labels.get(ref, ref)))
+                    elif dim == "defect":
+                        ref = str(group.get("quality_defect_ref") or "(sem motivo)")
+                        parts.append((ref, catalog_labels.get(ref, ref)))
+                    else:
+                        parts.append(wo_part(dim, wo))
+                key = (parts[0][0], parts[1][0])
+                qty[key] += Decimal(str(group.get("quantity") or "0"))
+                labels[key] = (parts[0][1], parts[1][1])
         return [
             BIExploreRow(key=k1, label=labels[(k1, k2)][0], key2=k2, label2=labels[(k1, k2)][1], value=float(qty[(k1, k2)]))
             for (k1, k2) in qty

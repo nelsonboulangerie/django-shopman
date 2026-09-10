@@ -73,6 +73,7 @@ from shopman.backstage.api._production_mutations import (
     ProductionOvenArmMutationSerializer,
     ProductionOvenConcludeMutationSerializer,
     ProductionPlanMutationSerializer,
+    ProductionQualityCorrectionMutationSerializer,
     ProductionQuickFinishMutationSerializer,
     ProductionStartMutationSerializer,
     ProductionVoidMutationSerializer,
@@ -2645,6 +2646,56 @@ class WorkOrderFinishView(_ProductionActionBase):
                 "wo_ref": wo_ref,
                 "quantity": _production_quantity(quantity),
                 "current": _current_work_order_projection(wo_ref),
+            }
+        )
+
+
+@extend_schema_view(
+    post=extend_schema(
+        tags=["backstage"],
+        summary="Correct the effective quality of a finished production batch",
+        responses={200: OpenApiResponse(description="Quality correction recorded and stock reclassified.")},
+    ),
+)
+class WorkOrderQualityCorrectionView(_ProductionActionBase):
+    required_production_capability = "can_correct_qc"
+
+    def post(self, request, wo_id: int):
+        body = validated_body(
+            request,
+            ProductionQualityCorrectionMutationSerializer,
+            projection_kind="qc",
+            action_kind="correct_qc",
+            action_href=f"/api/v1/backstage/production/{wo_id}/quality-correction/",
+            action_ref=f"correct_qc:{wo_id}",
+            work_order_id=wo_id,
+        )
+        _require_projected_work_order(
+            request,
+            wo_id,
+            committed_replay=body.get("_committed_replay", False),
+        )
+        try:
+            work_order = production_service.apply_quality_correction(
+                work_order_id=wo_id,
+                partition=body["partition"],
+                reason=body["reason"],
+                actor=_production_actor(request),
+                expected_rev=body["expected_rev"],
+                idempotency_key=body["idempotency_key"],
+            )
+        except ProductionError as exc:
+            return _production_error_response(
+                exc,
+                idempotency_key=body["idempotency_key"],
+                projection_generated_at=body.get("projection_generated_at"),
+            )
+        return Response(
+            {
+                "ok": True,
+                "wo_ref": work_order.ref,
+                "quantity": _production_quantity(work_order.finished or 0),
+                "current": _current_work_order_projection(work_order.pk),
             }
         )
 

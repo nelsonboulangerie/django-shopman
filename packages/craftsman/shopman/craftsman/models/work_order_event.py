@@ -58,6 +58,14 @@ Canonical payload schemas per kind:
         impact: dict        — frozen shortage/order impact snapshot
         work_order_rev: int — authoritative revision after the mutation
 
+    quality_corrected:
+        schema_version: int
+        reason: str          — manager's required audit justification
+        before_partition: list[dict]
+        after_partition: list[dict]
+        impact: dict         — stock/holds/communications reconciliation
+        attempt: dict        — canonical request used for idempotent replay
+
     voided:
         reason: str         — cancellation reason
 
@@ -90,6 +98,7 @@ class WorkOrderEvent(models.Model):
         OVEN_ABANDONED = "oven_abandoned", _("Medição de forno abandonada")
         SHORTAGE_OVERRIDDEN = "shortage_overridden", _("Falta sobreposta")
         FINISHED = "finished", _("Concluído")
+        QUALITY_CORRECTED = "quality_corrected", _("Qualidade corrigida")
         VOIDED = "voided", _("Cancelado")
 
     work_order = models.ForeignKey(

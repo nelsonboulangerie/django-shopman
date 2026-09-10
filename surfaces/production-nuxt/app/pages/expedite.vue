@@ -13,8 +13,7 @@ import type { QcPartitionGroup } from "~/presentation/qc";
 import { isStale } from "~/presentation/production";
 
 const route = useRoute();
-const routeDate =
-  typeof route.query.date === "string" ? route.query.date : "";
+const routeDate = typeof route.query.date === "string" ? route.query.date : "";
 const {
   kiosk,
   selectedDate,
@@ -24,6 +23,7 @@ const {
   refresh,
   finish,
   quickFinish,
+  correctQuality,
 } = useQcKiosk(routeDate);
 
 // Tolerante a dado velho: poll falhou com painel na tela = chip de degradação
@@ -91,6 +91,14 @@ function finishAvailable(order: QCOrderCardProjection): boolean {
   return projectedAction(`finish:${order.pk}`)?.enabled === true;
 }
 
+function correctionAvailable(order: QCOrderCardProjection): boolean {
+  return projectedAction(`correct_qc:${order.pk}`)?.enabled === true;
+}
+
+function correctionPartition(order: QCOrderCardProjection): QcPartitionGroup[] {
+  return order.partition;
+}
+
 function quickRecipeAvailable(recipe: RecipeOptionProjection): boolean {
   return projectedAction(`quick_finish:${recipe.pk}`)?.enabled === true;
 }
@@ -131,6 +139,12 @@ async function openOrder(order: QCOrderCardProjection) {
   selectedRecipe.value = null;
 }
 
+function openCorrection(order: QCOrderCardProjection) {
+  if (!correctionAvailable(order)) return;
+  selectedOrder.value = order;
+  selectedRecipe.value = null;
+}
+
 function openOffPlan(recipe: RecipeOptionProjection) {
   if (!quickRecipeAvailable(recipe)) return;
   recipePickerOpen.value = false;
@@ -152,6 +166,7 @@ interface QcClosePayload {
   partition: QcPartitionGroup[];
   yield_deviation_confirmed: boolean;
   yield_deviation_reason: string;
+  reason: string;
 }
 const lastPayload = ref<QcClosePayload | null>(null);
 
@@ -163,18 +178,26 @@ async function onConfirm(
 ) {
   lastPayload.value = payload;
   const closingOrder = selectedOrder.value;
+  const correcting = Boolean(closingOrder?.closed);
   const result = closingOrder
-    ? await finish(
-        closingOrder.pk,
-        ovenFacts.currentRev(closingOrder.pk, closingOrder.rev),
-        payload.quantity,
-        payload.partition,
-        force,
-        reason,
-        payload.yield_deviation_confirmed,
-        payload.yield_deviation_reason,
-        overrideProof,
-      )
+    ? correcting
+      ? await correctQuality(
+          closingOrder.pk,
+          closingOrder.rev,
+          payload.partition,
+          payload.reason,
+        )
+      : await finish(
+          closingOrder.pk,
+          ovenFacts.currentRev(closingOrder.pk, closingOrder.rev),
+          payload.quantity,
+          payload.partition,
+          force,
+          reason,
+          payload.yield_deviation_confirmed,
+          payload.yield_deviation_reason,
+          overrideProof,
+        )
     : selectedRecipe.value
       ? await quickFinish(
           selectedRecipe.value.pk,
@@ -188,8 +211,10 @@ async function onConfirm(
   if (result.ok) {
     // Fornada fechada leva o timer junto — senão ele fica órfão no
     // localStorage e alarma depois, num card que nem existe mais.
-    if (closingOrder) oven.clear(ovenKey(closingOrder));
-    useSonner.success("Quantidade concluída.");
+    if (closingOrder && !correcting) oven.clear(ovenKey(closingOrder));
+    useSonner.success(
+      correcting ? "Qualidade corrigida." : "Quantidade concluída.",
+    );
     backToBoard();
     return;
   }
@@ -204,6 +229,12 @@ function retryWithForce(reason: string, overrideProof: string) {
 
 const screenTitle = computed(
   () => selectedOrder.value?.recipe_name ?? selectedRecipe.value?.name ?? "",
+);
+const screenMode = computed<"close" | "correct">(() =>
+  selectedOrder.value?.closed ? "correct" : "close",
+);
+const screenInitialPartition = computed(() =>
+  selectedOrder.value?.closed ? correctionPartition(selectedOrder.value) : [],
 );
 const screenSubtitle = computed(() => {
   const order = selectedOrder.value;
@@ -351,13 +382,15 @@ function markOvenSeen() {
     <!-- Tela de fechamento. -->
     <QcCloseScreen
       v-if="(selectedOrder || selectedRecipe) && kiosk"
-      :key="selectedOrder?.pk ?? `recipe-${selectedRecipe?.pk}`"
+      :key="`${screenMode}-${selectedOrder?.pk ?? `recipe-${selectedRecipe?.pk}`}`"
       :title="screenTitle"
       :subtitle="screenSubtitle"
       :planned="screenPlanned"
       :started="screenStarted"
       :grades="kiosk.grades"
       :defects="kiosk.defects"
+      :mode="screenMode"
+      :initial-partition="screenInitialPartition"
       :submitting="submitting"
       @back="backToBoard"
       @confirm="onConfirm($event)"
@@ -578,25 +611,47 @@ function markOvenSeen() {
         <div
           v-for="order in closedOrders"
           :key="order.pk"
-          class="flex items-center justify-between gap-3 rounded-lg border bg-card p-4 opacity-50"
+          class="flex items-center justify-between gap-3 rounded-lg border bg-card p-4"
         >
-          <div class="min-w-0">
+          <div class="min-w-0 opacity-60">
             <p class="truncate text-base font-semibold">
               {{ order.recipe_name }}
             </p>
             <p class="truncate text-sm text-muted-foreground">
               {{ order.output_sku }}
             </p>
+            <p
+              v-if="order.correction_count"
+              class="truncate text-xs text-muted-foreground"
+            >
+              {{ order.correction_count }}
+              {{ order.correction_count === 1 ? "correção" : "correções" }}
+              <template v-if="order.last_correction_at_display">
+                · {{ order.last_correction_at_display }}
+              </template>
+            </p>
           </div>
-          <p class="shrink-0 text-sm tabular-nums text-muted-foreground">
-            {{ order.full_price_qty || "0" }} OK
-            <template v-if="order.discounted_qty">
-              · {{ order.discounted_qty }} com desconto</template
+          <div class="flex shrink-0 flex-col items-end gap-2">
+            <p class="text-sm tabular-nums text-muted-foreground opacity-60">
+              {{ order.full_price_qty || "0" }} OK
+              <template v-if="order.discounted_qty">
+                · {{ order.discounted_qty }} com desconto</template
+              >
+              <template v-if="order.loss_qty">
+                · {{ order.loss_qty }} de perda</template
+              >
+            </p>
+            <button
+              v-if="correctionAvailable(order)"
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+              :aria-label="`Corrigir qualidade da fornada de ${order.recipe_name}`"
+              @click="openCorrection(order)"
             >
-            <template v-if="order.loss_qty">
-              · {{ order.loss_qty }} de perda</template
-            >
-          </p>
+              <Icon name="lucide:shield-check" class="size-3.5" />
+              Corrigir qualidade
+            </button>
+          </div>
         </div>
       </div>
     </div>
