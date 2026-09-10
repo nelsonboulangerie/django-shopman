@@ -668,7 +668,9 @@ class MergeService:
 
         moved: list[dict] = []
         migrated = 0
-        for order in Order.objects.select_for_update().filter(identity_query).distinct():
+        # Só colunas/JSON da Order, sem joins: OR não multiplica linhas.
+        # DISTINCT é redundante e incompatível com FOR UPDATE no PostgreSQL.
+        for order in Order.objects.select_for_update().filter(identity_query):
             previous = {
                 "pk": order.pk,
                 "handle_type": order.handle_type,
