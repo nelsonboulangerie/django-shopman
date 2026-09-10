@@ -461,12 +461,12 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       <p v-if="!items.length" class="grid h-full min-h-24 place-items-center rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
         Carrinho vazio
       </p>
-      <ul v-else class="grid gap-2">
+      <ul v-else class="grid gap-0.5">
         <!-- Leitura primeiro. Expansão explícita; o teclado mantém seu alvo independente. -->
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-2 overflow-hidden rounded-md border border-border/60 px-3 pt-3 transition-colors"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-1 overflow-hidden rounded-md border border-transparent px-1 pt-1 transition-colors"
           :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/30')"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
         >
@@ -476,14 +476,20 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             </span>
           </button>
 
-          <div class="min-w-0 pb-3">
-            <button type="button" class="grid min-h-11 w-full gap-2 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="toggleDetails(item.line_id)">
+          <div class="min-w-0 pb-1">
+            <div class="flex items-center gap-1">
+            <button type="button" class="grid min-h-11 min-w-0 flex-1 gap-2 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-pressed="activeLineId === item.line_id" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="selectLine(item.line_id)">
               <span class="flex items-baseline gap-2">
+                <span v-if="activeLineId !== item.line_id" class="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ item.qty }}×</span>
                 <span class="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{{ item.name }}</span>
                 <span class="shrink-0 text-right">
                   <strong class="text-sm font-semibold tabular-nums">{{ formatBRL(lineTotalQ(item)) }}</strong>
                 </span>
               </span>
+            </button>
+              <button type="button" class="ml-auto grid size-9 shrink-0 place-items-center rounded-md text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Detalhes de ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" @click="toggleDetails(item.line_id)"><Icon name="lucide:chevron-down" class="size-4" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" /></button>
+            </div>
+            <div class="flex items-center gap-1">
               <span :id="`${detailsId(item.line_id)}-summary`" class="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 <span v-if="discountBadge(item) || item.authorship?.updated_by" class="inline-flex max-w-full items-center gap-2 rounded-full bg-muted px-2.5 py-1">
                   <span v-if="discountBadge(item)" class="shrink-0 font-medium text-primary" :title="discountBadge(item)">{{ compactDiscount(item) }}</span>
@@ -491,13 +497,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                   <span v-if="item.authorship?.updated_by" class="inline-flex min-w-0 items-center gap-1" :title="`Operador: ${item.authorship.updated_label || item.authorship.updated_by}`"><Icon name="lucide:pencil" class="size-3 shrink-0" /><span class="sr-only">Operador: </span><span class="truncate">{{ item.authorship.updated_label || item.authorship.updated_by }}</span></span>
                 </span>
                 <span v-if="lineKitchenState(item) !== 'unfired'" class="rounded-full px-2 py-1 font-medium" :class="badgeTone(kitchenBadge(item).tone)">{{ kitchenBadge(item).label }}</span>
-                <Icon name="lucide:chevron-down" class="ml-auto size-4 shrink-0" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" />
               </span>
-              <span v-if="item.notes" class="border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground">
+
+            </div>
+              <span v-if="item.notes" class="mt-1 block border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground">
                 {{ item.notes }}
               </span>
-            </button>
-            <div class="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <div v-if="activeLineId === item.line_id" class="mt-1 flex flex-wrap items-center justify-between gap-2">
                 <div class="inline-flex items-center rounded-md border border-border bg-card" role="group" :aria-label="`Quantidade de ${item.name}`">
                   <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-r-none" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')"><Icon name="lucide:minus" class="size-4" /></UiButton>
                   <button type="button" class="grid size-11 place-items-center border-x border-border text-sm font-semibold tabular-nums focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar quantidade de ${item.name}`" title="Ajustar pelo teclado" @click="selectLine(item.line_id); setMode('qty')">{{ item.qty }}</button>
@@ -506,7 +512,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
               <span class="text-xs tabular-nums text-muted-foreground">{{ formatBRL(unitChargedQ(item)) }} cada</span>
             </div>
           </div>
-          <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="col-span-2 -mx-3 border-t border-border/70 bg-muted/30 px-4 py-4">
+          <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="col-span-2 -mx-1 border-t border-border/70 bg-muted/30 px-4 py-4">
             <div class="grid gap-4">
               <div v-if="discountBadge(item)" class="grid gap-1 text-xs leading-relaxed">
                 <span class="text-muted-foreground">Desconto</span>

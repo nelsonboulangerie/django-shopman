@@ -45,3 +45,13 @@ Validado com 30 testes existentes do componente, typecheck, ESLint e diff check.
 Após nova solicitação de prévia, −/quantidade/+ ficam visíveis na linha recolhida. O número central seleciona a linha e o modo quantidade no teclado, sem expandir. Remove-se a quantidade duplicada antes do produto; preço unitário acompanha o controle. Desconto ganha rótulo numérico compacto e autoria usa lápis+nome em uma faixa conjunta, sem espaços vazios entre indicadores. Cozinha mantém selo separado. A mudança substitui o estudo anterior de slots fixos, seguindo a discussão posterior.
 
 31 testes do componente, typecheck, ESLint e diff check passam. Browser com componente real e parent sintético confirmou incremento de 2 para 3 com zero regiões de detalhes abertas; geometria em 320/390/768/1366 px sem overflow. Captura `quantity-line.png` em `.artifacts/pdv-20260910-a1/`. Prévia local, não publicada.
+
+## Seleção separada da expansão — decisão após benchmark
+
+Usuário aprovou retorno a linhas compactas: tocar no nome seleciona a linha e exibe somente nela os controles +/−; a seta separada expande detalhes. Quantidade fica no resumo das linhas inativas e no controle da ativa, sem duplicação. Seleção múltipla mantém checkbox independente. Resumo perdeu bordas por cartão e parte do espaçamento vertical do estudo anterior; observações e cozinha continuam aparentes.
+
+Comparação interativa local em `http://127.0.0.1:43021`, com painel completo (lista, teclado e rodapé), largura de 320 px e altura de 720 px, cenários de 3/10/20 linhas e opção de observações/autoria. Anterior usa o componente da base `696f5410`; novo usa o componente real da worktree. Dados e eventos são sintéticos, compartilhados entre painéis. Teclado físico no harness é encaminhado apenas ao painel focado; não existem comandos de caixa/venda nessa prévia. O servidor foi mantido ativo para revisão do usuário; não é um deploy. Harness em `.artifacts/pdv-20260910-a1/visual-app/`.
+
+Medição local: linhas anteriores simples com 60 px; novas inativas com 54–61 px; selecionada com 104 px para controle de toque. Nos cenários de 10/20 itens cabem quatro linhas completas antes da rolagem em ambos os painéis nesta configuração. É evidência de geometria, não de velocidade humana. Teste browser confirmou seleção sem abrir região, um único stepper, edição pelo teclado e expansão pela seta. Capturas `density-{3,10,20,rich}.png` e log `density-geometry.log`.
+
+847 testes frontend passaram, com repetição focada de 31 testes após reforço das asserções de seleção/expansão; typecheck, lint e diff check passam. Mudança local, sem publicação.

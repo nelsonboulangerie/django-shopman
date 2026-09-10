@@ -200,7 +200,7 @@ describe("PosCartPanel — duas linhas do MESMO produto", () => {
   it("o stepper age na linha tocada, não na primeira do sku", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props({ items: doisChas }) });
     await wrapper.findAll('[aria-label="Editar Chá"]')[1]!.trigger("click");
-    await wrapper.findAll('[aria-label="Aumentar"]')[1]!.trigger("click");
+    await wrapper.find('[aria-label="Aumentar"]').trigger("click");
     expect(wrapper.emitted("increment")?.[0]).toEqual(["L-cha-2"]);
   });
 
@@ -298,7 +298,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         items: [item({ sku: "TAB", name: "Tabatière", qty: 2, price_q: 510, charged_price_q: 510, list_price_q: 600 })],
       }),
     });
-    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("click");
+    await wrapper.find('button[aria-label="Detalhes de Tabatière"]').trigger("click");
     const struck = wrapper.find("span.line-through");
     expect(struck.exists()).toBe(true);
     expect(struck.text()).toBe(formatBRL(1200));
@@ -328,7 +328,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
       }),
     });
     expect(wrapper.findAll("span[title^='Desconto aplicado']")).toHaveLength(0);
-    await wrapper.find('[aria-label="Editar Tabatière"]').trigger("click");
+    await wrapper.find('button[aria-label="Detalhes de Tabatière"]').trigger("click");
     const struck = wrapper.find("span.line-through");
     expect(struck.text()).toBe(formatBRL(1200));
     expect(struck.attributes("title")).toContain("Semana do Pão −15%");
@@ -343,7 +343,7 @@ describe("PosCartPanel — transparência de desconto na linha", () => {
         })],
       }),
     });
-    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    await wrapper.find('button[aria-label="Detalhes de Pão"]').trigger("click");
     expect(wrapper.find("span.line-through").attributes("title")).toContain("Cortesia −10%");
   });
 
@@ -370,10 +370,10 @@ describe("PosCartPanel — autoria discreta", () => {
     ] }) });
     expect(wrapper.text()).toContain("Operador: Bruno");
     expect(wrapper.text()).not.toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
-    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
+    await wrapper.find('button[aria-label="Detalhes de Pão"]').trigger("click");
     expect(wrapper.text()).toContain("Lançado por Ana");
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
   });
 });
 
@@ -381,8 +381,8 @@ describe("PosCartPanel — autoria discreta", () => {
 describe("PosCartPanel — acordeão", () => {
   it("abre só uma linha e recolhe sem perder o alvo do teclado", async () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
-    const bread = wrapper.find('[aria-label="Editar Pão"]');
-    const coffee = wrapper.find('[aria-label="Editar Café"]');
+    const bread = wrapper.find('button[aria-label="Detalhes de Pão"]');
+    const coffee = wrapper.find('button[aria-label="Detalhes de Café"]');
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
     await bread.trigger("click");
     expect(bread.attributes("aria-expanded")).toBe("true");
@@ -412,9 +412,12 @@ describe("PosCartPanel — quantidade acessível sem expandir", () => {
     const wrapper = await mountSuspended(PosCartPanel, { props: props() });
     await wrapper.find('[aria-label="Quantidade de Café"] [aria-label="Aumentar"]').trigger("click");
     expect(wrapper.emitted("increment")?.[0]).toEqual(["L-CAFE"]);
+    await wrapper.find('[aria-label="Editar Pão"]').trigger("click");
+    expect(wrapper.find('[aria-label="Editar Pão"]').attributes("aria-pressed")).toBe("true");
+    expect(wrapper.find('button[aria-label="Detalhes de Pão"]').attributes("aria-expanded")).toBe("false");
     await wrapper.find('[aria-label="Editar quantidade de Pão"]').trigger("click");
     expect(wrapper.text()).toContain("Teclado: Pão");
     expect(wrapper.findAll('[role="region"]')).toHaveLength(0);
-    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(2);
+    expect(wrapper.findAll('[aria-label="Aumentar"]')).toHaveLength(1);
   });
 });
