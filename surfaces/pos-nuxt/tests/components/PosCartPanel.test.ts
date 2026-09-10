@@ -716,3 +716,23 @@ describe("PosCartPanel — navegação e seleção da linha inteira", () => {
     expect(wrapper.emitted("fire")).toBeUndefined();
   });
 });
+
+
+describe("PosCartPanel — rodapé no modo seleção", () => {
+  it("preserva o total e oculta ações gerais até sair da seleção, mesmo sem marcações", async () => {
+    const wrapper = await mountSuspended(PosCartPanel, { props: props() });
+    const payment = () => wrapper.findAll("button").filter(b => b.text().includes("Pagamento"));
+    expect(payment()).toHaveLength(1);
+    await wrapper.find('[aria-label="Iniciar seleção"]').trigger("click");
+    expect(wrapper.text()).toContain("Total parcial");
+    expect(wrapper.text()).toContain(formatBRL(1100));
+    expect(payment()).toHaveLength(0);
+    expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(false);
+    await wrapper.find('[data-item-select="L-PAO"]').trigger("click");
+    expect(payment()).toHaveLength(0);
+    expect(wrapper.findAll("button").some(b => b.text().includes("Enviar à cozinha"))).toBe(true);
+    await wrapper.find('[aria-label="Concluir seleção"]').trigger("click");
+    expect(payment()).toHaveLength(1);
+    expect(wrapper.findAll("button").some(b => b.text().includes("Transferir"))).toBe(true);
+  });
+});

@@ -1119,7 +1119,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
       <!-- Secondary actions stack on the left; Pagamento is the highlight column
            spanning their full height — saves a vertical row. -->
       <div
-        v-if="fireBar.visible || (hasOpenTab && items.length)"
+        v-if="!batchMode && (fireBar.visible || (hasOpenTab && items.length))"
         class="grid grid-cols-2 gap-2"
       >
         <div class="flex flex-col gap-2">
@@ -1180,7 +1180,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         </UiButton>
       </div>
       <UiButton
-        v-else
+        v-else-if="!batchMode"
         size="lg"
         class="w-full gap-2"
         :disabled="!items.length || loading || saving"
