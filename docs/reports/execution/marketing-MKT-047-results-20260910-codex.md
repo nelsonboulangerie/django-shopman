@@ -70,6 +70,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P02 | 3 | sim | até 4 inferidas + data/hora | somente data/hora e senha/frase de segurança | 0 | preview ≤20 ms e ack ≤50 ms no backend | 0 | N/A | não | Persistiu 11/09/2026 09:15 BRT e comprovante `3620c55b-ffe5-4591-a8dd-952fe606bb7e`, mas P02 classificou como parcial a clareza de fuso, expiração e efeito do horário permitido. Requer correção e repetição mínima. |
 | P02 | 2R1 | sim | 3 inferidas + edição | somente texto e senha/frase de segurança | 0 | autosave/preview ≤20 ms e ack ≤180 ms no backend | 0 | N/A | sim | Após a explicação inline, alterou somente o texto, aprovou sem nova dúvida e declarou o resultado claro. Conteúdo preservado no artefato, comprovante `ed34488a-1252-400d-ac85-135fb6059c0d`, versão 2, público 12 e WhatsApp. |
 | P02 | 3R1 | sim | inspeção visual; nenhum comando novo | nenhuma | 0 | sem espera relatada | 0 | N/A | sim, no escopo afetado de T3 | Após a correção, localizou no mesmo resumo fuso, política do horário permitido e validade e respondeu `CONCLUÍDO`, sem nova dúvida. |
+| P02 | 4 | não executada | — | — | — | — | — | — | — | Participante pediu para pular por já ter feito o mesmo fluxo anteriormente. Não conta como evidência P02 e permanece pendente para o gate. A campanha pré-requisito de T5 foi preparada pelo facilitador. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
