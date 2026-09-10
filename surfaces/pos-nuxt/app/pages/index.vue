@@ -14,6 +14,10 @@ import { globalKeysBlocked } from "~/utils/keyboardGuard";
 // (`/session`) — sem turno aberto, esta página manda o operador pra lá.
 useHead({ title: "PDV" });
 
+// Mantém a divisória do carrinho alinhada ao contexto, inclusive quando as pills quebram linha.
+const contextHeader = ref<HTMLElement | null>(null);
+const { height: contextHeaderHeight } = useElementSize(contextHeader, undefined, { box: "border-box" });
+
 const apiPath = usePosApiPath();
 const action = usePosAction();
 const runtimeConfig = useRuntimeConfig();
@@ -711,7 +715,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 </script>
 
 <template>
-  <main class="flex flex-wrap content-start min-h-dvh bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
+  <main :style="{ '--pos-context-header-height': `${contextHeaderHeight || 53}px` }" class="flex flex-wrap content-start min-h-dvh bg-background text-foreground md:h-[100dvh] md:min-h-0 md:flex-nowrap md:overflow-hidden">
     <PosFunctionRail
       v-if="pos"
       :pos="pos"
@@ -727,7 +731,7 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
     />
 
     <div class="flex min-w-0 flex-1 flex-col md:min-h-0 md:overflow-hidden">
-      <header v-if="pos" class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
+      <header v-if="pos" ref="contextHeader" class="flex shrink-0 items-center gap-3 border-b border-border bg-card px-4 py-2">
         <!-- Controle do rail (kit): cicla colapsado/compacto/estendido; mora no cabeçalho
              para que o rail suma por inteiro quando colapsado. -->
         <RailToggle />
@@ -1043,8 +1047,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
             @move="openMoveDialog"
             @fire="fireTab"
             @unfire="unfireTab"
-            @fire-lines="fireTab"
-            @unfire-lines="unfireSelected"
+            @fire-lines="(ids, complete) => fireTab(ids).then(complete)"
+            @unfire-lines="(ids, complete) => unfireSelected(ids).then(complete)"
             @request-tab="requestTabAssociation('start')"
           />
         </div>

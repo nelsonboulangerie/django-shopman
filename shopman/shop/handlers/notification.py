@@ -173,6 +173,7 @@ class NotificationSendHandler:
         # Normalize event → template name (stock.alert.triggered → stock_alert)
         if "stock.alert" in event:
             template = "stock_alert"
+            context = _stock_alert_context(context)
         else:
             template = context.get("template") or event
         context = _enrich_system_context(template, context)
@@ -220,6 +221,36 @@ def _system_backends(payload: dict) -> list[str]:
         return ["email", "console"]
     backends = [str(item).strip() for item in raw if str(item).strip()]
     return backends or ["email", "console"]
+
+
+def _stock_alert_context(context: dict) -> dict:
+    """Nome humano + SKU para o alerta operacional de estoque.
+
+    Stockman permanece agnóstico ao catálogo e publica apenas o SKU. A borda
+    orquestradora enriquece antes de escolher o canal; assim e-mail, console e
+    futuros adapters recebem a mesma descrição sem acoplar o kernel de estoque
+    ao Offerman.
+    """
+    enriched = dict(context or {})
+    sku = str(enriched.get("sku") or "").strip()
+    product_name = str(enriched.get("product_name") or "").strip()
+    if sku and not product_name:
+        try:
+            from shopman.shop.projections import catalog_context
+
+            product = catalog_context.get_product(sku)
+            product_name = str(getattr(product, "name", "") or "").strip()
+        except Exception:  # silêncio-deliberado: o alerta degrada para o SKU já presente
+            logger.debug(
+                "notification.system: product lookup failed for stock alert sku=%s",
+                sku,
+                exc_info=True,
+            )
+    enriched["product_name"] = product_name or sku
+    enriched["product_label"] = (
+        f"{product_name} ({sku})" if product_name and product_name != sku else sku
+    )
+    return enriched
 
 
 __all__ = ["NotificationSendHandler"]

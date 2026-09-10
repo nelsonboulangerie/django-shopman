@@ -10,6 +10,8 @@
 // Instruções específicas do SKU (peso de corte etc.) terão casa neste overlay
 // (estudo de notação de pâtonnage pendente). Nomenclatura interna do sistema
 // intacta (planned/started/finished) — as lentes são linguagem de UI.
+import { nextTick } from "vue";
+
 import {
   boardDisplay,
   elapsedLabel,
@@ -171,6 +173,7 @@ const emptyCopy = computed(() =>
 const explaining = ref<ProductionSuggestionProjection | null>(null);
 const planRow = ref<ProductionMatrixRowProjection | null>(null);
 const planQty = ref("");
+const planQtyInput = ref<HTMLInputElement | null>(null);
 const planSubmitting = ref(false);
 const planSource = ref<"manual" | "suggested">("manual");
 const selectedPlannedPk = ref<number | null>(null);
@@ -202,6 +205,7 @@ const PLAN_TITLE: Record<PlanMode, string> = {
 };
 const startRow = ref<ProductionMatrixRowProjection | null>(null);
 const startQty = ref("");
+const startQtyInput = ref<HTMLInputElement | null>(null);
 const startSubmitting = ref(false);
 const selectedStartPk = ref<number | null>(null);
 const startedRow = ref<ProductionMatrixRowProjection | null>(null);
@@ -284,11 +288,15 @@ function openPlan(
   else if (mode === "adjust")
     planQty.value = selectedPlannedOrder.value?.planned_qty ?? "";
   else planQty.value = row.suggestion?.quantity ?? "0";
+  if (!row.planned_orders.length || selectedPlannedPk.value != null) {
+    void nextTick(() => planQtyInput.value?.focus());
+  }
 }
 
 function selectPlannedWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedPlannedPk.value = workOrder.pk;
   if (planSource.value === "manual") planQty.value = workOrder.planned_qty;
+  void nextTick(() => planQtyInput.value?.focus());
 }
 
 // Do diálogo "por que essa sugestão?" direto para o planejamento da linha dona da
@@ -369,11 +377,15 @@ function openStart(row: ProductionMatrixRowProjection) {
   selectedStartPk.value =
     row.planned_orders.length === 1 ? row.planned_orders[0]!.pk : null;
   startQty.value = selectedStartOrder.value?.planned_qty ?? "";
+  if (selectedStartPk.value != null) {
+    void nextTick(() => startQtyInput.value?.focus());
+  }
 }
 
 function selectStartWorkOrder(workOrder: WorkOrderCardProjection) {
   selectedStartPk.value = workOrder.pk;
   startQty.value = workOrder.planned_qty;
+  void nextTick(() => startQtyInput.value?.focus());
 }
 
 async function confirmStart() {
@@ -886,12 +898,14 @@ const headerCount = computed(() => {
             −
           </button>
           <input
+            ref="planQtyInput"
             v-model="planQty"
             type="text"
             inputmode="decimal"
             class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
             :readonly="planSource === 'suggested'"
             aria-label="Quantidade planejada"
+            @keydown.enter.prevent="confirmPlan()"
           />
           <button
             type="button"
@@ -921,6 +935,7 @@ const headerCount = computed(() => {
               (!!planRow?.planned_orders.length && !selectedPlannedOrder)
             "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            aria-keyshortcuts="Enter"
             @click="confirmPlan()"
           >
             {{
@@ -996,11 +1011,13 @@ const headerCount = computed(() => {
             −
           </button>
           <input
+            ref="startQtyInput"
             v-model="startQty"
             type="text"
             inputmode="decimal"
             class="h-12 w-full rounded-md border bg-background text-center text-3xl font-bold tabular-nums outline-none focus:ring-1 focus:ring-ring"
             aria-label="Quantidade produzida"
+            @keydown.enter.prevent="confirmStart()"
           />
           <button
             type="button"
@@ -1025,6 +1042,7 @@ const headerCount = computed(() => {
               startSubmitting || !startQty.trim() || !selectedStartOrder
             "
             class="rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
+            aria-keyshortcuts="Enter"
             @click="confirmStart()"
           >
             {{ startSubmitting ? "Confirmando…" : "Confirmar" }}

@@ -119,7 +119,7 @@ function runClear() {
 </script>
 
 <template>
-  <div class="flex min-w-0 items-center gap-2">
+  <div class="flex min-w-0 flex-wrap items-center gap-2">
     <!-- tab number (renameable) -->
     <div v-if="renaming" class="flex items-center gap-1">
       <UiInput
@@ -139,7 +139,7 @@ function runClear() {
     <button
       v-else-if="hasOpenTab && canRename && !readOnly"
       type="button"
-      class="group flex min-w-0 items-center gap-1.5"
+      class="group flex min-w-0 max-w-full shrink-0 items-center gap-1.5"
       aria-label="Renomear comanda"
       @click="startRename"
     >
@@ -182,11 +182,10 @@ function runClear() {
         :class="customerRequired ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'"
       />
       <span v-if="customerName" class="min-w-0 max-w-40 truncate font-medium">{{ customerName }}</span>
-      <span v-else class="shrink-0" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
-      <kbd
-        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+      <span v-else class="min-w-0 truncate" :class="customerRequired ? '' : 'text-muted-foreground'">Identificar cliente</span>
+      <OperatorKbd
         aria-hidden="true"
-      >F6</kbd>
+      >F6</OperatorKbd>
     </button>
 
     <!-- RECEBIMENTO — irmão do chip de cliente. Os dois são fatos do PEDIDO,
@@ -203,10 +202,9 @@ function runClear() {
     >
       <Icon :name="fulfillmentType === 'delivery' ? 'lucide:bike' : 'lucide:store'" class="size-4 shrink-0 text-muted-foreground" />
       <span class="min-w-0 max-w-48 truncate font-medium">{{ fulfillmentLabel }}</span>
-      <kbd
-        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+      <OperatorKbd
         aria-hidden="true"
-      >F7</kbd>
+      >F7</OperatorKbd>
     </button>
 
     <!-- QUANDO — o terceiro irmão. A data morava dentro do formulário de
@@ -230,10 +228,9 @@ function runClear() {
         :class="scheduleConflict ? '' : 'text-muted-foreground'"
       />
       <span class="min-w-0 max-w-56 truncate font-medium">{{ scheduleLabel }}</span>
-      <kbd
-        class="shrink-0 rounded border bg-muted px-1 py-0.5 font-mono text-xs font-medium text-muted-foreground"
+      <OperatorKbd
         aria-hidden="true"
-      >F8</kbd>
+      >F8</OperatorKbd>
     </button>
 
     <!-- release tab (pushed to the right of the context bar) -->

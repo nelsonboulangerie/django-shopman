@@ -1,15 +1,20 @@
 <script setup lang="ts">
 // Preparação (mise en place) — the day's separation & weighing station.
 // Two lenses over the same planned WOs:
-//   · "Insumos": aggregated ingredient list (checklist local ao turno) — bom
-//     para conferir provisionamento ("quanto de farinha no total?").
 //   · "Por preparo": each prep with its scaled ingredients — é a pesagem real,
 //     e de onde saem as ETIQUETAS CEGAS (código do dia, ingrediente, peso,
 //     data; nunca o nome da receita — o mapa código↔preparo é visão de gestor
 //     no Admin). Impressão via print CSS: só as etiquetas saem no papel.
+//   · "Por insumo": aggregated ingredient list (checklist local ao turno) — bom
+//     para conferir provisionamento ("quanto de farinha no total?").
 // Tablet/touch-first.
 import type { MiseEnPlaceLineProjection } from "~/types/production";
+import type { ProductionPrintingSourceProjection } from "~/types/productionPrinting";
 import { isStale, isoForOffset } from "~/presentation/production";
+import {
+  operationalTargetDisplay,
+  projectedQuantityDisplay,
+} from "~/presentation/weighing";
 
 // Preparação olha hoje por padrão (a pesagem é do dia); amanhã na véspera.
 const selectedDate = ref(isoForOffset(0));
@@ -31,7 +36,7 @@ const {
 } = useMiseEnPlace(selectedDate);
 const weighing = useWeighing(selectedDate);
 
-const mode = ref<"insumos" | "preparos">("insumos");
+const mode = ref<"insumos" | "preparos">("preparos");
 
 // Tolerante a dado velho: se a atualização falhar mas já houver lista, mantém a lista
 // no ar e acende o chip de degradação (dado velho visível > tela em branco).
@@ -85,27 +90,56 @@ function toggleBreakdown(line: MiseEnPlaceLineProjection) {
 // Dois artefatos de impressão, papéis distintos:
 //   · etiquetas CEGAS de pesagem (uma por preparo × ingrediente) — só o
 //     código do dia, para qualquer colaborador pesar sem correlacionar;
-//   · etiquetas EXPLÍCITAS do preparo pronto (uma por preparo) — a massa
-//     feita ganha nome, data, rendimento e objetivo (o sigilo é da pesagem,
-//     não do produto).
+//   · identificação INTERNA do preparo (uma por preparo) — nunca se apresenta
+//     como rótulo de venda. Data e validade vêm do servidor; sem validade
+//     responsável, o servidor recusa a emissão.
 const printMode = ref<"pesagem" | "preparo">("pesagem");
+const printTicketRef = ref<string | null>(null);
+const printDialogOpen = ref(false);
+
+function ticketIdentity(ticket: (typeof weighing.tickets.value)[number]) {
+  return ticket.ticket_ref?.trim() || ticket.recipe_ref;
+}
+
+const printableTickets = computed(() => {
+  if (!printTicketRef.value) return weighing.tickets.value;
+  return weighing.tickets.value.filter(
+    (ticket) => ticketIdentity(ticket) === printTicketRef.value,
+  );
+});
 
 const labels = computed(() =>
-  weighing.tickets.value.flatMap((ticket) =>
-    ticket.ingredients.map((ing) => ({
+  printableTickets.value.flatMap((ticket) =>
+    ticket.ingredients.map((ing, index) => ({
       code: ticket.blind_code,
       ingredient: ing.name,
-      weight: ing.quantity_display,
+      sku: ing.sku,
+      weight: operationalTargetDisplay(
+        ing.target_display,
+        ing.quantity_display,
+      ),
+      annotation: ing.annotation,
       date: weighing.dateDisplay.value,
-      key: `${ticket.blind_code}-${ing.sku}`,
+      key: `${ticketIdentity(ticket)}-${ing.sku}-${index}`,
     })),
   ),
 );
 
-function printLabels(kind: "pesagem" | "preparo") {
+const printProjection = computed(
+  () => weighing.projection.value as ProductionPrintingSourceProjection | null,
+);
+const scaleRoundingNote = computed(
+  () => printProjection.value?.scale_rounding_note || "",
+);
+
+function openLabelsPreview(
+  kind: "pesagem" | "preparo",
+  ticketRef: string | null = null,
+) {
   printMode.value = kind;
+  printTicketRef.value = ticketRef;
   mode.value = "preparos";
-  nextTick(() => window.print());
+  printDialogOpen.value = true;
 }
 
 const isPending = computed(() =>
@@ -163,19 +197,6 @@ function refreshAll() {
             type="button"
             class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
             :class="
-              mode === 'insumos'
-                ? 'bg-primary text-primary-foreground'
-                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-            "
-            :aria-pressed="mode === 'insumos'"
-            @click="mode = 'insumos'"
-          >
-            Insumos
-          </button>
-          <button
-            type="button"
-            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
-            :class="
               mode === 'preparos'
                 ? 'bg-primary text-primary-foreground'
                 : 'text-muted-foreground hover:bg-accent hover:text-foreground'
@@ -184,6 +205,19 @@ function refreshAll() {
             @click="mode = 'preparos'"
           >
             Por preparo
+          </button>
+          <button
+            type="button"
+            class="rounded-md px-2.5 py-1.5 text-sm font-medium transition"
+            :class="
+              mode === 'insumos'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            "
+            :aria-pressed="mode === 'insumos'"
+            @click="mode = 'insumos'"
+          >
+            Por insumo
           </button>
         </div>
 
@@ -209,18 +243,18 @@ function refreshAll() {
           <template v-if="mode === 'preparos' && visibleTickets.length">
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border border-transparent bg-primary px-2.5 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
-              @click="printLabels('pesagem')"
+              class="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-transparent bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              @click="openLabelsPreview('pesagem')"
             >
               <Icon name="lucide:printer" class="size-4" /> Etiquetas de pesagem
             </button>
             <button
               type="button"
-              class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-sm font-medium transition hover:bg-accent"
-              title="Adesivo explícito da massa pronta: nome, data, rendimento e objetivo"
-              @click="printLabels('preparo')"
+              class="inline-flex min-h-11 items-center gap-1.5 rounded-md border px-3 py-2 text-sm font-medium transition hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              title="Identificação interna: nome, data prevista e validade configurada"
+              @click="openLabelsPreview('preparo')"
             >
-              <Icon name="lucide:tag" class="size-4" /> Etiquetas do preparo
+              <Icon name="lucide:tag" class="size-4" /> Identificação interna
             </button>
           </template>
         </div>
@@ -339,7 +373,9 @@ function refreshAll() {
                       >
                         <!-- Insumo sem nome cadastrado tem o SKU como nome; repetir
                              embaixo seria a mesma linha duas vezes. -->
-                        <span v-if="line.name !== line.sku">{{ line.sku }}</span>
+                        <span v-if="line.name !== line.sku">{{
+                          line.sku
+                        }}</span>
                         <UiBadge
                           v-if="line.is_subrecipe"
                           variant="outline"
@@ -349,7 +385,7 @@ function refreshAll() {
                       </p>
                     </td>
                     <td class="px-3 py-2 text-right font-semibold tabular-nums">
-                      {{ line.quantity_display }}
+                      {{ projectedQuantityDisplay(line.quantity_display) }}
                       <!-- O mesmo peso dito na contagem da bancada. O "≈" vem do
                            servidor quando o fator é aproximado; aqui só se mostra. -->
                       <p
@@ -380,7 +416,11 @@ function refreshAll() {
                             : 'text-muted-foreground'
                         "
                       >
-                        {{ line.available_display || "—" }}
+                        {{
+                          line.available_display
+                            ? projectedQuantityDisplay(line.available_display)
+                            : "—"
+                        }}
                       </span>
                       <p
                         v-if="line.is_short"
@@ -427,7 +467,7 @@ function refreshAll() {
                             ></span
                           >
                           <span class="tabular-nums">{{
-                            row.quantity_display
+                            projectedQuantityDisplay(row.quantity_display)
                           }}</span>
                         </li>
                         <!-- A quebra por receita NÃO fecha com o total quando há
@@ -508,30 +548,58 @@ function refreshAll() {
               >Sem atualizar — mostrando os últimos preparos carregados.</span
             >
           </div>
+          <p
+            v-if="scaleRoundingNote"
+            class="mb-3 flex items-center gap-1.5 text-xs text-muted-foreground"
+          >
+            <Icon name="lucide:scale" class="size-3.5" />
+            {{ scaleRoundingNote }}
+          </p>
           <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <article
               v-for="ticket in visibleTickets"
-              :key="ticket.recipe_ref"
+              :key="ticketIdentity(ticket)"
               class="flex flex-col gap-2.5 rounded-lg border bg-card p-3 shadow-sm"
             >
               <header class="flex items-start justify-between gap-2">
-                <div class="min-w-0">
-                  <p class="text-base font-bold leading-tight">
-                    {{ ticket.name }}
-                  </p>
-                  <p class="text-xs text-muted-foreground">
-                    {{ ticket.output_quantity_display
-                    }}<template v-if="ticket.dough_weight_display">
-                      · {{ ticket.dough_weight_display }}</template
-                    >
-                    · {{ ticket.output_sku }}
-                  </p>
+                <div class="flex min-w-0 items-start gap-2">
+                  <span
+                    class="shrink-0 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
+                    title="Código cego do dia — vai nas etiquetas no lugar do nome"
+                    >{{ ticket.blind_code }}</span
+                  >
+                  <div class="min-w-0">
+                    <p class="text-base font-bold leading-tight">
+                      {{ ticket.name }}
+                    </p>
+                    <p class="text-xs text-muted-foreground">
+                      {{ ticket.output_sku
+                      }}<template
+                        v-if="
+                          ticket.total_weight_display ||
+                          ticket.dough_weight_display
+                        "
+                      >
+                        · Peso total
+                        {{
+                          operationalTargetDisplay(
+                            ticket.total_weight_display,
+                            ticket.dough_weight_display,
+                          )
+                        }}</template
+                      >
+                    </p>
+                  </div>
                 </div>
-                <span
-                  class="shrink-0 rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 font-mono text-sm font-bold tracking-wide text-primary"
-                  title="Código cego do dia — vai nas etiquetas no lugar do nome"
-                  >{{ ticket.blind_code }}</span
+                <button
+                  type="button"
+                  class="grid size-11 shrink-0 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                  :aria-label="`Abrir etiquetas de pesagem de ${ticket.name}`"
+                  :title="`Conferir etiquetas de ${ticket.name} · 80 mm`"
+                  @click="openLabelsPreview('pesagem', ticketIdentity(ticket))"
                 >
+                  <Icon name="lucide:printer" class="size-4" />
+                </button>
               </header>
               <ul class="flex flex-col divide-y text-sm">
                 <li
@@ -539,17 +607,41 @@ function refreshAll() {
                   :key="ing.sku"
                   class="flex items-center justify-between gap-3 py-1.5"
                 >
-                  <span class="min-w-0 truncate">{{ ing.name }}</span>
-                  <span class="shrink-0 font-semibold tabular-nums">{{
-                    ing.quantity_display
-                  }}</span>
+                  <span class="min-w-0">
+                    <span class="block truncate font-medium">{{
+                      ing.name
+                    }}</span>
+                    <span
+                      class="block truncate font-mono text-xs text-muted-foreground"
+                      >{{ ing.sku }}</span
+                    >
+                  </span>
+                  <span class="shrink-0 text-right">
+                    <span class="block font-semibold tabular-nums">{{
+                      operationalTargetDisplay(
+                        ing.target_display,
+                        ing.quantity_display,
+                      )
+                    }}</span>
+                    <span
+                      v-if="ing.annotation"
+                      class="block text-xs text-muted-foreground"
+                      >{{ ing.annotation }}</span
+                    >
+                  </span>
                 </li>
               </ul>
               <footer
-                v-if="ticket.sources_display"
-                class="text-xs text-muted-foreground"
+                v-if="ticket.output_quantity_display || ticket.sources_display"
+                class="space-y-0.5 text-xs text-muted-foreground"
               >
-                Objetivo: {{ ticket.sources_display }}
+                <p v-if="ticket.output_quantity_display">
+                  Rendimento:
+                  {{ projectedQuantityDisplay(ticket.output_quantity_display) }}
+                </p>
+                <p v-if="ticket.sources_display">
+                  Objetivo: {{ ticket.sources_display }}
+                </p>
               </footer>
             </article>
           </div>
@@ -565,12 +657,15 @@ function refreshAll() {
       </template>
     </section>
 
-    <!-- Etiquetas de pesagem (SÓ impressão, papel físico) — extraídas p/ componente
-         próprio, allowlistado no guardrail de tipografia (medium ≠ tela). -->
-    <WeighingLabels
+    <ProductionLabelPrintDialog
+      v-model:open="printDialogOpen"
       :print-mode="printMode"
       :labels="labels"
-      :tickets="weighing.tickets.value"
+      :tickets="printableTickets"
+      :selected-date="selectedDate"
+      :date-display="weighing.dateDisplay.value"
+      :projection="printProjection"
+      :refresh-projection="weighing.refresh"
     />
   </main>
 </template>

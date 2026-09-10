@@ -80,6 +80,15 @@ class Command(BaseCommand):
                 "Não há flag de override, de propósito."
             )
 
+        # O alpha usa credenciais externas reais. Rejuvenescer dados sintéticos
+        # jamais pode avisar clientes/operadores como se uma chegada ou baixa
+        # tivesse acontecido na operação: esta trava protege os adapters deste
+        # processo, e o metadado dos Moves abaixo protege também o worker de
+        # diretivas, que roda em outro processo.
+        from shopman.shop.adapters._external import suppress
+
+        suppress("refresh_seed_dates")
+
         from shopman.craftsman.models import Recipe, WorkOrder
         from shopman.craftsman.signals import production_changed
         from shopman.stockman import stock
@@ -132,6 +141,8 @@ class Command(BaseCommand):
                     sku=sku,
                     position=deposito,
                     reason="Rejuvenescimento: reposição ao alvo de abertura",
+                    suppress_notifications=True,
+                    synthetic_source="refresh_seed_dates",
                 )
 
         # ── 3. Mise en place: pré-preparo até o alvo do plano ───────────────
@@ -149,6 +160,8 @@ class Command(BaseCommand):
                     position=deposito,
                     reason="Rejuvenescimento: mise en place ao alvo do plano",
                     kind="make",
+                    suppress_notifications=True,
+                    synthetic_source="refresh_seed_dates",
                 )
 
         # ── 4. Vitrine: estoque vendável ao alvo + sobras de ontem ──────────
@@ -175,6 +188,8 @@ class Command(BaseCommand):
                     sku=sku,
                     position=vitrine,
                     reason="Rejuvenescimento: vitrine ao alvo do dia",
+                    suppress_notifications=True,
+                    synthetic_source="refresh_seed_dates",
                 )
         ontem = hoje - timedelta(days=1)
         for sku, qty in LEFTOVER_ITEMS:
@@ -201,6 +216,8 @@ class Command(BaseCommand):
                     position=vitrine,
                     batch=lot_ref,
                     reason=f"Rejuvenescimento: sobra de ontem (lote datado): {sku}",
+                    suppress_notifications=True,
+                    synthetic_source="refresh_seed_dates",
                 )
 
         # ── 5. Produção: cancela o planejado que apodreceu, planta o de hoje+7 ─
@@ -246,7 +263,11 @@ class Command(BaseCommand):
                     target_date=target,
                     position_ref="producao",
                     operator_ref="chef:planejamento",
-                    meta={"refresh": True},
+                    meta={
+                        "refresh": True,
+                        "suppress_notifications": True,
+                        "synthetic_source": "refresh_seed_dates",
+                    },
                 )
                 if offset >= 1:
                     # Futuro vira estoque planejado (gate de encomenda) — hoje

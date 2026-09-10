@@ -26,6 +26,7 @@ from shopman.backstage.api._production_mutations import (
     PRODUCTION_MUTATION_DATACLASSES,
     PRODUCTION_REQUEST_SERIALIZERS,
 )
+from shopman.backstage.api.print_jobs import ProductionWeighingPrintJobSerializer
 from shopman.backstage.contracts import (
     render_action_client,
     render_contract_module,
@@ -63,6 +64,7 @@ from shopman.backstage.projections.production import (
     ProductionMatrixGroupRowProjection,
     ProductionMatrixRowProjection,
     ProductionMiseEnPlaceProjection,
+    ProductionPrintDestinationProjection,
     ProductionReportFilters,
     ProductionReportsProjection,
     ProductionSuggestionProjection,
@@ -119,6 +121,7 @@ CONTRACT_DATACLASSES = (
     ProductionWeighingIngredientProjection,
     ProductionWeighingTableRowProjection,
     ProductionWeighingTableProjection,
+    ProductionPrintDestinationProjection,
     ProductionWeighingTicketProjection,
     ProductionWeighingProjection,
     ProductionBlindMapRowProjection,
@@ -139,6 +142,11 @@ CONTRACT_DATACLASSES = (
     *PRODUCTION_MUTATION_DATACLASSES,
 )
 
+CONTRACT_REQUEST_SERIALIZERS = (
+    *PRODUCTION_REQUEST_SERIALIZERS,
+    ("ProductionWeighingPrintJobRequest", ProductionWeighingPrintJobSerializer),
+)
+
 
 def output_path() -> Path:
     return Path(settings.BASE_DIR) / OUTPUT_RELATIVE_PATH
@@ -147,11 +155,14 @@ def output_path() -> Path:
 def render_production_contract_ts() -> str:
     """Render the generated TypeScript contract mirror (deterministic)."""
     return render_contract_module(
-        source=("shopman/backstage/projections/production.py + projections/alerts.py + api/_production_mutations.py"),
+        source=(
+            "shopman/backstage/projections/production.py + projections/alerts.py + "
+            "api/_production_mutations.py + api/print_jobs.py"
+        ),
         command="export_production_schema",
         dataclasses=CONTRACT_DATACLASSES,
         extra_blocks=(
-            render_serializer_interfaces(PRODUCTION_REQUEST_SERIALIZERS),
+            render_serializer_interfaces(CONTRACT_REQUEST_SERIALIZERS),
             render_action_client(PRODUCTION_ACTION_SPECS),
         ),
     )

@@ -106,6 +106,7 @@ function installGlobals() {
 
 function mountQc(
   overrides: Partial<InstanceType<typeof QcCloseScreen>["$props"]> = {},
+  attachToDocument = false,
 ) {
   return mount(QcCloseScreen, {
     props: {
@@ -119,6 +120,7 @@ function mountQc(
       ...overrides,
     },
     global: { stubs },
+    ...(attachToDocument ? { attachTo: document.body } : {}),
   });
 }
 
@@ -278,6 +280,88 @@ describe("QcCloseScreen — classificação por grau", () => {
     expect(wrapper.emitted("confirm")).toBeUndefined();
   });
 
+  it("digita pelo teclado físico mesmo com o botão do grau em foco", async () => {
+    const wrapper = mountQc({}, true);
+    const grade = wrapper.find('[data-grade-ref="fair"]');
+    await grade.trigger("click");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "1",
+        code: "Numpad1",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "5",
+        code: "Numpad5",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+
+    expect(grade.attributes("aria-label")).toContain("15 unidades");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "NumpadEnter",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+    await buttonByText(wrapper, "Formato")!.trigger("click");
+
+    expect(wrapper.emitted("confirm")?.[0]?.[0]).toMatchObject({
+      partition: expect.arrayContaining([
+        {
+          quantity: "15",
+          quality_grade_ref: "fair",
+          quality_defect_ref: "shape",
+        },
+      ]),
+    });
+    wrapper.unmount();
+  });
+
+  it("aceita Backspace e C do teclado físico pelo mesmo alvo do numpad", async () => {
+    const wrapper = mountQc({}, true);
+    const grade = wrapper.find('[data-grade-ref="fair"]');
+    await grade.trigger("click");
+    for (const [key, code] of [
+      ["1", "Digit1"],
+      ["2", "Digit2"],
+      ["Backspace", "Backspace"],
+    ]) {
+      grade.element.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          key,
+          code,
+          bubbles: true,
+          cancelable: true,
+        }),
+      );
+    }
+    await nextTick();
+    expect(grade.attributes("aria-label")).toContain("1 unidades");
+
+    grade.element.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "c",
+        code: "KeyC",
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    await nextTick();
+    expect(grade.attributes("aria-label")).toContain("0 unidades");
+    wrapper.unmount();
+  });
+
   it("confirma antes de descartar um QC preenchido", async () => {
     const confirm = vi.fn(() => false);
     vi.stubGlobal("confirm", confirm);
@@ -324,9 +408,18 @@ describe("QcCloseScreen — correção auditável", () => {
     const fairReason = wrapper.find(
       'button[aria-label="Editar motivo de Razoável: Formato"]',
     );
+    const fairQuantity = wrapper.find('[data-grade-ref="fair"]');
     expect(fairReason.text()).toBe("Formato");
-    expect(fairReason.classes()).toContain("min-h-11");
-    expect(fairReason.classes()).toContain("rounded-full");
+    expect(fairReason.classes()).toContain("h-11");
+    expect(fairReason.classes()).toContain("rounded-md");
+    expect(fairReason.classes()).toContain("ml-3");
+    expect(fairReason.classes()).toContain("mr-2");
+    expect(fairReason.classes()).toContain("w-[calc(100%-1.25rem)]");
+    expect(fairReason.classes()).toContain("mt-14");
+    expect(fairReason.classes()).toContain("z-20");
+    expect(fairQuantity.classes()).toContain("absolute");
+    expect(fairQuantity.classes()).toContain("inset-0");
+    expect(wrapper.find("[data-qc-layout]").classes()).toContain("items-start");
     expect(fairReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
@@ -340,11 +433,13 @@ describe("QcCloseScreen — correção auditável", () => {
       'button[aria-label="Editar motivo da perda: Queimado"]',
     );
     expect(lossReason.text()).toBe("Queimado");
-    expect(lossReason.classes()).toContain("min-h-11");
-    expect(lossReason.classes()).toContain("rounded-full");
+    expect(lossReason.classes()).toContain("h-11");
+    expect(lossReason.classes()).toContain("rounded-md");
+    expect(lossReason.classes()).toContain("w-[calc(100%-1rem)]");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
+    expect(wrapper.text().match(/Queimado/g)).toHaveLength(1);
 
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "8");

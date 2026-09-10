@@ -6,6 +6,7 @@ quando disponível, marca uma vez, não marca em falha de envio) e o endpoint.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,10 +39,18 @@ def _publish(sku="SKU-NOTIFY", *, is_batch_produced=False):
     )
 
 
-def _move(sku: str, *, kind: str = "buy", delta=1, metadata=None):
+def _move(
+    sku: str,
+    *,
+    kind: str = "buy",
+    delta=1,
+    metadata=None,
+    target_date=None,
+):
     """Um ``Move`` de mentira, com o ``kind`` que o receptor lê para decidir a rede."""
     fake = MagicMock(quant_id=1, kind=kind, delta=delta, metadata=metadata or {})
     fake.quant.sku = sku
+    fake.quant.target_date = target_date
     return fake
 
 
@@ -353,6 +362,25 @@ def test_move_receiver_skips_when_no_pending_subscription():
         patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
     ):
         handlers.on_move_for_stock_alerts(sender=None, instance=fake)
+    nb.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "move",
+    [
+        _move("SKU-SYNTHETIC", metadata={"suppress_notifications": True}),
+        _move("SKU-FUTURE", target_date=timezone.localdate() + timedelta(days=1)),
+    ],
+)
+def test_move_receiver_skips_synthetic_refresh_and_future_planning(move):
+    from shopman.storefront import handlers
+
+    stock_alerts.subscribe(move.quant.sku, phone=PHONE)
+    with (
+        patch("shopman.storefront.services.stock_alerts.notify_back_in_stock") as nb,
+        patch("django.db.transaction.on_commit", side_effect=lambda fn: fn()),
+    ):
+        handlers.on_move_for_stock_alerts(sender=None, instance=move)
     nb.assert_not_called()
 
 

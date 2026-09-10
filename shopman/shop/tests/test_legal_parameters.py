@@ -75,6 +75,10 @@ def test_a_lista_da_casa_cobre_o_que_o_sistema_usa():
         "limiar_sem_lactose",
         "declaracao_gluten",
         "pode_conter_contaminacao_cruzada",
+        "etiqueta_interna_preparo_armazenado",
+        "rotulo_embalado_para_venda",
+        "rotulagem_nutricional_proprio_estabelecimento",
+        "conteudo_liquido_produto_pre_medido",
     }
     faltando = esperadas - chaves
     assert not faltando, f"parâmetro legal aplicado no código e não declarado: {faltando}"

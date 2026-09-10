@@ -35,7 +35,7 @@ Três tabelas de conversão e um campo livre para a mesma pergunta.
 | **`buyman`** | **O item master.** `Material.unit` é a unidade-**base**; a tabela editável de conversões (convencionada e aproximada) é dele; o custo lança pela conversão. |
 | **`craftsman`** | **A ficha.** Continua exigindo igualdade estrita com a base (`RecipeItem.clean` não muda). Ganha a **anotação derivada** para o preparo. |
 | **`stockman`** | **O livro.** Conta na base, e só nela. Ganha o **carimbo** de aproximação no `Move.metadata` (JSONField que já existe — sem migração no Core). |
-| **`backstage`** | **A tela.** `MiseEnPlaceLineProjection` mostra `300 g · ≈ 6 ovos`; o `≈` some quando o número é exato. |
+| **`backstage`** | **A tela.** `MiseEnPlaceLineProjection` mostra `300 g` e abaixo `(≈ 6 un.)`; contagens aproximadas são inteiras e arredondadas para cima. |
 | **orquestrador** | Nada novo: já compõe catálogo e validador. A tabela é do Buyman porque o insumo é dele. |
 
 ## Fases
@@ -128,9 +128,10 @@ Cada fase é útil sozinha e nenhuma exige a seguinte.
 ### Fase 4 — a anotação de preparo (requisito do dono) · ✅ concluída
 
 - `MiseEnPlaceLineProjection` (`shopman/backstage/projections/production.py`) ganha a
-  anotação derivada: `300 g · ≈ 6 ovos`, calculada na hora do fator `approximate` do
-  insumo. **Nunca gravada** — corrigir o fator (ovo jumbo, 60 g) atualiza toda lista de
-  picking sozinho.
+  anotação derivada: `300 g` e abaixo `(≈ 6 un.)`, calculada na hora do fator
+  `approximate` do insumo. Contagens físicas são arredondadas para cima; grandezas
+  contínuas reconhecidas, como litros, mantêm a fração e o rótulo. **Nunca gravada** —
+  corrigir o fator (ovo jumbo, 60 g) atualiza toda lista de picking sozinho.
 - O `≈` **só** aparece quando o número passou por fator aproximado. Número exato não
   ganha enfeite.
 - Depende só da Fase 2.

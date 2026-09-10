@@ -248,6 +248,50 @@ class TestSystemNotificationDelivery:
         # Não deve levantar: email falha sem SMTP e console absorve.
         NotificationSendHandler().handle(message=directive, ctx={})
 
+    def test_stock_alert_names_the_product_and_keeps_the_sku(self, monkeypatch):
+        from shopman.offerman.models import Product
+
+        from shopman.shop.handlers.notification import NotificationSendHandler
+
+        Product.objects.create(
+            sku="FOA",
+            name="Focaccia do dia",
+            base_price_q=1000,
+            is_sellable=True,
+        )
+        calls = []
+
+        def fake_notify(*, event, recipient, context, backend):
+            calls.append(
+                {
+                    "event": event,
+                    "recipient": recipient,
+                    "context": context,
+                    "backend": backend,
+                }
+            )
+            return SimpleNamespace(success=True, error=None)
+
+        monkeypatch.setattr("shopman.shop.handlers.notification.notify", fake_notify)
+        directive = Directive.objects.create(
+            topic=NOTIFICATION_SEND,
+            payload={
+                "event": "stock.alert.triggered",
+                "recipient": "operacao@boulangerie.com.br",
+                "backends": ["console"],
+                "context": {
+                    "sku": "FOA",
+                    "available": "0",
+                    "min_quantity": "4.000",
+                },
+            },
+        )
+
+        NotificationSendHandler().handle(message=directive, ctx={})
+
+        assert calls[0]["context"]["product_name"] == "Focaccia do dia"
+        assert calls[0]["context"]["product_label"] == "Focaccia do dia (FOA)"
+
     def test_handler_routes_system_event_to_explicit_supplier_recipient(self, monkeypatch, settings):
         # ⚠️ O canal precisa DIZER que entrega, senão a cadeia o pula antes de
         # chegar no `notify` — e é isso que este teste mede (o roteamento até o

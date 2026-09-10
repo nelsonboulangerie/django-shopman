@@ -3,7 +3,10 @@
 // its ingredients already scaled by the day's planned coefficient, plus the
 // day's blind code (the only identity that goes on paper).
 import type { Ref } from "vue";
-import type { WeighingResponse, WeighingTicketProjection } from "~/types/production";
+import type {
+  WeighingResponse,
+  WeighingTicketProjection,
+} from "~/types/production";
 
 export function useWeighing(selectedDate: Ref<string>) {
   const { data, pending, error, refresh } = useFetch<WeighingResponse>(
@@ -12,13 +15,19 @@ export function useWeighing(selectedDate: Ref<string>) {
       key: "production-weighing",
       server: true,
       query: computed(() => ({ date: selectedDate.value })),
+      onResponseError: operatorSessionOnError,
     },
   );
 
-  const tickets = computed<WeighingTicketProjection[]>(() => data.value?.weighing?.tickets ?? []);
-  const dateDisplay = computed(() => data.value?.weighing?.selected_date_display ?? "");
+  const projection = computed(() => data.value?.weighing ?? null);
+  const tickets = computed<WeighingTicketProjection[]>(
+    () => data.value?.weighing?.tickets ?? [],
+  );
+  const dateDisplay = computed(
+    () => data.value?.weighing?.selected_date_display ?? "",
+  );
 
   useAdaptivePoll(refresh, () => 60_000);
 
-  return { tickets, dateDisplay, pending, error, refresh };
+  return { projection, tickets, dateDisplay, pending, error, refresh };
 }

@@ -477,7 +477,18 @@ export interface POSResponse {
   pin_must_change: boolean;
 }
 
+export interface POSLineAuthorship {
+  created_by?: string;
+  created_label?: string;
+  created_at?: string;
+  updated_by?: string;
+  updated_label?: string;
+  updated_at?: string;
+}
+
 export interface POSCartItem {
+  /** Optional server-authored audit data; absent on older projections. */
+  authorship?: POSLineAuthorship;
   /** A IDENTIDADE da linha, e a única chave dela. O cliente gera ao criar
    *  (`L-` + 8 caracteres) e o servidor preserva.
    *

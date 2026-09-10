@@ -54,8 +54,8 @@ class TestMiseEnPlaceAggregation:
 
         assert projection.has_lines
         assert projection.work_order_count == 2
-        assert by_sku["FARINHA"].quantity_display == "14 kg"
-        assert by_sku["SAL"].quantity_display == "0,2 kg"
+        assert by_sku["FARINHA"].quantity_display == "14000 g"
+        assert by_sku["SAL"].quantity_display == "200 g"
         assert by_sku["OVOS"].quantity_display == "20 un"
 
     def test_breakdown_per_recipe(self, pao, brioche):
@@ -65,7 +65,7 @@ class TestMiseEnPlaceAggregation:
         projection = build_production_mise_en_place(selected_date=date.today())
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
         breakdown = {row.recipe_name: row.quantity_display for row in farinha.breakdown}
-        assert breakdown == {"Pão Francês": "10 kg", "Brioche": "4 kg"}
+        assert breakdown == {"Pão Francês": "10000 g", "Brioche": "4000 g"}
 
     def test_started_wos_count_and_other_dates_do_not(self, pao):
         started = craft.plan(pao, 10, date=date.today())
@@ -74,7 +74,7 @@ class TestMiseEnPlaceAggregation:
 
         projection = build_production_mise_en_place(selected_date=date.today())
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
-        assert farinha.quantity_display == "5 kg"
+        assert farinha.quantity_display == "5000 g"
 
     def test_finished_and_voided_excluded(self, pao):
         done = craft.plan(pao, 10, date=date.today())
@@ -103,8 +103,8 @@ class TestMiseEnPlaceAggregation:
         projection = build_production_mise_en_place(selected_date=date.today())
         by_sku = {line.sku: line for line in projection.lines}
 
-        assert by_sku["FARINHA"].quantity_display == "2,5 kg"
-        assert by_sku["SAL"].quantity_display == "0,05 kg"
+        assert by_sku["FARINHA"].quantity_display == "2500 g"
+        assert by_sku["SAL"].quantity_display == "50 g"
 
     def test_yield_margin_uses_started_quantity_over_the_frozen_bom(self):
         """A margem da massa preserva a verdade do start e da ficha congelada."""
@@ -113,7 +113,7 @@ class TestMiseEnPlaceAggregation:
             mixer_loss_g_for,
         )
 
-        from shopman.backstage.projections.production import _measure
+        from shopman.backstage.projections.production import _preparation_measure
 
         massa = Recipe.objects.create(
             ref="massa",
@@ -158,8 +158,8 @@ class TestMiseEnPlaceAggregation:
 
         assert margin is not None
         assert projection.yield_margin_applied
-        assert line.quantity_display == _measure(Decimal("1") + margin.total, "kg")
-        assert line.margin_display == f"+ {_measure(margin.total, 'kg')} de margem"
+        assert line.quantity_display == _preparation_measure(Decimal("1") + margin.total, "kg")
+        assert line.margin_display == f"+ {_preparation_measure(margin.total, 'kg')} de margem"
         assert "5 peças" in line.margin_reason
 
 
@@ -184,7 +184,7 @@ class TestMiseEnPlaceExpand:
 
         expanded = build_production_mise_en_place(selected_date=date.today(), expand=True)
         assert [line.sku for line in expanded.lines] == ["FARINHA"]
-        assert expanded.lines[0].quantity_display == "1 kg"  # 2kg massa × 0.5kg/1kg
+        assert expanded.lines[0].quantity_display == "1000 g"  # 2kg massa × 0.5kg/1kg
         assert expanded.expanded
 
 
@@ -230,10 +230,10 @@ class TestMiseEnPlaceAvailability:
 
         assert projection.has_stock_readings
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
-        assert farinha.available_display == "3 kg"
+        assert farinha.available_display == "3000 g"
         assert farinha.is_short
         sal = next(line for line in projection.lines if line.sku == "SAL")
-        assert not sal.available_display or sal.available_display == "0 kg"
+        assert not sal.available_display or sal.available_display == "0 g"
 
     def test_known_zero_is_a_reading_and_remains_visible(self, pao):
         from shopman.stockman.models import Quant
@@ -245,12 +245,12 @@ class TestMiseEnPlaceAvailability:
         farinha = next(line for line in projection.lines if line.sku == "FARINHA")
 
         assert projection.has_stock_readings
-        assert farinha.available_display == "0 kg"
+        assert farinha.available_display == "0 g"
         assert farinha.is_short
 
 
 class TestMiseEnPlaceAnnotation:
-    """A anotação de preparo — "300 g" dito como "≈ 6 ovos" (ADR-024 §4).
+    """A anotação de preparo — ``300 g`` com ajuda ``(≈ 6 un.)``.
 
     Derivada na hora do fator declarado no insumo, nunca gravada: corrigir o
     fator atualiza toda lista de separação sozinho.
@@ -279,7 +279,7 @@ class TestMiseEnPlaceAnnotation:
     def test_without_a_declared_conversion_there_is_no_annotation(self, ovos, madeleine):
         craft.plan(madeleine, 24, date=date.today())
         line = self._line()
-        assert line.quantity_display == "0,3 kg"
+        assert line.quantity_display == "300 g"
         assert line.annotation == ""
 
     def test_approximate_factor_annotates_with_the_tilde(self, ovos, madeleine):
@@ -292,8 +292,26 @@ class TestMiseEnPlaceAnnotation:
         craft.plan(madeleine, 24, date=date.today())
 
         line = self._line()
-        assert line.quantity_display == "0,3 kg"
-        assert line.annotation == "≈ 6 ovos"
+        assert line.quantity_display == "300 g"
+        assert line.annotation == "(≈ 6 un.)"
+
+    def test_fractional_physical_count_rounds_up_to_a_whole_unit(self, ovos, madeleine):
+        from shopman.buyman.models import MaterialConversion
+
+        RecipeItem.objects.filter(recipe=madeleine, input_sku=ovos.sku).update(
+            quantity=Decimal("0.168")
+        )
+        MaterialConversion.objects.create(
+            material=ovos,
+            label="ovos",
+            to_base_factor=Decimal("0.05"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(madeleine, 24, date=date.today())
+
+        line = self._line()
+        assert line.quantity_display == "168 g"
+        assert line.annotation == "(≈ 4 un.)"
 
     def test_conventional_factor_does_not_get_the_tilde(self, ovos, madeleine):
         from shopman.buyman.models import MaterialConversion
@@ -302,7 +320,28 @@ class TestMiseEnPlaceAnnotation:
             material=ovos, label="potes de 100 g", to_base_factor=Decimal("0.1"),
         )
         craft.plan(madeleine, 24, date=date.today())
-        assert self._line().annotation == "3 potes de 100 g"
+        assert self._line().annotation == "(3 potes de 100 g)"
+
+    def test_continuous_approximation_keeps_its_physical_unit(self, db):
+        """Litro pode ser fracionado; não é arredondado como ovo ou limão."""
+        from shopman.buyman.models import Material, MaterialConversion
+
+        leite = Material.objects.create(sku="LEITE-TESTE", name="Leite", unit="kg")
+        receita = Recipe.objects.create(
+            ref="creme-teste", name="Creme", output_sku="CREME-TESTE", batch_size=1
+        )
+        RecipeItem.objects.create(
+            recipe=receita, input_sku=leite.sku, quantity="0.300", unit="kg"
+        )
+        MaterialConversion.objects.create(
+            material=leite,
+            label="litros",
+            to_base_factor=Decimal("1.03"),
+            kind=MaterialConversion.Kind.APPROXIMATE,
+        )
+        craft.plan(receita, 1, date=date.today())
+
+        assert self._line(leite.sku).annotation == "(≈ 0,291 litros)"
 
     def test_fixing_the_factor_updates_the_list_without_touching_the_sheet(
         self, ovos, madeleine
@@ -314,7 +353,7 @@ class TestMiseEnPlaceAnnotation:
             kind=MaterialConversion.Kind.APPROXIMATE,
         )
         craft.plan(madeleine, 24, date=date.today())
-        assert self._line().annotation == "≈ 6 ovos"
+        assert self._line().annotation == "(≈ 6 un.)"
 
         # O fornecedor novo manda ovo jumbo: 60 g cada.
         conversion.to_base_factor = Decimal("0.06")
@@ -322,7 +361,7 @@ class TestMiseEnPlaceAnnotation:
 
         item = RecipeItem.objects.get(recipe=madeleine, input_sku="OVOS")
         assert item.quantity == Decimal("0.300")  # a ficha não foi tocada
-        assert self._line().annotation == "≈ 5 ovos"
+        assert self._line().annotation == "(≈ 5 un.)"
 
     def test_the_finest_conversion_wins(self, ovos, madeleine):
         from shopman.buyman.models import MaterialConversion
@@ -337,7 +376,7 @@ class TestMiseEnPlaceAnnotation:
         )
         craft.plan(madeleine, 24, date=date.today())
         # Quem separa conta ovo na mão, não 0,2 cartela.
-        assert self._line().annotation == "≈ 6 ovos"
+        assert self._line().annotation == "(≈ 6 un.)"
 
     def test_supplier_scoped_conversion_is_not_read_on_the_bench(self, ovos, madeleine):
         from shopman.buyman.models import MaterialConversion, Supplier

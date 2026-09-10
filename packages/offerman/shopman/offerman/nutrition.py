@@ -5,11 +5,18 @@ Single source of truth for the schema of ``Product.nutrition_facts``
 
 1. Python-side autocomplete / typing when services read/write the dict.
 2. Admin form rendering — one field per nutrient, no JSON raw in UI.
-3. Validation of ANVISA invariants via ``Product.clean()``.
+3. Validation of internal consistency via ``Product.clean()``.
 
-Reference: ANVISA RDC 360/2003 (rotulagem nutricional obrigatória no Brasil).
-The Brazilian Daily Reference Values (DRV) used for %VD default to the
-2000 kcal standard defined in Resolução RDC 360/2003.
+This is a legacy per-serving projection.  It is **not**, by itself, a complete
+commercial label contract under RDC 429/2020 + IN 75/2020: for example, that
+contract also distinguishes total/added sugars and requires the applicable
+100 g or 100 ml presentation.  Do not present this dataclass as regulatory
+certification (ADR-028).
+
+The DRV constants below preserve the historical storefront calculation until
+the commercial-label contract is migrated explicitly.  Their provenance is
+legacy RDC 360/2003; the name is deliberately not hidden behind “current
+ANVISA” wording.
 """
 
 from __future__ import annotations
@@ -17,7 +24,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, fields
 from typing import Any
 
-# Daily reference values (DRV) for a 2000 kcal diet — ANVISA RDC 360/2003.
+# Legacy daily reference values (DRV), retained for backward-compatible display.
 # Used by ``percent_daily_value`` to compute %VD for each nutrient.
 DRV_2000_KCAL: dict[str, float] = {
     "energy_kcal": 2000.0,

@@ -4,6 +4,12 @@
 // Produção/Expedição/Painel) + busca, alertas e atualizar. As funções COMUNS (Central,
 // operador/travar, tema) vivem no OperatorRail à esquerda — o rail as concentra e economiza
 // a horizontal. Touch-first e light-first, como o Gestor.
+import {
+  isEditableKeyboardTarget,
+  productionGlobalKeysBlocked,
+  resolveProductionGlobalShortcut,
+} from "~/presentation/keyboard";
+
 defineProps<{
   title: string;
   count?: number;
@@ -16,6 +22,42 @@ const emit = defineEmits<{ refresh: [] }>();
 const query = defineModel<string>("query", { default: "" });
 
 const route = useRoute();
+const searchInput = ref<HTMLInputElement | null>(null);
+const shortcutsHelpOpen = ref(false);
+
+const SHORTCUT_ROUTES = {
+  plan: "/plan",
+  "mise-en-place": "/mise-en-place",
+  produce: "/",
+  expedite: "/expedite",
+} as const;
+
+function onGlobalKeydown(event: KeyboardEvent) {
+  if (event.repeat || event.isComposing || productionGlobalKeysBlocked())
+    return;
+  const shortcut = resolveProductionGlobalShortcut(event);
+  if (!shortcut) return;
+  const editing = isEditableKeyboardTarget(event.target);
+  if (editing && ["focus-search", "refresh", "help"].includes(shortcut)) return;
+
+  event.preventDefault();
+  if (shortcut === "focus-search") {
+    searchInput.value?.focus();
+    return;
+  }
+  if (shortcut === "refresh") {
+    emit("refresh");
+    return;
+  }
+  if (shortcut === "help") {
+    shortcutsHelpOpen.value = true;
+    return;
+  }
+  navigateTo(SHORTCUT_ROUTES[shortcut]);
+}
+
+onMounted(() => window.addEventListener("keydown", onGlobalKeydown));
+onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown));
 
 // As abas são SÓ o fluxo do dia do operador: decide → separa/pesa → produz →
 // expede. A Expedição É o fechamento de fornada (QC, ADR-017 §9): a fornada
@@ -24,10 +66,30 @@ const route = useRoute();
 // primeiro nível enxuto, e a fileira nunca mais estoura a janela escondendo
 // aba sem aviso.
 const tabs = computed(() => [
-  { to: "/plan", label: "Planejamento", icon: "lucide:layout-grid" },
-  { to: "/mise-en-place", label: "Preparação", icon: "lucide:scale" },
-  { to: "/", label: "Produção", icon: "lucide:flame" },
-  { to: "/expedite", label: "Expedição", icon: "lucide:package-check" },
+  {
+    to: "/plan",
+    label: "Planejamento",
+    icon: "lucide:layout-grid",
+    shortcut: "Alt+1",
+  },
+  {
+    to: "/mise-en-place",
+    label: "Preparação",
+    icon: "lucide:scale",
+    shortcut: "Alt+2",
+  },
+  {
+    to: "/",
+    label: "Produção",
+    icon: "lucide:flame",
+    shortcut: "Alt+3",
+  },
+  {
+    to: "/expedite",
+    label: "Expedição",
+    icon: "lucide:package-check",
+    shortcut: "Alt+4",
+  },
 ]);
 function isActive(to: string): boolean {
   return to === "/" ? route.path === "/" : route.path.startsWith(to);
@@ -56,6 +118,8 @@ function isActive(to: string): boolean {
         v-for="tab in tabs"
         :key="tab.to"
         :to="tab.to"
+        :aria-keyshortcuts="tab.shortcut"
+        :title="`${tab.label} · ${tab.shortcut}`"
         class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition"
         :class="
           isActive(tab.to)
@@ -65,6 +129,11 @@ function isActive(to: string): boolean {
       >
         <Icon :name="tab.icon" class="size-4" />
         <span class="hidden sm:inline">{{ tab.label }}</span>
+        <OperatorKbd
+          variant="inverse"
+          class="hidden xl:inline-flex"
+          aria-hidden="true"
+          >{{ tab.shortcut }}</OperatorKbd>
       </NuxtLink>
     </nav>
 
@@ -111,12 +180,14 @@ function isActive(to: string): boolean {
           class="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground"
         />
         <input
+          ref="searchInput"
           v-model="query"
           type="search"
           inputmode="search"
           placeholder="Buscar…"
-          class="h-9 w-32 rounded-md border bg-background pl-8 pr-7 text-sm outline-none transition focus:w-44 focus:ring-1 focus:ring-ring sm:w-40"
+          class="h-9 w-32 rounded-md border bg-background pl-8 pr-8 text-sm outline-none transition focus:w-44 focus:ring-1 focus:ring-ring sm:w-40"
           aria-label="Buscar por código, SKU ou receita"
+          aria-keyshortcuts="/"
         />
         <button
           v-if="query"
@@ -127,13 +198,19 @@ function isActive(to: string): boolean {
         >
           <Icon name="lucide:x" class="size-3.5" />
         </button>
+        <OperatorKbd
+          v-else
+          class="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2"
+          aria-hidden="true"
+          >/</OperatorKbd>
       </div>
       <AlertsBell />
       <button
         type="button"
         class="grid size-9 place-items-center rounded-md border text-muted-foreground transition hover:bg-accent hover:text-foreground"
         aria-label="Atualizar"
-        title="Atualizar"
+        aria-keyshortcuts="R"
+        title="Atualizar · R"
         @click="emit('refresh')"
       >
         <Icon
@@ -142,6 +219,22 @@ function isActive(to: string): boolean {
           :class="pending ? 'animate-spin' : ''"
         />
       </button>
+      <button
+        type="button"
+        class="inline-flex h-9 items-center gap-1.5 rounded-md border px-2 text-sm font-semibold text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        aria-label="Ver atalhos do teclado"
+        aria-keyshortcuts="?"
+        title="Atalhos do teclado · ?"
+        @click="shortcutsHelpOpen = true"
+      >
+        <Icon name="lucide:keyboard" class="size-4" />
+        <span class="hidden xl:inline">Atalhos</span>
+        <OperatorKbd
+          aria-hidden="true"
+          >?</OperatorKbd>
+      </button>
     </div>
   </header>
+
+  <ProductionShortcutsHelp v-model:open="shortcutsHelpOpen" />
 </template>

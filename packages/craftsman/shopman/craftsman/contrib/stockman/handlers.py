@@ -250,6 +250,13 @@ def _handle_planned(work_order, product_ref, date):
     # Use WO.position_ref to determine position (string ref → Position.ref)
     position = _resolve_position(work_order.position_ref)
 
+    work_order_meta = work_order.meta or {}
+    move_metadata = {}
+    if work_order_meta.get("suppress_notifications"):
+        move_metadata["suppress_notifications"] = True
+        if work_order_meta.get("synthetic_source"):
+            move_metadata["synthetic_source"] = work_order_meta["synthetic_source"]
+
     StockMovements.receive(
         quantity=work_order.quantity,
         sku=product_ref,
@@ -257,6 +264,7 @@ def _handle_planned(work_order, product_ref, date):
         target_date=date,
         reason=f"Produção planejada: {work_order.ref}",
         kind="make",  # Move.Kind.MAKE — produção (saída produzida)
+        **move_metadata,
     )
     logger.info(
         "Planned quant created: sku=%s qty=%s target_date=%s position=%s ref=%s",

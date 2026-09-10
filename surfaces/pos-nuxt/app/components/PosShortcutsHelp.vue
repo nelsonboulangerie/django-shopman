@@ -34,6 +34,19 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
     ],
   },
   {
+    title: "Na lista de itens",
+    items: [
+      { keys: ["Alt+S"], label: "Selecionar itens (com navegação por teclado)" },
+      { keys: ["↑", "↓"], label: "Mover o foco entre itens, sem mudar as marcações" },
+      { keys: ["Espaço"], label: "Marcar/desmarcar o item" },
+      { keys: ["Enter"], label: "Abrir/fechar detalhes do item" },
+      { keys: ["→", "←"], label: "Abrir/fechar detalhes do item" },
+      { keys: ["+", "−"], label: "Ajustar quantidade fora da seleção múltipla" },
+      { keys: ["Delete"], label: "Pedir remoção do item, com confirmação" },
+      { keys: ["Esc"], label: "Fechar detalhes; depois, concluir seleção" },
+    ],
+  },
+  {
     title: "No pagamento",
     items: [
       { keys: ["0–9", ","], label: "Valor da forma selecionada (vírgula = centavos)" },
@@ -77,11 +90,10 @@ const groups: Array<{ title: string; items: Array<{ keys: string[]; label: strin
             >
               <span class="min-w-0">{{ item.label }}</span>
               <span class="flex shrink-0 items-center gap-1">
-                <kbd
+                <OperatorKbd
                   v-for="key in item.keys"
                   :key="key"
-                  class="rounded border bg-muted px-1.5 py-0.5 font-mono text-xs font-medium text-muted-foreground"
-                >{{ key }}</kbd>
+                >{{ key }}</OperatorKbd>
               </span>
             </li>
           </ul>

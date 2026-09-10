@@ -11,6 +11,13 @@ import type {
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import { isStale } from "~/presentation/production";
+import {
+  hasOpenDialogOutside,
+  isEditableKeyboardTarget,
+  isNativeActionTarget,
+  productionContextKeysBlocked,
+  resolveQuantityKeyboardShortcut,
+} from "~/presentation/keyboard";
 
 const route = useRoute();
 const routeDate = typeof route.query.date === "string" ? route.query.date : "";
@@ -291,7 +298,9 @@ const ovenKey = (order: QCOrderCardProjection) => String(order.pk);
 const hydrated = ref(false);
 onMounted(() => {
   hydrated.value = true;
+  window.addEventListener("keydown", onTimerKeydown);
 });
+onBeforeUnmount(() => window.removeEventListener("keydown", onTimerKeydown));
 
 type OvenMode = "idle" | "running" | "ringing" | "seen";
 function ovenMode(order: QCOrderCardProjection): OvenMode {
@@ -360,6 +369,48 @@ function markOvenSeen() {
   if (!order) return;
   oven.seen(ovenKey(order));
   ovenOrder.value = null;
+}
+
+function clearOvenMinutes() {
+  ovenMinutes.value = "0";
+  ovenFresh.value = true;
+}
+
+// O timer desenhado e o teclado físico alimentam o mesmo estado. Só o diálogo
+// do timer captura estas teclas; nada age por baixo do lock do operador.
+function onTimerKeydown(event: KeyboardEvent) {
+  if (
+    !ovenOrder.value ||
+    event.repeat ||
+    event.isComposing ||
+    productionContextKeysBlocked() ||
+    hasOpenDialogOutside("[data-production-timer-dialog]") ||
+    isEditableKeyboardTarget(event.target)
+  ) {
+    return;
+  }
+  const shortcut = resolveQuantityKeyboardShortcut(event);
+  if (!shortcut) return;
+  if (
+    shortcut.kind === "confirm" &&
+    event.code !== "NumpadEnter" &&
+    isNativeActionTarget(event.target)
+  ) {
+    return;
+  }
+
+  if (dialogMode.value === "idle") {
+    event.preventDefault();
+    if (shortcut.kind === "digit") ovenDigit(shortcut.digit);
+    else if (shortcut.kind === "backspace") ovenBackspace();
+    else if (shortcut.kind === "clear") clearOvenMinutes();
+    else startOven();
+    return;
+  }
+  if (dialogMode.value === "ringing" && shortcut.kind === "confirm") {
+    event.preventDefault();
+    markOvenSeen();
+  }
 }
 </script>
 
@@ -588,7 +639,7 @@ function markOvenSeen() {
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <button
             type="button"
-            class="group flex size-20 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex h-20 w-24 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :class="{
               'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
                 !finishAvailable(order) || ovenFacts.isPending(order.pk),
@@ -701,7 +752,11 @@ function markOvenSeen() {
         }
       "
     >
-      <UiDialogContent class="sm:max-w-sm" hide-close>
+      <UiDialogContent
+        class="sm:max-w-sm"
+        data-production-timer-dialog
+        hide-close
+      >
         <!-- X maior, pensando em touch: é a única saída sem ação. -->
         <template #close>
           <UiDialogClose
@@ -804,10 +859,8 @@ function markOvenSeen() {
             type="button"
             class="rounded-md border bg-card py-2.5 text-sm font-medium transition hover:bg-accent active:translate-y-px"
             aria-label="Limpar minutos"
-            @click="
-              ovenMinutes = '0';
-              ovenFresh = true;
-            "
+            aria-keyshortcuts="C Delete"
+            @click="clearOvenMinutes()"
           >
             C
           </button>
@@ -830,6 +883,7 @@ function markOvenSeen() {
           <button
             type="button"
             :disabled="ovenFactPending || !(parseInt(ovenMinutes, 10) >= 1)"
+            aria-keyshortcuts="Enter"
             class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px disabled:opacity-50"
             @click="startOven()"
           >
@@ -856,6 +910,7 @@ function markOvenSeen() {
             v-if="dialogMode === 'ringing'"
             type="button"
             class="rounded-md border border-transparent bg-primary py-2.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 active:translate-y-px"
+            aria-keyshortcuts="Enter"
             @click="markOvenSeen()"
           >
             Visto

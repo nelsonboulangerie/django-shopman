@@ -35,11 +35,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-#: Quanto tempo um parâmetro legal pode ficar sem alguém olhar. Um ano é o
-#: intervalo em que a ANVISA costuma publicar revisão relevante de rotulagem —
-#: e é curto o bastante para a conferência caber numa tarde, em vez de virar
-#: projeto.
-JANELA_DE_REVISAO_DIAS = 365
+#: Quanto tempo um parâmetro legal pode ficar sem alguém olhar.
+#: teto de revisão humana. A catraca é trimestral porque consulta pública,
+#: consolidação e norma local podem mudar antes de um aniversário; o worker
+#: não repete alerta enquanto o anterior continuar pendente.
+JANELA_DE_REVISAO_DIAS = 90
 
 
 @dataclass(frozen=True)
@@ -70,7 +70,12 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="19 alimentos/grupos de declaração obrigatória + látex natural",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
-        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2015/rdc0026_26_06_2015.pdf",
+        fonte=(
+            "https://anvisalegis.datalegis.net/action/ActionDatalegis.php?"
+            "acao=abrirTextoAto&cod_menu=8542&cod_modulo=310&link=S&"
+            "numeroAto=00000727&orgao=RDC/DC/ANVISA/MS&seqAto=002&"
+            "tipo=RDC&valorAno=2022"
+        ),
         urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2022-07-01;727",
         nota=(
             "⚠️ A RDC 26/2015 foi REVOGADA e consolidada na 727/2022 sem mudança "
@@ -86,7 +91,7 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="< 100 mg/100 g para 'zero lactose' / 'sem lactose' / 'não contém lactose'",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
-        fonte="https://www.legisweb.com.br/legislacao/?id=337142",
+        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2017/rdc0135_08_02_2017.pdf",
         urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2017-02-08;135",
         nota=(
             "Entre 100 mg e 1 g/100 g: 'baixo teor de lactose'. Acima de 100 mg: "
@@ -116,7 +121,12 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
         valor="'Alérgicos: Pode conter …' quando não se pode garantir ausência",
         conferido_em=date(2026, 9, 8),
         conferido_por="Pablo",
-        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2015/rdc0026_26_06_2015.pdf",
+        fonte=(
+            "https://anvisalegis.datalegis.net/action/ActionDatalegis.php?"
+            "acao=abrirTextoAto&cod_menu=8542&cod_modulo=310&link=S&"
+            "numeroAto=00000727&orgao=RDC/DC/ANVISA/MS&seqAto=002&"
+            "tipo=RDC&valorAno=2022"
+        ),
         urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2022-07-01;727",
         nota=(
             "⚠️ PENDENTE: a norma exige que esta declaração se baseie num "
@@ -126,10 +136,96 @@ PARAMETROS: tuple[ParametroLegal, ...] = (
             "documentado como a norma pede."
         ),
     ),
+    ParametroLegal(
+        chave="etiqueta_interna_preparo_armazenado",
+        norma="RDC 216/2004, itens 4.8.17, 4.8.18 e 4.9.1",
+        valor=(
+            "designação + data de preparo + prazo de validade; sob refrigeração a 4 °C ou menos, prazo máximo de 5 dias"
+        ),
+        conferido_em=date(2026, 9, 10),
+        conferido_por="Codex (levantamento técnico; validação do responsável pendente)",
+        fonte="https://bvsms.saude.gov.br/bvs/saudelegis/anvisa/2004/res0216_15_09_2004.html",
+        urn=(
+            "urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:"
+            "resolucao.diretoria.colegiada:2004-09-15;216"
+        ),
+        nota=(
+            "Aplica-se a serviços de alimentação, inclusive padarias. A etiqueta "
+            "de operação deste sistema é exclusivamente interna e não substitui "
+            "rótulo de venda. Normas estaduais/municipais podem complementar a "
+            "RDC; confirmar o enquadramento com a VISA local. Validade deve vir de "
+            "ficha/política aprovada: nunca presumir D+1."
+        ),
+    ),
+    ParametroLegal(
+        chave="rotulo_embalado_para_venda",
+        norma="RDC 727/2022, arts. 2º, 7º–8º e 28–32",
+        valor=(
+            "rótulo comercial próprio com denominação, ingredientes, conteúdo "
+            "líquido, origem, lote, validade e conservação, além das regras "
+            "específicas aplicáveis"
+        ),
+        conferido_em=date(2026, 9, 10),
+        conferido_por="Codex (levantamento técnico; validação do responsável pendente)",
+        fonte=(
+            "https://anvisalegis.datalegis.net/action/ActionDatalegis.php?"
+            "acao=abrirTextoAto&cod_menu=8542&cod_modulo=310&link=S&"
+            "numeroAto=00000727&orgao=RDC/DC/ANVISA/MS&seqAto=002&"
+            "tipo=RDC&valorAno=2022"
+        ),
+        urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2022-07-01;727",
+        nota=(
+            "Não reutilizar ficha/etiqueta de pesagem interna como rótulo de "
+            "venda. Venda remota, entrega, outra loja/filial ou terceiro pedem "
+            "enquadramento próprio. Conteúdo líquido é quantidade real com tara "
+            "descontada, não o alvo teórico de produção."
+        ),
+    ),
+    ParametroLegal(
+        chave="rotulagem_nutricional_proprio_estabelecimento",
+        norma="RDC 429/2020, arts. 4º e 18; IN 75/2020, Anexo I",
+        valor=(
+            "tabela nutricional voluntária e rotulagem frontal opcional somente "
+            "nos enquadramentos específicos de preparo/fracionamento e venda no "
+            "próprio estabelecimento"
+        ),
+        conferido_em=date(2026, 9, 10),
+        conferido_por="Codex (levantamento técnico; validação do responsável pendente)",
+        fonte=(
+            "https://anvisalegis.datalegis.net/action/ActionDatalegis.php?"
+            "acao=abrirTextoAto&cod_menu=9434&cod_modulo=310&"
+            "numeroAto=00000429&orgao=RDC/DC/ANVISA/MS&seqAto=000&"
+            "tipo=RDC&valorAno=2020"
+        ),
+        urn="urn:lex:br:ministerio.saude;agencia.nacional.vigilancia.sanitaria:resolucao.diretoria.colegiada:2020-10-08;429",
+        nota=(
+            "A dispensa não é geral e não elimina os demais campos da RDC "
+            "727/2022 nem o dever de informação do CDC. Alegação nutricional, "
+            "enriquecimento/restauração ou bioativos podem afastar a faculdade."
+        ),
+    ),
+    ParametroLegal(
+        chave="conteudo_liquido_produto_pre_medido",
+        norma="Portaria Inmetro 249/2021",
+        valor="conteúdo líquido é a quantidade real do produto, excluída a embalagem",
+        conferido_em=date(2026, 9, 10),
+        conferido_por="Codex (levantamento técnico; validação do responsável pendente)",
+        fonte=(
+            "https://anmlegis.datalegis.net/action/ActionDatalegis.php?"
+            "acao=abrirTextoAto&cod_menu=6783&cod_modulo=405&link=S&"
+            "numeroAto=00000249&orgao=INMETRO/ME&seqAto=000&"
+            "tipo=POR&valorAno=2021"
+        ),
+        nota=(
+            "O alvo arredondado da balança serve à operação e nunca deve ser "
+            "apresentado como PESO LÍQUIDO. Um futuro rótulo comercial precisa "
+            "receber medição real com tara descontada."
+        ),
+    ),
 )
 
 
 def vencidos(hoje: date | None = None) -> list[ParametroLegal]:
-    """Os parâmetros que ninguém confere há mais de um ano."""
+    """Os parâmetros que ninguém confere há mais de uma janela trimestral."""
     hoje = hoje or date.today()
     return [p for p in PARAMETROS if p.vencido_em(hoje)]

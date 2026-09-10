@@ -153,12 +153,28 @@ export interface MiseEnPlaceResponse {
 // ── Weighing (per-prep tickets + blind codes) ───────────────────────────────
 // Short aliases kept for the surface's components.
 
-export type WeighingIngredientProjection =
-  ProductionWeighingIngredientProjection;
-export type WeighingTicketProjection = ProductionWeighingTicketProjection;
+export type WeighingIngredientProjection = Omit<
+  ProductionWeighingIngredientProjection,
+  "target_display"
+> & {
+  /** Alvo operacional já arredondado pelo servidor para a balança. */
+  target_display?: string;
+};
+export type WeighingTicketProjection = Omit<
+  ProductionWeighingTicketProjection,
+  "ingredients" | "ticket_ref" | "total_weight_display"
+> & {
+  ingredients: WeighingIngredientProjection[];
+  /** Identidade da ocorrência/preparo; recipe_ref é só fallback de transição. */
+  ticket_ref?: string;
+  /** Peso total pronto para a balança, emitido em gramas pelo backend novo. */
+  total_weight_display?: string;
+};
 
 export interface WeighingResponse {
-  weighing: ProductionWeighingProjection;
+  weighing: Omit<ProductionWeighingProjection, "tickets"> & {
+    tickets: WeighingTicketProjection[];
+  };
 }
 
 // ── Relatórios e gestão (persona GESTOR — página /reports) ──────────────────

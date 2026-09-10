@@ -116,9 +116,11 @@ Isto **é requisito, não detalhe**, e cai exatamente na regra 3:
 
 - **A ficha fala na base:** `0,300 kg` de ovo. É o que entra no BOM, no consumo, no
   custo e no ledger.
-- **A tela de preparo mostra a anotação derivada:** `300 g · ≈ 6 ovos`, calculada na
-  hora a partir do fator aproximado do material (`MiseEnPlaceLineProjection`,
-  `shopman/backstage/projections/production.py`).
+- **A tela de preparo mostra a anotação derivada:** `300 g` e abaixo `(≈ 6 un.)`,
+  calculada na hora a partir do fator aproximado do material
+  (`MiseEnPlaceLineProjection`, `shopman/backstage/projections/production.py`).
+  Como essa é uma ajuda para separação física, uma fração é arredondada para
+  cima (`3,36 ovos` vira `(≈ 4 un.)`); o alvo em gramas não muda.
 - **A anotação nunca é gravada como verdade.** Corrigiu o fator porque o ovo do
   fornecedor novo é jumbo (60 g)? Toda lista de picking se atualiza sozinha, sem tocar
   em ficha nenhuma. Se a anotação fosse persistida, ela seria a quinta cópia de uma
