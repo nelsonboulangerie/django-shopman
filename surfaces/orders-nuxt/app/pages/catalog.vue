@@ -689,7 +689,7 @@ useHead({ title: "Catálogo · Gestor" });
         </span>
         <div class="flex items-center gap-1 rounded-lg bg-background/10 px-2 py-1 text-sm">
           <span class="text-xs opacity-70">em</span>
-          <select v-model="bulkSurface" class="bg-transparent text-sm font-medium text-background outline-none [&>option]:text-foreground [&>optgroup]:text-foreground">
+          <select v-model="bulkSurface" class="bg-transparent bg-none text-sm font-medium text-background outline-none [&>option]:text-foreground [&>optgroup]:text-foreground">
             <option value="*">Todos os canais</option>
             <optgroup v-if="channelSurfaces.length" label="Canais">
               <option v-for="s in channelSurfaces" :key="s.ref" :value="s.ref">{{ s.name }}</option>
