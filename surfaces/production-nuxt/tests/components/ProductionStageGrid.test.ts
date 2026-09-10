@@ -97,23 +97,23 @@ function installGlobals() {
   vi.stubGlobal("useProductionBoard", (initialDate: string) => {
     boardInitialDateSpy(initialDate);
     return {
-    board: ref({
-      access: FULL_ACCESS,
-      base_recipes: [],
-      selected_date: "2026-07-06",
-      selected_position_ref: "",
-      default_position_pk: 7,
-      positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
-    }),
-    rows: boardRows,
-    counts: ref(null),
-    selectedDate: ref("2026-07-06"),
-    pending: ref(false),
-    error: ref(null),
-    refresh: boardRefresh,
-    isBusy: () => false,
-    plan: planSpy,
-    start: startSpy,
+      board: ref({
+        access: FULL_ACCESS,
+        base_recipes: [],
+        selected_date: "2026-07-06",
+        selected_position_ref: "",
+        default_position_pk: 7,
+        positions: [{ pk: 7, ref: "forno", name: "Forno", is_default: true }],
+      }),
+      rows: boardRows,
+      counts: ref(null),
+      selectedDate: ref("2026-07-06"),
+      pending: ref(false),
+      error: ref(null),
+      refresh: boardRefresh,
+      isBusy: () => false,
+      plan: planSpy,
+      start: startSpy,
     };
   });
   vi.stubGlobal("useProductionKds", () => ({
@@ -200,6 +200,14 @@ const suggestion = {
 const byText = (w: ReturnType<typeof mountGrid>, sel: string, txt: string) =>
   w.findAll(sel).find((el) => el.text().includes(txt));
 
+function pendingResult<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   installGlobals();
   boardRows.value = [];
@@ -278,6 +286,29 @@ describe("ProductionStageGrid — planning authority", () => {
       }),
     );
     expect(w.text()).not.toContain("Planejar esta sugestão");
+  });
+
+  it("confirms planning on the first click and blocks repeats while pending", async () => {
+    const request = pendingResult<{ ok: true }>();
+    planSpy.mockImplementationOnce(() => request.promise);
+    boardRows.value = [row({ suggestion })];
+    const w = mountGrid("plan");
+
+    await byText(w, "button", "Confirmar")!.trigger("click");
+    const submit = w
+      .findAll("button")
+      .filter((button) => button.text().trim() === "Confirmar")
+      .at(-1)!;
+
+    await submit.trigger("click");
+
+    expect(submit.text()).toBe("Confirmando…");
+    expect(submit.attributes("disabled")).toBeDefined();
+    await submit.trigger("click");
+    expect(planSpy).toHaveBeenCalledTimes(1);
+
+    request.resolve({ ok: true });
+    await request.promise;
   });
 });
 
@@ -362,6 +393,34 @@ describe("ProductionStageGrid — produce render", () => {
       .trigger("click");
 
     expect(startSpy).toHaveBeenCalledWith("PAO-001", 8, 4, "30");
+  });
+
+  it("confirms produced quantity on the first click and blocks repeats while pending", async () => {
+    const request = pendingResult<{ ok: true }>();
+    startSpy.mockImplementationOnce(() => request.promise);
+    boardRows.value = [
+      row({
+        planned_qty: "30",
+        planned_orders: [wo({ status: "planned" })],
+      }),
+    ];
+    const w = mountGrid();
+
+    await byText(w, "button", "Confirmar")!.trigger("click");
+    const submit = w
+      .findAll("button")
+      .filter((button) => button.text().trim() === "Confirmar")
+      .at(-1)!;
+
+    await submit.trigger("click");
+
+    expect(submit.text()).toBe("Confirmando…");
+    expect(submit.attributes("disabled")).toBeDefined();
+    await submit.trigger("click");
+    expect(startSpy).toHaveBeenCalledTimes(1);
+
+    request.resolve({ ok: true });
+    await request.promise;
   });
 });
 

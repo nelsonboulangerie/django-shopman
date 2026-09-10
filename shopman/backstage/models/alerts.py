@@ -114,6 +114,10 @@ class OperatorAlert(models.Model):
         ("production_forgotten", "Produção planejada nunca iniciada"),
         ("production_unfinished", "Produção iniciada nunca concluída"),
         ("production_batch_traceability", "Produção concluída sem gravar os lotes"),
+        (
+            "production_quality_communication",
+            "Qualidade corrigida após comunicação da fornada",
+        ),
         ("directive_failed_spike", "Tarefas de fundo falhando"),
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
@@ -179,6 +183,7 @@ class OperatorAlert(models.Model):
         "production_forgotten",
         "production_unfinished",
         "production_batch_traceability",
+        "production_quality_communication",
         "stock_discrepancy",
         "stock_low",
     }

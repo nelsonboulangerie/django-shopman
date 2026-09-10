@@ -28,6 +28,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from shopman.stockman.services.holds import (
+    QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
     QUALITY_GRADE_POLICY_VERSION,
     QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
 )
@@ -267,11 +268,29 @@ def _quant_reservation_is_sound(hold) -> bool:
 
     ``Quant.available`` desconta todos os holds vivos. Validar o saldo agregado,
     e não apenas ``quantity >= hold.quantity``, fecha o caso em que dois holds
-    individualmente parecem caber mas juntos deixam o Quant negativo.
+    individualmente parecem caber mas juntos deixam o Quant negativo. Quando o
+    Quant já é físico, a promessa também precisa continuar dentro da allowlist de
+    QC congelada no hold: uma reclassificação posterior do lote não pode chamar o
+    cliente remoto para um produto que o canal jamais poderia oferecer.
     """
     try:
         quant = hold.quant
-        return quant.quantity >= 0 and quant.available >= 0
+        if quant.quantity < 0 or quant.available < 0:
+            return False
+
+        metadata = hold.metadata or {}
+        allowed_grades = metadata.get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+        if quant.target_date is None and allowed_grades is not None and quant.batch:
+            from shopman.stockman.models import Batch
+
+            grade_ref = (
+                Batch.objects.filter(sku=hold.sku, ref=quant.batch)
+                .values_list("quality_grade_ref", flat=True)
+                .first()
+            )
+            if not grade_ref or grade_ref not in set(allowed_grades):
+                return False
+        return True
     except (AttributeError, TypeError):
         return False
 

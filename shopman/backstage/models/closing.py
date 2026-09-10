@@ -34,6 +34,7 @@ class DayClosing(models.Model):
             ("operate_production", "Pode operar a produção (chão + planejamento) no app dedicado"),
             ("quick_finish_production", "Pode concluir produção sem ordem previamente iniciada"),
             ("override_production_shortage", "Pode forçar produção apesar de falta ou compromisso"),
+            ("correct_production_qc", "Pode corrigir a qualidade de uma fornada concluída"),
             ("void_production", "Pode estornar uma ordem de produção"),
             ("reveal_production_blind_map", "Pode revelar o mapa cego da pesagem"),
             ("operate_purchase", "Pode operar compras e recebimento de insumos no app dedicado"),

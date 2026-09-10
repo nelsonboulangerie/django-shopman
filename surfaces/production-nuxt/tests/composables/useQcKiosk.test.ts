@@ -35,6 +35,12 @@ function qcPayload(overrides: Record<string, unknown> = {}) {
           proof: "quick-proof",
           expected_rev: null,
         },
+        {
+          ref: "correct_qc:42",
+          enabled: true,
+          proof: "correct-proof",
+          expected_rev: 4,
+        },
       ],
       ...overrides,
     },
@@ -89,7 +95,7 @@ describe("useQcKiosk — guarded writes", () => {
   it("blocks both closing paths on stale data and leaves the partition untouched", async () => {
     env.fetchData.value = qcPayload({ fresh_until: "2020-01-01T00:00:00Z" });
     const partition = [{ quantity: "8", quality_grade_ref: "standard" }];
-    const { finish, quickFinish, submitting } = useQcKiosk();
+    const { finish, quickFinish, correctQuality, submitting } = useQcKiosk();
 
     expect((await finish(42, 3, "8", partition)).blocked?.code).toBe(
       "stale_projection",
@@ -97,9 +103,72 @@ describe("useQcKiosk — guarded writes", () => {
     expect((await quickFinish(7, "8", partition)).blocked?.code).toBe(
       "stale_projection",
     );
+    expect(
+      (await correctQuality(42, 3, partition, "Reavaliação")).blocked?.code,
+    ).toBe("stale_projection");
     expect(env.fetchMock).not.toHaveBeenCalled();
     expect(submitting.value).toBe(false);
-    expect(partition).toEqual([{ quantity: "8", quality_grade_ref: "standard" }]);
+    expect(partition).toEqual([
+      { quantity: "8", quality_grade_ref: "standard" },
+    ]);
+  });
+
+  it("rejects a QC correction without an audit reason before dispatch", async () => {
+    env.fetchData.value = qcPayload();
+    const { correctQuality, submitting } = useQcKiosk();
+    const partition = [{ quantity: "8", quality_grade_ref: "standard" }];
+
+    expect((await correctQuality(42, 3, partition, "   ")).ok).toBe(false);
+    expect(env.fetchMock).not.toHaveBeenCalled();
+    expect(submitting.value).toBe(false);
+  });
+
+  it("sends one guarded quality correction with audit metadata while pending", async () => {
+    env.fetchData.value = qcPayload();
+    let resolveRequest!: (value: unknown) => void;
+    env.fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const { correctQuality, submitting } = useQcKiosk();
+    const partition = [
+      {
+        quantity: "8",
+        quality_grade_ref: "fair",
+        quality_defect_ref: "shape",
+      },
+    ];
+
+    const first = correctQuality(42, 3, partition, "  Reavaliação do gestor  ");
+    expect(submitting.value).toBe(true);
+    expect(env.fetchMock).toHaveBeenCalledWith(
+      "/api/v1/backstage/production/42/quality-correction/",
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({
+          partition,
+          reason: "Reavaliação do gestor",
+          expected_rev: 4,
+          projection_generated_at: "2099-01-01T11:59:00Z",
+          source_revision: "qc:1",
+          contract_version: 1,
+          action_ref: "correct_qc:42",
+          action_proof: "correct-proof",
+          idempotency_key: expect.any(String),
+        }),
+      }),
+    );
+
+    expect((await correctQuality(42, 3, partition, "Clique repetido")).ok).toBe(
+      false,
+    );
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveRequest({ ok: true });
+    await expect(first).resolves.toEqual({ ok: true });
+    expect(submitting.value).toBe(false);
   });
 
   it("carries the shortage continuation proof on the force retry", async () => {

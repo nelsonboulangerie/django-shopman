@@ -100,6 +100,7 @@ _PRODUCTION_CONTEXT_PATHS = {
     "production_forgotten": "/plan",
     "production_unfinished": "/expedite",
     "production_batch_traceability": "/expedite",
+    "production_quality_communication": "/expedite",
     "stock_discrepancy": "/plan",
     "stock_low": "/plan",
 }

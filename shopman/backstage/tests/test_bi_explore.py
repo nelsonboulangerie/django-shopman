@@ -15,8 +15,8 @@ from django.contrib.contenttypes.models import ContentType
 from django.urls import reverse
 from django.utils import timezone
 from shopman.craftsman import craft
-from shopman.craftsman.models import Recipe
-from shopman.stockman.models import Position
+from shopman.craftsman.models import Recipe, WorkOrderEvent
+from shopman.stockman.models import Batch, Position
 
 from shopman.backstage.models import DayClosing, HistoricalSale, HistoricalSaleItem
 from shopman.backstage.projections.bi_explore import (
@@ -121,6 +121,63 @@ def test_loss_by_defect_crossed_with_recipe(recipe):
     assert row.key2 == recipe.ref
     assert row.label2 == recipe.name
     assert row.value == 3.0
+
+
+@pytest.mark.django_db
+def test_quality_dimensions_use_latest_qc_partition_including_output_defect(recipe):
+    wo = craft.plan(recipe, Decimal("40"), date=date.today(), position_ref="forno")
+    craft.start(wo, quantity=Decimal("40"), position_ref="forno", expected_rev=0)
+    apply_finish(
+        work_order_id=wo.pk,
+        quantity="40",
+        actor="t",
+        expected_rev=wo.rev,
+        idempotency_key="bi-explore-effective-finish",
+        partition=[
+            {"quantity": 37, "quality_grade_ref": "standard"},
+            {"quantity": 3, "loss": True, "quality_defect_ref": "overbaked"},
+        ],
+    )
+    Batch.objects.create(
+        ref="EXP-QC-CORRECTED",
+        sku=wo.output_sku,
+        quality_grade_ref="fair",
+        nonconformity_reason="Ficou menor",
+        nonconformity_percent=17,
+    )
+    WorkOrderEvent.objects.create(
+        work_order=wo,
+        seq=wo.events.order_by("-seq").values_list("seq", flat=True).first() + 1,
+        kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        actor="manager:test",
+        payload={
+            "schema_version": 1,
+            "after_partition": [
+                {
+                    "quantity": "37",
+                    "quality_grade_ref": "fair",
+                    "quality_defect_ref": "misshapen",
+                    "loss": False,
+                    "batch_ref": "EXP-QC-CORRECTED",
+                },
+                {
+                    "quantity": "3",
+                    "quality_grade_ref": "",
+                    "quality_defect_ref": "underproofed",
+                    "loss": True,
+                    "batch_ref": "",
+                },
+            ],
+        },
+    )
+
+    by_grade = build_bi_explore(metric="qty_produced", by="grade")
+    by_output_defect = build_bi_explore(metric="qty_produced", by="defect")
+    loss_by_defect = build_bi_explore(metric="loss", by="defect")
+
+    assert [(row.key, row.value) for row in by_grade.rows] == [("fair", 37.0)]
+    assert [(row.key, row.value) for row in by_output_defect.rows] == [("misshapen", 37.0)]
+    assert [(row.key, row.value) for row in loss_by_defect.rows] == [("underproofed", 3.0)]
 
 
 @pytest.mark.django_db

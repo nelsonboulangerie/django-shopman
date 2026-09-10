@@ -10,6 +10,7 @@ import type {
 } from "~/types/production";
 import type { QcPartitionGroup } from "~/presentation/qc";
 import {
+  correctProductionQuality,
   finishProductionWorkOrder,
   quickFinishProduction,
 } from "~/generated/productionContract";
@@ -58,6 +59,7 @@ export function useQcKiosk(initialDate = "") {
       idempotencyKey: string,
       metadata: ProductionMutationMetadata,
     ) => Promise<unknown>,
+    fallbackError = "Não deu para fechar a fornada. Tente de novo.",
   ): Promise<QcActResult> {
     if (submitting.value) return { ok: false };
     const authorization = mutationGuard.authorizeMutation(attemptRef);
@@ -74,9 +76,7 @@ export function useQcKiosk(initialDate = "") {
       const shortage = parseShortage(httpError(err).data);
       if (shortage) return { ok: false, shortage };
       if (mutationGuard.handleMutationError(err)) return { ok: false };
-      useSonner.error(
-        httpErrorMessage(err, "Não deu para fechar a fornada. Tente de novo."),
-      );
+      useSonner.error(httpErrorMessage(err, fallbackError));
       // Conflito de estado (fornada fechada/estornada em outra tela): o painel
       // está mentindo — atualiza na hora em vez de esperar o poll de 30s.
       if (httpErrorCode(err) === "conflict") await refresh();
@@ -137,6 +137,34 @@ export function useQcKiosk(initialDate = "") {
       }),
     );
 
+  const correctQuality = (
+    pk: number,
+    rev: number,
+    partition: QcPartitionGroup[],
+    reason: string,
+  ): Promise<QcActResult> => {
+    const auditReason = reason.trim();
+    if (!auditReason) {
+      useSonner.error("Informe o motivo da correção.");
+      return Promise.resolve({ ok: false });
+    }
+    return post(
+      `correct_qc:${pk}`,
+      (idempotencyKey, metadata) =>
+        correctProductionQuality(pk, {
+          partition,
+          reason: auditReason,
+          expected_rev:
+            kiosk.value?.actions.find(
+              (action) => action.ref === `correct_qc:${pk}`,
+            )?.expected_rev ?? rev,
+          ...metadata,
+          idempotency_key: idempotencyKey,
+        }),
+      "Não deu para salvar a correção de qualidade. Tente de novo.",
+    );
+  };
+
   return {
     kiosk,
     selectedDate,
@@ -146,5 +174,6 @@ export function useQcKiosk(initialDate = "") {
     submitting,
     finish,
     quickFinish,
+    correctQuality,
   };
 }

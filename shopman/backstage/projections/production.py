@@ -91,6 +91,7 @@ class ProductionActionProjection:
         "start",
         "advance_step",
         "finish",
+        "correct_qc",
         "quick_finish",
         "void",
         "oven_arm",
@@ -463,6 +464,7 @@ class ProductionSurfaceAccess:
     can_start: bool
     can_advance_step: bool
     can_close_qc: bool
+    can_correct_qc: bool
     can_quick_finish: bool
     can_override_shortage: bool
     can_void: bool
@@ -723,6 +725,22 @@ def _qc_actions(
     actions: list[ProductionActionProjection] = []
     for card in cards:
         if card.closed:
+            actions.append(
+                _production_action(
+                    ref=f"correct_qc:{card.pk}",
+                    kind="correct_qc",
+                    label="Corrigir qualidade",
+                    priority=40,
+                    enabled=card.can_correct,
+                    reason="Somente a gestão pode corrigir uma fornada concluída.",
+                    href=f"/api/v1/backstage/production/{card.pk}/quality-correction/",
+                    payload_schema="ProductionQualityCorrectionMutationRequest",
+                    expected_rev=card.rev,
+                    confirmation_title="Corrigir qualidade da fornada",
+                    confirmation_label="Salvar correção",
+                    confirmation_reason_required=True,
+                )
+            )
             continue
         actions.append(
             _production_action(
@@ -930,6 +948,16 @@ class QCDefectProjection:
 
 
 @dataclass(frozen=True)
+class QCPartitionGroupProjection:
+    """One mutually-exclusive bucket of the effective closed-batch QC."""
+
+    quantity: str
+    quality_grade_ref: str
+    quality_defect_ref: str
+    loss: bool
+
+
+@dataclass(frozen=True)
 class QCOrderCardProjection:
     """Uma fornada do dia no painel do quiosque de QC."""
 
@@ -950,6 +978,10 @@ class QCOrderCardProjection:
     elapsed_minutes: int
     can_close: bool
     closed: bool
+    can_correct: bool
+    partition: tuple[QCPartitionGroupProjection, ...]
+    correction_count: int
+    last_correction_at_display: str
     # UNIDADES comprometidas com pedidos que aguardam esta fornada
     # (production_order_sync): a pergunta do fournil é "quantos pães já têm
     # dono", não "quantos pedidos existem" — um pedido de 6 pesa 6.
@@ -1821,7 +1853,14 @@ def build_qc_kiosk(
     closed_cards: list[QCOrderCardProjection] = []
     for wo in work_orders:
         closed = wo.status == WorkOrder.Status.FINISHED
-        full_qty, discounted_qty, loss_qty = partitions.get(wo.pk, (None, None, None))
+        (
+            full_qty,
+            discounted_qty,
+            loss_qty,
+            effective_partition,
+            correction_count,
+            last_correction_at_display,
+        ) = partitions.get(wo.pk, (None, None, None, (), 0, ""))
         elapsed = 0
         if wo.started_at and not closed:
             elapsed = max(0, int((now - wo.started_at).total_seconds() // 60))
@@ -1846,6 +1885,10 @@ def build_qc_kiosk(
                 )
             ),
             closed=closed,
+            can_correct=closed and access.can_correct_qc,
+            partition=effective_partition,
+            correction_count=correction_count,
+            last_correction_at_display=last_correction_at_display,
             committed_qty="" if closed else _qty(_committed_units(wo)),
             full_price_qty=_qty(full_qty) if full_qty is not None else "",
             discounted_qty=_qty(discounted_qty) if discounted_qty is not None else "",
@@ -1922,7 +1965,17 @@ def _qc_closed_partitions(
     *,
     markdown_by_ref: dict[str, int],
     default_markdown: int,
-) -> dict[int, tuple[Decimal, Decimal, Decimal]]:
+) -> dict[
+    int,
+    tuple[
+        Decimal,
+        Decimal,
+        Decimal,
+        tuple[QCPartitionGroupProjection, ...],
+        int,
+        str,
+    ],
+]:
     """Partição (a preço cheio, com desconto, perda) por fornada fechada.
 
     "Com desconto" é o FATO CONGELADO do lote (``Batch.nonconformity_percent``
@@ -1934,35 +1987,99 @@ def _qc_closed_partitions(
     """
     if not finished_pks:
         return {}
-    from shopman.craftsman.models import WorkOrderItem
+    from shopman.craftsman.models import WorkOrderEvent, WorkOrderItem
     from shopman.stockman.models import Batch
 
-    result: dict[int, tuple[Decimal, Decimal, Decimal]] = {}
+    corrections: dict[int, list[tuple[dict, object]]] = {}
+    for wo_id, payload, created_at in (
+        WorkOrderEvent.objects.filter(
+            work_order_id__in=finished_pks,
+            kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
+        )
+        .order_by("work_order_id", "seq")
+        .values_list("work_order_id", "payload", "created_at")
+    ):
+        corrections.setdefault(wo_id, []).append((payload or {}, created_at))
+
+    grouped_lines: dict[int, list[dict]] = {}
     lines = list(
         WorkOrderItem.objects.filter(
             work_order_id__in=finished_pks,
             kind__in=(WorkOrderItem.Kind.OUTPUT, WorkOrderItem.Kind.WASTE),
-        ).values_list("work_order_id", "kind", "quality_grade_ref", "quantity", "batch_ref")
+        ).values_list(
+            "work_order_id",
+            "kind",
+            "quality_grade_ref",
+            "quality_defect_ref",
+            "quantity",
+            "batch_ref",
+        )
     )
+    batch_refs = [row[5] for row in lines if row[5]]
+    for rows in corrections.values():
+        batch_refs.extend(
+            str(group.get("batch_ref") or "")
+            for group in rows[-1][0].get("after_partition", [])
+            if group.get("batch_ref")
+        )
     lot_percent = dict(
-        Batch.objects.filter(
-            ref__in=[row[4] for row in lines if row[4]],
-        ).values_list("ref", "nonconformity_percent")
+        Batch.objects.filter(ref__in=batch_refs).values_list("ref", "nonconformity_percent")
     )
-    for wo_id, kind, grade_ref, quantity, batch_ref in lines:
-        full, discounted, loss = result.get(wo_id, (Decimal("0"), Decimal("0"), Decimal("0")))
-        qty = quantity or Decimal("0")
-        if kind == WorkOrderItem.Kind.WASTE:
-            loss += qty
-        elif (
-            lot_percent[batch_ref]
-            if batch_ref in lot_percent
-            else (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown)
-        ) > 0:
-            discounted += qty
-        else:
-            full += qty
-        result[wo_id] = (full, discounted, loss)
+
+    for wo_id, kind, grade_ref, defect_ref, quantity, batch_ref in lines:
+        grouped_lines.setdefault(wo_id, []).append(
+            {
+                "quantity": str(quantity),
+                "quality_grade_ref": grade_ref or "",
+                "quality_defect_ref": defect_ref or "",
+                "loss": kind == WorkOrderItem.Kind.WASTE,
+                "batch_ref": batch_ref or "",
+            }
+        )
+
+    result = {}
+    for wo_id in finished_pks:
+        correction_rows = corrections.get(wo_id, [])
+        groups = (
+            list(correction_rows[-1][0].get("after_partition", []))
+            if correction_rows
+            else grouped_lines.get(wo_id, [])
+        )
+        full = discounted = loss = Decimal("0")
+        projected: list[QCPartitionGroupProjection] = []
+        for group in groups:
+            qty = Decimal(str(group.get("quantity") or "0"))
+            is_loss = bool(group.get("loss"))
+            grade_ref = str(group.get("quality_grade_ref") or "")
+            defect_ref = str(group.get("quality_defect_ref") or "")
+            batch_ref = str(group.get("batch_ref") or "")
+            if is_loss:
+                loss += qty
+            elif (
+                lot_percent[batch_ref]
+                if batch_ref in lot_percent
+                else (markdown_by_ref.get(grade_ref, default_markdown) if grade_ref else default_markdown)
+            ) > 0:
+                discounted += qty
+            else:
+                full += qty
+            projected.append(
+                QCPartitionGroupProjection(
+                    quantity=_qty(qty),
+                    quality_grade_ref=grade_ref,
+                    quality_defect_ref=defect_ref,
+                    loss=is_loss,
+                )
+            )
+        last_at = correction_rows[-1][1] if correction_rows else None
+        result[wo_id] = (
+            full,
+            discounted,
+            loss,
+            tuple(projected),
+            len(correction_rows),
+            timezone.localtime(last_at).strftime("%d/%m %H:%M") if last_at else "",
+        )
     return result
 
 
@@ -3241,6 +3358,10 @@ def resolve_production_access(
         can_start=capability("can_start", can_start),
         can_advance_step=capability("can_advance_step", can_start),
         can_close_qc=capability("can_close_qc", can_close_qc),
+        can_correct_qc=capability(
+            "can_correct_qc",
+            user.has_perm("backstage.correct_production_qc"),
+        ),
         can_quick_finish=capability(
             "can_quick_finish",
             user.has_perm("backstage.quick_finish_production"),
@@ -3283,6 +3404,7 @@ def _full_access() -> ProductionSurfaceAccess:
         can_start=True,
         can_advance_step=True,
         can_close_qc=True,
+        can_correct_qc=True,
         can_quick_finish=True,
         can_override_shortage=True,
         can_void=True,
