@@ -728,7 +728,7 @@ def settle_delivery_cash(
 
 
 @transaction.atomic
-def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None = None) -> None:
+def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None = None, actor: str = "system") -> None:
     """Persist the operator's kitchen note on the order data payload.
 
     The note (preset tags + free text) is written by the operator in the gestor
@@ -743,6 +743,8 @@ def save_kitchen_note(order: Order, *, notes: str, expected_revision: str | None
     data["kitchen_note"] = notes
     order.data = data
     order.save(update_fields=["data", "updated_at"])
+
+    order.emit_event(event_type="kitchen_note_changed", actor=actor)
 
 
 @transaction.atomic

@@ -381,3 +381,27 @@ Sem DDL; recibo usa envelope já documentado. Rollback mantém lookup/dedupe e s
 incompatível, nunca volta a reaplicar pct/delta por tentativa ambígua. Lote de publicação,
 feed, célula e outros writers ainda não têm todo o protocolo de intenção/revisão; WP05
 continua em execução. Estado de sync atual continua no CatalogSyncState, não no recibo.
+
+## Integração local real — SSE, resposta perdida e confirmação de preço
+
+Primeiro ensaio: avanço com resposta descartada passou; nota concorrente não apareceu
+por SSE (1 passed/1 failed). Prova nova: save_kitchen_note não emitia evento, e eventos
+de contexto existentes não invalidavam a fila. Correção usa OrderEvent canônico e
+invalidação privada pós-commit, só ref/kind; não transmite texto da nota ao canal público.
+Atores vêm de request.user. Rollback não publica invalidação.
+
+Após correção: **26 testes Django passaram** (API/SSE); **3 testes Chromium integrados
+passaram em 7,7s**, usando Nitro → Django → PostgreSQL e Redis reais, todos isolados.
+1. POST de avanço efetivamente comita, navegador perde resposta: 1 POST + 1 GET de
+recibo, estado preparando e próxima ação pronta. J04: nenhuma ativação extra.
+2. Outro cliente salva nota: SSE atualiza contexto, mantém rascunho; conflito exige
+“manter meu texto” e salvar (2 ativações adicionais, zero redigitação).
+3. Preço: prévia mostra uma célula e não grava; confirmação explícita grava exatamente
+10%. Após seleção: abrir preço, revisar, confirmar (3 ativações, digitação separada).
+
+Harness e reprodução em orders-20260910/integration; logs anexos. Preparação: uvicorn
+indisponível, Daphne existente utilizado. HTTP/1 local; HTTP/2 opcional não instalado.
+Nenhum efeito externo ou worker separado. Esses ensaios não comprovam piloto/campo.
+Sem DDL; rollback dos emissores volta a depender de polling e perde frescor imediato;
+registro de eventos existentes pode permanecer, sem migração destrutiva. WP06/07 em
+execução: identidade, carga e outros cenários ainda pendentes.

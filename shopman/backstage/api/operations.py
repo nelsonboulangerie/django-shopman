@@ -2484,7 +2484,7 @@ class OrderNotesView(_OrderActionBase):
         notes = request.data.get("notes", "")
         if not isinstance(notes, str):
             return Response({"detail": "Nota deve ser texto."}, status=400)
-        return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base))
+        return self._context_response(request, order, "notes", {"notes": notes}, lambda base: orders_service.save_kitchen_note(order, notes=notes, expected_revision=base, actor=_actor(request)))
 
 
 def _operator_identity(request) -> tuple[int, str]:

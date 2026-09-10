@@ -1671,6 +1671,7 @@ def _status_counts(orders: list[Order]) -> dict[str, int]:
 # lia "Created" no histórico do pedido dele.
 _EVENT_LABELS = {
     "operator_comment": "Comentário",
+    "kitchen_note_changed": "Nota da cozinha atualizada",
     "order_assigned": "Atendimento assumido",
     "order_unassigned": "Atendimento liberado",
     "created": "Pedido criado",
