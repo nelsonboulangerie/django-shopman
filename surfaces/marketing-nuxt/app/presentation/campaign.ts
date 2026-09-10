@@ -18,6 +18,15 @@ const AUDIENCE_LABELS: ReadonlyArray<readonly [string, string]> = [
   ["alerts_count", "alertas"],
 ];
 
+const PT_BR_INTEGER = new Intl.NumberFormat("pt-BR", {
+  maximumFractionDigits: 0,
+});
+
+/** Inteiro operacional localizado sem abreviar nem esconder ordem de grandeza. */
+export function formatCount(value: number): string {
+  return PT_BR_INTEGER.format(Number.isFinite(value) ? value : 0);
+}
+
 /**
  * "12 favoritos, 28 recompra, 3 alertas = 43 clientes".
  *
@@ -29,14 +38,14 @@ export function audienceSummary(
 ): string {
   const counts = audience ?? {};
   const parts = AUDIENCE_LABELS.filter(([key]) => (counts[key] ?? 0) > 0).map(
-    ([key, label]) => `${counts[key]} ${label}`,
+    ([key, label]) => `${formatCount(counts[key] ?? 0)} ${label}`,
   );
   const total = counts.total ?? 0;
 
   if (total === 0) return "Ninguém para avisar por enquanto";
   if (parts.length === 0)
-    return `${total} ${total === 1 ? "cliente" : "clientes"}`;
-  return `${parts.join(", ")} = ${total} ${total === 1 ? "cliente" : "clientes"}`;
+    return `${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
+  return `${parts.join(", ")} = ${formatCount(total)} ${total === 1 ? "cliente" : "clientes"}`;
 }
 
 /** Quantos VIPs recebem antes, e com quanto de vantagem. */
@@ -47,7 +56,7 @@ export function vipSummary(
   const vips = counts.vip_count ?? 0;
   const delay = counts.vip_delay_minutes ?? 0;
   if (vips === 0 || delay === 0) return "";
-  return `${vips} ${vips === 1 ? "VIP recebe" : "VIPs recebem"} ${delay} min antes`;
+  return `${formatCount(vips)} ${vips === 1 ? "VIP recebe" : "VIPs recebem"} ${delay} min antes`;
 }
 
 /**

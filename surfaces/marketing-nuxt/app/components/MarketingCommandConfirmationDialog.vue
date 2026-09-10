@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import type { PendingMarketingDecision } from "~/composables/useMarketingDecisionCommand";
+import type { PendingCampaignFireCommand } from "~/composables/useCampaignFireCommand";
+import { formatCount } from "~/presentation/campaign";
 import { platformResultLabel } from "~/presentation/marketingResult";
 import { scheduleSummary } from "~/utils/marketingSchedule";
 
 const props = defineProps<{
-  command: PendingMarketingDecision | null;
+  command: PendingMarketingDecision | PendingCampaignFireCommand | null;
   busy?: boolean;
   error?: string;
   shopTimezone: string;
@@ -49,11 +51,14 @@ const ready = computed(() => {
 
 const title = computed(() => {
   if (!props.command) return "Confirmar decisão";
+  if (props.command.action === "fire") return "Confirmar este disparo?";
   if (props.command.action === "reject") return "Recusar este anúncio?";
   return props.command.body.publish_mode === "scheduled"
     ? "Confirmar este agendamento?"
     : "Confirmar publicação agora?";
 });
+
+const isFire = computed(() => props.command?.action === "fire");
 
 function submit() {
   if (!ready.value) return;
@@ -77,8 +82,14 @@ function submit() {
       <UiDialogHeader>
         <UiDialogTitle>{{ title }}</UiDialogTitle>
         <UiDialogDescription>
-          O servidor congelou esta versão e calculou a consequência abaixo. Nada
-          é publicado até a confirmação final.
+          <template v-if="isFire">
+            O servidor congelou esta versão e calculou o público abaixo. A confirmação
+            cria somente um anúncio para revisão; nada será publicado agora.
+          </template>
+          <template v-else>
+            O servidor congelou esta versão e calculou a consequência abaixo. Nada
+            é publicado até a confirmação final.
+          </template>
         </UiDialogDescription>
       </UiDialogHeader>
 
@@ -93,7 +104,7 @@ function submit() {
           <div>
             <dt class="text-xs text-muted-foreground">Público elegível</dt>
             <dd class="font-semibold">
-              {{ challenge.audience_count }} destinos
+              {{ formatCount(challenge.audience_count) }} destinos
             </dd>
           </div>
           <div class="sm:col-span-2">
@@ -196,7 +207,7 @@ function submit() {
           :disabled="busy"
           @click="emit('cancel')"
         >
-          Voltar sem publicar
+          {{ isFire ? "Voltar sem criar" : "Voltar sem publicar" }}
         </button>
         <button
           type="button"
@@ -204,7 +215,7 @@ function submit() {
           :disabled="!ready"
           @click="submit"
         >
-          {{ busy ? "Registrando…" : "Confirmar consequência" }}
+          {{ busy ? "Registrando…" : isFire ? "Criar para revisão" : "Confirmar consequência" }}
         </button>
       </UiDialogFooter>
     </UiDialogContent>

@@ -6,6 +6,7 @@
 import {
   audienceSummary,
   announcementOutcome,
+  formatCount,
   shortDateTime,
 } from "~/presentation/campaign";
 import type { AnnouncementEdits, PublishMode } from "~/types/campaign";
@@ -29,6 +30,7 @@ const {
   pendingPosts,
   recentPosts,
   stats,
+  freshness,
   loading,
   error,
   refresh,
@@ -175,6 +177,33 @@ useHead({ title: "Painel · Marketing" });
       </button>
     </div>
 
+    <section
+      v-if="freshness && freshness.state !== 'fresh' && !error"
+      class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-500/40 bg-amber-500/5 px-3 py-3"
+      role="status"
+      aria-label="Atualidade dos dados"
+    >
+      <Icon
+        name="lucide:clock-alert"
+        class="mt-0.5 size-4 shrink-0 text-amber-700 dark:text-amber-400"
+      />
+      <div>
+        <p class="text-sm font-semibold">
+          {{
+            freshness.state === "stale"
+              ? "Atualização atrasada"
+              : freshness.state === "degraded"
+                ? "Dados parcialmente atualizados"
+                : "Situação ao vivo indisponível"
+          }}
+        </p>
+        <p class="mt-0.5 text-sm text-muted-foreground">
+          As decisões continuam protegidas pelo servidor. Atualize antes de agir
+          se os números abaixo influenciarem sua escolha.
+        </p>
+      </div>
+    </section>
+
     <!-- Entrega por plataforma, ANTES de publicar. Bloqueio e limitação não podem
          parecer iguais: um diz "nada sai por aqui", o outro diz "sai, mas não para
          todo mundo". Antes disto o aviso existia só no `check --deploy`, que o gestor
@@ -232,16 +261,16 @@ useHead({ title: "Painel · Marketing" });
       aria-label="Situação operacional"
     >
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ stats.pending_decision_count }}</p>
+        <p class="text-2xl font-bold">{{ formatCount(stats.pending_decision_count) }}</p>
         <p class="text-xs text-muted-foreground">Aguardando decisão</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
-        <p class="text-2xl font-bold">{{ stats.confirmed_targets_today }}</p>
+        <p class="text-2xl font-bold">{{ formatCount(stats.confirmed_targets_today) }}</p>
         <p class="text-xs text-muted-foreground">Entregas confirmadas hoje</p>
       </div>
       <div class="rounded-lg border border-border bg-card px-3 py-2.5">
         <p class="text-2xl font-bold">
-          {{ stats.accepted_unconfirmed_targets_today }}
+          {{ formatCount(stats.accepted_unconfirmed_targets_today) }}
         </p>
         <p class="text-xs text-muted-foreground">
           Aceitas, ainda sem confirmação
@@ -261,7 +290,7 @@ useHead({ title: "Painel · Marketing" });
             stats.failed_final_targets_today > 0 ? 'text-destructive' : ''
           "
         >
-          {{ stats.failed_final_targets_today }}
+          {{ formatCount(stats.failed_final_targets_today) }}
         </p>
         <p class="text-xs text-muted-foreground">Falhas finais hoje</p>
       </div>
@@ -277,7 +306,7 @@ useHead({ title: "Painel · Marketing" });
           class="text-2xl font-bold"
           :class="stats.unknown_targets_open > 0 ? 'text-amber-700' : ''"
         >
-          {{ stats.unknown_targets_open }}
+          {{ formatCount(stats.unknown_targets_open) }}
         </p>
         <p class="text-xs text-muted-foreground">Resultados incertos</p>
       </div>

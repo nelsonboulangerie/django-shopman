@@ -10,7 +10,12 @@
 import { platformIcon } from "~/presentation/campaign";
 import { receiptStateLabel } from "~/presentation/marketingResult";
 
-const { platforms, loading, load: loadPlatforms } = usePlatforms();
+const {
+  platforms,
+  loading,
+  error,
+  load: loadPlatforms,
+} = usePlatforms();
 const waTemplate = useWhatsAppTemplate();
 
 // ⚠️ O detalhe abre em painel, não fica aberto na página. Com o WhatsApp expandido o tempo
@@ -155,12 +160,62 @@ useHead({ title: "Plataformas · Marketing" });
       Por onde o anúncio sai. Quem vende é o canal; aqui é quem fala.
     </p>
 
-    <div v-if="loading && !platforms.length" class="space-y-2" aria-busy="true">
+    <div
+      v-if="error && !platforms.length"
+      class="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-5"
+      role="alert"
+    >
+      <div class="flex items-start gap-3">
+        <Icon
+          name="lucide:cloud-off"
+          class="mt-0.5 size-5 shrink-0 text-destructive"
+        />
+        <div>
+          <p class="font-semibold">Não foi possível verificar as plataformas</p>
+          <p class="mt-1 text-sm text-muted-foreground">
+            Isso é uma indisponibilidade de leitura, não significa que nenhuma
+            plataforma esteja configurada. Nenhuma configuração foi alterada.
+          </p>
+          <button
+            type="button"
+            class="mt-3 min-h-11 rounded-md border border-border bg-background px-4 text-sm font-semibold hover:bg-muted"
+            :disabled="loading"
+            @click="loadPlatforms()"
+          >
+            {{ loading ? "Verificando…" : "Verificar novamente" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="loading && !platforms.length" class="space-y-2" aria-busy="true">
       <div
         v-for="n in 4"
         :key="n"
         class="h-24 animate-pulse rounded-xl bg-muted"
       ></div>
+    </div>
+
+    <div
+      v-else-if="!platforms.length"
+      class="rounded-xl border border-dashed border-border bg-card/50 px-6 py-10 text-center"
+    >
+      <Icon
+        name="lucide:share-2"
+        class="mx-auto size-8 text-muted-foreground"
+      />
+      <p class="mt-2 font-semibold">Nenhuma plataforma disponível</p>
+      <p class="mt-1 text-sm text-muted-foreground">
+        A verificação respondeu sem opções. Atualize antes de preparar uma
+        publicação.
+      </p>
+      <button
+        type="button"
+        class="mt-3 min-h-11 font-semibold underline underline-offset-2"
+        @click="loadPlatforms()"
+      >
+        Atualizar verificação
+      </button>
     </div>
 
     <ul

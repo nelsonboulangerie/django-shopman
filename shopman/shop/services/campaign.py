@@ -133,6 +133,8 @@ def fire_now(
     audience_rules: dict | None = None,
     body: str = "",
     author=None,
+    force_review: bool = False,
+    resolved_audience=None,
 ) -> Announcement:
     """Disparar UMA campanha agora, sem esperar evento. É a Action do gestor.
 
@@ -173,13 +175,23 @@ def fire_now(
         rule.audience_rules = dict(audience_rules)
         payload["audience_rules"] = dict(audience_rules)
 
+    if force_review:
+        # O comando seguro de disparo cria a ocasião, nunca a publicação. Mesmo uma
+        # campanha automática passa pela revisão humana quando acordada manualmente.
+        rule.requires_approval = True
+
     written = (body or "").strip()
     if written:
         # Escrito pelo gestor: não passa por revisão, e o `requires_approval` da campanha
         # não é atropelado em silêncio — ele vale para o que a OPERAÇÃO gerou (fornada,
         # estoque baixo), que é o caso em que existe alguém diferente para conferir.
         rule.requires_approval = False
-    announcement = _create_announcement(rule, payload, body=written)
+    announcement = _create_announcement(
+        rule,
+        payload,
+        body=written,
+        resolved_audience=resolved_audience,
+    )
 
     if written and author is not None and getattr(author, "pk", None):
         # O autor fica gravado como aprovador porque foi ele quem decidiu publicar. Sem
@@ -192,13 +204,18 @@ def fire_now(
 
 
 def _create_announcement(
-    rule: Campaign, context: dict, *, occurrence_key: str = "", body: str = ""
+    rule: Campaign,
+    context: dict,
+    *,
+    occurrence_key: str = "",
+    body: str = "",
+    resolved_audience=None,
 ) -> Announcement:
     sku = context.get("sku", "")
     content = resolve_content(
         rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
     )
-    resolved = audience_service.resolve(rule.audience_rules, sku=sku)
+    resolved = resolved_audience or audience_service.resolve(rule.audience_rules, sku=sku)
     if resolved.degraded_sources:
         raise CampaignError(
             "Não foi possível validar toda a audiência. Nenhum anúncio foi criado."

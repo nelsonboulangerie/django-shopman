@@ -235,6 +235,11 @@ const expiryClass = computed(
 
 const audience = computed(() => audienceSummary(props.announcement.audience));
 const vip = computed(() => vipSummary(props.announcement.audience));
+const platformLabels = computed<Record<string, string>>(() =>
+  Object.fromEntries(
+    props.platformOptions.map((option) => [option.value, option.label]),
+  ),
+);
 
 const expired = computed(() => Number.isFinite(expiresAtMs.value) && expiresAtMs.value <= clockMs.value);
 const canPublish = computed(
@@ -530,6 +535,15 @@ function askToReject() {
             Escolha ao menos uma plataforma.
           </p>
         </fieldset>
+
+        <!-- A decisão e a representação enviada não podem morar em telas diferentes.
+             A mesma prévia batch/cancelável usada no formulário de campanha acompanha
+             toda edição deste rascunho, por plataforma. -->
+        <AnnouncementPreview
+          :body="body"
+          :platforms="platforms"
+          :platform-labels="platformLabels"
+        />
 
         <!-- Audiência resolvida: quem recebe, e por quê -->
         <div class="rounded-lg bg-muted/50 px-3 py-2">

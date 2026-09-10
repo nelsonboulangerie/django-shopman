@@ -1,10 +1,8 @@
 <script setup lang="ts">
 // Disparar agora — a campanha manual, com o público escolhido na hora.
 //
-// Duas perguntas, nesta ordem: "o que dizer" e "para quem". O texto vem primeiro porque
-// é a decisão de verdade — e porque escrever AQUI é o que dispensa a revisão depois: não
-// há segundo par de olhos quando o autor e o revisor são a mesma pessoa. Deixar em branco
-// usa o modelo da campanha, e então o anúncio nasce para revisão, como o automático.
+// Uma pergunta: "para quem". O texto sempre vem do modelo salvo e o anúncio nasce para
+// revisão. Aceitar texto livre aqui criaria um caminho capaz de contornar a revisão.
 //
 // A pergunta do público é "para quem?", não "quais regras de audiência?": o gestor
 // pensa em pessoas, não em chaves de JSON. Cada opção é uma frase.
@@ -16,8 +14,18 @@
 // depois do envio — quando já não tem desfazer. Era também a única forma de ver que somar
 // regras ALARGA: "leais + atacado" dava 5 quando o gestor queria os 2 que são as duas
 // coisas, e a tela não contava isso em lugar nenhum.
-import { audienceRulesSummary, choiceLabels } from "~/presentation/campaign";
-import type { AudienceMatch, Campaign, Choice, ChosenAudience } from "~/types/campaign";
+import {
+  audienceRulesSummary,
+  choiceLabels,
+  formatCount,
+} from "~/presentation/campaign";
+import type {
+  AudienceMatch,
+  Campaign,
+  Choice,
+  ChosenAudience,
+  MarketingCommandResponse,
+} from "~/types/campaign";
 
 const props = defineProps<{
   rule: Campaign | null;
@@ -26,14 +34,15 @@ const props = defineProps<{
   tags: Choice[];
   rfmSegments: Choice[];
   busy?: boolean;
+  error?: string;
+  result?: MarketingCommandResponse | null;
 }>();
 
 const emit = defineEmits<{ submit: [FireRequest]; cancel: [] }>();
 
-/** O que o painel devolve: o texto (opcional) e o público deste disparo. */
-type FireRequest = { body: string; audience: ChosenAudience };
+/** O que o painel devolve: somente o público desta ocorrência. */
+type FireRequest = { audience: ChosenAudience };
 
-const body = ref("");
 const useSaved = ref(true);
 const tiers = ref<string[]>([]);
 const chosenTags = ref<string[]>([]);
@@ -55,9 +64,8 @@ const audienceLabels = computed(() => ({
 // Reabrir o painel para outra campanha não pode herdar a escolha da anterior: mandar
 // mensagem para o público errado não tem desfazer.
 watch(
-  () => props.rule?.pk,
+  () => [props.rule?.pk, props.rule?.version] as const,
   () => {
-    body.value = "";
     useSaved.value = true;
     tiers.value = [];
     chosenTags.value = [];
@@ -125,6 +133,29 @@ const rulesChosen = computed(
     (birthday.value ? 1 : 0),
 );
 
+const cannotSubmit = computed(
+  () =>
+    Boolean(props.busy) ||
+    nothingChosen.value ||
+    counting.value ||
+    countFailed.value ||
+    !count.value ||
+    count.value.empty_selection ||
+    count.value.total === 0,
+);
+
+const resultAudienceCount = computed(() => {
+  const value = props.result?.receipt.outcome.audience_count;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+});
+
+function measureAgain() {
+  const rules = useSaved.value
+    ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
+    : chosen.value;
+  measure(rules);
+}
+
 // O número acompanha a escolha. "O público da campanha" mede as regras salvas, porque a
 // pergunta "quantos isto alcança?" é a mesma nos dois modos.
 watch(
@@ -140,22 +171,67 @@ watch(
 </script>
 
 <template>
-  <form class="space-y-5" @submit.prevent="emit('submit', { body: body.trim(), audience: chosen })">
-    <div>
-      <label for="fire-body" class="mb-1 block text-sm font-semibold">O que dizer</label>
-      <textarea
-        id="fire-body"
-        v-model="body"
-        rows="4"
-        placeholder="Hoje tem fornada extra de pão de fermentação natural, a partir das 16h."
-        class="w-full resize-y rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-ring"
-      ></textarea>
+  <section
+    v-if="result"
+    class="space-y-4"
+    aria-labelledby="fire-result-title"
+  >
+    <div class="rounded-xl border border-emerald-500/40 bg-emerald-500/5 p-4">
+      <div class="flex items-start gap-3">
+        <Icon
+          name="lucide:badge-check"
+          class="mt-0.5 size-5 shrink-0 text-emerald-700 dark:text-emerald-400"
+        />
+        <div class="min-w-0">
+          <h2 id="fire-result-title" class="font-semibold">
+            Anúncio criado para revisão
+          </h2>
+          <p class="mt-1 text-sm text-muted-foreground">
+            {{ formatCount(resultAudienceCount) }}
+            {{ resultAudienceCount === 1 ? "pessoa elegível" : "pessoas elegíveis" }}.
+            Nenhuma publicação ou mensagem foi enviada.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <dl class="rounded-lg border border-border bg-muted/40 p-3 text-sm">
+      <div>
+        <dt class="text-xs text-muted-foreground">Comprovante</dt>
+        <dd class="mt-0.5 break-all font-mono">{{ result.receipt.ref }}</dd>
+      </div>
+      <div class="mt-2">
+        <dt class="text-xs text-muted-foreground">Versão registrada</dt>
+        <dd class="font-semibold">{{ result.receipt.resulting_version }}</dd>
+      </div>
+      <p v-if="result.replayed" class="mt-2 text-xs text-muted-foreground">
+        Este é o mesmo resultado do toque anterior; nenhum anúncio foi duplicado.
+      </p>
+    </dl>
+
+    <div class="flex flex-wrap justify-end gap-2">
+      <button
+        type="button"
+        class="min-h-11 rounded-md border border-border px-3 text-sm font-medium hover:bg-muted"
+        @click="emit('cancel')"
+      >
+        Fechar
+      </button>
+      <NuxtLink
+        :to="`/announcements/${result.announcement.pk}#review`"
+        class="inline-flex min-h-11 items-center rounded-md bg-primary px-3 text-sm font-semibold text-primary-foreground"
+      >
+        Revisar anúncio agora
+      </NuxtLink>
+    </div>
+  </section>
+
+  <form v-else class="space-y-5" @submit.prevent="emit('submit', { audience: chosen })">
+    <div class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
+      <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
       <p class="mt-1 text-xs text-muted-foreground">
-        {{
-          body.trim()
-            ? "Publica direto: quem escreve não precisa se aprovar depois."
-            : "Em branco usa o texto do modelo, e o anúncio nasce para você revisar."
-        }}
+        Este disparo usa o modelo salvo da campanha e cria um anúncio para revisão antes
+        de qualquer publicação. Para mudar a mensagem, edite o modelo da campanha.
       </p>
     </div>
 
@@ -315,14 +391,14 @@ watch(
     >
       <div class="flex items-baseline gap-2">
         <template v-if="count && !count.empty_selection">
-          <span class="text-2xl font-semibold tabular-nums">{{ count.total }}</span>
+          <span class="text-2xl font-semibold tabular-nums">{{ formatCount(count.total) }}</span>
           <span class="text-sm text-muted-foreground">
             {{ count.total === 1 ? "pessoa recebe" : "pessoas recebem" }}
           </span>
         </template>
         <span v-else-if="counting" class="text-sm text-muted-foreground">Contando…</span>
-        <span v-else-if="countFailed" class="text-sm text-muted-foreground">
-          Não foi possível contar agora. O disparo continua valendo.
+        <span v-else-if="countFailed" class="text-sm font-medium text-amber-700 dark:text-amber-400">
+          Não foi possível conferir o público. O disparo está bloqueado.
         </span>
         <Icon
           v-if="counting && count"
@@ -340,16 +416,16 @@ watch(
           class="flex items-baseline justify-between gap-3 text-xs text-muted-foreground"
         >
           <span class="truncate">{{ part.label }}</span>
-          <span class="tabular-nums">{{ part.count }}</span>
+          <span class="tabular-nums">{{ formatCount(part.count) }}</span>
         </li>
         <li class="flex items-baseline justify-between gap-3 border-t border-border pt-1 text-xs">
           <span class="text-muted-foreground">{{ count.match_label }}</span>
-          <span class="font-medium tabular-nums">{{ count.total }}</span>
+          <span class="font-medium tabular-nums">{{ formatCount(count.total) }}</span>
         </li>
       </ul>
 
       <p v-if="count && count.vip_count > 0" class="mt-2 text-xs text-muted-foreground">
-        {{ count.vip_count }} recebem primeiro; o resto, 15 min depois.
+        {{ formatCount(count.vip_count) }} recebem primeiro; o resto, 15 min depois.
       </p>
 
       <p
@@ -358,11 +434,23 @@ watch(
       >
         Ninguém se encaixa neste público hoje. Nada será enviado.
       </p>
+      <button
+        v-if="countFailed"
+        type="button"
+        class="mt-3 min-h-11 rounded-md border border-border px-3 text-sm font-semibold hover:bg-muted"
+        @click="measureAgain"
+      >
+        Contar novamente
+      </button>
     </div>
 
     <p class="rounded-lg bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
       Quem não deu consentimento para receber no WhatsApp fica de fora, mesmo se estiver
       no público escolhido.
+    </p>
+
+    <p v-if="error" class="text-sm text-destructive" role="alert">
+      {{ error }}
     </p>
 
     <div class="flex items-center justify-end gap-2">
@@ -375,11 +463,17 @@ watch(
       </button>
       <button
         type="submit"
-        :disabled="busy || nothingChosen"
+        :disabled="cannotSubmit"
         class="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:opacity-50"
       >
         <Icon name="lucide:send" class="size-4" />
-        {{ busy ? "Disparando…" : "Disparar agora" }}
+        {{
+          busy
+            ? "Disparando…"
+            : countFailed
+              ? "Aguardando contagem"
+              : "Disparar agora"
+        }}
       </button>
     </div>
   </form>

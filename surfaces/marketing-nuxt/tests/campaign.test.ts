@@ -5,6 +5,7 @@ import {
   displayHashtag,
   expiryLabel,
   expiryTone,
+  formatCount,
   isStillReviewable,
   parseHashtags,
   platformsSummary,
@@ -15,6 +16,17 @@ import {
   vipSummary,
 } from "~/presentation/campaign";
 import type { Announcement, PlatformResult } from "~/types/campaign";
+
+describe("formatCount", () => {
+  it("localiza toda ordem de grandeza sem abreviar", () => {
+    expect(formatCount(0)).toBe("0");
+    expect(formatCount(1)).toBe("1");
+    expect(formatCount(999)).toBe("999");
+    expect(formatCount(1_000)).toBe("1.000");
+    expect(formatCount(99_999)).toBe("99.999");
+    expect(formatCount(1_000_000)).toBe("1.000.000");
+  });
+});
 
 function result(platform: string, status: string): PlatformResult {
   return { platform, label: platform, status, detail: "", url: "" };

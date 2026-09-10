@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MarketingHistoryFilterName } from "~/composables/useCampaignHistory";
+import { formatCount } from "~/presentation/campaign";
 import {
   historyActorLabel,
   historyHref,
@@ -109,8 +110,8 @@ useHead({ title: "Histórico · Marketing" });
 
 <template>
   <main class="mx-auto w-full max-w-5xl flex-1 px-4 py-6">
-    <div class="mb-5 flex items-center gap-3">
-      <div>
+    <div class="mb-5 flex flex-col items-start gap-3 sm:flex-row sm:items-center">
+      <div class="min-w-0">
         <h1 class="text-xl font-bold">Histórico</h1>
         <p class="mt-1 text-sm text-muted-foreground">
           Resultado rastreado por plataforma, sem confundir aceite com entrega.
@@ -118,7 +119,7 @@ useHead({ title: "Histórico · Marketing" });
       </div>
       <button
         type="button"
-        class="ml-auto inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-muted-foreground transition hover:bg-muted"
+        class="inline-flex min-h-11 items-center gap-1.5 rounded-md border border-border px-3 text-sm text-muted-foreground transition hover:bg-muted sm:ml-auto"
         :disabled="loading"
         @click="refresh()"
       >
@@ -345,7 +346,7 @@ useHead({ title: "Histórico · Marketing" });
                     :key="count.key"
                     class="mt-1 text-xs text-muted-foreground"
                   >
-                    {{ count.count }} {{ count.label }}
+                    {{ formatCount(count.count) }} {{ count.label }}
                   </p>
                 </li>
               </ul>

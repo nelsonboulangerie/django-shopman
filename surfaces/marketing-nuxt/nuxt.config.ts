@@ -1,4 +1,5 @@
 import tailwindcss from "@tailwindcss/vite";
+import { fileURLToPath } from "node:url";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 
 const immutableAssetHeaders = {
@@ -15,6 +16,9 @@ const immutableAssetHeaders = {
 };
 
 export default defineNuxtConfig({
+  // A matriz visual roda client-only para que o relógio fixado pelo navegador
+  // seja também o relógio do primeiro render. O app normal e o build continuam SSR.
+  ssr: process.env.MARKETING_VISUAL_CLIENT_ONLY !== "1",
   // Superfície de operador: herda BFF/resiliência/telemetria/DS do kit compartilhado.
   extends: ["../operator-kit"],
 
@@ -28,6 +32,22 @@ export default defineNuxtConfig({
         process.env.NUXT_PUBLIC_DJANGO_BASE_URL || process.env.NUXT_DJANGO_BASE_URL || "http://127.0.0.1:8000",
     },
   },
+
+  // A página sintética só entra no roteador hermético da matriz. O app normal não
+  // publica uma rota capaz de fabricar erros.
+  hooks: process.env.MARKETING_VISUAL_MATRIX === "1"
+    ? {
+        "pages:extend": (pages) => {
+          pages.push({
+            name: "visual-error",
+            path: "/__visual_error/:status",
+            file: fileURLToPath(
+              new URL("./app/visual/VisualErrorPage.vue", import.meta.url),
+            ),
+          });
+        },
+      }
+    : {},
 
   // A notificação acionável do backend aponta para /campaign/announcements/<pk>/
   // (``UserNotification.action_url``). Servido na raiz do subdomínio, o prefixo

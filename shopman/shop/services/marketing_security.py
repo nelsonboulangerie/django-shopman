@@ -49,6 +49,7 @@ _SAFE_CONSEQUENCE_RE = re.compile(r"^[a-z0-9_]{1,64}$")
 logger = logging.getLogger(__name__)
 
 ACTION_APPROVE = "approve"
+ACTION_FIRE = "fire"
 ACTION_CANCEL = "cancel"
 ACTION_RESCHEDULE = "reschedule"
 ACTION_RETRY = "retry_delivery"
@@ -213,6 +214,7 @@ def requirement_for(context: AuthorizationContext, *, now: datetime | None = Non
 
     immediate = context.scheduled_for is None and context.action in {
         ACTION_APPROVE,
+        ACTION_FIRE,
         ACTION_RETRY,
     }
     if count >= 2_000:
@@ -853,7 +855,13 @@ def _require_step_up(
 
 
 def _reserve_external_quota(actor, *, context: AuthorizationContext, now: datetime) -> None:
-    if context.action in {ACTION_CANCEL, ACTION_RESCHEDULE, ACTION_RECONCILE, ACTION_UNFREEZE}:
+    if context.action in {
+        ACTION_CANCEL,
+        ACTION_FIRE,
+        ACTION_RESCHEDULE,
+        ACTION_RECONCILE,
+        ACTION_UNFREEZE,
+    }:
         return
     target_count = max(context.audience_count, len(context.platforms), 1)
     since = now - timedelta(days=1)

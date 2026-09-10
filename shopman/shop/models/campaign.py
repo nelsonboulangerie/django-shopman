@@ -267,6 +267,9 @@ class Campaign(models.Model):
         help_text="IDs de usuário a notificar. Vazio = todos com a permissão de aprovar anúncios de Marketing.",
     )
     is_active = models.BooleanField("ativa", default=True)
+    # CAS monotônico para comandos operacionais. ``updated_at`` continua sendo a
+    # versão editorial dos rascunhos, mas não é um token seguro para idempotência.
+    version = models.PositiveIntegerField(default=1)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -789,6 +792,7 @@ class MarketingAuditEvent(models.Model):
     """Append-only evidence that ties actor, version, snapshot and artifact."""
 
     class EventType(models.TextChoices):
+        CAMPAIGN_FIRED = "campaign_fired", "disparo de campanha criado"
         APPROVED = "approved", "aprovado"
         REJECTED = "rejected", "recusado"
         RESCHEDULED = "rescheduled", "reagendado"

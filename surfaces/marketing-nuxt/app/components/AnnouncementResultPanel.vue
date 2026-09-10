@@ -11,6 +11,7 @@ import {
   confirmMarketingRecovery,
   isRecoveryAction,
 } from "~/composables/useMarketingRecovery";
+import { formatCount } from "~/presentation/campaign";
 import {
   commandReceiptPresentation,
   deliveryCountItems,
@@ -338,7 +339,7 @@ function closeDialog(open: boolean) {
               {{ platformResultLabel(platform.platform_ref) }}
             </h3>
             <span class="text-xs text-muted-foreground">
-              {{ platform.fanout_materialized }}/{{ platform.fanout_expected }}
+              {{ formatCount(platform.fanout_materialized) }}/{{ formatCount(platform.fanout_expected) }}
               destinos preparados
             </span>
           </div>
@@ -349,7 +350,7 @@ function closeDialog(open: boolean) {
               class="rounded-full px-2.5 py-1 text-xs"
               :class="COUNT_TONE_CLASS[item.tone]"
             >
-              <strong>{{ item.count }}</strong> {{ item.label }}
+              <strong>{{ formatCount(item.count) }}</strong> {{ item.label }}
             </li>
           </ul>
         </li>
@@ -449,7 +450,7 @@ function closeDialog(open: boolean) {
         <div v-else-if="challenge" class="space-y-4">
           <div class="rounded-lg border border-border bg-muted/50 p-3 text-sm">
             <p>
-              <strong>{{ challenge.audience_count }}</strong> destinos elegíveis
+              <strong>{{ formatCount(challenge.audience_count) }}</strong> destinos elegíveis
               nesta consequência.
             </p>
             <p

@@ -58,18 +58,20 @@ Abra `http://127.0.0.1:3008`, entre com `admin/admin`, vá a **Plataformas →
 WhatsApp** e escolha **Fluxo local — sem envio externo**. A mudança passa pelo
 gate TOTP normal.
 
-Enquanto a Action HTTP de disparo manual estiver contida por
-`fire_command_upgrade_required`, crie somente o card pendente sintético pelo
-serviço canônico:
+Vá a **Campanhas**, abra **Disparar agora** na campanha ativa e escolha o público.
+A contagem vem do backend e o botão permanece bloqueado quando ela é zero ou está
+degradada. O primeiro envio abre a confirmação canônica; use a senha da sessão e
+digite a frase exibida. A repetição preserva a mesma chave de idempotência.
 
-```bash
-DJANGO_SETTINGS_MODULE=config.settings_marketing_demo python manage.py shell -c \
-"from shopman.shop.services.campaign import fire_now; a=fire_now(1, context={'sku':'ANC'}, audience_rules={'tags':['qa-marketing-e2e']}); print(a.pk, a.audience.get('total'))"
-```
+O comando aceita somente versão e regras de audiência. Ele não recebe corpo de
+mensagem nem telefone arbitrário e cria um anúncio **pendente de revisão**, com
+snapshot, audit event e comprovante no próprio painel. Nesse ponto nenhum outbox,
+directive, target, attempt ou efeito externo existe. Use **Revisar anúncio agora**
+para seguir ao card recém-criado.
 
-Abra `/announcements/<pk>#review`, revise e confirme a consequência. Com
-Instagram + WhatsApp, o esperado é 1 target de publicação, 12 targets de
-mensagem e 13 receipts `sim_…`.
+Abra `/announcements/<pk>#review`, revise e confirme a consequência. Com Instagram
++ WhatsApp, o esperado é 1 target de publicação, 12 targets de mensagem e 13
+receipts `sim_…`.
 
 ## Conferir sem tocar provider
 

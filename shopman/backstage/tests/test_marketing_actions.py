@@ -271,9 +271,11 @@ def test_campaign_platform_and_operator_alerts_share_the_canonical_shape():
     alert_actions = resolve_actions(alert, actor=operator)
 
     assert _action(campaign_actions, "edit_campaign").enabled is True
-    assert _action(campaign_actions, "fire_campaign").reason == (
-        "command_not_available"
-    )
+    fire = _action(campaign_actions, "fire_campaign")
+    assert fire.enabled is True
+    assert fire.ref == "campaign:17:fire_campaign:v3"
+    assert fire.idempotency == "required"
+    assert fire.confirmation.token_required is True
     assert _action(platform_actions, "open_platform").enabled is True
     configure = _action(platform_actions, "configure_platform")
     assert configure.enabled is True

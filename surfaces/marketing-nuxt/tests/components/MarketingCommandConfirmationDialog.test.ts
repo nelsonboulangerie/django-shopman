@@ -72,4 +72,51 @@ describe("MarketingCommandConfirmationDialog", () => {
       "TEXTAREA",
     );
   });
+
+  it("explica que confirmar o disparo cria revisão sem publicar", () => {
+    const wrapper = mount(MarketingCommandConfirmationDialog, {
+      props: {
+        command: {
+          campaignId: 3,
+          action: "fire",
+          body: { base_version: 1 },
+          href: "/api/v1/backstage/marketing/rules/3/fire/",
+          fingerprint: "campaign-3-v1",
+          idempotencyKey: "fire-key",
+          challenge: {
+            token: "token",
+            ref: "challenge",
+            expires_at: "2026-09-10T11:05:00-03:00",
+            mode: "typed",
+            step_up: "password",
+            dual_control: false,
+            typed_phrase: "PUBLICAR 12",
+            consequence: "creates_review_announcement",
+            resource_ref: "campaign:3",
+            base_version: 1,
+            audience_count: 12,
+            platforms: ["instagram"],
+            scheduled_for: null,
+          },
+        },
+        shopTimezone: "America/Sao_Paulo",
+      },
+      global: {
+        stubs: {
+          UiDialog: DialogStub,
+          UiDialogContent: SlotStub,
+          UiDialogHeader: SlotStub,
+          UiDialogTitle: SlotStub,
+          UiDialogDescription: SlotStub,
+          UiDialogFooter: SlotStub,
+        },
+      },
+    });
+
+    expect(wrapper.text()).toContain("Confirmar este disparo?");
+    expect(wrapper.text()).toContain("cria somente um anúncio para revisão");
+    expect(wrapper.text()).toContain("nada será publicado agora");
+    expect(wrapper.text()).toContain("Criar para revisão");
+    expect(wrapper.text()).toContain("Voltar sem criar");
+  });
 });

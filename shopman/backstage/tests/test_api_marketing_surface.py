@@ -694,6 +694,27 @@ class TestPostDecision:
 
 
 class TestRules:
+    def test_list_actions_use_the_same_campaign_version_as_the_projection(
+        self, client, gestor, rule
+    ):
+        rule.version = 7
+        rule.save(update_fields=["version"])
+        client.force_login(gestor)
+
+        response = client.get(RULES_URL)
+
+        assert response.status_code == 200
+        body = response.json()
+        projected = next(item for item in body["rules"] if item["pk"] == rule.pk)
+        fire = next(
+            action
+            for action in body["actions"]
+            if action["kind"] == "fire_campaign"
+            and action["resource_ref"] == f"campaign:{rule.pk}"
+        )
+        assert projected["version"] == 7
+        assert fire["ref"] == f"campaign:{rule.pk}:fire_campaign:v7"
+
     def test_create_rule(self, client, gestor, template):
         client.force_login(gestor)
 
@@ -1393,20 +1414,197 @@ def _fire_url(rule) -> str:
 
 
 class TestManualFire:
-    def test_legacy_fire_is_contained_before_any_announcement_or_effect(
+    def test_body_bypass_is_rejected_before_any_announcement_or_effect(
         self, client, gestor, rule
     ):
         client.force_login(gestor)
         resp = client.post(
             _fire_url(rule),
-            data={"body": "Fornada extra hoje, a partir das 16h."},
+            data={
+                "base_version": rule.version,
+                "body": "Fornada extra hoje, a partir das 16h.",
+            },
             content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-body-bypass-0001",
         )
 
-        assert resp.status_code == 409
-        assert resp.json()["code"] == "fire_command_upgrade_required"
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "unknown_command_fields"
+        assert resp.json()["field_errors"]["payload"] == ["body"]
         assert Announcement.objects.filter(rule=rule).count() == 0
         assert MarketingCommandReceipt.objects.count() == 0
+
+    def test_confirmed_fire_creates_review_snapshot_receipt_and_audit_without_delivery(
+        self, client, gestor, rule, template
+    ):
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer, PriceTier
+
+        template.body = "Novidades frescas hoje!"
+        template.save(update_fields=["body"])
+        tier = PriceTier.objects.create(ref="fire-local", name="Disparo local")
+        customer = Customer.objects.create(
+            ref="CLI-FIRE-1",
+            first_name="Ana",
+            phone="+5543999998801",
+            price_tier=tier,
+        )
+        ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
+        rule.audience_rules = {"price_tiers": [tier.ref]}
+        rule.requires_approval = False
+        rule.save(update_fields=["audience_rules", "requires_approval"])
+        client.force_login(gestor)
+        payload = {"base_version": rule.version}
+        key = "fire-safe-command-0001"
+
+        challenge = client.post(
+            _fire_url(rule),
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+
+        assert challenge.status_code == 428
+        confirmation = challenge.json()["confirmation"]
+        assert confirmation["resource_ref"] == f"campaign:{rule.pk}"
+        assert confirmation["base_version"] == rule.version
+        assert confirmation["audience_count"] == 1
+        assert confirmation["typed_phrase"] == "PUBLICAR 1"
+        assert Announcement.objects.filter(rule=rule).count() == 0
+        assert MarketingCommandReceipt.objects.count() == 0
+
+        response = _confirmed_post(client, _fire_url(rule), payload, key=key)
+
+        assert response.status_code == 200
+        result = response.json()
+        assert result["replayed"] is False
+        assert result["receipt"]["kind"] == "fire"
+        assert result["receipt"]["state"] == "completed"
+        assert result["receipt"]["base_version"] == 1
+        assert result["receipt"]["resulting_version"] == 2
+        assert result["receipt"]["outcome"]["audience_count"] == 1
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.status == AnnouncementStatus.PENDING_REVIEW
+        assert announcement.approved_by_id is None
+        assert AudienceSnapshot.objects.filter(
+            announcement=announcement,
+            version=announcement.version,
+        ).count() == 1
+        receipt = MarketingCommandReceipt.objects.get(ref=result["receipt"]["ref"])
+        event = MarketingAuditEvent.objects.get(command=receipt)
+        assert event.event_type == MarketingAuditEvent.EventType.CAMPAIGN_FIRED
+        assert event.snapshot_id is not None
+        assert event.facts["requires_review"] is True
+        rule.refresh_from_db()
+        assert rule.version == 2
+        assert MarketingOutbox.objects.count() == 0
+        assert Directive.objects.count() == 0
+
+        replay = client.post(
+            _fire_url(rule),
+            data=payload,
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+        assert replay.status_code == 200
+        assert replay.json()["replayed"] is True
+        assert replay.json()["receipt"]["ref"] == result["receipt"]["ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 1
+
+        reused_for_another_audience = client.post(
+            _fire_url(rule),
+            data={"base_version": 1, "audience_rules": {"tags": ["outra-intencao"]}},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY=key,
+        )
+        assert reused_for_another_audience.status_code == 409
+        assert reused_for_another_audience.json()["code"] == "idempotency_conflict"
+        assert Announcement.objects.filter(rule=rule).count() == 1
+
+        conflict = client.post(
+            _fire_url(rule),
+            data={"base_version": 1},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-stale-version-0001",
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "version_conflict"
+        assert conflict.json()["current_version"] == 2
+        assert conflict.json()["receipt_ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 1
+
+    def test_zero_and_degraded_audience_fail_closed(self, client, gestor, rule, monkeypatch):
+        from shopman.shop.services.audience import AudienceResult
+
+        rule.audience_rules = {"price_tiers": ["nobody"]}
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        zero = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-zero-audience-0001",
+        )
+        assert zero.status_code == 422
+        assert zero.json()["code"] == "no_eligible_audience"
+        assert zero.json()["receipt_ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 0
+
+        zero_replay = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-zero-audience-0001",
+        )
+        assert zero_replay.status_code == 422
+        assert zero_replay.json()["receipt_ref"] == zero.json()["receipt_ref"]
+
+        monkeypatch.setattr(
+            "shopman.shop.services.marketing_fire.audience_service.resolve",
+            lambda *args, **kwargs: AudienceResult(degraded_sources=("consent",)),
+        )
+        degraded = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-degraded-audience-0001",
+        )
+        assert degraded.status_code == 503
+        assert degraded.json()["code"] == "audience_degraded"
+        assert degraded.json()["retryable"] is True
+        assert degraded.json()["receipt_ref"]
+        assert Announcement.objects.filter(rule=rule).count() == 0
+
+    def test_inactive_and_private_audience_are_rejected_safely(
+        self, client, gestor, rule
+    ):
+        client.force_login(gestor)
+        private = client.post(
+            _fire_url(rule),
+            data={
+                "base_version": rule.version,
+                "audience_rules": {"customer_refs": ["CLI-SEGREDO"]},
+            },
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-private-audience-0001",
+        )
+        assert private.status_code == 422
+        assert private.json()["code"] == "invalid_audience_rules"
+        assert MarketingCommandReceipt.objects.count() == 0
+
+        rule.is_active = False
+        rule.save(update_fields=["is_active"])
+        inactive = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-inactive-campaign-0001",
+        )
+        assert inactive.status_code == 422
+        assert inactive.json()["code"] == "campaign_inactive"
+        assert inactive.json()["receipt_ref"]
+        assert Announcement.objects.count() == 0
 
     def test_firing_requires_the_permission(self, client, rule):
         outsider = User.objects.create_user(username="curioso", password="x", is_staff=True)

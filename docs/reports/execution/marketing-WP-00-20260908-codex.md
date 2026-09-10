@@ -2291,3 +2291,39 @@ Provas:
 Nenhum provider, destinatário real, staging, deploy, produção, push, merge ou PR foi
 acionado. O MKT-045 está tecnicamente concluído; MKT-046 pode iniciar a matriz visual e
 de estados sem antecipar a revisão humana exigida por ela.
+
+## MKT-046 — Matriz visual/estados e disparo manual seguro
+
+Depois da aprovação explícita de MKT-044, a matriz visual foi estabelecida com 69
+baselines determinísticas e fechou **69/69** sem atualização automática. Os mínimos de
+todas as células da seção 15, os sete viewports, zoom 200%, light/dark, reduced motion,
+forced colors e text spacing têm evidência. O caso extremo em 320 px reúne URL sem
+quebra, dez hashtags, RTL e emoji ZWJ; counts operacionais são localizados em pt-BR e
+têm cobertura até um milhão.
+
+Antes de fotografar Fire campaign, o bloqueio `fire_command_upgrade_required` foi
+substituído pelo contrato seguro completo. O comando usa Action/version/CAS,
+idempotência, actor lock, throttle/quota, confirmação e audience snapshot; recusa body,
+telefone e regras privadas; zero/degraded falham fechados com receipt. O sucesso cria
+somente anúncio pendente de revisão e audit event — sem outbox, directive, target,
+attempt ou provider — e mostra comprovante/atalho inline.
+
+Provas finais: **33 arquivos / 221 testes frontend**, **197 testes backend**, typecheck,
+lint, build, Ruff, migration check e diff check verdes. O ensaio de engenharia mede o
+disparo em 3 decisões, 0 mudanças de tela, 0 consulta externa, contagem local abaixo de
+2 s e receipt no mesmo contexto. Senha + frase são uma exceção deliberada de segurança
+ao budget de digitação zero e precisam de validação no G-H05/MKT-047.
+
+O ledger detalhado e o pacote de revisão humana estão em
+[`marketing-MKT-046-visual-matrix-20260910-codex.md`](marketing-MKT-046-visual-matrix-20260910-codex.md).
+MKT-046 aguarda somente a revisão visual humana; nenhuma autorização de produção ou de
+MKT-047 foi inferida.
+
+O browser E2E encontrou e fechou uma última divergência de contrato: a regra projetava
+versão 1 e sua Action ainda carregava versão 0. O frontend bloqueou corretamente antes
+do POST; agora lista e Action usam a mesma versão, com regressão automatizada. Após
+corrigir pela própria UI o modelo incompatível da campanha sintética, o disparo criou o
+anúncio local 37 pendente de revisão e o receipt
+`9844a84d-bd38-4abf-ba0d-5f8b326535f4`. A leitura do ledger confirmou 1 snapshot e o
+evento `campaign_fired`, com **0 outbox/directive/target**; o ensaio parou antes da
+publicação.

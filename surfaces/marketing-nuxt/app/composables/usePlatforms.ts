@@ -26,7 +26,7 @@ export type Platform = {
 };
 
 export function usePlatforms() {
-  const { data, refresh, pending } = useFetch<{ platforms: Platform[] }>(
+  const { data, refresh, pending, error } = useFetch<{ platforms: Platform[] }>(
     "/api/v1/backstage/marketing/platforms/",
     { key: "marketing-platforms", onResponseError: operatorSessionOnError },
   );
@@ -45,5 +45,5 @@ export function usePlatforms() {
     return 3;
   }
 
-  return { platforms: sorted, loading: pending, load: refresh };
+  return { platforms: sorted, loading: pending, error, load: refresh };
 }

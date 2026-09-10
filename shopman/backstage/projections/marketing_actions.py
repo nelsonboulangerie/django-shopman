@@ -195,7 +195,7 @@ def _resolve_actions(
         return _campaign_actions(
             CampaignActionContext(
                 ref=f"campaign:{resource.pk}",
-                version=0,
+                version=resource.version,
                 active=resource.is_active,
             ),
             actor=actor,
@@ -535,9 +535,7 @@ def _campaign_actions(
             ),
             capabilities=("shop.fire_marketing_campaigns",),
             actor=actor,
-            unavailable_reason=(
-                "command_not_available" if campaign.active else "campaign_inactive"
-            ),
+            unavailable_reason=("" if campaign.active else "campaign_inactive"),
             creates_external_effect=True,
         ),
     )

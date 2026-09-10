@@ -14,6 +14,7 @@
     "test:unit": "vitest run --project unit",
     "test:component": "vitest run --project component",
     "test:a11y": "playwright test --config playwright.a11y.config.ts",
+    "test:visual": "playwright test --config playwright.visual.config.ts",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "format": "prettier --write \"app/**/*.{ts,vue}\" \"tests/**/*.ts\"",

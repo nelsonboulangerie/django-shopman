@@ -186,6 +186,7 @@ class CampaignBoardProjection:
 @dataclass(frozen=True)
 class CampaignProjection:
     pk: int
+    version: int
     name: str
     trigger: str
     trigger_label: str
@@ -639,6 +640,7 @@ def build_rule(rule: Campaign, *, performance: dict | None = None) -> CampaignPr
     audience_rules = rule.audience_rules if isinstance(rule.audience_rules, dict) else {}
     return CampaignProjection(
         pk=rule.pk,
+        version=rule.version,
         name=rule.name,
         trigger=rule.trigger,
         trigger_label=rule.get_trigger_display(),

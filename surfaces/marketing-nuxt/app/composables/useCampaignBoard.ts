@@ -91,6 +91,7 @@ export function useCampaignBoard() {
   );
   const recentPosts = computed<Announcement[]>(() => board.value?.recent ?? []);
   const stats = computed(() => canonicalBoard.value?.counters);
+  const freshness = computed(() => canonicalData.value?.freshness ?? null);
   const loading = computed(() => legacyPending.value || canonicalPending.value);
   const error = computed(() => legacyError.value || canonicalError.value);
   /** Limites de alcance: aparecem no topo do painel, antes de qualquer disparo. */
@@ -322,6 +323,7 @@ export function useCampaignBoard() {
     pendingPosts,
     recentPosts,
     stats,
+    freshness,
     loading,
     error,
     refresh,

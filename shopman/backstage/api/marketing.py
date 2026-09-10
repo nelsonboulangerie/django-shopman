@@ -1144,7 +1144,7 @@ class CampaignListView(_CampaignBase):
         contexts = tuple(
             CampaignActionContext(
                 ref=f"campaign:{rule.pk}",
-                version=0,
+                version=rule.version,
                 active=rule.is_active,
             )
             for rule in rules
@@ -1412,23 +1412,12 @@ class WhatsAppTemplateView(_CampaignBase):
 
 
 class CampaignFireView(_CampaignBase):
-    """Disparar uma campanha AGORA, opcionalmente escolhendo o público.
+    """Criar agora uma ocasião de campanha, sempre pendente de revisão.
 
-    A Action que faltava: até aqui um anúncio só nascia de evento operacional, então
-    "quero avisar meus clientes hoje" não tinha caminho nenhum. `Trigger.MANUAL` tem
-    produtor real, e é este endpoint.
-
-    `body` é o texto escrito na hora. Com ele, o anúncio **publica direto**: não há segundo
-    par de olhos quando o autor e o revisor são a mesma pessoa. Sem ele, o texto vem do
-    modelo e a revisão segue valendo, porque aí quem escreveu foi o sistema.
-
-    `audience_rules` no corpo vale só PARA ESTE DISPARO — a campanha salva mantém o
-    público dela. Assim a mesma campanha serve a públicos diferentes em semanas
-    diferentes sem o gestor editar e desfazer a configuração.
-
-    O anúncio nasce pelo mesmo caminho do automático (`_create_announcement`), então
-    respeita expiração e janela de agendamento — disparar manual não inventa um segundo
-    caminho de criação.
+    O cliente pode escolher apenas o recorte público canônico. Texto livre é
+    deliberadamente desconhecido neste contrato: disparar nunca é um atalho para
+    publicar sem o segundo gate de revisão. Versão, idempotência, confirmação,
+    snapshot, receipt e audit são fechados na mesma transação.
     """
 
     permission_map = {"POST": "shop.fire_marketing_campaigns"}
@@ -1439,15 +1428,71 @@ class CampaignFireView(_CampaignBase):
     ]
 
     def post(self, request, pk: int):
-        return Response(
-            {
-                "code": "fire_command_upgrade_required",
-                "detail": (
-                    "O disparo manual direto está contido até usar receipt, versão, snapshot e confirmação vinculada."
+        from shopman.shop.services.audience import PUBLIC_RULE_KEYS
+        from shopman.shop.services.marketing_fire import fire_campaign_command
+
+        payload = request.data if isinstance(request.data, dict) else {}
+        allowed = {"base_version", "audience_rules"} | _AUTHORIZATION_FIELDS
+        unexpected = sorted(set(payload) - allowed)
+        if unexpected:
+            return _unknown_command_fields(unexpected)
+        base_version, error = _command_version(payload)
+        if error:
+            return error
+
+        raw_rules = payload.get("audience_rules")
+        if raw_rules is not None and not isinstance(raw_rules, dict):
+            return Response(
+                {
+                    "code": "invalid_audience_rules",
+                    "detail": "A configuração do público deve ser um objeto.",
+                    "field_errors": {"audience_rules": ["Use filtros válidos do público."]},
+                },
+                status=422,
+            )
+        audience_rules = dict(raw_rules or {})
+        unknown_rules = sorted(set(audience_rules) - PUBLIC_RULE_KEYS)
+        if unknown_rules:
+            return Response(
+                {
+                    "code": "invalid_audience_rules",
+                    "detail": "O público contém filtros desconhecidos ou privados.",
+                    "field_errors": {"audience_rules": unknown_rules},
+                },
+                status=422,
+            )
+
+        try:
+            result = fire_campaign_command(
+                pk,
+                actor=request.user,
+                idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
+                base_version=base_version,
+                audience_rules=audience_rules or None,
+                request_id=str(request.headers.get("X-Request-ID") or ""),
+                authorize=_command_authorizer(
+                    request,
+                    capability="shop.fire_marketing_campaigns",
                 ),
-            },
-            status=409,
+            )
+        except (MarketingAuthorizationRequired, MarketingAuthorizationError) as exc:
+            return _authorization_error_response(exc, request)
+        except (
+            MarketingCommandConflict,
+            MarketingCommandRejected,
+            MarketingContractError,
+        ) as exc:
+            return _command_error_response(exc)
+
+        logger.info(
+            "campaign.fire_command actor=%s campaign=%s announcement=%s receipt=%s replayed=%s",
+            request.user.pk,
+            pk,
+            result.announcement.pk,
+            result.receipt.ref,
+            result.replayed,
         )
+        return Response(_command_response(result))
 
 
 class CampaignDetailView(_CampaignBase):
@@ -1493,6 +1538,7 @@ class CampaignDetailView(_CampaignBase):
             error = _pairing_error(rule)
             if error:
                 return Response(error, status=400)
+            rule.version += 1
             rule.save()
         return Response({"ok": True, "rule": projection_data(marketing_projection.build_rule(rule))})
 
@@ -1965,7 +2011,7 @@ def _command_error_response(
     if isinstance(exc, MarketingCommandConflict):
         return Response(exc.as_payload(), status=409)
     if isinstance(exc, MarketingCommandRejected):
-        status_code = 404 if exc.code == "announcement_not_found" else 422
+        status_code = 404 if exc.code in {"announcement_not_found", "campaign_not_found"} else 422
         return Response(exc.as_payload(), status=status_code)
     status_code = int(getattr(exc, "status_code", 422))
     response = Response(exc.as_payload(), status=status_code)

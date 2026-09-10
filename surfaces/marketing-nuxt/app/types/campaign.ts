@@ -108,6 +108,8 @@ export interface CampaignBoard {
 
 export interface Campaign {
   pk: number;
+  /** Compare-and-set token required by operational commands. */
+  version: number;
   name: string;
   trigger: string;
   trigger_label: string;

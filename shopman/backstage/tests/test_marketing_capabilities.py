@@ -93,7 +93,9 @@ def test_publisher_passes_approve_and_fire_gates(client):
     ))
 
     assert client.post(APPROVE, data={}, content_type="application/json").status_code == 409
-    assert client.post(FIRE, data={}, content_type="application/json").status_code == 409
+    response = client.post(FIRE, data={}, content_type="application/json")
+    assert response.status_code == 422
+    assert response.json()["code"] == "invalid_base_version"
 
 
 def test_platform_owner_reaches_versioned_protocol_but_publisher_cannot(client):

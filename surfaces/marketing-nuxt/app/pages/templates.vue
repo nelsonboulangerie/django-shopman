@@ -12,7 +12,7 @@ import {
 } from "~/composables/useMarketingDraft";
 import { marketingTemplateSummary } from "~/presentation/marketingVariables";
 
-const { templates, loading, create, patch, remove } =
+const { templates, loading, error, load, create, patch, remove } =
   useAnnouncementTemplates();
 const { variables } = useCampaigns();
 const { aiAssistAvailable } = useCampaignBoard();
@@ -80,7 +80,35 @@ useHead({ title: "Modelos · Marketing" });
       </button>
     </div>
 
-    <div v-if="loading && !templates.length" class="space-y-2" aria-busy="true">
+    <div
+      v-if="error && !templates.length"
+      class="rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-5"
+      role="alert"
+    >
+      <div class="flex items-start gap-3">
+        <Icon
+          name="lucide:cloud-off"
+          class="mt-0.5 size-5 shrink-0 text-destructive"
+        />
+        <div>
+          <p class="font-semibold">Não foi possível carregar os modelos</p>
+          <p class="mt-1 text-sm text-muted-foreground">
+            A lista está indisponível agora; isso não significa que ela esteja
+            vazia. Seus modelos não foram alterados.
+          </p>
+          <button
+            type="button"
+            class="mt-3 min-h-11 rounded-md border border-border bg-background px-4 text-sm font-semibold hover:bg-muted"
+            :disabled="loading"
+            @click="load()"
+          >
+            {{ loading ? "Carregando…" : "Tentar novamente" }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else-if="loading && !templates.length" class="space-y-2" aria-busy="true">
       <div
         v-for="n in 3"
         :key="n"

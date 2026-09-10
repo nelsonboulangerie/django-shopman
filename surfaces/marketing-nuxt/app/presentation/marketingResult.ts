@@ -5,6 +5,7 @@ import type {
   MarketingActionProjectionV2,
   MarketingCommandReceipt,
 } from "~/types/campaign";
+import { formatCount } from "~/presentation/campaign";
 
 export type ResultTone = "ok" | "attention" | "danger" | "quiet";
 
@@ -167,10 +168,10 @@ export function recoveryActionLabel(
 ): string {
   const count = action.eligible_count;
   if (action.kind === "retry_failed_delivery") {
-    return `Tentar novamente ${count} ${count === 1 ? "falha" : "falhas"}`;
+    return `Tentar novamente ${formatCount(count)} ${count === 1 ? "falha" : "falhas"}`;
   }
   if (action.kind === "reconcile_unknown_delivery") {
-    return `Reconciliar ${count} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;
+    return `Reconciliar ${formatCount(count)} ${count === 1 ? "resultado incerto" : "resultados incertos"}`;
   }
   if (action.kind === "cancel_announcement") {
     return "Cancelar o que ainda não começou";
@@ -221,19 +222,19 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
   if (receipt.kind === "retry_delivery") {
     return {
       title: "Nova tentativa registrada",
-      detail: `${count} ${count === 1 ? "falha voltou" : "falhas voltaram"} para a fila; nenhum destino aceito, confirmado ou incerto foi repetido.`,
+      detail: `${formatCount(count)} ${count === 1 ? "falha voltou" : "falhas voltaram"} para a fila; nenhum destino aceito, confirmado ou incerto foi repetido.`,
     };
   }
   if (receipt.kind === "reconcile_delivery") {
     return {
       title: "Reconciliação registrada",
-      detail: `${count} ${count === 1 ? "consulta foi aberta" : "consultas foram abertas"}; nenhuma mensagem foi reenviada.`,
+      detail: `${formatCount(count)} ${count === 1 ? "consulta foi aberta" : "consultas foram abertas"}; nenhuma mensagem foi reenviada.`,
     };
   }
   if (receipt.kind === "cancel") {
     return {
       title: "Cancelamento registrado",
-      detail: `${count} ${count === 1 ? "faixa que não tinha começado foi cancelada" : "faixas que não tinham começado foram canceladas"}.`,
+      detail: `${formatCount(count)} ${count === 1 ? "faixa que não tinha começado foi cancelada" : "faixas que não tinham começado foram canceladas"}.`,
     };
   }
   if (receipt.kind === "approve") {
