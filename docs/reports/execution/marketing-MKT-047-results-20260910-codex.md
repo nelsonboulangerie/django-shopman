@@ -65,6 +65,7 @@ O facilitador preenche esta tabela; o participante não precisa anotar cliques o
 | P01 | 7R1 | sim | 1 confirmação + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada | 1 autenticador, exigido pela segurança | N/A | sim, no escopo de T7 | Repetição após enrollment concluída sem pedido de ajuda. Comprovante `7cdb3a33-2ccb-4759-9949-cc6c4372b893`, versão 5, somente WhatsApp, uma consulta e zero reenvios; ledger final 13/13. P01 apontou desalinhamento visual das casas do código depois de concluir. |
 | P01 | 8 | sim | 2 inferidas + TOTP | só TOTP, permitido pelo gate | 0 no app | não instrumentada; sem espera relatada | 1 autenticador, exigido pela segurança | rollback não acionado; gravação concluída | sim, no escopo da configuração | Substituiu a referência indisponível pelo fluxo local aprovado. Comprovante `1e81fb34-29f6-4f58-9d9b-b6773be51db2`, versão 3→4; teste externo permaneceu bloqueado por não existir aparelho verificado e nenhum envio foi criado. |
 | P01 | 9 | sim | login + 1 retomada após a expiração | somente credenciais de login | 0 trocas de rota | não instrumentada; sem espera relatada | 0 | sim | sim, no escopo da retomada | Após a expiração controlada, voltou a `/announcements/42`, retomou e recebeu uma confirmação nova e vazia para a versão 1, público 12 e Instagram + WhatsApp. O anúncio permaneceu pendente, sem aprovação, outbox ou destinos. |
+| P02 | 1 | sim | 3 inferidas | somente senha/frase de segurança | 0 | preview ≤60 ms e ack ≤100 ms no backend | 0 | N/A | sim | Agendou para a próxima janela segura sem ajuda. Comprovante `2bce1b10-340f-49fc-8a20-b52d5e93ae64`, versão 2, público 12 e WhatsApp; confirmou na própria tela que localizou todos os fatos e a próxima ação. |
 
 As linhas P02–P05 serão adicionadas no início de cada sessão, nunca antecipadas como
 evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta real.
@@ -310,6 +311,22 @@ evidência. O resumo e a decisão G-H05 só serão escritos depois da coleta rea
 - Classificação: retomada funcional aprovada, com intenção preservada, challenge antigo
   descartado, contexto revalidado e efeito externo inexistente. O retorno visual foi
   percebido como imediato, mas o limite de 1 segundo não é reivindicado sem telemetria.
+
+### P02/T1 — agendamento seguro compreendido sem ajuda
+
+- P02 recebeu somente o objetivo canônico e concluiu sem pedir orientação. O caminho
+  registrou o agendamento recomendado para 18:00 BRT, versão 2, público sintético de 12
+  pessoas e WhatsApp no comprovante
+  `2bce1b10-340f-49fc-8a20-b52d5e93ae64`.
+- A resposta que abriu a confirmação levou no máximo 60 ms no backend e o comando final
+  100 ms. As três ações são inferidas do caminho canônico; não há telemetria de cliques
+  que permita alegar precisão maior.
+- Antes de deixar o resultado, P02 confirmou sem consulta externa que a própria tela
+  deixou claros texto, versão, público, horário, plataforma, estado e próxima ação.
+- O worker hermético executou a janela em seguida e encerrou 12/12 destinos como
+  confirmados pelo simulador. O adapter permaneceu `SIMULATION_ONLY`, sem provider ou
+  efeito externo.
+- Classificação: T1 aprovada para P02, sem ajuda e dentro dos budgets observáveis.
 
 ### Regressão técnica facilitada — não conta como participante MKT047
 
