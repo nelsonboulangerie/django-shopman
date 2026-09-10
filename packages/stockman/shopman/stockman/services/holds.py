@@ -387,65 +387,75 @@ class StockHolds:
         """
         pk = _parse_hold_id(hold_id)
 
-        with transaction.atomic():
-            try:
+        # A criação e a correção de QC travam Quant → Hold. Fulfillment precisa
+        # seguir a mesma ordem para não formar o ciclo Hold → Quant em corrida
+        # com uma reclassificação. O primeiro read é só a pista do quant; depois
+        # dos locks, a FK é relida e uma troca concorrente repete uma vez.
+        for attempt in range(2):
+            with transaction.atomic():
+                snapshot = Hold.objects.filter(pk=pk).values("quant_id").first()
+                if snapshot is None:
+                    raise StockError("INVALID_HOLD", hold_id=hold_id)
+                quant_id = snapshot["quant_id"]
+                quant = Quant.objects.select_for_update().get(pk=quant_id) if quant_id else None
                 hold = Hold.objects.select_for_update().get(pk=pk)
-            except Hold.DoesNotExist:
-                raise StockError("INVALID_HOLD", hold_id=hold_id) from None
+                if hold.quant_id != quant_id:
+                    if attempt == 0:
+                        continue
+                    raise StockError("HOLD_CHANGED", hold_id=hold_id)
 
-            if hold.status != HoldStatus.CONFIRMED:
-                raise StockError("INVALID_STATUS", current=hold.status, expected=HoldStatus.CONFIRMED)
+                if hold.status != HoldStatus.CONFIRMED:
+                    raise StockError("INVALID_STATUS", current=hold.status, expected=HoldStatus.CONFIRMED)
 
-            if hold.is_expired:
-                raise StockError("HOLD_EXPIRED", hold_id=hold_id)
+                if hold.is_expired:
+                    raise StockError("HOLD_EXPIRED", hold_id=hold_id)
 
-            if hold.quant is None:
-                raise StockError("HOLD_IS_DEMAND", hold_id=hold_id)
+                if quant is None:
+                    raise StockError("HOLD_IS_DEMAND", hold_id=hold_id)
 
-            quant = Quant.objects.select_for_update().get(pk=hold.quant_id)
-
-            if (hold.metadata or {}).get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
-                raise StockError(
-                    "HOLD_POLICY_UNKNOWN",
-                    hold_id=hold_id,
-                    reason="quality_grade_policy_not_frozen",
-                )
-
-            allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
-            if allowed_grades is not None and quant.batch:
-                from shopman.stockman.models import Batch
-
-                grade_ref = (
-                    Batch.objects.filter(sku=hold.sku, ref=quant.batch)
-                    .values_list("quality_grade_ref", flat=True)
-                    .first()
-                )
-                if not grade_ref or grade_ref not in set(allowed_grades):
+                if (hold.metadata or {}).get(QUALITY_GRADE_POLICY_VERSION_METADATA_KEY) != QUALITY_GRADE_POLICY_VERSION:
                     raise StockError(
-                        "INELIGIBLE_BATCH",
+                        "HOLD_POLICY_UNKNOWN",
                         hold_id=hold_id,
-                        batch=quant.batch,
-                        quality_grade_ref=grade_ref or "",
+                        reason="quality_grade_policy_not_frozen",
                     )
 
-            consume_qty = quantity if quantity is not None else hold.quantity
-            move = Move.objects.create(
-                quant=quant, delta=-consume_qty, reason=f"Entrega hold:{hold.pk}", kind=kind, user=user
-            )
+                allowed_grades = (hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY)
+                if allowed_grades is not None and quant.batch:
+                    from shopman.stockman.models import Batch
 
-            _actor = actor or user
-            hold.status = HoldStatus.FULFILLED
-            hold.resolved_at = timezone.now()
-            if _actor is not None:
-                hold.metadata["fulfilled_by"] = _actor.pk
-            update_fields = ["status", "resolved_at"] + (["metadata"] if _actor is not None else [])
-            hold.save(update_fields=update_fields)
+                    grade_ref = (
+                        Batch.objects.filter(sku=hold.sku, ref=quant.batch)
+                        .values_list("quality_grade_ref", flat=True)
+                        .first()
+                    )
+                    if not grade_ref or grade_ref not in set(allowed_grades):
+                        raise StockError(
+                            "INELIGIBLE_BATCH",
+                            hold_id=hold_id,
+                            batch=quant.batch,
+                            quality_grade_ref=grade_ref or "",
+                        )
 
-            logger.info(
-                "stock.hold.fulfilled",
-                extra={"hold_id": hold_id, "qty": str(hold.quantity), "actor": _actor.pk if _actor else None},
-            )
-            return move
+                consume_qty = quantity if quantity is not None else hold.quantity
+                move = Move.objects.create(
+                    quant=quant, delta=-consume_qty, reason=f"Entrega hold:{hold.pk}", kind=kind, user=user
+                )
+
+                _actor = actor or user
+                hold.status = HoldStatus.FULFILLED
+                hold.resolved_at = timezone.now()
+                if _actor is not None:
+                    hold.metadata["fulfilled_by"] = _actor.pk
+                update_fields = ["status", "resolved_at"] + (["metadata"] if _actor is not None else [])
+                hold.save(update_fields=update_fields)
+
+                logger.info(
+                    "stock.hold.fulfilled",
+                    extra={"hold_id": hold_id, "qty": str(hold.quantity), "actor": _actor.pk if _actor else None},
+                )
+                return move
+        raise StockError("HOLD_CHANGED", hold_id=hold_id)
 
     @classmethod
     def release_expired(cls):

@@ -1,5 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch,
+} from "vue";
 import { mount, type VueWrapper } from "@vue/test-utils";
 
 import QcCloseScreen from "../../app/components/QcCloseScreen.vue";
@@ -93,6 +100,7 @@ function installGlobals() {
   vi.stubGlobal("ref", ref);
   vi.stubGlobal("onMounted", onMounted);
   vi.stubGlobal("onBeforeUnmount", onBeforeUnmount);
+  vi.stubGlobal("watch", watch);
   vi.stubGlobal("useSonner", { warning: vi.fn() });
 }
 
@@ -303,7 +311,7 @@ describe("QcCloseScreen — correção auditável", () => {
     { quantity: "4", quality_defect_ref: "burned", loss: true },
   ];
 
-  it("abre preenchido, preserva total e perda e permite corrigir os motivos", async () => {
+  it("mantém o total, edita Perda com um número e integra cada motivo ao bucket", async () => {
     const wrapper = mountQc({
       mode: "correct",
       initialPartition,
@@ -313,27 +321,38 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(
       wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
     ).toContain("30 unidades");
-    expect(wrapper.text()).toContain("Razoável · Formato");
-    expect(wrapper.text()).toContain("Queimado");
-
-    await buttonByText(wrapper, "Ótimo")!.trigger("click");
-    await enter(wrapper, "99");
     expect(
-      wrapper.find('[data-grade-ref="excellent"]').attributes("aria-label"),
-    ).toContain("30 unidades");
+      wrapper.find('button[aria-label="Alterar motivo de Razoável"]').text(),
+    ).toContain("Formato");
+    const lossReason = wrapper.find(
+      'button[aria-label="Alterar motivo da perda"]',
+    );
+    expect(lossReason.text()).toContain("Queimado");
+    expect(lossReason.classes()).toContain("min-h-11");
+    expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
+      true,
+    );
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "8");
+    expect(
+      wrapper.find('button[aria-label="Perda: 8 unidades"]').exists(),
+    ).toBe(true);
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("26 unidades");
 
     await wrapper
       .find('button[aria-label="Alterar motivo de Razoável"]')
       .trigger("click");
     await buttonByText(wrapper, "Cor")!.trigger("click");
-    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await wrapper
+      .find('button[aria-label="Alterar motivo da perda"]')
+      .trigger("click");
     await buttonByText(wrapper, "Formato")!.trigger("click");
 
     const submit = buttonByText(wrapper, "Salvar correção")!;
-    expect(submit.attributes("disabled")).toBeDefined();
-    await wrapper
-      .find('textarea[aria-label="Motivo da correção de qualidade"]')
-      .setValue("Reavaliação do responsável");
+    expect(submit.attributes("disabled")).toBeUndefined();
     await submit.trigger("click");
 
     const payload = wrapper.emitted("confirm")?.[0]?.[0] as {
@@ -349,25 +368,46 @@ describe("QcCloseScreen — correção auditável", () => {
     expect(payload).toEqual({
       quantity: "40",
       partition: [
-        { quantity: "30", quality_grade_ref: "excellent" },
+        { quantity: "26", quality_grade_ref: "standard" },
         {
           quantity: "6",
           quality_grade_ref: "fair",
           quality_defect_ref: "color",
         },
         {
-          quantity: "4",
+          quantity: "8",
           quality_defect_ref: "shape",
           loss: true,
         },
       ],
       yield_deviation_confirmed: false,
       yield_deviation_reason: "",
-      reason: "Reavaliação do responsável",
+      reason: "Revisão do QC registrada no quiosque.",
     });
     expect(payload.partition.filter((group) => group.loss)).toEqual([
-      { quantity: "4", quality_defect_ref: "shape", loss: true },
+      { quantity: "8", quality_defect_ref: "shape", loss: true },
     ]);
+  });
+
+  it("permite criar e zerar Perda sem alterar a âncora", async () => {
+    const wrapper = mountQc({
+      mode: "correct",
+      initialPartition: [{ quantity: "40", quality_grade_ref: "standard" }],
+    });
+
+    await buttonByText(wrapper, "Perda")!.trigger("click");
+    await enter(wrapper, "5");
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("35 unidades");
+
+    await wrapper.find("[data-clear]").trigger("click");
+    expect(
+      wrapper.find('[data-grade-ref="standard"]').attributes("aria-label"),
+    ).toContain("40 unidades");
+    expect(
+      wrapper.find('button[aria-label="Alterar motivo da perda"]').exists(),
+    ).toBe(false);
   });
 
   it("não trata o preenchimento inicial como alteração e mostra o estado de envio", async () => {

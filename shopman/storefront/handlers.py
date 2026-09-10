@@ -39,6 +39,14 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
     quant_id = getattr(instance, "quant_id", None)
     if not quant_id:
         return
+    # Só uma entrada líquida pode cumprir "me avise quando chegar". Débitos e
+    # transferências internas de revisão do QC não são uma nova fornada e não
+    # podem disparar uma promessa falsa ao cliente.
+    if getattr(instance, "delta", 0) <= 0:
+        return
+    metadata = getattr(instance, "metadata", None) or {}
+    if metadata.get("operation") == "production_qc_correction":
+        return
     sku = getattr(getattr(instance, "quant", None), "sku", None)
     if not sku:
         return
@@ -56,15 +64,11 @@ def on_move_for_stock_alerts(sender, instance, **kwargs) -> None:
 
     from django.db import transaction
 
-    transaction.on_commit(
-        lambda: stock_alerts.notify_back_in_stock(sku, also_bake_waiters=also_bake_waiters)
-    )
+    transaction.on_commit(lambda: stock_alerts.notify_back_in_stock(sku, also_bake_waiters=also_bake_waiters))
 
 
 @resilient_receiver
-def on_production_finished_for_stock_alerts(
-    sender, product_ref, date, action, work_order, **kwargs
-) -> None:
+def on_production_finished_for_stock_alerts(sender, product_ref, date, action, work_order, **kwargs) -> None:
     """Avisar quem pediu "me avise quando sair do forno" (F9).
 
     Não-crítico: o aviso ao cliente não pode derrubar o ``finish`` da fornada

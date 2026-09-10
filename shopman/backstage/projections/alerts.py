@@ -48,11 +48,7 @@ class OperatorAlertsProjection:
 
 def build_operator_alerts_projection(*, alerts, counts) -> OperatorAlertsProjection:
     alert_rows = tuple(alerts)
-    production_refs = {
-        alert.order_ref
-        for alert in alert_rows
-        if alert.order_ref and alert.audience == "production"
-    }
+    production_refs = {alert.order_ref for alert in alert_rows if alert.order_ref and alert.audience == "production"}
     target_dates: dict[str, str] = {}
     if production_refs:
         from shopman.craftsman.models import WorkOrder
@@ -101,14 +97,19 @@ _PRODUCTION_CONTEXT_PATHS = {
     "production_unfinished": "/expedite",
     "production_batch_traceability": "/expedite",
     "production_quality_communication": "/expedite",
+    "production_quality_hold_risk": "/expedite",
     "stock_discrepancy": "/plan",
     "stock_low": "/plan",
+}
+
+_ORDER_CONTEXT_PATHS = {
+    "order_production_quality_risk": "/",
 }
 
 
 def _alert_actions(alert, *, target_date: str = "") -> tuple[ProductionActionProjection, ...]:
     actions = []
-    path = _PRODUCTION_CONTEXT_PATHS.get(alert.type)
+    path = _PRODUCTION_CONTEXT_PATHS.get(alert.type) or _ORDER_CONTEXT_PATHS.get(alert.type)
     if path is not None:
         query_params = {}
         if alert.order_ref:

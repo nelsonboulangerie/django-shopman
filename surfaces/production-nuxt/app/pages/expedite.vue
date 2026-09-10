@@ -123,7 +123,7 @@ const showPosition = computed(
 );
 
 async function openOrder(order: QCOrderCardProjection) {
-  if (!finishAvailable(order)) return;
+  if (!finishAvailable(order) || ovenFacts.isPending(order.pk)) return;
   // O timer apenas lembra. O fato físico "retirou do forno" pertence à ação
   // produtiva de finalizar a fornada, nunca ao Visto do alarme.
   if (projectedAction(`oven_conclude:${order.pk}`)?.enabled === true) {
@@ -591,9 +591,10 @@ function markOvenSeen() {
             class="group flex size-20 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :class="{
               'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
-                !finishAvailable(order),
+                !finishAvailable(order) || ovenFacts.isPending(order.pk),
             }"
-            :disabled="!finishAvailable(order)"
+            :disabled="!finishAvailable(order) || ovenFacts.isPending(order.pk)"
+            :aria-busy="ovenFacts.isPending(order.pk)"
             :aria-label="`Confirmar conclusão da fornada de ${order.recipe_name}`"
             @click.stop="openOrder(order)"
           >
@@ -602,7 +603,9 @@ function markOvenSeen() {
             >
             <span
               class="text-xs font-semibold uppercase tracking-wide text-primary group-hover:text-primary-foreground"
-              >Confirmar</span
+              >{{
+                ovenFacts.isPending(order.pk) ? "Abrindo…" : "Confirmar"
+              }}</span
             >
           </button>
         </div>

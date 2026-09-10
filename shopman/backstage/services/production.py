@@ -1738,11 +1738,7 @@ def _quality_correction_attempt(partition, reason: str) -> dict:
 
 def _quality_partition_quantity(groups, *, loss: bool) -> Decimal:
     return sum(
-        (
-            Decimal(str(group.get("quantity") or "0"))
-            for group in groups
-            if bool(group.get("loss")) is loss
-        ),
+        (Decimal(str(group.get("quantity") or "0")) for group in groups if bool(group.get("loss")) is loss),
         Decimal("0"),
     )
 
@@ -1790,13 +1786,20 @@ def _quality_group_from_item(item: dict, *, loss: bool, batch_ref: str = "") -> 
 
 def _locked_quality_source_stock(work_order, before_partition):
     """Lock and prove that the whole effective saleable output is still present."""
-    from shopman.stockman.models import Move, Quant
+    from shopman.stockman.models import Move, Position, Quant
 
-    batch_refs = [
-        str(group.get("batch_ref") or "")
-        for group in before_partition
-        if not bool(group.get("loss"))
-    ]
+    expected = _quality_partition_quantity(before_partition, loss=False)
+    if expected == 0:
+        position = Position.objects.select_for_update().filter(is_saleable=True).order_by("pk").first()
+        if position is None:
+            raise ProductionConflict(
+                "Nenhuma posição de venda está configurada para recuperar estas unidades.",
+                code="quality_correction_blocked",
+                data={"work_order": work_order.ref, "cause": "missing_saleable_position"},
+            )
+        return [], position.pk
+
+    batch_refs = [str(group.get("batch_ref") or "") for group in before_partition if not bool(group.get("loss"))]
     if not batch_refs or any(not ref for ref in batch_refs):
         raise ProductionConflict(
             "Esta fornada não possui lotes identificáveis para uma correção segura.",
@@ -1808,7 +1811,6 @@ def _locked_quality_source_stock(work_order, before_partition):
         .filter(sku=work_order.output_sku, target_date__isnull=True, batch__in=batch_refs)
         .order_by("pk")
     )
-    expected = _quality_partition_quantity(before_partition, loss=False)
     present = sum((Decimal(str(quant.quantity)) for quant in quants), Decimal("0"))
     if present != expected:
         raise ProductionConflict(
@@ -1821,14 +1823,15 @@ def _locked_quality_source_stock(work_order, before_partition):
                 "present_quantity": _qty(present),
             },
         )
-    disallowed_negative = Move.objects.filter(quant__in=quants, delta__lt=0).exclude(
-        kind=Move.Kind.TRANSFER
-    )
+    # Qualquer saída anterior torna a localização física ambígua. Os lotes
+    # versionados da própria correção só possuem a perna positiva, portanto
+    # correções encadeadas continuam possíveis sem aceitar lote já movido.
+    disallowed_negative = Move.objects.filter(quant__in=quants, delta__lt=0)
     if disallowed_negative.exists():
         raise ProductionConflict(
-            "A qualidade não pode ser corrigida porque este lote já teve venda, perda ou ajuste.",
+            "Parte desta fornada já foi movimentada. Nenhuma alteração foi feita.",
             code="quality_correction_blocked",
-            data={"work_order": work_order.ref, "cause": "stock_history_changed"},
+            data={"work_order": work_order.ref, "cause": "stock_already_moved"},
         )
     position_ids = {quant.position_id for quant in quants if quant.quantity > 0}
     if len(position_ids) != 1:
@@ -1840,7 +1843,14 @@ def _locked_quality_source_stock(work_order, before_partition):
     return quants, next(iter(position_ids))
 
 
-def _plan_quality_hold_reassignment(holds, after_partition):
+def _plan_quality_hold_reassignment(
+    holds,
+    after_partition,
+    *,
+    capacities: dict[str, Decimal] | None = None,
+    require_all: bool = True,
+    work_order_ref: str = "",
+):
     """Assign each 1:1 active hold to one compatible corrected grade bucket."""
     from shopman.stockman.services.holds import (
         QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
@@ -1850,18 +1860,31 @@ def _plan_quality_hold_reassignment(holds, after_partition):
 
     from shopman.shop.models import QualityGrade
 
-    capacities = {
-        str(group.get("quality_grade_ref") or ""): Decimal(str(group.get("quantity") or "0"))
-        for group in after_partition
-        if not bool(group.get("loss"))
-    }
+    capacities = (
+        dict(capacities)
+        if capacities is not None
+        else {
+            str(group.get("quality_grade_ref") or ""): Decimal(str(group.get("quantity") or "0"))
+            for group in after_partition
+            if not bool(group.get("loss"))
+        }
+    )
     ranks = dict(QualityGrade.objects.filter(ref__in=capacities).values_list("ref", "rank"))
     planned = []
+
+    def _priority(hold):
+        value = (hold.metadata or {}).get("priority")
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 2_147_483_647
+
     ordered = sorted(
         holds,
         key=lambda hold: (
+            _priority(hold),
             len((hold.metadata or {}).get(QUALITY_GRADE_ALLOWLIST_METADATA_KEY) or capacities),
-            -Decimal(str(hold.quantity)),
+            hold.created_at,
             hold.pk,
         ),
     )
@@ -1894,24 +1917,55 @@ def _plan_quality_hold_reassignment(holds, after_partition):
         )
         capacities[grade_ref] -= hold.quantity
         planned.append((hold, grade_ref))
-    if blocked:
-        order_refs = sorted(
-            {
-                str((hold.metadata or {}).get("order_ref") or (hold.metadata or {}).get("reference") or hold.hold_id)
-                for hold in blocked
-            }
-        )
+    if blocked and require_all:
+        order_refs = set()
+        reservation_refs = set()
+        for hold in blocked:
+            metadata = hold.metadata or {}
+            order_ref = str(metadata.get("order_ref") or "").strip()
+            reference = str(metadata.get("reference") or "").strip()
+            if not order_ref and reference.startswith("order:"):
+                order_ref = reference.removeprefix("order:")
+            if order_ref:
+                order_refs.add(order_ref)
+            else:
+                reservation_refs.add(reference or hold.hold_id)
+        affected_refs = sorted({*order_refs, *reservation_refs})
+        noun = "promessa" if len(affected_refs) == 1 else "promessas"
         raise ProductionConflict(
-            "A correção deixaria reservas incompatíveis. Resolva os pedidos no Gestor antes de continuar: "
-            + ", ".join(order_refs),
+            f"Esta correção deixaria {len(affected_refs)} {noun} ao cliente sem produto. "
+            "Nenhuma alteração foi feita. Resolva no Gestor: " + ", ".join(affected_refs),
             code="quality_correction_blocked",
-            data={"cause": "ineligible_holds", "order_refs": order_refs},
+            data={
+                "work_order": work_order_ref,
+                "cause": "ineligible_holds",
+                "order_refs": sorted(order_refs),
+                "reservation_refs": sorted(reservation_refs),
+                "recovery_label": "Abrir o Gestor",
+            },
         )
-    return planned
+    return planned, capacities
+
+
+def _quality_correction_batch_dates(work_order, source_batch):
+    """Keep shelf life frozen to the production fact, including total-loss recovery."""
+    production_date = getattr(source_batch, "production_date", None) or work_order.target_date or timezone.localdate()
+    expiry_date = getattr(source_batch, "expiry_date", None)
+    if source_batch is None:
+        snapshot = (work_order.meta or {}).get("_recipe_snapshot") or {}
+        recipe_meta = snapshot.get("production") or work_order.recipe.meta or {}
+        shelf_life_days = recipe_meta.get("shelf_life_days")
+        if shelf_life_days in (None, ""):
+            from shopman.stockman.shelflife import shelf_life_days_for
+
+            shelf_life_days = shelf_life_days_for(work_order.output_sku)
+        if shelf_life_days not in (None, ""):
+            expiry_date = production_date + timedelta(days=int(shelf_life_days))
+    return production_date, expiry_date
 
 
 def _apply_quality_stock_reclassification(work_order, before_partition, after_items, *, event_seq: int):
-    """Create versioned lots and paired ledger legs; never rewrite old facts."""
+    """Version QC lots while balancing transfers and recording loss reversals."""
     from django.db.models import Q
     from shopman.stockman.models import Batch, Hold, HoldStatus, Move, Quant
 
@@ -1922,22 +1976,51 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
         .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
         .order_by("pk")
     )
-    provisional = [
-        _quality_group_from_item(item, loss=False, batch_ref="")
-        for item in after_items
-    ]
-    hold_plan = _plan_quality_hold_reassignment(active_holds, provisional)
+    provisional = [_quality_group_from_item(item, loss=False, batch_ref="") for item in after_items]
+    hold_plan, remaining_capacities = _plan_quality_hold_reassignment(
+        active_holds,
+        provisional,
+        work_order_ref=work_order.ref,
+    )
+
+    before_saleable = _quality_partition_quantity(before_partition, loss=False)
+    after_saleable = sum(
+        (Decimal(str(item.get("quantity") or "0")) for item in after_items),
+        Decimal("0"),
+    )
+    recovered = max(after_saleable - before_saleable, Decimal("0"))
+    floating_plan = []
+    if recovered > 0:
+        floating_holds = list(
+            Hold.objects.select_for_update()
+            .filter(
+                quant__isnull=True,
+                sku=work_order.output_sku,
+                target_date=work_order.target_date,
+                status__in=(HoldStatus.PENDING, HoldStatus.CONFIRMED),
+            )
+            .filter(Q(expires_at__isnull=True) | Q(expires_at__gte=timezone.now()))
+            .order_by("created_at", "pk")
+        )
+        floating_plan, remaining_capacities = _plan_quality_hold_reassignment(
+            floating_holds,
+            provisional,
+            capacities=remaining_capacities,
+            require_all=False,
+            work_order_ref=work_order.ref,
+        )
 
     source_batch = (
-        Batch.objects.filter(
-            ref__in=[group.get("batch_ref") for group in before_partition if group.get("batch_ref")]
-        )
+        Batch.objects.filter(ref__in=[group.get("batch_ref") for group in before_partition if group.get("batch_ref")])
         .order_by("pk")
         .first()
     )
+    production_date, expiry_date = _quality_correction_batch_dates(work_order, source_batch)
     destination_quants = {}
     after_groups = []
     reason = f"Correção de qualidade: {work_order.ref}"
+    move_ids = []
+    transfer_in_remaining = min(before_saleable, after_saleable)
     for ordinal, item in enumerate(after_items, start=1):
         batch_ref = _quality_correction_batch_ref(work_order, event_seq=event_seq, ordinal=ordinal)
         meta = dict(item.get("meta") or {})
@@ -1945,8 +2028,8 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
             ref=batch_ref,
             defaults={
                 "sku": work_order.output_sku,
-                "production_date": getattr(source_batch, "production_date", None) or work_order.target_date,
-                "expiry_date": getattr(source_batch, "expiry_date", None),
+                "production_date": production_date,
+                "expiry_date": expiry_date,
                 "quality_grade_ref": item.get("quality_grade_ref", ""),
                 "nonconformity_reason": str(meta.get("quality_reason") or ""),
                 "nonconformity_percent": int(meta.get("quality_markdown_percent") or 0),
@@ -1985,46 +2068,107 @@ def _apply_quality_stock_reclassification(work_order, before_partition, after_it
                 data={"work_order": work_order.ref, "cause": "correction_quant_conflict"},
             )
         quantity = Decimal(str(item.get("quantity") or "0"))
-        Move.objects.create(
-            quant=quant,
-            delta=quantity,
-            reason=reason,
-            kind=Move.Kind.TRANSFER,
-            metadata={
-                "operation": "production_qc_correction",
-                "work_order_ref": work_order.ref,
-                "event_seq": event_seq,
-                "direction": "in",
-            },
-        )
+        transfer_quantity = min(quantity, transfer_in_remaining)
+        if transfer_quantity > 0:
+            move = Move.objects.create(
+                quant=quant,
+                delta=transfer_quantity,
+                reason=reason,
+                kind=Move.Kind.TRANSFER,
+                metadata={
+                    "operation": "production_qc_correction",
+                    "work_order_ref": work_order.ref,
+                    "event_seq": event_seq,
+                    "direction": "in",
+                },
+            )
+            move_ids.append(move.pk)
+            transfer_in_remaining -= transfer_quantity
+        recovery_quantity = quantity - transfer_quantity
+        if recovery_quantity > 0:
+            move = Move.objects.create(
+                quant=quant,
+                delta=recovery_quantity,
+                reason=f"Perda revertida após conferência: {work_order.ref}",
+                kind=Move.Kind.WASTE,
+                metadata={
+                    "operation": "production_qc_correction",
+                    "work_order_ref": work_order.ref,
+                    "event_seq": event_seq,
+                    "direction": "loss_recovery",
+                },
+            )
+            move_ids.append(move.pk)
         destination_quants[str(item.get("quality_grade_ref") or "")] = quant
         after_groups.append(_quality_group_from_item(item, loss=False, batch_ref=batch_ref))
 
-    for hold, grade_ref in hold_plan:
+    for hold, grade_ref in [*hold_plan, *floating_plan]:
         hold.quant = destination_quants[grade_ref]
         hold.save(update_fields=["quant"])
 
+    transfer_out_remaining = min(before_saleable, after_saleable)
     for quant in source_quants:
         quantity = Decimal(str(quant.quantity))
         if quantity <= 0:
             continue
-        Move.objects.create(
-            quant=quant,
-            delta=-quantity,
-            reason=reason,
-            kind=Move.Kind.TRANSFER,
-            metadata={
-                "operation": "production_qc_correction",
-                "work_order_ref": work_order.ref,
-                "event_seq": event_seq,
-                "direction": "out",
-            },
-        )
+        transfer_quantity = min(quantity, transfer_out_remaining)
+        if transfer_quantity > 0:
+            move = Move.objects.create(
+                quant=quant,
+                delta=-transfer_quantity,
+                reason=reason,
+                kind=Move.Kind.TRANSFER,
+                metadata={
+                    "operation": "production_qc_correction",
+                    "work_order_ref": work_order.ref,
+                    "event_seq": event_seq,
+                    "direction": "out",
+                },
+            )
+            move_ids.append(move.pk)
+            transfer_out_remaining -= transfer_quantity
+        waste_quantity = quantity - transfer_quantity
+        if waste_quantity > 0:
+            move = Move.objects.create(
+                quant=quant,
+                delta=-waste_quantity,
+                reason=f"Perda confirmada na revisão do QC: {work_order.ref}",
+                kind=Move.Kind.WASTE,
+                metadata={
+                    "operation": "production_qc_correction",
+                    "work_order_ref": work_order.ref,
+                    "event_seq": event_seq,
+                    "direction": "loss",
+                },
+            )
+            move_ids.append(move.pk)
+
+    if floating_plan:
+        from django.db import transaction
+        from shopman.stockman.signals import holds_materialized
+
+        materialized_ids = [hold.hold_id for hold, _grade_ref in floating_plan]
+
+        def _emit_materialized():
+            holds_materialized.send(
+                sender=_apply_quality_stock_reclassification,
+                hold_ids=materialized_ids,
+                sku=work_order.output_sku,
+                target_date=work_order.target_date,
+                to_position=destination_quants[next(iter(destination_quants))].position,
+            )
+
+        transaction.on_commit(_emit_materialized)
     return after_groups, {
         "stock_reclassified": True,
         "from_batch_refs": sorted({quant.batch for quant in source_quants}),
         "to_batch_refs": [group["batch_ref"] for group in after_groups],
         "holds_reassigned": len(hold_plan),
+        "holds_materialized": len(floating_plan),
+        "move_ids": move_ids,
+        "saleable_before": _qty(before_saleable),
+        "saleable_after": _qty(after_saleable),
+        "loss_delta": _qty(before_saleable - after_saleable),
     }
 
 
@@ -2048,6 +2192,51 @@ def _quality_correction_replay(*, event_key: str, work_order_id, actor: str, att
     return replay.work_order
 
 
+def _record_quality_hold_risk(exc: ProductionConflict) -> None:
+    """Keep a blocked physical correction visible after its transaction rolls back."""
+    data = dict(getattr(exc, "data", {}) or {})
+    if data.get("cause") != "ineligible_holds":
+        return
+    work_order_ref = str(data.get("work_order") or "")
+    if not work_order_ref:
+        return
+
+    from shopman.shop.adapters import alert as alert_adapter
+
+    affected = [*data.get("order_refs", []), *data.get("reservation_refs", [])]
+    if not alert_adapter.recent_exists(
+        "production_quality_hold_risk",
+        timezone.now(),
+        order_ref=work_order_ref,
+    ):
+        alert_adapter.create(
+            "production_quality_hold_risk",
+            "critical",
+            (
+                f"{work_order_ref}: a correção física foi interrompida para proteger "
+                f"{len(affected)} promessa(s) ao cliente. Resolva no Gestor antes de repetir."
+            ),
+            order_ref=work_order_ref,
+        )
+    for order_ref in data.get("order_refs", []):
+        if alert_adapter.recent_exists(
+            "order_production_quality_risk",
+            timezone.now(),
+            order_ref=order_ref,
+        ):
+            continue
+        alert_adapter.create(
+            "order_production_quality_risk",
+            "critical",
+            (
+                f"O pedido {order_ref} foi protegido: uma correção física de {work_order_ref} "
+                "reduziria sua cobertura. Combine substituição, próxima fornada ou reembolso "
+                "com o cliente antes de liberar a reserva."
+            ),
+            order_ref=order_ref,
+        )
+
+
 def apply_quality_correction(
     *,
     work_order_id,
@@ -2057,12 +2246,7 @@ def apply_quality_correction(
     expected_rev: int | None,
     idempotency_key: str | None,
 ):
-    """Correct post-close QC as a versioned, audited stock reclassification.
-
-    Produced and loss quantities are deliberately immutable here.  Correcting
-    yield is a different physical-stock operation; this endpoint only changes
-    the orthogonal grade/reason fact the manager reviewed.
-    """
+    """Correct post-close QC without rewriting the immutable closing lines."""
     from django.db import transaction
     from shopman.craftsman.models import WorkOrder, WorkOrderEvent
     from shopman.craftsman.services.scheduling import _check_rev, _next_seq
@@ -2137,10 +2321,12 @@ def apply_quality_correction(
                 *(_quality_group_from_item(item, loss=False) for item in finished_items),
                 *(_quality_group_from_item(item, loss=True) for item in wasted_items),
             ]
-            if _quality_partition_quantity(provisional, loss=False) != _quality_partition_quantity(before, loss=False):
-                raise ProductionError("A correção de QC não pode alterar a quantidade produzida.")
-            if _quality_partition_quantity(provisional, loss=True) != _quality_partition_quantity(before, loss=True):
-                raise ProductionError("A correção de QC não pode alterar a quantidade de perda.")
+            before_saleable = _quality_partition_quantity(before, loss=False)
+            before_loss = _quality_partition_quantity(before, loss=True)
+            after_saleable = _quality_partition_quantity(provisional, loss=False)
+            after_loss = _quality_partition_quantity(provisional, loss=True)
+            if after_saleable + after_loss != total:
+                raise ProductionError("A soma da correção deve manter o total contabilizado da fornada.")
             saleable_changed = _saleable_quality_signature(before) != _saleable_quality_signature(provisional)
             loss_changed = _loss_quality_signature(before) != _loss_quality_signature(provisional)
             if not saleable_changed and not loss_changed:
@@ -2157,7 +2343,15 @@ def apply_quality_correction(
                 )
             else:
                 saleable_groups = [dict(group) for group in before if not bool(group.get("loss"))]
-                stock_impact = {"stock_reclassified": False, "holds_reassigned": 0}
+                stock_impact = {
+                    "stock_reclassified": False,
+                    "holds_reassigned": 0,
+                    "holds_materialized": 0,
+                    "move_ids": [],
+                    "saleable_before": _qty(before_saleable),
+                    "saleable_after": _qty(after_saleable),
+                    "loss_delta": _qty(after_loss - before_loss),
+                }
             after = [
                 *saleable_groups,
                 *(_quality_group_from_item(item, loss=True) for item in wasted_items),
@@ -2170,6 +2364,19 @@ def apply_quality_correction(
                 **stock_impact,
                 "communications": communication_impact,
             }
+            from shopman.backstage.services.alerts import resolve_alerts
+
+            impact["resolved_production_risks"] = resolve_alerts(
+                "production_quality_hold_risk",
+                order_ref=work_order.ref,
+                actor="production:quality-correction",
+            )
+            # ``finished`` is the current saleable aggregate consumed by legacy
+            # projections. The original FINISHED event and WorkOrderItems stay
+            # untouched; this correction event is the immutable authority for
+            # the new aggregate.
+            work_order.finished = after_saleable
+            work_order.save(update_fields=["finished", "updated_at"])
             irreversible = communication_impact["irreversible_announcements"]
             if irreversible:
                 from shopman.shop.adapters import alert as alert_adapter
@@ -2189,8 +2396,13 @@ def apply_quality_correction(
                 seq=event_seq,
                 kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
                 payload={
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "reason": audit_reason,
+                    "total_accounted": _qty(total),
+                    "saleable_before": _qty(before_saleable),
+                    "saleable_after": _qty(after_saleable),
+                    "loss_before": _qty(before_loss),
+                    "loss_after": _qty(after_loss),
                     "before_partition": before,
                     "after_partition": after,
                     "impact": impact,
@@ -2208,7 +2420,13 @@ def apply_quality_correction(
                 saleable_changed,
             )
             return work_order
-    except (ProductionError, ProductionConflict, ProductionNotFound):
+    except ProductionConflict as exc:
+        try:
+            _record_quality_hold_risk(exc)
+        except Exception:
+            logger.exception("production.quality_hold_risk_alert_failed")
+        raise
+    except (ProductionError, ProductionNotFound):
         raise
     except Exception as exc:
         translated = _operator_error(exc)

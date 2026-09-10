@@ -118,6 +118,14 @@ class OperatorAlert(models.Model):
             "production_quality_communication",
             "Qualidade corrigida após comunicação da fornada",
         ),
+        (
+            "production_quality_hold_risk",
+            "Correção de qualidade aguarda proteção ao cliente",
+        ),
+        (
+            "order_production_quality_risk",
+            "Pedido protegido de uma correção de qualidade",
+        ),
         ("directive_failed_spike", "Tarefas de fundo falhando"),
         ("directive_backlog", "Fila de tarefas de fundo acumulada"),
         ("directive_worker_stale", "Processador de tarefas de fundo parado"),
@@ -184,6 +192,7 @@ class OperatorAlert(models.Model):
         "production_unfinished",
         "production_batch_traceability",
         "production_quality_communication",
+        "production_quality_hold_risk",
         "stock_discrepancy",
         "stock_low",
     }
@@ -203,6 +212,7 @@ class OperatorAlert(models.Model):
         "pos_rejected_unavailable",
         "stale_new_order",
         "lifecycle_phase_stuck",
+        "order_production_quality_risk",
     }
 
     type = models.CharField("tipo", max_length=50, choices=TYPE_CHOICES)

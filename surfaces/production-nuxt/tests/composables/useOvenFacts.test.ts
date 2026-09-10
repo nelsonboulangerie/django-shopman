@@ -87,9 +87,34 @@ describe("useOvenFacts", () => {
     );
   });
 
+  it("ignora o segundo toque enquanto a primeira declaração está em curso", async () => {
+    let resolveRequest!: (value: unknown) => void;
+    env.fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveRequest = resolve;
+        }),
+    );
+    const ovenFacts = facts();
+
+    const first = ovenFacts.concluded(42, 7);
+    expect(ovenFacts.isPending(42)).toBe(true);
+    await expect(ovenFacts.concluded(42, 7)).resolves.toBe(false);
+    expect(env.fetchMock).toHaveBeenCalledTimes(1);
+
+    resolveRequest({
+      current: { pk: 42, ref: "WO-42", status: "started", rev: 8 },
+    });
+    await expect(first).resolves.toBe(true);
+    expect(ovenFacts.isPending(42)).toBe(false);
+  });
+
   it("falha terminal bloqueia o fato local e mantém erro reconciliável", async () => {
     // 400 não é transiente → sem retry, sem sleep: o teste fica rápido.
-    env.fetchMock.mockRejectedValueOnce({ statusCode: 400, data: { detail: "nope" } });
+    env.fetchMock.mockRejectedValueOnce({
+      statusCode: 400,
+      data: { detail: "nope" },
+    });
     const ovenFacts = facts();
     await expect(ovenFacts.armed(42, 6, 15)).resolves.toBe(false);
     expect(ovenFacts.errorFor(42)).toBe("nope");

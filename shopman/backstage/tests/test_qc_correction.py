@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -33,6 +33,7 @@ def qc_recipe(db):
         name="Pão Correção",
         output_sku="QC-CORRECTION",
         batch_size=Decimal("10"),
+        meta={"shelf_life_days": 3},
     )
 
 
@@ -126,11 +127,14 @@ def test_correction_versions_lots_moves_stock_and_effective_projection(qc_recipe
     assert corrected.finished == Decimal("10")
     assert corrected.rev == original_rev + 1
     assert seen == [], "correction must never replay the finished signal"
-    assert list(
-        WorkOrderItem.objects.filter(work_order=wo).values_list(
-            "pk", "quality_grade_ref", "quality_defect_ref", "batch_ref"
+    assert (
+        list(
+            WorkOrderItem.objects.filter(work_order=wo).values_list(
+                "pk", "quality_grade_ref", "quality_defect_ref", "batch_ref"
+            )
         )
-    ) == original_items
+        == original_items
+    )
     original_batch.refresh_from_db()
     assert original_batch.quality_grade_ref == "standard"
     assert Quant.objects.get(batch=original_batch_ref).quantity == 0
@@ -144,13 +148,16 @@ def test_correction_versions_lots_moves_stock_and_effective_projection(qc_recipe
         Quant.objects.filter(batch__in=new_refs).values_list("_quantity", flat=True),
         Decimal("0"),
     ) == Decimal("10")
-    assert sum(
-        Move.objects.filter(
-            metadata__operation="production_qc_correction",
-            metadata__work_order_ref=wo.ref,
-        ).values_list("delta", flat=True),
-        Decimal("0"),
-    ) == 0
+    assert (
+        sum(
+            Move.objects.filter(
+                metadata__operation="production_qc_correction",
+                metadata__work_order_ref=wo.ref,
+            ).values_list("delta", flat=True),
+            Decimal("0"),
+        )
+        == 0
+    )
     assert quality_service.output_partition(wo) == [
         {"grade_ref": "standard", "quantity": "6"},
         {"grade_ref": "fair", "quantity": "4"},
@@ -204,7 +211,7 @@ def test_correction_replay_is_exact_and_does_not_duplicate_moves(qc_recipe, monk
 
 
 @pytest.mark.django_db
-def test_correction_never_changes_produced_or_loss_quantities(qc_recipe, monkeypatch):
+def test_correction_recovers_loss_and_updates_the_effective_saleable_aggregate(qc_recipe, monkeypatch):
     wo = _finished(
         qc_recipe,
         monkeypatch,
@@ -213,19 +220,90 @@ def test_correction_never_changes_produced_or_loss_quantities(qc_recipe, monkeyp
             {"quantity": "2", "quality_defect_ref": "underproofed", "loss": True},
         ],
     )
-    with pytest.raises(ProductionError, match="quantidade produzida|quantidade de perda"):
-        production.apply_quality_correction(
-            work_order_id=wo.pk,
-            partition=[
-                {"quantity": "9", "quality_grade_ref": "standard"},
-                {"quantity": "1", "quality_defect_ref": "underproofed", "loss": True},
-            ],
-            reason="Ajuste indevido de rendimento.",
-            actor="production:gerente",
-            expected_rev=wo.rev,
-            idempotency_key="correct-qc-loss-change",
-        )
-    assert not WorkOrderEvent.objects.filter(kind=WorkOrderEvent.Kind.QUALITY_CORRECTED).exists()
+    production.apply_quality_correction(
+        work_order_id=wo.pk,
+        partition=[
+            {"quantity": "9", "quality_grade_ref": "standard"},
+            {"quantity": "1", "quality_defect_ref": "underproofed", "loss": True},
+        ],
+        reason="Uma unidade foi localizada e conferida fisicamente.",
+        actor="production:gerente",
+        expected_rev=wo.rev,
+        idempotency_key="correct-qc-loss-change",
+    )
+
+    wo.refresh_from_db()
+    assert wo.finished == Decimal("9")
+    assert wo.loss == Decimal("1")
+    moves = Move.objects.filter(metadata__operation="production_qc_correction")
+    assert sum(moves.filter(kind=Move.Kind.TRANSFER).values_list("delta", flat=True), Decimal("0")) == 0
+    assert sum(moves.filter(kind=Move.Kind.WASTE).values_list("delta", flat=True), Decimal("0")) == 1
+    event = WorkOrderEvent.objects.get(kind=WorkOrderEvent.Kind.QUALITY_CORRECTED)
+    assert event.payload["schema_version"] == 2
+    assert event.payload["saleable_before"] == "8"
+    assert event.payload["saleable_after"] == "9"
+    assert event.payload["loss_before"] == "2"
+    assert event.payload["loss_after"] == "1"
+
+
+@pytest.mark.django_db
+def test_correction_increases_loss_with_a_balanced_transfer_and_explicit_waste(qc_recipe, monkeypatch):
+    wo = _finished(qc_recipe, monkeypatch)
+
+    production.apply_quality_correction(
+        work_order_id=wo.pk,
+        partition=[
+            {"quantity": "8", "quality_grade_ref": "standard"},
+            {"quantity": "2", "quality_defect_ref": "overbaked", "loss": True},
+        ],
+        reason="Duas unidades foram descartadas após conferência.",
+        actor="production:gerente",
+        expected_rev=wo.rev,
+        idempotency_key="correct-qc-loss-increase",
+    )
+
+    wo.refresh_from_db()
+    assert wo.finished == Decimal("8")
+    assert wo.loss == Decimal("2")
+    moves = Move.objects.filter(metadata__operation="production_qc_correction")
+    assert sum(moves.filter(kind=Move.Kind.TRANSFER).values_list("delta", flat=True), Decimal("0")) == 0
+    assert sum(moves.filter(kind=Move.Kind.WASTE).values_list("delta", flat=True), Decimal("0")) == -2
+    current_refs = WorkOrderEvent.objects.get(kind=WorkOrderEvent.Kind.QUALITY_CORRECTED).payload["impact"][
+        "to_batch_refs"
+    ]
+    assert sum(Quant.objects.filter(batch__in=current_refs).values_list("_quantity", flat=True), Decimal("0")) == 8
+
+
+@pytest.mark.django_db
+def test_correction_recovers_a_total_loss_into_a_dated_saleable_lot(qc_recipe, monkeypatch):
+    wo = _finished(
+        qc_recipe,
+        monkeypatch,
+        partition=[{"quantity": "10", "quality_defect_ref": "overbaked", "loss": True}],
+    )
+
+    production.apply_quality_correction(
+        work_order_id=wo.pk,
+        partition=[{"quantity": "10", "quality_grade_ref": "standard"}],
+        reason="As unidades estavam separadas e foram conferidas pelo gerente.",
+        actor="production:gerente",
+        expected_rev=wo.rev,
+        idempotency_key="correct-qc-total-loss-recovery",
+    )
+
+    wo.refresh_from_db()
+    assert wo.finished == Decimal("10")
+    quant = Quant.objects.get(metadata__production_qc_correction=wo.ref, _quantity=10)
+    assert quant.position.is_saleable is True
+    batch = Batch.objects.get(ref=quant.batch)
+    assert batch.production_date == wo.target_date
+    assert batch.expiry_date == wo.target_date + timedelta(days=3)
+    recovery = Move.objects.get(
+        quant=quant,
+        kind=Move.Kind.WASTE,
+        metadata__direction="loss_recovery",
+    )
+    assert recovery.delta == Decimal("10")
 
 
 @pytest.mark.django_db
@@ -276,6 +354,63 @@ def test_incompatible_remote_hold_blocks_atomically(qc_recipe, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_loss_correction_never_consumes_units_promised_to_a_customer(qc_recipe, monkeypatch):
+    from shopman.stockman.services.holds import (
+        QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
+        QUALITY_GRADE_POLICY_VERSION,
+        QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    )
+
+    wo = _finished(qc_recipe, monkeypatch)
+    source = Quant.objects.get(batch__gt="", _quantity=10)
+    hold = Hold.objects.create(
+        sku=wo.output_sku,
+        quant=source,
+        quantity=9,
+        target_date=date.today(),
+        status=HoldStatus.CONFIRMED,
+        metadata={
+            "order_ref": "PED-CLIENTE-9",
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+            QUALITY_GRADE_ALLOWLIST_METADATA_KEY: ["excellent", "standard"],
+        },
+    )
+
+    with pytest.raises(ProductionConflict, match="PED-CLIENTE-9|Gestor"):
+        production.apply_quality_correction(
+            work_order_id=wo.pk,
+            partition=[
+                {"quantity": "8", "quality_grade_ref": "standard"},
+                {"quantity": "2", "quality_defect_ref": "overbaked", "loss": True},
+            ],
+            reason="Duas unidades foram descartadas após conferência.",
+            actor="production:gerente",
+            expected_rev=wo.rev,
+            idempotency_key="correct-qc-held-loss",
+        )
+
+    source.refresh_from_db()
+    hold.refresh_from_db()
+    wo.refresh_from_db()
+    assert source.quantity == Decimal("10")
+    assert hold.quant_id == source.pk
+    assert wo.finished == Decimal("10")
+    assert not Move.objects.filter(metadata__operation="production_qc_correction").exists()
+    assert not WorkOrderEvent.objects.filter(kind=WorkOrderEvent.Kind.QUALITY_CORRECTED).exists()
+    production_alert = OperatorAlert.objects.get(
+        type="production_quality_hold_risk",
+        order_ref=wo.ref,
+    )
+    order_alert = OperatorAlert.objects.get(
+        type="order_production_quality_risk",
+        order_ref="PED-CLIENTE-9",
+    )
+    assert production_alert.audience == "production"
+    assert order_alert.audience == "orders"
+    assert "substituição, próxima fornada ou reembolso" in order_alert.message
+
+
+@pytest.mark.django_db
 def test_permissive_hold_keeps_the_best_compatible_corrected_grade(qc_recipe, monkeypatch):
     from shopman.stockman.services.holds import (
         QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
@@ -317,6 +452,51 @@ def test_permissive_hold_keeps_the_best_compatible_corrected_grade(qc_recipe, mo
 
     hold.refresh_from_db()
     assert Batch.objects.get(ref=hold.quant.batch).quality_grade_ref == "excellent"
+
+
+@pytest.mark.django_db
+def test_recovered_units_materialize_waiting_demand_without_a_false_batch_alert(qc_recipe, monkeypatch):
+    from shopman.stockman.services.holds import (
+        QUALITY_GRADE_ALLOWLIST_METADATA_KEY,
+        QUALITY_GRADE_POLICY_VERSION,
+        QUALITY_GRADE_POLICY_VERSION_METADATA_KEY,
+    )
+
+    wo = _finished(
+        qc_recipe,
+        monkeypatch,
+        partition=[
+            {"quantity": "8", "quality_grade_ref": "standard"},
+            {"quantity": "2", "quality_defect_ref": "underproofed", "loss": True},
+        ],
+    )
+    waiting = Hold.objects.create(
+        sku=wo.output_sku,
+        quant=None,
+        quantity=2,
+        target_date=wo.target_date,
+        status=HoldStatus.PENDING,
+        metadata={
+            "reference": "waiting-session",
+            QUALITY_GRADE_POLICY_VERSION_METADATA_KEY: QUALITY_GRADE_POLICY_VERSION,
+            QUALITY_GRADE_ALLOWLIST_METADATA_KEY: ["excellent", "standard"],
+        },
+    )
+
+    production.apply_quality_correction(
+        work_order_id=wo.pk,
+        partition=[{"quantity": "10", "quality_grade_ref": "standard"}],
+        reason="Duas unidades separadas foram localizadas e conferidas.",
+        actor="production:gerente",
+        expected_rev=wo.rev,
+        idempotency_key="correct-qc-materialize-recovery",
+    )
+
+    waiting.refresh_from_db()
+    assert waiting.quant_id is not None
+    assert "-qc" in waiting.quant.batch
+    event = WorkOrderEvent.objects.get(kind=WorkOrderEvent.Kind.QUALITY_CORRECTED)
+    assert event.payload["impact"]["holds_materialized"] == 1
 
 
 @pytest.mark.django_db
@@ -419,9 +599,9 @@ def test_correction_preserves_sent_campaign_and_raises_operator_alert(qc_recipe,
         work_order=wo,
         kind=WorkOrderEvent.Kind.QUALITY_CORRECTED,
     )
-    assert event.payload["impact"]["communications"]["irreversible_announcements"][0][
-        "announcement_id"
-    ] == announcement.pk
+    assert (
+        event.payload["impact"]["communications"]["irreversible_announcements"][0]["announcement_id"] == announcement.pk
+    )
 
 
 @pytest.mark.django_db
