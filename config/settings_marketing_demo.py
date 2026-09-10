@@ -9,6 +9,11 @@ Importing it never enables any external transport.
 from config.settings_test import *  # noqa: F403
 
 SHOPMAN_ENVIRONMENT = "development"
+# Cookies ignoram porta: dois backends locais em 127.0.0.1 usam o mesmo pote do
+# navegador. O ensaio não pode perder a sessão porque outro app Django local leu,
+# substituiu ou removeu o `sessionid` genérico. O nome exclusivo vale somente neste
+# perfil descartável; produção mantém o contrato cross-subdomínio canônico.
+SESSION_COOKIE_NAME = "marketing_demo_sessionid"
 SHOPMAN_MARKETING_OUTBOX_CONSUMER_ENABLED = True
 SHOPMAN_MARKETING_DELIVERY_CONSUMER_ENABLED = True
 SHOPMAN_MARKETING_SIMULATION_ENABLED = True

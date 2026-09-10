@@ -56,6 +56,12 @@ SIMULATION_AFFORDANCES = {
 }
 
 
+def test_demo_profile_isolates_session_cookie_from_other_local_apps():
+    from config import settings_marketing_demo
+
+    assert settings_marketing_demo.SESSION_COOKIE_NAME == "marketing_demo_sessionid"
+
+
 def _artifact() -> ResolvedDispatchArtifact:
     return ResolvedDispatchArtifact(
         platform="instagram",

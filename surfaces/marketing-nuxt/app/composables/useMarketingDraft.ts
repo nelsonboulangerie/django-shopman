@@ -34,6 +34,13 @@ interface PendingConflict {
   serverWins: MarketingDraftPayload;
 }
 
+interface PendingPersist {
+  identity: MarketingDraftIdentity;
+  version: string | number;
+  base: MarketingDraftPayload;
+  payload: MarketingDraftPayload;
+}
+
 function copy(value: MarketingDraftPayload): MarketingDraftPayload {
   return JSON.parse(JSON.stringify(value)) as MarketingDraftPayload;
 }
@@ -46,6 +53,7 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
   const debounceMs = options.debounceMs ?? 400;
   let ready = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
+  let pendingPersist: PendingPersist | null = null;
   let pendingConflict: PendingConflict | null = null;
 
   const identity = computed<MarketingDraftIdentity>(() => ({
@@ -59,22 +67,32 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
     timer = null;
   }
 
-  function persist(payload = copy(toValue(options.current))) {
+  function snapshotPersist(): PendingPersist | null {
+    if (!storage || !identity.value.owner || !identity.value.resource) return null;
+    return {
+      identity: { ...identity.value },
+      version: toValue(options.version),
+      base: copy(toValue(options.base)),
+      payload: copy(toValue(options.current)),
+    };
+  }
+
+  function persist(snapshot = snapshotPersist()) {
     cancelTimer();
-    if (!enabled.value || !storage || state.value === "conflict") return;
-    const base = copy(toValue(options.base));
-    if (marketingDraftEqual(payload, base)) {
-      clearMarketingDraft(storage, identity.value);
+    pendingPersist = null;
+    if (!snapshot || !storage || state.value === "conflict") return;
+    if (marketingDraftEqual(snapshot.payload, snapshot.base)) {
+      clearMarketingDraft(storage, snapshot.identity);
       state.value = "";
       savedAt.value = 0;
       return;
     }
     const record = writeMarketingDraft(
       storage,
-      identity.value,
-      toValue(options.version),
-      base,
-      payload,
+      snapshot.identity,
+      snapshot.version,
+      snapshot.base,
+      snapshot.payload,
     );
     if (record) {
       savedAt.value = record.savedAt;
@@ -84,7 +102,15 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
 
   function schedulePersist() {
     cancelTimer();
-    timer = setTimeout(() => persist(), debounceMs);
+    pendingPersist = snapshotPersist();
+    if (!pendingPersist) return;
+    const scheduled = pendingPersist;
+    timer = setTimeout(() => persist(scheduled), debounceMs);
+  }
+
+  function flushPending() {
+    if (pendingPersist) persist(pendingPersist);
+    else cancelTimer();
   }
 
   async function applyWithoutSaving(payload: MarketingDraftPayload) {
@@ -95,7 +121,9 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
   }
 
   async function restore() {
-    cancelTimer();
+    // A sessão pode sumir antes do debounce. Grava com a identidade capturada
+    // quando a pessoa editou, nunca sob o próximo operador que entrar.
+    flushPending();
     ready = false;
     pendingConflict = null;
     conflicts.value = [];
@@ -194,7 +222,7 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
   }
 
   function flushBeforePageLeaves() {
-    if (ready && timer) persist();
+    if (ready && pendingPersist) persist(pendingPersist);
   }
 
   watch(
@@ -222,7 +250,7 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
   });
   onBeforeUnmount(() => {
     if (typeof window !== "undefined") window.removeEventListener("pagehide", flushBeforePageLeaves);
-    if (ready && timer) persist();
+    if (ready && pendingPersist) persist(pendingPersist);
     else cancelTimer();
   });
 
@@ -231,7 +259,7 @@ export function useMarketingDraft(options: UseMarketingDraftOptions) {
     savedAt,
     conflicts,
     enabled,
-    flush: persist,
+    flush: () => persist(),
     restore,
     discard,
     keepLocal: () => resolveConflict("local"),

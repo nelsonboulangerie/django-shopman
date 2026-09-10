@@ -9,6 +9,9 @@ leitura e receipt. O último boundary é substituído por um adapter
 
 - Use somente `DJANGO_SETTINGS_MODULE=config.settings_marketing_demo` em uma
   worktree descartável.
+- Esse perfil usa o cookie de sessão exclusivo `marketing_demo_sessionid`. Cookies
+  de `127.0.0.1` ignoram porta; o isolamento impede que outro app/backend local
+  encerre o ensaio ao substituir o `sessionid` genérico. Produção não é alterada.
 - Todas as flags de efeitos externos permanecem `False`; o adapter recusa a
   execução se qualquer uma for ligada.
 - O horário silencioso pode ser suspenso nesse perfil para ensaio noturno, mas

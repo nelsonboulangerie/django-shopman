@@ -352,6 +352,27 @@ describe("CampaignForm — round-trip lossless da audiência", () => {
     expect(restored.text()).toContain("Rascunho restaurado");
   });
 
+  it("salva a edição pendente para o operador original quando a sessão some", async () => {
+    const rule = makeRule({
+      trigger: "production_finished",
+      updated_at: "2026-09-09T08:00:00-03:00",
+    });
+    const first = form(rule, "operator:7");
+    await first.find("#rule-name").setValue("Não redigitar depois do login");
+
+    // Reproduz a janela crítica: a identidade desaparece antes dos 400 ms do
+    // debounce e o gate desmonta o formulário logo depois.
+    await first.setProps({ draftOwner: "" });
+    first.unmount();
+
+    const restored = form(rule, "operator:7");
+    await flushPromises();
+
+    expect((restored.find("#rule-name").element as HTMLInputElement).value)
+      .toBe("Não redigitar depois do login");
+    expect(restored.text()).toContain("Rascunho restaurado");
+  });
+
   it("isola o rascunho entre campanhas", async () => {
     const first = form(
       makeRule({ pk: 5, trigger: "production_finished", updated_at: "v1" }),

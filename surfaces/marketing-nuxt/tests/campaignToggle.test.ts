@@ -28,4 +28,16 @@ describe("campaign activation switch", () => {
     expect(page).toContain('action.kind === "fire_campaign"');
     expect(page).toContain('"Indisponível"');
   });
+
+  it("keeps the open editor across the authentication gate", () => {
+    const page = readFileSync(
+      new URL("../app/pages/campaigns.vue", import.meta.url),
+      "utf8",
+    );
+
+    expect(page).toContain('useState<boolean>("marketing-campaign-creating"');
+    expect(page).toContain('"marketing-campaign-editing-pk"');
+    expect(page).not.toContain("const creating = ref(false)");
+    expect(page).not.toContain("const editing = ref<Campaign | null>(null)");
+  });
 });

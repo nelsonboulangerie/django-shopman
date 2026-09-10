@@ -60,8 +60,19 @@ const audienceLabels = computed(() => ({
   segments: choiceLabels(rfmSegments.value),
 }));
 
-const editing = ref<Campaign | null>(null);
-const creating = ref(false);
+// O gate de autenticação desmonta a página protegida. Estes dois valores precisam
+// viver acima da instância da página: depois de entrar novamente, o operador volta
+// ao mesmo editor e o rascunho local reaparece sem outro gesto nem redigitação.
+const editingPk = useState<number | null>(
+  "marketing-campaign-editing-pk",
+  () => null,
+);
+const creating = useState<boolean>("marketing-campaign-creating", () => false);
+const editing = computed<Campaign | null>(() =>
+  editingPk.value === null
+    ? null
+    : rules.value.find((rule) => rule.pk === editingPk.value) ?? null,
+);
 const firing = ref<Campaign | null>(null);
 const fireResult = ref<MarketingCommandResponse | null>(null);
 const fireError = ref("");
@@ -205,18 +216,18 @@ function fireUnavailableReason(rule: Campaign): string {
 }
 
 function openNew() {
-  editing.value = null;
+  editingPk.value = null;
   creating.value = true;
 }
 
 function openEdit(rule: Campaign) {
   creating.value = false;
-  editing.value = rule;
+  editingPk.value = rule.pk;
 }
 
 function close() {
   creating.value = false;
-  editing.value = null;
+  editingPk.value = null;
 }
 
 /** Disparar agora: a campanha manual, sem esperar evento da padaria. */
