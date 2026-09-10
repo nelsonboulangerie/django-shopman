@@ -118,7 +118,15 @@ function printLabels(
   printMode.value = kind;
   printTicketRef.value = ticketRef;
   mode.value = "preparos";
-  void nextTick(() => window.print());
+  void nextTick(() => {
+    if (typeof window.print !== "function") {
+      useSonner.warning("Impressão indisponível neste preview.", {
+        description: "Abra Produção no Chrome ou Safari para imprimir.",
+      });
+      return;
+    }
+    window.print();
+  });
 }
 
 const isPending = computed(() =>

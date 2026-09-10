@@ -639,7 +639,7 @@ function onTimerKeydown(event: KeyboardEvent) {
           <!-- Hover invertido: contraste garantido mesmo com o card em accent. -->
           <button
             type="button"
-            class="group flex size-20 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
+            class="group flex h-20 w-24 shrink-0 flex-col items-center justify-center gap-1 self-center rounded-xl border bg-background transition hover:border-primary hover:bg-primary hover:text-primary-foreground active:translate-y-px"
             :class="{
               'cursor-not-allowed opacity-50 hover:border-border hover:bg-background hover:text-foreground':
                 !finishAvailable(order) || ovenFacts.isPending(order.pk),
