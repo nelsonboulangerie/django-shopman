@@ -19,7 +19,13 @@ function shopmanEnvironment(environment: Environment): string {
 export function isProductionRuntime(environment: Environment = process.env): boolean {
   const declaredEnvironment = shopmanEnvironment(environment);
   if (PRODUCTION_ENVIRONMENTS.has(declaredEnvironment)) return true;
-  if (LOCAL_ENVIRONMENTS.has(declaredEnvironment)) return false;
+  // Only the Nuxt-scoped build flag may deliberately relax NODE_ENV=production
+  // for local `nuxt prepare`/typecheck tooling. The legacy runtime flag must not
+  // be able to downgrade a real production process accidentally.
+  const nuxtEnvironment = String(environment.NUXT_SHOPMAN_ENVIRONMENT || "")
+    .trim()
+    .toLowerCase();
+  if (LOCAL_ENVIRONMENTS.has(nuxtEnvironment)) return false;
   // Playwright compila o app como NODE_ENV=production, mas aponta deliberadamente
   // para um mock local. A exceção exige ambiente + flag de teste explícitos.
   if (isExplicitTestRuntime(environment)) return false;
