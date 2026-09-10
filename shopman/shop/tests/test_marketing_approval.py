@@ -461,12 +461,14 @@ def test_publish_mode_has_no_implicit_boolean_or_ambiguous_instant(actor, announ
 
 
 def test_whatsapp_below_minimum_is_rejected_before_any_effect_shaped_row(actor, announcement):
+    business_time = datetime.fromisoformat("2026-09-09T09:00:00-03:00")
     with pytest.raises(MarketingCommandRejected) as caught:
         _approve(
             actor=actor,
             announcement=announcement,
             key="idem-approval-00000003",
             platforms=["whatsapp"],
+            now=business_time,
         )
 
     announcement.refresh_from_db()
@@ -485,6 +487,7 @@ def test_whatsapp_below_minimum_is_rejected_before_any_effect_shaped_row(actor, 
 
 
 def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(actor, announcement, monkeypatch):
+    business_time = datetime.fromisoformat("2026-09-09T09:00:00-03:00")
     refs = []
     for number in range(10):
         customer = Customer.objects.create(
@@ -514,7 +517,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(acto
     )
     from shopman.shop.services.manychat_flows import FlowCatalog
 
-    checked_at = timezone.now()
+    checked_at = business_time
     monkeypatch.setattr(
         "shopman.shop.services.manychat_flows.flow_catalog",
         lambda **kwargs: FlowCatalog(
@@ -533,6 +536,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(acto
             announcement=announcement,
             key="idem-approval-unverified-flow",
             platforms=["whatsapp"],
+            now=business_time,
         )
     assert blocked.value.code == "manychat_custom_fields_unverified"
     assert MarketingContentArtifact.objects.count() == 0
@@ -548,6 +552,7 @@ def test_whatsapp_at_approved_minimum_seals_exact_members_flow_and_one_wave(acto
         announcement=announcement,
         key="idem-approval-00000004",
         platforms=["whatsapp"],
+        now=business_time,
     )
 
     assert result.snapshot.members.count() == 10

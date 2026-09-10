@@ -2464,3 +2464,23 @@ Markdown e diff check verdes. Relatório completo:
 
 Nenhum push, PR, merge, deploy, staging, produção, provider, destinatário ou escrita
 externa foi executado.
+
+## MKT-051 — preflight local de shadow e canário
+
+A branch incorporou 34 commits paralelos de Produção/PDV sem conflito manual. Uma
+migration de merge vazia preserva as folhas independentes do Backstage. A integração
+também revelou e fechou 2 vulnerabilidades moderadas + 1 alta no lock do operator-kit;
+o CI passou a auditar kit e Marketing separadamente.
+
+O preflight hermético passou 19 drills backend + 4 probes, 56 testes de runtime,
+diagnóstico `OK` sem provider, carga de 200 mil candidatos/20 mil destinos, 245 testes
+Nuxt, build, E2E, 2 fluxos a11y, 69 estados visuais, 4 contratos de segurança e 234
+testes do operator-kit. A audiência ficou em p95 1,85 s, 6 queries e 82,59 MiB; o
+fan-out de 20 mil ficou em 8,56 s, sem interseção de workers.
+
+O backend integrado passou 641 casos e expôs cinco testes antigos ainda no protocolo
+pré-CAS ou dependentes do relógio; os cinco foram corrigidos e passaram focados. Detalhes:
+[`marketing-MKT-051-local-preflight-20260910-codex.md`](marketing-MKT-051-local-preflight-20260910-codex.md).
+
+O preflight local está concluído. Canário externo, push, PR, merge, imagem, deploy,
+staging, produção, credencial, destinatário e envio continuam sem execução.

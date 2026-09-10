@@ -149,7 +149,11 @@ jobs:
       - name: Security contracts
         run: npm run test:security
 
-      - name: Supply-chain audit
+      - name: Audit operator-kit supply chain
+        working-directory: surfaces/operator-kit
+        run: npm audit --audit-level=high
+
+      - name: Audit Marketing supply chain
         run: npm audit --audit-level=high
 
       - name: Upload browser evidence
