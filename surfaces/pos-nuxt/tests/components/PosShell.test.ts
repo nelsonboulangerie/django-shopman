@@ -75,6 +75,22 @@ describe("app.vue — um shell por rota", () => {
     for (const wrapper of mounted.splice(0)) wrapper.unmount();
   });
 
+  // PRIMEIRO caso de propósito: depois de um mount em `/display`, o roteador do
+  // harness já está na página e `/display/` deixa de ser uma navegação nova —
+  // o caso passaria mesmo com a comparação por `path`, e não provaria nada.
+  it("/display/ com barra no fim TAMBÉM sobe no shell kiosk — foi a tela de senha na parede", async () => {
+    // A comparação por `path` exato deixava `/display/` (digitado, favorito)
+    // cair no shell de operador: sem estação reconhecida naquela janela, a
+    // parede mostrava "Entre para operar o caixa". Pelo nome da rota não há
+    // segunda grafia.
+    const wrapper = await open("/display/", { ...OPERATOR_CHROME, ...PAGE_STUB });
+
+    expect(wrapper.find('[data-pos-shell="customer-display"]').exists()).toBe(true);
+    expect(wrapper.find('[data-pos-shell="operator"]').exists()).toBe(false);
+    expect(calls).toEqual({ terminal: 0, operatorLock: 0, autoLock: 0, events: 0 });
+    expect(wrapper.text()).not.toContain("Entre para operar o caixa");
+  });
+
   it("/display sobe no shell kiosk: sem Projection, sem lock, sem auto-lock, sem SSE, sem senha", async () => {
     const wrapper = await open("/display", { ...OPERATOR_CHROME, ...PAGE_STUB });
 

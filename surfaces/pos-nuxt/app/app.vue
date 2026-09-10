@@ -14,8 +14,14 @@
 // toca derrubar a sessão da estação no meio da venda. As duas janelas nunca
 // trocam de rota entre si (a estação ABRE o display em outra janela), mas a
 // decisão segue a rota mesmo assim — é o que a torna verificável.
+//
+// Pelo NOME da rota, não pelo `path`: `route.path === "/display"` era exato
+// demais. Bastava uma barra no fim (`/display/`, digitada ou de favorito) para a
+// janela do cliente escapar da comparação, subir no shell de operador e mostrar
+// a tela de usuário e senha na parede — foi assim que o Pablo a viu (10/09).
+// O roteador casa `/display/` com a mesma página; o nome é o que não muda.
 const route = useRoute();
-const isCustomerDisplay = computed(() => route.path === "/display");
+const isCustomerDisplay = computed(() => route.name === "display");
 </script>
 
 <template>
