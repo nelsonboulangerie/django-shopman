@@ -324,9 +324,8 @@ describe("QcCloseScreen — correção auditável", () => {
     const fairReason = wrapper.find(
       'button[aria-label="Editar motivo de Razoável: Formato"]',
     );
-    expect(fairReason.text()).toBe("Formato");
-    expect(fairReason.classes()).toContain("min-h-11");
-    expect(fairReason.classes()).toContain("rounded-full");
+    expect(fairReason.text()).toBe("");
+    expect(fairReason.classes()).toContain("size-11");
     expect(fairReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
@@ -339,12 +338,17 @@ describe("QcCloseScreen — correção auditável", () => {
     const lossReason = wrapper.find(
       'button[aria-label="Editar motivo da perda: Queimado"]',
     );
-    expect(lossReason.text()).toBe("Queimado");
-    expect(lossReason.classes()).toContain("min-h-11");
-    expect(lossReason.classes()).toContain("rounded-full");
+    expect(lossReason.text()).toBe("");
+    expect(lossReason.classes()).toContain("size-11");
     expect(lossReason.find('icon-stub[name="lucide:pencil"]').exists()).toBe(
       true,
     );
+    expect(
+      wrapper
+        .find('button[aria-label="Perda: 4 unidades"]')
+        .text()
+        .match(/Queimado/g),
+    ).toHaveLength(1);
 
     await buttonByText(wrapper, "Perda")!.trigger("click");
     await enter(wrapper, "8");
