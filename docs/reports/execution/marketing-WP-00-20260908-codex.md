@@ -2327,3 +2327,18 @@ anúncio local 37 pendente de revisão e o receipt
 `9844a84d-bd38-4abf-ba0d-5f8b326535f4`. A leitura do ledger confirmou 1 snapshot e o
 evento `campaign_fired`, com **0 outbox/directive/target**; o ensaio parou antes da
 publicação.
+
+Em 2026-09-10, o proprietário confirmou os três itens do gate: matriz visual sem corte
+ou ambiguidade, consequência/ausência de envio inequívocas no comprovante e aceitação
+provisória da senha + frase como exceção de segurança a ser reavaliada no G-H05. O gate
+humano de MKT-046 está, portanto, **aprovado**. A intenção declarada de também verificar
+online não autoriza deploy, staging, produção nem provider externo.
+
+Na repetição local posterior, o anúncio 37 expôs uma contradição no frescor factual: ao
+ultrapassar cinco minutos, a aprovação recusava antes de reler as fontes, embora o
+contrato já exigisse revalidação canônica sem trocar os bytes revisados. A ordem foi
+corrigida: snapshot vencido provoca releitura; igualdade exata do hash preserva o
+artefato/confirmation challenge, enquanto qualquer drift continua falhando fechado e a
+guarda pré-provider permanece. O mesmo anúncio concluiu 1/1 Instagram + 12/12 WhatsApp
+no simulador, receipt `8b0f402a-6a3d-4556-b9fe-e1dafea361b1`, `provider_calls=0` e
+`pii=false`.

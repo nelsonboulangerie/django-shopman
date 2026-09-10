@@ -221,7 +221,7 @@ def refresh_for_approval(
     scheduled_for: datetime | None,
     now: datetime,
 ) -> MarketingFactSnapshot | None:
-    """Refresh as-of only when every approved factual value is unchanged."""
+    """Revalidate every approved factual value without changing reviewed bytes."""
 
     raw = content.get("facts")
     promotion_ref = str(
@@ -251,12 +251,10 @@ def refresh_for_approval(
             detail="Os fatos recebidos divergem do rascunho salvo.",
             field_errors={"content.facts": ("Reabra a versão atual do anúncio.",)},
         )
-    if now > stored.fresh_until:
-        raise MarketingContractError(
-            code="marketing_facts_stale",
-            detail="Os fatos da prévia passaram da janela de frescor.",
-            field_errors={"content.facts": ("Atualize a prévia e revise novamente.",)},
-        )
+    # Expiry means "read the canonical owners again", not "reject regardless".
+    # Keep the sealed snapshot after an equal read so the confirmation challenge
+    # remains bound to the exact bytes reviewed by the operator.  The command
+    # timestamp proves this revalidation and dispatch performs the same guard again.
     current = resolve_facts(
         sku=stored.sku,
         promotion_ref=stored.promotion_ref,

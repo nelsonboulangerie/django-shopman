@@ -187,6 +187,69 @@ def test_approval_rejects_changed_price_and_preserves_the_draft(product):
     assert announcement.version == 1
 
 
+def test_approval_revalidates_expired_facts_when_canonical_values_are_unchanged(product):
+    captured_at = timezone.now() - timedelta(minutes=6)
+    template = AnnouncementTemplate.objects.create(
+        name="Preço factual vencido",
+        body="{{product_name}} por {{price}}",
+    )
+    facts = marketing_facts.resolve_facts(
+        sku=product.sku,
+        referenced=("price", "product_name"),
+        seed_variables={},
+        now=captured_at,
+    )
+    content = {"facts": facts.as_payload()}
+    announcement = Announcement.objects.create(
+        template=template,
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content=content,
+        platforms=["instagram"],
+        trigger_context={"sku": product.sku},
+    )
+    stored = marketing_facts.from_payload(content["facts"])
+    checked_at = timezone.now()
+
+    revalidated = marketing_facts.refresh_for_approval(
+        announcement,
+        content,
+        scheduled_for=None,
+        now=checked_at,
+    )
+
+    assert stored.fresh_until < checked_at
+    assert revalidated == stored
+    assert revalidated.source_hash == stored.source_hash
+
+
+def test_approval_still_rejects_expired_facts_when_canonical_values_changed(product):
+    captured_at = timezone.now() - timedelta(minutes=6)
+    facts = marketing_facts.resolve_facts(
+        sku=product.sku,
+        referenced=("price",),
+        seed_variables={},
+        now=captured_at,
+    )
+    content = {"facts": facts.as_payload()}
+    announcement = Announcement.objects.create(
+        status=AnnouncementStatus.PENDING_REVIEW,
+        content=content,
+        platforms=["instagram"],
+        trigger_context={"sku": product.sku},
+    )
+    Product.objects.filter(pk=product.pk).update(base_price_q=900)
+
+    with pytest.raises(MarketingContractError) as caught:
+        marketing_facts.refresh_for_approval(
+            announcement,
+            content,
+            scheduled_for=None,
+            now=timezone.now(),
+        )
+
+    assert caught.value.code == "marketing_facts_changed"
+
+
 def test_pre_send_price_drift_expires_target_without_provider_boundary(product):
     template = AnnouncementTemplate.objects.create(
         name="Preço antes do envio",

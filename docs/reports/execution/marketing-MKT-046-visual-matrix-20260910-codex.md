@@ -123,8 +123,7 @@ de publicar.
 
 ## Gate humano e limites
 
-MKT-046 está tecnicamente pronto, mas permanece aguardando revisão humana dos
-screenshots. A revisão deve confirmar:
+Em 2026-09-10, o proprietário confirmou explicitamente os três pontos abaixo:
 
 1. nenhuma ação primária, estado, consequência ou diferença por plataforma ficou
    cortada/ambígua nos viewports e modos obrigatórios;
@@ -133,7 +132,23 @@ screenshots. A revisão deve confirmar:
 3. a fricção de senha + frase no disparo é aceitável como exceção de segurança a ser
    levada ao G-H05.
 
-Essa confirmação não autoriza MKT-047 por procuração. O próximo pacote exige Product
+Com isso, o gate humano de MKT-046 está **aprovado**. A confirmação e a observação de
+que haverá verificação online não autorizam deploy, staging, produção ou provider
+externo, nem autorizam MKT-047 por procuração. O próximo pacote exige Product
 Owner e sessões com 5–8 gestores para medir task success, budgets, defaults,
 thresholds de confirmação, janela de cancel/edit e prioridade de alertas. Não houve
 deploy, staging, produção, provider externo, push, merge ou PR.
+
+## Correção posterior encontrada no E2E
+
+Ao tentar publicar o anúncio local 37 depois da revisão, os fatos já haviam ultrapassado
+a janela de cinco minutos. O serviço recusava antes da releitura canônica e tornava o
+retry impossível. A correção mantém a janela e todas as guardas: fatos vencidos são
+relidos; somente hash idêntico prossegue, preservando os bytes revisados e a vinculação
+da confirmação; drift continua recusado e o worker revalida antes do adapter.
+
+O navegador atravessou novamente senha + frase e concluiu o pipeline simulado: receipt
+`8b0f402a-6a3d-4556-b9fe-e1dafea361b1`, Instagram 1/1, WhatsApp 12/12,
+`provider_calls=0`, `pii=false`. A regressão focada de fatos/aprovação/IA fechou 244
+testes antes do ensaio; testes explícitos cobrem snapshot vencido igual e vencido com
+drift.
