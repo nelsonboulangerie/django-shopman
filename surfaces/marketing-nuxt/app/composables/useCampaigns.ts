@@ -37,6 +37,7 @@ export function useCampaigns() {
   const priceTiers = computed(() => options.value?.price_tiers ?? []);
   const tags = computed(() => options.value?.tags ?? []);
   const rfmSegments = computed(() => options.value?.rfm_segments ?? []);
+  const products = computed(() => options.value?.products ?? []);
   // Só ofertas que montam sacola chegam aqui — o servidor já filtrou.
   const offers = computed(() => options.value?.offers ?? []);
   const shopTimezone = computed(() => options.value?.shop_timezone ?? "UTC");
@@ -112,6 +113,7 @@ export function useCampaigns() {
     priceTiers,
     tags,
     rfmSegments,
+    products,
     offers,
     shopTimezone,
     loading: pending,

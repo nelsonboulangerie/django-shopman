@@ -34,6 +34,8 @@ const props = defineProps<{
   /** Etiquetas existentes, com a contagem de gente no rótulo. */
   tags: Choice[];
   rfmSegments: Choice[];
+  products?: Choice[];
+  productRequired?: boolean;
   busy?: boolean;
   error?: string;
   result?: MarketingCommandResponse | null;
@@ -41,8 +43,12 @@ const props = defineProps<{
 
 const emit = defineEmits<{ submit: [FireRequest]; cancel: [] }>();
 
-/** O que o painel devolve: somente o público desta ocorrência. */
-type FireRequest = { audience: ChosenAudience };
+/** O que o painel devolve: somente escolhas canônicas desta ocorrência. */
+type FireRequest = {
+  audience: ChosenAudience;
+  sku: string;
+  productLabel: string;
+};
 
 const useSaved = ref(true);
 const tiers = ref<string[]>([]);
@@ -52,6 +58,7 @@ const winBack = ref(false);
 const birthday = ref(false);
 const vipFirst = ref(false);
 const match = ref<AudienceMatch>("any");
+const productSku = ref("");
 
 const { count, pending: counting, failed: countFailed, measure, clear } = useAudienceCount();
 
@@ -86,6 +93,7 @@ watch(
     birthday.value = false;
     vipFirst.value = false;
     match.value = "any";
+    productSku.value = "";
     clear();
   },
 );
@@ -124,6 +132,23 @@ const chosen = computed<ChosenAudience>(() => {
   return audience;
 });
 
+const savedAudienceNeedsProduct = computed(
+  () =>
+    useSaved.value &&
+    Boolean(
+      props.rule?.audience_rules?.favorites ||
+      props.rule?.audience_rules?.alerts,
+    ),
+);
+const needsProduct = computed(
+  () => Boolean(props.productRequired) || savedAudienceNeedsProduct.value,
+);
+const chosenProductLabel = computed(
+  () =>
+    props.products?.find((product) => product.value === productSku.value)
+      ?.label ?? "",
+);
+
 /** Sem público escolhido, disparar alcançaria ninguém — melhor barrar o botão. */
 const nothingChosen = computed(
   () =>
@@ -148,6 +173,7 @@ const rulesChosen = computed(
 const cannotSubmit = computed(
   () =>
     Boolean(props.busy) ||
+    (needsProduct.value && !productSku.value) ||
     nothingChosen.value ||
     counting.value ||
     countFailed.value ||
@@ -165,18 +191,22 @@ function measureAgain() {
   const rules = useSaved.value
     ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
     : chosen.value;
-  measure(rules);
+  measure(rules, productSku.value);
 }
 
 // O número acompanha a escolha. "O público da campanha" mede as regras salvas, porque a
 // pergunta "quantos isto alcança?" é a mesma nos dois modos.
 watch(
-  [chosen, useSaved, () => props.rule?.pk],
+  [chosen, useSaved, productSku, () => props.rule?.pk],
   () => {
     const rules = useSaved.value
       ? ((props.rule?.audience_rules ?? {}) as ChosenAudience)
       : chosen.value;
-    measure(rules);
+    if (needsProduct.value && !productSku.value) {
+      clear();
+      return;
+    }
+    measure(rules, productSku.value);
   },
   { immediate: true, deep: true },
 );
@@ -238,12 +268,49 @@ watch(
     </div>
   </section>
 
-  <form v-else class="space-y-5" @submit.prevent="emit('submit', { audience: chosen })">
+  <form
+    v-else
+    class="space-y-5"
+    @submit.prevent="
+      emit('submit', {
+        audience: chosen,
+        sku: productSku,
+        productLabel: chosenProductLabel,
+      })
+    "
+  >
     <div class="rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm">
       <p class="font-semibold">Texto protegido pelo fluxo de revisão</p>
       <p class="mt-1 text-xs text-muted-foreground">
         Este disparo usa o modelo salvo da campanha e cria um anúncio para revisão antes
         de qualquer publicação. Para mudar a mensagem, edite o modelo da campanha.
+      </p>
+    </div>
+
+    <div v-if="needsProduct">
+      <label for="fire-product" class="mb-1 block text-sm font-medium">
+        Produto desta ocorrência
+      </label>
+      <select
+        id="fire-product"
+        v-model="productSku"
+        class="h-11 w-full rounded-md border border-border bg-background px-3 text-sm outline-none focus:ring-1 focus:ring-ring"
+        required
+      >
+        <option value="">Escolha o produto</option>
+        <option
+          v-for="product in products ?? []"
+          :key="product.value"
+          :value="product.value"
+        >
+          {{ product.label }}
+        </option>
+      </select>
+      <p v-if="(products ?? []).length" class="mt-1 text-xs text-muted-foreground">
+        Preenche nome, preço, disponibilidade e link com dados atuais do catálogo.
+      </p>
+      <p v-else class="mt-1 text-xs text-destructive" role="alert">
+        Nenhum produto publicável está disponível; o disparo permanece bloqueado.
       </p>
     </div>
 

@@ -66,8 +66,9 @@ A contagem vem do backend e o botão permanece bloqueado quando ela é zero ou e
 degradada. O primeiro envio abre a confirmação canônica; use a senha da sessão e
 digite a frase exibida. A repetição preserva a mesma chave de idempotência.
 
-O comando aceita somente versão e regras de audiência. Ele não recebe corpo de
-mensagem nem telefone arbitrário e cria um anúncio **pendente de revisão**, com
+O comando aceita somente versão, regras de audiência e, quando o modelo depende de
+produto, um SKU canônico escolhido no catálogo. Ele não recebe corpo de mensagem
+nem telefone arbitrário e cria um anúncio **pendente de revisão**, com
 snapshot, audit event e comprovante no próprio painel. Nesse ponto nenhum outbox,
 directive, target, attempt ou efeito externo existe. Use **Revisar anúncio agora**
 para seguir ao card recém-criado.

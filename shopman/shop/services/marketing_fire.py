@@ -76,6 +76,7 @@ def fire_campaign_command(
     idempotency_key: str,
     base_version: int,
     audience_rules: Mapping[str, Any] | None,
+    sku: str = "",
     authorize: FireAuthorizer,
     request_id: str = "",
 ) -> FireCommandExecution:
@@ -103,8 +104,17 @@ def fire_campaign_command(
         )
 
     public_rules = dict(audience_rules or {})
+    safe_sku = str(sku or "").strip()
+    if len(safe_sku) > 100:
+        raise MarketingCommandRejected(
+            code="invalid_product_sku",
+            detail="A referência do produto é inválida.",
+            field_errors={"sku": ("Escolha um produto existente.",)},
+        )
     resource_ref = f"campaign:{campaign_id}"
     payload = {"audience_rules": public_rules}
+    if safe_sku:
+        payload["sku"] = safe_sku
     key_hash, payload_hash = command_fingerprints(
         kind=MarketingCommandReceipt.Kind.FIRE,
         resource_ref=resource_ref,
@@ -238,11 +248,21 @@ def fire_campaign_command(
                         field_errors={"audience_rules": ("Ajuste o público e conte novamente.",)},
                     )
                 else:
+                    # Descobre produto inexistente/ausente e fatos indisponíveis antes
+                    # de pedir senha. A mesma resolução roda novamente na confirmação;
+                    # seu hash sela preço, disponibilidade e produto contra TOCTOU.
+                    prepared_content = campaign_service.resolve_content(
+                        rule.template,
+                        {"sku": safe_sku},
+                        promotion_ref=rule.promotion_ref,
+                    )
+                    artifact_hash = str((prepared_content.get("facts") or {}).get("source_hash") or "")
                     authorize(
                         authorization_context(
                             action=ACTION_FIRE,
                             resource_ref=resource_ref,
                             base_version=base_version,
+                            artifact_hash=artifact_hash,
                             audience_hash=resolution.cohort_hash,
                             audience_count=resolution.total,
                             platforms=tuple(rule.platforms or ()),
@@ -252,10 +272,12 @@ def fire_campaign_command(
                     )
                     announcement = campaign_service.fire_now(
                         rule.pk,
+                        context={"sku": safe_sku} if safe_sku else None,
                         audience_rules=public_rules or None,
                         author=actor_row,
                         force_review=True,
                         resolved_audience=resolution,
+                        prepared_content=prepared_content,
                     )
                     snapshot = audience_snapshot.create_snapshot(
                         resolution,
@@ -276,6 +298,7 @@ def fire_campaign_command(
                         "audience_count": resolution.total,
                         "snapshot_ref": str(snapshot.ref),
                         "status": announcement.status,
+                        **({"sku": safe_sku} if safe_sku else {}),
                     }
                     receipt.completed_at = now
                     receipt.save(
@@ -300,6 +323,7 @@ def fire_campaign_command(
                             "audience_count": resolution.total,
                             "cohort_hash": resolution.cohort_hash,
                             "requires_review": True,
+                            **({"sku": safe_sku} if safe_sku else {}),
                         },
                         request_id=safe_request_id,
                         occurred_at=now,

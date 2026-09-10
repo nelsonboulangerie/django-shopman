@@ -91,6 +91,14 @@ def test_projection_excludes_presentation_copy_pii_membership_and_legacy_results
         },
         platform_results={"whatsapp": {"detail": private_marker}},
     )
+    outbox.command.outcome = {
+        "audience_count": 1,
+        "detail": private_marker,
+        "platforms": ["whatsapp"],
+        "publish_mode": "now",
+        "status": private_marker,
+    }
+    outbox.command.save(update_fields=["outcome"])
     announcement = Announcement.objects.select_related("rule", "template").get(
         pk=outbox.announcement_id
     )
@@ -110,6 +118,12 @@ def test_projection_excludes_presentation_copy_pii_membership_and_legacy_results
     assert payload["data"]["announcement"]["decision_actor_policy"] == "operator"
     assert payload["data"]["announcement"]["artifact"]["artifact_hash"]
     assert "payload" not in payload["data"]["announcement"]["artifact"]
+    assert payload["data"]["latest_receipt"]["outcome"] == {
+        "audience_count": 1,
+        "platforms": ["whatsapp"],
+        "publish_mode": "now",
+    }
+    assert payload["data"]["latest_receipt"]["ref"] == str(outbox.command.ref)
 
     validated = TypeAdapter(MarketingEnvelopeV2).validate_python(payload)
     assert validated.contract == CONTRACT

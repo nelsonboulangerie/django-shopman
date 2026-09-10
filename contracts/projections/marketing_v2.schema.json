@@ -450,6 +450,77 @@
       "title": "AudienceSummaryProjectionV2",
       "type": "object"
     },
+    "CommandReceiptProjectionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "base_version": {
+          "title": "Base Version",
+          "type": "integer"
+        },
+        "completed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Completed At"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "outcome": {
+          "additionalProperties": true,
+          "title": "Outcome",
+          "type": "object"
+        },
+        "ref": {
+          "title": "Ref",
+          "type": "string"
+        },
+        "resource_ref": {
+          "title": "Resource Ref",
+          "type": "string"
+        },
+        "resulting_version": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Resulting Version"
+        },
+        "state": {
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ref",
+        "kind",
+        "state",
+        "base_version",
+        "resulting_version",
+        "resource_ref",
+        "outcome",
+        "created_at",
+        "completed_at"
+      ],
+      "title": "CommandReceiptProjectionV2",
+      "type": "object"
+    },
     "CursorPageProjectionV2": {
       "additionalProperties": false,
       "properties": {
@@ -773,11 +844,22 @@
           "const": "announcement_detail",
           "title": "Kind",
           "type": "string"
+        },
+        "latest_receipt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CommandReceiptProjectionV2"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [
         "kind",
-        "announcement"
+        "announcement",
+        "latest_receipt"
       ],
       "title": "MarketingAnnouncementDataV2",
       "type": "object"

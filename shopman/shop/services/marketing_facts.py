@@ -34,6 +34,7 @@ _FACT_VARIABLES = frozenset({
     "product_sku",
 })
 _AVAILABILITY_VARIABLES = frozenset({"available_qty", "availability_phrase"})
+_PRODUCT_REQUIRED_VARIABLES = _FACT_VARIABLES - {"link"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,6 +99,12 @@ def referenced_variables(*values: object) -> tuple[str, ...]:
     return tuple(sorted(found))
 
 
+def requires_product(referenced: Sequence[str]) -> bool:
+    """Return whether these canonical variables require a product occurrence."""
+
+    return bool({str(value).strip() for value in referenced} & _PRODUCT_REQUIRED_VARIABLES)
+
+
 def resolve_facts(
     *,
     sku: str,
@@ -117,7 +124,7 @@ def resolve_facts(
     seeds = {str(key): str(value or "") for key, value in (seed_variables or {}).items()}
     product = _product(
         safe_sku,
-        required=bool(set(refs) & (_FACT_VARIABLES - {"link"})),
+        required=requires_product(refs),
     )
     promotion = _promotion(
         safe_promotion_ref,

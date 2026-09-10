@@ -1447,7 +1447,7 @@ class CampaignFireView(_CampaignBase):
         from shopman.shop.services.marketing_fire import fire_campaign_command
 
         payload = request.data if isinstance(request.data, dict) else {}
-        allowed = {"base_version", "audience_rules"} | _AUTHORIZATION_FIELDS
+        allowed = {"base_version", "audience_rules", "sku"} | _AUTHORIZATION_FIELDS
         unexpected = sorted(set(payload) - allowed)
         if unexpected:
             return _unknown_command_fields(unexpected)
@@ -1477,6 +1477,17 @@ class CampaignFireView(_CampaignBase):
                 status=422,
             )
 
+        raw_sku = payload.get("sku", "")
+        if not isinstance(raw_sku, str):
+            return Response(
+                {
+                    "code": "invalid_product_sku",
+                    "detail": "A referência do produto é inválida.",
+                    "field_errors": {"sku": ["Escolha um produto existente."]},
+                },
+                status=422,
+            )
+
         try:
             result = fire_campaign_command(
                 pk,
@@ -1484,6 +1495,7 @@ class CampaignFireView(_CampaignBase):
                 idempotency_key=str(request.headers.get("Idempotency-Key") or ""),
                 base_version=base_version,
                 audience_rules=audience_rules or None,
+                sku=raw_sku,
                 request_id=str(request.headers.get("X-Request-ID") or ""),
                 authorize=_command_authorizer(
                     request,

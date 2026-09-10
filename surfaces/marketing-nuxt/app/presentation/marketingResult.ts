@@ -241,7 +241,7 @@ export function commandReceiptPresentation(receipt: MarketingCommandReceipt): {
     return {
       title: "Decisão registrada",
       detail:
-        "A versão aprovada e seu horário ficaram guardados neste comprovante.",
+        "A versão aprovada, o público selado, as plataformas e o horário podem ser conferidos abaixo.",
     };
   }
   if (receipt.kind === "reject") {

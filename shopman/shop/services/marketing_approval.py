@@ -441,9 +441,11 @@ def approve_command(
                 now=now,
             )
         return {
+            "audience_count": resolution.total,
             "artifact_hash": artifact.artifact_hash,
             "artifact_ref": str(artifact.ref),
             "outbox_count": len(outbox),
+            "platforms": list(safe_platforms),
             "publish_at": normalized_publish_at.isoformat() if normalized_publish_at else "",
             "publish_mode": normalized_mode,
             "publish_timezone": effective_timezone,

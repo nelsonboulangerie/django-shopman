@@ -182,6 +182,11 @@ def test_approval_commits_one_connected_graph_without_provider_or_directive(acto
     assert announcement.approved_by_id == actor.pk
     assert result.receipt.state == MarketingCommandReceipt.State.COMPLETED
     assert result.receipt.resulting_version == 2
+    assert result.receipt.outcome["audience_count"] == 0
+    assert result.receipt.outcome["platforms"] == [
+        "instagram",
+        "google_business",
+    ]
     assert result.artifact.announcement_id == announcement.pk
     assert result.artifact.version == result.snapshot.version == 2
     assert result.snapshot.announcement_id == announcement.pk

@@ -145,6 +145,7 @@ def fire_now(
     author=None,
     force_review: bool = False,
     resolved_audience=None,
+    prepared_content: dict | None = None,
 ) -> Announcement:
     """Disparar UMA campanha agora, sem esperar evento. É a Action do gestor.
 
@@ -201,6 +202,7 @@ def fire_now(
         payload,
         body=written,
         resolved_audience=resolved_audience,
+        prepared_content=prepared_content,
     )
 
     if written and author is not None and getattr(author, "pk", None):
@@ -220,10 +222,15 @@ def _create_announcement(
     occurrence_key: str = "",
     body: str = "",
     resolved_audience=None,
+    prepared_content: dict | None = None,
 ) -> Announcement:
     sku = context.get("sku", "")
-    content = resolve_content(
-        rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
+    content = (
+        dict(prepared_content)
+        if prepared_content is not None
+        else resolve_content(
+            rule.template, context, promotion_ref=rule.promotion_ref, override_body=body
+        )
     )
     resolved = resolved_audience or audience_service.resolve(rule.audience_rules, sku=sku)
     if resolved.degraded_sources:

@@ -83,6 +83,7 @@ describe("MarketingCommandConfirmationDialog", () => {
           href: "/api/v1/backstage/marketing/rules/3/fire/",
           fingerprint: "campaign-3-v1",
           idempotencyKey: "fire-key",
+          productLabel: "Madeleine (MDL)",
           challenge: {
             token: "token",
             ref: "challenge",
@@ -116,6 +117,7 @@ describe("MarketingCommandConfirmationDialog", () => {
     expect(wrapper.text()).toContain("Confirmar este disparo?");
     expect(wrapper.text()).toContain("cria somente um anúncio para revisão");
     expect(wrapper.text()).toContain("nada será publicado agora");
+    expect(wrapper.text()).toContain("Madeleine (MDL)");
     expect(wrapper.text()).toContain("Criar para revisão");
     expect(wrapper.text()).toContain("Voltar sem criar");
   });

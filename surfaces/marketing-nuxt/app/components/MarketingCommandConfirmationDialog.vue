@@ -116,6 +116,13 @@ function submit() {
               }}
             </dd>
           </div>
+          <div
+            v-if="isFire && command && 'productLabel' in command && command.productLabel"
+            class="sm:col-span-2"
+          >
+            <dt class="text-xs text-muted-foreground">Produto</dt>
+            <dd class="font-semibold">{{ command.productLabel }}</dd>
+          </div>
           <div v-if="challenge.scheduled_for" class="sm:col-span-2">
             <dt class="text-xs text-muted-foreground">Instante absoluto</dt>
             <dd class="font-semibold">

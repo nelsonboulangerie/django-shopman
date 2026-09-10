@@ -107,6 +107,30 @@ describe("comando seguro de disparo", () => {
     expect(command.pendingCommand.value).toBeNull();
   });
 
+  it("sela o produto escolhido na intenção e o mostra durante a confirmação", async () => {
+    const fetcher = vi.fn().mockRejectedValue({
+      data: { code: "confirmation_required", confirmation: challenge },
+    });
+    Object.assign(globalThis, { $fetch: fetcher });
+    const command = useCampaignFireCommand();
+
+    expect(
+      await command.begin({
+        rule,
+        action,
+        audience: {},
+        sku: "MDL",
+        productLabel: "Madeleine (MDL)",
+      }),
+    ).toBeNull();
+
+    expect(fetcher.mock.calls[0]![1].body).toEqual({
+      base_version: 7,
+      sku: "MDL",
+    });
+    expect(command.pendingCommand.value?.productLabel).toBe("Madeleine (MDL)");
+  });
+
   it("recusa Action de outra versão antes de chamar a rede", async () => {
     const fetcher = vi.fn();
     Object.assign(globalThis, { $fetch: fetcher });

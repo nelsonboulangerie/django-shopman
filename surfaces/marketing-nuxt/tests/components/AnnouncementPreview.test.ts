@@ -153,6 +153,25 @@ describe("AnnouncementPreview — request epoch e fidelidade", () => {
     wrapper.unmount();
   });
 
+  it("usa o produto da ocorrência na revisão, sem voltar para a amostra", async () => {
+    const fetch = vi.fn().mockResolvedValue({
+      ...batch({ instagram: "Madeleine saiu do forno" }),
+      sku: "MD",
+      sample: false,
+      product_name: "Madeleine",
+    });
+    vi.stubGlobal("$fetch", fetch);
+    const wrapper = mountPreview({ sku: "MD" });
+
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+
+    expect(fetch.mock.calls[0]![1].body.sku).toBe("MD");
+    expect(wrapper.text()).not.toContain("Exemplo com");
+    expect(wrapper.text()).toContain("Madeleine saiu do forno");
+    wrapper.unmount();
+  });
+
   it("mostra erro estruturado no contexto e recupera sem navegação", async () => {
     const fetch = vi.fn()
       .mockRejectedValueOnce({

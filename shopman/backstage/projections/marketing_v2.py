@@ -24,6 +24,7 @@ from shopman.shop.models import (
     AnnouncementStatus,
     AudienceSnapshot,
     DeliveryTarget,
+    MarketingCommandReceipt,
     MarketingContentArtifact,
     Trigger,
 )
@@ -119,6 +120,24 @@ _AUDIENCE_COUNT_FIELDS = (
     "wave_count",
 )
 _TARGET_STATES = tuple(value for value, _label in DeliveryTarget.State.choices)
+_SAFE_RECEIPT_OUTCOME_FIELDS = frozenset({
+    "audience_count",
+    "cancelled_count",
+    "effective_at",
+    "eligible_count",
+    "lookup_count",
+    "minimum_count",
+    "next_allowed_at",
+    "outbox_cancelled",
+    "outbox_count",
+    "platforms",
+    "publish_at",
+    "publish_mode",
+    "publish_timezone",
+    "queued_count",
+    "retryable",
+    "status",
+})
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,9 +313,23 @@ class MarketingBoardDataV2:
 
 
 @dataclass(frozen=True, slots=True)
+class CommandReceiptProjectionV2:
+    ref: str
+    kind: str
+    state: str
+    base_version: int
+    resulting_version: int | None
+    resource_ref: str
+    outcome: dict[str, Any]
+    created_at: datetime
+    completed_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
 class MarketingAnnouncementDataV2:
     kind: Literal["announcement_detail"]
     announcement: AnnouncementProjectionV2
+    latest_receipt: CommandReceiptProjectionV2 | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -420,6 +453,7 @@ def build_announcement(
         data=MarketingAnnouncementDataV2(
             kind="announcement_detail",
             announcement=projected,
+            latest_receipt=_latest_receipt(announcement),
         ),
         actions=(),
     )
@@ -496,6 +530,87 @@ def error_schema() -> dict[str, Any]:
         if definition.get("type") == "object":
             definition["additionalProperties"] = False
     return generated
+
+
+def _latest_receipt(
+    announcement: Announcement,
+) -> CommandReceiptProjectionV2 | None:
+    receipt = (
+        MarketingCommandReceipt.objects.filter(announcement=announcement)
+        .order_by("-created_at")
+        .first()
+    )
+    if receipt is None:
+        return None
+    return CommandReceiptProjectionV2(
+        ref=str(receipt.ref),
+        kind=_domain_code(receipt.kind),
+        state=_domain_code(receipt.state),
+        base_version=receipt.base_version,
+        resulting_version=receipt.resulting_version,
+        resource_ref=(
+            receipt.resource_ref
+            if _SAFE_CODE.fullmatch(receipt.resource_ref or "")
+            else f"announcement:{announcement.pk}"
+        ),
+        outcome=_safe_receipt_outcome(receipt.outcome),
+        created_at=_local(receipt.created_at),
+        completed_at=_optional_local(receipt.completed_at),
+    )
+
+
+def _safe_receipt_outcome(value: object) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    safe: dict[str, Any] = {}
+    count_fields = {
+        "audience_count",
+        "cancelled_count",
+        "eligible_count",
+        "lookup_count",
+        "minimum_count",
+        "outbox_cancelled",
+        "outbox_count",
+        "queued_count",
+    }
+    timestamp_fields = {"effective_at", "next_allowed_at", "publish_at"}
+    for key in _SAFE_RECEIPT_OUTCOME_FIELDS:
+        item = value.get(key)
+        if key in count_fields:
+            if isinstance(item, int) and not isinstance(item, bool) and item >= 0:
+                safe[key] = item
+        elif key == "retryable":
+            if isinstance(item, bool):
+                safe[key] = item
+        elif key == "platforms":
+            if isinstance(item, list | tuple):
+                platforms = [
+                    code for entry in item if (code := _domain_code(entry))
+                ]
+                safe[key] = platforms
+        elif key in timestamp_fields:
+            if item == "" or _is_offset_timestamp(item):
+                safe[key] = item
+        elif key == "publish_mode":
+            if item in {"now", "scheduled"}:
+                safe[key] = item
+        elif key == "publish_timezone":
+            if isinstance(item, str) and _SAFE_CODE.fullmatch(item):
+                safe[key] = item
+        elif key == "status":
+            if code := _domain_code(item):
+                safe[key] = code
+    return safe
+
+
+def _is_offset_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or len(value) > 64:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return timezone.is_aware(parsed)
 
 
 @dataclass(frozen=True, slots=True)

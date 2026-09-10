@@ -9,6 +9,7 @@ import type { AudienceCount, Campaign } from "~/types/campaign";
 let counted: AudienceCount;
 /** As regras que o painel MANDOU contar. É por aqui que se prova o `match`. */
 let lastCountedRules: Record<string, unknown> | null = null;
+let lastCountedSku = "";
 
 function fakeCount(over: Partial<AudienceCount> = {}): AudienceCount {
   return {
@@ -33,6 +34,7 @@ beforeAll(() => {
     computed, flagMarketingSessionError: () => false, ref, watch, onBeforeUnmount, useAudienceCount,
     $fetch: vi.fn(async (_url: string, opts: { body?: Record<string, unknown> }) => {
       lastCountedRules = (opts?.body?.audience_rules ?? null) as Record<string, unknown> | null;
+      lastCountedSku = String(opts?.body?.sku ?? "");
       return counted;
     }),
   });
@@ -41,6 +43,7 @@ beforeAll(() => {
 beforeEach(() => {
   counted = fakeCount();
   lastCountedRules = null;
+  lastCountedSku = "";
   vi.useFakeTimers();
 });
 
@@ -62,6 +65,10 @@ const SEGMENTS = [
   { value: "champion", label: "Campeão" },
   { value: "at_risk", label: "Em risco" },
 ];
+const PRODUCTS = [
+  { value: "MDL", label: "Madeleine (MDL)" },
+  { value: "FOA", label: "Focaccia Alecrim (FOA)" },
+];
 
 function makeRule(over: Partial<Campaign> = {}): Campaign {
   return {
@@ -71,7 +78,7 @@ function makeRule(over: Partial<Campaign> = {}): Campaign {
     trigger: "manual",
     trigger_label: "Disparo manual",
     platforms: ["whatsapp"],
-    audience_rules: { favorites: true },
+    audience_rules: { tags: ["clientes-da-casa"] },
     requires_approval: true,
     is_active: true,
     ...over,
@@ -92,7 +99,9 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     // Objeto vazio = usa o público salvo. A campanha não é alterada.
-    expect(wrapper.emitted("submit")?.[0]).toEqual([{ audience: {} }]);
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 
   it("não deixa disparar sem escolher ninguém", async () => {
@@ -115,7 +124,11 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { audience: { price_tiers: ["atacado"], rfm_segments: ["at_risk"] } },
+      {
+        audience: { price_tiers: ["atacado"], rfm_segments: ["at_risk"] },
+        sku: "",
+        productLabel: "",
+      },
     ]);
   });
 
@@ -126,7 +139,7 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { audience: { churn_risk_min: 0.7 } },
+      { audience: { churn_risk_min: 0.7 }, sku: "", productLabel: "" },
     ]);
   });
 
@@ -139,7 +152,11 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.find("form").trigger("submit");
 
     expect(wrapper.emitted("submit")?.[0]).toEqual([
-      { audience: { birthday_today: true, vip_first_minutes: 15 } },
+      {
+        audience: { birthday_today: true, vip_first_minutes: 15 },
+        sku: "",
+        productLabel: "",
+      },
     ]);
   });
 
@@ -153,7 +170,9 @@ describe("FireCampaignPanel — disparar agora", () => {
     await wrapper.setProps({ rule: makeRule({ pk: 99, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ audience: {} }]);
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 
   it("diz que o consentimento manda, mesmo com público escolhido", () => {
@@ -172,6 +191,35 @@ describe("FireCampaignPanel — conteúdo sob revisão", () => {
     expect(wrapper.find("textarea").exists()).toBe(false);
     expect(wrapper.text()).toContain("Texto protegido pelo fluxo de revisão");
     expect(wrapper.text()).toContain("cria um anúncio para revisão");
+  });
+
+  it("pede o produto antes da senha quando o modelo depende do catálogo", async () => {
+    const wrapper = mount(FireCampaignPanel, {
+      props: {
+        rule: makeRule(),
+        priceTiers: TIERS,
+        tags: TAGS,
+        rfmSegments: SEGMENTS,
+        products: PRODUCTS,
+        productRequired: true,
+      },
+      global: { stubs: { Icon: true } },
+    });
+    await settleCount(wrapper);
+
+    expect(wrapper.text()).toContain("Produto desta ocorrência");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+
+    await wrapper.get("#fire-product").setValue("MDL");
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeDefined();
+    await settleCount(wrapper);
+    expect(wrapper.find('button[type="submit"]').attributes("disabled")).toBeUndefined();
+    await wrapper.find("form").trigger("submit");
+
+    expect(lastCountedSku).toBe("MDL");
+    expect(wrapper.emitted("submit")?.[0]).toEqual([
+      { audience: {}, sku: "MDL", productLabel: "Madeleine (MDL)" },
+    ]);
   });
 
   it("mantém o comprovante e o próximo passo no painel", () => {
@@ -233,7 +281,7 @@ describe("FireCampaignPanel — quantas pessoas isto alcança", () => {
     const wrapper = panel();
     await settleCount(wrapper);
 
-    expect(lastCountedRules).toEqual({ favorites: true });
+    expect(lastCountedRules).toEqual({ tags: ["clientes-da-casa"] });
   });
 
   it("diz que ninguém se encaixa, em vez de deixar um zero sem explicação", async () => {
@@ -322,7 +370,9 @@ describe("FireCampaignPanel — somar ou cruzar as regras", () => {
     await wrapper.setProps({ rule: makeRule({ pk: 77, name: "Outra" }) });
     await wrapper.find("form").trigger("submit");
 
-    expect(wrapper.emitted("submit")?.at(-1)).toEqual([{ audience: {} }]);
+    expect(wrapper.emitted("submit")?.at(-1)).toEqual([
+      { audience: {}, sku: "", productLabel: "" },
+    ]);
   });
 });
 

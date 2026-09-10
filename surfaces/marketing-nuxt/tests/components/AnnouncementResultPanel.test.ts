@@ -212,6 +212,12 @@ function panel(options: { actions?: MarketingActionProjectionV2[] } = {}) {
         ...response().receipt,
         ref: "receipt-before",
         kind: "approve",
+        outcome: {
+          audience_count: 3,
+          effective_at: "2026-09-09T09:01:00-03:00",
+          platforms: ["whatsapp", "instagram"],
+          publish_mode: "now",
+        },
       },
     },
     global: {
@@ -239,6 +245,11 @@ describe("AnnouncementResultPanel", () => {
     expect(wrapper.text()).toContain("1 resultado incerto");
     expect(wrapper.text()).toContain("não são reenviados");
     expect(wrapper.text()).toContain("Comprovante:");
+    expect(wrapper.text()).toContain("Público autorizado:");
+    expect(wrapper.text()).toContain("3 pessoas");
+    expect(wrapper.text()).toContain("WhatsApp, Instagram");
+    expect(wrapper.text()).toContain("Execução:");
+    expect(wrapper.text()).toContain("Imediata");
     expect(wrapper.text()).toContain("concluído");
     expect(wrapper.text()).not.toContain("Receipt:");
     expect(wrapper.text()).not.toContain("succeeded");

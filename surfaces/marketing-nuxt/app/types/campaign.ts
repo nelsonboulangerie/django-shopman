@@ -187,6 +187,8 @@ export interface AnnouncementTemplate {
   body: string;
   platform_variants: Record<string, Record<string, unknown>>;
   variables: string[];
+  /** A ocorrência precisa trazer um produto para resolver o texto fielmente. */
+  requires_product: boolean;
   use_ai_generation: boolean;
   /** Instrução da IA. A projection devolve para o gestor poder conferir o que escreveu. */
   ai_prompt: string;
@@ -214,6 +216,8 @@ export interface CampaignOptions {
   /** Etiquetas existentes, com a contagem de gente no rótulo. */
   tags: Choice[];
   rfm_segments: Choice[];
+  /** Produtos publicáveis, já nomeados para a escolha da ocorrência manual. */
+  products: Choice[];
   /** Ofertas vivas que MONTAM sacola. O servidor já tirou as que valem para tudo:
    *  oferecê-las daria ao gestor um botão que promete o que não cumpre. */
   offers: Choice[];
@@ -327,11 +331,11 @@ export interface MarketingCommandReceipt {
   kind: string;
   state: string;
   base_version: number;
-  resulting_version: number;
+  resulting_version: number | null;
   resource_ref: string;
   outcome: Record<string, unknown>;
   created_at: string;
-  completed_at: string;
+  completed_at: string | null;
 }
 
 export interface MarketingCommandResponse {

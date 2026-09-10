@@ -67,6 +67,21 @@ const resultAnnouncement = computed(() =>
 const resultActions = computed(() => resultEnvelope.value?.actions ?? []);
 const loadFailure = computed(() => marketingLoadError(error.value));
 const currentReceipt = ref<MarketingCommandReceipt | null>(null);
+const serverReceipt = computed<MarketingCommandReceipt | null>(() =>
+  resultEnvelope.value?.data.kind === "announcement_detail"
+    ? resultEnvelope.value.data.latest_receipt
+    : null,
+);
+const displayedReceipt = computed(() => {
+  const browserReceipt = currentReceipt.value;
+  const durableReceipt = serverReceipt.value;
+  if (!browserReceipt) return durableReceipt;
+  if (!durableReceipt) return browserReceipt;
+  return Date.parse(durableReceipt.created_at) >=
+    Date.parse(browserReceipt.created_at)
+    ? durableReceipt
+    : browserReceipt;
+});
 const decisionCommand = useMarketingDecisionCommand();
 const pendingDecision = decisionCommand.pendingDecision;
 const pendingReauthentication = decisionCommand.pendingReauthentication;
@@ -376,8 +391,8 @@ useHead({ title: "Anúncio · Marketing" });
           O conteúdo abriu, mas o resultado de entrega não.
         </p>
         <p class="mt-1 text-muted-foreground">
-          Não vamos inferir sucesso enquanto o registro de entrega não responder.
-          O comprovante preservado continua abaixo quando existir.
+          Não vamos inferir sucesso enquanto o registro de entrega não
+          responder. O comprovante preservado continua abaixo quando existir.
         </p>
         <button
           type="button"
@@ -394,7 +409,7 @@ useHead({ title: "Anúncio · Marketing" });
         class="mt-4"
         :announcement="resultAnnouncement"
         :actions="resultActions"
-        :receipt="currentReceipt"
+        :receipt="displayedReceipt"
         :shop-timezone="shopTimezone"
         @receipt="rememberReceipt"
         @refresh="refreshAll"

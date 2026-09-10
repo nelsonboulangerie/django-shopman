@@ -3,6 +3,8 @@
 // Epoch + AbortController impedem que uma resposta antiga substitua o texto mais recente.
 const props = defineProps<{
   body: string;
+  /** SKU da ocorrência real. Vazio usa somente a amostra do formulário. */
+  sku?: string;
   platforms: string[];
   platformContent?: Record<string, Record<string, unknown>>;
   promotionRef?: string;
@@ -84,6 +86,7 @@ let epoch = 0;
 watch(
   () => [
     props.body,
+    props.sku || "",
     props.promotionRef || "",
     props.useAi ? "1" : "0",
     props.platforms.join("\u001f"),
@@ -142,6 +145,7 @@ async function load(requestEpoch: number) {
         signal: requestController.signal,
         body: {
           body: props.body,
+          sku: props.sku || "",
           platforms: normalizedPlatforms(),
           platform_content: props.platformContent || {},
           promotion_ref: props.promotionRef || "",

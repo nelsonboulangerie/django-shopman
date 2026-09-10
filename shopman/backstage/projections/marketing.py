@@ -228,6 +228,8 @@ class AnnouncementTemplateProjection:
     body: str
     platform_variants: dict
     variables: tuple[str, ...]
+    #: Verdade quando a ocorrência precisa nomear um produto antes de renderizar.
+    requires_product: bool
     use_ai_generation: bool
     #: ⚠️ A API aceitava GRAVAR `ai_prompt` e a projection não o devolvia: o gestor
     #: escrevia a instrução da IA e nunca mais a via. Config que só se escreve é config
@@ -266,6 +268,8 @@ class CampaignOptionsProjection:
     #: sozinho: RFM e churn são calculados, faixa é comercial, aniversário é cadastral.
     tags: tuple[ChoiceProjection, ...] = ()
     rfm_segments: tuple[ChoiceProjection, ...] = ()
+    #: Produtos publicáveis para preencher uma ocorrência disparada manualmente.
+    products: tuple[ChoiceProjection, ...] = ()
     #: Ofertas vivas que a campanha pode anunciar. Só as que MONTAM sacola: uma promoção
     #: que vale para o cardápio todo não tem itens para montar, e oferecê-la aqui daria
     #: ao gestor um botão que promete o que não cumpre.
@@ -736,12 +740,20 @@ def build_template(
     *,
     used_by_campaigns: tuple[str, ...] = (),
 ) -> AnnouncementTemplateProjection:
+    from shopman.shop.services.marketing_facts import (
+        referenced_variables,
+        requires_product,
+    )
+
+    content_variables = referenced_variables(template.body, template.platform_variants)
+
     return AnnouncementTemplateProjection(
         pk=template.pk,
         name=template.name,
         body=template.body,
         platform_variants=dict(template.platform_variants or {}),
         variables=tuple(template.variables or ()),
+        requires_product=requires_product(content_variables),
         use_ai_generation=template.use_ai_generation,
         ai_prompt=template.ai_prompt,
         image_source=template.image_source,
@@ -778,6 +790,7 @@ def build_options() -> CampaignOptionsProjection:
         price_tiers=_price_tier_choices(),
         tags=_tag_choices(),
         rfm_segments=_rfm_segment_choices(),
+        products=_product_choices(),
         offers=_offer_choices(),
         shop_timezone=_marketing_timezone_name(),
     )
@@ -805,6 +818,21 @@ def _offer_choices() -> tuple[ChoiceProjection, ...]:
         for promotion in live
         if offer_service.offer_skus(promotion)
     )
+
+
+def _product_choices() -> tuple[ChoiceProjection, ...]:
+    """Produtos que podem sustentar fatos verdadeiros em um anúncio novo."""
+
+    try:
+        from shopman.offerman.models import Product
+
+        return tuple(
+            ChoiceProjection(value=str(product.sku), label=f"{product.name} ({product.sku})")
+            for product in Product.objects.filter(is_published=True, is_sellable=True).order_by("name", "sku")
+        )
+    except Exception:
+        logger.warning("marketing.products_failed", exc_info=True)
+        return ()
 
 
 def _price_tier_choices() -> tuple[ChoiceProjection, ...]:

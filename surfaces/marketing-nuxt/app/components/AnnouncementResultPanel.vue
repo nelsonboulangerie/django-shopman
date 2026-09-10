@@ -67,6 +67,46 @@ const recoveryActions = computed(() => props.actions.filter(isRecoveryAction));
 const receiptSummary = computed(() =>
   props.receipt ? commandReceiptPresentation(props.receipt) : null,
 );
+const approvalEvidence = computed(() => {
+  const receipt = props.receipt;
+  if (!receipt || receipt.kind !== "approve") return null;
+  const rawAudience = receipt.outcome.audience_count;
+  const audienceCount =
+    typeof rawAudience === "number" &&
+    Number.isInteger(rawAudience) &&
+    rawAudience >= 0
+      ? rawAudience
+      : props.announcement.audience.eligible_count;
+  const rawPlatforms = receipt.outcome.platforms;
+  const platforms = (
+    Array.isArray(rawPlatforms)
+      ? rawPlatforms.filter(
+          (platform): platform is string => typeof platform === "string",
+        )
+      : props.announcement.platform_refs
+  ).map(platformResultLabel);
+  const mode = receipt.outcome.publish_mode;
+  const scheduledFor =
+    mode === "scheduled"
+      ? String(
+          receipt.outcome.publish_at || props.announcement.scheduled_for || "",
+        )
+      : String(
+          receipt.outcome.effective_at || props.announcement.approved_at || "",
+        );
+  return {
+    audience: `${formatCount(audienceCount)} ${audienceCount === 1 ? "pessoa" : "pessoas"}`,
+    platforms: platforms.join(", "),
+    execution:
+      mode === "scheduled" || props.announcement.scheduled_for
+        ? scheduledFor
+          ? `Agendada para ${scheduleSummary(scheduledFor, props.shopTimezone)}`
+          : "Agendada"
+        : scheduledFor
+          ? `Imediata — ${scheduleSummary(scheduledFor, props.shopTimezone)}`
+          : "Imediata",
+  };
+});
 
 const dialogOpen = ref(false);
 const activeAction = ref<MarketingActionProjectionV2 | null>(null);
@@ -298,9 +338,31 @@ function closeDialog(open: boolean) {
             <div>
               <dt class="inline text-muted-foreground">Versão resultante:</dt>
               <dd class="inline font-semibold">
-                {{ receipt.resulting_version }}
+                {{ receipt.resulting_version ?? "—" }}
               </dd>
             </div>
+            <template v-if="approvalEvidence">
+              <div>
+                <dt class="inline text-muted-foreground">
+                  Público autorizado:
+                </dt>
+                <dd class="inline font-semibold">
+                  {{ approvalEvidence.audience }}
+                </dd>
+              </div>
+              <div>
+                <dt class="inline text-muted-foreground">Plataformas:</dt>
+                <dd class="inline font-semibold">
+                  {{ approvalEvidence.platforms }}
+                </dd>
+              </div>
+              <div class="sm:col-span-2">
+                <dt class="inline text-muted-foreground">Execução:</dt>
+                <dd class="inline font-semibold">
+                  {{ approvalEvidence.execution }}
+                </dd>
+              </div>
+            </template>
           </dl>
           <p class="mt-1 text-xs text-muted-foreground">
             Registrado em
@@ -339,7 +401,9 @@ function closeDialog(open: boolean) {
               {{ platformResultLabel(platform.platform_ref) }}
             </h3>
             <span class="text-xs text-muted-foreground">
-              {{ formatCount(platform.fanout_materialized) }}/{{ formatCount(platform.fanout_expected) }}
+              {{ formatCount(platform.fanout_materialized) }}/{{
+                formatCount(platform.fanout_expected)
+              }}
               destinos preparados
             </span>
           </div>
@@ -450,8 +514,8 @@ function closeDialog(open: boolean) {
         <div v-else-if="challenge" class="space-y-4">
           <div class="rounded-lg border border-border bg-muted/50 p-3 text-sm">
             <p>
-              <strong>{{ formatCount(challenge.audience_count) }}</strong> destinos elegíveis
-              nesta consequência.
+              <strong>{{ formatCount(challenge.audience_count) }}</strong>
+              destinos elegíveis nesta consequência.
             </p>
             <p
               v-if="challenge.platforms.length"

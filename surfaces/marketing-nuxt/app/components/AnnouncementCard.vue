@@ -541,6 +541,7 @@ function askToReject() {
              toda edição deste rascunho, por plataforma. -->
         <AnnouncementPreview
           :body="body"
+          :sku="announcement.sku"
           :platforms="platforms"
           :platform-labels="platformLabels"
         />

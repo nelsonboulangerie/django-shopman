@@ -70,6 +70,18 @@ export interface AudienceSummaryProjectionV2 {
   freshness: FreshnessProjectionV2;
 }
 
+export interface CommandReceiptProjectionV2 {
+  ref: string;
+  kind: string;
+  state: string;
+  base_version: number;
+  resulting_version: number | null;
+  resource_ref: string;
+  outcome: Record<string, unknown>;
+  created_at: string;
+  completed_at: string | null;
+}
+
 export interface CursorPageProjectionV2 {
   as_of: string;
   limit: number;
@@ -128,6 +140,7 @@ export interface MarketingActionProjectionV2 {
 export interface MarketingAnnouncementDataV2 {
   kind: "announcement_detail";
   announcement: AnnouncementProjectionV2;
+  latest_receipt: CommandReceiptProjectionV2 | null;
 }
 
 export interface MarketingBoardDataV2 {

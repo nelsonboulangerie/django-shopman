@@ -363,6 +363,11 @@ class TestPostDecision:
         assert response.status_code == 200
         assert response.json()["scheduled"] is False
         assert response.json()["receipt"]["outcome"]["publish_mode"] == "now"
+        assert response.json()["receipt"]["outcome"]["audience_count"] == 0
+        assert response.json()["receipt"]["outcome"]["platforms"] == [
+            "instagram",
+            "google_business",
+        ]
         announcement.refresh_from_db()
         assert announcement.status == AnnouncementStatus.PUBLISHING
         assert announcement.publish_at is None
@@ -1052,6 +1057,9 @@ class TestTemplates:
 
 class TestOptions:
     def test_options_feed_the_rule_form(self, client, gestor, template):
+        from shopman.offerman.models import Product
+
+        Product.objects.create(sku="MDL", name="Madeleine", base_price_q=700)
         client.force_login(gestor)
 
         options = client.get(OPTIONS_URL).json()["options"]
@@ -1059,7 +1067,12 @@ class TestOptions:
         assert {t["value"] for t in options["triggers"]} >= {"production_finished", "low_stock"}
         assert {p["value"] for p in options["platforms"]} >= {"instagram", "google_business"}
         assert template.pk in {t["pk"] for t in options["templates"]}
+        projected_template = next(t for t in options["templates"] if t["pk"] == template.pk)
+        assert projected_template["requires_product"] is True
         assert "product_name" in options["variables"]
+        assert {p["value"]: p["label"] for p in options["products"]}["MDL"] == (
+            "Madeleine (MDL)"
+        )
         assert options["shop_timezone"] == "America/Sao_Paulo"
 
     def test_template_options_preserve_platform_variants_for_faithful_preview(
@@ -1532,6 +1545,73 @@ class TestManualFire:
         assert conflict.json()["current_version"] == 2
         assert conflict.json()["receipt_ref"]
         assert Announcement.objects.filter(rule=rule).count() == 1
+
+    def test_product_is_chosen_before_confirmation_and_sealed_in_the_result(
+        self, client, gestor, rule, monkeypatch
+    ):
+        from shopman.guestman import ConsentService
+        from shopman.guestman.models import Customer, PriceTier
+        from shopman.offerman.models import Product
+
+        product = Product.objects.create(
+            sku="MDL",
+            name="Madeleine",
+            base_price_q=700,
+        )
+        tier = PriceTier.objects.create(ref="madeleine-local", name="Madeleine local")
+        customer = Customer.objects.create(
+            ref="CLI-MDL-1",
+            first_name="Bia",
+            phone="+5543999998802",
+            price_tier=tier,
+        )
+        ConsentService.grant_consent(customer.ref, "whatsapp", source="test")
+        rule.audience_rules = {"price_tiers": [tier.ref]}
+        rule.save(update_fields=["audience_rules"])
+        client.force_login(gestor)
+
+        missing = client.post(
+            _fire_url(rule),
+            data={"base_version": rule.version},
+            content_type="application/json",
+            HTTP_IDEMPOTENCY_KEY="fire-product-missing-0001",
+        )
+
+        assert missing.status_code == 422
+        assert missing.json()["code"] == "marketing_product_required"
+        assert missing.json()["field_errors"]["sku"] == ["Escolha um produto para a prévia."]
+        assert MarketingCommandReceipt.objects.count() == 0
+
+        from shopman.shop.services import campaign as campaign_service
+
+        real_resolve_content = campaign_service.resolve_content
+        resolved = []
+
+        def counted_resolve_content(*args, **kwargs):
+            content = real_resolve_content(*args, **kwargs)
+            resolved.append(content)
+            return content
+
+        monkeypatch.setattr(campaign_service, "resolve_content", counted_resolve_content)
+        payload = {"base_version": rule.version, "sku": product.sku}
+        response = _confirmed_post(
+            client,
+            _fire_url(rule),
+            payload,
+            key="fire-product-selected-0001",
+        )
+
+        assert response.status_code == 200
+        # Uma leitura no desafio e uma na confirmação. O conteúdo autorizado é
+        # entregue à criação sem uma terceira resolução sujeita a TOCTOU.
+        assert len(resolved) == 2
+        result = response.json()
+        assert result["receipt"]["outcome"]["sku"] == product.sku
+        announcement = Announcement.objects.get(rule=rule)
+        assert announcement.trigger_context["sku"] == product.sku
+        assert announcement.content["body"] == "Madeleine saiu do forno!"
+        receipt = MarketingCommandReceipt.objects.get(ref=result["receipt"]["ref"])
+        assert MarketingAuditEvent.objects.get(command=receipt).facts["sku"] == product.sku
 
     def test_zero_and_degraded_audience_fail_closed(self, client, gestor, rule, monkeypatch):
         from shopman.shop.services.audience import AudienceResult

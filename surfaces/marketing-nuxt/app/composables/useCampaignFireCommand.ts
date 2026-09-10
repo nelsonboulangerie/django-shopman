@@ -13,6 +13,7 @@ export type PendingCampaignFireCommand = {
   body: Record<string, unknown>;
   idempotencyKey: string;
   fingerprint: string;
+  productLabel: string;
   challenge: MarketingConfirmationChallenge;
 };
 
@@ -68,7 +69,7 @@ function exactFireHref(
   return expectedHref;
 }
 
-function intentFingerprint(rule: Campaign, audience: ChosenAudience): string {
+function intentFingerprint(rule: Campaign, audience: ChosenAudience, sku: string): string {
   return JSON.stringify({
     audience: Object.fromEntries(
       Object.entries(audience).sort(([left], [right]) =>
@@ -76,6 +77,7 @@ function intentFingerprint(rule: Campaign, audience: ChosenAudience): string {
       ),
     ),
     campaignId: rule.pk,
+    sku,
     version: rule.version,
   });
 }
@@ -97,21 +99,26 @@ export function useCampaignFireCommand() {
     rule: Campaign;
     action: MarketingActionProjectionV2;
     audience: ChosenAudience;
+    sku?: string;
+    productLabel?: string;
   }): Promise<MarketingCommandResponse | null> {
     const href = exactFireHref(options.rule, options.action);
-    const fingerprint = intentFingerprint(options.rule, options.audience);
+    const sku = String(options.sku || "").trim();
+    const fingerprint = intentFingerprint(options.rule, options.audience, sku);
     const previous = retryIntent.value;
     const body: Record<string, unknown> = {
       base_version: options.rule.version,
     };
     if (Object.keys(options.audience).length)
       body.audience_rules = options.audience;
+    if (sku) body.sku = sku;
     const intent: CampaignFireIntent = {
       campaignId: options.rule.pk,
       action: "fire",
       href,
       body,
       fingerprint,
+      productLabel: String(options.productLabel || "").trim(),
       idempotencyKey:
         previous?.fingerprint === fingerprint
           ? previous.idempotencyKey

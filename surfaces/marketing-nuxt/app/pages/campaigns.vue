@@ -30,6 +30,7 @@ const {
   priceTiers,
   tags,
   rfmSegments,
+  products,
   offers,
   shopTimezone,
   loading,
@@ -79,6 +80,13 @@ const fireError = ref("");
 const busy = ref(false);
 const draftOwner = useMarketingDraftOwner();
 const route = useRoute();
+
+const firingTemplateRequiresProduct = computed(
+  () =>
+    templates.value.find(
+      (template) => template.pk === firing.value?.template_id,
+    )?.requires_product ?? false,
+);
 
 const PAGE_SIZE = 12;
 const search = ref(typeof route.query.q === "string" ? route.query.q : "");
@@ -269,7 +277,11 @@ async function showFireResult(response: MarketingCommandResponse) {
   await refresh();
 }
 
-async function onFire(request: { audience: ChosenAudience }) {
+async function onFire(request: {
+  audience: ChosenAudience;
+  sku: string;
+  productLabel: string;
+}) {
   if (!firing.value) return;
   const action = fireAction(firing.value);
   if (!action) {
@@ -283,6 +295,8 @@ async function onFire(request: { audience: ChosenAudience }) {
       rule: firing.value,
       action,
       audience: request.audience,
+      sku: request.sku,
+      productLabel: request.productLabel,
     });
     if (response) await showFireResult(response);
   } catch (error) {
@@ -718,6 +732,8 @@ useHead({ title: "Campanhas · Marketing" });
             :price-tiers="priceTiers"
             :tags="tags"
             :rfm-segments="rfmSegments"
+            :products="products"
+            :product-required="firingTemplateRequiresProduct"
             :busy="busy"
             :error="fireError"
             :result="fireResult"
