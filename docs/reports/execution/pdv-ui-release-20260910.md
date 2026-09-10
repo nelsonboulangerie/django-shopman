@@ -38,3 +38,7 @@ PR com checks obrigatórios, merge normal e Deploy Images no main. O app existen
 shopman-alpha atende pdv.boulangerie.com.br; não foi identificado outro ambiente
 separado. Não aplicar spec nem resemear dados. Este relatório registra a candidata;
 a conclusão do deploy exige verificar a implantação ativa correspondente.
+
+O gate compartilhado identificou tamanhos avulsos no carrinho. Textos auxiliares
+foram alinhados a text-xs e o total a text-xl; 220 testes do operator-kit passaram
+após a correção, sem exceção adicionada à regra tipográfica.

@@ -729,7 +729,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
           aria-label="Navegar nos itens"
           aria-keyshortcuts="Alt+i"
           title="Alt+I: entrar nos itens. ↑↓ navegar · Enter: detalhes · ←→ fechar/abrir · +/− quantidade · Delete: remover com confirmação · Esc: voltar"
-          class="min-h-9 rounded px-1 text-[10px] text-muted-foreground hover:text-primary"
+          class="min-h-9 rounded px-1 text-xs text-muted-foreground hover:text-primary"
           @click="focusItem()"
         >
           <kbd class="rounded border px-1 py-0.5">Alt I</kbd>
@@ -817,7 +817,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
               formatBRL(lineTotalQ(item))
             }}</strong>
             <span
-              class="col-start-2 col-end-4 text-[11px] leading-4 text-muted-foreground"
+              class="col-start-2 col-end-4 text-xs leading-4 text-muted-foreground"
               >{{ formatBRL(unitChargedQ(item)) }} cada</span
             >
             <span
@@ -827,7 +827,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
             >
             <span
               v-if="discountBadge(item) || lineKitchenState(item) !== 'unfired'"
-              class="col-start-2 col-end-4 flex flex-wrap gap-2 text-[11px] text-muted-foreground"
+              class="col-start-2 col-end-4 flex flex-wrap gap-2 text-xs text-muted-foreground"
               ><span
                 v-if="discountBadge(item)"
                 class="text-primary"
@@ -1117,7 +1117,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
         <span class="text-sm font-medium text-muted-foreground"
           >Total parcial</span
         >
-        <strong class="text-2xl font-semibold tabular-nums">{{
+        <strong class="text-xl font-semibold tabular-nums">{{
           totalDisplay
         }}</strong>
       </div>
