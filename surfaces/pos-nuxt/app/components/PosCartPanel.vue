@@ -457,13 +457,13 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
       <p v-if="!items.length" class="grid h-full min-h-24 place-items-center rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
         Carrinho vazio
       </p>
-      <ul v-else class="grid gap-0.5">
+      <ul v-else class="grid gap-2">
         <!-- Leitura primeiro. Expansão explícita; o teclado mantém seu alvo independente. -->
         <li
           v-for="item in items"
           :key="item.line_id"
-          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-1 rounded-md border border-transparent px-1 py-2 transition-colors"
-          :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/60')"
+          class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-2 overflow-hidden rounded-md border border-border/60 px-3 pt-3 transition-colors"
+          :class="isSelected(item.line_id) ? 'border-primary bg-primary/10' : (activeLineId === item.line_id ? 'border-primary bg-primary/5' : 'hover:bg-accent/30')"
           :aria-current="activeLineId === item.line_id ? 'true' : undefined"
         >
           <button type="button" class="grid size-11 shrink-0 place-items-center rounded-md focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Selecionar ${item.name}`" :aria-pressed="isSelected(item.line_id)" @click.stop="toggleSelect(item.line_id)">
@@ -472,8 +472,8 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
             </span>
           </button>
 
-          <div class="min-w-0">
-            <button type="button" class="grid min-h-11 w-full gap-1 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="toggleDetails(item.line_id)">
+          <div class="min-w-0 pb-3">
+            <button type="button" class="grid min-h-11 w-full gap-2 rounded-md py-1 text-left focus-visible:outline-2 focus-visible:outline-primary" :aria-label="`Editar ${item.name}`" :aria-expanded="expandedLineId === item.line_id" :aria-controls="expandedLineId === item.line_id ? detailsId(item.line_id) : undefined" :aria-describedby="`${detailsId(item.line_id)}-summary`" @click.stop="toggleDetails(item.line_id)">
               <span class="flex items-baseline gap-2">
                 <span class="shrink-0 text-sm font-semibold tabular-nums text-muted-foreground">{{ item.qty }}×</span>
                 <span class="min-w-0 flex-1 text-sm font-medium leading-snug [overflow-wrap:anywhere]">{{ item.name }}</span>
@@ -490,63 +490,39 @@ onBeforeUnmount(() => window.removeEventListener("keydown", onWindowKeydown));
                 <span v-if="lineKitchenState(item) !== 'unfired'" class="justify-self-start rounded-full px-2 py-0.5 text-xs font-medium" :class="badgeTone(kitchenBadge(item).tone)">{{ kitchenBadge(item).label }}</span><span v-else />
                 <Icon name="lucide:chevron-down" class="size-4" :class="expandedLineId === item.line_id ? 'rotate-180' : ''" />
               </span>
-              <span v-if="item.notes" class="flex items-start gap-1 text-xs italic leading-snug text-muted-foreground">
-                <Icon name="lucide:sticky-note" class="mt-0.5 size-3 shrink-0" /><span>{{ item.notes }}</span>
+              <span v-if="item.notes" class="border-l-2 border-border pl-2 text-xs leading-relaxed text-muted-foreground">
+                {{ item.notes }}
               </span>
             </button>
 
-            <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="mt-1 border-t border-border/60 pt-2">
-            <p v-if="discountBadge(item)" class="mb-2 text-xs leading-relaxed text-primary"><span class="font-medium">{{ discountBadge(item) }}</span><span v-if="lineListTotalDisplay(item)" class="text-muted-foreground"> · De <span class="line-through" :title="discountBadge(item)">{{ lineListTotalDisplay(item) }}</span> por {{ formatBRL(lineTotalQ(item)) }}</span></p>
-            <!-- faixa 2 — unitário à esquerda, controles à direita -->
-            <div class="flex flex-wrap items-center gap-2">
-              <span
-                class="min-w-0 flex-1 truncate text-xs tabular-nums text-muted-foreground"
-              >
-                {{ formatBRL(unitChargedQ(item)) }} cada
-              </span>
-
-              <!-- Alvos de toque de balcão: steppers em icon-sm (36px), e a lixeira
-                   APARTADA deles, para o dedo apressado não remover querendo "menos 1". -->
-              <div class="flex shrink-0 items-center gap-1" @click.stop>
-                <UiButton variant="ghost" size="icon-sm" class="size-11" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')">
-                  <Icon name="lucide:minus" class="size-4" />
-                </UiButton>
-                <span class="w-6 text-center text-sm font-semibold tabular-nums">{{ item.qty }}</span>
-                <UiButton variant="ghost" size="icon-sm" class="size-11" aria-label="Aumentar" @click="bump(item.line_id, 'increment')">
-                  <Icon name="lucide:plus" class="size-4" />
-                </UiButton>
-                <UiButton variant="ghost" size="icon-sm" class="ml-2 size-11" aria-label="Remover" @click="askRemove(item.line_id)">
-                  <Icon name="lucide:trash-2" class="size-4 text-destructive" />
-                </UiButton>
+          </div>
+          <div v-if="expandedLineId === item.line_id" :id="detailsId(item.line_id)" role="region" :aria-label="`Detalhes de ${item.name}`" class="col-span-2 -mx-3 border-t border-border/70 bg-muted/30 px-4 py-4">
+            <div class="grid gap-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="grid gap-1">
+                  <span class="text-xs text-muted-foreground">Valor unitário</span>
+                  <span class="text-sm font-medium tabular-nums">{{ formatBRL(unitChargedQ(item)) }} cada</span>
+                </div>
+                <div class="inline-flex items-center rounded-md border border-border bg-card" role="group" aria-label="Quantidade">
+                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-r-none" aria-label="Diminuir" @click="bump(item.line_id, 'decrement')"><Icon name="lucide:minus" class="size-4" /></UiButton>
+                  <span class="grid h-8 min-w-9 place-items-center border-x border-border px-2 text-sm font-semibold tabular-nums">{{ item.qty }}</span>
+                  <UiButton variant="ghost" size="icon-sm" class="size-11 rounded-l-none" aria-label="Aumentar" @click="bump(item.line_id, 'increment')"><Icon name="lucide:plus" class="size-4" /></UiButton>
+                </div>
               </div>
-            </div>
-
-            <div v-if="item.authorship" class="pb-1 text-xs leading-relaxed text-muted-foreground">
-              <p v-if="item.authorship.created_by && item.authorship.created_by !== item.authorship.updated_by">Lançado por {{ item.authorship.created_label || item.authorship.created_by }}</p>
-              <ClientOnly><p v-if="item.authorship.updated_at">Última alteração: {{ new Date(item.authorship.updated_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</p></ClientOnly>
-            </div>
-
-            <div
-              v-if="item.authorship?.updated_by || lineKitchenState(item) !== 'unfired'"
-              class="mb-0.5 flex flex-wrap items-center gap-1"
-            >
-            <span v-if="item.authorship?.updated_by" class="flex min-w-0 items-center gap-1 py-0.5 text-xs text-muted-foreground">
-              <Icon name="lucide:user-round" class="size-3 shrink-0" />
-              <span>{{ item.authorship.updated_by === item.authorship.created_by ? 'Lançado por' : 'Editado por' }} {{ item.authorship.updated_label || item.authorship.updated_by }}</span>
-            </span>
-              <button
-                v-if="lineKitchenState(item) === 'fired_cancellable'"
-                type="button"
-                class="group inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-                :disabled="firing"
-                :aria-label="`${unfireAction.label}: ${item.name}`"
-                @click.stop="$emit('unfire', item.line_id)"
-              >
-                <Icon name="lucide:flame" class="size-3 shrink-0 group-hover:hidden" />
-                <Icon name="lucide:x" class="hidden size-3 shrink-0 group-hover:inline" />
-                {{ kitchenBadge(item).label }}
-              </button>
-            </div>
+              <div v-if="discountBadge(item)" class="grid gap-1 border-t border-border/60 pt-3 text-xs leading-relaxed">
+                <span class="text-muted-foreground">Desconto</span>
+                <span class="font-medium text-primary">{{ discountBadge(item) }}</span>
+                <span v-if="lineListTotalDisplay(item)" class="tabular-nums text-muted-foreground">De <span class="line-through" :title="discountBadge(item)">{{ lineListTotalDisplay(item) }}</span> por {{ formatBRL(lineTotalQ(item)) }}</span>
+              </div>
+              <div class="flex items-end justify-between gap-3 border-t border-border/60 pt-3">
+                <div class="min-w-0 space-y-1 text-xs leading-relaxed text-muted-foreground">
+                  <p v-if="item.authorship?.created_by && item.authorship.created_by !== item.authorship.updated_by">Lançado por <span class="font-medium text-foreground">{{ item.authorship.created_label || item.authorship.created_by }}</span></p>
+                  <p v-if="item.authorship?.updated_by">{{ item.authorship.updated_by === item.authorship.created_by ? 'Lançado por' : 'Editado por' }} <span class="font-medium text-foreground">{{ item.authorship.updated_label || item.authorship.updated_by }}</span></p>
+                  <ClientOnly><p v-if="item.authorship?.updated_at">{{ new Date(item.authorship.updated_at).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</p></ClientOnly>
+                  <UiButton v-if="lineKitchenState(item) === 'fired_cancellable'" variant="ghost" size="sm" class="min-h-11 px-0" :disabled="firing" :aria-label="`${unfireAction.label}: ${item.name}`" @click="$emit('unfire', item.line_id)">{{ unfireAction.label }}</UiButton>
+                </div>
+                <UiButton variant="ghost" size="icon-sm" class="size-11 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive" aria-label="Remover" title="Remover item" @click="askRemove(item.line_id)"><Icon name="lucide:trash-2" class="size-4" /></UiButton>
+              </div>
             </div>
           </div>
         </li>

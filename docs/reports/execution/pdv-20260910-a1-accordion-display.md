@@ -33,3 +33,9 @@ Novo E2E testa página Nuxt real em duas janelas Chromium e BroadcastChannel rea
 846 testes frontend passam; 30 testes do componente passam após ajuste final; typecheck/ESLint e diff check passam. Quatro E2E passam (login, rede e display), com build Nuxt. Uma primeira execução paralela de Vitest/build conflitou nos arquivos gerados do Nuxt; repetida sequencialmente, passou sem skips. Não houve alteração de backend ou necessidade de repetir testes PostgreSQL nesta fatia.
 
 Logs locais `accordion-{all-tests,tests,types,lint,e2e,geometry}.log`. Sem alteração de tema, migration, push, PR, merge, deploy ou efeito operacional. O código desta worktree ainda não está online; a existência de `/display` foi confirmada no código da base, não por inspeção do deploy atual.
+
+## Refinamento após revisão visual do usuário
+
+O usuário apontou falta de padding e organização. O resumo ganhou inset de 12 px, espaçamento consistente e borda discreta por linha. Os detalhes agora ocupam toda a largura, com inset de 16 px e blocos separados para valor/quantidade, desconto e autoria. Controles de quantidade formam um único grupo; remoção fica apartada no rodapé. Observação perde ícone repetido e itálico, passando a uma nota com margem e régua lateral. Indicadores fixos, ações, seleção e preços preservados.
+
+Validado com 30 testes existentes do componente, typecheck, ESLint e diff check. Inspeção de resumo/expansão em 320/390/768/1024/1366 px sem overflow horizontal, cenário completo com desconto, observação, cozinha e dois operadores. Capturas: `spacing-compact.png`, `spacing-expanded.png` e `spacing-line.png` em `.artifacts/pdv-20260910-a1/`. Nenhuma publicação nesta revisão.
