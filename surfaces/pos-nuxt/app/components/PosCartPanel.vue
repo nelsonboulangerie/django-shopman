@@ -724,7 +724,7 @@ defineExpose({ focusItem, onDigit, onBackspace });
 
   <div
     v-else
-    class="flex min-h-0 flex-col overflow-hidden rounded-md border bg-card text-card-foreground md:h-full"
+    class="flex min-h-0 flex-col overflow-hidden border bg-card text-card-foreground md:h-full"
   >
     <header
       class="flex min-h-[calc(var(--pos-context-header-height,53px)-1px)] shrink-0 items-center justify-between gap-2 border-b px-3 py-1.5"
