@@ -526,7 +526,7 @@ useHead({ title: "Campanhas · Marketing" });
       <li
         v-for="rule in pageRules"
         :key="rule.pk"
-        class="flex items-start gap-3 px-4 py-3"
+        class="grid grid-cols-[2.75rem_minmax(0,1fr)] items-start gap-x-3 gap-y-2 px-4 py-3 sm:flex sm:gap-3"
       >
         <!-- Liga/desliga: o gesto mais comum, a um toque -->
         <button
@@ -551,7 +551,7 @@ useHead({ title: "Campanhas · Marketing" });
 
         <button
           type="button"
-          class="min-w-0 flex-1 text-left"
+          class="col-start-2 min-w-0 text-left sm:flex-1"
           @click="openEdit(rule)"
         >
           <p
@@ -604,7 +604,9 @@ useHead({ title: "Campanhas · Marketing" });
           </p>
         </button>
 
-        <div class="flex shrink-0 items-center gap-2">
+        <div
+          class="col-start-2 flex min-h-11 shrink-0 items-center justify-end gap-2 sm:min-h-0"
+        >
           <span
             v-if="!rule.requires_approval"
             class="rounded-full bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-700 dark:text-amber-400"
@@ -625,7 +627,7 @@ useHead({ title: "Campanhas · Marketing" });
             :title="
               fireAction(rule)?.enabled ? '' : fireUnavailableReason(rule)
             "
-            class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold transition hover:bg-muted disabled:opacity-40"
+            class="inline-flex min-h-11 items-center gap-1 rounded-md border border-border px-2 py-1 text-xs font-semibold transition hover:bg-muted disabled:opacity-40 sm:min-h-0"
             @click="openFire(rule)"
           >
             <Icon name="lucide:send" class="size-3.5" />

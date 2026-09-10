@@ -638,6 +638,12 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/v1/backstage/operator/login/":
             if scenario == "login-rate-limited":
                 self._send(429, {"detail": "Muitas tentativas. Aguarde um minuto e tente novamente."}, headers={"Retry-After": "60"})
+            elif scenario == "login-anonymous":
+                self._send(
+                    200,
+                    {"detail": "Entrada sintética concluída."},
+                    headers={"Set-Cookie": "visual_scenario=board-normal; Path=/; SameSite=Lax"},
+                )
             else:
                 self._send(403, {"detail": "Usuário ou senha incorretos."})
             return

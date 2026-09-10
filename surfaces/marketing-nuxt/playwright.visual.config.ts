@@ -12,8 +12,10 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   workers: 1,
+  timeout: 60_000,
   reporter: [["list"]],
   expect: {
+    timeout: 10_000,
     toHaveScreenshot: {
       animations: "disabled",
       caret: "hide",
@@ -43,7 +45,6 @@ export default defineConfig({
   use: {
     baseURL: `http://127.0.0.1:${appPort}`,
     browserName: "chromium",
-    channel: "chrome",
     headless: true,
     bypassCSP: true,
     colorScheme: "light",

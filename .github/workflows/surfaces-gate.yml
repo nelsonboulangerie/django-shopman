@@ -84,3 +84,79 @@ jobs:
       # junto com este gate.
       - name: Typecheck
         run: npm run typecheck --if-present
+
+  marketing-complete:
+    name: Marketing — cadeia completa
+    # Os screenshots foram revisados em macOS e usam o Chromium pinado pelo
+    # Playwright. Fixar ambos evita aprovar ruído de rasterização entre sistemas.
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: surfaces/marketing-nuxt
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: |
+            surfaces/marketing-nuxt/package-lock.json
+            surfaces/operator-kit/package-lock.json
+
+      - name: Install operator-kit layer dependencies
+        working-directory: surfaces/operator-kit
+        run: npm ci
+
+      - name: Install deterministic Marketing dependencies
+        run: npm ci
+
+      - name: Install pinned Playwright Chromium
+        run: npx playwright install chromium
+
+      - name: Unit and component tests
+        run: npm test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Production build
+        run: npm run build
+
+      - name: Browser E2E
+        env:
+          MARKETING_E2E_MANAGED: "1"
+        run: npm run test:e2e
+
+      - name: Accessibility
+        env:
+          MARKETING_E2E_MANAGED: "1"
+          MARKETING_E2E_USERNAME: operadora-e2e
+          MARKETING_E2E_PASSWORD: senha-sintetica-ci
+        run: npm run test:a11y
+
+      - name: Visual regression matrix
+        run: npm run test:visual
+
+      - name: Security contracts
+        run: npm run test:security
+
+      - name: Supply-chain audit
+        run: npm audit --audit-level=high
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: marketing-browser-gates
+          path: surfaces/marketing-nuxt/test-results
+          if-no-files-found: ignore
+          retention-days: 14

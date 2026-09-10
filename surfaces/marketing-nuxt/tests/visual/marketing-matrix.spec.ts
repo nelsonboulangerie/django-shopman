@@ -401,8 +401,13 @@ test.describe("listas operacionais", () => {
     await openScenario(page, "platforms-conflict", "/platforms", V1440);
     await page.getByRole("button", { name: /WhatsApp/ }).click();
     await page.getByRole("button", { name: /Aviso de fornada — versão revisada/ }).click();
-    await page.getByLabel("Código de 6 dígitos do autenticador").fill("123456");
-    await page.getByRole("button", { name: "Confirmar mudança" }).click();
+    const code = page.getByRole("group", {
+      name: "Código de 6 dígitos do autenticador",
+    });
+    for (const [index, digit] of Array.from("123456").entries()) {
+      await code.getByLabel(`Dígito ${index + 1} de 6`).fill(digit);
+    }
+    await page.getByRole("button", { name: "Salvar configuração" }).click();
     await expect(page.getByText(/mudou em outra sessão/)).toBeVisible();
     await expectStableScreenshot(page, "platforms__configuration-conflict", V1440, "light", { fullPage: false });
   });

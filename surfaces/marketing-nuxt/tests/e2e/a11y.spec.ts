@@ -90,6 +90,14 @@ async function signIn(page: Page) {
     "Credenciais sintéticas locais não informadas",
   );
 
+  await page.context().addCookies([
+    {
+      name: "visual_scenario",
+      value: "login-anonymous",
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
   await page.goto("/");
   const usernameInput = page.getByLabel("Usuário");
   await expect(usernameInput).toBeFocused();
@@ -104,14 +112,24 @@ async function signIn(page: Page) {
 test("entrada anônima cabe, explica e funciona inteiramente por teclado", async ({
   page,
 }) => {
+  await page.context().addCookies([
+    {
+      name: "visual_scenario",
+      value: "login-anonymous",
+      domain: "127.0.0.1",
+      path: "/",
+    },
+  ]);
   await page.goto("/");
   await expect(page.getByRole("main")).toBeVisible();
+  await expect(page.getByLabel("Usuário")).toBeFocused();
   await expectNoAxeViolations(page, "login 320×568");
   await expectNoHorizontalOverflow(page, "login 320×568");
   await expectTouchTargets(page, "login 320×568");
 
   await page.getByLabel("Usuário").fill("operadora");
   await page.getByLabel("Senha").fill("senha sintética");
+  await expect(page.getByRole("button", { name: "Entrar" })).toBeEnabled();
   await page.getByLabel("Usuário").focus();
   await page.keyboard.press("Shift+Tab");
   await expect(page.getByRole("button", { name: "Entrar" })).toBeFocused();

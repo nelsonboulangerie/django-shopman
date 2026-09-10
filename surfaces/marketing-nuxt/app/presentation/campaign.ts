@@ -382,9 +382,9 @@ export function mergeAudienceRules(
   original: AudienceRules | null | undefined,
   doFormulario: AudienceRules,
 ): AudienceRules {
-  const merged: AudienceRules = { ...(original ?? {}) };
-  for (const chave of AUDIENCE_KEYS_OWNED_BY_THE_FORM) {
-    delete merged[chave];
-  }
+  const owned = new Set<string>(AUDIENCE_KEYS_OWNED_BY_THE_FORM);
+  const merged = Object.fromEntries(
+    Object.entries(original ?? {}).filter(([chave]) => !owned.has(chave)),
+  ) as AudienceRules;
   return { ...merged, ...doFormulario };
 }

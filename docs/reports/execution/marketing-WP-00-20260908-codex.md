@@ -2420,3 +2420,26 @@ browser real confirmou os seis destinos, títulos/campos em português e apenas 
 
 Nenhum template custom, provider, credencial externa, push, PR, deploy, produção ou
 envio real foi acionado.
+
+## MKT-049 — CI completo e dependência Nuxt determinística
+
+Concluído na branch isolada em 2026-09-10. O `Surfaces Gate` passou a ter uma cadeia
+Marketing bloqueante com Node 22, `npm ci`, unit/component, lint, typecheck, build,
+E2E, acessibilidade, 69 screenshots, contratos de segurança e `npm audit`. O
+Playwright usa Chromium pinado e runner macOS fixo; os testes de navegador sobem
+backend sintético e Nuxt sem preparo humano.
+
+O lock instala `nuxt@4.5.2` sem upgrade oportunista. A correção dirigida de Vitest e
+js-yaml eliminou **2 vulnerabilidades moderadas + 1 alta**; a auditoria final tem zero.
+O gate também encontrou e corrigiu ARIA proibida no indicador de alerta, lint no merge
+de público e campanha mobile esmagada a 9,7 px. A lista de 12 campanhas em 320 px caiu
+de 4.434 para 3.170 px (**-28,5%**) e todos os alvos visíveis passaram o budget de 44
+px.
+
+Provas finais: `npm ci`; **34 arquivos / 245 testes** unit/component; lint; typecheck;
+build; **1 E2E**; **2 fluxos de acessibilidade**; **69/69 visuais**; **4 contratos de
+segurança**; audit zero; workflow YAML e diff check verdes. Relatório completo:
+[`marketing-MKT-049-ci-gate-20260910-codex.md`](marketing-MKT-049-ci-gate-20260910-codex.md).
+
+O workflow não foi executado remotamente porque push/PR não estão autorizados. Não
+houve provider, credencial real, destinatário, deploy, produção ou escrita externa.

@@ -281,8 +281,7 @@ onBeforeUnmount(() => setBackgroundInert(false));
               <span
                 v-if="notification.lifecycle === 'unseen'"
                 class="mt-0.5 size-2.5 shrink-0 rounded-full bg-destructive"
-                title="Novo"
-                aria-label="Novo"
+                aria-hidden="true"
               />
             </div>
 
